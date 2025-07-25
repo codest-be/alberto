@@ -5,6 +5,6 @@ public interface IEventToPersist
     Guid Id { get; }
     string EventJson { get; }
     EventType EventType { get; }
-    IReadOnlyCollection<DomainId> DomainIds { get; }
+    IReadOnlyCollection<EventTag> Tags { get; }
     Dictionary<string, string> Metadata { get; }
 }

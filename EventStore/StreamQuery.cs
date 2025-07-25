@@ -3,18 +3,18 @@ using EventStore.Events;
 namespace EventStore;
 
 /// <summary>
-/// Represents a query to filter events by domain identifiers and event types
+/// Represents a query to filter events by event tags and event types
 /// </summary>
 public class StreamQuery(
-    IEnumerable<DomainId> domainIdentifiers = null!,
+    IEnumerable<EventTag> tags = null!,
     IEnumerable<EventType> eventTypes = null!,
-    bool requireAllDomainIdentifiers = false,
+    bool requireAllTags = false,
     bool requireAllEventTypes = false)
 {
     /// <summary>
-    /// Domain identifiers to filter by (can be empty for all)
+    /// Tags to filter by (can be empty for all)
     /// </summary>
-    private IReadOnlyCollection<DomainId> DomainIdentifiers { get; } = domainIdentifiers?.ToList() ?? [];
+    private IReadOnlyCollection<EventTag> Tags { get; } = tags?.ToList() ?? [];
 
     /// <summary>
     /// Event types to filter by (can be empty for all)
@@ -22,9 +22,9 @@ public class StreamQuery(
     private IReadOnlyCollection<EventType> EventTypes { get; } = eventTypes?.ToList() ?? [];
 
     /// <summary>
-    /// Whether all domain identifiers must be present (AND) or any can be present (OR)
+    /// Whether all event tags must be present (AND) or any can be present (OR)
     /// </summary>
-    private bool RequireAllDomainIdentifiers { get; } = requireAllDomainIdentifiers;
+    private bool RequireAllTags { get; } = requireAllTags;
 
     /// <summary>
     /// Whether all event types must be present (AND) or any can be present (OR)
@@ -32,17 +32,17 @@ public class StreamQuery(
     private bool RequireAllEventTypes { get; } = requireAllEventTypes;
 
     /// <summary>
-    /// Creates a new StreamQuery with additional domain identifiers
+    /// Creates a new StreamQuery with additional event tags
     /// </summary>
-    public StreamQuery WithDomainIdentifiers(params IEnumerable<DomainId> additionalIdentifiers)
+    public StreamQuery WithTags(params IEnumerable<EventTag> tags)
     {
-        var combinedIdentifiers = new List<DomainId>(DomainIdentifiers);
-        combinedIdentifiers.AddRange(additionalIdentifiers);
+        var combinedIdentifiers = new List<EventTag>(Tags);
+        combinedIdentifiers.AddRange(tags);
 
         return new StreamQuery(
             combinedIdentifiers,
             EventTypes,
-            RequireAllDomainIdentifiers,
+            RequireAllTags,
             RequireAllEventTypes);
     }
 
@@ -55,9 +55,9 @@ public class StreamQuery(
         combinedEventTypes.AddRange(additionalEventTypes);
 
         return new StreamQuery(
-            DomainIdentifiers,
+            Tags,
             combinedEventTypes,
-            RequireAllDomainIdentifiers,
+            RequireAllTags,
             RequireAllEventTypes);
     }
 
@@ -68,12 +68,12 @@ public class StreamQuery(
         => WithEventTypes(additionalEventTypes.Select(e => EventType.GetEventType(e)!));
 
     /// <summary>
-    /// Creates a new StreamQuery that requires all domain identifiers to be present
+    /// Creates a new StreamQuery that requires all event tags to be present
     /// </summary>
-    public StreamQuery RequiringAllDomainIdentifiers()
+    public StreamQuery RequiringAllTags()
     {
         return new StreamQuery(
-            DomainIdentifiers,
+            Tags,
             EventTypes,
             true,
             RequireAllEventTypes);
@@ -85,9 +85,9 @@ public class StreamQuery(
     public StreamQuery RequiringAllEventTypes()
     {
         return new StreamQuery(
-            DomainIdentifiers,
+            Tags,
             EventTypes,
-            RequireAllDomainIdentifiers,
+            RequireAllTags,
             true);
     }
     
@@ -95,12 +95,12 @@ public class StreamQuery(
     {
         var parts = new List<string>();
 
-        // Add domain identifiers part
-        if (DomainIdentifiers.Any())
+        // Add event tags part
+        if (Tags.Any())
         {
-            var identifierValues = string.Join(",", DomainIdentifiers.Select(d => $"'{d}'"));
-            var domainClause = $"domain identifier in [{identifierValues}]";
-            parts.Add(domainClause);
+            var identifierValues = string.Join(",", Tags.Select(d => $"'{d}'"));
+            var tagClause = $"tag in [{identifierValues}]";
+            parts.Add(tagClause);
         }
 
         // Add event types part
@@ -130,11 +130,11 @@ public class StreamQuery(
     
     private string DetermineOperator()
     {
-        // If both domain identifiers and event types exist, we need to determine the operator
-        if (DomainIdentifiers.Any() && EventTypes.Any())
+        // If both event tags and event types exist, we need to determine the operator
+        if (Tags.Any() && EventTypes.Any())
         {
             // If either requires ALL, use AND (more restrictive)
-            if (RequireAllDomainIdentifiers || RequireAllEventTypes)
+            if (RequireAllTags || RequireAllEventTypes)
             {
                 return "AND";
             }
@@ -143,7 +143,7 @@ public class StreamQuery(
 
         // If only one type exists, the operator doesn't matter for display
         // but we'll show AND if that type requires all
-        if (DomainIdentifiers.Any() && RequireAllDomainIdentifiers)
+        if (Tags.Any() && RequireAllTags)
         {
             return "AND";
         }

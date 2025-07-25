@@ -26,7 +26,7 @@ internal sealed class AppendScope(Activity activity) : IDisposable
                             Tags.EventType, evt.EventType.Id
                         },
                         {
-                            Tags.EventTags, string.Join(",", evt.DomainIds.Select(x => x.FullIdentifier))
+                            Tags.EventTags, string.Join(",", evt.Tags.Select(x => x.FullIdentifier))
                         }
                     }));
         }
