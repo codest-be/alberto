@@ -11,7 +11,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EventStore.InMemory", "Even
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EventStore.Postgres", "EventStore.Postgres\EventStore.Postgres.csproj", "{87FC7EC7-6A07-4396-9D60-ED7028C585A0}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Eventstore.Testing", "Eventstore.Testing\Eventstore.Testing.csproj", "{191B8B86-DDF5-43E1-B369-7F96A74A9749}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Eventstore.Tests", "Eventstore.Tests\Eventstore.Tests.csproj", "{191B8B86-DDF5-43E1-B369-7F96A74A9749}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EventStore.Telemetry", "EventStore.Telemetry\EventStore.Telemetry.csproj", "{B610DA7F-2665-4928-B742-23867A48CEA3}"
 EndProject

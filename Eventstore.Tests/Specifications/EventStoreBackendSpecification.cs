@@ -5,7 +5,7 @@ using EventStore.MultiTenant;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
-namespace Eventstore.Testing.Specifications;
+namespace Eventstore.Tests.Specifications;
 
 /// <summary>
 /// Specification tests for IEventStoreBackend implementations
@@ -13,6 +13,9 @@ namespace Eventstore.Testing.Specifications;
 /// </summary>
 public abstract class EventStoreBackendSpecification
 {
+    public TimeProvider TimeProvider { get; } =
+        new FakeTimeProvider(new DateTimeOffset(2025, 3, 21, 11, 47, 12, TimeSpan.FromHours(5)));
+
     /// <summary>
     /// Factory method to create the backend under test
     /// Must be implemented by each concrete test class
@@ -32,9 +35,6 @@ public abstract class EventStoreBackendSpecification
     /// Override in concrete classes if needed
     /// </summary>
     protected virtual Task CleanupAsync() => Task.CompletedTask;
-
-    public TimeProvider TimeProvider { get; } =
-        new FakeTimeProvider(new DateTimeOffset(2025, 3, 21, 11, 47, 12, TimeSpan.FromHours(5)));
 
     [Fact]
     public async Task Append_SingleEvent_ShouldSucceed()

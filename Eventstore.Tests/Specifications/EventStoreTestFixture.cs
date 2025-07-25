@@ -1,4 +1,4 @@
-namespace Eventstore.Testing.Specifications;
+namespace Eventstore.Tests.Specifications;
 
 /// <summary>
 /// Shared test fixture for event store tests

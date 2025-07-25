@@ -1,6 +1,6 @@
 using Xunit;
 
-namespace Eventstore.Testing.Specifications;
+namespace Eventstore.Tests.Specifications;
 
 /// <summary>
 /// Example of how to create a test collection for running specification tests

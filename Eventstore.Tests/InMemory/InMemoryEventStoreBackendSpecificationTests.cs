@@ -4,16 +4,17 @@ using EventStore.MultiTenant;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Eventstore.Testing.Specifications;
+namespace Eventstore.Tests.Specifications;
 
 /// <summary>
 /// Concrete specification tests for InMemoryEventStoreBackend
 /// </summary>
 public class InMemoryEventStoreBackendSpecificationTests : EventStoreBackendSpecification
 {
-    private InMemoryEventStoreBackend? _backend;
+    private readonly ILogger<InMemoryEventStoreBackend> _logger =
+        new NullLoggerFactory().CreateLogger<InMemoryEventStoreBackend>();
 
-    private readonly ILogger<InMemoryEventStoreBackend> _logger = new NullLoggerFactory().CreateLogger<InMemoryEventStoreBackend>();
+    private InMemoryEventStoreBackend? _backend;
 
     protected override Task<IEventStoreBackend> CreateBackend()
     {
