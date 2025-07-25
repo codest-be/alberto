@@ -24,10 +24,7 @@ public class InMemoryEventStoreBackend(ILogger<InMemoryEventStoreBackend> logger
             Id = e.Id,
             EventType = e.EventType,
             EventJson = e.EventJson,
-            Metadata = new Dictionary<string, string>(e.Metadata)
-            {
-                ["_position"] = e.Position.ToString()
-            },
+            Metadata = new Dictionary<string, string>(e.Metadata),
             Created = e.Created
         });
 
@@ -179,12 +176,12 @@ public class InMemoryEventStoreBackend(ILogger<InMemoryEventStoreBackend> logger
 
         if (expectedLastEventId == null && latestEventId != null)
         {
-            throw new ConcurrencyConflictException("Expected no events but found some"); 
+            throw new ConcurrencyConflictException("Expected no events but found some");
         }
 
         if (expectedLastEventId != null && latestEventId != expectedLastEventId)
         {
-            throw new ConcurrencyConflictException("Expected specific event but got different one"); 
+            throw new ConcurrencyConflictException("Expected specific event but got different one");
         }
     }
 
@@ -372,21 +369,6 @@ public class InMemoryEventStoreBackend(ILogger<InMemoryEventStoreBackend> logger
         return _events.TryGetValue(tenantId, out var tenantEvents) && tenantEvents.ContainsKey(eventId);
     }
 
-    /// <summary>
-    /// Class to store events in memory
-    /// </summary>
-    private class StoredEvent
-    {
-        public Guid Id { get; init; }
-        public string TenantId { get; init; } = null!;
-        public long Position { get; init; } // Added position like PostgreSQL version
-        public EventType EventType { get; init; } = null!;
-        public string EventJson { get; init; } = null!;
-        public IReadOnlyCollection<EventTag> Tags { get; init; } = [];
-        public Dictionary<string, string> Metadata { get; init; } = new Dictionary<string, string>();
-        public DateTimeOffset Created { get; init; }
-    }
-
     public bool Contains(EventTag[] tags)
     {
         return _events.SelectMany(x => x.Value).Any(e => e.Value.Tags.Any(tags.Contains));
@@ -395,5 +377,20 @@ public class InMemoryEventStoreBackend(ILogger<InMemoryEventStoreBackend> logger
     public int EventCount(EventTag[] tags)
     {
         return _events.SelectMany(x => x.Value).Count(e => e.Value.Tags.Any(tags.Contains));
+    }
+
+    /// <summary>
+    ///     Class to store events in memory
+    /// </summary>
+    private class StoredEvent
+    {
+        public Guid Id { get; init; }
+        public string TenantId { get; init; } = null!;
+        public long Position { get; init; }
+        public EventType EventType { get; init; } = null!;
+        public string EventJson { get; init; } = null!;
+        public IReadOnlyCollection<EventTag> Tags { get; init; } = [];
+        public Dictionary<string, string> Metadata { get; init; } = new Dictionary<string, string>();
+        public DateTimeOffset Created { get; init; }
     }
 }
