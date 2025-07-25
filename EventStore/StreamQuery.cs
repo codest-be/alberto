@@ -5,7 +5,7 @@ namespace EventStore;
 /// <summary>
 /// Represents a query to filter events by event tags and event types
 /// </summary>
-public class StreamQuery(
+public sealed class StreamQuery(
     IEnumerable<EventTag> tags = null!,
     IEnumerable<EventType> eventTypes = null!,
     bool requireAllTags = false,
@@ -14,22 +14,22 @@ public class StreamQuery(
     /// <summary>
     /// Tags to filter by (can be empty for all)
     /// </summary>
-    private IReadOnlyCollection<EventTag> Tags { get; } = tags?.ToList() ?? [];
+    public IReadOnlyCollection<EventTag> Tags { get; } = tags?.ToList() ?? [];
 
     /// <summary>
     /// Event types to filter by (can be empty for all)
     /// </summary>
-    private IReadOnlyCollection<EventType> EventTypes { get; } = eventTypes?.ToList() ?? [];
+    public IReadOnlyCollection<EventType> EventTypes { get; } = eventTypes?.ToList() ?? [];
 
     /// <summary>
     /// Whether all event tags must be present (AND) or any can be present (OR)
     /// </summary>
-    private bool RequireAllTags { get; } = requireAllTags;
+    public bool RequireAllTags { get; } = requireAllTags;
 
     /// <summary>
     /// Whether all event types must be present (AND) or any can be present (OR)
     /// </summary>
-    private bool RequireAllEventTypes { get; } = requireAllEventTypes;
+    public bool RequireAllEventTypes { get; } = requireAllEventTypes;
 
     /// <summary>
     /// Creates a new StreamQuery with additional event tags

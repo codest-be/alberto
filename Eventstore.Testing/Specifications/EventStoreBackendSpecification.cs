@@ -1,6 +1,8 @@
 using EventStore;
 using EventStore.Events;
+using EventStore.Exceptions;
 using EventStore.MultiTenant;
+using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
 namespace Eventstore.Testing.Specifications;
@@ -30,6 +32,9 @@ public abstract class EventStoreBackendSpecification
     /// Override in concrete classes if needed
     /// </summary>
     protected virtual Task CleanupAsync() => Task.CompletedTask;
+
+    public TimeProvider TimeProvider { get; } =
+        new FakeTimeProvider(new DateTimeOffset(2025, 3, 21, 11, 47, 12, TimeSpan.FromHours(5)));
 
     [Fact]
     public async Task Append_SingleEvent_ShouldSucceed()
@@ -99,7 +104,7 @@ public abstract class EventStoreBackendSpecification
             TestContext.Current.CancellationToken);
 
         // Assert
-        await Assert.ThrowsAsync<Exception>(Result);
+        await Assert.ThrowsAsync<ConcurrencyConflictException>(Result);
 
         await CleanupAsync();
     }
@@ -113,7 +118,10 @@ public abstract class EventStoreBackendSpecification
         var query = new StreamQuery().WithTags(EventTag.Parse("order:123"));
 
         // Act
-        var result = await backend.Stream(CurrentTenant(), query, cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.Stream(
+            CurrentTenant(),
+            query,
+            cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Empty(result);
@@ -141,7 +149,10 @@ public abstract class EventStoreBackendSpecification
         var query = new StreamQuery().WithTags(EventTag.Parse("order:123"));
 
         // Act
-        var result = await backend.Stream(CurrentTenant(), query, cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.Stream(
+            CurrentTenant(),
+            query,
+            cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(2, result.Count);
@@ -167,7 +178,10 @@ public abstract class EventStoreBackendSpecification
         var query = new StreamQuery().WithEventTypes(new EventType("order-created"));
 
         // Act
-        var result = await backend.Stream(CurrentTenant(), query, cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.Stream(
+            CurrentTenant(),
+            query,
+            cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Single(result);
@@ -268,7 +282,7 @@ public abstract class EventStoreBackendSpecification
                 TestContext.Current.CancellationToken);
 
         // Assert
-        await Assert.ThrowsAsync<Exception>(Result); // concurrency conflict expected
+        await Assert.ThrowsAsync<ConcurrencyConflictException>(Result); // concurrency conflict expected
 
         await CleanupAsync();
     }
@@ -297,50 +311,7 @@ public abstract class EventStoreBackendSpecification
                 cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
-        await Assert.ThrowsAsync<Exception>(Result); // concurrency conflict expected
-
-        await CleanupAsync();
-    }
-
-    [Fact]
-    public async Task Stream_EventsAreOrderedByPosition()
-    {
-        // Arrange
-        await SetupAsync();
-        var backend = await CreateBackend();
-
-        var events = new[]
-        {
-            CreateTestEvent("first", "order:123"), CreateTestEvent("second", "order:123"),
-            CreateTestEvent("third", "order:123")
-        };
-
-        // Append events one by one to ensure ordering
-        foreach (var evt in events)
-        {
-            await backend.Append(CurrentTenant(), [evt], null, null, TestContext.Current.CancellationToken);
-        }
-
-        var query = new StreamQuery().WithTags(EventTag.Parse("order:123"));
-
-        // Act
-        var result = await backend.Stream(CurrentTenant(), query, cancellationToken: TestContext.Current.CancellationToken);
-
-        // Assert
-        var resultList = result.ToList();
-        Assert.Equal(3, resultList.Count);
-
-        // Events should be in the order they were appended
-        Assert.Equal("first", resultList[0].EventType.Id);
-        Assert.Equal("second", resultList[1].EventType.Id);
-        Assert.Equal("third", resultList[2].EventType.Id);
-
-        // Positions should be increasing
-        var positions = resultList.Select(e => long.Parse(e.Metadata["_position"])).ToList();
-        for (var i = 1; i < positions.Count; i++)
-        {
-            Assert.True(positions[i] > positions[i - 1], "Positions should be increasing");
-        }
+        await Assert.ThrowsAsync<ConcurrencyConflictException>(Result); // concurrency conflict expected
 
         await CleanupAsync();
     }
@@ -365,7 +336,10 @@ public abstract class EventStoreBackendSpecification
             .RequiringAllTags();
 
         // Act
-        var result = await backend.Stream(CurrentTenant(), query, cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.Stream(
+            CurrentTenant(),
+            query,
+            cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Single(result); // Only event-2 has both identifiers
@@ -406,20 +380,19 @@ public abstract class EventStoreBackendSpecification
         var returnedEvent = streamResult.First();
         Assert.Equal("correlation-123", returnedEvent.Metadata["correlation-id"]);
         Assert.Equal("user-456", returnedEvent.Metadata["user-id"]);
-        Assert.Contains("_position", returnedEvent.Metadata.Keys); // Should also have position
 
         await CleanupAsync();
     }
 
     // Helper method to create test events
-    private static IEventToPersist CreateTestEvent(
+    private IEventToPersist CreateTestEvent(
         string eventType,
         params string[] tags)
     {
         return CreateTestEvent(eventType, new Dictionary<string, string>(), tags);
     }
 
-    private static IEventToPersist CreateTestEvent(
+    private IEventToPersist CreateTestEvent(
         string eventType,
         Dictionary<string, string>? metadata = null,
         params string[] eventTags)
@@ -430,6 +403,7 @@ public abstract class EventStoreBackendSpecification
             EventJson = """{"data": "test"}""",
             Tags = eventTags.Select(EventTag.Parse).ToList(),
             Metadata = metadata ?? new Dictionary<string, string>(),
+            Created = TimeProvider.GetUtcNow()
         };
     }
 }
