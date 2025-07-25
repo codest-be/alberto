@@ -35,9 +35,3 @@ public partial class EventType : Attribute
     [GeneratedRegex("^[a-z-]+$")]
     private static partial Regex EventTypeRegex();
 }
-
-[AttributeUsage(AttributeTargets.Property, AllowMultiple = false, Inherited = false)]
-public class Tag(string name) : Attribute
-{
-    public string Name { get; } = name;
-}
