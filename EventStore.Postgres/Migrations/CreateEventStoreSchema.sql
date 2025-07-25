@@ -1,6 +1,7 @@
 -- =============================================================================
 -- DCB EVENT STORE SCHEMA FOR POSTGRESQL
 -- =============================================================================
+
 SET search_path = app, public;
 
 -- Main events table with tenant support

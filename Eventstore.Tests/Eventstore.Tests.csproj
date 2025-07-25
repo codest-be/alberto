@@ -22,6 +22,7 @@
 
     <ItemGroup>
       <ProjectReference Include="..\EventStore.InMemory\EventStore.InMemory.csproj" />
+        <ProjectReference Include="..\EventStore.Postgres\EventStore.Postgres.csproj"/>
       <ProjectReference Include="..\EventStore\EventStore.csproj" />
     </ItemGroup>
 </Project>
