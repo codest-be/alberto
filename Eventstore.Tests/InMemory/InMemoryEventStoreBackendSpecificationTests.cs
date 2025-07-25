@@ -1,10 +1,11 @@
 ﻿using EventStore;
 using EventStore.InMemory;
 using EventStore.MultiTenant;
+using Eventstore.Tests.Specifications;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Eventstore.Tests.Specifications;
+namespace Eventstore.Tests.InMemory;
 
 /// <summary>
 /// Concrete specification tests for InMemoryEventStoreBackend
