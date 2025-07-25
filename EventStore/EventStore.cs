@@ -1,10 +1,14 @@
 using System.Diagnostics;
 using EventStore.Diagnostics;
 using EventStore.Events;
+using EventStore.MultiTenant;
 
 namespace EventStore;
 
-public sealed class EventStore(IEventStoreBackend backend, IDiagnosticsEventListener diagnostics)
+public sealed class EventStore(
+    IEventStoreBackend backend, 
+    ITenantContext tenantContext,
+    IDiagnosticsEventListener diagnostics)
 {
     public Task<IReadOnlyCollection<IEventEnvelope>> Stream(
         StreamQuery query,
@@ -13,7 +17,7 @@ public sealed class EventStore(IEventStoreBackend backend, IDiagnosticsEventList
     {
         using var streamScope = diagnostics.Stream(query, maxCount);
         
-        return backend.Stream(query, maxCount, cancellationToken);
+        return backend.Stream(tenantContext.Tenant, query, maxCount, cancellationToken);
     }
 
     public Task<IEnumerable<IEventEnvelope>> Append(
@@ -26,6 +30,6 @@ public sealed class EventStore(IEventStoreBackend backend, IDiagnosticsEventList
 
         using var appendScope = diagnostics.Append(eventToPersists);
         
-        return backend.Append(eventToPersists, consistencyBoundary, expectedLatestEventId, cancellationToken);
+        return backend.Append(tenantContext.Tenant, eventToPersists, consistencyBoundary, expectedLatestEventId, cancellationToken);
     }
 }
