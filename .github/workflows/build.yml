@@ -50,5 +50,5 @@ jobs:
         if: success() || failure()
         with:
           name: Tests
-          path: WebApi.Tests/TestResults/*.trx
+          path: '**/TestResults/*.trx'
           reporter: dotnet-trx
