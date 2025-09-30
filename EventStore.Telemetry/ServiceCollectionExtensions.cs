@@ -1,12 +1,17 @@
 ﻿using EventStore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using OpenTelemetry.Trace;
 
 namespace EventStore.Telemetry;
 
 public static class ServiceCollectionExtensions
 {
-    public static IServiceCollection AddTelemetry(this IServiceCollection services)
+    public static EventStoreBuilder AddTelemetry(this EventStoreBuilder builder)
     {
-        return services.AddSingleton<IDiagnosticsEventListener, ActivityDiagnosticEventListener>();
+        builder.Services.AddSingleton<IDiagnosticsEventListener, ActivityDiagnosticEventListener>();
+        return builder;
     }
+    
+    public static TracerProviderBuilder AddEventStoreTelemetry(this TracerProviderBuilder builder)
+        => builder.AddSource(AlbertoActivitySource.Name);
 }

@@ -4,17 +4,17 @@ namespace EventStore.InMemory;
 
 public static class ServiceCollectionExtensions
 {
-    public static IServiceCollection AddInMemoryEventStore(this IServiceCollection services)
+    public static EventStoreBuilder AddInMemoryEventStore(this EventStoreBuilder builder)
     {
-        services.AddScoped<EventStore>();
-        services.AddSingleton<IEventStoreBackend, InMemoryEventStoreBackend>();
-        return services;
+        builder.Services.AddScoped<EventStore>();
+        builder.Services.AddSingleton<IEventStoreBackend, InMemoryEventStoreBackend>();
+        return builder;
     }
 
-    public static IServiceCollection AddTestingEventStore(this IServiceCollection services,
+    public static EventStoreBuilder AddTestingEventStore(this EventStoreBuilder builder,
         InMemoryEventStoreBackend backend)
     {
-        services.AddSingleton<IEventStoreBackend>(backend);
-        return services;
+        builder.Services.AddSingleton<IEventStoreBackend>(backend);
+        return builder;
     }
 }
