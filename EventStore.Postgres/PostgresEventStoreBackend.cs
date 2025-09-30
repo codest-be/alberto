@@ -246,7 +246,7 @@ public class PostgresEventStoreBackend(
             parameters.Add($"Tags{i}", evt.Tags.Select(di => di.ToString()).ToArray());
             parameters.Add($"Data{i}", evt.EventJson);
             parameters.Add($"Metadata{i}", JsonSerializer.Serialize(enhancedMetadata));
-            parameters.Add($"CreatedAt{i}", evt.Created);
+            parameters.Add($"CreatedAt{i}", evt.Created.ToUniversalTime());
         }
 
         string sql;
@@ -428,16 +428,23 @@ public class PostgresEventStoreBackend(
             RETURNING position";
         }
 
-        if (consistencyBoundary != null)
+        try
         {
-            var result = await connection.QuerySingleOrDefaultAsync(sql, parameters, transaction);
-            if (result != null && (int)result!.conflicts == 1)
-                return null;
+            if (consistencyBoundary != null)
+            {
+                var result = await connection.QuerySingleOrDefaultAsync(sql, parameters, transaction);
+                if (result != null && (int)result!.conflicts == 1)
+                    return null;
 
-            return result?.position;
+                return result?.position;
+            }
+
+            return await connection.QuerySingleOrDefaultAsync<long?>(sql, parameters, transaction);
         }
-
-        return await connection.QuerySingleOrDefaultAsync<long?>(sql, parameters, transaction);
+        catch (PostgresException ex) when (ex.SqlState == "23505") // Unique constraint violation
+        {
+            throw new ConcurrencyConflictException($"Event with ID {@event.Id} already exists");
+        }
     }
 
     private (string conditions, DynamicParameters parameters) BuildConsistencyConditions(

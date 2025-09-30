@@ -48,7 +48,7 @@ public class InMemoryEventStoreBackend(ILogger<InMemoryEventStoreBackend> logger
                 .ToList();
 
             // Apply maxCount if specified
-            if (maxCount.HasValue && maxCount.Value > 0)
+            if (maxCount is > 0)
             {
                 filteredEvents = filteredEvents.Take(maxCount.Value).ToList();
             }
