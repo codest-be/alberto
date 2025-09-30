@@ -1,10 +1,17 @@
+using Projects;
+
 var builder = DistributedApplication.CreateBuilder(args);
 
-var postgres = builder.AddPostgres("postgres");
-var database = postgres.AddDatabase("eventstore-db");
+var postgres = builder.AddPostgres("postgres").WithPgAdmin();
+var database = postgres.AddDatabase("alberto-db");
+
+var migrations = builder.AddProject<Alberto_SqlMigrator>("sql-migrator")
+    .WithReference(database)
+    .WaitFor(database);
 
 builder
-    .AddProject<Projects.EventStore_Example>("eventstore-example")
-    .WithReference(database);
+    .AddProject<Projects.Alberto_Example>("alberto-example")
+    .WithReference(database)
+    .WaitFor(migrations);
 
 builder.Build().Run();

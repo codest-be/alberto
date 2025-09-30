@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Alberto.ServiceDefaults\Alberto.ServiceDefaults.csproj"/>
+        <ProjectReference Include="..\EventStore.Postgres\EventStore.Postgres.csproj"/>
+        <ProjectReference Include="..\EventStore.Telemetry\EventStore.Telemetry.csproj"/>
+        <ProjectReference Include="..\EventStore\EventStore.csproj"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <EmbeddedResource Include="Migrations\*.sql"/>
+    </ItemGroup>
+
+</Project>
