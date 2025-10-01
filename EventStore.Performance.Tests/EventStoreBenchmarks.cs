@@ -1,5 +1,7 @@
 using BenchmarkDotNet.Attributes;
+using BenchmarkDotNet.Columns;
 using BenchmarkDotNet.Configs;
+using BenchmarkDotNet.Environments;
 using BenchmarkDotNet.Jobs;
 using Dapper;
 using EventStore;
@@ -16,15 +18,31 @@ namespace EventStore.Performance.Tests;
 
 [Config(typeof(Config))]
 [MemoryDiagnoser]
-[SimpleJob(baseline: true)]
+[MinColumn, MaxColumn, MeanColumn, MedianColumn]
+[RankColumn]
 public class EventStoreBenchmarks
 {
     private class Config : ManualConfig
     {
         public Config()
         {
-            AddJob(Job.Default.AsBaseline());
+            // Simplified professional benchmark configuration
+            AddJob(Job.Default
+                .WithId("Baseline")
+                .AsBaseline());
+
+            // Add a second job with enhanced statistical sampling
+            AddJob(Job.Default
+                .WithId("Optimized")
+                .WithInvocationCount(96)  // Multiple of 16 (UnrollFactor)
+                .WithIterationCount(15)
+                .WithWarmupCount(5));
+
             WithOptions(ConfigOptions.DisableOptimizationsValidator);
+            
+            // Add statistical columns for better analysis
+            AddColumn(StatisticColumn.StdDev);
+            AddColumn(StatisticColumn.Error);
         }
     }
 
