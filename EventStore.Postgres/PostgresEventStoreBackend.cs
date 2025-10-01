@@ -206,15 +206,33 @@ public class PostgresEventStoreBackend(
         if (query.EventTypes.Count > 0)
         {
             var eventTypes = query.EventTypes.Select(et => et.Id).ToArray();
-            if (eventTypes.Length == 1)
+            if (query.RequireAllEventTypes)
             {
-                parameters.Add($"eventType{paramIndex}", eventTypes[0]);
-                conditions.Add($"event_type = @eventType{paramIndex}");
+                // For single events, requiring ALL event types only makes sense if there's one type
+                if (eventTypes.Length == 1)
+                {
+                    parameters.Add($"eventType{paramIndex}", eventTypes[0]);
+                    conditions.Add($"event_type = @eventType{paramIndex}");
+                }
+                else
+                {
+                    // Multiple types required for single event is impossible - add impossible condition
+                    conditions.Add("FALSE");
+                }
             }
-            else if (!query.RequireAllEventTypes)
+            else
             {
-                parameters.Add($"eventTypes{paramIndex}", eventTypes);
-                conditions.Add($"event_type = ANY(@eventTypes{paramIndex})");
+                // ANY of the event types can match
+                if (eventTypes.Length == 1)
+                {
+                    parameters.Add($"eventType{paramIndex}", eventTypes[0]);
+                    conditions.Add($"event_type = @eventType{paramIndex}");
+                }
+                else
+                {
+                    parameters.Add($"eventTypes{paramIndex}", eventTypes);
+                    conditions.Add($"event_type = ANY(@eventTypes{paramIndex})");
+                }
             }
         }
 
@@ -485,15 +503,33 @@ public class PostgresEventStoreBackend(
         if (query.EventTypes.Count > 0)
         {
             var eventTypes = query.EventTypes.Select(et => et.Id).ToArray();
-            if (eventTypes.Length == 1)
+            if (query.RequireAllEventTypes)
             {
-                parameters.Add("CheckEventType", eventTypes[0]);
-                conditions.Add("event_type = @CheckEventType");
+                // For single events, requiring ALL event types only makes sense if there's one type
+                if (eventTypes.Length == 1)
+                {
+                    parameters.Add("CheckEventType", eventTypes[0]);
+                    conditions.Add("event_type = @CheckEventType");
+                }
+                else
+                {
+                    // Multiple types required for single event is impossible - add impossible condition
+                    conditions.Add("FALSE");
+                }
             }
-            else if (!query.RequireAllEventTypes)
+            else
             {
-                parameters.Add("CheckEventTypes", eventTypes);
-                conditions.Add("event_type = ANY(@CheckEventTypes)");
+                // ANY of the event types can match
+                if (eventTypes.Length == 1)
+                {
+                    parameters.Add("CheckEventType", eventTypes[0]);
+                    conditions.Add("event_type = @CheckEventType");
+                }
+                else
+                {
+                    parameters.Add("CheckEventTypes", eventTypes);
+                    conditions.Add("event_type = ANY(@CheckEventTypes)");
+                }
             }
         }
 

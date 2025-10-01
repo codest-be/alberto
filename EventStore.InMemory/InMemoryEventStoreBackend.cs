@@ -60,7 +60,10 @@ public class InMemoryEventStoreBackend(ILogger<InMemoryEventStoreBackend> logger
                     Id = e.Id,
                     EventType = e.EventType,
                     EventJson = e.EventJson,
-                    Metadata = new Dictionary<string, string>(e.Metadata),
+                    Metadata = new Dictionary<string, string>(e.Metadata)
+                    {
+                        ["_position"] = e.Position.ToString()
+                    },
                     Created = e.Created,
                 })
                 .ToList();
