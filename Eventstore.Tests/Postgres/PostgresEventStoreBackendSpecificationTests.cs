@@ -155,7 +155,8 @@ public class PostgresTestFixture : IAsyncLifetime
         await connection.ExecuteAsync($"CREATE SCHEMA IF NOT EXISTS {Options.Schema}");
 
         var migrationSql = await LoadMigrationFromFile();
-        await connection.ExecuteAsync(migrationSql);
+        var content = $"SET search_path TO {Options.Schema}, public;\n\n{migrationSql}";
+        await connection.ExecuteAsync(content);
         await VerifySchemaSetup();
     }
 

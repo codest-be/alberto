@@ -8,9 +8,9 @@
 
     <ItemGroup>
         <ProjectReference Include="..\Alberto.ServiceDefaults\Alberto.ServiceDefaults.csproj"/>
-        <ProjectReference Include="..\EventStore.Postgres\EventStore.Postgres.csproj"/>
-        <ProjectReference Include="..\EventStore.Telemetry\EventStore.Telemetry.csproj"/>
-        <ProjectReference Include="..\EventStore\EventStore.csproj"/>
+        <ProjectReference Include="..\..\EventStore.Postgres\EventStore.Postgres.csproj"/>
+        <ProjectReference Include="..\..\EventStore.Telemetry\EventStore.Telemetry.csproj"/>
+        <ProjectReference Include="..\..\EventStore\EventStore.csproj"/>
     </ItemGroup>
 
     <ItemGroup>
