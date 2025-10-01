@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS events
     tenant_id
     VARCHAR
 (
-    100
+    20
 ) NOT NULL,
     event_type TEXT NOT NULL,
     data JSONB NOT NULL,

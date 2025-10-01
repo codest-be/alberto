@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8' />
+<title>EventStore.Performance.Tests.EventStoreBenchmarks-20251001-220850</title>
+
+<style type="text/css">
+	table { border-collapse: collapse; display: block; width: 100%; overflow: auto; }
+	td, th { padding: 6px 13px; border: 1px solid #ddd; text-align: right; }
+	tr { background-color: #fff; border-top: 1px solid #ccc; }
+	tr:nth-child(even) { background: #f8f8f8; }
+</style>
+</head>
+<body>
+<pre><code>
+BenchmarkDotNet v0.15.4, macOS 26.0.1 (25A362) [Darwin 25.0.0]
+Apple M4 Pro, 1 CPU, 14 logical and 14 physical cores
+.NET SDK 10.0.100-rc.1.25451.107
+  [Host]     : .NET 10.0.0 (10.0.0-rc.1.25451.107, 10.0.25.45207), Arm64 RyuJIT armv8.0-a
+  Job-CNUJVU : .NET 10.0.0 (10.0.0-rc.1.25451.107, 10.0.25.45207), Arm64 RyuJIT armv8.0-a
+</code></pre>
+<pre><code>InvocationCount=1  UnrollFactor=1  
+</code></pre>
+
+<table>
+<thead><tr><th>Method                          </th><th>threshold</th><th>eventCount</th><th>timeoutMs</th><th>eventThreshold</th><th>Mean  </th><th>Error </th><th>StdDev</th><th>Median</th><th>Ratio</th><th>RatioSD</th><th>Allocated</th><th>Alloc Ratio</th>
+</tr>
+</thead><tbody><tr><td>AppendSingleEvent_InMemory</td><td>?</td><td>?</td><td>?</td><td>?</td><td>33.73 &mu;s</td><td>5.288 &mu;s</td><td>15.42 &mu;s</td><td>33.40 &mu;s</td><td>1.37</td><td>1.28</td><td>1.66 KB</td><td>1.00</td>
+</tr><tr><td>AppendSingleEvent_Postgres</td><td>?</td><td>?</td><td>?</td><td>?</td><td>1,077.30 &mu;s</td><td>93.508 &mu;s</td><td>269.79 &mu;s</td><td>1,006.06 &mu;s</td><td>1.06</td><td>0.36</td><td>10.7 KB</td><td>1.00</td>
+</tr><tr><td>AppendSingleEvent_PostgresPooled</td><td>?</td><td>?</td><td>?</td><td>?</td><td>1,054.55 &mu;s</td><td>77.193 &mu;s</td><td>220.23 &mu;s</td><td>986.25 &mu;s</td><td>1.04</td><td>0.30</td><td>10.7 KB</td><td>1.00</td>
+</tr><tr><td>ReadStream_InMemory</td><td>?</td><td>?</td><td>?</td><td>?</td><td>862.89 &mu;s</td><td>76.075 &mu;s</td><td>218.27 &mu;s</td><td>855.04 &mu;s</td><td>1.07</td><td>0.40</td><td>1916.24 KB</td><td>1.00</td>
+</tr><tr><td>ReadStream_Postgres</td><td>?</td><td>?</td><td>?</td><td>?</td><td>6,174.48 &mu;s</td><td>216.604 &mu;s</td><td>635.26 &mu;s</td><td>6,093.83 &mu;s</td><td>1.01</td><td>0.14</td><td>227.96 KB</td><td>1.00</td>
+</tr><tr><td>QueryEventsByType_InMemory</td><td>?</td><td>?</td><td>?</td><td>?</td><td>663.91 &mu;s</td><td>48.353 &mu;s</td><td>134.79 &mu;s</td><td>672.96 &mu;s</td><td>1.05</td><td>0.35</td><td>1282.27 KB</td><td>1.00</td>
+</tr><tr><td>QueryEventsByType_Postgres</td><td>?</td><td>?</td><td>?</td><td>?</td><td>5,803.11 &mu;s</td><td>187.688 &mu;s</td><td>535.48 &mu;s</td><td>5,704.46 &mu;s</td><td>1.01</td><td>0.13</td><td>198.32 KB</td><td>1.00</td>
+</tr><tr><td>AppendSingleEvent_LocalhostPostgres</td><td>?</td><td>?</td><td>?</td><td>?</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>?</td><td>?</td><td>NA</td><td>?</td>
+</tr><tr><td>ConnectionPoolStress_Postgres</td><td>?</td><td>?</td><td>?</td><td>?</td><td>2,504.11 &mu;s</td><td>99.470 &mu;s</td><td>267.22 &mu;s</td><td>2,524.83 &mu;s</td><td>1.01</td><td>0.16</td><td>478.9 KB</td><td>1.00</td>
+</tr><tr><td>BulkThresholdTest_Postgres</td><td>1</td><td>?</td><td>?</td><td>?</td><td>2,842.80 &mu;s</td><td>213.835 &mu;s</td><td>623.77 &mu;s</td><td>2,703.62 &mu;s</td><td>1.05</td><td>0.32</td><td>243.45 KB</td><td>1.00</td>
+</tr><tr><td>BulkThresholdTest_Postgres</td><td>5</td><td>?</td><td>?</td><td>?</td><td>2,769.06 &mu;s</td><td>188.458 &mu;s</td><td>552.71 &mu;s</td><td>2,616.81 &mu;s</td><td>1.04</td><td>0.28</td><td>243.45 KB</td><td>1.00</td>
+</tr><tr><td>AppendMultipleEvents_InMemory</td><td>?</td><td>10</td><td>?</td><td>?</td><td>54.50 &mu;s</td><td>4.540 &mu;s</td><td>13.17 &mu;s</td><td>55.73 &mu;s</td><td>1.08</td><td>0.45</td><td>15.19 KB</td><td>1.00</td>
+</tr><tr><td>AppendMultipleEvents_Postgres</td><td>?</td><td>10</td><td>?</td><td>?</td><td>1,572.38 &mu;s</td><td>112.296 &mu;s</td><td>329.34 &mu;s</td><td>1,469.96 &mu;s</td><td>1.04</td><td>0.30</td><td>64.47 KB</td><td>1.00</td>
+</tr><tr><td>AppendMultipleEvents_PostgresPooled</td><td>?</td><td>10</td><td>?</td><td>?</td><td>1,816.17 &mu;s</td><td>185.945 &mu;s</td><td>548.26 &mu;s</td><td>1,578.06 &mu;s</td><td>1.09</td><td>0.45</td><td>64.7 KB</td><td>1.00</td>
+</tr><tr><td>BulkThresholdTest_Postgres</td><td>10</td><td>?</td><td>?</td><td>?</td><td>2,637.61 &mu;s</td><td>194.904 &mu;s</td><td>571.62 &mu;s</td><td>2,431.69 &mu;s</td><td>1.04</td><td>0.31</td><td>243.6 KB</td><td>1.00</td>
+</tr><tr><td>BulkThresholdTest_Postgres</td><td>50</td><td>?</td><td>?</td><td>?</td><td>6,686.52 &mu;s</td><td>205.907 &mu;s</td><td>584.12 &mu;s</td><td>6,643.25 &mu;s</td><td>1.01</td><td>0.12</td><td>253.98 KB</td><td>1.00</td>
+</tr><tr><td>TimeBatchedAppend_Postgres</td><td>?</td><td>?</td><td>50</td><td>100</td><td>53,807.93 &mu;s</td><td>1,055.207 &mu;s</td><td>1,513.35 &mu;s</td><td>53,530.21 &mu;s</td><td>1.00</td><td>0.04</td><td>264.73 KB</td><td>1.00</td>
+</tr><tr><td>AppendMultipleEvents_InMemory</td><td>?</td><td>100</td><td>?</td><td>?</td><td>163.83 &mu;s</td><td>5.326 &mu;s</td><td>15.19 &mu;s</td><td>164.73 &mu;s</td><td>1.01</td><td>0.13</td><td>147.79 KB</td><td>1.00</td>
+</tr><tr><td>AppendMultipleEvents_Postgres</td><td>?</td><td>100</td><td>?</td><td>?</td><td>3,337.69 &mu;s</td><td>91.044 &mu;s</td><td>262.68 &mu;s</td><td>3,348.25 &mu;s</td><td>1.01</td><td>0.11</td><td>595.09 KB</td><td>1.00</td>
+</tr><tr><td>AppendMultipleEvents_PostgresPooled</td><td>?</td><td>100</td><td>?</td><td>?</td><td>3,491.14 &mu;s</td><td>100.170 &mu;s</td><td>275.90 &mu;s</td><td>3,433.69 &mu;s</td><td>1.01</td><td>0.11</td><td>597.43 KB</td><td>1.00</td>
+</tr><tr><td>AppendMultipleEvents_LocalhostPostgres</td><td>?</td><td>100</td><td>?</td><td>?</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>?</td><td>?</td><td>NA</td><td>?</td>
+</tr><tr><td>TimeBatchedAppend_Postgres</td><td>?</td><td>?</td><td>100</td><td>50</td><td>61,562.70 &mu;s</td><td>1,179.528 &mu;s</td><td>1,311.04 &mu;s</td><td>62,201.31 &mu;s</td><td>1.00</td><td>0.03</td><td>291.21 KB</td><td>1.00</td>
+</tr><tr><td>AppendMultipleEvents_InMemory</td><td>?</td><td>1000</td><td>?</td><td>?</td><td>1,214.41 &mu;s</td><td>46.646 &mu;s</td><td>135.33 &mu;s</td><td>1,214.75 &mu;s</td><td>1.01</td><td>0.17</td><td>1475.92 KB</td><td>1.00</td>
+</tr><tr><td>AppendMultipleEvents_Postgres</td><td>?</td><td>1000</td><td>?</td><td>?</td><td>19,799.21 &mu;s</td><td>386.837 &mu;s</td><td>542.29 &mu;s</td><td>19,856.77 &mu;s</td><td>1.00</td><td>0.04</td><td>6064.55 KB</td><td>1.00</td>
+</tr></tbody></table>
+</body>
+</html>

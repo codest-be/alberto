@@ -1,0 +1,36 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" Version="0.15.4" />
+    <PackageReference Include="NBomber" Version="6.1.1" />
+    <PackageReference Include="Respawn" Version="6.2.1" />
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.7.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EventStore\EventStore.csproj" />
+    <ProjectReference Include="..\EventStore.InMemory\EventStore.InMemory.csproj" />
+    <ProjectReference Include="..\EventStore.Postgres\EventStore.Postgres.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="BenchmarkDotNet.Artifacts\" />
+    <Folder Include="BenchmarkDotNet.Artifacts\results\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Remove="BenchmarkDotNet.Artifacts\results\EventStore.Performance.Tests.EventStoreBenchmarks-report.html" />
+    <None Remove="BenchmarkDotNet.Artifacts\results\EventStore.Performance.Tests.EventStoreBenchmarks-report.csv" />
+  </ItemGroup>
+
+</Project>

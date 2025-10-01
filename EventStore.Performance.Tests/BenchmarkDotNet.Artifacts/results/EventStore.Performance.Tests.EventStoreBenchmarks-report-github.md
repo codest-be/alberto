@@ -1,0 +1,64 @@
+```
+
+BenchmarkDotNet v0.15.4, macOS 26.0.1 (25A362) [Darwin 25.0.0]
+Apple M4 Pro, 1 CPU, 14 logical and 14 physical cores
+.NET SDK 10.0.100-rc.1.25451.107
+  [Host]     : .NET 10.0.0 (10.0.0-rc.1.25451.107, 10.0.25.45207), Arm64 RyuJIT armv8.0-a
+  Job-CNUJVU : .NET 10.0.0 (10.0.0-rc.1.25451.107, 10.0.25.45207), Arm64 RyuJIT armv8.0-a
+
+InvocationCount=1  UnrollFactor=1  
+
+```
+| Method                                 | threshold | eventCount | timeoutMs | eventThreshold | Mean         | Error        | StdDev      | Median       | Ratio | RatioSD | Allocated  | Alloc Ratio |
+|--------------------------------------- |---------- |----------- |---------- |--------------- |-------------:|-------------:|------------:|-------------:|------:|--------:|-----------:|------------:|
+| **AppendSingleEvent_InMemory**             | **?**         | **?**          | **?**         | **?**              |     **33.73 μs** |     **5.288 μs** |    **15.42 μs** |     **33.40 μs** |  **1.37** |    **1.28** |    **1.66 KB** |        **1.00** |
+|                                        |           |            |           |                |              |              |             |              |       |         |            |             |
+| AppendSingleEvent_Postgres             | ?         | ?          | ?         | ?              |  1,077.30 μs |    93.508 μs |   269.79 μs |  1,006.06 μs |  1.06 |    0.36 |    10.7 KB |        1.00 |
+|                                        |           |            |           |                |              |              |             |              |       |         |            |             |
+| AppendSingleEvent_PostgresPooled       | ?         | ?          | ?         | ?              |  1,054.55 μs |    77.193 μs |   220.23 μs |    986.25 μs |  1.04 |    0.30 |    10.7 KB |        1.00 |
+|                                        |           |            |           |                |              |              |             |              |       |         |            |             |
+| ReadStream_InMemory                    | ?         | ?          | ?         | ?              |    862.89 μs |    76.075 μs |   218.27 μs |    855.04 μs |  1.07 |    0.40 | 1916.24 KB |        1.00 |
+|                                        |           |            |           |                |              |              |             |              |       |         |            |             |
+| ReadStream_Postgres                    | ?         | ?          | ?         | ?              |  6,174.48 μs |   216.604 μs |   635.26 μs |  6,093.83 μs |  1.01 |    0.14 |  227.96 KB |        1.00 |
+|                                        |           |            |           |                |              |              |             |              |       |         |            |             |
+| QueryEventsByType_InMemory             | ?         | ?          | ?         | ?              |    663.91 μs |    48.353 μs |   134.79 μs |    672.96 μs |  1.05 |    0.35 | 1282.27 KB |        1.00 |
+|                                        |           |            |           |                |              |              |             |              |       |         |            |             |
+| QueryEventsByType_Postgres             | ?         | ?          | ?         | ?              |  5,803.11 μs |   187.688 μs |   535.48 μs |  5,704.46 μs |  1.01 |    0.13 |  198.32 KB |        1.00 |
+|                                        |           |            |           |                |              |              |             |              |       |         |            |             |
+| AppendSingleEvent_LocalhostPostgres    | ?         | ?          | ?         | ?              |           NA |           NA |          NA |           NA |     ? |       ? |         NA |           ? |
+|                                        |           |            |           |                |              |              |             |              |       |         |            |             |
+| ConnectionPoolStress_Postgres          | ?         | ?          | ?         | ?              |  2,504.11 μs |    99.470 μs |   267.22 μs |  2,524.83 μs |  1.01 |    0.16 |   478.9 KB |        1.00 |
+|                                        |           |            |           |                |              |              |             |              |       |         |            |             |
+| **BulkThresholdTest_Postgres**             | **1**         | **?**          | **?**         | **?**              |  **2,842.80 μs** |   **213.835 μs** |   **623.77 μs** |  **2,703.62 μs** |  **1.05** |    **0.32** |  **243.45 KB** |        **1.00** |
+|                                        |           |            |           |                |              |              |             |              |       |         |            |             |
+| **BulkThresholdTest_Postgres**             | **5**         | **?**          | **?**         | **?**              |  **2,769.06 μs** |   **188.458 μs** |   **552.71 μs** |  **2,616.81 μs** |  **1.04** |    **0.28** |  **243.45 KB** |        **1.00** |
+|                                        |           |            |           |                |              |              |             |              |       |         |            |             |
+| **AppendMultipleEvents_InMemory**          | **?**         | **10**         | **?**         | **?**              |     **54.50 μs** |     **4.540 μs** |    **13.17 μs** |     **55.73 μs** |  **1.08** |    **0.45** |   **15.19 KB** |        **1.00** |
+|                                        |           |            |           |                |              |              |             |              |       |         |            |             |
+| AppendMultipleEvents_Postgres          | ?         | 10         | ?         | ?              |  1,572.38 μs |   112.296 μs |   329.34 μs |  1,469.96 μs |  1.04 |    0.30 |   64.47 KB |        1.00 |
+|                                        |           |            |           |                |              |              |             |              |       |         |            |             |
+| AppendMultipleEvents_PostgresPooled    | ?         | 10         | ?         | ?              |  1,816.17 μs |   185.945 μs |   548.26 μs |  1,578.06 μs |  1.09 |    0.45 |    64.7 KB |        1.00 |
+|                                        |           |            |           |                |              |              |             |              |       |         |            |             |
+| **BulkThresholdTest_Postgres**             | **10**        | **?**          | **?**         | **?**              |  **2,637.61 μs** |   **194.904 μs** |   **571.62 μs** |  **2,431.69 μs** |  **1.04** |    **0.31** |   **243.6 KB** |        **1.00** |
+|                                        |           |            |           |                |              |              |             |              |       |         |            |             |
+| **BulkThresholdTest_Postgres**             | **50**        | **?**          | **?**         | **?**              |  **6,686.52 μs** |   **205.907 μs** |   **584.12 μs** |  **6,643.25 μs** |  **1.01** |    **0.12** |  **253.98 KB** |        **1.00** |
+|                                        |           |            |           |                |              |              |             |              |       |         |            |             |
+| **TimeBatchedAppend_Postgres**             | **?**         | **?**          | **50**        | **100**            | **53,807.93 μs** | **1,055.207 μs** | **1,513.35 μs** | **53,530.21 μs** |  **1.00** |    **0.04** |  **264.73 KB** |        **1.00** |
+|                                        |           |            |           |                |              |              |             |              |       |         |            |             |
+| **AppendMultipleEvents_InMemory**          | **?**         | **100**        | **?**         | **?**              |    **163.83 μs** |     **5.326 μs** |    **15.19 μs** |    **164.73 μs** |  **1.01** |    **0.13** |  **147.79 KB** |        **1.00** |
+|                                        |           |            |           |                |              |              |             |              |       |         |            |             |
+| AppendMultipleEvents_Postgres          | ?         | 100        | ?         | ?              |  3,337.69 μs |    91.044 μs |   262.68 μs |  3,348.25 μs |  1.01 |    0.11 |  595.09 KB |        1.00 |
+|                                        |           |            |           |                |              |              |             |              |       |         |            |             |
+| AppendMultipleEvents_PostgresPooled    | ?         | 100        | ?         | ?              |  3,491.14 μs |   100.170 μs |   275.90 μs |  3,433.69 μs |  1.01 |    0.11 |  597.43 KB |        1.00 |
+|                                        |           |            |           |                |              |              |             |              |       |         |            |             |
+| AppendMultipleEvents_LocalhostPostgres | ?         | 100        | ?         | ?              |           NA |           NA |          NA |           NA |     ? |       ? |         NA |           ? |
+|                                        |           |            |           |                |              |              |             |              |       |         |            |             |
+| **TimeBatchedAppend_Postgres**             | **?**         | **?**          | **100**       | **50**             | **61,562.70 μs** | **1,179.528 μs** | **1,311.04 μs** | **62,201.31 μs** |  **1.00** |    **0.03** |  **291.21 KB** |        **1.00** |
+|                                        |           |            |           |                |              |              |             |              |       |         |            |             |
+| **AppendMultipleEvents_InMemory**          | **?**         | **1000**       | **?**         | **?**              |  **1,214.41 μs** |    **46.646 μs** |   **135.33 μs** |  **1,214.75 μs** |  **1.01** |    **0.17** | **1475.92 KB** |        **1.00** |
+|                                        |           |            |           |                |              |              |             |              |       |         |            |             |
+| AppendMultipleEvents_Postgres          | ?         | 1000       | ?         | ?              | 19,799.21 μs |   386.837 μs |   542.29 μs | 19,856.77 μs |  1.00 |    0.04 | 6064.55 KB |        1.00 |
+
+Benchmarks with issues:
+  EventStoreBenchmarks.AppendSingleEvent_LocalhostPostgres: Job-CNUJVU(InvocationCount=1, UnrollFactor=1)
+  EventStoreBenchmarks.AppendMultipleEvents_LocalhostPostgres: Job-CNUJVU(InvocationCount=1, UnrollFactor=1) [eventCount=100]

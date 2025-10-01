@@ -33,8 +33,9 @@ public class PostgresEventStoreBackend(
         await connection.OpenAsync(cancellationToken);
 
         var (sql, parameters) = BuildStreamQuery(tenant, query, maxCount);
-        var events = await connection.QueryAsync<EventRecord>(sql, parameters);
 
+        // Execute query directly with Dapper - no prepared statement caching
+        var events = await connection.QueryAsync<EventRecord>(sql, parameters);
         return events.Select(MapToEventWithMeta).ToList();
     }
 
@@ -188,6 +189,7 @@ public class PostgresEventStoreBackend(
 
         return (sql.ToString(), parameters);
     }
+
 
     private List<string> BuildQueryConditions(StreamQuery query, DynamicParameters parameters)
     {
@@ -614,7 +616,7 @@ public class PostgresEventStoreBackend(
     {
         public long position { get; set; }
         public Guid id { get; set; }
-        public int tenant_id { get; set; }
+        public string tenant_id { get; set; } = null!;
         public string event_type { get; set; } = null!;
         public string[] tags { get; set; } = null!;
         public string event_data { get; set; } = null!;
