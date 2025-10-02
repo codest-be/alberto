@@ -1,31 +1,33 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <IsPackable>false</IsPackable>
-    <IsTestProject>true</IsTestProject>
-  </PropertyGroup>
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <IsPackable>false</IsPackable>
+        <IsTestProject>true</IsTestProject>
+        <!--Azure.Identity vulnerabilities not fixed yet-->
+        <NoWarn>NU1903;NU1904;NU1905</NoWarn>
+    </PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="BenchmarkDotNet" Version="0.15.4" />
-    <PackageReference Include="NBomber" Version="6.1.1" />
-    <PackageReference Include="Respawn" Version="6.2.1" />
-    <PackageReference Include="Testcontainers.PostgreSql" Version="4.7.0" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.0.0" />
-  </ItemGroup>
+    <ItemGroup>
+        <PackageReference Include="BenchmarkDotNet" Version="0.15.4"/>
+        <PackageReference Include="NBomber" Version="6.1.1"/>
+        <PackageReference Include="Respawn" Version="6.2.1"/>
+        <PackageReference Include="Testcontainers.PostgreSql" Version="4.7.0"/>
+        <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.0.0"/>
+    </ItemGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\Alberto.EventStore\Alberto.EventStore.csproj" />
-    <ProjectReference Include="..\Alberto.EventStore.InMemory\Alberto.EventStore.InMemory.csproj" />
-    <ProjectReference Include="..\Alberto.EventStore.Postgres\Alberto.EventStore.Postgres.csproj" />
-  </ItemGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\Alberto.EventStore\Alberto.EventStore.csproj"/>
+        <ProjectReference Include="..\Alberto.EventStore.InMemory\Alberto.EventStore.InMemory.csproj"/>
+        <ProjectReference Include="..\Alberto.EventStore.Postgres\Alberto.EventStore.Postgres.csproj"/>
+    </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="BenchmarkDotNet.Artifacts\" />
-    <Folder Include="BenchmarkDotNet.Artifacts\results\" />
-  </ItemGroup>
+    <ItemGroup>
+        <Folder Include="BenchmarkDotNet.Artifacts\"/>
+        <Folder Include="BenchmarkDotNet.Artifacts\results\"/>
+    </ItemGroup>
 
 </Project>
