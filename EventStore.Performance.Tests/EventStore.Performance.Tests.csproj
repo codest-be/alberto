@@ -28,9 +28,4 @@
     <Folder Include="BenchmarkDotNet.Artifacts\results\" />
   </ItemGroup>
 
-  <ItemGroup>
-    <None Remove="BenchmarkDotNet.Artifacts\results\EventStore.Performance.Tests.EventStoreBenchmarks-report.html" />
-    <None Remove="BenchmarkDotNet.Artifacts\results\EventStore.Performance.Tests.EventStoreBenchmarks-report.csv" />
-  </ItemGroup>
-
 </Project>
