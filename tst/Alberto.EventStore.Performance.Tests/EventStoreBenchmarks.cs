@@ -802,15 +802,17 @@ public class EventStoreBenchmarks
         DirectoryInfo? solutionDirectory = Directory.GetParent(currentDirectory);
 
         while (solutionDirectory != null
-               && !Directory.Exists(Path.Combine(solutionDirectory.FullName, "Alberto.EventStore.Postgres")))
+               && !Directory.Exists(Path.Combine(solutionDirectory.FullName, "src", "EventStore", "Alberto.EventStore.Postgres")))
             solutionDirectory = solutionDirectory.Parent;
 
         if (solutionDirectory == null)
             throw new DirectoryNotFoundException(
-                "Could not locate the solution root directory containing Alberto.EventStore.Postgres");
+                "Could not locate the solution root directory containing src/EventStore/Alberto.EventStore.Postgres");
 
         string migrationPath = Path.Combine(
             solutionDirectory.FullName,
+            "src",
+            "EventStore",
             "Alberto.EventStore.Postgres",
             "Migrations",
             "CreateEventStoreSchema.sql");
