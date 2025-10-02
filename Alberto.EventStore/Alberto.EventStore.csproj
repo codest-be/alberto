@@ -4,6 +4,12 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+        <!-- Package Metadata -->
+        <PackageId>Alberto.EventStore</PackageId>
+        <Title>Alberto EventStore</Title>
+        <Description>Core event store library for .NET with multi-tenant and multi-schema support. Provides the main EventStore facade and backend abstractions.</Description>
+        <IsPackable>true</IsPackable>
     </PropertyGroup>
     
     <ItemGroup>

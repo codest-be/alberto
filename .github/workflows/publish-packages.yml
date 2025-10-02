@@ -1,0 +1,82 @@
+# This workflow publishes NuGet packages when a release is created
+
+name: Publish NuGet Packages
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version to publish'
+        required: true
+        default: '0.0.1-alpha'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  publish:
+    name: Build and Publish Packages
+    runs-on: ubuntu-latest
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+      DOTNET_NOLOGO: true
+      DOTNET_GENERATE_ASPNET_CERTIFICATE: false
+      DOTNET_ADD_GLOBAL_TOOLS_TO_PATH: false
+      DOTNET_MULTILEVEL_LOOKUP: 0
+      DOTNET_SYSTEM_CONSOLE_ALLOW_ANSI_COLOR_REDIRECTION: true
+      TERM: xterm
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Set version from input
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "PACKAGE_VERSION=${{ github.event.inputs.version }}" >> $GITHUB_ENV
+
+      - name: Set version from release tag
+        if: github.event_name == 'release'
+        run: |
+          # Remove 'v' prefix from tag if present
+          VERSION=${{ github.event.release.tag_name }}
+          VERSION=${VERSION#v}
+          echo "PACKAGE_VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Update version in Directory.Build.props
+        run: |
+          sed -i "s|<Version>.*</Version>|<Version>$PACKAGE_VERSION</Version>|" Directory.Build.props
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build solution
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Run tests
+        run: dotnet test Alberto.EventStore.Tests/Alberto.EventStore.Tests.csproj --no-restore --no-build --configuration Release
+
+      - name: Create NuGet packages
+        run: dotnet pack --configuration Release --no-build --output ./artifacts/packages
+
+      - name: Publish packages to NuGet.org
+        run: |
+          for package in ./artifacts/packages/*.nupkg; do
+            echo "Publishing $package"
+            dotnet nuget push "$package" --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+          done
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages
+          path: ./artifacts/packages/*.nupkg
+          retention-days: 90

@@ -4,6 +4,12 @@
         <TargetFramework>net10.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
+
+        <!-- Package Metadata -->
+        <PackageId>Alberto.EventStore.Telemetry</PackageId>
+        <Title>Alberto EventStore - Telemetry</Title>
+        <Description>OpenTelemetry integration for Alberto EventStore. Provides comprehensive observability with metrics, tracing, and logging for event store operations.</Description>
+        <IsPackable>true</IsPackable>
     </PropertyGroup>
 
     <ItemGroup>

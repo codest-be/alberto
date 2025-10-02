@@ -1,0 +1,36 @@
+<Project>
+  <PropertyGroup>
+    <!-- Package Information -->
+    <Version>0.0.1-alpha</Version>
+    <Authors>Bjorn Vandenbussche</Authors>
+    <Company>Codest</Company>
+    <Product>Alberto EventStore</Product>
+    <Copyright>Copyright © 2025 Alberto</Copyright>
+
+    <!-- Repository Information -->
+    <RepositoryUrl>https://github.com/codest-be/alberto</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+
+    <!-- Package Configuration -->
+    <PackageProjectUrl>https://github.com/codest-be/alberto</PackageProjectUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <PackageTags>eventstore;events;cqrs;eventsourcing;dotnet;postgresql;inmemory</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+
+    <!-- Build Configuration -->
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <PackageOutputPath>$(MSBuildThisFileDirectory)artifacts/packages</PackageOutputPath>
+
+    <!-- Documentation -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn> <!-- Missing XML comment warnings -->
+  </PropertyGroup>
+
+  <!-- Include README in packages -->
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+</Project>

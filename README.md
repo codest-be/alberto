@@ -2,6 +2,82 @@
 
 A high-performance event store library for .NET with multi-tenant and multi-schema support.
 
+## Installation
+
+Alberto EventStore is available as NuGet packages:
+
+```bash
+# Core library (required)
+dotnet add package Alberto.EventStore
+
+# In-memory implementation (for testing/development)
+dotnet add package Alberto.EventStore.InMemory
+
+# PostgreSQL implementation (for production)
+dotnet add package Alberto.EventStore.Postgres
+
+# Telemetry support (optional)
+dotnet add package Alberto.EventStore.Telemetry
+```
+
+### Package Versions
+
+Current version: **0.0.1-alpha**
+
+⚠️ **Preview Warning**: This is an alpha preview release. Breaking changes may occur at any point until version 1.0.0. Use with caution in production environments.
+
+Note: The packages target .NET 10.0 RC - stable packages will be released when .NET 10.0 is generally available.
+
+## Quick Start
+
+### In-Memory Setup (Testing/Development)
+
+```csharp
+using Alberto.EventStore;
+using Alberto.EventStore.InMemory;
+
+// Configure services
+services.AddEventStore()
+        .AddInMemoryEventStore();
+
+// Use the event store
+public class OrderService
+{
+    private readonly IEventStore _eventStore;
+
+    public OrderService(IEventStore eventStore)
+    {
+        _eventStore = eventStore;
+    }
+
+    public async Task CreateOrder(CreateOrderCommand command)
+    {
+        var events = new[]
+        {
+            new OrderCreated(command.OrderId, command.CustomerId),
+            new OrderItemAdded(command.OrderId, command.ProductId, command.Quantity)
+        };
+
+        await _eventStore.AppendAsync("orders", command.OrderId.ToString(), events);
+    }
+}
+```
+
+### PostgreSQL Setup (Production)
+
+```csharp
+using Alberto.EventStore;
+using Alberto.EventStore.Postgres;
+
+// Configure services
+services.AddEventStore()
+        .AddPostgresEventStore("orders", options =>
+        {
+            options.ConnectionString = connectionString;
+            options.Schema = "orders_events";
+        });
+```
+
 ## Features
 
 - **Multi-Backend Architecture**: In-memory and PostgreSQL implementations

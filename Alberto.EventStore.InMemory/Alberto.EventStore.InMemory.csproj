@@ -4,6 +4,12 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+        <!-- Package Metadata -->
+        <PackageId>Alberto.EventStore.InMemory</PackageId>
+        <Title>Alberto EventStore - In-Memory Implementation</Title>
+        <Description>In-memory implementation of Alberto EventStore for testing and development scenarios. Provides fast, memory-based event storage with full feature compatibility.</Description>
+        <IsPackable>true</IsPackable>
     </PropertyGroup>
     <ItemGroup>
         <ProjectReference Include="..\Alberto.EventStore\Alberto.EventStore.csproj" />

@@ -4,6 +4,12 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+        <!-- Package Metadata -->
+        <PackageId>Alberto.EventStore.Postgres</PackageId>
+        <Title>Alberto EventStore - PostgreSQL Implementation</Title>
+        <Description>PostgreSQL implementation of Alberto EventStore for production scenarios. Provides high-performance, persistent event storage with multi-schema support and optimistic concurrency.</Description>
+        <IsPackable>true</IsPackable>
     </PropertyGroup>
     <ItemGroup>
         <ProjectReference Include="..\Alberto.EventStore\Alberto.EventStore.csproj" />

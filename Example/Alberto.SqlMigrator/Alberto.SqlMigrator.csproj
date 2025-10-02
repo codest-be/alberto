@@ -4,6 +4,7 @@
         <TargetFramework>net10.0</TargetFramework>
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
+        <IsPackable>false</IsPackable>
         <UserSecretsId>dotnet-SqlMigrator-40439389-03d1-4b07-9484-4f1c12ce5b3d</UserSecretsId>
     </PropertyGroup>
 

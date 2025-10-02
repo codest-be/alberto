@@ -6,3 +6,8 @@ public interface ITenantContext
 }
 
 public record struct Tenant(string Id);
+
+public sealed class SingleTenantContext : ITenantContext
+{
+    public Tenant Tenant { get; } = new("default");
+}
