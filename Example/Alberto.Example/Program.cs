@@ -1,4 +1,6 @@
 using Alberto.Example;
+using Alberto.Example.Modules.Orders;
+using Alberto.Example.Modules.Payments;
 using EventStore;
 using EventStore.MultiTenant;
 using EventStore.Postgres;
@@ -11,21 +13,8 @@ builder.AddServiceDefaults();
 builder.Services.AddScoped<ITenantContext, TenantContext>();
 
 builder.Services
-    .AddEventStore()
-    .AddPostgresEventStore("orders", o =>
-    {
-        o.ConnectionString = builder.Configuration.GetConnectionString("alberto-db") ??
-                             throw new InvalidOperationException("Connection string 'alberto-db' not found.");
-        o.Schema = "orders";
-    })
-    .AddPostgresEventStore("payments", o =>
-    {
-        o.ConnectionString = builder.Configuration.GetConnectionString("alberto-db") ??
-                             throw new InvalidOperationException("Connection string 'alberto-db' not found.");
-        o.Schema = "payments";
-    })
-    .AddTelemetry();
-
+    .AddOrdersModule(builder.Configuration)
+    .AddPaymentsModule(builder.Configuration);
 
 var app = builder.Build();
 

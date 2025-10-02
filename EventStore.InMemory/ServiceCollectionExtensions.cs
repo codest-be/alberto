@@ -1,3 +1,4 @@
+using EventStore.MultiTenant;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EventStore.InMemory;
@@ -8,6 +9,7 @@ public static class ServiceCollectionExtensions
     {
         builder.Services.AddScoped<EventStore>();
         builder.Services.AddSingleton<IEventStoreBackend, InMemoryEventStoreBackend>();
+        builder.Services.AddSingleton<IEventStoreBackendFactory, InMemoryEventStoreBackendFactory>();
         return builder;
     }
 
@@ -15,6 +17,7 @@ public static class ServiceCollectionExtensions
         InMemoryEventStoreBackend backend)
     {
         builder.Services.AddSingleton<IEventStoreBackend>(backend);
+        builder.Services.AddSingleton<IEventStoreBackendFactory, InMemoryEventStoreBackendFactory>();
         return builder;
     }
 }
