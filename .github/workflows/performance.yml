@@ -47,7 +47,7 @@ jobs:
         run: dotnet build --configuration Release --no-restore
 
       - name: Run Performance Tests
-        run: dotnet run --project EventStore.Performance.Tests --configuration Release
+        run: dotnet run --project Alberto.EventStore.Performance.Tests --configuration Release
 
       - name: Upload Performance Results
         uses: actions/upload-artifact@v4
@@ -55,7 +55,7 @@ jobs:
         with:
           name: performance-results
           path: |
-            EventStore.Performance.Tests/BenchmarkDotNet.Artifacts/
+            Alberto.EventStore.Performance.Tests/BenchmarkDotNet.Artifacts/
             **/*benchmark*.json
             **/*benchmark*.html
           retention-days: 30

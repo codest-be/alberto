@@ -38,4 +38,4 @@ jobs:
         run: dotnet build --configuration Release --no-restore
         
       - name: Test
-        run: dotnet test EventStore.Tests/EventStore.Tests.csproj --no-restore --no-build --configuration Release
+        run: dotnet test Alberto.EventStore.Tests/Alberto.EventStore.Tests.csproj --no-restore --no-build --configuration Release
