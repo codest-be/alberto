@@ -8,6 +8,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <UserSecretsId>88bc2984-911c-4fce-8fcd-bcbe1c96f5b0</UserSecretsId>
   </PropertyGroup>
 

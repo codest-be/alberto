@@ -64,7 +64,7 @@ jobs:
         run: dotnet build --configuration Release --no-restore
 
       - name: Run tests
-        run: dotnet test Alberto.EventStore.Tests/Alberto.EventStore.Tests.csproj --no-restore --no-build --configuration Release
+        run: dotnet test tst/Alberto.EventStore.Tests/Alberto.EventStore.Tests.csproj --no-restore --no-build --configuration Release
 
       - name: Create NuGet packages
         run: dotnet pack --configuration Release --no-build --output ./artifacts/packages
