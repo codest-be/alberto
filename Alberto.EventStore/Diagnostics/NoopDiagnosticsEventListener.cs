@@ -15,4 +15,7 @@ public class NoopDiagnosticsEventListener : IDiagnosticsEventListener
     }
 }
 
-internal class NoopDisposable : IDisposable { public void Dispose() { } }
+internal class NoopDisposable : IDisposable
+{
+    public void Dispose() { }
+}

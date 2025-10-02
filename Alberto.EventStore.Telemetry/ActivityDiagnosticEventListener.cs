@@ -9,7 +9,8 @@ internal class ActivityDiagnosticEventListener : IDiagnosticsEventListener
 {
     public IDisposable Stream(StreamQuery query, int? maxCount)
     {
-        var activity = AlbertoActivitySource.Source.CreateActivity(StreamScope.ActivityName, ActivityKind.Internal);
+        Activity? activity =
+            AlbertoActivitySource.Source.CreateActivity(StreamScope.ActivityName, ActivityKind.Internal);
 
         if (activity is null)
             return new EmptyScope();
@@ -21,7 +22,8 @@ internal class ActivityDiagnosticEventListener : IDiagnosticsEventListener
 
     public IDisposable Append(IEventToPersist[] events)
     {
-        var activity = AlbertoActivitySource.Source.CreateActivity(AppendScope.ActivityName, ActivityKind.Internal);
+        Activity? activity =
+            AlbertoActivitySource.Source.CreateActivity(AppendScope.ActivityName, ActivityKind.Internal);
 
         if (activity is null)
             return new EmptyScope();

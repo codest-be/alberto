@@ -16,7 +16,7 @@ public class EventStoreFactory(
         int? maxCount = null,
         CancellationToken cancellationToken = default)
     {
-        using var streamScope = _diagnostics.Stream(query, maxCount);
+        using IDisposable streamScope = _diagnostics.Stream(query, maxCount);
 
         return backend.Stream(tenantContext.Tenant, query, maxCount, cancellationToken);
     }
@@ -27,9 +27,9 @@ public class EventStoreFactory(
         Guid? expectedLatestEventId,
         CancellationToken cancellationToken = default)
     {
-        var eventToPersists = events as IEventToPersist[] ?? events.ToArray();
+        IEventToPersist[] eventToPersists = events as IEventToPersist[] ?? events.ToArray();
 
-        using var appendScope = _diagnostics.Append(eventToPersists);
+        using IDisposable appendScope = _diagnostics.Append(eventToPersists);
 
         return backend.Append(tenantContext.Tenant, eventToPersists, consistencyBoundary,
             expectedLatestEventId, cancellationToken);

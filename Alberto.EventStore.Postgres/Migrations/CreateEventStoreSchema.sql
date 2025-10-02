@@ -6,27 +6,24 @@
 CREATE TABLE IF NOT EXISTS events
 (
     position
-    BIGSERIAL
-    PRIMARY
-    KEY,
+               BIGSERIAL
+        PRIMARY
+            KEY,
     id
-    UUID
-    NOT
-    NULL
-    UNIQUE,
+               UUID
+                           NOT
+                               NULL
+        UNIQUE,
     tenant_id
-    VARCHAR
-(
-    20
-) NOT NULL,
-    event_type TEXT NOT NULL,
-    data JSONB NOT NULL,
-    tags TEXT [] NOT NULL DEFAULT '{}',
+               VARCHAR(20) NOT NULL,
+    event_type TEXT        NOT NULL,
+    data       JSONB       NOT NULL,
+    tags       TEXT[]      NOT NULL DEFAULT '{}',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW
-(
-),
-    metadata JSONB NOT NULL DEFAULT '{}'
-    );
+                                            (
+                                            ),
+    metadata   JSONB       NOT NULL DEFAULT '{}'
+);
 
 -- =============================================================================
 -- BASELINE INDEXES + SIMPLE GIN INDEX (PHASE 2 TESTING)

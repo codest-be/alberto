@@ -1,21 +1,17 @@
-using Dapper;
-using Alberto.EventStore;
 using Alberto.EventStore.Events;
 using Alberto.EventStore.MultiTenant;
 using Alberto.EventStore.Postgres;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
+using Dapper;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
-using Testcontainers.PostgreSql;
 using Xunit;
 
 namespace Alberto.EventStore.Tests.Postgres;
 
 /// <summary>
-/// Tests for multi-schema support in PostgreSQL Alberto.EventStore
-/// Ensures schema isolation and proper backend factory behavior
+///     Tests for multi-schema support in PostgreSQL Alberto.EventStore
+///     Ensures schema isolation and proper backend factory behavior
 /// </summary>
 [Collection("Postgres Integration Tests")]
 public class MultiSchemaEventStoreTests(PostgresTestFixture fixture) : IAsyncLifetime
@@ -37,23 +33,25 @@ public class MultiSchemaEventStoreTests(PostgresTestFixture fixture) : IAsyncLif
     public async Task MultipleSchemas_ShouldIsolateEvents()
     {
         // Arrange
-        var ordersBackend = CreateBackendForSchema("orders");
-        var paymentsBackend = CreateBackendForSchema("payments");
-        var tenant = new Tenant(_testTenantId.ToString());
+        PostgresEventStoreBackend ordersBackend = CreateBackendForSchema("orders");
+        PostgresEventStoreBackend paymentsBackend = CreateBackendForSchema("payments");
+        Tenant tenant = new(_testTenantId.ToString());
 
-        var orderEvent = CreateTestEvent("order-created", "order:123");
-        var paymentEvent = CreateTestEvent("payment-processed", "payment:456");
+        IEventToPersist orderEvent = CreateTestEvent("order-created", "order:123");
+        IEventToPersist paymentEvent = CreateTestEvent("payment-processed", "payment:456");
 
         // Act - Add events to different schemas
         await ordersBackend.Append(tenant, [orderEvent], null, null, CancellationToken.None);
         await paymentsBackend.Append(tenant, [paymentEvent], null, null, CancellationToken.None);
 
         // Assert - Events should be isolated by schema
-        var orderQuery = new StreamQuery().WithTags(EventTag.Parse("order:123"));
-        var paymentQuery = new StreamQuery().WithTags(EventTag.Parse("payment:456"));
+        StreamQuery orderQuery = new StreamQuery().WithTags(EventTag.Parse("order:123"));
+        StreamQuery paymentQuery = new StreamQuery().WithTags(EventTag.Parse("payment:456"));
 
-        var ordersResult = await ordersBackend.Stream(tenant, orderQuery, cancellationToken: CancellationToken.None);
-        var paymentsResult = await paymentsBackend.Stream(tenant, paymentQuery, cancellationToken: CancellationToken.None);
+        IReadOnlyCollection<IEventEnvelope> ordersResult =
+            await ordersBackend.Stream(tenant, orderQuery, cancellationToken: CancellationToken.None);
+        IReadOnlyCollection<IEventEnvelope> paymentsResult =
+            await paymentsBackend.Stream(tenant, paymentQuery, cancellationToken: CancellationToken.None);
 
         // Orders schema should only see order events
         Assert.Single(ordersResult);
@@ -64,8 +62,10 @@ public class MultiSchemaEventStoreTests(PostgresTestFixture fixture) : IAsyncLif
         Assert.Equal("payment-processed", paymentsResult.First().EventType.Id);
 
         // Cross-schema queries should return empty
-        var ordersPaymentQuery = await ordersBackend.Stream(tenant, paymentQuery, cancellationToken: CancellationToken.None);
-        var paymentsOrderQuery = await paymentsBackend.Stream(tenant, orderQuery, cancellationToken: CancellationToken.None);
+        IReadOnlyCollection<IEventEnvelope> ordersPaymentQuery =
+            await ordersBackend.Stream(tenant, paymentQuery, cancellationToken: CancellationToken.None);
+        IReadOnlyCollection<IEventEnvelope> paymentsOrderQuery =
+            await paymentsBackend.Stream(tenant, orderQuery, cancellationToken: CancellationToken.None);
 
         Assert.Empty(ordersPaymentQuery);
         Assert.Empty(paymentsOrderQuery);
@@ -75,21 +75,23 @@ public class MultiSchemaEventStoreTests(PostgresTestFixture fixture) : IAsyncLif
     public async Task SameEventContent_DifferentSchemas_ShouldAllowSeparateStorage()
     {
         // Arrange
-        var ordersBackend = CreateBackendForSchema("orders");
-        var paymentsBackend = CreateBackendForSchema("payments");
-        var tenant = new Tenant(_testTenantId.ToString());
+        PostgresEventStoreBackend ordersBackend = CreateBackendForSchema("orders");
+        PostgresEventStoreBackend paymentsBackend = CreateBackendForSchema("payments");
+        Tenant tenant = new(_testTenantId.ToString());
 
-        var testGuid = Guid.NewGuid();
-        var orderEvent = CreateTestEventWithId(testGuid, "business-event", "order:123");
-        var paymentEvent = CreateTestEventWithId(testGuid, "business-event", "payment:456");
+        Guid testGuid = Guid.NewGuid();
+        IEventToPersist orderEvent = CreateTestEventWithId(testGuid, "business-event", "order:123");
+        IEventToPersist paymentEvent = CreateTestEventWithId(testGuid, "business-event", "payment:456");
 
         // Act & Assert - Same logical event should be allowed in different schemas
         await ordersBackend.Append(tenant, [orderEvent], null, null, CancellationToken.None);
         await paymentsBackend.Append(tenant, [paymentEvent], null, null, CancellationToken.None);
 
         // Both events should exist in their respective schemas
-        var ordersResult = await ordersBackend.Stream(tenant, new StreamQuery().WithTags(EventTag.Parse("order:123")), cancellationToken: CancellationToken.None);
-        var paymentsResult = await paymentsBackend.Stream(tenant, new StreamQuery().WithTags(EventTag.Parse("payment:456")), cancellationToken: CancellationToken.None);
+        IReadOnlyCollection<IEventEnvelope> ordersResult = await ordersBackend.Stream(tenant,
+            new StreamQuery().WithTags(EventTag.Parse("order:123")), cancellationToken: CancellationToken.None);
+        IReadOnlyCollection<IEventEnvelope> paymentsResult = await paymentsBackend.Stream(tenant,
+            new StreamQuery().WithTags(EventTag.Parse("payment:456")), cancellationToken: CancellationToken.None);
 
         Assert.Single(ordersResult);
         Assert.Single(paymentsResult);
@@ -103,30 +105,34 @@ public class MultiSchemaEventStoreTests(PostgresTestFixture fixture) : IAsyncLif
     public async Task TenantIsolation_WithinSchema_ShouldWork()
     {
         // Arrange
-        var backend = CreateBackendForSchema("orders");
-        var tenant1 = new Tenant(_testTenantId.ToString());
-        var tenant2 = new Tenant((_testTenantId + 1).ToString());
+        PostgresEventStoreBackend backend = CreateBackendForSchema("orders");
+        Tenant tenant1 = new(_testTenantId.ToString());
+        Tenant tenant2 = new((_testTenantId + 1).ToString());
 
-        var tenant1Event = CreateTestEvent("order-created", "order:123");
-        var tenant2Event = CreateTestEvent("order-created", "order:456");
+        IEventToPersist tenant1Event = CreateTestEvent("order-created", "order:123");
+        IEventToPersist tenant2Event = CreateTestEvent("order-created", "order:456");
 
         // Act
         await backend.Append(tenant1, [tenant1Event], null, null, CancellationToken.None);
         await backend.Append(tenant2, [tenant2Event], null, null, CancellationToken.None);
 
         // Assert - Each tenant should only see their own events
-        var tenant1Query = new StreamQuery().WithTags(EventTag.Parse("order:123"));
-        var tenant2Query = new StreamQuery().WithTags(EventTag.Parse("order:456"));
+        StreamQuery tenant1Query = new StreamQuery().WithTags(EventTag.Parse("order:123"));
+        StreamQuery tenant2Query = new StreamQuery().WithTags(EventTag.Parse("order:456"));
 
-        var tenant1Result = await backend.Stream(tenant1, tenant1Query, cancellationToken: CancellationToken.None);
-        var tenant2Result = await backend.Stream(tenant2, tenant2Query, cancellationToken: CancellationToken.None);
+        IReadOnlyCollection<IEventEnvelope> tenant1Result =
+            await backend.Stream(tenant1, tenant1Query, cancellationToken: CancellationToken.None);
+        IReadOnlyCollection<IEventEnvelope> tenant2Result =
+            await backend.Stream(tenant2, tenant2Query, cancellationToken: CancellationToken.None);
 
         Assert.Single(tenant1Result);
         Assert.Single(tenant2Result);
 
         // Cross-tenant queries should return empty
-        var tenant1CrossQuery = await backend.Stream(tenant1, tenant2Query, cancellationToken: CancellationToken.None);
-        var tenant2CrossQuery = await backend.Stream(tenant2, tenant1Query, cancellationToken: CancellationToken.None);
+        IReadOnlyCollection<IEventEnvelope> tenant1CrossQuery =
+            await backend.Stream(tenant1, tenant2Query, cancellationToken: CancellationToken.None);
+        IReadOnlyCollection<IEventEnvelope> tenant2CrossQuery =
+            await backend.Stream(tenant2, tenant1Query, cancellationToken: CancellationToken.None);
 
         Assert.Empty(tenant1CrossQuery);
         Assert.Empty(tenant2CrossQuery);
@@ -136,32 +142,32 @@ public class MultiSchemaEventStoreTests(PostgresTestFixture fixture) : IAsyncLif
     public async Task SequencePositions_ShouldBeSchemaSpecific()
     {
         // Arrange
-        var ordersBackend = CreateBackendForSchema("orders");
-        var paymentsBackend = CreateBackendForSchema("payments");
-        var tenant = new Tenant(_testTenantId.ToString());
+        PostgresEventStoreBackend ordersBackend = CreateBackendForSchema("orders");
+        PostgresEventStoreBackend paymentsBackend = CreateBackendForSchema("payments");
+        Tenant tenant = new(_testTenantId.ToString());
 
         // Act - Add events to both schemas
-        var orderEvents = new[]
+        IEventToPersist[] orderEvents = new[]
         {
-            CreateTestEvent("order-created", "order:123"),
-            CreateTestEvent("order-confirmed", "order:123")
+            CreateTestEvent("order-created", "order:123"), CreateTestEvent("order-confirmed", "order:123")
         };
 
-        var paymentEvents = new[]
+        IEventToPersist[] paymentEvents = new[]
         {
-            CreateTestEvent("payment-initiated", "payment:456"),
-            CreateTestEvent("payment-completed", "payment:456")
+            CreateTestEvent("payment-initiated", "payment:456"), CreateTestEvent("payment-completed", "payment:456")
         };
 
         await ordersBackend.Append(tenant, orderEvents, null, null, CancellationToken.None);
         await paymentsBackend.Append(tenant, paymentEvents, null, null, CancellationToken.None);
 
         // Assert - Each schema should have its own sequence positions starting from 1
-        var ordersResult = await ordersBackend.Stream(tenant, new StreamQuery().WithTags(EventTag.Parse("order:123")), cancellationToken: CancellationToken.None);
-        var paymentsResult = await paymentsBackend.Stream(tenant, new StreamQuery().WithTags(EventTag.Parse("payment:456")), cancellationToken: CancellationToken.None);
+        IReadOnlyCollection<IEventEnvelope> ordersResult = await ordersBackend.Stream(tenant,
+            new StreamQuery().WithTags(EventTag.Parse("order:123")), cancellationToken: CancellationToken.None);
+        IReadOnlyCollection<IEventEnvelope> paymentsResult = await paymentsBackend.Stream(tenant,
+            new StreamQuery().WithTags(EventTag.Parse("payment:456")), cancellationToken: CancellationToken.None);
 
-        var orderPositions = ordersResult.Select(e => long.Parse(e.Metadata["_position"])).ToList();
-        var paymentPositions = paymentsResult.Select(e => long.Parse(e.Metadata["_position"])).ToList();
+        List<long> orderPositions = ordersResult.Select(e => long.Parse(e.Metadata["_position"])).ToList();
+        List<long> paymentPositions = paymentsResult.Select(e => long.Parse(e.Metadata["_position"])).ToList();
 
         // Each schema should start from its own sequence
         Assert.True(orderPositions.All(p => p > 0));
@@ -176,18 +182,18 @@ public class MultiSchemaEventStoreTests(PostgresTestFixture fixture) : IAsyncLif
     public async Task SchemaNotExists_ShouldFailGracefully()
     {
         // Arrange
-        var invalidBackend = CreateBackendForSchema("nonexistent");
-        var tenant = new Tenant(_testTenantId.ToString());
-        var testEvent = CreateTestEvent("test-event", "test:123");
+        PostgresEventStoreBackend invalidBackend = CreateBackendForSchema("nonexistent");
+        Tenant tenant = new(_testTenantId.ToString());
+        IEventToPersist testEvent = CreateTestEvent("test-event", "test:123");
 
         // Act & Assert - Should throw appropriate exception
-        await Assert.ThrowsAsync<Npgsql.PostgresException>(() =>
+        await Assert.ThrowsAsync<PostgresException>(() =>
             invalidBackend.Append(tenant, [testEvent], null, null, CancellationToken.None));
     }
 
     private async Task CreateTestSchemas()
     {
-        await using var connection = new NpgsqlConnection(fixture.Options.ConnectionString);
+        await using NpgsqlConnection connection = new(fixture.Options.ConnectionString);
         await connection.OpenAsync();
 
         // Create schemas
@@ -195,7 +201,7 @@ public class MultiSchemaEventStoreTests(PostgresTestFixture fixture) : IAsyncLif
         await connection.ExecuteAsync("CREATE SCHEMA IF NOT EXISTS payments");
 
         // Run migrations for each schema
-        var migrationSql = await LoadMigrationFromFile();
+        string migrationSql = await LoadMigrationFromFile();
 
         await connection.ExecuteAsync($"SET search_path TO orders, public;\n\n{migrationSql}");
         await connection.ExecuteAsync($"SET search_path TO payments, public;\n\n{migrationSql}");
@@ -203,11 +209,9 @@ public class MultiSchemaEventStoreTests(PostgresTestFixture fixture) : IAsyncLif
 
     private PostgresEventStoreBackend CreateBackendForSchema(string schema)
     {
-        var options = Options.Create(new PostgresEventStoreOptions
+        IOptions<PostgresEventStoreOptions> options = Options.Create(new PostgresEventStoreOptions
         {
-            ConnectionString = fixture.Options.ConnectionString,
-            Schema = schema,
-            BulkInsertThreshold = 5
+            ConnectionString = fixture.Options.ConnectionString, Schema = schema, BulkInsertThreshold = 5
         });
 
         return new PostgresEventStoreBackend(options, NullLogger<PostgresEventStoreBackend>.Instance);
@@ -241,17 +245,18 @@ public class MultiSchemaEventStoreTests(PostgresTestFixture fixture) : IAsyncLif
 
     private async Task<string> LoadMigrationFromFile()
     {
-        var currentDirectory = AppContext.BaseDirectory;
-        var solutionDirectory = Directory.GetParent(currentDirectory);
+        string currentDirectory = AppContext.BaseDirectory;
+        DirectoryInfo? solutionDirectory = Directory.GetParent(currentDirectory);
 
-        while (solutionDirectory != null && !Directory.Exists(Path.Combine(solutionDirectory.FullName, "Alberto.EventStore.Postgres")))
+        while (solutionDirectory != null &&
+               !Directory.Exists(Path.Combine(solutionDirectory.FullName, "Alberto.EventStore.Postgres")))
             solutionDirectory = solutionDirectory.Parent;
 
         if (solutionDirectory == null)
             throw new DirectoryNotFoundException("Could not locate Alberto.EventStore.Postgres directory");
 
-        var migrationPath = Path.Combine(solutionDirectory.FullName, "Alberto.EventStore.Postgres", "Migrations", "CreateEventStoreSchema.sql");
+        string migrationPath = Path.Combine(solutionDirectory.FullName, "Alberto.EventStore.Postgres", "Migrations",
+            "CreateEventStoreSchema.sql");
         return await File.ReadAllTextAsync(migrationPath);
     }
 }
-

@@ -1,9 +1,11 @@
-using System.Reflection;
+using Alberto.Example;
 using DbUp;
+using DbUp.Engine;
 
 namespace Alberto.SqlMigrator;
 
-public class Worker(ILogger<Worker> logger, IConfiguration configuration, IHostApplicationLifetime lifetime) : BackgroundService
+public class Worker(ILogger<Worker> logger, IConfiguration configuration, IHostApplicationLifetime lifetime)
+    : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -11,7 +13,7 @@ public class Worker(ILogger<Worker> logger, IConfiguration configuration, IHostA
         {
             logger.LogInformation("Starting schema migrations...");
 
-            var connectionString = configuration.GetConnectionString("alberto-db");
+            string? connectionString = configuration.GetConnectionString("alberto-db");
             if (string.IsNullOrEmpty(connectionString))
             {
                 logger.LogError("Connection string 'alberto-db' not found");
@@ -33,10 +35,9 @@ public class Worker(ILogger<Worker> logger, IConfiguration configuration, IHostA
 
     private async Task RunMigration(string connectionString, CancellationToken cancellationToken)
     {
-        var schemas = new[] { "orders", "payments" };
+        string[] schemas = new[] { "orders", "payments" };
 
-        foreach (var schema in schemas)
-        {
+        foreach (string schema in schemas)
             await Task.Run(() =>
             {
                 logger.LogInformation("Creating schema '{Schema}' if it doesn't exist...", schema);
@@ -45,15 +46,15 @@ public class Worker(ILogger<Worker> logger, IConfiguration configuration, IHostA
                 CreateSchemaIfNotExists(connectionString, schema);
 
                 // Run the Alberto.EventStore migration for this schema
-                var upgrader = DeployChanges.To
+                UpgradeEngine? upgrader = DeployChanges.To
                     .PostgresqlDatabase(connectionString)
-                    .WithScriptsEmbeddedInAssembly(typeof(Alberto.Example.TenantContext).Assembly)
+                    .WithScriptsEmbeddedInAssembly(typeof(MultiTenantContext).Assembly)
                     .WithPreprocessor(new SchemaPreprocessor(schema))
                     .WithExecutionTimeout(TimeSpan.FromMinutes(5))
                     .LogToConsole()
                     .Build();
 
-                var result = upgrader.PerformUpgrade();
+                DatabaseUpgradeResult? result = upgrader.PerformUpgrade();
 
                 if (!result.Successful)
                 {
@@ -63,19 +64,18 @@ public class Worker(ILogger<Worker> logger, IConfiguration configuration, IHostA
 
                 logger.LogInformation("Migration completed successfully for schema: {Schema}", schema);
             }, cancellationToken);
-        }
     }
 
     private void CreateSchemaIfNotExists(string connectionString, string schema)
     {
-        var createSchemaUpgrader = DeployChanges.To
+        UpgradeEngine? createSchemaUpgrader = DeployChanges.To
             .PostgresqlDatabase(connectionString)
             .WithScript($"CreateSchema_{schema}", $"CREATE SCHEMA IF NOT EXISTS {schema};")
             .WithExecutionTimeout(TimeSpan.FromMinutes(1))
             .LogToConsole()
             .Build();
 
-        var result = createSchemaUpgrader.PerformUpgrade();
+        DatabaseUpgradeResult? result = createSchemaUpgrader.PerformUpgrade();
         if (!result.Successful)
         {
             logger.LogError("Failed to create schema {Schema}: {Error}", schema, result.Error);

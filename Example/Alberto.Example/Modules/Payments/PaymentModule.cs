@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Alberto.EventStore;
 using Alberto.EventStore.Events;
 using Alberto.EventStore.Postgres;
@@ -7,32 +8,33 @@ namespace Alberto.Example.Modules.Payments;
 public static class PaymentModule
 {
     public static IServiceCollection AddPaymentsModule(this IServiceCollection services, IConfiguration configuration)
-        => services
+    {
+        return services
             .AddPostgresEventStore<PaymentEventStore>(o =>
             {
                 o.ConnectionString = configuration.GetConnectionString("alberto-db") ??
                                      throw new InvalidOperationException("Connection string 'alberto-db' not found.");
                 o.Schema = "payments";
             });
+    }
 
     public static IEndpointRouteBuilder MapPaymentsModule(this IEndpointRouteBuilder endpoints)
     {
-        var payments = endpoints.MapGroup("payments");
+        RouteGroupBuilder payments = endpoints.MapGroup("payments");
 
 
         payments.MapPost("/",
             async Task<IResult> (CreatePaymentRequest request, PaymentEventStore eventStore, CancellationToken ctx) =>
             {
-                var paymentId = Guid.NewGuid();
-                var paymentCreated =
-                    new PaymentCreated(paymentId, request.OrderId, request.Amount, DateTime.UtcNow);
+                Guid paymentId = Guid.NewGuid();
+                PaymentCreated paymentCreated = new(paymentId, request.OrderId, request.Amount, DateTime.UtcNow);
 
                 await eventStore.Append(
                     [
                         new EventToPersist
                         {
                             EventType = new EventType("PaymentCreated"),
-                            EventJson = System.Text.Json.JsonSerializer.Serialize(paymentCreated),
+                            EventJson = JsonSerializer.Serialize(paymentCreated),
                             Tags = [new EventTag("payment", paymentId.ToString())],
                             Metadata = new Dictionary<string, string>(),
                             Created = DateTimeOffset.UtcNow
@@ -49,33 +51,33 @@ public static class PaymentModule
         payments.MapGet("/{id:guid}",
             async Task<IResult> (Guid id, PaymentEventStore eventStore) =>
             {
-                var events = await eventStore.Stream(new StreamQuery(tags:
-                    [new EventTag("payment", id.ToString())]));
+                IReadOnlyCollection<IEventEnvelope> events =
+                    await eventStore.Stream(new StreamQuery([new EventTag("payment", id.ToString())]));
 
                 if (!events.Any())
                     return Results.NotFound();
 
-                var payment = Payment.Create(events.ToArray());
+                Payment payment = Payment.Create(events.ToArray());
                 return Results.Ok(payment);
             });
 
         payments.MapPost("/{id:guid}/process",
             async Task<IResult> (Guid id, PaymentEventStore eventStore, CancellationToken ctx) =>
             {
-                var paymentProcessed = new PaymentProcessed(id, DateTime.UtcNow);
+                PaymentProcessed paymentProcessed = new(id, DateTime.UtcNow);
 
                 await eventStore.Append(
                     [
                         new EventToPersist
                         {
                             EventType = new EventType("PaymentProcessed"),
-                            EventJson = System.Text.Json.JsonSerializer.Serialize(paymentProcessed),
+                            EventJson = JsonSerializer.Serialize(paymentProcessed),
                             Tags = [new EventTag("payment", id.ToString())],
                             Metadata = new Dictionary<string, string>(),
                             Created = DateTimeOffset.UtcNow
                         }
                     ],
-                    new StreamQuery(tags: [new EventTag("payment", id.ToString())]), null, ctx);
+                    new StreamQuery([new EventTag("payment", id.ToString())]), null, ctx);
 
                 return Results.Ok();
             });

@@ -1,4 +1,3 @@
-using Alberto.EventStore.MultiTenant;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Alberto.EventStore.InMemory;

@@ -1,4 +1,4 @@
-using Alberto.EventStore;
+using System.Text.Json;
 using Alberto.EventStore.Events;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
@@ -6,8 +6,8 @@ using Xunit;
 namespace Alberto.EventStore.Tests.Specifications;
 
 /// <summary>
-/// Shared test fixture for event store tests
-/// Provides common utilities and test data generators
+///     Shared test fixture for event store tests
+///     Provides common utilities and test data generators
 /// </summary>
 public class EventStoreTestFixture : IDisposable
 {
@@ -27,7 +27,7 @@ public class EventStoreTestFixture : IDisposable
     }
 
     /// <summary>
-    /// Creates a test event with the specified parameters
+    ///     Creates a test event with the specified parameters
     /// </summary>
     public static IEventToPersist CreateTestEvent(
         string eventType,
@@ -45,7 +45,7 @@ public class EventStoreTestFixture : IDisposable
     }
 
     /// <summary>
-    /// Creates a test event with custom JSON data
+    ///     Creates a test event with custom JSON data
     /// </summary>
     public static IEventToPersist CreateTestEventWithData(
         string eventType,
@@ -55,7 +55,7 @@ public class EventStoreTestFixture : IDisposable
         return new EventToPersist
         {
             EventType = new EventType(eventType),
-            EventJson = System.Text.Json.JsonSerializer.Serialize(data),
+            EventJson = JsonSerializer.Serialize(data),
             Tags = eventTags.Select(EventTag.Parse).ToList(),
             Metadata = new Dictionary<string, string>(),
             Created = TestTimeProvider.GetUtcNow()
@@ -63,7 +63,7 @@ public class EventStoreTestFixture : IDisposable
     }
 
     /// <summary>
-    /// Creates a batch of test events for performance testing
+    ///     Creates a batch of test events for performance testing
     /// </summary>
     public static IEventToPersist[] CreateEventBatch(
         int count,
@@ -81,87 +81,76 @@ public class EventStoreTestFixture : IDisposable
     }
 
     /// <summary>
-    /// Creates events with realistic e-commerce domain data
+    ///     Creates events with realistic e-commerce domain data
     /// </summary>
     public static IEventToPersist[] CreateECommerceEvents(string orderId, string customerId)
     {
         return new[]
         {
             CreateTestEventWithData("order-created", new
-            {
-                orderId,
-                customerId,
-                total = 129.99m,
-                currency = "USD",
-                items = new[]
                 {
-                    new { productId = "prod-123", quantity = 2, price = 49.99m },
-                    new { productId = "prod-456", quantity = 1, price = 30.01m }
-                }
-            }, $"order:{orderId}", $"customer:{customerId}", "domain:ecommerce"),
-
-            CreateTestEventWithData("payment-authorized", new
-            {
-                orderId,
-                paymentId = Guid.NewGuid(),
-                amount = 129.99m,
-                method = "credit_card"
-            }, $"order:{orderId}", $"customer:{customerId}", "domain:payment"),
-
-            CreateTestEventWithData("inventory-reserved", new
-            {
-                orderId,
-                items = new[]
+                    orderId,
+                    customerId,
+                    total = 129.99m,
+                    currency = "USD",
+                    items =
+                        new[]
+                        {
+                            new { productId = "prod-123", quantity = 2, price = 49.99m },
+                            new { productId = "prod-456", quantity = 1, price = 30.01m }
+                        }
+                }, $"order:{orderId}", $"customer:{customerId}", "domain:ecommerce"),
+            CreateTestEventWithData("payment-authorized",
+                new { orderId, paymentId = Guid.NewGuid(), amount = 129.99m, method = "credit_card" },
+                $"order:{orderId}", $"customer:{customerId}", "domain:payment"),
+            CreateTestEventWithData("inventory-reserved",
+                new
                 {
-                    new { productId = "prod-123", quantity = 2, warehouse = "US-WEST" },
-                    new { productId = "prod-456", quantity = 1, warehouse = "US-EAST" }
-                }
-            }, $"order:{orderId}", "domain:inventory"),
-
-            CreateTestEventWithData("order-confirmed", new
-            {
-                orderId,
-                customerId,
-                estimatedDelivery = DateTime.UtcNow.AddDays(3)
-            }, $"order:{orderId}", $"customer:{customerId}", "domain:ecommerce")
+                    orderId,
+                    items = new[]
+                    {
+                        new { productId = "prod-123", quantity = 2, warehouse = "US-WEST" },
+                        new { productId = "prod-456", quantity = 1, warehouse = "US-EAST" }
+                    }
+                }, $"order:{orderId}", "domain:inventory"),
+            CreateTestEventWithData("order-confirmed",
+                new { orderId, customerId, estimatedDelivery = DateTime.UtcNow.AddDays(3) }, $"order:{orderId}",
+                $"customer:{customerId}", "domain:ecommerce")
         };
     }
 
     /// <summary>
-    /// Generates realistic tenant IDs for multi-tenant testing
+    ///     Generates realistic tenant IDs for multi-tenant testing
     /// </summary>
     public static string[] GenerateTenantIds(int count)
     {
-        var tenantTypes = new[] { "org", "company", "team", "dept" };
-        var names = new[] { "acme", "globex", "initech", "umbrella", "stark", "wayne", "lexcorp", "oscorp" };
+        string[] tenantTypes = new[] { "org", "company", "team", "dept" };
+        string[] names = new[] { "acme", "globex", "initech", "umbrella", "stark", "wayne", "lexcorp", "oscorp" };
 
         return Enumerable.Range(1, count)
             .Select(i =>
             {
-                var type = tenantTypes[i % tenantTypes.Length];
-                var name = names[i % names.Length];
+                string type = tenantTypes[i % tenantTypes.Length];
+                string name = names[i % names.Length];
                 return $"{type}-{name}-{i:D3}";
             })
             .ToArray();
     }
 
     /// <summary>
-    /// Creates a complex query for testing advanced scenarios
+    ///     Creates a complex query for testing advanced scenarios
     /// </summary>
     public static StreamQuery CreateComplexQuery(params string[] tags)
     {
-        var query = new StreamQuery();
+        StreamQuery query = new();
 
-        if (tags.Length > 0)
-        {
-            query = query.WithTags(tags.Select(EventTag.Parse).ToArray());
-        }
+        if (tags.Length > 0) query = query.WithTags(tags.Select(EventTag.Parse).ToArray());
 
         return query;
     }
 
     /// <summary>
-    /// Validates that events maintain proper ordering and uniqueness
+    ///     Validates that events maintain proper ordering and uniqueness
     /// </summary>
     public static void ValidateEventOrdering(IList<IEventEnvelope> events)
     {
@@ -169,48 +158,44 @@ public class EventStoreTestFixture : IDisposable
 
         // Check position ordering
         long? previousPosition = null;
-        foreach (var eventEnvelope in events)
+        foreach (IEventEnvelope eventEnvelope in events)
         {
             Assert.True(eventEnvelope.Metadata.ContainsKey("_position"),
                 $"Event {eventEnvelope.EventType.Id} missing _position metadata");
 
-            var currentPosition = long.Parse(eventEnvelope.Metadata["_position"]);
+            long currentPosition = long.Parse(eventEnvelope.Metadata["_position"]);
 
             if (previousPosition.HasValue)
-            {
                 Assert.True(currentPosition > previousPosition.Value,
                     $"Position {currentPosition} should be greater than {previousPosition.Value}");
-            }
 
             previousPosition = currentPosition;
         }
 
         // Check position uniqueness
-        var positions = events.Select(e => long.Parse(e.Metadata["_position"])).ToList();
-        var uniquePositions = positions.Distinct().ToList();
+        List<long> positions = events.Select(e => long.Parse(e.Metadata["_position"])).ToList();
+        List<long> uniquePositions = positions.Distinct().ToList();
         Assert.Equal(positions.Count, uniquePositions.Count);
     }
 
     /// <summary>
-    /// Validates tenant isolation by ensuring events only belong to the specified tenant
+    ///     Validates tenant isolation by ensuring events only belong to the specified tenant
     /// </summary>
     public static void ValidateTenantIsolation(IList<IEventEnvelope> events, string expectedTenantId)
     {
-        foreach (var eventEnvelope in events)
-        {
+        foreach (IEventEnvelope eventEnvelope in events)
             // Events should not contain cross-tenant data
             // This is a conceptual validation - actual implementation may vary
             Assert.NotNull(eventEnvelope.EventJson);
-        }
     }
 
     /// <summary>
-    /// Creates a cancellation token that cancels after the specified delay
-    /// Useful for testing timeout scenarios
+    ///     Creates a cancellation token that cancels after the specified delay
+    ///     Useful for testing timeout scenarios
     /// </summary>
     public static CancellationToken CreateTimeoutToken(TimeSpan delay)
     {
-        var cts = new CancellationTokenSource(delay);
+        CancellationTokenSource cts = new(delay);
         return cts.Token;
     }
 }

@@ -14,11 +14,12 @@ public static class EventStoreBuilderExtensions
         services.AddTransient<IDiagnosticsEventListener, NoopDiagnosticsEventListener>();
         return new EventStoreBuilder(services);
     }
-    
-    public static EventStoreBuilder AddMultiTenancy<TTenantContext>(this IServiceCollection services) where TTenantContext : class, ITenantContext
+
+    public static EventStoreBuilder AddMultiTenancy<TTenantContext>(this EventStoreBuilder builder)
+        where TTenantContext : class, ITenantContext
     {
-        services.TryAddScoped<ITenantContext, TTenantContext>();
-        return new EventStoreBuilder(services);
+        builder.Services.TryAddScoped<ITenantContext, TTenantContext>();
+        return builder;
     }
 }
 

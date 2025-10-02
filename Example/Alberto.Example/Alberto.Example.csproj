@@ -1,22 +1,22 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
-    <PropertyGroup>
-        <TargetFramework>net10.0</TargetFramework>
-        <Nullable>enable</Nullable>
-        <ImplicitUsings>enable</ImplicitUsings>
-        <IsPackable>false</IsPackable>
-    </PropertyGroup>
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
 
-    <ItemGroup>
-        <ProjectReference Include="..\Alberto.ServiceDefaults\Alberto.ServiceDefaults.csproj"/>
-        <ProjectReference Include="..\..\Alberto.EventStore.Postgres\Alberto.EventStore.Postgres.csproj" />
-        <ProjectReference Include="..\..\Alberto.EventStore.Telemetry\Alberto.EventStore.Telemetry.csproj" />
-        <ProjectReference Include="..\..\Alberto.EventStore\Alberto.EventStore.csproj" />
-    </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Alberto.ServiceDefaults\Alberto.ServiceDefaults.csproj"/>
+    <ProjectReference Include="..\..\Alberto.EventStore.Postgres\Alberto.EventStore.Postgres.csproj"/>
+    <ProjectReference Include="..\..\Alberto.EventStore.Telemetry\Alberto.EventStore.Telemetry.csproj"/>
+    <ProjectReference Include="..\..\Alberto.EventStore\Alberto.EventStore.csproj"/>
+  </ItemGroup>
 
-    <ItemGroup>
-        <EmbeddedResource Include="Modules\Orders\Migrations\*.sql" />
-        <EmbeddedResource Include="Modules\Payments\Migrations\*.sql" />
-    </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Modules\Orders\Migrations\*.sql"/>
+    <EmbeddedResource Include="Modules\Payments\Migrations\*.sql"/>
+  </ItemGroup>
 
 </Project>

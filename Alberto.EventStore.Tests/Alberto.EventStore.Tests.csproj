@@ -1,29 +1,29 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-    <PropertyGroup>
-        <TargetFramework>net10.0</TargetFramework>
-        <ImplicitUsings>enable</ImplicitUsings>
-        <Nullable>enable</Nullable>
-        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-        <IsPackable>false</IsPackable>
+  <PropertyGroup>
+    <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>false</IsPackable>
 
-        <IsTestProject>true</IsTestProject>
-        <OutputType>exe</OutputType>
-        <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
-        <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
-        <DisableTestingPlatformServerCapability>false</DisableTestingPlatformServerCapability>
-    </PropertyGroup>
+    <IsTestProject>true</IsTestProject>
+    <OutputType>exe</OutputType>
+    <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+    <DisableTestingPlatformServerCapability>false</DisableTestingPlatformServerCapability>
+  </PropertyGroup>
 
-    <ItemGroup>
-        <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
-        <PackageReference Include="Microsoft.NET.Test.Sdk" />
-        <PackageReference Include="xunit.v3" />
-        <PackageReference Include="Testcontainers.PostgreSql" />
-    </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing"/>
+    <PackageReference Include="Microsoft.NET.Test.Sdk"/>
+    <PackageReference Include="xunit.v3"/>
+    <PackageReference Include="Testcontainers.PostgreSql"/>
+  </ItemGroup>
 
-    <ItemGroup>
-      <ProjectReference Include="..\Alberto.EventStore.InMemory\Alberto.EventStore.InMemory.csproj" />
-        <ProjectReference Include="..\Alberto.EventStore.Postgres\Alberto.EventStore.Postgres.csproj" />
-      <ProjectReference Include="..\Alberto.EventStore\Alberto.EventStore.csproj" />
-    </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Alberto.EventStore.InMemory\Alberto.EventStore.InMemory.csproj"/>
+    <ProjectReference Include="..\Alberto.EventStore.Postgres\Alberto.EventStore.Postgres.csproj"/>
+    <ProjectReference Include="..\Alberto.EventStore\Alberto.EventStore.csproj"/>
+  </ItemGroup>
 </Project>

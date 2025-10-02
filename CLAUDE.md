@@ -10,8 +10,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Run performance tests**: `dotnet run --project EventStore.Performance.Tests --configuration Release`
 - **Run example application**: `dotnet run --project Example/Alberto.AppHost/Alberto.AppHost.csproj`
 - **Start individual services**:
-  - Example web app: `dotnet run --project Example/Alberto.Example/Alberto.Example.csproj`
-  - SQL migrator: `dotnet run --project Example/Alberto.SqlMigrator/Alberto.SqlMigrator.csproj`
+    - Example web app: `dotnet run --project Example/Alberto.Example/Alberto.Example.csproj`
+    - SQL migrator: `dotnet run --project Example/Alberto.SqlMigrator/Alberto.SqlMigrator.csproj`
 
 ## Architecture Overview
 
@@ -27,22 +27,29 @@ Alberto is an event store library for .NET with multi-tenant and multi-schema su
 
 ### Key Patterns
 
-**Multi-Backend Architecture**: The system uses a factory pattern (`IEventStoreBackendFactory`) to abstract between different storage implementations. The main `EventStore` class delegates to backend implementations through `IEventStoreBackend`.
+**Multi-Backend Architecture**: The system uses a factory pattern (`IEventStoreBackendFactory`) to abstract between
+different storage implementations. The main `EventStore` class delegates to backend implementations through
+`IEventStoreBackend`.
 
-**Multi-Tenant Support**: Events are isolated by tenant using `ITenantContext`. The PostgreSQL implementation supports multiple schemas for tenant isolation.
+**Multi-Tenant Support**: Events are isolated by tenant using `ITenantContext`. The PostgreSQL implementation supports
+multiple schemas for tenant isolation.
 
 **Stream Queries**: Events are queried using `StreamQuery` objects that can filter by:
+
 - Event types with wildcard support
 - Tags (domain identifiers) with boolean operators (ALL vs ANY)
 - Consistency boundaries for optimistic concurrency
 
-**Optimistic Concurrency**: Append operations support consistency boundaries with expected last event IDs to prevent conflicts.
+**Optimistic Concurrency**: Append operations support consistency boundaries with expected last event IDs to prevent
+conflicts.
 
-**Aspire Integration**: The example uses .NET Aspire for orchestration with PostgreSQL and automatic dependency management.
+**Aspire Integration**: The example uses .NET Aspire for orchestration with PostgreSQL and automatic dependency
+management.
 
 ### Multi-Schema Support
 
 The PostgreSQL implementation supports multiple schemas within the same database:
+
 - Each schema represents a logical boundary (e.g., "orders", "payments")
 - Configured via `AddPostgresEventStore(schemaName, options)`
 - Schema context (`ISchemaContext`) determines which backend instance to use
@@ -59,39 +66,45 @@ The PostgreSQL implementation supports multiple schemas within the same database
 ## Project Structure
 
 The solution uses solution folders to organize projects:
-- **EventStore folder**: Core event store components (`EventStore`, `EventStore.InMemory`, `EventStore.Postgres`, `EventStore.Telemetry`, `EventStore.Tests`, `EventStore.Performance.Tests`)
-- **Example folder**: Aspire-based example application (`Alberto.Example`, `Alberto.AppHost`, `Alberto.ServiceDefaults`, `Alberto.SqlMigrator`)
+
+- **EventStore folder**: Core event store components (`EventStore`, `EventStore.InMemory`, `EventStore.Postgres`,
+  `EventStore.Telemetry`, `EventStore.Tests`, `EventStore.Performance.Tests`)
+- **Example folder**: Aspire-based example application (`Alberto.Example`, `Alberto.AppHost`, `Alberto.ServiceDefaults`,
+  `Alberto.SqlMigrator`)
 
 ## Testing Strategy
 
 The project uses a two-tier testing approach to separate fast feedback from comprehensive performance analysis:
 
 ### Unit and Integration Tests (`EventStore.Tests`)
+
 - **Purpose**: Fast feedback for correctness and functionality
 - **Test count**: 109 tests running in ~3 seconds
 - **Coverage**:
-  - Core event store functionality
-  - Multi-schema isolation
-  - Error handling and edge cases
-  - PostgreSQL configuration validation
-  - Concurrency correctness (small scale)
-  - Multi-tenant isolation (small scale)
+    - Core event store functionality
+    - Multi-schema isolation
+    - Error handling and edge cases
+    - PostgreSQL configuration validation
+    - Concurrency correctness (small scale)
+    - Multi-tenant isolation (small scale)
 - **Technology**: xUnit v3 with Testcontainers for PostgreSQL integration
 - **CI**: Runs on every push/PR for immediate feedback
 
 ### Performance Tests (`EventStore.Performance.Tests`)
+
 - **Purpose**: Comprehensive performance analysis and regression detection
 - **Test count**: 78 benchmarks covering various scenarios
 - **Coverage**:
-  - Single event operations
-  - Bulk operations (10, 100, 1000 events)
-  - Tag query performance
-  - Connection pooling impact
-  - Memory usage analysis
+    - Single event operations
+    - Bulk operations (10, 100, 1000 events)
+    - Tag query performance
+    - Connection pooling impact
+    - Memory usage analysis
 - **Technology**: BenchmarkDotNet with statistical analysis
 - **CI**: Separate pipeline (manual, releases, weekly) to preserve GitHub Actions minutes
 
 ### Test Architecture Patterns
+
 - **Specification Pattern**: `EventStoreBackendSpecification.cs` defines abstract test contracts
 - **Backend Implementations**: Each backend (InMemory, Postgres) implements the specification
 - **Advanced Query Tests**: `AdvancedQueryTests.cs` provides complex scenario testing
@@ -100,6 +113,7 @@ The project uses a two-tier testing approach to separate fast feedback from comp
 ## CI/CD Pipelines
 
 ### Main Build Pipeline (`.github/workflows/build.yml`)
+
 - **Triggers**: Every push and pull request to main branch
 - **Purpose**: Fast feedback for code changes
 - **Tests**: Runs unit/integration tests only (`--filter "FullyQualifiedName!~EventStore.Performance.Tests"`)
@@ -107,6 +121,7 @@ The project uses a two-tier testing approach to separate fast feedback from comp
 - **Scope**: Build validation, correctness testing, immediate feedback
 
 ### Performance Pipeline (`.github/workflows/performance.yml`)
+
 - **Triggers**: Manual dispatch, releases, weekly schedule (Monday 6 AM UTC)
 - **Purpose**: Performance regression detection and optimization
 - **Tests**: Runs comprehensive BenchmarkDotNet suite

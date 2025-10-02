@@ -11,7 +11,9 @@ public static class ServiceCollectionExtensions
         builder.Services.AddSingleton<IDiagnosticsEventListener, ActivityDiagnosticEventListener>();
         return builder;
     }
-    
+
     public static TracerProviderBuilder AddEventStoreTelemetry(this TracerProviderBuilder builder)
-        => builder.AddSource(AlbertoActivitySource.Name);
+    {
+        return builder.AddSource(AlbertoActivitySource.Name);
+    }
 }

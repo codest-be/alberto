@@ -1,14 +1,12 @@
-using BenchmarkDotNet.Attributes;
-using BenchmarkDotNet.Columns;
-using BenchmarkDotNet.Configs;
-using BenchmarkDotNet.Environments;
-using BenchmarkDotNet.Jobs;
-using Dapper;
-using Alberto.EventStore;
 using Alberto.EventStore.Events;
 using Alberto.EventStore.InMemory;
 using Alberto.EventStore.MultiTenant;
 using Alberto.EventStore.Postgres;
+using BenchmarkDotNet.Attributes;
+using BenchmarkDotNet.Columns;
+using BenchmarkDotNet.Configs;
+using BenchmarkDotNet.Jobs;
+using Dapper;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -18,46 +16,26 @@ namespace Alberto.EventStore.Performance.Tests;
 
 [Config(typeof(Config))]
 [MemoryDiagnoser]
-[MinColumn, MaxColumn, MeanColumn, MedianColumn]
+[MinColumn]
+[MaxColumn]
+[MeanColumn]
+[MedianColumn]
 [RankColumn]
 public class EventStoreBenchmarks
 {
-    private class Config : ManualConfig
-    {
-        public Config()
-        {
-            // Simplified professional benchmark configuration
-            AddJob(Job.Default
-                .WithId("Baseline")
-                .AsBaseline());
-
-            // Add a second job with enhanced statistical sampling
-            AddJob(Job.Default
-                .WithId("Optimized")
-                .WithInvocationCount(96)  // Multiple of 16 (UnrollFactor)
-                .WithIterationCount(15)
-                .WithWarmupCount(5));
-
-            WithOptions(ConfigOptions.DisableOptimizationsValidator);
-            
-            // Add statistical columns for better analysis
-            AddColumn(StatisticColumn.StdDev);
-            AddColumn(StatisticColumn.Error);
-        }
-    }
+    private readonly Tenant _tenant = new("benchmark-tenant");
 
     private IEventStoreBackend _inMemoryBackend = null!;
+    private IEventStoreBackend? _localhostPostgresBackend; // Optional localhost comparison
     private IEventStoreBackend _postgresBackend = null!;
     private IEventStoreBackend _postgresPooledBackend = null!;
-    private IEventStoreBackend? _localhostPostgresBackend = null; // Optional localhost comparison
     private PostgreSqlContainer _postgreSqlContainer = null!;
-    private readonly Tenant _tenant = new("benchmark-tenant");
 
     [GlobalSetup]
     public async Task GlobalSetup()
     {
-        var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
-        var inMemoryLogger = loggerFactory.CreateLogger<InMemoryEventStoreBackend>();
+        ILoggerFactory loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
+        ILogger<InMemoryEventStoreBackend> inMemoryLogger = loggerFactory.CreateLogger<InMemoryEventStoreBackend>();
         _inMemoryBackend = new InMemoryEventStoreBackend(inMemoryLogger);
 
         _postgreSqlContainer = new PostgreSqlBuilder()
@@ -81,43 +59,42 @@ public class EventStoreBenchmarks
 
         await _postgreSqlContainer.StartAsync();
 
-        var options = Options.Create(new PostgresEventStoreOptions
+        IOptions<PostgresEventStoreOptions> options = Options.Create(new PostgresEventStoreOptions
         {
-            ConnectionString = _postgreSqlContainer.GetConnectionString(),
-            Schema = "benchmark"
+            ConnectionString = _postgreSqlContainer.GetConnectionString(), Schema = "benchmark"
         });
 
         await RunMigrations(options.Value);
 
-        var postgresLogger = loggerFactory.CreateLogger<PostgresEventStoreBackend>();
+        ILogger<PostgresEventStoreBackend> postgresLogger = loggerFactory.CreateLogger<PostgresEventStoreBackend>();
         _postgresBackend = new PostgresEventStoreBackend(options, postgresLogger);
 
         // Create enhanced connection pooled version with optimized settings
-        var pooledConnectionString = _postgreSqlContainer.GetConnectionString() +
-            ";Pooling=true;MinPoolSize=5;MaxPoolSize=20;ConnectionLifeTime=300;CommandTimeout=30;ApplicationName=alberto_benchmarks;";
-        var pooledOptions = Options.Create(new PostgresEventStoreOptions
+        string pooledConnectionString = _postgreSqlContainer.GetConnectionString() +
+                                        ";Pooling=true;MinPoolSize=5;MaxPoolSize=20;ConnectionLifeTime=300;CommandTimeout=30;ApplicationName=alberto_benchmarks;";
+        IOptions<PostgresEventStoreOptions> pooledOptions = Options.Create(new PostgresEventStoreOptions
         {
-            ConnectionString = pooledConnectionString,
-            Schema = "benchmark"
+            ConnectionString = pooledConnectionString, Schema = "benchmark"
         });
         _postgresPooledBackend = new PostgresEventStoreBackend(pooledOptions, postgresLogger);
 
         // Try to setup localhost PostgreSQL for comparison (optional)
         try
         {
-            var localhostConnectionString = "Host=localhost;Port=5432;Database=alberto_localhost;Username=postgres;Password=postgres;";
-            var localhostOptions = Options.Create(new PostgresEventStoreOptions
+            string localhostConnectionString =
+                "Host=localhost;Port=5432;Database=alberto_localhost;Username=postgres;Password=postgres;";
+            IOptions<PostgresEventStoreOptions> localhostOptions = Options.Create(new PostgresEventStoreOptions
             {
-                ConnectionString = localhostConnectionString,
-                Schema = "benchmark"
+                ConnectionString = localhostConnectionString, Schema = "benchmark"
             });
 
             // Test connection and setup schema
-            await using var testConnection = new NpgsqlConnection(localhostConnectionString);
+            await using NpgsqlConnection testConnection = new(localhostConnectionString);
             await testConnection.OpenAsync();
             await testConnection.ExecuteAsync("CREATE SCHEMA IF NOT EXISTS benchmark");
 
-            var localhostLogger = loggerFactory.CreateLogger<PostgresEventStoreBackend>();
+            ILogger<PostgresEventStoreBackend>
+                localhostLogger = loggerFactory.CreateLogger<PostgresEventStoreBackend>();
             _localhostPostgresBackend = new PostgresEventStoreBackend(localhostOptions, localhostLogger);
 
             // Run migrations for localhost
@@ -134,7 +111,7 @@ public class EventStoreBenchmarks
         // Pre-populate with some test data to avoid setup issues in read benchmarks
         try
         {
-            var testEvents = Enumerable.Range(0, 10)
+            EventToPersist[] testEvents = Enumerable.Range(0, 10)
                 .Select(i => new EventToPersist
                 {
                     EventType = new EventType("benchmark-event"),
@@ -166,8 +143,8 @@ public class EventStoreBenchmarks
     [Benchmark]
     public async Task AppendSingleEvent_InMemory()
     {
-        var streamId = Guid.NewGuid().ToString();
-        var events = new[]
+        string streamId = Guid.NewGuid().ToString();
+        EventToPersist[] events = new[]
         {
             new EventToPersist
             {
@@ -185,8 +162,8 @@ public class EventStoreBenchmarks
     [Benchmark]
     public async Task AppendSingleEvent_Postgres()
     {
-        var streamId = Guid.NewGuid().ToString();
-        var events = new[]
+        string streamId = Guid.NewGuid().ToString();
+        EventToPersist[] events = new[]
         {
             new EventToPersist
             {
@@ -207,8 +184,8 @@ public class EventStoreBenchmarks
     [Arguments(1000)]
     public async Task AppendMultipleEvents_InMemory(int eventCount)
     {
-        var streamId = Guid.NewGuid().ToString();
-        var events = Enumerable.Range(0, eventCount)
+        string streamId = Guid.NewGuid().ToString();
+        EventToPersist[] events = Enumerable.Range(0, eventCount)
             .Select(i => new EventToPersist
             {
                 EventType = new EventType("benchmark-event"),
@@ -228,8 +205,8 @@ public class EventStoreBenchmarks
     [Arguments(1000)]
     public async Task AppendMultipleEvents_Postgres(int eventCount)
     {
-        var streamId = Guid.NewGuid().ToString();
-        var events = Enumerable.Range(0, eventCount)
+        string streamId = Guid.NewGuid().ToString();
+        EventToPersist[] events = Enumerable.Range(0, eventCount)
             .Select(i => new EventToPersist
             {
                 EventType = new EventType("benchmark-event"),
@@ -250,20 +227,20 @@ public class EventStoreBenchmarks
     [Arguments(50)]
     public async Task BulkThresholdTest_Postgres(int threshold)
     {
-        var options = Options.Create(new PostgresEventStoreOptions
+        IOptions<PostgresEventStoreOptions> options = Options.Create(new PostgresEventStoreOptions
         {
             ConnectionString = _postgreSqlContainer.GetConnectionString(),
             Schema = "benchmark",
             BulkInsertThreshold = threshold
         });
 
-        var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
-        var logger = loggerFactory.CreateLogger<PostgresEventStoreBackend>();
-        var backend = new PostgresEventStoreBackend(options, logger);
+        ILoggerFactory loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
+        ILogger<PostgresEventStoreBackend> logger = loggerFactory.CreateLogger<PostgresEventStoreBackend>();
+        PostgresEventStoreBackend backend = new(options, logger);
 
-        var streamId = Guid.NewGuid().ToString();
-        var eventCount = 20; // Fixed count to test threshold crossing
-        var events = Enumerable.Range(0, eventCount)
+        string streamId = Guid.NewGuid().ToString();
+        int eventCount = 20; // Fixed count to test threshold crossing
+        EventToPersist[] events = Enumerable.Range(0, eventCount)
             .Select(i => new EventToPersist
             {
                 EventType = new EventType("benchmark-event"),
@@ -280,8 +257,8 @@ public class EventStoreBenchmarks
     [Benchmark]
     public async Task AppendSingleEvent_PostgresPooled()
     {
-        var streamId = Guid.NewGuid().ToString();
-        var events = new[]
+        string streamId = Guid.NewGuid().ToString();
+        EventToPersist[] events = new[]
         {
             new EventToPersist
             {
@@ -301,14 +278,17 @@ public class EventStoreBenchmarks
     [Arguments(100)]
     public async Task AppendMultipleEvents_PostgresPooled(int eventCount)
     {
-        var streamId = Guid.NewGuid().ToString();
-        var events = Enumerable.Range(0, eventCount)
+        string streamId = Guid.NewGuid().ToString();
+        EventToPersist[] events = Enumerable.Range(0, eventCount)
             .Select(i => new EventToPersist
             {
                 EventType = new EventType("benchmark-event"),
                 EventJson = $"{{ \"message\": \"pooled benchmark data {i}\" }}",
                 Tags = [new EventTag("stream", streamId)],
-                Metadata = new Dictionary<string, string> { ["source"] = "benchmark-pooled", ["index"] = i.ToString() },
+                Metadata = new Dictionary<string, string>
+                {
+                    ["source"] = "benchmark-pooled", ["index"] = i.ToString()
+                },
                 Created = DateTimeOffset.UtcNow
             })
             .ToArray();
@@ -319,9 +299,9 @@ public class EventStoreBenchmarks
     [Benchmark]
     public async Task ReadStream_InMemory()
     {
-        var streamId = "benchmark-read-stream";
-        var query = new StreamQuery(
-            tags: [new EventTag("stream", streamId)]
+        string streamId = "benchmark-read-stream";
+        StreamQuery query = new(
+            [new EventTag("stream", streamId)]
         );
         await _inMemoryBackend.Stream(_tenant, query, 100);
     }
@@ -329,12 +309,12 @@ public class EventStoreBenchmarks
     [Benchmark]
     public async Task ReadStream_Postgres()
     {
-        var streamId = "benchmark-read-stream";
+        string streamId = "benchmark-read-stream";
 
         // Enhanced setup with detailed validation for isolated BenchmarkDotNet processes
         await EnsurePostgresSchemaAndData(async () =>
         {
-            var setupEvents = Enumerable.Range(0, 10)
+            EventToPersist[] setupEvents = Enumerable.Range(0, 10)
                 .Select(i => new EventToPersist
                 {
                     EventType = new EventType("benchmark-event"),
@@ -348,8 +328,8 @@ public class EventStoreBenchmarks
             await _postgresBackend.Append(_tenant, setupEvents, null, null);
         });
 
-        var query = new StreamQuery(
-            tags: [new EventTag("stream", streamId)]
+        StreamQuery query = new(
+            [new EventTag("stream", streamId)]
         );
 
         await _postgresBackend.Stream(_tenant, query, 100);
@@ -358,7 +338,7 @@ public class EventStoreBenchmarks
     [Benchmark]
     public async Task QueryEventsByType_InMemory()
     {
-        var query = new StreamQuery(
+        StreamQuery query = new(
             eventTypes: [new EventType("benchmark-event")]
         );
 
@@ -371,7 +351,7 @@ public class EventStoreBenchmarks
         // Enhanced setup with detailed validation for isolated BenchmarkDotNet processes
         await EnsurePostgresSchemaAndData(async () =>
         {
-            var setupEvents = Enumerable.Range(0, 5)
+            EventToPersist[] setupEvents = Enumerable.Range(0, 5)
                 .Select(i => new EventToPersist
                 {
                     EventType = new EventType("benchmark-event"),
@@ -385,7 +365,7 @@ public class EventStoreBenchmarks
             await _postgresBackend.Append(_tenant, setupEvents, null, null);
         });
 
-        var query = new StreamQuery(
+        StreamQuery query = new(
             eventTypes: [new EventType("benchmark-event")]
         );
 
@@ -398,9 +378,9 @@ public class EventStoreBenchmarks
     public async Task TimeBatchedAppend_Postgres(int timeoutMs, int eventThreshold)
     {
         // Simulate time-based batching: collect events until timeout OR threshold reached
-        var events = new List<IEventToPersist>();
-        var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(timeoutMs));
-        var startTime = DateTimeOffset.UtcNow;
+        List<IEventToPersist> events = new();
+        CancellationTokenSource cts = new(TimeSpan.FromMilliseconds(timeoutMs));
+        DateTimeOffset startTime = DateTimeOffset.UtcNow;
 
         try
         {
@@ -439,10 +419,7 @@ public class EventStoreBenchmarks
         }
 
         // Benchmark the actual batch append operation
-        if (events.Count > 0)
-        {
-            await _postgresBackend.Append(_tenant, events, null, null);
-        }
+        if (events.Count > 0) await _postgresBackend.Append(_tenant, events, null, null);
     }
 
     [Benchmark]
@@ -451,8 +428,8 @@ public class EventStoreBenchmarks
         if (_localhostPostgresBackend == null)
             throw new InvalidOperationException("Localhost PostgreSQL not available");
 
-        var streamId = Guid.NewGuid().ToString();
-        var events = new[]
+        string streamId = Guid.NewGuid().ToString();
+        EventToPersist[] events = new[]
         {
             new EventToPersist
             {
@@ -474,8 +451,8 @@ public class EventStoreBenchmarks
         if (_localhostPostgresBackend == null)
             throw new InvalidOperationException("Localhost PostgreSQL not available");
 
-        var streamId = Guid.NewGuid().ToString();
-        var events = Enumerable.Range(0, eventCount)
+        string streamId = Guid.NewGuid().ToString();
+        EventToPersist[] events = Enumerable.Range(0, eventCount)
             .Select(i => new EventToPersist
             {
                 EventType = new EventType("localhost-benchmark-event"),
@@ -483,8 +460,7 @@ public class EventStoreBenchmarks
                 Tags = [new EventTag("stream", streamId)],
                 Metadata = new Dictionary<string, string>
                 {
-                    ["source"] = "localhost-benchmark",
-                    ["index"] = i.ToString()
+                    ["source"] = "localhost-benchmark", ["index"] = i.ToString()
                 },
                 Created = DateTimeOffset.UtcNow
             })
@@ -494,94 +470,95 @@ public class EventStoreBenchmarks
     }
 
     [Benchmark]
-    [Arguments(1000, 1)]   // 1K events, 1 tag each (most common real-world scenario)
-    [Arguments(1000, 2)]   // 1K events, 2 tags each
-    [Arguments(10000, 2)]  // 10K events, 2 tags each (typical scale)
-    [Arguments(10000, 5)]  // 10K events, 5 tags each (high end of realistic)
+    [Arguments(1000, 1)] // 1K events, 1 tag each (most common real-world scenario)
+    [Arguments(1000, 2)] // 1K events, 2 tags each
+    [Arguments(10000, 2)] // 10K events, 2 tags each (typical scale)
+    [Arguments(10000, 5)] // 10K events, 5 tags each (high end of realistic)
     [Arguments(100000, 2)] // 100K events, 2 tags each (production scale)
     [Arguments(100000, 5)] // 100K events, 5 tags each (stress test at scale)
     public async Task TagQueryPerformance_RealisticScale_Postgres(int eventCount, int tagsPerEvent)
     {
-        var dataSetupId = $"tag-perf-{eventCount}-{tagsPerEvent}";
+        string dataSetupId = $"tag-perf-{eventCount}-{tagsPerEvent}";
 
         // Setup test data with realistic tag patterns
         await EnsureTagPerformanceData(eventCount, tagsPerEvent, dataSetupId);
 
         // Test 1: Query events by single tag (most common pattern)
-        var singleTagQuery = new StreamQuery(
-            tags: [new EventTag("dataset", dataSetupId)]
+        StreamQuery singleTagQuery = new(
+            [new EventTag("dataset", dataSetupId)]
         );
 
-        await _postgresBackend.Stream(_tenant, singleTagQuery, maxCount: 1000);
+        await _postgresBackend.Stream(_tenant, singleTagQuery, 1000);
 
         // Test 2: Query events requiring ALL tags (consistency boundary pattern)
         if (tagsPerEvent > 1)
         {
-            var allTagsQuery = new StreamQuery(
-                tags: [
+            StreamQuery allTagsQuery = new StreamQuery(
+                [
                     new EventTag("dataset", dataSetupId),
                     new EventTag("category", "business")
                 ]
             ).RequiringAllTags();
 
-            await _postgresBackend.Stream(_tenant, allTagsQuery, maxCount: 1000);
+            await _postgresBackend.Stream(_tenant, allTagsQuery, 1000);
         }
 
         // Test 3: Query events with ANY of multiple tags (broad search pattern)
-        var anyTagsQuery = new StreamQuery(
-            tags: [
+        StreamQuery anyTagsQuery = new(
+            [
                 new EventTag("priority", "high"),
                 new EventTag("priority", "critical"),
                 new EventTag("category", "business")
             ]
         ); // Default is RequireAny
 
-        await _postgresBackend.Stream(_tenant, anyTagsQuery, maxCount: 1000);
+        await _postgresBackend.Stream(_tenant, anyTagsQuery, 1000);
     }
 
     [Benchmark]
-    [Arguments(1000, 1)]   // 1K events, 1 tag each
-    [Arguments(1000, 2)]   // 1K events, 2 tags each
-    [Arguments(10000, 2)]  // 10K events, 2 tags each (typical scale)
-    [Arguments(10000, 5)]  // 10K events, 5 tags each (high end)
+    [Arguments(1000, 1)] // 1K events, 1 tag each
+    [Arguments(1000, 2)] // 1K events, 2 tags each
+    [Arguments(10000, 2)] // 10K events, 2 tags each (typical scale)
+    [Arguments(10000, 5)] // 10K events, 5 tags each (high end)
     [Arguments(100000, 2)] // 100K events, 2 tags each (production scale)
     [Arguments(100000, 5)] // 100K events, 5 tags each (stress test)
     public async Task CommonPattern_TenantEventTypeTags_Postgres(int eventCount, int tagsPerEvent)
     {
-        var dataSetupId = $"common-pattern-{eventCount}-{tagsPerEvent}";
+        string dataSetupId = $"common-pattern-{eventCount}-{tagsPerEvent}";
 
         // Setup test data with realistic tag patterns
         await EnsureTagPerformanceData(eventCount, tagsPerEvent, dataSetupId);
 
         // Test the MOST COMMON pattern: tenant + event_type + tags
         // Example: "get order_created events for order:123"
-        var commonQuery = new StreamQuery(
+        StreamQuery commonQuery = new(
             eventTypes: [new EventType("order-created")],
             tags: [new EventTag("dataset", dataSetupId)]
         );
 
-        await _postgresBackend.Stream(_tenant, commonQuery, maxCount: 1000);
+        await _postgresBackend.Stream(_tenant, commonQuery, 1000);
 
         // Test with multiple event types (also common)
-        var multiTypeQuery = new StreamQuery(
+        StreamQuery multiTypeQuery = new(
             eventTypes: [new EventType("order-created"), new EventType("payment-processed")],
             tags: [new EventTag("dataset", dataSetupId)]
         );
 
-        await _postgresBackend.Stream(_tenant, multiTypeQuery, maxCount: 1000);
+        await _postgresBackend.Stream(_tenant, multiTypeQuery, 1000);
 
         // Test event type + multiple tags (business logic queries)
         if (tagsPerEvent > 1)
         {
-            var businessQuery = new StreamQuery(
+            StreamQuery businessQuery = new StreamQuery(
                 eventTypes: [new EventType("order-created")],
-                tags: [
+                tags:
+                [
                     new EventTag("dataset", dataSetupId),
                     new EventTag("category", "business")
                 ]
             ).RequiringAllTags();
 
-            await _postgresBackend.Stream(_tenant, businessQuery, maxCount: 1000);
+            await _postgresBackend.Stream(_tenant, businessQuery, 1000);
         }
     }
 
@@ -591,55 +568,54 @@ public class EventStoreBenchmarks
     [Arguments(100000, 2)]
     public async Task TagQueryPerformance_RealisticScale_InMemory(int eventCount, int tagsPerEvent)
     {
-        var dataSetupId = $"tag-perf-inmem-{eventCount}-{tagsPerEvent}";
+        string dataSetupId = $"tag-perf-inmem-{eventCount}-{tagsPerEvent}";
 
         // Setup test data in memory
         await EnsureInMemoryTagPerformanceData(eventCount, tagsPerEvent, dataSetupId);
 
         // Same query patterns as Postgres version for comparison
-        var singleTagQuery = new StreamQuery(
-            tags: [new EventTag("dataset", dataSetupId)]
+        StreamQuery singleTagQuery = new(
+            [new EventTag("dataset", dataSetupId)]
         );
 
-        await _inMemoryBackend.Stream(_tenant, singleTagQuery, maxCount: 1000);
+        await _inMemoryBackend.Stream(_tenant, singleTagQuery, 1000);
 
         if (tagsPerEvent > 1)
         {
-            var allTagsQuery = new StreamQuery(
-                tags: [
+            StreamQuery allTagsQuery = new StreamQuery(
+                [
                     new EventTag("dataset", dataSetupId),
                     new EventTag("category", "business")
                 ]
             ).RequiringAllTags();
 
-            await _inMemoryBackend.Stream(_tenant, allTagsQuery, maxCount: 1000);
+            await _inMemoryBackend.Stream(_tenant, allTagsQuery, 1000);
         }
 
-        var anyTagsQuery = new StreamQuery(
-            tags: [
+        StreamQuery anyTagsQuery = new(
+            [
                 new EventTag("priority", "high"),
                 new EventTag("priority", "critical"),
                 new EventTag("category", "business")
             ]
         );
 
-        await _inMemoryBackend.Stream(_tenant, anyTagsQuery, maxCount: 1000);
+        await _inMemoryBackend.Stream(_tenant, anyTagsQuery, 1000);
     }
 
     [Benchmark]
     public async Task ConnectionPoolStress_Postgres()
     {
         // Stress test connection pooling by making concurrent database operations
-        var tasks = new List<Task>();
-        var random = new Random();
+        List<Task> tasks = new();
+        Random random = new();
 
         for (int i = 0; i < 10; i++) // 10 concurrent operations
-        {
             tasks.Add(Task.Run(async () =>
             {
-                var streamId = Guid.NewGuid().ToString();
-                var eventCount = random.Next(1, 20); // Random batch size
-                var events = Enumerable.Range(0, eventCount)
+                string streamId = Guid.NewGuid().ToString();
+                int eventCount = random.Next(1, 20); // Random batch size
+                EventToPersist[] events = Enumerable.Range(0, eventCount)
                     .Select(j => new EventToPersist
                     {
                         EventType = new EventType("pool-stress-event"),
@@ -656,7 +632,6 @@ public class EventStoreBenchmarks
 
                 await _postgresPooledBackend.Append(_tenant, events, null, null);
             }));
-        }
 
         await Task.WhenAll(tasks);
     }
@@ -664,8 +639,8 @@ public class EventStoreBenchmarks
     [IterationSetup]
     public void IterationSetup()
     {
-        var setupStreamId = "benchmark-read-stream";
-        var setupEvents = Enumerable.Range(0, 50)
+        string setupStreamId = "benchmark-read-stream";
+        EventToPersist[] setupEvents = Enumerable.Range(0, 50)
             .Select(i => new EventToPersist
             {
                 EventType = new EventType("benchmark-event"),
@@ -681,9 +656,7 @@ public class EventStoreBenchmarks
             _inMemoryBackend.Append(_tenant, setupEvents, null, null).GetAwaiter().GetResult();
 
             if (_postgresBackend != _inMemoryBackend)
-            {
                 _postgresBackend.Append(_tenant, setupEvents, null, null).GetAwaiter().GetResult();
-            }
         }
         catch (Exception ex)
         {
@@ -694,15 +667,14 @@ public class EventStoreBenchmarks
 
     private async Task EnsurePostgresSchemaAndData(Func<Task> dataSetup)
     {
-        var options = new PostgresEventStoreOptions
+        PostgresEventStoreOptions options = new()
         {
-            ConnectionString = _postgreSqlContainer.GetConnectionString(),
-            Schema = "benchmark"
+            ConnectionString = _postgreSqlContainer.GetConnectionString(), Schema = "benchmark"
         };
 
         try
         {
-            Console.WriteLine($"[BENCHMARK SETUP] Starting schema validation for isolated process");
+            Console.WriteLine("[BENCHMARK SETUP] Starting schema validation for isolated process");
 
             // Step 1: Validate connection
             await ValidateConnection(options);
@@ -714,10 +686,10 @@ public class EventStoreBenchmarks
             await VerifySchemaExists(options);
 
             // Step 4: Setup test data
-            Console.WriteLine($"[BENCHMARK SETUP] Setting up test data");
+            Console.WriteLine("[BENCHMARK SETUP] Setting up test data");
             await dataSetup();
 
-            Console.WriteLine($"[BENCHMARK SETUP] Schema and data setup completed successfully");
+            Console.WriteLine("[BENCHMARK SETUP] Schema and data setup completed successfully");
         }
         catch (Exception ex)
         {
@@ -729,12 +701,13 @@ public class EventStoreBenchmarks
 
     private async Task ValidateConnection(PostgresEventStoreOptions options)
     {
-        Console.WriteLine($"[BENCHMARK SETUP] Validating connection to: {MaskConnectionString(options.ConnectionString)}");
+        Console.WriteLine(
+            $"[BENCHMARK SETUP] Validating connection to: {MaskConnectionString(options.ConnectionString)}");
 
-        await using var connection = new NpgsqlConnection(options.ConnectionString);
+        await using NpgsqlConnection connection = new(options.ConnectionString);
         await connection.OpenAsync();
 
-        var version = await connection.QuerySingleAsync<string>("SELECT version()");
+        string version = await connection.QuerySingleAsync<string>("SELECT version()");
         Console.WriteLine($"[BENCHMARK SETUP] Connected to PostgreSQL: {version.Split(' ')[1]}");
     }
 
@@ -742,7 +715,7 @@ public class EventStoreBenchmarks
     {
         Console.WriteLine($"[BENCHMARK SETUP] Running migrations for schema: {options.Schema}");
 
-        await using var connection = new NpgsqlConnection(options.ConnectionString);
+        await using NpgsqlConnection connection = new(options.ConnectionString);
         await connection.OpenAsync();
 
         // Create schema first
@@ -750,10 +723,10 @@ public class EventStoreBenchmarks
         Console.WriteLine($"[BENCHMARK SETUP] Schema '{options.Schema}' created/verified");
 
         // Load and execute migration
-        var migrationSql = await LoadMigrationFromFile();
-        var content = $"SET search_path TO {options.Schema}, public;\n\n{migrationSql}";
+        string migrationSql = await LoadMigrationFromFile();
+        string content = $"SET search_path TO {options.Schema}, public;\n\n{migrationSql}";
 
-        var affectedRows = await connection.ExecuteAsync(content);
+        int affectedRows = await connection.ExecuteAsync(content);
         Console.WriteLine($"[BENCHMARK SETUP] Migration executed, {affectedRows} statements affected");
     }
 
@@ -761,11 +734,11 @@ public class EventStoreBenchmarks
     {
         Console.WriteLine($"[BENCHMARK SETUP] Verifying events table exists in schema: {options.Schema}");
 
-        await using var connection = new NpgsqlConnection(options.ConnectionString);
+        await using NpgsqlConnection connection = new(options.ConnectionString);
         await connection.OpenAsync();
 
         // Check if events table exists with expected structure
-        var tableExists = await connection.QuerySingleAsync<bool>($@"
+        bool tableExists = await connection.QuerySingleAsync<bool>(@"
             SELECT EXISTS (
                 SELECT FROM information_schema.tables
                 WHERE table_schema = @schema
@@ -773,28 +746,26 @@ public class EventStoreBenchmarks
             )", new { schema = options.Schema });
 
         if (!tableExists)
-        {
             throw new InvalidOperationException($"Events table does not exist in schema '{options.Schema}'");
-        }
 
         // Verify specific columns exist
-        var columns = await connection.QueryAsync<string>($@"
+        IEnumerable<string> columns = await connection.QueryAsync<string>(@"
             SELECT column_name
             FROM information_schema.columns
             WHERE table_schema = @schema
             AND table_name = 'events'
             ORDER BY column_name", new { schema = options.Schema });
 
-        var columnList = columns.ToList();
-        var requiredColumns = new[] { "tenant_id", "position", "id", "event_type", "data", "tags", "metadata", "created_at" };
-
-        foreach (var required in requiredColumns)
+        List<string> columnList = columns.ToList();
+        string[] requiredColumns = new[]
         {
+            "tenant_id", "position", "id", "event_type", "data", "tags", "metadata", "created_at"
+        };
+
+        foreach (string required in requiredColumns)
             if (!columnList.Contains(required))
-            {
-                throw new InvalidOperationException($"Required column '{required}' missing from events table. Found columns: {string.Join(", ", columnList)}");
-            }
-        }
+                throw new InvalidOperationException(
+                    $"Required column '{required}' missing from events table. Found columns: {string.Join(", ", columnList)}");
 
         Console.WriteLine($"[BENCHMARK SETUP] Events table verified with columns: {string.Join(", ", columnList)}");
     }
@@ -804,7 +775,7 @@ public class EventStoreBenchmarks
         // Simple masking for logging - just show host and database
         try
         {
-            var builder = new NpgsqlConnectionStringBuilder(connectionString);
+            NpgsqlConnectionStringBuilder builder = new(connectionString);
             return $"Host={builder.Host}:{builder.Port} Database={builder.Database}";
         }
         catch
@@ -815,20 +786,20 @@ public class EventStoreBenchmarks
 
     private async Task RunMigrations(PostgresEventStoreOptions options)
     {
-        await using var connection = new NpgsqlConnection(options.ConnectionString);
+        await using NpgsqlConnection connection = new(options.ConnectionString);
         await connection.OpenAsync();
 
         await connection.ExecuteAsync($"CREATE SCHEMA IF NOT EXISTS {options.Schema}");
 
-        var migrationSql = await LoadMigrationFromFile();
-        var content = $"SET search_path TO {options.Schema}, public;\n\n{migrationSql}";
+        string migrationSql = await LoadMigrationFromFile();
+        string content = $"SET search_path TO {options.Schema}, public;\n\n{migrationSql}";
         await connection.ExecuteAsync(content);
     }
 
     private async Task<string> LoadMigrationFromFile()
     {
-        var currentDirectory = AppContext.BaseDirectory;
-        var solutionDirectory = Directory.GetParent(currentDirectory);
+        string currentDirectory = AppContext.BaseDirectory;
+        DirectoryInfo? solutionDirectory = Directory.GetParent(currentDirectory);
 
         while (solutionDirectory != null
                && !Directory.Exists(Path.Combine(solutionDirectory.FullName, "Alberto.EventStore.Postgres")))
@@ -838,7 +809,7 @@ public class EventStoreBenchmarks
             throw new DirectoryNotFoundException(
                 "Could not locate the solution root directory containing Alberto.EventStore.Postgres");
 
-        var migrationPath = Path.Combine(
+        string migrationPath = Path.Combine(
             solutionDirectory.FullName,
             "Alberto.EventStore.Postgres",
             "Migrations",
@@ -853,52 +824,43 @@ public class EventStoreBenchmarks
     private async Task EnsureTagPerformanceData(int eventCount, int tagsPerEvent, string dataSetupId)
     {
         // Check if data already exists for this test case
-        var existingQuery = new StreamQuery(
-            tags: [new EventTag("dataset", dataSetupId)]
+        StreamQuery existingQuery = new(
+            [new EventTag("dataset", dataSetupId)]
         );
-        var existing = await _postgresBackend.Stream(_tenant, existingQuery, maxCount: 1);
+        IReadOnlyCollection<IEventEnvelope> existing = await _postgresBackend.Stream(_tenant, existingQuery, 1);
 
         if (existing.Any())
-        {
             // Data already exists for this configuration
             return;
-        }
 
-        Console.WriteLine($"[TAG BENCHMARK] Setting up {eventCount} events with {tagsPerEvent} tags each for dataset: {dataSetupId}");
+        Console.WriteLine(
+            $"[TAG BENCHMARK] Setting up {eventCount} events with {tagsPerEvent} tags each for dataset: {dataSetupId}");
 
         // Create realistic tag patterns
-        var eventTypes = new[] { "order-created", "payment-processed", "item-shipped", "order-completed" };
-        var categories = new[] { "business", "system", "user-action", "integration" };
-        var priorities = new[] { "low", "medium", "high", "critical" };
-        var sources = new[] { "web", "mobile", "api", "batch" };
+        string[] eventTypes = new[] { "order-created", "payment-processed", "item-shipped", "order-completed" };
+        string[] categories = new[] { "business", "system", "user-action", "integration" };
+        string[] priorities = new[] { "low", "medium", "high", "critical" };
+        string[] sources = new[] { "web", "mobile", "api", "batch" };
 
-        var events = new List<IEventToPersist>();
-        var random = new Random(42); // Fixed seed for reproducible benchmarks
+        List<IEventToPersist> events = new();
+        Random random = new(42); // Fixed seed for reproducible benchmarks
 
         for (int i = 0; i < eventCount; i++)
         {
-            var tags = new List<EventTag>
+            List<EventTag> tags = new()
             {
                 new EventTag("dataset", dataSetupId) // Always include dataset identifier
             };
 
             // Add realistic tag combinations based on tagsPerEvent
             if (tagsPerEvent > 1 && tags.Count < tagsPerEvent)
-            {
                 tags.Add(new EventTag("category", categories[random.Next(categories.Length)]));
-            }
             if (tagsPerEvent > 2 && tags.Count < tagsPerEvent)
-            {
                 tags.Add(new EventTag("priority", priorities[random.Next(priorities.Length)]));
-            }
             if (tagsPerEvent > 3 && tags.Count < tagsPerEvent)
-            {
                 tags.Add(new EventTag("source", sources[random.Next(sources.Length)]));
-            }
             if (tagsPerEvent > 4 && tags.Count < tagsPerEvent)
-            {
                 tags.Add(new EventTag("tenant", $"tenant-{random.Next(1, 10)}"));
-            }
 
             events.Add(new EventToPersist
             {
@@ -920,10 +882,7 @@ public class EventStoreBenchmarks
                 await _postgresBackend.Append(_tenant, events, null, null);
                 events.Clear();
 
-                if (i % 10000 == 0)
-                {
-                    Console.WriteLine($"[TAG BENCHMARK] Inserted {i + 1}/{eventCount} events");
-                }
+                if (i % 10000 == 0) Console.WriteLine($"[TAG BENCHMARK] Inserted {i + 1}/{eventCount} events");
             }
         }
 
@@ -933,48 +892,34 @@ public class EventStoreBenchmarks
     private async Task EnsureInMemoryTagPerformanceData(int eventCount, int tagsPerEvent, string dataSetupId)
     {
         // Check if data already exists
-        var existingQuery = new StreamQuery(
-            tags: [new EventTag("dataset", dataSetupId)]
+        StreamQuery existingQuery = new(
+            [new EventTag("dataset", dataSetupId)]
         );
-        var existing = await _inMemoryBackend.Stream(_tenant, existingQuery, maxCount: 1);
+        IReadOnlyCollection<IEventEnvelope> existing = await _inMemoryBackend.Stream(_tenant, existingQuery, 1);
 
-        if (existing.Any())
-        {
-            return;
-        }
+        if (existing.Any()) return;
 
         // Create the same data structure as PostgreSQL version for fair comparison
-        var eventTypes = new[] { "order-created", "payment-processed", "item-shipped", "order-completed" };
-        var categories = new[] { "business", "system", "user-action", "integration" };
-        var priorities = new[] { "low", "medium", "high", "critical" };
-        var sources = new[] { "web", "mobile", "api", "batch" };
+        string[] eventTypes = new[] { "order-created", "payment-processed", "item-shipped", "order-completed" };
+        string[] categories = new[] { "business", "system", "user-action", "integration" };
+        string[] priorities = new[] { "low", "medium", "high", "critical" };
+        string[] sources = new[] { "web", "mobile", "api", "batch" };
 
-        var events = new List<IEventToPersist>();
-        var random = new Random(42); // Same seed as PostgreSQL version
+        List<IEventToPersist> events = new();
+        Random random = new(42); // Same seed as PostgreSQL version
 
         for (int i = 0; i < eventCount; i++)
         {
-            var tags = new List<EventTag>
-            {
-                new EventTag("dataset", dataSetupId)
-            };
+            List<EventTag> tags = new() { new EventTag("dataset", dataSetupId) };
 
             if (tagsPerEvent > 1 && tags.Count < tagsPerEvent)
-            {
                 tags.Add(new EventTag("category", categories[random.Next(categories.Length)]));
-            }
             if (tagsPerEvent > 2 && tags.Count < tagsPerEvent)
-            {
                 tags.Add(new EventTag("priority", priorities[random.Next(priorities.Length)]));
-            }
             if (tagsPerEvent > 3 && tags.Count < tagsPerEvent)
-            {
                 tags.Add(new EventTag("source", sources[random.Next(sources.Length)]));
-            }
             if (tagsPerEvent > 4 && tags.Count < tagsPerEvent)
-            {
                 tags.Add(new EventTag("tenant", $"tenant-{random.Next(1, 10)}"));
-            }
 
             events.Add(new EventToPersist
             {
@@ -993,5 +938,29 @@ public class EventStoreBenchmarks
 
         // Insert all at once for in-memory (no batching needed)
         await _inMemoryBackend.Append(_tenant, events, null, null);
+    }
+
+    private class Config : ManualConfig
+    {
+        public Config()
+        {
+            // Simplified professional benchmark configuration
+            AddJob(Job.Default
+                .WithId("Baseline")
+                .AsBaseline());
+
+            // Add a second job with enhanced statistical sampling
+            AddJob(Job.Default
+                .WithId("Optimized")
+                .WithInvocationCount(96) // Multiple of 16 (UnrollFactor)
+                .WithIterationCount(15)
+                .WithWarmupCount(5));
+
+            WithOptions(ConfigOptions.DisableOptimizationsValidator);
+
+            // Add statistical columns for better analysis
+            AddColumn(StatisticColumn.StdDev);
+            AddColumn(StatisticColumn.Error);
+        }
     }
 }

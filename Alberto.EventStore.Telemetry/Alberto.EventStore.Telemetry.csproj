@@ -1,23 +1,23 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-    <PropertyGroup>
-        <TargetFramework>net10.0</TargetFramework>
-        <ImplicitUsings>enable</ImplicitUsings>
-        <Nullable>enable</Nullable>
+  <PropertyGroup>
+    <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
 
-        <!-- Package Metadata -->
-        <PackageId>Alberto.EventStore.Telemetry</PackageId>
-        <Title>Alberto EventStore - Telemetry</Title>
-        <Description>OpenTelemetry integration for Alberto EventStore. Provides comprehensive observability with metrics, tracing, and logging for event store operations.</Description>
-        <IsPackable>true</IsPackable>
-    </PropertyGroup>
+    <!-- Package Metadata -->
+    <PackageId>Alberto.EventStore.Telemetry</PackageId>
+    <Title>Alberto EventStore - Telemetry</Title>
+    <Description>OpenTelemetry integration for Alberto EventStore. Provides comprehensive observability with metrics, tracing, and logging for event store operations.</Description>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
 
-    <ItemGroup>
-      <ProjectReference Include="..\Alberto.EventStore\Alberto.EventStore.csproj" />
-    </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Alberto.EventStore\Alberto.EventStore.csproj"/>
+  </ItemGroup>
 
-    <ItemGroup>
-      <PackageReference Include="OpenTelemetry" />
-    </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="OpenTelemetry"/>
+  </ItemGroup>
 
 </Project>

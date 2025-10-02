@@ -1,16 +1,16 @@
 using Projects;
 
-var builder = DistributedApplication.CreateBuilder(args);
+IDistributedApplicationBuilder builder = DistributedApplication.CreateBuilder(args);
 
-var postgres = builder.AddPostgres("postgres").WithPgAdmin();
-var database = postgres.AddDatabase("alberto-db");
+IResourceBuilder<PostgresServerResource> postgres = builder.AddPostgres("postgres").WithPgAdmin();
+IResourceBuilder<PostgresDatabaseResource> database = postgres.AddDatabase("alberto-db");
 
-var migrations = builder.AddProject<Alberto_SqlMigrator>("sql-migrator")
+IResourceBuilder<ProjectResource> migrations = builder.AddProject<Alberto_SqlMigrator>("sql-migrator")
     .WithReference(database)
     .WaitFor(database);
 
 builder
-    .AddProject<Projects.Alberto_Example>("alberto-example")
+    .AddProject<Alberto_Example>("alberto-example")
     .WithReference(database)
     .WaitFor(migrations);
 

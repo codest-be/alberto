@@ -1,21 +1,17 @@
 using System.Net.Sockets;
-using Dapper;
-using Alberto.EventStore;
 using Alberto.EventStore.Events;
-using Alberto.EventStore.Exceptions;
 using Alberto.EventStore.MultiTenant;
 using Alberto.EventStore.Postgres;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
-using Testcontainers.PostgreSql;
 using Xunit;
 
 namespace Alberto.EventStore.Tests.Postgres;
 
 /// <summary>
-/// Tests for error handling and edge cases in PostgreSQL Alberto.EventStore
-/// Ensures robust behavior under failure conditions
+///     Tests for error handling and edge cases in PostgreSQL Alberto.EventStore
+///     Ensures robust behavior under failure conditions
 /// </summary>
 [Collection("Postgres Integration Tests")]
 public class EventStoreErrorHandlingTests(PostgresTestFixture fixture) : IAsyncLifetime
@@ -25,7 +21,7 @@ public class EventStoreErrorHandlingTests(PostgresTestFixture fixture) : IAsyncL
 
     public ValueTask InitializeAsync()
     {
-        var options = Options.Create(fixture.Options);
+        IOptions<PostgresEventStoreOptions> options = Options.Create(fixture.Options);
         _backend = new PostgresEventStoreBackend(options, NullLogger<PostgresEventStoreBackend>.Instance);
         return ValueTask.CompletedTask;
     }
@@ -39,19 +35,19 @@ public class EventStoreErrorHandlingTests(PostgresTestFixture fixture) : IAsyncL
     public async Task Append_WithInvalidConnectionString_ShouldThrowException()
     {
         // Arrange
-        var invalidOptions = Options.Create(new PostgresEventStoreOptions
+        IOptions<PostgresEventStoreOptions> invalidOptions = Options.Create(new PostgresEventStoreOptions
         {
             ConnectionString = "Host=nonexistent;Database=invalid;Username=fake;Password=fake",
             Schema = "app",
             BulkInsertThreshold = 5
         });
 
-        var invalidBackend = new PostgresEventStoreBackend(invalidOptions, NullLogger<PostgresEventStoreBackend>.Instance);
-        var tenant = new Tenant(_testTenantId.ToString());
-        var testEvent = CreateTestEvent("test-event", "test:123");
+        PostgresEventStoreBackend invalidBackend = new(invalidOptions, NullLogger<PostgresEventStoreBackend>.Instance);
+        Tenant tenant = new(_testTenantId.ToString());
+        IEventToPersist testEvent = CreateTestEvent("test-event", "test:123");
 
         // Act & Assert - Connection errors can be various exception types
-        var exception = await Assert.ThrowsAnyAsync<Exception>(() =>
+        Exception exception = await Assert.ThrowsAnyAsync<Exception>(() =>
             invalidBackend.Append(tenant, [testEvent], null, null, CancellationToken.None));
 
         // Should be a connection-related exception
@@ -63,8 +59,8 @@ public class EventStoreErrorHandlingTests(PostgresTestFixture fixture) : IAsyncL
     public async Task Append_WithMalformedJson_ShouldThrowException()
     {
         // Arrange
-        var tenant = new Tenant(_testTenantId.ToString());
-        var eventWithMalformedJson = new EventToPersist
+        Tenant tenant = new(_testTenantId.ToString());
+        EventToPersist eventWithMalformedJson = new()
         {
             EventType = new EventType("test-event"),
             EventJson = """{"incomplete": json""", // Malformed JSON
@@ -74,7 +70,7 @@ public class EventStoreErrorHandlingTests(PostgresTestFixture fixture) : IAsyncL
         };
 
         // Act & Assert - PostgreSQL validates JSON syntax
-        await Assert.ThrowsAsync<Npgsql.PostgresException>(async () =>
+        await Assert.ThrowsAsync<PostgresException>(async () =>
             await _backend!.Append(tenant, [eventWithMalformedJson], null, null, CancellationToken.None));
     }
 
@@ -82,9 +78,9 @@ public class EventStoreErrorHandlingTests(PostgresTestFixture fixture) : IAsyncL
     public async Task Append_WithVeryLargeEventPayload_ShouldSucceed()
     {
         // Arrange
-        var tenant = new Tenant(_testTenantId.ToString());
-        var largeData = new string('x', 64 * 1024); // 64KB of data
-        var largeEvent = new EventToPersist
+        Tenant tenant = new(_testTenantId.ToString());
+        string largeData = new('x', 64 * 1024); // 64KB of data
+        EventToPersist largeEvent = new()
         {
             EventType = new EventType("large-event"),
             EventJson = $$"""{"data": "{{largeData}}"}""",
@@ -94,11 +90,13 @@ public class EventStoreErrorHandlingTests(PostgresTestFixture fixture) : IAsyncL
         };
 
         // Act & Assert - Should handle large payloads
-        var result = await _backend!.Append(tenant, [largeEvent], null, null, CancellationToken.None);
+        IEnumerable<IEventEnvelope> result =
+            await _backend!.Append(tenant, [largeEvent], null, null, CancellationToken.None);
         Assert.Single(result);
 
         // Verify data integrity
-        var streamResult = await _backend.Stream(tenant, new StreamQuery().WithTags(EventTag.Parse("test:123")), cancellationToken: CancellationToken.None);
+        IReadOnlyCollection<IEventEnvelope> streamResult = await _backend.Stream(tenant,
+            new StreamQuery().WithTags(EventTag.Parse("test:123")), cancellationToken: CancellationToken.None);
         Assert.Single(streamResult);
         Assert.Contains(largeData, streamResult.First().EventJson);
     }
@@ -107,22 +105,19 @@ public class EventStoreErrorHandlingTests(PostgresTestFixture fixture) : IAsyncL
     public async Task Append_WithVariousTenantIdFormats_ShouldSucceed()
     {
         // Arrange - PostgreSQL should handle various tenant ID formats
-        var validTenants = new[]
+        Tenant[] validTenants = new[]
         {
-            new Tenant("tenant-dashes"),
-            new Tenant("tenant_underscore"),
-            new Tenant("tenant.dots"),
-            new Tenant("tenant123"),
-            new Tenant("UPPERCASE"),
-            new Tenant("mixed-Case")
+            new Tenant("tenant-dashes"), new Tenant("tenant_underscore"), new Tenant("tenant.dots"),
+            new Tenant("tenant123"), new Tenant("UPPERCASE"), new Tenant("mixed-Case")
         };
 
         // Act & Assert - All should succeed with proper escaping
-        foreach (var tenant in validTenants)
+        foreach (Tenant tenant in validTenants)
         {
-            var safeTagValue = tenant.Id.Replace(".", "-").Replace(" ", "-"); // Make tag-safe
-            var testEvent = CreateTestEvent("test-event", $"test:{safeTagValue}");
-            var result = await _backend!.Append(tenant, [testEvent], null, null, CancellationToken.None);
+            string safeTagValue = tenant.Id.Replace(".", "-").Replace(" ", "-"); // Make tag-safe
+            IEventToPersist testEvent = CreateTestEvent("test-event", $"test:{safeTagValue}");
+            IEnumerable<IEventEnvelope> result =
+                await _backend!.Append(tenant, [testEvent], null, null, CancellationToken.None);
             Assert.Single(result);
         }
     }
@@ -131,8 +126,8 @@ public class EventStoreErrorHandlingTests(PostgresTestFixture fixture) : IAsyncL
     public async Task Stream_WithShortTimeout_ShouldRespectCancellation()
     {
         // Arrange
-        var tenant = new Tenant(_testTenantId.ToString());
-        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(1)); // Very short timeout
+        Tenant tenant = new(_testTenantId.ToString());
+        using CancellationTokenSource cts = new(TimeSpan.FromMilliseconds(1)); // Very short timeout
 
         // Add a small delay to ensure cancellation happens
         await Task.Delay(10, TestContext.Current.CancellationToken);
@@ -140,7 +135,8 @@ public class EventStoreErrorHandlingTests(PostgresTestFixture fixture) : IAsyncL
         // Act & Assert - May throw OperationCanceledException or complete quickly
         try
         {
-            var result = await _backend!.Stream(tenant, new StreamQuery().WithTags(EventTag.Parse("test:123")), cancellationToken: cts.Token);
+            IReadOnlyCollection<IEventEnvelope> result = await _backend!.Stream(tenant,
+                new StreamQuery().WithTags(EventTag.Parse("test:123")), cancellationToken: cts.Token);
             // If it completes quickly, that's also acceptable
             Assert.NotNull(result);
         }
@@ -155,9 +151,9 @@ public class EventStoreErrorHandlingTests(PostgresTestFixture fixture) : IAsyncL
     public async Task Append_WithCancelledToken_ShouldThrowOperationCancelledException()
     {
         // Arrange
-        var tenant = new Tenant(_testTenantId.ToString());
-        var testEvent = CreateTestEvent("test-event", "test:123");
-        using var cts = new CancellationTokenSource();
+        Tenant tenant = new(_testTenantId.ToString());
+        IEventToPersist testEvent = CreateTestEvent("test-event", "test:123");
+        using CancellationTokenSource cts = new();
         cts.Cancel(); // Cancel immediately
 
         // Act & Assert
@@ -169,13 +165,14 @@ public class EventStoreErrorHandlingTests(PostgresTestFixture fixture) : IAsyncL
     public async Task Stream_WithExtremelyLongTagName_ShouldSucceed()
     {
         // Arrange
-        var tenant = new Tenant(_testTenantId.ToString());
-        var longTagName = "order:" + new string('x', 255); // Long tag (255 chars)
-        var testEvent = CreateTestEvent("test-event", longTagName);
+        Tenant tenant = new(_testTenantId.ToString());
+        string longTagName = "order:" + new string('x', 255); // Long tag (255 chars)
+        IEventToPersist testEvent = CreateTestEvent("test-event", longTagName);
 
         // Act
         await _backend!.Append(tenant, [testEvent], null, null, CancellationToken.None);
-        var result = await _backend.Stream(tenant, new StreamQuery().WithTags(EventTag.Parse(longTagName)), cancellationToken: CancellationToken.None);
+        IReadOnlyCollection<IEventEnvelope> result = await _backend.Stream(tenant,
+            new StreamQuery().WithTags(EventTag.Parse(longTagName)), cancellationToken: CancellationToken.None);
 
         // Assert
         Assert.Single(result);
@@ -187,9 +184,9 @@ public class EventStoreErrorHandlingTests(PostgresTestFixture fixture) : IAsyncL
     public async Task Append_WithThousandsOfTags_ShouldSucceed()
     {
         // Arrange
-        var tenant = new Tenant(_testTenantId.ToString());
-        var manyTags = Enumerable.Range(1, 100).Select(i => $"tag{i}:value{i}").ToArray();
-        var eventWithManyTags = new EventToPersist
+        Tenant tenant = new(_testTenantId.ToString());
+        string[] manyTags = Enumerable.Range(1, 100).Select(i => $"tag{i}:value{i}").ToArray();
+        EventToPersist eventWithManyTags = new()
         {
             EventType = new EventType("many-tags-event"),
             EventJson = """{"data": "test"}""",
@@ -199,7 +196,8 @@ public class EventStoreErrorHandlingTests(PostgresTestFixture fixture) : IAsyncL
         };
 
         // Act
-        var result = await _backend!.Append(tenant, [eventWithManyTags], null, null, CancellationToken.None);
+        IEnumerable<IEventEnvelope> result =
+            await _backend!.Append(tenant, [eventWithManyTags], null, null, CancellationToken.None);
 
         // Assert
         Assert.Single(result);
@@ -211,15 +209,16 @@ public class EventStoreErrorHandlingTests(PostgresTestFixture fixture) : IAsyncL
     public async Task Stream_WithEmptyQuery_ShouldReturnAllEvents()
     {
         // Arrange
-        var tenant = new Tenant(_testTenantId.ToString());
+        Tenant tenant = new(_testTenantId.ToString());
 
         // Add some test data
-        var testEvent = CreateTestEvent("test-event", "test:123");
+        IEventToPersist testEvent = CreateTestEvent("test-event", "test:123");
         await _backend!.Append(tenant, [testEvent], null, null, CancellationToken.None);
 
         // Act - Query with no filters
-        var emptyQuery = new StreamQuery();
-        var result = await _backend.Stream(tenant, emptyQuery, cancellationToken: CancellationToken.None);
+        StreamQuery emptyQuery = new();
+        IReadOnlyCollection<IEventEnvelope> result =
+            await _backend.Stream(tenant, emptyQuery, cancellationToken: CancellationToken.None);
 
         // Assert - Empty query returns all events for the tenant
         Assert.Single(result);
@@ -230,8 +229,8 @@ public class EventStoreErrorHandlingTests(PostgresTestFixture fixture) : IAsyncL
     public async Task Append_WithNullMetadata_ShouldFailGracefully()
     {
         // Arrange
-        var tenant = new Tenant(_testTenantId.ToString());
-        var eventWithNullMetadata = new EventToPersist
+        Tenant tenant = new(_testTenantId.ToString());
+        EventToPersist eventWithNullMetadata = new()
         {
             EventType = new EventType("test-event"),
             EventJson = """{"data": "test"}""",
@@ -249,24 +248,20 @@ public class EventStoreErrorHandlingTests(PostgresTestFixture fixture) : IAsyncL
     public async Task Append_WithValidEventTypeVariations_ShouldSucceed()
     {
         // Arrange
-        var tenant = new Tenant(_testTenantId.ToString());
-        var validEventTypes = new[]
+        Tenant tenant = new(_testTenantId.ToString());
+        string[] validEventTypes = new[]
         {
-            "event-with-dashes",
-            "event-with-multiple-dashes",
-            "very-long-event-type-name-with-many-parts",
+            "event-with-dashes", "event-with-multiple-dashes", "very-long-event-type-name-with-many-parts",
             "a", // Single character
             "ab", // Two characters
-            "short-event",
-            "long-event-name-that-tests-length-limits",
-            "event-a-b-c-d-e-f-g", // Many dashes
+            "short-event", "long-event-name-that-tests-length-limits", "event-a-b-c-d-e-f-g", // Many dashes
             "z" // Last letter of alphabet
         };
 
         // Act & Assert
-        foreach (var eventType in validEventTypes)
+        foreach (string eventType in validEventTypes)
         {
-            var testEvent = new EventToPersist
+            EventToPersist testEvent = new()
             {
                 EventType = new EventType(eventType),
                 EventJson = """{"data": "test"}""",
@@ -275,7 +270,8 @@ public class EventStoreErrorHandlingTests(PostgresTestFixture fixture) : IAsyncL
                 Created = DateTimeOffset.UtcNow
             };
 
-            var result = await _backend!.Append(tenant, [testEvent], null, null, CancellationToken.None);
+            IEnumerable<IEventEnvelope> result =
+                await _backend!.Append(tenant, [testEvent], null, null, CancellationToken.None);
             Assert.Single(result);
             Assert.Equal(eventType, result.First().EventType.Id);
         }
@@ -296,10 +292,10 @@ public class EventStoreErrorHandlingTests(PostgresTestFixture fixture) : IAsyncL
     public async Task Stream_WithValidComplexTagFormats_ShouldWork()
     {
         // Arrange
-        var tenant = new Tenant(_testTenantId.ToString());
+        Tenant tenant = new(_testTenantId.ToString());
 
         // Create events with valid but complex tag formats
-        var testEvents = new[]
+        IEventToPersist[] testEvents = new[]
         {
             CreateTestEventWithTags("test-event-a", ["normal:tag"]),
             CreateTestEventWithTags("test-event-b", ["concept:id-with-hyphens"]),
@@ -311,10 +307,11 @@ public class EventStoreErrorHandlingTests(PostgresTestFixture fixture) : IAsyncL
         await _backend!.Append(tenant, testEvents, null, null, CancellationToken.None);
 
         // Act & Assert - Should be able to query for events by their types
-        foreach (var testEvent in testEvents)
+        foreach (IEventToPersist testEvent in testEvents)
         {
-            var query = new StreamQuery().WithEventTypes(testEvent.EventType);
-            var result = await _backend.Stream(tenant, query, cancellationToken: CancellationToken.None);
+            StreamQuery query = new StreamQuery().WithEventTypes(testEvent.EventType);
+            IReadOnlyCollection<IEventEnvelope> result =
+                await _backend.Stream(tenant, query, cancellationToken: CancellationToken.None);
             Assert.Single(result);
             Assert.Equal(testEvent.EventType.Id, result.First().EventType.Id);
         }
@@ -324,14 +321,16 @@ public class EventStoreErrorHandlingTests(PostgresTestFixture fixture) : IAsyncL
     public async Task Append_WithMaxIntegerTenantId_ShouldSucceed()
     {
         // Arrange - Test edge case with maximum integer value
-        var maxTenant = new Tenant(int.MaxValue.ToString());
-        var testEvent = CreateTestEvent("max-tenant-event", "test:max");
+        Tenant maxTenant = new(int.MaxValue.ToString());
+        IEventToPersist testEvent = CreateTestEvent("max-tenant-event", "test:max");
 
         // Act & Assert
-        var result = await _backend!.Append(maxTenant, [testEvent], null, null, CancellationToken.None);
+        IEnumerable<IEventEnvelope> result =
+            await _backend!.Append(maxTenant, [testEvent], null, null, CancellationToken.None);
         Assert.Single(result);
 
-        var streamResult = await _backend.Stream(maxTenant, new StreamQuery().WithTags(EventTag.Parse("test:max")), cancellationToken: CancellationToken.None);
+        IReadOnlyCollection<IEventEnvelope> streamResult = await _backend.Stream(maxTenant,
+            new StreamQuery().WithTags(EventTag.Parse("test:max")), cancellationToken: CancellationToken.None);
         Assert.Single(streamResult);
     }
 
@@ -339,21 +338,24 @@ public class EventStoreErrorHandlingTests(PostgresTestFixture fixture) : IAsyncL
     public async Task Database_ConnectionRecovery_ShouldWork()
     {
         // Arrange
-        var tenant = new Tenant(_testTenantId.ToString());
-        var testEvent = CreateTestEvent("recovery-test", "test:recovery");
+        Tenant tenant = new(_testTenantId.ToString());
+        IEventToPersist testEvent = CreateTestEvent("recovery-test", "test:recovery");
 
         // Act - First operation should succeed
-        var result1 = await _backend!.Append(tenant, [testEvent], null, null, CancellationToken.None);
+        IEnumerable<IEventEnvelope> result1 =
+            await _backend!.Append(tenant, [testEvent], null, null, CancellationToken.None);
         Assert.Single(result1);
 
         // Simulate connection issues by creating a new backend with a brief invalid connection
         // Then test that subsequent operations still work
-        var testEvent2 = CreateTestEvent("recovery-test-b", "test:recovery");
-        var result2 = await _backend.Append(tenant, [testEvent2], null, null, CancellationToken.None);
+        IEventToPersist testEvent2 = CreateTestEvent("recovery-test-b", "test:recovery");
+        IEnumerable<IEventEnvelope> result2 =
+            await _backend.Append(tenant, [testEvent2], null, null, CancellationToken.None);
         Assert.Single(result2);
 
         // Verify both events are accessible
-        var streamResult = await _backend.Stream(tenant, new StreamQuery().WithTags(EventTag.Parse("test:recovery")), cancellationToken: CancellationToken.None);
+        IReadOnlyCollection<IEventEnvelope> streamResult = await _backend.Stream(tenant,
+            new StreamQuery().WithTags(EventTag.Parse("test:recovery")), cancellationToken: CancellationToken.None);
         Assert.Equal(2, streamResult.Count);
     }
 

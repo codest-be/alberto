@@ -3,7 +3,7 @@ using Alberto.EventStore.Events;
 namespace Alberto.EventStore;
 
 /// <summary>
-/// Represents a query to filter events by event tags and event types
+///     Represents a query to filter events by event tags and event types
 /// </summary>
 public sealed class StreamQuery(
     IEnumerable<EventTag> tags = null!,
@@ -12,31 +12,31 @@ public sealed class StreamQuery(
     bool requireAllEventTypes = false)
 {
     /// <summary>
-    /// Tags to filter by (can be empty for all)
+    ///     Tags to filter by (can be empty for all)
     /// </summary>
     public IReadOnlyCollection<EventTag> Tags { get; } = tags?.ToList() ?? [];
 
     /// <summary>
-    /// Event types to filter by (can be empty for all)
+    ///     Event types to filter by (can be empty for all)
     /// </summary>
     public IReadOnlyCollection<EventType> EventTypes { get; } = eventTypes?.ToList() ?? [];
 
     /// <summary>
-    /// Whether all event tags must be present (AND) or any can be present (OR)
+    ///     Whether all event tags must be present (AND) or any can be present (OR)
     /// </summary>
     public bool RequireAllTags { get; } = requireAllTags;
 
     /// <summary>
-    /// Whether all event types must be present (AND) or any can be present (OR)
+    ///     Whether all event types must be present (AND) or any can be present (OR)
     /// </summary>
     public bool RequireAllEventTypes { get; } = requireAllEventTypes;
 
     /// <summary>
-    /// Creates a new StreamQuery with additional event tags
+    ///     Creates a new StreamQuery with additional event tags
     /// </summary>
-    public StreamQuery WithTags(params IEnumerable<EventTag> tags)
+    public StreamQuery WithTags(params EventTag[] tags)
     {
-        var combinedIdentifiers = new List<EventTag>(Tags);
+        List<EventTag> combinedIdentifiers = new(Tags);
         combinedIdentifiers.AddRange(tags);
 
         return new StreamQuery(
@@ -47,11 +47,11 @@ public sealed class StreamQuery(
     }
 
     /// <summary>
-    /// Creates a new StreamQuery with additional event types
+    ///     Creates a new StreamQuery with additional event types
     /// </summary>
-    public StreamQuery WithEventTypes(params IEnumerable<EventType> additionalEventTypes)
+    public StreamQuery WithEventTypes(params EventType[] additionalEventTypes)
     {
-        var combinedEventTypes = new List<EventType>(EventTypes);
+        List<EventType> combinedEventTypes = new(EventTypes);
         combinedEventTypes.AddRange(additionalEventTypes);
 
         return new StreamQuery(
@@ -62,13 +62,15 @@ public sealed class StreamQuery(
     }
 
     /// <summary>
-    /// Creates a new StreamQuery with additional event types
+    ///     Creates a new StreamQuery with additional event types
     /// </summary>
-    public StreamQuery WithEventTypes(params IEnumerable<Type> additionalEventTypes)
-        => WithEventTypes(additionalEventTypes.Select(e => EventType.GetEventType(e)!));
+    public StreamQuery WithEventTypes(params Type[] additionalEventTypes)
+    {
+        return WithEventTypes(additionalEventTypes.Select(e => EventType.GetEventType(e)!).ToArray());
+    }
 
     /// <summary>
-    /// Creates a new StreamQuery that requires all event tags to be present
+    ///     Creates a new StreamQuery that requires all event tags to be present
     /// </summary>
     public StreamQuery RequiringAllTags()
     {
@@ -80,7 +82,7 @@ public sealed class StreamQuery(
     }
 
     /// <summary>
-    /// Creates a new StreamQuery that requires all event types to be present
+    ///     Creates a new StreamQuery that requires all event types to be present
     /// </summary>
     public StreamQuery RequiringAllEventTypes()
     {
@@ -90,67 +92,52 @@ public sealed class StreamQuery(
             RequireAllTags,
             true);
     }
-    
+
     public override string ToString()
     {
-        var parts = new List<string>();
+        List<string> parts = new();
 
         // Add event tags part
         if (Tags.Any())
         {
-            var identifierValues = string.Join(",", Tags.Select(d => $"'{d}'"));
-            var tagClause = $"tag in [{identifierValues}]";
+            string identifierValues = string.Join(",", Tags.Select(d => $"'{d}'"));
+            string tagClause = $"tag in [{identifierValues}]";
             parts.Add(tagClause);
         }
 
         // Add event types part
         if (EventTypes.Any())
         {
-            var eventTypeValues = string.Join(",", EventTypes.Select(e => $"'{e}'"));
-            var eventTypesClause = $"event type in [{eventTypeValues}]";
+            string eventTypeValues = string.Join(",", EventTypes.Select(e => $"'{e}'"));
+            string eventTypesClause = $"event type in [{eventTypeValues}]";
             parts.Add(eventTypesClause);
         }
 
         // If no conditions, return a wildcard
-        if (!parts.Any())
-        {
-            return "*";
-        }
+        if (!parts.Any()) return "*";
 
         // Join parts with the appropriate operator
-        if (parts.Count == 1)
-        {
-            return parts[0];
-        }
+        if (parts.Count == 1) return parts[0];
 
         // Determine operator based on requirements
-        var operatorSymbol = DetermineOperator();
+        string operatorSymbol = DetermineOperator();
         return string.Join($" {operatorSymbol} ", parts);
     }
-    
+
     private string DetermineOperator()
     {
         // If both event tags and event types exist, we need to determine the operator
         if (Tags.Any() && EventTypes.Any())
         {
             // If either requires ALL, use AND (more restrictive)
-            if (RequireAllTags || RequireAllEventTypes)
-            {
-                return "AND";
-            }
+            if (RequireAllTags || RequireAllEventTypes) return "AND";
             return "OR";
         }
 
         // If only one type exists, the operator doesn't matter for display
         // but we'll show AND if that type requires all
-        if (Tags.Any() && RequireAllTags)
-        {
-            return "AND";
-        }
-        if (EventTypes.Any() && RequireAllEventTypes)
-        {
-            return "AND";
-        }
+        if (Tags.Any() && RequireAllTags) return "AND";
+        if (EventTypes.Any() && RequireAllEventTypes) return "AND";
 
         return "OR";
     }

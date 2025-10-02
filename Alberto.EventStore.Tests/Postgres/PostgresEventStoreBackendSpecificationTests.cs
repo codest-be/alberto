@@ -1,8 +1,7 @@
-using Dapper;
-using Alberto.EventStore;
 using Alberto.EventStore.MultiTenant;
 using Alberto.EventStore.Postgres;
 using Alberto.EventStore.Tests.Specifications;
+using Dapper;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -27,8 +26,8 @@ public class PostgresEventStoreBackendSpecificationTests(PostgresTestFixture fix
 
     protected override Task<IEventStoreBackend> CreateBackend()
     {
-        var options = Options.Create(fixture.Options);
-        var backend = new PostgresEventStoreBackend(options, _logger);
+        IOptions<PostgresEventStoreOptions> options = Options.Create(fixture.Options);
+        PostgresEventStoreBackend backend = new(options, _logger);
         return Task.FromResult<IEventStoreBackend>(backend);
     }
 
@@ -68,7 +67,7 @@ public class PostgresTestFixture : IAsyncLifetime
         .WithCleanUp(true)
         .Build();
 
-    private readonly object _tenantIdLock = new object();
+    private readonly object _tenantIdLock = new();
 
     private int _nextTenantId = 2000; // Start from 1000 to avoid conflicts with hardcoded tenant IDs
     public PostgresEventStoreOptions Options { get; private set; } = null!;
@@ -79,9 +78,7 @@ public class PostgresTestFixture : IAsyncLifetime
 
         Options = new PostgresEventStoreOptions
         {
-            ConnectionString = _postgresContainer.GetConnectionString(),
-            Schema = "app",
-            BulkInsertThreshold = 5
+            ConnectionString = _postgresContainer.GetConnectionString(), Schema = "app", BulkInsertThreshold = 5
         };
 
         await RunMigrations();
@@ -109,14 +106,11 @@ public class PostgresTestFixture : IAsyncLifetime
     {
         try
         {
-            await using var connection = new NpgsqlConnection(Options.ConnectionString);
+            await using NpgsqlConnection connection = new(Options.ConnectionString);
             await connection.OpenAsync();
             await connection.ExecuteAsync(
                 $"DELETE FROM {Options.Schema}.events WHERE tenant_id = @tenantId",
-                new
-                {
-                    tenantId
-                });
+                new { tenantId });
         }
         catch (Exception)
         {
@@ -132,14 +126,11 @@ public class PostgresTestFixture : IAsyncLifetime
         if (tenantIds?.Length > 0)
             try
             {
-                await using var connection = new NpgsqlConnection(Options.ConnectionString);
+                await using NpgsqlConnection connection = new(Options.ConnectionString);
                 await connection.OpenAsync();
                 await connection.ExecuteAsync(
                     $"DELETE FROM {Options.Schema}.events WHERE tenant_id = ANY(@tenantIds)",
-                    new
-                    {
-                        tenantIds
-                    });
+                    new { tenantIds });
             }
             catch (Exception)
             {
@@ -149,47 +140,41 @@ public class PostgresTestFixture : IAsyncLifetime
 
     private async Task RunMigrations()
     {
-        await using var connection = new NpgsqlConnection(Options.ConnectionString);
+        await using NpgsqlConnection connection = new(Options.ConnectionString);
         await connection.OpenAsync();
 
         await connection.ExecuteAsync($"CREATE SCHEMA IF NOT EXISTS {Options.Schema}");
 
-        var migrationSql = await LoadMigrationFromFile();
-        var content = $"SET search_path TO {Options.Schema}, public;\n\n{migrationSql}";
+        string migrationSql = await LoadMigrationFromFile();
+        string content = $"SET search_path TO {Options.Schema}, public;\n\n{migrationSql}";
         await connection.ExecuteAsync(content);
         await VerifySchemaSetup();
     }
 
     private async Task VerifySchemaSetup()
     {
-        await using var connection = new NpgsqlConnection(Options.ConnectionString);
+        await using NpgsqlConnection connection = new(Options.ConnectionString);
         await connection.OpenAsync();
 
         // Verify table exists in correct schema
-        var tableExists = await connection.QuerySingleAsync<bool>(
+        bool tableExists = await connection.QuerySingleAsync<bool>(
             @"
         SELECT EXISTS (
             SELECT 1 FROM information_schema.tables 
             WHERE table_schema = @Schema AND table_name = 'events'
         )",
-            new
-            {
-                Options.Schema
-            });
+            new { Options.Schema });
 
         if (!tableExists)
             throw new InvalidOperationException($"Events table not found in schema '{Options.Schema}'");
 
         // Verify indexes exist
-        var indexCount = await connection.QuerySingleAsync<int>(
+        int indexCount = await connection.QuerySingleAsync<int>(
             @"
         SELECT COUNT(*) 
         FROM pg_indexes 
         WHERE schemaname = @Schema AND tablename = 'events'",
-            new
-            {
-                Options.Schema
-            });
+            new { Options.Schema });
 
         Console.WriteLine($"Created {indexCount} indexes in schema '{Options.Schema}'");
     }
@@ -197,8 +182,8 @@ public class PostgresTestFixture : IAsyncLifetime
     private async Task<string> LoadMigrationFromFile()
     {
         // Get the solution directory by going up from the test project
-        var currentDirectory = AppContext.BaseDirectory;
-        var solutionDirectory = Directory.GetParent(currentDirectory);
+        string currentDirectory = AppContext.BaseDirectory;
+        DirectoryInfo? solutionDirectory = Directory.GetParent(currentDirectory);
 
         // Navigate up until we find the solution root (contains Alberto.EventStore.Postgres folder)
         while (solutionDirectory != null
@@ -209,7 +194,7 @@ public class PostgresTestFixture : IAsyncLifetime
             throw new DirectoryNotFoundException(
                 "Could not locate the solution root directory containing Alberto.EventStore.Postgres");
 
-        var migrationPath = Path.Combine(
+        string migrationPath = Path.Combine(
             solutionDirectory.FullName,
             "Alberto.EventStore.Postgres",
             "Migrations",

@@ -2,10 +2,10 @@ using System.Data;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
-using Dapper;
 using Alberto.EventStore.Events;
 using Alberto.EventStore.Exceptions;
 using Alberto.EventStore.MultiTenant;
+using Dapper;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -29,13 +29,13 @@ public class PostgresEventStoreBackend(
         int? maxCount = null,
         CancellationToken cancellationToken = default)
     {
-        await using var connection = new NpgsqlConnection(_connectionString);
+        await using NpgsqlConnection connection = new(_connectionString);
         await connection.OpenAsync(cancellationToken);
 
-        var (sql, parameters) = BuildStreamQuery(tenant, query, maxCount);
+        (string sql, DynamicParameters parameters) = BuildStreamQuery(tenant, query, maxCount);
 
         // Execute query directly with Dapper - no prepared statement caching
-        var events = await connection.QueryAsync<EventRecord>(sql, parameters);
+        IEnumerable<EventRecord> events = await connection.QueryAsync<EventRecord>(sql, parameters);
         return events.Select(MapToEventWithMeta).ToList();
     }
 
@@ -46,13 +46,13 @@ public class PostgresEventStoreBackend(
         Guid? expectedLastEventId,
         CancellationToken cancellationToken = default)
     {
-        var eventsList = events.ToList();
+        List<IEventToPersist> eventsList = events.ToList();
         if (eventsList.Count == 0)
             return [];
 
         try
         {
-            var ambientContext = TransactionContext.Current;
+            TransactionContext? ambientContext = TransactionContext.Current;
             if (ambientContext != null)
                 return await ExecuteInAmbientTransaction(
                     tenant,
@@ -84,10 +84,10 @@ public class PostgresEventStoreBackend(
         TransactionContext ambientContext,
         CancellationToken cancellationToken)
     {
-        var connection = ambientContext.Connection;
-        var transaction = ambientContext.Transaction;
+        NpgsqlConnection connection = ambientContext.Connection;
+        NpgsqlTransaction transaction = ambientContext.Transaction;
 
-        var positions = eventsList.Count >= _bulkInsertThreshold
+        List<long>? positions = eventsList.Count >= _bulkInsertThreshold
             ? await BulkInsertEventsWithConsistencyCheck(
                 eventsList,
                 tenant.Id,
@@ -108,7 +108,7 @@ public class PostgresEventStoreBackend(
         if (positions == null)
             throw new ConcurrencyConflictException("Consistency boundary has been modified by another process");
 
-        var insertedEvents = CreateInsertedEvents(eventsList, positions);
+        IEnumerable<IEventEnvelope> insertedEvents = CreateInsertedEvents(eventsList, positions);
         return insertedEvents;
     }
 
@@ -119,19 +119,19 @@ public class PostgresEventStoreBackend(
         Guid? expectedLastEventId,
         CancellationToken cancellationToken)
     {
-        await using var connection = new NpgsqlConnection(_connectionString);
+        await using NpgsqlConnection connection = new(_connectionString);
         await connection.OpenAsync(cancellationToken);
 
-        await using var transaction =
+        await using NpgsqlTransaction transaction =
             await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
 
         try
         {
-            using var transactionScope = new TransactionContext(connection, transaction);
+            using TransactionContext transactionScope = new(connection, transaction);
 
             try
             {
-                var result = await ExecuteInAmbientTransaction(
+                IEnumerable<IEventEnvelope> result = await ExecuteInAmbientTransaction(
                     tenant,
                     eventsList,
                     consistencyBoundary,
@@ -166,16 +166,16 @@ public class PostgresEventStoreBackend(
 
     private (string sql, DynamicParameters parameters) BuildStreamQuery(Tenant tenant, StreamQuery query, int? maxCount)
     {
-        var sql = new StringBuilder(
+        StringBuilder sql = new(
             $@"
             SELECT position, id, tenant_id, event_type, data as event_data, metadata, created_at
             FROM {_eventsTable}
             WHERE tenant_id = @TenantId");
 
-        var parameters = new DynamicParameters();
+        DynamicParameters parameters = new();
         parameters.Add("TenantId", tenant.Id);
 
-        var conditions = BuildQueryConditions(query, parameters);
+        List<string> conditions = BuildQueryConditions(query, parameters);
         if (conditions.Count > 0)
             sql.Append(" AND (").Append(string.Join(" AND ", conditions)).Append(')');
 
@@ -193,13 +193,13 @@ public class PostgresEventStoreBackend(
 
     private List<string> BuildQueryConditions(StreamQuery query, DynamicParameters parameters)
     {
-        var conditions = new List<string>();
-        var paramIndex = parameters.ParameterNames.Count();
+        List<string> conditions = new();
+        int paramIndex = parameters.ParameterNames.Count();
 
         if (query.Tags.Count > 0)
         {
-            var tags = query.Tags.Select(di => di.ToString()).ToArray();
-            var op = query.RequireAllTags ? "@>" : "&&";
+            string[] tags = query.Tags.Select(di => di.ToString()).ToArray();
+            string op = query.RequireAllTags ? "@>" : "&&";
             parameters.Add($"tags{paramIndex}", tags);
             conditions.Add($"tags {op} @tags{paramIndex}");
             paramIndex++;
@@ -207,7 +207,7 @@ public class PostgresEventStoreBackend(
 
         if (query.EventTypes.Count > 0)
         {
-            var eventTypes = query.EventTypes.Select(et => et.Id).ToArray();
+            string[] eventTypes = query.EventTypes.Select(et => et.Id).ToArray();
             if (query.RequireAllEventTypes)
             {
                 // For single events, requiring ALL event types only makes sense if there's one type
@@ -250,14 +250,14 @@ public class PostgresEventStoreBackend(
         Guid? expectedLastEventId,
         CancellationToken cancellationToken)
     {
-        var valuesClauses = new List<string>();
-        var parameters = new DynamicParameters();
+        List<string> valuesClauses = new();
+        DynamicParameters parameters = new();
         parameters.Add("TenantId", tenantId);
 
-        for (var i = 0; i < eventsList.Count; i++)
+        for (int i = 0; i < eventsList.Count; i++)
         {
-            var evt = eventsList[i];
-            var enhancedMetadata = EnhanceMetadataWithTraceContext(evt.Metadata);
+            IEventToPersist evt = eventsList[i];
+            Dictionary<string, string> enhancedMetadata = EnhanceMetadataWithTraceContext(evt.Metadata);
             valuesClauses.Add(
                 $"(@Id{i}, @TenantId, @EventType{i}, @Tags{i}, @Data{i}::jsonb, @Metadata{i}::jsonb, @CreatedAt{i})");
 
@@ -272,12 +272,12 @@ public class PostgresEventStoreBackend(
         string sql;
         if (consistencyBoundary != null)
         {
-            var (consistencyConditions, consistencyParams) = BuildConsistencyConditions(
+            (string consistencyConditions, DynamicParameters consistencyParams) = BuildConsistencyConditions(
                 consistencyBoundary,
                 expectedLastEventId,
                 tenantId);
 
-            foreach (var param in consistencyParams.ParameterNames)
+            foreach (string param in consistencyParams.ParameterNames)
                 parameters.Add(param, consistencyParams.Get<object>(param));
 
             sql = $@"
@@ -320,18 +320,18 @@ public class PostgresEventStoreBackend(
         try
         {
             logger.LogDebug("Executing bulk insert with consistency check: {Sql}", sql);
-            var results = await connection.QueryAsync(sql, parameters, transaction);
-            var resultsList = results.ToList();
+            IEnumerable<dynamic> results = await connection.QueryAsync(sql, parameters, transaction);
+            List<dynamic> resultsList = results.ToList();
 
             // Check if there were conflicts
-            var firstResult = resultsList.FirstOrDefault();
+            dynamic? firstResult = resultsList.FirstOrDefault();
             if (firstResult != null && (int)firstResult!.conflicts == 1)
             {
                 logger.LogDebug("Consistency boundary conflict detected in bulk insert");
                 return null;
             }
 
-            var positions = resultsList.Where(r => r.position != null).Select(r => (long)r.position).ToList();
+            List<long> positions = resultsList.Where(r => r.position != null).Select(r => (long)r.position).ToList();
             return positions;
         }
         catch (Exception ex)
@@ -357,11 +357,11 @@ public class PostgresEventStoreBackend(
         Guid? expectedLastEventId,
         CancellationToken cancellationToken)
     {
-        var positions = new List<long>();
+        List<long> positions = new();
 
-        foreach (var @event in eventsList)
+        foreach (IEventToPersist @event in eventsList)
         {
-            var position = await InsertSingleEventWithConsistencyCheck(
+            long? position = await InsertSingleEventWithConsistencyCheck(
                 @event,
                 tenantId,
                 connection,
@@ -393,9 +393,9 @@ public class PostgresEventStoreBackend(
         Guid? expectedLastEventId,
         CancellationToken cancellationToken)
     {
-        var enhancedMetadata = EnhanceMetadataWithTraceContext(@event.Metadata);
+        Dictionary<string, string> enhancedMetadata = EnhanceMetadataWithTraceContext(@event.Metadata);
 
-        var parameters = new DynamicParameters();
+        DynamicParameters parameters = new();
         parameters.Add("Id", @event.Id);
         parameters.Add("TenantId", tenantId);
         parameters.Add("EventType", @event.EventType.Id);
@@ -407,12 +407,12 @@ public class PostgresEventStoreBackend(
         string sql;
         if (consistencyBoundary != null)
         {
-            var (consistencyConditions, consistencyParams) = BuildConsistencyConditions(
+            (string consistencyConditions, DynamicParameters consistencyParams) = BuildConsistencyConditions(
                 consistencyBoundary,
                 expectedLastEventId,
                 tenantId);
 
-            foreach (var param in consistencyParams.ParameterNames)
+            foreach (string param in consistencyParams.ParameterNames)
                 parameters.Add(param, consistencyParams.Get<object>(param));
 
             sql = $@"
@@ -452,7 +452,7 @@ public class PostgresEventStoreBackend(
         {
             if (consistencyBoundary != null)
             {
-                var result = await connection.QuerySingleOrDefaultAsync(sql, parameters, transaction);
+                dynamic? result = await connection.QuerySingleOrDefaultAsync(sql, parameters, transaction);
                 if (result != null && (int)result!.conflicts == 1)
                     return null;
 
@@ -472,8 +472,8 @@ public class PostgresEventStoreBackend(
         Guid? expectedLastEventId,
         string tenantId)
     {
-        var conditions = new List<string>();
-        var parameters = new DynamicParameters();
+        List<string> conditions = new();
+        DynamicParameters parameters = new();
 
         conditions.Add("tenant_id = @TenantId");
         parameters.Add("TenantId", tenantId);
@@ -495,8 +495,8 @@ public class PostgresEventStoreBackend(
         // Add domain identifier conditions
         if (query.Tags.Count > 0)
         {
-            var tags = query.Tags.Select(di => di.ToString()).ToArray();
-            var op = query.RequireAllTags ? "@>" : "&&";
+            string[] tags = query.Tags.Select(di => di.ToString()).ToArray();
+            string op = query.RequireAllTags ? "@>" : "&&";
             parameters.Add("CheckTags", tags);
             conditions.Add($"tags {op} @CheckTags");
         }
@@ -504,7 +504,7 @@ public class PostgresEventStoreBackend(
         // Add event type conditions
         if (query.EventTypes.Count > 0)
         {
-            var eventTypes = query.EventTypes.Select(et => et.Id).ToArray();
+            string[] eventTypes = query.EventTypes.Select(et => et.Id).ToArray();
             if (query.RequireAllEventTypes)
             {
                 // For single events, requiring ALL event types only makes sense if there's one type
@@ -541,10 +541,10 @@ public class PostgresEventStoreBackend(
     private static Dictionary<string, string> EnhanceMetadataWithTraceContext(
         IReadOnlyDictionary<string, string> originalMetadata)
     {
-        var enhancedMetadata = new Dictionary<string, string>(originalMetadata);
+        Dictionary<string, string> enhancedMetadata = new(originalMetadata);
 
         // Capture current trace context
-        var currentActivity = Activity.Current;
+        Activity? currentActivity = Activity.Current;
         if (currentActivity != null)
         {
             enhancedMetadata["traceparent"] = currentActivity.Id ?? "";
@@ -561,7 +561,7 @@ public class PostgresEventStoreBackend(
             positions,
             IEventEnvelope (eventToPersist, _) =>
             {
-                var metadata = new Dictionary<string, string>(eventToPersist.Metadata);
+                Dictionary<string, string> metadata = new(eventToPersist.Metadata);
 
                 return new EventEnvelope
                 {
@@ -576,12 +576,12 @@ public class PostgresEventStoreBackend(
 
     private static ActivityContext? ExtractTraceContextFromMetadata(IReadOnlyDictionary<string, string> metadata)
     {
-        if (!metadata.TryGetValue("traceparent", out var traceParent) || string.IsNullOrEmpty(traceParent))
+        if (!metadata.TryGetValue("traceparent", out string? traceParent) || string.IsNullOrEmpty(traceParent))
             return null;
 
-        metadata.TryGetValue("tracestate", out var traceState);
+        metadata.TryGetValue("tracestate", out string? traceState);
 
-        if (ActivityContext.TryParse(traceParent, traceState, out var context))
+        if (ActivityContext.TryParse(traceParent, traceState, out ActivityContext context))
             return context;
 
         return null;
@@ -589,15 +589,15 @@ public class PostgresEventStoreBackend(
 
     private static IEventEnvelope MapToEventWithMeta(EventRecord record)
     {
-        var metadata = string.IsNullOrEmpty(record.metadata)
+        Dictionary<string, string> metadata = string.IsNullOrEmpty(record.metadata)
             ? new Dictionary<string, string>()
             : JsonSerializer.Deserialize<Dictionary<string, string>>(record.metadata)
-            ?? new Dictionary<string, string>();
+              ?? new Dictionary<string, string>();
 
         metadata["_position"] = record.position.ToString();
 
         // Extract trace context for potential restoration
-        var traceContext = ExtractTraceContextFromMetadata(metadata);
+        ActivityContext? traceContext = ExtractTraceContextFromMetadata(metadata);
         if (traceContext.HasValue)
             metadata["_trace_context"] = "available"; // Flag that trace context is available
 
@@ -628,7 +628,8 @@ public class PostgresEventStoreBackend(
 
 public class TransactionContext : IDisposable
 {
-    private static readonly AsyncLocal<TransactionContext?> _current = new AsyncLocal<TransactionContext?>();
+    // ReSharper disable once InconsistentNaming
+    private static readonly AsyncLocal<TransactionContext?> _current = new();
 
     public TransactionContext(NpgsqlConnection connection, NpgsqlTransaction transaction)
     {

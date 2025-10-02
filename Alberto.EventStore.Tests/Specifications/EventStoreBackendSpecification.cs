@@ -1,4 +1,3 @@
-using Alberto.EventStore;
 using Alberto.EventStore.Events;
 using Alberto.EventStore.Exceptions;
 using Alberto.EventStore.MultiTenant;
@@ -8,8 +7,8 @@ using Xunit;
 namespace Alberto.EventStore.Tests.Specifications;
 
 /// <summary>
-/// Specification tests for IEventStoreBackend implementations
-/// These tests define the contract that all implementations must follow
+///     Specification tests for IEventStoreBackend implementations
+///     These tests define the contract that all implementations must follow
 /// </summary>
 public abstract class EventStoreBackendSpecification : AdvancedQueryTests
 {
@@ -17,43 +16,49 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
         new FakeTimeProvider(new DateTimeOffset(2025, 3, 21, 11, 47, 12, TimeSpan.FromHours(5)));
 
     /// <summary>
-    /// Factory method to create the backend under test
-    /// Must be implemented by each concrete test class
+    ///     Factory method to create the backend under test
+    ///     Must be implemented by each concrete test class
     /// </summary>
-    protected override abstract Task<IEventStoreBackend> CreateBackend();
+    protected abstract override Task<IEventStoreBackend> CreateBackend();
 
-    protected override abstract Tenant CurrentTenant();
-
-    /// <summary>
-    /// Setup method called before each test
-    /// Override in concrete classes if needed
-    /// </summary>
-    protected override Task SetupAsync() => Task.CompletedTask;
+    protected abstract override Tenant CurrentTenant();
 
     /// <summary>
-    /// Cleanup method called after each test
-    /// Override in concrete classes if needed
+    ///     Setup method called before each test
+    ///     Override in concrete classes if needed
     /// </summary>
-    protected override Task CleanupAsync() => Task.CompletedTask;
+    protected override Task SetupAsync()
+    {
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    ///     Cleanup method called after each test
+    ///     Override in concrete classes if needed
+    /// </summary>
+    protected override Task CleanupAsync()
+    {
+        return Task.CompletedTask;
+    }
 
     [Fact]
     public async Task Append_SingleEvent_ShouldSucceed()
     {
         // Arrange
         await SetupAsync();
-        var backend = await CreateBackend();
-        var eventToPersist = CreateTestEvent("test-event", "order:123");
+        IEventStoreBackend backend = await CreateBackend();
+        IEventToPersist eventToPersist = CreateTestEvent("test-event", "order:123");
 
         // Act
-        var result = await backend.Append(
+        IEnumerable<IEventEnvelope> result = await backend.Append(
             CurrentTenant(),
             [eventToPersist],
-            consistencyBoundary: null,
-            expectedLastEventId: null,
-            cancellationToken: TestContext.Current.CancellationToken);
+            null,
+            null,
+            TestContext.Current.CancellationToken);
 
         // Assert
-        var returnedEvent = result.First();
+        IEventEnvelope returnedEvent = result.First();
         Assert.Equal(eventToPersist.Id, returnedEvent.Id);
         Assert.Equal(eventToPersist.EventType, returnedEvent.EventType);
 
@@ -65,22 +70,20 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        var backend = await CreateBackend();
-        var events = new[]
+        IEventStoreBackend backend = await CreateBackend();
+        IEventToPersist[] events = new[]
         {
             CreateTestEvent("event-a", "order:123"), CreateTestEvent("event-b", "order:123"),
             CreateTestEvent("event-c", "order:123")
         };
 
         // Act
-        var result = await backend.Append(CurrentTenant(), events, null, null, TestContext.Current.CancellationToken);
+        IEnumerable<IEventEnvelope> result =
+            await backend.Append(CurrentTenant(), events, null, null, TestContext.Current.CancellationToken);
 
         // Assert
-        var returnedEvents = result.ToList();
-        for (var i = 0; i < events.Length; i++)
-        {
-            Assert.Equal(events[i].Id, returnedEvents[i].Id);
-        }
+        List<IEventEnvelope> returnedEvents = result.ToList();
+        for (int i = 0; i < events.Length; i++) Assert.Equal(events[i].Id, returnedEvents[i].Id);
 
         await CleanupAsync();
     }
@@ -90,18 +93,21 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        var backend = await CreateBackend();
-        var eventToPersist = CreateTestEvent("test-event", "order:123");
+        IEventStoreBackend backend = await CreateBackend();
+        IEventToPersist eventToPersist = CreateTestEvent("test-event", "order:123");
 
         // Act
         await backend.Append(CurrentTenant(), [eventToPersist], null, null, TestContext.Current.CancellationToken);
 
-        Task Result() => backend.Append(
-            CurrentTenant(),
-            [eventToPersist],
-            null,
-            null,
-            TestContext.Current.CancellationToken);
+        Task Result()
+        {
+            return backend.Append(
+                CurrentTenant(),
+                [eventToPersist],
+                null,
+                null,
+                TestContext.Current.CancellationToken);
+        }
 
         // Assert
         await Assert.ThrowsAsync<ConcurrencyConflictException>(Result);
@@ -114,11 +120,11 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        var backend = await CreateBackend();
-        var query = new StreamQuery().WithTags(EventTag.Parse("order:123"));
+        IEventStoreBackend backend = await CreateBackend();
+        StreamQuery query = new StreamQuery().WithTags(EventTag.Parse("order:123"));
 
         // Act
-        var result = await backend.Stream(
+        IReadOnlyCollection<IEventEnvelope> result = await backend.Stream(
             CurrentTenant(),
             query,
             cancellationToken: TestContext.Current.CancellationToken);
@@ -134,22 +140,22 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        var backend = await CreateBackend();
+        IEventStoreBackend backend = await CreateBackend();
 
-        var orderEvents = new[]
+        IEventToPersist[] orderEvents = new[]
         {
             CreateTestEvent("order-created", "order:123"), CreateTestEvent("item-added", "order:123", "product:456")
         };
 
-        var customerEvent = CreateTestEvent("customer-updated", "customer:789");
+        IEventToPersist customerEvent = CreateTestEvent("customer-updated", "customer:789");
 
         await backend.Append(CurrentTenant(), orderEvents, null, null, TestContext.Current.CancellationToken);
         await backend.Append(CurrentTenant(), [customerEvent], null, null, TestContext.Current.CancellationToken);
 
-        var query = new StreamQuery().WithTags(EventTag.Parse("order:123"));
+        StreamQuery query = new StreamQuery().WithTags(EventTag.Parse("order:123"));
 
         // Act
-        var result = await backend.Stream(
+        IReadOnlyCollection<IEventEnvelope> result = await backend.Stream(
             CurrentTenant(),
             query,
             cancellationToken: TestContext.Current.CancellationToken);
@@ -165,9 +171,9 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        var backend = await CreateBackend();
+        IEventStoreBackend backend = await CreateBackend();
 
-        var events = new[]
+        IEventToPersist[] events = new[]
         {
             CreateTestEvent("order-created", "order:123"), CreateTestEvent("order-updated", "order:123"),
             CreateTestEvent("item-added", "order:123")
@@ -175,10 +181,10 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
 
         await backend.Append(CurrentTenant(), events, null, null, TestContext.Current.CancellationToken);
 
-        var query = new StreamQuery().WithEventTypes(new EventType("order-created"));
+        StreamQuery query = new StreamQuery().WithEventTypes(new EventType("order-created"));
 
         // Act
-        var result = await backend.Stream(
+        IReadOnlyCollection<IEventEnvelope> result = await backend.Stream(
             CurrentTenant(),
             query,
             cancellationToken: TestContext.Current.CancellationToken);
@@ -195,9 +201,9 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        var backend = await CreateBackend();
+        IEventStoreBackend backend = await CreateBackend();
 
-        var events = new[]
+        IEventToPersist[] events = new[]
         {
             CreateTestEvent("event-a", "order:123"), CreateTestEvent("event-b", "order:123"),
             CreateTestEvent("event-c", "order:123"), CreateTestEvent("event-d", "order:123"),
@@ -206,14 +212,14 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
 
         await backend.Append(CurrentTenant(), events, null, null, TestContext.Current.CancellationToken);
 
-        var query = new StreamQuery().WithTags(EventTag.Parse("order:123"));
+        StreamQuery query = new StreamQuery().WithTags(EventTag.Parse("order:123"));
 
         // Act
-        var result = await backend.Stream(
+        IReadOnlyCollection<IEventEnvelope> result = await backend.Stream(
             CurrentTenant(),
             query,
-            maxCount: 3,
-            cancellationToken: TestContext.Current.CancellationToken);
+            3,
+            TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(3, result.Count);
@@ -226,22 +232,22 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        var backend = await CreateBackend();
+        IEventStoreBackend backend = await CreateBackend();
 
-        var initialEvent = CreateTestEvent("initial-event", "order:123");
-        var initialResult = await backend.Append(
+        IEventToPersist initialEvent = CreateTestEvent("initial-event", "order:123");
+        IEnumerable<IEventEnvelope> initialResult = await backend.Append(
             CurrentTenant(),
             [initialEvent],
             null,
             null,
             TestContext.Current.CancellationToken);
 
-        var query = new StreamQuery().WithTags(EventTag.Parse("order:123"));
+        StreamQuery query = new StreamQuery().WithTags(EventTag.Parse("order:123"));
 
-        var newEvent = CreateTestEvent("new-event", "order:123");
+        IEventToPersist newEvent = CreateTestEvent("new-event", "order:123");
 
         // Act
-        var result = await backend.Append(
+        IEnumerable<IEventEnvelope> result = await backend.Append(
             CurrentTenant(),
             [newEvent],
             query,
@@ -259,27 +265,29 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        var backend = await CreateBackend();
+        IEventStoreBackend backend = await CreateBackend();
 
-        var initialEvent = CreateTestEvent("initial-event", "order:123");
+        IEventToPersist initialEvent = CreateTestEvent("initial-event", "order:123");
         await backend.Append(CurrentTenant(), [initialEvent], null, null, TestContext.Current.CancellationToken);
 
         // Add another event to create a conflict
-        var conflictingEvent = CreateTestEvent("conflicting-event", "order:123");
+        IEventToPersist conflictingEvent = CreateTestEvent("conflicting-event", "order:123");
         await backend.Append(CurrentTenant(), [conflictingEvent], null, null, TestContext.Current.CancellationToken);
 
-        var query = new StreamQuery().WithTags(EventTag.Parse("order:123"));
+        StreamQuery query = new StreamQuery().WithTags(EventTag.Parse("order:123"));
 
-        var newEvent = CreateTestEvent("new-event", "order:123");
+        IEventToPersist newEvent = CreateTestEvent("new-event", "order:123");
 
         // Act - expect the initial event but there's now a conflicting event
-        Task Result() =>
-            backend.Append(
+        Task Result()
+        {
+            return backend.Append(
                 CurrentTenant(),
                 [newEvent],
                 query,
                 initialEvent.Id,
                 TestContext.Current.CancellationToken);
+        }
 
         // Assert
         await Assert.ThrowsAsync<ConcurrencyConflictException>(Result); // concurrency conflict expected
@@ -292,23 +300,25 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        var backend = await CreateBackend();
+        IEventStoreBackend backend = await CreateBackend();
 
-        var existingEvent = CreateTestEvent("existing-event", "order:123");
+        IEventToPersist existingEvent = CreateTestEvent("existing-event", "order:123");
         await backend.Append(CurrentTenant(), [existingEvent], null, null, TestContext.Current.CancellationToken);
 
-        var query = new StreamQuery().WithTags(EventTag.Parse("order:123"));
+        StreamQuery query = new StreamQuery().WithTags(EventTag.Parse("order:123"));
 
-        var newEvent = CreateTestEvent("new-event", "order:123");
+        IEventToPersist newEvent = CreateTestEvent("new-event", "order:123");
 
         // Act - expect no events but there are existing events
-        Task Result() =>
-            backend.Append(
+        Task Result()
+        {
+            return backend.Append(
                 CurrentTenant(),
                 [newEvent],
                 query,
-                expectedLastEventId: null,
-                cancellationToken: TestContext.Current.CancellationToken);
+                null,
+                TestContext.Current.CancellationToken);
+        }
 
         // Assert
         await Assert.ThrowsAsync<ConcurrencyConflictException>(Result); // concurrency conflict expected
@@ -321,9 +331,9 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        var backend = await CreateBackend();
+        IEventStoreBackend backend = await CreateBackend();
 
-        var events = new[]
+        IEventToPersist[] events = new[]
         {
             CreateTestEvent("event-a", "order:123"), CreateTestEvent("event-b", "order:123", "product:456"),
             CreateTestEvent("event-c", "product:456")
@@ -331,12 +341,12 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
 
         await backend.Append(CurrentTenant(), events, null, null, TestContext.Current.CancellationToken);
 
-        var query = new StreamQuery()
+        StreamQuery query = new StreamQuery()
             .WithTags(EventTag.Parse("order:123"), EventTag.Parse("product:456"))
             .RequiringAllTags();
 
         // Act
-        var result = await backend.Stream(
+        IReadOnlyCollection<IEventEnvelope> result = await backend.Stream(
             CurrentTenant(),
             query,
             cancellationToken: TestContext.Current.CancellationToken);
@@ -353,31 +363,30 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        var backend = await CreateBackend();
+        IEventStoreBackend backend = await CreateBackend();
 
-        var metadata = new Dictionary<string, string>
+        Dictionary<string, string> metadata = new()
         {
-            ["correlation-id"] = "correlation-123",
-            ["user-id"] = "user-456"
+            ["correlation-id"] = "correlation-123", ["user-id"] = "user-456"
         };
 
-        var eventToPersist = CreateTestEvent("test-event", metadata: metadata, "order:123");
+        IEventToPersist eventToPersist = CreateTestEvent("test-event", metadata, "order:123");
 
         // Act
-        var appendResult = await backend.Append(
+        IEnumerable<IEventEnvelope> appendResult = await backend.Append(
             CurrentTenant(),
             [eventToPersist],
             null,
             null,
             TestContext.Current.CancellationToken);
 
-        var streamResult = await backend.Stream(
+        IReadOnlyCollection<IEventEnvelope> streamResult = await backend.Stream(
             CurrentTenant(),
             new StreamQuery().WithTags(EventTag.Parse("order:123")),
             cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
-        var returnedEvent = streamResult.First();
+        IEventEnvelope returnedEvent = streamResult.First();
         Assert.Equal("correlation-123", returnedEvent.Metadata["correlation-id"]);
         Assert.Equal("user-456", returnedEvent.Metadata["user-id"]);
 
@@ -389,25 +398,25 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        var backend = await CreateBackend();
+        IEventStoreBackend backend = await CreateBackend();
 
-        var events = new[]
+        IEventToPersist[] events = new[]
         {
-            CreateTestEvent("event-c", "order:123"),
-            CreateTestEvent("event-a", "order:123"),
+            CreateTestEvent("event-c", "order:123"), CreateTestEvent("event-a", "order:123"),
             CreateTestEvent("event-b", "order:123")
         };
 
         // Act - append events in one batch
-        var appendResult = await backend.Append(CurrentTenant(), events, null, null, TestContext.Current.CancellationToken);
+        IEnumerable<IEventEnvelope> appendResult =
+            await backend.Append(CurrentTenant(), events, null, null, TestContext.Current.CancellationToken);
 
-        var streamResult = await backend.Stream(
+        IReadOnlyCollection<IEventEnvelope> streamResult = await backend.Stream(
             CurrentTenant(),
             new StreamQuery().WithTags(EventTag.Parse("order:123")),
             cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert - events should be ordered by position (append order), not event type
-        var resultList = streamResult.ToList();
+        List<IEventEnvelope> resultList = streamResult.ToList();
         Assert.Equal(3, resultList.Count);
         Assert.Equal("event-c", resultList[0].EventType.Id);
         Assert.Equal("event-a", resultList[1].EventType.Id);
@@ -421,38 +430,35 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        var backend = await CreateBackend();
+        IEventStoreBackend backend = await CreateBackend();
 
-        var events = new[]
+        IEventToPersist[] events = new[]
         {
-            CreateTestEvent("event-a", "order:123"),
-            CreateTestEvent("event-b", "order:123"),
+            CreateTestEvent("event-a", "order:123"), CreateTestEvent("event-b", "order:123"),
             CreateTestEvent("event-c", "order:123")
         };
 
         // Act
         await backend.Append(CurrentTenant(), events, null, null, TestContext.Current.CancellationToken);
 
-        var result = await backend.Stream(
+        IReadOnlyCollection<IEventEnvelope> result = await backend.Stream(
             CurrentTenant(),
             new StreamQuery().WithTags(EventTag.Parse("order:123")),
             cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert - positions should be monotonically increasing
-        var resultList = result.ToList();
+        List<IEventEnvelope> resultList = result.ToList();
         long? previousPosition = null;
 
-        foreach (var eventEnvelope in resultList)
+        foreach (IEventEnvelope eventEnvelope in resultList)
         {
             Assert.True(eventEnvelope.Metadata.ContainsKey("_position"),
                 $"Event {eventEnvelope.EventType.Id} missing _position metadata. Available keys: {string.Join(", ", eventEnvelope.Metadata.Keys)}");
-            var currentPosition = long.Parse(eventEnvelope.Metadata["_position"]);
+            long currentPosition = long.Parse(eventEnvelope.Metadata["_position"]);
 
             if (previousPosition.HasValue)
-            {
                 Assert.True(currentPosition > previousPosition.Value,
                     $"Position {currentPosition} should be greater than {previousPosition.Value} for event {eventEnvelope.EventType.Id}");
-            }
 
             previousPosition = currentPosition;
         }
@@ -465,12 +471,11 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        var backend = await CreateBackend();
+        IEventStoreBackend backend = await CreateBackend();
 
-        var events = new[]
+        IEventToPersist[] events = new[]
         {
-            CreateTestEvent("event-a", "order:123"),
-            CreateTestEvent("event-b", "order:456"),
+            CreateTestEvent("event-a", "order:123"), CreateTestEvent("event-b", "order:456"),
             CreateTestEvent("event-c", "order:789")
         };
 
@@ -478,24 +483,26 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
         await backend.Append(CurrentTenant(), events, null, null, TestContext.Current.CancellationToken);
 
         // Query each tag separately and combine results to ensure we get all events
-        var results = new List<IEventEnvelope>();
-        foreach (var tag in new[] { "order:123", "order:456", "order:789" })
+        List<IEventEnvelope> results = new();
+        foreach (string tag in new[] { "order:123", "order:456", "order:789" })
         {
-            var tagResult = await backend.Stream(
+            IReadOnlyCollection<IEventEnvelope> tagResult = await backend.Stream(
                 CurrentTenant(),
                 new StreamQuery().WithTags(EventTag.Parse(tag)),
                 cancellationToken: TestContext.Current.CancellationToken);
             results.AddRange(tagResult);
         }
-        var result = results;
+
+        List<IEventEnvelope> result = results;
 
         // Assert - all positions should be unique
-        var positions = result.Select(e => {
+        List<long> positions = result.Select(e =>
+        {
             Assert.True(e.Metadata.ContainsKey("_position"),
                 $"Event {e.EventType.Id} missing _position metadata. Available keys: {string.Join(", ", e.Metadata.Keys)}");
             return long.Parse(e.Metadata["_position"]);
         }).ToList();
-        var uniquePositions = positions.Distinct().ToList();
+        List<long> uniquePositions = positions.Distinct().ToList();
 
         Assert.Equal(positions.Count, uniquePositions.Count);
 
@@ -507,31 +514,29 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        var backend = await CreateBackend();
+        IEventStoreBackend backend = await CreateBackend();
 
-        var events = new[]
+        IEventToPersist[] events = new[]
         {
-            CreateTestEvent("order-created", "order:123"),
-            CreateTestEvent("payment-processed", "order:123"),
-            CreateTestEvent("item-shipped", "order:123"),
-            CreateTestEvent("notification-sent", "order:123")
+            CreateTestEvent("order-created", "order:123"), CreateTestEvent("payment-processed", "order:123"),
+            CreateTestEvent("item-shipped", "order:123"), CreateTestEvent("notification-sent", "order:123")
         };
 
         await backend.Append(CurrentTenant(), events, null, null, TestContext.Current.CancellationToken);
 
-        var query = new StreamQuery()
+        StreamQuery query = new StreamQuery()
             .WithEventTypes(new EventType("order-created"), new EventType("payment-processed"))
             .WithTags(EventTag.Parse("order:123"));
 
         // Act
-        var result = await backend.Stream(
+        IReadOnlyCollection<IEventEnvelope> result = await backend.Stream(
             CurrentTenant(),
             query,
             cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert - should return events matching any of the specified types
         Assert.Equal(2, result.Count);
-        var eventTypes = result.Select(e => e.EventType.Id).ToList();
+        List<string> eventTypes = result.Select(e => e.EventType.Id).ToList();
         Assert.Contains("order-created", eventTypes);
         Assert.Contains("payment-processed", eventTypes);
         Assert.DoesNotContain("item-shipped", eventTypes);
@@ -545,28 +550,27 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        var backend = await CreateBackend();
+        IEventStoreBackend backend = await CreateBackend();
 
-        var events = new[]
+        IEventToPersist[] events = new[]
         {
-            CreateTestEvent("order-created", "order:123"),
-            CreateTestEvent("payment-processed", "order:123"),
+            CreateTestEvent("order-created", "order:123"), CreateTestEvent("payment-processed", "order:123"),
             CreateTestEvent("item-shipped", "order:123")
         };
 
         await backend.Append(CurrentTenant(), events, null, null, TestContext.Current.CancellationToken);
 
-        var query = new StreamQuery().WithTags(EventTag.Parse("order:123")); // No event type filter
+        StreamQuery query = new StreamQuery().WithTags(EventTag.Parse("order:123")); // No event type filter
 
         // Act
-        var result = await backend.Stream(
+        IReadOnlyCollection<IEventEnvelope> result = await backend.Stream(
             CurrentTenant(),
             query,
             cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert - should return all events when no event type filter is specified
         Assert.Equal(3, result.Count);
-        var eventTypes = result.Select(e => e.EventType.Id).ToList();
+        List<string> eventTypes = result.Select(e => e.EventType.Id).ToList();
         Assert.Contains("order-created", eventTypes);
         Assert.Contains("payment-processed", eventTypes);
         Assert.Contains("item-shipped", eventTypes);
@@ -579,18 +583,18 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        var backend = await CreateBackend();
+        IEventStoreBackend backend = await CreateBackend();
 
-        var query = new StreamQuery().WithTags(EventTag.Parse("order:123"));
-        var newEvent = CreateTestEvent("initial-event", "order:123");
+        StreamQuery query = new StreamQuery().WithTags(EventTag.Parse("order:123"));
+        IEventToPersist newEvent = CreateTestEvent("initial-event", "order:123");
 
         // Act - expect no events and there are none
-        var result = await backend.Append(
+        IEnumerable<IEventEnvelope> result = await backend.Append(
             CurrentTenant(),
             [newEvent],
             query,
-            expectedLastEventId: null,
-            cancellationToken: TestContext.Current.CancellationToken);
+            null,
+            TestContext.Current.CancellationToken);
 
         // Assert
         Assert.NotEmpty(result);
@@ -603,21 +607,21 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        var backend = await CreateBackend();
+        IEventStoreBackend backend = await CreateBackend();
 
         // Create events in different streams
-        var orderEvent = CreateTestEvent("order-created", "order:123");
-        var paymentEvent = CreateTestEvent("payment-processed", "payment:456");
+        IEventToPersist orderEvent = CreateTestEvent("order-created", "order:123");
+        IEventToPersist paymentEvent = CreateTestEvent("payment-processed", "payment:456");
 
         await backend.Append(CurrentTenant(), [orderEvent], null, null, TestContext.Current.CancellationToken);
         await backend.Append(CurrentTenant(), [paymentEvent], null, null, TestContext.Current.CancellationToken);
 
         // Now append with consistency boundary on the order stream only
-        var query = new StreamQuery().WithTags(EventTag.Parse("order:123"));
-        var newEvent = CreateTestEvent("order-updated", "order:123");
+        StreamQuery query = new StreamQuery().WithTags(EventTag.Parse("order:123"));
+        IEventToPersist newEvent = CreateTestEvent("order-updated", "order:123");
 
         // Act
-        var result = await backend.Append(
+        IEnumerable<IEventEnvelope> result = await backend.Append(
             CurrentTenant(),
             [newEvent],
             query,
@@ -628,7 +632,7 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
         Assert.NotEmpty(result);
 
         // Verify the new event was added
-        var streamResult = await backend.Stream(
+        IReadOnlyCollection<IEventEnvelope> streamResult = await backend.Stream(
             CurrentTenant(),
             query,
             cancellationToken: TestContext.Current.CancellationToken);
@@ -642,24 +646,24 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        var backend = await CreateBackend();
+        IEventStoreBackend backend = await CreateBackend();
 
         // Create multiple events in the consistency boundary
-        var initialEvents = new[]
+        IEventToPersist[] initialEvents = new[]
         {
-            CreateTestEvent("order-created", "order:123"),
-            CreateTestEvent("order-confirmed", "order:123"),
+            CreateTestEvent("order-created", "order:123"), CreateTestEvent("order-confirmed", "order:123"),
             CreateTestEvent("payment-processed", "order:123")
         };
 
-        var initialResult = await backend.Append(CurrentTenant(), initialEvents, null, null, TestContext.Current.CancellationToken);
-        var lastEvent = initialResult.Last();
+        IEnumerable<IEventEnvelope> initialResult = await backend.Append(CurrentTenant(), initialEvents, null, null,
+            TestContext.Current.CancellationToken);
+        IEventEnvelope lastEvent = initialResult.Last();
 
-        var query = new StreamQuery().WithTags(EventTag.Parse("order:123"));
-        var newEvent = CreateTestEvent("order-shipped", "order:123");
+        StreamQuery query = new StreamQuery().WithTags(EventTag.Parse("order:123"));
+        IEventToPersist newEvent = CreateTestEvent("order-shipped", "order:123");
 
         // Act - expect the last event from the boundary
-        var result = await backend.Append(
+        IEnumerable<IEventEnvelope> result = await backend.Append(
             CurrentTenant(),
             [newEvent],
             query,
@@ -670,7 +674,7 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
         Assert.NotEmpty(result);
 
         // Verify we now have 4 events
-        var streamResult = await backend.Stream(
+        IReadOnlyCollection<IEventEnvelope> streamResult = await backend.Stream(
             CurrentTenant(),
             query,
             cancellationToken: TestContext.Current.CancellationToken);
@@ -684,26 +688,26 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        var backend = await CreateBackend();
+        IEventStoreBackend backend = await CreateBackend();
 
         // Create events of different types
-        var orderEvent = CreateTestEvent("order-created", "order:123");
-        var paymentEvent = CreateTestEvent("payment-processed", "order:123");
-        var notificationEvent = CreateTestEvent("notification-sent", "order:123");
+        IEventToPersist orderEvent = CreateTestEvent("order-created", "order:123");
+        IEventToPersist paymentEvent = CreateTestEvent("payment-processed", "order:123");
+        IEventToPersist notificationEvent = CreateTestEvent("notification-sent", "order:123");
 
         await backend.Append(CurrentTenant(), [orderEvent], null, null, TestContext.Current.CancellationToken);
         await backend.Append(CurrentTenant(), [paymentEvent], null, null, TestContext.Current.CancellationToken);
         await backend.Append(CurrentTenant(), [notificationEvent], null, null, TestContext.Current.CancellationToken);
 
         // Create consistency boundary that only considers order events
-        var query = new StreamQuery()
+        StreamQuery query = new StreamQuery()
             .WithTags(EventTag.Parse("order:123"))
             .WithEventTypes(new EventType("order-created"));
 
-        var newEvent = CreateTestEvent("order-updated", "order:123");
+        IEventToPersist newEvent = CreateTestEvent("order-updated", "order:123");
 
         // Act - should succeed because the query only looks at order-created events
-        var result = await backend.Append(
+        IEnumerable<IEventEnvelope> result = await backend.Append(
             CurrentTenant(),
             [newEvent],
             query,
@@ -721,23 +725,22 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        var backend = await CreateBackend();
+        IEventStoreBackend backend = await CreateBackend();
 
-        var events = new[]
+        IEventToPersist[] events = new[]
         {
-            CreateTestEvent("order-created", "order:123"),
-            CreateTestEvent("payment-processed", "order:123")
+            CreateTestEvent("order-created", "order:123"), CreateTestEvent("payment-processed", "order:123")
         };
 
         await backend.Append(CurrentTenant(), events, null, null, TestContext.Current.CancellationToken);
 
-        var query = new StreamQuery()
+        StreamQuery query = new StreamQuery()
             .WithTags(EventTag.Parse("order:123"))
             .WithEventTypes(new EventType("order-created"))
             .RequiringAllEventTypes();
 
         // Act
-        var result = await backend.Stream(
+        IReadOnlyCollection<IEventEnvelope> result = await backend.Stream(
             CurrentTenant(),
             query,
             cancellationToken: TestContext.Current.CancellationToken);
@@ -754,23 +757,22 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        var backend = await CreateBackend();
+        IEventStoreBackend backend = await CreateBackend();
 
-        var events = new[]
+        IEventToPersist[] events = new[]
         {
-            CreateTestEvent("order-created", "order:123"),
-            CreateTestEvent("payment-processed", "order:123")
+            CreateTestEvent("order-created", "order:123"), CreateTestEvent("payment-processed", "order:123")
         };
 
         await backend.Append(CurrentTenant(), events, null, null, TestContext.Current.CancellationToken);
 
-        var query = new StreamQuery()
+        StreamQuery query = new StreamQuery()
             .WithTags(EventTag.Parse("order:123"))
             .WithEventTypes(new EventType("order-created"), new EventType("payment-processed"))
             .RequiringAllEventTypes();
 
         // Act
-        var result = await backend.Stream(
+        IReadOnlyCollection<IEventEnvelope> result = await backend.Stream(
             CurrentTenant(),
             query,
             cancellationToken: TestContext.Current.CancellationToken);
@@ -786,9 +788,9 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        var backend = await CreateBackend();
+        IEventStoreBackend backend = await CreateBackend();
 
-        var events = new[]
+        IEventToPersist[] events = new[]
         {
             CreateTestEvent("order-created", "order:123", "customer:456"),
             CreateTestEvent("payment-processed", "order:123", "payment:789"),
@@ -799,13 +801,13 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
         await backend.Append(CurrentTenant(), events, null, null, TestContext.Current.CancellationToken);
 
         // Query for order events that also have customer tag
-        var query = new StreamQuery()
+        StreamQuery query = new StreamQuery()
             .WithTags(EventTag.Parse("order:123"), EventTag.Parse("customer:456"))
             .WithEventTypes(new EventType("order-created"))
             .RequiringAllTags();
 
         // Act
-        var result = await backend.Stream(
+        IReadOnlyCollection<IEventEnvelope> result = await backend.Stream(
             CurrentTenant(),
             query,
             cancellationToken: TestContext.Current.CancellationToken);
@@ -822,20 +824,17 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        var backend = await CreateBackend();
+        IEventStoreBackend backend = await CreateBackend();
 
-        var events = new[]
-        {
-            CreateTestEvent("order-created", "order:123")
-        };
+        IEventToPersist[] events = new[] { CreateTestEvent("order-created", "order:123") };
 
         await backend.Append(CurrentTenant(), events, null, null, TestContext.Current.CancellationToken);
 
         // Create query with no filters (should match nothing due to implementation)
-        var query = new StreamQuery();
+        StreamQuery query = new();
 
         // Act
-        var result = await backend.Stream(
+        IReadOnlyCollection<IEventEnvelope> result = await backend.Stream(
             CurrentTenant(),
             query,
             cancellationToken: TestContext.Current.CancellationToken);
@@ -853,30 +852,34 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        var backend = await CreateBackend();
+        IEventStoreBackend backend = await CreateBackend();
 
         // Act - Simulate concurrent appends from different "clients" (small scale for correctness)
-        var tasks = Enumerable.Range(1, 3).Select(async clientId =>
+        IEnumerable<Task<IEnumerable<IEventEnvelope>>> tasks = Enumerable.Range(1, 3).Select(async clientId =>
         {
-            var clientEvents = Enumerable.Range(1, 5)
-                .Select(i => CreateTestEvent($"client-{ToLetters(clientId)}-event-{ToLetters(i)}", $"client:{ToLetters(clientId)}", "concurrent:test"))
+            IEventToPersist[] clientEvents = Enumerable.Range(1, 5)
+                .Select(i => CreateTestEvent($"client-{ToLetters(clientId)}-event-{ToLetters(i)}",
+                    $"client:{ToLetters(clientId)}", "concurrent:test"))
                 .ToArray();
 
-            return await backend.Append(CurrentTenant(), clientEvents, null, null, TestContext.Current.CancellationToken);
+            return await backend.Append(CurrentTenant(), clientEvents, null, null,
+                TestContext.Current.CancellationToken);
         });
 
-        var results = await Task.WhenAll(tasks);
+        IEnumerable<IEventEnvelope>[] results = await Task.WhenAll(tasks);
 
         // Assert - All appends should succeed
-        var totalEvents = results.SelectMany(r => r).ToList();
+        List<IEventEnvelope> totalEvents = results.SelectMany(r => r).ToList();
         Assert.Equal(15, totalEvents.Count); // 3 clients * 5 events each
 
         // Verify all events are accessible
-        var streamResult = await backend.Stream(CurrentTenant(), new StreamQuery().WithTags(EventTag.Parse("concurrent:test")), cancellationToken: TestContext.Current.CancellationToken);
+        IReadOnlyCollection<IEventEnvelope> streamResult = await backend.Stream(CurrentTenant(),
+            new StreamQuery().WithTags(EventTag.Parse("concurrent:test")),
+            cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(15, streamResult.Count);
 
         // Verify position uniqueness and ordering
-        var positions = streamResult.Select(e => long.Parse(e.Metadata["_position"])).ToList();
+        List<long> positions = streamResult.Select(e => long.Parse(e.Metadata["_position"])).ToList();
         Assert.Equal(positions.Count, positions.Distinct().Count()); // All positions unique
         Assert.True(positions.SequenceEqual(positions.OrderBy(p => p))); // Results are ordered
 
@@ -888,37 +891,38 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        var backend = await CreateBackend();
+        IEventStoreBackend backend = await CreateBackend();
 
         // Create events for 5 different tenants (small scale for correctness)
-        var tenantTasks = Enumerable.Range(1, 5).Select(async tenantId =>
+        IEnumerable<Task<Tenant>> tenantTasks = Enumerable.Range(1, 5).Select(async tenantId =>
         {
-            var tenant = new Tenant(tenantId.ToString());
-            var tenantEvents = Enumerable.Range(1, 3)
-                .Select(i => CreateTestEvent($"tenant-{ToLetters(tenantId)}-event-{ToLetters(i)}", $"tenant:{tenantId}", "scale:test"))
+            Tenant tenant = new(tenantId.ToString());
+            IEventToPersist[] tenantEvents = Enumerable.Range(1, 3)
+                .Select(i => CreateTestEvent($"tenant-{ToLetters(tenantId)}-event-{ToLetters(i)}", $"tenant:{tenantId}",
+                    "scale:test"))
                 .ToArray();
 
             await backend.Append(tenant, tenantEvents, null, null, TestContext.Current.CancellationToken);
             return tenant;
         });
 
-        var tenants = await Task.WhenAll(tenantTasks);
+        Tenant[] tenants = await Task.WhenAll(tenantTasks);
 
         // Act - Verify each tenant only sees their own events
         var verificationTasks = tenants.Select(async tenant =>
         {
-            var query = new StreamQuery().WithTags(EventTag.Parse($"tenant:{tenant.Id}"));
-            var result = await backend.Stream(tenant, query, cancellationToken: TestContext.Current.CancellationToken);
+            StreamQuery query = new StreamQuery().WithTags(EventTag.Parse($"tenant:{tenant.Id}"));
+            IReadOnlyCollection<IEventEnvelope> result = await backend.Stream(tenant, query,
+                cancellationToken: TestContext.Current.CancellationToken);
             return new { Tenant = tenant, EventCount = result.Count };
         });
 
         var verificationResults = await Task.WhenAll(verificationTasks);
 
         // Assert
-        foreach (var result in verificationResults)
-        {
+        foreach (var result in
+                 verificationResults)
             Assert.Equal(3, result.EventCount); // Each tenant should see exactly their 3 events
-        }
 
         await CleanupAsync();
     }
@@ -945,13 +949,13 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
             Created = TimeProvider.GetUtcNow()
         };
     }
-    
+
     /// <summary>
-    /// Converts a number to a base-26 letter string (e.g., 0 = A, 1 = B, ..., 25 = Z, 26 = AA, etc.)
+    ///     Converts a number to a base-26 letter string (e.g., 0 = A, 1 = B, ..., 25 = Z, 26 = AA, etc.)
     /// </summary>
     private static string ToLetters(int number)
     {
-        var result = string.Empty;
+        string result = string.Empty;
         number++;
         while (number > 0)
         {
@@ -959,6 +963,7 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
             result = (char)('a' + (number % 26)) + result;
             number /= 26;
         }
+
         return result;
     }
 }

@@ -10,13 +10,13 @@ public static class EventStoreBuilderExtensions
         this IServiceCollection services,
         Action<PostgresEventStoreOptions> configureOptions) where T : EventStoreFactory
     {
-        var options = new PostgresEventStoreOptions();
+        PostgresEventStoreOptions options = new();
         configureOptions(options);
 
         services.Configure(configureOptions);
         services.AddKeyedScoped<IEventStoreBackend, PostgresEventStoreBackend>(options.Schema);
 
-        services.AddScoped<T>(sp => (T)Activator.CreateInstance(typeof(T), 
+        services.AddScoped<T>(sp => (T)Activator.CreateInstance(typeof(T),
             sp.GetRequiredService<ITenantContext>(),
             sp.GetRequiredService<IDiagnosticsEventListener>(),
             sp.GetRequiredKeyedService<IEventStoreBackend>(options.Schema))!);

@@ -4,12 +4,12 @@ using Alberto.EventStore.MultiTenant;
 namespace Alberto.EventStore;
 
 /// <summary>
-/// Interface for the event store
+///     Interface for the event store
 /// </summary>
 public interface IEventStoreBackend
 {
     /// <summary>
-    /// Queries events matching the specified criteria
+    ///     Queries events matching the specified criteria
     /// </summary>
     /// <param name="tenant">The tenant context for the event store operation</param>
     /// <param name="query">The stream query criteria</param>
@@ -23,7 +23,7 @@ public interface IEventStoreBackend
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Conditionally appends events to the event store with optimistic concurrency check
+    ///     Conditionally appends events to the event store with optimistic concurrency check
     /// </summary>
     /// <param name="tenant">The tenant for whom the events are being appended</param>
     /// <param name="events">The events to append</param>

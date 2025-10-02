@@ -5,34 +5,8 @@ namespace Alberto.EventStore.Telemetry.Scopes;
 
 internal sealed class AppendScope(Activity activity) : IDisposable
 {
-    private bool _disposed;
-
     public const string ActivityName = "Alberto.Append";
-
-    public AppendScope WithEvents(IEventToPersist[] events)
-    {
-        activity.DisplayName = $"Append events";
-        foreach (var evt in events)
-        {
-            Activity.Current?.AddEvent(
-                new ActivityEvent(
-                    evt.EventType.Id,
-                    tags: new ActivityTagsCollection
-                    {
-                        {
-                            Tags.EventId, evt.Id.ToString()
-                        },
-                        {
-                            Tags.EventType, evt.EventType.Id
-                        },
-                        {
-                            Tags.EventTags, string.Join(",", evt.Tags.Select(x => x.FullIdentifier))
-                        }
-                    }));
-        }
-
-        return this;
-    }
+    private bool _disposed;
 
     public void Dispose()
     {
@@ -41,5 +15,22 @@ internal sealed class AppendScope(Activity activity) : IDisposable
 
         activity.Dispose();
         _disposed = true;
+    }
+
+    public AppendScope WithEvents(IEventToPersist[] events)
+    {
+        activity.DisplayName = "Append events";
+        foreach (IEventToPersist evt in events)
+            Activity.Current?.AddEvent(
+                new ActivityEvent(
+                    evt.EventType.Id,
+                    tags: new ActivityTagsCollection
+                    {
+                        { Tags.EventId, evt.Id.ToString() },
+                        { Tags.EventType, evt.EventType.Id },
+                        { Tags.EventTags, string.Join(",", evt.Tags.Select(x => x.FullIdentifier)) }
+                    }));
+
+        return this;
     }
 }

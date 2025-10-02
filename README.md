@@ -24,9 +24,10 @@ dotnet add package Alberto.EventStore.Telemetry
 
 Current version: **0.0.1-alpha**
 
-⚠️ **Preview Warning**: This is an alpha preview release. Breaking changes may occur at any point until version 1.0.0. Use with caution in production environments.
+⚠️ **Preview Warning**: This is an alpha preview release. Breaking changes may occur at any point until version 1.0.0.
+Use with caution in production environments.
 
-Note: The packages target .NET 10.0 RC - stable packages will be released when .NET 10.0 is generally available.
+Note: The packages target .NET 9.0 and .NET 10.0 RC - stable packages will be released when .NET 10.0 is generally available.
 
 ## Quick Start
 
@@ -92,12 +93,14 @@ services.AddEventStore()
 The project uses a two-tier testing approach:
 
 ### Fast Feedback Tests (`EventStore.Tests`)
+
 - **109 tests** running in ~3 seconds
 - Unit and integration tests for correctness
 - Runs on every push/PR for immediate feedback
 - Command: `dotnet test EventStore.Tests`
 
 ### Performance Analysis (`EventStore.Performance.Tests`)
+
 - **78 benchmarks** using BenchmarkDotNet
 - Comprehensive performance analysis and regression detection
 - Separate CI pipeline to preserve GitHub Actions minutes

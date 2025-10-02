@@ -1,4 +1,3 @@
-using Alberto.EventStore;
 using Alberto.EventStore.Events;
 using Alberto.EventStore.MultiTenant;
 using Microsoft.Extensions.Time.Testing;
@@ -7,8 +6,8 @@ using Xunit;
 namespace Alberto.EventStore.Tests.Specifications;
 
 /// <summary>
-/// Advanced query scenario tests to be added to the specification
-/// These extend the base specification with complex querying scenarios
+///     Advanced query scenario tests to be added to the specification
+///     These extend the base specification with complex querying scenarios
 /// </summary>
 public abstract class AdvancedQueryTests
 {
@@ -17,39 +16,49 @@ public abstract class AdvancedQueryTests
 
     protected abstract Task<IEventStoreBackend> CreateBackend();
     protected abstract Tenant CurrentTenant();
-    protected virtual Task SetupAsync() => Task.CompletedTask;
-    protected virtual Task CleanupAsync() => Task.CompletedTask;
+
+    protected virtual Task SetupAsync()
+    {
+        return Task.CompletedTask;
+    }
+
+    protected virtual Task CleanupAsync()
+    {
+        return Task.CompletedTask;
+    }
 
     [Fact]
     public async Task Stream_WithPaginationUsingPosition_ShouldWork()
     {
         // Arrange
         await SetupAsync();
-        var backend = await CreateBackend();
-        var tenant = CurrentTenant();
+        IEventStoreBackend backend = await CreateBackend();
+        Tenant tenant = CurrentTenant();
 
-        var events = Enumerable.Range(1, 10)
+        IEventToPersist[] events = Enumerable.Range(1, 10)
             .Select(i => CreateTestEvent($"event-{ToLetters(i)}", "order:123"))
             .ToArray();
 
-        var appendResult = await backend.Append(tenant, events, null, null, CancellationToken.None);
-        var allEvents = appendResult.ToList();
+        IEnumerable<IEventEnvelope> appendResult =
+            await backend.Append(tenant, events, null, null, CancellationToken.None);
+        List<IEventEnvelope> allEvents = appendResult.ToList();
 
         // Act - Get first 3 events
-        var query = new StreamQuery().WithTags(EventTag.Parse("order:123"));
-        var firstPage = await backend.Stream(tenant, query, maxCount: 3, cancellationToken: CancellationToken.None);
+        StreamQuery query = new StreamQuery().WithTags(EventTag.Parse("order:123"));
+        IReadOnlyCollection<IEventEnvelope> firstPage = await backend.Stream(tenant, query, 3, CancellationToken.None);
 
         // Get remaining events (pagination would need to be implemented differently)
-        var allEventsForPaging = await backend.Stream(tenant, query, cancellationToken: CancellationToken.None);
-        var secondPage = allEventsForPaging.Skip(3).Take(3).ToList();
+        IReadOnlyCollection<IEventEnvelope> allEventsForPaging =
+            await backend.Stream(tenant, query, cancellationToken: CancellationToken.None);
+        List<IEventEnvelope> secondPage = allEventsForPaging.Skip(3).Take(3).ToList();
 
         // Assert
         Assert.Equal(3, firstPage.Count);
         Assert.Equal(3, secondPage.Count);
 
         // Verify pagination worked correctly
-        var firstPagePositions = firstPage.Select(e => long.Parse(e.Metadata["_position"])).ToList();
-        var secondPagePositions = secondPage.Select(e => long.Parse(e.Metadata["_position"])).ToList();
+        List<long> firstPagePositions = firstPage.Select(e => long.Parse(e.Metadata["_position"])).ToList();
+        List<long> secondPagePositions = secondPage.Select(e => long.Parse(e.Metadata["_position"])).ToList();
 
         Assert.True(secondPagePositions.All(pos => pos > firstPagePositions.Max()));
 
@@ -61,10 +70,10 @@ public abstract class AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        var backend = await CreateBackend();
-        var tenant = CurrentTenant();
+        IEventStoreBackend backend = await CreateBackend();
+        Tenant tenant = CurrentTenant();
 
-        var events = new[]
+        IEventToPersist[] events = new[]
         {
             CreateTestEvent("order-created", "order:123", "customer:456", "region:us"),
             CreateTestEvent("payment-processed", "order:123", "payment:789", "region:us"),
@@ -76,24 +85,27 @@ public abstract class AdvancedQueryTests
         await backend.Append(tenant, events, null, null, CancellationToken.None);
 
         // Test 1: ALL tags - order AND customer AND region
-        var allTagsQuery = new StreamQuery()
+        StreamQuery allTagsQuery = new StreamQuery()
             .WithTags(EventTag.Parse("order:123"), EventTag.Parse("customer:456"), EventTag.Parse("region:us"))
             .RequiringAllTags();
 
-        var allTagsResult = await backend.Stream(tenant, allTagsQuery, cancellationToken: CancellationToken.None);
+        IReadOnlyCollection<IEventEnvelope> allTagsResult =
+            await backend.Stream(tenant, allTagsQuery, cancellationToken: CancellationToken.None);
 
         // Test 2: ANY tags - order OR customer
-        var anyTagsQuery = new StreamQuery()
+        StreamQuery anyTagsQuery = new StreamQuery()
             .WithTags(EventTag.Parse("order:123"), EventTag.Parse("customer:789"));
 
-        var anyTagsResult = await backend.Stream(tenant, anyTagsQuery, cancellationToken: CancellationToken.None);
+        IReadOnlyCollection<IEventEnvelope> anyTagsResult =
+            await backend.Stream(tenant, anyTagsQuery, cancellationToken: CancellationToken.None);
 
         // Test 3: Complex combination - US region events for specific customer
-        var complexQuery = new StreamQuery()
+        StreamQuery complexQuery = new StreamQuery()
             .WithTags(EventTag.Parse("customer:456"), EventTag.Parse("region:us"))
             .RequiringAllTags();
 
-        var complexResult = await backend.Stream(tenant, complexQuery, cancellationToken: CancellationToken.None);
+        IReadOnlyCollection<IEventEnvelope> complexResult =
+            await backend.Stream(tenant, complexQuery, cancellationToken: CancellationToken.None);
 
         // Assert
         Assert.Single(allTagsResult); // Only the order-created event has all three tags
@@ -111,46 +123,39 @@ public abstract class AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        var backend = await CreateBackend();
-        var tenant = CurrentTenant();
+        IEventStoreBackend backend = await CreateBackend();
+        Tenant tenant = CurrentTenant();
 
-        var events = new[]
+        IEventToPersist[] events = new[]
         {
-            CreateTestEvent("order-created", "order:123"),
-            CreateTestEvent("order-updated", "order:123"),
-            CreateTestEvent("order-completed", "order:123"),
-            CreateTestEvent("payment-created", "order:123"),
-            CreateTestEvent("payment-processed", "order:123"),
-            CreateTestEvent("notification-sent", "order:123")
+            CreateTestEvent("order-created", "order:123"), CreateTestEvent("order-updated", "order:123"),
+            CreateTestEvent("order-completed", "order:123"), CreateTestEvent("payment-created", "order:123"),
+            CreateTestEvent("payment-processed", "order:123"), CreateTestEvent("notification-sent", "order:123")
         };
 
         await backend.Append(tenant, events, null, null, CancellationToken.None);
 
         // Test: Multiple event types with pattern-like filtering
-        var orderEventTypes = new[]
+        EventType[] orderEventTypes = new[]
         {
-            new EventType("order-created"),
-            new EventType("order-updated"),
-            new EventType("order-completed")
+            new EventType("order-created"), new EventType("order-updated"), new EventType("order-completed")
         };
 
-        var paymentEventTypes = new[]
-        {
-            new EventType("payment-created"),
-            new EventType("payment-processed")
-        };
+        EventType[] paymentEventTypes = new[] { new EventType("payment-created"), new EventType("payment-processed") };
 
-        var orderQuery = new StreamQuery()
+        StreamQuery orderQuery = new StreamQuery()
             .WithTags(EventTag.Parse("order:123"))
             .WithEventTypes(orderEventTypes);
 
-        var paymentQuery = new StreamQuery()
+        StreamQuery paymentQuery = new StreamQuery()
             .WithTags(EventTag.Parse("order:123"))
             .WithEventTypes(paymentEventTypes);
 
         // Act
-        var orderResult = await backend.Stream(tenant, orderQuery, cancellationToken: CancellationToken.None);
-        var paymentResult = await backend.Stream(tenant, paymentQuery, cancellationToken: CancellationToken.None);
+        IReadOnlyCollection<IEventEnvelope> orderResult =
+            await backend.Stream(tenant, orderQuery, cancellationToken: CancellationToken.None);
+        IReadOnlyCollection<IEventEnvelope> paymentResult =
+            await backend.Stream(tenant, paymentQuery, cancellationToken: CancellationToken.None);
 
         // Assert
         Assert.Equal(3, orderResult.Count);
@@ -167,26 +172,25 @@ public abstract class AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        var backend = await CreateBackend();
-        var tenant = CurrentTenant();
+        IEventStoreBackend backend = await CreateBackend();
+        Tenant tenant = CurrentTenant();
 
-        var events = new[]
+        IEventToPersist[] events = new[]
         {
-            CreateTestEvent("order-created", "order:123"),
-            CreateTestEvent("payment-processed", "order:123"),
-            CreateTestEvent("order-updated", "order:123"),
-            CreateTestEvent("order-completed", "order:123"),
+            CreateTestEvent("order-created", "order:123"), CreateTestEvent("payment-processed", "order:123"),
+            CreateTestEvent("order-updated", "order:123"), CreateTestEvent("order-completed", "order:123"),
             CreateTestEvent("notification-sent", "order:123")
         };
 
         await backend.Append(tenant, events, null, null, CancellationToken.None);
 
         // Test: Limit to 2 events, but only order events
-        var query = new StreamQuery()
+        StreamQuery query = new StreamQuery()
             .WithTags(EventTag.Parse("order:123"))
-            .WithEventTypes(new EventType("order-created"), new EventType("order-updated"), new EventType("order-completed"));
+            .WithEventTypes(new EventType("order-created"), new EventType("order-updated"),
+                new EventType("order-completed"));
 
-        var result = await backend.Stream(tenant, query, maxCount: 2, cancellationToken: CancellationToken.None);
+        IReadOnlyCollection<IEventEnvelope> result = await backend.Stream(tenant, query, 2, CancellationToken.None);
 
         // Assert
         Assert.Equal(2, result.Count);
@@ -200,31 +204,34 @@ public abstract class AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        var backend = await CreateBackend();
-        var tenant = CurrentTenant();
+        IEventStoreBackend backend = await CreateBackend();
+        Tenant tenant = CurrentTenant();
 
-        var events = new[]
+        IEventToPersist[] events = new[]
         {
             CreateTestEvent("order-created", "order:123", "customer:456", "org:acme", "region:us", "tier:premium"),
             CreateTestEvent("payment-processed", "order:123", "payment:789", "provider:stripe", "currency:usd"),
             CreateTestEvent("audit-logged", "order:123", "audit:security", "user:admin", "action:create"),
-            CreateTestEvent("metrics-recorded", "order:123", "metrics:performance", "component:api", "duration:150ms")
+            CreateTestEvent("metrics-recorded", "order:123", "metrics:performance", "component:api",
+                "duration:150ms")
         };
 
         await backend.Append(tenant, events, null, null, CancellationToken.None);
 
         // Test hierarchical tag queries
-        var customerHierarchyQuery = new StreamQuery()
+        StreamQuery customerHierarchyQuery = new StreamQuery()
             .WithTags(EventTag.Parse("customer:456"), EventTag.Parse("org:acme"), EventTag.Parse("tier:premium"))
             .RequiringAllTags();
 
-        var paymentProviderQuery = new StreamQuery()
+        StreamQuery paymentProviderQuery = new StreamQuery()
             .WithTags(EventTag.Parse("provider:stripe"), EventTag.Parse("currency:usd"))
             .RequiringAllTags();
 
         // Act
-        var customerResult = await backend.Stream(tenant, customerHierarchyQuery, cancellationToken: CancellationToken.None);
-        var paymentResult = await backend.Stream(tenant, paymentProviderQuery, cancellationToken: CancellationToken.None);
+        IReadOnlyCollection<IEventEnvelope> customerResult =
+            await backend.Stream(tenant, customerHierarchyQuery, cancellationToken: CancellationToken.None);
+        IReadOnlyCollection<IEventEnvelope> paymentResult =
+            await backend.Stream(tenant, paymentProviderQuery, cancellationToken: CancellationToken.None);
 
         // Assert
         Assert.Single(customerResult);
@@ -241,29 +248,32 @@ public abstract class AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        var backend = await CreateBackend();
-        var tenant = CurrentTenant();
+        IEventStoreBackend backend = await CreateBackend();
+        Tenant tenant = CurrentTenant();
 
         // Create 1000 events for performance testing
-        var largeEventSet = Enumerable.Range(0, 1000)
+        IEventToPersist[] largeEventSet = Enumerable.Range(0, 1000)
             .Select(i => CreateTestEvent($"bulk-event-{ToLetters(i)}", "bulk:test", $"batch:{i / 100}"))
             .ToArray();
 
         await backend.Append(tenant, largeEventSet, null, null, CancellationToken.None);
 
         // Test: Query all events
-        var allEventsQuery = new StreamQuery().WithTags(EventTag.Parse("bulk:test"));
-        var allEventsResult = await backend.Stream(tenant, allEventsQuery, cancellationToken: CancellationToken.None);
+        StreamQuery allEventsQuery = new StreamQuery().WithTags(EventTag.Parse("bulk:test"));
+        IReadOnlyCollection<IEventEnvelope> allEventsResult =
+            await backend.Stream(tenant, allEventsQuery, cancellationToken: CancellationToken.None);
 
         // Test: Query specific batch
-        var batchQuery = new StreamQuery()
+        StreamQuery batchQuery = new StreamQuery()
             .WithTags(EventTag.Parse("bulk:test"), EventTag.Parse("batch:5"))
             .RequiringAllTags();
-        var batchResult = await backend.Stream(tenant, batchQuery, cancellationToken: CancellationToken.None);
+        IReadOnlyCollection<IEventEnvelope> batchResult =
+            await backend.Stream(tenant, batchQuery, cancellationToken: CancellationToken.None);
 
         // Test: Large limited query
-        var limitedQuery = new StreamQuery().WithTags(EventTag.Parse("bulk:test"));
-        var limitedResult = await backend.Stream(tenant, limitedQuery, maxCount: 50, cancellationToken: CancellationToken.None);
+        StreamQuery limitedQuery = new StreamQuery().WithTags(EventTag.Parse("bulk:test"));
+        IReadOnlyCollection<IEventEnvelope> limitedResult =
+            await backend.Stream(tenant, limitedQuery, 50, CancellationToken.None);
 
         // Assert
         Assert.Equal(1000, allEventsResult.Count);
@@ -271,7 +281,7 @@ public abstract class AdvancedQueryTests
         Assert.Equal(50, limitedResult.Count);
 
         // Verify ordering is maintained
-        var positions = allEventsResult.Select(e => long.Parse(e.Metadata["_position"])).ToList();
+        List<long> positions = allEventsResult.Select(e => long.Parse(e.Metadata["_position"])).ToList();
         Assert.True(positions.SequenceEqual(positions.OrderBy(p => p)));
 
         await CleanupAsync();
@@ -282,20 +292,22 @@ public abstract class AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        var backend = await CreateBackend();
-        var tenant1 = new Tenant("tenant-1");
-        var tenant2 = new Tenant("tenant-2");
+        IEventStoreBackend backend = await CreateBackend();
+        Tenant tenant1 = new("tenant-1");
+        Tenant tenant2 = new("tenant-2");
 
-        var tenant1Event = CreateTestEvent("tenanta-event", "shared:tag");
-        var tenant2Event = CreateTestEvent("tenantb-event", "shared:tag");
+        IEventToPersist tenant1Event = CreateTestEvent("tenanta-event", "shared:tag");
+        IEventToPersist tenant2Event = CreateTestEvent("tenantb-event", "shared:tag");
 
         await backend.Append(tenant1, [tenant1Event], null, null, CancellationToken.None);
         await backend.Append(tenant2, [tenant2Event], null, null, CancellationToken.None);
 
         // Act - Query tenant1's events from tenant2's context
-        var crossTenantQuery = new StreamQuery().WithTags(EventTag.Parse("shared:tag"));
-        var tenant1Result = await backend.Stream(tenant1, crossTenantQuery, cancellationToken: CancellationToken.None);
-        var tenant2Result = await backend.Stream(tenant2, crossTenantQuery, cancellationToken: CancellationToken.None);
+        StreamQuery crossTenantQuery = new StreamQuery().WithTags(EventTag.Parse("shared:tag"));
+        IReadOnlyCollection<IEventEnvelope> tenant1Result =
+            await backend.Stream(tenant1, crossTenantQuery, cancellationToken: CancellationToken.None);
+        IReadOnlyCollection<IEventEnvelope> tenant2Result =
+            await backend.Stream(tenant2, crossTenantQuery, cancellationToken: CancellationToken.None);
 
         // Assert - Each tenant should only see their own events
         Assert.Single(tenant1Result);
@@ -320,11 +332,11 @@ public abstract class AdvancedQueryTests
     }
 
     /// <summary>
-    /// Converts a number to a base-26 letter string (e.g., 0 = A, 1 = B, ..., 25 = Z, 26 = AA, etc.)
+    ///     Converts a number to a base-26 letter string (e.g., 0 = A, 1 = B, ..., 25 = Z, 26 = AA, etc.)
     /// </summary>
     private static string ToLetters(int number)
     {
-        var result = string.Empty;
+        string result = string.Empty;
         number++;
         while (number > 0)
         {
@@ -332,6 +344,7 @@ public abstract class AdvancedQueryTests
             result = (char)('a' + (number % 26)) + result;
             number /= 26;
         }
+
         return result;
     }
 }

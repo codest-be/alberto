@@ -1,5 +1,4 @@
-﻿using Alberto.EventStore;
-using Alberto.EventStore.InMemory;
+﻿using Alberto.EventStore.InMemory;
 using Alberto.EventStore.MultiTenant;
 using Alberto.EventStore.Tests.Specifications;
 using Microsoft.Extensions.Logging;
@@ -8,7 +7,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Alberto.EventStore.Tests.InMemory;
 
 /// <summary>
-/// Concrete specification tests for InMemoryEventStoreBackend
+///     Concrete specification tests for InMemoryEventStoreBackend
 /// </summary>
 public class InMemoryEventStoreBackendSpecificationTests : EventStoreBackendSpecification
 {
