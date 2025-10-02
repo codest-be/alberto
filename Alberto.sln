@@ -8,29 +8,29 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution", "Solution", "{41
 		Directory.Build.props = Directory.Build.props
 	EndProjectSection
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Alberto.EventStore", "Alberto.EventStore\Alberto.EventStore.csproj", "{DC2C160F-60AD-4E39-85EF-DC637B01F1AC}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Alberto.EventStore", "src\EventStore\Alberto.EventStore\Alberto.EventStore.csproj", "{DC2C160F-60AD-4E39-85EF-DC637B01F1AC}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Alberto.EventStore.InMemory", "Alberto.EventStore.InMemory\Alberto.EventStore.InMemory.csproj", "{C61D82C7-3BB9-48A8-AE27-8BDF3AD28B04}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Alberto.EventStore.InMemory", "src\EventStore\Alberto.EventStore.InMemory\Alberto.EventStore.InMemory.csproj", "{C61D82C7-3BB9-48A8-AE27-8BDF3AD28B04}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Alberto.EventStore.Postgres", "Alberto.EventStore.Postgres\Alberto.EventStore.Postgres.csproj", "{87FC7EC7-6A07-4396-9D60-ED7028C585A0}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Alberto.EventStore.Postgres", "src\EventStore\Alberto.EventStore.Postgres\Alberto.EventStore.Postgres.csproj", "{87FC7EC7-6A07-4396-9D60-ED7028C585A0}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Alberto.EventStore.Tests", "Alberto.EventStore.Tests\Alberto.EventStore.Tests.csproj", "{191B8B86-DDF5-43E1-B369-7F96A74A9749}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Alberto.EventStore.Tests", "tst\Alberto.EventStore.Tests\Alberto.EventStore.Tests.csproj", "{191B8B86-DDF5-43E1-B369-7F96A74A9749}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Alberto.EventStore.Telemetry", "Alberto.EventStore.Telemetry\Alberto.EventStore.Telemetry.csproj", "{B610DA7F-2665-4928-B742-23867A48CEA3}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Alberto.EventStore.Telemetry", "src\EventStore\Alberto.EventStore.Telemetry\Alberto.EventStore.Telemetry.csproj", "{B610DA7F-2665-4928-B742-23867A48CEA3}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Alberto.Example", "Example\Alberto.Example\Alberto.Example.csproj", "{EE645E8B-DF41-42AA-A121-B67622A57C2D}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Alberto.Example", "src\Example\Alberto.Example\Alberto.Example.csproj", "{EE645E8B-DF41-42AA-A121-B67622A57C2D}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Alberto.AppHost", "Example\Alberto.AppHost\Alberto.AppHost.csproj", "{82D8F62F-0784-4D7C-B359-3772B7527FF5}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Alberto.AppHost", "src\Example\Alberto.AppHost\Alberto.AppHost.csproj", "{82D8F62F-0784-4D7C-B359-3772B7527FF5}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Alberto.ServiceDefaults", "Example\Alberto.ServiceDefaults\Alberto.ServiceDefaults.csproj", "{31A1A953-0426-4D17-B2AD-EB773A358C71}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Alberto.ServiceDefaults", "src\Example\Alberto.ServiceDefaults\Alberto.ServiceDefaults.csproj", "{31A1A953-0426-4D17-B2AD-EB773A358C71}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Alberto.SqlMigrator", "Example\Alberto.SqlMigrator\Alberto.SqlMigrator.csproj", "{CDB136D5-F45F-4346-A032-6ABED536F95A}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Alberto.SqlMigrator", "src\Example\Alberto.SqlMigrator\Alberto.SqlMigrator.csproj", "{CDB136D5-F45F-4346-A032-6ABED536F95A}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Example", "Example", "{BBB8D1F7-95A7-49B2-A49F-53646775324B}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "EventStore", "EventStore", "{3DDCAC6A-B673-47D6-84A1-B67600249246}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Alberto.EventStore.Performance.Tests", "Alberto.EventStore.Performance.Tests\Alberto.EventStore.Performance.Tests.csproj", "{84168343-E0A4-4EAC-94A5-BAC6305853C8}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Alberto.EventStore.Performance.Tests", "tst\Alberto.EventStore.Performance.Tests\Alberto.EventStore.Performance.Tests.csproj", "{84168343-E0A4-4EAC-94A5-BAC6305853C8}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

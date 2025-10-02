@@ -21,7 +21,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\Alberto.EventStore.Telemetry\Alberto.EventStore.Telemetry.csproj"/>
+    <ProjectReference Include="..\..\EventStore\Alberto.EventStore.Telemetry\Alberto.EventStore.Telemetry.csproj" />
   </ItemGroup>
 
 </Project>

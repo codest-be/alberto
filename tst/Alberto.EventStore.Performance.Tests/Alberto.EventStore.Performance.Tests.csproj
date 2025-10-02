@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!--Azure.Identity vulnerabilities not fixed yet-->
+    <NoWarn>NU1903;NU1904;NU1905</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet"/>
+    <PackageReference Include="NBomber"/>
+    <PackageReference Include="Respawn"/>
+    <PackageReference Include="Testcontainers.PostgreSql"/>
+    <PackageReference Include="Microsoft.Extensions.Logging.Console"/>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="BenchmarkDotNet.Artifacts\"/>
+    <Folder Include="BenchmarkDotNet.Artifacts\results\"/>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\EventStore\Alberto.EventStore.InMemory\Alberto.EventStore.InMemory.csproj" />
+    <ProjectReference Include="..\..\src\EventStore\Alberto.EventStore.Postgres\Alberto.EventStore.Postgres.csproj" />
+    <ProjectReference Include="..\..\src\EventStore\Alberto.EventStore\Alberto.EventStore.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Remove="BenchmarkDotNet.Artifacts\results\EventStore.Performance.Tests.EventStoreBenchmarks-report.html" />
+    <None Remove="BenchmarkDotNet.Artifacts\results\EventStore.Performance.Tests.EventStoreBenchmarks-report.csv" />
+    <None Remove="BenchmarkDotNet.Artifacts\results\EventStore.Performance.Tests.EventStoreBenchmarks-report-github.md" />
+    <None Remove="BenchmarkDotNet.Artifacts\EventStore.Performance.Tests.EventStoreBenchmarks-20251002-073848.log" />
+    <None Remove="BenchmarkDotNet.Artifacts\EventStore.Performance.Tests.EventStoreBenchmarks-20251002-054003.log" />
+    <None Remove="BenchmarkDotNet.Artifacts\EventStore.Performance.Tests.EventStoreBenchmarks-20251001-220844.log" />
+  </ItemGroup>
+
+</Project>
