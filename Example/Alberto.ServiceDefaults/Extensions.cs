@@ -1,4 +1,4 @@
-using EventStore.Telemetry;
+using Alberto.EventStore.Telemetry;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.DependencyInjection;

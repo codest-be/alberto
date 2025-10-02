@@ -1,10 +1,9 @@
 using Alberto.Example;
 using Alberto.Example.Modules.Orders;
 using Alberto.Example.Modules.Payments;
-using EventStore;
-using EventStore.MultiTenant;
-using EventStore.Postgres;
-using EventStore.Telemetry;
+using Alberto.EventStore;
+using Alberto.EventStore.MultiTenant;
+using Alberto.EventStore.Telemetry;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -13,6 +12,9 @@ builder.AddServiceDefaults();
 builder.Services.AddScoped<ITenantContext, TenantContext>();
 
 builder.Services
+    .AddEventStore()
+    .AddEventStoreTelemetry()
+    .Services
     .AddOrdersModule(builder.Configuration)
     .AddPaymentsModule(builder.Configuration);
 

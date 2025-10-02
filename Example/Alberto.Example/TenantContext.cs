@@ -1,4 +1,4 @@
-using EventStore.MultiTenant;
+using Alberto.EventStore.MultiTenant;
 
 namespace Alberto.Example;
 

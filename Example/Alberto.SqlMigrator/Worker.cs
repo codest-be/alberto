@@ -44,7 +44,7 @@ public class Worker(ILogger<Worker> logger, IConfiguration configuration, IHostA
                 // Create schema first
                 CreateSchemaIfNotExists(connectionString, schema);
 
-                // Run the EventStore migration for this schema
+                // Run the Alberto.EventStore migration for this schema
                 var upgrader = DeployChanges.To
                     .PostgresqlDatabase(connectionString)
                     .WithScriptsEmbeddedInAssembly(typeof(Alberto.Example.TenantContext).Assembly)
