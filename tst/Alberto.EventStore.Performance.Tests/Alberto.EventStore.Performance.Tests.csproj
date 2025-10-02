@@ -7,8 +7,10 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!-- Disable XML documentation for performance test project -->
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <!--Azure.Identity vulnerabilities not fixed yet-->
-    <NoWarn>NU1903;NU1904;NU1905</NoWarn>
+    <NoWarn>NU1903;NU1904;NU1905;NU1902</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
