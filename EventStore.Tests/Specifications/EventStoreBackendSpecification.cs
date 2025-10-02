@@ -5,36 +5,36 @@ using EventStore.MultiTenant;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
-namespace Eventstore.Tests.Specifications;
+namespace EventStore.Tests.Specifications;
 
 /// <summary>
 /// Specification tests for IEventStoreBackend implementations
 /// These tests define the contract that all implementations must follow
 /// </summary>
-public abstract class EventStoreBackendSpecification
+public abstract class EventStoreBackendSpecification : AdvancedQueryTests
 {
-    public TimeProvider TimeProvider { get; } =
+    public new TimeProvider TimeProvider { get; } =
         new FakeTimeProvider(new DateTimeOffset(2025, 3, 21, 11, 47, 12, TimeSpan.FromHours(5)));
 
     /// <summary>
     /// Factory method to create the backend under test
     /// Must be implemented by each concrete test class
     /// </summary>
-    protected abstract Task<IEventStoreBackend> CreateBackend();
+    protected override abstract Task<IEventStoreBackend> CreateBackend();
 
-    protected abstract Tenant CurrentTenant();
+    protected override abstract Tenant CurrentTenant();
 
     /// <summary>
     /// Setup method called before each test
     /// Override in concrete classes if needed
     /// </summary>
-    protected virtual Task SetupAsync() => Task.CompletedTask;
+    protected override Task SetupAsync() => Task.CompletedTask;
 
     /// <summary>
     /// Cleanup method called after each test
     /// Override in concrete classes if needed
     /// </summary>
-    protected virtual Task CleanupAsync() => Task.CompletedTask;
+    protected override Task CleanupAsync() => Task.CompletedTask;
 
     [Fact]
     public async Task Append_SingleEvent_ShouldSucceed()
@@ -847,6 +847,82 @@ public abstract class EventStoreBackendSpecification
         await CleanupAsync();
     }
 
+
+    [Fact]
+    public async Task Concurrency_ParallelAppends_ShouldMaintainConsistency()
+    {
+        // Arrange
+        await SetupAsync();
+        var backend = await CreateBackend();
+
+        // Act - Simulate concurrent appends from different "clients" (small scale for correctness)
+        var tasks = Enumerable.Range(1, 3).Select(async clientId =>
+        {
+            var clientEvents = Enumerable.Range(1, 5)
+                .Select(i => CreateTestEvent($"client-{ToLetters(clientId)}-event-{ToLetters(i)}", $"client:{ToLetters(clientId)}", "concurrent:test"))
+                .ToArray();
+
+            return await backend.Append(CurrentTenant(), clientEvents, null, null, TestContext.Current.CancellationToken);
+        });
+
+        var results = await Task.WhenAll(tasks);
+
+        // Assert - All appends should succeed
+        var totalEvents = results.SelectMany(r => r).ToList();
+        Assert.Equal(15, totalEvents.Count); // 3 clients * 5 events each
+
+        // Verify all events are accessible
+        var streamResult = await backend.Stream(CurrentTenant(), new StreamQuery().WithTags(EventTag.Parse("concurrent:test")), cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal(15, streamResult.Count);
+
+        // Verify position uniqueness and ordering
+        var positions = streamResult.Select(e => long.Parse(e.Metadata["_position"])).ToList();
+        Assert.Equal(positions.Count, positions.Distinct().Count()); // All positions unique
+        Assert.True(positions.SequenceEqual(positions.OrderBy(p => p))); // Results are ordered
+
+        await CleanupAsync();
+    }
+
+    [Fact]
+    public async Task Scale_ManyTenants_ShouldIsolateCorrectly()
+    {
+        // Arrange
+        await SetupAsync();
+        var backend = await CreateBackend();
+
+        // Create events for 5 different tenants (small scale for correctness)
+        var tenantTasks = Enumerable.Range(1, 5).Select(async tenantId =>
+        {
+            var tenant = new Tenant(tenantId.ToString());
+            var tenantEvents = Enumerable.Range(1, 3)
+                .Select(i => CreateTestEvent($"tenant-{ToLetters(tenantId)}-event-{ToLetters(i)}", $"tenant:{tenantId}", "scale:test"))
+                .ToArray();
+
+            await backend.Append(tenant, tenantEvents, null, null, TestContext.Current.CancellationToken);
+            return tenant;
+        });
+
+        var tenants = await Task.WhenAll(tenantTasks);
+
+        // Act - Verify each tenant only sees their own events
+        var verificationTasks = tenants.Select(async tenant =>
+        {
+            var query = new StreamQuery().WithTags(EventTag.Parse($"tenant:{tenant.Id}"));
+            var result = await backend.Stream(tenant, query, cancellationToken: TestContext.Current.CancellationToken);
+            return new { Tenant = tenant, EventCount = result.Count };
+        });
+
+        var verificationResults = await Task.WhenAll(verificationTasks);
+
+        // Assert
+        foreach (var result in verificationResults)
+        {
+            Assert.Equal(3, result.EventCount); // Each tenant should see exactly their 3 events
+        }
+
+        await CleanupAsync();
+    }
+
     // Helper method to create test events
     private IEventToPersist CreateTestEvent(
         string eventType,
@@ -868,5 +944,21 @@ public abstract class EventStoreBackendSpecification
             Metadata = metadata ?? new Dictionary<string, string>(),
             Created = TimeProvider.GetUtcNow()
         };
+    }
+    
+    /// <summary>
+    /// Converts a number to a base-26 letter string (e.g., 0 = A, 1 = B, ..., 25 = Z, 26 = AA, etc.)
+    /// </summary>
+    private static string ToLetters(int number)
+    {
+        var result = string.Empty;
+        number++;
+        while (number > 0)
+        {
+            number--;
+            result = (char)('a' + (number % 26)) + result;
+            number /= 26;
+        }
+        return result;
     }
 }

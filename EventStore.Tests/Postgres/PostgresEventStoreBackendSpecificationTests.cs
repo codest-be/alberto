@@ -2,7 +2,7 @@ using Dapper;
 using EventStore;
 using EventStore.MultiTenant;
 using EventStore.Postgres;
-using Eventstore.Tests.Specifications;
+using EventStore.Tests.Specifications;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -10,7 +10,7 @@ using Npgsql;
 using Testcontainers.PostgreSql;
 using Xunit;
 
-namespace Eventstore.Tests.Postgres;
+namespace EventStore.Tests.Postgres;
 
 /// <summary>
 ///     PostgreSQL specification tests using Testcontainers
