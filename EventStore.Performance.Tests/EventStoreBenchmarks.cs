@@ -494,6 +494,93 @@ public class EventStoreBenchmarks
     }
 
     [Benchmark]
+    [Arguments(1000, 1)]   // 1K events, 1 tag each (most common real-world scenario)
+    [Arguments(1000, 2)]   // 1K events, 2 tags each
+    [Arguments(10000, 2)]  // 10K events, 2 tags each (typical scale)
+    [Arguments(10000, 5)]  // 10K events, 5 tags each (high end of realistic)
+    [Arguments(100000, 2)] // 100K events, 2 tags each (production scale)
+    [Arguments(100000, 5)] // 100K events, 5 tags each (stress test at scale)
+    public async Task TagQueryPerformance_RealisticScale_Postgres(int eventCount, int tagsPerEvent)
+    {
+        var dataSetupId = $"tag-perf-{eventCount}-{tagsPerEvent}";
+
+        // Setup test data with realistic tag patterns
+        await EnsureTagPerformanceData(eventCount, tagsPerEvent, dataSetupId);
+
+        // Test 1: Query events by single tag (most common pattern)
+        var singleTagQuery = new StreamQuery(
+            tags: [new EventTag("dataset", dataSetupId)]
+        );
+
+        await _postgresBackend.Stream(_tenant, singleTagQuery, maxCount: 1000);
+
+        // Test 2: Query events requiring ALL tags (consistency boundary pattern)
+        if (tagsPerEvent > 1)
+        {
+            var allTagsQuery = new StreamQuery(
+                tags: [
+                    new EventTag("dataset", dataSetupId),
+                    new EventTag("category", "business")
+                ]
+            ).RequiringAllTags();
+
+            await _postgresBackend.Stream(_tenant, allTagsQuery, maxCount: 1000);
+        }
+
+        // Test 3: Query events with ANY of multiple tags (broad search pattern)
+        var anyTagsQuery = new StreamQuery(
+            tags: [
+                new EventTag("priority", "high"),
+                new EventTag("priority", "critical"),
+                new EventTag("category", "business")
+            ]
+        ); // Default is RequireAny
+
+        await _postgresBackend.Stream(_tenant, anyTagsQuery, maxCount: 1000);
+    }
+
+    [Benchmark]
+    [Arguments(1000, 1)]
+    [Arguments(10000, 2)]
+    [Arguments(100000, 2)]
+    public async Task TagQueryPerformance_RealisticScale_InMemory(int eventCount, int tagsPerEvent)
+    {
+        var dataSetupId = $"tag-perf-inmem-{eventCount}-{tagsPerEvent}";
+
+        // Setup test data in memory
+        await EnsureInMemoryTagPerformanceData(eventCount, tagsPerEvent, dataSetupId);
+
+        // Same query patterns as Postgres version for comparison
+        var singleTagQuery = new StreamQuery(
+            tags: [new EventTag("dataset", dataSetupId)]
+        );
+
+        await _inMemoryBackend.Stream(_tenant, singleTagQuery, maxCount: 1000);
+
+        if (tagsPerEvent > 1)
+        {
+            var allTagsQuery = new StreamQuery(
+                tags: [
+                    new EventTag("dataset", dataSetupId),
+                    new EventTag("category", "business")
+                ]
+            ).RequiringAllTags();
+
+            await _inMemoryBackend.Stream(_tenant, allTagsQuery, maxCount: 1000);
+        }
+
+        var anyTagsQuery = new StreamQuery(
+            tags: [
+                new EventTag("priority", "high"),
+                new EventTag("priority", "critical"),
+                new EventTag("category", "business")
+            ]
+        );
+
+        await _inMemoryBackend.Stream(_tenant, anyTagsQuery, maxCount: 1000);
+    }
+
+    [Benchmark]
     public async Task ConnectionPoolStress_Postgres()
     {
         // Stress test connection pooling by making concurrent database operations
@@ -715,5 +802,150 @@ public class EventStoreBenchmarks
             throw new FileNotFoundException($"Migration file not found: {migrationPath}");
 
         return await File.ReadAllTextAsync(migrationPath);
+    }
+
+    private async Task EnsureTagPerformanceData(int eventCount, int tagsPerEvent, string dataSetupId)
+    {
+        // Check if data already exists for this test case
+        var existingQuery = new StreamQuery(
+            tags: [new EventTag("dataset", dataSetupId)]
+        );
+        var existing = await _postgresBackend.Stream(_tenant, existingQuery, maxCount: 1);
+
+        if (existing.Any())
+        {
+            // Data already exists for this configuration
+            return;
+        }
+
+        Console.WriteLine($"[TAG BENCHMARK] Setting up {eventCount} events with {tagsPerEvent} tags each for dataset: {dataSetupId}");
+
+        // Create realistic tag patterns
+        var eventTypes = new[] { "order-created", "payment-processed", "item-shipped", "order-completed" };
+        var categories = new[] { "business", "system", "user-action", "integration" };
+        var priorities = new[] { "low", "medium", "high", "critical" };
+        var sources = new[] { "web", "mobile", "api", "batch" };
+
+        var events = new List<IEventToPersist>();
+        var random = new Random(42); // Fixed seed for reproducible benchmarks
+
+        for (int i = 0; i < eventCount; i++)
+        {
+            var tags = new List<EventTag>
+            {
+                new EventTag("dataset", dataSetupId) // Always include dataset identifier
+            };
+
+            // Add realistic tag combinations based on tagsPerEvent
+            if (tagsPerEvent > 1 && tags.Count < tagsPerEvent)
+            {
+                tags.Add(new EventTag("category", categories[random.Next(categories.Length)]));
+            }
+            if (tagsPerEvent > 2 && tags.Count < tagsPerEvent)
+            {
+                tags.Add(new EventTag("priority", priorities[random.Next(priorities.Length)]));
+            }
+            if (tagsPerEvent > 3 && tags.Count < tagsPerEvent)
+            {
+                tags.Add(new EventTag("source", sources[random.Next(sources.Length)]));
+            }
+            if (tagsPerEvent > 4 && tags.Count < tagsPerEvent)
+            {
+                tags.Add(new EventTag("tenant", $"tenant-{random.Next(1, 10)}"));
+            }
+
+            events.Add(new EventToPersist
+            {
+                EventType = new EventType(eventTypes[random.Next(eventTypes.Length)]),
+                EventJson = $"{{ \"index\": {i}, \"data\": \"tag performance test event\" }}",
+                Tags = tags,
+                Metadata = new Dictionary<string, string>
+                {
+                    ["benchmark"] = "tag-performance",
+                    ["eventCount"] = eventCount.ToString(),
+                    ["tagsPerEvent"] = tagsPerEvent.ToString()
+                },
+                Created = DateTimeOffset.UtcNow.AddSeconds(-i) // Spread events over time
+            });
+
+            // Batch inserts for better performance during setup
+            if (events.Count == 1000 || i == eventCount - 1)
+            {
+                await _postgresBackend.Append(_tenant, events, null, null);
+                events.Clear();
+
+                if (i % 10000 == 0)
+                {
+                    Console.WriteLine($"[TAG BENCHMARK] Inserted {i + 1}/{eventCount} events");
+                }
+            }
+        }
+
+        Console.WriteLine($"[TAG BENCHMARK] Completed setup for {dataSetupId}");
+    }
+
+    private async Task EnsureInMemoryTagPerformanceData(int eventCount, int tagsPerEvent, string dataSetupId)
+    {
+        // Check if data already exists
+        var existingQuery = new StreamQuery(
+            tags: [new EventTag("dataset", dataSetupId)]
+        );
+        var existing = await _inMemoryBackend.Stream(_tenant, existingQuery, maxCount: 1);
+
+        if (existing.Any())
+        {
+            return;
+        }
+
+        // Create the same data structure as PostgreSQL version for fair comparison
+        var eventTypes = new[] { "order-created", "payment-processed", "item-shipped", "order-completed" };
+        var categories = new[] { "business", "system", "user-action", "integration" };
+        var priorities = new[] { "low", "medium", "high", "critical" };
+        var sources = new[] { "web", "mobile", "api", "batch" };
+
+        var events = new List<IEventToPersist>();
+        var random = new Random(42); // Same seed as PostgreSQL version
+
+        for (int i = 0; i < eventCount; i++)
+        {
+            var tags = new List<EventTag>
+            {
+                new EventTag("dataset", dataSetupId)
+            };
+
+            if (tagsPerEvent > 1 && tags.Count < tagsPerEvent)
+            {
+                tags.Add(new EventTag("category", categories[random.Next(categories.Length)]));
+            }
+            if (tagsPerEvent > 2 && tags.Count < tagsPerEvent)
+            {
+                tags.Add(new EventTag("priority", priorities[random.Next(priorities.Length)]));
+            }
+            if (tagsPerEvent > 3 && tags.Count < tagsPerEvent)
+            {
+                tags.Add(new EventTag("source", sources[random.Next(sources.Length)]));
+            }
+            if (tagsPerEvent > 4 && tags.Count < tagsPerEvent)
+            {
+                tags.Add(new EventTag("tenant", $"tenant-{random.Next(1, 10)}"));
+            }
+
+            events.Add(new EventToPersist
+            {
+                EventType = new EventType(eventTypes[random.Next(eventTypes.Length)]),
+                EventJson = $"{{ \"index\": {i}, \"data\": \"tag performance test event\" }}",
+                Tags = tags,
+                Metadata = new Dictionary<string, string>
+                {
+                    ["benchmark"] = "tag-performance-inmem",
+                    ["eventCount"] = eventCount.ToString(),
+                    ["tagsPerEvent"] = tagsPerEvent.ToString()
+                },
+                Created = DateTimeOffset.UtcNow.AddSeconds(-i)
+            });
+        }
+
+        // Insert all at once for in-memory (no batching needed)
+        await _inMemoryBackend.Append(_tenant, events, null, null);
     }
 }
