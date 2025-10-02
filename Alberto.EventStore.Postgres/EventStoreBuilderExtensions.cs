@@ -8,7 +8,7 @@ public static class EventStoreBuilderExtensions
 {
     public static IServiceCollection AddPostgresEventStore<T>(
         this IServiceCollection services,
-        Action<PostgresEventStoreOptions> configureOptions) where T : EventStore
+        Action<PostgresEventStoreOptions> configureOptions) where T : EventStoreFactory
     {
         var options = new PostgresEventStoreOptions();
         configureOptions(options);
@@ -16,10 +16,10 @@ public static class EventStoreBuilderExtensions
         services.Configure(configureOptions);
         services.AddKeyedScoped<IEventStoreBackend, PostgresEventStoreBackend>(options.Schema);
 
-        services.AddScoped<T>(sp => (T)Activator.CreateInstance(typeof(T), new EventStoreFactory(
+        services.AddScoped<T>(sp => (T)Activator.CreateInstance(typeof(T), 
             sp.GetRequiredService<ITenantContext>(),
             sp.GetRequiredService<IDiagnosticsEventListener>(),
-            sp.GetRequiredKeyedService<IEventStoreBackend>(options.Schema)))!);
+            sp.GetRequiredKeyedService<IEventStoreBackend>(options.Schema))!);
 
         return services;
     }

@@ -22,7 +22,8 @@ var app = builder.Build();
 
 app.MapDefaultEndpoints();
 
-app.MapGet("/", () => "Hello World!");
+app.MapOrdersModule();
+app.MapPaymentsModule();
 
 app.Run();
 

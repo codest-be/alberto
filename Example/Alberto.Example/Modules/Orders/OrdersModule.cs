@@ -11,7 +11,7 @@ public static class OrdersModule
 {
     public static IServiceCollection AddOrdersModule(this IServiceCollection services, IConfiguration configuration)
         => services
-            .AddPostgresEventStore<OrderEventStore>(o =>
+            .AddPostgresEventStore<OrderEventStoreFactory>(o =>
             {
                 o.ConnectionString = configuration.GetConnectionString("alberto-db") ??
                                      throw new InvalidOperationException("Connection string 'alberto-db' not found.");
@@ -23,9 +23,9 @@ public static class OrdersModule
         var orders = endpoints.MapGroup("orders");
 
         orders.MapGet("/{id:guid}",
-            async Task<IResult> (Guid id, OrderEventStore eventStore) =>
+            async Task<IResult> (Guid id, OrderEventStoreFactory eventStoreFactory) =>
             {
-                var events = await eventStore.Stream(new StreamQuery(tags:
+                var events = await eventStoreFactory.Stream(new StreamQuery(tags:
                     [new EventTag("order", id.ToString())]));
                 var order = Order.Create(events.ToArray());
                 return Results.Ok(order);
@@ -34,8 +34,6 @@ public static class OrdersModule
         return endpoints;
     }
 }
-
-public class OrderEventStore(EventStoreFactory factory) : EventStore.EventStore(factory);
 
 public class Order
 {

@@ -14,7 +14,8 @@
     </ItemGroup>
 
     <ItemGroup>
-        <EmbeddedResource Include="Migrations\*.sql"/>
+        <EmbeddedResource Include="Modules\Orders\Migrations\*.sql" />
+        <EmbeddedResource Include="Modules\Payments\Migrations\*.sql" />
     </ItemGroup>
 
 </Project>

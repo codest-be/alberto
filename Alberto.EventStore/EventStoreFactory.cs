@@ -4,33 +4,19 @@ using Alberto.EventStore.MultiTenant;
 
 namespace Alberto.EventStore;
 
-
-public abstract class EventStore(EventStoreFactory factory)
-{
-    public Task<IReadOnlyCollection<IEventEnvelope>> Stream(
-        StreamQuery query,
-        int? maxCount = null,
-        CancellationToken cancellationToken = default) => factory.Stream(query, maxCount, cancellationToken);
-
-    public Task<IEnumerable<IEventEnvelope>> Append(
-        IEnumerable<IEventToPersist> events,
-        StreamQuery? consistencyBoundary,
-        Guid? expectedLatestEventId,
-        CancellationToken cancellationToken = default) =>
-        factory.Append(events, consistencyBoundary, expectedLatestEventId, cancellationToken);
-}
-
 public class EventStoreFactory(
     ITenantContext tenantContext,
-    IDiagnosticsEventListener diagnostics,
-    IEventStoreBackend backend)
+    IEventStoreBackend backend,
+    IDiagnosticsEventListener? diagnostics)
 {
+    private readonly IDiagnosticsEventListener _diagnostics = diagnostics ?? new NoopDiagnosticsEventListener();
+
     public Task<IReadOnlyCollection<IEventEnvelope>> Stream(
         StreamQuery query,
         int? maxCount = null,
         CancellationToken cancellationToken = default)
     {
-        using var streamScope = diagnostics.Stream(query, maxCount);
+        using var streamScope = _diagnostics.Stream(query, maxCount);
 
         return backend.Stream(tenantContext.Tenant, query, maxCount, cancellationToken);
     }
@@ -43,7 +29,7 @@ public class EventStoreFactory(
     {
         var eventToPersists = events as IEventToPersist[] ?? events.ToArray();
 
-        using var appendScope = diagnostics.Append(eventToPersists);
+        using var appendScope = _diagnostics.Append(eventToPersists);
 
         return backend.Append(tenantContext.Tenant, eventToPersists, consistencyBoundary,
             expectedLatestEventId, cancellationToken);
