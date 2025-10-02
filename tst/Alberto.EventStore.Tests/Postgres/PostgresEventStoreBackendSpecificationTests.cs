@@ -185,17 +185,19 @@ public class PostgresTestFixture : IAsyncLifetime
         string currentDirectory = AppContext.BaseDirectory;
         DirectoryInfo? solutionDirectory = Directory.GetParent(currentDirectory);
 
-        // Navigate up until we find the solution root (contains Alberto.EventStore.Postgres folder)
+        // Navigate up until we find the solution root (contains src/EventStore/Alberto.EventStore.Postgres folder)
         while (solutionDirectory != null
-               && !Directory.Exists(Path.Combine(solutionDirectory.FullName, "Alberto.EventStore.Postgres")))
+               && !Directory.Exists(Path.Combine(solutionDirectory.FullName, "src", "EventStore", "Alberto.EventStore.Postgres")))
             solutionDirectory = solutionDirectory.Parent;
 
         if (solutionDirectory == null)
             throw new DirectoryNotFoundException(
-                "Could not locate the solution root directory containing Alberto.EventStore.Postgres");
+                "Could not locate the solution root directory containing src/EventStore/Alberto.EventStore.Postgres");
 
         string migrationPath = Path.Combine(
             solutionDirectory.FullName,
+            "src",
+            "EventStore",
             "Alberto.EventStore.Postgres",
             "Migrations",
             "CreateEventStoreSchema.sql");
