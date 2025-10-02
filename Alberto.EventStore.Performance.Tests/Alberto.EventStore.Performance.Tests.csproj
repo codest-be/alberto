@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
         <OutputType>Exe</OutputType>
@@ -12,22 +12,22 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="BenchmarkDotNet" Version="0.15.4"/>
-        <PackageReference Include="NBomber" Version="6.1.1"/>
-        <PackageReference Include="Respawn" Version="6.2.1"/>
-        <PackageReference Include="Testcontainers.PostgreSql" Version="4.7.0"/>
-        <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.0.0"/>
+        <PackageReference Include="BenchmarkDotNet" />
+        <PackageReference Include="NBomber" />
+        <PackageReference Include="Respawn" />
+        <PackageReference Include="Testcontainers.PostgreSql" />
+        <PackageReference Include="Microsoft.Extensions.Logging.Console" />
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\Alberto.EventStore\Alberto.EventStore.csproj"/>
-        <ProjectReference Include="..\Alberto.EventStore.InMemory\Alberto.EventStore.InMemory.csproj"/>
-        <ProjectReference Include="..\Alberto.EventStore.Postgres\Alberto.EventStore.Postgres.csproj"/>
+        <ProjectReference Include="..\Alberto.EventStore\Alberto.EventStore.csproj" />
+        <ProjectReference Include="..\Alberto.EventStore.InMemory\Alberto.EventStore.InMemory.csproj" />
+        <ProjectReference Include="..\Alberto.EventStore.Postgres\Alberto.EventStore.Postgres.csproj" />
     </ItemGroup>
 
     <ItemGroup>
-        <Folder Include="BenchmarkDotNet.Artifacts\"/>
-        <Folder Include="BenchmarkDotNet.Artifacts\results\"/>
+        <Folder Include="BenchmarkDotNet.Artifacts\" />
+        <Folder Include="BenchmarkDotNet.Artifacts\results\" />
     </ItemGroup>
 
 </Project>

@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
         <TargetFramework>net10.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
@@ -9,9 +9,9 @@
         <ProjectReference Include="..\Alberto.EventStore\Alberto.EventStore.csproj" />
     </ItemGroup>
     <ItemGroup>
-        <PackageReference Include="Dapper" Version="2.1.66"/>
-        <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0"/>
-        <PackageReference Include="Microsoft.Extensions.Options" Version="9.0.0"/>
-        <PackageReference Include="Npgsql" Version="9.0.3"/>
+        <PackageReference Include="Dapper" />
+        <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+        <PackageReference Include="Microsoft.Extensions.Options" />
+        <PackageReference Include="Npgsql" />
     </ItemGroup>
 </Project>
