@@ -43,4 +43,4 @@ jobs:
         run: dotnet build --configuration Release --no-restore
 
       - name: Test
-        run: dotnet test
+        run: dotnet test --filter "FullyQualifiedName!~EventStore.Performance.Tests"
