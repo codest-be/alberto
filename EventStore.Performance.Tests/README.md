@@ -25,6 +25,9 @@ dotnet build -c Release
 
 # Run the benchmarks (automatically spins up Docker PostgreSQL)
 dotnet run -c Release
+
+# Or run from solution root
+dotnet run --project EventStore.Performance.Tests --configuration Release
 ```
 
 **Prerequisites:**
@@ -36,6 +39,16 @@ dotnet run -c Release
 # For development/testing only - results won't be accurate
 dotnet run
 ```
+
+### CI/CD Integration
+
+Performance tests run in a **separate GitHub Actions pipeline** to avoid consuming excessive CI minutes:
+
+- **Triggers**: Manual dispatch, releases, weekly schedule (Monday 6 AM UTC)
+- **Pipeline**: `.github/workflows/performance.yml`
+- **Duration**: 10-30 minutes depending on system load
+- **Artifacts**: Performance reports retained for 30 days
+- **Separation**: Main CI runs only fast unit tests for immediate feedback
 
 The benchmarks will generate detailed reports showing:
 - Mean execution time and standard deviation

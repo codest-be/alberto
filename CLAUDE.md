@@ -5,8 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build and Development Commands
 
 - **Build solution**: `dotnet build Alberto.sln`
-- **Run tests**: `dotnet test`
-- **Run specific test project**: `dotnet test Eventstore.Tests/Eventstore.Tests.csproj`
+- **Run tests**: `dotnet test` (excludes performance tests for fast feedback)
+- **Run specific test project**: `dotnet test EventStore.Tests/EventStore.Tests.csproj`
+- **Run performance tests**: `dotnet run --project EventStore.Performance.Tests --configuration Release`
 - **Run example application**: `dotnet run --project Example/Alberto.AppHost/Alberto.AppHost.csproj`
 - **Start individual services**:
   - Example web app: `dotnet run --project Example/Alberto.Example/Alberto.Example.csproj`
@@ -58,13 +59,66 @@ The PostgreSQL implementation supports multiple schemas within the same database
 ## Project Structure
 
 The solution uses solution folders to organize projects:
-- **EventStore folder**: Core event store components (`EventStore`, `EventStore.InMemory`, `EventStore.Postgres`, `EventStore.Telemetry`, `Eventstore.Tests`)
+- **EventStore folder**: Core event store components (`EventStore`, `EventStore.InMemory`, `EventStore.Postgres`, `EventStore.Telemetry`, `EventStore.Tests`, `EventStore.Performance.Tests`)
 - **Example folder**: Aspire-based example application (`Alberto.Example`, `Alberto.AppHost`, `Alberto.ServiceDefaults`, `Alberto.SqlMigrator`)
+
+## Testing Strategy
+
+The project uses a two-tier testing approach to separate fast feedback from comprehensive performance analysis:
+
+### Unit and Integration Tests (`EventStore.Tests`)
+- **Purpose**: Fast feedback for correctness and functionality
+- **Test count**: 109 tests running in ~3 seconds
+- **Coverage**:
+  - Core event store functionality
+  - Multi-schema isolation
+  - Error handling and edge cases
+  - PostgreSQL configuration validation
+  - Concurrency correctness (small scale)
+  - Multi-tenant isolation (small scale)
+- **Technology**: xUnit v3 with Testcontainers for PostgreSQL integration
+- **CI**: Runs on every push/PR for immediate feedback
+
+### Performance Tests (`EventStore.Performance.Tests`)
+- **Purpose**: Comprehensive performance analysis and regression detection
+- **Test count**: 78 benchmarks covering various scenarios
+- **Coverage**:
+  - Single event operations
+  - Bulk operations (10, 100, 1000 events)
+  - Tag query performance
+  - Connection pooling impact
+  - Memory usage analysis
+- **Technology**: BenchmarkDotNet with statistical analysis
+- **CI**: Separate pipeline (manual, releases, weekly) to preserve GitHub Actions minutes
+
+### Test Architecture Patterns
+- **Specification Pattern**: `EventStoreBackendSpecification.cs` defines abstract test contracts
+- **Backend Implementations**: Each backend (InMemory, Postgres) implements the specification
+- **Advanced Query Tests**: `AdvancedQueryTests.cs` provides complex scenario testing
+- **Fixture-based Setup**: `PostgresTestFixture` manages database lifecycle and tenant isolation
+
+## CI/CD Pipelines
+
+### Main Build Pipeline (`.github/workflows/build.yml`)
+- **Triggers**: Every push and pull request to main branch
+- **Purpose**: Fast feedback for code changes
+- **Tests**: Runs unit/integration tests only (`--filter "FullyQualifiedName!~EventStore.Performance.Tests"`)
+- **Duration**: ~1-2 minutes total
+- **Scope**: Build validation, correctness testing, immediate feedback
+
+### Performance Pipeline (`.github/workflows/performance.yml`)
+- **Triggers**: Manual dispatch, releases, weekly schedule (Monday 6 AM UTC)
+- **Purpose**: Performance regression detection and optimization
+- **Tests**: Runs comprehensive BenchmarkDotNet suite
+- **Duration**: 10-30 minutes (varies by system load)
+- **Artifacts**: Performance reports (JSON/HTML) retained for 30 days
+- **Scope**: Performance analysis, regression detection, optimization guidance
 
 ## Dependencies and Technology
 
 - .NET 10 with nullable reference types and implicit usings enabled
 - xUnit v3 for testing with Microsoft.NET.Test.Sdk
+- BenchmarkDotNet for performance testing
 - Testcontainers for integration testing
 - .NET Aspire for orchestration and service defaults
 - PostgreSQL with schema-based multi-tenancy
