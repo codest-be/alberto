@@ -540,6 +540,52 @@ public class EventStoreBenchmarks
     }
 
     [Benchmark]
+    [Arguments(1000, 1)]   // 1K events, 1 tag each
+    [Arguments(1000, 2)]   // 1K events, 2 tags each
+    [Arguments(10000, 2)]  // 10K events, 2 tags each (typical scale)
+    [Arguments(10000, 5)]  // 10K events, 5 tags each (high end)
+    [Arguments(100000, 2)] // 100K events, 2 tags each (production scale)
+    [Arguments(100000, 5)] // 100K events, 5 tags each (stress test)
+    public async Task CommonPattern_TenantEventTypeTags_Postgres(int eventCount, int tagsPerEvent)
+    {
+        var dataSetupId = $"common-pattern-{eventCount}-{tagsPerEvent}";
+
+        // Setup test data with realistic tag patterns
+        await EnsureTagPerformanceData(eventCount, tagsPerEvent, dataSetupId);
+
+        // Test the MOST COMMON pattern: tenant + event_type + tags
+        // Example: "get order_created events for order:123"
+        var commonQuery = new StreamQuery(
+            eventTypes: [new EventType("order-created")],
+            tags: [new EventTag("dataset", dataSetupId)]
+        );
+
+        await _postgresBackend.Stream(_tenant, commonQuery, maxCount: 1000);
+
+        // Test with multiple event types (also common)
+        var multiTypeQuery = new StreamQuery(
+            eventTypes: [new EventType("order-created"), new EventType("payment-processed")],
+            tags: [new EventTag("dataset", dataSetupId)]
+        );
+
+        await _postgresBackend.Stream(_tenant, multiTypeQuery, maxCount: 1000);
+
+        // Test event type + multiple tags (business logic queries)
+        if (tagsPerEvent > 1)
+        {
+            var businessQuery = new StreamQuery(
+                eventTypes: [new EventType("order-created")],
+                tags: [
+                    new EventTag("dataset", dataSetupId),
+                    new EventTag("category", "business")
+                ]
+            ).RequiringAllTags();
+
+            await _postgresBackend.Stream(_tenant, businessQuery, maxCount: 1000);
+        }
+    }
+
+    [Benchmark]
     [Arguments(1000, 1)]
     [Arguments(10000, 2)]
     [Arguments(100000, 2)]

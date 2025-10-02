@@ -29,32 +29,27 @@ CREATE TABLE IF NOT EXISTS events
     );
 
 -- =============================================================================
--- OPTIMIZED INDEXES 
+-- OPTIMIZED TENANT-FIRST INDEXES FOR ACTUAL QUERY PATTERNS
 -- =============================================================================
 
--- 1. Core tenant-based queries (covers most DCB operations)
--- This index supports ORDER BY position DESC and tenant filtering
-CREATE INDEX IF NOT EXISTS idx_events_tenant_position_desc ON events (tenant_id, position DESC);
+-- 1. PRIMARY PATTERN: tenant + event_type + tags
+-- Optimized for: "get order_created events for order:123" (most common)
+CREATE INDEX IF NOT EXISTS idx_events_tenant_type_tags ON events (tenant_id, event_type) INCLUDE (tags, position, data, metadata, created_at);
 
--- 2. GIN index for efficient tag array operations (CRITICAL for performance)
--- Supports @> (contains) and && (overlaps) operations on tags array
-CREATE INDEX IF NOT EXISTS idx_events_tags_gin ON events USING GIN (tags);
+-- 2. SECONDARY PATTERN: tenant + tags (when no event_type filter)
+-- For broad tag queries within tenant
+CREATE INDEX IF NOT EXISTS idx_events_tenant_tags ON events (tenant_id) INCLUDE (tags, event_type, position, data, metadata, created_at);
 
--- 3. Tenant + tag combination (most common DCB query pattern)
--- Uses INCLUDE for covering index benefits
-CREATE INDEX IF NOT EXISTS idx_events_tenant_tags_combo ON events (tenant_id) INCLUDE (tags, event_type, position);
+-- 3. ORDERING: tenant-based result ordering and pagination
+-- Supports ORDER BY position DESC within tenant
+CREATE INDEX IF NOT EXISTS idx_events_tenant_position ON events (tenant_id, position DESC);
 
--- 4. Event type filtering within tenant
--- Optimized with INCLUDE for common projections
-CREATE INDEX IF NOT EXISTS idx_events_tenant_type ON events (tenant_id, event_type) INCLUDE (position, tags);
-
--- 5. Consistency boundary checks (after specific position)
--- Supports efficient "position > X" queries within tenant
+-- 4. CONSISTENCY: optimistic concurrency control
+-- For consistency boundary checks (version-like behavior)
 CREATE INDEX IF NOT EXISTS idx_events_consistency ON events (tenant_id, position)
     WHERE position > 0;
 
--- 6. Multi-tenant reading optimization
--- Critical for IMultitenantEventstoreBackend performance
--- Supports efficient "position > X ORDER BY position" across all tenants
+-- 5. CROSS-TENANT: multi-tenant queries (keep for cross-tenant access)
+-- Critical for queries that span multiple tenants
 CREATE INDEX IF NOT EXISTS idx_events_global_position ON events (position)
     INCLUDE (tenant_id, event_type, tags, data, metadata, created_at);
