@@ -1,16 +1,15 @@
-# This workflow publishes NuGet packages when a release is created
+# This workflow publishes NuGet packages using GitVersion for automatic versioning
 
 name: Publish NuGet Packages
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'v*.*.*'
+    branches:
+      - main
+      - develop
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'Package version to publish'
-        required: true
-        default: '0.0.1-alpha'
 
 permissions:
   contents: read
@@ -32,6 +31,17 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Required for GitVersion
+
+      - name: Install GitVersion
+        uses: gittools/actions/gitversion/setup@v1.1.1
+        with:
+          versionSpec: '5.x'
+
+      - name: Determine Version
+        id: gitversion
+        uses: gittools/actions/gitversion/execute@v1.1.1
 
       - name: Start PostgreSQL 16
         run: |
@@ -52,28 +62,17 @@ jobs:
             9.0.x
             10.0.x
 
-      - name: Set version from input
-        if: github.event_name == 'workflow_dispatch'
+      - name: Display Version Information
         run: |
-          echo "PACKAGE_VERSION=${{ github.event.inputs.version }}" >> $GITHUB_ENV
-
-      - name: Set version from release tag
-        if: github.event_name == 'release'
-        run: |
-          # Remove 'v' prefix from tag if present
-          VERSION=${{ github.event.release.tag_name }}
-          VERSION=${VERSION#v}
-          echo "PACKAGE_VERSION=$VERSION" >> $GITHUB_ENV
-
-      - name: Update version in Directory.Build.props
-        run: |
-          sed -i "s|<Version>.*</Version>|<Version>$PACKAGE_VERSION</Version>|" Directory.Build.props
+          echo "Version: ${{ steps.gitversion.outputs.nuGetVersionV2 }}"
+          echo "Semantic Version: ${{ steps.gitversion.outputs.semVer }}"
+          echo "Branch Name: ${{ steps.gitversion.outputs.branchName }}"
 
       - name: Restore dependencies
         run: dotnet restore
 
       - name: Build solution
-        run: dotnet build --configuration Release --no-restore
+        run: dotnet build --configuration Release --no-restore /p:Version=${{ steps.gitversion.outputs.nuGetVersionV2 }}
 
       - name: Run tests
         run: dotnet test tst/Alberto.EventStore.Tests/Alberto.EventStore.Tests.csproj --no-restore --no-build --configuration Release

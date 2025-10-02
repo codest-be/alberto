@@ -13,6 +13,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     - Example web app: `dotnet run --project Example/Alberto.Example/Alberto.Example.csproj`
     - SQL migrator: `dotnet run --project Example/Alberto.SqlMigrator/Alberto.SqlMigrator.csproj`
 
+## Versioning and Releases
+
+The project uses **GitVersion** for automatic semantic versioning based on Git history and conventional commits:
+
+- **Version calculation**: Automatic based on branch, commits, and tags
+- **Main branch**: Produces release versions (e.g., `1.2.3`)
+- **Develop branch**: Produces beta pre-releases (e.g., `1.2.3-beta.4`)
+- **Feature branches**: Produces alpha pre-releases (e.g., `1.2.3-alpha.5`)
+- **Tags**: Create releases by pushing tags like `v1.2.3`
+- **Conventional commits**: Use `+semver: major/minor/patch` to control version bumps
+
 ## Architecture Overview
 
 Alberto is an event store library for .NET with multi-tenant and multi-schema support, built on .NET 10.
@@ -115,10 +126,22 @@ The project uses a two-tier testing approach to separate fast feedback from comp
 ### Main Build Pipeline (`.github/workflows/build.yml`)
 
 - **Triggers**: Every push and pull request to main branch
-- **Purpose**: Fast feedback for code changes
-- **Tests**: Runs unit/integration tests only (`--filter "FullyQualifiedName!~EventStore.Performance.Tests"`)
+- **Purpose**: Fast feedback for code changes with GitVersion integration
+- **GitVersion**: Calculates versions automatically based on Git history
+- **Tests**: Runs unit/integration tests across PostgreSQL versions (15, 16, 17)
 - **Duration**: ~1-2 minutes total
 - **Scope**: Build validation, correctness testing, immediate feedback
+
+### Publish Pipeline (`.github/workflows/publish-packages.yml`)
+
+- **Triggers**: Push to main/develop branches, tags matching `v*.*.*`, manual dispatch
+- **Purpose**: Automatic NuGet package publishing with GitVersion
+- **Versioning**:
+  - **Tags** (e.g., `v1.2.3`): Publishes release packages
+  - **Main branch**: Publishes release versions
+  - **Develop branch**: Publishes beta pre-releases
+- **Tests**: Full test suite before publishing
+- **Artifacts**: NuGet packages uploaded with 90-day retention
 
 ### Performance Pipeline (`.github/workflows/performance.yml`)
 

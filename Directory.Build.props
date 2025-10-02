@@ -1,7 +1,7 @@
 <Project>
   <PropertyGroup>
     <!-- Package Information -->
-    <Version>0.0.1-alpha</Version>
+    <!-- Version is automatically set by GitVersion during CI/CD -->
     <Authors>Bjorn Vandenbussche</Authors>
     <Company>Codest</Company>
     <Product>Alberto EventStore</Product>

@@ -28,6 +28,17 @@ jobs:
       TERM: xterm
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Required for GitVersion
+
+      - name: Install GitVersion
+        uses: gittools/actions/gitversion/setup@v1.1.1
+        with:
+          versionSpec: '5.x'
+
+      - name: Determine Version
+        id: gitversion
+        uses: gittools/actions/gitversion/execute@v1.1.1
 
       - name: Start PostgreSQL ${{ matrix.postgres-version }}
         run: |
@@ -52,7 +63,7 @@ jobs:
         run: dotnet restore
         
       - name: Build
-        run: dotnet build --configuration Release --no-restore
+        run: dotnet build --configuration Release --no-restore /p:Version=${{ steps.gitversion.outputs.nuGetVersionV2 }}
         
       - name: Test (PostgreSQL ${{ matrix.postgres-version }})
         run: dotnet test tst/Alberto.EventStore.Tests/Alberto.EventStore.Tests.csproj --no-restore --no-build --configuration Release
