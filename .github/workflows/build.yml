@@ -12,8 +12,11 @@ permissions:
   checks: write
 jobs:
   build:
-    name: Build
+    name: Build and Test
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        postgres-version: [15, 16, 17]
     env:
       DOTNET_CLI_TELEMETRY_OPTOUT: 1
       DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
@@ -25,7 +28,19 @@ jobs:
       TERM: xterm
     steps:
       - uses: actions/checkout@v4
-      
+
+      - name: Start PostgreSQL ${{ matrix.postgres-version }}
+        run: |
+          docker run --name postgres-test \
+            -e POSTGRES_PASSWORD=postgres \
+            -e POSTGRES_USER=postgres \
+            -e POSTGRES_DB=test \
+            -p 5432:5432 \
+            -d postgres:${{ matrix.postgres-version }}
+
+          # Wait for PostgreSQL to be ready
+          timeout 30 bash -c 'until docker exec postgres-test pg_isready -U postgres; do sleep 1; done'
+
       - name: Setup .NET SDKs
         uses: actions/setup-dotnet@v4
         with:
@@ -39,5 +54,7 @@ jobs:
       - name: Build
         run: dotnet build --configuration Release --no-restore
         
-      - name: Test
+      - name: Test (PostgreSQL ${{ matrix.postgres-version }})
         run: dotnet test tst/Alberto.EventStore.Tests/Alberto.EventStore.Tests.csproj --no-restore --no-build --configuration Release
+        env:
+          POSTGRES_CONNECTION_STRING: "Host=localhost;Port=5432;Database=test;Username=postgres;Password=postgres"

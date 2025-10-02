@@ -29,6 +29,12 @@ Use with caution in production environments.
 
 Note: The packages target .NET 9.0 and .NET 10.0 RC - stable packages will be released when .NET 10.0 is generally available.
 
+## Requirements
+
+- **.NET**: 9.0 or 10.0+
+- **PostgreSQL**: 15+ (16+ recommended for production)
+- **Tested on**: PostgreSQL 15, 16, 17
+
 ## Quick Start
 
 ### In-Memory Setup (Testing/Development)
@@ -65,6 +71,8 @@ public class OrderService
 ```
 
 ### PostgreSQL Setup (Production)
+
+**Requirements**: PostgreSQL 15+ (PostgreSQL 16+ recommended for optimal performance)
 
 ```csharp
 using Alberto.EventStore;

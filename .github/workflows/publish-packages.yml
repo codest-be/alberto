@@ -33,6 +33,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Start PostgreSQL 16
+        run: |
+          docker run --name postgres-test \
+            -e POSTGRES_PASSWORD=postgres \
+            -e POSTGRES_USER=postgres \
+            -e POSTGRES_DB=test \
+            -p 5432:5432 \
+            -d postgres:16
+
+          # Wait for PostgreSQL to be ready
+          timeout 30 bash -c 'until docker exec postgres-test pg_isready -U postgres; do sleep 1; done'
+
       - name: Setup .NET SDKs
         uses: actions/setup-dotnet@v4
         with:
@@ -65,6 +77,8 @@ jobs:
 
       - name: Run tests
         run: dotnet test tst/Alberto.EventStore.Tests/Alberto.EventStore.Tests.csproj --no-restore --no-build --configuration Release
+        env:
+          POSTGRES_CONNECTION_STRING: "Host=localhost;Port=5432;Database=test;Username=postgres;Password=postgres"
 
       - name: Create NuGet packages
         run: dotnet pack --configuration Release --no-build --output ./artifacts/packages
