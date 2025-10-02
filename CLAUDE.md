@@ -123,25 +123,19 @@ The project uses a two-tier testing approach to separate fast feedback from comp
 
 ## CI/CD Pipelines
 
-### Main Build Pipeline (`.github/workflows/build.yml`)
+### Main Pipeline (`.github/workflows/build.yml`)
 
-- **Triggers**: Every push and pull request to main branch
-- **Purpose**: Fast feedback for code changes with GitVersion integration
+- **Triggers**: Push to main/develop branches, tags matching `v*.*.*`, PRs to main/develop, manual dispatch
+- **Purpose**: Complete build, test, and publish pipeline with GitVersion integration
 - **GitVersion**: Calculates versions automatically based on Git history
 - **Tests**: Runs unit/integration tests across PostgreSQL versions (15, 16, 17)
-- **Duration**: ~1-2 minutes total
-- **Scope**: Build validation, correctness testing, immediate feedback
-
-### Publish Pipeline (`.github/workflows/publish-packages.yml`)
-
-- **Triggers**: Push to main/develop branches, tags matching `v*.*.*`, manual dispatch
-- **Purpose**: Automatic NuGet package publishing with GitVersion
-- **Versioning**:
-  - **Tags** (e.g., `v1.2.3`): Publishes release packages
-  - **Main branch**: Publishes release versions
-  - **Develop branch**: Publishes beta pre-releases
-- **Tests**: Full test suite before publishing
+- **Publishing**:
+  - **Tags** (e.g., `v1.2.3`): Publishes release packages to NuGet.org
+  - **Main branch**: Publishes release versions to NuGet.org
+  - **Develop branch**: Publishes beta pre-releases to NuGet.org
+  - **PRs**: Build and test only (no publishing)
 - **Artifacts**: NuGet packages uploaded with 90-day retention
+- **Duration**: ~2-3 minutes total
 
 ### Performance Pipeline (`.github/workflows/performance.yml`)
 
