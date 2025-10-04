@@ -1,9 +1,9 @@
+using System.Text.Json;
 using Alberto.EventStore;
 using Alberto.EventStore.Events;
 using Alberto.EventStore.Subscriptions;
 using Alberto.Example.Modules.Orders.EventHandlers;
 using Alberto.Example.Modules.Orders.Filters;
-using System.Text.Json;
 
 namespace Alberto.Example.Modules.Orders;
 
@@ -18,7 +18,8 @@ public static class OrdersModule
             .AddEventStore<OrderEventStore, MultiTenantContext>("orders", options =>
             {
                 options.ConnectionString = configuration.GetConnectionString("alberto-db") ??
-                                           throw new InvalidOperationException("Connection string 'alberto-db' not found.");
+                                           throw new InvalidOperationException(
+                                               "Connection string 'alberto-db' not found.");
                 options.Schema = "orders";
             })
             .AddPolling(options =>
@@ -41,7 +42,8 @@ public static class OrdersModule
         RouteGroupBuilder orders = endpoints.MapGroup("orders");
 
         orders.MapPost("/",
-            async Task<IResult> (CreateOrderRequest request, OrderEventStore eventStore, ILogger<OrderEventStore> logger) =>
+            async Task<IResult> (CreateOrderRequest request, OrderEventStore eventStore,
+                ILogger<OrderEventStore> logger) =>
             {
                 try
                 {
@@ -58,10 +60,7 @@ public static class OrdersModule
                         EventType = EventType.GetEventType(typeof(OrderCreated))!,
                         EventJson = JsonSerializer.Serialize(orderCreated),
                         Tags = [new EventTag("order", orderId)],
-                        Metadata = new Dictionary<string, string>
-                        {
-                            ["customer"] = request.CustomerId
-                        },
+                        Metadata = new Dictionary<string, string> { ["customer"] = request.CustomerId },
                         Created = DateTimeOffset.UtcNow
                     };
 
@@ -85,8 +84,7 @@ public static class OrdersModule
                 Order order = Order.Create(events.ToArray());
                 return Results.Ok(order);
             });
-        
-        
+
 
         return endpoints;
     }

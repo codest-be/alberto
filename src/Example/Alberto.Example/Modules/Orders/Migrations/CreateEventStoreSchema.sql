@@ -100,39 +100,85 @@ CREATE INDEX IF NOT EXISTS idx_subscription_checkpoints_updated
 CREATE INDEX IF NOT EXISTS idx_subscription_checkpoints_position
     ON subscription_checkpoints (position DESC NULLS LAST);
 
-COMMENT ON TABLE subscription_checkpoints IS 'Tracks last processed position for each subscription';
-COMMENT ON COLUMN subscription_checkpoints.position IS 'Last successfully processed global position (NULL = from beginning)';
+COMMENT
+ON TABLE subscription_checkpoints IS 'Tracks last processed position for each subscription';
+COMMENT
+ON COLUMN subscription_checkpoints.position IS 'Last successfully processed global position (NULL = from beginning)';
 
 -- =============================================================================
 -- POISON PILLS TABLE
 -- =============================================================================
 
-CREATE TABLE IF NOT EXISTS subscription_poison_pills (
-    id UUID PRIMARY KEY,
-    subscription_id VARCHAR NOT NULL,
-    global_position BIGINT NOT NULL,
-    event_id UUID NOT NULL,
-    event_type VARCHAR NOT NULL,
-    event_data JSONB NOT NULL,
-    metadata JSONB NOT NULL,
-    error_message TEXT NOT NULL,
-    stack_trace TEXT,
-    retry_count INT NOT NULL,
-    first_failed_at TIMESTAMPTZ NOT NULL,
-    last_failed_at TIMESTAMPTZ NOT NULL,
-    resolved_at TIMESTAMPTZ,
-    resolved_by VARCHAR,
-    resolution_action VARCHAR,
+CREATE TABLE IF NOT EXISTS subscription_poison_pills
+(
+    id
+    UUID
+    PRIMARY
+    KEY,
+    subscription_id
+    VARCHAR
+    NOT
+    NULL,
+    global_position
+    BIGINT
+    NOT
+    NULL,
+    event_id
+    UUID
+    NOT
+    NULL,
+    event_type
+    VARCHAR
+    NOT
+    NULL,
+    event_data
+    JSONB
+    NOT
+    NULL,
+    metadata
+    JSONB
+    NOT
+    NULL,
+    error_message
+    TEXT
+    NOT
+    NULL,
+    stack_trace
+    TEXT,
+    retry_count
+    INT
+    NOT
+    NULL,
+    first_failed_at
+    TIMESTAMPTZ
+    NOT
+    NULL,
+    last_failed_at
+    TIMESTAMPTZ
+    NOT
+    NULL,
+    resolved_at
+    TIMESTAMPTZ,
+    resolved_by
+    VARCHAR,
+    resolution_action
+    VARCHAR,
 
-    UNIQUE(subscription_id, global_position)
-);
+    UNIQUE
+(
+    subscription_id,
+    global_position
+)
+    );
 
 CREATE INDEX IF NOT EXISTS idx_poison_pills_subscription
-ON subscription_poison_pills (subscription_id, resolved_at NULLS FIRST);
+    ON subscription_poison_pills (subscription_id, resolved_at NULLS FIRST);
 
 CREATE INDEX IF NOT EXISTS idx_poison_pills_unresolved
-ON subscription_poison_pills (subscription_id, global_position)
-WHERE resolved_at IS NULL;
+    ON subscription_poison_pills (subscription_id, global_position)
+    WHERE resolved_at IS NULL;
 
-COMMENT ON TABLE subscription_poison_pills IS 'Events that failed processing after retries';
-COMMENT ON COLUMN subscription_poison_pills.resolution_action IS 'Actions: skip, reprocess, manual';
+COMMENT
+ON TABLE subscription_poison_pills IS 'Events that failed processing after retries';
+COMMENT
+ON COLUMN subscription_poison_pills.resolution_action IS 'Actions: skip, reprocess, manual';

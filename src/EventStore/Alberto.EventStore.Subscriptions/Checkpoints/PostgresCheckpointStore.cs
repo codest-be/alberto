@@ -44,12 +44,8 @@ public sealed class PostgresCheckpointStore(
             VALUES (@SubscriptionId, @Position, @UpdatedAt)
             ON CONFLICT (subscription_id) DO NOTHING";
 
-        await connection.ExecuteAsync(insertSql, new
-        {
-            SubscriptionId = subscriptionId,
-            Position = (long?)null,
-            UpdatedAt = newCheckpoint.UpdatedAt
-        });
+        await connection.ExecuteAsync(insertSql,
+            new { SubscriptionId = subscriptionId, Position = (long?)null, newCheckpoint.UpdatedAt });
 
         logger.LogInformation(
             "Created new checkpoint for subscription '{SubscriptionId}'",
@@ -76,12 +72,8 @@ public sealed class PostgresCheckpointStore(
 
         var updatedCheckpoint = checkpoint with { UpdatedAt = DateTimeOffset.UtcNow };
 
-        await connection.ExecuteAsync(sql, new
-        {
-            SubscriptionId = updatedCheckpoint.SubscriptionId,
-            Position = updatedCheckpoint.Position,
-            UpdatedAt = updatedCheckpoint.UpdatedAt
-        });
+        await connection.ExecuteAsync(sql,
+            new { updatedCheckpoint.SubscriptionId, updatedCheckpoint.Position, updatedCheckpoint.UpdatedAt });
 
         return updatedCheckpoint;
     }

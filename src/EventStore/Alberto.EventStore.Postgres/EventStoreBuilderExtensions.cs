@@ -16,10 +16,11 @@ public static class EventStoreBuilderExtensions
         configureOptions(options);
 
         services.Configure(options.Schema, configureOptions);
-        
+
         services.AddKeyedScoped<IEventStoreBackend, PostgresEventStoreBackend>(options.Schema, (provider, _) =>
             new PostgresEventStoreBackend(
-                Options.Create(provider.GetRequiredService<IOptionsSnapshot<PostgresEventStoreOptions>>().Get(options.Schema)),
+                Options.Create(provider.GetRequiredService<IOptionsSnapshot<PostgresEventStoreOptions>>()
+                    .Get(options.Schema)),
                 provider.GetRequiredService<ILogger<PostgresEventStoreBackend>>()));
 
         services.AddScoped<T>(sp => ((T)Activator.CreateInstance(typeof(T),

@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Logging;
 using System.Text.Json;
 using Alberto.EventStore.Events;
 using Alberto.EventStore.Serialization;
@@ -7,6 +6,7 @@ using Alberto.EventStore.Subscriptions.Filters;
 using Alberto.EventStore.Subscriptions.PoisonPills;
 using Alberto.EventStore.Subscriptions.Subscriptions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Alberto.EventStore.Subscriptions.Polling;
 
@@ -214,10 +214,11 @@ public sealed class EventRouter(
             var eventType = EventType.GetEventType(eventInstance.GetType());
             if (eventType == null)
             {
-                logger.LogWarning("Could not determine event type for {EventInstanceType}", eventInstance.GetType().FullName);
+                logger.LogWarning("Could not determine event type for {EventInstanceType}",
+                    eventInstance.GetType().FullName);
                 continue;
             }
-            
+
             if (eventType.Equals(expectedEventTypeType))
             {
                 var method = handleInterface.GetMethod(nameof(IHandleEvent<object>.Handle));

@@ -802,7 +802,8 @@ public class EventStoreBenchmarks
         DirectoryInfo? solutionDirectory = Directory.GetParent(currentDirectory);
 
         while (solutionDirectory != null
-               && !Directory.Exists(Path.Combine(solutionDirectory.FullName, "src", "EventStore", "Alberto.EventStore.Postgres")))
+               && !Directory.Exists(Path.Combine(solutionDirectory.FullName, "src", "EventStore",
+                   "Alberto.EventStore.Postgres")))
             solutionDirectory = solutionDirectory.Parent;
 
         if (solutionDirectory == null)

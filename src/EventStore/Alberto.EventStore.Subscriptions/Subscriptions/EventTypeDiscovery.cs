@@ -18,8 +18,7 @@ internal static class EventTypeDiscovery
         // Find all IHandleEvent<T> interfaces
         var handleInterfaces = handlerType
             .GetInterfaces()
-            .Where(i => i.IsGenericType &&
-                       i.GetGenericTypeDefinition() == typeof(IHandleEvent<>));
+            .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IHandleEvent<>));
 
         foreach (var handleInterface in handleInterfaces)
         {
@@ -62,7 +61,7 @@ internal static class EventTypeDiscovery
         var handleInterfaces = handlerType
             .GetInterfaces()
             .Where(i => i.IsGenericType &&
-                       i.GetGenericTypeDefinition() == typeof(IHandleEvent<>));
+                        i.GetGenericTypeDefinition() == typeof(IHandleEvent<>));
 
         foreach (var handleInterface in handleInterfaces)
         {

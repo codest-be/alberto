@@ -1,4 +1,3 @@
-
 namespace Alberto.EventStore.Events;
 
 public class EventTypeRegistry

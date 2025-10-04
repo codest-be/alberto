@@ -249,13 +249,16 @@ public class MultiSchemaEventStoreTests(PostgresTestFixture fixture) : IAsyncLif
         DirectoryInfo? solutionDirectory = Directory.GetParent(currentDirectory);
 
         while (solutionDirectory != null &&
-               !Directory.Exists(Path.Combine(solutionDirectory.FullName, "src", "EventStore", "Alberto.EventStore.Postgres")))
+               !Directory.Exists(Path.Combine(solutionDirectory.FullName, "src", "EventStore",
+                   "Alberto.EventStore.Postgres")))
             solutionDirectory = solutionDirectory.Parent;
 
         if (solutionDirectory == null)
-            throw new DirectoryNotFoundException("Could not locate src/EventStore/Alberto.EventStore.Postgres directory");
+            throw new DirectoryNotFoundException(
+                "Could not locate src/EventStore/Alberto.EventStore.Postgres directory");
 
-        string migrationPath = Path.Combine(solutionDirectory.FullName, "src", "EventStore", "Alberto.EventStore.Postgres", "Migrations",
+        string migrationPath = Path.Combine(solutionDirectory.FullName, "src", "EventStore",
+            "Alberto.EventStore.Postgres", "Migrations",
             "CreateEventStoreSchema.sql");
         return await File.ReadAllTextAsync(migrationPath);
     }

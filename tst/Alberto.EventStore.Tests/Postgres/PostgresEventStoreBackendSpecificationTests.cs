@@ -187,7 +187,8 @@ public class PostgresTestFixture : IAsyncLifetime
 
         // Navigate up until we find the solution root (contains src/EventStore/Alberto.EventStore.Postgres folder)
         while (solutionDirectory != null
-               && !Directory.Exists(Path.Combine(solutionDirectory.FullName, "src", "EventStore", "Alberto.EventStore.Postgres")))
+               && !Directory.Exists(Path.Combine(solutionDirectory.FullName, "src", "EventStore",
+                   "Alberto.EventStore.Postgres")))
             solutionDirectory = solutionDirectory.Parent;
 
         if (solutionDirectory == null)

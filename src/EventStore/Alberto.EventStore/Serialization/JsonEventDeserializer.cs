@@ -9,8 +9,7 @@ public sealed class JsonEventDeserializer(JsonSerializerOptions? options = null)
 {
     private readonly JsonSerializerOptions _options = options ?? new JsonSerializerOptions
     {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        PropertyNameCaseInsensitive = true
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase, PropertyNameCaseInsensitive = true
     };
 
     public TEvent Deserialize<TEvent>(string eventJson)
@@ -21,7 +20,9 @@ public sealed class JsonEventDeserializer(JsonSerializerOptions? options = null)
         try
         {
             var result = JsonSerializer.Deserialize<TEvent>(eventJson, _options);
-            return result ?? throw new InvalidOperationException($"Deserialization resulted in null for type {typeof(TEvent).Name}");
+            return result ??
+                   throw new InvalidOperationException(
+                       $"Deserialization resulted in null for type {typeof(TEvent).Name}");
         }
         catch (JsonException ex)
         {
@@ -40,7 +41,8 @@ public sealed class JsonEventDeserializer(JsonSerializerOptions? options = null)
         try
         {
             var result = JsonSerializer.Deserialize(eventJson, eventType, _options);
-            return result ?? throw new InvalidOperationException($"Deserialization resulted in null for type {eventType.Name}");
+            return result ??
+                   throw new InvalidOperationException($"Deserialization resulted in null for type {eventType.Name}");
         }
         catch (JsonException ex)
         {

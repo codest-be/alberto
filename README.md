@@ -27,7 +27,8 @@ Current version: **0.0.1-alpha**
 ⚠️ **Preview Warning**: This is an alpha preview release. Breaking changes may occur at any point until version 1.0.0.
 Use with caution in production environments.
 
-Note: The packages target .NET 9.0 and .NET 10.0 RC - stable packages will be released when .NET 10.0 is generally available.
+Note: The packages target .NET 9.0 and .NET 10.0 RC - stable packages will be released when .NET 10.0 is generally
+available.
 
 ## Requirements
 

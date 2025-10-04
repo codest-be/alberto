@@ -130,10 +130,10 @@ The project uses a two-tier testing approach to separate fast feedback from comp
 - **GitVersion**: Calculates versions automatically based on Git history
 - **Tests**: Runs unit/integration tests across PostgreSQL versions (15, 16, 17)
 - **Publishing**:
-  - **Tags** (e.g., `v1.2.3`): Publishes release packages to NuGet.org
-  - **Main branch**: Publishes release versions to NuGet.org
-  - **Develop branch**: Publishes beta pre-releases to NuGet.org
-  - **PRs**: Build and test only (no publishing)
+    - **Tags** (e.g., `v1.2.3`): Publishes release packages to NuGet.org
+    - **Main branch**: Publishes release versions to NuGet.org
+    - **Develop branch**: Publishes beta pre-releases to NuGet.org
+    - **PRs**: Build and test only (no publishing)
 - **Artifacts**: NuGet packages uploaded with 90-day retention
 - **Duration**: ~2-3 minutes total
 
