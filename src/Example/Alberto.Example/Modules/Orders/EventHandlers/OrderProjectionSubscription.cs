@@ -20,7 +20,7 @@ public record OrderCancelled(string OrderId, string Reason, DateTimeOffset Cance
 /// Example event handler that processes order-related events across all tenants
 /// </summary>
 [Subscription("order-projection")]
-public class OrderEventHandler(ILogger<OrderEventHandler> logger) :
+public class OrderProjectionSubscription(ILogger<OrderProjectionSubscription> logger) :
     IHandleEvent<OrderCreated>,
     IHandleEvent<OrderPlaced>,
     IHandleEvent<OrderShipped>,

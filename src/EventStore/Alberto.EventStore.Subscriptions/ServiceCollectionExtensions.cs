@@ -1,5 +1,4 @@
 using Microsoft.Extensions.DependencyInjection;
-using Alberto.EventStore;
 using Alberto.EventStore.MultiTenant;
 using Alberto.EventStore.Postgres;
 using Alberto.EventStore.Telemetry;
@@ -19,7 +18,7 @@ public static class SubscriptionServiceCollectionExtensions
     /// <summary>
     /// Adds EventStore with PostgreSQL backend, telemetry, multi-tenancy AND subscription system in one call
     /// </summary>
-    public static IEventStoreModuleBuilder AddEventStore<TEventStore, TTenantContext>(
+    public static EventStoreModuleBuilder AddEventStore<TEventStore, TTenantContext>(
         this IServiceCollection services,
         string moduleKey,
         Action<PostgresEventStoreOptions> configureOptions)
@@ -40,7 +39,7 @@ public static class SubscriptionServiceCollectionExtensions
     /// <summary>
     /// Adds only the subscription system (for advanced scenarios)
     /// </summary>
-    public static IEventStoreModuleBuilder WithSubscriptions(
+    public static EventStoreModuleBuilder WithSubscriptions(
         this IServiceCollection services,
         string moduleKey)
     {

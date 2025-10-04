@@ -1,9 +1,6 @@
 using Alberto.EventStore;
 using Alberto.EventStore.Events;
-using Alberto.EventStore.Postgres;
 using Alberto.EventStore.Subscriptions;
-using Alberto.EventStore.Telemetry;
-using Alberto.Example;
 using Alberto.Example.Modules.Orders.EventHandlers;
 using Alberto.Example.Modules.Orders.Filters;
 using System.Text.Json;
@@ -24,17 +21,17 @@ public static class OrdersModule
                                            throw new InvalidOperationException("Connection string 'alberto-db' not found.");
                 options.Schema = "orders";
             })
-            .AddEventPolling("orders-polling", options =>
+            .AddPolling(options =>
             {
                 options.MinPollingIntervalMs = 100;
-                options.MaxPollingIntervalMs = 5000;
+                options.MaxPollingIntervalMs = 2000;
                 options.MaxPageSize = 100;
                 options.MaxRetries = 3;
-                options.RetryDelayMs = 1000;
+                options.RetryDelayMs = 500;
             })
-            .Pipeline(pipeline => pipeline.AddConsumeFilter<LoggingFilter>())
-            .AddEventHandler<OrderEventHandler>()
-            .AddEventHandler<OrderAnalyticsHandler>();
+            .ConfigurePipeline(pipeline => pipeline.AddConsumeFilter<LoggingFilter>())
+            .AddSubscription<OrderProjectionSubscription>()
+            .AddSubscription<OrderAnalyticsHandler>();
 
         return services;
     }

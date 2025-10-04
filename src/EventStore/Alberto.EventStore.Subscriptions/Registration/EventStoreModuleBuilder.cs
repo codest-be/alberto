@@ -11,40 +11,15 @@ namespace Alberto.EventStore.Subscriptions.Registration;
 /// <summary>
 /// Builder for configuring an event store module with subscriptions
 /// </summary>
-public interface IEventStoreModuleBuilder
+public sealed class EventStoreModuleBuilder(IServiceCollection services, string moduleKey)
 {
-    IEventStoreModuleBuilder AddEventPolling(
-        string pollingId,
-        Action<PollingOptions> configureOptions
-    );
-
-    IEventStoreModuleBuilder Pipeline(
-        Action<IPipelineBuilder> configurePipeline
-    );
-
-    IEventStoreModuleBuilder AddEventHandler<THandler>()
-        where THandler : class, IEventHandler;
-
-    IEventStoreModuleBuilder AddEventHandlersFromAssembly(Assembly assembly);
-}
-
-public interface IPipelineBuilder
-{
-    IPipelineBuilder AddConsumeFilter<TFilter>()
-        where TFilter : class, IConsumeFilter;
-}
-
-internal sealed class EventStoreModuleBuilder(IServiceCollection services, string moduleKey) : IEventStoreModuleBuilder
-{
-    public IEventStoreModuleBuilder AddEventPolling(
-        string pollingId,
-        Action<PollingOptions> configureOptions)
+    public EventStoreModuleBuilder AddPolling(Action<PollingOptions> configureOptions)
     {
         var options = new PollingOptions();
         configureOptions(options);
 
         // Register polling options for this specific module
-        services.AddKeyedSingleton(moduleKey, (sp, key) => options);
+        services.AddKeyedSingleton(moduleKey, (_, _) => options);
 
         // Register as hosted service
         services.AddSingleton<IHostedService>(sp => new SubscriptionPollingService(
@@ -57,27 +32,27 @@ internal sealed class EventStoreModuleBuilder(IServiceCollection services, strin
         return this;
     }
 
-    public IEventStoreModuleBuilder Pipeline(Action<IPipelineBuilder> configurePipeline)
+    public EventStoreModuleBuilder ConfigurePipeline(Action<PipelineBuilder> configurePipeline)
     {
         var pipelineBuilder = new PipelineBuilder(services, moduleKey);
         configurePipeline(pipelineBuilder);
         return this;
     }
 
-    public IEventStoreModuleBuilder AddEventHandler<THandler>()
+    public EventStoreModuleBuilder AddSubscription<THandler>()
         where THandler : class, IEventHandler
     {
         // Register the handler with module key
         services.AddKeyedScoped<THandler>(moduleKey);
 
         // Register as IEventHandler for discovery within this module
-        services.AddKeyedScoped<IEventHandler>(moduleKey, (sp, key) =>
-            sp.GetRequiredKeyedService<THandler>(key));
+        services.AddKeyedScoped<IEventHandler>(moduleKey, (sp, _) =>
+            sp.GetRequiredKeyedService<THandler>(moduleKey));
 
         return this;
     }
 
-    public IEventStoreModuleBuilder AddEventHandlersFromAssembly(Assembly assembly)
+    public EventStoreModuleBuilder AddSubscriptionsFromAssembly(Assembly assembly)
     {
         var handlerTypes = EventTypeDiscovery.DiscoverHandlerTypes(assembly);
 
@@ -87,17 +62,17 @@ internal sealed class EventStoreModuleBuilder(IServiceCollection services, strin
             services.AddKeyedScoped(handlerType, moduleKey);
 
             // Register as IEventHandler for discovery within this module
-            services.AddKeyedScoped<IEventHandler>(moduleKey, (sp, key) =>
-                (IEventHandler)sp.GetRequiredKeyedService(handlerType, key));
+            services.AddKeyedScoped<IEventHandler>(moduleKey, (sp, _) =>
+                (IEventHandler)sp.GetRequiredKeyedService(handlerType, moduleKey));
         }
 
         return this;
     }
 }
 
-internal sealed class PipelineBuilder(IServiceCollection services, string moduleKey) : IPipelineBuilder
+public sealed class PipelineBuilder(IServiceCollection services, string moduleKey)
 {
-    public IPipelineBuilder AddConsumeFilter<TFilter>()
+    public PipelineBuilder AddConsumeFilter<TFilter>()
         where TFilter : class, IConsumeFilter
     {
         // Register filter with module key
