@@ -5,16 +5,16 @@ namespace Alberto.Example.Modules.Orders.EventHandlers;
 
 // Example event types
 [EventType("order-created")]
-public record OrderCreated(string OrderId, decimal Amount, string CustomerId, DateTimeOffset CreatedAt);
+public record OrderCreated([property: Tag("order")] string OrderId, decimal Amount, string CustomerId);
 
 [EventType("order-placed")]
-public record OrderPlaced(string OrderId, decimal Amount, string CustomerId, DateTimeOffset PlacedAt);
+public record OrderPlaced(string OrderId, decimal Amount, string CustomerId);
 
 [EventType("order-shipped")]
-public record OrderShipped(string OrderId, string TrackingNumber, DateTimeOffset ShippedAt);
+public record OrderShipped(string OrderId, string TrackingNumber);
 
 [EventType("order-cancelled")]
-public record OrderCancelled(string OrderId, string Reason, DateTimeOffset CancelledAt);
+public record OrderCancelled(string OrderId, string Reason);
 
 /// <summary>
 /// Example event handler that processes order-related events across all tenants
@@ -26,6 +26,20 @@ public class OrderProjectionSubscription(ILogger<OrderProjectionSubscription> lo
     IHandleEvent<OrderShipped>,
     IHandleEvent<OrderCancelled>
 {
+    public ValueTask Handle(OrderCancelled @event, EventContext context, CancellationToken cancellationToken = default)
+    {
+        logger.LogInformation(
+            "Order cancelled: {OrderId} - {Reason} in tenant {TenantId} at position {Position}",
+            @event.OrderId,
+            @event.Reason,
+            context.TenantId,
+            context.GlobalPosition
+        );
+
+        // Example: Process refund, update inventory
+        return ValueTask.CompletedTask;
+    }
+
     public ValueTask Handle(OrderCreated @event, EventContext context, CancellationToken cancellationToken = default)
     {
         logger.LogInformation(
@@ -67,20 +81,6 @@ public class OrderProjectionSubscription(ILogger<OrderProjectionSubscription> lo
         );
 
         // Example: Send notification, update shipping status
-        return ValueTask.CompletedTask;
-    }
-
-    public ValueTask Handle(OrderCancelled @event, EventContext context, CancellationToken cancellationToken = default)
-    {
-        logger.LogInformation(
-            "Order cancelled: {OrderId} - {Reason} in tenant {TenantId} at position {Position}",
-            @event.OrderId,
-            @event.Reason,
-            context.TenantId,
-            context.GlobalPosition
-        );
-
-        // Example: Process refund, update inventory
         return ValueTask.CompletedTask;
     }
 }

@@ -7,7 +7,6 @@ using Alberto.Example.Modules.Orders.Filters;
 
 namespace Alberto.Example.Modules.Orders;
 
-// Request model for creating orders
 public record CreateOrderRequest(decimal Amount, string CustomerId);
 
 public static class OrdersModule
@@ -51,8 +50,7 @@ public static class OrdersModule
                     var orderCreated = new OrderCreated(
                         orderId,
                         request.Amount,
-                        request.CustomerId,
-                        DateTimeOffset.UtcNow
+                        request.CustomerId
                     );
 
                     var eventToPersist = new EventToPersist
