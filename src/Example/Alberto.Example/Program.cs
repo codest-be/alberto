@@ -1,6 +1,5 @@
 using Alberto.Example.Modules.Orders;
 using Alberto.Example.Modules.Payments;
-using Microsoft.OpenApi;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 

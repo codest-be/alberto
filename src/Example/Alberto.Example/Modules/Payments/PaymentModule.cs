@@ -2,7 +2,6 @@ using System.Text.Json;
 using Alberto.EventStore;
 using Alberto.EventStore.Events;
 using Alberto.EventStore.Subscriptions;
-using Alberto.Example;
 
 namespace Alberto.Example.Modules.Payments;
 
