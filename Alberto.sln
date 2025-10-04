@@ -32,6 +32,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "EventStore", "EventStore", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Alberto.EventStore.Performance.Tests", "tst\Alberto.EventStore.Performance.Tests\Alberto.EventStore.Performance.Tests.csproj", "{84168343-E0A4-4EAC-94A5-BAC6305853C8}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Alberto.EventStore.Subscriptions", "src\EventStore\Alberto.EventStore.Subscriptions\Alberto.EventStore.Subscriptions.csproj", "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -162,6 +164,18 @@ Global
 		{84168343-E0A4-4EAC-94A5-BAC6305853C8}.Release|x64.Build.0 = Release|Any CPU
 		{84168343-E0A4-4EAC-94A5-BAC6305853C8}.Release|x86.ActiveCfg = Release|Any CPU
 		{84168343-E0A4-4EAC-94A5-BAC6305853C8}.Release|x86.Build.0 = Release|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Debug|x64.Build.0 = Debug|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Debug|x86.Build.0 = Debug|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|x64.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|x64.Build.0 = Release|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|x86.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -177,5 +191,6 @@ Global
 		{31A1A953-0426-4D17-B2AD-EB773A358C71} = {BBB8D1F7-95A7-49B2-A49F-53646775324B}
 		{CDB136D5-F45F-4346-A032-6ABED536F95A} = {BBB8D1F7-95A7-49B2-A49F-53646775324B}
 		{84168343-E0A4-4EAC-94A5-BAC6305853C8} = {3DDCAC6A-B673-47D6-84A1-B67600249246}
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890} = {3DDCAC6A-B673-47D6-84A1-B67600249246}
 	EndGlobalSection
 EndGlobal

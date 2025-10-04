@@ -12,10 +12,12 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting"/>
     <PackageReference Include="DbUp-PostgreSQL"/>
+    <PackageReference Include="Microsoft.Extensions.ServiceDiscovery"/>
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Alberto.Example\Alberto.Example.csproj"/>
+    <ProjectReference Include="..\Alberto.ServiceDefaults\Alberto.ServiceDefaults.csproj"/>
   </ItemGroup>
 
 </Project>

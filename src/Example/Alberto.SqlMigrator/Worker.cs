@@ -1,4 +1,3 @@
-using Alberto.Example;
 using DbUp;
 using DbUp.Engine;
 
@@ -35,7 +34,7 @@ public class Worker(ILogger<Worker> logger, IConfiguration configuration, IHostA
 
     private async Task RunMigration(string connectionString, CancellationToken cancellationToken)
     {
-        string[] schemas = new[] { "orders", "payments" };
+        string[] schemas = ["orders", "payments"];
 
         foreach (string schema in schemas)
             await Task.Run(() =>
@@ -48,7 +47,7 @@ public class Worker(ILogger<Worker> logger, IConfiguration configuration, IHostA
                 // Run the Alberto.EventStore migration for this schema
                 UpgradeEngine? upgrader = DeployChanges.To
                     .PostgresqlDatabase(connectionString)
-                    .WithScriptsEmbeddedInAssembly(typeof(MultiTenantContext).Assembly)
+                    .WithScriptsEmbeddedInAssembly(typeof(Example.Modules.Orders.OrdersModule).Assembly)
                     .WithPreprocessor(new SchemaPreprocessor(schema))
                     .WithExecutionTimeout(TimeSpan.FromMinutes(5))
                     .LogToConsole()

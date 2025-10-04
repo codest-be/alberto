@@ -4,14 +4,9 @@ namespace Alberto.EventStore.Tests.Attributes;
 ///     Attribute to categorize tests by their purpose and characteristics
 /// </summary>
 [AttributeUsage(AttributeTargets.Method | AttributeTargets.Class, AllowMultiple = true)]
-public class TestCategoryAttribute : Attribute
+public class TestCategoryAttribute(string category) : Attribute
 {
-    public TestCategoryAttribute(string category)
-    {
-        Category = category;
-    }
-
-    public string Category { get; }
+    public string Category { get; } = category;
 }
 
 /// <summary>
@@ -37,28 +32,18 @@ public static class TestCategories
 ///     Attribute to mark tests that require specific backend implementations
 /// </summary>
 [AttributeUsage(AttributeTargets.Method | AttributeTargets.Class)]
-public class RequiresBackendAttribute : Attribute
+public class RequiresBackendAttribute(params string[] backendTypes) : Attribute
 {
-    public RequiresBackendAttribute(params string[] backendTypes)
-    {
-        BackendTypes = backendTypes;
-    }
-
-    public string[] BackendTypes { get; }
+    public string[] BackendTypes { get; } = backendTypes;
 }
 
 /// <summary>
 ///     Attribute to mark tests that are slow and should only run in CI or explicit performance test runs
 /// </summary>
 [AttributeUsage(AttributeTargets.Method | AttributeTargets.Class)]
-public class SlowTestAttribute : Attribute
+public class SlowTestAttribute(string reason = "") : Attribute
 {
-    public SlowTestAttribute(string reason = "")
-    {
-        Reason = reason;
-    }
-
-    public string Reason { get; }
+    public string Reason { get; } = reason;
 }
 
 /// <summary>

@@ -1,5 +1,7 @@
 using Alberto.EventStore.Diagnostics;
+using Alberto.EventStore.Events;
 using Alberto.EventStore.MultiTenant;
+using Alberto.EventStore.Serialization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -9,9 +11,10 @@ public static class EventStoreBuilderExtensions
 {
     public static EventStoreBuilder AddEventStore(this IServiceCollection services)
     {
-        services.AddScoped<EventStoreFactory>();
         services.AddScoped<ITenantContext, SingleTenantContext>();
         services.AddTransient<IDiagnosticsEventListener, NoopDiagnosticsEventListener>();
+        services.AddSingleton(new EventTypeRegistry());
+        services.AddTransient<IEventDeserializer, JsonEventDeserializer>();
         return new EventStoreBuilder(services);
     }
 

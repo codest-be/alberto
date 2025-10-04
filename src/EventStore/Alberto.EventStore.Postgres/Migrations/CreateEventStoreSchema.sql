@@ -6,24 +6,27 @@
 CREATE TABLE IF NOT EXISTS events
 (
     position
-               BIGSERIAL
-        PRIMARY
-            KEY,
+    BIGSERIAL
+    PRIMARY
+    KEY,
     id
-               UUID
-                           NOT
-                               NULL
-        UNIQUE,
+    UUID
+    NOT
+    NULL
+    UNIQUE,
     tenant_id
-               VARCHAR(20) NOT NULL,
-    event_type TEXT        NOT NULL,
-    data       JSONB       NOT NULL,
-    tags       TEXT[]      NOT NULL DEFAULT '{}',
+    VARCHAR
+(
+    20
+) NOT NULL,
+    event_type TEXT NOT NULL,
+    data JSONB NOT NULL,
+    tags TEXT[] NOT NULL DEFAULT '{}',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW
-                                            (
-                                            ),
-    metadata   JSONB       NOT NULL DEFAULT '{}'
-);
+(
+),
+    metadata JSONB NOT NULL DEFAULT '{}'
+    );
 
 -- =============================================================================
 -- BASELINE INDEXES + SIMPLE GIN INDEX (PHASE 2 TESTING)
@@ -64,3 +67,112 @@ CREATE INDEX IF NOT EXISTS idx_events_tenant_type_tags ON events (tenant_id, eve
 CREATE INDEX IF NOT EXISTS idx_events_tenant_tags_covering ON events (tenant_id)
     INCLUDE (event_type, tags, data, metadata, created_at, position)
     WHERE array_length(tags, 1) > 0;
+
+-- =============================================================================
+-- SUBSCRIPTION CHECKPOINTS
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS subscription_checkpoints
+(
+    subscription_id
+    VARCHAR
+    PRIMARY
+    KEY,
+    position
+    BIGINT
+    NULL,
+    updated_at
+    TIMESTAMPTZ
+    NOT
+    NULL
+    DEFAULT
+    NOW
+(
+)
+    );
+
+CREATE INDEX IF NOT EXISTS idx_subscription_checkpoints_updated
+    ON subscription_checkpoints (updated_at DESC);
+
+COMMENT
+ON TABLE subscription_checkpoints IS 'Tracks last processed position for each subscription';
+COMMENT
+ON COLUMN subscription_checkpoints.position IS 'Last successfully processed global position (NULL = from beginning)';
+
+-- =============================================================================
+-- POISON PILLS
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS subscription_poison_pills
+(
+    id
+    UUID
+    PRIMARY
+    KEY,
+    subscription_id
+    VARCHAR
+    NOT
+    NULL,
+    global_position
+    BIGINT
+    NOT
+    NULL,
+    event_id
+    UUID
+    NOT
+    NULL,
+    event_type
+    VARCHAR
+    NOT
+    NULL,
+    event_data
+    JSONB
+    NOT
+    NULL,
+    metadata
+    JSONB
+    NOT
+    NULL,
+    error_message
+    TEXT
+    NOT
+    NULL,
+    stack_trace
+    TEXT,
+    retry_count
+    INT
+    NOT
+    NULL,
+    first_failed_at
+    TIMESTAMPTZ
+    NOT
+    NULL,
+    last_failed_at
+    TIMESTAMPTZ
+    NOT
+    NULL,
+    resolved_at
+    TIMESTAMPTZ,
+    resolved_by
+    VARCHAR,
+    resolution_action
+    VARCHAR,
+
+    UNIQUE
+(
+    subscription_id,
+    global_position
+)
+    );
+
+CREATE INDEX IF NOT EXISTS idx_poison_pills_subscription
+    ON subscription_poison_pills (subscription_id, resolved_at NULLS FIRST);
+
+CREATE INDEX IF NOT EXISTS idx_poison_pills_unresolved
+    ON subscription_poison_pills (subscription_id, global_position)
+    WHERE resolved_at IS NULL;
+
+COMMENT
+ON TABLE subscription_poison_pills IS 'Events that failed processing after retries';
+COMMENT
+ON COLUMN subscription_poison_pills.resolution_action IS 'Actions: skip, reprocess, manual';

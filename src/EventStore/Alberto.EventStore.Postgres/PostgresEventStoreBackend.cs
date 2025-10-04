@@ -15,7 +15,7 @@ namespace Alberto.EventStore.Postgres;
 public class PostgresEventStoreBackend(
     IOptions<PostgresEventStoreOptions> options,
     ILogger<PostgresEventStoreBackend> logger)
-    : IEventStoreBackend
+    : IEventStoreBackend, IMultiTenantEventStore
 {
     private readonly int _bulkInsertThreshold =
         options.Value.BulkInsertThreshold > 0 ? options.Value.BulkInsertThreshold : 5;
@@ -624,6 +624,63 @@ public class PostgresEventStoreBackend(
         public DateTimeOffset created_at { get; set; }
     }
     // ReSharper restore InconsistentNaming
+
+    public async Task<IReadOnlyCollection<GlobalEventEnvelope>> StreamAll(
+        long fromPosition,
+        int maxCount,
+        IReadOnlySet<string>? eventTypes = null,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        var sql = new StringBuilder($@"
+            SELECT position, id, tenant_id, event_type, tags, data as event_data, metadata, created_at
+            FROM {_eventsTable}
+            WHERE position > @FromPosition");
+
+        var parameters = new DynamicParameters();
+        parameters.Add("FromPosition", fromPosition);
+
+        if (eventTypes is { Count: > 0 })
+        {
+            if (eventTypes.Count == 1)
+            {
+                sql.Append(" AND event_type = @EventType");
+                parameters.Add("EventType", eventTypes.First());
+            }
+            else
+            {
+                sql.Append(" AND event_type = ANY(@EventTypes)");
+                parameters.Add("EventTypes", eventTypes.ToArray());
+            }
+        }
+
+        sql.Append(" ORDER BY position LIMIT @MaxCount");
+        parameters.Add("MaxCount", maxCount);
+
+        var events = await connection.QueryAsync<EventRecord>(sql.ToString(), parameters);
+
+        return events.Select(e => new GlobalEventEnvelope(
+            e.position,
+            e.id,
+            e.tenant_id,
+            e.event_type,
+            e.tags,
+            e.event_data,
+            DeserializeMetadata(e.metadata),
+            e.created_at
+        )).ToList();
+    }
+
+    private static Dictionary<string, string> DeserializeMetadata(string metadataJson)
+    {
+        if (string.IsNullOrEmpty(metadataJson))
+            return new Dictionary<string, string>();
+
+        return JsonSerializer.Deserialize<Dictionary<string, string>>(metadataJson)
+               ?? new Dictionary<string, string>();
+    }
 }
 
 public class TransactionContext : IDisposable
