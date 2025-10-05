@@ -1,71 +1,70 @@
+using Alberto.EventStore.InMemory.Subscriptions.Checkpoints;
+using Alberto.EventStore.InMemory.Subscriptions.PoisonPills;
 using Alberto.EventStore.MultiTenant;
-using Alberto.EventStore.Postgres;
 using Alberto.EventStore.Subscriptions.Checkpoints;
 using Alberto.EventStore.Subscriptions.Filters;
 using Alberto.EventStore.Subscriptions.PoisonPills;
 using Alberto.EventStore.Subscriptions.Polling;
 using Alberto.EventStore.Subscriptions.Registration;
 using Alberto.EventStore.Subscriptions.Subscriptions;
-using Alberto.EventStore.Telemetry;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
-namespace Alberto.EventStore.Subscriptions;
+namespace Alberto.EventStore.InMemory;
 
-public static class SubscriptionServiceCollectionExtensions
+public static class InMemorySubscriptionExtensions
 {
     /// <summary>
-    /// Adds EventStore with PostgreSQL backend, telemetry, multi-tenancy AND subscription system in one call
+    /// Adds EventStore with in-memory backend, telemetry, multi-tenancy AND subscription system in one call
     /// </summary>
-    public static EventStoreModuleBuilder AddEventStore<TEventStore, TTenantContext>(
+    public static EventStoreModuleBuilder AddEventStoreWithInMemorySubscriptions<TTenantContext>(
         this IServiceCollection services,
-        string moduleKey,
-        Action<PostgresEventStoreOptions> configureOptions)
-        where TEventStore : EventStoreFactory
+        string moduleKey)
         where TTenantContext : class, ITenantContext
     {
         services
             .AddEventStore()
-            .AddMultiTenancy<TTenantContext>()
-            .AddEventStoreTelemetry();
+            .AddMultiTenancy<TTenantContext>();
 
-        services.AddPostgresEventStore<TEventStore>(configureOptions);
+        services.AddInMemoryEventStore();
 
         // Subscription system registration for background processing
+        return services.WithInMemorySubscriptions(moduleKey);
+    }
+
+    /// <summary>
+    /// Adds only the subscription system with in-memory storage
+    /// </summary>
+    public static EventStoreModuleBuilder WithInMemorySubscriptions(
+        this IServiceCollection services,
+        string moduleKey)
+    {
+        services.AddKeyedScoped<IMultiTenantEventStore>(moduleKey, (provider, _) =>
+            provider.GetRequiredService<InMemoryEventStoreBackend>());
+
+        // Register in-memory subscription infrastructure for this module
+        services.AddKeyedSingleton<ICheckpointStore>(moduleKey, (sp, _) =>
+        {
+            var logger = sp.GetRequiredService<ILogger<InMemoryCheckpointStore>>();
+            return new InMemoryCheckpointStore(logger);
+        });
+
+        services.AddKeyedSingleton<IPoisonPillStore>(moduleKey, (sp, _) =>
+        {
+            var logger = sp.GetRequiredService<ILogger<InMemoryPoisonPillStore>>();
+            return new InMemoryPoisonPillStore(logger);
+        });
+
         return services.WithSubscriptions(moduleKey);
     }
 
     /// <summary>
-    /// Adds only the subscription system (for advanced scenarios)
+    /// Core subscription services (storage-agnostic)
     /// </summary>
-    public static EventStoreModuleBuilder WithSubscriptions(
+    private static EventStoreModuleBuilder WithSubscriptions(
         this IServiceCollection services,
         string moduleKey)
     {
-        services.AddKeyedScoped<IMultiTenantEventStore>(moduleKey, (provider, _) => new PostgresEventStoreBackend(
-            Options.Create(provider.GetRequiredService<IOptionsSnapshot<PostgresEventStoreOptions>>().Get(moduleKey)),
-            provider.GetRequiredService<ILogger<PostgresEventStoreBackend>>()));
-
-        // Register subscription infrastructure for this module
-        services.AddKeyedSingleton<ICheckpointStore>(moduleKey, (sp, key) =>
-        {
-            var keyName = key?.ToString() ?? moduleKey;
-            var options = sp.GetRequiredService<IOptionsMonitor<PostgresEventStoreOptions>>().Get(keyName);
-            var logger = sp.GetRequiredService<ILogger<PostgresCheckpointStore>>();
-            return new PostgresCheckpointStore(options.ConnectionString, options.Schema, logger);
-        });
-
-        services.AddKeyedSingleton<IPoisonPillStore>(moduleKey, (sp, key) =>
-        {
-            var keyName = key?.ToString() ?? moduleKey;
-            var options = sp
-                .GetRequiredService<IOptionsMonitor<PostgresEventStoreOptions>>()
-                .Get(keyName);
-            var logger = sp.GetRequiredService<ILogger<PostgresPoisonPillStore>>();
-            return new PostgresPoisonPillStore(options.ConnectionString, options.Schema, logger);
-        });
-
         services.AddKeyedScoped<ConsumePipeline>(moduleKey, (sp, key) =>
         {
             var logger = sp.GetRequiredService<ILogger<ConsumePipeline>>();

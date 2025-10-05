@@ -27,6 +27,9 @@ public sealed class TenantScopeFilter(ITenantContext tenantContext, ILogger<Tena
             context.GlobalPosition
         );
 
+        // Set tenant context from event
+        tenantContext.Tenant = eventTenant;
+
         try
         {
             await next();

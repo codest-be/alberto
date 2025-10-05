@@ -1,10 +1,11 @@
+using System.Reflection;
+using Alberto.EventStore.Diagnostics;
+using Alberto.EventStore.Subscriptions.Filters;
+using Alberto.EventStore.Subscriptions.Polling;
+using Alberto.EventStore.Subscriptions.Subscriptions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Alberto.EventStore.Subscriptions.Filters;
-using Alberto.EventStore.Subscriptions.Subscriptions;
-using Alberto.EventStore.Subscriptions.Polling;
-using System.Reflection;
 
 namespace Alberto.EventStore.Subscriptions.Registration;
 
@@ -67,6 +68,11 @@ public sealed class EventStoreModuleBuilder(IServiceCollection services, string 
         }
 
         return this;
+    }
+
+    public void AddTelemetry<T>() where T : class, IDiagnosticsEventListener
+    {
+        services.AddSingleton<T>();
     }
 }
 

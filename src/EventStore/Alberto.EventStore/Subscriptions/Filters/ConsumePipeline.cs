@@ -1,5 +1,5 @@
-using Microsoft.Extensions.Logging;
 using Alberto.EventStore.Subscriptions.Subscriptions;
+using Microsoft.Extensions.Logging;
 
 namespace Alberto.EventStore.Subscriptions.Filters;
 

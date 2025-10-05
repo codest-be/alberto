@@ -1,7 +1,8 @@
 using System.Text.Json;
 using Alberto.EventStore;
 using Alberto.EventStore.Events;
-using Alberto.EventStore.Subscriptions;
+using Alberto.EventStore.Postgres;
+using Alberto.EventStore.Telemetry;
 using Alberto.Example.Modules.Orders.EventHandlers;
 using Alberto.Example.Modules.Orders.Filters;
 
@@ -14,7 +15,7 @@ public static class OrdersModule
     public static IServiceCollection AddOrdersModule(this IServiceCollection services, IConfiguration configuration)
     {
         services
-            .AddEventStore<OrderEventStore, MultiTenantContext>("orders", options =>
+            .AddEventStoreWithPostgresSubscriptions<OrderEventStore, MultiTenantContext>("orders", options =>
             {
                 options.ConnectionString = configuration.GetConnectionString("alberto-db") ??
                                            throw new InvalidOperationException(
@@ -30,6 +31,7 @@ public static class OrdersModule
                 options.RetryDelayMs = 500;
             })
             .ConfigurePipeline(pipeline => pipeline.AddConsumeFilter<LoggingFilter>())
+            .AddOpenTelemetry()
             .AddSubscription<OrderProjectionSubscription>()
             .AddSubscription<OrderAnalyticsHandler>();
 

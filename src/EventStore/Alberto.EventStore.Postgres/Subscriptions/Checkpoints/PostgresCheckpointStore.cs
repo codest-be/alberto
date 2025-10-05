@@ -1,8 +1,9 @@
+using Alberto.EventStore.Subscriptions.Checkpoints;
 using Dapper;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
-namespace Alberto.EventStore.Subscriptions.Checkpoints;
+namespace Alberto.EventStore.Postgres.Subscriptions.Checkpoints;
 
 public sealed class PostgresCheckpointStore(
     string connectionString,

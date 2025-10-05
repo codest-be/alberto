@@ -1,14 +1,13 @@
-﻿using Alberto.EventStore.Diagnostics;
-using Microsoft.Extensions.DependencyInjection;
+﻿using Alberto.EventStore.Subscriptions.Registration;
 using OpenTelemetry.Trace;
 
 namespace Alberto.EventStore.Telemetry;
 
 public static class ServiceCollectionExtensions
 {
-    public static EventStoreBuilder AddEventStoreTelemetry(this EventStoreBuilder builder)
+    public static EventStoreModuleBuilder AddOpenTelemetry(this EventStoreModuleBuilder builder)
     {
-        builder.Services.AddSingleton<IDiagnosticsEventListener, ActivityDiagnosticEventListener>();
+        builder.AddTelemetry<ActivityDiagnosticEventListener>();
         return builder;
     }
 

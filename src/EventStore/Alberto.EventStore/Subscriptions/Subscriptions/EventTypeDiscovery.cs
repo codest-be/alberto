@@ -6,7 +6,7 @@ namespace Alberto.EventStore.Subscriptions.Subscriptions;
 /// <summary>
 /// Discovers event types that a handler supports
 /// </summary>
-internal static class EventTypeDiscovery
+public static class EventTypeDiscovery
 {
     /// <summary>
     /// Discovers all event types a handler can handle

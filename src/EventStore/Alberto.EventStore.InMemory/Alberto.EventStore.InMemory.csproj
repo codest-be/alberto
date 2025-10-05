@@ -13,6 +13,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Alberto.EventStore\Alberto.EventStore.csproj"/>
+    <ProjectReference Include="..\Alberto.EventStore.Telemetry\Alberto.EventStore.Telemetry.csproj"/>
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions"/>

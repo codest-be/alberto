@@ -101,18 +101,3 @@ public sealed class SubscriptionPollingService(
         logger.LogInformation("Subscription polling service stopped");
     }
 }
-
-/// <summary>
-/// Options for polling configuration
-/// </summary>
-public sealed class PollingOptions
-{
-    public int MinPollingIntervalMs { get; set; } = 100;
-    public int MaxPollingIntervalMs { get; set; } = 5000;
-    public double PollingGrowFactor { get; set; } = 1.5;
-    public int MaxPageSize { get; set; } = 100;
-    public int? GapAgeThresholdMs { get; set; } = 60000;
-    public int GapSkipTimeoutMs { get; set; } = 5000;
-    public int MaxRetries { get; set; } = 3;
-    public int RetryDelayMs { get; set; } = 1000;
-}

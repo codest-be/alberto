@@ -16,7 +16,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\EventStore\Alberto.EventStore.Postgres\Alberto.EventStore.Postgres.csproj"/>
     <ProjectReference Include="..\..\EventStore\Alberto.EventStore.Telemetry\Alberto.EventStore.Telemetry.csproj"/>
-    <ProjectReference Include="..\..\EventStore\Alberto.EventStore.Subscriptions\Alberto.EventStore.Subscriptions.csproj"/>
     <ProjectReference Include="..\Alberto.ServiceDefaults\Alberto.ServiceDefaults.csproj"/>
   </ItemGroup>
 

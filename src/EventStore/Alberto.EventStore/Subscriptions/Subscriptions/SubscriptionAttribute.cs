@@ -6,8 +6,6 @@ namespace Alberto.EventStore.Subscriptions.Subscriptions;
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
 public sealed class SubscriptionAttribute : Attribute
 {
-    public string SubscriptionId { get; }
-
     public SubscriptionAttribute(string subscriptionId)
     {
         if (string.IsNullOrWhiteSpace(subscriptionId))
@@ -15,4 +13,6 @@ public sealed class SubscriptionAttribute : Attribute
 
         SubscriptionId = subscriptionId;
     }
+
+    public string SubscriptionId { get; }
 }

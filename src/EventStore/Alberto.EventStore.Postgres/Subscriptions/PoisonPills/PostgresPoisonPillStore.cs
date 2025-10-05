@@ -1,8 +1,9 @@
+using Alberto.EventStore.Subscriptions.PoisonPills;
 using Dapper;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
-namespace Alberto.EventStore.Subscriptions.PoisonPills;
+namespace Alberto.EventStore.Postgres.Subscriptions.PoisonPills;
 
 public sealed class PostgresPoisonPillStore(
     string connectionString,

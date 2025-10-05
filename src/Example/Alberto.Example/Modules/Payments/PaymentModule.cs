@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Alberto.EventStore;
 using Alberto.EventStore.Events;
-using Alberto.EventStore.Subscriptions;
+using Alberto.EventStore.Postgres;
 
 namespace Alberto.Example.Modules.Payments;
 
@@ -9,7 +9,7 @@ public static class PaymentModule
 {
     public static IServiceCollection AddPaymentsModule(this IServiceCollection services, IConfiguration configuration)
     {
-        services.AddEventStore<PaymentEventStore, MultiTenantContext>("payments", options =>
+        services.AddEventStoreWithPostgresSubscriptions<PaymentEventStore, MultiTenantContext>("payments", options =>
         {
             options.ConnectionString = configuration.GetConnectionString("alberto-db") ??
                                        throw new InvalidOperationException("Connection string 'alberto-db' not found.");

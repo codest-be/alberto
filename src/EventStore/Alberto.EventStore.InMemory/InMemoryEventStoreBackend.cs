@@ -9,7 +9,8 @@ namespace Alberto.EventStore.InMemory;
 /// <summary>
 ///     In-memory implementation of IEventStore for testing purposes
 /// </summary>
-public class InMemoryEventStoreBackend(ILogger<InMemoryEventStoreBackend> logger) : IEventStoreBackend
+public class InMemoryEventStoreBackend(ILogger<InMemoryEventStoreBackend> logger)
+    : IEventStoreBackend, IMultiTenantEventStore
 {
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<Guid, StoredEvent>> _events = new();
 
@@ -144,6 +145,50 @@ public class InMemoryEventStoreBackend(ILogger<InMemoryEventStoreBackend> logger
         {
             _mutex.Release();
         }
+    }
+
+    /// <summary>
+    /// Streams all events across all tenants in global position order (for subscriptions)
+    /// </summary>
+    public Task<IReadOnlyCollection<GlobalEventEnvelope>> StreamAll(
+        long fromPosition,
+        int maxCount,
+        IReadOnlySet<string>? eventTypes = null,
+        CancellationToken cancellationToken = default)
+    {
+        // Get all events across all tenants
+        var allEvents = _events.SelectMany(tenantKvp =>
+                tenantKvp.Value.Values.Select(storedEvent => new GlobalEventEnvelope(
+                    storedEvent.Position,
+                    storedEvent.Id,
+                    storedEvent.TenantId,
+                    storedEvent.EventType.Id,
+                    storedEvent.Tags.Select(t => t.FullIdentifier).ToArray(),
+                    storedEvent.EventJson,
+                    new Dictionary<string, string>(storedEvent.Metadata),
+                    storedEvent.Created
+                )))
+            .Where(e => e.GlobalPosition > fromPosition);
+
+        // Filter by event types if specified
+        if (eventTypes != null && eventTypes.Count > 0)
+        {
+            allEvents = allEvents.Where(e => eventTypes.Contains(e.EventType));
+        }
+
+        // Order and limit the result count
+        var result = allEvents
+            .OrderBy(e => e.GlobalPosition)
+            .Take(maxCount)
+            .ToList();
+
+        logger.LogDebug(
+            "StreamAll returned {EventCount} events from position {FromPosition}",
+            result.Count,
+            fromPosition
+        );
+
+        return Task.FromResult<IReadOnlyCollection<GlobalEventEnvelope>>(result);
     }
 
     private void CheckConsistencyBoundary(StreamQuery query, Guid? expectedLastEventId, string tenantId)
