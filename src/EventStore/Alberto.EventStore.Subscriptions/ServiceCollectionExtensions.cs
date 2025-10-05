@@ -1,13 +1,13 @@
-using Microsoft.Extensions.DependencyInjection;
 using Alberto.EventStore.MultiTenant;
 using Alberto.EventStore.Postgres;
-using Alberto.EventStore.Telemetry;
-using Alberto.EventStore.Subscriptions.Registration;
 using Alberto.EventStore.Subscriptions.Checkpoints;
-using Alberto.EventStore.Subscriptions.PoisonPills;
 using Alberto.EventStore.Subscriptions.Filters;
+using Alberto.EventStore.Subscriptions.PoisonPills;
 using Alberto.EventStore.Subscriptions.Polling;
+using Alberto.EventStore.Subscriptions.Registration;
 using Alberto.EventStore.Subscriptions.Subscriptions;
+using Alberto.EventStore.Telemetry;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -70,6 +70,12 @@ public static class SubscriptionServiceCollectionExtensions
         {
             var logger = sp.GetRequiredService<ILogger<ConsumePipeline>>();
             var pipeline = new ConsumePipeline(logger);
+
+            // ALWAYS add TenantScopeFilter as the first filter to ensure tenant scoping
+            var tenantContext = sp.GetRequiredService<ITenantContext>();
+            var tenantScopeLogger = sp.GetRequiredService<ILogger<TenantScopeFilter>>();
+            var tenantScopeFilter = new TenantScopeFilter(tenantContext, tenantScopeLogger);
+            pipeline.AddFilter(tenantScopeFilter);
 
             // Add filters registered for this specific module
             var filters = sp.GetKeyedServices<IConsumeFilter>(key);
