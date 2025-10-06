@@ -8,6 +8,7 @@ public sealed record EventContext(
     Guid EventId,
     string EventType,
     string TenantId,
+    string SubscriptionName,
     IReadOnlyDictionary<string, string> Metadata,
     DateTimeOffset Created
 );

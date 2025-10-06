@@ -70,9 +70,16 @@ public sealed class EventStoreModuleBuilder(IServiceCollection services, string 
         return this;
     }
 
-    public void AddTelemetry<T>() where T : class, IDiagnosticsEventListener
+    public void AddDiagnosticEventListener<TDiagnosticsEventListener>()
+        where TDiagnosticsEventListener : class, IDiagnosticsEventListener
     {
-        services.AddSingleton<T>();
+        services.AddKeyedSingleton<IDiagnosticsEventListener, TDiagnosticsEventListener>(moduleKey);
+    }
+
+    public void AddTraceContextProvider<TTraceContextProvider>()
+        where TTraceContextProvider : class, ITraceContextProvider
+    {
+        services.AddKeyedSingleton<ITraceContextProvider, TTraceContextProvider>(moduleKey);
     }
 }
 

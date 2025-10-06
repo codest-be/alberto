@@ -16,7 +16,8 @@ public sealed class TelemetryConsumeFilter(
         CancellationToken cancellationToken = default)
     {
         // Create telemetry scope from event metadata (may be no-op if no telemetry configured)
-        using var traceScope = traceContextProvider.CreateScopeFromMetadata(context.Metadata);
+        using var traceScope =
+            traceContextProvider.CreateScopeFromMetadata(context.Metadata, context.SubscriptionName, context.EventType);
 
         // Continue with the pipeline within the trace context
         await next();

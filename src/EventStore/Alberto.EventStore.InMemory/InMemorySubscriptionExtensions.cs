@@ -82,7 +82,7 @@ public static class InMemorySubscriptionExtensions
             pipeline.AddFilter(tenantScopeFilter);
 
             // Add telemetry tracing filter as the second filter for end-to-end tracing
-            var traceContextProvider = sp.GetRequiredService<ITraceContextProvider>();
+            var traceContextProvider = sp.GetRequiredKeyedService<ITraceContextProvider>(key);
             var telemetryFilter = new TelemetryConsumeFilter(traceContextProvider);
             pipeline.AddFilter(telemetryFilter);
 

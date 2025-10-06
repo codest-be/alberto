@@ -9,8 +9,11 @@ public interface ITraceContextProvider
     /// Creates a telemetry scope from event metadata (e.g., for tracing event consumption)
     /// </summary>
     /// <param name="metadata">Event metadata that may contain trace information</param>
+    /// <param name="subscriptionName">Name of the subscription processing the event</param>
+    /// <param name="eventType">Type of the event being processed</param>
     /// <returns>A disposable scope that maintains trace context</returns>
-    IDisposable CreateScopeFromMetadata(IReadOnlyDictionary<string, string> metadata);
+    IDisposable CreateScopeFromMetadata(IReadOnlyDictionary<string, string> metadata, string subscriptionName,
+        string eventType);
 }
 
 /// <summary>
@@ -18,7 +21,8 @@ public interface ITraceContextProvider
 /// </summary>
 public class NoopTraceContextProvider : ITraceContextProvider
 {
-    public IDisposable CreateScopeFromMetadata(IReadOnlyDictionary<string, string> metadata)
+    public IDisposable CreateScopeFromMetadata(IReadOnlyDictionary<string, string> metadata, string subscriptionName,
+        string eventType)
     {
         return new NoopDisposable();
     }

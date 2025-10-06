@@ -165,6 +165,7 @@ public sealed class EventRouter(
             evt.Id,
             evt.EventType,
             evt.TenantId,
+            handler.SubscriptionId,
             evt.Metadata,
             evt.Created
         );

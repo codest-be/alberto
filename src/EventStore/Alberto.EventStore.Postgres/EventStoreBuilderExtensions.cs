@@ -26,7 +26,7 @@ public static class EventStoreBuilderExtensions
         services.AddScoped<T>(sp => ((T)Activator.CreateInstance(typeof(T),
             sp.GetRequiredService<ITenantContext>(),
             sp.GetRequiredKeyedService<IEventStoreBackend>(options.Schema),
-            sp.GetRequiredService<IDiagnosticsEventListener>())!));
+            sp.GetRequiredKeyedService<IDiagnosticsEventListener>(options.Schema))!));
 
         return services;
     }
