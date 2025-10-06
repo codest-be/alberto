@@ -29,9 +29,38 @@ public class EventStoreFactory(
     {
         IEventToPersist[] eventToPersists = events as IEventToPersist[] ?? events.ToArray();
 
-        using IDisposable appendScope = _diagnostics.Append(eventToPersists);
+        // Enhance events with telemetry metadata through diagnostics abstraction
+        var enhancedEvents = EnhanceEventsWithTelemetry(eventToPersists);
 
-        return backend.Append(tenantContext.Tenant, eventToPersists, consistencyBoundary,
+        using IDisposable appendScope = _diagnostics.Append(enhancedEvents);
+
+        return backend.Append(tenantContext.Tenant, enhancedEvents, consistencyBoundary,
             expectedLatestEventId, cancellationToken);
+    }
+
+    private IEventToPersist[] EnhanceEventsWithTelemetry(IEventToPersist[] events)
+    {
+        return events.Select(evt =>
+        {
+            // Get telemetry metadata from diagnostics listener
+            var telemetryMetadata = _diagnostics.GetTelemetryMetadata();
+
+            // Merge user metadata with telemetry metadata (telemetry takes precedence)
+            var enhancedMetadata = new Dictionary<string, string>(evt.Metadata);
+            foreach (var kvp in telemetryMetadata)
+            {
+                enhancedMetadata[kvp.Key] = kvp.Value;
+            }
+
+            // Return a new EventToPersist with enhanced metadata
+            return new EventToPersist
+            {
+                Tags = evt.Tags,
+                EventJson = evt.EventJson,
+                EventType = evt.EventType,
+                Metadata = enhancedMetadata,
+                Created = evt.Created
+            };
+        }).ToArray();
     }
 }

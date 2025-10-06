@@ -13,9 +13,14 @@ public class NoopDiagnosticsEventListener : IDiagnosticsEventListener
     {
         return new NoopDisposable();
     }
+
+    public Dictionary<string, string> GetTelemetryMetadata()
+    {
+        return new Dictionary<string, string>();
+    }
 }
 
-internal class NoopDisposable : IDisposable
+public class NoopDisposable : IDisposable
 {
     public void Dispose() { }
 }

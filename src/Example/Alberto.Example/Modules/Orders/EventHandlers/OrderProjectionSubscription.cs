@@ -1,4 +1,5 @@
 using Alberto.EventStore.Events;
+using Alberto.EventStore.MultiTenant;
 using Alberto.EventStore.Subscriptions.Subscriptions;
 
 namespace Alberto.Example.Modules.Orders.EventHandlers;
@@ -20,7 +21,7 @@ public record OrderCancelled(string OrderId, string Reason);
 /// Example event handler that processes order-related events across all tenants
 /// </summary>
 [Subscription("order-projection")]
-public class OrderProjectionSubscription(ILogger<OrderProjectionSubscription> logger) :
+public class OrderProjectionSubscription(ITenantContext tenantContext, ILogger<OrderProjectionSubscription> logger) :
     IHandleEvent<OrderCreated>,
     IHandleEvent<OrderPlaced>,
     IHandleEvent<OrderShipped>,
@@ -32,7 +33,7 @@ public class OrderProjectionSubscription(ILogger<OrderProjectionSubscription> lo
             "Order cancelled: {OrderId} - {Reason} in tenant {TenantId} at position {Position}",
             @event.OrderId,
             @event.Reason,
-            context.TenantId,
+            tenantContext.Tenant.Id,
             context.GlobalPosition
         );
 

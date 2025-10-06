@@ -1,3 +1,4 @@
+using Alberto.EventStore.Diagnostics;
 using Alberto.EventStore.InMemory.Subscriptions.Checkpoints;
 using Alberto.EventStore.InMemory.Subscriptions.PoisonPills;
 using Alberto.EventStore.MultiTenant;
@@ -8,6 +9,7 @@ using Alberto.EventStore.Subscriptions.Polling;
 using Alberto.EventStore.Subscriptions.Registration;
 using Alberto.EventStore.Subscriptions.Subscriptions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 
 namespace Alberto.EventStore.InMemory;
@@ -55,6 +57,9 @@ public static class InMemorySubscriptionExtensions
             return new InMemoryPoisonPillStore(logger);
         });
 
+        // Register default no-op trace context provider (can be overridden if telemetry package is used)
+        services.TryAddSingleton<ITraceContextProvider, NoopTraceContextProvider>();
+
         return services.WithSubscriptions(moduleKey);
     }
 
@@ -75,6 +80,11 @@ public static class InMemorySubscriptionExtensions
             var tenantScopeLogger = sp.GetRequiredService<ILogger<TenantScopeFilter>>();
             var tenantScopeFilter = new TenantScopeFilter(tenantContext, tenantScopeLogger);
             pipeline.AddFilter(tenantScopeFilter);
+
+            // Add telemetry tracing filter as the second filter for end-to-end tracing
+            var traceContextProvider = sp.GetRequiredService<ITraceContextProvider>();
+            var telemetryFilter = new TelemetryConsumeFilter(traceContextProvider);
+            pipeline.AddFilter(telemetryFilter);
 
             // Add filters registered for this specific module
             var filters = sp.GetKeyedServices<IConsumeFilter>(key);

@@ -32,4 +32,17 @@ internal class ActivityDiagnosticEventListener : IDiagnosticsEventListener
 
         return new AppendScope(activity).WithEvents(events);
     }
+
+    public Dictionary<string, string> GetTelemetryMetadata()
+    {
+        var currentActivity = Activity.Current;
+        if (currentActivity == null)
+            return new Dictionary<string, string>();
+
+        // Add trace information only when OpenTelemetry is actively being used
+        return new Dictionary<string, string>
+        {
+            ["_traceId"] = currentActivity.TraceId.ToString(), ["_spanId"] = currentActivity.SpanId.ToString()
+        };
+    }
 }
