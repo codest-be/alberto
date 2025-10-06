@@ -92,10 +92,10 @@ jobs:
           retention-days: 90
 
       # Publish packages only on tags (releases) or main/develop pushes (not PRs)
-      - name: Publish packages to NuGet.org
-        if: matrix.postgres-version == 15 && github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
-        run: |
-          for package in ./artifacts/packages/*.nupkg; do
-            echo "Publishing $package"
-            dotnet nuget push "$package" --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
-          done
+#      - name: Publish packages to NuGet.org
+#        if: matrix.postgres-version == 15 && github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+#        run: |
+#          for package in ./artifacts/packages/*.nupkg; do
+#            echo "Publishing $package"
+#            dotnet nuget push "$package" --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+#          done
