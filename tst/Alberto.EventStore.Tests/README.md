@@ -71,7 +71,7 @@ dotnet test
 ### Specific Test Project
 
 ```bash
-dotnet test EventStore.Tests/EventStore.Tests.csproj
+dotnet test tst/Alberto.EventStore.Tests/Alberto.EventStore.Tests.csproj
 ```
 
 ### By Category (when filtering is implemented)

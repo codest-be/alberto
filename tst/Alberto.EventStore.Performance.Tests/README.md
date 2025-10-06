@@ -20,7 +20,7 @@ testing:
 **For accurate performance measurements, always build and run in Release mode:**
 
 ```bash
-cd EventStore.Performance.Tests
+cd tst/Alberto.EventStore.Performance.Tests
 
 # Build the entire solution in Release mode
 dotnet build -c Release
@@ -29,7 +29,7 @@ dotnet build -c Release
 dotnet run -c Release
 
 # Or run from solution root
-dotnet run --project EventStore.Performance.Tests --configuration Release
+dotnet run --project tst/Alberto.EventStore.Performance.Tests --configuration Release
 ```
 
 **Prerequisites:**
@@ -64,11 +64,11 @@ The benchmarks will generate detailed reports showing:
 
 ## Dependencies
 
-- **BenchmarkDotNet 0.15.4**: Micro-benchmarking framework
-- **Microsoft.Extensions.Logging.Console 9.0.0**: Logging support
-- **NBomber 6.1.1**: For future load testing scenarios
-- **Testcontainers.PostgreSql 4.7.0**: Docker container management for isolated PostgreSQL testing
-- **Respawn 6.2.1**: For future database cleanup scenarios
+- **BenchmarkDotNet**: Micro-benchmarking framework
+- **Microsoft.Extensions.Logging.Console**: Logging support
+- **NBomber**: For future load testing scenarios
+- **Testcontainers.PostgreSql**: Docker container management for isolated PostgreSQL testing
+- **Respawn**: For future database cleanup scenarios
 
 ## Actual Performance Results (Latest Benchmarks)
 
