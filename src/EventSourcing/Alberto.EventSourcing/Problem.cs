@@ -1,4 +1,4 @@
-namespace Albert.EventSourcing;
+namespace Alberto.EventSourcing;
 
 /// <summary>
 /// Represents a problem or error that occurred during command/query execution.

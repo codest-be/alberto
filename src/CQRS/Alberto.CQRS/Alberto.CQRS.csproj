@@ -16,7 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../EventSourcing/Albert.EventSourcing/Albert.EventSourcing.csproj"/>
+    <ProjectReference Include="..\..\EventSourcing\Alberto.EventSourcing\Alberto.EventSourcing.csproj"/>
   </ItemGroup>
 
 </Project>

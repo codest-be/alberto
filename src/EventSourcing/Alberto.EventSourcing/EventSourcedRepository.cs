@@ -1,7 +1,7 @@
-using Albert.EventSourcing.Projectors;
+using Alberto.EventSourcing.Projectors;
 using Alberto.EventStore;
 
-namespace Albert.EventSourcing;
+namespace Alberto.EventSourcing;
 
 /// <summary>
 /// Default implementation of IEventSourcedRepository that uses EventStoreFactory and IProjector.

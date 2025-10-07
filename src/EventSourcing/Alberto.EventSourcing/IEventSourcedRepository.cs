@@ -1,6 +1,6 @@
 using Alberto.EventStore;
 
-namespace Albert.EventSourcing;
+namespace Alberto.EventSourcing;
 
 /// <summary>
 /// Repository for loading and persisting event-sourced aggregates.

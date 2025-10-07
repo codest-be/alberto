@@ -1,8 +1,8 @@
-using Albert.EventSourcing.Projectors;
+using Alberto.EventSourcing.Projectors;
 using Alberto.EventStore;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Albert.EventSourcing;
+namespace Alberto.EventSourcing;
 
 /// <summary>
 /// Extension methods for registering event sourcing components in dependency injection.

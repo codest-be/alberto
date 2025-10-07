@@ -1,6 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 
-namespace Albert.EventSourcing;
+namespace Alberto.EventSourcing;
 
 /// <summary>
 /// Represents a decision made by a decider, containing either events to persist or problems.

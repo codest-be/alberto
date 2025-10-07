@@ -1,5 +1,5 @@
-using Albert.EventSourcing;
 using Alberto.CQRS.Results;
+using Alberto.EventSourcing;
 using FluentValidation;
 using FluentValidation.Results;
 using Microsoft.Extensions.DependencyInjection;

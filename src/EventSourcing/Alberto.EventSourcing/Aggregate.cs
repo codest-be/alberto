@@ -1,4 +1,4 @@
-namespace Albert.EventSourcing;
+namespace Alberto.EventSourcing;
 
 /// <summary>
 /// Represents an aggregate with its current state and metadata for optimistic concurrency.

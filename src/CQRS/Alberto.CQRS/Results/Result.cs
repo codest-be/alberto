@@ -1,4 +1,4 @@
-using Albert.EventSourcing;
+using Alberto.EventSourcing;
 
 namespace Alberto.CQRS.Results;
 

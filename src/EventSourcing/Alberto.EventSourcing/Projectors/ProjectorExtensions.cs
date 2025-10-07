@@ -1,4 +1,4 @@
-namespace Albert.EventSourcing.Projectors;
+namespace Alberto.EventSourcing.Projectors;
 
 /// <summary>
 /// Extension methods for projectors.

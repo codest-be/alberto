@@ -2,7 +2,7 @@ using System.Text.Json;
 using Alberto.EventStore;
 using Alberto.EventStore.Events;
 
-namespace Albert.EventSourcing;
+namespace Alberto.EventSourcing;
 
 /// <summary>
 /// Extension methods for EventStoreFactory to simplify loading and persisting events.

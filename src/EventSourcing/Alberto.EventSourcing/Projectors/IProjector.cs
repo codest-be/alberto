@@ -1,4 +1,4 @@
-namespace Albert.EventSourcing.Projectors;
+namespace Alberto.EventSourcing.Projectors;
 
 /// <summary>
 /// Projects events into a state representation.

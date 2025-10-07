@@ -34,7 +34,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Alberto.EventStore.Performa
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "EventSourcing", "EventSourcing", "{34CE9B7A-9E58-4CD8-8E78-E2462D0E6242}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Albert.EventSourcing", "src\EventSourcing\Albert.EventSourcing\Albert.EventSourcing.csproj", "{D7785F36-9CD0-4DCD-B7FB-7A2F0D078E05}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Alberto.EventSourcing", "src\EventSourcing\Alberto.EventSourcing\Alberto.EventSourcing.csproj", "{D7785F36-9CD0-4DCD-B7FB-7A2F0D078E05}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "CQRS", "CQRS", "{EF8D5A62-F0B1-5A35-CE34-34399E664908}"
 EndProject
