@@ -13,7 +13,6 @@ public interface IValidator<in T>
     /// Validates the given instance.
     /// </summary>
     /// <param name="instance">The instance to validate</param>
-    /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>A result indicating validation success or containing validation problems</returns>
-    Task<Result> ValidateAsync(T instance, CancellationToken cancellationToken = default);
+    Result Validate(T instance);
 }

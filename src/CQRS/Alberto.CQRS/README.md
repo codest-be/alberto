@@ -39,7 +39,7 @@ public class CreateOrderHandler(OrderEventStore eventStore)
         CancellationToken ct)
     {
         var id = OrderId.Create();
-        var query = new StreamQuery().WithTags(new EventTag("order", id.Value));
+        var query = new StreamQuery().WithTags(new EventTag(Tags.Order, id.Value));
 
         var (events, version) = await eventStore.Load(query, ct);
         var projector = new OrderProjector();

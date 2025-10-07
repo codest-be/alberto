@@ -6,16 +6,16 @@ namespace Alberto.Example.Modules.Orders.EventHandlers;
 
 // Example event types
 [EventType("order-created")]
-public record OrderCreated([property: Tag("order")] string OrderId, decimal Amount, string CustomerId);
+public record OrderCreated([property: Tag(Tags.Order)] Guid OrderId, decimal Amount, string CustomerId);
 
 [EventType("order-placed")]
-public record OrderPlaced(string OrderId, decimal Amount, string CustomerId);
+public record OrderPlaced([property: Tag(Tags.Order)] Guid OrderId, decimal Amount, string CustomerId);
 
 [EventType("order-shipped")]
-public record OrderShipped(string OrderId, string TrackingNumber);
+public record OrderShipped([property: Tag(Tags.Order)] Guid OrderId, string TrackingNumber);
 
 [EventType("order-cancelled")]
-public record OrderCancelled(string OrderId, string Reason);
+public record OrderCancelled([property: Tag(Tags.Order)] Guid OrderId, string Reason);
 
 /// <summary>
 /// Example event handler that processes order-related events across all tenants

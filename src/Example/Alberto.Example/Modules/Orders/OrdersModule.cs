@@ -1,9 +1,9 @@
-using System.Text.Json;
-using Alberto.EventStore;
-using Alberto.EventStore.Events;
+using Alberto.CQRS.Registration;
+using Alberto.EventSourcing;
 using Alberto.EventStore.Postgres;
 using Alberto.EventStore.Telemetry;
 using Alberto.Example.Modules.Orders.EventHandlers;
+using Alberto.Example.Modules.Orders.Features;
 using Alberto.Example.Modules.Orders.Filters;
 
 namespace Alberto.Example.Modules.Orders;
@@ -35,66 +35,18 @@ public static class OrdersModule
             .AddSubscription<OrderProjectionSubscription>()
             .AddSubscription<OrderAnalyticsHandler>();
 
+        services.AddCQRS(b => b.ScanAssembly(typeof(Program).Assembly));
+        services.AddEventSourcedRepository<OrderState, OrderProjector, OrderEventStore>();
+
         return services;
     }
 
     public static IEndpointRouteBuilder MapOrdersModule(this IEndpointRouteBuilder endpoints)
     {
-        RouteGroupBuilder orders = endpoints.MapGroup("orders");
-
-        orders.MapPost("/",
-            async Task<IResult> (CreateOrderRequest request, OrderEventStore eventStore,
-                ILogger<OrderEventStore> logger) =>
-            {
-                try
-                {
-                    var orderId = Guid.NewGuid().ToString();
-                    var orderCreated = new OrderCreated(
-                        orderId,
-                        request.Amount,
-                        request.CustomerId
-                    );
-
-                    var eventToPersist = new EventToPersist
-                    {
-                        EventType = EventType.GetEventType(typeof(OrderCreated))!,
-                        EventJson = JsonSerializer.Serialize(orderCreated),
-                        Tags = [new EventTag("order", orderId)],
-                        Metadata = new Dictionary<string, string> { ["customer"] = request.CustomerId },
-                        Created = DateTimeOffset.UtcNow
-                    };
-
-                    var persistedEvents = await eventStore.Append([eventToPersist], null, null);
-                    logger.LogInformation("Order created with ID {OrderId}", orderId);
-                    var persistedEvent = persistedEvents.First();
-
-                    return Results.Created($"/orders/{orderId}", new { orderId, EventId = persistedEvent.Id });
-                }
-                catch (Exception ex)
-                {
-                    return Results.Problem($"Failed to create order: {ex.Message}");
-                }
-            });
-
-        orders.MapGet("/{id:guid}",
-            async Task<IResult> (Guid id, OrderEventStore eventStore) =>
-            {
-                IReadOnlyCollection<IEventEnvelope> events =
-                    await eventStore.Stream(new StreamQuery([new EventTag("order", id.ToString())]));
-                Order order = Order.Create(events.ToArray());
-                return Results.Ok(order);
-            });
-
+        endpoints.MapCreateOrder();
+        endpoints.MapPlaceOrder();
+        endpoints.MapGetOrder();
 
         return endpoints;
-    }
-}
-
-public class Order
-{
-    public static Order Create(IEventEnvelope[] events)
-    {
-        // Implement event sourcing logic to reconstruct the Order from events
-        return new Order();
     }
 }

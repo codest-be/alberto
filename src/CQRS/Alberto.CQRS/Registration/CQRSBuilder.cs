@@ -9,41 +9,29 @@ namespace Alberto.CQRS.Registration;
 /// <summary>
 /// Builder for configuring an event sourcing module with automatic registration.
 /// </summary>
-public sealed class ModuleBuilder
+public sealed class CQRSBuilder
 {
     private readonly List<Assembly> _assemblies = [];
-    private readonly string _moduleName;
     private readonly IServiceCollection _services;
-    private string? _eventStoreSchema;
 
-    internal ModuleBuilder(IServiceCollection services, string moduleName)
+    internal CQRSBuilder(IServiceCollection services)
     {
         _services = services;
-        _moduleName = moduleName;
     }
 
     /// <summary>
     /// Scans the given assembly for command handlers, query handlers, and validators.
     /// </summary>
-    public ModuleBuilder ScanAssembly(Assembly assembly)
+    public CQRSBuilder ScanAssembly(Assembly assembly)
     {
         _assemblies.Add(assembly);
         return this;
     }
 
     /// <summary>
-    /// Specifies the EventStore schema this module should use.
-    /// </summary>
-    public ModuleBuilder WithEventStoreSchema(string schemaName)
-    {
-        _eventStoreSchema = schemaName;
-        return this;
-    }
-
-    /// <summary>
     /// Builds and registers all components.
     /// </summary>
-    public IServiceCollection Build()
+    internal IServiceCollection Build()
     {
         foreach (var assembly in _assemblies)
         {
@@ -52,12 +40,8 @@ public sealed class ModuleBuilder
             RegisterValidators(assembly);
         }
 
-        // Register executors
-        _services.AddKeyedScoped<CommandExecutor>(_moduleName, (sp, _) =>
-            new CommandExecutor(sp, _moduleName));
-
-        _services.AddKeyedScoped<QueryExecutor>(_moduleName, (sp, _) =>
-            new QueryExecutor(sp, _moduleName));
+        _services.AddScoped<CommandExecutor>();
+        _services.AddScoped<QueryExecutor>();
 
         return _services;
     }
@@ -82,7 +66,7 @@ public sealed class ModuleBuilder
 
             foreach (var @interface in interfaces)
             {
-                _services.AddKeyedScoped(@interface, _moduleName, handlerType);
+                _services.AddScoped(@interface, handlerType);
             }
         }
     }
@@ -103,7 +87,7 @@ public sealed class ModuleBuilder
 
             foreach (var @interface in interfaces)
             {
-                _services.AddKeyedScoped(@interface, _moduleName, handlerType);
+                _services.AddScoped(@interface, handlerType);
             }
         }
     }
@@ -124,7 +108,7 @@ public sealed class ModuleBuilder
 
             foreach (var @interface in interfaces)
             {
-                _services.AddKeyedScoped(@interface, _moduleName, validatorType);
+                _services.AddScoped(@interface, validatorType);
             }
         }
     }

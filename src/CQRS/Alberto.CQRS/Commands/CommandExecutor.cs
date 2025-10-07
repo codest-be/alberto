@@ -49,14 +49,14 @@ public sealed class CommandExecutor(IServiceProvider serviceProvider, string? mo
         return await handler.Handle(command, cancellationToken);
     }
 
-    private async Task<Result> ValidateCommand<TCommand>(TCommand command, CancellationToken cancellationToken)
+    private Task<Result> ValidateCommand<TCommand>(TCommand command, CancellationToken cancellationToken)
         where TCommand : ICommand
     {
         var validator = GetService<IValidator<TCommand>>();
         if (validator == null)
-            return Result.Success();
+            return Task.FromResult(Result.Success());
 
-        return await validator.ValidateAsync(command, cancellationToken);
+        return Task.FromResult(validator.Validate(command));
     }
 
     private TService? GetHandler<TService>() where TService : class

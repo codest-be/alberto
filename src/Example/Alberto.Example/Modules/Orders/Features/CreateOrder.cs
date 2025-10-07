@@ -1,0 +1,62 @@
+using Alberto.CQRS.Commands;
+using Alberto.CQRS.Results;
+using Alberto.CQRS.Validation;
+using Alberto.EventSourcing;
+using Alberto.EventStore;
+using Alberto.EventStore.Events;
+using Alberto.Example.Modules.Orders.EventHandlers;
+
+namespace Alberto.Example.Modules.Orders.Features;
+
+public static class CreateOrderEndpoint
+{
+    public static IEndpointRouteBuilder MapCreateOrder(this IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapPost("/orders", async (
+                CreateOrderRequest request,
+                ICommandHandler<CreateOrderCommand, Guid> handler,
+                CancellationToken ct) =>
+            {
+                var command = new CreateOrderCommand(request.Amount, request.CustomerId);
+                var result = await handler.Handle(command, ct);
+
+                return result.ToHttpResult();
+            })
+            .WithName("CreateOrder");
+
+        return endpoints;
+    }
+}
+
+public sealed record CreateOrderCommand(decimal Amount, string CustomerId) : ICommand;
+
+public sealed class CreateOrderValidator : IValidator<CreateOrderCommand>
+{
+    public Result Validate(CreateOrderCommand command)
+    {
+        if (command.Amount <= 0)
+            return Result.Fail(Problem.Create("INVALID_AMOUNT", "Order amount must be greater than zero"));
+
+        if (string.IsNullOrWhiteSpace(command.CustomerId))
+            return Result.Fail(Problem.Create("INVALID_CUSTOMER", "Customer ID is required"));
+
+        return Result.Success();
+    }
+}
+
+public sealed class CreateOrderHandler(IEventSourcedRepository<OrderState> repository)
+    : ICommandHandler<CreateOrderCommand, Guid>
+{
+    public async Task<Result<Guid>> Handle(CreateOrderCommand command, CancellationToken cancellationToken = default)
+    {
+        var orderId = Guid.CreateVersion7();
+
+        var orderCreated = new OrderCreated(orderId, command.Amount, command.CustomerId);
+
+        var query = new StreamQuery([new EventTag(Tags.Order, orderId.ToString())]);
+
+        await repository.SaveNew(query, [orderCreated], cancellationToken);
+
+        return Result<Guid>.Success(orderId);
+    }
+}
