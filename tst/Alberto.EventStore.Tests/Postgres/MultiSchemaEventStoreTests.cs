@@ -147,15 +147,15 @@ public class MultiSchemaEventStoreTests(PostgresTestFixture fixture) : IAsyncLif
         Tenant tenant = new(_testTenantId.ToString());
 
         // Act - Add events to both schemas
-        IEventToPersist[] orderEvents = new[]
-        {
+        IEventToPersist[] orderEvents =
+        [
             CreateTestEvent("order-created", "order:123"), CreateTestEvent("order-confirmed", "order:123")
-        };
+        ];
 
-        IEventToPersist[] paymentEvents = new[]
-        {
+        IEventToPersist[] paymentEvents =
+        [
             CreateTestEvent("payment-initiated", "payment:456"), CreateTestEvent("payment-completed", "payment:456")
-        };
+        ];
 
         await ordersBackend.Append(tenant, orderEvents, null, null, CancellationToken.None);
         await paymentsBackend.Append(tenant, paymentEvents, null, null, CancellationToken.None);

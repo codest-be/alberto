@@ -76,6 +76,54 @@ public class PostgresEventStoreBackend(
         }
     }
 
+    public async Task<IReadOnlyCollection<GlobalEventEnvelope>> StreamAll(
+        long fromPosition,
+        int maxCount,
+        IReadOnlySet<string>? eventTypes = null,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        var sql = new StringBuilder($@"
+            SELECT position, id, tenant_id, event_type, tags, data as event_data, metadata, created_at
+            FROM {_eventsTable}
+            WHERE position > @FromPosition");
+
+        var parameters = new DynamicParameters();
+        parameters.Add("FromPosition", fromPosition);
+
+        if (eventTypes is { Count: > 0 })
+        {
+            if (eventTypes.Count == 1)
+            {
+                sql.Append(" AND event_type = @EventType");
+                parameters.Add("EventType", eventTypes.First());
+            }
+            else
+            {
+                sql.Append(" AND event_type = ANY(@EventTypes)");
+                parameters.Add("EventTypes", eventTypes.ToArray());
+            }
+        }
+
+        sql.Append(" ORDER BY position LIMIT @MaxCount");
+        parameters.Add("MaxCount", maxCount);
+
+        var events = await connection.QueryAsync<EventRecord>(sql.ToString(), parameters);
+
+        return events.Select(e => new GlobalEventEnvelope(
+            e.position,
+            e.id,
+            e.tenant_id,
+            e.event_type,
+            e.tags,
+            e.event_data,
+            DeserializeMetadata(e.metadata),
+            e.created_at
+        )).ToList();
+    }
+
     private async Task<IEnumerable<IEventEnvelope>> ExecuteInAmbientTransaction(
         Tenant tenant,
         List<IEventToPersist> eventsList,
@@ -193,7 +241,7 @@ public class PostgresEventStoreBackend(
 
     private List<string> BuildQueryConditions(StreamQuery query, DynamicParameters parameters)
     {
-        List<string> conditions = new();
+        List<string> conditions = [];
         int paramIndex = parameters.ParameterNames.Count();
 
         if (query.Tags.Count > 0)
@@ -250,7 +298,7 @@ public class PostgresEventStoreBackend(
         Guid? expectedLastEventId,
         CancellationToken cancellationToken)
     {
-        List<string> valuesClauses = new();
+        List<string> valuesClauses = [];
         DynamicParameters parameters = new();
         parameters.Add("TenantId", tenantId);
 
@@ -357,7 +405,7 @@ public class PostgresEventStoreBackend(
         Guid? expectedLastEventId,
         CancellationToken cancellationToken)
     {
-        List<long> positions = new();
+        List<long> positions = [];
 
         foreach (IEventToPersist @event in eventsList)
         {
@@ -472,7 +520,7 @@ public class PostgresEventStoreBackend(
         Guid? expectedLastEventId,
         string tenantId)
     {
-        List<string> conditions = new();
+        List<string> conditions = [];
         DynamicParameters parameters = new();
 
         conditions.Add("tenant_id = @TenantId");
@@ -611,6 +659,15 @@ public class PostgresEventStoreBackend(
         };
     }
 
+    private static Dictionary<string, string> DeserializeMetadata(string metadataJson)
+    {
+        if (string.IsNullOrEmpty(metadataJson))
+            return new Dictionary<string, string>();
+
+        return JsonSerializer.Deserialize<Dictionary<string, string>>(metadataJson)
+               ?? new Dictionary<string, string>();
+    }
+
     // ReSharper disable InconsistentNaming
     private class EventRecord
     {
@@ -624,63 +681,6 @@ public class PostgresEventStoreBackend(
         public DateTimeOffset created_at { get; set; }
     }
     // ReSharper restore InconsistentNaming
-
-    public async Task<IReadOnlyCollection<GlobalEventEnvelope>> StreamAll(
-        long fromPosition,
-        int maxCount,
-        IReadOnlySet<string>? eventTypes = null,
-        CancellationToken cancellationToken = default)
-    {
-        await using var connection = new NpgsqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
-
-        var sql = new StringBuilder($@"
-            SELECT position, id, tenant_id, event_type, tags, data as event_data, metadata, created_at
-            FROM {_eventsTable}
-            WHERE position > @FromPosition");
-
-        var parameters = new DynamicParameters();
-        parameters.Add("FromPosition", fromPosition);
-
-        if (eventTypes is { Count: > 0 })
-        {
-            if (eventTypes.Count == 1)
-            {
-                sql.Append(" AND event_type = @EventType");
-                parameters.Add("EventType", eventTypes.First());
-            }
-            else
-            {
-                sql.Append(" AND event_type = ANY(@EventTypes)");
-                parameters.Add("EventTypes", eventTypes.ToArray());
-            }
-        }
-
-        sql.Append(" ORDER BY position LIMIT @MaxCount");
-        parameters.Add("MaxCount", maxCount);
-
-        var events = await connection.QueryAsync<EventRecord>(sql.ToString(), parameters);
-
-        return events.Select(e => new GlobalEventEnvelope(
-            e.position,
-            e.id,
-            e.tenant_id,
-            e.event_type,
-            e.tags,
-            e.event_data,
-            DeserializeMetadata(e.metadata),
-            e.created_at
-        )).ToList();
-    }
-
-    private static Dictionary<string, string> DeserializeMetadata(string metadataJson)
-    {
-        if (string.IsNullOrEmpty(metadataJson))
-            return new Dictionary<string, string>();
-
-        return JsonSerializer.Deserialize<Dictionary<string, string>>(metadataJson)
-               ?? new Dictionary<string, string>();
-    }
 }
 
 public class TransactionContext : IDisposable

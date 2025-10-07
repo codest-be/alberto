@@ -71,11 +71,11 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
         // Arrange
         await SetupAsync();
         IEventStoreBackend backend = await CreateBackend();
-        IEventToPersist[] events = new[]
-        {
+        IEventToPersist[] events =
+        [
             CreateTestEvent("event-a", "order:123"), CreateTestEvent("event-b", "order:123"),
             CreateTestEvent("event-c", "order:123")
-        };
+        ];
 
         // Act
         IEnumerable<IEventEnvelope> result =
@@ -142,10 +142,10 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
         await SetupAsync();
         IEventStoreBackend backend = await CreateBackend();
 
-        IEventToPersist[] orderEvents = new[]
-        {
+        IEventToPersist[] orderEvents =
+        [
             CreateTestEvent("order-created", "order:123"), CreateTestEvent("item-added", "order:123", "product:456")
-        };
+        ];
 
         IEventToPersist customerEvent = CreateTestEvent("customer-updated", "customer:789");
 
@@ -173,11 +173,11 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
         await SetupAsync();
         IEventStoreBackend backend = await CreateBackend();
 
-        IEventToPersist[] events = new[]
-        {
+        IEventToPersist[] events =
+        [
             CreateTestEvent("order-created", "order:123"), CreateTestEvent("order-updated", "order:123"),
             CreateTestEvent("item-added", "order:123")
-        };
+        ];
 
         await backend.Append(CurrentTenant(), events, null, null, TestContext.Current.CancellationToken);
 
@@ -203,12 +203,12 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
         await SetupAsync();
         IEventStoreBackend backend = await CreateBackend();
 
-        IEventToPersist[] events = new[]
-        {
+        IEventToPersist[] events =
+        [
             CreateTestEvent("event-a", "order:123"), CreateTestEvent("event-b", "order:123"),
             CreateTestEvent("event-c", "order:123"), CreateTestEvent("event-d", "order:123"),
             CreateTestEvent("event-e", "order:123")
-        };
+        ];
 
         await backend.Append(CurrentTenant(), events, null, null, TestContext.Current.CancellationToken);
 
@@ -333,11 +333,11 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
         await SetupAsync();
         IEventStoreBackend backend = await CreateBackend();
 
-        IEventToPersist[] events = new[]
-        {
+        IEventToPersist[] events =
+        [
             CreateTestEvent("event-a", "order:123"), CreateTestEvent("event-b", "order:123", "product:456"),
             CreateTestEvent("event-c", "product:456")
-        };
+        ];
 
         await backend.Append(CurrentTenant(), events, null, null, TestContext.Current.CancellationToken);
 
@@ -400,11 +400,11 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
         await SetupAsync();
         IEventStoreBackend backend = await CreateBackend();
 
-        IEventToPersist[] events = new[]
-        {
+        IEventToPersist[] events =
+        [
             CreateTestEvent("event-c", "order:123"), CreateTestEvent("event-a", "order:123"),
             CreateTestEvent("event-b", "order:123")
-        };
+        ];
 
         // Act - append events in one batch
         IEnumerable<IEventEnvelope> appendResult =
@@ -432,11 +432,11 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
         await SetupAsync();
         IEventStoreBackend backend = await CreateBackend();
 
-        IEventToPersist[] events = new[]
-        {
+        IEventToPersist[] events =
+        [
             CreateTestEvent("event-a", "order:123"), CreateTestEvent("event-b", "order:123"),
             CreateTestEvent("event-c", "order:123")
-        };
+        ];
 
         // Act
         await backend.Append(CurrentTenant(), events, null, null, TestContext.Current.CancellationToken);
@@ -473,17 +473,17 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
         await SetupAsync();
         IEventStoreBackend backend = await CreateBackend();
 
-        IEventToPersist[] events = new[]
-        {
+        IEventToPersist[] events =
+        [
             CreateTestEvent("event-a", "order:123"), CreateTestEvent("event-b", "order:456"),
             CreateTestEvent("event-c", "order:789")
-        };
+        ];
 
         // Act
         await backend.Append(CurrentTenant(), events, null, null, TestContext.Current.CancellationToken);
 
         // Query each tag separately and combine results to ensure we get all events
-        List<IEventEnvelope> results = new();
+        List<IEventEnvelope> results = [];
         foreach (string tag in new[] { "order:123", "order:456", "order:789" })
         {
             IReadOnlyCollection<IEventEnvelope> tagResult = await backend.Stream(
@@ -516,11 +516,11 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
         await SetupAsync();
         IEventStoreBackend backend = await CreateBackend();
 
-        IEventToPersist[] events = new[]
-        {
+        IEventToPersist[] events =
+        [
             CreateTestEvent("order-created", "order:123"), CreateTestEvent("payment-processed", "order:123"),
             CreateTestEvent("item-shipped", "order:123"), CreateTestEvent("notification-sent", "order:123")
-        };
+        ];
 
         await backend.Append(CurrentTenant(), events, null, null, TestContext.Current.CancellationToken);
 
@@ -552,11 +552,11 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
         await SetupAsync();
         IEventStoreBackend backend = await CreateBackend();
 
-        IEventToPersist[] events = new[]
-        {
+        IEventToPersist[] events =
+        [
             CreateTestEvent("order-created", "order:123"), CreateTestEvent("payment-processed", "order:123"),
             CreateTestEvent("item-shipped", "order:123")
-        };
+        ];
 
         await backend.Append(CurrentTenant(), events, null, null, TestContext.Current.CancellationToken);
 
@@ -649,11 +649,11 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
         IEventStoreBackend backend = await CreateBackend();
 
         // Create multiple events in the consistency boundary
-        IEventToPersist[] initialEvents = new[]
-        {
+        IEventToPersist[] initialEvents =
+        [
             CreateTestEvent("order-created", "order:123"), CreateTestEvent("order-confirmed", "order:123"),
             CreateTestEvent("payment-processed", "order:123")
-        };
+        ];
 
         IEnumerable<IEventEnvelope> initialResult = await backend.Append(CurrentTenant(), initialEvents, null, null,
             TestContext.Current.CancellationToken);
@@ -727,10 +727,10 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
         await SetupAsync();
         IEventStoreBackend backend = await CreateBackend();
 
-        IEventToPersist[] events = new[]
-        {
+        IEventToPersist[] events =
+        [
             CreateTestEvent("order-created", "order:123"), CreateTestEvent("payment-processed", "order:123")
-        };
+        ];
 
         await backend.Append(CurrentTenant(), events, null, null, TestContext.Current.CancellationToken);
 
@@ -759,10 +759,10 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
         await SetupAsync();
         IEventStoreBackend backend = await CreateBackend();
 
-        IEventToPersist[] events = new[]
-        {
+        IEventToPersist[] events =
+        [
             CreateTestEvent("order-created", "order:123"), CreateTestEvent("payment-processed", "order:123")
-        };
+        ];
 
         await backend.Append(CurrentTenant(), events, null, null, TestContext.Current.CancellationToken);
 
@@ -790,13 +790,13 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
         await SetupAsync();
         IEventStoreBackend backend = await CreateBackend();
 
-        IEventToPersist[] events = new[]
-        {
+        IEventToPersist[] events =
+        [
             CreateTestEvent("order-created", "order:123", "customer:456"),
             CreateTestEvent("payment-processed", "order:123", "payment:789"),
             CreateTestEvent("notification-sent", "customer:456", "notification:abc"),
             CreateTestEvent("order-updated", "order:123")
-        };
+        ];
 
         await backend.Append(CurrentTenant(), events, null, null, TestContext.Current.CancellationToken);
 
@@ -826,7 +826,7 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
         await SetupAsync();
         IEventStoreBackend backend = await CreateBackend();
 
-        IEventToPersist[] events = new[] { CreateTestEvent("order-created", "order:123") };
+        IEventToPersist[] events = [CreateTestEvent("order-created", "order:123")];
 
         await backend.Append(CurrentTenant(), events, null, null, TestContext.Current.CancellationToken);
 

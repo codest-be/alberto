@@ -34,6 +34,8 @@ Alberto is an event store library for .NET with multi-tenant and multi-schema su
 - **EventStore.InMemory**: In-memory implementation for testing and development
 - **EventStore.Postgres**: PostgreSQL-based production implementation with schema isolation
 - **EventStore.Telemetry**: Diagnostics and telemetry integration
+- **EventSourcing**: Minimal event sourcing building blocks (IProjector, Load/Persist helpers)
+- **CQRS**: Optional CQRS framework with commands, queries, validation, and auto-registration
 - **Example**: .NET Aspire-based example application demonstrating usage
 
 ### Key Patterns
@@ -71,8 +73,38 @@ The PostgreSQL implementation supports multiple schemas within the same database
 - `EventStore/IEventStoreBackend.cs`: Backend abstraction interface
 - `EventStore.InMemory/InMemoryEventStoreBackend.cs`: Full in-memory implementation
 - `EventStore.Postgres/PostgresEventStoreBackendFactory.cs`: PostgreSQL factory using keyed services
+- `EventSourcing/IProjector.cs`: Event projection interface
+- `EventSourcing/EventStoreExtensions.cs`: Load/Persist helpers for EventStore
+- `CQRS/Commands/ICommand.cs`: Command marker interface and handlers
+- `CQRS/Queries/IQuery.cs`: Query marker interface and handlers
+- `CQRS/Results/Result.cs`: Functional result types
+- `CQRS/Registration/EventSourcingExtensions.cs`: Module registration with auto-discovery
 - `Example/Alberto.Example/Program.cs`: Example service configuration
 - `Example/Alberto.AppHost/AppHost.cs`: Aspire orchestration setup
+
+### Event Sourcing & CQRS Layers
+
+**Alberto.EventSourcing** (Minimal building blocks):
+
+- `IProjector<TState>` - Projects events into state
+- `ProjectorExtensions.Evolve()` - Folds events into state
+- `EventStoreExtensions` - Load/Persist helpers with optimistic concurrency
+
+**Alberto.CQRS** (Opt-in opinionated framework):
+
+- Commands, Queries, Handlers - CQRS pattern implementation
+- Result/Problem/Decision - Functional error handling
+- Validation pipeline - FluentValidation integration
+- Auto-registration - Assembly scanning for handlers/validators
+- Module isolation - Keyed services per EventStore type
+
+Users can:
+
+- Use only EventSourcing for minimal event sourcing
+- Add CQRS for full framework with validation and auto-registration
+- Use their own CQRS framework (MediatR, Wolverine) with EventSourcing
+
+See `EventSourcing/README.md` and `CQRS/README.md` for detailed usage.
 
 ## Project Structure
 
@@ -80,8 +112,9 @@ The solution uses solution folders to organize projects:
 
 - **EventStore folder**: Core event store components (`EventStore`, `EventStore.InMemory`, `EventStore.Postgres`,
   `EventStore.Telemetry`, `EventStore.Tests`, `EventStore.Performance.Tests`)
-- **Example folder**: Aspire-based example application (`Alberto.Example`, `Alberto.AppHost`, `Alberto.ServiceDefaults`,
-  `Alberto.SqlMigrator`)
+- **EventSourcing folder**: Minimal event sourcing building blocks (`EventSourcing`)
+- **CQRS folder**: Optional CQRS framework with validation and auto-registration (`CQRS`)
+- **Example folder**: Aspire-based example application (`Alberto.Example`, `AppHost`, `ServiceDefaults`, `SqlMigrator`)
 
 ## Testing Strategy
 

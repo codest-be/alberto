@@ -83,7 +83,7 @@ public static class EventTypeDiscovery
     public static IEnumerable<Type> DiscoverHandlerTypes(Assembly assembly)
     {
         return assembly.GetTypes()
-            .Where(type => type.IsClass && !type.IsAbstract)
+            .Where(type => type is { IsClass: true, IsAbstract: false })
             .Where(type => typeof(IEventHandler).IsAssignableFrom(type))
             .Where(type => type.GetCustomAttribute<SubscriptionAttribute>() != null);
     }

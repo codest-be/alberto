@@ -73,14 +73,14 @@ public abstract class AdvancedQueryTests
         IEventStoreBackend backend = await CreateBackend();
         Tenant tenant = CurrentTenant();
 
-        IEventToPersist[] events = new[]
-        {
+        IEventToPersist[] events =
+        [
             CreateTestEvent("order-created", "order:123", "customer:456", "region:us"),
             CreateTestEvent("payment-processed", "order:123", "payment:789", "region:us"),
             CreateTestEvent("item-shipped", "order:123", "shipping:101", "region:eu"),
             CreateTestEvent("customer-updated", "customer:456", "region:us"),
             CreateTestEvent("order-created", "order:124", "customer:789", "region:eu")
-        };
+        ];
 
         await backend.Append(tenant, events, null, null, CancellationToken.None);
 
@@ -126,22 +126,22 @@ public abstract class AdvancedQueryTests
         IEventStoreBackend backend = await CreateBackend();
         Tenant tenant = CurrentTenant();
 
-        IEventToPersist[] events = new[]
-        {
+        IEventToPersist[] events =
+        [
             CreateTestEvent("order-created", "order:123"), CreateTestEvent("order-updated", "order:123"),
             CreateTestEvent("order-completed", "order:123"), CreateTestEvent("payment-created", "order:123"),
             CreateTestEvent("payment-processed", "order:123"), CreateTestEvent("notification-sent", "order:123")
-        };
+        ];
 
         await backend.Append(tenant, events, null, null, CancellationToken.None);
 
         // Test: Multiple event types with pattern-like filtering
-        EventType[] orderEventTypes = new[]
-        {
+        EventType[] orderEventTypes =
+        [
             new EventType("order-created"), new EventType("order-updated"), new EventType("order-completed")
-        };
+        ];
 
-        EventType[] paymentEventTypes = new[] { new EventType("payment-created"), new EventType("payment-processed") };
+        EventType[] paymentEventTypes = [new EventType("payment-created"), new EventType("payment-processed")];
 
         StreamQuery orderQuery = new StreamQuery()
             .WithTags(EventTag.Parse("order:123"))
@@ -175,12 +175,12 @@ public abstract class AdvancedQueryTests
         IEventStoreBackend backend = await CreateBackend();
         Tenant tenant = CurrentTenant();
 
-        IEventToPersist[] events = new[]
-        {
+        IEventToPersist[] events =
+        [
             CreateTestEvent("order-created", "order:123"), CreateTestEvent("payment-processed", "order:123"),
             CreateTestEvent("order-updated", "order:123"), CreateTestEvent("order-completed", "order:123"),
             CreateTestEvent("notification-sent", "order:123")
-        };
+        ];
 
         await backend.Append(tenant, events, null, null, CancellationToken.None);
 
@@ -207,14 +207,14 @@ public abstract class AdvancedQueryTests
         IEventStoreBackend backend = await CreateBackend();
         Tenant tenant = CurrentTenant();
 
-        IEventToPersist[] events = new[]
-        {
+        IEventToPersist[] events =
+        [
             CreateTestEvent("order-created", "order:123", "customer:456", "org:acme", "region:us", "tier:premium"),
             CreateTestEvent("payment-processed", "order:123", "payment:789", "provider:stripe", "currency:usd"),
             CreateTestEvent("audit-logged", "order:123", "audit:security", "user:admin", "action:create"),
             CreateTestEvent("metrics-recorded", "order:123", "metrics:performance", "component:api",
                 "duration:150ms")
-        };
+        ];
 
         await backend.Append(tenant, events, null, null, CancellationToken.None);
 

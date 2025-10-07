@@ -105,11 +105,11 @@ public class EventStoreErrorHandlingTests(PostgresTestFixture fixture) : IAsyncL
     public async Task Append_WithVariousTenantIdFormats_ShouldSucceed()
     {
         // Arrange - PostgreSQL should handle various tenant ID formats
-        Tenant[] validTenants = new[]
-        {
+        Tenant[] validTenants =
+        [
             new Tenant("tenant-dashes"), new Tenant("tenant_underscore"), new Tenant("tenant.dots"),
             new Tenant("tenant123"), new Tenant("UPPERCASE"), new Tenant("mixed-Case")
-        };
+        ];
 
         // Act & Assert - All should succeed with proper escaping
         foreach (Tenant tenant in validTenants)
@@ -249,14 +249,14 @@ public class EventStoreErrorHandlingTests(PostgresTestFixture fixture) : IAsyncL
     {
         // Arrange
         Tenant tenant = new(_testTenantId.ToString());
-        string[] validEventTypes = new[]
-        {
+        string[] validEventTypes =
+        [
             "event-with-dashes", "event-with-multiple-dashes", "very-long-event-type-name-with-many-parts",
             "a", // Single character
             "ab", // Two characters
             "short-event", "long-event-name-that-tests-length-limits", "event-a-b-c-d-e-f-g", // Many dashes
             "z" // Last letter of alphabet
-        };
+        ];
 
         // Act & Assert
         foreach (string eventType in validEventTypes)
@@ -295,14 +295,14 @@ public class EventStoreErrorHandlingTests(PostgresTestFixture fixture) : IAsyncL
         Tenant tenant = new(_testTenantId.ToString());
 
         // Create events with valid but complex tag formats
-        IEventToPersist[] testEvents = new[]
-        {
+        IEventToPersist[] testEvents =
+        [
             CreateTestEventWithTags("test-event-a", ["normal:tag"]),
             CreateTestEventWithTags("test-event-b", ["concept:id-with-hyphens"]),
             CreateTestEventWithTags("test-event-c", ["concept_underscore:id_underscore"]),
             CreateTestEventWithTags("test-event-d", ["MixedCase:ID123"]),
             CreateTestEventWithTags("test-event-e", ["tag:value", "secondary:tag"])
-        };
+        ];
 
         await _backend!.Append(tenant, testEvents, null, null, CancellationToken.None);
 

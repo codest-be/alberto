@@ -85,8 +85,8 @@ public class EventStoreTestFixture : IDisposable
     /// </summary>
     public static IEventToPersist[] CreateECommerceEvents(string orderId, string customerId)
     {
-        return new[]
-        {
+        return
+        [
             CreateTestEventWithData("order-created", new
                 {
                     orderId,
@@ -116,7 +116,7 @@ public class EventStoreTestFixture : IDisposable
             CreateTestEventWithData("order-confirmed",
                 new { orderId, customerId, estimatedDelivery = DateTime.UtcNow.AddDays(3) }, $"order:{orderId}",
                 $"customer:{customerId}", "domain:ecommerce")
-        };
+        ];
     }
 
     /// <summary>
@@ -124,8 +124,8 @@ public class EventStoreTestFixture : IDisposable
     /// </summary>
     public static string[] GenerateTenantIds(int count)
     {
-        string[] tenantTypes = new[] { "org", "company", "team", "dept" };
-        string[] names = new[] { "acme", "globex", "initech", "umbrella", "stark", "wayne", "lexcorp", "oscorp" };
+        string[] tenantTypes = ["org", "company", "team", "dept"];
+        string[] names = ["acme", "globex", "initech", "umbrella", "stark", "wayne", "lexcorp", "oscorp"];
 
         return Enumerable.Range(1, count)
             .Select(i =>

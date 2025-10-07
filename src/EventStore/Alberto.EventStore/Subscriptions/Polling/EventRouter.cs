@@ -22,7 +22,7 @@ public sealed class EventRouter(
     int maxRetries = 3,
     int retryDelayMs = 1000)
 {
-    private readonly List<HandlerRegistration> _handlers = new();
+    private readonly List<HandlerRegistration> _handlers = [];
 
     public void RegisterHandler(HandlerRegistration handler)
     {
@@ -71,7 +71,7 @@ public sealed class EventRouter(
                 cancellationToken
             );
 
-            if (existingPoisonPill != null && existingPoisonPill.ResolvedAt == null)
+            if (existingPoisonPill is { ResolvedAt: null })
             {
                 logger.LogError(
                     "Subscription '{SubscriptionId}' is blocked by unresolved poison pill at position {Position}",

@@ -95,7 +95,7 @@ public sealed class StreamQuery(
 
     public override string ToString()
     {
-        List<string> parts = new();
+        List<string> parts = [];
 
         // Add event tags part
         if (Tags.Any())

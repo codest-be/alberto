@@ -8,7 +8,7 @@ namespace Alberto.EventStore.Subscriptions.Filters;
 /// </summary>
 public sealed class ConsumePipeline(ILogger<ConsumePipeline> logger)
 {
-    private readonly List<IConsumeFilter> _filters = new();
+    private readonly List<IConsumeFilter> _filters = [];
     private readonly ILogger<ConsumePipeline> _logger = logger;
 
     public void AddFilter(IConsumeFilter filter)

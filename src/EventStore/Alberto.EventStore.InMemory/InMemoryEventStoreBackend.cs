@@ -98,7 +98,7 @@ public class InMemoryEventStoreBackend(ILogger<InMemoryEventStoreBackend> logger
                 CheckConsistencyBoundary(consistencyBoundary, expectedLastEventId, tenantId);
 
             // Insert events with global positions
-            List<IEventEnvelope> insertedEvents = new();
+            List<IEventEnvelope> insertedEvents = [];
 
             foreach (IEventToPersist @event in eventsList)
             {
@@ -171,7 +171,7 @@ public class InMemoryEventStoreBackend(ILogger<InMemoryEventStoreBackend> logger
             .Where(e => e.GlobalPosition > fromPosition);
 
         // Filter by event types if specified
-        if (eventTypes != null && eventTypes.Count > 0)
+        if (eventTypes is { Count: > 0 })
         {
             allEvents = allEvents.Where(e => eventTypes.Contains(e.EventType));
         }

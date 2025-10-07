@@ -144,8 +144,8 @@ public class EventStoreBenchmarks
     public async Task AppendSingleEvent_InMemory()
     {
         string streamId = Guid.NewGuid().ToString();
-        EventToPersist[] events = new[]
-        {
+        EventToPersist[] events =
+        [
             new EventToPersist
             {
                 EventType = new EventType("benchmark-event"),
@@ -154,7 +154,7 @@ public class EventStoreBenchmarks
                 Metadata = new Dictionary<string, string> { ["source"] = "benchmark" },
                 Created = DateTimeOffset.UtcNow
             }
-        };
+        ];
 
         await _inMemoryBackend.Append(_tenant, events, null, null);
     }
@@ -163,8 +163,8 @@ public class EventStoreBenchmarks
     public async Task AppendSingleEvent_Postgres()
     {
         string streamId = Guid.NewGuid().ToString();
-        EventToPersist[] events = new[]
-        {
+        EventToPersist[] events =
+        [
             new EventToPersist
             {
                 EventType = new EventType("benchmark-event"),
@@ -173,7 +173,7 @@ public class EventStoreBenchmarks
                 Metadata = new Dictionary<string, string> { ["source"] = "benchmark" },
                 Created = DateTimeOffset.UtcNow
             }
-        };
+        ];
 
         await _postgresBackend.Append(_tenant, events, null, null);
     }
@@ -258,8 +258,8 @@ public class EventStoreBenchmarks
     public async Task AppendSingleEvent_PostgresPooled()
     {
         string streamId = Guid.NewGuid().ToString();
-        EventToPersist[] events = new[]
-        {
+        EventToPersist[] events =
+        [
             new EventToPersist
             {
                 EventType = new EventType("benchmark-event"),
@@ -268,7 +268,7 @@ public class EventStoreBenchmarks
                 Metadata = new Dictionary<string, string> { ["source"] = "benchmark-pooled" },
                 Created = DateTimeOffset.UtcNow
             }
-        };
+        ];
 
         await _postgresPooledBackend.Append(_tenant, events, null, null);
     }
@@ -378,7 +378,7 @@ public class EventStoreBenchmarks
     public async Task TimeBatchedAppend_Postgres(int timeoutMs, int eventThreshold)
     {
         // Simulate time-based batching: collect events until timeout OR threshold reached
-        List<IEventToPersist> events = new();
+        List<IEventToPersist> events = [];
         CancellationTokenSource cts = new(TimeSpan.FromMilliseconds(timeoutMs));
         DateTimeOffset startTime = DateTimeOffset.UtcNow;
 
@@ -429,8 +429,8 @@ public class EventStoreBenchmarks
             throw new InvalidOperationException("Localhost PostgreSQL not available");
 
         string streamId = Guid.NewGuid().ToString();
-        EventToPersist[] events = new[]
-        {
+        EventToPersist[] events =
+        [
             new EventToPersist
             {
                 EventType = new EventType("localhost-benchmark-event"),
@@ -439,7 +439,7 @@ public class EventStoreBenchmarks
                 Metadata = new Dictionary<string, string> { ["source"] = "localhost-benchmark" },
                 Created = DateTimeOffset.UtcNow
             }
-        };
+        ];
 
         await _localhostPostgresBackend.Append(_tenant, events, null, null);
     }
@@ -607,7 +607,7 @@ public class EventStoreBenchmarks
     public async Task ConnectionPoolStress_Postgres()
     {
         // Stress test connection pooling by making concurrent database operations
-        List<Task> tasks = new();
+        List<Task> tasks = [];
         Random random = new();
 
         for (int i = 0; i < 10; i++) // 10 concurrent operations
@@ -757,10 +757,10 @@ public class EventStoreBenchmarks
             ORDER BY column_name", new { schema = options.Schema });
 
         List<string> columnList = columns.ToList();
-        string[] requiredColumns = new[]
-        {
+        string[] requiredColumns =
+        [
             "tenant_id", "position", "id", "event_type", "data", "tags", "metadata", "created_at"
-        };
+        ];
 
         foreach (string required in requiredColumns)
             if (!columnList.Contains(required))
@@ -840,20 +840,17 @@ public class EventStoreBenchmarks
             $"[TAG BENCHMARK] Setting up {eventCount} events with {tagsPerEvent} tags each for dataset: {dataSetupId}");
 
         // Create realistic tag patterns
-        string[] eventTypes = new[] { "order-created", "payment-processed", "item-shipped", "order-completed" };
-        string[] categories = new[] { "business", "system", "user-action", "integration" };
-        string[] priorities = new[] { "low", "medium", "high", "critical" };
-        string[] sources = new[] { "web", "mobile", "api", "batch" };
+        string[] eventTypes = ["order-created", "payment-processed", "item-shipped", "order-completed"];
+        string[] categories = ["business", "system", "user-action", "integration"];
+        string[] priorities = ["low", "medium", "high", "critical"];
+        string[] sources = ["web", "mobile", "api", "batch"];
 
-        List<IEventToPersist> events = new();
+        List<IEventToPersist> events = [];
         Random random = new(42); // Fixed seed for reproducible benchmarks
 
         for (int i = 0; i < eventCount; i++)
         {
-            List<EventTag> tags = new()
-            {
-                new EventTag("dataset", dataSetupId) // Always include dataset identifier
-            };
+            List<EventTag> tags = [new EventTag("dataset", dataSetupId)];
 
             // Add realistic tag combinations based on tagsPerEvent
             if (tagsPerEvent > 1 && tags.Count < tagsPerEvent)
@@ -903,17 +900,17 @@ public class EventStoreBenchmarks
         if (existing.Any()) return;
 
         // Create the same data structure as PostgreSQL version for fair comparison
-        string[] eventTypes = new[] { "order-created", "payment-processed", "item-shipped", "order-completed" };
-        string[] categories = new[] { "business", "system", "user-action", "integration" };
-        string[] priorities = new[] { "low", "medium", "high", "critical" };
-        string[] sources = new[] { "web", "mobile", "api", "batch" };
+        string[] eventTypes = ["order-created", "payment-processed", "item-shipped", "order-completed"];
+        string[] categories = ["business", "system", "user-action", "integration"];
+        string[] priorities = ["low", "medium", "high", "critical"];
+        string[] sources = ["web", "mobile", "api", "batch"];
 
-        List<IEventToPersist> events = new();
+        List<IEventToPersist> events = [];
         Random random = new(42); // Same seed as PostgreSQL version
 
         for (int i = 0; i < eventCount; i++)
         {
-            List<EventTag> tags = new() { new EventTag("dataset", dataSetupId) };
+            List<EventTag> tags = [new EventTag("dataset", dataSetupId)];
 
             if (tagsPerEvent > 1 && tags.Count < tagsPerEvent)
                 tags.Add(new EventTag("category", categories[random.Next(categories.Length)]));
