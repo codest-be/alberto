@@ -52,7 +52,7 @@ internal sealed record ShipOrderState
     public OrderStatus Status { get; init; } = OrderStatus.Draft;
 }
 
-internal sealed class ShipOrderProjector : IProjector<ShipOrderState>
+internal sealed class ShipOrderDecider : IProjector<ShipOrderState>
 {
     public ShipOrderState Apply(ShipOrderState state, object @event)
     {
@@ -65,11 +65,17 @@ internal sealed class ShipOrderProjector : IProjector<ShipOrderState>
             _ => state
         };
     }
-}
 
-internal static class ShipOrderDecider
-{
-    public static Decision Decide(ShipOrderState state, ShipOrderCommand command)
+    public static StreamQuery GetQuery(Guid orderId)
+    {
+        return new StreamQuery([new EventTag(Tags.Order, orderId.ToString())])
+            .WithEventType<OrderCreated>()
+            .WithEventType<OrderPlaced>()
+            .WithEventType<OrderShipped>()
+            .WithEventType<OrderCancelled>();
+    }
+
+    public Decision Decide(ShipOrderState state, ShipOrderCommand command)
     {
         if (!state.Exists)
             return Decision.Fail(Problem.Create("ORDER_NOT_FOUND", $"Order {command.OrderId} does not exist"));
@@ -89,17 +95,12 @@ public sealed class ShipOrderHandler(OrderEventStore eventStore)
 {
     public async Task<Result<bool>> Handle(ShipOrderCommand command, CancellationToken cancellationToken = default)
     {
-        var query = new StreamQuery([new EventTag(Tags.Order, command.OrderId.ToString())])
-            .WithEventType<OrderCreated>()
-            .WithEventType<OrderPlaced>()
-            .WithEventType<OrderShipped>()
-            .WithEventType<OrderCancelled>();
+        var decider = new ShipOrderDecider();
+        var query = ShipOrderDecider.GetQuery(command.OrderId);
 
-        var projector = new ShipOrderProjector();
         var (events, lastEventId) = await eventStore.Load(query, cancellationToken);
-        var state = projector.Evolve(events);
-
-        var decision = ShipOrderDecider.Decide(state, command);
+        var state = decider.Evolve(events);
+        var decision = decider.Decide(state, command);
 
         if (decision.IsError)
             return Result<bool>.Fail(decision.Problems.First());
