@@ -10,6 +10,27 @@ namespace Alberto.Example.Modules.Orders.Commands;
 
 public sealed record PlaceOrderCommand(Guid OrderId) : ICommand;
 
+public sealed class PlaceOrderHandler(OrderEventStore eventStore)
+    : ICommandHandler<PlaceOrderCommand, bool>
+{
+    public async Task<Result<bool>> Handle(PlaceOrderCommand command, CancellationToken cancellationToken = default)
+    {
+        var decider = new PlaceOrderDecider();
+        var query = PlaceOrderDecider.GetQuery(command.OrderId);
+
+        var (events, lastEventId) = await eventStore.Load(query, cancellationToken);
+        var state = decider.Evolve(events);
+        var decision = decider.Decide(state, command.OrderId);
+
+        if (decision.IsError)
+            return Result<bool>.Fail(decision.Problems.First());
+
+        await eventStore.Persist(query, lastEventId, decision.Events, cancellationToken);
+
+        return Result<bool>.Success(true);
+    }
+}
+
 internal sealed record PlaceOrderState
 {
     public bool Exists { get; init; }
@@ -54,26 +75,5 @@ internal sealed class PlaceOrderDecider : IProjector<PlaceOrderState>
 
         var orderPlaced = new OrderPlaced(orderId, state.Amount, state.CustomerId);
         return Decision.Succeed(orderPlaced);
-    }
-}
-
-public sealed class PlaceOrderHandler(OrderEventStore eventStore)
-    : ICommandHandler<PlaceOrderCommand, bool>
-{
-    public async Task<Result<bool>> Handle(PlaceOrderCommand command, CancellationToken cancellationToken = default)
-    {
-        var decider = new PlaceOrderDecider();
-        var query = PlaceOrderDecider.GetQuery(command.OrderId);
-
-        var (events, lastEventId) = await eventStore.Load(query, cancellationToken);
-        var state = decider.Evolve(events);
-        var decision = decider.Decide(state, command.OrderId);
-
-        if (decision.IsError)
-            return Result<bool>.Fail(decision.Problems.First());
-
-        await eventStore.Persist(query, lastEventId, decision.Events, cancellationToken);
-
-        return Result<bool>.Success(true);
     }
 }
