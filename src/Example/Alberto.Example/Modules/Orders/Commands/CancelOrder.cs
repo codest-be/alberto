@@ -1,24 +1,24 @@
 using Alberto.CQRS.Commands;
 using Alberto.CQRS.Results;
-using Alberto.CQRS.Validation;
 using Alberto.EventSourcing;
 using Alberto.EventSourcing.Projectors;
 using Alberto.EventStore;
 using Alberto.EventStore.Events;
 using Alberto.Example.Modules.Orders.EventHandlers;
+using FluentValidation;
 
 namespace Alberto.Example.Modules.Orders.Commands;
 
 public sealed record CancelOrderCommand(Guid OrderId, string Reason) : ICommand;
 
-public sealed class CancelOrderValidator : IValidator<CancelOrderCommand>
+public sealed class CancelOrderValidator : AbstractValidator<CancelOrderCommand>
 {
-    public Result Validate(CancelOrderCommand command)
+    public CancelOrderValidator()
     {
-        if (string.IsNullOrWhiteSpace(command.Reason))
-            return Result.Fail(Problem.Create("INVALID_REASON", "Cancellation reason is required"));
-
-        return Result.Success();
+        RuleFor(x => x.Reason)
+            .NotEmpty()
+            .WithErrorCode("INVALID_REASON")
+            .WithMessage("Cancellation reason is required");
     }
 }
 

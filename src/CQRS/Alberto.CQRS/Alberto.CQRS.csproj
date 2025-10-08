@@ -14,4 +14,9 @@
     <ProjectReference Include="..\..\EventSourcing\Alberto.EventSourcing\Alberto.EventSourcing.csproj"/>
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="FluentValidation"/>
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions"/>
+  </ItemGroup>
+
 </Project>

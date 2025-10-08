@@ -1,5 +1,6 @@
 using Alberto.CQRS.Results;
-using Alberto.CQRS.Validation;
+using Alberto.EventSourcing;
+using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Alberto.CQRS.Commands;
@@ -49,14 +50,31 @@ public sealed class CommandExecutor(IServiceProvider serviceProvider, string? mo
         return await handler.Handle(command, cancellationToken);
     }
 
-    private Task<Result> ValidateCommand<TCommand>(TCommand command, CancellationToken cancellationToken)
+    private async Task<Result> ValidateCommand<TCommand>(TCommand command, CancellationToken cancellationToken)
         where TCommand : ICommand
     {
         var validator = GetService<IValidator<TCommand>>();
         if (validator == null)
-            return Task.FromResult(Result.Success());
+            return Result.Success();
 
-        return Task.FromResult(validator.Validate(command));
+        var validationResult = await validator.ValidateAsync(command, cancellationToken);
+
+        if (validationResult.IsValid)
+            return Result.Success();
+
+        var problems = validationResult.Errors
+            .Select(error => Problem.Create(
+                code: IsFluentValidationDefaultCode(error.ErrorCode) ? "VALIDATION_ERROR" : error.ErrorCode,
+                message: error.ErrorMessage))
+            .ToList();
+
+        return Result.Fail(problems);
+    }
+
+    private static bool IsFluentValidationDefaultCode(string errorCode)
+    {
+        // FluentValidation default error codes end with "Validator" (e.g., "NotEmptyValidator", "GreaterThanValidator")
+        return errorCode.EndsWith("Validator", StringComparison.Ordinal);
     }
 
     private TService? GetHandler<TService>() where TService : class

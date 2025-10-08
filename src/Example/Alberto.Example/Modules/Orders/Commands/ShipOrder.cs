@@ -1,24 +1,24 @@
 using Alberto.CQRS.Commands;
 using Alberto.CQRS.Results;
-using Alberto.CQRS.Validation;
 using Alberto.EventSourcing;
 using Alberto.EventSourcing.Projectors;
 using Alberto.EventStore;
 using Alberto.EventStore.Events;
 using Alberto.Example.Modules.Orders.EventHandlers;
+using FluentValidation;
 
 namespace Alberto.Example.Modules.Orders.Commands;
 
 public sealed record ShipOrderCommand(Guid OrderId, string TrackingNumber) : ICommand;
 
-public sealed class ShipOrderValidator : IValidator<ShipOrderCommand>
+public sealed class ShipOrderValidator : AbstractValidator<ShipOrderCommand>
 {
-    public Result Validate(ShipOrderCommand command)
+    public ShipOrderValidator()
     {
-        if (string.IsNullOrWhiteSpace(command.TrackingNumber))
-            return Result.Fail(Problem.Create("INVALID_TRACKING_NUMBER", "Tracking number is required"));
-
-        return Result.Success();
+        RuleFor(x => x.TrackingNumber)
+            .NotEmpty()
+            .WithErrorCode("INVALID_TRACKING_NUMBER")
+            .WithMessage("Tracking number is required");
     }
 }
 

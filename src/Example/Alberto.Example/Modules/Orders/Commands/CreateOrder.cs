@@ -1,26 +1,28 @@
 using Alberto.CQRS.Commands;
 using Alberto.CQRS.Results;
-using Alberto.CQRS.Validation;
 using Alberto.EventSourcing;
 using Alberto.EventStore;
 using Alberto.EventStore.Events;
 using Alberto.Example.Modules.Orders.EventHandlers;
+using FluentValidation;
 
 namespace Alberto.Example.Modules.Orders.Commands;
 
 public sealed record CreateOrderCommand(decimal Amount, string CustomerId) : ICommand;
 
-public sealed class CreateOrderValidator : IValidator<CreateOrderCommand>
+public sealed class CreateOrderValidator : AbstractValidator<CreateOrderCommand>
 {
-    public Result Validate(CreateOrderCommand command)
+    public CreateOrderValidator()
     {
-        if (command.Amount <= 0)
-            return Result.Fail(Problem.Create("INVALID_AMOUNT", "Order amount must be greater than zero"));
+        RuleFor(x => x.Amount)
+            .GreaterThan(0)
+            .WithErrorCode("INVALID_AMOUNT")
+            .WithMessage("Order amount must be greater than zero");
 
-        if (string.IsNullOrWhiteSpace(command.CustomerId))
-            return Result.Fail(Problem.Create("INVALID_CUSTOMER", "Customer ID is required"));
-
-        return Result.Success();
+        RuleFor(x => x.CustomerId)
+            .NotEmpty()
+            .WithErrorCode("INVALID_CUSTOMER")
+            .WithMessage("Customer ID is required");
     }
 }
 
