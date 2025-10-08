@@ -7,7 +7,7 @@ using Alberto.Example.Modules.Orders;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace Alberto.Example.IntegrationTests;
+namespace Alberto.Example.ComponentTests;
 
 public abstract class OrdersFixture
 {

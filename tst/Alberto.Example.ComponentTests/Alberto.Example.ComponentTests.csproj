@@ -8,7 +8,7 @@
     <OutputType>exe</OutputType>
     <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
     <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
-    <RootNamespace>Alberto.Example.IntegrationTests</RootNamespace>
+    <RootNamespace>Alberto.Example.ComponentTests</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>

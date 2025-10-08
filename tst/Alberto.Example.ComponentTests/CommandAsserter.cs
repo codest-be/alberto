@@ -3,7 +3,7 @@ using Alberto.EventSourcing;
 using Alberto.EventStore.InMemory;
 using Xunit;
 
-namespace Alberto.Example.IntegrationTests;
+namespace Alberto.Example.ComponentTests;
 
 public sealed class CommandAsserter
 {

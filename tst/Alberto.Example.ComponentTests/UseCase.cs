@@ -6,7 +6,7 @@ using Alberto.EventStore.InMemory;
 using Alberto.Example.Modules.Orders;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Alberto.Example.IntegrationTests;
+namespace Alberto.Example.ComponentTests;
 
 public sealed class UseCase
 {

@@ -2,7 +2,7 @@ using Alberto.Example.Modules.Orders.Commands;
 using Alberto.Example.Modules.Orders.EventHandlers;
 using Xunit;
 
-namespace Alberto.Example.IntegrationTests.Orders;
+namespace Alberto.Example.ComponentTests.Orders;
 
 public sealed class CreateOrderTests : OrdersFixture
 {

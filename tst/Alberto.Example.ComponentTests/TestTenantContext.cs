@@ -1,6 +1,6 @@
 using Alberto.EventStore.MultiTenant;
 
-namespace Alberto.Example.IntegrationTests;
+namespace Alberto.Example.ComponentTests;
 
 internal sealed class TestTenantContext : ITenantContext
 {
