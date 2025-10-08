@@ -6,28 +6,7 @@ using Alberto.EventStore;
 using Alberto.EventStore.Events;
 using Alberto.Example.Modules.Orders.EventHandlers;
 
-namespace Alberto.Example.Modules.Orders.Features;
-
-public static class PlaceOrderEndpoint
-{
-    public static IEndpointRouteBuilder MapPlaceOrder(this IEndpointRouteBuilder endpoints)
-    {
-        endpoints.MapPost("/orders/{orderId:guid}/place", async (
-                Guid orderId,
-                ICommandHandler<PlaceOrderCommand, bool> handler,
-                CancellationToken ct) =>
-            {
-                var command = new PlaceOrderCommand(orderId);
-                var result = await handler.Handle(command, ct);
-
-                return result.ToHttpResult();
-            })
-            .WithName("PlaceOrder")
-            .WithOpenApi();
-
-        return endpoints;
-    }
-}
+namespace Alberto.Example.Modules.Orders.Commands;
 
 public sealed record PlaceOrderCommand(Guid OrderId) : ICommand;
 
@@ -63,17 +42,17 @@ internal sealed class PlaceOrderDecider : IProjector<PlaceOrderState>
             .WithEventType<OrderCancelled>();
     }
 
-    public Decision Decide(PlaceOrderState state, PlaceOrderCommand command)
+    public Decision Decide(PlaceOrderState state, Guid orderId)
     {
         if (!state.Exists)
-            return Decision.Fail(Problem.Create("ORDER_NOT_FOUND", $"Order {command.OrderId} does not exist"));
+            return Decision.Fail(Problem.Create("ORDER_NOT_FOUND", $"Order {orderId} does not exist"));
 
         if (state.Status != OrderStatus.Created)
             return Decision.Fail(Problem.Create(
                 "INVALID_ORDER_STATUS",
                 $"Order must be in Created status to be placed. Current status: {state.Status}"));
 
-        var orderPlaced = new OrderPlaced(command.OrderId, state.Amount, state.CustomerId);
+        var orderPlaced = new OrderPlaced(orderId, state.Amount, state.CustomerId);
         return Decision.Succeed(orderPlaced);
     }
 }
@@ -88,7 +67,7 @@ public sealed class PlaceOrderHandler(OrderEventStore eventStore)
 
         var (events, lastEventId) = await eventStore.Load(query, cancellationToken);
         var state = decider.Evolve(events);
-        var decision = decider.Decide(state, command);
+        var decision = decider.Decide(state, command.OrderId);
 
         if (decision.IsError)
             return Result<bool>.Fail(decision.Problems.First());

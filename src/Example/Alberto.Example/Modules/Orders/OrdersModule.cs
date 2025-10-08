@@ -2,13 +2,11 @@ using Alberto.CQRS.Registration;
 using Alberto.EventSourcing;
 using Alberto.EventStore.Postgres;
 using Alberto.EventStore.Telemetry;
+using Alberto.Example.Modules.Orders.Api.Endpoints;
 using Alberto.Example.Modules.Orders.EventHandlers;
-using Alberto.Example.Modules.Orders.Features;
 using Alberto.Example.Modules.Orders.Filters;
 
 namespace Alberto.Example.Modules.Orders;
-
-public record CreateOrderRequest(decimal Amount, string CustomerId);
 
 public static class OrdersModule
 {

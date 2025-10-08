@@ -6,27 +6,7 @@ using Alberto.EventStore;
 using Alberto.EventStore.Events;
 using Alberto.Example.Modules.Orders.EventHandlers;
 
-namespace Alberto.Example.Modules.Orders.Features;
-
-public static class CreateOrderEndpoint
-{
-    public static IEndpointRouteBuilder MapCreateOrder(this IEndpointRouteBuilder endpoints)
-    {
-        endpoints.MapPost("/orders", async (
-                CreateOrderRequest request,
-                ICommandHandler<CreateOrderCommand, Guid> handler,
-                CancellationToken ct) =>
-            {
-                var command = new CreateOrderCommand(request.Amount, request.CustomerId);
-                var result = await handler.Handle(command, ct);
-
-                return result.ToHttpResult();
-            })
-            .WithName("CreateOrder");
-
-        return endpoints;
-    }
-}
+namespace Alberto.Example.Modules.Orders.Commands;
 
 public sealed record CreateOrderCommand(decimal Amount, string CustomerId) : ICommand;
 
@@ -46,10 +26,10 @@ public sealed class CreateOrderValidator : IValidator<CreateOrderCommand>
 
 internal sealed class CreateOrderDecider
 {
-    public static Decision<Guid> Decide(CreateOrderCommand command)
+    public static Decision<Guid> Decide(decimal amount, string customerId)
     {
         var orderId = Guid.CreateVersion7();
-        var orderCreated = new OrderCreated(orderId, command.Amount, command.CustomerId);
+        var orderCreated = new OrderCreated(orderId, amount, customerId);
 
         return Decision<Guid>.Succeed(orderId, orderCreated);
     }
@@ -60,7 +40,7 @@ public sealed class CreateOrderHandler(OrderEventStore eventStore)
 {
     public async Task<Result<Guid>> Handle(CreateOrderCommand command, CancellationToken cancellationToken = default)
     {
-        var decision = CreateOrderDecider.Decide(command);
+        var decision = CreateOrderDecider.Decide(command.Amount, command.CustomerId);
 
         var orderId = decision.Value;
         var query = new StreamQuery([new EventTag(Tags.Order, orderId.ToString())]);

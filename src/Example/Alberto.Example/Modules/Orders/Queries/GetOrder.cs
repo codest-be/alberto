@@ -3,39 +3,11 @@ using Alberto.CQRS.Results;
 using Alberto.EventSourcing;
 using Alberto.EventStore;
 using Alberto.EventStore.Events;
+using Alberto.Example.Modules.Orders.Api.Contracts;
 
-namespace Alberto.Example.Modules.Orders.Features;
-
-public static class GetOrderEndpoint
-{
-    public static IEndpointRouteBuilder MapGetOrder(this IEndpointRouteBuilder endpoints)
-    {
-        endpoints.MapGet("/orders/{orderId:guid}", async (
-                Guid orderId,
-                IQueryHandler<GetOrderQuery, OrderDto> handler,
-                CancellationToken ct) =>
-            {
-                var query = new GetOrderQuery(orderId);
-                var result = await handler.Handle(query, ct);
-
-                return result.ToHttpResult();
-            })
-            .WithName("GetOrder")
-            .WithOpenApi();
-
-        return endpoints;
-    }
-}
+namespace Alberto.Example.Modules.Orders.Queries;
 
 public sealed record GetOrderQuery(Guid OrderId) : IQuery;
-
-public sealed record OrderDto(
-    Guid OrderId,
-    decimal Amount,
-    string CustomerId,
-    string Status,
-    string? TrackingNumber,
-    string? CancellationReason);
 
 public sealed class GetOrderHandler(IEventSourcedRepository<OrderState> repository)
     : IQueryHandler<GetOrderQuery, OrderDto>

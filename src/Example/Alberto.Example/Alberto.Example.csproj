@@ -9,6 +9,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Alberto.Example.Tests"/>
+  </ItemGroup>
+
+  <ItemGroup>
     <EmbeddedResource Include="Modules\Orders\Migrations\*.sql"/>
     <EmbeddedResource Include="Modules\Payments\Migrations\*.sql"/>
   </ItemGroup>
@@ -17,7 +21,6 @@
     <ProjectReference Include="..\..\EventSourcing\Alberto.EventSourcing\Alberto.EventSourcing.csproj"/>
     <ProjectReference Include="..\..\EventStore\Alberto.EventStore.Postgres\Alberto.EventStore.Postgres.csproj"/>
     <ProjectReference Include="..\..\EventStore\Alberto.EventStore.Telemetry\Alberto.EventStore.Telemetry.csproj"/>
-    <ProjectReference Include="..\..\EventSourcing\Albert.EventSourcing\Albert.EventSourcing.csproj"/>
     <ProjectReference Include="..\..\CQRS\Alberto.CQRS\Alberto.CQRS.csproj"/>
     <ProjectReference Include="..\Alberto.ServiceDefaults\Alberto.ServiceDefaults.csproj"/>
   </ItemGroup>

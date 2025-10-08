@@ -7,31 +7,7 @@ using Alberto.EventStore;
 using Alberto.EventStore.Events;
 using Alberto.Example.Modules.Orders.EventHandlers;
 
-namespace Alberto.Example.Modules.Orders.Features;
-
-public static class ShipOrderEndpoint
-{
-    public static IEndpointRouteBuilder MapShipOrder(this IEndpointRouteBuilder endpoints)
-    {
-        endpoints.MapPost("/orders/{orderId:guid}/ship", async (
-                Guid orderId,
-                ShipOrderRequest request,
-                ICommandHandler<ShipOrderCommand, bool> handler,
-                CancellationToken ct) =>
-            {
-                var command = new ShipOrderCommand(orderId, request.TrackingNumber);
-                var result = await handler.Handle(command, ct);
-
-                return result.ToHttpResult();
-            })
-            .WithName("ShipOrder")
-            .WithOpenApi();
-
-        return endpoints;
-    }
-}
-
-public sealed record ShipOrderRequest(string TrackingNumber);
+namespace Alberto.Example.Modules.Orders.Commands;
 
 public sealed record ShipOrderCommand(Guid OrderId, string TrackingNumber) : ICommand;
 
@@ -75,17 +51,17 @@ internal sealed class ShipOrderDecider : IProjector<ShipOrderState>
             .WithEventType<OrderCancelled>();
     }
 
-    public Decision Decide(ShipOrderState state, ShipOrderCommand command)
+    public Decision Decide(ShipOrderState state, Guid orderId, string trackingNumber)
     {
         if (!state.Exists)
-            return Decision.Fail(Problem.Create("ORDER_NOT_FOUND", $"Order {command.OrderId} does not exist"));
+            return Decision.Fail(Problem.Create("ORDER_NOT_FOUND", $"Order {orderId} does not exist"));
 
         if (state.Status != OrderStatus.Placed)
             return Decision.Fail(Problem.Create(
                 "INVALID_ORDER_STATUS",
                 $"Order must be in Placed status to be shipped. Current status: {state.Status}"));
 
-        var orderShipped = new OrderShipped(command.OrderId, command.TrackingNumber);
+        var orderShipped = new OrderShipped(orderId, trackingNumber);
         return Decision.Succeed(orderShipped);
     }
 }
@@ -100,7 +76,7 @@ public sealed class ShipOrderHandler(OrderEventStore eventStore)
 
         var (events, lastEventId) = await eventStore.Load(query, cancellationToken);
         var state = decider.Evolve(events);
-        var decision = decider.Decide(state, command);
+        var decision = decider.Decide(state, command.OrderId, command.TrackingNumber);
 
         if (decision.IsError)
             return Result<bool>.Fail(decision.Problems.First());

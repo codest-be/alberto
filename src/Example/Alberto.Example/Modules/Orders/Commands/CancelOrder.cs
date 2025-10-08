@@ -7,31 +7,7 @@ using Alberto.EventStore;
 using Alberto.EventStore.Events;
 using Alberto.Example.Modules.Orders.EventHandlers;
 
-namespace Alberto.Example.Modules.Orders.Features;
-
-public static class CancelOrderEndpoint
-{
-    public static IEndpointRouteBuilder MapCancelOrder(this IEndpointRouteBuilder endpoints)
-    {
-        endpoints.MapPost("/orders/{orderId:guid}/cancel", async (
-                Guid orderId,
-                CancelOrderRequest request,
-                ICommandHandler<CancelOrderCommand, bool> handler,
-                CancellationToken ct) =>
-            {
-                var command = new CancelOrderCommand(orderId, request.Reason);
-                var result = await handler.Handle(command, ct);
-
-                return result.ToHttpResult();
-            })
-            .WithName("CancelOrder")
-            .WithOpenApi();
-
-        return endpoints;
-    }
-}
-
-public sealed record CancelOrderRequest(string Reason);
+namespace Alberto.Example.Modules.Orders.Commands;
 
 public sealed record CancelOrderCommand(Guid OrderId, string Reason) : ICommand;
 
@@ -73,10 +49,10 @@ internal sealed class CancelOrderDecider : IProjector<CancelOrderState>
             .WithEventType<OrderShipped>()
             .WithEventType<OrderCancelled>();
 
-    public Decision Decide(CancelOrderState state, CancelOrderCommand command)
+    public Decision Decide(CancelOrderState state, Guid orderId, string reason)
     {
         if (!state.Exists)
-            return Decision.Fail(Problem.Create("ORDER_NOT_FOUND", $"Order {command.OrderId} does not exist"));
+            return Decision.Fail(Problem.Create("ORDER_NOT_FOUND", $"Order {orderId} does not exist"));
 
         if (state.Status == OrderStatus.Cancelled)
             return Decision.Fail(Problem.Create(
@@ -88,7 +64,7 @@ internal sealed class CancelOrderDecider : IProjector<CancelOrderState>
                 "CANNOT_CANCEL_SHIPPED_ORDER",
                 "Cannot cancel an order that has already been shipped"));
 
-        var orderCancelled = new OrderCancelled(command.OrderId, command.Reason);
+        var orderCancelled = new OrderCancelled(orderId, reason);
         return Decision.Succeed(orderCancelled);
     }
 }
@@ -103,7 +79,7 @@ public sealed class CancelOrderHandler(OrderEventStore eventStore)
 
         var (events, lastEventId) = await eventStore.Load(query, cancellationToken);
         var state = decider.Evolve(events);
-        var decision = decider.Decide(state, command);
+        var decision = decider.Decide(state, command.OrderId, command.Reason);
 
         if (decision.IsError)
             return Result<bool>.Fail(decision.Problems.First());

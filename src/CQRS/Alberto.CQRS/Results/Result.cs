@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Alberto.EventSourcing;
 
 namespace Alberto.CQRS.Results;
@@ -34,6 +35,7 @@ public readonly record struct Result
 /// Represents the result of an operation that may succeed with a value or fail.
 /// </summary>
 /// <typeparam name="T">The type of the success value</typeparam>
+[SuppressMessage("Design", "CA1000:Do not declare static members on generic types")]
 public readonly record struct Result<T>
 {
     private readonly List<Problem> _problems;
