@@ -2,6 +2,7 @@ using Alberto.CQRS.Commands;
 using Alberto.CQRS.Results;
 using Alberto.CQRS.Validation;
 using Alberto.EventSourcing;
+using Alberto.EventSourcing.Projectors;
 using Alberto.EventStore;
 using Alberto.EventStore.Events;
 using Alberto.Example.Modules.Orders.EventHandlers;
@@ -44,19 +45,59 @@ public sealed class CreateOrderValidator : IValidator<CreateOrderCommand>
     }
 }
 
-public sealed class CreateOrderHandler(IEventSourcedRepository<OrderState> repository)
+internal sealed record CreateOrderState
+{
+    public bool Exists { get; init; }
+}
+
+internal sealed class CreateOrderProjector : IProjector<CreateOrderState>
+{
+    public CreateOrderState Apply(CreateOrderState state, object @event)
+    {
+        return @event switch
+        {
+            OrderCreated => state with { Exists = true },
+            _ => state
+        };
+    }
+}
+
+internal static class CreateOrderDecider
+{
+    public static Decision<Guid> Decide(CreateOrderState state, CreateOrderCommand command)
+    {
+        if (state.Exists)
+            return Decision<Guid>.Fail(Problem.Create("ORDER_ALREADY_EXISTS", "Order already exists"));
+
+        var orderId = Guid.CreateVersion7();
+        var orderCreated = new OrderCreated(orderId, command.Amount, command.CustomerId);
+
+        return Decision<Guid>.Succeed(orderId, orderCreated);
+    }
+}
+
+public sealed class CreateOrderHandler(OrderEventStore eventStore)
     : ICommandHandler<CreateOrderCommand, Guid>
 {
     public async Task<Result<Guid>> Handle(CreateOrderCommand command, CancellationToken cancellationToken = default)
     {
-        var orderId = Guid.CreateVersion7();
+        var tempOrderId = Guid.CreateVersion7();
 
-        var orderCreated = new OrderCreated(orderId, command.Amount, command.CustomerId);
+        // Query only order-created events to check existence
+        var query = new StreamQuery([new EventTag(Tags.Order, tempOrderId.ToString())])
+            .WithEventType<OrderCreated>();
 
-        var query = new StreamQuery([new EventTag(Tags.Order, orderId.ToString())]);
+        var projector = new CreateOrderProjector();
+        var (events, lastEventId) = await eventStore.Load(query, cancellationToken);
+        var state = projector.Evolve(events);
 
-        await repository.SaveNew(query, [orderCreated], cancellationToken);
+        var decision = CreateOrderDecider.Decide(state, command);
 
-        return Result<Guid>.Success(orderId);
+        if (decision.IsError)
+            return Result<Guid>.Fail(decision.Problems.First());
+
+        await eventStore.PersistNew(query, decision.Events, cancellationToken);
+
+        return Result<Guid>.Success(decision.Value);
     }
 }

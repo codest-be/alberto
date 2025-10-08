@@ -40,12 +40,10 @@ public sealed record OrderDto(
 public sealed class GetOrderHandler(IEventSourcedRepository<OrderState> repository)
     : IQueryHandler<GetOrderQuery, OrderDto>
 {
-    private readonly IEventSourcedRepository<OrderState> _repository = repository;
-
     public async Task<Result<OrderDto>> Handle(GetOrderQuery query, CancellationToken cancellationToken = default)
     {
         var streamQuery = new StreamQuery([new EventTag(Tags.Order, query.OrderId.ToString())]);
-        var aggregate = await _repository.Load(streamQuery, cancellationToken);
+        var aggregate = await repository.Load(streamQuery, cancellationToken);
 
         if (aggregate.IsNew)
             return Result<OrderDto>.Fail(Problem.Create("ORDER_NOT_FOUND", $"Order {query.OrderId} does not exist"));

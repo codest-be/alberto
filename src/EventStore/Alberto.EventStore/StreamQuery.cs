@@ -70,6 +70,18 @@ public sealed class StreamQuery(
     }
 
     /// <summary>
+    ///     Creates a new StreamQuery with an additional event type using a generic type parameter
+    /// </summary>
+    public StreamQuery WithEventType<TEvent>()
+    {
+        EventType? eventType = EventType.GetEventType(typeof(TEvent));
+        if (eventType == null)
+            throw new InvalidOperationException($"Type {typeof(TEvent).Name} does not have an EventType attribute");
+
+        return WithEventTypes(eventType);
+    }
+
+    /// <summary>
     ///     Creates a new StreamQuery that requires all event tags to be present
     /// </summary>
     public StreamQuery RequiringAllTags()

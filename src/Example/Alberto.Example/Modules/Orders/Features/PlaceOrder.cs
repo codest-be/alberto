@@ -1,6 +1,7 @@
 using Alberto.CQRS.Commands;
 using Alberto.CQRS.Results;
 using Alberto.EventSourcing;
+using Alberto.EventSourcing.Projectors;
 using Alberto.EventStore;
 using Alberto.EventStore.Events;
 using Alberto.Example.Modules.Orders.EventHandlers;
@@ -30,30 +31,69 @@ public static class PlaceOrderEndpoint
 
 public sealed record PlaceOrderCommand(Guid OrderId) : ICommand;
 
-public sealed class PlaceOrderHandler(IEventSourcedRepository<OrderState> repository)
+internal sealed record PlaceOrderState
+{
+    public bool Exists { get; init; }
+    public OrderStatus Status { get; init; } = OrderStatus.Draft;
+    public decimal Amount { get; init; }
+    public string CustomerId { get; init; } = string.Empty;
+}
+
+internal sealed class PlaceOrderProjector : IProjector<PlaceOrderState>
+{
+    public PlaceOrderState Apply(PlaceOrderState state, object @event)
+    {
+        return @event switch
+        {
+            OrderCreated e => state with
+            {
+                Exists = true, Status = OrderStatus.Created, Amount = e.Amount, CustomerId = e.CustomerId
+            },
+            OrderPlaced => state with { Status = OrderStatus.Placed },
+            OrderCancelled => state with { Status = OrderStatus.Cancelled },
+            _ => state
+        };
+    }
+}
+
+internal static class PlaceOrderDecider
+{
+    public static Decision Decide(PlaceOrderState state, PlaceOrderCommand command)
+    {
+        if (!state.Exists)
+            return Decision.Fail(Problem.Create("ORDER_NOT_FOUND", $"Order {command.OrderId} does not exist"));
+
+        if (state.Status != OrderStatus.Created)
+            return Decision.Fail(Problem.Create(
+                "INVALID_ORDER_STATUS",
+                $"Order must be in Created status to be placed. Current status: {state.Status}"));
+
+        var orderPlaced = new OrderPlaced(command.OrderId, state.Amount, state.CustomerId);
+        return Decision.Succeed(orderPlaced);
+    }
+}
+
+public sealed class PlaceOrderHandler(OrderEventStore eventStore)
     : ICommandHandler<PlaceOrderCommand, bool>
 {
-    private readonly IEventSourcedRepository<OrderState> _repository = repository;
-
     public async Task<Result<bool>> Handle(PlaceOrderCommand command, CancellationToken cancellationToken = default)
     {
-        var query = new StreamQuery([new EventTag(Tags.Order, command.OrderId.ToString())]);
-        var aggregate = await _repository.Load(query, cancellationToken);
+        // Query only events that affect placement decisions
+        var query = new StreamQuery([new EventTag(Tags.Order, command.OrderId.ToString())])
+            .WithEventType<OrderCreated>()
+            .WithEventType<OrderPlaced>()
+            .WithEventType<OrderCancelled>();
 
-        if (aggregate.IsNew)
-            return Result<bool>.Fail(Problem.Create("ORDER_NOT_FOUND", $"Order {command.OrderId} does not exist"));
+        var projector = new PlaceOrderProjector();
+        var (events, lastEventId) = await eventStore.Load(query, cancellationToken);
+        var state = projector.Evolve(events);
 
-        if (aggregate.State.Status != OrderStatus.Created)
-            return Result<bool>.Fail(Problem.Create(
-                "INVALID_ORDER_STATUS",
-                $"Order must be in Created status to be placed. Current status: {aggregate.State.Status}"));
+        var decision = PlaceOrderDecider.Decide(state, command);
 
-        var orderPlaced = new OrderPlaced(
-            command.OrderId,
-            aggregate.State.Amount,
-            aggregate.State.CustomerId);
+        if (decision.IsError)
+            return Result<bool>.Fail(decision.Problems.First());
 
-        await _repository.Save(query, aggregate, [orderPlaced], cancellationToken);
+        await eventStore.Persist(query, lastEventId, decision.Events, cancellationToken);
 
         return Result<bool>.Success(true);
     }

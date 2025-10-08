@@ -45,6 +45,8 @@ public static class OrdersModule
     {
         endpoints.MapCreateOrder();
         endpoints.MapPlaceOrder();
+        endpoints.MapShipOrder();
+        endpoints.MapCancelOrder();
         endpoints.MapGetOrder();
 
         return endpoints;
