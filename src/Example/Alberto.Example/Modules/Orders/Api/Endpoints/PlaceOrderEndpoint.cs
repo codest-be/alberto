@@ -10,11 +10,11 @@ public static class PlaceOrderEndpoint
     {
         endpoints.MapPost("/orders/{orderId:guid}/place", async (
                 Guid orderId,
-                ICommandHandler<PlaceOrderCommand, bool> handler,
+                CommandExecutor executor,
                 CancellationToken ct) =>
             {
                 var command = new PlaceOrderCommand(orderId);
-                var result = await handler.Handle(command, ct);
+                var result = await executor.Execute<PlaceOrderCommand, bool>(command, ct);
 
                 return result.ToHttpResult();
             })

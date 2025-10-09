@@ -1,10 +1,10 @@
-using Alberto.Example.Modules.Orders.Commands;
+using Alberto.Example.ComponentTests.Steps.Orders;
 using Alberto.Example.Modules.Orders.EventHandlers;
 using Xunit;
 
 namespace Alberto.Example.ComponentTests.Orders;
 
-public sealed class CancelOrderTests : OrdersFixture
+public sealed class CancelOrderTests() : OrdersFixture()
 {
     [Fact]
     public void CancelOrder_WhenOrderIsCreated_ShouldSucceed()
@@ -14,7 +14,7 @@ public sealed class CancelOrderTests : OrdersFixture
         UseCase()
             .Given(orderId,
                 new OrderCreated(orderId, Amount: 100m, CustomerId: "customer-123"))
-            .When<CancelOrderCommand, bool>(new CancelOrderCommand(orderId, "Customer changed mind"))
+            .When(new CancelOrderStep(orderId, "Customer changed mind"))
             .ThenExpectSuccess(assert =>
             {
                 assert.AssertEvent<OrderCancelled>(e =>
@@ -34,7 +34,7 @@ public sealed class CancelOrderTests : OrdersFixture
             .Given(orderId,
                 new OrderCreated(orderId, Amount: 100m, CustomerId: "customer-123"),
                 new OrderPlaced(orderId, Amount: 100m, CustomerId: "customer-123"))
-            .When<CancelOrderCommand, bool>(new CancelOrderCommand(orderId, "Out of stock"))
+            .When(new CancelOrderStep(orderId, "Out of stock"))
             .ThenExpectSuccess(assert =>
             {
                 assert.AssertEvent<OrderCancelled>(e =>
@@ -51,7 +51,7 @@ public sealed class CancelOrderTests : OrdersFixture
         var orderId = Guid.NewGuid();
 
         UseCase()
-            .When<CancelOrderCommand, bool>(new CancelOrderCommand(orderId, "Some reason"))
+            .When(new CancelOrderStep(orderId, "Some reason"))
             .ThenExpectFailure("ORDER_NOT_FOUND");
     }
 
@@ -64,7 +64,7 @@ public sealed class CancelOrderTests : OrdersFixture
             .Given(orderId,
                 new OrderCreated(orderId, Amount: 100m, CustomerId: "customer-123"),
                 new OrderCancelled(orderId, Reason: "First cancellation"))
-            .When<CancelOrderCommand, bool>(new CancelOrderCommand(orderId, "Second cancellation"))
+            .When(new CancelOrderStep(orderId, "Second cancellation"))
             .ThenExpectFailure("ORDER_ALREADY_CANCELLED");
     }
 
@@ -78,7 +78,7 @@ public sealed class CancelOrderTests : OrdersFixture
                 new OrderCreated(orderId, Amount: 100m, CustomerId: "customer-123"),
                 new OrderPlaced(orderId, Amount: 100m, CustomerId: "customer-123"),
                 new OrderShipped(orderId, TrackingNumber: "TRACK-123"))
-            .When<CancelOrderCommand, bool>(new CancelOrderCommand(orderId, "Changed mind"))
+            .When(new CancelOrderStep(orderId, "Changed mind"))
             .ThenExpectFailure("CANNOT_CANCEL_SHIPPED_ORDER");
     }
 
@@ -90,7 +90,7 @@ public sealed class CancelOrderTests : OrdersFixture
         UseCase()
             .Given(orderId,
                 new OrderCreated(orderId, Amount: 100m, CustomerId: "customer-123"))
-            .When<CancelOrderCommand, bool>(new CancelOrderCommand(orderId, ""))
+            .When(new CancelOrderStep(orderId, ""))
             .ThenExpectFailure("INVALID_REASON");
     }
 
@@ -102,10 +102,7 @@ public sealed class CancelOrderTests : OrdersFixture
         UseCase()
             .Given(orderId,
                 new OrderCreated(orderId, Amount: 100m, CustomerId: "customer-123"))
-            .When<CancelOrderCommand, bool>(new CancelOrderCommand(orderId, "Customer request"))
-            .ThenExpectSuccess(assert =>
-            {
-                assert.AssertEventCount(1);
-            });
+            .When(new CancelOrderStep(orderId, "Customer request"))
+            .ThenExpectSuccess(assert => { assert.AssertEventCount(1); });
     }
 }

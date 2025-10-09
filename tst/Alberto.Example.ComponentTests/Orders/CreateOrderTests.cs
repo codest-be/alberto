@@ -1,16 +1,17 @@
-using Alberto.Example.Modules.Orders.Commands;
+using Alberto.Example.ComponentTests.Steps.Orders;
 using Alberto.Example.Modules.Orders.EventHandlers;
 using Xunit;
 
 namespace Alberto.Example.ComponentTests.Orders;
 
-public sealed class CreateOrderTests : OrdersFixture
+[Collection("Service collection")]
+public sealed class CreateOrderTests() : OrdersFixture()
 {
     [Fact]
     public void CreateOrder_WithValidData_ShouldSucceed()
     {
         UseCase()
-            .When<CreateOrderCommand, Guid>(new CreateOrderCommand(100m, "customer-123"))
+            .When(new CreateOrderStep(100m, "customer-123"))
             .ThenExpectSuccess<Guid>((result, assert) =>
             {
                 Assert.NotEqual(Guid.Empty, result);
@@ -28,7 +29,7 @@ public sealed class CreateOrderTests : OrdersFixture
     public void CreateOrder_WithZeroAmount_ShouldFail()
     {
         UseCase()
-            .When<CreateOrderCommand, Guid>(new CreateOrderCommand(0m, "customer-123"))
+            .When(new CreateOrderStep(0m, "customer-123"))
             .ThenExpectFailure("INVALID_AMOUNT");
     }
 
@@ -36,7 +37,7 @@ public sealed class CreateOrderTests : OrdersFixture
     public void CreateOrder_WithNegativeAmount_ShouldFail()
     {
         UseCase()
-            .When<CreateOrderCommand, Guid>(new CreateOrderCommand(-50m, "customer-123"))
+            .When(new CreateOrderStep(-50m, "customer-123"))
             .ThenExpectFailure("INVALID_AMOUNT");
     }
 
@@ -44,7 +45,7 @@ public sealed class CreateOrderTests : OrdersFixture
     public void CreateOrder_WithEmptyCustomerId_ShouldFail()
     {
         UseCase()
-            .When<CreateOrderCommand, Guid>(new CreateOrderCommand(100m, ""))
+            .When(new CreateOrderStep(100m, ""))
             .ThenExpectFailure("INVALID_CUSTOMER");
     }
 
@@ -52,10 +53,7 @@ public sealed class CreateOrderTests : OrdersFixture
     public void CreateOrder_ShouldPersistExactlyOneEvent()
     {
         UseCase()
-            .When<CreateOrderCommand, Guid>(new CreateOrderCommand(100m, "customer-123"))
-            .ThenExpectSuccess<Guid>((result, assert) =>
-            {
-                assert.AssertEventCount(1);
-            });
+            .When(new CreateOrderStep(100m, "customer-123"))
+            .ThenExpectSuccess<Guid>((result, assert) => { assert.AssertEventCount(1); });
     }
 }

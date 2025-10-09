@@ -4,5 +4,6 @@ namespace Alberto.Example.ComponentTests;
 
 internal sealed class TestTenantContext : ITenantContext
 {
-    public Tenant Tenant { get; set; } = new("test-tenant");
+    // Use "default" to match the API's MultiTenantContext default tenant
+    public Tenant Tenant { get; set; } = new("default");
 }

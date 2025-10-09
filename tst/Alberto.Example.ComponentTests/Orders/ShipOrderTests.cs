@@ -1,10 +1,10 @@
-using Alberto.Example.Modules.Orders.Commands;
+using Alberto.Example.ComponentTests.Steps.Orders;
 using Alberto.Example.Modules.Orders.EventHandlers;
 using Xunit;
 
 namespace Alberto.Example.ComponentTests.Orders;
 
-public sealed class ShipOrderTests : OrdersFixture
+public sealed class ShipOrderTests() : OrdersFixture()
 {
     [Fact]
     public void ShipOrder_WhenOrderIsPlaced_ShouldSucceed()
@@ -15,7 +15,7 @@ public sealed class ShipOrderTests : OrdersFixture
             .Given(orderId,
                 new OrderCreated(orderId, Amount: 100m, CustomerId: "customer-123"),
                 new OrderPlaced(orderId, Amount: 100m, CustomerId: "customer-123"))
-            .When<ShipOrderCommand, bool>(new ShipOrderCommand(orderId, "TRACK-123"))
+            .When(new ShipOrderStep(orderId, "TRACK-123"))
             .ThenExpectSuccess(assert =>
             {
                 assert.AssertEvent<OrderShipped>(e =>
@@ -32,7 +32,7 @@ public sealed class ShipOrderTests : OrdersFixture
         var orderId = Guid.NewGuid();
 
         UseCase()
-            .When<ShipOrderCommand, bool>(new ShipOrderCommand(orderId, "TRACK-123"))
+            .When(new ShipOrderStep(orderId, "TRACK-123"))
             .ThenExpectFailure("ORDER_NOT_FOUND");
     }
 
@@ -44,7 +44,7 @@ public sealed class ShipOrderTests : OrdersFixture
         UseCase()
             .Given(orderId,
                 new OrderCreated(orderId, Amount: 100m, CustomerId: "customer-123"))
-            .When<ShipOrderCommand, bool>(new ShipOrderCommand(orderId, "TRACK-123"))
+            .When(new ShipOrderStep(orderId, "TRACK-123"))
             .ThenExpectFailure("INVALID_ORDER_STATUS");
     }
 
@@ -58,7 +58,7 @@ public sealed class ShipOrderTests : OrdersFixture
                 new OrderCreated(orderId, Amount: 100m, CustomerId: "customer-123"),
                 new OrderPlaced(orderId, Amount: 100m, CustomerId: "customer-123"),
                 new OrderShipped(orderId, TrackingNumber: "TRACK-999"))
-            .When<ShipOrderCommand, bool>(new ShipOrderCommand(orderId, "TRACK-123"))
+            .When(new ShipOrderStep(orderId, "TRACK-123"))
             .ThenExpectFailure("INVALID_ORDER_STATUS");
     }
 
@@ -71,7 +71,7 @@ public sealed class ShipOrderTests : OrdersFixture
             .Given(orderId,
                 new OrderCreated(orderId, Amount: 100m, CustomerId: "customer-123"),
                 new OrderCancelled(orderId, Reason: "Customer request"))
-            .When<ShipOrderCommand, bool>(new ShipOrderCommand(orderId, "TRACK-123"))
+            .When(new ShipOrderStep(orderId, "TRACK-123"))
             .ThenExpectFailure("INVALID_ORDER_STATUS");
     }
 
@@ -84,7 +84,7 @@ public sealed class ShipOrderTests : OrdersFixture
             .Given(orderId,
                 new OrderCreated(orderId, Amount: 100m, CustomerId: "customer-123"),
                 new OrderPlaced(orderId, Amount: 100m, CustomerId: "customer-123"))
-            .When<ShipOrderCommand, bool>(new ShipOrderCommand(orderId, ""))
+            .When(new ShipOrderStep(orderId, ""))
             .ThenExpectFailure("INVALID_TRACKING_NUMBER");
     }
 
@@ -97,10 +97,7 @@ public sealed class ShipOrderTests : OrdersFixture
             .Given(orderId,
                 new OrderCreated(orderId, Amount: 100m, CustomerId: "customer-123"),
                 new OrderPlaced(orderId, Amount: 100m, CustomerId: "customer-123"))
-            .When<ShipOrderCommand, bool>(new ShipOrderCommand(orderId, "TRACK-123"))
-            .ThenExpectSuccess(assert =>
-            {
-                assert.AssertEventCount(1);
-            });
+            .When(new ShipOrderStep(orderId, "TRACK-123"))
+            .ThenExpectSuccess(assert => { assert.AssertEventCount(1); });
     }
 }

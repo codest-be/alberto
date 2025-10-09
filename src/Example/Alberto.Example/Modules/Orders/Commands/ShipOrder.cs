@@ -28,6 +28,27 @@ internal sealed record ShipOrderState
     public OrderStatus Status { get; init; } = OrderStatus.Draft;
 }
 
+public sealed class ShipOrderHandler(OrderEventStore eventStore)
+    : ICommandHandler<ShipOrderCommand, bool>
+{
+    public async Task<Result<bool>> Handle(ShipOrderCommand command, CancellationToken cancellationToken = default)
+    {
+        var decider = new ShipOrderDecider();
+        var query = ShipOrderDecider.GetQuery(command.OrderId);
+
+        var (events, lastEventId) = await eventStore.Load(query, cancellationToken);
+        var state = decider.Evolve(events);
+        var decision = decider.Decide(state, command.OrderId, command.TrackingNumber);
+
+        if (decision.IsError)
+            return Result<bool>.Fail(decision.Problems.First());
+
+        await eventStore.Persist(query, lastEventId, decision.Events, cancellationToken);
+
+        return Result<bool>.Success(true);
+    }
+}
+
 internal sealed class ShipOrderDecider : IProjector<ShipOrderState>
 {
     public ShipOrderState Apply(ShipOrderState state, object @event)
@@ -63,26 +84,5 @@ internal sealed class ShipOrderDecider : IProjector<ShipOrderState>
 
         var orderShipped = new OrderShipped(orderId, trackingNumber);
         return Decision.Succeed(orderShipped);
-    }
-}
-
-public sealed class ShipOrderHandler(OrderEventStore eventStore)
-    : ICommandHandler<ShipOrderCommand, bool>
-{
-    public async Task<Result<bool>> Handle(ShipOrderCommand command, CancellationToken cancellationToken = default)
-    {
-        var decider = new ShipOrderDecider();
-        var query = ShipOrderDecider.GetQuery(command.OrderId);
-
-        var (events, lastEventId) = await eventStore.Load(query, cancellationToken);
-        var state = decider.Evolve(events);
-        var decision = decider.Decide(state, command.OrderId, command.TrackingNumber);
-
-        if (decision.IsError)
-            return Result<bool>.Fail(decision.Problems.First());
-
-        await eventStore.Persist(query, lastEventId, decision.Events, cancellationToken);
-
-        return Result<bool>.Success(true);
     }
 }

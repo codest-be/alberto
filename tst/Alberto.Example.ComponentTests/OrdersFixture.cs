@@ -1,6 +1,3 @@
-using Alberto.CQRS.Registration;
-using Alberto.EventSourcing;
-using Alberto.EventStore;
 using Alberto.EventStore.InMemory;
 using Alberto.EventStore.MultiTenant;
 using Alberto.Example.Modules.Orders;
@@ -9,7 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Alberto.Example.ComponentTests;
 
-public abstract class OrdersFixture
+public abstract class OrdersFixture : ServiceFixture
 {
     private readonly InMemoryEventStoreBackend _eventStoreBackend;
 
@@ -21,32 +18,12 @@ public abstract class OrdersFixture
 
     public UseCase UseCase()
     {
-        var services = CreateServiceCollection();
-        return new UseCase(services, _eventStoreBackend);
+        return new UseCase(_eventStoreBackend, HttpClient, new TestTenantContext().Tenant);
     }
 
-    private IServiceCollection CreateServiceCollection()
+    protected override void ConfigureTestServices(IServiceCollection services)
     {
-        var services = new ServiceCollection();
-
-        // Add logging
-        services.AddLogging(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Warning));
-
-        // Add tenant context
-        services.AddSingleton<ITenantContext, TestTenantContext>();
-
-        // Add InMemory EventStore backend
-        services.AddSingleton<IEventStoreBackend>(_eventStoreBackend);
-
-        // Add OrderEventStore
-        services.AddScoped<OrderEventStore>();
-
-        // Add CQRS (commands, handlers, validators)
-        services.AddCQRS(b => b.ScanAssembly(typeof(OrdersModule).Assembly));
-
-        // Add EventSourced repository
-        services.AddEventSourcedRepository<OrderState, OrderProjector, OrderEventStore>();
-
-        return services;
+        services.AddScoped<OrderEventStore>(sp =>
+            new OrderEventStore(sp.GetRequiredService<ITenantContext>(), _eventStoreBackend));
     }
 }

@@ -12,11 +12,11 @@ public static class ShipOrderEndpoint
         endpoints.MapPost("/orders/{orderId:guid}/ship", async (
                 Guid orderId,
                 ShipOrderRequest request,
-                ICommandHandler<ShipOrderCommand, bool> handler,
+                CommandExecutor executor,
                 CancellationToken ct) =>
             {
                 var command = new ShipOrderCommand(orderId, request.TrackingNumber);
-                var result = await handler.Handle(command, ct);
+                var result = await executor.Execute<ShipOrderCommand, bool>(command, ct);
 
                 return result.ToHttpResult();
             })

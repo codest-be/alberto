@@ -26,17 +26,6 @@ public sealed class CreateOrderValidator : AbstractValidator<CreateOrderCommand>
     }
 }
 
-internal sealed class CreateOrderDecider
-{
-    public static Decision<Guid> Decide(decimal amount, string customerId)
-    {
-        var orderId = Guid.CreateVersion7();
-        var orderCreated = new OrderCreated(orderId, amount, customerId);
-
-        return Decision<Guid>.Succeed(orderId, orderCreated);
-    }
-}
-
 public sealed class CreateOrderHandler(OrderEventStore eventStore)
     : ICommandHandler<CreateOrderCommand, Guid>
 {
@@ -50,5 +39,16 @@ public sealed class CreateOrderHandler(OrderEventStore eventStore)
         await eventStore.PersistNew(query, decision.Events, cancellationToken);
 
         return Result<Guid>.Success(orderId);
+    }
+}
+
+internal sealed class CreateOrderDecider
+{
+    public static Decision<Guid> Decide(decimal amount, string customerId)
+    {
+        var orderId = Guid.CreateVersion7();
+        var orderCreated = new OrderCreated(orderId, amount, customerId);
+
+        return Decision<Guid>.Succeed(orderId, orderCreated);
     }
 }

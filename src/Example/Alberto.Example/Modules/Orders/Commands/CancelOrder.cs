@@ -28,6 +28,27 @@ internal sealed record CancelOrderState
     public OrderStatus Status { get; init; } = OrderStatus.Draft;
 }
 
+public sealed class CancelOrderHandler(OrderEventStore eventStore)
+    : ICommandHandler<CancelOrderCommand, bool>
+{
+    public async Task<Result<bool>> Handle(CancelOrderCommand command, CancellationToken cancellationToken = default)
+    {
+        var decider = new CancelOrderDecider();
+        var query = CancelOrderDecider.GetQuery(command.OrderId);
+
+        var (events, lastEventId) = await eventStore.Load(query, cancellationToken);
+        var state = decider.Evolve(events);
+        var decision = decider.Decide(state, command.OrderId, command.Reason);
+
+        if (decision.IsError)
+            return Result<bool>.Fail(decision.Problems.First());
+
+        await eventStore.Persist(query, lastEventId, decision.Events, cancellationToken);
+
+        return Result<bool>.Success(true);
+    }
+}
+
 internal sealed class CancelOrderDecider : IProjector<CancelOrderState>
 {
     public CancelOrderState Apply(CancelOrderState state, object @event)
@@ -66,26 +87,5 @@ internal sealed class CancelOrderDecider : IProjector<CancelOrderState>
 
         var orderCancelled = new OrderCancelled(orderId, reason);
         return Decision.Succeed(orderCancelled);
-    }
-}
-
-public sealed class CancelOrderHandler(OrderEventStore eventStore)
-    : ICommandHandler<CancelOrderCommand, bool>
-{
-    public async Task<Result<bool>> Handle(CancelOrderCommand command, CancellationToken cancellationToken = default)
-    {
-        var decider = new CancelOrderDecider();
-        var query = CancelOrderDecider.GetQuery(command.OrderId);
-
-        var (events, lastEventId) = await eventStore.Load(query, cancellationToken);
-        var state = decider.Evolve(events);
-        var decision = decider.Decide(state, command.OrderId, command.Reason);
-
-        if (decision.IsError)
-            return Result<bool>.Fail(decision.Problems.First());
-
-        await eventStore.Persist(query, lastEventId, decision.Events, cancellationToken);
-
-        return Result<bool>.Success(true);
     }
 }

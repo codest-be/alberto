@@ -1,10 +1,10 @@
 using System.Text.Json;
-using Alberto.CQRS.Commands;
 using Alberto.EventStore;
 using Alberto.EventStore.Events;
 using Alberto.EventStore.InMemory;
+using Alberto.EventStore.MultiTenant;
+using Alberto.Example.ComponentTests.Steps.Orders;
 using Alberto.Example.Modules.Orders;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Alberto.Example.ComponentTests;
 
@@ -12,27 +12,23 @@ public sealed class UseCase
 {
     private readonly InMemoryEventStoreBackend _eventStore;
     private readonly List<Guid> _givenEventIds = [];
-    private readonly IServiceCollection _services;
-    private IServiceProvider? _serviceProvider;
+    private readonly HttpClient _httpClient;
+    private readonly Tenant _tenant;
 
-    internal UseCase(IServiceCollection services, InMemoryEventStoreBackend eventStore)
+    internal UseCase(InMemoryEventStoreBackend eventStore, HttpClient httpClient, Tenant tenant)
     {
-        _services = services;
         _eventStore = eventStore;
+        _httpClient = httpClient;
+        _tenant = tenant;
     }
 
     public UseCase Given(Guid orderId, params object[] events)
     {
-        _serviceProvider ??= _services.BuildServiceProvider();
-
         var eventsToPersist = events.Select(evt => ToEventToPersist(evt, orderId)).ToList();
-
-        using var scope = _serviceProvider.CreateScope();
-        var orderEventStore = scope.ServiceProvider.GetRequiredService<OrderEventStore>();
 
         var streamQuery = new StreamQuery([new EventTag(Tags.Order, orderId.ToString())]);
 
-        var persisted = orderEventStore.Append(eventsToPersist, streamQuery, null, CancellationToken.None)
+        var persisted = _eventStore.Append(_tenant, eventsToPersist, streamQuery, null, CancellationToken.None)
             .GetAwaiter()
             .GetResult();
 
@@ -41,33 +37,27 @@ public sealed class UseCase
         return this;
     }
 
-    public CommandAsserter When<TCommand>(TCommand command) where TCommand : ICommand
+    public CommandAsserter When(CreateOrderStep step)
     {
-        _serviceProvider ??= _services.BuildServiceProvider();
-
-        object? result;
-
-        using (var scope = _serviceProvider.CreateScope())
-        {
-            var executor = scope.ServiceProvider.GetRequiredService<CommandExecutor>();
-            result = executor.Execute(command, CancellationToken.None).GetAwaiter().GetResult();
-        }
-
+        var result = step.ExecuteAsync(_httpClient, CancellationToken.None).GetAwaiter().GetResult();
         return new CommandAsserter(result!, _givenEventIds.ToArray(), _eventStore);
     }
 
-    public CommandAsserter When<TCommand, TResult>(TCommand command) where TCommand : ICommand
+    public CommandAsserter When(PlaceOrderStep step)
     {
-        _serviceProvider ??= _services.BuildServiceProvider();
+        var result = step.ExecuteAsync(_httpClient, CancellationToken.None).GetAwaiter().GetResult();
+        return new CommandAsserter(result!, _givenEventIds.ToArray(), _eventStore);
+    }
 
-        object? result;
+    public CommandAsserter When(CancelOrderStep step)
+    {
+        var result = step.ExecuteAsync(_httpClient, CancellationToken.None).GetAwaiter().GetResult();
+        return new CommandAsserter(result!, _givenEventIds.ToArray(), _eventStore);
+    }
 
-        using (var scope = _serviceProvider.CreateScope())
-        {
-            var executor = scope.ServiceProvider.GetRequiredService<CommandExecutor>();
-            result = executor.Execute<TCommand, TResult>(command, CancellationToken.None).GetAwaiter().GetResult();
-        }
-
+    public CommandAsserter When(ShipOrderStep step)
+    {
+        var result = step.ExecuteAsync(_httpClient, CancellationToken.None).GetAwaiter().GetResult();
         return new CommandAsserter(result!, _givenEventIds.ToArray(), _eventStore);
     }
 

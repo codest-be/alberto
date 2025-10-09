@@ -1,10 +1,10 @@
-using Alberto.Example.Modules.Orders.Commands;
+using Alberto.Example.ComponentTests.Steps.Orders;
 using Alberto.Example.Modules.Orders.EventHandlers;
 using Xunit;
 
 namespace Alberto.Example.ComponentTests.Orders;
 
-public sealed class PlaceOrderTests : OrdersFixture
+public sealed class PlaceOrderTests() : OrdersFixture()
 {
     [Fact]
     public void PlaceOrder_WhenOrderIsCreated_ShouldSucceed()
@@ -14,7 +14,7 @@ public sealed class PlaceOrderTests : OrdersFixture
         UseCase()
             .Given(orderId,
                 new OrderCreated(orderId, Amount: 100m, CustomerId: "customer-123"))
-            .When<PlaceOrderCommand, bool>(new PlaceOrderCommand(orderId))
+            .When(new PlaceOrderStep(orderId))
             .ThenExpectSuccess(assert =>
             {
                 assert.AssertEvent<OrderPlaced>(e =>
@@ -32,7 +32,7 @@ public sealed class PlaceOrderTests : OrdersFixture
         var orderId = Guid.NewGuid();
 
         UseCase()
-            .When<PlaceOrderCommand, bool>(new PlaceOrderCommand(orderId))
+            .When(new PlaceOrderStep(orderId))
             .ThenExpectFailure("ORDER_NOT_FOUND");
     }
 
@@ -45,7 +45,7 @@ public sealed class PlaceOrderTests : OrdersFixture
             .Given(orderId,
                 new OrderCreated(orderId, Amount: 100m, CustomerId: "customer-123"),
                 new OrderPlaced(orderId, Amount: 100m, CustomerId: "customer-123"))
-            .When<PlaceOrderCommand, bool>(new PlaceOrderCommand(orderId))
+            .When(new PlaceOrderStep(orderId))
             .ThenExpectFailure("INVALID_ORDER_STATUS");
     }
 
@@ -58,7 +58,7 @@ public sealed class PlaceOrderTests : OrdersFixture
             .Given(orderId,
                 new OrderCreated(orderId, Amount: 100m, CustomerId: "customer-123"),
                 new OrderCancelled(orderId, Reason: "Customer request"))
-            .When<PlaceOrderCommand, bool>(new PlaceOrderCommand(orderId))
+            .When(new PlaceOrderStep(orderId))
             .ThenExpectFailure("INVALID_ORDER_STATUS");
     }
 
@@ -70,10 +70,7 @@ public sealed class PlaceOrderTests : OrdersFixture
         UseCase()
             .Given(orderId,
                 new OrderCreated(orderId, Amount: 100m, CustomerId: "customer-123"))
-            .When<PlaceOrderCommand, bool>(new PlaceOrderCommand(orderId))
-            .ThenExpectSuccess(assert =>
-            {
-                assert.AssertEventCount(1);
-            });
+            .When(new PlaceOrderStep(orderId))
+            .ThenExpectSuccess(assert => { assert.AssertEventCount(1); });
     }
 }

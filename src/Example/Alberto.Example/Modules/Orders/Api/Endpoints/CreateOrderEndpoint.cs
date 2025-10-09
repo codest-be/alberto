@@ -11,11 +11,11 @@ public static class CreateOrderEndpoint
     {
         endpoints.MapPost("/orders", async (
                 CreateOrderRequest request,
-                ICommandHandler<CreateOrderCommand, Guid> handler,
+                CommandExecutor executor,
                 CancellationToken ct) =>
             {
                 var command = new CreateOrderCommand(request.Amount, request.CustomerId);
-                var result = await handler.Handle(command, ct);
+                var result = await executor.Execute<CreateOrderCommand, Guid>(command, ct);
 
                 return result.ToHttpResult();
             })

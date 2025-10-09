@@ -12,11 +12,11 @@ public static class CancelOrderEndpoint
         endpoints.MapPost("/orders/{orderId:guid}/cancel", async (
                 Guid orderId,
                 CancelOrderRequest request,
-                ICommandHandler<CancelOrderCommand, bool> handler,
+                CommandExecutor executor,
                 CancellationToken ct) =>
             {
                 var command = new CancelOrderCommand(orderId, request.Reason);
-                var result = await handler.Handle(command, ct);
+                var result = await executor.Execute<CancelOrderCommand, bool>(command, ct);
 
                 return result.ToHttpResult();
             })
