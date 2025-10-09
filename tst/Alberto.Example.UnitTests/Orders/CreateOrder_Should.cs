@@ -11,7 +11,7 @@ public class CreateOrder_Should
     public void EmitOrderCreated()
     {
         new Specification()
-            .When(() => CreateOrderDecider.Decide(100m, "customer-123"))
+            .When(() => new CreateOrderDecider().Decide(100m, "customer-123"))
             .ThenEventOfType<OrderCreated>(e => e is { Amount: 100m, CustomerId: "customer-123" });
     }
 }

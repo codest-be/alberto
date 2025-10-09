@@ -31,7 +31,7 @@ public sealed class CreateOrderHandler(OrderEventStore eventStore)
 {
     public async Task<Result<Guid>> Handle(CreateOrderCommand command, CancellationToken cancellationToken = default)
     {
-        var decision = CreateOrderDecider.Decide(command.Amount, command.CustomerId);
+        var decision = new CreateOrderDecider().Decide(command.Amount, command.CustomerId);
 
         var orderId = decision.Value;
         var query = new StreamQuery([new EventTag(Tags.Order, orderId.ToString())]);
@@ -44,7 +44,7 @@ public sealed class CreateOrderHandler(OrderEventStore eventStore)
 
 internal sealed class CreateOrderDecider
 {
-    public static Decision<Guid> Decide(decimal amount, string customerId)
+    public Decision<Guid> Decide(decimal amount, string customerId)
     {
         var orderId = Guid.CreateVersion7();
         var orderCreated = new OrderCreated(orderId, amount, customerId);

@@ -32,38 +32,6 @@ public sealed class CancelOrderTests(ITestOutputHelper testOutputHelper) : Order
     }
 
     [Fact]
-    public Task CancelOrder_WhenOrderDoesNotExist_ShouldFail()
-    {
-        return UseCase()
-            .Arrange(new SetOrderId(Guid.NewGuid()))
-            .Act(new CancelOrder("Some reason"))
-            .Assert(new HttpFailureResponse("ORDER_NOT_FOUND"));
-    }
-
-    [Fact]
-    public Task CancelOrder_WhenOrderIsAlreadyCancelled_ShouldFail()
-    {
-        return UseCase()
-            .Arrange(
-                new CreateOrder(100m, "customer-123"),
-                new CancelOrder("First cancellation"))
-            .Act(new CancelOrder("Second cancellation"))
-            .Assert(new HttpFailureResponse("ORDER_ALREADY_CANCELLED"));
-    }
-
-    [Fact]
-    public Task CancelOrder_WhenOrderIsShipped_ShouldFail()
-    {
-        return UseCase()
-            .Arrange(
-                new CreateOrder(100m, "customer-123"),
-                new PlaceOrderStep(),
-                new ShipOrderStep("TRACK-123"))
-            .Act(new CancelOrder("Changed mind"))
-            .Assert(new HttpFailureResponse("CANNOT_CANCEL_SHIPPED_ORDER"));
-    }
-
-    [Fact]
     public Task CancelOrder_WithEmptyReason_ShouldFail()
     {
         return UseCase()

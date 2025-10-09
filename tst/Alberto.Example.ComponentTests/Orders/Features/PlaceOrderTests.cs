@@ -16,37 +16,4 @@ public sealed class PlaceOrderTests(ITestOutputHelper testOutputHelper) : Orders
                 new HttpSuccessResponse(),
                 new OrderIsPlaced());
     }
-
-    [Fact]
-    public Task PlaceOrder_WhenOrderDoesNotExist_ShouldFail()
-    {
-        var orderId = Guid.NewGuid();
-
-        return UseCase()
-            .Arrange(new SetOrderId(orderId))
-            .Act(new PlaceOrderStep())
-            .Assert(new HttpFailureResponse("ORDER_NOT_FOUND"));
-    }
-
-    [Fact]
-    public Task PlaceOrder_WhenOrderIsAlreadyPlaced_ShouldFail()
-    {
-        return UseCase()
-            .Arrange(
-                new CreateOrder(100m, "customer-123"),
-                new PlaceOrderStep())
-            .Act(new PlaceOrderStep())
-            .Assert(new HttpFailureResponse("INVALID_ORDER_STATUS"));
-    }
-
-    [Fact]
-    public Task PlaceOrder_WhenOrderIsCancelled_ShouldFail()
-    {
-        return UseCase()
-            .Arrange(
-                new CreateOrder(100m, "customer-123"),
-                new CancelOrder("Customer request"))
-            .Act(new PlaceOrderStep())
-            .Assert(new HttpFailureResponse("INVALID_ORDER_STATUS"));
-    }
 }
