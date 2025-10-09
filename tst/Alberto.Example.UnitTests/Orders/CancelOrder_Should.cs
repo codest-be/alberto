@@ -1,6 +1,6 @@
 using Alberto.Example.Modules.Orders;
 using Alberto.Example.Modules.Orders.Commands;
-using Alberto.Example.Modules.Orders.EventHandlers;
+using Alberto.Example.Modules.Orders.Events;
 using Alberto.UnitTests;
 using Xunit;
 

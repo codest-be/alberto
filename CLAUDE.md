@@ -82,7 +82,10 @@ The PostgreSQL implementation supports multiple schemas within the same database
 - `Testing/Alberto.ComponentTests/UseCase.cs`: Component test framework fluent API
 - `Testing/Alberto.ComponentTests/ScenarioContext.cs`: Test context and state management
 - `Testing/Alberto.ComponentTests/Steps/IStep.cs`: Base interface for test steps
+- `Testing/Alberto.UnitTests/Specification.cs`: Unit test specification pattern for stateless commands
+- `Testing/Alberto.UnitTests/Specification<TState>.cs`: Unit test specification pattern with projectors
 - `Example/Alberto.Example/Program.cs`: Example service configuration
+- `Example/Alberto.Example/Modules/Orders/OrderProblems.cs`: Centralized error definitions for order domain
 - `Example/Alberto.AppHost/AppHost.cs`: Aspire orchestration setup
 
 ### Event Sourcing & CQRS Layers
@@ -117,9 +120,10 @@ The solution uses solution folders to organize projects:
   `EventStore.Telemetry`, `EventStore.Tests`, `EventStore.Performance.Tests`)
 - **EventSourcing folder**: Minimal event sourcing building blocks (`EventSourcing`)
 - **CQRS folder**: Optional CQRS framework with validation and auto-registration (`CQRS`)
-- **Testing folder**: Reusable component testing framework (`Alberto.ComponentTests`)
+- **Testing folder**: Reusable testing frameworks (`Alberto.ComponentTests`, `Alberto.UnitTests`)
 - **Example folder**: Aspire-based example application (`Alberto.Example`, `AppHost`, `ServiceDefaults`, `SqlMigrator`)
-- **Test Projects**: Component tests for the example application (`Alberto.Example.ComponentTests`)
+- **Test Projects**: Unit and component tests for the example application (`Alberto.Example.UnitTests`,
+  `Alberto.Example.ComponentTests`)
 
 ## Testing Strategy
 
@@ -152,9 +156,38 @@ The project uses a two-tier testing approach to separate fast feedback from comp
 - **Technology**: BenchmarkDotNet with statistical analysis
 - **CI**: Separate pipeline (manual, releases, weekly) to preserve GitHub Actions minutes
 
+### Unit Tests (`Example.UnitTests`)
+
+- **Purpose**: Fast, isolated testing of business logic (deciders/projectors) without infrastructure
+- **Test count**: 15 tests running in ~100ms
+- **Coverage**:
+  - Decision logic for all commands (CreateOrder, PlaceOrder, ShipOrder, CancelOrder)
+  - Success scenarios (valid state transitions)
+  - Failure scenarios (business rule violations, invalid states)
+  - All problem/error cases defined in `OrderProblems.cs`
+- **Framework**: Custom specification pattern (`Specification<TState>`) built on xUnit v3
+- **Test Pattern**:
+  - `new Specification<TState>(projector)` - Creates specification with projector
+  - `.Given(events...)` - Sets up initial state from events
+  - `.When(state => decider.Decide(...))` - Executes decision logic
+  - `.ThenEventOfType<T>()` / `.ThenFailWith(problem)` - Verifies outcome
+- **Key Files**:
+  - `Specification.cs` - Stateless specification for commands without history
+  - `Specification<TState>.cs` - Stateful specification with projectors
+  - `SpecificationBase.cs` - Base class with assertion helpers
+  - Tests in `Orders/` folder (e.g., `CancelOrder_Should.cs`, `PlaceOrder_Should.cs`)
+- **Technology**: xUnit v3
+- **Scope**: Pure business logic, no HTTP/database/infrastructure
+
 ### Component Tests (`Example.ComponentTests`)
 
-- **Purpose**: End-to-end testing of example application features using Arrange-Act-Assert pattern
+- **Purpose**: Integration testing of full request pipeline (HTTP → validation → handlers → event store)
+- **Test count**: 10 tests running in ~600ms
+- **Coverage**:
+  - Happy path integration for each command (verifies full stack works)
+  - FluentValidation rules (INVALID_AMOUNT, INVALID_CUSTOMER, INVALID_REASON, INVALID_TRACKING_NUMBER)
+  - API-level concerns (serialization, routing, HTTP status codes)
+  - Complex workflows (Create → Place → Ship)
 - **Framework**: Custom component testing framework (`Alberto.ComponentTests`) built on xUnit v3
 - **Test Organization**:
   - Tests organized by feature in `Orders/Features/` folder (e.g., `CancelOrderTests.cs`, `CreateOrderTests.cs`)
@@ -172,8 +205,23 @@ The project uses a two-tier testing approach to separate fast feedback from comp
   - Action steps (e.g., `CreateOrder`, `CancelOrder`, `PlaceOrderStep`, `ShipOrderStep`)
   - Assertion steps (e.g., `HttpSuccessResponse`, `HttpFailureResponse`, `OrderCreated`, `OrderIsPlaced`,
     `OrderIsShipped`, `OrderIsCancelled`)
-  - Helper steps (e.g., `SetOrderId` for testing non-existent entities)
 - **Technology**: xUnit v3, Microsoft.AspNetCore.Mvc.Testing for WebApplicationFactory integration
+- **Scope**: Full integration, infrastructure included
+
+### Testing Philosophy: Unit vs Component
+
+**Unit tests** cover business logic edge cases (decider decisions, state transitions, business rules). These are fast,
+deterministic, and test the domain logic in isolation.
+
+**Component tests** verify the full stack integration (HTTP → validation → command handling → event persistence). These
+focus on happy paths and validation rules, avoiding duplication of business logic already covered by unit tests.
+
+**Why this split?**
+
+- Avoid testing the same business logic twice (once at unit level, once through HTTP)
+- Fast feedback loop: unit tests run in milliseconds, component tests take longer due to infrastructure
+- Clear separation: unit tests = pure logic, component tests = integration & API concerns
+- Better maintainability: business rule changes only require updating unit tests, not full integration tests
 
 ### Test Architecture Patterns
 

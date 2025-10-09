@@ -1,10 +1,10 @@
 using Alberto.CQRS.Registration;
-using Alberto.EventSourcing;
+using Alberto.EventSourcing.Projections;
 using Alberto.EventStore.Postgres;
 using Alberto.EventStore.Telemetry;
 using Alberto.Example.Modules.Orders.Api.Endpoints;
-using Alberto.Example.Modules.Orders.EventHandlers;
 using Alberto.Example.Modules.Orders.Filters;
+using Alberto.Example.Modules.Orders.Projections;
 
 namespace Alberto.Example.Modules.Orders;
 
@@ -30,11 +30,12 @@ public static class OrdersModule
             })
             .ConfigurePipeline(pipeline => pipeline.AddConsumeFilter<LoggingFilter>())
             .AddOpenTelemetry()
-            .AddSubscription<OrderProjectionSubscription>()
-            .AddSubscription<OrderAnalyticsHandler>();
+            .AddSubscription<OrderProjectionSubscription>();
 
         services.AddCQRS(b => b.ScanAssembly(typeof(Program).Assembly));
-        services.AddEventSourcedRepository<OrderState, OrderProjector, OrderEventStore>();
+
+        // Read-side projection repository for subscriptions
+        services.AddInMemoryProjectionRepository<Guid, OrderState, OrderProjector, OrderEventStore>();
 
         return services;
     }

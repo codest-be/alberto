@@ -4,7 +4,8 @@ using Alberto.EventSourcing;
 using Alberto.EventSourcing.Projectors;
 using Alberto.EventStore;
 using Alberto.EventStore.Events;
-using Alberto.Example.Modules.Orders.EventHandlers;
+using Alberto.Example.Modules.Orders.Enums;
+using Alberto.Example.Modules.Orders.Events;
 using FluentValidation;
 
 namespace Alberto.Example.Modules.Orders.Commands;

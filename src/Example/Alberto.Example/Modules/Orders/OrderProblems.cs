@@ -1,4 +1,5 @@
 using Alberto.EventSourcing;
+using Alberto.Example.Modules.Orders.Enums;
 
 namespace Alberto.Example.Modules.Orders;
 
