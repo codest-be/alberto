@@ -75,12 +75,10 @@ internal sealed class ShipOrderDecider : IProjector<ShipOrderState>
     public Decision Decide(ShipOrderState state, Guid orderId, string trackingNumber)
     {
         if (!state.Exists)
-            return Decision.Fail(Problem.Create("ORDER_NOT_FOUND", $"Order {orderId} does not exist"));
+            return Decision.Fail(OrderProblems.OrderNotFound(orderId));
 
         if (state.Status != OrderStatus.Placed)
-            return Decision.Fail(Problem.Create(
-                "INVALID_ORDER_STATUS",
-                $"Order must be in Placed status to be shipped. Current status: {state.Status}"));
+            return Decision.Fail(OrderProblems.InvalidStatusForShipping(state.Status));
 
         var orderShipped = new OrderShipped(orderId, trackingNumber);
         return Decision.Succeed(orderShipped);

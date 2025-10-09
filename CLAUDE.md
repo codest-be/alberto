@@ -79,6 +79,9 @@ The PostgreSQL implementation supports multiple schemas within the same database
 - `CQRS/Queries/IQuery.cs`: Query marker interface and handlers
 - `CQRS/Results/Result.cs`: Functional result types
 - `CQRS/Registration/EventSourcingExtensions.cs`: Module registration with auto-discovery
+- `Testing/Alberto.ComponentTests/UseCase.cs`: Component test framework fluent API
+- `Testing/Alberto.ComponentTests/ScenarioContext.cs`: Test context and state management
+- `Testing/Alberto.ComponentTests/Steps/IStep.cs`: Base interface for test steps
 - `Example/Alberto.Example/Program.cs`: Example service configuration
 - `Example/Alberto.AppHost/AppHost.cs`: Aspire orchestration setup
 
@@ -114,7 +117,9 @@ The solution uses solution folders to organize projects:
   `EventStore.Telemetry`, `EventStore.Tests`, `EventStore.Performance.Tests`)
 - **EventSourcing folder**: Minimal event sourcing building blocks (`EventSourcing`)
 - **CQRS folder**: Optional CQRS framework with validation and auto-registration (`CQRS`)
+- **Testing folder**: Reusable component testing framework (`Alberto.ComponentTests`)
 - **Example folder**: Aspire-based example application (`Alberto.Example`, `AppHost`, `ServiceDefaults`, `SqlMigrator`)
+- **Test Projects**: Component tests for the example application (`Alberto.Example.ComponentTests`)
 
 ## Testing Strategy
 
@@ -147,12 +152,36 @@ The project uses a two-tier testing approach to separate fast feedback from comp
 - **Technology**: BenchmarkDotNet with statistical analysis
 - **CI**: Separate pipeline (manual, releases, weekly) to preserve GitHub Actions minutes
 
+### Component Tests (`Example.ComponentTests`)
+
+- **Purpose**: End-to-end testing of example application features using Arrange-Act-Assert pattern
+- **Framework**: Custom component testing framework (`Alberto.ComponentTests`) built on xUnit v3
+- **Test Organization**:
+  - Tests organized by feature in `Orders/Features/` folder (e.g., `CancelOrderTests.cs`, `CreateOrderTests.cs`)
+  - Steps (actions and assertions) in `Orders/Steps/Orders/` folder
+  - Fixtures provide test context and service configuration
+- **Test Pattern**:
+  - `UseCase()` - Creates test scenario
+  - `.Arrange(steps...)` - Setup actions (no verification in arrange phase)
+  - `.Act(steps...)` - Action under test
+  - `.Assert(steps...)` - Verify outcomes
+- **Key Components**:
+  - `IStep` - Interface for all test steps (actions and assertions)
+  - `ScenarioContext` - Manages test state and provides access to HttpClient and services
+  - `UseCase` - Fluent API for building test scenarios
+  - Action steps (e.g., `CreateOrder`, `CancelOrder`, `PlaceOrderStep`, `ShipOrderStep`)
+  - Assertion steps (e.g., `HttpSuccessResponse`, `HttpFailureResponse`, `OrderCreated`, `OrderIsPlaced`,
+    `OrderIsShipped`, `OrderIsCancelled`)
+  - Helper steps (e.g., `SetOrderId` for testing non-existent entities)
+- **Technology**: xUnit v3, Microsoft.AspNetCore.Mvc.Testing for WebApplicationFactory integration
+
 ### Test Architecture Patterns
 
 - **Specification Pattern**: `EventStoreBackendSpecification.cs` defines abstract test contracts
 - **Backend Implementations**: Each backend (InMemory, Postgres) implements the specification
 - **Advanced Query Tests**: `AdvancedQueryTests.cs` provides complex scenario testing
 - **Fixture-based Setup**: `PostgresTestFixture` manages database lifecycle and tenant isolation
+- **Component Test Pattern**: Feature-based tests using Arrange-Act-Assert with reusable step framework
 
 ## CI/CD Pipelines
 

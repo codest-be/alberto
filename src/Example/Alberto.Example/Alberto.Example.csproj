@@ -9,7 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="Alberto.Example.Tests"/>
+    <InternalsVisibleTo Include="Alberto.Example.UnitTests"/>
   </ItemGroup>
 
   <ItemGroup>
@@ -29,5 +29,4 @@
     <PackageReference Include="Microsoft.AspNetCore.OpenApi"/>
     <PackageReference Include="Swashbuckle.AspNetCore.SwaggerUI"/>
   </ItemGroup>
-
 </Project>

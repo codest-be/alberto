@@ -1,3 +1,4 @@
+using Alberto.ServiceDefaults;
 using Alberto.SqlMigrator;
 
 HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);

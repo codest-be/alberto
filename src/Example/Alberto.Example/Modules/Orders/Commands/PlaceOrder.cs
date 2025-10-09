@@ -66,12 +66,10 @@ internal sealed class PlaceOrderDecider : IProjector<PlaceOrderState>
     public Decision Decide(PlaceOrderState state, Guid orderId)
     {
         if (!state.Exists)
-            return Decision.Fail(Problem.Create("ORDER_NOT_FOUND", $"Order {orderId} does not exist"));
+            return Decision.Fail(OrderProblems.OrderNotFound(orderId));
 
         if (state.Status != OrderStatus.Created)
-            return Decision.Fail(Problem.Create(
-                "INVALID_ORDER_STATUS",
-                $"Order must be in Created status to be placed. Current status: {state.Status}"));
+            return Decision.Fail(OrderProblems.InvalidStatusForPlacing(state.Status));
 
         var orderPlaced = new OrderPlaced(orderId, state.Amount, state.CustomerId);
         return Decision.Succeed(orderPlaced);

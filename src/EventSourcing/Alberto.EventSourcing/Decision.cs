@@ -83,4 +83,9 @@ public readonly record struct Decision<T>
         Fail(Problem.Create("Error", message));
 
     public static implicit operator Decision<T>(Problem problem) => Fail(problem);
+
+    public static implicit operator Decision(Decision<T> decision) =>
+        decision.IsSuccess
+            ? Decision.Succeed(decision.Events)
+            : Decision.Fail(decision.Problems);
 }

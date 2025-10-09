@@ -33,12 +33,11 @@ public sealed class CancelOrderHandler(OrderEventStore eventStore)
 {
     public async Task<Result<bool>> Handle(CancelOrderCommand command, CancellationToken cancellationToken = default)
     {
-        var decider = new CancelOrderDecider();
         var query = CancelOrderDecider.GetQuery(command.OrderId);
 
         var (events, lastEventId) = await eventStore.Load(query, cancellationToken);
-        var state = decider.Evolve(events);
-        var decision = decider.Decide(state, command.OrderId, command.Reason);
+        var state = new CancelOrderDecider().Evolve(events);
+        var decision = CancelOrderDecider.Decide(state, command.OrderId, command.Reason);
 
         if (decision.IsError)
             return Result<bool>.Fail(decision.Problems.First());
@@ -70,20 +69,16 @@ internal sealed class CancelOrderDecider : IProjector<CancelOrderState>
             .WithEventType<OrderShipped>()
             .WithEventType<OrderCancelled>();
 
-    public Decision Decide(CancelOrderState state, Guid orderId, string reason)
+    public static Decision Decide(CancelOrderState state, Guid orderId, string reason)
     {
         if (!state.Exists)
-            return Decision.Fail(Problem.Create("ORDER_NOT_FOUND", $"Order {orderId} does not exist"));
+            return Decision.Fail(OrderProblems.OrderNotFound(orderId));
 
         if (state.Status == OrderStatus.Cancelled)
-            return Decision.Fail(Problem.Create(
-                "ORDER_ALREADY_CANCELLED",
-                "Order is already cancelled"));
+            return Decision.Fail(OrderProblems.OrderAlreadyCancelled());
 
         if (state.Status == OrderStatus.Shipped)
-            return Decision.Fail(Problem.Create(
-                "CANNOT_CANCEL_SHIPPED_ORDER",
-                "Cannot cancel an order that has already been shipped"));
+            return Decision.Fail(OrderProblems.CannotCancelShippedOrder());
 
         var orderCancelled = new OrderCancelled(orderId, reason);
         return Decision.Succeed(orderCancelled);
