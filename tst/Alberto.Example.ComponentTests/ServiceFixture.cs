@@ -1,3 +1,4 @@
+using Alberto.ComponentTests;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -13,22 +14,16 @@ public class ServiceFixture : WebApplicationFactory<Program>, IServiceFixture, I
     {
     }
 
-    public HttpClient HttpClient { get; private set; } = null!;
-
     public ValueTask InitializeAsync()
     {
         // Trigger creation of the host on the xUnit lifecycle event
         _ = Services;
-
-        // Create HttpClient with TestServer handler
-        HttpClient = CreateClient();
 
         return default;
     }
 
     public new ValueTask DisposeAsync()
     {
-        HttpClient?.Dispose();
         return base.DisposeAsync();
     }
 

@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.TestHost;
 
-namespace Alberto.Example.ComponentTests;
+namespace Alberto.ComponentTests;
 
 public interface IServiceFixture
 {

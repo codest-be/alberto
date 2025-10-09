@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -8,14 +8,7 @@
     <OutputType>exe</OutputType>
     <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
     <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
-    <RootNamespace>Alberto.Example.ComponentTests</RootNamespace>
   </PropertyGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="../../src/Example/Alberto.Example/Alberto.Example.csproj"/>
-    <ProjectReference Include="../../src/EventStore/Alberto.EventStore.InMemory/Alberto.EventStore.InMemory.csproj"/>
-    <ProjectReference Include="..\..\src\Testing\Alberto.ComponentTests\Alberto.ComponentTests.csproj"/>
-  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing"/>
