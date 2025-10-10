@@ -7,7 +7,7 @@ using Xunit;
 
 namespace Alberto.Example.UnitTests.Orders;
 
-public class ShipOrder_Should
+public class ShipOrderShould
 {
     [Fact]
     public void Given_OrderPlaced_EmitOrderShipped()

@@ -10,18 +10,11 @@ namespace Alberto.Example.ComponentTests.Orders;
 /// <summary>
 /// Fixture for testing subscription behavior with InMemory backend
 /// </summary>
-public abstract class OrdersSubscriptionFixture : ServiceFixture
+public abstract class OrdersSubscriptionFixture(ITestOutputHelper testOutputHelper) : ServiceFixture
 {
-    private readonly ITestOutputHelper _testOutputHelper;
-
-    protected OrdersSubscriptionFixture(ITestOutputHelper testOutputHelper)
-    {
-        _testOutputHelper = testOutputHelper;
-    }
-
     public UseCase UseCase()
     {
-        return new UseCase(new ScenarioContext(_testOutputHelper, this));
+        return new UseCase(new ScenarioContext(testOutputHelper, this));
     }
 
     protected override void ConfigureTestServices(IServiceCollection services)

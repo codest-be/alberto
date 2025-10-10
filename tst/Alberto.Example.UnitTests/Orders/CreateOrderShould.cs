@@ -5,7 +5,7 @@ using Xunit;
 
 namespace Alberto.Example.UnitTests.Orders;
 
-public class CreateOrder_Should
+public class CreateOrderShould
 {
     [Fact]
     public void EmitOrderCreated()

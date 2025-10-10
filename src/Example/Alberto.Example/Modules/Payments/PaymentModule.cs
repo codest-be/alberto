@@ -16,6 +16,7 @@ public static class PaymentModule
                                            throw new InvalidOperationException(
                                                "Connection string 'alberto-db' not found.");
                 options.Schema = "payments";
+                options.RunMigrations = true;
             })
             .AddOpenTelemetry();
 

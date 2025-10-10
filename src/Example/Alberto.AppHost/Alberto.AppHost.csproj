@@ -19,7 +19,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Alberto.Example\Alberto.Example.csproj"/>
-    <ProjectReference Include="..\Alberto.SqlMigrator\Alberto.SqlMigrator.csproj"/>
   </ItemGroup>
 
 </Project>

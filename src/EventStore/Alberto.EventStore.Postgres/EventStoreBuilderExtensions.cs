@@ -1,6 +1,9 @@
 using Alberto.EventStore.Diagnostics;
 using Alberto.EventStore.MultiTenant;
+using Alberto.EventStore.Postgres.Migrations;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -27,6 +30,21 @@ public static class EventStoreBuilderExtensions
             sp.GetRequiredService<ITenantContext>(),
             sp.GetRequiredKeyedService<IEventStoreBackend>(options.Schema),
             sp.GetRequiredKeyedService<IDiagnosticsEventListener>(options.Schema))!));
+
+        // Register migrations if enabled
+        if (options.RunMigrations)
+        {
+            // Register registry as singleton (only once)
+            services.TryAddSingleton<EventStoreMigrationRegistry>();
+
+            // Register hosted service (only once) using TryAddEnumerable
+            services.TryAddEnumerable(
+                ServiceDescriptor.Singleton<IHostedService, EventStoreMigrationHostedService>());
+
+            // Register this schema for migration using static backing store
+            var registry = new EventStoreMigrationRegistry();
+            registry.Register(options.ConnectionString, options.Schema);
+        }
 
         return services;
     }

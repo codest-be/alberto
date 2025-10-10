@@ -6,7 +6,7 @@ using Xunit;
 
 namespace Alberto.Example.UnitTests.Orders;
 
-public class CancelOrder_Should
+public class CancelOrderShould
 {
     [Fact]
     public void Given_OrderCreated_EmitOrderCancelled()

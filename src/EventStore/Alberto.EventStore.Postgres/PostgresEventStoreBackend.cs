@@ -12,16 +12,24 @@ using Npgsql;
 
 namespace Alberto.EventStore.Postgres;
 
-public class PostgresEventStoreBackend(
-    IOptions<PostgresEventStoreOptions> options,
-    ILogger<PostgresEventStoreBackend> logger)
-    : IEventStoreBackend, IMultiTenantEventStore
+public class PostgresEventStoreBackend : IEventStoreBackend, IMultiTenantEventStore
 {
-    private readonly int _bulkInsertThreshold =
-        options.Value.BulkInsertThreshold > 0 ? options.Value.BulkInsertThreshold : 5;
+    private readonly int _bulkInsertThreshold;
+    private readonly string _connectionString;
+    private readonly string _eventsTable;
+    private readonly ILogger<PostgresEventStoreBackend> _logger;
+    private readonly PostgresEventStoreOptions _options;
 
-    private readonly string _connectionString = options.Value.ConnectionString;
-    private readonly string _eventsTable = $"{options.Value.Schema}.events";
+    public PostgresEventStoreBackend(
+        IOptions<PostgresEventStoreOptions> options,
+        ILogger<PostgresEventStoreBackend> logger)
+    {
+        _options = options.Value;
+        _logger = logger;
+        _bulkInsertThreshold = _options.BulkInsertThreshold > 0 ? _options.BulkInsertThreshold : 5;
+        _connectionString = _options.ConnectionString;
+        _eventsTable = $"{_options.Schema}.events";
+    }
 
     public async Task<IReadOnlyCollection<IEventEnvelope>> Stream(
         Tenant tenant,
@@ -71,7 +79,7 @@ public class PostgresEventStoreBackend(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error appending events");
+            _logger.LogError(ex, "Error appending events");
             throw;
         }
     }
@@ -367,7 +375,7 @@ public class PostgresEventStoreBackend(
 
         try
         {
-            logger.LogDebug("Executing bulk insert with consistency check: {Sql}", sql);
+            _logger.LogDebug("Executing bulk insert with consistency check: {Sql}", sql);
             IEnumerable<dynamic> results = await connection.QueryAsync(sql, parameters, transaction);
             List<dynamic> resultsList = results.ToList();
 
@@ -375,7 +383,7 @@ public class PostgresEventStoreBackend(
             dynamic? firstResult = resultsList.FirstOrDefault();
             if (firstResult != null && (int)firstResult!.conflicts == 1)
             {
-                logger.LogDebug("Consistency boundary conflict detected in bulk insert");
+                _logger.LogDebug("Consistency boundary conflict detected in bulk insert");
                 return null;
             }
 
@@ -384,7 +392,7 @@ public class PostgresEventStoreBackend(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Bulk insert failed, falling back to sequential");
+            _logger.LogWarning(ex, "Bulk insert failed, falling back to sequential");
             return await InsertEventsSequentiallyWithConsistencyCheck(
                 eventsList,
                 tenantId,

@@ -87,6 +87,62 @@ services.AddEventStore()
         });
 ```
 
+## Production Deployment
+
+For production environments, you may want to manage database migrations separately from your application. Alberto
+provides a migration script generator tool that extracts SQL scripts for manual review and deployment.
+
+### Generating Migration Scripts
+
+```bash
+# First, build your application
+dotnet build YourApp.csproj -c Release
+
+# Navigate to the script generator
+cd src/Tools/Alberto.MigrationScriptGenerator
+
+# Generate scripts (including projection tables from your app)
+dotnet run -- \
+  --assembly ../../../YourApp/bin/Release/net10.0/YourApp.dll \
+  --schemas orders,payments \
+  --output ./migrations
+
+# Or generate just EventStore and Projection schemas (without projection tables)
+dotnet run -- --schemas orders,payments --output ./migrations
+
+# Review generated scripts
+ls ./migrations/
+# 001_eventstore_orders.sql
+# 001_eventstore_payments.sql
+# 001_projections_schema_orders.sql
+# 001_projections_schema_payments.sql
+# 002_projections_table_orders_ordersummary.sql  (if --assembly provided)
+# 002_projections_table_orders_customerview.sql  (if --assembly provided)
+```
+
+**How it works:**
+
+- The tool scans your assembly for types implementing `IProjector<TState>`
+- For each `TState` found, it generates a CREATE TABLE script
+- Scripts match the structure created by `PostgresProjectionRepository.InitializeTable()`
+- If no assembly is provided, projection tables will be auto-created at runtime (backward compatible)
+
+### Deploying to Production
+
+Use the generated SQL scripts with your preferred deployment tool:
+
+```bash
+# Using psql
+psql -h prod-db.example.com -U admin -d mydb -f migrations/001_eventstore_orders.sql
+
+# Using Azure CLI
+az postgres flexible-server execute --name myserver --database mydb --file-path migrations/001_eventstore_orders.sql
+
+# Or integrate with your CI/CD pipeline (Flyway, Liquibase, etc.)
+```
+
+**Note**: The generated scripts are idempotent (use `CREATE IF NOT EXISTS`) and can be run multiple times safely.
+
 ## Architecture
 
 Alberto uses a **multi-backend architecture** with a factory pattern (`IEventStoreBackendFactory`) to abstract between

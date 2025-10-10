@@ -1,6 +1,9 @@
 using Alberto.EventSourcing.Projectors;
 using Alberto.EventStore.MultiTenant;
+using Alberto.Projections.Postgres.Migrations;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -25,6 +28,10 @@ public static class PostgresProjectionRepositoryExtensions
         where TState : new()
         where TProjector : class, IProjector<TState>
     {
+        // Create options to check RunMigrations flag
+        PostgresProjectionOptions options = new();
+        configure(options);
+
         // Use named options with the state type name as the key
         var optionsName = typeof(TState).FullName ?? typeof(TState).Name;
         services.Configure(optionsName, configure);
@@ -37,15 +44,30 @@ public static class PostgresProjectionRepositoryExtensions
         services.AddScoped<IProjectionRepository<TKey, TState>>(sp =>
         {
             var namedOptions = sp.GetRequiredService<IOptionsSnapshot<PostgresProjectionOptions>>();
-            var options = Options.Create(namedOptions.Get(optionsName));
+            var resolvedOptions = Options.Create(namedOptions.Get(optionsName));
             var logger = sp.GetRequiredService<ILogger<PostgresProjectionRepository<TKey, TState>>>();
             var tenantContext = sp.GetRequiredService<ITenantContext>();
 
-            return new PostgresProjectionRepository<TKey, TState>(options, logger, tenantContext);
+            return new PostgresProjectionRepository<TKey, TState>(resolvedOptions, logger, tenantContext);
         });
 
         // Register projection handler helper
         services.AddScoped<ProjectionHandler<TKey, TState>>();
+
+        // Register migrations if enabled
+        if (options.RunMigrations)
+        {
+            // Register registry as singleton (only once)
+            services.TryAddSingleton<ProjectionMigrationRegistry>();
+
+            // Register hosted service (only once) using TryAddEnumerable
+            services.TryAddEnumerable(
+                ServiceDescriptor.Singleton<IHostedService, ProjectionMigrationHostedService>());
+
+            // Register this schema for migration using static backing store
+            var registry = new ProjectionMigrationRegistry();
+            registry.Register(options.ConnectionString, options.Schema);
+        }
 
         return services;
     }

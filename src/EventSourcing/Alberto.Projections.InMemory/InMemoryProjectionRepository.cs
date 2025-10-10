@@ -10,20 +10,14 @@ namespace Alberto.Projections.InMemory;
 /// </summary>
 /// <typeparam name="TKey">The type of the projection key</typeparam>
 /// <typeparam name="TState">The projected state type</typeparam>
-public sealed class InMemoryProjectionRepository<TKey, TState> : IProjectionRepository<TKey, TState>
+public sealed class InMemoryProjectionRepository<TKey, TState>(
+    ITenantContext tenantContext,
+    ILogger<InMemoryProjectionRepository<TKey, TState>> logger)
+    : IProjectionRepository<TKey, TState>
     where TKey : notnull
     where TState : new()
 {
-    private readonly ILogger<InMemoryProjectionRepository<TKey, TState>> _logger;
     private readonly ConcurrentDictionary<string, (TState State, long GlobalVersion)> _store = new();
-    private readonly ITenantContext _tenantContext;
-
-    public InMemoryProjectionRepository(ITenantContext tenantContext,
-        ILogger<InMemoryProjectionRepository<TKey, TState>> logger)
-    {
-        _tenantContext = tenantContext;
-        _logger = logger;
-    }
 
     /// <inheritdoc />
     public Task<TState?> Get(TKey key, CancellationToken cancellationToken = default)
@@ -35,7 +29,7 @@ public sealed class InMemoryProjectionRepository<TKey, TState> : IProjectionRepo
     /// <inheritdoc />
     public Task<IReadOnlyCollection<TState>> GetAll(CancellationToken cancellationToken = default)
     {
-        var tenantPrefix = $"{_tenantContext.Tenant.Id}:";
+        var tenantPrefix = $"{tenantContext.Tenant.Id}:";
         var tenantStates = _store
             .Where(kvp => kvp.Key.StartsWith(tenantPrefix))
             .Select(kvp => kvp.Value.State)
@@ -52,7 +46,7 @@ public sealed class InMemoryProjectionRepository<TKey, TState> : IProjectionRepo
             _ => (state, 0L),
             (_, existing) => (state, existing.GlobalVersion));
 
-        _logger.LogDebug("Upserted projection {Key} for tenant {TenantId}", key, _tenantContext.Tenant.Id);
+        logger.LogDebug("Upserted projection {Key} for tenant {TenantId}", key, tenantContext.Tenant.Id);
         return Task.CompletedTask;
     }
 
@@ -65,7 +59,7 @@ public sealed class InMemoryProjectionRepository<TKey, TState> : IProjectionRepo
             _ => (updateFn(new TState()), 0L),
             (_, existing) => (updateFn(existing.State), existing.GlobalVersion));
 
-        _logger.LogDebug("Updated projection {Key} for tenant {TenantId}", key, _tenantContext.Tenant.Id);
+        logger.LogDebug("Updated projection {Key} for tenant {TenantId}", key, tenantContext.Tenant.Id);
         return Task.CompletedTask;
     }
 
@@ -87,7 +81,7 @@ public sealed class InMemoryProjectionRepository<TKey, TState> : IProjectionRepo
             {
                 if (existing.GlobalVersion >= globalVersion)
                 {
-                    _logger.LogDebug(
+                    logger.LogDebug(
                         "Skipping projection update for {Key} - event version {EventVersion} <= stored version {StoredVersion}",
                         key, globalVersion, existing.GlobalVersion);
                     return existing;
@@ -99,9 +93,9 @@ public sealed class InMemoryProjectionRepository<TKey, TState> : IProjectionRepo
 
         if (updated)
         {
-            _logger.LogDebug(
+            logger.LogDebug(
                 "Updated projection {Key} for tenant {TenantId} to version {GlobalVersion}",
-                key, _tenantContext.Tenant.Id, globalVersion);
+                key, tenantContext.Tenant.Id, globalVersion);
         }
 
         return Task.FromResult(updated);
@@ -112,7 +106,7 @@ public sealed class InMemoryProjectionRepository<TKey, TState> : IProjectionRepo
     {
         var tenantKey = GetTenantKey(key);
         _store.TryRemove(tenantKey, out _);
-        _logger.LogDebug("Deleted projection {Key} for tenant {TenantId}", key, _tenantContext.Tenant.Id);
+        logger.LogDebug("Deleted projection {Key} for tenant {TenantId}", key, tenantContext.Tenant.Id);
         return Task.CompletedTask;
     }
 
@@ -126,16 +120,16 @@ public sealed class InMemoryProjectionRepository<TKey, TState> : IProjectionRepo
     /// <inheritdoc />
     public Task Clear(CancellationToken cancellationToken = default)
     {
-        var tenantPrefix = $"{_tenantContext.Tenant.Id}:";
+        var tenantPrefix = $"{tenantContext.Tenant.Id}:";
         var keysToRemove = _store.Keys.Where(k => k.StartsWith(tenantPrefix)).ToList();
         foreach (var key in keysToRemove)
         {
             _store.TryRemove(key, out _);
         }
 
-        _logger.LogWarning("Cleared all projections for tenant {TenantId}", _tenantContext.Tenant.Id);
+        logger.LogWarning("Cleared all projections for tenant {TenantId}", tenantContext.Tenant.Id);
         return Task.CompletedTask;
     }
 
-    private string GetTenantKey(TKey key) => $"{_tenantContext.Tenant.Id}:{key}";
+    private string GetTenantKey(TKey key) => $"{tenantContext.Tenant.Id}:{key}";
 }

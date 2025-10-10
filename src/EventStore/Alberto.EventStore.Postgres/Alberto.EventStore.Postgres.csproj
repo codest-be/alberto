@@ -21,4 +21,7 @@
     <PackageReference Include="Microsoft.Extensions.Options"/>
     <PackageReference Include="Npgsql"/>
   </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Migrations\*.sql"/>
+  </ItemGroup>
 </Project>

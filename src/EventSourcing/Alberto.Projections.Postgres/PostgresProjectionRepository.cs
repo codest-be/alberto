@@ -17,10 +17,7 @@ public sealed class PostgresProjectionRepository<TKey, TState> : IProjectionRepo
     where TKey : notnull
     where TState : new()
 {
-    private readonly JsonSerializerOptions _jsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-    };
+    private readonly JsonSerializerOptions _jsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
     private readonly ILogger<PostgresProjectionRepository<TKey, TState>> _logger;
     private readonly PostgresProjectionOptions _options;
@@ -42,6 +39,7 @@ public sealed class PostgresProjectionRepository<TKey, TState> : IProjectionRepo
         var schema = string.IsNullOrWhiteSpace(_options.Schema) ? "default" : _options.Schema;
         _schemaQualifiedTableName = $"{schema}.{_tableName}";
 
+        // Always initialize the projection table (per-projection table creation)
         InitializeTable().GetAwaiter().GetResult();
     }
 
@@ -181,7 +179,9 @@ public sealed class PostgresProjectionRepository<TKey, TState> : IProjectionRepo
                 new CommandDefinition(upsertSql,
                     new
                     {
-                        TenantId = _tenantContext.Tenant.Id, Key = key.ToString(), State = json,
+                        TenantId = _tenantContext.Tenant.Id,
+                        Key = key.ToString(),
+                        State = json,
                         GlobalVersion = globalVersion
                     },
                     transaction,

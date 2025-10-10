@@ -7,7 +7,7 @@ using Xunit;
 
 namespace Alberto.Example.UnitTests.Orders;
 
-public class PlaceOrder_Should
+public class PlaceOrderShould
 {
     [Fact]
     public void Given_OrderCreated_EmitOrderPlaced()

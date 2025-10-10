@@ -19,6 +19,7 @@ public static class OrdersModule
                                            throw new InvalidOperationException(
                                                "Connection string 'alberto-db' not found.");
                 options.Schema = "orders";
+                options.RunMigrations = true;
             })
             .AddPolling(options =>
             {
@@ -40,6 +41,7 @@ public static class OrdersModule
             o.ConnectionString = configuration.GetConnectionString("alberto-db") ??
                                  throw new InvalidOperationException("Connection string 'alberto-db' not found.");
             o.Schema = "orders";
+            o.RunMigrations = true;
         });
 
         return services;

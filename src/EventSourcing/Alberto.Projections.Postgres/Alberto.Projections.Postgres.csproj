@@ -22,4 +22,8 @@
   <ItemGroup>
     <ProjectReference Include="..\Alberto.EventSourcing\Alberto.EventSourcing.csproj"/>
   </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Migrations\*.sql"/>
+  </ItemGroup>
 </Project>

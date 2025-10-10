@@ -1,29 +1,38 @@
 -- =============================================================================
--- DCB EVENT STORE SCHEMA FOR POSTGRESQL
+-- ALBERTO EVENT STORE SCHEMA FOR POSTGRESQL
+-- =============================================================================
+-- This script creates the event store schema in the specified schema.
+-- The $schema$ variable is replaced by DbUp at runtime.
 -- =============================================================================
 
+-- Create schema if it doesn't exist
+CREATE SCHEMA IF NOT EXISTS $schema$;
+
 -- Main events table with tenant support
-CREATE TABLE IF NOT EXISTS events
+CREATE TABLE IF NOT EXISTS $schema$.events
 (
     position
-               BIGSERIAL
-        PRIMARY
-            KEY,
+    BIGSERIAL
+    PRIMARY
+    KEY,
     id
-               UUID
-                           NOT
-                               NULL
-        UNIQUE,
+    UUID
+    NOT
+    NULL
+    UNIQUE,
     tenant_id
-               VARCHAR(20) NOT NULL,
-    event_type TEXT        NOT NULL,
-    data       JSONB       NOT NULL,
-    tags       TEXT[]      NOT NULL DEFAULT '{}',
+    VARCHAR
+(
+    20
+) NOT NULL,
+    event_type TEXT NOT NULL,
+    data JSONB NOT NULL,
+    tags TEXT[] NOT NULL DEFAULT '{}',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW
-                                            (
-                                            ),
-    metadata   JSONB       NOT NULL DEFAULT '{}'
-);
+(
+),
+    metadata JSONB NOT NULL DEFAULT '{}'
+    );
 
 -- =============================================================================
 -- BASELINE INDEXES + SIMPLE GIN INDEX (PHASE 2 TESTING)
@@ -31,16 +40,16 @@ CREATE TABLE IF NOT EXISTS events
 
 -- 1. ESSENTIAL: tenant-based ordering and pagination
 -- Supports ORDER BY position DESC within tenant
-CREATE INDEX IF NOT EXISTS idx_events_tenant_position ON events (tenant_id, position DESC);
+CREATE INDEX IF NOT EXISTS idx_events_tenant_position ON $schema$.events (tenant_id, position DESC);
 
 -- 2. ESSENTIAL: optimistic concurrency control
 -- For consistency boundary checks (version-like behavior)
-CREATE INDEX IF NOT EXISTS idx_events_consistency ON events (tenant_id, position)
+CREATE INDEX IF NOT EXISTS idx_events_consistency ON $schema$.events (tenant_id, position)
     WHERE position > 0;
 
 -- 3. ESSENTIAL: cross-tenant queries
 -- Critical for queries that span multiple tenants
-CREATE INDEX IF NOT EXISTS idx_events_global_position ON events (position)
+CREATE INDEX IF NOT EXISTS idx_events_global_position ON $schema$.events (position)
     INCLUDE (tenant_id, event_type, tags, data, metadata, created_at);
 
 -- =============================================================================
@@ -50,18 +59,18 @@ CREATE INDEX IF NOT EXISTS idx_events_global_position ON events (position)
 -- 4. OPTIMIZED: Tenant-first composite index with GIN
 -- This leverages that ALL tag queries start with tenant_id
 -- PostgreSQL can use this for: WHERE tenant_id = ? AND tags @> ?
-CREATE INDEX IF NOT EXISTS idx_events_tenant_tags_gin ON events (tenant_id, tags)
+CREATE INDEX IF NOT EXISTS idx_events_tenant_tags_gin ON $schema$.events (tenant_id, tags)
     WHERE array_length(tags, 1) > 0;
 
 -- 5. OPTIMIZED: Tenant + event_type + tags (most common pattern)
 -- For queries: WHERE tenant_id = ? AND event_type = ? AND tags @> ?
 -- Uses partial index to avoid empty tag arrays
-CREATE INDEX IF NOT EXISTS idx_events_tenant_type_tags ON events (tenant_id, event_type, tags)
+CREATE INDEX IF NOT EXISTS idx_events_tenant_type_tags ON $schema$.events (tenant_id, event_type, tags)
     WHERE array_length(tags, 1) > 0;
 
 -- 6. OPTIMIZED: Include index for covering queries
 -- Provides all data needed for most queries without table lookups
-CREATE INDEX IF NOT EXISTS idx_events_tenant_tags_covering ON events (tenant_id)
+CREATE INDEX IF NOT EXISTS idx_events_tenant_tags_covering ON $schema$.events (tenant_id)
     INCLUDE (event_type, tags, data, metadata, created_at, position)
     WHERE array_length(tags, 1) > 0;
 
@@ -69,107 +78,106 @@ CREATE INDEX IF NOT EXISTS idx_events_tenant_tags_covering ON events (tenant_id)
 -- SUBSCRIPTION CHECKPOINTS
 -- =============================================================================
 
-CREATE TABLE IF NOT EXISTS subscription_checkpoints
+CREATE TABLE IF NOT EXISTS $schema$.subscription_checkpoints
 (
     subscription_id
-        VARCHAR
-        PRIMARY
-            KEY,
+    VARCHAR
+    PRIMARY
+    KEY,
     position
-        BIGINT
-        NULL,
+    BIGINT
+    NULL,
     updated_at
-        TIMESTAMPTZ
-        NOT
-            NULL
-        DEFAULT
-            NOW
-            (
-            )
-);
+    TIMESTAMPTZ
+    NOT
+    NULL
+    DEFAULT
+    NOW
+(
+)
+    );
 
 CREATE INDEX IF NOT EXISTS idx_subscription_checkpoints_updated
-    ON subscription_checkpoints (updated_at DESC);
+    ON $schema$.subscription_checkpoints (updated_at DESC);
 
 COMMENT
-    ON TABLE subscription_checkpoints IS 'Tracks last processed position for each subscription';
+ON TABLE $schema$.subscription_checkpoints IS 'Tracks last processed position for each subscription';
 COMMENT
-    ON COLUMN subscription_checkpoints.position IS 'Last successfully processed global position (NULL = from beginning)';
+ON COLUMN $schema$.subscription_checkpoints.position IS 'Last successfully processed global position (NULL = from beginning)';
 
 -- =============================================================================
 -- POISON PILLS
 -- =============================================================================
 
-CREATE TABLE IF NOT EXISTS subscription_poison_pills
+CREATE TABLE IF NOT EXISTS $schema$.subscription_poison_pills
 (
     id
-        UUID
-        PRIMARY
-            KEY,
+    UUID
+    PRIMARY
+    KEY,
     subscription_id
-        VARCHAR
-        NOT
-            NULL,
+    VARCHAR
+    NOT
+    NULL,
     global_position
-        BIGINT
-        NOT
-            NULL,
+    BIGINT
+    NOT
+    NULL,
     event_id
-        UUID
-        NOT
-            NULL,
+    UUID
+    NOT
+    NULL,
     event_type
-        VARCHAR
-        NOT
-            NULL,
+    VARCHAR
+    NOT
+    NULL,
     event_data
-        JSONB
-        NOT
-            NULL,
+    JSONB
+    NOT
+    NULL,
     metadata
-        JSONB
-        NOT
-            NULL,
+    JSONB
+    NOT
+    NULL,
     error_message
-        TEXT
-        NOT
-            NULL,
+    TEXT
+    NOT
+    NULL,
     stack_trace
-        TEXT,
+    TEXT,
     retry_count
-        INT
-        NOT
-            NULL,
+    INT
+    NOT
+    NULL,
     first_failed_at
-        TIMESTAMPTZ
-        NOT
-            NULL,
+    TIMESTAMPTZ
+    NOT
+    NULL,
     last_failed_at
-        TIMESTAMPTZ
-        NOT
-            NULL,
+    TIMESTAMPTZ
+    NOT
+    NULL,
     resolved_at
-        TIMESTAMPTZ,
+    TIMESTAMPTZ,
     resolved_by
-        VARCHAR,
+    VARCHAR,
     resolution_action
-        VARCHAR,
-
+    VARCHAR,
     UNIQUE
-        (
-         subscription_id,
-         global_position
-            )
-);
+(
+    subscription_id,
+    global_position
+)
+    );
 
 CREATE INDEX IF NOT EXISTS idx_poison_pills_subscription
-    ON subscription_poison_pills (subscription_id, resolved_at NULLS FIRST);
+    ON $schema$.subscription_poison_pills (subscription_id, resolved_at NULLS FIRST);
 
 CREATE INDEX IF NOT EXISTS idx_poison_pills_unresolved
-    ON subscription_poison_pills (subscription_id, global_position)
+    ON $schema$.subscription_poison_pills (subscription_id, global_position)
     WHERE resolved_at IS NULL;
 
 COMMENT
-    ON TABLE subscription_poison_pills IS 'Events that failed processing after retries';
+ON TABLE $schema$.subscription_poison_pills IS 'Events that failed processing after retries';
 COMMENT
-    ON COLUMN subscription_poison_pills.resolution_action IS 'Actions: skip, reprocess, manual';
+ON COLUMN $schema$.subscription_poison_pills.resolution_action IS 'Actions: skip, reprocess, manual';

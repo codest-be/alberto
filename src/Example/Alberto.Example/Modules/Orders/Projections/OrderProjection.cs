@@ -1,3 +1,4 @@
+using Alberto.EventSourcing.Projections;
 using Alberto.EventSourcing.Projectors;
 using Alberto.EventStore.Subscriptions.Subscriptions;
 using Alberto.Example.Modules.Orders.Enums;
@@ -27,6 +28,7 @@ public class OrderProjectionSubscription(
         => handler.Handle(@event.OrderId, @event, context, cancellationToken);
 }
 
+[GenerateMigration(Schema = "orders", TableName = "order")]
 public record Order
 {
     public Guid OrderId { get; init; }
@@ -45,25 +47,11 @@ public class OrderProjector : IProjector<Order>
         {
             OrderCreated e => projectionState with
             {
-                OrderId = e.OrderId,
-                Amount = e.Amount,
-                CustomerId = e.CustomerId,
-                Status = OrderStatus.Created
+                OrderId = e.OrderId, Amount = e.Amount, CustomerId = e.CustomerId, Status = OrderStatus.Created
             },
-            OrderPlaced e => projectionState with
-            {
-                Status = OrderStatus.Placed
-            },
-            OrderShipped e => projectionState with
-            {
-                Status = OrderStatus.Shipped,
-                TrackingNumber = e.TrackingNumber
-            },
-            OrderCancelled e => projectionState with
-            {
-                Status = OrderStatus.Cancelled,
-                CancellationReason = e.Reason
-            },
+            OrderPlaced e => projectionState with { Status = OrderStatus.Placed },
+            OrderShipped e => projectionState with { Status = OrderStatus.Shipped, TrackingNumber = e.TrackingNumber },
+            OrderCancelled e => projectionState with { Status = OrderStatus.Cancelled, CancellationReason = e.Reason },
             _ => projectionState
         };
     }

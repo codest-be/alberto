@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Alberto.ComponentTests;
 
-public sealed class UseCase
+public sealed class UseCase(ScenarioContext context)
 {
     private static readonly JsonSerializerOptions StepJsonSerializerOptions = new()
     {
@@ -16,16 +16,10 @@ public sealed class UseCase
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault,
     };
 
-    private readonly ScenarioContext _context;
     private List<IStep> _actSteps = [];
 
     private List<IStep> _arrangeSteps = [];
     private List<IStep> _assertSteps = [];
-
-    public UseCase(ScenarioContext context)
-    {
-        _context = context;
-    }
 
     private static ConcurrentDictionary<Type, string> TypeNameCache { get; } = new();
 
@@ -34,7 +28,7 @@ public sealed class UseCase
         if (backgroundSteps.Length == 0)
             throw new ArgumentException("At least one background step must be provided", nameof(backgroundSteps));
 
-        _context.BackgroundSteps.AddRange(backgroundSteps);
+        context.BackgroundSteps.AddRange(backgroundSteps);
         return this;
     }
 
@@ -67,34 +61,34 @@ public sealed class UseCase
 
     private async Task Execute()
     {
-        var logger = _context.CreateLogger();
+        var logger = context.CreateLogger();
 
-        if (_context.BackgroundSteps.Any())
+        if (context.BackgroundSteps.Any())
         {
             logger.LogInformation("😶‍🌫️ Background");
-            foreach (var step in _context.BackgroundSteps)
-                await ExecuteStep(step, _context, logger);
+            foreach (var step in context.BackgroundSteps)
+                await ExecuteStep(step, context, logger);
         }
 
         if (_arrangeSteps.Any())
         {
             logger.LogInformation("🔧 Arrange");
             foreach (var step in _arrangeSteps)
-                await ExecuteStep(step, _context, logger);
+                await ExecuteStep(step, context, logger);
         }
 
         if (_actSteps.Any())
         {
             logger.LogInformation("🚀 Act");
             foreach (var step in _actSteps)
-                await ExecuteStep(step, _context, logger);
+                await ExecuteStep(step, context, logger);
         }
 
         if (_assertSteps.Any())
         {
             logger.LogInformation("🔎 Assert");
             foreach (var step in _assertSteps)
-                await ExecuteStep(step, _context, logger);
+                await ExecuteStep(step, context, logger);
         }
     }
 

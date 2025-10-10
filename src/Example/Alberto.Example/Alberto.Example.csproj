@@ -6,6 +6,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+    <!-- Enable migration script generation -->
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <CompilerGeneratedFilesOutputPath>$(BaseIntermediateOutputPath)/Generated</CompilerGeneratedFilesOutputPath>
   </PropertyGroup>
 
   <ItemGroup>
@@ -25,6 +29,11 @@
     <ProjectReference Include="..\..\EventSourcing\Alberto.Projections.Postgres\Alberto.Projections.Postgres.csproj"/>
     <ProjectReference Include="..\..\EventSourcing\Alberto.Projections.InMemory\Alberto.Projections.InMemory.csproj"/>
     <ProjectReference Include="..\Alberto.ServiceDefaults\Alberto.ServiceDefaults.csproj"/>
+
+    <!-- Add the migration script generator -->
+    <ProjectReference Include="..\..\Tools\Alberto.MigrationScriptGenerator.SourceGenerator\Alberto.MigrationScriptGenerator.SourceGenerator.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false"/>
   </ItemGroup>
 
   <ItemGroup>
