@@ -1,4 +1,4 @@
-namespace Alberto.Projections;
+namespace Alberto.EventSourcing.Projections;
 
 /// <summary>
 /// Extracts a projection key from an event.

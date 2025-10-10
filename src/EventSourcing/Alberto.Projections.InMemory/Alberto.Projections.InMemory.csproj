@@ -11,8 +11,8 @@
     <Description>In-memory implementation of Alberto projection repositories for development, testing, and low-scale production scenarios. Thread-safe and high-performance.</Description>
     <IsPackable>true</IsPackable>
   </PropertyGroup>
-
+  
   <ItemGroup>
-    <ProjectReference Include="..\Alberto.Projections\Alberto.Projections.csproj"/>
+    <ProjectReference Include="..\Alberto.EventSourcing\Alberto.EventSourcing.csproj"/>
   </ItemGroup>
 </Project>

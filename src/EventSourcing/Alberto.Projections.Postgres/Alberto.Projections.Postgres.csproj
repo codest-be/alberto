@@ -13,13 +13,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Alberto.Projections\Alberto.Projections.csproj"/>
-  </ItemGroup>
-
-  <ItemGroup>
     <PackageReference Include="Dapper"/>
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions"/>
     <PackageReference Include="Microsoft.Extensions.Options"/>
     <PackageReference Include="Npgsql"/>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Alberto.EventSourcing\Alberto.EventSourcing.csproj"/>
   </ItemGroup>
 </Project>

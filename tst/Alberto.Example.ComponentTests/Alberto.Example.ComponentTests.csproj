@@ -15,7 +15,6 @@
     <ProjectReference Include="../../src/Example/Alberto.Example/Alberto.Example.csproj"/>
     <ProjectReference Include="../../src/EventStore/Alberto.EventStore.InMemory/Alberto.EventStore.InMemory.csproj"/>
     <ProjectReference Include="..\..\src\Testing\Alberto.ComponentTests\Alberto.ComponentTests.csproj"/>
-    <ProjectReference Include="..\..\src\Projections\Alberto.Projections\Alberto.Projections.csproj"/>
     <ProjectReference Include="..\..\src\Projections\Alberto.Projections.InMemory\Alberto.Projections.InMemory.csproj"/>
   </ItemGroup>
 
