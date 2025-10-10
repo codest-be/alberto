@@ -62,4 +62,16 @@ public interface IProjectionRepository<in TKey, TState>
     /// </summary>
     /// <param name="cancellationToken">Cancellation token</param>
     Task Clear(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Updates a projection only if the global version is higher than the stored version.
+    /// This ensures idempotency and prevents out-of-order event processing.
+    /// </summary>
+    /// <param name="key">The key identifying the projection</param>
+    /// <param name="updateFn">Function to update the existing state</param>
+    /// <param name="globalVersion">The global version from the event (EventContext.GlobalPosition)</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>True if the update was applied, false if skipped due to version check</returns>
+    Task<bool> UpdateWithVersion(TKey key, Func<TState, TState> updateFn, long globalVersion,
+        CancellationToken cancellationToken = default);
 }
