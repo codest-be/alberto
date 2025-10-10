@@ -49,10 +49,12 @@ public readonly record struct Decision<T>
     private readonly List<object> _events;
     private readonly List<Problem> _problems;
 
+    [AllowNull, MaybeNull] private readonly T _value;
+
     private Decision(bool isSuccess, T? value, List<object> events, List<Problem> problems)
     {
         IsSuccess = isSuccess;
-        Value = value;
+        _value = value;
         _events = events;
         _problems = problems;
     }
@@ -60,9 +62,8 @@ public readonly record struct Decision<T>
     public bool IsSuccess { get; }
     public bool IsError => !IsSuccess;
 
-    [field: AllowNull, MaybeNull]
     public T Value =>
-        IsSuccess ? field! : throw new InvalidOperationException("Cannot access value of a failed decision");
+        IsSuccess ? _value! : throw new InvalidOperationException("Cannot access value of a failed decision");
 
     public IReadOnlyList<object> Events => _events ?? [];
     public IReadOnlyList<Problem> Problems => _problems ?? [];

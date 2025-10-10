@@ -1,7 +1,7 @@
 using Alberto.ComponentTests;
 using Alberto.ComponentTests.Steps;
-using Alberto.EventSourcing.Projections;
 using Alberto.Example.Modules.Orders.Projections;
+using Alberto.Projections;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -11,7 +11,7 @@ public sealed class OrderExistsInReadModel(Guid orderId, string expectedStatus) 
 {
     public async ValueTask Execute(ScenarioContext scenarioContext, CancellationToken ct = default)
     {
-        var repository = scenarioContext.GetRequiredService<IProjectionRepository<Guid, OrderState>>();
+        var repository = scenarioContext.GetRequiredKeyedService<IProjectionRepository<Guid, Order>>("orders");
 
         var order = await repository.Get(orderId, ct);
 

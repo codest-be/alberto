@@ -1,4 +1,4 @@
-namespace Alberto.EventSourcing.Projections;
+namespace Alberto.Projections;
 
 /// <summary>
 /// Repository for storing and retrieving projected read models.

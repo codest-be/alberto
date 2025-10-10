@@ -1,6 +1,7 @@
 using Alberto.ComponentTests;
 using Alberto.EventStore.InMemory;
 using Alberto.Example.Modules.Orders.Projections;
+using Alberto.Projections.InMemory;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -38,5 +39,8 @@ public abstract class OrdersSubscriptionFixture : ServiceFixture
                 options.RetryDelayMs = 50;
             })
             .AddSubscription<OrderProjectionSubscription>();
+
+        // Register projection repository
+        services.AddInMemoryProjectionRepository<Guid, Order, OrderProjector>();
     }
 }

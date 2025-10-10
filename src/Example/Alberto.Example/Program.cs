@@ -9,7 +9,8 @@ builder.AddServiceDefaults();
 builder.Services
     .AddOrdersModule(builder.Configuration)
     .AddPaymentsModule(builder.Configuration)
-    .AddOpenApi();
+    .AddOpenApi()
+    .AddLogging();
 
 WebApplication app = builder.Build();
 

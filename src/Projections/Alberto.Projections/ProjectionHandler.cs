@@ -2,26 +2,11 @@ using Alberto.EventSourcing.Projectors;
 using Alberto.EventStore.Subscriptions.Subscriptions;
 using Microsoft.Extensions.Logging;
 
-namespace Alberto.EventSourcing.Projections;
+namespace Alberto.Projections;
 
 /// <summary>
 /// Helper class that encapsulates the logic for handling events in a projection repository.
 /// Reduces boilerplate in subscription handlers by centralizing the projection logic.
-///
-/// Usage:
-/// <code>
-/// [Subscription("order-projection")]
-/// public class OrderProjectionSubscription(ProjectionHandler&lt;Guid, OrderState&gt; handler) :
-///     IHandleEvent&lt;OrderCreated&gt;,
-///     IHandleEvent&lt;OrderPlaced&gt;
-/// {
-///     public ValueTask Handle(OrderCreated e, EventContext ctx, CancellationToken ct)
-///         =&gt; handler.Handle(e.OrderId, e, ctx, ct);
-///
-///     public ValueTask Handle(OrderPlaced e, EventContext ctx, CancellationToken ct)
-///         =&gt; handler.Handle(e.OrderId, e, ctx, ct);
-/// }
-/// </code>
 /// </summary>
 /// <typeparam name="TKey">The type of the projection key</typeparam>
 /// <typeparam name="TState">The projected state type</typeparam>

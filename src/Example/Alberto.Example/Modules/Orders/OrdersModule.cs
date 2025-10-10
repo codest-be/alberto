@@ -1,10 +1,10 @@
 using Alberto.CQRS.Registration;
-using Alberto.EventSourcing.Projections;
 using Alberto.EventStore.Postgres;
 using Alberto.EventStore.Telemetry;
 using Alberto.Example.Modules.Orders.Api.Endpoints;
 using Alberto.Example.Modules.Orders.Filters;
 using Alberto.Example.Modules.Orders.Projections;
+using Alberto.Projections.Postgres;
 
 namespace Alberto.Example.Modules.Orders;
 
@@ -35,7 +35,12 @@ public static class OrdersModule
         services.AddCQRS(b => b.ScanAssembly(typeof(Program).Assembly));
 
         // Read-side projection repository for subscriptions
-        services.AddInMemoryProjectionRepository<Guid, OrderState, OrderProjector, OrderEventStore>();
+        services.AddPostgresProjectionRepository<Guid, Order, OrderProjector>(o =>
+        {
+            o.ConnectionString = configuration.GetConnectionString("alberto-db") ??
+                                 throw new InvalidOperationException("Connection string 'alberto-db' not found.");
+            o.Schema = "orders";
+        });
 
         return services;
     }
@@ -46,6 +51,7 @@ public static class OrdersModule
         endpoints.MapPlaceOrder();
         endpoints.MapShipOrder();
         endpoints.MapCancelOrder();
+
         endpoints.MapGetOrder();
 
         return endpoints;
