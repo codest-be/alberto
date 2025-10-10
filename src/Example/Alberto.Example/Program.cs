@@ -1,3 +1,4 @@
+using Alberto.EventStore.Postgres.Migrations;
 using Alberto.Example.Modules.Orders;
 using Alberto.Example.Modules.Payments;
 using Alberto.ServiceDefaults;
@@ -11,6 +12,12 @@ builder.Services
     .AddPaymentsModule(builder.Configuration)
     .AddOpenApi()
     .AddLogging();
+
+if (builder.Environment.IsDevelopment())
+{
+    // Auto-discovers connection strings from registered EventStore configurations
+    builder.Services.AddDatabaseMigrations();
+}
 
 WebApplication app = builder.Build();
 

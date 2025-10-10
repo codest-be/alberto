@@ -28,7 +28,6 @@ public class OrderProjectionSubscription(
         => handler.Handle(@event.OrderId, @event, context, cancellationToken);
 }
 
-[GenerateMigration(Schema = "orders", TableName = "order")]
 public record Order
 {
     public Guid OrderId { get; init; }
@@ -39,6 +38,7 @@ public record Order
     public string? CancellationReason { get; init; }
 }
 
+[GenerateMigration(Schema = "orders", TableName = "order")]
 public class OrderProjector : IProjector<Order>
 {
     public Order Apply(Order projectionState, object @event)

@@ -35,11 +35,4 @@ public sealed class PostgresProjectionOptions
             _schema = value;
         }
     }
-
-    /// <summary>
-    /// When true, automatically runs database migrations on startup.
-    /// Set to false if you want to manage migrations separately.
-    /// Default is false for production safety.
-    /// </summary>
-    public bool RunMigrations { get; set; } = false;
 }

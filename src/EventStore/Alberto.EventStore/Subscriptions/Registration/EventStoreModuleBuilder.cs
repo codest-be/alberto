@@ -14,6 +14,9 @@ namespace Alberto.EventStore.Subscriptions.Registration;
 /// </summary>
 public sealed class EventStoreModuleBuilder(IServiceCollection services, string moduleKey)
 {
+    public IServiceCollection Services => services;
+    public string ModuleKey => moduleKey;
+
     public EventStoreModuleBuilder AddPolling(Action<PollingOptions> configureOptions)
     {
         var options = new PollingOptions();

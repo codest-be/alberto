@@ -36,9 +36,8 @@ public class PostgresEventStoreOptions
     public int BulkInsertThreshold { get; set; } = 5;
 
     /// <summary>
-    /// When true, automatically runs database migrations on startup.
-    /// Set to false if you want to manage migrations separately.
-    /// Default is false for production safety.
+    /// Maximum size of a single batch when appending events.
+    /// If the number of events exceeds this, they will be split into multiple batches.
     /// </summary>
-    public bool RunMigrations { get; set; } = false;
+    public int MaxBatchSize { get; set; } = 1000;
 }

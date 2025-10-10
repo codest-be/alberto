@@ -1,0 +1,4 @@
+# Alberto Generated Migrations
+# Mark source-generated migration files as generated code
+**/Migrations/Generated/*.g.cs linguist-generated=true
+**/Migrations/Generated/*.g.cs diff=csharp

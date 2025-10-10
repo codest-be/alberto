@@ -20,7 +20,7 @@ public static class PostgresSubscriptionExtensions
     /// <summary>
     /// Adds EventStore with PostgreSQL backend, telemetry, multi-tenancy AND subscription system in one call
     /// </summary>
-    public static EventStoreModuleBuilder AddEventStoreWithPostgresSubscriptions<TEventStore, TTenantContext>(
+    public static EventStoreModuleBuilder AddPostgresEventStore<TEventStore, TTenantContext>(
         this IServiceCollection services,
         string moduleKey,
         Action<PostgresEventStoreOptions> configureOptions)

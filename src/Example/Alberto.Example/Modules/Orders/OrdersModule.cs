@@ -1,4 +1,3 @@
-using Alberto.CQRS.Registration;
 using Alberto.EventStore.Postgres;
 using Alberto.EventStore.Telemetry;
 using Alberto.Example.Modules.Orders.Api.Endpoints;
@@ -13,13 +12,12 @@ public static class OrdersModule
     public static IServiceCollection AddOrdersModule(this IServiceCollection services, IConfiguration configuration)
     {
         services
-            .AddEventStoreWithPostgresSubscriptions<OrderEventStore, MultiTenantContext>("orders", options =>
+            .AddPostgresEventStore<OrderEventStore, MultiTenantContext>("orders", options =>
             {
                 options.ConnectionString = configuration.GetConnectionString("alberto-db") ??
                                            throw new InvalidOperationException(
                                                "Connection string 'alberto-db' not found.");
                 options.Schema = "orders";
-                options.RunMigrations = true;
             })
             .AddPolling(options =>
             {
@@ -31,18 +29,8 @@ public static class OrdersModule
             })
             .ConfigurePipeline(pipeline => pipeline.AddConsumeFilter<LoggingFilter>())
             .AddOpenTelemetry()
-            .AddSubscription<OrderProjectionSubscription>();
-
-        services.AddCQRS(b => b.ScanAssembly(typeof(Program).Assembly));
-
-        // Read-side projection repository for subscriptions
-        services.AddPostgresProjectionRepository<Guid, Order, OrderProjector>(o =>
-        {
-            o.ConnectionString = configuration.GetConnectionString("alberto-db") ??
-                                 throw new InvalidOperationException("Connection string 'alberto-db' not found.");
-            o.Schema = "orders";
-            o.RunMigrations = true;
-        });
+            .AddSubscription<OrderProjectionSubscription>()
+            .AddPostgresProjectionRepository<Guid, Order, OrderProjector>();
 
         return services;
     }

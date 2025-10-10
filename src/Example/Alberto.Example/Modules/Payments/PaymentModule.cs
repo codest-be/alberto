@@ -10,13 +10,12 @@ public static class PaymentModule
 {
     public static IServiceCollection AddPaymentsModule(this IServiceCollection services, IConfiguration configuration)
     {
-        services.AddEventStoreWithPostgresSubscriptions<PaymentEventStore, MultiTenantContext>("payments", options =>
+        services.AddPostgresEventStore<PaymentEventStore, MultiTenantContext>("payments", options =>
             {
                 options.ConnectionString = configuration.GetConnectionString("alberto-db") ??
                                            throw new InvalidOperationException(
                                                "Connection string 'alberto-db' not found.");
                 options.Schema = "payments";
-                options.RunMigrations = true;
             })
             .AddOpenTelemetry();
 

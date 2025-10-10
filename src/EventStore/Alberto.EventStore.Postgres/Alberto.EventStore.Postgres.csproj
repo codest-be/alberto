@@ -14,6 +14,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Alberto.EventStore\Alberto.EventStore.csproj"/>
     <ProjectReference Include="..\Alberto.EventStore.Telemetry\Alberto.EventStore.Telemetry.csproj"/>
+    <ProjectReference Include="..\..\EventSourcing\Alberto.EventSourcing\Alberto.EventSourcing.csproj"/>
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Dapper"/>
@@ -24,4 +25,5 @@
   <ItemGroup>
     <EmbeddedResource Include="Migrations\*.sql"/>
   </ItemGroup>
+
 </Project>

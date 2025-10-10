@@ -38,9 +38,6 @@ public sealed class PostgresProjectionRepository<TKey, TState> : IProjectionRepo
         // Build schema-qualified table name
         var schema = string.IsNullOrWhiteSpace(_options.Schema) ? "default" : _options.Schema;
         _schemaQualifiedTableName = $"{schema}.{_tableName}";
-
-        // Always initialize the projection table (per-projection table creation)
-        InitializeTable().GetAwaiter().GetResult();
     }
 
     /// <inheritdoc />
@@ -246,34 +243,5 @@ public sealed class PostgresProjectionRepository<TKey, TState> : IProjectionRepo
 
         _logger.LogWarning("Cleared all projections for tenant {TenantId} from table {TableName}",
             _tenantContext.Tenant.Id, _tableName);
-    }
-
-    private async Task InitializeTable()
-    {
-        await using var connection = new NpgsqlConnection(_options.ConnectionString);
-        await connection.OpenAsync();
-
-        var schema = string.IsNullOrWhiteSpace(_options.Schema) ? "public" : _options.Schema;
-
-        // Create schema if it doesn't exist
-        var createSchema = $"CREATE SCHEMA IF NOT EXISTS {schema}";
-        await connection.ExecuteAsync(createSchema);
-
-        var sql = $"""
-                   CREATE TABLE IF NOT EXISTS {_schemaQualifiedTableName} (
-                       tenant_id TEXT NOT NULL,
-                       key TEXT NOT NULL,
-                       state JSONB NOT NULL,
-                       global_version BIGINT NOT NULL DEFAULT 0,
-                       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                       PRIMARY KEY (tenant_id, key)
-                   );
-
-                   CREATE INDEX IF NOT EXISTS idx_{_tableName}_tenant_updated ON {_schemaQualifiedTableName}(tenant_id, updated_at);
-                   CREATE INDEX IF NOT EXISTS idx_{_tableName}_global_version ON {_schemaQualifiedTableName}(tenant_id, key, global_version);
-                   """;
-
-        await connection.ExecuteAsync(sql);
-        _logger.LogDebug("Initialized projection table {TableName} in schema {Schema}", _tableName, schema);
     }
 }

@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Alberto.EventSourcing\Alberto.EventSourcing.csproj"/>
+    <ProjectReference Include="..\..\EventStore\Alberto.EventStore.Postgres\Alberto.EventStore.Postgres.csproj"/>
   </ItemGroup>
 
   <ItemGroup>

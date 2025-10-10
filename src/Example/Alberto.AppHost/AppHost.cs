@@ -5,7 +5,7 @@ IDistributedApplicationBuilder builder = DistributedApplication.CreateBuilder(ar
 IResourceBuilder<PostgresServerResource> postgres =
     builder
         .AddPostgres("postgres")
-        .WithPgAdmin(o => o.WithLifetime(ContainerLifetime.Persistent))
+        .WithPgAdmin(o => o.WithLifetime(ContainerLifetime.Persistent).WithHostPort(54320))
         .WithLifetime(ContainerLifetime.Persistent);
 
 IResourceBuilder<PostgresDatabaseResource> database = postgres.AddDatabase("alberto-db");
@@ -13,6 +13,6 @@ IResourceBuilder<PostgresDatabaseResource> database = postgres.AddDatabase("albe
 builder
     .AddProject<Alberto_Example>("alberto-example")
     .WithReference(database)
-    .WaitForStart(postgres);
+    .WaitFor(database);
 
 builder.Build().Run();

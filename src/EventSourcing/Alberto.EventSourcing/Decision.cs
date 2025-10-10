@@ -44,6 +44,7 @@ public readonly record struct Decision
 /// Represents a decision that returns a value along with events to persist.
 /// </summary>
 /// <typeparam name="T">The type of the value to return</typeparam>
+[SuppressMessage("Design", "CA1000:Do not declare static members on generic types")]
 public readonly record struct Decision<T>
 {
     private readonly List<object> _events;
