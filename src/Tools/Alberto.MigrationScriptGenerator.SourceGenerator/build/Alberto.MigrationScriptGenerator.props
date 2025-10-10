@@ -1,0 +1,27 @@
+<Project>
+  <PropertyGroup>
+    <!-- Enable compiler-generated files to be emitted -->
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+
+    <!-- Output generated migrations to a Migrations folder -->
+    <AlbertoMigrationsOutputPath Condition="'$(AlbertoMigrationsOutputPath)' == ''">$(MSBuildProjectDirectory)/Migrations/Generated</AlbertoMigrationsOutputPath>
+  </PropertyGroup>
+
+  <Target Name="CopyAlbertoMigrations" AfterTargets="CoreCompile">
+    <ItemGroup>
+      <GeneratedSqlFiles Include="$(CompilerGeneratedFilesOutputPath)/**/*.sql"/>
+    </ItemGroup>
+
+    <MakeDir Directories="$(AlbertoMigrationsOutputPath)" Condition="'@(GeneratedSqlFiles)' != ''"/>
+
+    <Copy SourceFiles="@(GeneratedSqlFiles)"
+          DestinationFolder="$(AlbertoMigrationsOutputPath)"
+          SkipUnchangedFiles="true"
+          Condition="'@(GeneratedSqlFiles)' != ''"/>
+
+    <Message Text="Alberto migrations generated in: $(AlbertoMigrationsOutputPath)"
+             Importance="high"
+             Condition="'@(GeneratedSqlFiles)' != ''"/>
+  </Target>
+</Project>
+
