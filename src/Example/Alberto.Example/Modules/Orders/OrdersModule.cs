@@ -1,3 +1,4 @@
+using Alberto.CQRS.Registration;
 using Alberto.EventStore.Postgres;
 using Alberto.EventStore.Telemetry;
 using Alberto.Example.Modules.Orders.Api.Endpoints;
@@ -31,6 +32,8 @@ public static class OrdersModule
             .AddOpenTelemetry()
             .AddSubscription<OrderProjectionSubscription>()
             .AddPostgresProjectionRepository<Guid, Order, OrderProjector>();
+
+        services.AddCQRS(b => b.ScanAssembly(typeof(OrdersModule).Assembly));
 
         return services;
     }

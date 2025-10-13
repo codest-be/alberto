@@ -8,7 +8,7 @@ internal static class AlbertoActivitySource
     /// <summary>
     ///     Gets the name of the activity source for this library.
     /// </summary>
-    public static string Name { get; } = typeof(IDiagnosticsEventListener).Assembly.GetName().Name ?? "Alberto";
+    public static string Name => "Alberto";
 
     private static string Version { get; } =
         typeof(IDiagnosticsEventListener).Assembly.GetName().Version?.ToString() ?? "0.0.0";

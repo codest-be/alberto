@@ -28,16 +28,20 @@ public sealed class SubscriptionPollingService(
         {
             try
             {
-                await using var scope = serviceProvider.CreateAsyncScope();
                 var fromPosition = eventRouter.GetMinimumPosition();
 
-                var events = await scope.ServiceProvider.GetRequiredKeyedService<IMultiTenantEventStore>(moduleKey)
-                    .StreamAll(
-                        fromPosition,
-                        options.MaxPageSize,
-                        eventTypes: null, // Get all event types
-                        stoppingToken
-                    );
+                IReadOnlyCollection<GlobalEventEnvelope> events;
+                await using (var scope = serviceProvider.CreateAsyncScope())
+                {
+                    events = await scope.ServiceProvider
+                        .GetRequiredKeyedService<IMultiTenantEventStore>(moduleKey)
+                        .StreamAll(
+                            fromPosition,
+                            options.MaxPageSize,
+                            eventTypes: null, // Get all event types
+                            stoppingToken
+                        );
+                }
 
                 if (events.Count > 0)
                 {

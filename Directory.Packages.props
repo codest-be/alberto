@@ -22,6 +22,7 @@
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0"/>
     <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="9.0.0"/>
     <PackageVersion Include="Microsoft.Extensions.Options" Version="9.0.0"/>
+    <PackageVersion Include="Npgsql.OpenTelemetry" Version="10.0.0-rc.1"/>
     <PackageVersion Include="OpenTelemetry.Api" Version="1.13.0"/>
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="9.0.6"/>
     <PackageVersion Include="Swashbuckle.AspNetCore.SwaggerUI" Version="9.0.6"/>

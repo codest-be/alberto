@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Alberto.EventStore.Telemetry;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -5,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 using OpenTelemetry;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
@@ -59,7 +61,8 @@ public static class Extensions
             {
                 metrics.AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation()
-                    .AddRuntimeInstrumentation();
+                    .AddRuntimeInstrumentation()
+                    .AddNpgsqlInstrumentation();
             })
             .WithTracing(tracing =>
             {
@@ -73,7 +76,10 @@ public static class Extensions
                     // Uncomment the following line to enable gRPC instrumentation (requires the OpenTelemetry.Instrumentation.GrpcNetClient package)
                     //.AddGrpcClientInstrumentation()
                     .AddHttpClientInstrumentation()
-                    .AddEventStoreTelemetry();
+                    .AddAlbertoInstrumentation()
+                    .AddNpgsql()
+                    .AddProcessor(new FilteringProcessor(activity =>
+                        activity.Source.Name != "Npgsql" || activity.Parent != null));
             });
 
         builder.AddOpenTelemetryExporters();
@@ -123,5 +129,23 @@ public static class Extensions
         }
 
         return app;
+    }
+}
+
+public class FilteringProcessor : BaseProcessor<Activity>
+{
+    private readonly Func<Activity, bool> _filter;
+
+    public FilteringProcessor(Func<Activity, bool> filter)
+    {
+        _filter = filter;
+    }
+
+    public override void OnEnd(Activity activity)
+    {
+        if (!_filter(activity))
+        {
+            activity.ActivityTraceFlags &= ~ActivityTraceFlags.Recorded;
+        }
     }
 }

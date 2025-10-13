@@ -9,10 +9,11 @@ public static class ServiceCollectionExtensions
     {
         builder.AddDiagnosticEventListener<ActivityDiagnosticEventListener>();
         builder.AddTraceContextProvider<ActivityTraceContextProvider>();
+
         return builder;
     }
 
-    public static TracerProviderBuilder AddEventStoreTelemetry(this TracerProviderBuilder builder)
+    public static TracerProviderBuilder AddAlbertoInstrumentation(this TracerProviderBuilder builder)
     {
         return builder.AddSource(AlbertoActivitySource.Name);
     }
