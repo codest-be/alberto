@@ -1,19 +1,22 @@
 using Alberto.ComponentTests.Steps;
+using Alberto.Example.ComponentTests.Orders.Steps;
 using Alberto.Example.ComponentTests.Orders.Steps.Orders;
 using Xunit;
+using OrderCreated = Alberto.Example.Modules.Orders.Events.OrderCreated;
 
 namespace Alberto.Example.ComponentTests.Orders.Features;
 
 public sealed class CreateOrderTests(ITestOutputHelper testOutputHelper) : OrdersFixture(testOutputHelper)
 {
     [Fact]
-    public void CreateOrder_WithValidData_ShouldSucceed()
+    public Task CreateOrder_WithValidData_ShouldSucceed()
     {
-        UseCase()
+        return UseCase()
             .Act(new CreateOrder(100m, "customer-123"))
             .Assert(
                 new HttpSuccessResponse(),
-                new OrderCreated(100m, "customer-123"));
+                new EventIsConsumed<OrderCreated>().WithPredicate((sc, e) => e.OrderId == sc.GetOrder()),
+                new Steps.Orders.OrderCreated(100m, "customer-123"));
     }
 
     [Fact]

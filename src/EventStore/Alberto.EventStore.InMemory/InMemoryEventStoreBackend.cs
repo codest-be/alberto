@@ -38,11 +38,11 @@ public class InMemoryEventStoreBackend(ILogger<InMemoryEventStoreBackend> logger
         try
         {
             // Get events for this tenant
-            ConcurrentDictionary<Guid, StoredEvent> tenantEvents =
+            var tenantEvents =
                 _events.GetOrAdd(tenant.Id, _ => new ConcurrentDictionary<Guid, StoredEvent>());
 
             // Filter events by query criteria
-            List<StoredEvent> filteredEvents = tenantEvents.Values
+            var filteredEvents = tenantEvents.Values
                 .AsParallel()
                 .Where(e => MatchesQuery(e, query))
                 .OrderBy(e => e.Position) // Use position for consistent ordering like PostgreSQL
@@ -52,7 +52,7 @@ public class InMemoryEventStoreBackend(ILogger<InMemoryEventStoreBackend> logger
             if (maxCount is > 0) filteredEvents = filteredEvents.Take(maxCount.Value).ToList();
 
             // Map to IEventEnvelope
-            List<IEventEnvelope> result = filteredEvents
+            var result = filteredEvents
                 .Select(IEventEnvelope (e) => new EventEnvelope
                 {
                     Id = e.Id,
@@ -80,7 +80,7 @@ public class InMemoryEventStoreBackend(ILogger<InMemoryEventStoreBackend> logger
         Guid? expectedLastEventId,
         CancellationToken cancellationToken = default)
     {
-        List<IEventToPersist> eventsList = events.ToList();
+        var eventsList = events.ToList();
         if (eventsList.Count == 0)
             return [];
 
@@ -89,8 +89,8 @@ public class InMemoryEventStoreBackend(ILogger<InMemoryEventStoreBackend> logger
 
         try
         {
-            string tenantId = tenant.Id;
-            ConcurrentDictionary<Guid, StoredEvent> tenantEvents =
+            var tenantId = tenant.Id;
+            var tenantEvents =
                 _events.GetOrAdd(tenantId, _ => new ConcurrentDictionary<Guid, StoredEvent>());
 
             // DCB consistency check
@@ -100,9 +100,9 @@ public class InMemoryEventStoreBackend(ILogger<InMemoryEventStoreBackend> logger
             // Insert events with global positions
             List<IEventEnvelope> insertedEvents = [];
 
-            foreach (IEventToPersist @event in eventsList)
+            foreach (var @event in eventsList)
             {
-                long position = Interlocked.Increment(ref _globalPosition);
+                var position = Interlocked.Increment(ref _globalPosition);
 
                 StoredEvent storedEvent = new()
                 {
@@ -193,11 +193,11 @@ public class InMemoryEventStoreBackend(ILogger<InMemoryEventStoreBackend> logger
 
     private void CheckConsistencyBoundary(StreamQuery query, Guid? expectedLastEventId, string tenantId)
     {
-        ConcurrentDictionary<Guid, StoredEvent> tenantEvents =
+        var tenantEvents =
             _events.GetOrAdd(tenantId, _ => new ConcurrentDictionary<Guid, StoredEvent>());
 
         // Get the latest event ID based on the consistency boundary
-        List<StoredEvent> filteredEvents = tenantEvents.Values
+        var filteredEvents = tenantEvents.Values
             .Where(e => MatchesQuery(e, query))
             .OrderBy(e => e.Position)
             .ToList();
@@ -229,7 +229,7 @@ public class InMemoryEventStoreBackend(ILogger<InMemoryEventStoreBackend> logger
         // Filter by domain identifiers if any are specified
         if (query.Tags.Count > 0)
         {
-            IReadOnlyCollection<EventTag> eventIdentifiers = @event.Tags;
+            var eventIdentifiers = @event.Tags;
 
             if (query.RequireAllTags)
             {
@@ -251,7 +251,7 @@ public class InMemoryEventStoreBackend(ILogger<InMemoryEventStoreBackend> logger
                 // For single events, this only makes sense if there's one type in query
                 if (query.EventTypes.Count == 1)
                 {
-                    EventType queryType = query.EventTypes.First();
+                    var queryType = query.EventTypes.First();
                     if (queryType.Id != "*" && !@event.EventType.Id.Equals(queryType.Id)) return false;
                 }
                 else
@@ -292,7 +292,7 @@ public class InMemoryEventStoreBackend(ILogger<InMemoryEventStoreBackend> logger
     /// </summary>
     public IReadOnlyCollection<IEventEnvelope> GetAllEvents(string tenantId)
     {
-        if (_events.TryGetValue(tenantId, out ConcurrentDictionary<Guid, StoredEvent>? tenantEvents))
+        if (_events.TryGetValue(tenantId, out var tenantEvents))
             return tenantEvents.Values
                 .OrderBy(e => e.Position)
                 .Select(e => (IEventEnvelope)new EventEnvelope
@@ -313,7 +313,7 @@ public class InMemoryEventStoreBackend(ILogger<InMemoryEventStoreBackend> logger
     /// </summary>
     public IReadOnlyCollection<IEventEnvelope> GetEventsByType(string tenantId, string eventType)
     {
-        if (_events.TryGetValue(tenantId, out ConcurrentDictionary<Guid, StoredEvent>? tenantEvents))
+        if (_events.TryGetValue(tenantId, out var tenantEvents))
             return tenantEvents.Values
                 .Where(e => e.EventType.Id == eventType)
                 .OrderBy(e => e.Position)
@@ -337,7 +337,7 @@ public class InMemoryEventStoreBackend(ILogger<InMemoryEventStoreBackend> logger
         string tenantId,
         EventTag tag)
     {
-        if (_events.TryGetValue(tenantId, out ConcurrentDictionary<Guid, StoredEvent>? tenantEvents))
+        if (_events.TryGetValue(tenantId, out var tenantEvents))
             return tenantEvents.Values
                 .Where(e => e.Tags.Any(id => id.Equals(tag)))
                 .OrderBy(e => e.Position)
@@ -359,7 +359,7 @@ public class InMemoryEventStoreBackend(ILogger<InMemoryEventStoreBackend> logger
     /// </summary>
     public int GetEventCount(string tenantId)
     {
-        return _events.TryGetValue(tenantId, out ConcurrentDictionary<Guid, StoredEvent>? tenantEvents)
+        return _events.TryGetValue(tenantId, out var tenantEvents)
             ? tenantEvents.Count
             : 0;
     }
@@ -377,7 +377,7 @@ public class InMemoryEventStoreBackend(ILogger<InMemoryEventStoreBackend> logger
     /// </summary>
     public bool ContainsEvent(string tenantId, Guid eventId)
     {
-        return _events.TryGetValue(tenantId, out ConcurrentDictionary<Guid, StoredEvent>? tenantEvents) &&
+        return _events.TryGetValue(tenantId, out var tenantEvents) &&
                tenantEvents.ContainsKey(eventId);
     }
 

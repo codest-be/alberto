@@ -31,7 +31,7 @@ public sealed class CQRSBuilder
     /// <summary>
     /// Builds and registers all components.
     /// </summary>
-    internal IServiceCollection Build()
+    public IServiceCollection Build()
     {
         foreach (var assembly in _assemblies)
         {

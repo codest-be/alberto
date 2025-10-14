@@ -1,5 +1,7 @@
 using Alberto.ComponentTests.Steps;
+using Alberto.Example.ComponentTests.Orders.Steps;
 using Alberto.Example.ComponentTests.Orders.Steps.Orders;
+using Alberto.Example.Modules.Orders.Events;
 using Xunit;
 
 namespace Alberto.Example.ComponentTests.Orders.Features;
@@ -16,6 +18,8 @@ public sealed class ShipOrderTests(ITestOutputHelper testOutputHelper) : OrdersF
             .Act(new ShipOrderStep("TRACK-123"))
             .Assert(
                 new HttpSuccessResponse(),
+                new EventIsConsumed<OrderShipped>().WithPredicate((sc, e) =>
+                    e.OrderId == sc.GetOrder()),
                 new OrderIsShipped("TRACK-123"));
     }
 

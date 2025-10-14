@@ -30,7 +30,7 @@ public static class InMemoryProjectionRepositoryExtensions
 
         // Register in-memory repository backend as scoped (to support tenant context)
         // Type signature provides isolation (e.g., IProjectionRepository<Guid, OrderState> vs IProjectionRepository<Guid, PaymentState>)
-        services.AddScoped<IProjectionRepository<TKey, TState>, InMemoryProjectionRepository<TKey, TState>>();
+        services.AddSingleton<IProjectionRepository<TKey, TState>, InMemoryProjectionRepository<TKey, TState>>();
 
         // Register projection handler helper
         services.AddScoped<ProjectionHandler<TKey, TState>>();

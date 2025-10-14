@@ -154,7 +154,7 @@ public class EventStoreErrorHandlingTests(PostgresTestFixture fixture) : IAsyncL
         Tenant tenant = new(_testTenantId.ToString());
         IEventToPersist testEvent = CreateTestEvent("test-event", "test:123");
         using CancellationTokenSource cts = new();
-        cts.Cancel(); // Cancel immediately
+        await cts.CancelAsync(); // Cancel immediately
 
         // Act & Assert
         await Assert.ThrowsAsync<OperationCanceledException>(() =>

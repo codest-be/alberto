@@ -1,5 +1,8 @@
 using Alberto.ComponentTests;
+using Alberto.EventSourcing.Projections;
+using Alberto.EventStore;
 using Alberto.EventStore.InMemory;
+using Alberto.Example.Modules.Orders;
 using Alberto.Example.Modules.Orders.Projections;
 using Alberto.Projections.InMemory;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,19 +22,23 @@ public abstract class OrdersSubscriptionFixture(ITestOutputHelper testOutputHelp
 
     protected override void ConfigureTestServices(IServiceCollection services)
     {
-        // Use InMemory subscriptions infrastructure
-        services
-            .AddEventStoreWithInMemorySubscriptions<MultiTenantContext>("orders")
-            .AddPolling(options =>
-            {
-                // Fast polling for tests
-                options.MinPollingIntervalMs = 10;
-                options.MaxPollingIntervalMs = 50;
-                options.MaxPageSize = 100;
-                options.MaxRetries = 3;
-                options.RetryDelayMs = 50;
-            })
-            .AddSubscription<OrderProjectionSubscription>();
+        // Use InMemory backend with subscriptions
+        services.AddModule<OrderEventStore>("orders", module => module
+            .WithInMemory()
+            .WithMultiTenancy<MultiTenantContext>()
+            .WithPollingSubscriptions(polling => polling
+                .Configure(options =>
+                {
+                    // Fast polling for tests
+                    options.MinPollingIntervalMs = 10;
+                    options.MaxPollingIntervalMs = 50;
+                    options.MaxPageSize = 100;
+                    options.MaxRetries = 3;
+                    options.RetryDelayMs = 50;
+                })
+                .AddProjection<OrderEventStore, OrderProjectionSubscription, Guid, Order, OrderProjector>()
+            )
+        );
 
         // Register projection repository
         services.AddInMemoryProjectionRepository<Guid, Order, OrderProjector>();

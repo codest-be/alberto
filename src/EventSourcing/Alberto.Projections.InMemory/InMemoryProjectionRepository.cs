@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Alberto.EventStore.MultiTenant;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Alberto.Projections.InMemory;
@@ -11,7 +12,7 @@ namespace Alberto.Projections.InMemory;
 /// <typeparam name="TKey">The type of the projection key</typeparam>
 /// <typeparam name="TState">The projected state type</typeparam>
 public sealed class InMemoryProjectionRepository<TKey, TState>(
-    ITenantContext tenantContext,
+    IServiceProvider serviceProvider,
     ILogger<InMemoryProjectionRepository<TKey, TState>> logger)
     : IProjectionRepository<TKey, TState>
     where TKey : notnull
@@ -29,6 +30,7 @@ public sealed class InMemoryProjectionRepository<TKey, TState>(
     /// <inheritdoc />
     public Task<IReadOnlyCollection<TState>> GetAll(CancellationToken cancellationToken = default)
     {
+        var tenantContext = serviceProvider.GetRequiredService<ITenantContext>();
         var tenantPrefix = $"{tenantContext.Tenant.Id}:";
         var tenantStates = _store
             .Where(kvp => kvp.Key.StartsWith(tenantPrefix))
@@ -46,7 +48,8 @@ public sealed class InMemoryProjectionRepository<TKey, TState>(
             _ => (state, 0L),
             (_, existing) => (state, existing.GlobalVersion));
 
-        logger.LogDebug("Upserted projection {Key} for tenant {TenantId}", key, tenantContext.Tenant.Id);
+        logger.LogDebug("Upserted projection {Key} for tenant {TenantId}", key,
+            serviceProvider.GetRequiredService<ITenantContext>().Tenant.Id);
         return Task.CompletedTask;
     }
 
@@ -59,7 +62,8 @@ public sealed class InMemoryProjectionRepository<TKey, TState>(
             _ => (updateFn(new TState()), 0L),
             (_, existing) => (updateFn(existing.State), existing.GlobalVersion));
 
-        logger.LogDebug("Updated projection {Key} for tenant {TenantId}", key, tenantContext.Tenant.Id);
+        logger.LogDebug("Updated projection {Key} for tenant {TenantId}", key,
+            serviceProvider.GetRequiredService<ITenantContext>().Tenant.Id);
         return Task.CompletedTask;
     }
 
@@ -95,7 +99,7 @@ public sealed class InMemoryProjectionRepository<TKey, TState>(
         {
             logger.LogDebug(
                 "Updated projection {Key} for tenant {TenantId} to version {GlobalVersion}",
-                key, tenantContext.Tenant.Id, globalVersion);
+                key, serviceProvider.GetRequiredService<ITenantContext>().Tenant.Id, globalVersion);
         }
 
         return Task.FromResult(updated);
@@ -106,7 +110,8 @@ public sealed class InMemoryProjectionRepository<TKey, TState>(
     {
         var tenantKey = GetTenantKey(key);
         _store.TryRemove(tenantKey, out _);
-        logger.LogDebug("Deleted projection {Key} for tenant {TenantId}", key, tenantContext.Tenant.Id);
+        logger.LogDebug("Deleted projection {Key} for tenant {TenantId}", key,
+            serviceProvider.GetRequiredService<ITenantContext>().Tenant.Id);
         return Task.CompletedTask;
     }
 
@@ -120,16 +125,17 @@ public sealed class InMemoryProjectionRepository<TKey, TState>(
     /// <inheritdoc />
     public Task Clear(CancellationToken cancellationToken = default)
     {
-        var tenantPrefix = $"{tenantContext.Tenant.Id}:";
+        var tenantPrefix = $"{serviceProvider.GetRequiredService<ITenantContext>().Tenant.Id}:";
         var keysToRemove = _store.Keys.Where(k => k.StartsWith(tenantPrefix)).ToList();
         foreach (var key in keysToRemove)
         {
             _store.TryRemove(key, out _);
         }
 
-        logger.LogWarning("Cleared all projections for tenant {TenantId}", tenantContext.Tenant.Id);
+        logger.LogWarning("Cleared all projections for tenant {TenantId}",
+            serviceProvider.GetRequiredService<ITenantContext>().Tenant.Id);
         return Task.CompletedTask;
     }
 
-    private string GetTenantKey(TKey key) => $"{tenantContext.Tenant.Id}:{key}";
+    private string GetTenantKey(TKey key) => $"{serviceProvider.GetRequiredService<ITenantContext>().Tenant.Id}:{key}";
 }

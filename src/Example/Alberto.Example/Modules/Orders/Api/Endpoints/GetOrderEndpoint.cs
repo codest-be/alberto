@@ -11,11 +11,11 @@ public static class GetOrderEndpoint
     {
         endpoints.MapGet("/orders/{orderId:guid}", async (
                 Guid orderId,
-                IQueryHandler<GetOrderQuery, OrderDto> handler,
+                QueryExecutor executor,
                 CancellationToken ct) =>
             {
                 var query = new GetOrderQuery(orderId);
-                var result = await handler.Handle(query, ct);
+                var result = await executor.Execute<GetOrderQuery, OrderDto>(query, ct);
 
                 return result.ToHttpResult();
             })
