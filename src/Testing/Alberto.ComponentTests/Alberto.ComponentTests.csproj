@@ -5,9 +5,13 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsTestProject>true</IsTestProject>
-    <OutputType>exe</OutputType>
-    <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
-    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+    <!-- Package Metadata -->
+    <PackageId>Alberto.Testing.ComponentTests</PackageId>
+    <Title>Alberto Testing - Component Tests Framework</Title>
+    <Description>Reusable component testing framework for Alberto EventStore applications. Provides fluent API for building integration tests with Arrange-Act-Assert pattern, step-based architecture, and WebApplicationFactory support.</Description>
+    <IsPackable>true</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>

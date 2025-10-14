@@ -38,23 +38,4 @@ public static class EventStoreBackendBuilderExtensions
 
         return builder;
     }
-
-    /// <summary>
-    /// Legacy registration method for backward compatibility.
-    /// NEW CODE SHOULD USE: services.AddEventStore().AddBackend{TEventStore}(moduleKey).UsePostgres(options)
-    /// </summary>
-    [Obsolete("Use services.AddEventStore().AddBackend<T>(moduleKey).UsePostgres(options) instead")]
-    public static IServiceCollection AddPostgresEventStore<T>(
-        this IServiceCollection services,
-        Action<PostgresEventStoreOptions> configureOptions) where T : EventStoreFactory
-    {
-        var options = new PostgresEventStoreOptions();
-        configureOptions(options);
-
-        return services
-            .AddEventStore()
-            .AddBackend<T>(options.Schema)
-            .UsePostgres(configureOptions)
-            .Services;
-    }
 }

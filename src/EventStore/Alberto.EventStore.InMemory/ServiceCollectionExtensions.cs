@@ -47,34 +47,4 @@ public static class EventStoreBackendBuilderExtensions
 
         return builder;
     }
-
-    /// <summary>
-    /// Legacy registration method for backward compatibility.
-    /// NEW CODE SHOULD USE: services.AddEventStore().AddBackend{EventStoreFactory}("default").UseInMemory()
-    /// </summary>
-    [Obsolete("Use services.AddEventStore().AddBackend<EventStoreFactory>(\"default\").UseInMemory() instead")]
-    public static IServiceCollection AddInMemoryEventStore(this IServiceCollection services)
-    {
-        return services
-            .AddEventStore()
-            .AddBackend<EventStoreFactory>("default")
-            .UseInMemory()
-            .Services;
-    }
-
-    /// <summary>
-    /// Legacy testing registration method for backward compatibility.
-    /// NEW CODE SHOULD USE: services.AddEventStore().AddBackend{EventStoreFactory}("default").UseInMemory(backend)
-    /// </summary>
-    [Obsolete("Use services.AddEventStore().AddBackend<EventStoreFactory>(\"default\").UseInMemory(backend) instead")]
-    public static IServiceCollection AddTestingEventStore(
-        this IServiceCollection services,
-        InMemoryEventStoreBackend backend)
-    {
-        return services
-            .AddEventStore()
-            .AddBackend<EventStoreFactory>("default")
-            .UseInMemory(backend)
-            .Services;
-    }
 }

@@ -5,9 +5,13 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsTestProject>true</IsTestProject>
-    <OutputType>exe</OutputType>
-    <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
-    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+    <!-- Package Metadata -->
+    <PackageId>Alberto.Testing.UnitTests</PackageId>
+    <Title>Alberto Testing - Unit Tests Framework</Title>
+    <Description>Reusable unit testing framework for Alberto EventStore applications. Provides specification pattern for testing deciders and projectors with Given-When-Then syntax, supporting both stateless and stateful scenarios.</Description>
+    <IsPackable>true</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>
