@@ -22,9 +22,8 @@ public sealed class ChannelSubscriptionService(
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         logger.LogInformation(
-            "Starting channel subscription service for module '{ModuleKey}' in {Mode} mode",
-            moduleKey,
-            options.Mode
+            "Starting channel subscription service for module '{ModuleKey}'",
+            moduleKey
         );
 
         // Initialize handler checkpoints

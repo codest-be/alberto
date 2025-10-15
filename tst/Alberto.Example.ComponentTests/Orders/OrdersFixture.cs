@@ -46,9 +46,9 @@ public abstract class OrdersFixture : ServiceFixture
                 .WithInMemory(_eventStoreBackend)
                 .WithMultiTenancy<MultiTenantContext>()
                 .WithChannelSubscriptions(channel => channel
-                    .Configure(opts => opts.Mode = SubscriptionMode.Hybrid) // Test hybrid mode
-                    .WithFilter<SubscriptionEventCollectorFilter>()
-                    .AddProjection<OrderEventStore, OrderProjectionSubscription, Guid, Order, OrderProjector>()
+                        .WithFilter<SubscriptionEventCollectorFilter>()
+                        .AddProjection<OrderEventStore, OrderProjectionSubscription, Guid, Order, OrderProjector>(
+                            mode: SubscriptionMode.Hybrid) // Test hybrid mode
                 )
                 .WithCQRS(cqrs => cqrs.ScanAssembly(typeof(OrdersModule).Assembly))
                 .WithTelemetry()

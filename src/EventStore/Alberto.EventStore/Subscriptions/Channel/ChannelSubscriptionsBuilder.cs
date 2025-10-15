@@ -13,6 +13,13 @@ using Microsoft.Extensions.Logging;
 namespace Alberto.EventStore.Subscriptions.Channel;
 
 /// <summary>
+/// Tracks a handler registration with its subscription mode
+/// </summary>
+/// <param name="HandlerType">The handler type</param>
+/// <param name="Mode">The subscription mode for this handler</param>
+internal record HandlerModeRegistration(Type HandlerType, SubscriptionMode Mode);
+
+/// <summary>
 /// Builder for configuring channel-based event subscriptions
 /// </summary>
 /// <typeparam name="TEventStore">The EventStore factory type</typeparam>
@@ -20,6 +27,7 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
 {
     private readonly List<Type> _consumerTypes = [];
     private readonly List<Type> _filterTypes = [];
+    private readonly List<HandlerModeRegistration> _handlers = [];
     private readonly string _moduleKey;
     private readonly IServiceCollection _services;
     private ChannelOptions _channelOptions = new();
@@ -68,10 +76,14 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
     /// Adds a custom event handler to the subscription pipeline
     /// </summary>
     /// <typeparam name="THandler">The handler type implementing IHandleEvent</typeparam>
+    /// <param name="mode">Subscription mode for this handler (Sync, Async, or Hybrid). Default: Sync</param>
     /// <returns>The builder for chaining</returns>
-    public ChannelSubscriptionsBuilder<TEventStore> AddHandler<THandler>()
+    public ChannelSubscriptionsBuilder<TEventStore> AddHandler<THandler>(SubscriptionMode mode = SubscriptionMode.Sync)
         where THandler : class, IEventHandler
     {
+        // Track handler with its mode
+        _handlers.Add(new HandlerModeRegistration(typeof(THandler), mode));
+
         // Register the handler with module key
         _services.AddKeyedScoped<THandler>(_moduleKey);
 
@@ -130,30 +142,35 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
         // Register channel options
         _services.AddKeyedSingleton(_moduleKey, (_, _) => _channelOptions);
 
-        // Handle different subscription modes
-        switch (_channelOptions.Mode)
+        // Determine which infrastructure to build based on handler modes
+        var needsChannel = _handlers.Any(h => h.Mode is SubscriptionMode.Sync or SubscriptionMode.Hybrid);
+        var needsPolling = _handlers.Any(h => h.Mode is SubscriptionMode.Async or SubscriptionMode.Hybrid);
+
+        // Get handlers for each mode
+        var channelHandlers = _handlers
+            .Where(h => h.Mode is SubscriptionMode.Sync or SubscriptionMode.Hybrid)
+            .ToList();
+
+        var pollingHandlers = _handlers
+            .Where(h => h.Mode is SubscriptionMode.Async or SubscriptionMode.Hybrid)
+            .ToList();
+
+        // Build infrastructure as needed
+        if (needsChannel)
         {
-        case SubscriptionMode.Sync:
-            BuildChannelInfrastructure();
-            break;
+            BuildChannelInfrastructure(channelHandlers);
+        }
 
-        case SubscriptionMode.Async:
-            BuildPollingInfrastructure();
-            break;
-
-        case SubscriptionMode.Hybrid:
-            BuildChannelInfrastructure();
-            BuildPollingInfrastructure();
-            break;
-
-        default:
-            throw new ArgumentOutOfRangeException(nameof(_channelOptions.Mode), _channelOptions.Mode,
-                "Unknown subscription mode");
+        if (needsPolling)
+        {
+            BuildPollingInfrastructure(pollingHandlers);
         }
     }
 
-    private void BuildChannelInfrastructure()
+    private void BuildChannelInfrastructure(List<HandlerModeRegistration> channelHandlers)
     {
+        var channelRouterKey = $"{_moduleKey}:channel";
+
         // Create the channel for event distribution
         Channel<GlobalEventEnvelope> channel;
         if (_channelOptions.BoundedCapacity.HasValue)
@@ -180,9 +197,9 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
         {
             var registry = sp.GetRequiredService<ChannelSubscriptionRegistry>();
             var writer = sp.GetRequiredKeyedService<ChannelWriter<GlobalEventEnvelope>>(_moduleKey);
-            var eventRouter = sp.GetRequiredKeyedService<EventRouter>(_moduleKey);
+            var eventRouter = sp.GetRequiredKeyedService<EventRouter>(channelRouterKey);
 
-            // Extract event types from all registered handlers
+            // Extract event types from channel handlers
             var eventTypes = GetEventTypesFromRouter(eventRouter);
 
             return new ChannelRegistrationService(registry, writer, _moduleKey, eventTypes);
@@ -217,15 +234,15 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
             return pipeline;
         });
 
-        // Register EventRouter (reused from polling)
-        _services.AddKeyedSingleton<EventRouter>(_moduleKey, (sp, _) =>
+        // Register EventRouter for channel handlers only
+        _services.AddKeyedSingleton<EventRouter>(channelRouterKey, (sp, _) =>
         {
             var checkpointStore = sp.GetRequiredService<ICheckpointStore>();
             var poisonPillStore = sp.GetRequiredService<IPoisonPillStore>();
             var logger = sp.GetRequiredService<ILogger<EventRouter>>();
 
             var router = new EventRouter(
-                _moduleKey,
+                channelRouterKey,
                 checkpointStore,
                 poisonPillStore,
                 sp,
@@ -234,10 +251,10 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
                 _channelOptions.RetryDelayMs
             );
 
-            // Discover and register all handlers
-            var handlers = sp.GetKeyedServices<IEventHandler>(_moduleKey);
-            foreach (var handler in handlers)
+            // Register only channel handlers
+            foreach (var handlerReg in channelHandlers)
             {
+                var handler = (IEventHandler)sp.GetRequiredKeyedService(handlerReg.HandlerType, _moduleKey);
                 var subscriptionId = GetSubscriptionId(handler);
                 var supportedEventTypes = GetSupportedEventTypes(handler);
                 var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
@@ -258,7 +275,7 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
         // Register ChannelSubscriptionService as hosted service
         _services.AddSingleton<IHostedService>(sp =>
         {
-            var eventRouter = sp.GetRequiredKeyedService<EventRouter>(_moduleKey);
+            var eventRouter = sp.GetRequiredKeyedService<EventRouter>(channelRouterKey);
             var channelReader = sp.GetRequiredKeyedService<ChannelReader<GlobalEventEnvelope>>(_moduleKey);
             var consumers = sp.GetKeyedServices<IChannelConsumer>(_moduleKey);
             var logger = sp.GetRequiredService<ILogger<ChannelSubscriptionService>>();
@@ -274,8 +291,10 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
         });
     }
 
-    private void BuildPollingInfrastructure()
+    private void BuildPollingInfrastructure(List<HandlerModeRegistration> pollingHandlers)
     {
+        var pollingRouterKey = $"{_moduleKey}:polling";
+
         // Convert ChannelOptions to PollingOptions
         var pollingOptions = new PollingOptions
         {
@@ -289,10 +308,77 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
         // Register polling options
         _services.AddKeyedSingleton(_moduleKey, (_, _) => pollingOptions);
 
+        // Register ConsumePipeline with filters (shared with channel)
+        _services.AddKeyedScoped<ConsumePipeline>(pollingRouterKey, (sp, _) =>
+        {
+            var logger = sp.GetRequiredService<ILogger<ConsumePipeline>>();
+            var pipeline = new ConsumePipeline(logger);
+
+            // Add default filters first (TenantScopeFilter and TelemetryConsumeFilter)
+            var tenantScopeFilter = sp.GetKeyedService<TenantScopeFilter>(_moduleKey);
+            if (tenantScopeFilter != null)
+            {
+                pipeline.AddFilter(tenantScopeFilter);
+            }
+
+            var telemetryFilter = sp.GetKeyedService<TelemetryConsumeFilter>(_moduleKey);
+            if (telemetryFilter != null)
+            {
+                pipeline.AddFilter(telemetryFilter);
+            }
+
+            // Add user-defined filters in order
+            foreach (var filterType in _filterTypes)
+            {
+                var filter = (IConsumeFilter)sp.GetRequiredKeyedService(filterType, _moduleKey);
+                pipeline.AddFilter(filter);
+            }
+
+            return pipeline;
+        });
+
+        // Register EventRouter for polling handlers only
+        _services.AddKeyedSingleton<EventRouter>(pollingRouterKey, (sp, _) =>
+        {
+            var checkpointStore = sp.GetRequiredService<ICheckpointStore>();
+            var poisonPillStore = sp.GetRequiredService<IPoisonPillStore>();
+            var logger = sp.GetRequiredService<ILogger<EventRouter>>();
+
+            var router = new EventRouter(
+                pollingRouterKey,
+                checkpointStore,
+                poisonPillStore,
+                sp,
+                logger,
+                _channelOptions.MaxRetries,
+                _channelOptions.RetryDelayMs
+            );
+
+            // Register only polling handlers
+            foreach (var handlerReg in pollingHandlers)
+            {
+                var handler = (IEventHandler)sp.GetRequiredKeyedService(handlerReg.HandlerType, _moduleKey);
+                var subscriptionId = GetSubscriptionId(handler);
+                var supportedEventTypes = GetSupportedEventTypes(handler);
+                var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+                var handlerLogger = loggerFactory.CreateLogger(handler.GetType());
+
+                router.RegisterHandler(new HandlerRegistration
+                {
+                    SubscriptionId = subscriptionId,
+                    Handler = handler,
+                    SupportedEventTypes = supportedEventTypes,
+                    Logger = handlerLogger
+                });
+            }
+
+            return router;
+        });
+
         // Register SubscriptionPollingService as hosted service
         _services.AddSingleton<IHostedService>(sp => new SubscriptionPollingService(
             _moduleKey,
-            sp.GetRequiredKeyedService<EventRouter>(_moduleKey),
+            sp.GetRequiredKeyedService<EventRouter>(pollingRouterKey),
             sp.GetRequiredKeyedService<PollingOptions>(_moduleKey),
             sp,
             sp.GetRequiredService<ILogger<SubscriptionPollingService>>()

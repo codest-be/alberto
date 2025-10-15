@@ -6,11 +6,6 @@ namespace Alberto.EventStore.Subscriptions.Channel;
 public sealed class ChannelOptions
 {
     /// <summary>
-    /// Subscription mode (Sync, Async, or Hybrid). Default: Sync
-    /// </summary>
-    public SubscriptionMode Mode { get; set; } = SubscriptionMode.Sync;
-
-    /// <summary>
     /// Maximum capacity for bounded channels. If null, unbounded channels are used. Default: null (unbounded)
     /// </summary>
     public int? BoundedCapacity { get; set; }

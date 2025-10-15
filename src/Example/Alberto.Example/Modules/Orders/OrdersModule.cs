@@ -28,12 +28,12 @@ public static class OrdersModule
                 .WithChannelSubscriptions(channel => channel
                     .Configure(options =>
                     {
-                        options.Mode = SubscriptionMode.Hybrid; // Immediate push + polling fallback
                         options.MaxRetries = 3;
-                        options.RetryDelayMs = 500;
+                        options.RetryDelayMs = 250;
                     })
                     .WithFilter<LoggingFilter>()
-                    .AddProjection<OrderEventStore, OrderProjectionSubscription, Guid, Order, OrderProjector>()
+                    .AddProjection<OrderEventStore, OrderProjectionSubscription, Guid, Order, OrderProjector>(
+                        mode: SubscriptionMode.Hybrid)
                 )
                 .WithCQRS(cqrs => cqrs.ScanAssembly(typeof(OrdersModule).Assembly))
                 .WithTelemetry()
