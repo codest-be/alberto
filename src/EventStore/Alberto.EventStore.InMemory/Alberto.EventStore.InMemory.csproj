@@ -12,6 +12,9 @@
     <IsPackable>true</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Alberto.EventStore\Alberto.EventStore.csproj"/>
     <ProjectReference Include="..\Alberto.EventStore.Telemetry\Alberto.EventStore.Telemetry.csproj"/>
   </ItemGroup>
