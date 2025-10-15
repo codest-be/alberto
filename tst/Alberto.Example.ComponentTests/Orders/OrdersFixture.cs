@@ -1,12 +1,10 @@
 using System.Reflection;
 using Alberto.ComponentTests;
 using Alberto.CQRS;
-using Alberto.EventSourcing.Projections;
 using Alberto.EventStore;
 using Alberto.EventStore.InMemory;
 using Alberto.EventStore.Subscriptions.Channel;
 using Alberto.EventStore.Subscriptions.Subscriptions;
-using Alberto.EventStore.Telemetry;
 using Alberto.Example.Modules.Orders;
 using Alberto.Example.Modules.Orders.Projections;
 using Alberto.Projections.InMemory;
@@ -80,9 +78,6 @@ public abstract class OrdersFixture : ServiceFixture
 
     protected override void ConfigureTestServices(IServiceCollection services)
     {
-        services.AddInMemoryProjectionRepository<Guid, Order, OrderProjector>();
-        services.AddInMemoryProjectionRepository<string, OrderStatistics, OrderStatisticsProjector>();
-
         services.AddSingleton(SubscriptionCollector);
 
         services
@@ -102,11 +97,11 @@ public abstract class OrdersFixture : ServiceFixture
                         options.MaxRetries = 0;
                     })
                     .WithFilter<SubscriptionEventCollectorFilter>()
-                    .AddProjection<OrderEventStore, OrderProjectionSubscription, Guid, Order, OrderProjector>(mode: SubscriptionMode.Hybrid)
-                    .AddProjection<OrderEventStore, OrderStatisticsSubscription, string, OrderStatistics, OrderStatisticsProjector>(mode: SubscriptionMode.Async)
+                    .AddInMemoryProjection<OrderEventStore, OrderProjectionSubscription, Guid, Order, OrderProjector>(mode: SubscriptionMode.Hybrid)
+                    .AddInMemoryProjection<OrderEventStore, OrderStatisticsSubscription, string, OrderStatistics, OrderStatisticsProjector>(
+                        mode: SubscriptionMode.Async)
                 )
                 .WithCQRS(cqrs => cqrs.ScanAssembly(typeof(OrdersModule).Assembly))
-                .WithTelemetry()
             );
     }
 }

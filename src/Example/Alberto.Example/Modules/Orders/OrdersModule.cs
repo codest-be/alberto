@@ -1,5 +1,4 @@
 using Alberto.CQRS;
-using Alberto.EventSourcing.Projections;
 using Alberto.EventStore;
 using Alberto.EventStore.Postgres;
 using Alberto.EventStore.Subscriptions.Channel;
@@ -41,20 +40,15 @@ public static class OrdersModule
                         options.MaxPageSize = 100;
                     })
                     .WithFilter<LoggingFilter>()
-                    .AddProjection<OrderEventStore, OrderProjectionSubscription, Guid, Order, OrderProjector>(
+                    .AddPostgresProjection<OrderEventStore, OrderProjectionSubscription, Guid, Order, OrderProjector>(
                         mode: SubscriptionMode.Hybrid)
-                    .AddProjection<OrderEventStore, OrderStatisticsSubscription, string, OrderStatistics,
+                    .AddPostgresProjection<OrderEventStore, OrderStatisticsSubscription, string, OrderStatistics,
                         OrderStatisticsProjector>(
                         mode: SubscriptionMode.Async)
                 )
                 .WithCQRS(cqrs => cqrs.ScanAssembly(typeof(OrdersModule).Assembly))
                 .WithTelemetry()
             );
-
-        // Register projection repositories separately for now
-        // TODO: Could be integrated into .AddProjection<>() in the future
-        services.AddPostgresProjectionRepository<Guid, Order, OrderProjector>("orders");
-        services.AddPostgresProjectionRepository<string, OrderStatistics, OrderStatisticsProjector>("orders");
 
         return services;
     }
