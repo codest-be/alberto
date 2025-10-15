@@ -2,6 +2,7 @@ using Alberto.CQRS;
 using Alberto.EventSourcing.Projections;
 using Alberto.EventStore;
 using Alberto.EventStore.Postgres;
+using Alberto.EventStore.Subscriptions.Channel;
 using Alberto.EventStore.Telemetry;
 using Alberto.Example.Modules.Orders.Api.Endpoints;
 using Alberto.Example.Modules.Orders.Filters;
@@ -24,12 +25,10 @@ public static class OrdersModule
                     options.Schema = "orders";
                 })
                 .WithMultiTenancy<MultiTenantContext>()
-                .WithPollingSubscriptions(polling => polling
+                .WithChannelSubscriptions(channel => channel
                     .Configure(options =>
                     {
-                        options.MinPollingIntervalMs = 100;
-                        options.MaxPollingIntervalMs = 2000;
-                        options.MaxPageSize = 100;
+                        options.Mode = SubscriptionMode.Hybrid; // Immediate push + polling fallback
                         options.MaxRetries = 3;
                         options.RetryDelayMs = 500;
                     })

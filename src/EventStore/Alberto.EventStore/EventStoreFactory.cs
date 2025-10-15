@@ -1,12 +1,14 @@
 using Alberto.EventStore.Diagnostics;
 using Alberto.EventStore.Events;
 using Alberto.EventStore.MultiTenant;
+using Alberto.EventStore.Subscriptions.Channel;
 
 namespace Alberto.EventStore;
 
 public class EventStoreFactory(
     ITenantContext tenantContext,
     IEventStoreBackend backend,
+    ChannelSubscriptionRegistry channelRegistry,
     IDiagnosticsEventListener? diagnostics)
 {
     private readonly IDiagnosticsEventListener _diagnostics = diagnostics ?? new NoopDiagnosticsEventListener();
@@ -21,7 +23,7 @@ public class EventStoreFactory(
         return backend.Stream(tenantContext.Tenant, query, maxCount, cancellationToken);
     }
 
-    public Task<IEnumerable<IEventEnvelope>> Append(
+    public async Task<IEnumerable<IEventEnvelope>> Append(
         IEnumerable<IEventToPersist> events,
         StreamQuery? consistencyBoundary,
         Guid? expectedLatestEventId,
@@ -34,15 +36,28 @@ public class EventStoreFactory(
         // Enhance events with telemetry metadata after append activity is created
         var enhancedEvents = EnhanceEventsWithTelemetry(eventToPersists);
 
-        return backend.Append(tenantContext.Tenant, enhancedEvents, consistencyBoundary,
+        var result = await backend.Append(tenantContext.Tenant, enhancedEvents, consistencyBoundary,
             expectedLatestEventId, cancellationToken);
+
+        // Notify channel subscriptions after successful append
+        IEnumerable<IEventEnvelope> eventEnvelopes = result as IEventEnvelope[] ?? result.ToArray();
+        if (channelRegistry != null)
+        {
+            var globalEvents = ConvertToGlobalEventEnvelopes(eventEnvelopes, tenantContext.Tenant.Id);
+            if (globalEvents.Count > 0)
+            {
+                await channelRegistry.NotifySubscriptions(globalEvents, cancellationToken);
+            }
+        }
+
+        return eventEnvelopes;
     }
 
     private IEventToPersist[] EnhanceEventsWithTelemetry(IEventToPersist[] events)
     {
         // Get telemetry metadata from diagnostics listener
         var telemetryMetadata = _diagnostics.GetTelemetryMetadata();
-        if (!telemetryMetadata.Any()) return events;
+        if (telemetryMetadata.Count == 0) return events;
 
         foreach (var evt in events)
         {
@@ -53,5 +68,40 @@ public class EventStoreFactory(
         }
 
         return events;
+    }
+
+    private static List<GlobalEventEnvelope> ConvertToGlobalEventEnvelopes(
+        IEnumerable<IEventEnvelope> events,
+        string tenantId)
+    {
+        var globalEvents = new List<GlobalEventEnvelope>();
+
+        foreach (var evt in events)
+        {
+            // Extract position from metadata (backends store it there)
+            if (!evt.Metadata.TryGetValue("_position", out var positionStr) ||
+                !long.TryParse(positionStr, out var position))
+            {
+                continue; // Skip events without position
+            }
+
+            // Extract tags from the original event data
+            // Note: We don't have direct access to tags here, so we'll need to handle this differently
+            // For now, pass empty array - subscribers will need to deserialize if they need tags
+            var globalEvent = new GlobalEventEnvelope(
+                position,
+                evt.Id,
+                tenantId,
+                evt.EventType.Id,
+                Array.Empty<string>(), // Tags not available at this level
+                evt.EventJson,
+                new Dictionary<string, string>(evt.Metadata),
+                evt.Created
+            );
+
+            globalEvents.Add(globalEvent);
+        }
+
+        return globalEvents;
     }
 }

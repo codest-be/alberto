@@ -3,6 +3,7 @@ using Alberto.EventStore.Events;
 using Alberto.EventStore.MultiTenant;
 using Alberto.EventStore.Serialization;
 using Alberto.EventStore.Subscriptions;
+using Alberto.EventStore.Subscriptions.Channel;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -80,6 +81,31 @@ public class ModuleBuilder<TEventStore> where TEventStore : EventStoreFactory
     }
 
     /// <summary>
+    /// Configures channel-based event subscriptions for this EventStore module.
+    /// Supports Sync (immediate), Async (polling), and Hybrid (both) modes.
+    /// </summary>
+    /// <param name="configure">Configuration action for subscription pipeline</param>
+    /// <returns>The module builder for chaining</returns>
+    public ModuleBuilder<TEventStore> WithChannelSubscriptions(
+        Action<ChannelSubscriptionsBuilder<TEventStore>> configure)
+    {
+        if (!_backendConfigured)
+        {
+            throw new InvalidOperationException(
+                "Backend must be configured before subscriptions. Call WithPostgres() or WithInMemory() first.");
+        }
+
+        // Ensure ChannelSubscriptionRegistry is registered as singleton (shared across all modules)
+        _services.TryAddSingleton<ChannelSubscriptionRegistry>();
+
+        var builder = new ChannelSubscriptionsBuilder<TEventStore>(_services, _moduleKey);
+        configure(builder);
+        builder.Build();
+
+        return this;
+    }
+
+    /// <summary>
     /// Marks the backend as configured. Called by backend extension methods (WithPostgres, WithInMemory).
     /// </summary>
     public void MarkBackendConfigured()
@@ -93,16 +119,21 @@ public class ModuleBuilder<TEventStore> where TEventStore : EventStoreFactory
     /// </summary>
     public void RegisterEventStore()
     {
+        // Ensure ChannelSubscriptionRegistry is always registered (required dependency)
+        _services.TryAddSingleton<ChannelSubscriptionRegistry>();
+
         _services.AddScoped<TEventStore>(provider =>
         {
             var backend = provider.GetRequiredKeyedService<IEventStoreBackend>(_moduleKey);
             var tenantContext = provider.GetRequiredService<ITenantContext>();
+            var channelRegistry = provider.GetRequiredService<ChannelSubscriptionRegistry>();
             var diagnostics = provider.GetService<IDiagnosticsEventListener>();
 
             return (TEventStore)Activator.CreateInstance(
                 typeof(TEventStore),
                 tenantContext,
                 backend,
+                channelRegistry,
                 diagnostics)!;
         });
     }

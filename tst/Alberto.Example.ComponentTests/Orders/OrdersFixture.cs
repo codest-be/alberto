@@ -3,6 +3,7 @@ using Alberto.CQRS;
 using Alberto.EventSourcing.Projections;
 using Alberto.EventStore;
 using Alberto.EventStore.InMemory;
+using Alberto.EventStore.Subscriptions.Channel;
 using Alberto.EventStore.Telemetry;
 using Alberto.Example.Modules.Orders;
 using Alberto.Example.Modules.Orders.Projections;
@@ -44,7 +45,8 @@ public abstract class OrdersFixture : ServiceFixture
             .AddModule<OrderEventStore>("orders", module => module
                 .WithInMemory(_eventStoreBackend)
                 .WithMultiTenancy<MultiTenantContext>()
-                .WithPollingSubscriptions(polling => polling
+                .WithChannelSubscriptions(channel => channel
+                    .Configure(opts => opts.Mode = SubscriptionMode.Hybrid) // Test hybrid mode
                     .WithFilter<SubscriptionEventCollectorFilter>()
                     .AddProjection<OrderEventStore, OrderProjectionSubscription, Guid, Order, OrderProjector>()
                 )
