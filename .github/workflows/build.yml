@@ -81,7 +81,7 @@ jobs:
 
       - name: Create NuGet packages
         if: matrix.postgres-version == 15
-        run: dotnet pack --configuration Release --no-build --output ./artifacts/packages
+        run: dotnet pack --configuration Release --no-build --output ./artifacts/packages /p:Version=${{ steps.gitversion.outputs.nuGetVersionV2 }}
 
       - name: Upload package artifacts
         if: matrix.postgres-version == 15
