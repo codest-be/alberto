@@ -1,7 +1,9 @@
 using Alberto.EventStore.MultiTenant;
 using Alberto.EventStore.Postgres;
+using Alberto.EventStore.Postgres.Migrations;
 using Alberto.EventStore.Tests.Specifications;
 using Dapper;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -26,7 +28,7 @@ public class PostgresEventStoreBackendSpecificationTests(PostgresTestFixture fix
 
     protected override Task<IEventStoreBackend> CreateBackend()
     {
-        IOptions<PostgresEventStoreOptions> options = Options.Create(fixture.Options);
+        var options = Options.Create(fixture.Options);
         PostgresEventStoreBackend backend = new(options, _logger);
         return Task.FromResult<IEventStoreBackend>(backend);
     }
@@ -78,7 +80,7 @@ public class PostgresTestFixture : IAsyncLifetime
 
         Options = new PostgresEventStoreOptions
         {
-            ConnectionString = _postgresContainer.GetConnectionString(), Schema = "app", BulkInsertThreshold = 5
+            ConnectionString = _postgresContainer.GetConnectionString(), Schema = "orders", BulkInsertThreshold = 5
         };
 
         await RunMigrations();
@@ -140,14 +142,24 @@ public class PostgresTestFixture : IAsyncLifetime
 
     private async Task RunMigrations()
     {
-        await using NpgsqlConnection connection = new(Options.ConnectionString);
-        await connection.OpenAsync();
+        // Set up a minimal service provider with the options for the migration service
+        var services = new ServiceCollection();
 
-        await connection.ExecuteAsync($"CREATE SCHEMA IF NOT EXISTS {Options.Schema}");
+        // Register the options with the schema name as the key
+        services.Configure<PostgresEventStoreOptions>(Options.Schema, opts =>
+        {
+            opts.ConnectionString = Options.ConnectionString;
+            opts.Schema = Options.Schema;
+        });
 
-        string migrationSql = await LoadMigrationFromFile();
-        string content = $"SET search_path TO {Options.Schema}, public;\n\n{migrationSql}";
-        await connection.ExecuteAsync(content);
+        var serviceProvider = services.BuildServiceProvider();
+
+        // Create and run the migration service with null logger for tests
+        var logger = new NullLogger<MigrationHostedService>();
+        var migrationService = new MigrationHostedService(serviceProvider, logger);
+
+        await migrationService.StartAsync(CancellationToken.None);
+
         await VerifySchemaSetup();
     }
 
@@ -157,7 +169,7 @@ public class PostgresTestFixture : IAsyncLifetime
         await connection.OpenAsync();
 
         // Verify table exists in correct schema
-        bool tableExists = await connection.QuerySingleAsync<bool>(
+        var tableExists = await connection.QuerySingleAsync<bool>(
             @"
         SELECT EXISTS (
             SELECT 1 FROM information_schema.tables 
@@ -169,7 +181,7 @@ public class PostgresTestFixture : IAsyncLifetime
             throw new InvalidOperationException($"Events table not found in schema '{Options.Schema}'");
 
         // Verify indexes exist
-        int indexCount = await connection.QuerySingleAsync<int>(
+        var indexCount = await connection.QuerySingleAsync<int>(
             @"
         SELECT COUNT(*) 
         FROM pg_indexes 
@@ -177,35 +189,5 @@ public class PostgresTestFixture : IAsyncLifetime
             new { Options.Schema });
 
         Console.WriteLine($"Created {indexCount} indexes in schema '{Options.Schema}'");
-    }
-
-    private async Task<string> LoadMigrationFromFile()
-    {
-        // Get the solution directory by going up from the test project
-        string currentDirectory = AppContext.BaseDirectory;
-        DirectoryInfo? solutionDirectory = Directory.GetParent(currentDirectory);
-
-        // Navigate up until we find the solution root (contains src/EventStore/Alberto.EventStore.Postgres folder)
-        while (solutionDirectory != null
-               && !Directory.Exists(Path.Combine(solutionDirectory.FullName, "src", "EventStore",
-                   "Alberto.EventStore.Postgres")))
-            solutionDirectory = solutionDirectory.Parent;
-
-        if (solutionDirectory == null)
-            throw new DirectoryNotFoundException(
-                "Could not locate the solution root directory containing src/EventStore/Alberto.EventStore.Postgres");
-
-        string migrationPath = Path.Combine(
-            solutionDirectory.FullName,
-            "src",
-            "EventStore",
-            "Alberto.EventStore.Postgres",
-            "Migrations",
-            "CreateEventStoreSchema.sql");
-
-        if (!File.Exists(migrationPath))
-            throw new FileNotFoundException($"Migration file not found: {migrationPath}");
-
-        return await File.ReadAllTextAsync(migrationPath);
     }
 }

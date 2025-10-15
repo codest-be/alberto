@@ -25,7 +25,7 @@ public class PostgresConfigurationTests
         };
 
         // Act & Assert - Should not throw
-        IOptions<PostgresEventStoreOptions> wrappedOptions = Options.Create(options);
+        var wrappedOptions = Options.Create(options);
         PostgresEventStoreBackend backend = new(wrappedOptions, NullLogger<PostgresEventStoreBackend>.Instance);
         Assert.NotNull(backend);
     }
@@ -39,7 +39,7 @@ public class PostgresConfigurationTests
             ConnectionString = null!, Schema = "events", BulkInsertThreshold = 10
         };
 
-        IOptions<PostgresEventStoreOptions> wrappedOptions = Options.Create(options);
+        var wrappedOptions = Options.Create(options);
         PostgresEventStoreBackend backend = new(wrappedOptions, NullLogger<PostgresEventStoreBackend>.Instance);
         Tenant tenant = new("test");
         EventToPersist testEvent = new()
@@ -68,7 +68,7 @@ public class PostgresConfigurationTests
         };
 
         // Act & Assert - Empty schema should work (may default to "public" or similar)
-        IOptions<PostgresEventStoreOptions> wrappedOptions = Options.Create(options);
+        var wrappedOptions = Options.Create(options);
         PostgresEventStoreBackend backend = new(wrappedOptions, NullLogger<PostgresEventStoreBackend>.Instance);
         Assert.NotNull(backend);
     }
@@ -85,7 +85,7 @@ public class PostgresConfigurationTests
         };
 
         // Act & Assert - Negative values should be handled gracefully (likely default to 5)
-        IOptions<PostgresEventStoreOptions> wrappedOptions = Options.Create(options);
+        var wrappedOptions = Options.Create(options);
         PostgresEventStoreBackend backend = new(wrappedOptions, NullLogger<PostgresEventStoreBackend>.Instance);
         Assert.NotNull(backend);
     }
@@ -102,7 +102,7 @@ public class PostgresConfigurationTests
         };
 
         // Act & Assert
-        IOptions<PostgresEventStoreOptions> wrappedOptions = Options.Create(options);
+        var wrappedOptions = Options.Create(options);
         PostgresEventStoreBackend backend = new(wrappedOptions, NullLogger<PostgresEventStoreBackend>.Instance);
         Assert.NotNull(backend);
     }
@@ -124,7 +124,7 @@ public class PostgresConfigurationTests
         };
 
         // Act & Assert
-        IOptions<PostgresEventStoreOptions> wrappedOptions = Options.Create(options);
+        var wrappedOptions = Options.Create(options);
         PostgresEventStoreBackend backend = new(wrappedOptions, NullLogger<PostgresEventStoreBackend>.Instance);
         Assert.NotNull(backend);
     }
@@ -146,7 +146,7 @@ public class PostgresConfigurationTests
         };
 
         // Act & Assert - Should handle special characters gracefully
-        IOptions<PostgresEventStoreOptions> wrappedOptions = Options.Create(options);
+        var wrappedOptions = Options.Create(options);
 
         // Some names might require special handling, but constructor should not throw
         PostgresEventStoreBackend backend = new(wrappedOptions, NullLogger<PostgresEventStoreBackend>.Instance);
@@ -157,7 +157,7 @@ public class PostgresConfigurationTests
     public void ConnectionString_ShouldParseCorrectly()
     {
         // Arrange
-        string connectionString = "Host=localhost;Port=5432;Database=eventstore;Username=user;Password=pass;Timeout=30";
+        var connectionString = "Host=localhost;Port=5432;Database=eventstore;Username=user;Password=pass;Timeout=30";
 
         // Act
         NpgsqlConnectionStringBuilder builder = new(connectionString);
@@ -188,7 +188,7 @@ public class PostgresConfigurationTests
         };
 
         // Act & Assert
-        IOptions<PostgresEventStoreOptions> wrappedOptions = Options.Create(options);
+        var wrappedOptions = Options.Create(options);
         PostgresEventStoreBackend backend = new(wrappedOptions, NullLogger<PostgresEventStoreBackend>.Instance);
         Assert.NotNull(backend);
     }

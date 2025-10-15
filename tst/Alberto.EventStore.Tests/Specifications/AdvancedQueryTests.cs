@@ -32,33 +32,33 @@ public abstract class AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        IEventStoreBackend backend = await CreateBackend();
-        Tenant tenant = CurrentTenant();
+        var backend = await CreateBackend();
+        var tenant = CurrentTenant();
 
-        IEventToPersist[] events = Enumerable.Range(1, 10)
+        var events = Enumerable.Range(1, 10)
             .Select(i => CreateTestEvent($"event-{ToLetters(i)}", "order:123"))
             .ToArray();
 
-        IEnumerable<IEventEnvelope> appendResult =
+        var appendResult =
             await backend.Append(tenant, events, null, null, CancellationToken.None);
-        List<IEventEnvelope> allEvents = appendResult.ToList();
+        var allEvents = appendResult.ToList();
 
         // Act - Get first 3 events
-        StreamQuery query = new StreamQuery().WithTags(EventTag.Parse("order:123"));
-        IReadOnlyCollection<IEventEnvelope> firstPage = await backend.Stream(tenant, query, 3, CancellationToken.None);
+        var query = new StreamQuery().WithTags(EventTag.Parse("order:123"));
+        var firstPage = await backend.Stream(tenant, query, 3, CancellationToken.None);
 
         // Get remaining events (pagination would need to be implemented differently)
-        IReadOnlyCollection<IEventEnvelope> allEventsForPaging =
+        var allEventsForPaging =
             await backend.Stream(tenant, query, cancellationToken: CancellationToken.None);
-        List<IEventEnvelope> secondPage = allEventsForPaging.Skip(3).Take(3).ToList();
+        var secondPage = allEventsForPaging.Skip(3).Take(3).ToList();
 
         // Assert
         Assert.Equal(3, firstPage.Count);
         Assert.Equal(3, secondPage.Count);
 
         // Verify pagination worked correctly
-        List<long> firstPagePositions = firstPage.Select(e => long.Parse(e.Metadata["_position"])).ToList();
-        List<long> secondPagePositions = secondPage.Select(e => long.Parse(e.Metadata["_position"])).ToList();
+        var firstPagePositions = firstPage.Select(e => long.Parse(e.Metadata["_position"])).ToList();
+        var secondPagePositions = secondPage.Select(e => long.Parse(e.Metadata["_position"])).ToList();
 
         Assert.True(secondPagePositions.All(pos => pos > firstPagePositions.Max()));
 
@@ -70,8 +70,8 @@ public abstract class AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        IEventStoreBackend backend = await CreateBackend();
-        Tenant tenant = CurrentTenant();
+        var backend = await CreateBackend();
+        var tenant = CurrentTenant();
 
         IEventToPersist[] events =
         [
@@ -85,26 +85,26 @@ public abstract class AdvancedQueryTests
         await backend.Append(tenant, events, null, null, CancellationToken.None);
 
         // Test 1: ALL tags - order AND customer AND region
-        StreamQuery allTagsQuery = new StreamQuery()
+        var allTagsQuery = new StreamQuery()
             .WithTags(EventTag.Parse("order:123"), EventTag.Parse("customer:456"), EventTag.Parse("region:us"))
             .RequiringAllTags();
 
-        IReadOnlyCollection<IEventEnvelope> allTagsResult =
+        var allTagsResult =
             await backend.Stream(tenant, allTagsQuery, cancellationToken: CancellationToken.None);
 
         // Test 2: ANY tags - order OR customer
-        StreamQuery anyTagsQuery = new StreamQuery()
+        var anyTagsQuery = new StreamQuery()
             .WithTags(EventTag.Parse("order:123"), EventTag.Parse("customer:789"));
 
-        IReadOnlyCollection<IEventEnvelope> anyTagsResult =
+        var anyTagsResult =
             await backend.Stream(tenant, anyTagsQuery, cancellationToken: CancellationToken.None);
 
         // Test 3: Complex combination - US region events for specific customer
-        StreamQuery complexQuery = new StreamQuery()
+        var complexQuery = new StreamQuery()
             .WithTags(EventTag.Parse("customer:456"), EventTag.Parse("region:us"))
             .RequiringAllTags();
 
-        IReadOnlyCollection<IEventEnvelope> complexResult =
+        var complexResult =
             await backend.Stream(tenant, complexQuery, cancellationToken: CancellationToken.None);
 
         // Assert
@@ -123,8 +123,8 @@ public abstract class AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        IEventStoreBackend backend = await CreateBackend();
-        Tenant tenant = CurrentTenant();
+        var backend = await CreateBackend();
+        var tenant = CurrentTenant();
 
         IEventToPersist[] events =
         [
@@ -143,18 +143,18 @@ public abstract class AdvancedQueryTests
 
         EventType[] paymentEventTypes = [new EventType("payment-created"), new EventType("payment-processed")];
 
-        StreamQuery orderQuery = new StreamQuery()
+        var orderQuery = new StreamQuery()
             .WithTags(EventTag.Parse("order:123"))
             .WithEventTypes(orderEventTypes);
 
-        StreamQuery paymentQuery = new StreamQuery()
+        var paymentQuery = new StreamQuery()
             .WithTags(EventTag.Parse("order:123"))
             .WithEventTypes(paymentEventTypes);
 
         // Act
-        IReadOnlyCollection<IEventEnvelope> orderResult =
+        var orderResult =
             await backend.Stream(tenant, orderQuery, cancellationToken: CancellationToken.None);
-        IReadOnlyCollection<IEventEnvelope> paymentResult =
+        var paymentResult =
             await backend.Stream(tenant, paymentQuery, cancellationToken: CancellationToken.None);
 
         // Assert
@@ -172,8 +172,8 @@ public abstract class AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        IEventStoreBackend backend = await CreateBackend();
-        Tenant tenant = CurrentTenant();
+        var backend = await CreateBackend();
+        var tenant = CurrentTenant();
 
         IEventToPersist[] events =
         [
@@ -185,12 +185,12 @@ public abstract class AdvancedQueryTests
         await backend.Append(tenant, events, null, null, CancellationToken.None);
 
         // Test: Limit to 2 events, but only order events
-        StreamQuery query = new StreamQuery()
+        var query = new StreamQuery()
             .WithTags(EventTag.Parse("order:123"))
             .WithEventTypes(new EventType("order-created"), new EventType("order-updated"),
                 new EventType("order-completed"));
 
-        IReadOnlyCollection<IEventEnvelope> result = await backend.Stream(tenant, query, 2, CancellationToken.None);
+        var result = await backend.Stream(tenant, query, 2, CancellationToken.None);
 
         // Assert
         Assert.Equal(2, result.Count);
@@ -204,8 +204,8 @@ public abstract class AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        IEventStoreBackend backend = await CreateBackend();
-        Tenant tenant = CurrentTenant();
+        var backend = await CreateBackend();
+        var tenant = CurrentTenant();
 
         IEventToPersist[] events =
         [
@@ -219,18 +219,18 @@ public abstract class AdvancedQueryTests
         await backend.Append(tenant, events, null, null, CancellationToken.None);
 
         // Test hierarchical tag queries
-        StreamQuery customerHierarchyQuery = new StreamQuery()
+        var customerHierarchyQuery = new StreamQuery()
             .WithTags(EventTag.Parse("customer:456"), EventTag.Parse("org:acme"), EventTag.Parse("tier:premium"))
             .RequiringAllTags();
 
-        StreamQuery paymentProviderQuery = new StreamQuery()
+        var paymentProviderQuery = new StreamQuery()
             .WithTags(EventTag.Parse("provider:stripe"), EventTag.Parse("currency:usd"))
             .RequiringAllTags();
 
         // Act
-        IReadOnlyCollection<IEventEnvelope> customerResult =
+        var customerResult =
             await backend.Stream(tenant, customerHierarchyQuery, cancellationToken: CancellationToken.None);
-        IReadOnlyCollection<IEventEnvelope> paymentResult =
+        var paymentResult =
             await backend.Stream(tenant, paymentProviderQuery, cancellationToken: CancellationToken.None);
 
         // Assert
@@ -248,31 +248,31 @@ public abstract class AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        IEventStoreBackend backend = await CreateBackend();
-        Tenant tenant = CurrentTenant();
+        var backend = await CreateBackend();
+        var tenant = CurrentTenant();
 
         // Create 1000 events for performance testing
-        IEventToPersist[] largeEventSet = Enumerable.Range(0, 1000)
+        var largeEventSet = Enumerable.Range(0, 1000)
             .Select(i => CreateTestEvent($"bulk-event-{ToLetters(i)}", "bulk:test", $"batch:{i / 100}"))
             .ToArray();
 
         await backend.Append(tenant, largeEventSet, null, null, CancellationToken.None);
 
         // Test: Query all events
-        StreamQuery allEventsQuery = new StreamQuery().WithTags(EventTag.Parse("bulk:test"));
-        IReadOnlyCollection<IEventEnvelope> allEventsResult =
+        var allEventsQuery = new StreamQuery().WithTags(EventTag.Parse("bulk:test"));
+        var allEventsResult =
             await backend.Stream(tenant, allEventsQuery, cancellationToken: CancellationToken.None);
 
         // Test: Query specific batch
-        StreamQuery batchQuery = new StreamQuery()
+        var batchQuery = new StreamQuery()
             .WithTags(EventTag.Parse("bulk:test"), EventTag.Parse("batch:5"))
             .RequiringAllTags();
-        IReadOnlyCollection<IEventEnvelope> batchResult =
+        var batchResult =
             await backend.Stream(tenant, batchQuery, cancellationToken: CancellationToken.None);
 
         // Test: Large limited query
-        StreamQuery limitedQuery = new StreamQuery().WithTags(EventTag.Parse("bulk:test"));
-        IReadOnlyCollection<IEventEnvelope> limitedResult =
+        var limitedQuery = new StreamQuery().WithTags(EventTag.Parse("bulk:test"));
+        var limitedResult =
             await backend.Stream(tenant, limitedQuery, 50, CancellationToken.None);
 
         // Assert
@@ -281,7 +281,7 @@ public abstract class AdvancedQueryTests
         Assert.Equal(50, limitedResult.Count);
 
         // Verify ordering is maintained
-        List<long> positions = allEventsResult.Select(e => long.Parse(e.Metadata["_position"])).ToList();
+        var positions = allEventsResult.Select(e => long.Parse(e.Metadata["_position"])).ToList();
         Assert.True(positions.SequenceEqual(positions.OrderBy(p => p)));
 
         await CleanupAsync();
@@ -292,21 +292,21 @@ public abstract class AdvancedQueryTests
     {
         // Arrange
         await SetupAsync();
-        IEventStoreBackend backend = await CreateBackend();
+        var backend = await CreateBackend();
         Tenant tenant1 = new("tenant-1");
         Tenant tenant2 = new("tenant-2");
 
-        IEventToPersist tenant1Event = CreateTestEvent("tenanta-event", "shared:tag");
-        IEventToPersist tenant2Event = CreateTestEvent("tenantb-event", "shared:tag");
+        var tenant1Event = CreateTestEvent("tenanta-event", "shared:tag");
+        var tenant2Event = CreateTestEvent("tenantb-event", "shared:tag");
 
         await backend.Append(tenant1, [tenant1Event], null, null, CancellationToken.None);
         await backend.Append(tenant2, [tenant2Event], null, null, CancellationToken.None);
 
         // Act - Query tenant1's events from tenant2's context
-        StreamQuery crossTenantQuery = new StreamQuery().WithTags(EventTag.Parse("shared:tag"));
-        IReadOnlyCollection<IEventEnvelope> tenant1Result =
+        var crossTenantQuery = new StreamQuery().WithTags(EventTag.Parse("shared:tag"));
+        var tenant1Result =
             await backend.Stream(tenant1, crossTenantQuery, cancellationToken: CancellationToken.None);
-        IReadOnlyCollection<IEventEnvelope> tenant2Result =
+        var tenant2Result =
             await backend.Stream(tenant2, crossTenantQuery, cancellationToken: CancellationToken.None);
 
         // Assert - Each tenant should only see their own events
@@ -336,7 +336,7 @@ public abstract class AdvancedQueryTests
     /// </summary>
     private static string ToLetters(int number)
     {
-        string result = string.Empty;
+        var result = string.Empty;
         number++;
         while (number > 0)
         {

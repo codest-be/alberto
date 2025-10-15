@@ -130,8 +130,8 @@ public class EventStoreTestFixture : IDisposable
         return Enumerable.Range(1, count)
             .Select(i =>
             {
-                string type = tenantTypes[i % tenantTypes.Length];
-                string name = names[i % names.Length];
+                var type = tenantTypes[i % tenantTypes.Length];
+                var name = names[i % names.Length];
                 return $"{type}-{name}-{i:D3}";
             })
             .ToArray();
@@ -158,12 +158,12 @@ public class EventStoreTestFixture : IDisposable
 
         // Check position ordering
         long? previousPosition = null;
-        foreach (IEventEnvelope eventEnvelope in events)
+        foreach (var eventEnvelope in events)
         {
             Assert.True(eventEnvelope.Metadata.ContainsKey("_position"),
                 $"Event {eventEnvelope.EventType.Id} missing _position metadata");
 
-            long currentPosition = long.Parse(eventEnvelope.Metadata["_position"]);
+            var currentPosition = long.Parse(eventEnvelope.Metadata["_position"]);
 
             if (previousPosition.HasValue)
                 Assert.True(currentPosition > previousPosition.Value,
@@ -173,8 +173,8 @@ public class EventStoreTestFixture : IDisposable
         }
 
         // Check position uniqueness
-        List<long> positions = events.Select(e => long.Parse(e.Metadata["_position"])).ToList();
-        List<long> uniquePositions = positions.Distinct().ToList();
+        var positions = events.Select(e => long.Parse(e.Metadata["_position"])).ToList();
+        var uniquePositions = positions.Distinct().ToList();
         Assert.Equal(positions.Count, uniquePositions.Count);
     }
 
@@ -183,7 +183,7 @@ public class EventStoreTestFixture : IDisposable
     /// </summary>
     public static void ValidateTenantIsolation(IList<IEventEnvelope> events, string expectedTenantId)
     {
-        foreach (IEventEnvelope eventEnvelope in events)
+        foreach (var eventEnvelope in events)
             // Events should not contain cross-tenant data
             // This is a conceptual validation - actual implementation may vary
             Assert.NotNull(eventEnvelope.EventJson);
