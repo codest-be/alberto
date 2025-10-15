@@ -1,5 +1,3 @@
-using Alberto.EventStore.Events;
-using Alberto.EventStore.MultiTenant;
 using Alberto.EventStore.Postgres;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -31,46 +29,31 @@ public class PostgresConfigurationTests
     }
 
     [Fact]
-    public async Task PostgresEventStoreOptions_WithNullConnectionString_ShouldFailDuringOperations()
+    public void PostgresEventStoreOptions_WithNullConnectionString_ShouldThrowOnInitialize()
     {
-        // Arrange
-        PostgresEventStoreOptions options = new()
+        // Arrange & Act & Assert - Should throw during initialization
+        Assert.Throws<ArgumentException>(() =>
         {
-            ConnectionString = null!, Schema = "events", BulkInsertThreshold = 10
-        };
-
-        var wrappedOptions = Options.Create(options);
-        PostgresEventStoreBackend backend = new(wrappedOptions, NullLogger<PostgresEventStoreBackend>.Instance);
-        Tenant tenant = new("test");
-        EventToPersist testEvent = new()
-        {
-            EventType = new EventType("test-event"),
-            EventJson = """{"data": "test"}""",
-            Tags = [EventTag.Parse("test:123")],
-            Metadata = new Dictionary<string, string>(),
-            Created = DateTimeOffset.UtcNow
-        };
-
-        // Act & Assert - Should fail during database operation
-        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await backend.Append(tenant, [testEvent], null, null, CancellationToken.None));
+            PostgresEventStoreOptions options = new()
+            {
+                ConnectionString = null!, Schema = "events", BulkInsertThreshold = 10
+            };
+        });
     }
 
     [Fact]
-    public void PostgresEventStoreOptions_WithEmptySchema_ShouldUseDefaultSchema()
+    public void PostgresEventStoreOptions_WithEmptySchema_ShouldThrowException()
     {
-        // Arrange
-        PostgresEventStoreOptions options = new()
+        // Arrange & Act & Assert - Empty schema should throw
+        Assert.Throws<ArgumentException>(() =>
         {
-            ConnectionString = "Host=localhost;Database=test;Username=test;Password=test",
-            Schema = "",
-            BulkInsertThreshold = 10
-        };
-
-        // Act & Assert - Empty schema should work (may default to "public" or similar)
-        var wrappedOptions = Options.Create(options);
-        PostgresEventStoreBackend backend = new(wrappedOptions, NullLogger<PostgresEventStoreBackend>.Instance);
-        Assert.NotNull(backend);
+            PostgresEventStoreOptions options = new()
+            {
+                ConnectionString = "Host=localhost;Database=test;Username=test;Password=test",
+                Schema = "",
+                BulkInsertThreshold = 10
+            };
+        });
     }
 
     [Fact]
