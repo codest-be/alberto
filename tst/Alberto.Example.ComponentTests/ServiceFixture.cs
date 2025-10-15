@@ -14,7 +14,7 @@ public class ServiceFixture : WebApplicationFactory<Program>, IServiceFixture, I
     {
     }
 
-    public ValueTask InitializeAsync()
+    public virtual ValueTask InitializeAsync()
     {
         // Trigger creation of the host on the xUnit lifecycle event
         _ = Services;

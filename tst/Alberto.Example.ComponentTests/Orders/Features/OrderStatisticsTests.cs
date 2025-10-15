@@ -8,7 +8,7 @@ namespace Alberto.Example.ComponentTests.Orders.Features;
 public class OrderStatisticsTests(ITestOutputHelper testOutputHelper) : OrdersFixture(testOutputHelper)
 {
     [Fact]
-    public async Task Should_Track_Order_Statistics_Across_Multiple_Orders()
+    public async Task Should_TrackOrderStatisticsAcrossMultipleOrders()
     {
         await UseCase()
             .Arrange(

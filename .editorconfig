@@ -1,8 +1,8 @@
+root = true
 #---------------------------------------------------------------------------------------------------------------
 ### Core EditorConfig Options
 
 ### Set as root
-root = true
 
 ### Indentation and spacing
 #### Global
@@ -30,9 +30,9 @@ indent_size = 2
 indent_size = 2
 
 ### Severity level of formatting violations
-dotnet_diagnostic.IDE0040.severity = warning
-dotnet_analyzer_diagnostic.category-Style.severity = error
-dotnet_diagnostic.IDE0055.severity = error
+dotnet_diagnostic.ide0040.severity = warning
+dotnet_analyzer_diagnostic.category-style.severity = error
+dotnet_diagnostic.ide0055.severity = error
 
 #---------------------------------------------------------------------------------------------------------------
 ## .NET Coding Conventions
@@ -236,7 +236,12 @@ dotnet_naming_rule.member.style = member
 #### Diagnostic configuration ####
 
 # CA1000: Do not declare static members on generic types
-dotnet_diagnostic.CA1000.severity = warning
+dotnet_diagnostic.ca1000.severity = warning
+
+# ReSharper properties
+resharper_arguments_skip_single = true
+resharper_csharp_max_line_length = 161
+resharper_instance_members_qualify_declared_in = base_class
 
 
 ## Unnecessary code rules

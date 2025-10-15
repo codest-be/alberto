@@ -1,9 +1,11 @@
+using System.Reflection;
 using Alberto.ComponentTests;
 using Alberto.CQRS;
 using Alberto.EventSourcing.Projections;
 using Alberto.EventStore;
 using Alberto.EventStore.InMemory;
 using Alberto.EventStore.Subscriptions.Channel;
+using Alberto.EventStore.Subscriptions.Subscriptions;
 using Alberto.EventStore.Telemetry;
 using Alberto.Example.Modules.Orders;
 using Alberto.Example.Modules.Orders.Projections;
@@ -36,10 +38,51 @@ public abstract class OrdersFixture : ServiceFixture
         return new UseCase(new ScenarioContext(_testOutputHelper, this));
     }
 
+    public override async ValueTask InitializeAsync()
+    {
+        // Initialize the service provider first
+        await base.InitializeAsync();
+
+        // Auto-discover subscription metadata from registered handlers
+        var metadataRegistry = new SubscriptionMetadataRegistry();
+        const string moduleKey = "orders";
+
+        // Get all subscription handlers registered with the module key
+        var handlers =
+            Services.GetKeyedServices<IEventHandler>(moduleKey);
+
+        foreach (var handler in handlers)
+        {
+            var handlerType = handler.GetType();
+
+            // Extract subscription ID from [Subscription] attribute
+            var subscriptionAttribute = handlerType
+                .GetCustomAttribute<SubscriptionAttribute>();
+            var subscriptionId = subscriptionAttribute?.SubscriptionId ?? handlerType.Name;
+
+            // Extract event types from IHandleEvent<> interfaces
+            var handleInterfaces = handlerType
+                .GetInterfaces()
+                .Where(i => i.IsGenericType &&
+                            i.GetGenericTypeDefinition() ==
+                            typeof(IHandleEvent<>));
+
+            var eventTypes = handleInterfaces
+                .Select(i => i.GetGenericArguments()[0].Name)
+                .ToArray();
+
+            metadataRegistry.RegisterSubscription(subscriptionId, eventTypes);
+        }
+
+        // Wire up the metadata registry to the collector
+        SubscriptionCollector.SetMetadataRegistry(metadataRegistry);
+    }
+
     protected override void ConfigureTestServices(IServiceCollection services)
     {
         services.AddInMemoryProjectionRepository<Guid, Order, OrderProjector>();
         services.AddInMemoryProjectionRepository<string, OrderStatistics, OrderStatisticsProjector>();
+
         services.AddSingleton(SubscriptionCollector);
 
         services
@@ -47,16 +90,20 @@ public abstract class OrdersFixture : ServiceFixture
                 .WithInMemory(_eventStoreBackend)
                 .WithMultiTenancy<MultiTenantContext>()
                 .WithChannelSubscriptions(channel => channel
-                        .Configure(options =>
-                        {
-                            options.RetryDelayMs = 10;
-                        })
-                        .WithFilter<SubscriptionEventCollectorFilter>()
-                        .AddProjection<OrderEventStore, OrderProjectionSubscription, Guid, Order, OrderProjector>(
-                            mode: SubscriptionMode.Hybrid) // Test hybrid mode
-                        .AddProjection<OrderEventStore, OrderStatisticsSubscription, string, OrderStatistics,
-                            OrderStatisticsProjector>(
-                            mode: SubscriptionMode.Async) // Test async mode
+                    .ConfigureSync(options =>
+                    {
+                        options.MaxRetries = 0;
+                        options.AllowParallelExecution = true;
+                    })
+                    .ConfigureAsync(options =>
+                    {
+                        options.MinPollingIntervalMs = 25;
+                        options.PollingGrowFactor = 1;
+                        options.MaxRetries = 0;
+                    })
+                    .WithFilter<SubscriptionEventCollectorFilter>()
+                    .AddProjection<OrderEventStore, OrderProjectionSubscription, Guid, Order, OrderProjector>(mode: SubscriptionMode.Hybrid)
+                    .AddProjection<OrderEventStore, OrderStatisticsSubscription, string, OrderStatistics, OrderStatisticsProjector>(mode: SubscriptionMode.Async)
                 )
                 .WithCQRS(cqrs => cqrs.ScanAssembly(typeof(OrdersModule).Assembly))
                 .WithTelemetry()

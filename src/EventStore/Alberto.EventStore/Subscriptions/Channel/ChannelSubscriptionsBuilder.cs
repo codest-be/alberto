@@ -20,7 +20,7 @@ namespace Alberto.EventStore.Subscriptions.Channel;
 internal record HandlerModeRegistration(Type HandlerType, SubscriptionMode Mode);
 
 /// <summary>
-/// Builder for configuring channel-based event subscriptions
+/// Builder for configuring event subscriptions supporting Sync (channel-based), Async (polling-based), and Hybrid modes
 /// </summary>
 /// <typeparam name="TEventStore">The EventStore factory type</typeparam>
 public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventStoreFactory
@@ -29,6 +29,7 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
     private readonly List<Type> _filterTypes = [];
     private readonly List<HandlerModeRegistration> _handlers = [];
     private readonly string _moduleKey;
+    private readonly PollingOptions _pollingOptions = new();
     private readonly IServiceCollection _services;
 
     internal ChannelSubscriptionsBuilder(IServiceCollection services, string moduleKey)
@@ -48,13 +49,24 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
     public string ModuleKey => _moduleKey;
 
     /// <summary>
-    /// Configures channel options for this subscription module
+    /// Configures options for Sync and Hybrid subscription modes (channel-based event delivery)
     /// </summary>
     /// <param name="configure">Configuration action for channel options</param>
     /// <returns>The builder for chaining</returns>
-    public ChannelSubscriptionsBuilder<TEventStore> Configure(Action<ChannelOptions> configure)
+    public ChannelSubscriptionsBuilder<TEventStore> ConfigureSync(Action<ChannelOptions> configure)
     {
         configure(_channelOptions);
+        return this;
+    }
+
+    /// <summary>
+    /// Configures options for Async and Hybrid subscription modes (polling-based event delivery)
+    /// </summary>
+    /// <param name="configure">Configuration action for polling options</param>
+    /// <returns>The builder for chaining</returns>
+    public ChannelSubscriptionsBuilder<TEventStore> ConfigureAsync(Action<PollingOptions> configure)
+    {
+        configure(_pollingOptions);
         return this;
     }
 
@@ -174,10 +186,7 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
         if (_channelOptions.BoundedCapacity.HasValue)
         {
             channel = System.Threading.Channels.Channel.CreateBounded<GlobalEventEnvelope>(
-                new BoundedChannelOptions(_channelOptions.BoundedCapacity.Value)
-                {
-                    FullMode = BoundedChannelFullMode.Wait
-                });
+                new BoundedChannelOptions(_channelOptions.BoundedCapacity.Value) { FullMode = BoundedChannelFullMode.Wait });
         }
         else
         {
@@ -203,8 +212,8 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
             return new ChannelRegistrationService(registry, writer, _moduleKey, eventTypes);
         });
 
-        // Register ConsumePipeline with filters (shared with polling)
-        _services.AddKeyedScoped<ConsumePipeline>(_moduleKey, (sp, _) =>
+        // Register ConsumePipeline with filters for channel
+        _services.AddKeyedScoped<ConsumePipeline>(channelRouterKey, (sp, _) =>
         {
             var logger = sp.GetRequiredService<ILogger<ConsumePipeline>>();
             var pipeline = new ConsumePipeline(logger);
@@ -260,10 +269,7 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
 
                 router.RegisterHandler(new HandlerRegistration
                 {
-                    SubscriptionId = subscriptionId,
-                    Handler = handler,
-                    SupportedEventTypes = supportedEventTypes,
-                    Logger = handlerLogger
+                    SubscriptionId = subscriptionId, Handler = handler, SupportedEventTypes = supportedEventTypes, Logger = handlerLogger
                 });
             }
 
@@ -293,20 +299,10 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
     {
         var pollingRouterKey = $"{_moduleKey}:polling";
 
-        // Convert ChannelOptions to PollingOptions
-        var pollingOptions = new PollingOptions
-        {
-            MinPollingIntervalMs = _channelOptions.RetryDelayMs,
-            MaxPollingIntervalMs = _channelOptions.RetryDelayMs * 2,
-            MaxPageSize = 100,
-            MaxRetries = _channelOptions.MaxRetries,
-            RetryDelayMs = _channelOptions.RetryDelayMs
-        };
-
         // Register polling options
-        _services.AddKeyedSingleton(_moduleKey, (_, _) => pollingOptions);
+        _services.AddKeyedSingleton(_moduleKey, (_, _) => _pollingOptions);
 
-        // Register ConsumePipeline with filters (shared with channel)
+        // Register ConsumePipeline with filters for polling
         _services.AddKeyedScoped<ConsumePipeline>(pollingRouterKey, (sp, _) =>
         {
             var logger = sp.GetRequiredService<ILogger<ConsumePipeline>>();
@@ -348,8 +344,8 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
                 poisonPillStore,
                 sp,
                 logger,
-                _channelOptions.MaxRetries,
-                _channelOptions.RetryDelayMs
+                _pollingOptions.MaxRetries,
+                _pollingOptions.RetryDelayMs
             );
 
             // Register only polling handlers
@@ -363,10 +359,7 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
 
                 router.RegisterHandler(new HandlerRegistration
                 {
-                    SubscriptionId = subscriptionId,
-                    Handler = handler,
-                    SupportedEventTypes = supportedEventTypes,
-                    Logger = handlerLogger
+                    SubscriptionId = subscriptionId, Handler = handler, SupportedEventTypes = supportedEventTypes, Logger = handlerLogger
                 });
             }
 

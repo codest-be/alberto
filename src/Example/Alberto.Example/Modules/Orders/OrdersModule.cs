@@ -26,10 +26,19 @@ public static class OrdersModule
                 })
                 .WithMultiTenancy<MultiTenantContext>()
                 .WithChannelSubscriptions(channel => channel
-                    .Configure(options =>
+                    .ConfigureSync(options =>
                     {
                         options.MaxRetries = 3;
                         options.RetryDelayMs = 250;
+                        options.AllowParallelExecution = true;
+                    })
+                    .ConfigureAsync(options =>
+                    {
+                        options.MinPollingIntervalMs = 100;
+                        options.PollingGrowFactor = 1.5;
+                        options.MaxRetries = 5;
+                        options.RetryDelayMs = 250;
+                        options.MaxPageSize = 100;
                     })
                     .WithFilter<LoggingFilter>()
                     .AddProjection<OrderEventStore, OrderProjectionSubscription, Guid, Order, OrderProjector>(
