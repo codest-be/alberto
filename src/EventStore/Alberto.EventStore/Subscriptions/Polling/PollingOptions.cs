@@ -8,7 +8,7 @@ public sealed class PollingOptions
     /// <summary>
     /// Minimum polling interval in milliseconds when events are not found
     /// </summary>
-    public int MinPollingIntervalMs { get; set; } = 100;
+    public int MinPollingIntervalMs { get; set; } = 25;
 
     /// <summary>
     /// Maximum polling interval in milliseconds
@@ -33,5 +33,5 @@ public sealed class PollingOptions
     /// <summary>
     /// Base delay in milliseconds for retries (multiplied by attempt number)
     /// </summary>
-    public int RetryDelayMs { get; set; } = 1000;
+    public int RetryDelayMs { get; set; } = 500;
 }

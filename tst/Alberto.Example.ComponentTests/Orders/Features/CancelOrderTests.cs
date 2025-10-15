@@ -25,7 +25,7 @@ public sealed class CancelOrderTests(ITestOutputHelper testOutputHelper) : Order
         return UseCase()
             .Arrange(
                 new CreateOrder(100m, "customer-123"),
-                new PlaceOrderStep())
+                new PlaceOrder())
             .Act(new CancelOrder("Out of stock"))
             .Assert(
                 new HttpSuccessResponse(),

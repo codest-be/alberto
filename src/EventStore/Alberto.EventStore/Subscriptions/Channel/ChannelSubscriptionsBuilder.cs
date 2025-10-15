@@ -25,12 +25,11 @@ internal record HandlerModeRegistration(Type HandlerType, SubscriptionMode Mode)
 /// <typeparam name="TEventStore">The EventStore factory type</typeparam>
 public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventStoreFactory
 {
-    private readonly List<Type> _consumerTypes = [];
+    private readonly ChannelOptions _channelOptions = new();
     private readonly List<Type> _filterTypes = [];
     private readonly List<HandlerModeRegistration> _handlers = [];
     private readonly string _moduleKey;
     private readonly IServiceCollection _services;
-    private ChannelOptions _channelOptions = new();
 
     internal ChannelSubscriptionsBuilder(IServiceCollection services, string moduleKey)
     {
@@ -102,7 +101,6 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
     public ChannelSubscriptionsBuilder<TEventStore> AddConsumer<TConsumer>()
         where TConsumer : class, IChannelConsumer
     {
-        _consumerTypes.Add(typeof(TConsumer));
         _services.AddKeyedScoped<TConsumer>(_moduleKey);
 
         // Register as IChannelConsumer for discovery within this module

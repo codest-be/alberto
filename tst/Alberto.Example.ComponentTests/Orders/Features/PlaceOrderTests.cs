@@ -12,7 +12,7 @@ public sealed class PlaceOrderTests(ITestOutputHelper testOutputHelper) : Orders
     {
         return UseCase()
             .Arrange(new CreateOrder(100m, "customer-123"))
-            .Act(new PlaceOrderStep())
+            .Act(new PlaceOrder())
             .Assert(
                 new HttpSuccessResponse(),
                 new EventIsConsumed<OrderPlaced>().WithPredicate((sc, e) => e.OrderId == sc.GetOrderId()),

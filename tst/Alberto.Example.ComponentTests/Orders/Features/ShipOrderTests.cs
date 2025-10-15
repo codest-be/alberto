@@ -13,8 +13,8 @@ public sealed class ShipOrderTests(ITestOutputHelper testOutputHelper) : OrdersF
         return UseCase()
             .Arrange(
                 new CreateOrder(100m, "customer-123"),
-                new PlaceOrderStep())
-            .Act(new ShipOrderStep("TRACK-123"))
+                new PlaceOrder())
+            .Act(new ShipOrder("TRACK-123"))
             .Assert(
                 new HttpSuccessResponse(),
                 new EventIsConsumed<OrderShipped>().WithPredicate((sc, e) =>
@@ -28,8 +28,8 @@ public sealed class ShipOrderTests(ITestOutputHelper testOutputHelper) : OrdersF
         return UseCase()
             .Arrange(
                 new CreateOrder(100m, "customer-123"),
-                new PlaceOrderStep())
-            .Act(new ShipOrderStep(""))
+                new PlaceOrder())
+            .Act(new ShipOrder(""))
             .Assert(new HttpFailureResponse("INVALID_TRACKING_NUMBER"));
     }
 }

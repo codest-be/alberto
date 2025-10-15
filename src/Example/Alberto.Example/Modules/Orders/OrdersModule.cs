@@ -34,14 +34,18 @@ public static class OrdersModule
                     .WithFilter<LoggingFilter>()
                     .AddProjection<OrderEventStore, OrderProjectionSubscription, Guid, Order, OrderProjector>(
                         mode: SubscriptionMode.Hybrid)
+                    .AddProjection<OrderEventStore, OrderStatisticsSubscription, string, OrderStatistics,
+                        OrderStatisticsProjector>(
+                        mode: SubscriptionMode.Async)
                 )
                 .WithCQRS(cqrs => cqrs.ScanAssembly(typeof(OrdersModule).Assembly))
                 .WithTelemetry()
             );
 
-        // Register projection repository separately for now
+        // Register projection repositories separately for now
         // TODO: Could be integrated into .AddProjection<>() in the future
         services.AddPostgresProjectionRepository<Guid, Order, OrderProjector>("orders");
+        services.AddPostgresProjectionRepository<string, OrderStatistics, OrderStatisticsProjector>("orders");
 
         return services;
     }
@@ -54,6 +58,7 @@ public static class OrdersModule
         endpoints.MapCancelOrder();
 
         endpoints.MapGetOrder();
+        endpoints.MapGetOrderStatistics();
 
         return endpoints;
     }

@@ -39,6 +39,7 @@ public abstract class OrdersFixture : ServiceFixture
     protected override void ConfigureTestServices(IServiceCollection services)
     {
         services.AddInMemoryProjectionRepository<Guid, Order, OrderProjector>();
+        services.AddInMemoryProjectionRepository<string, OrderStatistics, OrderStatisticsProjector>();
         services.AddSingleton(SubscriptionCollector);
 
         services
@@ -46,9 +47,16 @@ public abstract class OrdersFixture : ServiceFixture
                 .WithInMemory(_eventStoreBackend)
                 .WithMultiTenancy<MultiTenantContext>()
                 .WithChannelSubscriptions(channel => channel
+                        .Configure(options =>
+                        {
+                            options.RetryDelayMs = 10;
+                        })
                         .WithFilter<SubscriptionEventCollectorFilter>()
                         .AddProjection<OrderEventStore, OrderProjectionSubscription, Guid, Order, OrderProjector>(
                             mode: SubscriptionMode.Hybrid) // Test hybrid mode
+                        .AddProjection<OrderEventStore, OrderStatisticsSubscription, string, OrderStatistics,
+                            OrderStatisticsProjector>(
+                            mode: SubscriptionMode.Async) // Test async mode
                 )
                 .WithCQRS(cqrs => cqrs.ScanAssembly(typeof(OrdersModule).Assembly))
                 .WithTelemetry()

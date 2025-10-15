@@ -16,9 +16,9 @@ public sealed class ChannelOptions
     public int MaxRetries { get; set; } = 3;
 
     /// <summary>
-    /// Delay in milliseconds between retries. Default: 1000ms
+    /// Delay in milliseconds between retries. Default: 500ms
     /// </summary>
-    public int RetryDelayMs { get; set; } = 1000;
+    public int RetryDelayMs { get; set; } = 500;
 
     /// <summary>
     /// Whether to process events in parallel across handlers. Default: false
