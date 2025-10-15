@@ -1,7 +1,7 @@
 using Alberto.EventStore.Subscriptions.Filters;
 using Alberto.EventStore.Subscriptions.Subscriptions;
 
-namespace Alberto.Example.ComponentTests.Orders;
+namespace Alberto.ComponentTests;
 
 public sealed class SubscriptionEventCollectorFilter(SubscriptionEventCollector collector) : IConsumeFilter
 {

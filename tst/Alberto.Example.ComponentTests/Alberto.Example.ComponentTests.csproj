@@ -14,14 +14,21 @@
   <ItemGroup>
     <ProjectReference Include="../../src/Example/Alberto.Example/Alberto.Example.csproj"/>
     <ProjectReference Include="../../src/EventStore/Alberto.EventStore.InMemory/Alberto.EventStore.InMemory.csproj"/>
+    <ProjectReference Include="../../src/EventStore/Alberto.EventStore.Postgres/Alberto.EventStore.Postgres.csproj"/>
     <ProjectReference Include="..\..\src\Testing\Alberto.ComponentTests\Alberto.ComponentTests.csproj"/>
     <ProjectReference Include="..\..\src\EventSourcing\Alberto.Projections.InMemory\Alberto.Projections.InMemory.csproj"/>
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing"/>
+    <PackageReference Include="Testcontainers.PostgreSql"/>
     <PackageReference Include="xunit.v3"/>
     <PackageReference Include="Microsoft.NET.Test.Sdk"/>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="Orders\Postgres\OrdersComponentTests_Postgres.PlaceOrder.cs"/>
+    <Compile Remove="Orders\Postgres\OrdersComponentTests_Postgres.CancelOrder.cs"/>
   </ItemGroup>
 
 </Project>

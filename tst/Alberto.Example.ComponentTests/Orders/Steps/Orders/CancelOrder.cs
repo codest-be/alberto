@@ -9,7 +9,7 @@ public sealed class CancelOrder(string reason) : IStep
 {
     public async ValueTask Execute(ScenarioContext scenarioContext, CancellationToken ct = default)
     {
-        var orderId = scenarioContext.GetOrder();
+        var orderId = scenarioContext.GetOrderId();
         var request = new CancelOrderRequest(reason);
         var response = await scenarioContext.HttpClient().PostAsJsonAsync($"/orders/{orderId}/cancel", request, ct);
 

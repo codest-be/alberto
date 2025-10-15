@@ -17,7 +17,7 @@ public sealed class CreateOrder(decimal amount, string customerId) : IStep
         if (response.IsSuccessStatusCode)
         {
             var createdOrder = await response.Content.ReadFromJsonAsync<Guid>(cancellationToken: ct);
-            scenarioContext.StoreOrder(createdOrder);
+            scenarioContext.StoreOrderId(createdOrder);
         }
     }
 }

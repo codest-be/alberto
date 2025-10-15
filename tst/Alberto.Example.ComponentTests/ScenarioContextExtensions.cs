@@ -4,16 +4,17 @@ namespace Alberto.Example.ComponentTests;
 
 public static class ScenarioContextExtensions
 {
-    public static void StoreOrder(this ScenarioContext scenarioContext, Guid orderId)
+    public static void StoreOrderId(this ScenarioContext scenarioContext, Guid orderId)
     {
         scenarioContext.Set(orderId, "order");
     }
 
-    public static Guid? TryGetOrder(this ScenarioContext scenarioContext)
+    public static Guid? TryGetOrderId(this ScenarioContext scenarioContext)
         => scenarioContext.TryGet<Guid>("order");
 
-    public static Guid GetOrder(this ScenarioContext scenarioContext)
-        => scenarioContext.TryGetOrder() ?? throw new InvalidOperationException("Order not found in scenario context");
+    public static Guid GetOrderId(this ScenarioContext scenarioContext)
+        => scenarioContext.TryGetOrderId() ??
+           throw new InvalidOperationException("Order not found in scenario context");
 
 
     public static void StoreResponse(this ScenarioContext scenarioContext, HttpResponseMessage response)

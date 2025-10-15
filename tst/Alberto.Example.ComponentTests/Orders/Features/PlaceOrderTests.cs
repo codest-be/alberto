@@ -1,5 +1,4 @@
 using Alberto.ComponentTests.Steps;
-using Alberto.Example.ComponentTests.Orders.Steps;
 using Alberto.Example.ComponentTests.Orders.Steps.Orders;
 using Alberto.Example.Modules.Orders.Events;
 using Xunit;
@@ -16,7 +15,7 @@ public sealed class PlaceOrderTests(ITestOutputHelper testOutputHelper) : Orders
             .Act(new PlaceOrderStep())
             .Assert(
                 new HttpSuccessResponse(),
-                new EventIsConsumed<OrderPlaced>().WithPredicate((sc, e) => e.OrderId == sc.GetOrder()),
+                new EventIsConsumed<OrderPlaced>().WithPredicate((sc, e) => e.OrderId == sc.GetOrderId()),
                 new OrderIsPlaced());
     }
 }

@@ -1,5 +1,4 @@
 using Alberto.ComponentTests.Steps;
-using Alberto.Example.ComponentTests.Orders.Steps;
 using Alberto.Example.ComponentTests.Orders.Steps.Orders;
 using Alberto.Example.Modules.Orders.Events;
 using Xunit;
@@ -16,7 +15,7 @@ public sealed class CancelOrderTests(ITestOutputHelper testOutputHelper) : Order
             .Act(new CancelOrder("Customer changed mind"))
             .Assert(
                 new HttpSuccessResponse(),
-                new EventIsConsumed<OrderCancelled>().WithPredicate((sc, e) => e.OrderId == sc.GetOrder()),
+                new EventIsConsumed<OrderCancelled>().WithPredicate((sc, e) => e.OrderId == sc.GetOrderId()),
                 new OrderIsCancelled("Customer changed mind"));
     }
 
@@ -30,7 +29,7 @@ public sealed class CancelOrderTests(ITestOutputHelper testOutputHelper) : Order
             .Act(new CancelOrder("Out of stock"))
             .Assert(
                 new HttpSuccessResponse(),
-                new EventIsConsumed<OrderCancelled>().WithPredicate((sc, e) => e.OrderId == sc.GetOrder()),
+                new EventIsConsumed<OrderCancelled>().WithPredicate((sc, e) => e.OrderId == sc.GetOrderId()),
                 new OrderIsCancelled("Out of stock"));
     }
 

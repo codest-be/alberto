@@ -10,7 +10,7 @@ public class OrderIsShipped(string trackingNumber) : IStep
 {
     public async ValueTask Execute(ScenarioContext scenarioContext, CancellationToken ct = default)
     {
-        var orderId = scenarioContext.GetOrder();
+        var orderId = scenarioContext.GetOrderId();
         var response = await scenarioContext.HttpClient().GetAsync($"/orders/{orderId}", ct);
 
         Assert.True(response.IsSuccessStatusCode, "Could not get order");

@@ -16,10 +16,10 @@ public sealed class UseCase(ScenarioContext context)
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault,
     };
 
-    private List<IStep> _actSteps = [];
+    private readonly List<IStep> _actSteps = [];
 
-    private List<IStep> _arrangeSteps = [];
-    private List<IStep> _assertSteps = [];
+    private readonly List<IStep> _arrangeSteps = [];
+    private readonly List<IStep> _assertSteps = [];
 
     private static ConcurrentDictionary<Type, string> TypeNameCache { get; } = new();
 

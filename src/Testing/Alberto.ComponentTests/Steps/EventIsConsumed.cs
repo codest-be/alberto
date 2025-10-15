@@ -1,8 +1,6 @@
-using Alberto.ComponentTests;
-using Alberto.ComponentTests.Steps;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Alberto.Example.ComponentTests.Orders.Steps;
+namespace Alberto.ComponentTests.Steps;
 
 public class EventIsConsumed<T> : IStep where T : class
 {

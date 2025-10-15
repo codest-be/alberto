@@ -1,5 +1,4 @@
 using Alberto.ComponentTests.Steps;
-using Alberto.Example.ComponentTests.Orders.Steps;
 using Alberto.Example.ComponentTests.Orders.Steps.Orders;
 using Xunit;
 using OrderCreated = Alberto.Example.Modules.Orders.Events.OrderCreated;
@@ -15,7 +14,7 @@ public sealed class CreateOrderTests(ITestOutputHelper testOutputHelper) : Order
             .Act(new CreateOrder(100m, "customer-123"))
             .Assert(
                 new HttpSuccessResponse(),
-                new EventIsConsumed<OrderCreated>().WithPredicate((sc, e) => e.OrderId == sc.GetOrder()),
+                new EventIsConsumed<OrderCreated>().WithPredicate((sc, e) => e.OrderId == sc.GetOrderId()),
                 new Steps.Orders.OrderCreated(100m, "customer-123"));
     }
 

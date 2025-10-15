@@ -9,7 +9,7 @@ public sealed class ShipOrderStep(string trackingNumber) : IStep
 {
     public async ValueTask Execute(ScenarioContext scenarioContext, CancellationToken ct = default)
     {
-        var orderId = scenarioContext.GetOrder();
+        var orderId = scenarioContext.GetOrderId();
         var request = new ShipOrderRequest(trackingNumber);
         var response = await scenarioContext.HttpClient().PostAsJsonAsync($"/orders/{orderId}/ship", request, ct);
 
