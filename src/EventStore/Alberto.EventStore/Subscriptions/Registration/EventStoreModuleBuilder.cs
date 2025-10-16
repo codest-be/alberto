@@ -31,7 +31,8 @@ public sealed class EventStoreModuleBuilder(IServiceCollection services, string 
             sp.GetRequiredKeyedService<EventRouter>(moduleKey),
             sp.GetRequiredKeyedService<PollingOptions>(moduleKey),
             sp,
-            sp.GetRequiredService<ILogger<SubscriptionPollingService>>()));
+            sp.GetRequiredService<ILogger<SubscriptionPollingService>>(),
+            sp.GetRequiredService<IMetricsRecorder>()));
 
         return this;
     }

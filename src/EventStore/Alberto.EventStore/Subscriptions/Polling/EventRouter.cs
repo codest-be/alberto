@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Alberto.EventStore.Diagnostics;
 using Alberto.EventStore.Events;
 using Alberto.EventStore.Serialization;
 using Alberto.EventStore.Subscriptions.Checkpoints;
@@ -19,6 +20,7 @@ public sealed class EventRouter(
     IPoisonPillStore poisonPillStore,
     IServiceProvider serviceProvider,
     ILogger<EventRouter> logger,
+    IMetricsRecorder metrics,
     int maxRetries = 3,
     int retryDelayMs = 1000)
 {
@@ -105,6 +107,7 @@ public sealed class EventRouter(
         CancellationToken cancellationToken)
     {
         Exception? lastException = null;
+        using var processingScope = metrics.RecordEventProcessing(handler.SubscriptionId, evt.EventType);
 
         for (int attempt = 0; attempt <= maxRetries; attempt++)
         {
@@ -112,6 +115,9 @@ public sealed class EventRouter(
             {
                 if (attempt > 0)
                 {
+                    // Record retry metric
+                    metrics.RecordRetry(handler.SubscriptionId, evt.EventType, attempt);
+
                     logger.LogWarning(
                         "Retrying event {EventId} for subscription '{SubscriptionId}' (attempt {Attempt}/{MaxRetries})",
                         evt.Id,
@@ -134,6 +140,9 @@ public sealed class EventRouter(
                     cancellationToken
                 );
 
+                // Record success metrics
+                metrics.RecordEventProcessed(handler.SubscriptionId, evt.EventType, evt.Created);
+
                 return true;
             }
             catch (Exception ex)
@@ -150,7 +159,8 @@ public sealed class EventRouter(
             }
         }
 
-        // All retries exhausted - create poison pill
+        // All retries exhausted - record failure and create poison pill
+        metrics.RecordEventProcessingFailed(handler.SubscriptionId, evt.EventType);
         await CreatePoisonPill(handler, evt, lastException!, cancellationToken);
         return false;
     }
@@ -260,6 +270,9 @@ public sealed class EventRouter(
         );
 
         await poisonPillStore.StorePoisonPill(poisonPill, cancellationToken);
+
+        // Record poison pill metric
+        metrics.RecordPoisonPill(handler.SubscriptionId, evt.EventType);
 
         logger.LogCritical(
             "Created poison pill for subscription '{SubscriptionId}' at position {Position}. Subscription is now STOPPED.",

@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Threading.Channels;
+using Alberto.EventStore.Diagnostics;
 using Microsoft.Extensions.Logging;
 
 namespace Alberto.EventStore.Subscriptions.Channel;
@@ -11,11 +12,13 @@ namespace Alberto.EventStore.Subscriptions.Channel;
 public sealed class ChannelSubscriptionRegistry
 {
     private readonly ILogger<ChannelSubscriptionRegistry> _logger;
+    private readonly IMetricsRecorder _metrics;
     private readonly ConcurrentDictionary<string, ChannelSubscription> _subscriptions = new();
 
-    public ChannelSubscriptionRegistry(ILogger<ChannelSubscriptionRegistry> logger)
+    public ChannelSubscriptionRegistry(ILogger<ChannelSubscriptionRegistry> logger, IMetricsRecorder metrics)
     {
         _logger = logger;
+        _metrics = metrics;
     }
 
     /// <summary>
@@ -114,6 +117,7 @@ public sealed class ChannelSubscriptionRegistry
 
         // Write to all matching channels in parallel
         var tasks = new List<ValueTask>(matchingChannels.Count * events.Count);
+        var blockedWriteCount = 0;
 
         foreach (var writer in matchingChannels)
         {
@@ -127,6 +131,7 @@ public sealed class ChannelSubscriptionRegistry
 
                 // If channel is full, use async write
                 tasks.Add(writer.WriteAsync(evt, cancellationToken));
+                blockedWriteCount++;
             }
         }
 
@@ -134,6 +139,26 @@ public sealed class ChannelSubscriptionRegistry
         foreach (var task in tasks)
         {
             await task;
+        }
+
+        // Record metrics
+        foreach (var (moduleKey, subscription) in _subscriptions)
+        {
+            if (matchingChannels.Contains(subscription.Writer))
+            {
+                _metrics.RecordChannelPublish(moduleKey, events.Count);
+            }
+        }
+
+        if (blockedWriteCount > 0)
+        {
+            foreach (var (moduleKey, subscription) in _subscriptions)
+            {
+                if (matchingChannels.Contains(subscription.Writer))
+                {
+                    _metrics.RecordChannelWriteBlocked(moduleKey);
+                }
+            }
         }
 
         _logger.LogDebug(

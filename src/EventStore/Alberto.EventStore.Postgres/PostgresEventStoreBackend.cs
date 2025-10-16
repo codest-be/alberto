@@ -2,6 +2,7 @@ using System.Data;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using Alberto.EventStore.Diagnostics;
 using Alberto.EventStore.Events;
 using Alberto.EventStore.Exceptions;
 using Alberto.EventStore.MultiTenant;
@@ -18,14 +19,17 @@ public class PostgresEventStoreBackend : IEventStoreBackend, IMultiTenantEventSt
     private readonly string _connectionString;
     private readonly string _eventsTable;
     private readonly ILogger<PostgresEventStoreBackend> _logger;
+    private readonly IMetricsRecorder _metrics;
     private readonly PostgresEventStoreOptions _options;
 
     public PostgresEventStoreBackend(
         IOptions<PostgresEventStoreOptions> options,
-        ILogger<PostgresEventStoreBackend> logger)
+        ILogger<PostgresEventStoreBackend> logger,
+        IMetricsRecorder? metrics = null)
     {
         _options = options.Value;
         _logger = logger;
+        _metrics = metrics ?? new NoopMetricsRecorder();
         _bulkInsertThreshold = _options.BulkInsertThreshold > 0 ? _options.BulkInsertThreshold : 5;
         _connectionString = _options.ConnectionString;
         _eventsTable = $"{_options.Schema}.events";
@@ -37,6 +41,9 @@ public class PostgresEventStoreBackend : IEventStoreBackend, IMultiTenantEventSt
         int? maxCount = null,
         CancellationToken cancellationToken = default)
     {
+        var hasFilters = query.Tags.Count > 0 || query.EventTypes.Count > 0;
+        using var metricsScope = _metrics.RecordQuery(_options.Schema, hasFilters);
+
         await using NpgsqlConnection connection = new(_connectionString);
         await connection.OpenAsync(cancellationToken);
 
@@ -44,7 +51,12 @@ public class PostgresEventStoreBackend : IEventStoreBackend, IMultiTenantEventSt
 
         // Execute query directly with Dapper - no prepared statement caching
         IEnumerable<EventRecord> events = await connection.QueryAsync<EventRecord>(sql, parameters);
-        return events.Select(MapToEventWithMeta).ToList();
+        var result = events.Select(MapToEventWithMeta).ToList();
+
+        // Record events queried count
+        _metrics.RecordEventsQueried(result.Count, _options.Schema, hasFilters);
+
+        return result;
     }
 
     public async Task<IEnumerable<IEventEnvelope>> Append(
@@ -58,24 +70,34 @@ public class PostgresEventStoreBackend : IEventStoreBackend, IMultiTenantEventSt
         if (eventsList.Count == 0)
             return [];
 
+        using var metricsScope = _metrics.RecordAppend(tenant.Id, _options.Schema, eventsList.Count);
         try
         {
+            IEnumerable<IEventEnvelope> result;
             TransactionContext? ambientContext = TransactionContext.Current;
             if (ambientContext != null)
-                return await ExecuteInAmbientTransaction(
+                result = await ExecuteInAmbientTransaction(
                     tenant,
                     eventsList,
                     consistencyBoundary,
                     expectedLastEventId,
                     ambientContext,
                     cancellationToken);
+            else
+                result = await ExecuteStandaloneAppend(
+                    tenant,
+                    eventsList,
+                    consistencyBoundary,
+                    expectedLastEventId,
+                    cancellationToken);
 
-            return await ExecuteStandaloneAppend(
-                tenant,
-                eventsList,
-                consistencyBoundary,
-                expectedLastEventId,
-                cancellationToken);
+            // Record individual event metrics
+            foreach (var evt in eventsList)
+            {
+                _metrics.RecordEventAppended(tenant.Id, evt.EventType.Id, _options.Schema);
+            }
+
+            return result;
         }
         catch (Exception ex)
         {

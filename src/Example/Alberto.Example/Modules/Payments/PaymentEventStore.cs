@@ -9,4 +9,5 @@ public class PaymentEventStore(
     ITenantContext tenantContext,
     IEventStoreBackend backend,
     ChannelSubscriptionRegistry channelRegistry,
-    IDiagnosticsEventListener diagnostics) : EventStoreFactory(tenantContext, backend, channelRegistry, diagnostics);
+    IDiagnosticsEventListener? diagnostics = null)
+    : EventStoreFactory(tenantContext, backend, channelRegistry, diagnostics);

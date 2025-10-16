@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Threading.Channels;
+using Alberto.EventStore.Diagnostics;
 using Alberto.EventStore.Events;
 using Alberto.EventStore.Subscriptions.Checkpoints;
 using Alberto.EventStore.Subscriptions.Filters;
@@ -254,6 +255,7 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
             var checkpointStore = sp.GetRequiredKeyedService<ICheckpointStore>(_moduleKey);
             var poisonPillStore = sp.GetRequiredKeyedService<IPoisonPillStore>(_moduleKey);
             var logger = sp.GetRequiredService<ILogger<EventRouter>>();
+            var metrics = sp.GetRequiredService<IMetricsRecorder>();
             var builderLogger = sp.GetRequiredService<ILogger<ChannelSubscriptionsBuilder<TEventStore>>>();
 
             var router = new EventRouter(
@@ -262,6 +264,7 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
                 poisonPillStore,
                 sp,
                 logger,
+                metrics,
                 _channelOptions.MaxRetries,
                 _channelOptions.RetryDelayMs
             );
@@ -359,6 +362,7 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
             var checkpointStore = sp.GetRequiredKeyedService<ICheckpointStore>(_moduleKey);
             var poisonPillStore = sp.GetRequiredKeyedService<IPoisonPillStore>(_moduleKey);
             var logger = sp.GetRequiredService<ILogger<EventRouter>>();
+            var metrics = sp.GetRequiredService<IMetricsRecorder>();
             var builderLogger = sp.GetRequiredService<ILogger<ChannelSubscriptionsBuilder<TEventStore>>>();
 
             var router = new EventRouter(
@@ -367,6 +371,7 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
                 poisonPillStore,
                 sp,
                 logger,
+                metrics,
                 _pollingOptions.MaxRetries,
                 _pollingOptions.RetryDelayMs
             );
@@ -408,7 +413,8 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
             sp.GetRequiredKeyedService<EventRouter>(pollingRouterKey),
             sp.GetRequiredKeyedService<PollingOptions>(_moduleKey),
             sp,
-            sp.GetRequiredService<ILogger<SubscriptionPollingService>>()
+            sp.GetRequiredService<ILogger<SubscriptionPollingService>>(),
+            sp.GetRequiredService<IMetricsRecorder>()
         ));
     }
 

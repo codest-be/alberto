@@ -45,6 +45,9 @@ public class ModuleBuilder<TEventStore> where TEventStore : EventStoreFactory
 
         // Register no-op diagnostics by default (can be overridden by WithTelemetry)
         _services.TryAddTransient<IDiagnosticsEventListener, NoopDiagnosticsEventListener>();
+
+        // Register no-op metrics by default (can be overridden by WithTelemetry)
+        _services.TryAddSingleton<IMetricsRecorder, NoopMetricsRecorder>();
     }
 
     /// <summary>

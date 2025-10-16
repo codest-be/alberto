@@ -1,3 +1,4 @@
+using Alberto.EventStore.Diagnostics;
 using Alberto.EventStore.Events;
 using Alberto.EventStore.InMemory;
 using Alberto.EventStore.MultiTenant;
@@ -67,7 +68,7 @@ public class EventStoreBenchmarks
         await RunMigrations(options.Value);
 
         ILogger<PostgresEventStoreBackend> postgresLogger = loggerFactory.CreateLogger<PostgresEventStoreBackend>();
-        _postgresBackend = new PostgresEventStoreBackend(options, postgresLogger);
+        _postgresBackend = new PostgresEventStoreBackend(options, postgresLogger, new NoopMetricsRecorder());
 
         // Create enhanced connection pooled version with optimized settings
         string pooledConnectionString = _postgreSqlContainer.GetConnectionString() +
@@ -76,7 +77,7 @@ public class EventStoreBenchmarks
         {
             ConnectionString = pooledConnectionString, Schema = "benchmark"
         });
-        _postgresPooledBackend = new PostgresEventStoreBackend(pooledOptions, postgresLogger);
+        _postgresPooledBackend = new PostgresEventStoreBackend(pooledOptions, postgresLogger, new NoopMetricsRecorder());
 
         // Try to setup localhost PostgreSQL for comparison (optional)
         try
@@ -95,7 +96,7 @@ public class EventStoreBenchmarks
 
             ILogger<PostgresEventStoreBackend>
                 localhostLogger = loggerFactory.CreateLogger<PostgresEventStoreBackend>();
-            _localhostPostgresBackend = new PostgresEventStoreBackend(localhostOptions, localhostLogger);
+            _localhostPostgresBackend = new PostgresEventStoreBackend(localhostOptions, localhostLogger, new NoopMetricsRecorder());
 
             // Run migrations for localhost
             await RunMigrations(localhostOptions.Value);
@@ -229,14 +230,12 @@ public class EventStoreBenchmarks
     {
         IOptions<PostgresEventStoreOptions> options = Options.Create(new PostgresEventStoreOptions
         {
-            ConnectionString = _postgreSqlContainer.GetConnectionString(),
-            Schema = "benchmark",
-            BulkInsertThreshold = threshold
+            ConnectionString = _postgreSqlContainer.GetConnectionString(), Schema = "benchmark", BulkInsertThreshold = threshold
         });
 
         ILoggerFactory loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
         ILogger<PostgresEventStoreBackend> logger = loggerFactory.CreateLogger<PostgresEventStoreBackend>();
-        PostgresEventStoreBackend backend = new(options, logger);
+        PostgresEventStoreBackend backend = new(options, logger, new NoopMetricsRecorder());
 
         string streamId = Guid.NewGuid().ToString();
         int eventCount = 20; // Fixed count to test threshold crossing
@@ -285,10 +284,7 @@ public class EventStoreBenchmarks
                 EventType = new EventType("benchmark-event"),
                 EventJson = $"{{ \"message\": \"pooled benchmark data {i}\" }}",
                 Tags = [new EventTag("stream", streamId)],
-                Metadata = new Dictionary<string, string>
-                {
-                    ["source"] = "benchmark-pooled", ["index"] = i.ToString()
-                },
+                Metadata = new Dictionary<string, string> { ["source"] = "benchmark-pooled", ["index"] = i.ToString() },
                 Created = DateTimeOffset.UtcNow
             })
             .ToArray();
@@ -398,9 +394,7 @@ public class EventStoreBenchmarks
                     Tags = [new EventTag("batch", "time-based")],
                     Metadata = new Dictionary<string, string>
                     {
-                        ["timeout"] = timeoutMs.ToString(),
-                        ["threshold"] = eventThreshold.ToString(),
-                        ["collected"] = events.Count.ToString()
+                        ["timeout"] = timeoutMs.ToString(), ["threshold"] = eventThreshold.ToString(), ["collected"] = events.Count.ToString()
                     },
                     Created = DateTimeOffset.UtcNow
                 });
@@ -458,10 +452,7 @@ public class EventStoreBenchmarks
                 EventType = new EventType("localhost-benchmark-event"),
                 EventJson = $"{{ \"message\": \"localhost batch data {i}\" }}",
                 Tags = [new EventTag("stream", streamId)],
-                Metadata = new Dictionary<string, string>
-                {
-                    ["source"] = "localhost-benchmark", ["index"] = i.ToString()
-                },
+                Metadata = new Dictionary<string, string> { ["source"] = "localhost-benchmark", ["index"] = i.ToString() },
                 Created = DateTimeOffset.UtcNow
             })
             .ToArray();
@@ -623,8 +614,7 @@ public class EventStoreBenchmarks
                         Tags = [new EventTag("stress", "connection-pool")],
                         Metadata = new Dictionary<string, string>
                         {
-                            ["threadId"] = Thread.CurrentThread.ManagedThreadId.ToString(),
-                            ["timestamp"] = DateTimeOffset.UtcNow.ToString("O")
+                            ["threadId"] = Thread.CurrentThread.ManagedThreadId.ToString(), ["timestamp"] = DateTimeOffset.UtcNow.ToString("O")
                         },
                         Created = DateTimeOffset.UtcNow
                     })
@@ -667,10 +657,7 @@ public class EventStoreBenchmarks
 
     private async Task EnsurePostgresSchemaAndData(Func<Task> dataSetup)
     {
-        PostgresEventStoreOptions options = new()
-        {
-            ConnectionString = _postgreSqlContainer.GetConnectionString(), Schema = "benchmark"
-        };
+        PostgresEventStoreOptions options = new() { ConnectionString = _postgreSqlContainer.GetConnectionString(), Schema = "benchmark" };
 
         try
         {
@@ -869,9 +856,7 @@ public class EventStoreBenchmarks
                 Tags = tags,
                 Metadata = new Dictionary<string, string>
                 {
-                    ["benchmark"] = "tag-performance",
-                    ["eventCount"] = eventCount.ToString(),
-                    ["tagsPerEvent"] = tagsPerEvent.ToString()
+                    ["benchmark"] = "tag-performance", ["eventCount"] = eventCount.ToString(), ["tagsPerEvent"] = tagsPerEvent.ToString()
                 },
                 Created = DateTimeOffset.UtcNow.AddSeconds(-i) // Spread events over time
             });
@@ -928,9 +913,7 @@ public class EventStoreBenchmarks
                 Tags = tags,
                 Metadata = new Dictionary<string, string>
                 {
-                    ["benchmark"] = "tag-performance-inmem",
-                    ["eventCount"] = eventCount.ToString(),
-                    ["tagsPerEvent"] = tagsPerEvent.ToString()
+                    ["benchmark"] = "tag-performance-inmem", ["eventCount"] = eventCount.ToString(), ["tagsPerEvent"] = tagsPerEvent.ToString()
                 },
                 Created = DateTimeOffset.UtcNow.AddSeconds(-i)
             });

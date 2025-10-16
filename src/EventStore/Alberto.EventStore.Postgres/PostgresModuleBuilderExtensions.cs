@@ -42,7 +42,8 @@ public static class PostgresModuleBuilderExtensions
                 Options.Create(
                     provider.GetRequiredService<IOptionsSnapshot<PostgresEventStoreOptions>>()
                         .Get(moduleBuilder.ModuleKey)),
-                provider.GetRequiredService<ILogger<PostgresEventStoreBackend>>()));
+                provider.GetRequiredService<ILogger<PostgresEventStoreBackend>>(),
+                provider.GetRequiredService<IMetricsRecorder>()));
 
         // Register as IMultiTenantEventStore for subscription polling
         moduleBuilder.Services.AddKeyedScoped<IMultiTenantEventStore, PostgresEventStoreBackend>(
@@ -51,7 +52,8 @@ public static class PostgresModuleBuilderExtensions
                 Options.Create(
                     provider.GetRequiredService<IOptionsSnapshot<PostgresEventStoreOptions>>()
                         .Get(moduleBuilder.ModuleKey)),
-                provider.GetRequiredService<ILogger<PostgresEventStoreBackend>>()));
+                provider.GetRequiredService<ILogger<PostgresEventStoreBackend>>(),
+                provider.GetRequiredService<IMetricsRecorder>()));
 
         // Register subscription infrastructure (checkpoint and poison pill stores)
         RegisterPostgresSubscriptionInfrastructure(moduleBuilder);

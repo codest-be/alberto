@@ -1,0 +1,59 @@
+using Alberto.CQRS;
+using Alberto.EventStore;
+using Alberto.EventStore.Postgres;
+using Alberto.EventStore.Subscriptions.Channel;
+using Alberto.EventStore.Telemetry;
+using Alberto.Example.Modules.Payments.Api.Endpoints;
+using Alberto.Example.Modules.Payments.Projections;
+using Alberto.Projections.Postgres;
+
+namespace Alberto.Example.Modules.Payments;
+
+public static class PaymentsModule
+{
+    public static IServiceCollection AddPaymentsModule(this IServiceCollection services, IConfiguration configuration)
+    {
+        services
+            .AddModule<PaymentEventStore>("payments", module => module
+                .WithPostgres(options =>
+                {
+                    options.ConnectionString = configuration.GetConnectionString("alberto-db") ??
+                                               throw new InvalidOperationException(
+                                                   "Connection string 'alberto-db' not found.");
+                    options.Schema = "payments";
+                })
+                .WithMultiTenancy<MultiTenantContext>()
+                .WithChannelSubscriptions(channel => channel
+                    .ConfigureSync(options =>
+                    {
+                        options.MaxRetries = 3;
+                        options.RetryDelayMs = 250;
+                        options.AllowParallelExecution = true;
+                    })
+                    .ConfigureAsync(options =>
+                    {
+                        options.MinPollingIntervalMs = 100;
+                        options.PollingGrowFactor = 1.5;
+                        options.MaxRetries = 5;
+                        options.RetryDelayMs = 250;
+                        options.MaxPageSize = 100;
+                    })
+                    .AddPostgresProjection<PaymentEventStore, PaymentProjectionSubscription, Guid, Payment, PaymentProjector>(
+                        mode: SubscriptionMode.Hybrid)
+                )
+                .WithCQRS(cqrs => cqrs.ScanAssembly(typeof(PaymentsModule).Assembly))
+                .WithTelemetry()
+            );
+
+        return services;
+    }
+
+    public static IEndpointRouteBuilder MapPaymentsModule(this IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapCreatePayment();
+        endpoints.MapProcessPayment();
+        endpoints.MapGetPayment();
+
+        return endpoints;
+    }
+}

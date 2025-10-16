@@ -40,9 +40,6 @@ internal class ActivityDiagnosticEventListener : IDiagnosticsEventListener
             return new Dictionary<string, string>();
 
         // Add trace information only when OpenTelemetry is actively being used
-        return new Dictionary<string, string>
-        {
-            ["_traceId"] = currentActivity.TraceId.ToString(), ["_spanId"] = currentActivity.SpanId.ToString()
-        };
+        return new Dictionary<string, string> { ["_traceId"] = currentActivity.TraceId.ToString(), ["_spanId"] = currentActivity.SpanId.ToString() };
     }
 }

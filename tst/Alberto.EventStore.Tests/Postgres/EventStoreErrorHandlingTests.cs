@@ -1,4 +1,5 @@
 using System.Net.Sockets;
+using Alberto.EventStore.Diagnostics;
 using Alberto.EventStore.Events;
 using Alberto.EventStore.MultiTenant;
 using Alberto.EventStore.Postgres;
@@ -22,7 +23,7 @@ public class EventStoreErrorHandlingTests(PostgresTestFixture fixture) : IAsyncL
     public ValueTask InitializeAsync()
     {
         var options = Options.Create(fixture.Options);
-        _backend = new PostgresEventStoreBackend(options, NullLogger<PostgresEventStoreBackend>.Instance);
+        _backend = new PostgresEventStoreBackend(options, NullLogger<PostgresEventStoreBackend>.Instance, new NoopMetricsRecorder());
         return ValueTask.CompletedTask;
     }
 
@@ -37,9 +38,7 @@ public class EventStoreErrorHandlingTests(PostgresTestFixture fixture) : IAsyncL
         // Arrange
         var invalidOptions = Options.Create(new PostgresEventStoreOptions
         {
-            ConnectionString = "Host=nonexistent;Database=invalid;Username=fake;Password=fake",
-            Schema = "app",
-            BulkInsertThreshold = 5
+            ConnectionString = "Host=nonexistent;Database=invalid;Username=fake;Password=fake", Schema = "app", BulkInsertThreshold = 5
         });
 
         PostgresEventStoreBackend invalidBackend = new(invalidOptions, NullLogger<PostgresEventStoreBackend>.Instance);

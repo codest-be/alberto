@@ -1,3 +1,4 @@
+using Alberto.EventStore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -12,7 +13,8 @@ public sealed class SubscriptionPollingService(
     EventRouter eventRouter,
     PollingOptions options,
     IServiceProvider serviceProvider,
-    ILogger<SubscriptionPollingService> logger)
+    ILogger<SubscriptionPollingService> logger,
+    IMetricsRecorder metrics)
     : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -51,6 +53,9 @@ public sealed class SubscriptionPollingService(
                         fromPosition
                     );
 
+                    // Record batch size metric
+                    metrics.RecordPollingBatch(moduleKey, events.Count);
+
                     var allSuccessful = true;
                     foreach (var evt in events.OrderBy(e => e.GlobalPosition))
                     {
@@ -85,6 +90,9 @@ public sealed class SubscriptionPollingService(
                         options.MaxPollingIntervalMs
                     );
                 }
+
+                // Update polling interval metric
+                metrics.UpdatePollingInterval(moduleKey, currentPollingInterval);
 
                 await Task.Delay(currentPollingInterval, stoppingToken);
             }

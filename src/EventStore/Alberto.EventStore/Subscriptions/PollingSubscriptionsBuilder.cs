@@ -1,4 +1,5 @@
 using System.Reflection;
+using Alberto.EventStore.Diagnostics;
 using Alberto.EventStore.Events;
 using Alberto.EventStore.Subscriptions.Checkpoints;
 using Alberto.EventStore.Subscriptions.Filters;
@@ -162,6 +163,7 @@ public class PollingSubscriptionsBuilder<TEventStore> where TEventStore : EventS
             var checkpointStore = sp.GetRequiredKeyedService<ICheckpointStore>(_moduleKey);
             var poisonPillStore = sp.GetRequiredKeyedService<IPoisonPillStore>(_moduleKey);
             var logger = sp.GetRequiredService<ILogger<EventRouter>>();
+            var metrics = sp.GetRequiredService<IMetricsRecorder>();
 
             var router = new EventRouter(
                 _moduleKey,
@@ -169,6 +171,7 @@ public class PollingSubscriptionsBuilder<TEventStore> where TEventStore : EventS
                 poisonPillStore,
                 sp,
                 logger,
+                metrics,
                 _pollingOptions.MaxRetries,
                 _pollingOptions.RetryDelayMs
             );
@@ -197,7 +200,8 @@ public class PollingSubscriptionsBuilder<TEventStore> where TEventStore : EventS
             sp.GetRequiredKeyedService<EventRouter>(_moduleKey),
             sp.GetRequiredKeyedService<PollingOptions>(_moduleKey),
             sp,
-            sp.GetRequiredService<ILogger<SubscriptionPollingService>>()
+            sp.GetRequiredService<ILogger<SubscriptionPollingService>>(),
+            sp.GetRequiredService<IMetricsRecorder>()
         ));
     }
 
