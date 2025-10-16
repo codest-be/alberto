@@ -73,7 +73,7 @@ public static class PostgresModuleBuilderExtensions
         var moduleKey = moduleBuilder.ModuleKey;
 
         // Register checkpoint store
-        services.AddSingleton<ICheckpointStore>(sp =>
+        services.AddKeyedSingleton<ICheckpointStore>(moduleKey, (sp, _) =>
         {
             var options = sp.GetRequiredService<IOptionsMonitor<PostgresEventStoreOptions>>().Get(moduleKey);
             var logger = sp.GetRequiredService<ILogger<PostgresCheckpointStore>>();
@@ -81,7 +81,7 @@ public static class PostgresModuleBuilderExtensions
         });
 
         // Register poison pill store
-        services.AddSingleton<IPoisonPillStore>(sp =>
+        services.AddKeyedSingleton<IPoisonPillStore>(moduleKey, (sp, _) =>
         {
             var options = sp.GetRequiredService<IOptionsMonitor<PostgresEventStoreOptions>>().Get(moduleKey);
             var logger = sp.GetRequiredService<ILogger<PostgresPoisonPillStore>>();

@@ -1,7 +1,7 @@
 -- =============================================================================
 -- ALBERTO PROJECTIONS SCHEMA FOR POSTGRESQL
 -- =============================================================================
--- Schema: {schema}
+-- Schema: orders
 -- =============================================================================
 
-CREATE SCHEMA IF NOT EXISTS {schema};
+CREATE SCHEMA IF NOT EXISTS orders;

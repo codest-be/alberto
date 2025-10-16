@@ -94,14 +94,14 @@ public static class InMemoryModuleBuilderExtensions
         var moduleKey = moduleBuilder.ModuleKey;
 
         // Register checkpoint store
-        services.AddSingleton<ICheckpointStore>(sp =>
+        services.AddKeyedSingleton<ICheckpointStore>(moduleKey, (sp, _) =>
         {
             var logger = sp.GetRequiredService<ILogger<InMemoryCheckpointStore>>();
             return new InMemoryCheckpointStore(logger);
         });
 
         // Register poison pill store
-        services.AddSingleton<IPoisonPillStore>(sp =>
+        services.AddKeyedSingleton<IPoisonPillStore>(moduleKey, (sp, _) =>
         {
             var logger = sp.GetRequiredService<ILogger<InMemoryPoisonPillStore>>();
             return new InMemoryPoisonPillStore(logger);

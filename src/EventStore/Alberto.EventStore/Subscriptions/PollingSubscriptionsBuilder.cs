@@ -156,8 +156,8 @@ public class PollingSubscriptionsBuilder<TEventStore> where TEventStore : EventS
         // Register EventRouter
         _services.AddKeyedSingleton<EventRouter>(_moduleKey, (sp, _) =>
         {
-            var checkpointStore = sp.GetRequiredService<ICheckpointStore>();
-            var poisonPillStore = sp.GetRequiredService<IPoisonPillStore>();
+            var checkpointStore = sp.GetRequiredKeyedService<ICheckpointStore>(_moduleKey);
+            var poisonPillStore = sp.GetRequiredKeyedService<IPoisonPillStore>(_moduleKey);
             var logger = sp.GetRequiredService<ILogger<EventRouter>>();
 
             var router = new EventRouter(
@@ -181,10 +181,7 @@ public class PollingSubscriptionsBuilder<TEventStore> where TEventStore : EventS
 
                 router.RegisterHandler(new HandlerRegistration
                 {
-                    SubscriptionId = subscriptionId,
-                    Handler = handler,
-                    SupportedEventTypes = supportedEventTypes,
-                    Logger = handlerLogger
+                    SubscriptionId = subscriptionId, Handler = handler, SupportedEventTypes = supportedEventTypes, Logger = handlerLogger
                 });
             }
 

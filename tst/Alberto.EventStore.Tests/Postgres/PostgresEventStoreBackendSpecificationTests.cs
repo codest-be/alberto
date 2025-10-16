@@ -78,10 +78,7 @@ public class PostgresTestFixture : IAsyncLifetime
     {
         await _postgresContainer.StartAsync();
 
-        Options = new PostgresEventStoreOptions
-        {
-            ConnectionString = _postgresContainer.GetConnectionString(), Schema = "orders", BulkInsertThreshold = 5
-        };
+        Options = new PostgresEventStoreOptions { ConnectionString = _postgresContainer.GetConnectionString(), Schema = "orders", BulkInsertThreshold = 5 };
 
         await RunMigrations();
     }
@@ -158,7 +155,7 @@ public class PostgresTestFixture : IAsyncLifetime
         var logger = new NullLogger<MigrationHostedService>();
         var migrationService = new MigrationHostedService(serviceProvider, logger);
 
-        await migrationService.StartAsync(CancellationToken.None);
+        await migrationService.StartingAsync(CancellationToken.None);
 
         await VerifySchemaSetup();
     }

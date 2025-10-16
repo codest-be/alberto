@@ -216,7 +216,7 @@ public class MultiSchemaEventStoreTests(PostgresTestFixture fixture) : IAsyncLif
         var logger = new NullLogger<MigrationHostedService>();
         var migrationService = new MigrationHostedService(serviceProvider, logger);
 
-        await migrationService.StartAsync(CancellationToken.None);
+        await migrationService.StartingAsync(CancellationToken.None);
     }
 
     private PostgresEventStoreBackend CreateBackendForSchema(string schema)

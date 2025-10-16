@@ -244,8 +244,8 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
         // Register EventRouter for channel handlers only
         _services.AddKeyedSingleton<EventRouter>(channelRouterKey, (sp, _) =>
         {
-            var checkpointStore = sp.GetRequiredService<ICheckpointStore>();
-            var poisonPillStore = sp.GetRequiredService<IPoisonPillStore>();
+            var checkpointStore = sp.GetRequiredKeyedService<ICheckpointStore>(_moduleKey);
+            var poisonPillStore = sp.GetRequiredKeyedService<IPoisonPillStore>(_moduleKey);
             var logger = sp.GetRequiredService<ILogger<EventRouter>>();
 
             var router = new EventRouter(
@@ -259,12 +259,13 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
             );
 
             // Register only channel handlers
+            using var scope = sp.CreateScope();
             foreach (var handlerReg in channelHandlers)
             {
-                var handler = (IEventHandler)sp.GetRequiredKeyedService(handlerReg.HandlerType, _moduleKey);
+                var handler = (IEventHandler)scope.ServiceProvider.GetRequiredKeyedService(handlerReg.HandlerType, _moduleKey);
                 var subscriptionId = GetSubscriptionId(handler);
                 var supportedEventTypes = GetSupportedEventTypes(handler);
-                var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+                var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
                 var handlerLogger = loggerFactory.CreateLogger(handler.GetType());
 
                 router.RegisterHandler(new HandlerRegistration
@@ -334,8 +335,8 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
         // Register EventRouter for polling handlers only
         _services.AddKeyedSingleton<EventRouter>(pollingRouterKey, (sp, _) =>
         {
-            var checkpointStore = sp.GetRequiredService<ICheckpointStore>();
-            var poisonPillStore = sp.GetRequiredService<IPoisonPillStore>();
+            var checkpointStore = sp.GetRequiredKeyedService<ICheckpointStore>(_moduleKey);
+            var poisonPillStore = sp.GetRequiredKeyedService<IPoisonPillStore>(_moduleKey);
             var logger = sp.GetRequiredService<ILogger<EventRouter>>();
 
             var router = new EventRouter(
@@ -349,12 +350,13 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
             );
 
             // Register only polling handlers
+            using var scope = sp.CreateScope();
             foreach (var handlerReg in pollingHandlers)
             {
-                var handler = (IEventHandler)sp.GetRequiredKeyedService(handlerReg.HandlerType, _moduleKey);
+                var handler = (IEventHandler)scope.ServiceProvider.GetRequiredKeyedService(handlerReg.HandlerType, _moduleKey);
                 var subscriptionId = GetSubscriptionId(handler);
                 var supportedEventTypes = GetSupportedEventTypes(handler);
-                var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+                var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
                 var handlerLogger = loggerFactory.CreateLogger(handler.GetType());
 
                 router.RegisterHandler(new HandlerRegistration

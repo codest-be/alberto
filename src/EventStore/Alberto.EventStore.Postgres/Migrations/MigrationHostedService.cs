@@ -12,11 +12,12 @@ namespace Alberto.EventStore.Postgres.Migrations;
 /// Runtime migration service that generates, persists, and runs SQL migrations.
 /// First run: Generates SQL files and saves to disk
 /// Subsequent runs: Loads SQL files from disk
+/// Uses IHostedLifecycleService to ensure migrations complete before other services start
 /// </summary>
 public sealed class MigrationHostedService(
     IServiceProvider serviceProvider,
     ILogger<MigrationHostedService> logger)
-    : IHostedService
+    : IHostedLifecycleService
 {
     private const string MigrationsFolder = "Migrations/Generated";
 
@@ -26,7 +27,7 @@ public sealed class MigrationHostedService(
     private readonly IServiceProvider _serviceProvider =
         serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
 
-    public async Task StartAsync(CancellationToken cancellationToken)
+    public async Task StartingAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("Starting runtime database migrations");
 
@@ -66,7 +67,15 @@ public sealed class MigrationHostedService(
         }
     }
 
+    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StartedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StoppingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     private Dictionary<string, string> DiscoverSchemasFromEventStores()
     {
@@ -252,13 +261,13 @@ public sealed class MigrationHostedService(
         return $@"-- =============================================================================
 -- ALBERTO EVENT STORE SCHEMA FOR POSTGRESQL
 -- =============================================================================
--- Schema: {{schema}}
+-- Schema: {schema}
 -- =============================================================================
 
-CREATE SCHEMA IF NOT EXISTS {{schema}};
+CREATE SCHEMA IF NOT EXISTS {schema};
 
 -- Main events table with tenant support
-CREATE TABLE IF NOT EXISTS {{schema}}.events
+CREATE TABLE IF NOT EXISTS {schema}.events
 (
     position       BIGSERIAL PRIMARY KEY,
     id             UUID NOT NULL UNIQUE,
@@ -271,27 +280,27 @@ CREATE TABLE IF NOT EXISTS {{schema}}.events
 );
 
 -- Essential indexes
-CREATE INDEX IF NOT EXISTS idx_{{schema}}_events_tenant_position ON {{schema}}.events (tenant_id, position DESC);
-CREATE INDEX IF NOT EXISTS idx_{{schema}}_events_consistency ON {{schema}}.events (tenant_id, position) WHERE position > 0;
-CREATE INDEX IF NOT EXISTS idx_{{schema}}_events_global_position ON {{schema}}.events (position) INCLUDE (tenant_id, event_type, tags, data, metadata, created_at);
+CREATE INDEX IF NOT EXISTS idx_{schema}_events_tenant_position ON {schema}.events (tenant_id, position DESC);
+CREATE INDEX IF NOT EXISTS idx_{schema}_events_consistency ON {schema}.events (tenant_id, position) WHERE position > 0;
+CREATE INDEX IF NOT EXISTS idx_{schema}_events_global_position ON {schema}.events (position) INCLUDE (tenant_id, event_type, tags, data, metadata, created_at);
 
 -- Optimized tenant-first indexes
-CREATE INDEX IF NOT EXISTS idx_{{schema}}_events_tenant_tags_gin ON {{schema}}.events (tenant_id, tags) WHERE array_length(tags, 1) > 0;
-CREATE INDEX IF NOT EXISTS idx_{{schema}}_events_tenant_type_tags ON {{schema}}.events (tenant_id, event_type, tags) WHERE array_length(tags, 1) > 0;
-CREATE INDEX IF NOT EXISTS idx_{{schema}}_events_tenant_tags_covering ON {{schema}}.events (tenant_id) INCLUDE (event_type, tags, data, metadata, created_at, position) WHERE array_length(tags, 1) > 0;
+CREATE INDEX IF NOT EXISTS idx_{schema}_events_tenant_tags_gin ON {schema}.events (tenant_id, tags) WHERE array_length(tags, 1) > 0;
+CREATE INDEX IF NOT EXISTS idx_{schema}_events_tenant_type_tags ON {schema}.events (tenant_id, event_type, tags) WHERE array_length(tags, 1) > 0;
+CREATE INDEX IF NOT EXISTS idx_{schema}_events_tenant_tags_covering ON {schema}.events (tenant_id) INCLUDE (event_type, tags, data, metadata, created_at, position) WHERE array_length(tags, 1) > 0;
 
 -- Subscription checkpoints
-CREATE TABLE IF NOT EXISTS {{schema}}.subscription_checkpoints
+CREATE TABLE IF NOT EXISTS {schema}.subscription_checkpoints
 (
     subscription_id VARCHAR PRIMARY KEY,
     position        BIGINT NULL,
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_{{schema}}_subscription_checkpoints_updated ON {{schema}}.subscription_checkpoints (updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_{schema}_subscription_checkpoints_updated ON {schema}.subscription_checkpoints (updated_at DESC);
 
 -- Poison pills
-CREATE TABLE IF NOT EXISTS {{schema}}.subscription_poison_pills
+CREATE TABLE IF NOT EXISTS {schema}.subscription_poison_pills
 (
     id                  UUID PRIMARY KEY,
     subscription_id     VARCHAR NOT NULL,
@@ -311,9 +320,9 @@ CREATE TABLE IF NOT EXISTS {{schema}}.subscription_poison_pills
     resolution_notes    TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_{{schema}}_poison_pills_subscription ON {{schema}}.subscription_poison_pills (subscription_id);
-CREATE INDEX IF NOT EXISTS idx_{{schema}}_poison_pills_event ON {{schema}}.subscription_poison_pills (event_id);
-CREATE INDEX IF NOT EXISTS idx_{{schema}}_poison_pills_unresolved ON {{schema}}.subscription_poison_pills (subscription_id, last_failed_at) WHERE resolved_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_{schema}_poison_pills_subscription ON {schema}.subscription_poison_pills (subscription_id);
+CREATE INDEX IF NOT EXISTS idx_{schema}_poison_pills_event ON {schema}.subscription_poison_pills (event_id);
+CREATE INDEX IF NOT EXISTS idx_{schema}_poison_pills_unresolved ON {schema}.subscription_poison_pills (subscription_id, last_failed_at) WHERE resolved_at IS NULL;
 ";
     }
 
@@ -322,20 +331,20 @@ CREATE INDEX IF NOT EXISTS idx_{{schema}}_poison_pills_unresolved ON {{schema}}.
         return $@"-- =============================================================================
 -- ALBERTO PROJECTIONS SCHEMA FOR POSTGRESQL
 -- =============================================================================
--- Schema: {{schema}}
+-- Schema: {schema}
 -- =============================================================================
 
-CREATE SCHEMA IF NOT EXISTS {{schema}};
+CREATE SCHEMA IF NOT EXISTS {schema};
 ";
     }
 
     private string GenerateProjectionTableSql(string schema, string tableName)
     {
         return $@"-- =============================================================================
--- PROJECTION TABLE: {{schema}}.{tableName}
+-- PROJECTION TABLE: {schema}.{tableName}
 -- =============================================================================
 
-CREATE TABLE IF NOT EXISTS {{schema}}.{tableName} (
+CREATE TABLE IF NOT EXISTS {schema}.{tableName} (
     tenant_id TEXT NOT NULL,
     key TEXT NOT NULL,
     state JSONB NOT NULL,
@@ -344,10 +353,10 @@ CREATE TABLE IF NOT EXISTS {{schema}}.{tableName} (
     PRIMARY KEY (tenant_id, key)
 );
 
-CREATE INDEX IF NOT EXISTS idx_{{schema}}_{tableName}_tenant_updated ON {{schema}}.{tableName}(tenant_id, updated_at);
-CREATE INDEX IF NOT EXISTS idx_{{schema}}_{tableName}_global_version ON {{schema}}.{tableName}(tenant_id, key, global_version);
+CREATE INDEX IF NOT EXISTS idx_{schema}_{tableName}_tenant_updated ON {schema}.{tableName}(tenant_id, updated_at);
+CREATE INDEX IF NOT EXISTS idx_{schema}_{tableName}_global_version ON {schema}.{tableName}(tenant_id, key, global_version);
 
-COMMENT ON TABLE {{schema}}.{tableName} IS 'Projection state for {tableName}';
+COMMENT ON TABLE {schema}.{tableName} IS 'Projection state for {tableName}';
 ";
     }
 
