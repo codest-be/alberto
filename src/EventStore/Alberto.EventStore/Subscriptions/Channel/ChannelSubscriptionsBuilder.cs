@@ -252,7 +252,10 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
         // Register EventRouter for channel handlers only
         _services.AddKeyedSingleton<EventRouter>(channelRouterKey, (sp, _) =>
         {
-            var checkpointStore = sp.GetRequiredKeyedService<ICheckpointStore>(_moduleKey);
+            // Channel router uses ephemeral checkpoints (in-memory only, not persisted to DB)
+            // This prevents race conditions with polling router in Hybrid mode
+            // On restart, polling router will catch up on any missed events
+            var checkpointStore = new EphemeralCheckpointStore();
             var poisonPillStore = sp.GetRequiredKeyedService<IPoisonPillStore>(_moduleKey);
             var logger = sp.GetRequiredService<ILogger<EventRouter>>();
             var metrics = sp.GetRequiredService<IMetricsRecorder>();

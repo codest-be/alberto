@@ -34,10 +34,4 @@ public class PostgresEventStoreOptions
     }
 
     public int BulkInsertThreshold { get; set; } = 5;
-
-    /// <summary>
-    /// Maximum size of a single batch when appending events.
-    /// If the number of events exceeds this, they will be split into multiple batches.
-    /// </summary>
-    public int MaxBatchSize { get; set; } = 1000;
 }

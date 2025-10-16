@@ -5,6 +5,7 @@ using Alberto.EventStore.Postgres.Subscriptions.PoisonPills;
 using Alberto.EventStore.Subscriptions.Checkpoints;
 using Alberto.EventStore.Subscriptions.Filters;
 using Alberto.EventStore.Subscriptions.PoisonPills;
+using Alberto.EventStore.Subscriptions.Polling;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -74,12 +75,25 @@ public static class PostgresModuleBuilderExtensions
         var services = moduleBuilder.Services;
         var moduleKey = moduleBuilder.ModuleKey;
 
-        // Register checkpoint store
+        // Register checkpoint store with throttling
         services.AddKeyedSingleton<ICheckpointStore>(moduleKey, (sp, _) =>
         {
             var options = sp.GetRequiredService<IOptionsMonitor<PostgresEventStoreOptions>>().Get(moduleKey);
-            var logger = sp.GetRequiredService<ILogger<PostgresCheckpointStore>>();
-            return new PostgresCheckpointStore(options.ConnectionString, options.Schema, logger);
+            var innerLogger = sp.GetRequiredService<ILogger<PostgresCheckpointStore>>();
+            var throttledLogger = sp.GetRequiredService<ILogger<ThrottledCheckpointStore>>();
+
+            // Create inner PostgreSQL checkpoint store
+            var innerStore = new PostgresCheckpointStore(options.ConnectionString, options.Schema, innerLogger);
+
+            // Try to get polling options (may not be configured if no subscriptions are set up)
+            var pollingOptions = sp.GetKeyedService<PollingOptions>(moduleKey);
+            var flushInterval = pollingOptions?.CheckpointFlushIntervalSeconds ?? 5;
+
+            // Wrap with throttling to batch database writes
+            return new ThrottledCheckpointStore(
+                innerStore,
+                TimeSpan.FromSeconds(flushInterval),
+                throttledLogger);
         });
 
         // Register poison pill store

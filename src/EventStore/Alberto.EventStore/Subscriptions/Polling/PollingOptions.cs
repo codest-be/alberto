@@ -34,4 +34,10 @@ public sealed class PollingOptions
     /// Base delay in milliseconds for retries (multiplied by attempt number)
     /// </summary>
     public int RetryDelayMs { get; set; } = 500;
+
+    /// <summary>
+    /// Interval in seconds for flushing checkpoint updates to database.
+    /// Checkpoints are cached in-memory and periodically flushed to reduce database load.
+    /// </summary>
+    public int CheckpointFlushIntervalSeconds { get; set; } = 5;
 }
