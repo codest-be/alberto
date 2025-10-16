@@ -57,8 +57,8 @@ public abstract class AdvancedQueryTests
         Assert.Equal(3, secondPage.Count);
 
         // Verify pagination worked correctly
-        var firstPagePositions = firstPage.Select(e => long.Parse(e.Metadata["_position"])).ToList();
-        var secondPagePositions = secondPage.Select(e => long.Parse(e.Metadata["_position"])).ToList();
+        var firstPagePositions = firstPage.Select(e => e.Position).ToList();
+        var secondPagePositions = secondPage.Select(e => e.Position).ToList();
 
         Assert.True(secondPagePositions.All(pos => pos > firstPagePositions.Max()));
 
@@ -281,7 +281,7 @@ public abstract class AdvancedQueryTests
         Assert.Equal(50, limitedResult.Count);
 
         // Verify ordering is maintained
-        var positions = allEventsResult.Select(e => long.Parse(e.Metadata["_position"])).ToList();
+        var positions = allEventsResult.Select(e => e.Position).ToList();
         Assert.True(positions.SequenceEqual(positions.OrderBy(p => p)));
 
         await CleanupAsync();

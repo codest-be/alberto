@@ -167,8 +167,8 @@ public class MultiSchemaEventStoreTests(PostgresTestFixture fixture) : IAsyncLif
         var paymentsResult = await paymentsBackend.Stream(tenant,
             new StreamQuery().WithTags(EventTag.Parse("payment:456")), cancellationToken: CancellationToken.None);
 
-        var orderPositions = ordersResult.Select(e => long.Parse(e.Metadata["_position"])).ToList();
-        var paymentPositions = paymentsResult.Select(e => long.Parse(e.Metadata["_position"])).ToList();
+        var orderPositions = ordersResult.Select(e => e.Position).ToList();
+        var paymentPositions = paymentsResult.Select(e => e.Position).ToList();
 
         // Each schema should start from its own sequence
         Assert.True(orderPositions.All(p => p > 0));

@@ -94,11 +94,7 @@ public class EventStoreTestFixture : IDisposable
                     total = 129.99m,
                     currency = "USD",
                     items =
-                        new[]
-                        {
-                            new { productId = "prod-123", quantity = 2, price = 49.99m },
-                            new { productId = "prod-456", quantity = 1, price = 30.01m }
-                        }
+                        new[] { new { productId = "prod-123", quantity = 2, price = 49.99m }, new { productId = "prod-456", quantity = 1, price = 30.01m } }
                 }, $"order:{orderId}", $"customer:{customerId}", "domain:ecommerce"),
             CreateTestEventWithData("payment-authorized",
                 new { orderId, paymentId = Guid.NewGuid(), amount = 129.99m, method = "credit_card" },
@@ -160,10 +156,7 @@ public class EventStoreTestFixture : IDisposable
         long? previousPosition = null;
         foreach (var eventEnvelope in events)
         {
-            Assert.True(eventEnvelope.Metadata.ContainsKey("_position"),
-                $"Event {eventEnvelope.EventType.Id} missing _position metadata");
-
-            var currentPosition = long.Parse(eventEnvelope.Metadata["_position"]);
+            var currentPosition = eventEnvelope.Position;
 
             if (previousPosition.HasValue)
                 Assert.True(currentPosition > previousPosition.Value,
@@ -173,7 +166,7 @@ public class EventStoreTestFixture : IDisposable
         }
 
         // Check position uniqueness
-        var positions = events.Select(e => long.Parse(e.Metadata["_position"])).ToList();
+        var positions = events.Select(e => e.Position).ToList();
         var uniquePositions = positions.Distinct().ToList();
         Assert.Equal(positions.Count, uniquePositions.Count);
     }

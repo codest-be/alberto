@@ -22,6 +22,7 @@ public class InMemoryEventStoreBackend(ILogger<InMemoryEventStoreBackend> logger
         .Select(IEventEnvelope (e) => new EventEnvelope
         {
             Id = e.Id,
+            Position = e.Position,
             EventType = e.EventType,
             EventJson = e.EventJson,
             Metadata = new Dictionary<string, string>(e.Metadata),
@@ -56,9 +57,10 @@ public class InMemoryEventStoreBackend(ILogger<InMemoryEventStoreBackend> logger
                 .Select(IEventEnvelope (e) => new EventEnvelope
                 {
                     Id = e.Id,
+                    Position = e.Position,
                     EventType = e.EventType,
                     EventJson = e.EventJson,
-                    Metadata = new Dictionary<string, string>(e.Metadata) { ["_position"] = e.Position.ToString() },
+                    Metadata = new Dictionary<string, string>(e.Metadata),
                     Created = e.Created
                 })
                 .ToList();
@@ -119,16 +121,14 @@ public class InMemoryEventStoreBackend(ILogger<InMemoryEventStoreBackend> logger
                 if (!tenantEvents.TryAdd(@event.Id, storedEvent))
                     throw new ConcurrencyConflictException($"Event with ID {@event.Id} already exists");
 
-                // Create the returned event with position in metadata
-                Dictionary<string, string> metadata = new(@event.Metadata) { ["_position"] = position.ToString() };
-
                 insertedEvents.Add(
                     new EventEnvelope
                     {
                         Id = @event.Id,
+                        Position = position,
                         EventType = @event.EventType,
                         EventJson = @event.EventJson,
-                        Metadata = metadata,
+                        Metadata = new Dictionary<string, string>(@event.Metadata),
                         Created = @event.Created
                     });
             }
@@ -298,9 +298,10 @@ public class InMemoryEventStoreBackend(ILogger<InMemoryEventStoreBackend> logger
                 .Select(e => (IEventEnvelope)new EventEnvelope
                 {
                     Id = e.Id,
+                    Position = e.Position,
                     EventType = e.EventType,
                     EventJson = e.EventJson,
-                    Metadata = new Dictionary<string, string>(e.Metadata) { ["_position"] = e.Position.ToString() },
+                    Metadata = new Dictionary<string, string>(e.Metadata),
                     Created = e.Created
                 })
                 .ToList();
@@ -320,6 +321,7 @@ public class InMemoryEventStoreBackend(ILogger<InMemoryEventStoreBackend> logger
                 .Select(e => (IEventEnvelope)new EventEnvelope
                 {
                     Id = e.Id,
+                    Position = e.Position,
                     EventType = e.EventType,
                     EventJson = e.EventJson,
                     Metadata = new Dictionary<string, string>(e.Metadata),
@@ -344,9 +346,10 @@ public class InMemoryEventStoreBackend(ILogger<InMemoryEventStoreBackend> logger
                 .Select(e => (IEventEnvelope)new EventEnvelope
                 {
                     Id = e.Id,
+                    Position = e.Position,
                     EventType = e.EventType,
                     EventJson = e.EventJson,
-                    Metadata = new Dictionary<string, string>(e.Metadata) { ["_position"] = e.Position.ToString() },
+                    Metadata = new Dictionary<string, string>(e.Metadata),
                     Created = e.Created
                 })
                 .ToList();

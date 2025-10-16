@@ -615,13 +615,14 @@ public class PostgresEventStoreBackend : IEventStoreBackend, IMultiTenantEventSt
     {
         return eventsList.Zip(
             positions,
-            IEventEnvelope (eventToPersist, _) =>
+            IEventEnvelope (eventToPersist, position) =>
             {
                 Dictionary<string, string> metadata = new(eventToPersist.Metadata);
 
                 return new EventEnvelope
                 {
                     Id = eventToPersist.Id,
+                    Position = position,
                     EventType = eventToPersist.EventType,
                     EventJson = eventToPersist.EventJson,
                     Metadata = metadata,
@@ -650,8 +651,6 @@ public class PostgresEventStoreBackend : IEventStoreBackend, IMultiTenantEventSt
             : JsonSerializer.Deserialize<Dictionary<string, string>>(record.metadata)
               ?? new Dictionary<string, string>();
 
-        metadata["_position"] = record.position.ToString();
-
         // Extract trace context for potential restoration
         ActivityContext? traceContext = ExtractTraceContextFromMetadata(metadata);
         if (traceContext.HasValue)
@@ -660,6 +659,7 @@ public class PostgresEventStoreBackend : IEventStoreBackend, IMultiTenantEventSt
         return new EventEnvelope
         {
             Id = record.id,
+            Position = record.position,
             EventType = new EventType(record.event_type),
             EventJson = record.event_data,
             Metadata = metadata,

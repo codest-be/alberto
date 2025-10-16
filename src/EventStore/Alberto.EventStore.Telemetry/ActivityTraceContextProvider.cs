@@ -11,7 +11,7 @@ public sealed class ActivityTraceContextProvider(
     ILogger<ActivityTraceContextProvider> logger) : ITraceContextProvider
 {
     public IDisposable CreateScopeFromMetadata(IReadOnlyDictionary<string, string> metadata, string subscriptionName,
-        string eventType)
+        string eventType, bool isSynchronous)
     {
         // Extract trace information from event metadata
         if (!metadata.TryGetValue("_traceId", out var traceIdString) ||
@@ -39,16 +39,29 @@ public sealed class ActivityTraceContextProvider(
             return new NoopDisposable();
         }
 
-        // Create a new activity that links to the original append activity
         var activityName = $"{subscriptionName}:{eventType}";
         var appendActivityContext = new ActivityContext(traceId, parentSpanId, ActivityTraceFlags.Recorded);
-        var link = new ActivityLink(appendActivityContext);
 
-        var activity = AlbertoActivitySource.Source.StartActivity(
-            activityName,
-            ActivityKind.Consumer,
-            parentContext: default,
-            links: [link]);
+        Activity? activity;
+
+        if (isSynchronous)
+        {
+            // Synchronous subscriptions (channels): Continue the parent trace as a child span
+            activity = AlbertoActivitySource.Source.StartActivity(
+                activityName,
+                ActivityKind.Consumer,
+                parentContext: appendActivityContext);
+        }
+        else
+        {
+            // Asynchronous subscriptions (polling): Create a linked trace for async processing
+            var link = new ActivityLink(appendActivityContext);
+            activity = AlbertoActivitySource.Source.StartActivity(
+                activityName,
+                ActivityKind.Consumer,
+                parentContext: default,
+                links: [link]);
+        }
 
         if (activity == null)
         {
@@ -58,9 +71,11 @@ public sealed class ActivityTraceContextProvider(
         // Add telemetry tags for better observability
         activity.SetTag("subscription.name", subscriptionName);
         activity.SetTag("event.type", eventType);
+        activity.SetTag("subscription.mode", isSynchronous ? "sync" : "async");
 
         logger.LogDebug(
-            "Created consumption trace context for {SubscriptionName}:{EventType} with trace {TraceId}",
+            "Created {Mode} consumption trace context for {SubscriptionName}:{EventType} with trace {TraceId}",
+            isSynchronous ? "synchronous" : "asynchronous",
             subscriptionName,
             eventType,
             activity.TraceId);

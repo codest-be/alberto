@@ -105,11 +105,18 @@ public static class PostgresModuleBuilderExtensions
             return new TenantScopeFilter(tenantContext, logger);
         });
 
-        // TelemetryConsumeFilter is always added second for distributed tracing
-        services.AddKeyedScoped<TelemetryConsumeFilter>(moduleKey, (sp, _) =>
+        // Register TelemetryConsumeFilter for channel subscriptions (synchronous)
+        services.AddKeyedScoped<TelemetryConsumeFilter>($"{moduleKey}:channel", (sp, _) =>
         {
             var traceContextProvider = sp.GetRequiredService<ITraceContextProvider>();
-            return new TelemetryConsumeFilter(traceContextProvider);
+            return new TelemetryConsumeFilter(traceContextProvider, isSynchronous: true);
+        });
+
+        // Register TelemetryConsumeFilter for polling subscriptions (asynchronous)
+        services.AddKeyedScoped<TelemetryConsumeFilter>($"{moduleKey}:polling", (sp, _) =>
+        {
+            var traceContextProvider = sp.GetRequiredService<ITraceContextProvider>();
+            return new TelemetryConsumeFilter(traceContextProvider, isSynchronous: false);
         });
     }
 }

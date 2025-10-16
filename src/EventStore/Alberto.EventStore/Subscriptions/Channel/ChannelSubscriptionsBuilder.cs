@@ -205,11 +205,17 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
             var registry = sp.GetRequiredService<ChannelSubscriptionRegistry>();
             var writer = sp.GetRequiredKeyedService<ChannelWriter<GlobalEventEnvelope>>(_moduleKey);
             var eventRouter = sp.GetRequiredKeyedService<EventRouter>(channelRouterKey);
+            var logger = sp.GetRequiredService<ILogger<ChannelRegistrationService>>();
 
             // Extract event types from channel handlers
             var eventTypes = GetEventTypesFromRouter(eventRouter);
 
-            return new ChannelRegistrationService(registry, writer, _moduleKey, eventTypes);
+            logger.LogInformation(
+                "Creating ChannelRegistrationService for module '{ModuleKey}' with {EventTypeCount} event types",
+                _moduleKey,
+                eventTypes?.Count ?? 0);
+
+            return new ChannelRegistrationService(registry, writer, _moduleKey, eventTypes, logger);
         });
 
         // Register ConsumePipeline with filters for channel
@@ -225,7 +231,8 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
                 pipeline.AddFilter(tenantScopeFilter);
             }
 
-            var telemetryFilter = sp.GetKeyedService<TelemetryConsumeFilter>(_moduleKey);
+            // Use channel-specific telemetry filter (synchronous mode)
+            var telemetryFilter = sp.GetKeyedService<TelemetryConsumeFilter>(channelRouterKey);
             if (telemetryFilter != null)
             {
                 pipeline.AddFilter(telemetryFilter);
@@ -247,6 +254,7 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
             var checkpointStore = sp.GetRequiredKeyedService<ICheckpointStore>(_moduleKey);
             var poisonPillStore = sp.GetRequiredKeyedService<IPoisonPillStore>(_moduleKey);
             var logger = sp.GetRequiredService<ILogger<EventRouter>>();
+            var builderLogger = sp.GetRequiredService<ILogger<ChannelSubscriptionsBuilder<TEventStore>>>();
 
             var router = new EventRouter(
                 channelRouterKey,
@@ -258,6 +266,11 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
                 _channelOptions.RetryDelayMs
             );
 
+            builderLogger.LogInformation(
+                "Registering {HandlerCount} handlers for channel router (module: {ModuleKey})",
+                channelHandlers.Count,
+                _moduleKey);
+
             // Register only channel handlers
             using var scope = sp.CreateScope();
             foreach (var handlerReg in channelHandlers)
@@ -267,6 +280,13 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
                 var supportedEventTypes = GetSupportedEventTypes(handler);
                 var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
                 var handlerLogger = loggerFactory.CreateLogger(handler.GetType());
+
+                builderLogger.LogInformation(
+                    "Registering channel handler: {HandlerType} (subscription: {SubscriptionId}, mode: {Mode}, events: {EventTypes})",
+                    handlerReg.HandlerType.Name,
+                    subscriptionId,
+                    handlerReg.Mode,
+                    string.Join(", ", supportedEventTypes));
 
                 router.RegisterHandler(new HandlerRegistration
                 {
@@ -316,7 +336,8 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
                 pipeline.AddFilter(tenantScopeFilter);
             }
 
-            var telemetryFilter = sp.GetKeyedService<TelemetryConsumeFilter>(_moduleKey);
+            // Use polling-specific telemetry filter (asynchronous mode)
+            var telemetryFilter = sp.GetKeyedService<TelemetryConsumeFilter>(pollingRouterKey);
             if (telemetryFilter != null)
             {
                 pipeline.AddFilter(telemetryFilter);
@@ -338,6 +359,7 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
             var checkpointStore = sp.GetRequiredKeyedService<ICheckpointStore>(_moduleKey);
             var poisonPillStore = sp.GetRequiredKeyedService<IPoisonPillStore>(_moduleKey);
             var logger = sp.GetRequiredService<ILogger<EventRouter>>();
+            var builderLogger = sp.GetRequiredService<ILogger<ChannelSubscriptionsBuilder<TEventStore>>>();
 
             var router = new EventRouter(
                 pollingRouterKey,
@@ -349,6 +371,11 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
                 _pollingOptions.RetryDelayMs
             );
 
+            builderLogger.LogInformation(
+                "Registering {HandlerCount} handlers for polling router (module: {ModuleKey})",
+                pollingHandlers.Count,
+                _moduleKey);
+
             // Register only polling handlers
             using var scope = sp.CreateScope();
             foreach (var handlerReg in pollingHandlers)
@@ -358,6 +385,13 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
                 var supportedEventTypes = GetSupportedEventTypes(handler);
                 var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
                 var handlerLogger = loggerFactory.CreateLogger(handler.GetType());
+
+                builderLogger.LogInformation(
+                    "Registering polling handler: {HandlerType} (subscription: {SubscriptionId}, mode: {Mode}, events: {EventTypes})",
+                    handlerReg.HandlerType.Name,
+                    subscriptionId,
+                    handlerReg.Mode,
+                    string.Join(", ", supportedEventTypes));
 
                 router.RegisterHandler(new HandlerRegistration
                 {
@@ -412,21 +446,16 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
 
     private static IReadOnlySet<string>? GetEventTypesFromRouter(EventRouter router)
     {
-        // Use reflection to get the registered handlers and their event types
-        var handlerRegistrationsField = typeof(EventRouter)
-            .GetField("_handlerRegistrations", BindingFlags.NonPublic | BindingFlags.Instance);
+        // Use the public method to get handlers instead of reflection
+        var handlers = router.GetHandlers();
 
-        if (handlerRegistrationsField == null)
-            return null;
-
-        var registrations = handlerRegistrationsField.GetValue(router) as IEnumerable<HandlerRegistration>;
-        if (registrations == null)
+        if (handlers.Count == 0)
             return null;
 
         var allEventTypes = new HashSet<string>();
-        foreach (var registration in registrations)
+        foreach (var handler in handlers)
         {
-            foreach (var eventType in registration.SupportedEventTypes)
+            foreach (var eventType in handler.SupportedEventTypes)
             {
                 allEventTypes.Add(eventType);
             }
@@ -443,11 +472,17 @@ internal sealed class ChannelRegistrationService(
     ChannelSubscriptionRegistry registry,
     ChannelWriter<GlobalEventEnvelope> writer,
     string moduleKey,
-    IReadOnlySet<string>? eventTypeFilter) : IHostedService
+    IReadOnlySet<string>? eventTypeFilter,
+    ILogger<ChannelRegistrationService> logger) : IHostedService
 {
     public Task StartAsync(CancellationToken cancellationToken)
     {
         // Register with the subscription registry
+        logger.LogInformation(
+            "Registering channel subscription for module '{ModuleKey}' with event filter: {EventTypes}",
+            moduleKey,
+            eventTypeFilter == null ? "ALL EVENTS" : string.Join(", ", eventTypeFilter));
+
         registry.Register(moduleKey, writer, eventTypeFilter);
         return Task.CompletedTask;
     }
@@ -455,6 +490,7 @@ internal sealed class ChannelRegistrationService(
     public Task StopAsync(CancellationToken cancellationToken)
     {
         // Unregister from the registry
+        logger.LogInformation("Unregistering channel subscription for module '{ModuleKey}'", moduleKey);
         registry.Unregister(moduleKey);
 
         // Try to complete the channel (may already be completed by ChannelSubscriptionService)

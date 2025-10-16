@@ -3,6 +3,7 @@ namespace Alberto.EventStore.Events;
 public interface IEventEnvelope
 {
     Guid Id { get; }
+    long Position { get; }
     string EventJson { get; }
     EventType EventType { get; }
     Dictionary<string, string> Metadata { get; }
@@ -17,6 +18,7 @@ public interface IEventEnvelope<out TEvent> : IEventEnvelope where TEvent : ISou
 public record EventEnvelope : IEventEnvelope
 {
     public required Guid Id { get; init; }
+    public required long Position { get; init; }
     public required string EventJson { get; init; }
     public required EventType EventType { get; init; }
     public required Dictionary<string, string> Metadata { get; init; } = new();

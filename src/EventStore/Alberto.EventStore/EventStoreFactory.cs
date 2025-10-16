@@ -41,16 +41,13 @@ public class EventStoreFactory(
 
         // Notify channel subscriptions after successful append
         IEnumerable<IEventEnvelope> eventEnvelopes = result as IEventEnvelope[] ?? result.ToArray();
-        if (channelRegistry != null)
-        {
-            var globalEvents = ConvertToGlobalEventEnvelopes(eventEnvelopes, tenantContext.Tenant.Id);
-            if (globalEvents.Count > 0)
-            {
-                await channelRegistry.NotifySubscriptions(globalEvents, cancellationToken);
-            }
-        }
+        var eventArray = eventEnvelopes.ToArray();
 
-        return eventEnvelopes;
+        var globalEvents = ConvertToGlobalEventEnvelopes(eventArray, tenantContext.Tenant.Id);
+
+        if (globalEvents.Count > 0) await channelRegistry.NotifySubscriptions(globalEvents, cancellationToken);
+
+        return eventArray;
     }
 
     private IEventToPersist[] EnhanceEventsWithTelemetry(IEventToPersist[] events)
@@ -70,7 +67,7 @@ public class EventStoreFactory(
         return events;
     }
 
-    private static List<GlobalEventEnvelope> ConvertToGlobalEventEnvelopes(
+    private List<GlobalEventEnvelope> ConvertToGlobalEventEnvelopes(
         IEnumerable<IEventEnvelope> events,
         string tenantId)
     {
@@ -78,18 +75,11 @@ public class EventStoreFactory(
 
         foreach (var evt in events)
         {
-            // Extract position from metadata (backends store it there)
-            if (!evt.Metadata.TryGetValue("_position", out var positionStr) ||
-                !long.TryParse(positionStr, out var position))
-            {
-                continue; // Skip events without position
-            }
-
             // Extract tags from the original event data
             // Note: We don't have direct access to tags here, so we'll need to handle this differently
             // For now, pass empty array - subscribers will need to deserialize if they need tags
             var globalEvent = new GlobalEventEnvelope(
-                position,
+                evt.Position,
                 evt.Id,
                 tenantId,
                 evt.EventType.Id,

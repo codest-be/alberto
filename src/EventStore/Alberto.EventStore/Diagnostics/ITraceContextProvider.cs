@@ -11,9 +11,10 @@ public interface ITraceContextProvider
     /// <param name="metadata">Event metadata that may contain trace information</param>
     /// <param name="subscriptionName">Name of the subscription processing the event</param>
     /// <param name="eventType">Type of the event being processed</param>
+    /// <param name="isSynchronous">True for synchronous subscriptions (same trace), false for asynchronous (linked trace)</param>
     /// <returns>A disposable scope that maintains trace context</returns>
     IDisposable CreateScopeFromMetadata(IReadOnlyDictionary<string, string> metadata, string subscriptionName,
-        string eventType);
+        string eventType, bool isSynchronous);
 }
 
 /// <summary>
@@ -22,7 +23,7 @@ public interface ITraceContextProvider
 public class NoopTraceContextProvider : ITraceContextProvider
 {
     public IDisposable CreateScopeFromMetadata(IReadOnlyDictionary<string, string> metadata, string subscriptionName,
-        string eventType)
+        string eventType, bool isSynchronous)
     {
         return new NoopDisposable();
     }

@@ -125,7 +125,10 @@ public class PollingSubscriptionsBuilder<TEventStore> where TEventStore : EventS
                 pipeline.AddFilter(tenantScopeFilter);
             }
 
-            var telemetryFilter = sp.GetKeyedService<TelemetryConsumeFilter>(_moduleKey);
+            // Use polling-specific telemetry filter (asynchronous mode) if available,
+            // otherwise fall back to module-keyed filter for backward compatibility
+            var telemetryFilter = sp.GetKeyedService<TelemetryConsumeFilter>($"{_moduleKey}:polling")
+                                  ?? sp.GetKeyedService<TelemetryConsumeFilter>(_moduleKey);
             if (telemetryFilter != null)
             {
                 pipeline.AddFilter(telemetryFilter);

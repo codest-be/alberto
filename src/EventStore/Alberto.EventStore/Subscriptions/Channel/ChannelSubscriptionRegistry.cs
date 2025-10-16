@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Threading.Channels;
+using Microsoft.Extensions.Logging;
 
 namespace Alberto.EventStore.Subscriptions.Channel;
 
@@ -9,7 +10,13 @@ namespace Alberto.EventStore.Subscriptions.Channel;
 /// </summary>
 public sealed class ChannelSubscriptionRegistry
 {
+    private readonly ILogger<ChannelSubscriptionRegistry> _logger;
     private readonly ConcurrentDictionary<string, ChannelSubscription> _subscriptions = new();
+
+    public ChannelSubscriptionRegistry(ILogger<ChannelSubscriptionRegistry> logger)
+    {
+        _logger = logger;
+    }
 
     /// <summary>
     /// Registers a channel subscription for a specific module
@@ -24,6 +31,13 @@ public sealed class ChannelSubscriptionRegistry
     {
         var subscription = new ChannelSubscription(moduleKey, writer, eventTypeFilter);
         _subscriptions[moduleKey] = subscription;
+
+        _logger.LogInformation(
+            "Registered channel subscription for module '{ModuleKey}' with filter: {Filter}",
+            moduleKey,
+            eventTypeFilter == null || eventTypeFilter.Count == 0
+                ? "ALL EVENTS"
+                : string.Join(", ", eventTypeFilter));
     }
 
     /// <summary>
@@ -82,7 +96,19 @@ public sealed class ChannelSubscriptionRegistry
         if (events.Count == 0)
             return;
 
+        var eventTypes = events.Select(e => e.EventType).Distinct().ToList();
+        _logger.LogDebug(
+            "NotifySubscriptions called with {EventCount} events of types: {EventTypes}",
+            events.Count,
+            string.Join(", ", eventTypes));
+
         var matchingChannels = GetMatchingChannels(events);
+
+        _logger.LogDebug(
+            "Found {MatchingChannelCount} matching channels out of {TotalSubscriptions} total subscriptions",
+            matchingChannels.Count,
+            _subscriptions.Count);
+
         if (matchingChannels.Count == 0)
             return;
 
@@ -109,6 +135,11 @@ public sealed class ChannelSubscriptionRegistry
         {
             await task;
         }
+
+        _logger.LogDebug(
+            "Successfully notified {ChannelCount} channels with {EventCount} events",
+            matchingChannels.Count,
+            events.Count);
     }
 
     private sealed record ChannelSubscription(

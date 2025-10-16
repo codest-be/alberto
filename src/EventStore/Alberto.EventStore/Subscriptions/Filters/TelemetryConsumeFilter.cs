@@ -7,7 +7,8 @@ namespace Alberto.EventStore.Subscriptions.Filters;
 /// Filter that creates telemetry trace context from event metadata to enable end-to-end tracing
 /// </summary>
 public sealed class TelemetryConsumeFilter(
-    ITraceContextProvider traceContextProvider) : IConsumeFilter
+    ITraceContextProvider traceContextProvider,
+    bool isSynchronous) : IConsumeFilter
 {
     public async ValueTask Execute(
         object @event,
@@ -17,7 +18,7 @@ public sealed class TelemetryConsumeFilter(
     {
         // Create telemetry scope from event metadata (may be no-op if no telemetry configured)
         using var traceScope =
-            traceContextProvider.CreateScopeFromMetadata(context.Metadata, context.SubscriptionName, context.EventType);
+            traceContextProvider.CreateScopeFromMetadata(context.Metadata, context.SubscriptionName, context.EventType, isSynchronous);
 
         // Continue with the pipeline within the trace context
         await next();

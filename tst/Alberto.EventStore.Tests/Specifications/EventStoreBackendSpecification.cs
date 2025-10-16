@@ -365,10 +365,7 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
         await SetupAsync();
         var backend = await CreateBackend();
 
-        Dictionary<string, string> metadata = new()
-        {
-            ["correlation-id"] = "correlation-123", ["user-id"] = "user-456"
-        };
+        Dictionary<string, string> metadata = new() { ["correlation-id"] = "correlation-123", ["user-id"] = "user-456" };
 
         var eventToPersist = CreateTestEvent("test-event", metadata, "order:123");
 
@@ -452,9 +449,7 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
 
         foreach (var eventEnvelope in resultList)
         {
-            Assert.True(eventEnvelope.Metadata.ContainsKey("_position"),
-                $"Event {eventEnvelope.EventType.Id} missing _position metadata. Available keys: {string.Join(", ", eventEnvelope.Metadata.Keys)}");
-            var currentPosition = long.Parse(eventEnvelope.Metadata["_position"]);
+            var currentPosition = eventEnvelope.Position;
 
             if (previousPosition.HasValue)
                 Assert.True(currentPosition > previousPosition.Value,
@@ -496,12 +491,7 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
         var result = results;
 
         // Assert - all positions should be unique
-        var positions = result.Select(e =>
-        {
-            Assert.True(e.Metadata.ContainsKey("_position"),
-                $"Event {e.EventType.Id} missing _position metadata. Available keys: {string.Join(", ", e.Metadata.Keys)}");
-            return long.Parse(e.Metadata["_position"]);
-        }).ToList();
+        var positions = result.Select(e => e.Position).ToList();
         var uniquePositions = positions.Distinct().ToList();
 
         Assert.Equal(positions.Count, uniquePositions.Count);
@@ -879,7 +869,7 @@ public abstract class EventStoreBackendSpecification : AdvancedQueryTests
         Assert.Equal(15, streamResult.Count);
 
         // Verify position uniqueness and ordering
-        var positions = streamResult.Select(e => long.Parse(e.Metadata["_position"])).ToList();
+        var positions = streamResult.Select(e => e.Position).ToList();
         Assert.Equal(positions.Count, positions.Distinct().Count()); // All positions unique
         Assert.True(positions.SequenceEqual(positions.OrderBy(p => p))); // Results are ordered
 
