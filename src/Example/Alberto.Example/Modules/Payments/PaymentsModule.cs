@@ -17,9 +17,13 @@ public static class PaymentsModule
             .AddModule<PaymentEventStore>("payments", module => module
                 .WithPostgres(options =>
                 {
-                    options.ConnectionString = configuration.GetConnectionString("alberto-db") ??
+                    var baseConnectionString = configuration.GetConnectionString("alberto-db") ??
                                                throw new InvalidOperationException(
                                                    "Connection string 'alberto-db' not found.");
+
+                    // Add connection pooling parameters for better resource management
+                    options.ConnectionString =
+                        $"{baseConnectionString};Minimum Pool Size=5;Maximum Pool Size=30;Connection Idle Lifetime=300;Connection Pruning Interval=10";
                     options.Schema = "payments";
                 })
                 .WithMultiTenancy<MultiTenantContext>()

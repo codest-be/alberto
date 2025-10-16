@@ -1,0 +1,19 @@
+{
+  "name": "alberto-example-loadtests",
+  "version": "1.0.0",
+  "description": "Load tests for Alberto Example application",
+  "scripts": {
+    "build": "webpack",
+    "test:smoke": "npm run build && k6 run dist/order-lifecycle.test.js",
+    "test:load": "npm run build && TEST_PROFILE=load k6 run dist/order-lifecycle.test.js",
+    "test:stress": "npm run build && TEST_PROFILE=stress k6 run dist/order-lifecycle.test.js",
+    "test:breakpoint": "npm run build && TEST_PROFILE=breakpoint k6 run dist/order-lifecycle.test.js"
+  },
+  "devDependencies": {
+    "@types/k6": "^0.52.0",
+    "typescript": "^5.6.0",
+    "webpack": "^5.95.0",
+    "webpack-cli": "^5.1.4",
+    "ts-loader": "^9.5.1"
+  }
+}
