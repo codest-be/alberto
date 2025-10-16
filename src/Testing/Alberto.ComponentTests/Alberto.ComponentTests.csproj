@@ -26,6 +26,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\EventSourcing\Alberto.EventSourcing\Alberto.EventSourcing.csproj"/>
+    <ProjectReference Include="..\..\EventSourcing\Alberto.Projections.InMemory\Alberto.Projections.InMemory.csproj"/>
+    <ProjectReference Include="..\..\EventStore\Alberto.EventStore.InMemory\Alberto.EventStore.InMemory.csproj"/>
   </ItemGroup>
 
 </Project>

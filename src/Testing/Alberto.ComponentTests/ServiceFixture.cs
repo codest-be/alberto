@@ -1,23 +1,38 @@
-using Alberto.ComponentTests;
+using Alberto.EventStore.InMemory;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Xunit;
+using Xunit.v3;
 
-namespace Alberto.Example.ComponentTests;
+namespace Alberto.ComponentTests;
 
-public class ServiceFixture : WebApplicationFactory<Program>, IServiceFixture, IAsyncLifetime
+public class ServiceFixture<TProgram> : WebApplicationFactory<TProgram>, IServiceFixture, IAsyncLifetime where TProgram : class
 {
+    private readonly SubscriptionEventCollector _collector = new();
+
     public ServiceFixture()
     {
+        EventStoreBackend = new InMemoryEventStoreBackend(
+            LoggerFactory.Create(builder => builder.AddConsole()).CreateLogger<InMemoryEventStoreBackend>());
     }
 
-    public virtual ValueTask InitializeAsync()
+    /// <summary>
+    /// Gets the subscription event collector for waiting on processed events in tests.
+    /// </summary>
+    protected SubscriptionMetadataRegistry SubscriptionMetadataRegistry { get; } = new();
+
+    protected InMemoryEventStoreBackend EventStoreBackend { get; }
+    protected ITestOutputHelper TestOutputHelper { get; init; } = new TestOutputHelper();
+
+    public ValueTask InitializeAsync()
     {
-        // Trigger creation of the host on the xUnit lifecycle event
         _ = Services;
+
+        _collector.SetMetadataRegistry(SubscriptionMetadataRegistry);
 
         return default;
     }
@@ -25,6 +40,11 @@ public class ServiceFixture : WebApplicationFactory<Program>, IServiceFixture, I
     public new ValueTask DisposeAsync()
     {
         return base.DisposeAsync();
+    }
+
+    public UseCase UseCase()
+    {
+        return new UseCase(new ScenarioContext(TestOutputHelper, this));
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -37,6 +57,8 @@ public class ServiceFixture : WebApplicationFactory<Program>, IServiceFixture, I
 
         builder.ConfigureTestServices(services =>
         {
+            services.AddSingleton(_collector);
+
             // Remove all hosted services (subscription polling, etc.) for testing
             var hostedServices = services
                 .Where(d => d.ServiceType == typeof(IHostedService))

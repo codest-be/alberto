@@ -136,7 +136,7 @@ public sealed class SubscriptionEventCollector
                 if (matchingEvents.Count == 0)
                 {
                     // No matching events yet
-                    Thread.Sleep(25);
+                    Thread.Sleep(1);
                     continue;
                 }
 
@@ -158,7 +158,7 @@ public sealed class SubscriptionEventCollector
                 }
             }
 
-            Thread.Sleep(25);
+            Thread.Sleep(1);
         }
 
         var subscriptionInfo = waitForAllSubscriptions

@@ -1,4 +1,4 @@
-using Alberto.Example.ComponentTests;
+using Alberto.ComponentTests;
 using Xunit;
 
-[assembly: AssemblyFixture(typeof(ServiceFixture))]
+[assembly: AssemblyFixture(typeof(ServiceFixture<Program>))]
