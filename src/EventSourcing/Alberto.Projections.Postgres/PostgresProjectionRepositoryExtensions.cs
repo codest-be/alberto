@@ -39,18 +39,17 @@ public static class PostgresProjectionRepositoryExtensions
             var eventStoreOptions = eventStoreOptionsMonitor.Get(moduleKey);
 
             // Create projection options that inherit from EventStore
-            var projectionOptions = new PostgresProjectionOptions
-            {
-                ConnectionString = eventStoreOptions.ConnectionString, Schema = eventStoreOptions.Schema
-            };
+            var projectionOptions = new PostgresProjectionOptions { ConnectionString = eventStoreOptions.ConnectionString, Schema = eventStoreOptions.Schema };
 
             var logger = sp.GetRequiredService<ILogger<PostgresProjectionRepository<TKey, TState>>>();
             var tenantContext = sp.GetRequiredService<ITenantContext>();
 
+            // Pass projector type to ensure consistent table naming with migrations
             return new PostgresProjectionRepository<TKey, TState>(
                 Options.Create(projectionOptions),
                 logger,
-                tenantContext);
+                tenantContext,
+                typeof(TProjector));
         });
 
         // Register projection handler helper
@@ -88,18 +87,17 @@ public static class PostgresProjectionRepositoryExtensions
             var eventStoreOptions = eventStoreOptionsMonitor.Get(moduleKey);
 
             // Create projection options that inherit from EventStore
-            var projectionOptions = new PostgresProjectionOptions
-            {
-                ConnectionString = eventStoreOptions.ConnectionString, Schema = eventStoreOptions.Schema
-            };
+            var projectionOptions = new PostgresProjectionOptions { ConnectionString = eventStoreOptions.ConnectionString, Schema = eventStoreOptions.Schema };
 
             var logger = sp.GetRequiredService<ILogger<PostgresProjectionRepository<TKey, TState>>>();
             var tenantContext = sp.GetRequiredService<ITenantContext>();
 
+            // Pass projector type to ensure consistent table naming with migrations
             return new PostgresProjectionRepository<TKey, TState>(
                 Options.Create(projectionOptions),
                 logger,
-                tenantContext);
+                tenantContext,
+                typeof(TProjector));
         });
 
         // Register projection handler helper

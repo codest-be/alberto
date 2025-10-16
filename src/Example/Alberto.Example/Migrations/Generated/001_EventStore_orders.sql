@@ -33,7 +33,7 @@ CREATE INDEX IF NOT EXISTS idx_orders_events_tenant_tags_covering ON orders.even
 CREATE TABLE IF NOT EXISTS orders.subscription_checkpoints
 (
     subscription_id VARCHAR PRIMARY KEY,
-    position        BIGINT      NULL,
+    position BIGINT NULL,
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -57,7 +57,8 @@ CREATE TABLE IF NOT EXISTS orders.subscription_poison_pills
     resolved_at       TIMESTAMPTZ,
     resolved_by       VARCHAR,
     resolution_action VARCHAR,
-    resolution_notes  TEXT
+    resolution_notes TEXT,
+    UNIQUE (subscription_id, global_position) -- Ensure global_position is unique within subscription
 );
 
 CREATE INDEX IF NOT EXISTS idx_orders_poison_pills_subscription ON orders.subscription_poison_pills (subscription_id);

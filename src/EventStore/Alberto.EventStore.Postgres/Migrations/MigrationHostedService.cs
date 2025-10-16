@@ -142,9 +142,12 @@ public sealed class MigrationHostedService(
                     var attr = projectorType.GetCustomAttribute<GenerateMigrationAttribute>();
                     if (attr != null && !string.IsNullOrEmpty(attr.Schema))
                     {
+                        // Use ProjectionTableNameResolver to ensure consistency with runtime repository
+                        var tableName = ProjectionTableNameResolver.ResolveTableName(projectorType, stateType);
+
                         projections.Add(new ProjectionInfo(
                             attr.Schema,
-                            attr.TableName ?? stateType.Name.ToLowerInvariant(),
+                            tableName,
                             stateType.Name));
                     }
                 }
@@ -317,7 +320,8 @@ CREATE TABLE IF NOT EXISTS {schema}.subscription_poison_pills
     resolved_at         TIMESTAMPTZ,
     resolved_by         VARCHAR,
     resolution_action   VARCHAR,
-    resolution_notes    TEXT
+    resolution_notes    TEXT,
+    UNIQUE (subscription_id, global_position)  -- Ensure global_position is unique within subscription
 );
 
 CREATE INDEX IF NOT EXISTS idx_{schema}_poison_pills_subscription ON {schema}.subscription_poison_pills (subscription_id);

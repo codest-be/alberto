@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Alberto.EventSourcing.Projections;
 using Alberto.EventStore.MultiTenant;
 using Dapper;
 using Microsoft.Extensions.Logging;
@@ -28,12 +29,17 @@ public sealed class PostgresProjectionRepository<TKey, TState> : IProjectionRepo
     public PostgresProjectionRepository(
         IOptions<PostgresProjectionOptions> options,
         ILogger<PostgresProjectionRepository<TKey, TState>> logger,
-        ITenantContext tenantContext)
+        ITenantContext tenantContext,
+        Type? projectorType = null)
     {
         _options = options.Value;
         _logger = logger;
         _tenantContext = tenantContext;
-        _tableName = typeof(TState).Name.ToLowerInvariant() + "_projections";
+
+        // Use ProjectionTableNameResolver to ensure consistency with migration generator
+        _tableName = projectorType != null
+            ? ProjectionTableNameResolver.ResolveTableName(projectorType, typeof(TState))
+            : typeof(TState).Name.ToLowerInvariant() + "_projections";
 
         // Build schema-qualified table name
         var schema = string.IsNullOrWhiteSpace(_options.Schema) ? "default" : _options.Schema;
@@ -174,13 +180,7 @@ public sealed class PostgresProjectionRepository<TKey, TState> : IProjectionRepo
 
             var rowsAffected = await connection.ExecuteAsync(
                 new CommandDefinition(upsertSql,
-                    new
-                    {
-                        TenantId = _tenantContext.Tenant.Id,
-                        Key = key.ToString(),
-                        State = json,
-                        GlobalVersion = globalVersion
-                    },
+                    new { TenantId = _tenantContext.Tenant.Id, Key = key.ToString(), State = json, GlobalVersion = globalVersion },
                     transaction,
                     cancellationToken: cancellationToken));
 
