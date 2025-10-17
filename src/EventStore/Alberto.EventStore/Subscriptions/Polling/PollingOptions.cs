@@ -40,4 +40,10 @@ public sealed class PollingOptions
     /// Checkpoints are cached in-memory and periodically flushed to reduce database load.
     /// </summary>
     public int CheckpointFlushIntervalSeconds { get; set; } = 5;
+
+    /// <summary>
+    /// Maximum number of poison pill check results to cache in-memory.
+    /// Caching reduces database queries since most checks return null (no poison pill).
+    /// </summary>
+    public int PoisonPillCacheSize { get; set; } = 10000;
 }

@@ -5,6 +5,7 @@ using Alberto.EventStore.MultiTenant;
 using Alberto.EventStore.Subscriptions.Checkpoints;
 using Alberto.EventStore.Subscriptions.Filters;
 using Alberto.EventStore.Subscriptions.PoisonPills;
+using Alberto.EventStore.Subscriptions.Polling;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -100,11 +101,24 @@ public static class InMemoryModuleBuilderExtensions
             return new InMemoryCheckpointStore(logger);
         });
 
-        // Register poison pill store
+        // Register poison pill store with caching
         services.AddKeyedSingleton<IPoisonPillStore>(moduleKey, (sp, _) =>
         {
-            var logger = sp.GetRequiredService<ILogger<InMemoryPoisonPillStore>>();
-            return new InMemoryPoisonPillStore(logger);
+            var innerLogger = sp.GetRequiredService<ILogger<InMemoryPoisonPillStore>>();
+            var cachedLogger = sp.GetRequiredService<ILogger<CachedPoisonPillStore>>();
+
+            // Create inner in-memory poison pill store
+            var innerStore = new InMemoryPoisonPillStore(innerLogger);
+
+            // Try to get polling options (may not be configured if no subscriptions are set up)
+            var pollingOptions = sp.GetKeyedService<PollingOptions>(moduleKey);
+            var cacheSize = pollingOptions?.PoisonPillCacheSize ?? 10000;
+
+            // Wrap with caching for consistency with PostgreSQL implementation
+            return new CachedPoisonPillStore(
+                innerStore,
+                cacheSize,
+                cachedLogger);
         });
 
         // Register default no-op trace context provider (can be overridden by WithTelemetry)

@@ -96,12 +96,25 @@ public static class PostgresModuleBuilderExtensions
                 throttledLogger);
         });
 
-        // Register poison pill store
+        // Register poison pill store with caching
         services.AddKeyedSingleton<IPoisonPillStore>(moduleKey, (sp, _) =>
         {
             var options = sp.GetRequiredService<IOptionsMonitor<PostgresEventStoreOptions>>().Get(moduleKey);
-            var logger = sp.GetRequiredService<ILogger<PostgresPoisonPillStore>>();
-            return new PostgresPoisonPillStore(options.ConnectionString, options.Schema, logger);
+            var innerLogger = sp.GetRequiredService<ILogger<PostgresPoisonPillStore>>();
+            var cachedLogger = sp.GetRequiredService<ILogger<CachedPoisonPillStore>>();
+
+            // Create inner PostgreSQL poison pill store
+            var innerStore = new PostgresPoisonPillStore(options.ConnectionString, options.Schema, innerLogger);
+
+            // Try to get polling options (may not be configured if no subscriptions are set up)
+            var pollingOptions = sp.GetKeyedService<PollingOptions>(moduleKey);
+            var cacheSize = pollingOptions?.PoisonPillCacheSize ?? 10000;
+
+            // Wrap with caching to reduce database queries
+            return new CachedPoisonPillStore(
+                innerStore,
+                cacheSize,
+                cachedLogger);
         });
 
         // Register default no-op trace context provider (can be overridden by WithTelemetry)
