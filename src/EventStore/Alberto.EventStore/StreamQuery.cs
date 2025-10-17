@@ -120,7 +120,7 @@ public sealed class StreamQuery(
         // Add event types part
         if (EventTypes.Any())
         {
-            string eventTypeValues = string.Join(",", EventTypes.Select(e => $"'{e}'"));
+            string eventTypeValues = string.Join(",", EventTypes.Select(e => $"'{e.Id}'"));
             string eventTypesClause = $"event type in [{eventTypeValues}]";
             parts.Add(eventTypesClause);
         }

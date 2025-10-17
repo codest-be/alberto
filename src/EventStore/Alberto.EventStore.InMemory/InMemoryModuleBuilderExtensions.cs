@@ -5,7 +5,6 @@ using Alberto.EventStore.MultiTenant;
 using Alberto.EventStore.Subscriptions.Checkpoints;
 using Alberto.EventStore.Subscriptions.Filters;
 using Alberto.EventStore.Subscriptions.PoisonPills;
-using Alberto.EventStore.Subscriptions.Polling;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -110,14 +109,10 @@ public static class InMemoryModuleBuilderExtensions
             // Create inner in-memory poison pill store
             var innerStore = new InMemoryPoisonPillStore(innerLogger);
 
-            // Try to get polling options (may not be configured if no subscriptions are set up)
-            var pollingOptions = sp.GetKeyedService<PollingOptions>(moduleKey);
-            var cacheSize = pollingOptions?.PoisonPillCacheSize ?? 10000;
-
             // Wrap with caching for consistency with PostgreSQL implementation
+            // Uses position-based eviction to automatically manage cache size
             return new CachedPoisonPillStore(
                 innerStore,
-                cacheSize,
                 cachedLogger);
         });
 

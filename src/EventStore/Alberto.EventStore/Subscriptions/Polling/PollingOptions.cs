@@ -42,8 +42,9 @@ public sealed class PollingOptions
     public int CheckpointFlushIntervalSeconds { get; set; } = 5;
 
     /// <summary>
-    /// Maximum number of poison pill check results to cache in-memory.
-    /// Caching reduces database queries since most checks return null (no poison pill).
+    /// [OBSOLETE] This property is no longer used. The poison pill cache now uses position-based eviction
+    /// and automatically manages its size based on subscription progress.
     /// </summary>
+    [Obsolete("The poison pill cache now uses automatic position-based eviction. This property is no longer used and will be removed in a future version.")]
     public int PoisonPillCacheSize { get; set; } = 10000;
 }

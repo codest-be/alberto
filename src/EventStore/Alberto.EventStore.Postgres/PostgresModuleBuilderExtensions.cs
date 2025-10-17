@@ -106,14 +106,10 @@ public static class PostgresModuleBuilderExtensions
             // Create inner PostgreSQL poison pill store
             var innerStore = new PostgresPoisonPillStore(options.ConnectionString, options.Schema, innerLogger);
 
-            // Try to get polling options (may not be configured if no subscriptions are set up)
-            var pollingOptions = sp.GetKeyedService<PollingOptions>(moduleKey);
-            var cacheSize = pollingOptions?.PoisonPillCacheSize ?? 10000;
-
             // Wrap with caching to reduce database queries
+            // Uses position-based eviction to automatically manage cache size
             return new CachedPoisonPillStore(
                 innerStore,
-                cacheSize,
                 cachedLogger);
         });
 

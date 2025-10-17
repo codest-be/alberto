@@ -7,14 +7,17 @@ namespace Alberto.EventStore.Subscriptions.PoisonPills;
 /// Poison pill store that caches read results to reduce database queries.
 /// Most poison pill checks return null (no poison pill), so caching significantly
 /// reduces database load during high-throughput scenarios.
+/// Uses position-based eviction to automatically remove obsolete entries as subscriptions advance.
 /// </summary>
 public sealed class CachedPoisonPillStore(
     IPoisonPillStore innerStore,
-    int maxCacheSize,
     ILogger<CachedPoisonPillStore> logger)
     : IPoisonPillStore
 {
+    private const int PositionWindow = 100;
+
     private readonly ConcurrentDictionary<(string SubscriptionId, long Position), PoisonPill?> _cache = new();
+    private readonly ConcurrentDictionary<string, long> _highestPositions = new();
 
     public async ValueTask<PoisonPill?> GetPoisonPill(
         string subscriptionId,
@@ -26,6 +29,8 @@ public sealed class CachedPoisonPillStore(
         // Check cache first
         if (_cache.TryGetValue(key, out var cachedResult))
         {
+            // Update highest position and clean up if needed
+            UpdateHighestPositionAndCleanup(subscriptionId, position);
             return cachedResult;
         }
 
@@ -33,7 +38,10 @@ public sealed class CachedPoisonPillStore(
         var poisonPill = await innerStore.GetPoisonPill(subscriptionId, position, ct);
 
         // Cache the result (even if null - negative caching is important!)
-        TryAddToCache(key, poisonPill);
+        _cache.TryAdd(key, poisonPill);
+
+        // Update highest position and clean up old entries
+        UpdateHighestPositionAndCleanup(subscriptionId, position);
 
         return poisonPill;
     }
@@ -82,21 +90,34 @@ public sealed class CachedPoisonPillStore(
         }
     }
 
-    private void TryAddToCache((string SubscriptionId, long Position) key, PoisonPill? poisonPill)
+    private void UpdateHighestPositionAndCleanup(string subscriptionId, long position)
     {
-        // Simple cache eviction: if cache is full, don't add new entries
-        // This is a basic strategy - could be improved with LRU or other eviction policies
-        if (_cache.Count >= maxCacheSize)
-        {
-            logger.LogWarning(
-                "Poison pill cache is full ({Count} entries), skipping cache for subscription '{SubscriptionId}' at position {Position}",
-                _cache.Count,
-                key.SubscriptionId,
-                key.Position
-            );
-            return;
-        }
+        // Update highest position for this subscription
+        var previousHighest = _highestPositions.AddOrUpdate(
+            subscriptionId,
+            position,
+            (_, oldValue) => Math.Max(oldValue, position)
+        );
 
-        _cache.TryAdd(key, poisonPill);
+        // If position has advanced, clean up old entries
+        if (position > previousHighest)
+        {
+            var evictionThreshold = position - PositionWindow;
+            var keysToRemove = _cache.Keys
+                .Where(k => k.SubscriptionId == subscriptionId && k.Position < evictionThreshold)
+                .ToList();
+
+            var removedCount = keysToRemove.Count(key => _cache.TryRemove(key, out _));
+
+            if (removedCount > 0)
+            {
+                logger.LogDebug(
+                    "Evicted {Count} obsolete poison pill cache entries for subscription '{SubscriptionId}' (positions < {Threshold})",
+                    removedCount,
+                    subscriptionId,
+                    evictionThreshold
+                );
+            }
+        }
     }
 }
