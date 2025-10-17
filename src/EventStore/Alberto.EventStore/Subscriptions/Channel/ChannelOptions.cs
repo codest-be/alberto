@@ -6,9 +6,12 @@ namespace Alberto.EventStore.Subscriptions.Channel;
 public sealed class ChannelOptions
 {
     /// <summary>
-    /// Maximum capacity for bounded channels. If null, unbounded channels are used. Default: null (unbounded)
+    /// Maximum capacity for bounded channels. Default: 10,000 events.
+    /// Channels use BoundedChannelFullMode.Wait to provide backpressure when full.
+    /// This prevents unbounded memory growth under sustained load with slow handlers.
+    /// Increase this value if you have high-throughput scenarios with many concurrent subscriptions.
     /// </summary>
-    public int? BoundedCapacity { get; set; }
+    public int BoundedCapacity { get; set; } = 10_000;
 
     /// <summary>
     /// Maximum number of retries for failed event handling. Default: 3

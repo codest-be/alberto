@@ -182,17 +182,12 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
     {
         var channelRouterKey = $"{_moduleKey}:channel";
 
-        // Create the channel for event distribution
-        Channel<GlobalEventEnvelope> channel;
-        if (_channelOptions.BoundedCapacity.HasValue)
-        {
-            channel = System.Threading.Channels.Channel.CreateBounded<GlobalEventEnvelope>(
-                new BoundedChannelOptions(_channelOptions.BoundedCapacity.Value) { FullMode = BoundedChannelFullMode.Wait });
-        }
-        else
-        {
-            channel = System.Threading.Channels.Channel.CreateUnbounded<GlobalEventEnvelope>();
-        }
+        // Create bounded channel for event distribution with backpressure
+        var channel = System.Threading.Channels.Channel.CreateBounded<GlobalEventEnvelope>(
+            new BoundedChannelOptions(_channelOptions.BoundedCapacity)
+            {
+                FullMode = BoundedChannelFullMode.Wait // Provides backpressure when channel is full
+            });
 
         // Register channel reader for the service
         _services.AddKeyedSingleton(_moduleKey, (_, _) => channel.Reader);
@@ -309,6 +304,7 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
             var eventRouter = sp.GetRequiredKeyedService<EventRouter>(channelRouterKey);
             var channelReader = sp.GetRequiredKeyedService<ChannelReader<GlobalEventEnvelope>>(_moduleKey);
             var consumers = sp.GetKeyedServices<IChannelConsumer>(_moduleKey);
+            var metrics = sp.GetRequiredService<IMetricsRecorder>();
             var logger = sp.GetRequiredService<ILogger<ChannelSubscriptionService>>();
 
             return new ChannelSubscriptionService(
@@ -317,6 +313,7 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
                 channelReader,
                 _channelOptions,
                 consumers,
+                metrics,
                 logger
             );
         });
