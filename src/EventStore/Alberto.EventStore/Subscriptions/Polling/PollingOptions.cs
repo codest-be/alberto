@@ -42,6 +42,13 @@ public sealed class PollingOptions
     public int CheckpointFlushIntervalSeconds { get; set; } = 5;
 
     /// <summary>
+    /// Number of events to process before writing checkpoint to in-memory store.
+    /// Batching checkpoint writes reduces method call overhead during high-throughput scenarios.
+    /// The in-memory store (ThrottledCheckpointStore) then periodically flushes to database.
+    /// </summary>
+    public int CheckpointBatchSize { get; set; } = 50;
+
+    /// <summary>
     /// [OBSOLETE] This property is no longer used. The poison pill cache now uses position-based eviction
     /// and automatically manages its size based on subscription progress.
     /// </summary>

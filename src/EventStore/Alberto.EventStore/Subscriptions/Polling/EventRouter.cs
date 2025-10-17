@@ -22,7 +22,8 @@ public sealed class EventRouter(
     ILogger<EventRouter> logger,
     IMetricsRecorder metrics,
     int maxRetries = 3,
-    int retryDelayMs = 1000)
+    int retryDelayMs = 1000,
+    int checkpointBatchSize = 50)
 {
     private readonly List<HandlerRegistration> _handlers = [];
 
@@ -135,10 +136,15 @@ public sealed class EventRouter(
                 handler.Position = evt.GlobalPosition;
                 handler.EventsProcessedSinceCheckpoint++;
 
-                await checkpointStore.StoreCheckpoint(
-                    new Checkpoint(handler.SubscriptionId, handler.Position, DateTimeOffset.UtcNow),
-                    cancellationToken
-                );
+                // Batch checkpoint writes to reduce method call overhead
+                if (handler.EventsProcessedSinceCheckpoint >= checkpointBatchSize)
+                {
+                    await checkpointStore.StoreCheckpoint(
+                        new Checkpoint(handler.SubscriptionId, handler.Position, DateTimeOffset.UtcNow),
+                        cancellationToken
+                    );
+                    handler.EventsProcessedSinceCheckpoint = 0;
+                }
 
                 // Record success metrics
                 metrics.RecordEventProcessed(handler.SubscriptionId, evt.EventType, evt.Created);

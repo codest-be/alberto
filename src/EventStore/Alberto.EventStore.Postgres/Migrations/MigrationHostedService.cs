@@ -285,6 +285,10 @@ CREATE TABLE IF NOT EXISTS {schema}.events
 -- Essential indexes
 CREATE INDEX IF NOT EXISTS idx_{schema}_events_tenant_position ON {schema}.events (tenant_id, position DESC);
 CREATE INDEX IF NOT EXISTS idx_{schema}_events_consistency ON {schema}.events (tenant_id, position) WHERE position > 0;
+
+-- Covering index for subscription StreamAll queries (optimized for high-load scenarios)
+-- INCLUDE clause contains all columns needed by StreamAll, enabling index-only scans
+-- This eliminates table lookups and provides optimal performance for subscription polling
 CREATE INDEX IF NOT EXISTS idx_{schema}_events_global_position ON {schema}.events (position) INCLUDE (tenant_id, event_type, tags, data, metadata, created_at);
 
 -- Optimized tenant-first indexes

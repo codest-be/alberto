@@ -264,7 +264,8 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
                 logger,
                 metrics,
                 _channelOptions.MaxRetries,
-                _channelOptions.RetryDelayMs
+                _channelOptions.RetryDelayMs,
+                _channelOptions.CheckpointBatchSize
             );
 
             builderLogger.LogInformation(
@@ -373,7 +374,8 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
                 logger,
                 metrics,
                 _pollingOptions.MaxRetries,
-                _pollingOptions.RetryDelayMs
+                _pollingOptions.RetryDelayMs,
+                _pollingOptions.CheckpointBatchSize
             );
 
             builderLogger.LogInformation(
