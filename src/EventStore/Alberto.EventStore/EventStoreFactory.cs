@@ -45,7 +45,9 @@ public class EventStoreFactory(
 
         var globalEvents = ConvertToGlobalEventEnvelopes(eventArray, tenantContext.Tenant.Id);
 
-        if (globalEvents.Count > 0) await channelRegistry.NotifySubscriptions(globalEvents, cancellationToken);
+#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
+        if (globalEvents.Count > 0) channelRegistry.NotifySubscriptions(globalEvents, cancellationToken);
+#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
 
         return eventArray;
     }
@@ -83,7 +85,7 @@ public class EventStoreFactory(
                 evt.Id,
                 tenantId,
                 evt.EventType.Id,
-                Array.Empty<string>(), // Tags not available at this level
+                [], // Tags not available at this level
                 evt.EventJson,
                 new Dictionary<string, string>(evt.Metadata),
                 evt.Created
