@@ -4,59 +4,47 @@ using Microsoft.Extensions.Logging;
 namespace Alberto.EventStore.Subscriptions.PoisonPills;
 
 /// <summary>
-/// Poison pill store that caches read results to reduce database queries.
-/// Most poison pill checks return null (no poison pill), so caching significantly
-/// reduces database load during high-throughput scenarios.
-/// Uses position-based eviction to automatically remove obsolete entries as subscriptions advance.
+/// Poison pill store that maintains an in-memory cache as the source of truth.
+/// On first access, loads all poison pills from the underlying store once (lazy initialization).
+/// During operation, serves all reads from memory (zero database queries) and writes through to the database.
+/// Perfect for single-active subscription processor model where one instance handles all subscriptions.
 /// </summary>
 public sealed class CachedPoisonPillStore(
     IPoisonPillStore innerStore,
     ILogger<CachedPoisonPillStore> logger)
     : IPoisonPillStore
 {
-    private const int PositionWindow = 100;
-
-    private readonly ConcurrentDictionary<(string SubscriptionId, long Position), PoisonPill?> _cache = new();
-    private readonly ConcurrentDictionary<string, long> _highestPositions = new();
+    private readonly SemaphoreSlim _initializationLock = new(1, 1);
+    private readonly ConcurrentDictionary<(string SubscriptionId, long Position), PoisonPill> _poisonPills = new();
+    private bool _initialized;
 
     public async ValueTask<PoisonPill?> GetPoisonPill(
         string subscriptionId,
         long position,
         CancellationToken ct)
     {
+        await EnsureInitialized(ct);
+
+        // Pure in-memory lookup - never hits database after initialization
         var key = (subscriptionId, position);
-
-        // Check cache first
-        if (_cache.TryGetValue(key, out var cachedResult))
-        {
-            // Update highest position and clean up if needed
-            UpdateHighestPositionAndCleanup(subscriptionId, position);
-            return cachedResult;
-        }
-
-        // Cache miss - query inner store
-        var poisonPill = await innerStore.GetPoisonPill(subscriptionId, position, ct);
-
-        // Cache the result (even if null - negative caching is important!)
-        _cache.TryAdd(key, poisonPill);
-
-        // Update highest position and clean up old entries
-        UpdateHighestPositionAndCleanup(subscriptionId, position);
+        _poisonPills.TryGetValue(key, out var poisonPill);
 
         return poisonPill;
     }
 
     public async ValueTask StorePoisonPill(PoisonPill poisonPill, CancellationToken ct)
     {
-        // Store in underlying store first
+        await EnsureInitialized(ct);
+
+        // Write to memory first
+        var key = (poisonPill.SubscriptionId, poisonPill.GlobalPosition);
+        _poisonPills.AddOrUpdate(key, poisonPill, (_, _) => poisonPill);
+
+        // Write through to database
         await innerStore.StorePoisonPill(poisonPill, ct);
 
-        // Update cache immediately to reflect the new poison pill
-        var key = (poisonPill.SubscriptionId, poisonPill.GlobalPosition);
-        _cache.AddOrUpdate(key, poisonPill, (_, _) => poisonPill);
-
         logger.LogDebug(
-            "Cached poison pill for subscription '{SubscriptionId}' at position {Position}",
+            "Stored poison pill for subscription '{SubscriptionId}' at position {Position} (in-memory + database)",
             poisonPill.SubscriptionId,
             poisonPill.GlobalPosition
         );
@@ -68,56 +56,71 @@ public sealed class CachedPoisonPillStore(
         string action,
         CancellationToken ct)
     {
-        // Resolve in underlying store first
-        await innerStore.ResolvePoisonPill(poisonPillId, resolvedBy, action, ct);
+        await EnsureInitialized(ct);
 
-        // Update cached entries to mark as resolved
-        // We need to find the cached entry by ID and update it
-        foreach (var kvp in _cache)
+        // Find and update in memory
+        foreach (var kvp in _poisonPills)
         {
-            if (kvp.Value?.Id == poisonPillId)
+            if (kvp.Value.Id == poisonPillId)
             {
                 var resolvedPoisonPill = kvp.Value with { ResolvedAt = DateTimeOffset.UtcNow, ResolvedBy = resolvedBy, ResolutionAction = action };
 
-                _cache.TryUpdate(kvp.Key, resolvedPoisonPill, kvp.Value);
+                _poisonPills.TryUpdate(kvp.Key, resolvedPoisonPill, kvp.Value);
 
                 logger.LogDebug(
-                    "Updated cached poison pill {PoisonPillId} to resolved state",
+                    "Updated cached poison pill {PoisonPillId} to resolved state (in-memory)",
                     poisonPillId
                 );
                 break;
             }
         }
+
+        // Write through to database
+        await innerStore.ResolvePoisonPill(poisonPillId, resolvedBy, action, ct);
     }
 
-    private void UpdateHighestPositionAndCleanup(string subscriptionId, long position)
+    public async ValueTask<IReadOnlyList<PoisonPill>> GetAllPoisonPills(CancellationToken ct)
     {
-        // Update highest position for this subscription
-        var previousHighest = _highestPositions.AddOrUpdate(
-            subscriptionId,
-            position,
-            (_, oldValue) => Math.Max(oldValue, position)
-        );
+        await EnsureInitialized(ct);
 
-        // If position has advanced, clean up old entries
-        if (position > previousHighest)
+        // Return from in-memory cache
+        return _poisonPills.Values.ToList();
+    }
+
+    /// <summary>
+    /// Ensures the cache is initialized by loading all poison pills from the underlying store.
+    /// Uses lazy initialization - called automatically on first access.
+    /// Thread-safe using semaphore for async/await compatibility.
+    /// </summary>
+    private async ValueTask EnsureInitialized(CancellationToken ct)
+    {
+        if (_initialized)
+            return;
+
+        await _initializationLock.WaitAsync(ct);
+        try
         {
-            var evictionThreshold = position - PositionWindow;
-            var keysToRemove = _cache.Keys
-                .Where(k => k.SubscriptionId == subscriptionId && k.Position < evictionThreshold)
-                .ToList();
+            // Double-check after acquiring lock
+            if (_initialized)
+                return;
 
-            var removedCount = keysToRemove.Count(key => _cache.TryRemove(key, out _));
+            var allPills = await innerStore.GetAllPoisonPills(ct);
 
-            if (removedCount > 0)
+            foreach (var pill in allPills)
             {
-                logger.LogDebug(
-                    "Evicted {Count} obsolete poison pill cache entries for subscription '{SubscriptionId}' (positions < {Threshold})",
-                    removedCount,
-                    subscriptionId,
-                    evictionThreshold
-                );
+                _poisonPills[(pill.SubscriptionId, pill.GlobalPosition)] = pill;
             }
+
+            _initialized = true;
+
+            logger.LogInformation(
+                "Initialized poison pill cache with {Count} poison pills",
+                allPills.Count
+            );
+        }
+        finally
+        {
+            _initializationLock.Release();
         }
     }
 }

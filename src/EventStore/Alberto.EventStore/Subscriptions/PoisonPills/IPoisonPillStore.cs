@@ -19,4 +19,9 @@ public interface IPoisonPillStore
     /// Marks a poison pill as resolved
     /// </summary>
     ValueTask ResolvePoisonPill(Guid poisonPillId, string resolvedBy, string action, CancellationToken ct);
+
+    /// <summary>
+    /// Gets all poison pills (for cache initialization)
+    /// </summary>
+    ValueTask<IReadOnlyList<PoisonPill>> GetAllPoisonPills(CancellationToken ct);
 }

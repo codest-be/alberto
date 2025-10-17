@@ -5,80 +5,69 @@ using Xunit;
 namespace Alberto.EventStore.Tests.Subscriptions;
 
 /// <summary>
-/// Tests for CachedPoisonPillStore position-based eviction
+/// Tests for CachedPoisonPillStore write-through cache with lazy initialization
 /// </summary>
 public class CachedPoisonPillStoreTests
 {
     [Fact]
-    public async Task GetPoisonPill_EvictsOldEntries_WhenSubscriptionAdvances()
+    public async Task GetPoisonPill_InitializesLazily_OnFirstAccess()
+    {
+        // Arrange
+        var innerStore = new InMemoryPoisonPillStore();
+
+        // Pre-populate inner store with existing poison pills
+        var existingPill = new PoisonPill(
+            Guid.NewGuid(),
+            "subscription-1",
+            50,
+            Guid.NewGuid(),
+            "TestEvent",
+            "{}",
+            "{}",
+            "Error message",
+            "Stack trace",
+            3,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow,
+            null,
+            null,
+            null
+        );
+        await innerStore.StorePoisonPill(existingPill, CancellationToken.None);
+
+        var logger = NullLogger<CachedPoisonPillStore>.Instance;
+        var cachedStore = new CachedPoisonPillStore(innerStore, logger);
+
+        // Act - First access should trigger initialization and load existing pills
+        var result = await cachedStore.GetPoisonPill("subscription-1", 50, CancellationToken.None);
+
+        // Assert - Should find the pre-existing poison pill
+        Assert.NotNull(result);
+        Assert.Equal(existingPill.Id, result.Id);
+
+        // Subsequent queries should return from in-memory cache (no DB hit)
+        var result2 = await cachedStore.GetPoisonPill("subscription-1", 50, CancellationToken.None);
+        Assert.NotNull(result2);
+        Assert.Equal(existingPill.Id, result2.Id);
+    }
+
+    [Fact]
+    public async Task GetPoisonPill_ReturnsNull_WhenNoPoisonPillExists()
     {
         // Arrange
         var innerStore = new InMemoryPoisonPillStore();
         var logger = NullLogger<CachedPoisonPillStore>.Instance;
         var cachedStore = new CachedPoisonPillStore(innerStore, logger);
 
-        const string subscriptionId = "test-subscription";
+        // Act
+        var result = await cachedStore.GetPoisonPill("subscription-1", 100, CancellationToken.None);
 
-        // Act - Query positions 1-200 (all return null, so they get cached)
-        for (long i = 1; i <= 200; i++)
-        {
-            await cachedStore.GetPoisonPill(subscriptionId, i, CancellationToken.None);
-        }
-
-        // Query position 250 - this should trigger cleanup of positions < 150 (250 - 100)
-        await cachedStore.GetPoisonPill(subscriptionId, 250, CancellationToken.None);
-
-        // Assert - Verify cache size by checking if old positions hit the inner store again
-        // If positions < 150 were evicted, querying them should hit the inner store
-        // We verify this by checking the inner store's call count
-
-        // Since we can't easily inspect the cache, we verify the behavior by checking
-        // that subsequent queries for evicted positions don't cause issues
-        for (long i = 1; i < 150; i++)
-        {
-            var result = await cachedStore.GetPoisonPill(subscriptionId, i, CancellationToken.None);
-            Assert.Null(result); // Should still work, even if re-queried from inner store
-        }
-
-        // Positions >= 150 should still be cached
-        for (long i = 150; i <= 250; i++)
-        {
-            var result = await cachedStore.GetPoisonPill(subscriptionId, i, CancellationToken.None);
-            Assert.Null(result); // Should be cached
-        }
+        // Assert
+        Assert.Null(result);
     }
 
     [Fact]
-    public async Task GetPoisonPill_IsolatesSubscriptions_WhenEvicting()
-    {
-        // Arrange
-        var innerStore = new InMemoryPoisonPillStore();
-        var logger = NullLogger<CachedPoisonPillStore>.Instance;
-        var cachedStore = new CachedPoisonPillStore(innerStore, logger);
-
-        const string subscription1 = "subscription-1";
-        const string subscription2 = "subscription-2";
-
-        // Act - Cache positions for both subscriptions
-        for (long i = 1; i <= 100; i++)
-        {
-            await cachedStore.GetPoisonPill(subscription1, i, CancellationToken.None);
-            await cachedStore.GetPoisonPill(subscription2, i, CancellationToken.None);
-        }
-
-        // Advance subscription1 to position 200
-        await cachedStore.GetPoisonPill(subscription1, 200, CancellationToken.None);
-
-        // Assert - Subscription2 positions should still be cached (not affected by subscription1's advancement)
-        for (long i = 1; i <= 100; i++)
-        {
-            var result = await cachedStore.GetPoisonPill(subscription2, i, CancellationToken.None);
-            Assert.Null(result); // Should still work
-        }
-    }
-
-    [Fact]
-    public async Task GetPoisonPill_CachesPoisonPills_Correctly()
+    public async Task StorePoisonPill_WritesToMemoryAndDatabase()
     {
         // Arrange
         var innerStore = new InMemoryPoisonPillStore();
@@ -107,19 +96,19 @@ public class CachedPoisonPillStoreTests
         // Act - Store poison pill
         await cachedStore.StorePoisonPill(poisonPill, CancellationToken.None);
 
-        // Query the poison pill twice
-        var result1 = await cachedStore.GetPoisonPill(subscriptionId, 100, CancellationToken.None);
-        var result2 = await cachedStore.GetPoisonPill(subscriptionId, 100, CancellationToken.None);
+        // Assert - Should be retrievable from cache
+        var cachedResult = await cachedStore.GetPoisonPill(subscriptionId, 100, CancellationToken.None);
+        Assert.NotNull(cachedResult);
+        Assert.Equal(poisonPill.Id, cachedResult.Id);
 
-        // Assert
-        Assert.NotNull(result1);
-        Assert.NotNull(result2);
-        Assert.Equal(poisonPill.Id, result1.Id);
-        Assert.Equal(poisonPill.Id, result2.Id);
+        // Assert - Should also be in inner store (write-through)
+        var innerResult = await innerStore.GetPoisonPill(subscriptionId, 100, CancellationToken.None);
+        Assert.NotNull(innerResult);
+        Assert.Equal(poisonPill.Id, innerResult.Id);
     }
 
     [Fact]
-    public async Task ResolvePoisonPill_UpdatesCache_Correctly()
+    public async Task StorePoisonPill_CanBeQueriedMultipleTimes()
     {
         // Arrange
         var innerStore = new InMemoryPoisonPillStore();
@@ -145,20 +134,134 @@ public class CachedPoisonPillStoreTests
             null
         );
 
-        // Act - Store and cache poison pill
+        // Act - Store poison pill
+        await cachedStore.StorePoisonPill(poisonPill, CancellationToken.None);
+
+        // Query multiple times (should all return from in-memory cache)
+        var result1 = await cachedStore.GetPoisonPill(subscriptionId, 100, CancellationToken.None);
+        var result2 = await cachedStore.GetPoisonPill(subscriptionId, 100, CancellationToken.None);
+        var result3 = await cachedStore.GetPoisonPill(subscriptionId, 100, CancellationToken.None);
+
+        // Assert - All queries should return the same poison pill
+        Assert.NotNull(result1);
+        Assert.NotNull(result2);
+        Assert.NotNull(result3);
+        Assert.Equal(poisonPill.Id, result1.Id);
+        Assert.Equal(poisonPill.Id, result2.Id);
+        Assert.Equal(poisonPill.Id, result3.Id);
+    }
+
+    [Fact]
+    public async Task ResolvePoisonPill_UpdatesMemoryAndDatabase()
+    {
+        // Arrange
+        var innerStore = new InMemoryPoisonPillStore();
+        var logger = NullLogger<CachedPoisonPillStore>.Instance;
+        var cachedStore = new CachedPoisonPillStore(innerStore, logger);
+
+        const string subscriptionId = "test-subscription";
+        var poisonPill = new PoisonPill(
+            Guid.NewGuid(),
+            subscriptionId,
+            100,
+            Guid.NewGuid(),
+            "TestEvent",
+            "{}",
+            "{}",
+            "Error message",
+            "Stack trace",
+            3,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow,
+            null,
+            null,
+            null
+        );
+
+        // Act - Store poison pill
         await cachedStore.StorePoisonPill(poisonPill, CancellationToken.None);
 
         // Resolve it
         await cachedStore.ResolvePoisonPill(poisonPill.Id, "admin", "fixed", CancellationToken.None);
 
-        // Query again
-        var result = await cachedStore.GetPoisonPill(subscriptionId, 100, CancellationToken.None);
+        // Query from cache
+        var cachedResult = await cachedStore.GetPoisonPill(subscriptionId, 100, CancellationToken.None);
 
-        // Assert - Should be marked as resolved
-        Assert.NotNull(result);
-        Assert.NotNull(result.ResolvedAt);
-        Assert.Equal("admin", result.ResolvedBy);
-        Assert.Equal("fixed", result.ResolutionAction);
+        // Assert - Should be marked as resolved in cache
+        Assert.NotNull(cachedResult);
+        Assert.NotNull(cachedResult.ResolvedAt);
+        Assert.Equal("admin", cachedResult.ResolvedBy);
+        Assert.Equal("fixed", cachedResult.ResolutionAction);
+
+        // Assert - Should also be resolved in inner store (write-through)
+        var innerResult = await innerStore.GetPoisonPill(subscriptionId, 100, CancellationToken.None);
+        Assert.NotNull(innerResult);
+        Assert.NotNull(innerResult.ResolvedAt);
+        Assert.Equal("admin", innerResult.ResolvedBy);
+        Assert.Equal("fixed", innerResult.ResolutionAction);
+    }
+
+    [Fact]
+    public async Task GetAllPoisonPills_ReturnsAllFromCache()
+    {
+        // Arrange
+        var innerStore = new InMemoryPoisonPillStore();
+        var logger = NullLogger<CachedPoisonPillStore>.Instance;
+        var cachedStore = new CachedPoisonPillStore(innerStore, logger);
+
+        // Store multiple poison pills
+        var pill1 = new PoisonPill(
+            Guid.NewGuid(), "sub-1", 10, Guid.NewGuid(), "Event1", "{}", "{}", "Error 1", null, 3,
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, null, null, null
+        );
+        var pill2 = new PoisonPill(
+            Guid.NewGuid(), "sub-2", 20, Guid.NewGuid(), "Event2", "{}", "{}", "Error 2", null, 3,
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, null, null, null
+        );
+
+        await cachedStore.StorePoisonPill(pill1, CancellationToken.None);
+        await cachedStore.StorePoisonPill(pill2, CancellationToken.None);
+
+        // Act
+        var allPills = await cachedStore.GetAllPoisonPills(CancellationToken.None);
+
+        // Assert
+        Assert.Equal(2, allPills.Count);
+        Assert.Contains(allPills, p => p.Id == pill1.Id);
+        Assert.Contains(allPills, p => p.Id == pill2.Id);
+    }
+
+    [Fact]
+    public async Task MultipleSubscriptions_IsolatedCorrectly()
+    {
+        // Arrange
+        var innerStore = new InMemoryPoisonPillStore();
+        var logger = NullLogger<CachedPoisonPillStore>.Instance;
+        var cachedStore = new CachedPoisonPillStore(innerStore, logger);
+
+        // Store poison pills for different subscriptions
+        var pill1 = new PoisonPill(
+            Guid.NewGuid(), "subscription-1", 100, Guid.NewGuid(), "Event", "{}", "{}", "Error", null, 3,
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, null, null, null
+        );
+        var pill2 = new PoisonPill(
+            Guid.NewGuid(), "subscription-2", 100, Guid.NewGuid(), "Event", "{}", "{}", "Error", null, 3,
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, null, null, null
+        );
+
+        await cachedStore.StorePoisonPill(pill1, CancellationToken.None);
+        await cachedStore.StorePoisonPill(pill2, CancellationToken.None);
+
+        // Act - Query for each subscription
+        var result1 = await cachedStore.GetPoisonPill("subscription-1", 100, CancellationToken.None);
+        var result2 = await cachedStore.GetPoisonPill("subscription-2", 100, CancellationToken.None);
+
+        // Assert - Each subscription should get its own poison pill
+        Assert.NotNull(result1);
+        Assert.NotNull(result2);
+        Assert.Equal(pill1.Id, result1.Id);
+        Assert.Equal(pill2.Id, result2.Id);
+        Assert.NotEqual(result1.Id, result2.Id);
     }
 
     /// <summary>
@@ -166,7 +269,7 @@ public class CachedPoisonPillStoreTests
     /// </summary>
     private class InMemoryPoisonPillStore : IPoisonPillStore
     {
-        private readonly List<PoisonPill> _poisonPills = new();
+        private readonly List<PoisonPill> _poisonPills = [];
 
         public ValueTask StorePoisonPill(PoisonPill poisonPill, CancellationToken ct)
         {
@@ -191,6 +294,11 @@ public class CachedPoisonPillStoreTests
             }
 
             return ValueTask.CompletedTask;
+        }
+
+        public ValueTask<IReadOnlyList<PoisonPill>> GetAllPoisonPills(CancellationToken ct)
+        {
+            return ValueTask.FromResult<IReadOnlyList<PoisonPill>>(_poisonPills.ToList());
         }
     }
 }

@@ -55,10 +55,7 @@ public sealed class InMemoryPoisonPillStore(ILogger<InMemoryPoisonPillStore> log
     {
         if (_poisonPillsById.TryGetValue(poisonPillId, out var poisonPill))
         {
-            var resolvedPoisonPill = poisonPill with
-            {
-                ResolvedAt = DateTimeOffset.UtcNow, ResolvedBy = resolvedBy, ResolutionAction = action
-            };
+            var resolvedPoisonPill = poisonPill with { ResolvedAt = DateTimeOffset.UtcNow, ResolvedBy = resolvedBy, ResolutionAction = action };
 
             var key = (poisonPill.SubscriptionId, poisonPill.GlobalPosition);
             _poisonPills.TryUpdate(key, resolvedPoisonPill, poisonPill);
@@ -80,5 +77,12 @@ public sealed class InMemoryPoisonPillStore(ILogger<InMemoryPoisonPillStore> log
         }
 
         return ValueTask.CompletedTask;
+    }
+
+    public ValueTask<IReadOnlyList<PoisonPill>> GetAllPoisonPills(CancellationToken ct)
+    {
+        var allPills = _poisonPills.Values.ToList();
+        logger.LogDebug("Retrieved {Count} poison pills", allPills.Count);
+        return ValueTask.FromResult<IReadOnlyList<PoisonPill>>(allPills);
     }
 }

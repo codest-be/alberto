@@ -109,6 +109,42 @@ public sealed class PostgresPoisonPillStore(
         );
     }
 
+    public async ValueTask<IReadOnlyList<PoisonPill>> GetAllPoisonPills(CancellationToken ct)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(ct);
+
+        var sql = $@"
+            SELECT id, subscription_id, global_position, event_id, event_type, event_data, metadata,
+                   error_message, stack_trace, retry_count, first_failed_at, last_failed_at,
+                   resolved_at, resolved_by, resolution_action
+            FROM {schema}.subscription_poison_pills";
+
+        var results = await connection.QueryAsync<PoisonPillRecord>(sql);
+
+        var poisonPills = results.Select(result => new PoisonPill(
+            result.id,
+            result.subscription_id,
+            result.global_position,
+            result.event_id,
+            result.event_type,
+            result.event_data,
+            result.metadata,
+            result.error_message,
+            result.stack_trace,
+            result.retry_count,
+            result.first_failed_at,
+            result.last_failed_at,
+            result.resolved_at,
+            result.resolved_by,
+            result.resolution_action
+        )).ToList();
+
+        logger.LogDebug("Retrieved {Count} poison pills from database", poisonPills.Count);
+
+        return poisonPills;
+    }
+
     // ReSharper disable InconsistentNaming
     private record PoisonPillRecord
     {
