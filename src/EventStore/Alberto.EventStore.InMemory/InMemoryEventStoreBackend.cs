@@ -163,7 +163,6 @@ public class InMemoryEventStoreBackend(ILogger<InMemoryEventStoreBackend> logger
                     storedEvent.Id,
                     storedEvent.TenantId,
                     storedEvent.EventType.Id,
-                    storedEvent.Tags.Select(t => t.FullIdentifier).ToArray(),
                     storedEvent.EventJson,
                     new Dictionary<string, string>(storedEvent.Metadata),
                     storedEvent.Created

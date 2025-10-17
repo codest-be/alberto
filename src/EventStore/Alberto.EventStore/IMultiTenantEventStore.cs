@@ -27,7 +27,6 @@ public interface IMultiTenantEventStore
 /// <param name="Id">Unique identifier for this event</param>
 /// <param name="TenantId">The tenant ID this event belongs to</param>
 /// <param name="EventType">The type of event</param>
-/// <param name="Tags">Tags associated with this event</param>
 /// <param name="EventJson">The JSON representation of the event data</param>
 /// <param name="Metadata">Metadata associated with the event</param>
 /// <param name="Created">When this event was created</param>
@@ -36,7 +35,6 @@ public sealed record GlobalEventEnvelope(
     Guid Id,
     string TenantId,
     string EventType,
-    string[] Tags,
     string EventJson,
     Dictionary<string, string> Metadata,
     DateTimeOffset Created

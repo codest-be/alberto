@@ -77,15 +77,11 @@ public class EventStoreFactory(
 
         foreach (var evt in events)
         {
-            // Extract tags from the original event data
-            // Note: We don't have direct access to tags here, so we'll need to handle this differently
-            // For now, pass empty array - subscribers will need to deserialize if they need tags
             var globalEvent = new GlobalEventEnvelope(
                 evt.Position,
                 evt.Id,
                 tenantId,
                 evt.EventType.Id,
-                [], // Tags not available at this level
                 evt.EventJson,
                 new Dictionary<string, string>(evt.Metadata),
                 evt.Created

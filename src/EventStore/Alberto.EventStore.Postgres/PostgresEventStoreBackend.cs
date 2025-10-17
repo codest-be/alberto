@@ -147,7 +147,6 @@ public class PostgresEventStoreBackend : IEventStoreBackend, IMultiTenantEventSt
             e.id,
             e.tenant_id,
             e.event_type,
-            e.tags,
             e.event_data,
             DeserializeMetadata(e.metadata),
             e.created_at
