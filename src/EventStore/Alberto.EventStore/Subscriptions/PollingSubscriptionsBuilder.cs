@@ -173,8 +173,7 @@ public class PollingSubscriptionsBuilder<TEventStore> where TEventStore : EventS
                 logger,
                 metrics,
                 _pollingOptions.MaxRetries,
-                _pollingOptions.RetryDelayMs,
-                _pollingOptions.CheckpointBatchSize
+                _pollingOptions.RetryDelayMs
             );
 
             // Discover and register all handlers

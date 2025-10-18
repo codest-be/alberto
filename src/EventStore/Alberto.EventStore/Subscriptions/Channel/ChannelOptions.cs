@@ -27,11 +27,4 @@ public sealed class ChannelOptions
     /// Whether to process events in parallel across handlers. Default: false
     /// </summary>
     public bool AllowParallelExecution { get; set; }
-
-    /// <summary>
-    /// Number of events to process before writing checkpoint to in-memory store.
-    /// Batching checkpoint writes reduces method call overhead during high-throughput scenarios.
-    /// The in-memory store (ThrottledCheckpointStore) then periodically flushes to database.
-    /// </summary>
-    public int CheckpointBatchSize { get; set; } = 50;
 }
