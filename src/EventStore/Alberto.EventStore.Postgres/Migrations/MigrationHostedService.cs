@@ -282,19 +282,24 @@ CREATE TABLE IF NOT EXISTS {schema}.events
     metadata       JSONB NOT NULL DEFAULT '{{}}'
 );
 
--- Essential indexes
-CREATE INDEX IF NOT EXISTS idx_{schema}_events_tenant_position ON {schema}.events (tenant_id, position DESC);
-CREATE INDEX IF NOT EXISTS idx_{schema}_events_consistency ON {schema}.events (tenant_id, position) WHERE position > 0;
+-- Consistency check queries - WHERE tenant_id = ? AND id = ?
+CREATE INDEX IF NOT EXISTS idx_{{schema}}_events_tenant_id ON {{schema}}.events (tenant_id, id);
 
--- Covering index for subscription StreamAll queries (optimized for high-load scenarios)
--- INCLUDE clause contains all columns needed by StreamAll, enabling index-only scans
--- This eliminates table lookups and provides optimal performance for subscription polling
-CREATE INDEX IF NOT EXISTS idx_{schema}_events_global_position ON {schema}.events (position) INCLUDE (tenant_id, event_type, tags, data, metadata, created_at);
+-- Primary covering index for most tenant queries
+CREATE INDEX IF NOT EXISTS idx_{{schema}}_events_tenant_all 
+ON {{schema}}.events (tenant_id, position)
+INCLUDE (event_type, tags, id, data, metadata, created_at);
 
--- Optimized tenant-first indexes
-CREATE INDEX IF NOT EXISTS idx_{schema}_events_tenant_tags_gin ON {schema}.events (tenant_id, tags) WHERE array_length(tags, 1) > 0;
-CREATE INDEX IF NOT EXISTS idx_{schema}_events_tenant_type_tags ON {schema}.events (tenant_id, event_type, tags) WHERE array_length(tags, 1) > 0;
-CREATE INDEX IF NOT EXISTS idx_{schema}_events_tenant_tags_covering ON {schema}.events (tenant_id) INCLUDE (event_type, tags, data, metadata, created_at, position) WHERE array_length(tags, 1) > 0;
+-- Global position index for StreamAll() subscription queries
+CREATE INDEX IF NOT EXISTS idx_{{schema}}_events_global_position ON {{schema}}.events (position) 
+INCLUDE (id, tenant_id, event_type, tags, data, metadata, created_at);
+
+-- For queries filtering by event type: WHERE tenant_id = ? AND event_type = ?
+CREATE INDEX IF NOT EXISTS idx_{{schema}}_events_tenant_type_position ON {{schema}}.events (tenant_id, event_type, position);
+
+-- GIN index for tag array queries ONLY (separate index)
+CREATE INDEX IF NOT EXISTS idx_{{schema}}_events_tags_gin ON {{schema}}.events USING GIN (tags) 
+WHERE array_length(tags, 1) > 0;
 
 -- Subscription checkpoints
 CREATE TABLE IF NOT EXISTS {schema}.subscription_checkpoints

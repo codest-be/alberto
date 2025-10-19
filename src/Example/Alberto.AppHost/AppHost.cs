@@ -12,6 +12,8 @@ IResourceBuilder<PostgresServerResource> postgres =
         {
             args.Add("-c");
             args.Add("max_connections=200");
+            args.Add("-c");
+            args.Add("shared_preload_libraries=pg_stat_statements");
         }));
 
 IResourceBuilder<PostgresDatabaseResource> database = postgres.AddDatabase("alberto-db");
@@ -19,7 +21,8 @@ IResourceBuilder<PostgresDatabaseResource> database = postgres.AddDatabase("albe
 var api = builder
     .AddProject<Alberto_Example>("alberto-example")
     .WithReference(database)
-    .WaitFor(database);
+    .WaitFor(database)
+    .WithReplicas(3);
 
 builder
     .AddNpmApp("load-tests", "../../../tst/Alberto.Example.LoadTests", "test:stress")

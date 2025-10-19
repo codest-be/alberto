@@ -357,11 +357,21 @@ public class PostgresEventStoreBackend : IEventStoreBackend, IMultiTenantEventSt
             foreach (string param in consistencyParams.ParameterNames)
                 parameters.Add(param, consistencyParams.Get<object>(param));
 
-            sql = $@"
-            WITH consistency_check AS (
+            // OPTIMIZED: Use CTE to force tenant_id index usage
+            if (expectedLastEventId.HasValue)
+            {
+                sql = $@"
+            WITH target_position AS (
+                SELECT COALESCE(position, 0) as pos
+                FROM {_eventsTable}
+                WHERE tenant_id = @TenantId AND id = @ExpectedLastEventId
+            ),
+            consistency_check AS (
                 SELECT CASE 
                     WHEN EXISTS (
-                        SELECT 1 FROM {_eventsTable}
+                        SELECT 1 
+                        FROM {_eventsTable} e
+                        CROSS JOIN target_position tp
                         WHERE {consistencyConditions}
                     ) THEN 1 
                     ELSE 0 
@@ -382,6 +392,36 @@ public class PostgresEventStoreBackend : IEventStoreBackend, IMultiTenantEventSt
             FROM consistency_check
             LEFT JOIN inserted ON (SELECT has_conflicts FROM consistency_check) = 0
             ORDER BY position";
+            }
+            else
+            {
+                sql = $@"
+            WITH consistency_check AS (
+                SELECT CASE 
+                    WHEN EXISTS (
+                        SELECT 1 
+                        FROM {_eventsTable} e
+                        WHERE {consistencyConditions}
+                    ) THEN 1 
+                    ELSE 0 
+                END as has_conflicts
+            ),
+            inserted AS (
+                INSERT INTO {_eventsTable} (id, tenant_id, event_type, tags, data, metadata, created_at)
+                SELECT * FROM (VALUES {string.Join(", ", valuesClauses)}) v
+                WHERE (SELECT has_conflicts FROM consistency_check) = 0
+                RETURNING position
+            )
+            SELECT 
+                CASE WHEN (SELECT has_conflicts FROM consistency_check) = 1 
+                     THEN NULL 
+                     ELSE position 
+                END as position,
+                (SELECT has_conflicts FROM consistency_check) as conflicts
+            FROM consistency_check
+            LEFT JOIN inserted ON (SELECT has_conflicts FROM consistency_check) = 0
+            ORDER BY position";
+            }
         }
         else
         {
@@ -492,11 +532,21 @@ public class PostgresEventStoreBackend : IEventStoreBackend, IMultiTenantEventSt
             foreach (string param in consistencyParams.ParameterNames)
                 parameters.Add(param, consistencyParams.Get<object>(param));
 
-            sql = $@"
-            WITH consistency_check AS (
+            // OPTIMIZED: Use CTE to force tenant_id index usage
+            if (expectedLastEventId.HasValue)
+            {
+                sql = $@"
+            WITH target_position AS (
+                SELECT COALESCE(position, 0) as pos
+                FROM {_eventsTable}
+                WHERE tenant_id = @TenantId AND id = @ExpectedLastEventId
+            ),
+            consistency_check AS (
                 SELECT CASE 
                     WHEN EXISTS (
-                        SELECT 1 FROM {_eventsTable}
+                        SELECT 1 
+                        FROM {_eventsTable} e
+                        CROSS JOIN target_position tp
                         WHERE {consistencyConditions}
                     ) THEN 1 
                     ELSE 0 
@@ -516,6 +566,35 @@ public class PostgresEventStoreBackend : IEventStoreBackend, IMultiTenantEventSt
                 (SELECT has_conflicts FROM consistency_check) as conflicts
             FROM consistency_check
             LEFT JOIN inserted ON (SELECT has_conflicts FROM consistency_check) = 0";
+            }
+            else
+            {
+                sql = $@"
+            WITH consistency_check AS (
+                SELECT CASE 
+                    WHEN EXISTS (
+                        SELECT 1 
+                        FROM {_eventsTable} e
+                        WHERE {consistencyConditions}
+                    ) THEN 1 
+                    ELSE 0 
+                END as has_conflicts
+            ),
+            inserted AS (
+                INSERT INTO {_eventsTable} (id, tenant_id, event_type, tags, data, metadata, created_at)
+                SELECT @Id, @TenantId, @EventType, @Tags, @Data::jsonb, @Metadata::jsonb, @CreatedAt
+                WHERE (SELECT has_conflicts FROM consistency_check) = 0
+                RETURNING position
+            )
+            SELECT 
+                CASE WHEN (SELECT has_conflicts FROM consistency_check) = 1 
+                     THEN NULL 
+                     ELSE position 
+                END as position,
+                (SELECT has_conflicts FROM consistency_check) as conflicts
+            FROM consistency_check
+            LEFT JOIN inserted ON (SELECT has_conflicts FROM consistency_check) = 0";
+            }
         }
         else
         {
@@ -552,22 +631,18 @@ public class PostgresEventStoreBackend : IEventStoreBackend, IMultiTenantEventSt
         List<string> conditions = [];
         DynamicParameters parameters = new();
 
-        conditions.Add("tenant_id = @TenantId");
+        // CRITICAL: Put tenant_id filter FIRST to force index usage
+        conditions.Add("e.tenant_id = @TenantId");
         parameters.Add("TenantId", tenantId);
 
         if (expectedLastEventId.HasValue)
         {
-            // Check for events after the expected last event within the boundary
-            conditions.Add(
-                $"position > COALESCE((SELECT position FROM {_eventsTable} WHERE tenant_id = @TenantId AND id = @ExpectedLastEventId), -1)"); // Use -1 so if event not found, we check for any events
-
+            // Use position from CTE to force tenant_id index usage first
+            conditions.Add("e.position > tp.pos");
             parameters.Add("ExpectedLastEventId", expectedLastEventId.Value);
         }
-        else
-        {
-            // If no expected last event, check for any events matching the boundary
-            conditions.Add("position >= 0");
-        }
+        // else: No position filter when expectedLastEventId is null
+        // This allows the planner to use tenant_id index without position constraint
 
         // Add domain identifier conditions
         if (query.Tags.Count > 0)
@@ -575,7 +650,7 @@ public class PostgresEventStoreBackend : IEventStoreBackend, IMultiTenantEventSt
             string[] tags = query.Tags.Select(di => di.ToString()).ToArray();
             string op = query.RequireAllTags ? "@>" : "&&";
             parameters.Add("CheckTags", tags);
-            conditions.Add($"tags {op} @CheckTags");
+            conditions.Add($"e.tags {op} @CheckTags");
         }
 
         // Add event type conditions
@@ -588,7 +663,7 @@ public class PostgresEventStoreBackend : IEventStoreBackend, IMultiTenantEventSt
                 if (eventTypes.Length == 1)
                 {
                     parameters.Add("CheckEventType", eventTypes[0]);
-                    conditions.Add("event_type = @CheckEventType");
+                    conditions.Add("e.event_type = @CheckEventType");
                 }
                 else
                 {
@@ -602,12 +677,12 @@ public class PostgresEventStoreBackend : IEventStoreBackend, IMultiTenantEventSt
                 if (eventTypes.Length == 1)
                 {
                     parameters.Add("CheckEventType", eventTypes[0]);
-                    conditions.Add("event_type = @CheckEventType");
+                    conditions.Add("e.event_type = @CheckEventType");
                 }
                 else
                 {
                     parameters.Add("CheckEventTypes", eventTypes);
-                    conditions.Add("event_type = ANY(@CheckEventTypes)");
+                    conditions.Add("e.event_type = ANY(@CheckEventTypes)");
                 }
             }
         }

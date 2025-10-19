@@ -54,4 +54,21 @@ public sealed class PollingOptions
     /// Set to 1 to disable batching (process events one at a time).
     /// </summary>
     public int ProjectionBatchSize { get; set; } = 50;
+
+    /// <summary>
+    /// Initial retry interval in milliseconds when failing to acquire the distributed lock.
+    /// When multiple instances compete for the lock, failed attempts will retry with exponential backoff.
+    /// </summary>
+    public int LockAcquisitionRetryIntervalMs { get; set; } = 5000;
+
+    /// <summary>
+    /// Maximum retry interval in milliseconds when failing to acquire the distributed lock.
+    /// Prevents unbounded growth of the backoff interval.
+    /// </summary>
+    public int LockAcquisitionMaxRetryIntervalMs { get; set; } = 60000;
+
+    /// <summary>
+    /// Factor by which the lock acquisition retry interval grows on each failed attempt.
+    /// </summary>
+    public double LockRetryBackoffFactor { get; set; } = 1.5;
 }

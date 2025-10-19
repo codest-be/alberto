@@ -2,6 +2,7 @@ using System.Reflection;
 using Alberto.EventStore.Diagnostics;
 using Alberto.EventStore.Events;
 using Alberto.EventStore.Subscriptions.Checkpoints;
+using Alberto.EventStore.Subscriptions.DistributedLocking;
 using Alberto.EventStore.Subscriptions.Filters;
 using Alberto.EventStore.Subscriptions.PoisonPills;
 using Alberto.EventStore.Subscriptions.Polling;
@@ -199,6 +200,7 @@ public class PollingSubscriptionsBuilder<TEventStore> where TEventStore : EventS
             _moduleKey,
             sp.GetRequiredKeyedService<EventRouter>(_moduleKey),
             sp.GetRequiredKeyedService<PollingOptions>(_moduleKey),
+            sp.GetRequiredKeyedService<IDistributedLock>(_moduleKey),
             sp,
             sp.GetRequiredService<ILogger<SubscriptionPollingService>>(),
             sp.GetRequiredService<IMetricsRecorder>()

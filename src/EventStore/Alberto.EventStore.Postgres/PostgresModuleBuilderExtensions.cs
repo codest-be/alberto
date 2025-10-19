@@ -1,8 +1,10 @@
 using Alberto.EventStore.Diagnostics;
 using Alberto.EventStore.MultiTenant;
 using Alberto.EventStore.Postgres.Subscriptions.Checkpoints;
+using Alberto.EventStore.Postgres.Subscriptions.DistributedLocking;
 using Alberto.EventStore.Postgres.Subscriptions.PoisonPills;
 using Alberto.EventStore.Subscriptions.Checkpoints;
+using Alberto.EventStore.Subscriptions.DistributedLocking;
 using Alberto.EventStore.Subscriptions.Filters;
 using Alberto.EventStore.Subscriptions.PoisonPills;
 using Alberto.EventStore.Subscriptions.Polling;
@@ -111,6 +113,14 @@ public static class PostgresModuleBuilderExtensions
             return new CachedPoisonPillStore(
                 innerStore,
                 cachedLogger);
+        });
+
+        // Register distributed lock for polling subscriptions
+        services.AddKeyedSingleton<IDistributedLock>(moduleKey, (sp, _) =>
+        {
+            var options = sp.GetRequiredService<IOptionsMonitor<PostgresEventStoreOptions>>().Get(moduleKey);
+            var logger = sp.GetRequiredService<ILogger<PostgresAdvisoryLock>>();
+            return new PostgresAdvisoryLock(options.ConnectionString, moduleKey, logger);
         });
 
         // Register default no-op trace context provider (can be overridden by WithTelemetry)

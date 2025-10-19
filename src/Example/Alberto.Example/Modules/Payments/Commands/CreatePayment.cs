@@ -36,7 +36,7 @@ public sealed class CreatePaymentHandler(PaymentEventStore eventStore)
         var paymentId = decision.Value;
         var query = new StreamQuery([new EventTag(Tags.Payment, paymentId.ToString())]);
 
-        await eventStore.PersistNew(query, decision.Events, cancellationToken);
+        await eventStore.PersistNew(decision.Events, cancellationToken);
 
         return Result<Guid>.Success(paymentId);
     }

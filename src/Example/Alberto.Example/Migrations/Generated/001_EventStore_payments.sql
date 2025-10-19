@@ -19,15 +19,24 @@ CREATE TABLE IF NOT EXISTS payments.events
     metadata   JSONB       NOT NULL DEFAULT '{}'
 );
 
--- Essential indexes
-CREATE INDEX IF NOT EXISTS idx_payments_events_tenant_position ON payments.events (tenant_id, position DESC);
-CREATE INDEX IF NOT EXISTS idx_payments_events_consistency ON payments.events (tenant_id, position) WHERE position > 0;
-CREATE INDEX IF NOT EXISTS idx_payments_events_global_position ON payments.events (position) INCLUDE (tenant_id, event_type, tags, data, metadata, created_at);
+-- Consistency check queries - WHERE tenant_id = ? AND id = ?
+CREATE INDEX IF NOT EXISTS idx_{schema} _events_tenant_id ON {schema}.events (tenant_id, id);
 
--- Optimized tenant-first indexes
-CREATE INDEX IF NOT EXISTS idx_payments_events_tenant_tags_gin ON payments.events (tenant_id, tags) WHERE array_length(tags, 1) > 0;
-CREATE INDEX IF NOT EXISTS idx_payments_events_tenant_type_tags ON payments.events (tenant_id, event_type, tags) WHERE array_length(tags, 1) > 0;
-CREATE INDEX IF NOT EXISTS idx_payments_events_tenant_tags_covering ON payments.events (tenant_id) INCLUDE (event_type, tags, data, metadata, created_at, position) WHERE array_length(tags, 1) > 0;
+-- Primary covering index for most tenant queries
+CREATE INDEX IF NOT EXISTS idx_{schema} _events_tenant_all
+    ON {schema}.events (tenant_id, position)
+    INCLUDE (event_type, tags, id, data, metadata, created_at);
+
+-- Global position index for StreamAll() subscription queries
+CREATE INDEX IF NOT EXISTS idx_{schema} _events_global_position ON {schema}.events (position)
+    INCLUDE (id, tenant_id, event_type, tags, data, metadata, created_at);
+
+-- For queries filtering by event type: WHERE tenant_id = ? AND event_type = ?
+CREATE INDEX IF NOT EXISTS idx_{schema} _events_tenant_type_position ON {schema}.events (tenant_id, event_type, position);
+
+-- GIN index for tag array queries ONLY (separate index)
+CREATE INDEX IF NOT EXISTS idx_{schema} _events_tags_gin ON {schema}.events USING GIN (tags)
+    WHERE array_length(tags, 1) > 0;
 
 -- Subscription checkpoints
 CREATE TABLE IF NOT EXISTS payments.subscription_checkpoints

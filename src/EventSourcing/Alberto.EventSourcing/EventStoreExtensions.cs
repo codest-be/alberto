@@ -45,13 +45,13 @@ public static class EventStoreExtensions
     /// <param name="cancellationToken">Cancellation token</param>
     public static async Task Persist(
         this EventStoreFactory eventStore,
-        StreamQuery query,
+        StreamQuery? query,
         Guid? expectedLastEventId,
         IEnumerable<object> events,
         CancellationToken cancellationToken = default)
     {
         var eventsToPersist = events
-            .Select(e => CreateEventToPersist(e, query.Tags))
+            .Select(CreateEventToPersist)
             .ToList();
 
         await eventStore.Append(
@@ -64,6 +64,19 @@ public static class EventStoreExtensions
     /// <summary>
     /// Persists events for a new aggregate (expectedLastEventId = null).
     /// This is a convenience method for creating new aggregates.
+    /// </summary>
+    public static Task PersistNew(
+        this EventStoreFactory eventStore,
+        IEnumerable<object> events,
+        CancellationToken cancellationToken = default)
+    {
+        return eventStore.Persist(null, null, events, cancellationToken);
+    }
+
+    /// <summary>
+    /// Persists events for a new aggregate (expectedLastEventId = null).
+    /// This is a convenience method for creating new aggregates.
+    /// With the stream query, you check ALL events in history ;)
     /// </summary>
     public static Task PersistNew(
         this EventStoreFactory eventStore,
@@ -95,12 +108,14 @@ public static class EventStoreExtensions
         }
     }
 
-    private static IEventToPersist CreateEventToPersist(object @event, IReadOnlyCollection<EventTag> tags)
+    private static IEventToPersist CreateEventToPersist(object @event)
     {
         var eventType = EventType.GetEventType(@event.GetType());
         if (eventType == null)
             throw new InvalidOperationException(
                 $"Event type {@event.GetType().Name} does not have an [EventType] attribute");
+
+        var tags = ExtractTags(@event);
 
         return new EventToPersist
         {
@@ -110,5 +125,32 @@ public static class EventStoreExtensions
             Metadata = new Dictionary<string, string>(),
             Created = DateTimeOffset.UtcNow
         };
+    }
+
+    private static List<EventTag> ExtractTags(object @event)
+    {
+        var tags = new List<EventTag>();
+        var eventType = @event.GetType();
+
+        foreach (var property in eventType.GetProperties())
+        {
+            var tagAttributes = property.GetCustomAttributes(typeof(Tag), false).Cast<Tag>();
+            var tagAttribute = tagAttributes.FirstOrDefault();
+
+            if (tagAttribute != null)
+            {
+                var value = property.GetValue(@event);
+                if (value != null)
+                {
+                    var tagId = value.ToString();
+                    if (!string.IsNullOrWhiteSpace(tagId))
+                    {
+                        tags.Add(new EventTag(tagAttribute.Name, tagId));
+                    }
+                }
+            }
+        }
+
+        return tags;
     }
 }

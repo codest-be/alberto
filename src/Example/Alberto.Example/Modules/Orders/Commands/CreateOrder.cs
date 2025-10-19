@@ -36,7 +36,7 @@ public sealed class CreateOrderHandler(OrderEventStore eventStore)
         var orderId = decision.Value;
         var query = new StreamQuery([new EventTag(Tags.Order, orderId.ToString())]);
 
-        await eventStore.PersistNew(query, decision.Events, cancellationToken);
+        await eventStore.PersistNew(decision.Events, cancellationToken);
 
         return Result<Guid>.Success(orderId);
     }

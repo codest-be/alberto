@@ -1,5 +1,6 @@
 using System.Reflection;
 using Alberto.EventStore.Diagnostics;
+using Alberto.EventStore.Subscriptions.DistributedLocking;
 using Alberto.EventStore.Subscriptions.Filters;
 using Alberto.EventStore.Subscriptions.Polling;
 using Alberto.EventStore.Subscriptions.Subscriptions;
@@ -30,6 +31,7 @@ public sealed class EventStoreModuleBuilder(IServiceCollection services, string 
             moduleKey,
             sp.GetRequiredKeyedService<EventRouter>(moduleKey),
             sp.GetRequiredKeyedService<PollingOptions>(moduleKey),
+            sp.GetRequiredKeyedService<IDistributedLock>(moduleKey),
             sp,
             sp.GetRequiredService<ILogger<SubscriptionPollingService>>(),
             sp.GetRequiredService<IMetricsRecorder>()));

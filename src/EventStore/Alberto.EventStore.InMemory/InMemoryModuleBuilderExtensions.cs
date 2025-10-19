@@ -1,8 +1,10 @@
 using Alberto.EventStore.Diagnostics;
 using Alberto.EventStore.InMemory.Subscriptions.Checkpoints;
+using Alberto.EventStore.InMemory.Subscriptions.DistributedLocking;
 using Alberto.EventStore.InMemory.Subscriptions.PoisonPills;
 using Alberto.EventStore.MultiTenant;
 using Alberto.EventStore.Subscriptions.Checkpoints;
+using Alberto.EventStore.Subscriptions.DistributedLocking;
 using Alberto.EventStore.Subscriptions.Filters;
 using Alberto.EventStore.Subscriptions.PoisonPills;
 using Microsoft.Extensions.DependencyInjection;
@@ -114,6 +116,13 @@ public static class InMemoryModuleBuilderExtensions
             return new CachedPoisonPillStore(
                 innerStore,
                 cachedLogger);
+        });
+
+        // Register distributed lock for polling subscriptions
+        services.AddKeyedSingleton<IDistributedLock>(moduleKey, (sp, _) =>
+        {
+            var logger = sp.GetRequiredService<ILogger<InMemoryDistributedLock>>();
+            return new InMemoryDistributedLock(moduleKey, logger);
         });
 
         // Register default no-op trace context provider (can be overridden by WithTelemetry)
