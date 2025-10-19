@@ -22,7 +22,7 @@ internal sealed class ProjectionBatchAccumulator<TKey, TState>(
     {
         if (!_eventsByKey.TryGetValue(key, out var events))
         {
-            events = new List<(object, EventContext)>();
+            events = [];
             _eventsByKey[key] = events;
         }
 
@@ -156,22 +156,22 @@ internal sealed class ProjectionBatchAccumulator<TKey, TState>(
             metricsType.GetProperty("ProjectionBatchesCommitted")?.GetValue(null)
                 ?.GetType().GetMethod("Add")?.Invoke(
                     metricsType.GetProperty("ProjectionBatchesCommitted")?.GetValue(null),
-                    new object[] { 1L, Array.Empty<KeyValuePair<string, object?>>() });
+                    [1L, Array.Empty<KeyValuePair<string, object?>>()]);
 
             metricsType.GetProperty("ProjectionBatchSize")?.GetValue(null)
                 ?.GetType().GetMethod("Record")?.Invoke(
                     metricsType.GetProperty("ProjectionBatchSize")?.GetValue(null),
-                    new object[] { batchSize, Array.Empty<KeyValuePair<string, object?>>() });
+                    [batchSize, Array.Empty<KeyValuePair<string, object?>>()]);
 
             metricsType.GetProperty("ProjectionBatchDuration")?.GetValue(null)
                 ?.GetType().GetMethod("Record")?.Invoke(
                     metricsType.GetProperty("ProjectionBatchDuration")?.GetValue(null),
-                    new object[] { duration, Array.Empty<KeyValuePair<string, object?>>() });
+                    [duration, Array.Empty<KeyValuePair<string, object?>>()]);
 
             metricsType.GetProperty("ProjectionBatchKeysUpdated")?.GetValue(null)
                 ?.GetType().GetMethod("Record")?.Invoke(
                     metricsType.GetProperty("ProjectionBatchKeysUpdated")?.GetValue(null),
-                    new object[] { keysUpdated, Array.Empty<KeyValuePair<string, object?>>() });
+                    [keysUpdated, Array.Empty<KeyValuePair<string, object?>>()]);
         }
         catch
         {

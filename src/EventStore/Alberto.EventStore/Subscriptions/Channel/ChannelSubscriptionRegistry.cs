@@ -53,7 +53,7 @@ public sealed class ChannelSubscriptionRegistry(ILogger<ChannelSubscriptionRegis
         IReadOnlyCollection<GlobalEventEnvelope> events)
     {
         if (events.Count == 0)
-            return Array.Empty<ChannelWriter<GlobalEventEnvelope>>();
+            return [];
 
         // Extract unique event types from the events
         var eventTypes = events.Select(e => e.EventType).ToHashSet();

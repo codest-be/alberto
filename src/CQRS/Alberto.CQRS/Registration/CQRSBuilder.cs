@@ -20,6 +20,11 @@ public sealed class CQRSBuilder
     }
 
     /// <summary>
+    /// Gets the service collection for advanced configuration.
+    /// </summary>
+    public IServiceCollection Services => _services;
+
+    /// <summary>
     /// Scans the given assembly for command handlers, query handlers, and validators.
     /// </summary>
     public CQRSBuilder ScanAssembly(Assembly assembly)

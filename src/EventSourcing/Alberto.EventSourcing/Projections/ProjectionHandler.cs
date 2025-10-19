@@ -72,7 +72,7 @@ public sealed class ProjectionHandler<TKey, TState>(
         }
         else
         {
-            // No batch scope - save immediately (existing behavior)
+            // No batch scope - save immediately
             var updated = await repository.UpdateWithVersion(
                 key,
                 state => projector.Apply(state, @event),

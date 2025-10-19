@@ -1,4 +1,5 @@
 using Alberto.CQRS;
+using Alberto.CQRS.Telemetry;
 using Alberto.EventStore;
 using Alberto.EventStore.Postgres;
 using Alberto.EventStore.Subscriptions.Channel;
@@ -45,7 +46,9 @@ public static class PaymentsModule
                     .AddPostgresProjection<PaymentEventStore, PaymentProjectionSubscription, Guid, Payment, PaymentProjector>(
                         mode: SubscriptionMode.Hybrid)
                 )
-                .WithCQRS(cqrs => cqrs.ScanAssembly(typeof(PaymentsModule).Assembly))
+                .WithCQRS(cqrs => cqrs
+                    .ScanAssembly(typeof(PaymentsModule).Assembly)
+                    .WithTelemetry())
                 .WithTelemetry()
             );
 

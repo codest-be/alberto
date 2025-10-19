@@ -52,6 +52,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Alberto.Projections.InMemor
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Alberto.Projections.Postgres", "src\EventSourcing\Alberto.Projections.Postgres\Alberto.Projections.Postgres.csproj", "{BF2AE372-FE02-4496-BD21-AC056BB68AD3}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Alberto.CQRS.Telemetry", "src\CQRS\Alberto.CQRS.Telemetry\Alberto.CQRS.Telemetry.csproj", "{6137834D-C0AC-4678-B06B-39387D4E64F1}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -266,6 +268,18 @@ Global
 		{BF2AE372-FE02-4496-BD21-AC056BB68AD3}.Release|x64.Build.0 = Release|Any CPU
 		{BF2AE372-FE02-4496-BD21-AC056BB68AD3}.Release|x86.ActiveCfg = Release|Any CPU
 		{BF2AE372-FE02-4496-BD21-AC056BB68AD3}.Release|x86.Build.0 = Release|Any CPU
+		{6137834D-C0AC-4678-B06B-39387D4E64F1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6137834D-C0AC-4678-B06B-39387D4E64F1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6137834D-C0AC-4678-B06B-39387D4E64F1}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{6137834D-C0AC-4678-B06B-39387D4E64F1}.Debug|x64.Build.0 = Debug|Any CPU
+		{6137834D-C0AC-4678-B06B-39387D4E64F1}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{6137834D-C0AC-4678-B06B-39387D4E64F1}.Debug|x86.Build.0 = Debug|Any CPU
+		{6137834D-C0AC-4678-B06B-39387D4E64F1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6137834D-C0AC-4678-B06B-39387D4E64F1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6137834D-C0AC-4678-B06B-39387D4E64F1}.Release|x64.ActiveCfg = Release|Any CPU
+		{6137834D-C0AC-4678-B06B-39387D4E64F1}.Release|x64.Build.0 = Release|Any CPU
+		{6137834D-C0AC-4678-B06B-39387D4E64F1}.Release|x86.ActiveCfg = Release|Any CPU
+		{6137834D-C0AC-4678-B06B-39387D4E64F1}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -288,5 +302,6 @@ Global
 		{C7ABA0A6-67B0-4F7D-A5C1-92BB257705EE} = {9B0EAD7B-19A5-4B6B-8CE1-248CBBABE00A}
 		{C14F1BE6-B71E-4BDB-B9AB-A6F0C0AD7B34} = {34CE9B7A-9E58-4CD8-8E78-E2462D0E6242}
 		{BF2AE372-FE02-4496-BD21-AC056BB68AD3} = {34CE9B7A-9E58-4CD8-8E78-E2462D0E6242}
+		{6137834D-C0AC-4678-B06B-39387D4E64F1} = {EF8D5A62-F0B1-5A35-CE34-34399E664908}
 	EndGlobalSection
 EndGlobal

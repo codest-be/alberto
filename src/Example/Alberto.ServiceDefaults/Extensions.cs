@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Alberto.CQRS.Telemetry;
 using Alberto.EventStore.Telemetry;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -78,6 +79,7 @@ public static class Extensions
                     //.AddGrpcClientInstrumentation()
                     .AddHttpClientInstrumentation()
                     .AddAlbertoInstrumentation()
+                    .AddAlbertoCQRSInstrumentation()
                     .AddNpgsql()
                     .AddProcessor(new FilteringProcessor(activity =>
                         activity.Source.Name != "Npgsql" || activity.Parent != null));

@@ -1,4 +1,5 @@
 using Alberto.CQRS;
+using Alberto.CQRS.Telemetry;
 using Alberto.EventStore;
 using Alberto.EventStore.Postgres;
 using Alberto.EventStore.Subscriptions.Channel;
@@ -50,7 +51,9 @@ public static class OrdersModule
                         OrderStatisticsProjector>(
                         mode: SubscriptionMode.Async)
                 )
-                .WithCQRS(cqrs => cqrs.ScanAssembly(typeof(OrdersModule).Assembly))
+                .WithCQRS(cqrs => cqrs
+                    .ScanAssembly(typeof(OrdersModule).Assembly)
+                    .WithTelemetry())
                 .WithTelemetry()
             );
 

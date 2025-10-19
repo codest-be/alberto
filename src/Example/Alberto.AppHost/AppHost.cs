@@ -7,6 +7,7 @@ IResourceBuilder<PostgresServerResource> postgres =
         .AddPostgres("postgres")
         .WithPgAdmin(o => o.WithLifetime(ContainerLifetime.Persistent).WithHostPort(54320))
         .WithLifetime(ContainerLifetime.Persistent)
+        .WithDataVolume("alberto-postgres-data")
         .WithAnnotation(new CommandLineArgsCallbackAnnotation(args =>
         {
             args.Add("-c");

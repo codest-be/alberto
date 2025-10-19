@@ -1,3 +1,4 @@
+using Alberto.CQRS.Diagnostics;
 using Alberto.CQRS.Results;
 using Alberto.EventSourcing;
 using FluentValidation;
@@ -10,23 +11,45 @@ namespace Alberto.CQRS.Commands;
 /// </summary>
 public sealed class CommandExecutor(IServiceProvider serviceProvider, string? moduleKey = null)
 {
+    private readonly IDiagnosticsEventListener? _diagnostics =
+        serviceProvider.GetService<IDiagnosticsEventListener>();
+
     /// <summary>
     /// Executes a command without a return value.
     /// </summary>
     public async Task<Result> Execute<TCommand>(TCommand command, CancellationToken cancellationToken = default)
         where TCommand : ICommand
     {
+        using var scope = _diagnostics?.Command(typeof(TCommand), typeof(TCommand).Name, moduleKey, hasReturnValue: false)
+                          ?? EmptyDisposable.Instance;
+
         // Validate if validator exists
         var validationResult = await ValidateCommand(command, cancellationToken);
         if (validationResult.IsFailure)
+        {
+            scope.WithValidationFailure(validationResult.Problems.Select(p => p.Code));
             return validationResult;
+        }
 
         // Get and execute handler
         var handler = GetHandler<ICommandHandler<TCommand>>();
         if (handler == null)
-            return Result.Fail($"No handler found for command {typeof(TCommand).Name}");
+        {
+            var error = $"No handler found for command {typeof(TCommand).Name}";
+            scope.WithError(error);
+            return Result.Fail(error);
+        }
 
-        return await handler.Handle(command, cancellationToken);
+        scope.WithHandler(handler.GetType());
+
+        var result = await handler.Handle(command, cancellationToken);
+
+        if (result.IsSuccess)
+            scope.WithOutcome("success");
+        else
+            scope.WithError("Command execution failed", result.Problems.Select(p => p.Code));
+
+        return result;
     }
 
     /// <summary>
@@ -37,17 +60,36 @@ public sealed class CommandExecutor(IServiceProvider serviceProvider, string? mo
         CancellationToken cancellationToken = default)
         where TCommand : ICommand
     {
+        using var scope = _diagnostics?.Command(typeof(TCommand), typeof(TCommand).Name, moduleKey, hasReturnValue: true)
+                          ?? EmptyDisposable.Instance;
+
         // Validate if validator exists
         var validationResult = await ValidateCommand(command, cancellationToken);
         if (validationResult.IsFailure)
+        {
+            scope.WithValidationFailure(validationResult.Problems.Select(p => p.Code));
             return Result<TResult>.Fail(validationResult.Problems);
+        }
 
         // Get and execute handler
         var handler = GetHandler<ICommandHandler<TCommand, TResult>>();
         if (handler == null)
-            return Result<TResult>.Fail($"No handler found for command {typeof(TCommand).Name}");
+        {
+            var error = $"No handler found for command {typeof(TCommand).Name}";
+            scope.WithError(error);
+            return Result<TResult>.Fail(error);
+        }
 
-        return await handler.Handle(command, cancellationToken);
+        scope.WithHandler(handler.GetType());
+
+        var result = await handler.Handle(command, cancellationToken);
+
+        if (result.IsSuccess)
+            scope.WithOutcome("success");
+        else
+            scope.WithError("Command execution failed", result.Problems.Select(p => p.Code));
+
+        return result;
     }
 
     private async Task<Result> ValidateCommand<TCommand>(TCommand command, CancellationToken cancellationToken)

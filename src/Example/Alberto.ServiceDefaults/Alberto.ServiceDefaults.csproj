@@ -24,6 +24,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\EventStore\Alberto.EventStore.Telemetry\Alberto.EventStore.Telemetry.csproj"/>
+    <ProjectReference Include="..\..\CQRS\Alberto.CQRS.Telemetry\Alberto.CQRS.Telemetry.csproj"/>
   </ItemGroup>
 
 </Project>

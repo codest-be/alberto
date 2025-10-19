@@ -10,7 +10,7 @@ public sealed class ProjectionBatchScope : IAsyncDisposable
     // ReSharper disable once InconsistentNaming
     private static readonly AsyncLocal<ProjectionBatchScope?> _current = new();
     private readonly Dictionary<object, object> _accumulators = new();
-    private readonly List<Func<CancellationToken, ValueTask>> _commits = new();
+    private readonly List<Func<CancellationToken, ValueTask>> _commits = [];
     private bool _committed;
     private bool _disposed;
 

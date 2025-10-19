@@ -9,7 +9,7 @@ namespace Alberto.Projections.Postgres.Migrations;
 /// </summary>
 public sealed class ProjectionMigrationRegistry
 {
-    private static readonly HashSet<SchemaRegistration> _registrations = new();
+    private static readonly HashSet<SchemaRegistration> _registrations = [];
     private static readonly object _lock = new();
 
     /// <summary>
