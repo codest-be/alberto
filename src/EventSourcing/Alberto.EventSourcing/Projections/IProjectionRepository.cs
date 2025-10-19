@@ -6,7 +6,7 @@ namespace Alberto.Projections;
 /// </summary>
 /// <typeparam name="TKey">The type of the key used to identify projections</typeparam>
 /// <typeparam name="TState">The projected state type</typeparam>
-public interface IProjectionRepository<in TKey, TState>
+public interface IProjectionRepository<TKey, TState>
     where TKey : notnull
     where TState : new()
 {
@@ -73,5 +73,26 @@ public interface IProjectionRepository<in TKey, TState>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>True if the update was applied, false if skipped due to version check</returns>
     Task<bool> UpdateWithVersion(TKey key, Func<TState, TState> updateFn, long globalVersion,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Retrieves multiple projections by their keys in a single batch operation.
+    /// </summary>
+    /// <param name="keys">The keys identifying the projections</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Dictionary mapping keys to their states (or default/null if not found)</returns>
+    Task<IDictionary<TKey, TState?>> BatchGet(
+        IEnumerable<TKey> keys,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Batch updates multiple projections with version checking.
+    /// Implementations should optimize this as a single database transaction where possible.
+    /// </summary>
+    /// <param name="updates">Dictionary of keys to (state, version) tuples</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Number of projections actually updated (may be less than input due to version checks)</returns>
+    Task<int> BatchUpsertWithVersion(
+        IDictionary<TKey, (TState State, long Version)> updates,
         CancellationToken cancellationToken = default);
 }

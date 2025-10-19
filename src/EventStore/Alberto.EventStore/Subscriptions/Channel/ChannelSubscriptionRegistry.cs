@@ -9,17 +9,9 @@ namespace Alberto.EventStore.Subscriptions.Channel;
 /// Registry for managing channel-based subscriptions with targeted event routing.
 /// Only routes events to channels that have registered interest in specific event types.
 /// </summary>
-public sealed class ChannelSubscriptionRegistry
+public sealed class ChannelSubscriptionRegistry(ILogger<ChannelSubscriptionRegistry> logger, IMetricsRecorder metrics)
 {
-    private readonly ILogger<ChannelSubscriptionRegistry> _logger;
-    private readonly IMetricsRecorder _metrics;
     private readonly ConcurrentDictionary<string, ChannelSubscription> _subscriptions = new();
-
-    public ChannelSubscriptionRegistry(ILogger<ChannelSubscriptionRegistry> logger, IMetricsRecorder metrics)
-    {
-        _logger = logger;
-        _metrics = metrics;
-    }
 
     /// <summary>
     /// Registers a channel subscription for a specific module
@@ -35,7 +27,7 @@ public sealed class ChannelSubscriptionRegistry
         var subscription = new ChannelSubscription(moduleKey, writer, eventTypeFilter);
         _subscriptions[moduleKey] = subscription;
 
-        _logger.LogInformation(
+        logger.LogInformation(
             "Registered channel subscription for module '{ModuleKey}' with filter: {Filter}",
             moduleKey,
             eventTypeFilter == null || eventTypeFilter.Count == 0
@@ -100,14 +92,14 @@ public sealed class ChannelSubscriptionRegistry
             return;
 
         var eventTypes = events.Select(e => e.EventType).Distinct().ToList();
-        _logger.LogDebug(
+        logger.LogDebug(
             "NotifySubscriptions called with {EventCount} events of types: {EventTypes}",
             events.Count,
             string.Join(", ", eventTypes));
 
         var matchingChannels = GetMatchingChannels(events);
 
-        _logger.LogDebug(
+        logger.LogDebug(
             "Found {MatchingChannelCount} matching channels out of {TotalSubscriptions} total subscriptions",
             matchingChannels.Count,
             _subscriptions.Count);
@@ -146,7 +138,7 @@ public sealed class ChannelSubscriptionRegistry
         {
             if (matchingChannels.Contains(subscription.Writer))
             {
-                _metrics.RecordChannelPublish(moduleKey, events.Count);
+                metrics.RecordChannelPublish(moduleKey, events.Count);
             }
         }
 
@@ -156,12 +148,12 @@ public sealed class ChannelSubscriptionRegistry
             {
                 if (matchingChannels.Contains(subscription.Writer))
                 {
-                    _metrics.RecordChannelWriteBlocked(moduleKey);
+                    metrics.RecordChannelWriteBlocked(moduleKey);
                 }
             }
         }
 
-        _logger.LogDebug(
+        logger.LogDebug(
             "Successfully notified {ChannelCount} channels with {EventCount} events",
             matchingChannels.Count,
             events.Count);

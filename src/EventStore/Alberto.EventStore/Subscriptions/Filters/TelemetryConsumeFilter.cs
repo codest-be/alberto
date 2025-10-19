@@ -1,4 +1,5 @@
 using Alberto.EventStore.Diagnostics;
+using Alberto.EventStore.Subscriptions.Batching;
 using Alberto.EventStore.Subscriptions.Subscriptions;
 
 namespace Alberto.EventStore.Subscriptions.Filters;
@@ -16,6 +17,15 @@ public sealed class TelemetryConsumeFilter(
         Func<ValueTask> next,
         CancellationToken cancellationToken = default)
     {
+        // Skip individual event traces when in batch mode - the batch will create its own trace with links
+        var batchScope = ProjectionBatchScope.Current;
+        if (batchScope != null)
+        {
+            // No trace scope for individual events when batching
+            await next();
+            return;
+        }
+
         // Create telemetry scope from event metadata (may be no-op if no telemetry configured)
         using var traceScope =
             traceContextProvider.CreateScopeFromMetadata(context.Metadata, context.SubscriptionName, context.EventType, isSynchronous);

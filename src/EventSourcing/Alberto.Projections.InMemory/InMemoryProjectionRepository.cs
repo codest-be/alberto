@@ -28,6 +28,21 @@ public sealed class InMemoryProjectionRepository<TKey, TState>(
     }
 
     /// <inheritdoc />
+    public Task<IDictionary<TKey, TState?>> BatchGet(
+        IEnumerable<TKey> keys,
+        CancellationToken cancellationToken = default)
+    {
+        var result = new Dictionary<TKey, TState?>();
+        foreach (var key in keys)
+        {
+            var tenantKey = GetTenantKey(key);
+            result[key] = _store.TryGetValue(tenantKey, out var entry) ? entry.State : default(TState?);
+        }
+
+        return Task.FromResult<IDictionary<TKey, TState?>>(result);
+    }
+
+    /// <inheritdoc />
     public Task<IReadOnlyCollection<TState>> GetAll(CancellationToken cancellationToken = default)
     {
         var tenantContext = serviceProvider.GetRequiredService<ITenantContext>();
@@ -135,6 +150,55 @@ public sealed class InMemoryProjectionRepository<TKey, TState>(
         logger.LogWarning("Cleared all projections for tenant {TenantId}",
             serviceProvider.GetRequiredService<ITenantContext>().Tenant.Id);
         return Task.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    public Task<int> BatchUpsertWithVersion(
+        IDictionary<TKey, (TState State, long Version)> updates,
+        CancellationToken cancellationToken = default)
+    {
+        if (updates.Count == 0)
+            return Task.FromResult(0);
+
+        var updatedCount = 0;
+
+        foreach (var (key, (state, version)) in updates)
+        {
+            var tenantKey = GetTenantKey(key);
+            var wasUpdated = false;
+
+            _store.AddOrUpdate(
+                tenantKey,
+                _ =>
+                {
+                    wasUpdated = true;
+                    return (state, version);
+                },
+                (_, existing) =>
+                {
+                    if (existing.GlobalVersion >= version)
+                    {
+                        logger.LogDebug(
+                            "Skipping batch projection update for {Key} - event version {EventVersion} <= stored version {StoredVersion}",
+                            key, version, existing.GlobalVersion);
+                        return existing;
+                    }
+
+                    wasUpdated = true;
+                    return (state, version);
+                });
+
+            if (wasUpdated)
+                updatedCount++;
+        }
+
+        logger.LogDebug(
+            "Batch upserted {Count} projections for tenant {TenantId}, {UpdatedCount} rows affected",
+            updates.Count,
+            serviceProvider.GetRequiredService<ITenantContext>().Tenant.Id,
+            updatedCount);
+
+        return Task.FromResult(updatedCount);
     }
 
     private string GetTenantKey(TKey key) => $"{serviceProvider.GetRequiredService<ITenantContext>().Tenant.Id}:{key}";

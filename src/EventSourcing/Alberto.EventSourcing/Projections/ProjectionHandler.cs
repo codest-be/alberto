@@ -1,4 +1,6 @@
+using Alberto.EventSourcing.Projections;
 using Alberto.EventSourcing.Projectors;
+using Alberto.EventStore.Subscriptions.Batching;
 using Alberto.EventStore.Subscriptions.Subscriptions;
 using Microsoft.Extensions.Logging;
 
@@ -20,6 +22,8 @@ public sealed class ProjectionHandler<TKey, TState>(
     /// <summary>
     /// Handles an event by projecting it and storing the result.
     /// Uses version-aware updates to ensure idempotency based on EventContext.GlobalPosition.
+    /// If called within a ProjectionBatchScope, accumulates updates in memory for batch commit.
+    /// Otherwise, saves immediately to the repository.
     /// </summary>
     /// <param name="key">The projection key extracted from the event</param>
     /// <param name="event">The event to project</param>
@@ -38,29 +42,60 @@ public sealed class ProjectionHandler<TKey, TState>(
             key
         );
 
-        // Use version-aware update to ensure idempotency
-        var updated = await repository.UpdateWithVersion(
-            key,
-            state => projector.Apply(state, @event),
-            context.GlobalPosition,
-            cancellationToken);
+        // Check if we're in a batch scope
+        var batchScope = ProjectionBatchScope.Current;
 
-        if (updated)
+        if (batchScope != null)
         {
+            // Get or create accumulator for this handler instance (stored in the scope, not AsyncLocal)
+            var accumulator = batchScope.GetOrCreateAccumulator(
+                this, // Use handler instance as key
+                () =>
+                {
+                    var newAccumulator = new ProjectionBatchAccumulator<TKey, TState>(repository, projector);
+
+                    // Register commit action with the batch scope
+                    batchScope.RegisterCommit(ct => newAccumulator.CommitAsync(ct));
+
+                    return newAccumulator;
+                });
+
+            // Accumulate event with context
+            accumulator.Add(key, @event, context);
+
             logger.LogDebug(
-                "Updated projection {Key} from event {EventType} at position {Position}",
-                key,
+                "Accumulated event {EventType} at position {Position} for projection key {Key} in batch",
                 context.EventType,
-                context.GlobalPosition
+                context.GlobalPosition,
+                key
             );
         }
         else
         {
-            logger.LogDebug(
-                "Skipped projection update for {Key} - event at position {Position} already processed or out of order",
+            // No batch scope - save immediately (existing behavior)
+            var updated = await repository.UpdateWithVersion(
                 key,
-                context.GlobalPosition
-            );
+                state => projector.Apply(state, @event),
+                context.GlobalPosition,
+                cancellationToken);
+
+            if (updated)
+            {
+                logger.LogDebug(
+                    "Updated projection {Key} from event {EventType} at position {Position}",
+                    key,
+                    context.EventType,
+                    context.GlobalPosition
+                );
+            }
+            else
+            {
+                logger.LogDebug(
+                    "Skipped projection update for {Key} - event at position {Position} already processed or out of order",
+                    key,
+                    context.GlobalPosition
+                );
+            }
         }
     }
 }

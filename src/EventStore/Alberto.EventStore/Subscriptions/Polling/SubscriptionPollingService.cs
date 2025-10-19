@@ -1,4 +1,5 @@
 using Alberto.EventStore.Diagnostics;
+using Alberto.EventStore.Subscriptions.Batching;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -56,27 +57,20 @@ public sealed class SubscriptionPollingService(
                     // Record batch size metric
                     metrics.RecordPollingBatch(moduleKey, events.Count);
 
-                    var allSuccessful = true;
-                    foreach (var evt in events.OrderBy(e => e.GlobalPosition))
+                    // Route events in batch with projection batching scope
+                    var orderedEvents = events.OrderBy(e => e.GlobalPosition).ToList();
+
+                    await using (var batchScope = new ProjectionBatchScope())
                     {
-                        var success = await eventRouter.RouteEvent(evt, stoppingToken);
+                        var success = await eventRouter.RouteEvents(orderedEvents, stoppingToken);
+
                         if (!success)
                         {
-                            allSuccessful = false;
-                            logger.LogError(
-                                "Event routing failed for event {EventId} at position {Position}",
-                                evt.Id,
-                                evt.GlobalPosition
-                            );
-                            // Stop processing this batch if we hit a poison pill
+                            logger.LogWarning("Stopping polling due to subscription failures");
                             break;
                         }
-                    }
 
-                    if (!allSuccessful)
-                    {
-                        logger.LogWarning("Stopping polling due to subscription failures");
-                        break;
+                        // Batch scope will auto-commit on dispose
                     }
 
                     // Reset polling interval on successful processing

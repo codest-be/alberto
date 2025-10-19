@@ -38,12 +38,14 @@ public sealed class ChannelSubscriptionService(
 
         try
         {
-            // Read events from channel
+            // Process events immediately as they arrive (synchronous, fast)
+            // NO batching in channel mode - projections save immediately
+            // Channel is meant to be fast and inline with write operations
             await foreach (var evt in channelReader.ReadAllAsync(stoppingToken))
             {
                 try
                 {
-                    // Route to event handlers
+                    // Process event immediately without batch scope for minimal latency
                     var handlerSuccess = await eventRouter.RouteEvent(evt, stoppingToken);
 
                     if (!handlerSuccess)
@@ -53,10 +55,9 @@ public sealed class ChannelSubscriptionService(
                             evt.Id,
                             evt.GlobalPosition
                         );
-                        // Continue processing other events even if one handler fails
                     }
 
-                    // Notify channel consumers in parallel
+                    // Notify channel consumers
                     if (_consumers.Count > 0)
                     {
                         await NotifyConsumers(evt, stoppingToken);

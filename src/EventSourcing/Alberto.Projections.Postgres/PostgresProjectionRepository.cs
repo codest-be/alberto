@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Text.Json;
 using Alberto.EventSourcing.Projections;
 using Alberto.EventStore.MultiTenant;
@@ -60,6 +61,49 @@ public sealed class PostgresProjectionRepository<TKey, TState> : IProjectionRepo
             return default;
 
         return JsonSerializer.Deserialize<TState>(json, _jsonOptions);
+    }
+
+    /// <inheritdoc />
+    public async Task<IDictionary<TKey, TState?>> BatchGet(
+        IEnumerable<TKey> keys,
+        CancellationToken cancellationToken = default)
+    {
+        var keyList = keys.ToList();
+        if (keyList.Count == 0)
+            return new Dictionary<TKey, TState?>();
+
+        await using var connection = new NpgsqlConnection(_options.ConnectionString);
+
+        // Use ANY array query for efficient batch retrieval
+        var keyStrings = keyList.Select(k => k.ToString()).ToArray();
+        var sql = $"""
+                   SELECT key, state, global_version
+                   FROM {_schemaQualifiedTableName}
+                   WHERE tenant_id = @TenantId AND key = ANY(@Keys)
+                   """;
+
+        var results = await connection.QueryAsync<(string Key, string State, long GlobalVersion)>(
+            new CommandDefinition(sql, new { TenantId = _tenantContext.Tenant.Id, Keys = keyStrings },
+                cancellationToken: cancellationToken));
+
+        // Build dictionary with results, converting string keys back to TKey
+        var resultDict = new Dictionary<TKey, TState?>();
+        foreach (var (keyString, state, _) in results)
+        {
+            var key = ConvertStringToKey(keyString);
+            resultDict[key] = JsonSerializer.Deserialize<TState>(state, _jsonOptions);
+        }
+
+        // Fill in missing keys with null
+        foreach (var key in keyList)
+        {
+            if (!resultDict.ContainsKey(key))
+            {
+                resultDict[key] = default;
+            }
+        }
+
+        return resultDict;
     }
 
     /// <inheritdoc />
@@ -243,5 +287,100 @@ public sealed class PostgresProjectionRepository<TKey, TState> : IProjectionRepo
 
         _logger.LogWarning("Cleared all projections for tenant {TenantId} from table {TableName}",
             _tenantContext.Tenant.Id, _tableName);
+    }
+
+    /// <inheritdoc />
+    public async Task<int> BatchUpsertWithVersion(
+        IDictionary<TKey, (TState State, long Version)> updates,
+        CancellationToken cancellationToken = default)
+    {
+        if (updates.Count == 0)
+            return 0;
+
+        await using var connection = new NpgsqlConnection(_options.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        try
+        {
+            var rowsAffected = 0;
+
+            // Use UNNEST for efficient batch insert
+            // Build arrays of values
+            var keys = new List<string>();
+            var states = new List<string>();
+            var versions = new List<long>();
+
+            foreach (var (key, (state, version)) in updates)
+            {
+                keys.Add(key.ToString()!);
+                states.Add(JsonSerializer.Serialize(state, _jsonOptions));
+                versions.Add(version);
+            }
+
+            var sql = $"""
+                       INSERT INTO {_schemaQualifiedTableName} (tenant_id, key, state, global_version, updated_at)
+                       SELECT
+                           @TenantId,
+                           unnest(@Keys::text[]),
+                           unnest(@States::jsonb[]),
+                           unnest(@Versions::bigint[]),
+                           NOW()
+                       ON CONFLICT (tenant_id, key) DO UPDATE
+                       SET state = EXCLUDED.state,
+                           global_version = EXCLUDED.global_version,
+                           updated_at = NOW()
+                       WHERE {_schemaQualifiedTableName}.global_version < EXCLUDED.global_version
+                       """;
+
+            rowsAffected = await connection.ExecuteAsync(
+                new CommandDefinition(
+                    sql,
+                    new { TenantId = _tenantContext.Tenant.Id, Keys = keys.ToArray(), States = states.ToArray(), Versions = versions.ToArray() },
+                    transaction,
+                    cancellationToken: cancellationToken));
+
+            await transaction.CommitAsync(cancellationToken);
+
+            _logger.LogDebug(
+                "Batch upserted {Count} projections for tenant {TenantId}, {RowsAffected} rows affected",
+                updates.Count,
+                _tenantContext.Tenant.Id,
+                rowsAffected);
+
+            return rowsAffected;
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
+
+    private static TKey ConvertStringToKey(string keyString)
+    {
+        var keyType = typeof(TKey);
+
+        // Handle common key types
+        if (keyType == typeof(string))
+            return (TKey)(object)keyString;
+
+        if (keyType == typeof(Guid))
+            return (TKey)(object)Guid.Parse(keyString);
+
+        if (keyType == typeof(int))
+            return (TKey)(object)int.Parse(keyString);
+
+        if (keyType == typeof(long))
+            return (TKey)(object)long.Parse(keyString);
+
+        // Fallback: use type converter
+        var converter = TypeDescriptor.GetConverter(keyType);
+        if (converter.CanConvertFrom(typeof(string)))
+        {
+            return (TKey)converter.ConvertFromString(keyString)!;
+        }
+
+        throw new NotSupportedException($"Key type {keyType.Name} is not supported for conversion from string");
     }
 }

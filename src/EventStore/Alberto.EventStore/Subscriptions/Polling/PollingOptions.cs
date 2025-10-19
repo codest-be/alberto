@@ -47,4 +47,11 @@ public sealed class PollingOptions
     /// </summary>
     [Obsolete("The poison pill cache now uses automatic position-based eviction. This property is no longer used and will be removed in a future version.")]
     public int PoisonPillCacheSize { get; set; } = 10000;
+
+    /// <summary>
+    /// Maximum number of events to process in a single batch for projection updates.
+    /// Higher values improve throughput by reducing database roundtrips, but increase memory usage.
+    /// Set to 1 to disable batching (process events one at a time).
+    /// </summary>
+    public int ProjectionBatchSize { get; set; } = 50;
 }

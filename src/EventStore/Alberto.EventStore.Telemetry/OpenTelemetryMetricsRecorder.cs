@@ -211,75 +211,41 @@ public sealed class OpenTelemetryMetricsRecorder : IMetricsRecorder
 
     private sealed record SubscriptionMetrics(long Position, long MaxGlobalPosition);
 
-    private sealed class AppendScope : IDisposable
+    private sealed class AppendScope(Stopwatch stopwatch, string tenantId, string schema, string batchSizeBucket)
+        : IDisposable
     {
-        private readonly string _batchSizeBucket;
-        private readonly string _schema;
-        private readonly Stopwatch _stopwatch;
-        private readonly string _tenantId;
-
-        public AppendScope(Stopwatch stopwatch, string tenantId, string schema, string batchSizeBucket)
-        {
-            _stopwatch = stopwatch;
-            _tenantId = tenantId;
-            _schema = schema;
-            _batchSizeBucket = batchSizeBucket;
-        }
-
         public void Dispose()
         {
-            _stopwatch.Stop();
+            stopwatch.Stop();
             AlbertoMeter.AppendDuration.Record(
-                _stopwatch.Elapsed.TotalMilliseconds,
-                new KeyValuePair<string, object?>("tenant_id", _tenantId),
-                new KeyValuePair<string, object?>("schema", _schema),
-                new KeyValuePair<string, object?>("batch_size", _batchSizeBucket));
+                stopwatch.Elapsed.TotalMilliseconds,
+                new KeyValuePair<string, object?>("tenant_id", tenantId),
+                new KeyValuePair<string, object?>("schema", schema),
+                new KeyValuePair<string, object?>("batch_size", batchSizeBucket));
         }
     }
 
-    private sealed class QueryScope : IDisposable
+    private sealed class QueryScope(Stopwatch stopwatch, string schema, bool hasFilters) : IDisposable
     {
-        private readonly bool _hasFilters;
-        private readonly string _schema;
-        private readonly Stopwatch _stopwatch;
-
-        public QueryScope(Stopwatch stopwatch, string schema, bool hasFilters)
-        {
-            _stopwatch = stopwatch;
-            _schema = schema;
-            _hasFilters = hasFilters;
-        }
-
         public void Dispose()
         {
-            _stopwatch.Stop();
+            stopwatch.Stop();
             AlbertoMeter.QueryDuration.Record(
-                _stopwatch.Elapsed.TotalMilliseconds,
-                new KeyValuePair<string, object?>("schema", _schema),
-                new KeyValuePair<string, object?>("has_filters", _hasFilters));
+                stopwatch.Elapsed.TotalMilliseconds,
+                new KeyValuePair<string, object?>("schema", schema),
+                new KeyValuePair<string, object?>("has_filters", hasFilters));
         }
     }
 
-    private sealed class ProcessingScope : IDisposable
+    private sealed class ProcessingScope(Stopwatch stopwatch, string subscriptionId, string eventType) : IDisposable
     {
-        private readonly string _eventType;
-        private readonly Stopwatch _stopwatch;
-        private readonly string _subscriptionId;
-
-        public ProcessingScope(Stopwatch stopwatch, string subscriptionId, string eventType)
-        {
-            _stopwatch = stopwatch;
-            _subscriptionId = subscriptionId;
-            _eventType = eventType;
-        }
-
         public void Dispose()
         {
-            _stopwatch.Stop();
+            stopwatch.Stop();
             AlbertoMeter.ProcessingDuration.Record(
-                _stopwatch.Elapsed.TotalMilliseconds,
-                new KeyValuePair<string, object?>("subscription_id", _subscriptionId),
-                new KeyValuePair<string, object?>("event_type", _eventType));
+                stopwatch.Elapsed.TotalMilliseconds,
+                new KeyValuePair<string, object?>("subscription_id", subscriptionId),
+                new KeyValuePair<string, object?>("event_type", eventType));
         }
     }
 }

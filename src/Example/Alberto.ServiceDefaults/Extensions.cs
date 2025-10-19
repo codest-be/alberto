@@ -133,18 +133,11 @@ public static class Extensions
     }
 }
 
-public class FilteringProcessor : BaseProcessor<Activity>
+public class FilteringProcessor(Func<Activity, bool> filter) : BaseProcessor<Activity>
 {
-    private readonly Func<Activity, bool> _filter;
-
-    public FilteringProcessor(Func<Activity, bool> filter)
-    {
-        _filter = filter;
-    }
-
     public override void OnEnd(Activity activity)
     {
-        if (!_filter(activity))
+        if (!filter(activity))
         {
             activity.ActivityTraceFlags &= ~ActivityTraceFlags.Recorded;
         }

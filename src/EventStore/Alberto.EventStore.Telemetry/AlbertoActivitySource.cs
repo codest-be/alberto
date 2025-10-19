@@ -3,7 +3,7 @@ using Alberto.EventStore.Diagnostics;
 
 namespace Alberto.EventStore.Telemetry;
 
-internal static class AlbertoActivitySource
+public static class AlbertoActivitySource
 {
     /// <summary>
     ///     Gets the name of the activity source for this library.

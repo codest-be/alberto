@@ -41,11 +41,13 @@ public sealed class EventRouter(
             );
 
             handler.Position = checkpoint.Position ?? -1;
+        }
 
+        if (_handlers.Count > 0)
+        {
             logger.LogInformation(
-                "Initialized subscription '{SubscriptionId}' at position {Position}",
-                handler.SubscriptionId,
-                handler.Position
+                "Initialized {HandlerCount} subscription(s)",
+                _handlers.Count
             );
         }
     }
@@ -95,6 +97,64 @@ public sealed class EventRouter(
             {
                 anyHandlerFailed = true;
                 // Poison pill created, subscription will stop
+            }
+        }
+
+        return !anyHandlerFailed;
+    }
+
+    public async Task<bool> RouteEvents(
+        IReadOnlyList<GlobalEventEnvelope> events,
+        CancellationToken cancellationToken)
+    {
+        if (events.Count == 0)
+            return true;
+
+        var anyHandlerFailed = false;
+
+        foreach (var evt in events)
+        {
+            foreach (var handler in _handlers)
+            {
+                // Skip if handler already processed this event
+                if (evt.GlobalPosition <= handler.Position)
+                    continue;
+
+                // Check if handler is interested in this event type
+                if (!handler.SupportedEventTypes.Contains(evt.EventType))
+                    continue;
+
+                // Check for existing poison pill
+                var existingPoisonPill = await poisonPillStore.GetPoisonPill(
+                    handler.SubscriptionId,
+                    evt.GlobalPosition,
+                    cancellationToken
+                );
+
+                if (existingPoisonPill is { ResolvedAt: null })
+                {
+                    logger.LogError(
+                        "Subscription '{SubscriptionId}' is blocked by unresolved poison pill at position {Position}",
+                        handler.SubscriptionId,
+                        evt.GlobalPosition
+                    );
+                    anyHandlerFailed = true;
+                    continue; // Don't process, subscription is blocked
+                }
+
+                // Try to process with retries (may accumulate in batch scope if present)
+                var success = await ProcessEventWithRetry(
+                    handler,
+                    evt,
+                    cancellationToken
+                );
+
+                if (!success)
+                {
+                    anyHandlerFailed = true;
+                    // Poison pill created, subscription will stop
+                    return false;
+                }
             }
         }
 

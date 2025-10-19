@@ -85,4 +85,25 @@ internal static class AlbertoMeter
         "alberto.channel.write.blocked",
         unit: "{operation}",
         description: "Number of times channel write was blocked requiring async write");
+
+    // Projection Batching
+    public static Counter<long> ProjectionBatchesCommitted { get; } = Source.CreateCounter<long>(
+        "alberto.projection.batches.committed",
+        unit: "{batch}",
+        description: "Total number of projection batches committed");
+
+    public static Histogram<int> ProjectionBatchSize { get; } = Source.CreateHistogram<int>(
+        "alberto.projection.batch_size",
+        unit: "{event}",
+        description: "Number of events in a projection batch");
+
+    public static Histogram<double> ProjectionBatchDuration { get; } = Source.CreateHistogram<double>(
+        "alberto.projection.batch.duration",
+        unit: "ms",
+        description: "Duration of projection batch commit operations");
+
+    public static Histogram<int> ProjectionBatchKeysUpdated { get; } = Source.CreateHistogram<int>(
+        "alberto.projection.batch.keys_updated",
+        unit: "{key}",
+        description: "Number of unique projection keys updated in a batch");
 }

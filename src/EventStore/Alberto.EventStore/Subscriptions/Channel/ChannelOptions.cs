@@ -27,4 +27,11 @@ public sealed class ChannelOptions
     /// Whether to process events in parallel across handlers. Default: false
     /// </summary>
     public bool AllowParallelExecution { get; set; }
+
+    /// <summary>
+    /// Maximum number of events to process in a single batch for projection updates.
+    /// Higher values improve throughput by reducing database roundtrips, but increase memory usage.
+    /// Set to 1 to disable batching (process events one at a time).
+    /// </summary>
+    public int ProjectionBatchSize { get; set; } = 100;
 }

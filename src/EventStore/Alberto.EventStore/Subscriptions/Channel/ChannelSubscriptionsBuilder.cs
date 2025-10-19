@@ -182,11 +182,12 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
     {
         var channelRouterKey = $"{_moduleKey}:channel";
 
-        // Create bounded channel for event distribution with backpressure
+        // Create bounded channel for event distribution
+        // Drop oldest events when full to prevent blocking writes and maintain low latency
         var channel = System.Threading.Channels.Channel.CreateBounded<GlobalEventEnvelope>(
             new BoundedChannelOptions(_channelOptions.BoundedCapacity)
             {
-                FullMode = BoundedChannelFullMode.Wait // Provides backpressure when channel is full
+                FullMode = BoundedChannelFullMode.DropOldest // Drop old events instead of blocking writes
             });
 
         // Register channel reader for the service
