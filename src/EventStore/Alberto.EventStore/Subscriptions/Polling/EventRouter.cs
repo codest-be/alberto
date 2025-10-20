@@ -313,7 +313,7 @@ public sealed class EventRouter(
         CancellationToken cancellationToken)
     {
         var poisonPill = new PoisonPill(
-            Guid.NewGuid(),
+            Guid.CreateVersion7(),
             handler.SubscriptionId,
             evt.GlobalPosition,
             evt.Id,

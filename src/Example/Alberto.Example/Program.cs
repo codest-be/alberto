@@ -1,4 +1,5 @@
 using Alberto.EventStore.Postgres.Migrations;
+using Alberto.Example;
 using Alberto.Example.Modules.Orders;
 using Alberto.Example.Modules.Payments;
 using Alberto.ServiceDefaults;
@@ -20,6 +21,8 @@ if (builder.Environment.IsDevelopment())
 }
 
 WebApplication app = builder.Build();
+
+app.UseMiddleware<TenantMiddleware>();
 
 if (app.Environment.IsDevelopment())
 {

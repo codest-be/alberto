@@ -28,4 +28,20 @@ public static class ScenarioContextExtensions
     public static HttpResponseMessage GetResponse(this ScenarioContext scenarioContext)
         => scenarioContext.TryGetResponse() ??
            throw new InvalidOperationException("Response not found in scenario context");
+
+    public static void StoreTenantId(this ScenarioContext scenarioContext, string tenantId)
+    {
+        scenarioContext.Set(tenantId, "tenant");
+    }
+
+    public static string GetTenantId(this ScenarioContext scenarioContext)
+        => scenarioContext.TryGet<string>("tenant") ?? "default";
+
+    public static HttpClient HttpClientWithTenant(this ScenarioContext scenarioContext)
+    {
+        var client = scenarioContext.HttpClient();
+        var tenantId = scenarioContext.GetTenantId();
+        client.DefaultRequestHeaders.Add("X-Tenant", tenantId);
+        return client;
+    }
 }

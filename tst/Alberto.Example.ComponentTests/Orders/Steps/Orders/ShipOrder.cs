@@ -11,7 +11,7 @@ public sealed class ShipOrder(string trackingNumber) : IStep
     {
         var orderId = scenarioContext.GetOrderId();
         var request = new ShipOrderRequest(trackingNumber);
-        var response = await scenarioContext.HttpClient().PostAsJsonAsync($"/orders/{orderId}/ship", request, ct);
+        var response = await scenarioContext.HttpClientWithTenant().PostAsJsonAsync($"/orders/{orderId}/ship", request, ct);
 
         scenarioContext.StoreResponse(response);
     }

@@ -11,7 +11,7 @@ public sealed class CancelOrder(string reason) : IStep
     {
         var orderId = scenarioContext.GetOrderId();
         var request = new CancelOrderRequest(reason);
-        var response = await scenarioContext.HttpClient().PostAsJsonAsync($"/orders/{orderId}/cancel", request, ct);
+        var response = await scenarioContext.HttpClientWithTenant().PostAsJsonAsync($"/orders/{orderId}/cancel", request, ct);
 
         scenarioContext.StoreResponse(response);
     }

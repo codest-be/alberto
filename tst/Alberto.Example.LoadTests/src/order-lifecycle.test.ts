@@ -42,8 +42,9 @@ const profiles = {
     stages: [
       { duration: '2m', target: 50 },   // Warm up
       { duration: '3m', target: 100 },  // Sustained load
-      { duration: '3m', target: 150 },  // Push to limits
-      { duration: '2m', target: 100 },  // Cool down
+      { duration: '3m', target: 150 },  // Push 
+      { duration: '2m', target: 200 },  // Push more
+      { duration: '3m', target: 100 },  // Cool down
       { duration: '2m', target: 0 },    // Ramp down
     ],
     thresholds: {
@@ -73,6 +74,7 @@ const profiles = {
 // Get configuration from environment
 const testProfile = __ENV.TEST_PROFILE || 'smoke';
 const baseUrl = __ENV.BASE_URL || 'http://localhost:5000';
+const numTenants = parseInt(__ENV.NUM_TENANTS || '5'); // Spread load across 5 tenants by default
 
 // Apply selected profile
 const selectedProfile = profiles[testProfile as keyof typeof profiles] || profiles.smoke;
@@ -82,6 +84,14 @@ export const options = {
   thresholds: selectedProfile.thresholds,
 };
 
+// Helper function to select a tenant for this virtual user
+function getTenantId(): string {
+  // Use __VU (virtual user ID) to deterministically assign tenants
+  // This ensures even distribution across tenants
+  const tenantIndex = (__VU - 1) % numTenants;
+  return `tenant-${tenantIndex + 1}`;
+}
+
 // Helper function to generate random data
 function generateTestData() {
   const randomId = Math.floor(Math.random() * 1000000);
@@ -89,6 +99,7 @@ function generateTestData() {
     amount: Math.floor(Math.random() * 90000) + 10000, // $100 - $1000
     customerId: `customer-${randomId}`,
     trackingNumber: `TRACK-${randomId}`,
+    tenantId: getTenantId(),
   };
 }
 
@@ -108,8 +119,11 @@ export default function () {
         customerId: testData.customerId,
       }),
       {
-        headers: { 'Content-Type': 'application/json' },
-        tags: { name: 'CreateOrder' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Tenant': testData.tenantId,
+        },
+        tags: { name: 'CreateOrder', tenant: testData.tenantId },
       }
     );
 
@@ -141,8 +155,11 @@ export default function () {
       `${baseUrl}/orders/${orderId}/place`,
       null,
       {
-        headers: { 'Content-Type': 'application/json' },
-        tags: { name: 'PlaceOrder' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Tenant': testData.tenantId,
+        },
+        tags: { name: 'PlaceOrder', tenant: testData.tenantId },
       }
     );
 
@@ -168,8 +185,11 @@ export default function () {
         amount: testData.amount,
       }),
       {
-        headers: { 'Content-Type': 'application/json' },
-        tags: { name: 'CreatePayment' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Tenant': testData.tenantId,
+        },
+        tags: { name: 'CreatePayment', tenant: testData.tenantId },
       }
     );
 
@@ -201,8 +221,11 @@ export default function () {
       `${baseUrl}/payments/${paymentId}/process`,
       null,
       {
-        headers: { 'Content-Type': 'application/json' },
-        tags: { name: 'ProcessPayment' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Tenant': testData.tenantId,
+        },
+        tags: { name: 'ProcessPayment', tenant: testData.tenantId },
       }
     );
 
@@ -227,8 +250,11 @@ export default function () {
         trackingNumber: testData.trackingNumber,
       }),
       {
-        headers: { 'Content-Type': 'application/json' },
-        tags: { name: 'ShipOrder' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Tenant': testData.tenantId,
+        },
+        tags: { name: 'ShipOrder', tenant: testData.tenantId },
       }
     );
 

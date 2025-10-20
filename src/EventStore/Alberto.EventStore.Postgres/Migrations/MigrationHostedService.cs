@@ -282,24 +282,30 @@ CREATE TABLE IF NOT EXISTS {schema}.events
     metadata       JSONB NOT NULL DEFAULT '{{}}'
 );
 
--- Consistency check queries - WHERE tenant_id = ? AND id = ?
-CREATE INDEX IF NOT EXISTS idx_{{schema}}_events_tenant_id ON {{schema}}.events (tenant_id, id);
+-- Index for consistency checks: WHERE tenant_id = ? AND id = ?
+-- Used by: Consistency boundary checks in append operations
+CREATE INDEX IF NOT EXISTS idx_{schema}_events_tenant_id 
+ON {schema}.events (tenant_id, id);
 
--- Primary covering index for most tenant queries
-CREATE INDEX IF NOT EXISTS idx_{{schema}}_events_tenant_all 
-ON {{schema}}.events (tenant_id, position)
+-- Primary covering index for tenant-scoped queries
+-- Used by: Stream(tenant), Stream(tenant, tags), Stream(tenant, eventType, tags)
+-- Covers: Most tenant queries with index-only scans for minority tenants
+CREATE INDEX IF NOT EXISTS idx_{schema}_events_tenant_all 
+ON {schema}.events (tenant_id, position)
 INCLUDE (event_type, tags, id, data, metadata, created_at);
 
--- Global position index for StreamAll() subscription queries
-CREATE INDEX IF NOT EXISTS idx_{{schema}}_events_global_position ON {{schema}}.events (position) 
+-- Global position index for subscription queries
+-- Used by: StreamAll(fromPosition) - cross-tenant event streaming
+-- Covers: Subscription queries with index-only scans
+CREATE INDEX IF NOT EXISTS idx_{schema}_events_global_position 
+ON {schema}.events (position) 
 INCLUDE (id, tenant_id, event_type, tags, data, metadata, created_at);
 
--- For queries filtering by event type: WHERE tenant_id = ? AND event_type = ?
-CREATE INDEX IF NOT EXISTS idx_{{schema}}_events_tenant_type_position ON {{schema}}.events (tenant_id, event_type, position);
-
--- GIN index for tag array queries ONLY (separate index)
-CREATE INDEX IF NOT EXISTS idx_{{schema}}_events_tags_gin ON {{schema}}.events USING GIN (tags) 
-WHERE array_length(tags, 1) > 0;
+-- Specialized index for event type filtering
+-- Used by: Stream(tenant, eventType) when event_type is highly selective
+-- Note: tenant_all can handle this too, but this is faster for event_type-first queries
+CREATE INDEX IF NOT EXISTS idx_{schema}_events_tenant_type_position 
+ON {schema}.events (tenant_id, event_type, position);
 
 -- Subscription checkpoints
 CREATE TABLE IF NOT EXISTS {schema}.subscription_checkpoints

@@ -10,7 +10,7 @@ public sealed class CreateOrder(decimal amount, string customerId) : IStep
     public async ValueTask Execute(ScenarioContext scenarioContext, CancellationToken ct = default)
     {
         var request = new CreateOrderRequest(amount, customerId);
-        var response = await scenarioContext.HttpClient().PostAsJsonAsync("/orders", request, ct);
+        var response = await scenarioContext.HttpClientWithTenant().PostAsJsonAsync("/orders", request, ct);
 
         scenarioContext.StoreResponse(response);
 

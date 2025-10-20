@@ -16,7 +16,7 @@ public class GetOrderStatistics(
 {
     public async ValueTask Execute(ScenarioContext scenarioContext, CancellationToken ct = default)
     {
-        var response = await scenarioContext.HttpClient().GetAsync($"/orders/statistics", ct);
+        var response = await scenarioContext.HttpClientWithTenant().GetAsync($"/orders/statistics", ct);
 
         Assert.True(response.IsSuccessStatusCode);
         var statistics = await response.Content.ReadFromJsonAsync<OrderStatistics>(cancellationToken: ct);
