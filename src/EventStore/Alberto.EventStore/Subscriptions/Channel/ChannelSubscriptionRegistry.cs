@@ -9,6 +9,9 @@ namespace Alberto.EventStore.Subscriptions.Channel;
 /// Registry for managing channel-based subscriptions with targeted event routing.
 /// Only routes events to channels that have registered interest in specific event types.
 /// </summary>
+/// <remarks>
+/// Automatically managed by ModuleBuilder. Users don't interact with this directly.
+/// </remarks>
 public sealed class ChannelSubscriptionRegistry(ILogger<ChannelSubscriptionRegistry> logger, IMetricsRecorder metrics)
 {
     private readonly ConcurrentDictionary<string, ChannelSubscription> _subscriptions = new();

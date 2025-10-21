@@ -5,7 +5,10 @@ namespace Alberto.EventStore.Serialization;
 /// <summary>
 /// Default JSON-based event deserializer using System.Text.Json
 /// </summary>
-public sealed class JsonEventDeserializer(JsonSerializerOptions? options = null) : IEventDeserializer
+/// <remarks>
+/// Default implementation, automatically registered. Users can replace via IEventDeserializer.
+/// </remarks>
+internal sealed class JsonEventDeserializer(JsonSerializerOptions? options = null) : IEventDeserializer
 {
     private readonly JsonSerializerOptions _options = options ?? new JsonSerializerOptions
     {

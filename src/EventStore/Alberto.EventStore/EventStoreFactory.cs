@@ -44,7 +44,7 @@ public class EventStoreFactory(
     /// <param name="expectedLatestEventId">Expected ID of the last event in the consistency boundary</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Appended events with populated metadata</returns>
-    /// <exception cref="ConcurrencyConflictException">Thrown when optimistic concurrency check fails</exception>
+    /// <exception cref="Alberto.EventStore.Exceptions.ConcurrencyConflictException">Thrown when optimistic concurrency check fails</exception>
     public async Task<IEnumerable<IEventEnvelope>> Append(
         IEnumerable<IEventToPersist> events,
         StreamQuery? consistencyBoundary,

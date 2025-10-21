@@ -9,7 +9,10 @@ namespace Alberto.EventStore.Subscriptions.Channel;
 /// <summary>
 /// Background service that consumes events from a channel and routes them to handlers
 /// </summary>
-public sealed class ChannelSubscriptionService(
+/// <remarks>
+/// Automatically registered by ChannelSubscriptionsBuilder. Users don't interact with this directly.
+/// </remarks>
+internal sealed class ChannelSubscriptionService(
     string moduleKey,
     EventRouter eventRouter,
     ChannelReader<GlobalEventEnvelope> channelReader,
