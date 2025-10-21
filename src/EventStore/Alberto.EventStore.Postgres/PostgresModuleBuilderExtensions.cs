@@ -35,6 +35,12 @@ public static class PostgresModuleBuilderExtensions
         var options = new PostgresEventStoreOptions();
         configureOptions(options);
 
+        // Register schema registry singleton instance (shared across all modules)
+        moduleBuilder.Services.TryAddSingleton(PostgresSchemaRegistry.Instance);
+
+        // Register this schema in the registry for automatic migration discovery
+        PostgresSchemaRegistry.Instance.Register(moduleBuilder.ModuleKey, options.ConnectionString);
+
         // Register options with the module key
         moduleBuilder.Services.Configure(moduleBuilder.ModuleKey, configureOptions);
 

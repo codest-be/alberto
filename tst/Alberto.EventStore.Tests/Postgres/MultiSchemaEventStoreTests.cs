@@ -210,11 +210,15 @@ public class MultiSchemaEventStoreTests(PostgresTestFixture fixture) : IAsyncLif
             opts.Schema = "payments";
         });
 
-        var serviceProvider = services.BuildServiceProvider();
+        // Clear and register both schemas in the singleton registry
+        var registry = PostgresSchemaRegistry.Instance;
+        registry.Clear();
+        registry.Register("orders", fixture.Options.ConnectionString);
+        registry.Register("payments", fixture.Options.ConnectionString);
 
         // Create and run the migration service
         var logger = new NullLogger<MigrationHostedService>();
-        var migrationService = new MigrationHostedService(serviceProvider, logger);
+        var migrationService = new MigrationHostedService(registry, logger);
 
         await migrationService.StartingAsync(CancellationToken.None);
     }

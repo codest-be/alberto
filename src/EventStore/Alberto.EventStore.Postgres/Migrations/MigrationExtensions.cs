@@ -22,7 +22,7 @@ public static class MigrationExtensions
     {
         services.AddSingleton<IHostedService>(sp =>
             new MigrationHostedService(
-                sp,
+                sp.GetRequiredService<PostgresSchemaRegistry>(),
                 sp.GetRequiredService<ILogger<MigrationHostedService>>()));
 
         return services;

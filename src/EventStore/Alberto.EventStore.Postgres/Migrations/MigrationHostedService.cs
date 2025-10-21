@@ -1,9 +1,7 @@
 using System.Reflection;
 using Alberto.EventSourcing.Projections;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Npgsql;
 
 namespace Alberto.EventStore.Postgres.Migrations;
@@ -15,7 +13,7 @@ namespace Alberto.EventStore.Postgres.Migrations;
 /// Uses IHostedLifecycleService to ensure migrations complete before other services start
 /// </summary>
 public sealed class MigrationHostedService(
-    IServiceProvider serviceProvider,
+    PostgresSchemaRegistry schemaRegistry,
     ILogger<MigrationHostedService> logger)
     : IHostedLifecycleService
 {
@@ -24,8 +22,8 @@ public sealed class MigrationHostedService(
     private readonly ILogger<MigrationHostedService>
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
-    private readonly IServiceProvider _serviceProvider =
-        serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
+    private readonly PostgresSchemaRegistry _schemaRegistry =
+        schemaRegistry ?? throw new ArgumentNullException(nameof(schemaRegistry));
 
     public async Task StartingAsync(CancellationToken cancellationToken)
     {
@@ -33,12 +31,12 @@ public sealed class MigrationHostedService(
 
         try
         {
-            // Discover schemas from EventStore registrations
-            var schemaConnectionMap = DiscoverSchemasFromEventStores();
+            // Get schemas from registry (populated during module registration)
+            var schemaConnectionMap = _schemaRegistry.GetAll();
 
             if (schemaConnectionMap.Count == 0)
             {
-                _logger.LogWarning("No EventStore schemas discovered");
+                _logger.LogWarning("No EventStore schemas registered");
                 return;
             }
 
@@ -76,43 +74,6 @@ public sealed class MigrationHostedService(
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-    private Dictionary<string, string> DiscoverSchemasFromEventStores()
-    {
-        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
-        var optionsMonitor = _serviceProvider.GetService<IOptionsMonitor<PostgresEventStoreOptions>>();
-        if (optionsMonitor == null)
-        {
-            _logger.LogWarning("No PostgresEventStoreOptions registered");
-            return map;
-        }
-
-        // Try common schema names (orders, payments, etc.)
-        // This is a limitation - we can't easily enumerate all named options
-        // Alternative: Use a registration tracking service
-        var potentialSchemas = new[] { "orders", "payments", "inventory", "shipping", "users" };
-
-        foreach (var schema in potentialSchemas)
-        {
-            try
-            {
-                var options = optionsMonitor.Get(schema);
-                if (options != null && !string.IsNullOrWhiteSpace(options.ConnectionString) &&
-                    !string.IsNullOrWhiteSpace(options.Schema))
-                {
-                    map[schema] = options.ConnectionString;
-                    _logger.LogDebug("Found EventStore for schema: {Schema}", schema);
-                }
-            }
-            catch
-            {
-                // Schema not registered, skip
-            }
-        }
-
-        return map;
-    }
 
     private List<ProjectionInfo> DiscoverProjections()
     {
