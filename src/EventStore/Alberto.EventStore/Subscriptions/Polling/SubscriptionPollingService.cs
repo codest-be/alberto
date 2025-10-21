@@ -102,8 +102,8 @@ public sealed class SubscriptionPollingService(
 
                             if (!success)
                             {
-                                logger.LogWarning("Stopping polling due to subscription failures");
-                                break;
+                                logger.LogWarning("Subscription blocked by poison pill. Continuing to poll at max interval for resolution...");
+                                currentPollingInterval = options.MaxPollingIntervalMs;
                             }
 
                             // Batch scope will auto-commit on dispose

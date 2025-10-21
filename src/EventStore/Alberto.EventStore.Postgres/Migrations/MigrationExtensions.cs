@@ -20,7 +20,6 @@ public static class MigrationExtensions
     public static IServiceCollection AddDatabaseMigrations(
         this IServiceCollection services)
     {
-        // Register the unified migration hosted service with auto-discovery
         services.AddSingleton<IHostedService>(sp =>
             new MigrationHostedService(
                 sp,

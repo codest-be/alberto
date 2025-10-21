@@ -16,7 +16,6 @@ builder.Services
 
 if (builder.Environment.IsDevelopment())
 {
-    // Auto-discovers connection strings from registered EventStore configurations
     builder.Services.AddDatabaseMigrations();
 }
 
