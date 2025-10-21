@@ -20,19 +20,25 @@ Alberto.EventStore provides a high-performance event store abstraction with supp
 
 ## Quick Start
 
+### Module-Based Configuration (Recommended)
+
 ```csharp
 using Alberto.EventStore;
 
-// Configure services
-services.AddEventStore()
-        .AddInMemoryEventStore(); // or .AddPostgresEventStore()
+// Define your EventStore type
+public class OrderEventStore : EventStoreFactory { }
 
-// Use the event store
+// Configure the module
+services.AddModule<OrderEventStore>("orders", module => module
+    .WithInMemory()  // or .WithPostgres(options => { ... })
+    .WithMultiTenancy<MyTenantContext>());  // Optional
+
+// Use in your services
 public class OrderService
 {
-    private readonly IEventStore _eventStore;
+    private readonly OrderEventStore _eventStore;
 
-    public OrderService(IEventStore eventStore)
+    public OrderService(OrderEventStore eventStore)
     {
         _eventStore = eventStore;
     }
@@ -48,18 +54,55 @@ public class OrderService
         var query = new StreamQuery()
             .WithTags(new EventTag("order", command.OrderId.ToString()));
 
-        await _eventStore.AppendAsync(query, events);
+        await _eventStore.Append(events, query, null);
     }
 }
 ```
 
+### Legacy Configuration
+
+```csharp
+// Legacy approach (still supported)
+services.AddEventStore()
+        .AddInMemoryEventStore();
+
+// Inject IEventStore instead of typed EventStore
+public OrderService(IEventStore eventStore) { }
+```
+
 ## Features
 
-- **IEventStore** - Main event store interface
-- **IMultiTenantEventStore** - Multi-tenant support
-- **StreamQuery** - Flexible event querying
-- **Event Subscriptions** - Real-time event notifications
+- **ModuleBuilder** - Fluent API for module configuration
+- **EventStoreFactory** - Base class for typed event stores
+- **StreamQuery** - Flexible event querying with builder pattern
+- **Channel Subscriptions** - Ultra-low latency in-process pub/sub
+- **Polling Subscriptions** - Traditional pull-based subscriptions
+- **Multi-tenancy** - Isolated event streams per tenant
 - **Serialization** - JSON-based event serialization
+- **Telemetry** - OpenTelemetry integration support
+
+## Module-Based Architecture
+
+Alberto uses a module-based architecture where each EventStore is a unique type:
+
+```csharp
+public class OrderEventStore : EventStoreFactory { }
+public class PaymentEventStore : EventStoreFactory { }
+
+// Each gets independent configuration
+services.AddModule<OrderEventStore>("orders", module => module
+    .WithPostgres(options => options.Schema = "orders"));
+
+services.AddModule<PaymentEventStore>("payments", module => module
+    .WithPostgres(options => options.Schema = "payments"));
+```
+
+**Benefits:**
+
+- Multiple event stores with different backends
+- Schema isolation per module
+- Type-safe service resolution
+- Independent subscription configuration
 
 ## Documentation
 

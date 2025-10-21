@@ -30,28 +30,40 @@ Alberto is an event store library for .NET with multi-tenant and multi-schema su
 
 ### Core Components
 
-- **EventStore**: Main event store facade with dependency injection integration
+- **EventStore**: Main event store facade with dependency injection integration and ModuleBuilder pattern
 - **EventStore.InMemory**: In-memory implementation for testing and development
-- **EventStore.Postgres**: PostgreSQL-based production implementation with schema isolation
-- **EventStore.Telemetry**: Diagnostics and telemetry integration
+- **EventStore.Postgres**: PostgreSQL-based production implementation with schema isolation and connection pooling
+- **EventStore.Telemetry**: OpenTelemetry integration for distributed tracing and diagnostics
 - **EventSourcing**: Minimal event sourcing building blocks (IProjector, Load/Persist helpers)
+- **Projections.InMemory**: In-memory projection repositories for testing
+- **Projections.Postgres**: PostgreSQL-based projection storage with JSONB and automatic table creation
 - **CQRS**: Optional CQRS framework with commands, queries, validation, and auto-registration
-- **Example**: .NET Aspire-based example application demonstrating usage
+- **CQRS.Telemetry**: OpenTelemetry integration for command/query tracing
+- **ComponentTests**: Testing utilities for integration/component tests
+- **UnitTests**: Specification pattern for unit testing business logic
+- **Example**: .NET Aspire-based example application demonstrating full stack (Orders + Payments modules)
 
 ### Key Patterns
 
-**Multi-Backend Architecture**: The system uses a factory pattern (`IEventStoreBackendFactory`) to abstract between
-different storage implementations. The main `EventStore` class delegates to backend implementations through
-`IEventStoreBackend`.
+**Module-Based Architecture**: Each EventStore is a module identified by a unique `TEventStore` type, enabling multiple
+isolated event stores with different backends and configurations in the same application. Configured via
+`ModuleBuilder<TEventStore>` fluent API.
 
 **Multi-Tenant Support**: Events are isolated by tenant using `ITenantContext`. The PostgreSQL implementation supports
 multiple schemas for tenant isolation.
 
-**Stream Queries**: Events are queried using `StreamQuery` objects that can filter by:
+**Stream Queries**: Events are queried using `StreamQuery` objects with builder pattern that can filter by:
 
 - Event types with wildcard support
 - Tags (domain identifiers) with boolean operators (ALL vs ANY)
+- Position-based streaming
 - Consistency boundaries for optimistic concurrency
+
+**Subscription System**: Supports both polling and channel-based subscriptions with three modes:
+
+- **Sync**: Runs inline with append (strong consistency)
+- **Async**: Runs in background (high throughput)
+- **Hybrid**: Mix of sync and async (recommended)
 
 **Optimistic Concurrency**: Append operations support consistency boundaries with expected last event IDs to prevent
 conflicts.
@@ -69,24 +81,32 @@ The PostgreSQL implementation supports multiple schemas within the same database
 
 ### Key Files
 
-- `EventStore/EventStore.cs`: Main event store facade
+- `EventStore/EventStoreFactory.cs`: Base factory class for all event stores
+- `EventStore/ModuleBuilder.cs`: Fluent configuration API for modules
 - `EventStore/IEventStoreBackend.cs`: Backend abstraction interface
 - `EventStore.InMemory/InMemoryEventStoreBackend.cs`: Full in-memory implementation
-- `EventStore.Postgres/PostgresEventStoreBackendFactory.cs`: PostgreSQL factory using keyed services
+- `EventStore.Postgres/PostgresEventStoreBackend.cs`: PostgreSQL backend with JSONB storage
+- `EventStore.Postgres/PostgresModuleBuilderExtensions.cs`: `.WithPostgres()` extension
+- `EventStore.Telemetry/ActivityDiagnosticEventListener.cs`: OpenTelemetry integration
 - `EventSourcing/IProjector.cs`: Event projection interface
 - `EventSourcing/EventStoreExtensions.cs`: Load/Persist helpers for EventStore
-- `CQRS/Commands/ICommand.cs`: Command marker interface and handlers
-- `CQRS/Queries/IQuery.cs`: Query marker interface and handlers
+- `Projections.Postgres/PostgresProjectionRepository.cs`: JSONB-based projection storage
+- `Projections.Postgres/PostgresProjectionBuilderExtensions.cs`: `.AddPostgresProjection()` extension
+- `CQRS/Commands/CommandExecutor.cs`: Command execution with validation
+- `CQRS/Queries/QueryExecutor.cs`: Query execution with validation
 - `CQRS/Results/Result.cs`: Functional result types
-- `CQRS/Registration/EventSourcingExtensions.cs`: Module registration with auto-discovery
-- `Testing/Alberto.ComponentTests/UseCase.cs`: Component test framework fluent API
-- `Testing/Alberto.ComponentTests/ScenarioContext.cs`: Test context and state management
-- `Testing/Alberto.ComponentTests/Steps/IStep.cs`: Base interface for test steps
-- `Testing/Alberto.UnitTests/Specification.cs`: Unit test specification pattern for stateless commands
-- `Testing/Alberto.UnitTests/Specification<TState>.cs`: Unit test specification pattern with projectors
-- `Example/Alberto.Example/Program.cs`: Example service configuration
-- `Example/Alberto.Example/Modules/Orders/OrderProblems.cs`: Centralized error definitions for order domain
-- `Example/Alberto.AppHost/AppHost.cs`: Aspire orchestration setup
+- `CQRS/ModuleBuilderExtensions.cs`: `.WithCQRS()` extension for auto-registration
+- `CQRS.Telemetry/ActivityDiagnosticEventListener.cs`: Command/query tracing
+- `ComponentTests/UseCase.cs`: Component test framework fluent API
+- `ComponentTests/ScenarioContext.cs`: Test context and state management
+- `UnitTests/Specification.cs`: Unit test specification pattern for stateless commands
+- `UnitTests/Specification<TState>.cs`: Unit test specification pattern with projectors
+- `Example/Modules/Orders/OrdersModule.cs`: Orders module registration
+- `Example/Modules/Orders/OrderProblems.cs`: Centralized error definitions
+- `Example/Modules/Orders/OrderDecisions.cs`: Pure business logic
+- `Example/AppHost/AppHost.cs`: Aspire orchestration setup
+
+See project-specific CLAUDE.md files in each package for detailed architecture documentation.
 
 ### Event Sourcing & CQRS Layers
 
@@ -116,14 +136,36 @@ See `EventSourcing/README.md` and `CQRS/README.md` for detailed usage.
 
 The solution uses solution folders to organize projects:
 
-- **EventStore folder**: Core event store components (`EventStore`, `EventStore.InMemory`, `EventStore.Postgres`,
-  `EventStore.Telemetry`, `EventStore.Tests`, `EventStore.Performance.Tests`)
-- **EventSourcing folder**: Minimal event sourcing building blocks (`EventSourcing`)
-- **CQRS folder**: Optional CQRS framework with validation and auto-registration (`CQRS`)
-- **Testing folder**: Reusable testing frameworks (`Alberto.ComponentTests`, `Alberto.UnitTests`)
-- **Example folder**: Aspire-based example application (`Alberto.Example`, `AppHost`, `ServiceDefaults`, `SqlMigrator`)
-- **Test Projects**: Unit and component tests for the example application (`Alberto.Example.UnitTests`,
-  `Alberto.Example.ComponentTests`)
+- **EventStore folder**: Core event store components
+  - `EventStore` - Core abstractions and ModuleBuilder
+  - `EventStore.InMemory` - In-memory backend
+  - `EventStore.Postgres` - PostgreSQL backend with connection pooling
+  - `EventStore.Telemetry` - OpenTelemetry integration
+  - `EventStore.Tests` - Unit and integration tests
+  - `EventStore.Performance.Tests` - BenchmarkDotNet performance tests
+
+- **EventSourcing folder**: Event sourcing and projections
+  - `EventSourcing` - Minimal building blocks (IProjector, Load/Persist)
+  - `Projections.InMemory` - In-memory projection repositories
+  - `Projections.Postgres` - PostgreSQL projection storage with JSONB
+
+- **CQRS folder**: Optional CQRS framework
+  - `CQRS` - Commands, queries, handlers, validation, auto-registration
+  - `CQRS.Telemetry` - OpenTelemetry integration for CQRS
+
+- **Testing folder**: Reusable testing frameworks
+  - `ComponentTests` - Integration test utilities (UseCase pattern)
+  - `UnitTests` - Specification pattern for unit tests
+
+- **Example folder**: Aspire-based example application
+  - `Alberto.Example` - Orders and Payments modules
+  - `AppHost` - Aspire orchestration
+  - `ServiceDefaults` - Shared Aspire configuration
+
+- **Test Projects**: Tests for example application
+  - `Alberto.Example.UnitTests` - Business logic tests
+  - `Alberto.Example.ComponentTests` - Full stack integration tests
+  - `Alberto.Example.LoadTests` - k6-based load tests
 
 ## Testing Strategy
 
