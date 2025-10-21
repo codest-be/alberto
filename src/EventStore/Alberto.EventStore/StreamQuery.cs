@@ -105,11 +105,13 @@ public sealed class StreamQuery(
             true);
     }
 
+    /// <summary>
+    /// Returns a string representation of the query for debugging and logging.
+    /// </summary>
     public override string ToString()
     {
         List<string> parts = [];
 
-        // Add event tags part
         if (Tags.Any())
         {
             string identifierValues = string.Join(",", Tags.Select(d => $"'{d}'"));
@@ -117,7 +119,6 @@ public sealed class StreamQuery(
             parts.Add(tagClause);
         }
 
-        // Add event types part
         if (EventTypes.Any())
         {
             string eventTypeValues = string.Join(",", EventTypes.Select(e => $"'{e.Id}'"));
@@ -125,29 +126,21 @@ public sealed class StreamQuery(
             parts.Add(eventTypesClause);
         }
 
-        // If no conditions, return a wildcard
         if (!parts.Any()) return "*";
-
-        // Join parts with the appropriate operator
         if (parts.Count == 1) return parts[0];
 
-        // Determine operator based on requirements
         string operatorSymbol = DetermineOperator();
         return string.Join($" {operatorSymbol} ", parts);
     }
 
     private string DetermineOperator()
     {
-        // If both event tags and event types exist, we need to determine the operator
         if (Tags.Any() && EventTypes.Any())
         {
-            // If either requires ALL, use AND (more restrictive)
             if (RequireAllTags || RequireAllEventTypes) return "AND";
             return "OR";
         }
 
-        // If only one type exists, the operator doesn't matter for display
-        // but we'll show AND if that type requires all
         if (Tags.Any() && RequireAllTags) return "AND";
         if (EventTypes.Any() && RequireAllEventTypes) return "AND";
 

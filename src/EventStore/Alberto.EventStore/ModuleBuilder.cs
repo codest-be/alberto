@@ -29,7 +29,14 @@ public class ModuleBuilder<TEventStore> where TEventStore : EventStoreFactory
         RegisterCoreServices();
     }
 
+    /// <summary>
+    /// Gets the service collection for advanced configuration.
+    /// </summary>
     public IServiceCollection Services => _services;
+
+    /// <summary>
+    /// Gets the unique key for this module.
+    /// </summary>
     public string ModuleKey => _moduleKey;
 
     private void RegisterCoreServices()
@@ -109,17 +116,24 @@ public class ModuleBuilder<TEventStore> where TEventStore : EventStoreFactory
     }
 
     /// <summary>
-    /// Marks the backend as configured. Called by backend extension methods (WithPostgres, WithInMemory).
+    /// Marks the backend as configured. Called internally by backend extension methods.
     /// </summary>
+    /// <remarks>
+    /// This is called by <c>WithPostgres()</c> and <c>WithInMemory()</c> to prevent
+    /// subscription configuration before backend setup.
+    /// </remarks>
     public void MarkBackendConfigured()
     {
         _backendConfigured = true;
     }
 
     /// <summary>
-    /// Registers the EventStore factory for this module as a regular (non-keyed) service.
-    /// The backend is keyed, but the EventStore facade is not - users inject the EventStore directly.
+    /// Registers the EventStore factory as a scoped service. Called internally by backend extensions.
     /// </summary>
+    /// <remarks>
+    /// The EventStore is registered as a non-keyed service for direct injection,
+    /// while the backend is keyed for module isolation.
+    /// </remarks>
     public void RegisterEventStore()
     {
         // Ensure ChannelSubscriptionRegistry is always registered (required dependency)

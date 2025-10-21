@@ -5,6 +5,12 @@ using Alberto.EventStore.Subscriptions.Channel;
 
 namespace Alberto.EventStore;
 
+/// <summary>
+/// Base class for typed EventStore modules. Inherit from this class to create domain-specific event stores.
+/// </summary>
+/// <remarks>
+/// Example: <c>public class OrderEventStore : EventStoreFactory { }</c>
+/// </remarks>
 public class EventStoreFactory(
     ITenantContext tenantContext,
     IEventStoreBackend backend,
@@ -13,6 +19,13 @@ public class EventStoreFactory(
 {
     private readonly IDiagnosticsEventListener _diagnostics = diagnostics ?? new NoopDiagnosticsEventListener();
 
+    /// <summary>
+    /// Queries events matching the specified criteria.
+    /// </summary>
+    /// <param name="query">Query criteria for filtering events</param>
+    /// <param name="maxCount">Maximum number of events to return</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Collection of events matching the query</returns>
     public Task<IReadOnlyCollection<IEventEnvelope>> Stream(
         StreamQuery query,
         int? maxCount = null,
@@ -23,6 +36,15 @@ public class EventStoreFactory(
         return backend.Stream(tenantContext.Tenant, query, maxCount, cancellationToken);
     }
 
+    /// <summary>
+    /// Appends events to the event store with optional optimistic concurrency check.
+    /// </summary>
+    /// <param name="events">Events to append</param>
+    /// <param name="consistencyBoundary">Query defining the consistency boundary for concurrency check</param>
+    /// <param name="expectedLatestEventId">Expected ID of the last event in the consistency boundary</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Appended events with populated metadata</returns>
+    /// <exception cref="ConcurrencyConflictException">Thrown when optimistic concurrency check fails</exception>
     public async Task<IEnumerable<IEventEnvelope>> Append(
         IEnumerable<IEventToPersist> events,
         StreamQuery? consistencyBoundary,
@@ -39,22 +61,20 @@ public class EventStoreFactory(
         var result = await backend.Append(tenantContext.Tenant, enhancedEvents, consistencyBoundary,
             expectedLatestEventId, cancellationToken);
 
-        // Notify channel subscriptions after successful append
         IEnumerable<IEventEnvelope> eventEnvelopes = result as IEventEnvelope[] ?? result.ToArray();
         var eventArray = eventEnvelopes.ToArray();
 
         var globalEvents = ConvertToGlobalEventEnvelopes(eventArray, tenantContext.Tenant.Id);
 
-#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
+#pragma warning disable CS4014
         if (globalEvents.Count > 0) channelRegistry.NotifySubscriptions(globalEvents, cancellationToken);
-#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
+#pragma warning restore CS4014
 
         return eventArray;
     }
 
     private IEventToPersist[] EnhanceEventsWithTelemetry(IEventToPersist[] events)
     {
-        // Get telemetry metadata from diagnostics listener
         var telemetryMetadata = _diagnostics.GetTelemetryMetadata();
         if (telemetryMetadata.Count == 0) return events;
 
@@ -69,7 +89,7 @@ public class EventStoreFactory(
         return events;
     }
 
-    private List<GlobalEventEnvelope> ConvertToGlobalEventEnvelopes(
+    private static List<GlobalEventEnvelope> ConvertToGlobalEventEnvelopes(
         IEnumerable<IEventEnvelope> events,
         string tenantId)
     {
