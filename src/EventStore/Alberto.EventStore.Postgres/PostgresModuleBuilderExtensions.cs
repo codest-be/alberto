@@ -38,8 +38,8 @@ public static class PostgresModuleBuilderExtensions
         // Register schema registry singleton instance (shared across all modules)
         moduleBuilder.Services.TryAddSingleton(PostgresSchemaRegistry.Instance);
 
-        // Register this schema in the registry for automatic migration discovery
-        PostgresSchemaRegistry.Instance.Register(moduleBuilder.ModuleKey, options.ConnectionString);
+        // Register this module's schema in the registry for automatic migration discovery
+        PostgresSchemaRegistry.Instance.Register(moduleBuilder.ModuleKey, options.Schema, options.ConnectionString);
 
         // Register options with the module key
         moduleBuilder.Services.Configure(moduleBuilder.ModuleKey, configureOptions);

@@ -61,7 +61,9 @@ public class OrderSummaryProjector : IProjector<OrderSummary>
 
 ## Note
 
-⚠️ **This implementation is NOT suitable for production use.** All data is stored in memory and will be lost when the application restarts. Use `Alberto.Projections.Postgres` for production scenarios.
+⚠️ **This implementation is NOT suitable for production use.** All data is stored in memory and will be lost when the
+application restarts. For production scenarios, use `Alberto.Projections.EfCore` with your preferred database provider (
+SQL Server, PostgreSQL, MySQL, etc.).
 
 ## Documentation
 

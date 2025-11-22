@@ -7,7 +7,7 @@ using Alberto.EventStore.Telemetry;
 using Alberto.Example.Modules.Orders.Api.Endpoints;
 using Alberto.Example.Modules.Orders.Filters;
 using Alberto.Example.Modules.Orders.Projections;
-using Alberto.Projections.Postgres;
+using Alberto.Projections.InMemory;
 
 namespace Alberto.Example.Modules.Orders;
 
@@ -45,9 +45,9 @@ public static class OrdersModule
                         options.MaxPageSize = 100;
                     })
                     .WithFilter<LoggingFilter>()
-                    .AddPostgresProjection<OrderEventStore, OrderProjectionSubscription, Guid, Order, OrderProjector>(
+                    .AddInMemoryProjection<OrderEventStore, OrderProjectionSubscription, Guid, Order, OrderProjector>(
                         mode: SubscriptionMode.Hybrid)
-                    .AddPostgresProjection<OrderEventStore, OrderStatisticsSubscription, string, OrderStatistics,
+                    .AddInMemoryProjection<OrderEventStore, OrderStatisticsSubscription, string, OrderStatistics,
                         OrderStatisticsProjector>(
                         mode: SubscriptionMode.Async)
                 )

@@ -5,7 +5,7 @@ This document explains the design and implementation of the PostgreSQL backend f
 ## Overview
 
 The Postgres backend provides production-ready event persistence with high performance, JSONB storage, connection
-pooling, and automatic schema management. It's designed to handle millions of events with microsecond-level query
+pooling, and **pluggable migration strategies**. It's designed to handle millions of events with microsecond-level query
 performance.
 
 ## Key Design Decisions
@@ -145,30 +145,87 @@ Database: myapp
 - **Security**: Row-level security policies per schema
 - **Migration safety**: Schema changes don't affect other modules
 
-### 5. Schema Registry and Automatic Migrations
+### 5. Pluggable Migration Strategies
 
-The `PostgresSchemaRegistry` singleton tracks all schemas across modules:
+Alberto uses a **pluggable migration strategy** system that gives users full control over when and how EventStore schema
+migrations are applied:
 
 ```csharp
-public class PostgresSchemaRegistry
+public interface IMigrationStrategy
 {
-    public static PostgresSchemaRegistry Instance { get; } = new();
-
-    public void Register(string moduleKey, string connectionString) { }
-    public HashSet<string> GetRegisteredSchemas() { }
+    Task EnsureSchemaAsync(string schema, string connectionString, CancellationToken ct);
 }
+```
+
+**Available Strategies:**
+
+#### **AutoMigrationStrategy (Default - Development)**
+
+- Generates migration files to `./Migrations/EventStore/{schema}/` on first run
+- Automatically applies all migrations (idempotent - safe to re-run)
+- Use only for development
+
+```csharp
+services.AddModule<OrderEventStore>("orders", module => module
+    .WithPostgres(options => {
+        options.ConnectionString = connectionString;
+        options.Schema = "orders";
+        // Default: AutoMigrationStrategy
+    }));
+```
+
+#### **NoMigrationStrategy (Production)**
+
+- No automatic migration execution
+- Users manage migrations via deployment pipeline
+
+```csharp
+options.MigrationStrategy = new NoMigrationStrategy();
+// Deploy via: psql -f ./Migrations/EventStore/orders/001_InitialSchema.sql
+```
+
+#### **ScriptOnlyMigrationStrategy (CI/CD)**
+
+- Generates SQL scripts without executing
+- Review → commit to source control → deploy via Flyway/Liquibase/DbUp
+
+```csharp
+options.MigrationStrategy = new ScriptOnlyMigrationStrategy("./Migrations");
 ```
 
 **How it works:**
 
-1. Each `WithPostgres()` call registers its schema
-2. `EventStoreMigrationHostedService` (if enabled) discovers all schemas
-3. Migrations run at application startup via `IEventStoreMigration` implementations
+1. Library ships embedded SQL templates (e.g., `001_InitialSchema.sql`)
+2. Templates contain `{schema}` placeholder
+3. On first run, templates are generated to `./Migrations/EventStore/{schema}/`
+4. AutoMigration reads and applies from disk (not embedded resources)
+5. Migrations are **idempotent** - tracked in `{schema}.__alberto_schema_version`
 
-**Migration modes:**
+**Migration Template Structure:**
 
-- **Automatic (Development)**: Set `RunMigrations = true`, schemas created at startup
-- **Manual (Production)**: Use migration script generator or deployment pipeline
+```sql
+-- Idempotent check
+DO
+$$
+    BEGIN
+        IF NOT EXISTS (SELECT 1
+                       FROM {schema} .__alberto_schema_version
+    WHERE migration_name = '001_InitialSchema') THEN
+            -- Migration DDL here
+            INSERT INTO {schema}.__alberto_schema_version (migration_name, applied_at, is_breaking)
+            VALUES ('001_InitialSchema', NOW(), true);
+        END IF;
+    END
+$$;
+```
+
+**Benefits:**
+
+- ✅ Full control: Choose when migrations run
+- ✅ Review migrations: Generated SQL is visible and editable
+- ✅ Production-safe: No surprise schema changes
+- ✅ Version controlled: Commit generated SQL to source control
+- ✅ Idempotent: Safe to re-run migrations
 
 ### 6. Optimistic Concurrency with Consistency Boundaries
 
@@ -405,6 +462,7 @@ services.AddModule<OrderEventStore>("orders", module => module
             $"{baseConnectionString};Minimum Pool Size=5;Maximum Pool Size=30;Connection Idle Lifetime=300";
         options.Schema = "orders";
         options.BulkInsertThreshold = 5;  // Optimal for most workloads
+        options.MigrationStrategy = new NoMigrationStrategy();  // ✅ Manual migration control
     }));
 ```
 
@@ -441,25 +499,80 @@ services.AddModule<OrderEventStore>("orders", module => module
 
 ## Migration Strategy
 
-### Development
+Alberto uses **pluggable migration strategies** to give you full control over EventStore schema management.
+
+### Development (Auto-Apply)
 
 ```csharp
-// Auto-migrate at startup (via IEventStoreMigration)
 services.AddModule<OrderEventStore>("orders", module => module
-    .WithPostgres(options => { ... }));
+    .WithPostgres(options => {
+        options.ConnectionString = connectionString;
+        options.Schema = "orders";
+        // Default: AutoMigrationStrategy
+        // - Generates ./Migrations/EventStore/orders/*.sql on first run
+        // - Applies migrations automatically (idempotent)
+    }));
 ```
 
-### Production
+**First run:** Migrations generated to `./Migrations/EventStore/orders/001_InitialSchema.sql`
+**Subsequent runs:** Reads from disk and applies (only new migrations)
 
-Use the migration script generator:
+### Production (Manual Control)
+
+```csharp
+services.AddModule<OrderEventStore>("orders", module => module
+    .WithPostgres(options => {
+        options.ConnectionString = connectionString;
+        options.Schema = "orders";
+        options.MigrationStrategy = new NoMigrationStrategy();  // ✅ No auto-migrations
+    }));
+```
+
+Apply migrations via your deployment pipeline:
 
 ```bash
-dotnet run --project src/Tools/Alberto.MigrationScriptGenerator -- \
-  --schemas orders,payments \
-  --output ./migrations
+# Review generated SQL first
+cat ./Migrations/EventStore/orders/001_InitialSchema.sql
+
+# Apply via psql
+psql -f ./Migrations/EventStore/orders/001_InitialSchema.sql
+
+# Or use your preferred migration tool
+flyway migrate -locations=filesystem:./Migrations/EventStore/orders/
 ```
 
-Then apply via your deployment pipeline (Flyway, Liquibase, psql, etc.).
+### CI/CD (Script Generation)
+
+```csharp
+options.MigrationStrategy = new ScriptOnlyMigrationStrategy("./Migrations");
+// Generates SQL without executing
+// Commit to source control for review
+```
+
+### Recommended Pattern (Environment-Based)
+
+```csharp
+#if DEBUG
+    options.MigrationStrategy = new AutoMigrationStrategy();  // Dev: auto-apply
+#else
+    options.MigrationStrategy = new NoMigrationStrategy();    // Prod: manual control
+#endif
+```
+
+### Migration Files
+
+All migration files are **idempotent** and safe to re-run:
+
+- Located at: `./Migrations/EventStore/{schema}/`
+- Tracked in: `{schema}.__alberto_schema_version` table
+- Format: `001_InitialSchema.sql`, `002_AddIndex.sql`, etc.
+- Commit to source control for version history
+
+**Important:**
+
+- Don't delete generated migration files - library expects them on disk
+- Review SQL before first production deployment
+- Use `NoMigrationStrategy` in production for full control
 
 ## Security Considerations
 

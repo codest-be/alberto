@@ -6,7 +6,7 @@ using Alberto.EventStore.Subscriptions.Channel;
 using Alberto.EventStore.Telemetry;
 using Alberto.Example.Modules.Payments.Api.Endpoints;
 using Alberto.Example.Modules.Payments.Projections;
-using Alberto.Projections.Postgres;
+using Alberto.Projections.InMemory;
 
 namespace Alberto.Example.Modules.Payments;
 
@@ -43,7 +43,8 @@ public static class PaymentsModule
                         options.RetryDelayMs = 250;
                         options.MaxPageSize = 100;
                     })
-                    .AddPostgresProjection<PaymentEventStore, PaymentProjectionSubscription, Guid, Payment, PaymentProjector>(
+                    .AddInMemoryProjection<PaymentEventStore, PaymentProjectionSubscription, Guid, Payment,
+                        PaymentProjector>(
                         mode: SubscriptionMode.Hybrid)
                 )
                 .WithCQRS(cqrs => cqrs

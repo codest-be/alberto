@@ -1,3 +1,5 @@
+using Alberto.EventStore.Postgres.Migrations;
+
 namespace Alberto.EventStore.Postgres;
 
 public class PostgresEventStoreOptions
@@ -44,4 +46,11 @@ public class PostgresEventStoreOptions
         get => _commandTimeoutSeconds;
         set => _commandTimeoutSeconds = value > 0 ? value : 30;
     }
+
+    /// <summary>
+    /// Migration strategy for EventStore schema management.
+    /// Default: AutoMigrationStrategy (runs migrations at startup - use only for development).
+    /// For production, use NoMigrationStrategy or ScriptOnlyMigrationStrategy.
+    /// </summary>
+    public IMigrationStrategy MigrationStrategy { get; set; } = new AutoMigrationStrategy();
 }

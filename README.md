@@ -16,7 +16,7 @@ dotnet add package Alberto.EventStore.Telemetry          # OpenTelemetry integra
 # EventSourcing packages
 dotnet add package Alberto.EventSourcing                 # Minimal event sourcing
 dotnet add package Alberto.Projections.InMemory          # In-memory projections
-dotnet add package Alberto.Projections.Postgres          # PostgreSQL projections
+dotnet add package Alberto.Projections.EfCore            # EF Core projection adapter
 
 # CQRS packages (optional)
 dotnet add package Alberto.CQRS                          # CQRS framework
@@ -164,7 +164,7 @@ isolated event stores with different backends in the same application. Configura
 - **EventStore.Telemetry**: OpenTelemetry integration for distributed tracing
 - **EventSourcing**: Minimal event sourcing building blocks (IProjector, Load/Persist)
 - **Projections.InMemory**: In-memory projection repositories for testing
-- **Projections.Postgres**: PostgreSQL JSONB-based projection storage with automatic table creation
+- **Projections.EfCore**: Entity Framework Core adapter for using EF Core DbContext with IProjectionRepository
 - **CQRS**: Optional CQRS framework with commands, queries, validation, auto-registration
 - **CQRS.Telemetry**: OpenTelemetry integration for command/query tracing
 - **ComponentTests**: Integration test utilities with UseCase pattern

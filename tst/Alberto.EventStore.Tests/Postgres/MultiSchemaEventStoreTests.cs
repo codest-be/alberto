@@ -197,28 +197,31 @@ public class MultiSchemaEventStoreTests(PostgresTestFixture fixture) : IAsyncLif
         // Set up a minimal service provider with options for both schemas
         var services = new ServiceCollection();
 
-        // Register options for both schemas
-        services.Configure<PostgresEventStoreOptions>("orders", opts =>
+        // Register options for both schemas using module keys
+        services.Configure<PostgresEventStoreOptions>("OrdersModule", opts =>
         {
             opts.ConnectionString = fixture.Options.ConnectionString;
             opts.Schema = "orders";
         });
 
-        services.Configure<PostgresEventStoreOptions>("payments", opts =>
+        services.Configure<PostgresEventStoreOptions>("PaymentsModule", opts =>
         {
             opts.ConnectionString = fixture.Options.ConnectionString;
             opts.Schema = "payments";
         });
 
+        var serviceProvider = services.BuildServiceProvider();
+
         // Clear and register both schemas in the singleton registry
         var registry = PostgresSchemaRegistry.Instance;
         registry.Clear();
-        registry.Register("orders", fixture.Options.ConnectionString);
-        registry.Register("payments", fixture.Options.ConnectionString);
+        registry.Register("OrdersModule", "orders", fixture.Options.ConnectionString);
+        registry.Register("PaymentsModule", "payments", fixture.Options.ConnectionString);
 
         // Create and run the migration service
         var logger = new NullLogger<MigrationHostedService>();
-        var migrationService = new MigrationHostedService(registry, logger);
+        var optionsMonitor = serviceProvider.GetRequiredService<IOptionsMonitor<PostgresEventStoreOptions>>();
+        var migrationService = new MigrationHostedService(registry, optionsMonitor, logger);
 
         await migrationService.StartingAsync(CancellationToken.None);
     }

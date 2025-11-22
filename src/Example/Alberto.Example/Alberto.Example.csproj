@@ -26,7 +26,6 @@
     <ProjectReference Include="..\..\EventStore\Alberto.EventStore.Postgres\Alberto.EventStore.Postgres.csproj"/>
     <ProjectReference Include="..\..\EventStore\Alberto.EventStore.Telemetry\Alberto.EventStore.Telemetry.csproj"/>
     <ProjectReference Include="..\..\CQRS\Alberto.CQRS\Alberto.CQRS.csproj"/>
-    <ProjectReference Include="..\..\EventSourcing\Alberto.Projections.Postgres\Alberto.Projections.Postgres.csproj"/>
     <ProjectReference Include="..\..\EventSourcing\Alberto.Projections.InMemory\Alberto.Projections.InMemory.csproj"/>
     <ProjectReference Include="..\Alberto.ServiceDefaults\Alberto.ServiceDefaults.csproj"/>
     <ProjectReference Include="..\..\CQRS\Alberto.CQRS.Telemetry\Alberto.CQRS.Telemetry.csproj"/>

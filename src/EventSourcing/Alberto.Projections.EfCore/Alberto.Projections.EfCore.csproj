@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+    <!-- Package Metadata -->
+    <PackageId>Alberto.Projections.EfCore</PackageId>
+    <Title>Alberto Projections - Entity Framework Core Adapter</Title>
+    <Description>Entity Framework Core adapter for Alberto EventStore projections. Provides easy integration between IProjectionRepository and EF Core DbContext for testable, swappable projection storage.</Description>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Alberto.EventSourcing\Alberto.EventSourcing.csproj"/>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore"/>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions"/>
+  </ItemGroup>
+
+</Project>

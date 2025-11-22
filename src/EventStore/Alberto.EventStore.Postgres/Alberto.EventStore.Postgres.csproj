@@ -26,7 +26,7 @@
     <PackageReference Include="Npgsql"/>
   </ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Include="Migrations\*.sql"/>
+    <EmbeddedResource Include="Migrations\Templates\*.sql"/>
   </ItemGroup>
 
 </Project>

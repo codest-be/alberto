@@ -142,18 +142,25 @@ public class PostgresTestFixture : IAsyncLifetime
         // Clear any existing registrations (important for test isolation)
         PostgresSchemaRegistry.Instance.Clear();
 
-        // Register schema in singleton registry
-        PostgresSchemaRegistry.Instance.Register(Options.Schema, Options.ConnectionString);
+        // Register schema in singleton registry with module key
+        var moduleKey = "TestModule";
+        PostgresSchemaRegistry.Instance.Register(moduleKey, Options.Schema, Options.ConnectionString);
 
         // Set up a minimal service provider with the options for the migration service
         var services = new ServiceCollection();
         services.AddSingleton(PostgresSchemaRegistry.Instance);
+        services.Configure<PostgresEventStoreOptions>(moduleKey, opts =>
+        {
+            opts.ConnectionString = Options.ConnectionString;
+            opts.Schema = Options.Schema;
+        });
 
         var serviceProvider = services.BuildServiceProvider();
 
-        // Create and run the migration service with null logger for tests
+        // Create and run the migration service
         var logger = new NullLogger<MigrationHostedService>();
-        var migrationService = new MigrationHostedService(PostgresSchemaRegistry.Instance, logger);
+        var optionsMonitor = serviceProvider.GetRequiredService<IOptionsMonitor<PostgresEventStoreOptions>>();
+        var migrationService = new MigrationHostedService(PostgresSchemaRegistry.Instance, optionsMonitor, logger);
 
         await migrationService.StartingAsync(CancellationToken.None);
 

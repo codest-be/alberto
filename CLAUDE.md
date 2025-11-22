@@ -37,7 +37,8 @@ Alberto is an event store library for .NET with multi-tenant and multi-schema su
     - Schema isolation and connection pooling
     - JSONB event storage with covering indexes
     - Bulk insert optimization (threshold: 5 events)
-    - Automatic migrations and schema management
+  - **Pluggable migration strategies** (NoMigration, ScriptOnly, AutoMigration)
+  - Idempotent migrations with version tracking
     - Subscription infrastructure (checkpoints, poison pills, distributed locking)
 - **EventStore.Telemetry**: OpenTelemetry integration for distributed tracing and diagnostics
 
@@ -55,11 +56,11 @@ Alberto is an event store library for .NET with multi-tenant and multi-schema su
         - `EventUpcasterRegistry`: Automatic upcasting during deserialization
         - `EventVersionAttribute`: Version tracking
 - **Projections.InMemory**: In-memory projection repositories for testing
-- **Projections.Postgres**: PostgreSQL-based projection storage with:
-    - JSONB state storage for schema flexibility
-    - Automatic table creation per projection type
-    - Batch updates with version checking
-    - Global version tracking for idempotency
+- **Projections**: User-managed read models (not auto-created by Alberto)
+    - Recommended: Use EF Core with DbContext for complex projections
+    - Alternative: Dapper, plain SQL, or any database (MongoDB, Redis, etc.)
+    - Projections are subscription handlers (`IHandleEvent<T>`)
+    - See `examples/EF_CORE_INTEGRATION.md` for complete guide
 
 #### CQRS Layer (Optional)
 
@@ -140,8 +141,49 @@ management.
 The PostgreSQL implementation supports multiple schemas within the same database:
 
 - Each schema represents a logical boundary (e.g., "orders", "payments")
-- Configured via `AddPostgresEventStore(schemaName, options)`
-- Schema context (`ISchemaContext`) determines which backend instance to use
+- Configured via `.WithPostgres(options => options.Schema = "orders")`
+- Schema context determines which backend instance to use
+
+### Migration Strategies
+
+Alberto uses a **pluggable migration strategy** system for EventStore schema management:
+
+**Development (Default - AutoMigrationStrategy):**
+
+```csharp
+services.AddModule<OrderEventStore>("orders", module => module
+    .WithPostgres(options => {
+        options.ConnectionString = connectionString;
+        options.Schema = "orders";
+        // Default: AutoMigrationStrategy
+        // - Generates ./Migrations/EventStore/orders/*.sql on first run
+        // - Applies migrations automatically (idempotent)
+    }));
+```
+
+**Production (NoMigrationStrategy):**
+
+```csharp
+options.MigrationStrategy = new NoMigrationStrategy();
+// Deploy migrations via CI/CD pipeline:
+// psql -f ./Migrations/EventStore/orders/001_InitialSchema.sql
+```
+
+**CI/CD (ScriptOnlyMigrationStrategy):**
+
+```csharp
+options.MigrationStrategy = new ScriptOnlyMigrationStrategy("./Migrations");
+// Generates SQL scripts without executing
+// Review → commit → deploy via Flyway/Liquibase/DbUp
+```
+
+**Key Features:**
+
+- Library ships embedded SQL templates with `{schema}` placeholder
+- Generated to `./Migrations/EventStore/{schema}/` for review and modification
+- Idempotent migrations track applied changes in `__alberto_schema_version`
+- Users manage **projection schemas** separately (EF Core, Dapper, etc.)
+- See `ARCHITECTURE_RECOMMENDATIONS.md` for detailed guide
 
 ### Key Files
 
@@ -161,7 +203,11 @@ The PostgreSQL implementation supports multiple schemas within the same database
 - `EventStore.InMemory/InMemoryEventStoreBackend.cs`: Full in-memory implementation
 - `EventStore.Postgres/PostgresEventStoreBackend.cs`: PostgreSQL backend with JSONB storage
 - `EventStore.Postgres/PostgresModuleBuilderExtensions.cs`: `.WithPostgres()` extension
-- `EventStore.Postgres/Migrations/MigrationHostedService.cs`: Automatic schema migrations
+- `EventStore.Postgres/Migrations/IMigrationStrategy.cs`: Pluggable migration strategies (NoMigration, ScriptOnly,
+  AutoMigration)
+- `EventStore.Postgres/Migrations/MigrationTemplateLoader.cs`: Loads embedded SQL templates
+- `EventStore.Postgres/Migrations/MigrationHostedService.cs`: Runs migrations on startup using configured strategy
+- `EventStore.Postgres/Migrations/Templates/001_InitialSchema.sql`: EventStore schema template
 
 #### Subscriptions
 
@@ -182,9 +228,10 @@ The PostgreSQL implementation supports multiple schemas within the same database
 
 #### Projections
 
-- `Projections.Postgres/PostgresProjectionRepository.cs`: JSONB-based projection storage with batch updates
-- `Projections.Postgres/PostgresProjectionBuilderExtensions.cs`: `.AddPostgresProjection()` extension
-- `EventSourcing/Projections/IProjectionRepository.cs`: Projection repository interface with batch operations
+- `Projections.InMemory/InMemoryProjectionRepository.cs`: In-memory projection storage for testing
+- `EventSourcing/Projections/IProjectionRepository.cs`: Projection repository interface (optional)
+- **Note**: For production, use EF Core DbContext or Dapper instead of built-in repositories
+- See `examples/EF_CORE_INTEGRATION.md` for recommended patterns
 
 #### CQRS
 - `CQRS/Commands/CommandExecutor.cs`: Command execution with validation
@@ -400,7 +447,7 @@ The solution uses solution folders to organize projects:
 - **EventSourcing folder**: Event sourcing and projections
   - `EventSourcing` - Minimal building blocks (IProjector, Load/Persist)
   - `Projections.InMemory` - In-memory projection repositories
-  - `Projections.Postgres` - PostgreSQL projection storage with JSONB
+  - `Projections.EfCore` - Entity Framework Core projection adapter
 
 - **CQRS folder**: Optional CQRS framework
   - `CQRS` - Commands, queries, handlers, validation, auto-registration
