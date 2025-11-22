@@ -2,6 +2,7 @@ namespace Alberto.EventStore.Postgres;
 
 public class PostgresEventStoreOptions
 {
+    private int _commandTimeoutSeconds = 30;
     private string _connectionString = null!;
     private string _schema = "default";
 
@@ -34,4 +35,13 @@ public class PostgresEventStoreOptions
     }
 
     public int BulkInsertThreshold { get; set; } = 5;
+
+    /// <summary>
+    /// Command timeout in seconds for all Postgres operations. Default: 30 seconds.
+    /// </summary>
+    public int CommandTimeoutSeconds
+    {
+        get => _commandTimeoutSeconds;
+        set => _commandTimeoutSeconds = value > 0 ? value : 30;
+    }
 }

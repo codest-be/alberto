@@ -45,6 +45,8 @@ internal sealed class CommandScope(Activity activity) : ICommandScope
         if (problemCodes != null)
             activity.SetTag(Tags.ProblemCodes, string.Join(", ", problemCodes));
 
+        activity.SetStatus(ActivityStatusCode.Error);
+
         return this;
     }
 

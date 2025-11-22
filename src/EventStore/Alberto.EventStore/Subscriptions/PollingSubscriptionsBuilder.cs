@@ -168,6 +168,7 @@ public class PollingSubscriptionsBuilder<TEventStore> where TEventStore : EventS
 
             var router = new EventRouter(
                 _moduleKey,
+                _moduleKey,
                 checkpointStore,
                 poisonPillStore,
                 sp,
@@ -188,7 +189,8 @@ public class PollingSubscriptionsBuilder<TEventStore> where TEventStore : EventS
 
                 router.RegisterHandler(new HandlerRegistration
                 {
-                    SubscriptionId = subscriptionId, Handler = handler, SupportedEventTypes = supportedEventTypes, Logger = handlerLogger
+                    SubscriptionId = subscriptionId, HandlerType = handler.GetType(),
+                    SupportedEventTypes = supportedEventTypes, Logger = handlerLogger
                 });
             }
 

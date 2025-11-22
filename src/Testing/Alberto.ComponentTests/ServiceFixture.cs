@@ -10,7 +10,8 @@ using Xunit.v3;
 
 namespace Alberto.ComponentTests;
 
-public class ServiceFixture<TProgram> : WebApplicationFactory<TProgram>, IServiceFixture, IAsyncLifetime where TProgram : class
+public class ServiceFixture<TProgram> : WebApplicationFactory<TProgram>, IServiceFixture, IAsyncLifetime
+    where TProgram : class
 {
     private readonly SubscriptionEventCollector _collector = new();
 
@@ -51,9 +52,6 @@ public class ServiceFixture<TProgram> : WebApplicationFactory<TProgram>, IServic
     {
         Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", "Testing");
         Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Testing");
-
-        // Add configuration FIRST, before services are registered
-        builder.UseSetting("ConnectionStrings:alberto-db", "Host=localhost;Database=test;Username=test;Password=test");
 
         builder.ConfigureTestServices(services =>
         {

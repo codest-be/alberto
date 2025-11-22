@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace Alberto.Projections.Postgres;
 
 /// <summary>
@@ -35,4 +37,10 @@ public sealed class PostgresProjectionOptions
             _schema = value;
         }
     }
+
+    /// <summary>
+    /// Serializer options used for projection state (defaults to camelCase).
+    /// </summary>
+    public JsonSerializerOptions? SerializerOptions { get; set; } =
+        new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 }

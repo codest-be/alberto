@@ -19,7 +19,10 @@ public sealed class PostgresProjectionRepository<TKey, TState> : IProjectionRepo
     where TKey : notnull
     where TState : new()
 {
-    private readonly JsonSerializerOptions _jsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    private static readonly JsonSerializerOptions DefaultJsonOptions =
+        new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+
+    private readonly JsonSerializerOptions _jsonOptions;
 
     private readonly ILogger<PostgresProjectionRepository<TKey, TState>> _logger;
     private readonly PostgresProjectionOptions _options;
@@ -36,6 +39,7 @@ public sealed class PostgresProjectionRepository<TKey, TState> : IProjectionRepo
         _options = options.Value;
         _logger = logger;
         _tenantContext = tenantContext;
+        _jsonOptions = _options.SerializerOptions ?? DefaultJsonOptions;
 
         // Use ProjectionTableNameResolver to ensure consistency with migration generator
         _tableName = projectorType != null
@@ -148,18 +152,48 @@ public sealed class PostgresProjectionRepository<TKey, TState> : IProjectionRepo
     public async Task Update(TKey key, Func<TState, TState> updateFn, CancellationToken cancellationToken = default)
     {
         await using var connection = new NpgsqlConnection(_options.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         try
         {
-            // Get current state
-            var currentState = await Get(key, cancellationToken) ?? new TState();
+            var getSql = $"""
+                          SELECT state 
+                          FROM {_schemaQualifiedTableName} 
+                          WHERE tenant_id = @TenantId AND key = @Key
+                          FOR UPDATE
+                          """;
+
+            var currentJson = await connection.QuerySingleOrDefaultAsync<string>(
+                new CommandDefinition(
+                    getSql,
+                    new { TenantId = _tenantContext.Tenant.Id, Key = key.ToString() },
+                    transaction: transaction,
+                    cancellationToken: cancellationToken));
+
+            var currentState = currentJson is null
+                ? new TState()
+                : JsonSerializer.Deserialize<TState>(currentJson, _jsonOptions) ?? new TState();
 
             // Apply update
             var newState = updateFn(currentState);
+            var json = JsonSerializer.Serialize(newState, _jsonOptions);
 
             // Upsert
-            await Upsert(key, newState, cancellationToken);
+            var upsertSql = $"""
+                             INSERT INTO {_schemaQualifiedTableName} (tenant_id, key, state, global_version, updated_at)
+                             VALUES (@TenantId, @Key, @State::jsonb, 0, NOW())
+                             ON CONFLICT (tenant_id, key) DO UPDATE
+                             SET state = EXCLUDED.state,
+                                 updated_at = NOW()
+                             """;
+
+            await connection.ExecuteAsync(
+                new CommandDefinition(
+                    upsertSql,
+                    new { TenantId = _tenantContext.Tenant.Id, Key = key.ToString(), State = json },
+                    transaction,
+                    cancellationToken: cancellationToken));
 
             await transaction.CommitAsync(cancellationToken);
         }
@@ -224,7 +258,11 @@ public sealed class PostgresProjectionRepository<TKey, TState> : IProjectionRepo
 
             var rowsAffected = await connection.ExecuteAsync(
                 new CommandDefinition(upsertSql,
-                    new { TenantId = _tenantContext.Tenant.Id, Key = key.ToString(), State = json, GlobalVersion = globalVersion },
+                    new
+                    {
+                        TenantId = _tenantContext.Tenant.Id, Key = key.ToString(), State = json,
+                        GlobalVersion = globalVersion
+                    },
                     transaction,
                     cancellationToken: cancellationToken));
 
@@ -336,7 +374,11 @@ public sealed class PostgresProjectionRepository<TKey, TState> : IProjectionRepo
             rowsAffected = await connection.ExecuteAsync(
                 new CommandDefinition(
                     sql,
-                    new { TenantId = _tenantContext.Tenant.Id, Keys = keys.ToArray(), States = states.ToArray(), Versions = versions.ToArray() },
+                    new
+                    {
+                        TenantId = _tenantContext.Tenant.Id, Keys = keys.ToArray(), States = states.ToArray(),
+                        Versions = versions.ToArray()
+                    },
                     transaction,
                     cancellationToken: cancellationToken));
 

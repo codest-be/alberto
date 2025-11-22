@@ -16,7 +16,6 @@
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
     <PackageTags>eventstore;events;cqrs;eventsourcing;dotnet;postgresql;inmemory</PackageTags>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
 
     <!-- Build Configuration -->
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>

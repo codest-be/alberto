@@ -268,6 +268,10 @@ INCLUDE (id, tenant_id, event_type, tags, data, metadata, created_at);
 CREATE INDEX IF NOT EXISTS idx_{schema}_events_tenant_type_position 
 ON {schema}.events (tenant_id, event_type, position);
 
+-- Index for tag-based filtering and uniqueness checks
+CREATE INDEX IF NOT EXISTS idx_{schema}_events_tags 
+    ON {schema}.events USING GIN (tags);
+
 -- Subscription checkpoints
 CREATE TABLE IF NOT EXISTS {schema}.subscription_checkpoints
 (

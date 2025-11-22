@@ -16,6 +16,7 @@ namespace Alberto.EventStore.Postgres;
 public class PostgresEventStoreBackend : IEventStoreBackend, IMultiTenantEventStore
 {
     private readonly int _bulkInsertThreshold;
+    private readonly int _commandTimeoutSeconds;
     private readonly string _connectionString;
     private readonly string _eventsTable;
     private readonly ILogger<PostgresEventStoreBackend> _logger;
@@ -33,6 +34,7 @@ public class PostgresEventStoreBackend : IEventStoreBackend, IMultiTenantEventSt
         _bulkInsertThreshold = _options.BulkInsertThreshold > 0 ? _options.BulkInsertThreshold : 5;
         _connectionString = _options.ConnectionString;
         _eventsTable = $"{_options.Schema}.events";
+        _commandTimeoutSeconds = _options.CommandTimeoutSeconds > 0 ? _options.CommandTimeoutSeconds : 30;
     }
 
     public async Task<IReadOnlyCollection<IEventEnvelope>> Stream(
@@ -42,6 +44,7 @@ public class PostgresEventStoreBackend : IEventStoreBackend, IMultiTenantEventSt
         CancellationToken cancellationToken = default)
     {
         var hasFilters = query.Tags.Count > 0 || query.EventTypes.Count > 0;
+        ValidateQuery(query);
         using var metricsScope = _metrics.RecordQuery(_options.Schema, hasFilters);
 
         await using NpgsqlConnection connection = new(_connectionString);
@@ -50,7 +53,8 @@ public class PostgresEventStoreBackend : IEventStoreBackend, IMultiTenantEventSt
         (string sql, DynamicParameters parameters) = BuildStreamQuery(tenant, query, maxCount);
 
         // Execute query directly with Dapper - no prepared statement caching
-        IEnumerable<EventRecord> events = await connection.QueryAsync<EventRecord>(sql, parameters);
+        IEnumerable<EventRecord> events = await connection.QueryAsync<EventRecord>(
+            CreateCommand(sql, parameters, cancellationToken: cancellationToken));
         var result = events.Select(MapToEventWithMeta).ToList();
 
         // Record events queried count
@@ -69,6 +73,13 @@ public class PostgresEventStoreBackend : IEventStoreBackend, IMultiTenantEventSt
         List<IEventToPersist> eventsList = events.ToList();
         if (eventsList.Count == 0)
             return [];
+
+        if (consistencyBoundary != null)
+            ValidateQuery(consistencyBoundary);
+
+        if (eventsList.Count > 5000)
+            _logger.LogWarning("Large batch append detected ({Count} events) for schema {Schema}", eventsList.Count,
+                _options.Schema);
 
         using var metricsScope = _metrics.RecordAppend(tenant.Id, _options.Schema, eventsList.Count);
         try
@@ -140,7 +151,8 @@ public class PostgresEventStoreBackend : IEventStoreBackend, IMultiTenantEventSt
         sql.Append(" ORDER BY position LIMIT @MaxCount");
         parameters.Add("MaxCount", maxCount);
 
-        var events = await connection.QueryAsync<EventRecord>(sql.ToString(), parameters);
+        var events = await connection.QueryAsync<EventRecord>(
+            CreateCommand(sql.ToString(), parameters, cancellationToken: cancellationToken));
 
         return events.Select(e => new GlobalEventEnvelope(
             e.position,
@@ -270,6 +282,8 @@ public class PostgresEventStoreBackend : IEventStoreBackend, IMultiTenantEventSt
 
     private List<string> BuildQueryConditions(StreamQuery query, DynamicParameters parameters)
     {
+        ValidateQuery(query);
+
         List<string> conditions = [];
         int paramIndex = parameters.ParameterNames.Count();
 
@@ -316,6 +330,13 @@ public class PostgresEventStoreBackend : IEventStoreBackend, IMultiTenantEventSt
         }
 
         return conditions;
+    }
+
+    private static void ValidateQuery(StreamQuery query)
+    {
+        if (query is { RequireAllEventTypes: true, EventTypes.Count: > 1 })
+            throw new ArgumentException(
+                "RequireAllEventTypes cannot be used with multiple event types in a single event stream query.");
     }
 
     private async Task<List<long>?> BulkInsertEventsWithConsistencyCheck(
@@ -437,7 +458,8 @@ public class PostgresEventStoreBackend : IEventStoreBackend, IMultiTenantEventSt
         try
         {
             _logger.LogDebug("Executing bulk insert with consistency check: {Sql}", sql);
-            IEnumerable<dynamic> results = await connection.QueryAsync(sql, parameters, transaction);
+            IEnumerable<dynamic> results = await connection.QueryAsync(
+                CreateCommand(sql, parameters, transaction, cancellationToken));
             List<dynamic> resultsList = results.ToList();
 
             // Check if there were conflicts
@@ -608,14 +630,16 @@ public class PostgresEventStoreBackend : IEventStoreBackend, IMultiTenantEventSt
         {
             if (consistencyBoundary != null)
             {
-                dynamic? result = await connection.QuerySingleOrDefaultAsync(sql, parameters, transaction);
+                dynamic? result = await connection.QuerySingleOrDefaultAsync(
+                    CreateCommand(sql, parameters, transaction, cancellationToken));
                 if (result != null && (int)result!.conflicts == 1)
                     return null;
 
                 return result?.position;
             }
 
-            return await connection.QuerySingleOrDefaultAsync<long?>(sql, parameters, transaction);
+            return await connection.QuerySingleOrDefaultAsync<long?>(
+                CreateCommand(sql, parameters, transaction, cancellationToken));
         }
         catch (PostgresException ex) when (ex.SqlState == "23505") // Unique constraint violation
         {
@@ -770,6 +794,20 @@ public class PostgresEventStoreBackend : IEventStoreBackend, IMultiTenantEventSt
 
         return JsonSerializer.Deserialize<Dictionary<string, string>>(metadataJson)
                ?? new Dictionary<string, string>();
+    }
+
+    private CommandDefinition CreateCommand(
+        string sql,
+        object parameters,
+        NpgsqlTransaction? transaction = null,
+        CancellationToken cancellationToken = default)
+    {
+        return new CommandDefinition(
+            sql,
+            parameters,
+            transaction: transaction,
+            commandTimeout: _commandTimeoutSeconds,
+            cancellationToken: cancellationToken);
     }
 
     // ReSharper disable InconsistentNaming

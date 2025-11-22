@@ -259,6 +259,7 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
             var builderLogger = sp.GetRequiredService<ILogger<ChannelSubscriptionsBuilder<TEventStore>>>();
 
             var router = new EventRouter(
+                _moduleKey,
                 channelRouterKey,
                 checkpointStore,
                 poisonPillStore,
@@ -278,7 +279,8 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
             using var scope = sp.CreateScope();
             foreach (var handlerReg in channelHandlers)
             {
-                var handler = (IEventHandler)scope.ServiceProvider.GetRequiredKeyedService(handlerReg.HandlerType, _moduleKey);
+                var handler =
+                    (IEventHandler)scope.ServiceProvider.GetRequiredKeyedService(handlerReg.HandlerType, _moduleKey);
                 var subscriptionId = GetSubscriptionId(handler);
                 var supportedEventTypes = GetSupportedEventTypes(handler);
                 var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
@@ -293,7 +295,8 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
 
                 router.RegisterHandler(new HandlerRegistration
                 {
-                    SubscriptionId = subscriptionId, Handler = handler, SupportedEventTypes = supportedEventTypes, Logger = handlerLogger
+                    SubscriptionId = subscriptionId, HandlerType = handler.GetType(),
+                    SupportedEventTypes = supportedEventTypes, Logger = handlerLogger
                 });
             }
 
@@ -368,6 +371,7 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
             var builderLogger = sp.GetRequiredService<ILogger<ChannelSubscriptionsBuilder<TEventStore>>>();
 
             var router = new EventRouter(
+                _moduleKey,
                 pollingRouterKey,
                 checkpointStore,
                 poisonPillStore,
@@ -387,11 +391,12 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
             using var scope = sp.CreateScope();
             foreach (var handlerReg in pollingHandlers)
             {
-                var handler = (IEventHandler)scope.ServiceProvider.GetRequiredKeyedService(handlerReg.HandlerType, _moduleKey);
+                var handler =
+                    (IEventHandler)scope.ServiceProvider.GetRequiredKeyedService(handlerReg.HandlerType, _moduleKey);
                 var subscriptionId = GetSubscriptionId(handler);
                 var supportedEventTypes = GetSupportedEventTypes(handler);
                 var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
-                var handlerLogger = loggerFactory.CreateLogger(handler.GetType());
+                var handlerLogger = loggerFactory.CreateLogger(handlerReg.HandlerType);
 
                 builderLogger.LogInformation(
                     "Registering polling handler: {HandlerType} (subscription: {SubscriptionId}, mode: {Mode}, events: {EventTypes})",
@@ -402,7 +407,8 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
 
                 router.RegisterHandler(new HandlerRegistration
                 {
-                    SubscriptionId = subscriptionId, Handler = handler, SupportedEventTypes = supportedEventTypes, Logger = handlerLogger
+                    SubscriptionId = subscriptionId, HandlerType = handlerReg.HandlerType,
+                    SupportedEventTypes = supportedEventTypes, Logger = handlerLogger
                 });
             }
 

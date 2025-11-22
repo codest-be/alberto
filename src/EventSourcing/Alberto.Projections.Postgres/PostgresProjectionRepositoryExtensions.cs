@@ -38,8 +38,17 @@ public static class PostgresProjectionRepositoryExtensions
             var eventStoreOptionsMonitor = sp.GetRequiredService<IOptionsMonitor<PostgresEventStoreOptions>>();
             var eventStoreOptions = eventStoreOptionsMonitor.Get(moduleKey);
 
-            // Create projection options that inherit from EventStore
-            var projectionOptions = new PostgresProjectionOptions { ConnectionString = eventStoreOptions.ConnectionString, Schema = eventStoreOptions.Schema };
+            // Optional: allow consumers to configure serializer options per module
+            var projectionOptionsMonitor = sp.GetService<IOptionsMonitor<PostgresProjectionOptions>>();
+            var configuredProjectionOptions = projectionOptionsMonitor?.Get(moduleKey);
+
+            // Create projection options that inherit from EventStore while honoring custom serializer settings
+            var projectionOptions = new PostgresProjectionOptions
+            {
+                ConnectionString = eventStoreOptions.ConnectionString,
+                Schema = eventStoreOptions.Schema,
+                SerializerOptions = configuredProjectionOptions?.SerializerOptions
+            };
 
             var logger = sp.GetRequiredService<ILogger<PostgresProjectionRepository<TKey, TState>>>();
             var tenantContext = sp.GetRequiredService<ITenantContext>();
@@ -86,8 +95,17 @@ public static class PostgresProjectionRepositoryExtensions
             var eventStoreOptionsMonitor = sp.GetRequiredService<IOptionsMonitor<PostgresEventStoreOptions>>();
             var eventStoreOptions = eventStoreOptionsMonitor.Get(moduleKey);
 
-            // Create projection options that inherit from EventStore
-            var projectionOptions = new PostgresProjectionOptions { ConnectionString = eventStoreOptions.ConnectionString, Schema = eventStoreOptions.Schema };
+            // Optional: allow consumers to configure serializer options per module
+            var projectionOptionsMonitor = sp.GetService<IOptionsMonitor<PostgresProjectionOptions>>();
+            var configuredProjectionOptions = projectionOptionsMonitor?.Get(moduleKey);
+
+            // Create projection options that inherit from EventStore while honoring custom serializer settings
+            var projectionOptions = new PostgresProjectionOptions
+            {
+                ConnectionString = eventStoreOptions.ConnectionString,
+                Schema = eventStoreOptions.Schema,
+                SerializerOptions = configuredProjectionOptions?.SerializerOptions
+            };
 
             var logger = sp.GetRequiredService<ILogger<PostgresProjectionRepository<TKey, TState>>>();
             var tenantContext = sp.GetRequiredService<ITenantContext>();

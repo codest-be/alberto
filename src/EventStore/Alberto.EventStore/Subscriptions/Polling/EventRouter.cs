@@ -15,6 +15,7 @@ namespace Alberto.EventStore.Subscriptions.Polling;
 /// Routes events to handlers with retry and poison pill support
 /// </summary>
 public sealed class EventRouter(
+    string moduleKey,
     object key,
     ICheckpointStore checkpointStore,
     IPoisonPillStore poisonPillStore,
@@ -246,18 +247,27 @@ public sealed class EventRouter(
         var eventType = eventTypeRegistry.GetEventType(evt.EventType);
         var eventInstance = deserializer.Deserialize(evt.EventJson, eventType);
 
-        await using var scope = serviceProvider.CreateAsyncScope();
-        // Execute through pipeline
-        await scope.ServiceProvider.GetRequiredKeyedService<ConsumePipeline>(key).Execute(
-            eventInstance,
-            context,
-            async () =>
-            {
-                // Call the typed handler method
-                await InvokeTypedHandler(handler.Handler, eventInstance, context, cancellationToken);
-            },
-            cancellationToken
-        );
+        var scope = serviceProvider.CreateAsyncScope();
+        try
+        {
+            // Execute through pipeline
+            await scope.ServiceProvider.GetRequiredKeyedService<ConsumePipeline>(key).Execute(
+                eventInstance,
+                context,
+                async () =>
+                {
+                    // Resolve handler from the same scope
+                    var handlerInstance =
+                        scope.ServiceProvider.GetRequiredKeyedService(handler.HandlerType, moduleKey) as IEventHandler;
+                    await InvokeTypedHandler(handlerInstance!, eventInstance, context, cancellationToken);
+                },
+                cancellationToken
+            );
+        }
+        finally
+        {
+            await scope.DisposeAsync();
+        }
     }
 
     private async ValueTask InvokeTypedHandler(

@@ -8,7 +8,7 @@ namespace Alberto.EventStore.Subscriptions.Subscriptions;
 public sealed class HandlerRegistration
 {
     public required string SubscriptionId { get; init; }
-    public required IEventHandler Handler { get; init; }
+    public required Type HandlerType { get; init; }
     public required HashSet<string> SupportedEventTypes { get; init; }
     public required ILogger Logger { get; init; }
 
