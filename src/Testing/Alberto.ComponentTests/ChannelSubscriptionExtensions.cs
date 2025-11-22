@@ -15,7 +15,7 @@ public static class ChannelSubscriptionExtensions
         SubscriptionMode mode,
         SubscriptionMetadataRegistry registry)
         where TEventStore : EventStoreFactory
-        where TSubscription : class, IEventHandler
+        where TSubscription : class, IProjectionSubscription, IEventHandler
         where TKey : notnull
         where TState : new()
         where TProjector : class, IProjector<TState>

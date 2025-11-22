@@ -1,4 +1,3 @@
-using Alberto.EventSourcing.Projections;
 using Alberto.EventSourcing.Projectors;
 using Alberto.EventStore;
 using Alberto.EventStore.Subscriptions.Channel;
@@ -29,7 +28,7 @@ public static class InMemoryProjectionExtensions
         this ChannelSubscriptionsBuilder<TEventStore> builder,
         SubscriptionMode mode = SubscriptionMode.Sync)
         where TEventStore : EventStoreFactory
-        where TSubscription : class, IEventHandler
+        where TSubscription : class, IProjectionSubscription, IEventHandler
         where TKey : notnull
         where TState : new()
         where TProjector : class, IProjector<TState>
@@ -38,6 +37,6 @@ public static class InMemoryProjectionExtensions
         builder.Services.AddInMemoryProjectionRepository<TKey, TState, TProjector>();
 
         // Register projection subscription
-        return builder.AddProjection<TEventStore, TSubscription, TKey, TState, TProjector>(mode);
+        return builder.AddProjection<TSubscription, TKey, TState>(mode);
     }
 }

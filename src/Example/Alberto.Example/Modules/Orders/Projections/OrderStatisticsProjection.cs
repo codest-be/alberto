@@ -8,7 +8,9 @@ namespace Alberto.Example.Modules.Orders.Projections;
 
 [Subscription("order-statistics")]
 public class OrderStatisticsSubscription(
-    ProjectionHandler<string, OrderStatistics> handler) :
+    IProjectionRepository<string, OrderStatistics> repository,
+    OrderStatisticsProjector projector) :
+    IProjectionSubscription<string, OrderStatistics>,
     IHandleEvent<OrderCreated>,
     IHandleEvent<OrderPlaced>,
     IHandleEvent<OrderShipped>,
@@ -17,17 +19,23 @@ public class OrderStatisticsSubscription(
     // All events use the same key "global" for statistics
     private const string GlobalKey = "global";
 
+    // Handle methods can be empty - EventRouter routes via IProjectionSubscription
     public ValueTask Handle(OrderCancelled @event, EventContext context, CancellationToken cancellationToken = default)
-        => handler.Handle(GlobalKey, @event, context, cancellationToken);
+        => ValueTask.CompletedTask;
 
     public ValueTask Handle(OrderCreated @event, EventContext context, CancellationToken cancellationToken = default)
-        => handler.Handle(GlobalKey, @event, context, cancellationToken);
+        => ValueTask.CompletedTask;
 
     public ValueTask Handle(OrderPlaced @event, EventContext context, CancellationToken cancellationToken = default)
-        => handler.Handle(GlobalKey, @event, context, cancellationToken);
+        => ValueTask.CompletedTask;
 
     public ValueTask Handle(OrderShipped @event, EventContext context, CancellationToken cancellationToken = default)
-        => handler.Handle(GlobalKey, @event, context, cancellationToken);
+        => ValueTask.CompletedTask;
+
+    public IProjector<OrderStatistics> Projector => projector;
+    public IProjectionRepository<string, OrderStatistics> Repository => repository;
+
+    public string GetKey(object @event) => GlobalKey;
 }
 
 public record OrderStatistics

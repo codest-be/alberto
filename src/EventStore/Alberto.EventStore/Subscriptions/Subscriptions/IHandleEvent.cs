@@ -20,3 +20,17 @@ public interface IHandleEvent<in TEvent> : IEventHandler
     /// </summary>
     ValueTask Handle(TEvent @event, EventContext context, CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// Marker interface for projection subscriptions.
+/// Projection subscriptions are treated specially by EventRouter for batching and optimization.
+/// The EventRouter uses reflection to access Projector and Repository properties.
+/// </summary>
+public interface IProjectionSubscription : IEventHandler
+{
+    /// <summary>
+    /// Extract the projection key(s) from an event.
+    /// Can return multiple keys if event affects multiple projections.
+    /// </summary>
+    IEnumerable<object> GetKeys(object @event);
+}

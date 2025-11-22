@@ -1,6 +1,8 @@
 using System.Reflection;
 using Alberto.EventStore.Diagnostics;
 using Alberto.EventStore.Events;
+using Alberto.EventStore.Subscriptions.Batching;
+using Alberto.EventStore.Subscriptions.Channel;
 using Alberto.EventStore.Subscriptions.Checkpoints;
 using Alberto.EventStore.Subscriptions.DistributedLocking;
 using Alberto.EventStore.Subscriptions.Filters;
@@ -187,10 +189,21 @@ public class PollingSubscriptionsBuilder<TEventStore> where TEventStore : EventS
                 var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
                 var handlerLogger = loggerFactory.CreateLogger(handler.GetType());
 
+                // Check if this is a projection subscription
+                var isProjection = handler is IProjectionSubscription;
+
+                // Polling subscriptions default to batched mode (entire poll cycle)
+                var batchingOptions = new ProjectionBatchingOptions();
+
                 router.RegisterHandler(new HandlerRegistration
                 {
-                    SubscriptionId = subscriptionId, HandlerType = handler.GetType(),
-                    SupportedEventTypes = supportedEventTypes, Logger = handlerLogger
+                    SubscriptionId = subscriptionId,
+                    HandlerType = handler.GetType(),
+                    SupportedEventTypes = supportedEventTypes,
+                    Logger = handlerLogger,
+                    IsProjection = isProjection,
+                    SubscriptionMode = SubscriptionMode.Async, // Polling is always async
+                    ProjectionBatchingOptions = batchingOptions
                 });
             }
 

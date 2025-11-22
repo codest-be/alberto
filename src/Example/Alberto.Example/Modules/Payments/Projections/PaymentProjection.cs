@@ -9,15 +9,29 @@ namespace Alberto.Example.Modules.Payments.Projections;
 
 [Subscription("payment-projection")]
 public class PaymentProjectionSubscription(
-    ProjectionHandler<Guid, Payment> handler) :
+    IProjectionRepository<Guid, Payment> repository,
+    PaymentProjector projector) :
+    IProjectionSubscription<Guid, Payment>,
     IHandleEvent<PaymentCreated>,
     IHandleEvent<PaymentProcessed>
 {
+    // Handle methods can be empty - EventRouter routes via IProjectionSubscription
     public ValueTask Handle(PaymentCreated @event, EventContext context, CancellationToken cancellationToken = default)
-        => handler.Handle(@event.PaymentId, @event, context, cancellationToken);
+        => ValueTask.CompletedTask;
 
-    public ValueTask Handle(PaymentProcessed @event, EventContext context, CancellationToken cancellationToken = default)
-        => handler.Handle(@event.PaymentId, @event, context, cancellationToken);
+    public ValueTask Handle(PaymentProcessed @event, EventContext context,
+        CancellationToken cancellationToken = default)
+        => ValueTask.CompletedTask;
+
+    public IProjector<Payment> Projector => projector;
+    public IProjectionRepository<Guid, Payment> Repository => repository;
+
+    public Guid GetKey(object @event) => @event switch
+    {
+        PaymentCreated e => e.PaymentId,
+        PaymentProcessed e => e.PaymentId,
+        _ => throw new InvalidOperationException($"Unsupported event type: {@event.GetType().Name}")
+    };
 }
 
 public record Payment
@@ -35,7 +49,10 @@ public class PaymentProjector : IProjector<Payment>
     {
         return @event switch
         {
-            PaymentCreated e => projectionState with { PaymentId = e.PaymentId, OrderId = e.OrderId, Amount = e.Amount, Status = PaymentStatus.Created },
+            PaymentCreated e => projectionState with
+            {
+                PaymentId = e.PaymentId, OrderId = e.OrderId, Amount = e.Amount, Status = PaymentStatus.Created
+            },
             PaymentProcessed => projectionState with { Status = PaymentStatus.Processed },
             _ => projectionState
         };

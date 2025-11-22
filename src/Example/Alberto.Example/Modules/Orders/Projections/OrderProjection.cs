@@ -9,23 +9,38 @@ namespace Alberto.Example.Modules.Orders.Projections;
 
 [Subscription("order-projection")]
 public class OrderProjectionSubscription(
-    ProjectionHandler<Guid, Order> handler) :
+    IProjectionRepository<Guid, Order> repository,
+    OrderProjector projector) :
+    IProjectionSubscription<Guid, Order>,
     IHandleEvent<OrderCreated>,
     IHandleEvent<OrderPlaced>,
     IHandleEvent<OrderShipped>,
     IHandleEvent<OrderCancelled>
 {
+    // Handle methods can be empty - EventRouter routes via IProjectionSubscription
     public ValueTask Handle(OrderCancelled @event, EventContext context, CancellationToken cancellationToken = default)
-        => handler.Handle(@event.OrderId, @event, context, cancellationToken);
+        => ValueTask.CompletedTask;
 
     public ValueTask Handle(OrderCreated @event, EventContext context, CancellationToken cancellationToken = default)
-        => handler.Handle(@event.OrderId, @event, context, cancellationToken);
+        => ValueTask.CompletedTask;
 
     public ValueTask Handle(OrderPlaced @event, EventContext context, CancellationToken cancellationToken = default)
-        => handler.Handle(@event.OrderId, @event, context, cancellationToken);
+        => ValueTask.CompletedTask;
 
     public ValueTask Handle(OrderShipped @event, EventContext context, CancellationToken cancellationToken = default)
-        => handler.Handle(@event.OrderId, @event, context, cancellationToken);
+        => ValueTask.CompletedTask;
+
+    public IProjector<Order> Projector => projector;
+    public IProjectionRepository<Guid, Order> Repository => repository;
+
+    public Guid GetKey(object @event) => @event switch
+    {
+        OrderCreated e => e.OrderId,
+        OrderPlaced e => e.OrderId,
+        OrderShipped e => e.OrderId,
+        OrderCancelled e => e.OrderId,
+        _ => throw new InvalidOperationException($"Unsupported event type: {@event.GetType().Name}")
+    };
 }
 
 public record Order

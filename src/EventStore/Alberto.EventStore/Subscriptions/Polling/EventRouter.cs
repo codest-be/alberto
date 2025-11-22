@@ -1,7 +1,10 @@
+using System.Reflection;
 using System.Text.Json;
 using Alberto.EventStore.Diagnostics;
 using Alberto.EventStore.Events;
 using Alberto.EventStore.Serialization;
+using Alberto.EventStore.Subscriptions.Batching;
+using Alberto.EventStore.Subscriptions.Channel;
 using Alberto.EventStore.Subscriptions.Checkpoints;
 using Alberto.EventStore.Subscriptions.Filters;
 using Alberto.EventStore.Subscriptions.PoisonPills;
@@ -26,6 +29,7 @@ public sealed class EventRouter(
     int retryDelayMs = 1000)
 {
     private readonly List<HandlerRegistration> _handlers = [];
+    private readonly Dictionary<string, ProjectionAccumulator> _projectionAccumulators = new();
 
     public void RegisterHandler(HandlerRegistration handler)
     {
@@ -87,17 +91,32 @@ public sealed class EventRouter(
                 continue; // Don't process, subscription is blocked
             }
 
-            // Try to process with retries
-            var success = await ProcessEventWithRetry(
-                handler,
-                evt,
-                cancellationToken
-            );
-
-            if (!success)
+            // Route projections differently based on mode
+            if (handler.IsProjection)
             {
-                anyHandlerFailed = true;
-                // Poison pill created, subscription will stop
+                var success = await ProcessProjectionEvent(
+                    handler,
+                    evt,
+                    cancellationToken);
+
+                if (!success)
+                {
+                    anyHandlerFailed = true;
+                }
+            }
+            else
+            {
+                // Regular event handler - existing flow
+                var success = await ProcessEventWithRetry(
+                    handler,
+                    evt,
+                    cancellationToken);
+
+                if (!success)
+                {
+                    anyHandlerFailed = true;
+                    // Poison pill created, subscription will stop
+                }
             }
         }
 
@@ -350,6 +369,247 @@ public sealed class EventRouter(
             handler.SubscriptionId,
             evt.GlobalPosition
         );
+    }
+
+    private async Task<bool> ProcessProjectionEvent(
+        HandlerRegistration handler,
+        GlobalEventEnvelope evt,
+        CancellationToken ct)
+    {
+        // Get or create accumulator for this handler
+        if (!_projectionAccumulators.TryGetValue(handler.SubscriptionId, out var accumulator))
+        {
+            accumulator = new ProjectionAccumulator();
+            _projectionAccumulators[handler.SubscriptionId] = accumulator;
+        }
+
+        // Accumulate the event
+        accumulator.Add(evt);
+
+        // Decide whether to flush based on mode and thresholds
+        var shouldFlush = ShouldFlushProjection(handler, accumulator);
+
+        if (shouldFlush)
+        {
+            return await FlushProjectionAccumulator(handler, accumulator, ct);
+        }
+
+        return true; // Accumulated successfully
+    }
+
+    private bool ShouldFlushProjection(
+        HandlerRegistration handler,
+        ProjectionAccumulator accumulator)
+    {
+        var options = handler.ProjectionBatchingOptions;
+
+        return handler.SubscriptionMode switch
+        {
+            // Sync: Always flush immediately for strong consistency
+            SubscriptionMode.Sync => true,
+
+            // Async: Flush when threshold met
+            SubscriptionMode.Async =>
+                accumulator.EventCount >= options.MaxBatchSize ||
+                accumulator.TimeSinceFirstEvent >= options.MaxBatchTime,
+
+            // Hybrid: Same as async (handler-level mode determines behavior)
+            _ => true
+        };
+    }
+
+    private async Task<bool> FlushProjectionAccumulator(
+        HandlerRegistration handler,
+        ProjectionAccumulator accumulator,
+        CancellationToken ct)
+    {
+        var events = accumulator.GetEvents();
+        if (events.Count == 0)
+            return true;
+
+        try
+        {
+            using var scope = serviceProvider.CreateAsyncScope();
+
+            // Resolve the projection subscription
+            var projectionInstance = scope.ServiceProvider.GetRequiredKeyedService(
+                handler.HandlerType,
+                moduleKey) as IProjectionSubscription;
+
+            if (projectionInstance == null)
+            {
+                logger.LogError(
+                    "Handler {HandlerType} is marked as projection but doesn't implement IProjectionSubscription",
+                    handler.HandlerType.Name);
+                return false;
+            }
+
+            // Group events by key
+            var eventsByKey = new Dictionary<object, List<(object Event, EventContext Context)>>();
+
+            foreach (var evt in events)
+            {
+                var eventInstance = DeserializeEvent(evt);
+                var context = CreateEventContext(evt, handler.SubscriptionId);
+
+                // Get keys from projection
+                var keys = projectionInstance.GetKeys(eventInstance);
+
+                foreach (var key in keys)
+                {
+                    if (!eventsByKey.TryGetValue(key, out var list))
+                    {
+                        list = new();
+                        eventsByKey[key] = list;
+                    }
+
+                    list.Add((eventInstance, context));
+                }
+            }
+
+            // Invoke the typed flush method
+            await InvokeTypedFlush(projectionInstance, eventsByKey, ct);
+
+            // Update checkpoint to max position
+            var maxPosition = events.Max(e => e.GlobalPosition);
+            handler.Position = maxPosition;
+            await checkpointStore.StoreCheckpoint(
+                new Checkpoint(handler.SubscriptionId, maxPosition, DateTimeOffset.UtcNow),
+                ct);
+
+            logger.LogDebug(
+                "Flushed projection batch for {SubscriptionId}: {EventCount} events, {KeyCount} keys",
+                handler.SubscriptionId,
+                events.Count,
+                eventsByKey.Count);
+
+            accumulator.Clear();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to flush projection batch for {SubscriptionId}", handler.SubscriptionId);
+            await CreatePoisonPill(handler, events[0], ex, ct);
+            return false;
+        }
+    }
+
+    private async Task InvokeTypedFlush(
+        IProjectionSubscription projectionInstance,
+        Dictionary<object, List<(object Event, EventContext Context)>> eventsByKey,
+        CancellationToken ct)
+    {
+        // Use reflection to find the typed projection interface
+        // It will be in Alberto.EventSourcing assembly: IProjectionSubscription<TKey, TState>
+        var projectionType = projectionInstance.GetType();
+        var projectionInterface = projectionType.GetInterfaces()
+            .FirstOrDefault(i => i.IsGenericType &&
+                                 i.Name.StartsWith("IProjectionSubscription") &&
+                                 i.GetGenericArguments().Length == 2);
+
+        if (projectionInterface == null)
+        {
+            throw new InvalidOperationException(
+                $"Projection {projectionType.Name} doesn't implement typed IProjectionSubscription<TKey, TState>. " +
+                "Ensure your subscription implements Alberto.EventSourcing.Projections.IProjectionSubscription<TKey, TState>.");
+        }
+
+        var genericArgs = projectionInterface.GetGenericArguments();
+        var keyType = genericArgs[0];
+        var stateType = genericArgs[1];
+
+        // Get repository and projector from the projection instance via reflection
+        var repositoryProp = projectionInterface.GetProperty("Repository");
+        var projectorProp = projectionInterface.GetProperty("Projector");
+
+        if (repositoryProp == null || projectorProp == null)
+        {
+            throw new InvalidOperationException(
+                $"Projection {projectionType.Name} doesn't expose Repository and Projector properties");
+        }
+
+        var repository = repositoryProp.GetValue(projectionInstance);
+        var projector = projectorProp.GetValue(projectionInstance);
+
+        // Invoke the generic batch processing method
+        var method = typeof(EventRouter).GetMethod(
+            nameof(FlushTypedProjectionBatch),
+            BindingFlags.NonPublic | BindingFlags.Instance);
+
+        var genericMethod = method!.MakeGenericMethod(keyType, stateType);
+        var task = (Task)genericMethod.Invoke(this, [repository, projector, eventsByKey, ct])!;
+        await task;
+    }
+
+    private async Task FlushTypedProjectionBatch<TKey, TState>(
+        object repositoryObj,
+        object projectorObj,
+        Dictionary<object, List<(object Event, EventContext Context)>> eventsByKey,
+        CancellationToken ct)
+        where TKey : notnull
+        where TState : new()
+    {
+        // Use reflection to call methods on repository and projector
+        // Repository type: IProjectionRepository<TKey, TState>
+        // Projector type: IProjector<TState>
+
+        var repositoryType = repositoryObj.GetType();
+        var projectorType = projectorObj.GetType();
+
+        // Convert dictionary keys to typed version
+        var typedEventsByKey = eventsByKey.ToDictionary(
+            kvp => (TKey)kvp.Key,
+            kvp => kvp.Value);
+
+        // 1. Batch load current states - use reflection to call BatchGet
+        var batchGetMethod = repositoryType.GetMethod("BatchGet");
+        var batchGetTask = (Task)batchGetMethod!.Invoke(repositoryObj, [typedEventsByKey.Keys, ct])!;
+        await batchGetTask;
+        var currentStatesObj = batchGetTask.GetType().GetProperty("Result")!.GetValue(batchGetTask);
+        var currentStates = (IDictionary<TKey, TState?>)currentStatesObj!;
+
+        // 2. Fold events per key using projector.Apply
+        var applyMethod = projectorType.GetMethod("Apply");
+        var updates = new Dictionary<TKey, (TState State, long Version)>();
+
+        foreach (var (key, events) in typedEventsByKey)
+        {
+            var currentState = currentStates.TryGetValue(key, out var existing) && existing != null
+                ? existing
+                : new TState();
+
+            var newState = events.Aggregate(
+                currentState,
+                (state, tuple) => (TState)applyMethod!.Invoke(projectorObj, [state, tuple.Event])!);
+
+            var maxVersion = events.Max(e => e.Context.GlobalPosition);
+            updates[key] = (newState, maxVersion);
+        }
+
+        // 3. Batch save - use reflection to call BatchUpsertWithVersion
+        var batchUpsertMethod = repositoryType.GetMethod("BatchUpsertWithVersion");
+        var batchUpsertTask = (Task)batchUpsertMethod!.Invoke(repositoryObj, [updates, ct])!;
+        await batchUpsertTask;
+    }
+
+    private object DeserializeEvent(GlobalEventEnvelope evt)
+    {
+        var deserializer = serviceProvider.GetRequiredService<IEventDeserializer>();
+        var eventTypeRegistry = serviceProvider.GetRequiredService<EventTypeRegistry>();
+        var eventType = eventTypeRegistry.GetEventType(evt.EventType);
+        return deserializer.Deserialize(evt.EventJson, eventType);
+    }
+
+    private EventContext CreateEventContext(GlobalEventEnvelope evt, string subscriptionId)
+    {
+        return new EventContext(
+            evt.GlobalPosition,
+            evt.Id,
+            evt.EventType,
+            evt.TenantId,
+            subscriptionId,
+            evt.Metadata,
+            evt.Created);
     }
 
     public long GetMinimumPosition()
