@@ -3,14 +3,31 @@ using Alberto.EventSourcing.Projectors;
 
 namespace Alberto.UnitTests;
 
-public class Specification<TState>(IProjector<TState> decider) : SpecificationBase where TState : new()
+public class Specification<TState> : SpecificationBase where TState : new()
 {
     private readonly List<object> _givenEvents = [];
-    private readonly TState _initialState = new();
+    private readonly IProjector<TState> decider;
     private TState _finalState = default!;
+    private TState _initialState;
+
+    public Specification(IProjector<TState> decider)
+    {
+        this.decider = decider;
+        _initialState = new();
+    }
 
     public Specification<TState> Given(params object[] events)
     {
+        _givenEvents.AddRange(events);
+
+        _finalState = events.Aggregate(_initialState, decider.Apply);
+
+        return this;
+    }
+
+    public Specification<TState> Given(TState initialState, params object[] events)
+    {
+        _initialState = initialState;
         _givenEvents.AddRange(events);
 
         _finalState = events.Aggregate(_initialState, decider.Apply);

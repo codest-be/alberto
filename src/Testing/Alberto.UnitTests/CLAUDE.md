@@ -78,6 +78,23 @@ public void Should_reject_placing_already_placed_order()
         .When(state => OrderDecisions.PlaceOrder(state))
         .ThenFailWith(OrderProblems.InvalidStatusForPlacing(OrderStatus.Placed));
 }
+
+[Fact]
+public void Should_apply_vip_discount_to_large_order()
+{
+    // Start with custom state instead of replaying many events
+    var vipState = new OrderState
+    {
+        CustomerId = "vip-customer",
+        IsVipCustomer = true,
+        Amount = 1000m
+    };
+
+    new Specification<OrderState>(new OrderProjector())
+        .Given(vipState)  // Custom initial state
+        .When(state => OrderDecisions.ApplyDiscount(state, 0.15m))
+        .ThenEventOfType<DiscountApplied>();
+}
 ```
 
 **Use cases:**
@@ -85,6 +102,7 @@ public void Should_reject_placing_already_placed_order()
 - Commands with preconditions
 - State-dependent decisions
 - Testing state transitions
+- Complex state scenarios (using custom initial state)
 
 ## API Reference
 
@@ -103,12 +121,18 @@ new Specification()
 
 ```csharp
 new Specification<TState>(projector)
-    .Given(events...)                    // Setup initial state
-    .When(state => decision)             // Execute decision with state
-    .ThenEventOfType<T>()                // Expect event type T
-    .ThenEvents(event1, ...)             // Expect specific events
-    .ThenFailWith(problem)               // Expect failure with problem
-    .ThenState(predicate);               // Verify final state
+    .Given(events...)                         // Setup initial state (uses new TState())
+    .When(state => decision)                  // Execute decision with state
+    .ThenEventOfType<T>()                     // Expect event type T
+    .ThenEvents(event1, ...)                  // Expect specific events
+    .ThenFailWith(problem)                    // Expect failure with problem
+    .ThenState(predicate);                    // Verify final state
+
+// With custom initial state
+new Specification<TState>(projector)
+    .Given(customInitialState, events...)     // Setup with custom initial state + events
+    .When(state => decision)                  // Execute decision with state
+    .ThenEventOfType<T>();                    // Expect event type T
 ```
 
 ## Testing Patterns
@@ -294,6 +318,58 @@ public class OrderProjector_Should
 }
 ```
 
+### 5. Testing with Custom Initial State
+
+For testing scenarios that require a specific starting state without replaying all events:
+
+```csharp
+[Fact]
+public void Should_apply_discount_when_customer_is_vip()
+{
+    // Custom initial state with VIP flag already set
+    var vipState = new OrderState
+    {
+        Status = OrderStatus.Created,
+        CustomerId = "customer1",
+        IsVipCustomer = true,
+        Amount = 100m
+    };
+
+    new Specification<OrderState>(new OrderProjector())
+        .Given(vipState)  // Start with custom state
+        .When(state => OrderDecisions.ApplyDiscount(state, 0.20m))
+        .ThenEventOfType<DiscountApplied>()
+        .WithValue(e => e.DiscountPercent == 0.20m);
+}
+
+[Fact]
+public void Should_handle_complex_state_transitions()
+{
+    // Custom initial state that would take many events to reach
+    var complexState = new OrderState
+    {
+        Status = OrderStatus.Placed,
+        Amount = 500m,
+        ItemCount = 10,
+        ShippingAddress = new Address("123 Main St", "City", "State"),
+        PaymentMethod = PaymentMethod.CreditCard
+    };
+
+    new Specification<OrderState>(new OrderProjector())
+        .Given(complexState, new PaymentProcessed(orderId, 500m))
+        .When(state => OrderDecisions.Ship(state, "TRACK-123"))
+        .ThenEventOfType<OrderShipped>();
+}
+```
+
+**Use cases for custom initial state:**
+
+- Testing aggregates with complex state that requires many events to reach
+- Testing scenarios where the exact event history is not relevant
+- Performance optimization for tests with long event histories
+- Testing migration scenarios or legacy state
+- Snapshot-based testing (validating behavior from a snapshot state)
+
 ## Decision Pattern
 
 Decisions are pure functions that return `Decision` or `Decision<T>`:
@@ -459,6 +535,52 @@ public void Should_update_order()
 [Fact] public void Should_handle_empty_customer() { }
 [Fact] public void Should_handle_whitespace_reason() { }
 [Fact] public void Should_handle_null_tracking_number() { }
+```
+
+### 6. Choose Between Event History and Custom Initial State
+
+```csharp
+// ✅ Good: Use event history for behavior-driven tests
+[Fact]
+public void Should_transition_through_complete_lifecycle()
+{
+    new Specification<OrderState>(projector)
+        .Given(
+            new OrderCreated(orderId, 100m, "customer1"),
+            new OrderPlaced(orderId))
+        .When(state => OrderDecisions.Ship(state, "TRACK-123"))
+        .ThenEventOfType<OrderShipped>();
+}
+
+// ✅ Good: Use custom initial state for complex scenarios
+[Fact]
+public void Should_handle_vip_customer_with_many_items()
+{
+    var complexState = new OrderState
+    {
+        IsVipCustomer = true,
+        ItemCount = 100,
+        TotalSpent = 10000m
+    };
+
+    new Specification<OrderState>(projector)
+        .Given(complexState)
+        .When(state => OrderDecisions.ApplyVipDiscount(state))
+        .ThenEventOfType<VipDiscountApplied>();
+}
+
+// ❌ Avoid: Mixing when one approach is clearer
+[Fact]
+public void Should_not_mix_unnecessarily()
+{
+    // Don't use custom state if simple events suffice
+    var state = new OrderState { Status = OrderStatus.Created };
+
+    new Specification<OrderState>(projector)
+        .Given(state, new OrderCreated(...))  // Redundant
+        .When(state => OrderDecisions.PlaceOrder(state))
+        .ThenEventOfType<OrderPlaced>();
+}
 ```
 
 ## File Structure

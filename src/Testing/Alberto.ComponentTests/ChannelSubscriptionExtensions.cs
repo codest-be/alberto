@@ -1,5 +1,4 @@
 using System.Reflection;
-using Alberto.EventSourcing.Projectors;
 using Alberto.EventStore;
 using Alberto.EventStore.Subscriptions.Channel;
 using Alberto.EventStore.Subscriptions.Subscriptions;
@@ -9,16 +8,13 @@ namespace Alberto.ComponentTests;
 
 public static class ChannelSubscriptionExtensions
 {
-    public static ChannelSubscriptionsBuilder<TEventStore> AddTestingProjection<TEventStore, TSubscription, TKey,
-        TState, TProjector>(
+    public static ChannelSubscriptionsBuilder<TEventStore> AddTestingProjection<TSubscription, TProjector, TEventStore>(
         this ChannelSubscriptionsBuilder<TEventStore> builder,
         SubscriptionMode mode,
         SubscriptionMetadataRegistry registry)
-        where TEventStore : EventStoreFactory
         where TSubscription : class, IProjectionSubscription, IEventHandler
-        where TKey : notnull
-        where TState : new()
-        where TProjector : class, IProjector<TState>
+        where TProjector : class
+        where TEventStore : EventStoreFactory
     {
         var subscriptionAttribute = typeof(TSubscription).GetCustomAttribute<SubscriptionAttribute>();
         var subscriptionId = subscriptionAttribute?.SubscriptionId ?? typeof(TSubscription).Name;
@@ -33,6 +29,6 @@ public static class ChannelSubscriptionExtensions
             .ToArray();
 
         registry.RegisterSubscription(subscriptionId, eventTypes);
-        return builder.AddInMemoryProjection<TEventStore, TSubscription, TKey, TState, TProjector>(mode);
+        return builder.AddInMemoryProjection<TSubscription, TProjector, TEventStore>(mode);
     }
 }
