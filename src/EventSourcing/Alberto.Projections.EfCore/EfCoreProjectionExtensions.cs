@@ -1,4 +1,8 @@
+using System.Reflection;
 using Alberto.EventSourcing.Projections;
+using Alberto.EventStore.Subscriptions.Batching;
+using Alberto.EventStore.Subscriptions.Channel;
+using Alberto.EventStore.Subscriptions.Subscriptions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -53,5 +57,71 @@ public static class EfCoreProjectionExtensions
         where T : IVersionedProjection
     {
         return projection.GlobalVersion >= globalPosition;
+    }
+
+    /// <summary>
+    /// Adds a projection subscription with EF Core repository backend.
+    /// Combines repository registration and subscription setup in a single call.
+    /// TKey and TState are automatically inferred from the IProjectionSubscription&lt;TKey, TState&gt; interface.
+    /// </summary>
+    /// <typeparam name="TSubscription">The subscription handler class implementing IProjectionSubscription&lt;TKey, TState&gt;</typeparam>
+    /// <typeparam name="TDbContext">The EF Core DbContext type</typeparam>
+    /// <typeparam name="TProjector">The projector implementation</typeparam>
+    /// <param name="builder">The channel subscriptions builder</param>
+    /// <param name="mode">Subscription mode for this projection (Sync, Async, or Hybrid). Default: Sync</param>
+    /// <param name="configureBatching">Optional configuration for batching behavior</param>
+    /// <returns>The builder for chaining</returns>
+    /// <example>
+    /// <code>
+    /// services.AddModule&lt;OrderEventStore&gt;("orders", module => module
+    ///     .WithPostgres(...)
+    ///     .WithChannelSubscriptions(channel => channel
+    ///         .AddEfCoreProjection&lt;OrderProjectionSubscription, OrderDbContext, OrderProjector&gt;(
+    ///             mode: SubscriptionMode.Hybrid)));
+    /// </code>
+    /// </example>
+    public static IChannelSubscriptionsBuilder AddEfCoreProjection<TSubscription, TDbContext, TProjector>(
+        this IChannelSubscriptionsBuilder builder,
+        SubscriptionMode mode = SubscriptionMode.Sync,
+        Action<ProjectionBatchingOptions>? configureBatching = null)
+        where TSubscription : class, IProjectionSubscription, IEventHandler
+        where TDbContext : DbContext
+        where TProjector : class
+    {
+        // Find IProjectionSubscription<TKey, TState> interface on TSubscription
+        var projectionInterface = typeof(TSubscription)
+            .GetInterfaces()
+            .FirstOrDefault(i => i.IsGenericType &&
+                                 i.GetGenericTypeDefinition() == typeof(IProjectionSubscription<,>));
+
+        if (projectionInterface == null)
+        {
+            throw new InvalidOperationException(
+                $"Type {typeof(TSubscription).Name} must implement IProjectionSubscription<TKey, TState>");
+        }
+
+        // Extract TKey and TState from the interface
+        var genericArgs = projectionInterface.GetGenericArguments();
+        var keyType = genericArgs[0];
+        var stateType = genericArgs[1];
+
+        // Register EF Core repository using reflection
+        var repoMethod = typeof(EfCoreProjectionExtensions)
+            .GetMethod(nameof(AddEfCoreProjectionRepository), BindingFlags.Public | BindingFlags.Static)!
+            .MakeGenericMethod(typeof(TDbContext), keyType, stateType);
+
+        repoMethod.Invoke(null, new object[] { builder.Services });
+
+        // Register projector
+        builder.Services.AddScoped(typeof(TProjector));
+
+        // Register projection subscription using reflection
+        var addProjectionMethod = typeof(IChannelSubscriptionsBuilder)
+            .GetMethod(nameof(IChannelSubscriptionsBuilder.AddProjection))!
+            .MakeGenericMethod(typeof(TSubscription), keyType, stateType);
+
+        return (IChannelSubscriptionsBuilder)addProjectionMethod.Invoke(
+            builder,
+            [mode, configureBatching])!;
     }
 }

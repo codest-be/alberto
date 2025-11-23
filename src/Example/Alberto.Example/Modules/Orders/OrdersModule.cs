@@ -45,10 +45,9 @@ public static class OrdersModule
                         options.MaxPageSize = 100;
                     })
                     .WithFilter<LoggingFilter>()
-                    .AddInMemoryProjection<OrderEventStore, OrderProjectionSubscription, Guid, Order, OrderProjector>(
+                    .AddInMemoryProjection<OrderProjectionSubscription, OrderProjector, OrderEventStore>(
                         mode: SubscriptionMode.Hybrid)
-                    .AddInMemoryProjection<OrderEventStore, OrderStatisticsSubscription, string, OrderStatistics,
-                        OrderStatisticsProjector>(
+                    .AddInMemoryProjection<OrderStatisticsSubscription, OrderStatisticsProjector, OrderEventStore>(
                         mode: SubscriptionMode.Async)
                 )
                 .WithCQRS(cqrs => cqrs

@@ -36,9 +36,9 @@ public abstract class OrdersFixture : ServiceFixture<Program>
                         options.MaxRetries = 0;
                     })
                     .WithFilter<SubscriptionEventCollectorFilter>()
-                    .AddTestingProjection<OrderEventStore, OrderProjectionSubscription, Guid, Order, OrderProjector>(mode: SubscriptionMode.Hybrid,
+                    .AddTestingProjection<OrderProjectionSubscription, OrderProjector, OrderEventStore>(mode: SubscriptionMode.Hybrid,
                         SubscriptionMetadataRegistry)
-                    .AddTestingProjection<OrderEventStore, OrderStatisticsSubscription, string, OrderStatistics, OrderStatisticsProjector>(
+                    .AddTestingProjection<OrderStatisticsSubscription, OrderStatisticsProjector, OrderEventStore>(
                         mode: SubscriptionMode.Async, SubscriptionMetadataRegistry)
                 )
                 .WithCQRS(cqrs => cqrs.ScanAssembly(typeof(OrdersModule).Assembly))

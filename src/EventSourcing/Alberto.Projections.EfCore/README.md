@@ -1,19 +1,29 @@
 # Alberto.Projections.EfCore
 
-Entity Framework Core adapter for Alberto EventStore projections. Provides easy integration between
-`IProjectionRepository<TKey, TState>` and EF Core `DbContext` for testable, swappable projection storage.
+Entity Framework Core adapter for Alberto EventStore projections. Provides simplified projection registration
+with automatic repository setup and type inference.
 
 ## Why Use This?
+
+**Simplified API**: Register projections with minimal type parameters - `TKey` and `TState` are automatically inferred
+from your subscription interface.
+
+```csharp
+// Before: 7 type parameters
+.AddEfCoreProjection<OrderEventStore, OrderProjectionSubscription, OrderDbContext, Guid, Order, OrderProjector>(...)
+
+// After: 3 type parameters (TKey and TState inferred automatically)
+.AddEfCoreProjection<OrderProjectionSubscription, OrderDbContext, OrderProjector>(...)
+```
 
 **Easy Testing**: Swap between EF Core (production) and in-memory (tests) without changing your projection handlers.
 
 ```csharp
 // Production
-services.AddEfCoreProjectionRepository<OrderDbContext, Guid, OrderSummary>();
+.AddEfCoreProjection<OrderProjectionSubscription, OrderDbContext, OrderProjector>(mode: SubscriptionMode.Sync)
 
 // Tests
-services.AddSingleton<IProjectionRepository<Guid, OrderSummary>,
-                      InMemoryProjectionRepository<Guid, OrderSummary>>();
+.AddInMemoryProjection<OrderProjectionSubscription, OrderProjector>(mode: SubscriptionMode.Sync)
 ```
 
 ## Installation
@@ -24,15 +34,15 @@ dotnet add package Alberto.Projections.EfCore
 
 ## Quick Start
 
-### 1. Define Your Projection Entity
+### 1. Define Your Projection State
 
 ```csharp
-public class OrderSummary : IHasKey<Guid>, IVersionedProjection
+public class Order : IHasKey<Guid>, IVersionedProjection
 {
     public Guid Id { get; set; }
     public string CustomerId { get; set; } = null!;
-    public decimal TotalAmount { get; set; }
-    public string Status { get; set; } = null!;
+    public decimal Amount { get; set; }
+    public OrderStatus Status { get; set; }
 
     // For idempotency - tracks last event position
     public long GlobalVersion { get; set; }
@@ -44,11 +54,11 @@ public class OrderSummary : IHasKey<Guid>, IVersionedProjection
 ```csharp
 public class OrderDbContext : DbContext
 {
-    public DbSet<OrderSummary> OrderSummaries { get; set; }
+    public DbSet<Order> Orders { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<OrderSummary>(entity =>
+        modelBuilder.Entity<Order>(entity =>
         {
             entity.HasKey(e => e.Id);
             entity.Property(e => e.CustomerId).IsRequired().HasMaxLength(100);
@@ -58,80 +68,128 @@ public class OrderDbContext : DbContext
 }
 ```
 
-### 3. Register Services
+### 3. Create Projector
+
+```csharp
+public class OrderProjector : IProjector<Order>
+{
+    public Order Apply(Order state, object @event)
+    {
+        return @event switch
+        {
+            OrderCreated created => new Order
+            {
+                Id = created.OrderId,
+                CustomerId = created.CustomerId,
+                Amount = created.Amount,
+                Status = OrderStatus.Created
+            },
+            OrderPlaced => state with { Status = OrderStatus.Placed },
+            _ => state
+        };
+    }
+}
+```
+
+### 4. Create Projection Subscription
+
+```csharp
+[Subscription("order-projection")]
+public class OrderProjectionSubscription(IProjectionRepository<Guid, Order> repository, OrderProjector projector)
+    : IProjectionSubscription<Guid, Order>,
+      IHandleEvent<OrderCreated>,
+      IHandleEvent<OrderPlaced>
+{
+    public Guid GetKey(object @event) => @event switch
+    {
+        OrderCreated e => e.OrderId,
+        OrderPlaced e => e.OrderId,
+        _ => throw new InvalidOperationException()
+    };
+
+    public async Task Handle(EventContext<OrderCreated> ctx)
+    {
+        await repository.UpdateWithProjector(GetKey(ctx.Event), e => projector.Apply(e, ctx.Event), ctx.GlobalPosition);
+    }
+
+    public async Task Handle(EventContext<OrderPlaced> ctx)
+    {
+        await repository.UpdateWithProjector(GetKey(ctx.Event), e => projector.Apply(e, ctx.Event), ctx.GlobalPosition);
+    }
+}
+```
+
+### 5. Register Everything (All-In-One)
 
 ```csharp
 services.AddDbContext<OrderDbContext>(options =>
     options.UseNpgsql(connectionString));
 
-// Register the projection repository
-services.AddEfCoreProjectionRepository<OrderDbContext, Guid, OrderSummary>();
-```
-
-### 4. Create Projection Handler
-
-```csharp
-public class OrderSummaryHandler : IHandleEvent<OrderCreated>, IHandleEvent<OrderPlaced>
-{
-    private readonly IProjectionRepository<Guid, OrderSummary> _repository;
-
-    public OrderSummaryHandler(IProjectionRepository<Guid, OrderSummary> repository)
-    {
-        _repository = repository;
-    }
-
-    public async Task Handle(EventContext<OrderCreated> ctx)
-    {
-        var summary = new OrderSummary
-        {
-            Id = ctx.Event.OrderId,
-            CustomerId = ctx.Event.CustomerId,
-            TotalAmount = ctx.Event.Amount,
-            Status = "Created"
-        };
-
-        // Automatically handles idempotency via GlobalVersion
-        await _repository.Upsert(ctx.Event.OrderId, summary, ctx.GlobalPosition);
-    }
-
-    public async Task Handle(EventContext<OrderPlaced> ctx)
-    {
-        var summary = await _repository.Get(ctx.Event.OrderId);
-        if (summary != null)
-        {
-            summary.Status = "Placed";
-            await _repository.Upsert(ctx.Event.OrderId, summary, ctx.GlobalPosition);
-        }
-    }
-}
-```
-
-### 5. Register Subscription
-
-```csharp
 services.AddModule<OrderEventStore>("orders", module => module
     .WithPostgres(...)
     .WithChannelSubscriptions(channel => channel
-        .Add<OrderSummaryHandler>(mode: SubscriptionMode.Async)));
+        // TKey (Guid) and TState (Order) are automatically inferred!
+        .AddEfCoreProjection<OrderProjectionSubscription, OrderDbContext, OrderProjector>(
+            mode: SubscriptionMode.Hybrid)));
 ```
+
+**What this does automatically:**
+
+- ✅ Registers `IProjectionRepository<Guid, Order>` with EF Core backend
+- ✅ Registers `OrderProjector` as scoped service
+- ✅ Registers `OrderProjectionSubscription` with the subscription system
+- ✅ Infers `TKey=Guid` and `TState=Order` from `IProjectionSubscription<Guid, Order>`
 
 ## Testing
 
-### In-Memory for Fast Tests
+### Swap to In-Memory for Fast Tests
+
+Simply replace `AddEfCoreProjection` with `AddInMemoryProjection`:
 
 ```csharp
-services.AddSingleton<IProjectionRepository<Guid, OrderSummary>,
-                      InMemoryProjectionRepository<Guid, OrderSummary>>();
+// Production (EF Core)
+.AddEfCoreProjection<OrderProjectionSubscription, OrderDbContext, OrderProjector>(
+    mode: SubscriptionMode.Hybrid)
+
+// Tests (In-Memory)
+.AddInMemoryProjection<OrderProjectionSubscription, OrderProjector>(
+    mode: SubscriptionMode.Sync)  // Use Sync for immediate updates in tests
 ```
 
-### EF Core In-Memory Provider
+### Manual Repository Registration (if needed)
+
+If you're not using subscriptions or need more control:
 
 ```csharp
-services.AddDbContext<OrderDbContext>(options =>
-    options.UseInMemoryDatabase("TestDb"));
+// Production
+services.AddEfCoreProjectionRepository<OrderDbContext, Guid, Order>();
 
-services.AddEfCoreProjectionRepository<OrderDbContext, Guid, OrderSummary>();
+// Tests
+services.AddSingleton<IProjectionRepository<Guid, Order>,
+                      InMemoryProjectionRepository<Guid, Order>>();
 ```
+
+## How Type Inference Works
+
+The `AddEfCoreProjection` method uses reflection to automatically extract `TKey` and `TState` from your subscription:
+
+```csharp
+// Your subscription implements this interface
+public class OrderProjectionSubscription : IProjectionSubscription<Guid, Order>
+
+// AddEfCoreProjection extracts:
+// - TKey = Guid
+// - TState = Order
+// Using reflection on the IProjectionSubscription<TKey, TState> interface
+```
+
+This means you only need to specify:
+
+1. **TSubscription** - Your subscription class
+2. **TDbContext** - Your EF Core DbContext
+3. **TProjector** - Your projector implementation
+
+Everything else is inferred automatically!
 
 ## Idempotency
 
@@ -144,70 +202,88 @@ public interface IVersionedProjection
 }
 ```
 
-When you call `Upsert`, the repository:
+When you use `UpdateWithProjector`, the repository:
 
 1. Checks if `existing.GlobalVersion >= globalPosition`
 2. If true, skips the update (already processed)
-3. If false, updates the projection and sets `GlobalVersion = globalPosition`
+3. If false, applies the projector and sets `GlobalVersion = globalPosition`
 
 This ensures events are never processed twice, even if replayed.
 
-## When to Use This vs Plain DbContext
+## API Options
 
-**Use `IProjectionRepository` (this package) when:**
+### Option 1: Simplified All-In-One (Recommended)
 
-- ✅ Simple, single-entity projections
-- ✅ Want easy testing (swap to InMemory)
-- ✅ Need automatic idempotency
+Use `AddEfCoreProjection` for minimal boilerplate:
 
-**Use plain `DbContext` when:**
+```csharp
+.AddEfCoreProjection<OrderProjectionSubscription, OrderDbContext, OrderProjector>(
+    mode: SubscriptionMode.Hybrid)
+```
 
-- ✅ Complex projections with navigation properties
-- ✅ Need LINQ queries across multiple entities
-- ✅ Using EF Core In-Memory provider for tests anyway
+**Pros:**
+
+- ✅ Minimal type parameters (3 instead of 7)
+- ✅ Automatic type inference
+- ✅ One-line registration
+- ✅ Easy to swap with `AddInMemoryProjection` for tests
+
+### Option 2: Manual Registration
+
+For more control, register components separately:
+
+```csharp
+services.AddDbContext<OrderDbContext>(options => options.UseNpgsql(connectionString));
+services.AddEfCoreProjectionRepository<OrderDbContext, Guid, Order>();
+services.AddScoped<OrderProjector>();
+
+// Then register subscription manually
+.AddProjection<OrderProjectionSubscription, Guid, Order>(mode: SubscriptionMode.Hybrid)
+```
+
+**Use when:**
+
+- ✅ Sharing repository across multiple subscriptions
+- ✅ Need custom repository configuration
+- ✅ Using projector outside subscriptions
 
 Both approaches work great with Alberto!
 
-## Example: Complex Projection with Plain DbContext
+## Multiple Projections Example
 
-For projections with relationships, use `DbContext` directly:
+You can register multiple projections easily:
 
 ```csharp
-public class OrderDetailsHandler : IHandleEvent<OrderCreated>
-{
-    private readonly OrderDbContext _context;
+services.AddModule<OrderEventStore>("orders", module => module
+    .WithPostgres(...)
+    .WithChannelSubscriptions(channel => channel
+        // Per-order projection (sync for strong consistency)
+        .AddEfCoreProjection<OrderProjectionSubscription, OrderDbContext, OrderProjector>(
+            mode: SubscriptionMode.Hybrid)
 
-    public OrderDetailsHandler(OrderDbContext context)
-    {
-        _context = context;
-    }
+        // Global statistics (async for better performance)
+        .AddEfCoreProjection<OrderStatisticsSubscription, OrderDbContext, OrderStatisticsProjector>(
+            mode: SubscriptionMode.Async)
 
-    public async Task Handle(EventContext<OrderCreated> ctx)
-    {
-        var order = new Order
-        {
-            Id = ctx.Event.OrderId,
-            CustomerId = ctx.Event.CustomerId,
-            Lines = ctx.Event.Lines.Select(l => new OrderLine
-            {
-                ProductId = l.ProductId,
-                Quantity = l.Quantity
-            }).ToList(),
-            GlobalVersion = ctx.GlobalPosition
-        };
-
-        // Check idempotency manually
-        var existing = await _context.Orders.FindAsync(ctx.Event.OrderId);
-        if (existing != null && existing.GlobalVersion >= ctx.GlobalPosition)
-            return; // Already processed
-
-        _context.Orders.Add(order);
-        await _context.SaveChangesAsync();
-    }
-}
+        // Customer summary (async)
+        .AddEfCoreProjection<CustomerSummarySubscription, OrderDbContext, CustomerSummaryProjector>(
+            mode: SubscriptionMode.Async)
+    ));
 ```
+
+Each projection automatically gets its own repository with the correct types inferred!
+
+## Key Benefits Summary
+
+✅ **Simplified API**: 3 type parameters instead of 7
+✅ **Type Inference**: Automatic extraction of TKey and TState
+✅ **Easy Testing**: Swap `AddEfCoreProjection` ↔ `AddInMemoryProjection`
+✅ **Automatic Idempotency**: Via `IVersionedProjection.GlobalVersion`
+✅ **Flexible**: Use all-in-one or manual registration
+✅ **Multiple Projections**: Register many projections with minimal code
 
 ## See Also
 
-- [EF_CORE_INTEGRATION.md](../../../examples/EF_CORE_INTEGRATION.md) - Complete guide to EF Core projections
 - [Alberto.Projections.InMemory](../Alberto.Projections.InMemory/) - In-memory implementation for testing
+- [Alberto.EventStore](../../EventStore/Alberto.EventStore/) - Core event store library
+- [Example Application](../../Example/) - Complete working example

@@ -22,11 +22,49 @@ namespace Alberto.EventStore.Subscriptions.Channel;
 /// <param name="Mode">The subscription mode for this handler</param>
 internal record HandlerModeRegistration(Type HandlerType, SubscriptionMode Mode);
 
+public interface IChannelSubscriptionsBuilder
+{
+    IServiceCollection Services { get; }
+
+    /// <summary>
+    /// Adds a projection subscription with batching support.
+    /// Projections are processed according to their subscription mode:
+    /// - Sync: Immediate flush after each event (strong consistency)
+    /// - Async: Batched using MaxBatchSize and MaxBatchTime thresholds
+    /// </summary>
+    /// <typeparam name="TSubscription">The projection subscription type</typeparam>
+    /// <typeparam name="TKey">The projection key type</typeparam>
+    /// <typeparam name="TState">The projection state type</typeparam>
+    /// <param name="mode">Subscription mode (Sync for strong consistency, Async for batching). Default: Async</param>
+    /// <param name="configureBatching">Optional configuration for batching behavior</param>
+    /// <returns>The builder for chaining</returns>
+    /// <example>
+    /// <code>
+    /// channel.AddProjection&lt;OrderProjectionSubscription, Guid, Order&gt;(
+    ///     mode: SubscriptionMode.Sync)
+    ///
+    /// channel.AddProjection&lt;OrderStatsSubscription, string, OrderStats&gt;(
+    ///     mode: SubscriptionMode.Async,
+    ///     configureBatching: opts =>
+    ///     {
+    ///         opts.MaxBatchSize = 50;
+    ///         opts.MaxBatchTime = TimeSpan.FromMilliseconds(200);
+    ///     })
+    /// </code>
+    /// </example>
+    IChannelSubscriptionsBuilder AddProjection<TSubscription, TKey, TState>(
+        SubscriptionMode mode = SubscriptionMode.Async,
+        Action<ProjectionBatchingOptions>? configureBatching = null)
+        where TSubscription : class, IProjectionSubscription, IEventHandler
+        where TKey : notnull
+        where TState : new();
+}
+
 /// <summary>
 /// Builder for configuring event subscriptions supporting Sync (channel-based), Async (polling-based), and Hybrid modes
 /// </summary>
 /// <typeparam name="TEventStore">The EventStore factory type</typeparam>
-public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventStoreFactory
+public class ChannelSubscriptionsBuilder<TEventStore> : IChannelSubscriptionsBuilder where TEventStore : EventStoreFactory
 {
     private readonly ChannelOptions _channelOptions = new();
     private readonly List<Type> _filterTypes = [];
@@ -42,14 +80,69 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
     }
 
     /// <summary>
+    /// Gets the module key for keyed service registration
+    /// </summary>
+    public string ModuleKey => _moduleKey;
+
+    /// <summary>
     /// Gets the service collection for advanced extension scenarios
     /// </summary>
     public IServiceCollection Services => _services;
 
     /// <summary>
-    /// Gets the module key for keyed service registration
+    /// Adds a projection subscription with batching support.
+    /// Projections are processed according to their subscription mode:
+    /// - Sync: Immediate flush after each event (strong consistency)
+    /// - Async: Batched using MaxBatchSize and MaxBatchTime thresholds
     /// </summary>
-    public string ModuleKey => _moduleKey;
+    /// <typeparam name="TSubscription">The projection subscription type</typeparam>
+    /// <typeparam name="TKey">The projection key type</typeparam>
+    /// <typeparam name="TState">The projection state type</typeparam>
+    /// <param name="mode">Subscription mode (Sync for strong consistency, Async for batching). Default: Async</param>
+    /// <param name="configureBatching">Optional configuration for batching behavior</param>
+    /// <returns>The builder for chaining</returns>
+    /// <example>
+    /// <code>
+    /// channel.AddProjection&lt;OrderProjectionSubscription, Guid, Order&gt;(
+    ///     mode: SubscriptionMode.Sync)
+    ///
+    /// channel.AddProjection&lt;OrderStatsSubscription, string, OrderStats&gt;(
+    ///     mode: SubscriptionMode.Async,
+    ///     configureBatching: opts =>
+    ///     {
+    ///         opts.MaxBatchSize = 50;
+    ///         opts.MaxBatchTime = TimeSpan.FromMilliseconds(200);
+    ///     })
+    /// </code>
+    /// </example>
+    public IChannelSubscriptionsBuilder AddProjection<TSubscription, TKey, TState>(
+        SubscriptionMode mode = SubscriptionMode.Async,
+        Action<ProjectionBatchingOptions>? configureBatching = null)
+        where TSubscription : class, IProjectionSubscription, IEventHandler
+        where TKey : notnull
+        where TState : new()
+    {
+        // Configure batching options
+        var batchingOptions = new ProjectionBatchingOptions();
+        configureBatching?.Invoke(batchingOptions);
+
+        // Register using existing AddHandler infrastructure
+        _handlers.Add(new HandlerModeRegistration(typeof(TSubscription), mode));
+
+        // Register the subscription handler
+        _services.AddKeyedScoped<TSubscription>(_moduleKey);
+
+        // Register as IEventHandler for discovery
+        _services.AddKeyedScoped<IEventHandler>(_moduleKey, (sp, _) =>
+            sp.GetRequiredKeyedService<TSubscription>(_moduleKey));
+
+        // Store projection-specific configuration in a way EventRouter can access it
+        // We'll use a keyed singleton to store batching options per subscription type
+        var optionsKey = $"{_moduleKey}:{typeof(TSubscription).FullName}:ProjectionBatchingOptions";
+        _services.AddKeyedSingleton(optionsKey, batchingOptions);
+
+        return this;
+    }
 
     /// <summary>
     /// Configures options for Sync and Hybrid subscription modes (channel-based event delivery)
@@ -428,8 +521,7 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
 
                 router.RegisterHandler(new HandlerRegistration
                 {
-                    SubscriptionId = subscriptionId, HandlerType = handlerReg.HandlerType,
-                    SupportedEventTypes = supportedEventTypes, Logger = handlerLogger
+                    SubscriptionId = subscriptionId, HandlerType = handlerReg.HandlerType, SupportedEventTypes = supportedEventTypes, Logger = handlerLogger
                 });
             }
 
@@ -498,61 +590,6 @@ public class ChannelSubscriptionsBuilder<TEventStore> where TEventStore : EventS
         }
 
         return allEventTypes.Count > 0 ? allEventTypes : null;
-    }
-
-    /// <summary>
-    /// Adds a projection subscription with batching support.
-    /// Projections are processed according to their subscription mode:
-    /// - Sync: Immediate flush after each event (strong consistency)
-    /// - Async: Batched using MaxBatchSize and MaxBatchTime thresholds
-    /// </summary>
-    /// <typeparam name="TSubscription">The projection subscription type</typeparam>
-    /// <typeparam name="TKey">The projection key type</typeparam>
-    /// <typeparam name="TState">The projection state type</typeparam>
-    /// <param name="mode">Subscription mode (Sync for strong consistency, Async for batching). Default: Async</param>
-    /// <param name="configureBatching">Optional configuration for batching behavior</param>
-    /// <returns>The builder for chaining</returns>
-    /// <example>
-    /// <code>
-    /// channel.AddProjection&lt;OrderProjectionSubscription, Guid, Order&gt;(
-    ///     mode: SubscriptionMode.Sync)
-    ///
-    /// channel.AddProjection&lt;OrderStatsSubscription, string, OrderStats&gt;(
-    ///     mode: SubscriptionMode.Async,
-    ///     configureBatching: opts =>
-    ///     {
-    ///         opts.MaxBatchSize = 50;
-    ///         opts.MaxBatchTime = TimeSpan.FromMilliseconds(200);
-    ///     })
-    /// </code>
-    /// </example>
-    public ChannelSubscriptionsBuilder<TEventStore> AddProjection<TSubscription, TKey, TState>(
-        SubscriptionMode mode = SubscriptionMode.Async,
-        Action<ProjectionBatchingOptions>? configureBatching = null)
-        where TSubscription : class, IProjectionSubscription, IEventHandler
-        where TKey : notnull
-        where TState : new()
-    {
-        // Configure batching options
-        var batchingOptions = new ProjectionBatchingOptions();
-        configureBatching?.Invoke(batchingOptions);
-
-        // Register using existing AddHandler infrastructure
-        _handlers.Add(new HandlerModeRegistration(typeof(TSubscription), mode));
-
-        // Register the subscription handler
-        _services.AddKeyedScoped<TSubscription>(_moduleKey);
-
-        // Register as IEventHandler for discovery
-        _services.AddKeyedScoped<IEventHandler>(_moduleKey, (sp, _) =>
-            sp.GetRequiredKeyedService<TSubscription>(_moduleKey));
-
-        // Store projection-specific configuration in a way EventRouter can access it
-        // We'll use a keyed singleton to store batching options per subscription type
-        var optionsKey = $"{_moduleKey}:{typeof(TSubscription).FullName}:ProjectionBatchingOptions";
-        _services.AddKeyedSingleton(optionsKey, batchingOptions);
-
-        return this;
     }
 }
 

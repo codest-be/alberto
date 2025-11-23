@@ -43,8 +43,7 @@ public static class PaymentsModule
                         options.RetryDelayMs = 250;
                         options.MaxPageSize = 100;
                     })
-                    .AddInMemoryProjection<PaymentEventStore, PaymentProjectionSubscription, Guid, Payment,
-                        PaymentProjector>(
+                    .AddInMemoryProjection<PaymentProjectionSubscription, PaymentProjector, PaymentEventStore>(
                         mode: SubscriptionMode.Hybrid)
                 )
                 .WithCQRS(cqrs => cqrs

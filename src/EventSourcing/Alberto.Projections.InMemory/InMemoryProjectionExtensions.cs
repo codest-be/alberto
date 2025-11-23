@@ -1,5 +1,6 @@
-using Alberto.EventSourcing.Projectors;
+using Alberto.EventSourcing.Projections;
 using Alberto.EventStore;
+using Alberto.EventStore.Subscriptions.Batching;
 using Alberto.EventStore.Subscriptions.Channel;
 using Alberto.EventStore.Subscriptions.Subscriptions;
 
@@ -14,29 +15,63 @@ public static class InMemoryProjectionExtensions
     /// Adds a projection subscription with in-memory repository backend.
     /// Combines repository registration and subscription setup in a single call.
     /// Ideal for testing and development scenarios.
+    /// TKey and TState are automatically inferred from the IProjectionSubscription&lt;TKey, TState&gt; interface.
     /// </summary>
-    /// <typeparam name="TEventStore">The EventStore factory type</typeparam>
-    /// <typeparam name="TSubscription">The subscription handler class</typeparam>
-    /// <typeparam name="TKey">The projection key type</typeparam>
-    /// <typeparam name="TState">The projection state type</typeparam>
+    /// <typeparam name="TSubscription">The subscription handler class implementing IProjectionSubscription&lt;TKey, TState&gt;</typeparam>
     /// <typeparam name="TProjector">The projector implementation</typeparam>
+    /// <typeparam name="TEventStore">The EventStore factory type (inferred from builder)</typeparam>
     /// <param name="builder">The channel subscriptions builder</param>
     /// <param name="mode">Subscription mode for this projection (Sync, Async, or Hybrid). Default: Sync</param>
+    /// <param name="configureBatching">Optional configuration for batching behavior</param>
     /// <returns>The builder for chaining</returns>
-    public static ChannelSubscriptionsBuilder<TEventStore> AddInMemoryProjection<TEventStore, TSubscription, TKey,
-        TState, TProjector>(
+    /// <example>
+    /// <code>
+    /// services.AddModule&lt;OrderEventStore&gt;("orders", module => module
+    ///     .WithInMemory()
+    ///     .WithChannelSubscriptions(channel => channel
+    ///         .AddInMemoryProjection&lt;OrderProjectionSubscription, OrderProjector&gt;(
+    ///             mode: SubscriptionMode.Sync)));
+    /// </code>
+    /// </example>
+    public static ChannelSubscriptionsBuilder<TEventStore> AddInMemoryProjection<TSubscription, TProjector, TEventStore>(
         this ChannelSubscriptionsBuilder<TEventStore> builder,
-        SubscriptionMode mode = SubscriptionMode.Sync)
-        where TEventStore : EventStoreFactory
+        SubscriptionMode mode = SubscriptionMode.Sync,
+        Action<ProjectionBatchingOptions>? configureBatching = null)
         where TSubscription : class, IProjectionSubscription, IEventHandler
-        where TKey : notnull
-        where TState : new()
-        where TProjector : class, IProjector<TState>
+        where TProjector : class
+        where TEventStore : EventStoreFactory
     {
-        // Register in-memory repository
-        builder.Services.AddInMemoryProjectionRepository<TKey, TState, TProjector>();
+        // Find IProjectionSubscription<TKey, TState> interface on TSubscription
+        var projectionInterface = typeof(TSubscription)
+            .GetInterfaces()
+            .FirstOrDefault(i => i.IsGenericType &&
+                                 i.GetGenericTypeDefinition() == typeof(IProjectionSubscription<,>));
 
-        // Register projection subscription
-        return builder.AddProjection<TSubscription, TKey, TState>(mode);
+        if (projectionInterface == null)
+        {
+            throw new InvalidOperationException(
+                $"Type {typeof(TSubscription).Name} must implement IProjectionSubscription<TKey, TState>");
+        }
+
+        // Extract TKey and TState from the interface
+        var genericArgs = projectionInterface.GetGenericArguments();
+        var keyType = genericArgs[0];
+        var stateType = genericArgs[1];
+
+        // Register in-memory repository using reflection
+        var repoMethod = typeof(InMemoryProjectionRepositoryExtensions)
+            .GetMethod(nameof(InMemoryProjectionRepositoryExtensions.AddInMemoryProjectionRepository))!
+            .MakeGenericMethod(keyType, stateType, typeof(TProjector));
+
+        repoMethod.Invoke(null, new object[] { builder.Services });
+
+        // Register projection subscription using reflection
+        var addProjectionMethod = typeof(ChannelSubscriptionsBuilder<TEventStore>)
+            .GetMethod(nameof(ChannelSubscriptionsBuilder<TEventStore>.AddProjection))!
+            .MakeGenericMethod(typeof(TSubscription), keyType, stateType);
+
+        return (ChannelSubscriptionsBuilder<TEventStore>)addProjectionMethod.Invoke(
+            builder,
+            new object?[] { mode, configureBatching })!;
     }
 }
