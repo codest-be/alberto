@@ -9,12 +9,12 @@ namespace Alberto.EventStore.Metadata;
 /// </summary>
 public class CorrelationIdEnricher : IEventMetadataEnricher
 {
-    private static readonly AsyncLocal<string?> _correlationId = new();
+    private static readonly AsyncLocal<string?> CorrelationId = new();
 
     public void Enrich(IDictionary<string, string> metadata, IEventToPersist @event)
     {
         // Try to get correlation ID from async local context
-        var correlationId = _correlationId.Value;
+        var correlationId = CorrelationId.Value;
 
         // If not set, try to extract from current Activity (OpenTelemetry)
         if (string.IsNullOrEmpty(correlationId))
@@ -31,7 +31,7 @@ public class CorrelationIdEnricher : IEventMetadataEnricher
         if (string.IsNullOrEmpty(correlationId))
         {
             correlationId = Guid.NewGuid().ToString();
-            _correlationId.Value = correlationId;
+            CorrelationId.Value = correlationId;
         }
 
         metadata["correlation_id"] = correlationId;
@@ -43,19 +43,19 @@ public class CorrelationIdEnricher : IEventMetadataEnricher
     /// </summary>
     public static void SetCorrelationId(string correlationId)
     {
-        _correlationId.Value = correlationId;
+        CorrelationId.Value = correlationId;
     }
 
     /// <summary>
     /// Gets the current correlation ID, or null if not set.
     /// </summary>
-    public static string? GetCorrelationId() => _correlationId.Value;
+    public static string? GetCorrelationId() => CorrelationId.Value;
 
     /// <summary>
     /// Clears the correlation ID for the current async context.
     /// </summary>
     public static void ClearCorrelationId()
     {
-        _correlationId.Value = null;
+        CorrelationId.Value = null;
     }
 }

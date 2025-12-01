@@ -29,12 +29,17 @@ internal sealed class CommandScope(Activity activity) : ICommandScope
         return this;
     }
 
-    public ICommandScope WithValidationFailure(IEnumerable<string> problemCodes)
+    public IValidatorScope WithValidator(Type handlerType)
     {
-        activity.SetTag(Tags.ValidationFailed, true);
-        activity.SetTag(Tags.Outcome, "validation_failure");
-        activity.SetTag(Tags.ProblemCodes, string.Join(", ", problemCodes));
-        return this;
+        Activity? activity =
+            AlbertoCQRSActivitySource.Source.CreateActivity(ActivityName, ActivityKind.Internal);
+
+        if (activity is null)
+            return EmptyScope.Instance;
+
+        activity.Start();
+
+        return new ValidatorScope(activity).WithValidatorInfo(handlerType.Assembly.GetType(), handlerType.Assembly.GetName().Name ?? string.Empty);
     }
 
     public ICommandScope WithError(string errorMessage, IEnumerable<string>? problemCodes = null)
@@ -50,6 +55,14 @@ internal sealed class CommandScope(Activity activity) : ICommandScope
         return this;
     }
 
+    public ICommandScope WithValidationFailure(IEnumerable<string> problemCodes)
+    {
+        activity.SetTag(Tags.ValidationFailed, true);
+        activity.SetTag(Tags.Outcome, "validation_failure");
+        activity.SetTag(Tags.ProblemCodes, string.Join(", ", problemCodes));
+        return this;
+    }
+
     public CommandScope WithCommandInfo(Type commandType, string commandName, string? moduleKey, bool hasReturnValue)
     {
         activity.DisplayName = $"Command: {commandName}";
@@ -59,6 +72,37 @@ internal sealed class CommandScope(Activity activity) : ICommandScope
 
         if (!string.IsNullOrEmpty(moduleKey))
             activity.SetTag(Tags.ModuleKey, moduleKey);
+
+        return this;
+    }
+}
+
+public class ValidatorScope(Activity activity) : IValidatorScope
+{
+    private bool _disposed;
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        activity.Dispose();
+        _disposed = true;
+    }
+
+    public IValidatorScope WithValidationFailure(IEnumerable<string> problemCodes)
+    {
+        activity.SetTag(Tags.ValidationFailed, true);
+        activity.SetTag(Tags.Outcome, "validation_failure");
+        activity.SetTag(Tags.ProblemCodes, string.Join(", ", problemCodes));
+        return this;
+    }
+
+    public ValidatorScope WithValidatorInfo(Type validatorType, string validatorName)
+    {
+        activity.DisplayName = $"Validator: {validatorName}";
+        activity.SetTag(Tags.ValidatorType, validatorType.FullName ?? validatorType.Name);
+        activity.SetTag(Tags.ValidatorName, validatorName);
 
         return this;
     }

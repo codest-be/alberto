@@ -27,6 +27,9 @@ public static class OrdersModule
                     options.ConnectionString =
                         $"{baseConnectionString};Minimum Pool Size=5;Maximum Pool Size=30;Connection Idle Lifetime=300;Connection Pruning Interval=10";
                     options.Schema = "orders";
+
+                    // Store migrations within the Orders module directory
+                    options.MigrationsDirectory = "Modules/Orders/Migrations";
                 })
                 .WithMultiTenancy<MultiTenantContext>()
                 .WithChannelSubscriptions(channel => channel

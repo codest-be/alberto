@@ -1,7 +1,7 @@
 using System.Reflection;
 using Alberto.CQRS.Commands;
 using Alberto.CQRS.Queries;
-using FluentValidation;
+using Alberto.CQRS.Validators;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Alberto.CQRS.Registration;
@@ -42,15 +42,34 @@ public sealed class CQRSBuilder
         {
             RegisterCommandHandlers(assembly);
             RegisterQueryHandlers(assembly);
-
-            // Register FluentValidation validators
-            _services.AddValidatorsFromAssembly(assembly, includeInternalTypes: true);
+            RegisterValidators(assembly);
         }
 
         _services.AddScoped<CommandExecutor>();
         _services.AddScoped<QueryExecutor>();
 
         return _services;
+    }
+
+    private void RegisterValidators(Assembly assembly)
+    {
+        var handlerTypes = assembly.GetTypes()
+            .Where(t => t is { IsClass: true, IsAbstract: false })
+            .Where(t => t.GetInterfaces().Any(i =>
+                i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IValidator<>)))
+            .ToList();
+
+        foreach (var handlerType in handlerTypes)
+        {
+            var interfaces = handlerType.GetInterfaces()
+                .Where(i => i.IsGenericType && (i.GetGenericTypeDefinition() == typeof(IValidator<>)))
+                .ToList();
+
+            foreach (var @interface in interfaces)
+            {
+                _services.AddScoped(@interface, handlerType);
+            }
+        }
     }
 
     private void RegisterCommandHandlers(Assembly assembly)

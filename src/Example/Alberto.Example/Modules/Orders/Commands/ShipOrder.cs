@@ -6,20 +6,31 @@ using Alberto.EventStore;
 using Alberto.EventStore.Events;
 using Alberto.Example.Modules.Orders.Enums;
 using Alberto.Example.Modules.Orders.Events;
-using FluentValidation;
 
 namespace Alberto.Example.Modules.Orders.Commands;
 
 public sealed record ShipOrderCommand(Guid OrderId, string TrackingNumber) : ICommand;
 
-public sealed class ShipOrderValidator : AbstractValidator<ShipOrderCommand>
+public sealed class ShipOrderHandler(OrderEventStore eventStore)
+    : ICommandHandler<ShipOrderCommand>
 {
-    public ShipOrderValidator()
+    public async Task<Result> Handle(ShipOrderCommand command, CancellationToken cancellationToken = default)
     {
-        RuleFor(x => x.TrackingNumber)
-            .NotEmpty()
-            .WithErrorCode("INVALID_TRACKING_NUMBER")
-            .WithMessage("Tracking number is required");
+        var query = new StreamQuery([new EventTag(Tags.Order, command.OrderId.ToString())])
+            .WithEventType<OrderCreated>()
+            .WithEventType<OrderPlaced>()
+            .WithEventType<OrderShipped>()
+            .WithEventType<OrderCancelled>();
+
+        var decision = await eventStore.Decide(
+            new ShipOrderProjector(),
+            query,
+            state => ShipOrderDecision.Decide(state, command.OrderId, command.TrackingNumber),
+            cancellationToken);
+
+        return decision.IsError
+            ? Result.Fail(decision.Problems)
+            : Result.Success();
     }
 }
 
@@ -29,28 +40,7 @@ internal sealed record ShipOrderState
     public OrderStatus Status { get; init; } = OrderStatus.Draft;
 }
 
-public sealed class ShipOrderHandler(OrderEventStore eventStore)
-    : ICommandHandler<ShipOrderCommand, bool>
-{
-    public async Task<Result<bool>> Handle(ShipOrderCommand command, CancellationToken cancellationToken = default)
-    {
-        var decider = new ShipOrderDecider();
-        var query = ShipOrderDecider.GetQuery(command.OrderId);
-
-        var (events, lastEventId) = await eventStore.Load(query, cancellationToken);
-        var state = decider.Evolve(events);
-        var decision = decider.Decide(state, command.OrderId, command.TrackingNumber);
-
-        if (decision.IsError)
-            return Result<bool>.Fail(decision.Problems.First());
-
-        await eventStore.Persist(query, lastEventId, decision.Events, cancellationToken);
-
-        return Result<bool>.Success(true);
-    }
-}
-
-internal sealed class ShipOrderDecider : IProjector<ShipOrderState>
+internal sealed class ShipOrderProjector : IProjector<ShipOrderState>
 {
     public ShipOrderState Apply(ShipOrderState state, object @event)
     {
@@ -63,17 +53,11 @@ internal sealed class ShipOrderDecider : IProjector<ShipOrderState>
             _ => state
         };
     }
+}
 
-    public static StreamQuery GetQuery(Guid orderId)
-    {
-        return new StreamQuery([new EventTag(Tags.Order, orderId.ToString())])
-            .WithEventType<OrderCreated>()
-            .WithEventType<OrderPlaced>()
-            .WithEventType<OrderShipped>()
-            .WithEventType<OrderCancelled>();
-    }
-
-    public Decision Decide(ShipOrderState state, Guid orderId, string trackingNumber)
+internal static class ShipOrderDecision
+{
+    public static Decision Decide(ShipOrderState state, Guid orderId, string trackingNumber)
     {
         if (!state.Exists)
             return Decision.Fail(OrderProblems.OrderNotFound(orderId));

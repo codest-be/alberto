@@ -16,7 +16,7 @@ public static class CancelOrderEndpoint
                 CancellationToken ct) =>
             {
                 var command = new CancelOrderCommand(orderId, request.Reason);
-                var result = await executor.Execute<CancelOrderCommand, bool>(command, ct);
+                var result = await executor.Execute(command, ct);
 
                 return result.ToHttpResult();
             })

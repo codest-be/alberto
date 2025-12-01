@@ -13,11 +13,11 @@ public class PlaceOrderShould
     public void Given_OrderCreated_EmitOrderPlaced()
     {
         var orderId = Guid.NewGuid();
-        var decider = new PlaceOrderDecider();
+        var projector = new PlaceOrderProjector();
 
-        new Specification<PlaceOrderState>(decider)
+        new Specification<PlaceOrderState>(projector)
             .Given(new OrderCreated(orderId, 100m, "customer-123"))
-            .When(state => decider.Decide(state, orderId))
+            .When(state => PlaceOrderDecision.Decide(state, orderId))
             .ThenEventOfType<OrderPlaced>(e =>
                 e.OrderId == orderId && e.Amount == 100m && e.CustomerId == "customer-123");
     }
@@ -26,10 +26,10 @@ public class PlaceOrderShould
     public void Given_NoEvents_FailWithOrderNotFound()
     {
         var orderId = Guid.NewGuid();
-        var decider = new PlaceOrderDecider();
+        var projector = new PlaceOrderProjector();
 
-        new Specification<PlaceOrderState>(decider)
-            .When(state => decider.Decide(state, orderId))
+        new Specification<PlaceOrderState>(projector)
+            .When(state => PlaceOrderDecision.Decide(state, orderId))
             .ThenFailWith(OrderProblems.OrderNotFound(orderId));
     }
 
@@ -37,13 +37,13 @@ public class PlaceOrderShould
     public void Given_OrderAlreadyPlaced_FailWithInvalidOrderStatus()
     {
         var orderId = Guid.NewGuid();
-        var decider = new PlaceOrderDecider();
+        var projector = new PlaceOrderProjector();
 
-        new Specification<PlaceOrderState>(decider)
+        new Specification<PlaceOrderState>(projector)
             .Given(
                 new OrderCreated(orderId, 100m, "customer-123"),
                 new OrderPlaced(orderId, 100m, "customer-123"))
-            .When(state => decider.Decide(state, orderId))
+            .When(state => PlaceOrderDecision.Decide(state, orderId))
             .ThenFailWith(OrderProblems.InvalidStatusForPlacing(OrderStatus.Placed));
     }
 
@@ -51,13 +51,13 @@ public class PlaceOrderShould
     public void Given_OrderCancelled_FailWithInvalidOrderStatus()
     {
         var orderId = Guid.NewGuid();
-        var decider = new PlaceOrderDecider();
+        var projector = new PlaceOrderProjector();
 
-        new Specification<PlaceOrderState>(decider)
+        new Specification<PlaceOrderState>(projector)
             .Given(
                 new OrderCreated(orderId, 100m, "customer-123"),
                 new OrderCancelled(orderId, "Customer request"))
-            .When(state => decider.Decide(state, orderId))
+            .When(state => PlaceOrderDecision.Decide(state, orderId))
             .ThenFailWith(OrderProblems.InvalidStatusForPlacing(OrderStatus.Cancelled));
     }
 }

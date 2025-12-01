@@ -17,12 +17,20 @@ public interface ICommandScope : IDisposable
     ICommandScope WithOutcome(string outcome);
 
     /// <summary>
-    /// Records a validation failure with problem codes.
+    /// Records the handler type that validated this command.
     /// </summary>
-    ICommandScope WithValidationFailure(IEnumerable<string> problemCodes);
+    IValidatorScope WithValidator(Type handlerType);
 
     /// <summary>
     /// Records an error with optional problem codes.
     /// </summary>
     ICommandScope WithError(string errorMessage, IEnumerable<string>? problemCodes = null);
+}
+
+public interface IValidatorScope : IDisposable
+{
+    /// <summary>
+    /// Records a validation failure with problem codes.
+    /// </summary>
+    IValidatorScope WithValidationFailure(IEnumerable<string> problemCodes);
 }

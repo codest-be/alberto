@@ -14,13 +14,13 @@ public class ShipOrderShould
     {
         var orderId = Guid.NewGuid();
         var trackingNumber = "TRACK-12345";
-        var decider = new ShipOrderDecider();
+        var projector = new ShipOrderProjector();
 
-        new Specification<ShipOrderState>(decider)
+        new Specification<ShipOrderState>(projector)
             .Given(
                 new OrderCreated(orderId, 100m, "customer-123"),
                 new OrderPlaced(orderId, 100m, "customer-123"))
-            .When(state => decider.Decide(state, orderId, trackingNumber))
+            .When(state => ShipOrderDecision.Decide(state, orderId, trackingNumber))
             .ThenEventOfType<OrderShipped>(e => e.OrderId == orderId && e.TrackingNumber == trackingNumber);
     }
 
@@ -28,10 +28,10 @@ public class ShipOrderShould
     public void Given_NoEvents_FailWithOrderNotFound()
     {
         var orderId = Guid.NewGuid();
-        var decider = new ShipOrderDecider();
+        var projector = new ShipOrderProjector();
 
-        new Specification<ShipOrderState>(decider)
-            .When(state => decider.Decide(state, orderId, "TRACK-123"))
+        new Specification<ShipOrderState>(projector)
+            .When(state => ShipOrderDecision.Decide(state, orderId, "TRACK-123"))
             .ThenFailWith(OrderProblems.OrderNotFound(orderId));
     }
 
@@ -39,11 +39,11 @@ public class ShipOrderShould
     public void Given_OrderCreatedNotPlaced_FailWithInvalidOrderStatus()
     {
         var orderId = Guid.NewGuid();
-        var decider = new ShipOrderDecider();
+        var projector = new ShipOrderProjector();
 
-        new Specification<ShipOrderState>(decider)
+        new Specification<ShipOrderState>(projector)
             .Given(new OrderCreated(orderId, 100m, "customer-123"))
-            .When(state => decider.Decide(state, orderId, "TRACK-123"))
+            .When(state => ShipOrderDecision.Decide(state, orderId, "TRACK-123"))
             .ThenFailWith(OrderProblems.InvalidStatusForShipping(OrderStatus.Created));
     }
 
@@ -51,13 +51,13 @@ public class ShipOrderShould
     public void Given_OrderCancelled_FailWithInvalidOrderStatus()
     {
         var orderId = Guid.NewGuid();
-        var decider = new ShipOrderDecider();
+        var projector = new ShipOrderProjector();
 
-        new Specification<ShipOrderState>(decider)
+        new Specification<ShipOrderState>(projector)
             .Given(
                 new OrderCreated(orderId, 100m, "customer-123"),
                 new OrderCancelled(orderId, "Customer request"))
-            .When(state => decider.Decide(state, orderId, "TRACK-123"))
+            .When(state => ShipOrderDecision.Decide(state, orderId, "TRACK-123"))
             .ThenFailWith(OrderProblems.InvalidStatusForShipping(OrderStatus.Cancelled));
     }
 
@@ -65,14 +65,14 @@ public class ShipOrderShould
     public void Given_OrderAlreadyShipped_FailWithInvalidOrderStatus()
     {
         var orderId = Guid.NewGuid();
-        var decider = new ShipOrderDecider();
+        var projector = new ShipOrderProjector();
 
-        new Specification<ShipOrderState>(decider)
+        new Specification<ShipOrderState>(projector)
             .Given(
                 new OrderCreated(orderId, 100m, "customer-123"),
                 new OrderPlaced(orderId, 100m, "customer-123"),
                 new OrderShipped(orderId, "TRACK-123"))
-            .When(state => decider.Decide(state, orderId, "TRACK-456"))
+            .When(state => ShipOrderDecision.Decide(state, orderId, "TRACK-456"))
             .ThenFailWith(OrderProblems.InvalidStatusForShipping(OrderStatus.Shipped));
     }
 }

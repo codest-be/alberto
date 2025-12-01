@@ -14,7 +14,7 @@ public static class ProcessPaymentEndpoint
                 CancellationToken ct) =>
             {
                 var command = new ProcessPaymentCommand(id);
-                var result = await executor.Execute<ProcessPaymentCommand, bool>(command, ct);
+                var result = await executor.Execute(command, ct);
 
                 return result.ToHttpResult();
             })

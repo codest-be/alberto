@@ -4,27 +4,10 @@ using Alberto.EventSourcing;
 using Alberto.EventStore;
 using Alberto.EventStore.Events;
 using Alberto.Example.Modules.Payments.Events;
-using FluentValidation;
 
 namespace Alberto.Example.Modules.Payments.Commands;
 
-public sealed record CreatePaymentCommand(Guid OrderId, decimal Amount) : ICommand;
-
-public sealed class CreatePaymentValidator : AbstractValidator<CreatePaymentCommand>
-{
-    public CreatePaymentValidator()
-    {
-        RuleFor(x => x.Amount)
-            .GreaterThan(0)
-            .WithErrorCode("INVALID_AMOUNT")
-            .WithMessage("Payment amount must be greater than zero");
-
-        RuleFor(x => x.OrderId)
-            .NotEmpty()
-            .WithErrorCode("INVALID_ORDER")
-            .WithMessage("Order ID is required");
-    }
-}
+public sealed record CreatePaymentCommand(Guid OrderId, decimal Amount) : ICommand<Guid>;
 
 public sealed class CreatePaymentHandler(PaymentEventStore eventStore)
     : ICommandHandler<CreatePaymentCommand, Guid>

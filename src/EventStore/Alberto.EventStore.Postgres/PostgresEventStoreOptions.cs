@@ -48,6 +48,13 @@ public class PostgresEventStoreOptions
     }
 
     /// <summary>
+    /// Directory for migration scripts. If null, defaults to "./Migrations".
+    /// Set this to place migrations within your module's project folder.
+    /// Example: "src/Example/Alberto.Example/Modules/Orders/Migrations"
+    /// </summary>
+    public string? MigrationsDirectory { get; set; }
+
+    /// <summary>
     /// Migration strategy for EventStore schema management.
     /// Default: AutoMigrationStrategy (runs migrations at startup - use only for development).
     /// For production, use NoMigrationStrategy or ScriptOnlyMigrationStrategy.

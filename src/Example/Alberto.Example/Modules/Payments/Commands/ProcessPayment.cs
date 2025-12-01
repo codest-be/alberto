@@ -12,9 +12,9 @@ namespace Alberto.Example.Modules.Payments.Commands;
 public sealed record ProcessPaymentCommand(Guid PaymentId) : ICommand;
 
 public sealed class ProcessPaymentHandler(PaymentEventStore eventStore)
-    : ICommandHandler<ProcessPaymentCommand, bool>
+    : ICommandHandler<ProcessPaymentCommand>
 {
-    public async Task<Result<bool>> Handle(ProcessPaymentCommand command, CancellationToken cancellationToken = default)
+    public async Task<Result> Handle(ProcessPaymentCommand command, CancellationToken cancellationToken = default)
     {
         var decider = new ProcessPaymentDecider();
         var query = ProcessPaymentDecider.GetQuery(command.PaymentId);
@@ -24,11 +24,11 @@ public sealed class ProcessPaymentHandler(PaymentEventStore eventStore)
         var decision = decider.Decide(state, command.PaymentId);
 
         if (decision.IsError)
-            return Result<bool>.Fail(decision.Problems.First());
+            return Result.Fail(decision.Problems.First());
 
         await eventStore.Persist(query, lastEventId, decision.Events, cancellationToken);
 
-        return Result<bool>.Success(true);
+        return Result.Success();
     }
 }
 

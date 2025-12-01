@@ -155,8 +155,9 @@ services.AddModule<OrderEventStore>("orders", module => module
     .WithPostgres(options => {
         options.ConnectionString = connectionString;
         options.Schema = "orders";
+        options.MigrationsDirectory = "Modules/Orders/Migrations"; // Optional: place in module folder
         // Default: AutoMigrationStrategy
-        // - Generates ./Migrations/EventStore/orders/*.sql on first run
+        // - Generates {MigrationsDirectory}/EventStore/orders/*.sql on first run
         // - Applies migrations automatically (idempotent)
     }));
 ```
@@ -164,15 +165,17 @@ services.AddModule<OrderEventStore>("orders", module => module
 **Production (NoMigrationStrategy):**
 
 ```csharp
+options.MigrationsDirectory = "Modules/Orders/Migrations";
 options.MigrationStrategy = new NoMigrationStrategy();
 // Deploy migrations via CI/CD pipeline:
-// psql -f ./Migrations/EventStore/orders/001_InitialSchema.sql
+// psql -f Modules/Orders/Migrations/EventStore/orders/001_InitialSchema.sql
 ```
 
 **CI/CD (ScriptOnlyMigrationStrategy):**
 
 ```csharp
-options.MigrationStrategy = new ScriptOnlyMigrationStrategy("./Migrations");
+options.MigrationsDirectory = "Modules/Orders/Migrations";
+options.MigrationStrategy = new ScriptOnlyMigrationStrategy();
 // Generates SQL scripts without executing
 // Review → commit → deploy via Flyway/Liquibase/DbUp
 ```
@@ -180,7 +183,9 @@ options.MigrationStrategy = new ScriptOnlyMigrationStrategy("./Migrations");
 **Key Features:**
 
 - Library ships embedded SQL templates with `{schema}` placeholder
-- Generated to `./Migrations/EventStore/{schema}/` for review and modification
+- Generated to `{MigrationsDirectory}/EventStore/{schema}/` (defaults to `./Migrations/EventStore/{schema}/`)
+- **Recommended:** Set `MigrationsDirectory` per module (e.g., `"Modules/Orders/Migrations"`) to keep migrations with
+  module code
 - Idempotent migrations track applied changes in `__alberto_schema_version`
 - Users manage **projection schemas** separately (EF Core, Dapper, etc.)
 - See `ARCHITECTURE_RECOMMENDATIONS.md` for detailed guide
@@ -282,6 +287,128 @@ Users can:
 - Use their own CQRS framework (MediatR, Wolverine) with EventSourcing
 
 See `EventSourcing/README.md` and `CQRS/README.md` for detailed usage.
+
+### Command Handler Pattern with Decide API
+
+Alberto provides a clean, consistent API for implementing command handlers using the **Decide** pattern for vertical
+slice architecture.
+
+#### Standard Command File Structure
+
+Each command file follows a 5-section structure where everything for one mutation stays together:
+
+```csharp
+// 1. Command (data contract)
+public sealed record PlaceOrderCommand(Guid OrderId) : ICommand;
+
+// 2. Handler (orchestration)
+public sealed class PlaceOrderHandler(OrderEventStore eventStore) : ICommandHandler<PlaceOrderCommand>
+{
+    public async Task<Result> Handle(PlaceOrderCommand command, CancellationToken ct)
+    {
+        var query = new StreamQuery([new EventTag(Tags.Order, command.OrderId.ToString())])
+            .WithEventType<OrderCreated>()
+            .WithEventType<OrderPlaced>()
+            .WithEventType<OrderCancelled>();
+
+        var decision = await eventStore.Decide(
+            new PlaceOrderProjector(),
+            query,
+            state => PlaceOrderDecision.Decide(state, command.OrderId),
+            ct);
+
+        return decision.IsError ? Result.Fail(decision.Problems) : Result.Success();
+    }
+}
+
+// 3. State (aggregate state projection)
+internal sealed record PlaceOrderState
+{
+    public bool Exists { get; init; }
+    public OrderStatus Status { get; init; } = OrderStatus.Draft;
+    public decimal Amount { get; init; }
+    public string CustomerId { get; init; } = string.Empty;
+}
+
+// 4. Projector (event projection logic)
+internal sealed class PlaceOrderProjector : IProjector<PlaceOrderState>
+{
+    public PlaceOrderState Apply(PlaceOrderState state, object @event)
+    {
+        return @event switch
+        {
+            OrderCreated e => state with { Exists = true, Status = OrderStatus.Created, Amount = e.Amount, CustomerId = e.CustomerId },
+            OrderPlaced => state with { Status = OrderStatus.Placed },
+            OrderCancelled => state with { Status = OrderStatus.Cancelled },
+            _ => state
+        };
+    }
+}
+
+// 5. Decision (pure business logic)
+internal static class PlaceOrderDecision
+{
+    public static Decision Decide(PlaceOrderState state, Guid orderId)
+    {
+        if (!state.Exists)
+            return Decision.Fail(OrderProblems.OrderNotFound(orderId));
+
+        if (state.Status != OrderStatus.Created)
+            return Decision.Fail(OrderProblems.InvalidStatusForPlacing(state.Status));
+
+        var orderPlaced = new OrderPlaced(orderId, state.Amount, state.CustomerId);
+        return Decision.Succeed(orderPlaced);
+    }
+}
+```
+
+#### Decide vs DecideNew
+
+**Use `Decide` for existing aggregates** (Load → Project → Decide → Persist):
+
+```csharp
+var query = new StreamQuery([new EventTag(Tags.Order, command.OrderId.ToString())])
+    .WithEventType<OrderCreated>()
+    .WithEventType<OrderPlaced>();
+
+var decision = await eventStore.Decide(
+    new PlaceOrderProjector(),  // Projects events into state
+    query,                       // Specifies which events to load
+    state => PlaceOrderDecision.Decide(state, command.OrderId),
+    ct);
+```
+
+**Use `DecideNew` for new aggregates** (Decide → Persist):
+
+```csharp
+var orderId = Guid.CreateVersion7();
+var query = new StreamQuery([new EventTag(Tags.Order, orderId.ToString())]);
+
+var decision = await eventStore.DecideNew(
+    query,  // No projector needed - no history to load
+    () => CreateOrderDecision.Decide(command.Amount, command.CustomerId, orderId),
+    ct);
+```
+
+#### Key Principles
+
+1. **Vertical Slice Cohesion**: Each command file is a self-contained vertical slice representing one aggregate mutation
+2. **Functional Decision Logic**: Decision methods are static, pure functions that are easy to test in isolation
+3. **Separation of Concerns**:
+  - **Projector**: Handles event projection (Apply method) to build current state
+  - **Query**: Specifies which events to load (tags, event types)
+  - **Decision**: Contains pure business logic without infrastructure dependencies
+4. **Explicit Dependencies**: Each piece (projector, query, decision) is explicit and independently testable
+5. **Consistent Structure**: All commands follow the same 5-section template for predictability
+
+#### Benefits
+
+- **Easy Testing**: Static decision methods can be tested without instantiating infrastructure
+- **Clear Dependencies**: Explicit projector + query parameters make data flow obvious
+- **No Magic**: No hidden coupling through interfaces - what you see is what you get
+- **Clear Boundaries**: Each mutation is its own aggregate with explicit state requirements
+- **Maintainability**: Changes to one command stay localized to one file
+- **Discoverability**: Consistent pattern makes code easy to navigate and understand
 
 ## Advanced Features
 
@@ -572,6 +699,235 @@ focus on happy paths and validation rules, avoiding duplication of business logi
 - **Advanced Query Tests**: `AdvancedQueryTests.cs` provides complex scenario testing
 - **Fixture-based Setup**: `PostgresTestFixture` manages database lifecycle and tenant isolation
 - **Component Test Pattern**: Feature-based tests using Arrange-Act-Assert with reusable step framework
+
+## Event Sourcing Patterns
+
+Alberto supports multiple patterns for structuring event-sourced commands. Choose the pattern that best fits your domain
+complexity.
+
+### Pattern 1: Vertical Slices (Default - Recommended for Most Commands)
+
+Each command file is a self-contained vertical slice with its own state, projector, and decision logic.
+
+**When to use:**
+
+- Simple commands with minimal state
+- Commands that don't share logic with other commands
+- Most CRUD-like operations
+- When maximum independence is desired
+
+**Example:**
+
+```csharp
+// PlaceOrder.cs - Everything in one file
+public sealed record PlaceOrderCommand(Guid OrderId) : ICommand;
+
+public sealed class PlaceOrderHandler(OrderEventStore eventStore) : ICommandHandler<PlaceOrderCommand>
+{
+    public async Task<Result> Handle(PlaceOrderCommand command, CancellationToken ct)
+    {
+        var query = new StreamQuery([new EventTag(Tags.Order, command.OrderId.ToString())])
+            .WithEventType<OrderCreated>()
+            .WithEventType<OrderPlaced>()
+            .WithEventType<OrderCancelled>();
+
+        var decision = await eventStore.Decide(
+            new PlaceOrderProjector(),  // Command-specific projector
+            query,
+            state => PlaceOrderDecision.Decide(state, command.OrderId),
+            ct);
+
+        return decision.IsError ? Result.Fail(decision.Problems) : Result.Success();
+    }
+}
+
+internal sealed record PlaceOrderState { /* minimal state */ }
+internal sealed class PlaceOrderProjector : IProjector<PlaceOrderState> { /* ... */ }
+internal static class PlaceOrderDecision { /* business logic */ }
+```
+
+**Benefits:**
+
+- ✅ Fully independent and cohesive
+- ✅ Easy to understand and maintain
+- ✅ Changes stay local to one file
+- ✅ No shared dependencies
+
+### Pattern 2: Real Aggregates (Optional - For Complex Domains)
+
+Multiple commands share a common aggregate state and projector, reducing duplication when commands operate on the same
+domain concept.
+
+**When to use:**
+
+- Complex aggregates with many operations
+- Multiple commands that share significant state
+- When you want a single source of truth for aggregate logic
+- Traditional DDD-style aggregates (but functional, not OOP)
+
+**Example:**
+
+```csharp
+// OrderAggregate.cs - Shared across commands
+public sealed record OrderState
+{
+    public bool Exists { get; init; }
+    public OrderStatus Status { get; init; }
+    public decimal Amount { get; init; }
+    public string CustomerId { get; init; } = string.Empty;
+    public string? TrackingNumber { get; init; }
+}
+
+public sealed class OrderAggregateProjector : IAggregateProjector<OrderState>
+{
+    public OrderState Apply(OrderState state, object @event)
+    {
+        return @event switch
+        {
+            OrderCreated e => state with { Exists = true, Status = OrderStatus.Created, ... },
+            OrderPlaced => state with { Status = OrderStatus.Placed },
+            OrderShipped e => state with { Status = OrderStatus.Shipped, TrackingNumber = e.TrackingNumber },
+            OrderCancelled => state with { Status = OrderStatus.Cancelled },
+            _ => state
+        };
+    }
+
+    public StreamQuery GetQuery(string aggregateId)
+    {
+        return new StreamQuery([new EventTag(Tags.Order, aggregateId)])
+            .WithEventType<OrderCreated>()
+            .WithEventType<OrderPlaced>()
+            .WithEventType<OrderShipped>()
+            .WithEventType<OrderCancelled>();
+    }
+}
+
+// PlaceOrder.cs - Uses shared aggregate
+public sealed class PlaceOrderHandler(OrderEventStore eventStore) : ICommandHandler<PlaceOrderCommand>
+{
+    private static readonly OrderAggregateProjector Aggregate = new();
+
+    public async Task<Result> Handle(PlaceOrderCommand command, CancellationToken ct)
+    {
+        var decision = await eventStore.Decide(
+            Aggregate,  // Shared aggregate projector
+            command.OrderId.ToString(),
+            state => PlaceOrderDecision.Decide(state, command.OrderId),
+            ct);
+
+        return decision.IsError ? Result.Fail(decision.Problems) : Result.Success();
+    }
+}
+
+internal static class PlaceOrderDecision
+{
+    public static Decision Decide(OrderState state, Guid orderId) { /* ... */ }
+}
+```
+
+**Benefits:**
+
+- ✅ Single source of truth for aggregate state
+- ✅ Reduces duplication across commands
+- ✅ Still functional (not OOP classes)
+- ✅ Easier to maintain complex aggregates
+
+**Trade-offs:**
+
+- ⚠️ Shared dependency (commands coupled to aggregate)
+- ⚠️ More moving parts than vertical slices
+
+### Pattern 3: Sync Subscriptions (Optional - For Immediate Consistency)
+
+Use `SubscriptionMode.Sync` to execute projections immediately after event persistence, ensuring projections are updated
+before the command completes.
+
+**When to use:**
+
+- Critical read models that must be immediately consistent
+- Small-scale writes where synchronous updates are acceptable
+- User-facing operations where stale reads are unacceptable
+- When you want the command to fail if projection update fails
+
+**Configuration:**
+
+```csharp
+services.AddModule<OrderEventStore>("orders", module => module
+    .WithPostgres(options => { /* ... */ })
+    .WithChannelSubscriptions(channel => channel
+        .AddPostgresProjection<OrderEventStore, OrderProjection, Guid, Order, OrderProjector>(
+            mode: SubscriptionMode.Sync)));  // ← Sync mode for immediate execution
+```
+
+**Usage - No Special API Needed:**
+
+```csharp
+// Just use regular Decide - Sync subscriptions execute automatically!
+public sealed class PlaceOrderHandler(OrderEventStore eventStore) : ICommandHandler<PlaceOrderCommand>
+{
+    private static readonly OrderAggregateProjector Aggregate = new();
+
+    public async Task<Result> Handle(PlaceOrderCommand command, CancellationToken ct)
+    {
+        // Sync subscriptions execute inline automatically
+        var decision = await eventStore.Decide(
+            Aggregate,
+            command.OrderId.ToString(),
+            state => PlaceOrderDecision.Decide(state, command.OrderId),
+            ct);
+
+        return decision.IsError ? Result.Fail(decision.Problems) : Result.Success();
+        // Projection is already updated when this returns!
+    }
+}
+```
+
+**Benefits:**
+
+- ✅ Immediate consistency (no eventual consistency window)
+- ✅ Same API as async subscriptions (just configuration change)
+- ✅ Automatic execution (no manual callbacks)
+- ✅ Perfect for critical reads
+
+**Trade-offs:**
+
+- ⚠️ Slower than async subscriptions (blocks command)
+- ⚠️ Limited scalability for high-throughput scenarios
+- ⚠️ Command fails if projection fails
+
+**Subscription Modes Comparison:**
+
+| Mode       | Execution                      | Use Case                                           |
+|------------|--------------------------------|----------------------------------------------------|
+| **Sync**   | Inline with Decide/DecideNew   | Critical projections needing immediate consistency |
+| **Async**  | Background polling             | High-throughput, eventual consistency OK           |
+| **Hybrid** | Sync delivery + async catch-up | Balance of consistency and performance             |
+
+### Decision Guide: Which Pattern to Use?
+
+**Use Vertical Slices (Pattern 1) when:**
+
+- Building most commands in your system
+- Command has simple, focused logic
+- You want maximum independence
+- Default choice for new commands
+
+**Use Real Aggregates (Pattern 2) when:**
+
+- Multiple commands operate on the same complex state
+- You have a traditional DDD aggregate with many operations
+- Duplication across commands becomes painful
+- You want a single source of truth for aggregate logic
+
+**Use Sync Subscriptions (Pattern 3) when:**
+
+- Read model must be immediately consistent with events
+- User-facing operations where stale reads are unacceptable
+- Small-scale writes (not high-throughput scenarios)
+- You can accept synchronous performance impact
+
+**Patterns can coexist:** Use vertical slices for most commands, real aggregates for complex domains like Order/Payment,
+and Sync subscriptions for critical user-facing reads. Mix and match based on specific needs.
 
 ## CI/CD Pipelines
 

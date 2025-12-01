@@ -53,7 +53,12 @@ public sealed class MigrationHostedService(
 
                 _logger.LogInformation("Using migration strategy: {Strategy}", strategy.GetType().Name);
 
-                await strategy.EnsureSchemaAsync(schema, connectionString, cancellationToken);
+                if (options.MigrationsDirectory != null)
+                {
+                    _logger.LogInformation("Using migrations directory: {Directory}", options.MigrationsDirectory);
+                }
+
+                await strategy.EnsureSchemaAsync(schema, connectionString, options.MigrationsDirectory, cancellationToken);
             }
 
             _logger.LogInformation("EventStore schema migrations completed successfully");

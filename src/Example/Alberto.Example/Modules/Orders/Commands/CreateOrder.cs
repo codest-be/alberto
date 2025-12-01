@@ -4,51 +4,34 @@ using Alberto.EventSourcing;
 using Alberto.EventStore;
 using Alberto.EventStore.Events;
 using Alberto.Example.Modules.Orders.Events;
-using FluentValidation;
 
 namespace Alberto.Example.Modules.Orders.Commands;
 
-public sealed record CreateOrderCommand(decimal Amount, string CustomerId) : ICommand;
-
-public sealed class CreateOrderValidator : AbstractValidator<CreateOrderCommand>
-{
-    public CreateOrderValidator()
-    {
-        RuleFor(x => x.Amount)
-            .GreaterThan(0)
-            .WithErrorCode("INVALID_AMOUNT")
-            .WithMessage("Order amount must be greater than zero");
-
-        RuleFor(x => x.CustomerId)
-            .NotEmpty()
-            .WithErrorCode("INVALID_CUSTOMER")
-            .WithMessage("Customer ID is required");
-    }
-}
+public sealed record CreateOrderCommand(decimal Amount, string CustomerId) : ICommand<Guid>;
 
 public sealed class CreateOrderHandler(OrderEventStore eventStore)
     : ICommandHandler<CreateOrderCommand, Guid>
 {
     public async Task<Result<Guid>> Handle(CreateOrderCommand command, CancellationToken cancellationToken = default)
     {
-        var decision = new CreateOrderDecider().Decide(command.Amount, command.CustomerId);
-
-        var orderId = decision.Value;
+        var orderId = Guid.CreateVersion7();
         var query = new StreamQuery([new EventTag(Tags.Order, orderId.ToString())]);
+        var decision = await eventStore.DecideNew(
+            query,
+            () => CreateOrderDecision.Decide(command.Amount, command.CustomerId, orderId),
+            cancellationToken);
 
-        await eventStore.PersistNew(decision.Events, cancellationToken);
-
-        return Result<Guid>.Success(orderId);
+        return decision.IsError
+            ? Result<Guid>.Fail(decision.Problems)
+            : Result<Guid>.Success(decision.Value);
     }
 }
 
-internal sealed class CreateOrderDecider
+internal static class CreateOrderDecision
 {
-    public Decision<Guid> Decide(decimal amount, string customerId)
+    public static Decision<Guid> Decide(decimal amount, string customerId, Guid orderId)
     {
-        var orderId = Guid.CreateVersion7();
         var orderCreated = new OrderCreated(orderId, amount, customerId);
-
         return Decision<Guid>.Succeed(orderId, orderCreated);
     }
 }

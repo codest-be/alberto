@@ -1,7 +1,7 @@
 using Alberto.CQRS.Diagnostics;
 using Alberto.CQRS.Results;
+using Alberto.CQRS.Validators;
 using Alberto.EventSourcing;
-using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Alberto.CQRS.Commands;
@@ -18,38 +18,54 @@ public sealed class CommandExecutor(IServiceProvider serviceProvider, string? mo
     /// Executes a command without a return value.
     /// </summary>
     public async Task<Result> Execute<TCommand>(TCommand command, CancellationToken cancellationToken = default)
-        where TCommand : ICommand
+        where TCommand : ICommand<Unit>
     {
         using var scope = _diagnostics?.Command(typeof(TCommand), typeof(TCommand).Name, moduleKey, hasReturnValue: false)
                           ?? EmptyDisposable.Instance;
 
         // Validate if validator exists
-        var validationResult = await ValidateCommand(command, cancellationToken);
-        if (validationResult.IsFailure)
+        var validators = GetHandlers<IValidator<TCommand>>().ToArray();
+        var allProblems = new List<Problem>();
+
+        foreach (var validator in validators)
         {
-            scope.WithValidationFailure(validationResult.Problems.Select(p => p.Code));
-            return validationResult;
+            using var validationScope = scope?.WithValidator(validator.GetType()) ?? EmptyDisposable.Instance;
+
+            await foreach (var problem in validator.Validate(command, cancellationToken))
+            {
+                allProblems.Add(problem);
+            }
+
+            if (allProblems.Any())
+            {
+                validationScope.WithValidationFailure(allProblems.Select(p => p.Code));
+            }
+        }
+
+        if (allProblems.Any())
+        {
+            return Result.Fail(allProblems);
         }
 
         // Get and execute handler
-        var handler = GetHandler<ICommandHandler<TCommand>>();
+        var handler = GetHandler<ICommandHandler<TCommand, Unit>>();
         if (handler == null)
         {
             var error = $"No handler found for command {typeof(TCommand).Name}";
-            scope.WithError(error);
+            scope?.WithError(error);
             return Result.Fail(error);
         }
 
-        scope.WithHandler(handler.GetType());
+        scope?.WithHandler(handler.GetType());
 
         var result = await handler.Handle(command, cancellationToken);
 
         if (result.IsSuccess)
-            scope.WithOutcome("success");
+            scope?.WithOutcome("success");
         else
-            scope.WithError("Command execution failed", result.Problems.Select(p => p.Code));
+            scope?.WithError("Command execution failed", result.Problems.Select(p => p.Code));
 
-        return result;
+        return Result.Success();
     }
 
     /// <summary>
@@ -58,17 +74,33 @@ public sealed class CommandExecutor(IServiceProvider serviceProvider, string? mo
     public async Task<Result<TResult>> Execute<TCommand, TResult>(
         TCommand command,
         CancellationToken cancellationToken = default)
-        where TCommand : ICommand
+        where TCommand : ICommand<TResult>
     {
         using var scope = _diagnostics?.Command(typeof(TCommand), typeof(TCommand).Name, moduleKey, hasReturnValue: true)
                           ?? EmptyDisposable.Instance;
 
         // Validate if validator exists
-        var validationResult = await ValidateCommand(command, cancellationToken);
-        if (validationResult.IsFailure)
+        var validators = GetHandlers<IValidator<TCommand>>().ToArray();
+        var allProblems = new List<Problem>();
+
+        foreach (var validator in validators)
         {
-            scope.WithValidationFailure(validationResult.Problems.Select(p => p.Code));
-            return Result<TResult>.Fail(validationResult.Problems);
+            using var validatorScope = scope.WithValidator(validator.GetType());
+
+            await foreach (var problem in validator.Validate(command, cancellationToken))
+            {
+                allProblems.Add(problem);
+            }
+
+            if (allProblems.Any())
+            {
+                validatorScope.WithValidationFailure(allProblems.Select(p => p.Code));
+            }
+        }
+
+        if (allProblems.Any())
+        {
+            return Result<TResult>.Fail(allProblems);
         }
 
         // Get and execute handler
@@ -92,38 +124,18 @@ public sealed class CommandExecutor(IServiceProvider serviceProvider, string? mo
         return result;
     }
 
-    private async Task<Result> ValidateCommand<TCommand>(TCommand command, CancellationToken cancellationToken)
-        where TCommand : ICommand
-    {
-        var validator = GetService<IValidator<TCommand>>();
-        if (validator == null)
-            return Result.Success();
-
-        var validationResult = await validator.ValidateAsync(command, cancellationToken);
-
-        if (validationResult.IsValid)
-            return Result.Success();
-
-        var problems = validationResult.Errors
-            .Select(error => Problem.Create(
-                code: IsFluentValidationDefaultCode(error.ErrorCode) ? "VALIDATION_ERROR" : error.ErrorCode,
-                message: error.ErrorMessage))
-            .ToList();
-
-        return Result.Fail(problems);
-    }
-
-    private static bool IsFluentValidationDefaultCode(string errorCode)
-    {
-        // FluentValidation default error codes end with "Validator" (e.g., "NotEmptyValidator", "GreaterThanValidator")
-        return errorCode.EndsWith("Validator", StringComparison.Ordinal);
-    }
-
     private TService? GetHandler<TService>() where TService : class
     {
         return moduleKey != null
             ? serviceProvider.GetKeyedService<TService>(moduleKey)
             : serviceProvider.GetService<TService>();
+    }
+
+    private IEnumerable<TService> GetHandlers<TService>() where TService : class
+    {
+        return moduleKey != null
+            ? serviceProvider.GetKeyedServices<TService>(moduleKey)
+            : serviceProvider.GetServices<TService>();
     }
 
     private TService? GetService<TService>() where TService : class

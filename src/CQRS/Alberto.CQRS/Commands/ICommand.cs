@@ -4,4 +4,6 @@ namespace Alberto.CQRS.Commands;
 /// Marker interface for commands in the event sourcing system.
 /// Commands represent intentions to modify the system state.
 /// </summary>
-public interface ICommand;
+public interface ICommand : ICommand<Unit>;
+
+public interface ICommand<TResult>;

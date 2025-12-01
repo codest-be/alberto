@@ -8,11 +8,11 @@ namespace Alberto.EventStore.Metadata;
 /// </summary>
 public class CausationIdEnricher : IEventMetadataEnricher
 {
-    private static readonly AsyncLocal<string?> _causationId = new();
+    private static readonly AsyncLocal<string?> CausationId = new();
 
     public void Enrich(IDictionary<string, string> metadata, IEventToPersist @event)
     {
-        var causationId = _causationId.Value;
+        var causationId = CausationId.Value;
 
         if (!string.IsNullOrEmpty(causationId))
         {
@@ -26,7 +26,7 @@ public class CausationIdEnricher : IEventMetadataEnricher
     /// </summary>
     public static void SetCausationId(string causationId)
     {
-        _causationId.Value = causationId;
+        CausationId.Value = causationId;
     }
 
     /// <summary>
@@ -34,19 +34,19 @@ public class CausationIdEnricher : IEventMetadataEnricher
     /// </summary>
     public static void SetCausationId(Guid eventId)
     {
-        _causationId.Value = eventId.ToString();
+        CausationId.Value = eventId.ToString();
     }
 
     /// <summary>
     /// Gets the current causation ID, or null if not set.
     /// </summary>
-    public static string? GetCausationId() => _causationId.Value;
+    public static string? GetCausationId() => CausationId.Value;
 
     /// <summary>
     /// Clears the causation ID for the current async context.
     /// </summary>
     public static void ClearCausationId()
     {
-        _causationId.Value = null;
+        CausationId.Value = null;
     }
 }

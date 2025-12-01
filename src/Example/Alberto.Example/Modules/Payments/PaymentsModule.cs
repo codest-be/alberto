@@ -26,6 +26,9 @@ public static class PaymentsModule
                     options.ConnectionString =
                         $"{baseConnectionString};Minimum Pool Size=5;Maximum Pool Size=30;Connection Idle Lifetime=300;Connection Pruning Interval=10";
                     options.Schema = "payments";
+
+                    // Store migrations within the Payments module directory
+                    options.MigrationsDirectory = "Modules/Payments/Migrations";
                 })
                 .WithMultiTenancy<MultiTenantContext>()
                 .WithChannelSubscriptions(channel => channel

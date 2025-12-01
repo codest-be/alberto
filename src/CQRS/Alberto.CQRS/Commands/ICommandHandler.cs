@@ -6,7 +6,7 @@ namespace Alberto.CQRS.Commands;
 /// Handler for commands that do not return a result value.
 /// </summary>
 /// <typeparam name="TCommand">The command type to handle</typeparam>
-public interface ICommandHandler<in TCommand> where TCommand : ICommand
+public interface ICommandHandler<in TCommand> where TCommand : ICommand<Unit>
 {
     /// <summary>
     /// Handles the command execution.
@@ -22,7 +22,7 @@ public interface ICommandHandler<in TCommand> where TCommand : ICommand
 /// </summary>
 /// <typeparam name="TCommand">The command type to handle</typeparam>
 /// <typeparam name="TResult">The result type</typeparam>
-public interface ICommandHandler<in TCommand, TResult> where TCommand : ICommand
+public interface ICommandHandler<in TCommand, TResult> where TCommand : ICommand<TResult>
 {
     /// <summary>
     /// Handles the command execution and returns a result.

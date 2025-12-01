@@ -14,7 +14,7 @@ public static class PlaceOrderEndpoint
                 CancellationToken ct) =>
             {
                 var command = new PlaceOrderCommand(orderId);
-                var result = await executor.Execute<PlaceOrderCommand, bool>(command, ct);
+                var result = await executor.Execute(command, ct);
 
                 return result.ToHttpResult();
             })

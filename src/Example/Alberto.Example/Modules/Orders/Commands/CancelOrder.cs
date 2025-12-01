@@ -6,20 +6,31 @@ using Alberto.EventStore;
 using Alberto.EventStore.Events;
 using Alberto.Example.Modules.Orders.Enums;
 using Alberto.Example.Modules.Orders.Events;
-using FluentValidation;
 
 namespace Alberto.Example.Modules.Orders.Commands;
 
 public sealed record CancelOrderCommand(Guid OrderId, string Reason) : ICommand;
 
-public sealed class CancelOrderValidator : AbstractValidator<CancelOrderCommand>
+public sealed class CancelOrderHandler(OrderEventStore eventStore)
+    : ICommandHandler<CancelOrderCommand>
 {
-    public CancelOrderValidator()
+    public async Task<Result> Handle(CancelOrderCommand command, CancellationToken cancellationToken = default)
     {
-        RuleFor(x => x.Reason)
-            .NotEmpty()
-            .WithErrorCode("INVALID_REASON")
-            .WithMessage("Cancellation reason is required");
+        var query = new StreamQuery([new EventTag(Tags.Order, command.OrderId.ToString())])
+            .WithEventType<OrderCreated>()
+            .WithEventType<OrderPlaced>()
+            .WithEventType<OrderShipped>()
+            .WithEventType<OrderCancelled>();
+
+        var decision = await eventStore.Decide(
+            new CancelOrderProjector(),
+            query,
+            state => CancelOrderDecision.Decide(state, command.OrderId, command.Reason),
+            cancellationToken);
+
+        return decision.IsError
+            ? Result.Fail(decision.Problems.First())
+            : Result.Success();
     }
 }
 
@@ -29,27 +40,7 @@ internal sealed record CancelOrderState
     public OrderStatus Status { get; init; } = OrderStatus.Draft;
 }
 
-public sealed class CancelOrderHandler(OrderEventStore eventStore)
-    : ICommandHandler<CancelOrderCommand, bool>
-{
-    public async Task<Result<bool>> Handle(CancelOrderCommand command, CancellationToken cancellationToken = default)
-    {
-        var query = CancelOrderDecider.GetQuery(command.OrderId);
-
-        var (events, lastEventId) = await eventStore.Load(query, cancellationToken);
-        var state = new CancelOrderDecider().Evolve(events);
-        var decision = CancelOrderDecider.Decide(state, command.OrderId, command.Reason);
-
-        if (decision.IsError)
-            return Result<bool>.Fail(decision.Problems.First());
-
-        await eventStore.Persist(query, lastEventId, decision.Events, cancellationToken);
-
-        return Result<bool>.Success(true);
-    }
-}
-
-internal sealed class CancelOrderDecider : IProjector<CancelOrderState>
+internal sealed class CancelOrderProjector : IProjector<CancelOrderState>
 {
     public CancelOrderState Apply(CancelOrderState state, object @event)
     {
@@ -62,14 +53,10 @@ internal sealed class CancelOrderDecider : IProjector<CancelOrderState>
             _ => state
         };
     }
+}
 
-    public static StreamQuery GetQuery(Guid orderId) =>
-        new StreamQuery([new EventTag(Tags.Order, orderId.ToString())])
-            .WithEventType<OrderCreated>()
-            .WithEventType<OrderPlaced>()
-            .WithEventType<OrderShipped>()
-            .WithEventType<OrderCancelled>();
-
+internal static class CancelOrderDecision
+{
     public static Decision Decide(CancelOrderState state, Guid orderId, string reason)
     {
         if (!state.Exists)

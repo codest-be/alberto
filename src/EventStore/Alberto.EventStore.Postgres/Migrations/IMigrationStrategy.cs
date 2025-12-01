@@ -14,8 +14,9 @@ public interface IMigrationStrategy
     /// </summary>
     /// <param name="schema">The schema name (e.g., "orders")</param>
     /// <param name="connectionString">The PostgreSQL connection string</param>
+    /// <param name="migrationsDirectory">Optional directory for migration scripts. If null, uses strategy default.</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    Task EnsureSchemaAsync(string schema, string connectionString, CancellationToken cancellationToken = default);
+    Task EnsureSchemaAsync(string schema, string connectionString, string? migrationsDirectory = null, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -23,7 +24,7 @@ public interface IMigrationStrategy
 /// </summary>
 public class NoMigrationStrategy : IMigrationStrategy
 {
-    public Task EnsureSchemaAsync(string schema, string connectionString, CancellationToken cancellationToken = default)
+    public Task EnsureSchemaAsync(string schema, string connectionString, string? migrationsDirectory = null, CancellationToken cancellationToken = default)
     {
         // Do nothing - user manages migrations externally
         return Task.CompletedTask;
@@ -33,17 +34,20 @@ public class NoMigrationStrategy : IMigrationStrategy
 /// <summary>
 /// Script-based migration strategy. Generates SQL scripts without executing them.
 /// Use for review-before-deploy workflows.
-/// Generates idempotent migration files to ./Migrations/EventStore/{schema}/
+/// Generates idempotent migration files to {migrationsDirectory}/EventStore/{schema}/
 /// </summary>
-public class ScriptOnlyMigrationStrategy(string outputDirectory = "./Migrations") : IMigrationStrategy
+public class ScriptOnlyMigrationStrategy(string? defaultOutputDirectory = null) : IMigrationStrategy
 {
-    public async Task EnsureSchemaAsync(string schema, string connectionString,
+    public async Task EnsureSchemaAsync(string schema, string connectionString, string? migrationsDirectory = null,
         CancellationToken cancellationToken = default)
     {
+        // Use passed directory, then default, then fallback to "./Migrations"
+        var outputDirectory = migrationsDirectory ?? defaultOutputDirectory ?? "./Migrations";
+
         // Load embedded migration templates
         var templates = MigrationTemplateLoader.LoadAll();
 
-        // Generate to disk: ./Migrations/EventStore/{schema}/
+        // Generate to disk: {outputDirectory}/EventStore/{schema}/
         var schemaDir = Path.Combine(outputDirectory, "EventStore", schema);
         Directory.CreateDirectory(schemaDir);
 
@@ -68,23 +72,25 @@ public class ScriptOnlyMigrationStrategy(string outputDirectory = "./Migrations"
 
 /// <summary>
 /// Automatic migration strategy.
-/// Reads migrations from ./Migrations/EventStore/{schema}/ and applies them automatically.
+/// Reads migrations from {migrationsDirectory}/EventStore/{schema}/ and applies them automatically.
 /// If migrations don't exist, generates them first.
 /// Use only for development/testing. NOT recommended for production.
 /// </summary>
-public class AutoMigrationStrategy(string migrationsDirectory = "./Migrations") : IMigrationStrategy
+public class AutoMigrationStrategy(string? defaultMigrationsDirectory = null) : IMigrationStrategy
 {
-    public async Task EnsureSchemaAsync(string schema, string connectionString,
+    public async Task EnsureSchemaAsync(string schema, string connectionString, string? migrationsDirectory = null,
         CancellationToken cancellationToken = default)
     {
-        var schemaDir = Path.Combine(migrationsDirectory, "EventStore", schema);
+        // Use passed directory, then default, then fallback to "./Migrations"
+        var effectiveMigrationsDirectory = migrationsDirectory ?? defaultMigrationsDirectory ?? "./Migrations";
+        var schemaDir = Path.Combine(effectiveMigrationsDirectory, "EventStore", schema);
 
         // If migrations don't exist, generate them first
         if (!Directory.Exists(schemaDir) || Directory.GetFiles(schemaDir, "*.sql").Length == 0)
         {
             Console.WriteLine($"Generating migration scripts for schema '{schema}'...");
-            await new ScriptOnlyMigrationStrategy(migrationsDirectory)
-                .EnsureSchemaAsync(schema, connectionString, cancellationToken);
+            await new ScriptOnlyMigrationStrategy(effectiveMigrationsDirectory)
+                .EnsureSchemaAsync(schema, connectionString, effectiveMigrationsDirectory, cancellationToken);
         }
 
         // Load migration files from disk

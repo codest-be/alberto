@@ -12,23 +12,24 @@ namespace Alberto.Example.Modules.Orders.Commands;
 public sealed record PlaceOrderCommand(Guid OrderId) : ICommand;
 
 public sealed class PlaceOrderHandler(OrderEventStore eventStore)
-    : ICommandHandler<PlaceOrderCommand, bool>
+    : ICommandHandler<PlaceOrderCommand>
 {
-    public async Task<Result<bool>> Handle(PlaceOrderCommand command, CancellationToken cancellationToken = default)
+    public async Task<Result> Handle(PlaceOrderCommand command, CancellationToken cancellationToken = default)
     {
-        var decider = new PlaceOrderDecider();
-        var query = PlaceOrderDecider.GetQuery(command.OrderId);
+        var query = new StreamQuery([new EventTag(Tags.Order, command.OrderId.ToString())])
+            .WithEventType<OrderCreated>()
+            .WithEventType<OrderPlaced>()
+            .WithEventType<OrderCancelled>();
 
-        var (events, lastEventId) = await eventStore.Load(query, cancellationToken);
-        var state = decider.Evolve(events);
-        var decision = decider.Decide(state, command.OrderId);
+        var decision = await eventStore.Decide(
+            new PlaceOrderProjector(),
+            query,
+            state => PlaceOrderDecision.Decide(state, command.OrderId),
+            cancellationToken);
 
-        if (decision.IsError)
-            return Result<bool>.Fail(decision.Problems.First());
-
-        await eventStore.Persist(query, lastEventId, decision.Events, cancellationToken);
-
-        return Result<bool>.Success(true);
+        return decision.IsError
+            ? Result.Fail(decision.Problems)
+            : Result.Success();
     }
 }
 
@@ -40,31 +41,23 @@ internal sealed record PlaceOrderState
     public string CustomerId { get; init; } = string.Empty;
 }
 
-internal sealed class PlaceOrderDecider : IProjector<PlaceOrderState>
+internal sealed class PlaceOrderProjector : IProjector<PlaceOrderState>
 {
     public PlaceOrderState Apply(PlaceOrderState state, object @event)
     {
         return @event switch
         {
-            OrderCreated e => state with
-            {
-                Exists = true, Status = OrderStatus.Created, Amount = e.Amount, CustomerId = e.CustomerId
-            },
+            OrderCreated e => state with { Exists = true, Status = OrderStatus.Created, Amount = e.Amount, CustomerId = e.CustomerId },
             OrderPlaced => state with { Status = OrderStatus.Placed },
             OrderCancelled => state with { Status = OrderStatus.Cancelled },
             _ => state
         };
     }
+}
 
-    public static StreamQuery GetQuery(Guid orderId)
-    {
-        return new StreamQuery([new EventTag(Tags.Order, orderId.ToString())])
-            .WithEventType<OrderCreated>()
-            .WithEventType<OrderPlaced>()
-            .WithEventType<OrderCancelled>();
-    }
-
-    public Decision Decide(PlaceOrderState state, Guid orderId)
+internal static class PlaceOrderDecision
+{
+    public static Decision Decide(PlaceOrderState state, Guid orderId)
     {
         if (!state.Exists)
             return Decision.Fail(OrderProblems.OrderNotFound(orderId));

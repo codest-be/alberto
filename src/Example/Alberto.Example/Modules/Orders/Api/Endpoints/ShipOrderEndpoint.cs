@@ -16,7 +16,7 @@ public static class ShipOrderEndpoint
                 CancellationToken ct) =>
             {
                 var command = new ShipOrderCommand(orderId, request.TrackingNumber);
-                var result = await executor.Execute<ShipOrderCommand, bool>(command, ct);
+                var result = await executor.Execute(command, ct);
 
                 return result.ToHttpResult();
             })

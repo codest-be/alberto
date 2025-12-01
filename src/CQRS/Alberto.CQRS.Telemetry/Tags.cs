@@ -17,6 +17,8 @@ internal static class Tags
     // Common tags
     public const string ModuleKey = "module.key";
     public const string Outcome = "outcome";
+    public const string ValidatorType = "validation.handler_type";
+    public const string ValidatorName = "validation.handler_name";
     public const string ValidationFailed = "validation.failed";
     public const string ProblemCodes = "problem.codes";
     public const string ErrorMessage = "error.message";

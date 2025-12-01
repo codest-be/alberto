@@ -508,14 +508,17 @@ services.AddModule<OrderEventStore>("orders", module => module
     .WithPostgres(options => {
         options.ConnectionString = connectionString;
         options.Schema = "orders";
+        options.MigrationsDirectory = "Modules/Orders/Migrations"; // Optional: place migrations in module folder
         // Default: AutoMigrationStrategy
-        // - Generates ./Migrations/EventStore/orders/*.sql on first run
+        // - Generates {MigrationsDirectory}/EventStore/orders/*.sql on first run
         // - Applies migrations automatically (idempotent)
     }));
 ```
 
-**First run:** Migrations generated to `./Migrations/EventStore/orders/001_InitialSchema.sql`
+**First run:** Migrations generated to `Modules/Orders/Migrations/EventStore/orders/001_InitialSchema.sql`
 **Subsequent runs:** Reads from disk and applies (only new migrations)
+
+**Note:** If `MigrationsDirectory` is not specified, defaults to `./Migrations`
 
 ### Production (Manual Control)
 
@@ -524,6 +527,7 @@ services.AddModule<OrderEventStore>("orders", module => module
     .WithPostgres(options => {
         options.ConnectionString = connectionString;
         options.Schema = "orders";
+        options.MigrationsDirectory = "Modules/Orders/Migrations"; // Place migrations in module folder
         options.MigrationStrategy = new NoMigrationStrategy();  // ✅ No auto-migrations
     }));
 ```
@@ -532,19 +536,20 @@ Apply migrations via your deployment pipeline:
 
 ```bash
 # Review generated SQL first
-cat ./Migrations/EventStore/orders/001_InitialSchema.sql
+cat Modules/Orders/Migrations/EventStore/orders/001_InitialSchema.sql
 
 # Apply via psql
-psql -f ./Migrations/EventStore/orders/001_InitialSchema.sql
+psql -f Modules/Orders/Migrations/EventStore/orders/001_InitialSchema.sql
 
 # Or use your preferred migration tool
-flyway migrate -locations=filesystem:./Migrations/EventStore/orders/
+flyway migrate -locations=filesystem:Modules/Orders/Migrations/EventStore/orders/
 ```
 
 ### CI/CD (Script Generation)
 
 ```csharp
-options.MigrationStrategy = new ScriptOnlyMigrationStrategy("./Migrations");
+options.MigrationsDirectory = "Modules/Orders/Migrations";
+options.MigrationStrategy = new ScriptOnlyMigrationStrategy();
 // Generates SQL without executing
 // Commit to source control for review
 ```
@@ -563,13 +568,16 @@ options.MigrationStrategy = new ScriptOnlyMigrationStrategy("./Migrations");
 
 All migration files are **idempotent** and safe to re-run:
 
-- Located at: `./Migrations/EventStore/{schema}/`
+- Located at: `{MigrationsDirectory}/EventStore/{schema}/` (defaults to `./Migrations/EventStore/{schema}/` if not
+  specified)
 - Tracked in: `{schema}.__alberto_schema_version` table
 - Format: `001_InitialSchema.sql`, `002_AddIndex.sql`, etc.
 - Commit to source control for version history
 
-**Important:**
+**Recommended Practice:**
 
+- Set `MigrationsDirectory` to place migrations within each module's folder (e.g., `"Modules/Orders/Migrations"`)
+- This keeps module artifacts co-located for better organization
 - Don't delete generated migration files - library expects them on disk
 - Review SQL before first production deployment
 - Use `NoMigrationStrategy` in production for full control
