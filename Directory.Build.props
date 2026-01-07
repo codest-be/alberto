@@ -1,0 +1,29 @@
+<Project>
+    <PropertyGroup>
+        <!-- Package Information -->
+        <Authors>Bjorn Vandenbussche</Authors>
+        <Company>Codest</Company>
+        <Product>Alberto DCB Event Store</Product>
+        <Copyright>Copyright © 2025 Alberto</Copyright>
+
+        <!-- Repository Information -->
+        <RepositoryUrl>https://github.com/codest-be/alberto</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+
+        <!-- Package Configuration -->
+        <PackageProjectUrl>https://github.com/codest-be/alberto</PackageProjectUrl>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+        <PackageTags>DCB;events;eventsourcing;dotnet;postgresql;dynamic-consistency-boundary</PackageTags>
+
+        <!-- Build Configuration -->
+        <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+        <IncludeSymbols>true</IncludeSymbols>
+        <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+        <PackageOutputPath>$(MSBuildThisFileDirectory)artifacts/packages</PackageOutputPath>
+
+        <!-- Documentation -->
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <NoWarn>$(NoWarn);CS1591</NoWarn>
+    </PropertyGroup>
+</Project>

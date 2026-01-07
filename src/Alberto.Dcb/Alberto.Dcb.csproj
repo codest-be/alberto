@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net9.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+        <!-- Package Metadata -->
+        <PackageId>Alberto.Dcb</PackageId>
+        <Title>Alberto DCB Event Store</Title>
+        <Description>Dynamic Consistency Boundary event store library for .NET. Provides core abstractions for event sourcing with DCB pattern.</Description>
+        <IsPackable>true</IsPackable>
+        <RootNamespace>Alberto.Dcb</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="Alberto.Dcb.Tests"/>
+        <InternalsVisibleTo Include="Alberto.Dcb.InMemory"/>
+        <InternalsVisibleTo Include="Alberto.Dcb.Postgres"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions"/>
+        <PackageReference Include="Microsoft.Extensions.Logging.Abstractions"/>
+        <PackageReference Include="System.Text.Json"/>
+    </ItemGroup>
+</Project>
