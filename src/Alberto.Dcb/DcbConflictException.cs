@@ -37,4 +37,16 @@ public sealed class DcbConflictException : Exception
         ExpectedPosition = expectedPosition;
         Query = query;
     }
+
+    /// <summary>
+    /// Creates a DCB conflict exception with a message and inner exception.
+    /// Used when the conflict details are not available (e.g., from database exceptions).
+    /// </summary>
+    public DcbConflictException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+        ConflictingPosition = -1;
+        ExpectedPosition = -1;
+        Query = DcbQuery.Empty;
+    }
 }
