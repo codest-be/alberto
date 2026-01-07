@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net9.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+        <!-- Package Metadata -->
+        <PackageId>Alberto.Dcb.InMemory</PackageId>
+        <Title>Alberto DCB Event Store - In-Memory Backend</Title>
+        <Description>In-memory backend for Alberto DCB event store. Useful for testing and development.</Description>
+        <IsPackable>true</IsPackable>
+        <RootNamespace>Alberto.Dcb.InMemory</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Alberto.Dcb\Alberto.Dcb.csproj" />
+    </ItemGroup>
+</Project>

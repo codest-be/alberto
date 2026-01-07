@@ -1,3 +1,4 @@
 <Solution>
   <Project Path="src/Alberto.Dcb/Alberto.Dcb.csproj" />
+  <Project Path="src/Alberto.Dcb.InMemory/Alberto.Dcb.InMemory.csproj" />
 </Solution>
