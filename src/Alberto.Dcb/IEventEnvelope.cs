@@ -42,9 +42,9 @@ public interface IEventEnvelope
     IReadOnlyDictionary<string, string> Metadata { get; }
 
     /// <summary>
-    /// Timestamp when the event was created/persisted.
+    /// Timestamp when the event was created/persisted (always UTC).
     /// </summary>
-    DateTimeOffset CreatedAt { get; }
+    DateTime CreatedAt { get; }
 }
 
 /// <summary>
@@ -100,7 +100,7 @@ public sealed record EventEnvelope : IEventEnvelope
     public required IReadOnlyDictionary<string, string> Metadata { get; init; }
 
     /// <summary>
-    /// Timestamp when the event was created/persisted.
+    /// Timestamp when the event was created/persisted (always UTC).
     /// </summary>
-    public required DateTimeOffset CreatedAt { get; init; }
+    public required DateTime CreatedAt { get; init; }
 }

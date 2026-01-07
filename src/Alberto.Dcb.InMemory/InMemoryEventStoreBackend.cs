@@ -119,7 +119,7 @@ public sealed class InMemoryEventStoreBackend : IEventStoreBackend
 
             // Append events
             var appended = new List<EventEnvelope>();
-            var now = _timeProvider.GetUtcNow();
+            var now = _timeProvider.GetUtcNow().UtcDateTime;
 
             foreach (var evt in events)
             {
