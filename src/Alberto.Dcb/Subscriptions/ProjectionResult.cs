@@ -39,7 +39,7 @@ public abstract record ProjectionResult<TState>
 /// Use these when you need explicit control (Delete, Unchanged).
 /// For Set, just return the state directly - implicit conversion handles it.
 /// </summary>
-public static class Projection
+public static class ProjectionResults
 {
     /// <summary>
     /// Signal that the projection doesn't care about this event.

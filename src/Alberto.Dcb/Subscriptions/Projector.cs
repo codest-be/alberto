@@ -66,7 +66,7 @@ public abstract class Projector<TState, TProjection> : IEventProcessor
             states.TryGetValue(docId, out var state);
             state ??= new TState();
 
-            ProjectionResult<TState> result = Projection.Unchanged<TState>();
+            ProjectionResult<TState> result = ProjectionResults.Unchanged<TState>();
 
             foreach (var envelope in docEvents)
             {

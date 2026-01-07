@@ -61,7 +61,7 @@ internal sealed class ProjectionDispatcher<TState>
     public ProjectionResult<TState> Apply(TState state, IEventEnvelope envelope)
     {
         if (!_handlers.TryGetValue(envelope.EventType.Id, out var handler))
-            return Projection.Unchanged<TState>();
+            return ProjectionResults.Unchanged<TState>();
 
         return handler.Apply(state, envelope);
     }
