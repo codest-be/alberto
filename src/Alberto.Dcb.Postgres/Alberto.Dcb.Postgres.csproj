@@ -21,4 +21,8 @@
         <PackageReference Include="Npgsql" />
         <PackageReference Include="DbUp-PostgreSQL" />
     </ItemGroup>
+
+    <ItemGroup>
+        <EmbeddedResource Include="Migrations\*.sql" />
+    </ItemGroup>
 </Project>
