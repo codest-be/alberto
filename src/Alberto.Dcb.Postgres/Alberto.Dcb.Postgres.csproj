@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net9.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+        <!-- Package Metadata -->
+        <PackageId>Alberto.Dcb.Postgres</PackageId>
+        <Title>Alberto DCB Event Store - PostgreSQL Backend</Title>
+        <Description>PostgreSQL backend for Alberto DCB event store. Uses inverted indexes for efficient DCB queries.</Description>
+        <IsPackable>true</IsPackable>
+        <RootNamespace>Alberto.Dcb.Postgres</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Alberto.Dcb\Alberto.Dcb.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Npgsql" />
+        <PackageReference Include="DbUp-PostgreSQL" />
+    </ItemGroup>
+</Project>
