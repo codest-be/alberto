@@ -4,20 +4,19 @@ namespace Alberto.Dcb.Tests;
 
 /// <summary>
 /// Specification tests for InMemoryEventStoreBackend.
+/// Test isolation is achieved through unique tenant IDs per test.
 /// </summary>
 public class InMemoryEventStoreBackendTests : EventStoreBackendSpecification
 {
-    private InMemoryEventStoreBackend? _backend;
+    private readonly InMemoryEventStoreBackend _backend;
+
+    public InMemoryEventStoreBackendTests()
+    {
+        _backend = new InMemoryEventStoreBackend(TimeProvider);
+    }
 
     protected override Task<IEventStoreBackend> CreateBackend()
     {
-        _backend = new InMemoryEventStoreBackend(TimeProvider);
         return Task.FromResult<IEventStoreBackend>(_backend);
-    }
-
-    protected override Task CleanupAsync()
-    {
-        _backend?.Clear();
-        return Task.CompletedTask;
     }
 }
