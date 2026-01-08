@@ -4,15 +4,14 @@ namespace Alberto.Dcb;
 
 /// <summary>
 /// High-level event store with support for inline projections.
-/// Wraps <see cref="IEventStoreBackend"/> and coordinates transactional projections.
-/// Inline projections run in the same database transaction as event append.
+/// Wraps <see cref="IEventStoreBackend"/> and runs registered projections immediately after append.
 /// </summary>
 public interface IEventStore
 {
     /// <summary>
-    /// Registers an inline projection that runs in the same transaction as Append.
-    /// Inline projections provide strong consistency: events and projections commit together.
-    /// Uses the same <see cref="Projection{TState}"/> definition as async projections.
+    /// Registers an inline projection that runs immediately after events are appended.
+    /// Uses the same <see cref="Projection{TState}"/> definition as async projections,
+    /// but updates state synchronously for lower latency.
     /// </summary>
     /// <typeparam name="TState">The projection state type.</typeparam>
     /// <typeparam name="TProjection">The projection implementation type.</typeparam>
@@ -22,7 +21,7 @@ public interface IEventStore
         where TState : new();
 
     /// <summary>
-    /// Appends events to the store with inline projections executed in the same transaction.
+    /// Appends events to the store and runs inline projections immediately after.
     /// </summary>
     /// <param name="tenantId">The tenant to append events for.</param>
     /// <param name="events">The events to append.</param>
