@@ -25,35 +25,22 @@ public sealed class PollingConsumerTests
 
     private class TestProcessor : IEventProcessor
     {
-        private readonly ICheckpointStore _checkpointStore;
         public List<IEventEnvelope> ProcessedEvents { get; } = [];
 
-        public TestProcessor(
-            string processorId,
-            IReadOnlySet<string> handledTypes,
-            ICheckpointStore checkpointStore)
+        public TestProcessor(string processorId, IReadOnlySet<string> handledTypes)
         {
             ProcessorId = processorId;
             HandledEventTypes = handledTypes;
-            _checkpointStore = checkpointStore;
         }
 
         public string ProcessorId { get; }
         public bool IsActive { get; set; } = true;
         public IReadOnlySet<string> HandledEventTypes { get; }
 
-        public async Task<ProcessingResult> ProcessBatchAsync(
-            IReadOnlyList<IEventEnvelope> events,
-            CancellationToken ct = default)
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
         {
-            ProcessedEvents.AddRange(events);
-
-            if (events.Count > 0)
-            {
-                await _checkpointStore.SaveAsync(ProcessorId, events[^1].GlobalPosition, ct);
-            }
-
-            return ProcessingResult.Continue;
+            ProcessedEvents.Add(@event);
+            return Task.CompletedTask;
         }
     }
 
@@ -74,8 +61,7 @@ public sealed class PollingConsumerTests
 
         var processor = new TestProcessor(
             "test-processor",
-            new HashSet<string> { "test-event-a" },
-            checkpointStore);
+            new HashSet<string> { "test-event-a" });
         consumer.RegisterProcessor(processor);
 
         // Append event before starting consumer
@@ -105,13 +91,11 @@ public sealed class PollingConsumerTests
 
         var processorA = new TestProcessor(
             "processor-a",
-            new HashSet<string> { "test-event-a" },
-            checkpointStore);
+            new HashSet<string> { "test-event-a" });
 
         var processorB = new TestProcessor(
             "processor-b",
-            new HashSet<string> { "test-event-b" },
-            checkpointStore);
+            new HashSet<string> { "test-event-b" });
 
         consumer.RegisterProcessor(processorA);
         consumer.RegisterProcessor(processorB);
@@ -148,8 +132,7 @@ public sealed class PollingConsumerTests
 
         var processor = new TestProcessor(
             "test-processor",
-            new HashSet<string> { "test-event-a" },
-            checkpointStore);
+            new HashSet<string> { "test-event-a" });
         consumer.RegisterProcessor(processor);
 
         using var cts = new CancellationTokenSource();
@@ -187,8 +170,7 @@ public sealed class PollingConsumerTests
 
         var processor = new TestProcessor(
             "test-processor",
-            new HashSet<string> { "test-event-a" },
-            checkpointStore);
+            new HashSet<string> { "test-event-a" });
         consumer.RegisterProcessor(processor);
 
         using var cts = new CancellationTokenSource();
@@ -217,8 +199,7 @@ public sealed class PollingConsumerTests
 
         var processor = new TestProcessor(
             "test-processor",
-            new HashSet<string> { "test-event-a" },
-            checkpointStore)
+            new HashSet<string> { "test-event-a" })
         {
             IsActive = false
         };
@@ -295,13 +276,11 @@ public sealed class PollingConsumerTests
 
         var processorA = new TestProcessor(
             "processor-a",
-            new HashSet<string> { "test-event-a" },
-            checkpointStore);
+            new HashSet<string> { "test-event-a" });
 
         var processorB = new TestProcessor(
             "processor-b",
-            new HashSet<string> { "test-event-a" },
-            checkpointStore);
+            new HashSet<string> { "test-event-a" });
 
         consumer.RegisterProcessor(processorA);
         consumer.RegisterProcessor(processorB);

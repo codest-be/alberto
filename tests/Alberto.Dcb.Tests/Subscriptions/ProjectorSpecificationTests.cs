@@ -103,29 +103,25 @@ public class ProjectorSpecificationTests
 
     #endregion
 
-    #region ProcessBatch Tests
+    #region ProcessEvent Tests
 
-    private static (IEventProcessor processor, InMemoryStateStore stateStore, InMemoryCheckpointStore checkpointStore) CreateProcessor()
+    private static (IEventProcessor processor, InMemoryStateStore stateStore) CreateProcessor()
     {
         var stateStore = new InMemoryStateStore();
-        var checkpointStore = new InMemoryCheckpointStore();
         var processor = new AsyncProjection<OrderSummary, OrderSummaryProjection>(
-            stateStore, checkpointStore, "order-summary-v1");
-        return (processor, stateStore, checkpointStore);
+            stateStore, "order-summary-v1");
+        return (processor, stateStore);
     }
 
     [Fact]
-    public async Task ProcessBatch_ShouldUpsertState()
+    public async Task ProcessEvent_ShouldUpsertState()
     {
-        var (processor, stateStore, _) = CreateProcessor();
+        var (processor, stateStore) = CreateProcessor();
 
         var orderId = Guid.NewGuid();
-        var events = new[]
-        {
-            CreateEnvelope(new OrderCreated(orderId, 100m), 1)
-        };
+        var envelope = CreateEnvelope(new OrderCreated(orderId, 100m), 1);
 
-        await processor.ProcessBatchAsync(events, TestContext.Current.CancellationToken);
+        await processor.ProcessEventAsync(envelope, TestContext.Current.CancellationToken);
 
         Assert.Single(stateStore.Store);
         var state = stateStore.Store[orderId.ToString()];
@@ -135,23 +131,21 @@ public class ProjectorSpecificationTests
     }
 
     [Fact]
-    public async Task ProcessBatch_ShouldUpdateExistingState()
+    public async Task ProcessEvent_ShouldUpdateExistingState()
     {
-        var (processor, stateStore, _) = CreateProcessor();
+        var (processor, stateStore) = CreateProcessor();
 
         var orderId = Guid.NewGuid();
 
-        // First batch: create
-        await processor.ProcessBatchAsync(new[]
-        {
-            CreateEnvelope(new OrderCreated(orderId, 100m), 1)
-        }, TestContext.Current.CancellationToken);
+        // First event: create
+        await processor.ProcessEventAsync(
+            CreateEnvelope(new OrderCreated(orderId, 100m), 1),
+            TestContext.Current.CancellationToken);
 
-        // Second batch: confirm
-        await processor.ProcessBatchAsync(new[]
-        {
-            CreateEnvelope(new OrderConfirmed(orderId), 2)
-        }, TestContext.Current.CancellationToken);
+        // Second event: confirm
+        await processor.ProcessEventAsync(
+            CreateEnvelope(new OrderConfirmed(orderId), 2),
+            TestContext.Current.CancellationToken);
 
         var state = stateStore.Store[orderId.ToString()];
         Assert.Equal("Confirmed", state.Status);
@@ -159,42 +153,43 @@ public class ProjectorSpecificationTests
     }
 
     [Fact]
-    public async Task ProcessBatch_ShouldDeleteOnCancellation()
+    public async Task ProcessEvent_ShouldDeleteOnCancellation()
     {
-        var (processor, stateStore, _) = CreateProcessor();
+        var (processor, stateStore) = CreateProcessor();
 
         var orderId = Guid.NewGuid();
 
         // Create
-        await processor.ProcessBatchAsync(new[]
-        {
-            CreateEnvelope(new OrderCreated(orderId, 100m), 1)
-        }, TestContext.Current.CancellationToken);
+        await processor.ProcessEventAsync(
+            CreateEnvelope(new OrderCreated(orderId, 100m), 1),
+            TestContext.Current.CancellationToken);
 
         // Cancel
-        await processor.ProcessBatchAsync(new[]
-        {
-            CreateEnvelope(new OrderCancelled(orderId), 2)
-        }, TestContext.Current.CancellationToken);
+        await processor.ProcessEventAsync(
+            CreateEnvelope(new OrderCancelled(orderId), 2),
+            TestContext.Current.CancellationToken);
 
         Assert.Empty(stateStore.Store);
         Assert.Contains(orderId.ToString(), stateStore.DeletedIds);
     }
 
     [Fact]
-    public async Task ProcessBatch_ShouldHandleMultipleDocuments()
+    public async Task ProcessEvent_ShouldHandleMultipleDocuments()
     {
-        var (processor, stateStore, _) = CreateProcessor();
+        var (processor, stateStore) = CreateProcessor();
 
         var order1 = Guid.NewGuid();
         var order2 = Guid.NewGuid();
 
-        await processor.ProcessBatchAsync(new[]
-        {
+        await processor.ProcessEventAsync(
             CreateEnvelope(new OrderCreated(order1, 100m), 1),
+            TestContext.Current.CancellationToken);
+        await processor.ProcessEventAsync(
             CreateEnvelope(new OrderCreated(order2, 200m), 2),
-            CreateEnvelope(new OrderConfirmed(order1), 3)
-        }, TestContext.Current.CancellationToken);
+            TestContext.Current.CancellationToken);
+        await processor.ProcessEventAsync(
+            CreateEnvelope(new OrderConfirmed(order1), 3),
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(2, stateStore.Store.Count);
         Assert.Equal("Confirmed", stateStore.Store[order1.ToString()].Status);
@@ -202,18 +197,19 @@ public class ProjectorSpecificationTests
     }
 
     [Fact]
-    public async Task ProcessBatch_ShouldFoldEventsForSameDocument()
+    public async Task ProcessEvent_ShouldFoldEventsForSameDocument()
     {
-        var (processor, stateStore, _) = CreateProcessor();
+        var (processor, stateStore) = CreateProcessor();
 
         var orderId = Guid.NewGuid();
 
-        // All events for same order in one batch
-        await processor.ProcessBatchAsync(new[]
-        {
+        // Events for same order processed sequentially
+        await processor.ProcessEventAsync(
             CreateEnvelope(new OrderCreated(orderId, 100m), 1),
-            CreateEnvelope(new OrderConfirmed(orderId), 2)
-        }, TestContext.Current.CancellationToken);
+            TestContext.Current.CancellationToken);
+        await processor.ProcessEventAsync(
+            CreateEnvelope(new OrderConfirmed(orderId), 2),
+            TestContext.Current.CancellationToken);
 
         // Should have folded to final state
         var state = stateStore.Store[orderId.ToString()];
@@ -221,34 +217,9 @@ public class ProjectorSpecificationTests
     }
 
     [Fact]
-    public async Task ProcessBatch_ShouldSaveCheckpoint()
-    {
-        var (processor, _, checkpointStore) = CreateProcessor();
-
-        await processor.ProcessBatchAsync(new[]
-        {
-            CreateEnvelope(new OrderCreated(Guid.NewGuid(), 100m), 10),
-            CreateEnvelope(new OrderCreated(Guid.NewGuid(), 200m), 15)
-        }, TestContext.Current.CancellationToken);
-
-        var checkpoint = await checkpointStore.GetAsync(processor.ProcessorId, TestContext.Current.CancellationToken);
-        Assert.Equal(15, checkpoint);
-    }
-
-    [Fact]
-    public async Task ProcessBatch_EmptyBatch_ShouldNotThrow()
-    {
-        var (processor, _, _) = CreateProcessor();
-
-        var result = await processor.ProcessBatchAsync([], TestContext.Current.CancellationToken);
-
-        Assert.Equal(ProcessingResult.Continue, result);
-    }
-
-    [Fact]
     public void HandledEventTypes_ShouldContainProjectionTypes()
     {
-        var (processor, _, _) = CreateProcessor();
+        var (processor, _) = CreateProcessor();
 
         Assert.Contains("order-created", processor.HandledEventTypes);
         Assert.Contains("order-confirmed", processor.HandledEventTypes);
@@ -258,7 +229,7 @@ public class ProjectorSpecificationTests
     [Fact]
     public void ProcessorId_ShouldMatchConstructorArgument()
     {
-        var (processor, _, _) = CreateProcessor();
+        var (processor, _) = CreateProcessor();
 
         Assert.Equal("order-summary-v1", processor.ProcessorId);
     }

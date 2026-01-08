@@ -9,16 +9,11 @@ internal sealed class AsyncProjection<TState, TProjection> : IEventProcessor
     where TState : new()
 {
     private readonly IStateStore<TState> _stateStore;
-    private readonly ICheckpointStore _checkpointStore;
     private readonly TProjection _projection = new();
 
-    public AsyncProjection(
-        IStateStore<TState> stateStore,
-        ICheckpointStore checkpointStore,
-        string processorId)
+    public AsyncProjection(IStateStore<TState> stateStore, string processorId)
     {
         _stateStore = stateStore ?? throw new ArgumentNullException(nameof(stateStore));
-        _checkpointStore = checkpointStore ?? throw new ArgumentNullException(nameof(checkpointStore));
         ProcessorId = processorId ?? throw new ArgumentNullException(nameof(processorId));
     }
 
@@ -26,72 +21,41 @@ internal sealed class AsyncProjection<TState, TProjection> : IEventProcessor
     public string ProcessorId { get; }
 
     /// <inheritdoc/>
-    public bool IsActive => true;
+    public bool IsActive { get; set; } = true;
 
     /// <inheritdoc/>
     public IReadOnlySet<string> HandledEventTypes => _projection.HandledEventTypes;
 
     /// <inheritdoc/>
-    public async Task<ProcessingResult> ProcessBatchAsync(
-        IReadOnlyList<IEventEnvelope> events,
-        CancellationToken ct = default)
+    public async Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
     {
-        if (events.Count == 0)
-            return ProcessingResult.Continue;
+        var docId = _projection.GetDocumentId(@event);
 
-        // Group events by document ID
-        var byDocument = events
-            .GroupBy(e => _projection.GetDocumentId(e))
-            .ToDictionary(g => g.Key, g => g.ToList());
+        // Load current state
+        var states = await _stateStore.LoadManyAsync([docId], transaction: null, ct);
+        var state = states.GetValueOrDefault(docId) ?? new TState();
 
-        // Load all states in one batch
-        var states = await _stateStore.LoadManyAsync(byDocument.Keys, transaction: null, ct);
+        // Apply event
+        var result = _projection.Apply(state, @event);
 
-        var upserts = new Dictionary<string, TState>();
-        var deletes = new List<string>();
-
-        // Fold events per document
-        foreach (var (docId, docEvents) in byDocument)
+        // Persist change
+        switch (result)
         {
-            states.TryGetValue(docId, out var state);
-            state ??= new TState();
-
-            ProjectionResult<TState> result = ProjectionResults.Unchanged<TState>();
-
-            foreach (var envelope in docEvents)
-            {
-                // Update state from previous result
-                state = result switch
-                {
-                    ProjectionResult<TState>.Set s => s.State,
-                    _ => state
-                };
-                result = _projection.Apply(state, envelope);
-            }
-
-            // Classify final result
-            switch (result)
-            {
-                case ProjectionResult<TState>.Set s:
-                    upserts[docId] = s.State;
-                    break;
-                case ProjectionResult<TState>.Delete:
-                    deletes.Add(docId);
-                    break;
-                // Unchanged: no database operation
-            }
+            case ProjectionResult<TState>.Set s:
+                await _stateStore.ApplyChangesAsync(
+                    new Dictionary<string, TState> { [docId] = s.State },
+                    [],
+                    transaction: null,
+                    ct);
+                break;
+            case ProjectionResult<TState>.Delete:
+                await _stateStore.ApplyChangesAsync(
+                    new Dictionary<string, TState>(),
+                    [docId],
+                    transaction: null,
+                    ct);
+                break;
+            // Unchanged: no database operation
         }
-
-        // Persist all changes
-        if (upserts.Count > 0 || deletes.Count > 0)
-        {
-            await _stateStore.ApplyChangesAsync(upserts, deletes, transaction: null, ct);
-        }
-
-        // Save checkpoint
-        var lastPosition = events[^1].GlobalPosition;
-        await _checkpointStore.SaveAsync(ProcessorId, lastPosition, ct);
-
-        return ProcessingResult.Continue;
     }
 }

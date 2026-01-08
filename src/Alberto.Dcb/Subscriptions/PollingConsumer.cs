@@ -1,3 +1,5 @@
+using Alberto.Dcb.Subscriptions.Pipeline;
+
 namespace Alberto.Dcb.Subscriptions;
 
 /// <summary>
@@ -8,9 +10,13 @@ public sealed class PollingConsumer : IEventConsumer
 {
     private readonly IEventStoreBackend _eventStore;
     private readonly ICheckpointStore _checkpointStore;
+    private readonly IDeadLetterStore? _deadLetterStore;
+    private readonly IConsumeFilterPipeline? _pipeline;
     private readonly TimeSpan _pollingInterval;
     private readonly int _batchSize;
     private readonly IProcessorLock? _processorLock;
+    private readonly ErrorPolicy _errorPolicy;
+    private readonly string _moduleKey;
 
     private readonly List<IEventProcessor> _processors = [];
     private IAsyncDisposable? _lockLease;
@@ -21,16 +27,24 @@ public sealed class PollingConsumer : IEventConsumer
         IEventStoreBackend eventStore,
         ICheckpointStore checkpointStore,
         string consumerId,
+        string moduleKey = "",
         TimeSpan? pollingInterval = null,
         int batchSize = 100,
-        IProcessorLock? processorLock = null)
+        IProcessorLock? processorLock = null,
+        IDeadLetterStore? deadLetterStore = null,
+        IConsumeFilterPipeline? pipeline = null,
+        ErrorPolicy? errorPolicy = null)
     {
         _eventStore = eventStore ?? throw new ArgumentNullException(nameof(eventStore));
         _checkpointStore = checkpointStore ?? throw new ArgumentNullException(nameof(checkpointStore));
         ConsumerId = consumerId ?? throw new ArgumentNullException(nameof(consumerId));
+        _moduleKey = moduleKey;
         _pollingInterval = pollingInterval ?? TimeSpan.FromMilliseconds(100);
         _batchSize = batchSize;
         _processorLock = processorLock;
+        _deadLetterStore = deadLetterStore;
+        _pipeline = pipeline;
+        _errorPolicy = errorPolicy ?? ErrorPolicy.Default;
     }
 
     /// <inheritdoc />
@@ -133,7 +147,7 @@ public sealed class PollingConsumer : IEventConsumer
 
                         if (relevant.Count > 0)
                         {
-                            await processor.ProcessBatchAsync(relevant, ct);
+                            await ProcessEventsForProcessorAsync(processor, relevant, processorCheckpoint, ct);
                             processedAny = true;
                         }
                     }
@@ -151,6 +165,110 @@ public sealed class PollingConsumer : IEventConsumer
                 break;
             }
         }
+    }
+
+    private async Task ProcessEventsForProcessorAsync(
+        IEventProcessor processor,
+        IReadOnlyList<IEventEnvelope> events,
+        long currentCheckpoint,
+        CancellationToken ct)
+    {
+        var context = new ConsumeContext(processor.ProcessorId, _moduleKey, currentCheckpoint);
+
+        // The processing action that handles each event with error handling
+        async Task ProcessingAction()
+        {
+            foreach (var evt in events)
+            {
+                if (!processor.IsActive)
+                    break;
+
+                await ProcessSingleEventAsync(processor, evt, ct);
+            }
+        }
+
+        // Execute through pipeline if available
+        if (_pipeline is not null)
+        {
+            await _pipeline.ExecuteAsync(events, context, ProcessingAction, ct);
+        }
+        else
+        {
+            await ProcessingAction();
+        }
+    }
+
+    private async Task ProcessSingleEventAsync(
+        IEventProcessor processor,
+        IEventEnvelope evt,
+        CancellationToken ct)
+    {
+        var attempts = 0;
+
+        while (true)
+        {
+            try
+            {
+                attempts++;
+                await processor.ProcessEventAsync(evt, ct);
+
+                // Success - save checkpoint and move on
+                await _checkpointStore.SaveAsync(processor.ProcessorId, evt.GlobalPosition, ct);
+                return;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw; // Propagate cancellation
+            }
+            catch (Exception ex)
+            {
+                var decision = processor.HandleError(evt, ex, attempts, _errorPolicy);
+
+                switch (decision)
+                {
+                    case ErrorHandlingDecision.Retry:
+                        await Task.Delay(_errorPolicy.RetryDelay, ct);
+                        continue;
+
+                    case ErrorHandlingDecision.DeadLetter:
+                        await DeadLetterEventAsync(processor.ProcessorId, evt, ex, attempts, ct);
+                        await _checkpointStore.SaveAsync(processor.ProcessorId, evt.GlobalPosition, ct);
+                        return;
+
+                    case ErrorHandlingDecision.Skip:
+                        await _checkpointStore.SaveAsync(processor.ProcessorId, evt.GlobalPosition, ct);
+                        return;
+
+                    case ErrorHandlingDecision.Stop:
+                        processor.IsActive = false;
+                        return;
+                }
+            }
+        }
+    }
+
+    private async Task DeadLetterEventAsync(
+        string processorId,
+        IEventEnvelope evt,
+        Exception ex,
+        int attempts,
+        CancellationToken ct)
+    {
+        if (_deadLetterStore is null)
+            return;
+
+        var entry = new DeadLetterEntry(
+            Id: Guid.NewGuid(),
+            ProcessorId: processorId,
+            EventId: evt.Id,
+            EventType: evt.EventType.Id,
+            EventData: evt.EventData,
+            ErrorMessage: ex.Message,
+            StackTrace: ex.StackTrace,
+            AttemptCount: attempts,
+            FailedAt: DateTimeOffset.UtcNow);
+
+        await _deadLetterStore.StoreAsync(entry, ct);
     }
 
     private async Task<Dictionary<string, long>> GetProcessorCheckpointsAsync(CancellationToken ct)

@@ -22,10 +22,12 @@ public static class InMemoryBuilderExtensions
         var backend = new InMemoryEventStoreBackend();
         var eventStore = new InMemoryEventStore();
         var checkpointStore = new InMemoryCheckpointStore();
+        var deadLetterStore = new InMemoryDeadLetterStore();
 
         builder.Services.AddKeyedSingleton<IEventStoreBackend>(moduleKey, backend);
         builder.Services.AddKeyedSingleton<IEventStore>(moduleKey, eventStore);
         builder.Services.AddKeyedSingleton<ICheckpointStore>(moduleKey, checkpointStore);
+        builder.Services.AddKeyedSingleton<IDeadLetterStore>(moduleKey, deadLetterStore);
 
         return builder;
     }

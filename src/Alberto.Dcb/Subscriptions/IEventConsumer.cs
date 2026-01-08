@@ -40,19 +40,16 @@ public static class EventConsumerExtensions
     /// <typeparam name="TProjection">The projection implementation type.</typeparam>
     /// <param name="consumer">The consumer to register with.</param>
     /// <param name="stateStore">State storage for the projection.</param>
-    /// <param name="checkpointStore">Checkpoint storage for tracking progress.</param>
     /// <param name="processorId">Optional processor ID. Defaults to projection type name.</param>
     public static void RegisterProjection<TState, TProjection>(
         this IEventConsumer consumer,
         IStateStore<TState> stateStore,
-        ICheckpointStore checkpointStore,
         string? processorId = null)
         where TProjection : Projection<TState>, new()
         where TState : new()
     {
         var processor = new AsyncProjection<TState, TProjection>(
             stateStore,
-            checkpointStore,
             processorId ?? typeof(TProjection).Name);
         consumer.RegisterProcessor(processor);
     }
@@ -65,18 +62,15 @@ public static class EventConsumerExtensions
     /// <typeparam name="TReactor">The reactor type implementing IReact&lt;TEvent&gt; interfaces.</typeparam>
     /// <param name="consumer">The consumer to register with.</param>
     /// <param name="reactor">The reactor instance.</param>
-    /// <param name="checkpointStore">Checkpoint storage for tracking progress.</param>
     /// <param name="processorId">Optional processor ID. Defaults to reactor type name.</param>
     public static void RegisterReactor<TReactor>(
         this IEventConsumer consumer,
         TReactor reactor,
-        ICheckpointStore checkpointStore,
         string? processorId = null)
         where TReactor : class
     {
         var processor = new AsyncReactor<TReactor>(
             reactor,
-            checkpointStore,
             processorId ?? typeof(TReactor).Name);
         consumer.RegisterProcessor(processor);
     }

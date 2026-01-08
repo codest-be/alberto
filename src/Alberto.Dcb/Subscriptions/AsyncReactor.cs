@@ -8,16 +8,11 @@ internal sealed class AsyncReactor<TReactor> : IEventProcessor
     where TReactor : class
 {
     private readonly TReactor _reactor;
-    private readonly ICheckpointStore _checkpointStore;
     private readonly ReactorDispatcher _dispatcher;
 
-    public AsyncReactor(
-        TReactor reactor,
-        ICheckpointStore checkpointStore,
-        string processorId)
+    public AsyncReactor(TReactor reactor, string processorId)
     {
         _reactor = reactor ?? throw new ArgumentNullException(nameof(reactor));
-        _checkpointStore = checkpointStore ?? throw new ArgumentNullException(nameof(checkpointStore));
         ProcessorId = processorId ?? throw new ArgumentNullException(nameof(processorId));
         _dispatcher = ReactorDispatcher.For(reactor);
 
@@ -33,32 +28,17 @@ internal sealed class AsyncReactor<TReactor> : IEventProcessor
     public string ProcessorId { get; }
 
     /// <inheritdoc/>
-    public bool IsActive => true;
+    public bool IsActive { get; set; } = true;
 
     /// <inheritdoc/>
     public IReadOnlySet<string> HandledEventTypes => _dispatcher.HandledEventTypes;
 
     /// <inheritdoc/>
-    public async Task<ProcessingResult> ProcessBatchAsync(
-        IReadOnlyList<IEventEnvelope> events,
-        CancellationToken ct = default)
+    public async Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
     {
-        if (events.Count == 0)
-            return ProcessingResult.Continue;
-
-        foreach (var envelope in events)
+        if (_dispatcher.CanHandle(@event.EventType.Id))
         {
-            // Only process events we have handlers for
-            if (_dispatcher.CanHandle(envelope.EventType.Id))
-            {
-                await _dispatcher.ReactAsync(envelope, ct);
-            }
+            await _dispatcher.ReactAsync(@event, ct);
         }
-
-        // Save checkpoint after successful processing
-        var lastPosition = events[^1].GlobalPosition;
-        await _checkpointStore.SaveAsync(ProcessorId, lastPosition, ct);
-
-        return ProcessingResult.Continue;
     }
 }

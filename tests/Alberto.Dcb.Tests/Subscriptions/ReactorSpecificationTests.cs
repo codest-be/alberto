@@ -53,14 +53,12 @@ public class ReactorSpecificationTests
 
     #region Test Setup
 
-    private static (IEventProcessor processor, List<string> notifications, InMemoryCheckpointStore checkpointStore) CreateProcessor()
+    private static (IEventProcessor processor, List<string> notifications) CreateProcessor()
     {
         var notifications = new List<string>();
-        var checkpointStore = new InMemoryCheckpointStore();
         var reactor = new NotificationReactor(notifications);
-        var processor = new AsyncReactor<NotificationReactor>(
-            reactor, checkpointStore, "notification-reactor-v1");
-        return (processor, notifications, checkpointStore);
+        var processor = new AsyncReactor<NotificationReactor>(reactor, "notification-reactor-v1");
+        return (processor, notifications);
     }
 
     #endregion
@@ -70,7 +68,7 @@ public class ReactorSpecificationTests
     [Fact]
     public void HandledEventTypes_ShouldContainImplementedTypes()
     {
-        var (processor, _, _) = CreateProcessor();
+        var (processor, _) = CreateProcessor();
 
         Assert.Contains("order-confirmed", processor.HandledEventTypes);
         Assert.Contains("order-shipped", processor.HandledEventTypes);
@@ -79,28 +77,29 @@ public class ReactorSpecificationTests
     [Fact]
     public void HandledEventTypes_ShouldNotContainUnimplementedTypes()
     {
-        var (processor, _, _) = CreateProcessor();
+        var (processor, _) = CreateProcessor();
 
         Assert.DoesNotContain("order-cancelled", processor.HandledEventTypes);
     }
 
     #endregion
 
-    #region ProcessBatch Tests
+    #region ProcessEvent Tests
 
     [Fact]
-    public async Task ProcessBatch_ShouldCallHandlers()
+    public async Task ProcessEvent_ShouldCallHandlers()
     {
-        var (processor, notifications, _) = CreateProcessor();
+        var (processor, notifications) = CreateProcessor();
 
         var orderId = Guid.NewGuid();
-        var events = new[]
-        {
-            CreateEnvelope(new OrderConfirmed(orderId, "test@example.com"), 1),
-            CreateEnvelope(new OrderShipped(orderId), 2)
-        };
 
-        await processor.ProcessBatchAsync(events, TestContext.Current.CancellationToken);
+        await processor.ProcessEventAsync(
+            CreateEnvelope(new OrderConfirmed(orderId, "test@example.com"), 1),
+            TestContext.Current.CancellationToken);
+
+        await processor.ProcessEventAsync(
+            CreateEnvelope(new OrderShipped(orderId), 2),
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(2, notifications.Count);
         Assert.Contains("Confirmation email", notifications[0]);
@@ -108,54 +107,26 @@ public class ReactorSpecificationTests
     }
 
     [Fact]
-    public async Task ProcessBatch_ShouldSaveCheckpoint()
+    public async Task ProcessEvent_ShouldIgnoreUnhandledEvents()
     {
-        var (processor, _, checkpointStore) = CreateProcessor();
+        var (processor, notifications) = CreateProcessor();
 
-        var events = new[]
-        {
-            CreateEnvelope(new OrderConfirmed(Guid.NewGuid(), "test@example.com"), 10),
-            CreateEnvelope(new OrderShipped(Guid.NewGuid()), 15)
-        };
-
-        await processor.ProcessBatchAsync(events, TestContext.Current.CancellationToken);
-
-        var checkpoint = await checkpointStore.GetAsync(processor.ProcessorId, TestContext.Current.CancellationToken);
-        Assert.Equal(15, checkpoint);
-    }
-
-    [Fact]
-    public async Task ProcessBatch_ShouldIgnoreUnhandledEvents()
-    {
-        var (processor, notifications, _) = CreateProcessor();
-
-        var events = new[]
-        {
+        await processor.ProcessEventAsync(
             CreateEnvelope(new OrderConfirmed(Guid.NewGuid(), "test@example.com"), 1),
-            CreateEnvelope(new OrderCancelled(Guid.NewGuid()), 2) // Not handled
-        };
+            TestContext.Current.CancellationToken);
 
-        await processor.ProcessBatchAsync(events, TestContext.Current.CancellationToken);
+        await processor.ProcessEventAsync(
+            CreateEnvelope(new OrderCancelled(Guid.NewGuid()), 2), // Not handled
+            TestContext.Current.CancellationToken);
 
         Assert.Single(notifications);
         Assert.Contains("Confirmation email", notifications[0]);
     }
 
     [Fact]
-    public async Task ProcessBatch_EmptyBatch_ShouldNotThrow()
-    {
-        var (processor, notifications, _) = CreateProcessor();
-
-        var result = await processor.ProcessBatchAsync([], TestContext.Current.CancellationToken);
-
-        Assert.Equal(ProcessingResult.Continue, result);
-        Assert.Empty(notifications);
-    }
-
-    [Fact]
     public void ProcessorId_ShouldMatchConstructorArgument()
     {
-        var (processor, _, _) = CreateProcessor();
+        var (processor, _) = CreateProcessor();
 
         Assert.Equal("notification-reactor-v1", processor.ProcessorId);
     }
@@ -163,11 +134,10 @@ public class ReactorSpecificationTests
     [Fact]
     public void Constructor_ShouldThrowIfNoReactInterfaces()
     {
-        var checkpointStore = new InMemoryCheckpointStore();
         var invalidReactor = new object(); // No IReact<> interfaces
 
         Assert.Throws<ArgumentException>(() =>
-            new AsyncReactor<object>(invalidReactor, checkpointStore, "test"));
+            new AsyncReactor<object>(invalidReactor, "test"));
     }
 
     #endregion

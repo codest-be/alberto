@@ -68,6 +68,13 @@ public static class PostgresBuilderExtensions
             return new PostgresCheckpointStore(dataSource);
         });
 
+        // Register dead letter store
+        builder.Services.AddKeyedSingleton<IDeadLetterStore>(moduleKey, (sp, _) =>
+        {
+            var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
+            return new PostgresDeadLetterStore(dataSource);
+        });
+
         return builder;
     }
 }

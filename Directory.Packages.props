@@ -11,6 +11,9 @@
     <PackageVersion Include="Microsoft.Extensions.Options" Version="9.0.0" />
     <PackageVersion Include="System.Text.Json" Version="9.0.0" />
 
+    <!-- OpenTelemetry -->
+    <PackageVersion Include="OpenTelemetry.Api" Version="1.11.2" />
+
     <!-- PostgreSQL -->
     <PackageVersion Include="Npgsql" Version="9.0.3" />
     <PackageVersion Include="DbUp-PostgreSQL" Version="6.0.3" />

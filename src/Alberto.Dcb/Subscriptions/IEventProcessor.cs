@@ -14,8 +14,9 @@ public interface IEventProcessor
 
     /// <summary>
     /// Whether this processor is currently active and should receive events.
+    /// Can be set to false to stop the processor.
     /// </summary>
-    bool IsActive { get; }
+    bool IsActive { get; set; }
 
     /// <summary>
     /// The event types this processor handles.
@@ -24,10 +25,32 @@ public interface IEventProcessor
     IReadOnlySet<string> HandledEventTypes { get; }
 
     /// <summary>
-    /// Process a batch of events.
-    /// The processor is responsible for saving its checkpoint after successful processing.
+    /// Process a single event.
     /// </summary>
-    Task<ProcessingResult> ProcessBatchAsync(
-        IReadOnlyList<IEventEnvelope> events,
-        CancellationToken ct = default);
+    /// <param name="event">The event to process.</param>
+    /// <param name="ct">Cancellation token.</param>
+    Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default);
+
+    /// <summary>
+    /// Called when event processing fails to determine how to handle the error.
+    /// Default implementation returns Retry up to max attempts, then DeadLetter.
+    /// </summary>
+    /// <param name="failedEvent">The event that failed.</param>
+    /// <param name="exception">The exception that occurred.</param>
+    /// <param name="attemptNumber">The current attempt number (1-based).</param>
+    /// <param name="policy">The error policy in effect.</param>
+    /// <returns>The decision on how to handle the error.</returns>
+    ErrorHandlingDecision HandleError(
+        IEventEnvelope failedEvent,
+        Exception exception,
+        int attemptNumber,
+        ErrorPolicy policy)
+    {
+        if (attemptNumber < policy.MaxRetries)
+            return ErrorHandlingDecision.Retry;
+
+        return policy.DeadLetterOnMaxRetries
+            ? ErrorHandlingDecision.DeadLetter
+            : ErrorHandlingDecision.Skip;
+    }
 }
