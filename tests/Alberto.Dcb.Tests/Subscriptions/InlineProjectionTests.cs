@@ -1,15 +1,14 @@
 using System.Data;
 using System.Text.Json;
-using Alberto.Dcb.InMemory;
 using Alberto.Dcb.Subscriptions;
 using Xunit;
 
 namespace Alberto.Dcb.Tests.Subscriptions;
 
 /// <summary>
-/// Tests for async projection processing via consumer registration.
+/// Tests for the InlineProjection wrapper class.
 /// </summary>
-public class ProjectorSpecificationTests
+public class InlineProjectionTests
 {
     #region Test Events
 
@@ -103,29 +102,42 @@ public class ProjectorSpecificationTests
 
     #endregion
 
-    #region ProcessBatch Tests
+    #region Tests
 
-    private static (IEventProcessor processor, InMemoryStateStore stateStore, InMemoryCheckpointStore checkpointStore) CreateProcessor()
+    [Fact]
+    public void HandledEventTypes_ShouldContainProjectionTypes()
     {
         var stateStore = new InMemoryStateStore();
-        var checkpointStore = new InMemoryCheckpointStore();
-        var processor = new AsyncProjection<OrderSummary, OrderSummaryProjection>(
-            stateStore, checkpointStore, "order-summary-v1");
-        return (processor, stateStore, checkpointStore);
+        var inline = new InlineProjection<OrderSummary, OrderSummaryProjection>(stateStore);
+
+        Assert.Contains("order-created", inline.HandledEventTypes);
+        Assert.Contains("order-confirmed", inline.HandledEventTypes);
+        Assert.Contains("order-cancelled", inline.HandledEventTypes);
     }
 
     [Fact]
-    public async Task ProcessBatch_ShouldUpsertState()
+    public void Projection_ShouldBeAccessible()
     {
-        var (processor, stateStore, _) = CreateProcessor();
+        var stateStore = new InMemoryStateStore();
+        var inline = new InlineProjection<OrderSummary, OrderSummaryProjection>(stateStore);
+
+        Assert.NotNull(inline.Projection);
+        Assert.IsType<OrderSummaryProjection>(inline.Projection);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_ShouldUpsertNewState()
+    {
+        var stateStore = new InMemoryStateStore();
+        var inline = new InlineProjection<OrderSummary, OrderSummaryProjection>(stateStore);
 
         var orderId = Guid.NewGuid();
-        var events = new[]
+        var events = new List<IEventEnvelope>
         {
             CreateEnvelope(new OrderCreated(orderId, 100m), 1)
         };
 
-        await processor.ProcessBatchAsync(events);
+        await inline.ProcessAsync(events, transaction: null!);
 
         Assert.Single(stateStore.Store);
         var state = stateStore.Store[orderId.ToString()];
@@ -135,66 +147,69 @@ public class ProjectorSpecificationTests
     }
 
     [Fact]
-    public async Task ProcessBatch_ShouldUpdateExistingState()
+    public async Task ProcessAsync_ShouldUpdateExistingState()
     {
-        var (processor, stateStore, _) = CreateProcessor();
+        var stateStore = new InMemoryStateStore();
+        var inline = new InlineProjection<OrderSummary, OrderSummaryProjection>(stateStore);
 
         var orderId = Guid.NewGuid();
 
         // First batch: create
-        await processor.ProcessBatchAsync(new[]
+        await inline.ProcessAsync(new List<IEventEnvelope>
         {
             CreateEnvelope(new OrderCreated(orderId, 100m), 1)
-        });
+        }, transaction: null!);
 
         // Second batch: confirm
-        await processor.ProcessBatchAsync(new[]
+        await inline.ProcessAsync(new List<IEventEnvelope>
         {
             CreateEnvelope(new OrderConfirmed(orderId), 2)
-        });
+        }, transaction: null!);
 
         var state = stateStore.Store[orderId.ToString()];
         Assert.Equal("Confirmed", state.Status);
-        Assert.Equal(100m, state.Amount); // Preserved
+        Assert.Equal(100m, state.Amount);
     }
 
     [Fact]
-    public async Task ProcessBatch_ShouldDeleteOnCancellation()
+    public async Task ProcessAsync_ShouldDeleteOnCancellation()
     {
-        var (processor, stateStore, _) = CreateProcessor();
+        var stateStore = new InMemoryStateStore();
+        var inline = new InlineProjection<OrderSummary, OrderSummaryProjection>(stateStore);
 
         var orderId = Guid.NewGuid();
 
         // Create
-        await processor.ProcessBatchAsync(new[]
+        await inline.ProcessAsync(new List<IEventEnvelope>
         {
             CreateEnvelope(new OrderCreated(orderId, 100m), 1)
-        });
+        }, transaction: null!);
 
         // Cancel
-        await processor.ProcessBatchAsync(new[]
+        await inline.ProcessAsync(new List<IEventEnvelope>
         {
             CreateEnvelope(new OrderCancelled(orderId), 2)
-        });
+        }, transaction: null!);
 
         Assert.Empty(stateStore.Store);
         Assert.Contains(orderId.ToString(), stateStore.DeletedIds);
     }
 
     [Fact]
-    public async Task ProcessBatch_ShouldHandleMultipleDocuments()
+    public async Task ProcessAsync_ShouldHandleMultipleDocuments()
     {
-        var (processor, stateStore, _) = CreateProcessor();
+        var stateStore = new InMemoryStateStore();
+        var inline = new InlineProjection<OrderSummary, OrderSummaryProjection>(stateStore);
 
         var order1 = Guid.NewGuid();
         var order2 = Guid.NewGuid();
 
-        await processor.ProcessBatchAsync(new[]
+        await inline.ProcessAsync(new List<IEventEnvelope>
         {
             CreateEnvelope(new OrderCreated(order1, 100m), 1),
             CreateEnvelope(new OrderCreated(order2, 200m), 2),
             CreateEnvelope(new OrderConfirmed(order1), 3)
-        });
+        }, transaction: null!);
 
         Assert.Equal(2, stateStore.Store.Count);
         Assert.Equal("Confirmed", stateStore.Store[order1.ToString()].Status);
@@ -202,18 +217,19 @@ public class ProjectorSpecificationTests
     }
 
     [Fact]
-    public async Task ProcessBatch_ShouldFoldEventsForSameDocument()
+    public async Task ProcessAsync_ShouldFoldEventsForSameDocument()
     {
-        var (processor, stateStore, _) = CreateProcessor();
+        var stateStore = new InMemoryStateStore();
+        var inline = new InlineProjection<OrderSummary, OrderSummaryProjection>(stateStore);
 
         var orderId = Guid.NewGuid();
 
         // All events for same order in one batch
-        await processor.ProcessBatchAsync(new[]
+        await inline.ProcessAsync(new List<IEventEnvelope>
         {
             CreateEnvelope(new OrderCreated(orderId, 100m), 1),
             CreateEnvelope(new OrderConfirmed(orderId), 2)
-        });
+        }, transaction: null!);
 
         // Should have folded to final state
         var state = stateStore.Store[orderId.ToString()];
@@ -221,46 +237,38 @@ public class ProjectorSpecificationTests
     }
 
     [Fact]
-    public async Task ProcessBatch_ShouldSaveCheckpoint()
+    public async Task ProcessAsync_EmptyBatch_ShouldNotThrow()
     {
-        var (processor, _, checkpointStore) = CreateProcessor();
+        var stateStore = new InMemoryStateStore();
+        var inline = new InlineProjection<OrderSummary, OrderSummaryProjection>(stateStore);
 
-        await processor.ProcessBatchAsync(new[]
+        await inline.ProcessAsync([], transaction: null!);
+
+        Assert.Empty(stateStore.Store);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_UnhandledEventTypes_ShouldBeIgnored()
+    {
+        var stateStore = new InMemoryStateStore();
+        var inline = new InlineProjection<OrderSummary, OrderSummaryProjection>(stateStore);
+
+        // Create an envelope with an unhandled event type
+        var envelope = new EventEnvelope
         {
-            CreateEnvelope(new OrderCreated(Guid.NewGuid(), 100m), 10),
-            CreateEnvelope(new OrderCreated(Guid.NewGuid(), 200m), 15)
-        });
+            Id = Guid.NewGuid(),
+            TenantId = "test-tenant",
+            GlobalPosition = 1,
+            EventType = new EventType("unknown-event"),
+            Tags = [],
+            EventData = "{}",
+            Metadata = new Dictionary<string, string>(),
+            CreatedAt = DateTime.UtcNow
+        };
 
-        var checkpoint = await checkpointStore.GetAsync(processor.ProcessorId);
-        Assert.Equal(15, checkpoint);
-    }
+        await inline.ProcessAsync([envelope], transaction: null!);
 
-    [Fact]
-    public async Task ProcessBatch_EmptyBatch_ShouldNotThrow()
-    {
-        var (processor, _, _) = CreateProcessor();
-
-        var result = await processor.ProcessBatchAsync([]);
-
-        Assert.Equal(ProcessingResult.Continue, result);
-    }
-
-    [Fact]
-    public void HandledEventTypes_ShouldContainProjectionTypes()
-    {
-        var (processor, _, _) = CreateProcessor();
-
-        Assert.Contains("order-created", processor.HandledEventTypes);
-        Assert.Contains("order-confirmed", processor.HandledEventTypes);
-        Assert.Contains("order-cancelled", processor.HandledEventTypes);
-    }
-
-    [Fact]
-    public void ProcessorId_ShouldMatchConstructorArgument()
-    {
-        var (processor, _, _) = CreateProcessor();
-
-        Assert.Equal("order-summary-v1", processor.ProcessorId);
+        Assert.Empty(stateStore.Store);
     }
 
     #endregion

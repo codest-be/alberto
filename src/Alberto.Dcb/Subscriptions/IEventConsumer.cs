@@ -26,3 +26,34 @@ public interface IEventConsumer : IAsyncDisposable
     /// </summary>
     Task StopAsync(CancellationToken ct = default);
 }
+
+/// <summary>
+/// Extension methods for registering projections and reactors.
+/// </summary>
+public static class EventConsumerExtensions
+{
+    /// <summary>
+    /// Register a projection to run asynchronously via this consumer.
+    /// Uses the same projection definition as inline projections.
+    /// </summary>
+    /// <typeparam name="TState">The projection state type.</typeparam>
+    /// <typeparam name="TProjection">The projection implementation type.</typeparam>
+    /// <param name="consumer">The consumer to register with.</param>
+    /// <param name="stateStore">State storage for the projection.</param>
+    /// <param name="checkpointStore">Checkpoint storage for tracking progress.</param>
+    /// <param name="processorId">Optional processor ID. Defaults to projection type name.</param>
+    public static void RegisterProjection<TState, TProjection>(
+        this IEventConsumer consumer,
+        IStateStore<TState> stateStore,
+        ICheckpointStore checkpointStore,
+        string? processorId = null)
+        where TProjection : Projection<TState>, new()
+        where TState : new()
+    {
+        var processor = new AsyncProjection<TState, TProjection>(
+            stateStore,
+            checkpointStore,
+            processorId ?? typeof(TProjection).Name);
+        consumer.RegisterProcessor(processor);
+    }
+}
