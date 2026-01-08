@@ -73,22 +73,31 @@ public sealed class PostgresEventStoreBackend : IEventStoreBackend
     {
         var eventsList = events.ToList();
         if (eventsList.Count == 0)
-        {
             return [];
-        }
 
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        return await AppendCore(connection, null, tenantId, eventsList, dcbQuery, expectedPosition, cancellationToken);
+    }
+
+    private async Task<IReadOnlyCollection<IEventEnvelope>> AppendCore(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        string tenantId,
+        List<IEventToPersist> eventsList,
+        DcbQuery? dcbQuery,
+        long? expectedPosition,
+        CancellationToken cancellationToken)
+    {
         await using var cmd = new NpgsqlCommand(
             "SELECT * FROM append_events(@p_tenant_id, @p_events, @p_dcb_types, @p_dcb_tags, @p_expected_position)",
-            connection);
+            connection,
+            transaction);
 
-        // Build events JSON array
         var eventsJson = BuildEventsJson(eventsList);
 
         cmd.Parameters.AddWithValue("p_tenant_id", tenantId);
         cmd.Parameters.Add(new NpgsqlParameter("p_events", NpgsqlDbType.Jsonb) { Value = eventsJson });
 
-        // DCB query parameters
         if (dcbQuery != null && expectedPosition.HasValue)
         {
             cmd.Parameters.AddWithValue("p_dcb_types",

@@ -36,7 +36,7 @@ internal class InlineProjection<TState, TProjection> : IInlineProjection
     /// <inheritdoc/>
     public async Task ProcessAsync(
         IReadOnlyList<IEventEnvelope> events,
-        IDbTransaction transaction,
+        IDbTransaction? transaction = null,
         CancellationToken ct = default)
     {
         // Filter to events we handle and group by document ID
