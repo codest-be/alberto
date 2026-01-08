@@ -125,7 +125,7 @@ public class ProjectorSpecificationTests
             CreateEnvelope(new OrderCreated(orderId, 100m), 1)
         };
 
-        await processor.ProcessBatchAsync(events);
+        await processor.ProcessBatchAsync(events, TestContext.Current.CancellationToken);
 
         Assert.Single(stateStore.Store);
         var state = stateStore.Store[orderId.ToString()];
@@ -145,13 +145,13 @@ public class ProjectorSpecificationTests
         await processor.ProcessBatchAsync(new[]
         {
             CreateEnvelope(new OrderCreated(orderId, 100m), 1)
-        });
+        }, TestContext.Current.CancellationToken);
 
         // Second batch: confirm
         await processor.ProcessBatchAsync(new[]
         {
             CreateEnvelope(new OrderConfirmed(orderId), 2)
-        });
+        }, TestContext.Current.CancellationToken);
 
         var state = stateStore.Store[orderId.ToString()];
         Assert.Equal("Confirmed", state.Status);
@@ -169,13 +169,13 @@ public class ProjectorSpecificationTests
         await processor.ProcessBatchAsync(new[]
         {
             CreateEnvelope(new OrderCreated(orderId, 100m), 1)
-        });
+        }, TestContext.Current.CancellationToken);
 
         // Cancel
         await processor.ProcessBatchAsync(new[]
         {
             CreateEnvelope(new OrderCancelled(orderId), 2)
-        });
+        }, TestContext.Current.CancellationToken);
 
         Assert.Empty(stateStore.Store);
         Assert.Contains(orderId.ToString(), stateStore.DeletedIds);
@@ -194,7 +194,7 @@ public class ProjectorSpecificationTests
             CreateEnvelope(new OrderCreated(order1, 100m), 1),
             CreateEnvelope(new OrderCreated(order2, 200m), 2),
             CreateEnvelope(new OrderConfirmed(order1), 3)
-        });
+        }, TestContext.Current.CancellationToken);
 
         Assert.Equal(2, stateStore.Store.Count);
         Assert.Equal("Confirmed", stateStore.Store[order1.ToString()].Status);
@@ -213,7 +213,7 @@ public class ProjectorSpecificationTests
         {
             CreateEnvelope(new OrderCreated(orderId, 100m), 1),
             CreateEnvelope(new OrderConfirmed(orderId), 2)
-        });
+        }, TestContext.Current.CancellationToken);
 
         // Should have folded to final state
         var state = stateStore.Store[orderId.ToString()];
@@ -229,9 +229,9 @@ public class ProjectorSpecificationTests
         {
             CreateEnvelope(new OrderCreated(Guid.NewGuid(), 100m), 10),
             CreateEnvelope(new OrderCreated(Guid.NewGuid(), 200m), 15)
-        });
+        }, TestContext.Current.CancellationToken);
 
-        var checkpoint = await checkpointStore.GetAsync(processor.ProcessorId);
+        var checkpoint = await checkpointStore.GetAsync(processor.ProcessorId, TestContext.Current.CancellationToken);
         Assert.Equal(15, checkpoint);
     }
 
@@ -240,7 +240,7 @@ public class ProjectorSpecificationTests
     {
         var (processor, _, _) = CreateProcessor();
 
-        var result = await processor.ProcessBatchAsync([]);
+        var result = await processor.ProcessBatchAsync([], TestContext.Current.CancellationToken);
 
         Assert.Equal(ProcessingResult.Continue, result);
     }

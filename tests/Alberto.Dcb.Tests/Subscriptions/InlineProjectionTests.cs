@@ -137,7 +137,7 @@ public class InlineProjectionTests
             CreateEnvelope(new OrderCreated(orderId, 100m), 1)
         };
 
-        await inline.ProcessAsync(events, transaction: null!);
+        await inline.ProcessAsync(events, transaction: null!, ct: TestContext.Current.CancellationToken);
 
         Assert.Single(stateStore.Store);
         var state = stateStore.Store[orderId.ToString()];
@@ -158,13 +158,13 @@ public class InlineProjectionTests
         await inline.ProcessAsync(new List<IEventEnvelope>
         {
             CreateEnvelope(new OrderCreated(orderId, 100m), 1)
-        }, transaction: null!);
+        }, transaction: null!, ct: TestContext.Current.CancellationToken);
 
         // Second batch: confirm
         await inline.ProcessAsync(new List<IEventEnvelope>
         {
             CreateEnvelope(new OrderConfirmed(orderId), 2)
-        }, transaction: null!);
+        }, transaction: null!, ct: TestContext.Current.CancellationToken);
 
         var state = stateStore.Store[orderId.ToString()];
         Assert.Equal("Confirmed", state.Status);
@@ -183,13 +183,13 @@ public class InlineProjectionTests
         await inline.ProcessAsync(new List<IEventEnvelope>
         {
             CreateEnvelope(new OrderCreated(orderId, 100m), 1)
-        }, transaction: null!);
+        }, transaction: null!, ct: TestContext.Current.CancellationToken);
 
         // Cancel
         await inline.ProcessAsync(new List<IEventEnvelope>
         {
             CreateEnvelope(new OrderCancelled(orderId), 2)
-        }, transaction: null!);
+        }, transaction: null!, ct: TestContext.Current.CancellationToken);
 
         Assert.Empty(stateStore.Store);
         Assert.Contains(orderId.ToString(), stateStore.DeletedIds);
@@ -209,7 +209,7 @@ public class InlineProjectionTests
             CreateEnvelope(new OrderCreated(order1, 100m), 1),
             CreateEnvelope(new OrderCreated(order2, 200m), 2),
             CreateEnvelope(new OrderConfirmed(order1), 3)
-        }, transaction: null!);
+        }, transaction: null!, ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(2, stateStore.Store.Count);
         Assert.Equal("Confirmed", stateStore.Store[order1.ToString()].Status);
@@ -229,7 +229,7 @@ public class InlineProjectionTests
         {
             CreateEnvelope(new OrderCreated(orderId, 100m), 1),
             CreateEnvelope(new OrderConfirmed(orderId), 2)
-        }, transaction: null!);
+        }, transaction: null!, ct: TestContext.Current.CancellationToken);
 
         // Should have folded to final state
         var state = stateStore.Store[orderId.ToString()];
@@ -242,7 +242,7 @@ public class InlineProjectionTests
         var stateStore = new InMemoryStateStore();
         var inline = new InlineProjection<OrderSummary, OrderSummaryProjection>(stateStore);
 
-        await inline.ProcessAsync([], transaction: null!);
+        await inline.ProcessAsync([], transaction: null!, ct: TestContext.Current.CancellationToken);
 
         Assert.Empty(stateStore.Store);
     }
@@ -266,7 +266,7 @@ public class InlineProjectionTests
             CreatedAt = DateTime.UtcNow
         };
 
-        await inline.ProcessAsync([envelope], transaction: null!);
+        await inline.ProcessAsync([envelope], transaction: null!, ct: TestContext.Current.CancellationToken);
 
         Assert.Empty(stateStore.Store);
     }

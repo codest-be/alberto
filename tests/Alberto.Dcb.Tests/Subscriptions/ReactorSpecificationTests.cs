@@ -100,7 +100,7 @@ public class ReactorSpecificationTests
             CreateEnvelope(new OrderShipped(orderId), 2)
         };
 
-        await processor.ProcessBatchAsync(events);
+        await processor.ProcessBatchAsync(events, TestContext.Current.CancellationToken);
 
         Assert.Equal(2, notifications.Count);
         Assert.Contains("Confirmation email", notifications[0]);
@@ -118,9 +118,9 @@ public class ReactorSpecificationTests
             CreateEnvelope(new OrderShipped(Guid.NewGuid()), 15)
         };
 
-        await processor.ProcessBatchAsync(events);
+        await processor.ProcessBatchAsync(events, TestContext.Current.CancellationToken);
 
-        var checkpoint = await checkpointStore.GetAsync(processor.ProcessorId);
+        var checkpoint = await checkpointStore.GetAsync(processor.ProcessorId, TestContext.Current.CancellationToken);
         Assert.Equal(15, checkpoint);
     }
 
@@ -135,7 +135,7 @@ public class ReactorSpecificationTests
             CreateEnvelope(new OrderCancelled(Guid.NewGuid()), 2) // Not handled
         };
 
-        await processor.ProcessBatchAsync(events);
+        await processor.ProcessBatchAsync(events, TestContext.Current.CancellationToken);
 
         Assert.Single(notifications);
         Assert.Contains("Confirmation email", notifications[0]);
@@ -146,7 +146,7 @@ public class ReactorSpecificationTests
     {
         var (processor, notifications, _) = CreateProcessor();
 
-        var result = await processor.ProcessBatchAsync([]);
+        var result = await processor.ProcessBatchAsync([], TestContext.Current.CancellationToken);
 
         Assert.Equal(ProcessingResult.Continue, result);
         Assert.Empty(notifications);

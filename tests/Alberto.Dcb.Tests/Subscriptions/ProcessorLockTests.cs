@@ -21,7 +21,7 @@ public class ProcessorLockTests : IClassFixture<PostgresFixture>
         var lockManager = new PostgresProcessorLock(_fixture.DataSource);
         var consumerId = $"consumer-{Guid.NewGuid():N}";
 
-        var lease = await lockManager.TryAcquireAsync(consumerId);
+        var lease = await lockManager.TryAcquireAsync(consumerId, TestContext.Current.CancellationToken);
 
         Assert.NotNull(lease);
 
@@ -36,11 +36,11 @@ public class ProcessorLockTests : IClassFixture<PostgresFixture>
         var consumerId = $"consumer-{Guid.NewGuid():N}";
 
         // First instance acquires
-        var lease1 = await lockManager.TryAcquireAsync(consumerId);
+        var lease1 = await lockManager.TryAcquireAsync(consumerId, TestContext.Current.CancellationToken);
         Assert.NotNull(lease1);
 
         // Second instance should fail
-        var lease2 = await lockManager.TryAcquireAsync(consumerId);
+        var lease2 = await lockManager.TryAcquireAsync(consumerId, TestContext.Current.CancellationToken);
         Assert.Null(lease2);
 
         // Cleanup
@@ -54,12 +54,12 @@ public class ProcessorLockTests : IClassFixture<PostgresFixture>
         var consumerId = $"consumer-{Guid.NewGuid():N}";
 
         // First acquire and release
-        var lease1 = await lockManager.TryAcquireAsync(consumerId);
+        var lease1 = await lockManager.TryAcquireAsync(consumerId, TestContext.Current.CancellationToken);
         Assert.NotNull(lease1);
         await lease1.DisposeAsync();
 
         // Second acquire should succeed
-        var lease2 = await lockManager.TryAcquireAsync(consumerId);
+        var lease2 = await lockManager.TryAcquireAsync(consumerId, TestContext.Current.CancellationToken);
         Assert.NotNull(lease2);
 
         // Cleanup
@@ -73,8 +73,8 @@ public class ProcessorLockTests : IClassFixture<PostgresFixture>
         var consumer1 = $"consumer-1-{Guid.NewGuid():N}";
         var consumer2 = $"consumer-2-{Guid.NewGuid():N}";
 
-        var lease1 = await lockManager.TryAcquireAsync(consumer1);
-        var lease2 = await lockManager.TryAcquireAsync(consumer2);
+        var lease1 = await lockManager.TryAcquireAsync(consumer1, TestContext.Current.CancellationToken);
+        var lease2 = await lockManager.TryAcquireAsync(consumer2, TestContext.Current.CancellationToken);
 
         Assert.NotNull(lease1);
         Assert.NotNull(lease2);
@@ -92,11 +92,11 @@ public class ProcessorLockTests : IClassFixture<PostgresFixture>
         var consumerId = $"consumer-{Guid.NewGuid():N}";
 
         // First instance acquires
-        var lease1 = await lockManager1.TryAcquireAsync(consumerId);
+        var lease1 = await lockManager1.TryAcquireAsync(consumerId, TestContext.Current.CancellationToken);
         Assert.NotNull(lease1);
 
         // Second instance (different lock manager, same consumer) should fail
-        var lease2 = await lockManager2.TryAcquireAsync(consumerId);
+        var lease2 = await lockManager2.TryAcquireAsync(consumerId, TestContext.Current.CancellationToken);
         Assert.Null(lease2);
 
         // Cleanup
@@ -110,12 +110,12 @@ public class ProcessorLockTests : IClassFixture<PostgresFixture>
         var consumerId = $"consumer-{Guid.NewGuid():N}";
 
         // Acquire and immediately release
-        var lease = await lockManager.TryAcquireAsync(consumerId);
+        var lease = await lockManager.TryAcquireAsync(consumerId, TestContext.Current.CancellationToken);
         Assert.NotNull(lease);
         await lease.DisposeAsync();
 
         // Another acquire should work immediately
-        var lease2 = await lockManager.TryAcquireAsync(consumerId);
+        var lease2 = await lockManager.TryAcquireAsync(consumerId, TestContext.Current.CancellationToken);
         Assert.NotNull(lease2);
         await lease2.DisposeAsync();
     }
@@ -126,7 +126,7 @@ public class ProcessorLockTests : IClassFixture<PostgresFixture>
         var lockManager = new PostgresProcessorLock(_fixture.DataSource);
         var consumerId = $"consumer-{Guid.NewGuid():N}";
 
-        var lease = await lockManager.TryAcquireAsync(consumerId);
+        var lease = await lockManager.TryAcquireAsync(consumerId, TestContext.Current.CancellationToken);
         Assert.NotNull(lease);
 
         // Multiple dispose should not throw

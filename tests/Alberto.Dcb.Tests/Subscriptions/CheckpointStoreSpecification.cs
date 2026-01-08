@@ -25,7 +25,7 @@ public abstract class CheckpointStoreSpecification
     {
         var store = await CreateStore();
 
-        var result = await store.GetAsync(ProcessorId);
+        var result = await store.GetAsync(ProcessorId, TestContext.Current.CancellationToken);
 
         Assert.Null(result);
     }
@@ -35,8 +35,8 @@ public abstract class CheckpointStoreSpecification
     {
         var store = await CreateStore();
 
-        await store.SaveAsync(ProcessorId, 42);
-        var result = await store.GetAsync(ProcessorId);
+        await store.SaveAsync(ProcessorId, 42, TestContext.Current.CancellationToken);
+        var result = await store.GetAsync(ProcessorId, TestContext.Current.CancellationToken);
 
         Assert.Equal(42, result);
     }
@@ -46,11 +46,11 @@ public abstract class CheckpointStoreSpecification
     {
         var store = await CreateStore();
 
-        await store.SaveAsync(ProcessorId, 10);
-        await store.SaveAsync(ProcessorId, 20);
-        await store.SaveAsync(ProcessorId, 30);
+        await store.SaveAsync(ProcessorId, 10, TestContext.Current.CancellationToken);
+        await store.SaveAsync(ProcessorId, 20, TestContext.Current.CancellationToken);
+        await store.SaveAsync(ProcessorId, 30, TestContext.Current.CancellationToken);
 
-        var result = await store.GetAsync(ProcessorId);
+        var result = await store.GetAsync(ProcessorId, TestContext.Current.CancellationToken);
         Assert.Equal(30, result);
     }
 
@@ -59,10 +59,10 @@ public abstract class CheckpointStoreSpecification
     {
         var store = await CreateStore();
 
-        await store.SaveAsync(ProcessorId, 100);
-        await store.ResetAsync(ProcessorId);
+        await store.SaveAsync(ProcessorId, 100, TestContext.Current.CancellationToken);
+        await store.ResetAsync(ProcessorId, TestContext.Current.CancellationToken);
 
-        var result = await store.GetAsync(ProcessorId);
+        var result = await store.GetAsync(ProcessorId, TestContext.Current.CancellationToken);
         Assert.Null(result);
     }
 
@@ -71,9 +71,9 @@ public abstract class CheckpointStoreSpecification
     {
         var store = await CreateStore();
 
-        await store.ResetAsync(ProcessorId); // Should not throw
+        await store.ResetAsync(ProcessorId, TestContext.Current.CancellationToken); // Should not throw
 
-        var result = await store.GetAsync(ProcessorId);
+        var result = await store.GetAsync(ProcessorId, TestContext.Current.CancellationToken);
         Assert.Null(result);
     }
 
@@ -84,11 +84,11 @@ public abstract class CheckpointStoreSpecification
         var processor1 = $"processor-1-{Guid.NewGuid():N}";
         var processor2 = $"processor-2-{Guid.NewGuid():N}";
 
-        await store.SaveAsync(processor1, 100);
-        await store.SaveAsync(processor2, 200);
+        await store.SaveAsync(processor1, 100, TestContext.Current.CancellationToken);
+        await store.SaveAsync(processor2, 200, TestContext.Current.CancellationToken);
 
-        Assert.Equal(100, await store.GetAsync(processor1));
-        Assert.Equal(200, await store.GetAsync(processor2));
+        Assert.Equal(100, await store.GetAsync(processor1, TestContext.Current.CancellationToken));
+        Assert.Equal(200, await store.GetAsync(processor2, TestContext.Current.CancellationToken));
     }
 }
 
