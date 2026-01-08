@@ -6,7 +6,7 @@ using Xunit;
 namespace Alberto.Dcb.Tests.Subscriptions;
 
 /// <summary>
-/// Tests for the Reactor base class.
+/// Tests for async reactor processing via consumer registration.
 /// </summary>
 public class ReactorSpecificationTests
 {
@@ -23,21 +23,18 @@ public class ReactorSpecificationTests
 
     #endregion
 
-    #region Test Reactor
+    #region Test Reactor - No Base Class!
 
-    public class NotificationReactor : Reactor,
+    public class NotificationReactor :
         IReact<OrderConfirmed>,
         IReact<OrderShipped>
     {
         private readonly List<string> _sentNotifications;
 
-        public NotificationReactor(ICheckpointStore checkpointStore, List<string> sentNotifications)
-            : base(checkpointStore)
+        public NotificationReactor(List<string> sentNotifications)
         {
             _sentNotifications = sentNotifications;
         }
-
-        public override string ProcessorId => "notification-reactor-v1";
 
         public Task ReactAsync(OrderConfirmed @event, IEventEnvelope envelope, CancellationToken ct)
         {
@@ -54,27 +51,37 @@ public class ReactorSpecificationTests
 
     #endregion
 
+    #region Test Setup
+
+    private static (IEventProcessor processor, List<string> notifications, InMemoryCheckpointStore checkpointStore) CreateProcessor()
+    {
+        var notifications = new List<string>();
+        var checkpointStore = new InMemoryCheckpointStore();
+        var reactor = new NotificationReactor(notifications);
+        var processor = new AsyncReactor<NotificationReactor>(
+            reactor, checkpointStore, "notification-reactor-v1");
+        return (processor, notifications, checkpointStore);
+    }
+
+    #endregion
+
     #region Handled Event Types
 
     [Fact]
     public void HandledEventTypes_ShouldContainImplementedTypes()
     {
-        var checkpointStore = new InMemoryCheckpointStore();
-        var notifications = new List<string>();
-        var reactor = new NotificationReactor(checkpointStore, notifications);
+        var (processor, _, _) = CreateProcessor();
 
-        Assert.Contains("order-confirmed", reactor.HandledEventTypes);
-        Assert.Contains("order-shipped", reactor.HandledEventTypes);
+        Assert.Contains("order-confirmed", processor.HandledEventTypes);
+        Assert.Contains("order-shipped", processor.HandledEventTypes);
     }
 
     [Fact]
     public void HandledEventTypes_ShouldNotContainUnimplementedTypes()
     {
-        var checkpointStore = new InMemoryCheckpointStore();
-        var notifications = new List<string>();
-        var reactor = new NotificationReactor(checkpointStore, notifications);
+        var (processor, _, _) = CreateProcessor();
 
-        Assert.DoesNotContain("order-cancelled", reactor.HandledEventTypes);
+        Assert.DoesNotContain("order-cancelled", processor.HandledEventTypes);
     }
 
     #endregion
@@ -84,9 +91,7 @@ public class ReactorSpecificationTests
     [Fact]
     public async Task ProcessBatch_ShouldCallHandlers()
     {
-        var checkpointStore = new InMemoryCheckpointStore();
-        var notifications = new List<string>();
-        var reactor = new NotificationReactor(checkpointStore, notifications);
+        var (processor, notifications, _) = CreateProcessor();
 
         var orderId = Guid.NewGuid();
         var events = new[]
@@ -95,7 +100,7 @@ public class ReactorSpecificationTests
             CreateEnvelope(new OrderShipped(orderId), 2)
         };
 
-        await reactor.ProcessBatchAsync(events);
+        await processor.ProcessBatchAsync(events);
 
         Assert.Equal(2, notifications.Count);
         Assert.Contains("Confirmation email", notifications[0]);
@@ -105,9 +110,7 @@ public class ReactorSpecificationTests
     [Fact]
     public async Task ProcessBatch_ShouldSaveCheckpoint()
     {
-        var checkpointStore = new InMemoryCheckpointStore();
-        var notifications = new List<string>();
-        var reactor = new NotificationReactor(checkpointStore, notifications);
+        var (processor, _, checkpointStore) = CreateProcessor();
 
         var events = new[]
         {
@@ -115,18 +118,16 @@ public class ReactorSpecificationTests
             CreateEnvelope(new OrderShipped(Guid.NewGuid()), 15)
         };
 
-        await reactor.ProcessBatchAsync(events);
+        await processor.ProcessBatchAsync(events);
 
-        var checkpoint = await checkpointStore.GetAsync(reactor.ProcessorId);
+        var checkpoint = await checkpointStore.GetAsync(processor.ProcessorId);
         Assert.Equal(15, checkpoint);
     }
 
     [Fact]
     public async Task ProcessBatch_ShouldIgnoreUnhandledEvents()
     {
-        var checkpointStore = new InMemoryCheckpointStore();
-        var notifications = new List<string>();
-        var reactor = new NotificationReactor(checkpointStore, notifications);
+        var (processor, notifications, _) = CreateProcessor();
 
         var events = new[]
         {
@@ -134,7 +135,7 @@ public class ReactorSpecificationTests
             CreateEnvelope(new OrderCancelled(Guid.NewGuid()), 2) // Not handled
         };
 
-        await reactor.ProcessBatchAsync(events);
+        await processor.ProcessBatchAsync(events);
 
         Assert.Single(notifications);
         Assert.Contains("Confirmation email", notifications[0]);
@@ -143,14 +144,30 @@ public class ReactorSpecificationTests
     [Fact]
     public async Task ProcessBatch_EmptyBatch_ShouldNotThrow()
     {
-        var checkpointStore = new InMemoryCheckpointStore();
-        var notifications = new List<string>();
-        var reactor = new NotificationReactor(checkpointStore, notifications);
+        var (processor, notifications, _) = CreateProcessor();
 
-        var result = await reactor.ProcessBatchAsync([]);
+        var result = await processor.ProcessBatchAsync([]);
 
         Assert.Equal(ProcessingResult.Continue, result);
         Assert.Empty(notifications);
+    }
+
+    [Fact]
+    public void ProcessorId_ShouldMatchConstructorArgument()
+    {
+        var (processor, _, _) = CreateProcessor();
+
+        Assert.Equal("notification-reactor-v1", processor.ProcessorId);
+    }
+
+    [Fact]
+    public void Constructor_ShouldThrowIfNoReactInterfaces()
+    {
+        var checkpointStore = new InMemoryCheckpointStore();
+        var invalidReactor = new object(); // No IReact<> interfaces
+
+        Assert.Throws<ArgumentException>(() =>
+            new AsyncReactor<object>(invalidReactor, checkpointStore, "test"));
     }
 
     #endregion

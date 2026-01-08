@@ -56,4 +56,28 @@ public static class EventConsumerExtensions
             processorId ?? typeof(TProjection).Name);
         consumer.RegisterProcessor(processor);
     }
+
+    /// <summary>
+    /// Register a reactor to run asynchronously via this consumer.
+    /// The reactor should implement IReact&lt;TEvent&gt; for each event it handles.
+    /// No base class inheritance required.
+    /// </summary>
+    /// <typeparam name="TReactor">The reactor type implementing IReact&lt;TEvent&gt; interfaces.</typeparam>
+    /// <param name="consumer">The consumer to register with.</param>
+    /// <param name="reactor">The reactor instance.</param>
+    /// <param name="checkpointStore">Checkpoint storage for tracking progress.</param>
+    /// <param name="processorId">Optional processor ID. Defaults to reactor type name.</param>
+    public static void RegisterReactor<TReactor>(
+        this IEventConsumer consumer,
+        TReactor reactor,
+        ICheckpointStore checkpointStore,
+        string? processorId = null)
+        where TReactor : class
+    {
+        var processor = new AsyncReactor<TReactor>(
+            reactor,
+            checkpointStore,
+            processorId ?? typeof(TReactor).Name);
+        consumer.RegisterProcessor(processor);
+    }
 }
