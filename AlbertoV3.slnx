@@ -1,8 +1,18 @@
 <Solution>
-  <Project Path="src/Alberto.Dcb/Alberto.Dcb.csproj" />
-  <Project Path="src/Alberto.Dcb.InMemory/Alberto.Dcb.InMemory.csproj" />
-  <Project Path="src/Alberto.Dcb.Postgres/Alberto.Dcb.Postgres.csproj" />
-  <Project Path="src/Alberto.Dcb.Telemetry/Alberto.Dcb.Telemetry.csproj" />
-  <Project Path="apps/Alberto.AppHost/Alberto.AppHost.csproj" />
-  <Project Path="tests/Alberto.Dcb.Tests/Alberto.Dcb.Tests.csproj" />
+  <Folder Name="/src/">
+    <Project Path="src/Alberto.Dcb/Alberto.Dcb.csproj" />
+    <Project Path="src/Alberto.Dcb.InMemory/Alberto.Dcb.InMemory.csproj" />
+    <Project Path="src/Alberto.Dcb.Postgres/Alberto.Dcb.Postgres.csproj" />
+    <Project Path="src/Alberto.Dcb.Telemetry/Alberto.Dcb.Telemetry.csproj" />
+    <Project Path="src/Alberto.Dcb.Admin/Alberto.Dcb.Admin.csproj" />
+  </Folder>
+  <Folder Name="/apps/">
+    <Project Path="apps/Alberto.AppHost/Alberto.AppHost.csproj" />
+    <Project Path="apps/Alberto.Orders/Alberto.Orders.Core/Alberto.Orders.Core.csproj" />
+    <Project Path="apps/Alberto.Orders/Alberto.Orders.Infrastructure/Alberto.Orders.Infrastructure.csproj" />
+    <Project Path="apps/Alberto.Orders/Alberto.Orders.Api/Alberto.Orders.Api.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Alberto.Dcb.Tests/Alberto.Dcb.Tests.csproj" />
+  </Folder>
 </Solution>

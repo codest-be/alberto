@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Alberto.Orders.Core\Alberto.Orders.Core.csproj" />
+    <ProjectReference Include="..\..\..\src\Alberto.Dcb.Postgres\Alberto.Dcb.Postgres.csproj" />
+    <ProjectReference Include="..\..\..\src\Alberto.Dcb.Telemetry\Alberto.Dcb.Telemetry.csproj" />
+    <ProjectReference Include="..\..\..\src\Alberto.Dcb.Admin\Alberto.Dcb.Admin.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
+  </ItemGroup>
+
+</Project>

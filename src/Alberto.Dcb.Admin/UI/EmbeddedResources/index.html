@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DCB Admin</title>
+    <link rel="stylesheet" href="admin.css">
+    <script src="config.js"></script>
+</head>
+<body>
+    <div class="layout">
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h1 id="app-title">DCB Admin</h1>
+            </div>
+            <nav class="nav">
+                <a href="#" class="nav-item active" data-view="overview">
+                    <span class="nav-icon">&#9673;</span>
+                    Overview
+                </a>
+                <a href="#" class="nav-item" data-view="processors">
+                    <span class="nav-icon">&#9881;</span>
+                    Processors
+                </a>
+                <a href="#" class="nav-item" data-view="checkpoints">
+                    <span class="nav-icon">&#10003;</span>
+                    Checkpoints
+                </a>
+                <a href="#" class="nav-item" data-view="projections">
+                    <span class="nav-icon">&#9638;</span>
+                    Projections
+                </a>
+                <a href="#" class="nav-item" data-view="dead-letters">
+                    <span class="nav-icon">&#9888;</span>
+                    Dead Letters
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <span id="read-only-badge" class="badge badge-warning" style="display: none;">Read Only</span>
+            </div>
+        </aside>
+        <main class="main">
+            <header class="header">
+                <h2 id="view-title">Overview</h2>
+                <div class="header-actions">
+                    <button class="btn btn-secondary" onclick="refresh()">
+                        &#8635; Refresh
+                    </button>
+                </div>
+            </header>
+            <div class="content" id="content">
+                <!-- Dynamic content -->
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal -->
+    <div id="modal" class="modal" style="display: none;">
+        <div class="modal-backdrop" onclick="closeModal()"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title">Details</h3>
+                <button class="btn-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="modal-body">
+            </div>
+        </div>
+    </div>
+
+    <script src="admin.js"></script>
+</body>
+</html>

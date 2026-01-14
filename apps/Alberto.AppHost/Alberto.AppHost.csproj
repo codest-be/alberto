@@ -10,7 +10,11 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="Aspire.Hosting.AppHost" />
-        <PackageReference Include="Aspire.Hosting.PostgreSQL" />
+        <PackageReference Include="Aspire.Hosting.AppHost" VersionOverride="9.0.0" />
+        <PackageReference Include="Aspire.Hosting.PostgreSQL" VersionOverride="9.0.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Alberto.Orders\Alberto.Orders.Api\Alberto.Orders.Api.csproj" IsAspireProjectResource="true" />
     </ItemGroup>
 </Project>

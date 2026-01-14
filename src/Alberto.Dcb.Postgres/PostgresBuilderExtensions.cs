@@ -1,3 +1,4 @@
+using Alberto.Dcb.Admin.Internal;
 using Alberto.Dcb.Subscriptions;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -73,6 +74,13 @@ public static class PostgresBuilderExtensions
         {
             var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
             return new PostgresDeadLetterStore(dataSource);
+        });
+
+        // Register admin data access
+        builder.Services.AddKeyedSingleton<IAdminDataAccess>(moduleKey, (sp, _) =>
+        {
+            var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
+            return new PostgresAdminDataAccess(dataSource);
         });
 
         return builder;
