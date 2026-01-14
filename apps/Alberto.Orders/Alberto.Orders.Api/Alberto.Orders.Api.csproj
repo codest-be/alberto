@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Alberto.Orders.Infrastructure\Alberto.Orders.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\..\src\Alberto.Dcb.Telemetry\Alberto.Dcb.Telemetry.csproj" />
   </ItemGroup>
 
   <ItemGroup>

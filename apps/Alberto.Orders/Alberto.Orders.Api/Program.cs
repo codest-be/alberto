@@ -1,4 +1,5 @@
 using Alberto.Dcb.Admin;
+using Alberto.Dcb.Telemetry;
 using Alberto.Orders.Api.GraphQL;
 using Alberto.Orders.Infrastructure;
 using OpenTelemetry.Resources;
@@ -12,6 +13,7 @@ builder.Services.AddOpenTelemetry()
     .WithTracing(tracing => tracing
         .AddAspNetCoreInstrumentation()
         .AddHttpClientInstrumentation()
+        .AddAlbertoInstrumentation()
         .AddOtlpExporter());
 
 // Add services
