@@ -1,11 +1,10 @@
-using System.Runtime.CompilerServices;
 using Alberto.Dcb.Admin.Subscriptions;
 using Alberto.Orders.Api.GraphQL.Types;
 
 namespace Alberto.Orders.Api.GraphQL.Subscriptions;
 
 /// <summary>
-/// GraphQL subscriptions for admin monitoring.
+/// GraphQL subscriptions for admin monitoring using HotChocolate's topic-based pub/sub.
 /// </summary>
 [SubscriptionType]
 public static class AdminSubscriptions
@@ -15,28 +14,23 @@ public static class AdminSubscriptions
     /// <summary>
     /// Subscribes to real-time processor status updates.
     /// </summary>
-    [Subscribe(With = nameof(SubscribeToProcessorStatus))]
+    [Subscribe]
+    [Topic(AdminTopics.ProcessorStatus)]
     [GraphQLDescription("Subscribes to real-time processor status updates.")]
     public static ProcessorStatusUpdated OnProcessorStatusUpdated(
-        [EventMessage] ProcessorStatusUpdated update) => update;
-
-    public static async IAsyncEnumerable<ProcessorStatusUpdated> SubscribeToProcessorStatus(
-        [Service] InMemoryAdminPublisher publisher,
-        string? moduleKey = null,
-        string? processorId = null,
-        [EnumeratorCancellation] CancellationToken ct = default)
+        string? moduleKey,
+        string? processorId,
+        [EventMessage] ProcessorStatusUpdate update)
     {
-        await foreach (var update in publisher.ProcessorUpdates.ReadAllAsync(ct))
-        {
-            if (moduleKey is not null && update.ModuleKey != moduleKey)
-                continue;
-            if (processorId is not null && update.Status.ProcessorId != processorId)
-                continue;
+        // Filter by moduleKey and processorId if provided
+        if (moduleKey is not null && update.ModuleKey != moduleKey)
+            return null!;
+        if (processorId is not null && update.Status.ProcessorId != processorId)
+            return null!;
 
-            yield return new ProcessorStatusUpdated(
-                update.ModuleKey,
-                ProcessorStatus.FromDto(update.Status));
-        }
+        return new ProcessorStatusUpdated(
+            update.ModuleKey,
+            ProcessorStatus.FromDto(update.Status));
     }
 
     #endregion
@@ -46,28 +40,22 @@ public static class AdminSubscriptions
     /// <summary>
     /// Subscribes to real-time checkpoint updates.
     /// </summary>
-    [Subscribe(With = nameof(SubscribeToCheckpoints))]
+    [Subscribe]
+    [Topic(AdminTopics.Checkpoint)]
     [GraphQLDescription("Subscribes to real-time checkpoint updates.")]
     public static CheckpointUpdated OnCheckpointUpdated(
-        [EventMessage] CheckpointUpdated update) => update;
-
-    public static async IAsyncEnumerable<CheckpointUpdated> SubscribeToCheckpoints(
-        [Service] InMemoryAdminPublisher publisher,
-        string? moduleKey = null,
-        string? processorId = null,
-        [EnumeratorCancellation] CancellationToken ct = default)
+        string? moduleKey,
+        string? processorId,
+        [EventMessage] CheckpointUpdate update)
     {
-        await foreach (var update in publisher.CheckpointUpdates.ReadAllAsync(ct))
-        {
-            if (moduleKey is not null && update.ModuleKey != moduleKey)
-                continue;
-            if (processorId is not null && update.Checkpoint.ProcessorId != processorId)
-                continue;
+        if (moduleKey is not null && update.ModuleKey != moduleKey)
+            return null!;
+        if (processorId is not null && update.Checkpoint.ProcessorId != processorId)
+            return null!;
 
-            yield return new CheckpointUpdated(
-                update.ModuleKey,
-                Checkpoint.FromDto(update.Checkpoint));
-        }
+        return new CheckpointUpdated(
+            update.ModuleKey,
+            Checkpoint.FromDto(update.Checkpoint));
     }
 
     #endregion
@@ -77,29 +65,23 @@ public static class AdminSubscriptions
     /// <summary>
     /// Subscribes to real-time dead letter changes.
     /// </summary>
-    [Subscribe(With = nameof(SubscribeToDeadLetters))]
+    [Subscribe]
+    [Topic(AdminTopics.DeadLetter)]
     [GraphQLDescription("Subscribes to real-time dead letter changes (new failures).")]
     public static DeadLetterChanged OnDeadLetterChanged(
-        [EventMessage] DeadLetterChanged update) => update;
-
-    public static async IAsyncEnumerable<DeadLetterChanged> SubscribeToDeadLetters(
-        [Service] InMemoryAdminPublisher publisher,
-        string? moduleKey = null,
-        string? processorId = null,
-        [EnumeratorCancellation] CancellationToken ct = default)
+        string? moduleKey,
+        string? processorId,
+        [EventMessage] DeadLetterUpdate update)
     {
-        await foreach (var update in publisher.DeadLetterUpdates.ReadAllAsync(ct))
-        {
-            if (moduleKey is not null && update.ModuleKey != moduleKey)
-                continue;
-            if (processorId is not null && update.DeadLetter.ProcessorId != processorId)
-                continue;
+        if (moduleKey is not null && update.ModuleKey != moduleKey)
+            return null!;
+        if (processorId is not null && update.DeadLetter.ProcessorId != processorId)
+            return null!;
 
-            yield return new DeadLetterChanged(
-                update.ModuleKey,
-                DeadLetter.FromDto(update.DeadLetter),
-                update.ChangeType.ToString());
-        }
+        return new DeadLetterChanged(
+            update.ModuleKey,
+            DeadLetter.FromDto(update.DeadLetter),
+            update.ChangeType.ToString());
     }
 
     #endregion
@@ -109,25 +91,19 @@ public static class AdminSubscriptions
     /// <summary>
     /// Subscribes to real-time system info updates.
     /// </summary>
-    [Subscribe(With = nameof(SubscribeToSystemInfo))]
+    [Subscribe]
+    [Topic(AdminTopics.SystemInfo)]
     [GraphQLDescription("Subscribes to real-time system info updates.")]
     public static SystemInfoUpdated OnSystemInfoUpdated(
-        [EventMessage] SystemInfoUpdated update) => update;
-
-    public static async IAsyncEnumerable<SystemInfoUpdated> SubscribeToSystemInfo(
-        [Service] InMemoryAdminPublisher publisher,
-        string? moduleKey = null,
-        [EnumeratorCancellation] CancellationToken ct = default)
+        string? moduleKey,
+        [EventMessage] SystemInfoUpdate update)
     {
-        await foreach (var update in publisher.SystemInfoUpdates.ReadAllAsync(ct))
-        {
-            if (moduleKey is not null && update.ModuleKey != moduleKey)
-                continue;
+        if (moduleKey is not null && update.ModuleKey != moduleKey)
+            return null!;
 
-            yield return new SystemInfoUpdated(
-                update.ModuleKey,
-                SystemInfo.FromDto(update.Info));
-        }
+        return new SystemInfoUpdated(
+            update.ModuleKey,
+            SystemInfo.FromDto(update.Info));
     }
 
     #endregion

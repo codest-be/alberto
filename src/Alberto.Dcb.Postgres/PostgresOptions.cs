@@ -15,4 +15,11 @@ public sealed class PostgresOptions
     /// Default is true.
     /// </summary>
     public bool AutoMigrate { get; set; } = true;
+
+    /// <summary>
+    /// The PostgreSQL schema to use for all tables and functions.
+    /// If null or empty, uses the default PostgreSQL search path (typically "public").
+    /// Example: "orders" creates orders.events, orders.append_events(), etc.
+    /// </summary>
+    public string? Schema { get; set; }
 }

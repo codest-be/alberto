@@ -28,6 +28,7 @@
     <!-- GraphQL -->
     <PackageVersion Include="HotChocolate.AspNetCore" Version="15.1.11" />
     <PackageVersion Include="HotChocolate.Diagnostics" Version="15.1.11" />
+    <PackageVersion Include="HotChocolate.Subscriptions.InMemory" Version="15.1.11" />
     <PackageVersion Include="HotChocolate.Types.Analyzers" Version="15.1.11" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.2" />
     <!-- Service Defaults -->

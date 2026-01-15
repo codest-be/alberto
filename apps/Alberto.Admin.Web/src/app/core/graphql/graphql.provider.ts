@@ -1,4 +1,4 @@
-import { inject, Provider } from '@angular/core';
+import { inject, Injectable, Provider, signal } from '@angular/core';
 import { InMemoryCache, split } from '@apollo/client/core';
 import { GraphQLWsLink } from '@apollo/client/link/subscriptions';
 import { HttpLink } from 'apollo-angular/http';
@@ -8,12 +8,26 @@ import { APOLLO_OPTIONS, Apollo } from 'apollo-angular';
 import { HttpClient } from '@angular/common/http';
 import { Kind, OperationTypeNode } from 'graphql';
 
-let wsClient: Client | null = null;
+/**
+ * Service to track WebSocket connection state.
+ */
+@Injectable({ providedIn: 'root' })
+export class WebSocketConnectionService {
+  readonly connected = signal(false);
 
-function createWsClient(url: string): Client {
+  setConnected(value: boolean): void {
+    this.connected.set(value);
+  }
+}
+
+let wsClient: Client | null = null;
+let connectionService: WebSocketConnectionService | null = null;
+
+function createWsClient(url: string, connService: WebSocketConnectionService): Client {
   return createClient({
     url,
     connectionParams: {},
+    lazy: false, // Connect immediately instead of waiting for first subscription
     retryAttempts: Infinity,
     retryWait: async (retries) => {
       // Exponential backoff: 1s, 2s, 4s, 8s, max 30s
@@ -23,8 +37,20 @@ function createWsClient(url: string): Client {
     },
     shouldRetry: () => true,
     on: {
-      connected: () => console.log('[Apollo] WebSocket connected'),
-      closed: (event) => console.log('[Apollo] WebSocket closed', event),
+      connecting: () => {
+        console.log('[Apollo] WebSocket connecting...');
+      },
+      opened: (socket) => {
+        console.log('[Apollo] WebSocket opened', (socket as WebSocket).url);
+      },
+      connected: () => {
+        console.log('[Apollo] WebSocket connected (protocol handshake complete)');
+        connService.setConnected(true);
+      },
+      closed: (event) => {
+        console.log('[Apollo] WebSocket closed', event);
+        connService.setConnected(false);
+      },
       error: (error) => console.error('[Apollo] WebSocket error', error),
     },
   });
@@ -32,6 +58,7 @@ function createWsClient(url: string): Client {
 
 function apolloOptionsFactory() {
   const httpClient = inject(HttpClient);
+  const connService = inject(WebSocketConnectionService);
 
   // WebSocket URL - use relative path through proxy
   const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -46,7 +73,8 @@ function apolloOptionsFactory() {
 
   // Create WebSocket client (singleton to avoid multiple connections)
   if (!wsClient) {
-    wsClient = createWsClient(wsUrl);
+    connectionService = connService;
+    wsClient = createWsClient(wsUrl, connService);
   }
 
   // WebSocket link for subscriptions

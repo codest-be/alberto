@@ -1,0 +1,22 @@
+{
+  "name": "alberto-orders-load-tests",
+  "version": "1.0.0",
+  "description": "K6 load tests for Alberto Order Service GraphQL API",
+  "scripts": {
+    "build": "webpack",
+    "build:watch": "webpack --watch",
+    "test:smoke": "npm run build && k6 run dist/smoke.test.js",
+    "test:load": "npm run build && k6 run dist/load.test.js",
+    "test:stress": "npm run build && k6 run dist/stress.test.js",
+    "test:spike": "npm run build && k6 run dist/spike.test.js",
+    "test:local": "npm run build && k6 run --env ENV=local dist/load.test.js",
+    "test:docker": "npm run build && k6 run --env ENV=docker dist/load.test.js"
+  },
+  "devDependencies": {
+    "@types/k6": "^0.54.0",
+    "typescript": "~5.7.0",
+    "webpack": "^5.97.0",
+    "webpack-cli": "^6.0.0",
+    "ts-loader": "^9.5.0"
+  }
+}

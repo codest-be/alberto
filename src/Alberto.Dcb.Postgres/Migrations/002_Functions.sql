@@ -1,7 +1,7 @@
 -- Alberto DCB Event Store - PostgreSQL Functions
 
 -- Append events with optional DCB conflict check
-CREATE OR REPLACE FUNCTION append_events(
+CREATE OR REPLACE FUNCTION $schema_prefix$append_events(
     p_tenant_id VARCHAR(100),
     p_events JSONB,
     p_dcb_types VARCHAR(500)[] DEFAULT NULL,
@@ -34,7 +34,7 @@ BEGIN
         -- Check for conflicts by types
         IF p_dcb_types IS NOT NULL AND array_length(p_dcb_types, 1) > 0 THEN
             SELECT etp.global_position INTO v_conflict_position
-            FROM event_type_positions etp
+            FROM $schema_prefix$event_type_positions etp
             WHERE etp.tenant_id = p_tenant_id
               AND etp.event_type = ANY(p_dcb_types)
               AND etp.global_position > p_expected_position
@@ -49,7 +49,7 @@ BEGIN
         -- Check for conflicts by tags
         IF p_dcb_tags IS NOT NULL AND array_length(p_dcb_tags, 1) > 0 THEN
             SELECT etagp.global_position INTO v_conflict_position
-            FROM event_tag_positions etagp
+            FROM $schema_prefix$event_tag_positions etagp
             WHERE etagp.tenant_id = p_tenant_id
               AND etagp.tag = ANY(p_dcb_tags)
               AND etagp.global_position > p_expected_position
@@ -73,18 +73,18 @@ BEGIN
         v_created_at := now();
 
         -- Insert into events table
-        INSERT INTO events (tenant_id, event_id, event_type, event_tags, event_data, event_metadata, created_at)
+        INSERT INTO $schema_prefix$events (tenant_id, event_id, event_type, event_tags, event_data, event_metadata, created_at)
         VALUES (p_tenant_id, v_event_id, v_event_type, v_event_tags, v_event_data, v_event_metadata, v_created_at)
-        RETURNING events.global_position INTO v_new_position;
+        RETURNING $schema_prefix$events.global_position INTO v_new_position;
 
         -- Update type inverted index
-        INSERT INTO event_type_positions (tenant_id, event_type, global_position)
+        INSERT INTO $schema_prefix$event_type_positions (tenant_id, event_type, global_position)
         VALUES (p_tenant_id, v_event_type, v_new_position);
 
         -- Update tag inverted index
         FOREACH v_tag IN ARRAY v_event_tags
         LOOP
-            INSERT INTO event_tag_positions (tenant_id, tag, global_position)
+            INSERT INTO $schema_prefix$event_tag_positions (tenant_id, tag, global_position)
             VALUES (p_tenant_id, v_tag, v_new_position);
         END LOOP;
 
@@ -102,7 +102,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Read events by types (OR logic)
-CREATE OR REPLACE FUNCTION read_by_types(
+CREATE OR REPLACE FUNCTION $schema_prefix$read_by_types(
     p_tenant_id VARCHAR(100),
     p_types VARCHAR(500)[],
     p_after_position BIGINT DEFAULT 0,
@@ -121,8 +121,8 @@ RETURNS TABLE (
 BEGIN
     RETURN QUERY
     SELECT e.global_position, e.tenant_id, e.event_id, e.event_type, e.event_tags, e.event_data, e.event_metadata, e.created_at
-    FROM events e
-    INNER JOIN event_type_positions etp ON e.global_position = etp.global_position
+    FROM $schema_prefix$events e
+    INNER JOIN $schema_prefix$event_type_positions etp ON e.global_position = etp.global_position
     WHERE etp.tenant_id = p_tenant_id
       AND etp.event_type = ANY(p_types)
       AND e.global_position > p_after_position
@@ -132,7 +132,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Read events by tags (OR logic)
-CREATE OR REPLACE FUNCTION read_by_tags(
+CREATE OR REPLACE FUNCTION $schema_prefix$read_by_tags(
     p_tenant_id VARCHAR(100),
     p_tags VARCHAR(500)[],
     p_after_position BIGINT DEFAULT 0,
@@ -151,8 +151,8 @@ RETURNS TABLE (
 BEGIN
     RETURN QUERY
     SELECT e.global_position, e.tenant_id, e.event_id, e.event_type, e.event_tags, e.event_data, e.event_metadata, e.created_at
-    FROM events e
-    INNER JOIN event_tag_positions etagp ON e.global_position = etagp.global_position
+    FROM $schema_prefix$events e
+    INNER JOIN $schema_prefix$event_tag_positions etagp ON e.global_position = etagp.global_position
     WHERE etagp.tenant_id = p_tenant_id
       AND etagp.tag = ANY(p_tags)
       AND e.global_position > p_after_position
@@ -162,7 +162,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Read events by types OR tags (DCB query)
-CREATE OR REPLACE FUNCTION read_by_types_or_tags(
+CREATE OR REPLACE FUNCTION $schema_prefix$read_by_types_or_tags(
     p_tenant_id VARCHAR(100),
     p_types VARCHAR(500)[] DEFAULT NULL,
     p_tags VARCHAR(500)[] DEFAULT NULL,
@@ -182,9 +182,9 @@ RETURNS TABLE (
 BEGIN
     RETURN QUERY
     SELECT DISTINCT e.global_position, e.tenant_id, e.event_id, e.event_type, e.event_tags, e.event_data, e.event_metadata, e.created_at
-    FROM events e
-    LEFT JOIN event_type_positions etp ON e.global_position = etp.global_position AND etp.tenant_id = p_tenant_id
-    LEFT JOIN event_tag_positions etagp ON e.global_position = etagp.global_position AND etagp.tenant_id = p_tenant_id
+    FROM $schema_prefix$events e
+    LEFT JOIN $schema_prefix$event_type_positions etp ON e.global_position = etp.global_position AND etp.tenant_id = p_tenant_id
+    LEFT JOIN $schema_prefix$event_tag_positions etagp ON e.global_position = etagp.global_position AND etagp.tenant_id = p_tenant_id
     WHERE e.tenant_id = p_tenant_id
       AND e.global_position > p_after_position
       AND (
@@ -197,7 +197,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Read all events for a tenant
-CREATE OR REPLACE FUNCTION read_all(
+CREATE OR REPLACE FUNCTION $schema_prefix$read_all(
     p_tenant_id VARCHAR(100),
     p_after_position BIGINT DEFAULT 0,
     p_limit INT DEFAULT NULL
@@ -215,7 +215,7 @@ RETURNS TABLE (
 BEGIN
     RETURN QUERY
     SELECT e.global_position, e.tenant_id, e.event_id, e.event_type, e.event_tags, e.event_data, e.event_metadata, e.created_at
-    FROM events e
+    FROM $schema_prefix$events e
     WHERE e.tenant_id = p_tenant_id
       AND e.global_position > p_after_position
     ORDER BY e.global_position
@@ -224,7 +224,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Read all events globally (for system-wide subscriptions)
-CREATE OR REPLACE FUNCTION read_all_global(
+CREATE OR REPLACE FUNCTION $schema_prefix$read_all_global(
     p_after_position BIGINT DEFAULT 0,
     p_limit INT DEFAULT NULL
 )
@@ -241,7 +241,7 @@ RETURNS TABLE (
 BEGIN
     RETURN QUERY
     SELECT e.global_position, e.tenant_id, e.event_id, e.event_type, e.event_tags, e.event_data, e.event_metadata, e.created_at
-    FROM events e
+    FROM $schema_prefix$events e
     WHERE e.global_position > p_after_position
     ORDER BY e.global_position
     LIMIT p_limit;
@@ -249,13 +249,13 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Get last position for a tenant
-CREATE OR REPLACE FUNCTION get_last_position(p_tenant_id VARCHAR(100))
+CREATE OR REPLACE FUNCTION $schema_prefix$get_last_position(p_tenant_id VARCHAR(100))
 RETURNS BIGINT AS $$
 DECLARE
     v_position BIGINT;
 BEGIN
     SELECT COALESCE(MAX(e.global_position), 0) INTO v_position
-    FROM events e
+    FROM $schema_prefix$events e
     WHERE e.tenant_id = p_tenant_id;
 
     RETURN v_position;
@@ -263,13 +263,13 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Get last position globally
-CREATE OR REPLACE FUNCTION get_last_position_global()
+CREATE OR REPLACE FUNCTION $schema_prefix$get_last_position_global()
 RETURNS BIGINT AS $$
 DECLARE
     v_position BIGINT;
 BEGIN
     SELECT COALESCE(MAX(e.global_position), 0) INTO v_position
-    FROM events e;
+    FROM $schema_prefix$events e;
 
     RETURN v_position;
 END;

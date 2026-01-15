@@ -9,12 +9,12 @@ public static class AdminSubscriptionExtensions
 {
     /// <summary>
     /// Adds admin real-time subscription services.
+    /// Requires HotChocolate's AddInMemorySubscriptions() to be called first.
     /// </summary>
     public static IServiceCollection AddAdminSubscriptions(this IServiceCollection services)
     {
-        // Register unified publisher
-        services.AddSingleton<InMemoryAdminPublisher>();
-        services.AddSingleton<IAdminPublisher>(sp => sp.GetRequiredService<InMemoryAdminPublisher>());
+        // Register HotChocolate-based admin publisher
+        services.AddSingleton<IAdminPublisher, HotChocolateAdminPublisher>();
 
         // Legacy support - redirect to unified publisher
         services.AddSingleton<InMemoryProcessorStatusPublisher>();

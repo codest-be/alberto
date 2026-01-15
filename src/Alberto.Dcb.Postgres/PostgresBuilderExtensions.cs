@@ -32,7 +32,7 @@ public static class PostgresBuilderExtensions
         // Run migrations if enabled
         if (options.AutoMigrate)
         {
-            var migrationResult = PostgresMigrator.Migrate(options.ConnectionString);
+            var migrationResult = PostgresMigrator.Migrate(options.ConnectionString, options.Schema);
             if (!migrationResult.Successful)
             {
                 throw new InvalidOperationException(
@@ -42,6 +42,7 @@ public static class PostgresBuilderExtensions
         }
 
         var moduleKey = builder.ModuleKey;
+        var schema = options.Schema;
 
         // Register NpgsqlDataSource
         builder.Services.AddKeyedSingleton(moduleKey,
@@ -59,7 +60,7 @@ public static class PostgresBuilderExtensions
         {
             var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
             var timeProvider = sp.GetService<TimeProvider>() ?? TimeProvider.System;
-            var rawBackend = new PostgresEventStoreBackend(dataSource, timeProvider);
+            var rawBackend = new PostgresEventStoreBackend(dataSource, timeProvider, schema);
 
             var pipeline = sp.GetRequiredKeyedService<IAppendInterceptorPipeline>(moduleKey);
             return new InterceptingEventStoreBackend(rawBackend, pipeline);
@@ -76,21 +77,21 @@ public static class PostgresBuilderExtensions
         builder.Services.AddKeyedSingleton<ICheckpointStore>(moduleKey, (sp, _) =>
         {
             var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
-            return new PostgresCheckpointStore(dataSource);
+            return new PostgresCheckpointStore(dataSource, schema);
         });
 
         // Register dead letter store
         builder.Services.AddKeyedSingleton<IDeadLetterStore>(moduleKey, (sp, _) =>
         {
             var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
-            return new PostgresDeadLetterStore(dataSource);
+            return new PostgresDeadLetterStore(dataSource, schema);
         });
 
         // Register admin data access
         builder.Services.AddKeyedSingleton<IAdminDataAccess>(moduleKey, (sp, _) =>
         {
             var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
-            return new PostgresAdminDataAccess(dataSource);
+            return new PostgresAdminDataAccess(dataSource, schema);
         });
 
         return builder;

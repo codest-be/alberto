@@ -1,33 +1,12 @@
-using System.Threading.Channels;
 using Alberto.Dcb.Admin.Api.Models;
 
 namespace Alberto.Dcb.Admin.Subscriptions;
 
 /// <summary>
-/// Interface for publishing admin updates.
+/// Interface for publishing admin updates via HotChocolate's topic-based pub/sub.
 /// </summary>
 public interface IAdminPublisher
 {
-    /// <summary>
-    /// Reader for processor status updates.
-    /// </summary>
-    ChannelReader<ProcessorStatusUpdate> ProcessorUpdates { get; }
-
-    /// <summary>
-    /// Reader for checkpoint updates.
-    /// </summary>
-    ChannelReader<CheckpointUpdate> CheckpointUpdates { get; }
-
-    /// <summary>
-    /// Reader for dead letter updates.
-    /// </summary>
-    ChannelReader<DeadLetterUpdate> DeadLetterUpdates { get; }
-
-    /// <summary>
-    /// Reader for system info updates.
-    /// </summary>
-    ChannelReader<SystemInfoUpdate> SystemInfoUpdates { get; }
-
     /// <summary>
     /// Publishes a processor status update.
     /// </summary>

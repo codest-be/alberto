@@ -1,5 +1,7 @@
 using Alberto.Dcb.Admin;
 using Alberto.Dcb.Admin.Subscriptions;
+using Alberto.Dcb.Tenancy;
+using Alberto.Orders.Api.GraphQL;
 using Alberto.Orders.Infrastructure;
 using HotChocolate.Diagnostics;
 
@@ -11,15 +13,16 @@ builder.AddServiceDefaults();
 // Add services
 builder.Services.AddSingleton(TimeProvider.System);
 
+// Add tenancy support
+builder.Services.AddTenancy();
+
 // Add Orders module
 builder.Services.AddOrdersModule(builder.Configuration);
 
-// Add admin subscriptions (real-time monitoring)
-builder.Services.AddAdminSubscriptions();
-
-// Add GraphQL with subscriptions
+// Add GraphQL with subscriptions (must be before AddAdminSubscriptions)
 builder.Services
     .AddGraphQLServer()
+    .AddHttpRequestInterceptor<TenantHttpRequestInterceptor>()
     .AddInstrumentation(o =>
     {
         o.RequestDetails = RequestDetails.Operation;
@@ -28,6 +31,9 @@ builder.Services
     })
     .AddTypes()
     .AddInMemorySubscriptions();
+
+// Add admin subscriptions (real-time monitoring)
+builder.Services.AddAdminSubscriptions();
 
 var app = builder.Build();
 

@@ -1,7 +1,8 @@
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { Apollo, gql } from 'apollo-angular';
-import { Observable, map, tap, retry, timer } from 'rxjs';
+import { Observable, map, retry, timer } from 'rxjs';
 import { ProcessorStatus, Checkpoint, DeadLetter, SystemInfo } from '../models/admin.models';
+import { WebSocketConnectionService } from './graphql.provider';
 
 // GraphQL Subscriptions
 const PROCESSOR_STATUS_SUBSCRIPTION = gql`
@@ -92,8 +93,10 @@ export interface SystemInfoUpdate {
 @Injectable({ providedIn: 'root' })
 export class AdminSubscriptionService {
   private readonly apollo = inject(Apollo);
+  private readonly wsConnection = inject(WebSocketConnectionService);
 
-  readonly connected = signal(false);
+  /** Exposes the WebSocket connection state */
+  readonly connected = this.wsConnection.connected;
 
   /**
    * Subscribe to processor status updates.
@@ -137,7 +140,6 @@ export class AdminSubscriptionService {
 
   private createSubscription<T>(query: ReturnType<typeof gql>, variables: Record<string, unknown>): Observable<T> {
     return this.apollo.subscribe<T>({ query, variables }).pipe(
-      tap(() => this.connected.set(true)),
       map(result => {
         if (!result.data) {
           throw new Error('No data received');
@@ -146,7 +148,6 @@ export class AdminSubscriptionService {
       }),
       retry({
         delay: (_, retryCount) => {
-          this.connected.set(false);
           const delay = Math.min(1000 * Math.pow(2, retryCount), 30000);
           console.log(`[AdminSubscription] Reconnecting in ${delay}ms`);
           return timer(delay);

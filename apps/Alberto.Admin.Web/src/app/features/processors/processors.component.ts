@@ -127,7 +127,7 @@ import { ProcessorStatus } from '../../core/models/admin.models';
   `,
   styles: `
     .processors {
-      max-width: 1400px;
+      width: 100%;
     }
 
     .page-header {

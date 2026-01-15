@@ -24,14 +24,15 @@ public static class OrdersModule
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        var connectionString = configuration.GetConnectionString("orders")
-            ?? throw new InvalidOperationException("Connection string 'orders' not found");
+        var connectionString = configuration.GetConnectionString("alberto")
+            ?? throw new InvalidOperationException("Connection string 'alberto' not found");
 
         services.AddAlberto(ModuleKey, builder => builder
             .WithPostgres(options =>
             {
                 options.ConnectionString = connectionString;
                 options.AutoMigrate = true;
+                options.Schema = "orders";
             })
             .WithTelemetry()
             .WithConsumer(consumer => consumer
@@ -44,43 +45,28 @@ public static class OrdersModule
                 .AddProjection<OrdersOverview, OrdersOverviewProjection>(sp =>
                 {
                     var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
-                    return new PostgresStateStore<OrdersOverview>(
+                    return tenantId => new PostgresStateStore<OrdersOverview>(
                         dataSource,
-                        "default",
-                        nameof(OrdersOverviewProjection));
+                        tenantId,
+                        nameof(OrdersOverviewProjection),
+                        "orders");
                 })
                 .AddProjection<OrderSummary, OrderSummaryProjection>(sp =>
                 {
                     var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
-                    return new PostgresStateStore<OrderSummary>(
+                    return tenantId => new PostgresStateStore<OrderSummary>(
                         dataSource,
-                        "default",
-                        nameof(OrderSummaryProjection));
+                        tenantId,
+                        nameof(OrderSummaryProjection),
+                        "orders");
                 }))
             .WithAdmin(admin =>
             {
                 admin.Title = "Orders Admin";
             }));
 
-        // Register state store for querying OrdersOverview
-        services.AddSingleton(sp =>
-        {
-            var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
-            return new PostgresStateStore<OrdersOverview>(
-                dataSource,
-                "default",
-                nameof(OrdersOverviewProjection));
-        });
-
-        // Register state store for querying OrderSummary (recent orders)
-        services.AddSingleton(sp =>
-        {
-            var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
-            return new PostgresStateStore<OrderSummary>(
-                dataSource,
-                "default",
-                nameof(OrderSummaryProjection));
-        });
+        // Note: Query-side state stores are created dynamically per-tenant in GraphQL queries.
+        // The projection state stores above use the tenant from the event envelope during writes.
 
         return services;
     }

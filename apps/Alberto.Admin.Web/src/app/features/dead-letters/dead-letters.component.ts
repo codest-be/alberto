@@ -161,7 +161,7 @@ import { DeadLetter, PagedResult } from '../../core/models/admin.models';
   `,
   styles: `
     .dead-letters {
-      max-width: 1400px;
+      width: 100%;
     }
 
     .page-header {

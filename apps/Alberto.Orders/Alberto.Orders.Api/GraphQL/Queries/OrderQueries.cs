@@ -8,7 +8,9 @@ using OrderDecider = Alberto.Orders.Core.Order.Actions.OrderDecider;
 using Alberto.Orders.Infrastructure.Projections;
 using Alberto.Orders.Infrastructure.ReadModels;
 using HotChocolate;
+using HotChocolate.Resolvers;
 using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 
 namespace Alberto.Orders.Api.GraphQL.Queries;
 
@@ -24,11 +26,13 @@ public static class OrderQueries
     [GraphQLDescription("Gets an order by ID, rebuilt from events for consistency.")]
     public static async Task<Order?> GetOrder(
         Guid orderId,
+        IResolverContext context,
         [Service] IServiceProvider sp,
         CancellationToken ct)
     {
+        var tenantId = GetTenantId(context);
         var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(OrdersModule.ModuleKey);
-        var state = await LoadOrderState(backend, orderId, ct);
+        var state = await LoadOrderState(backend, tenantId, orderId, ct);
 
         if (!state.Exists)
             return null;
@@ -42,9 +46,13 @@ public static class OrderQueries
     [Query]
     [GraphQLDescription("Gets aggregated order statistics from the async projection.")]
     public static async Task<OrdersOverview?> GetOrdersOverview(
-        [Service] PostgresStateStore<OrdersOverview> stateStore,
+        IResolverContext context,
+        [Service] IServiceProvider sp,
         CancellationToken ct)
     {
+        var tenantId = GetTenantId(context);
+        var stateStore = CreateStateStore<OrdersOverview>(sp, tenantId, nameof(OrdersOverviewProjection));
+
         var states = await stateStore.LoadManyAsync(
             [OrdersOverviewProjection.DocumentId],
             ct: ct);
@@ -58,25 +66,43 @@ public static class OrderQueries
     [Query]
     [GraphQLDescription("Gets recent orders from the projection, ordered by last update.")]
     public static async Task<IReadOnlyList<Order>> GetRecentOrders(
-        [Service] PostgresStateStore<OrderSummary> stateStore,
+        IResolverContext context,
+        [Service] IServiceProvider sp,
         int limit = 20,
         CancellationToken ct = default)
     {
+        var tenantId = GetTenantId(context);
+        var stateStore = CreateStateStore<OrderSummary>(sp, tenantId, nameof(OrderSummaryProjection));
+
         var summaries = await stateStore.ListRecentAsync(limit, ct);
         return summaries.Select(Order.FromSummary).ToList();
     }
 
     #region Helper Methods
 
+    private static string GetTenantId(IResolverContext context) =>
+        context.GetGlobalState<string>(TenantHttpRequestInterceptor.TenantIdKey)
+        ?? throw new InvalidOperationException("Tenant ID not found in resolver context");
+
+    private static PostgresStateStore<TState> CreateStateStore<TState>(
+        IServiceProvider sp,
+        string tenantId,
+        string projectionType)
+    {
+        var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(OrdersModule.ModuleKey);
+        return new PostgresStateStore<TState>(dataSource, tenantId, projectionType, "orders");
+    }
+
     private static async Task<OrderState> LoadOrderState(
         IEventStoreBackend backend,
+        string tenantId,
         Guid orderId,
         CancellationToken ct)
     {
         var decider = new OrderDecider();
         var state = new OrderState();
 
-        var events = await backend.Stream("default", OrderDecider.BoundaryFor(orderId), cancellationToken: ct);
+        var events = await backend.Stream(tenantId, OrderDecider.BoundaryFor(orderId), cancellationToken: ct);
 
         foreach (var envelope in events)
         {

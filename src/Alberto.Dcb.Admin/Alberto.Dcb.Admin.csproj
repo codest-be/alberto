@@ -12,6 +12,10 @@
     </ItemGroup>
 
     <ItemGroup>
+        <PackageReference Include="HotChocolate.Subscriptions.InMemory" />
+    </ItemGroup>
+
+    <ItemGroup>
         <FrameworkReference Include="Microsoft.AspNetCore.App" />
     </ItemGroup>
 

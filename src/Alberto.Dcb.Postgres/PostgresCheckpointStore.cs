@@ -10,17 +10,19 @@ namespace Alberto.Dcb.Postgres;
 public sealed class PostgresCheckpointStore : ICheckpointStore
 {
     private readonly NpgsqlDataSource _dataSource;
+    private readonly SchemaQualifier _schema;
 
-    public PostgresCheckpointStore(NpgsqlDataSource dataSource)
+    public PostgresCheckpointStore(NpgsqlDataSource dataSource, string? schema = null)
     {
         _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
+        _schema = new SchemaQualifier(schema);
     }
 
     public async Task<long?> GetAsync(string processorId, CancellationToken ct = default)
     {
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand(
-            "SELECT last_position FROM processor_checkpoints WHERE processor_id = @processor_id",
+            $"SELECT last_position FROM {_schema.Table("processor_checkpoints")} WHERE processor_id = @processor_id",
             connection);
 
         cmd.Parameters.AddWithValue("processor_id", processorId);
@@ -33,8 +35,8 @@ public sealed class PostgresCheckpointStore : ICheckpointStore
     {
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand(
-            """
-            INSERT INTO processor_checkpoints (processor_id, last_position, updated_at)
+            $"""
+            INSERT INTO {_schema.Table("processor_checkpoints")} (processor_id, last_position, updated_at)
             VALUES (@processor_id, @last_position, now())
             ON CONFLICT (processor_id) DO UPDATE
             SET last_position = @last_position, updated_at = now()
@@ -51,7 +53,7 @@ public sealed class PostgresCheckpointStore : ICheckpointStore
     {
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand(
-            "DELETE FROM processor_checkpoints WHERE processor_id = @processor_id",
+            $"DELETE FROM {_schema.Table("processor_checkpoints")} WHERE processor_id = @processor_id",
             connection);
 
         cmd.Parameters.AddWithValue("processor_id", processorId);

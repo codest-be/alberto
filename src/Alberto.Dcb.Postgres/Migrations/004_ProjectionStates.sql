@@ -1,7 +1,7 @@
 -- Alberto DCB Event Store - Projection States
 -- Stores projection state as JSONB, keyed by tenant + projection type + document ID
 
-CREATE TABLE IF NOT EXISTS projection_states (
+CREATE TABLE IF NOT EXISTS $schema_prefix$projection_states (
     tenant_id         TEXT NOT NULL,
     projection_type   TEXT NOT NULL,
     document_id       TEXT NOT NULL,
@@ -11,4 +11,4 @@ CREATE TABLE IF NOT EXISTS projection_states (
 );
 
 CREATE INDEX IF NOT EXISTS idx_projection_states_tenant_type
-    ON projection_states(tenant_id, projection_type);
+    ON $schema_prefix$projection_states(tenant_id, projection_type);

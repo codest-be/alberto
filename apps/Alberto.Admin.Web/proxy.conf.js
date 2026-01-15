@@ -24,6 +24,12 @@ const PROXY_CONFIG = {
     changeOrigin: true,
     ws: true,
     logLevel: 'debug',
+    onProxyReqWs: (proxyReq, req, socket) => {
+      console.log('[Proxy] WebSocket upgrade request to:', target + req.url);
+    },
+    onError: (err, req, res) => {
+      console.error('[Proxy] Error:', err.message);
+    },
   },
 };
 

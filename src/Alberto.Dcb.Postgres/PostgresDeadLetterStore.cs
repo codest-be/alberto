@@ -9,17 +9,19 @@ namespace Alberto.Dcb.Postgres;
 public sealed class PostgresDeadLetterStore : IDeadLetterStore
 {
     private readonly NpgsqlDataSource _dataSource;
+    private readonly SchemaQualifier _schema;
 
-    public PostgresDeadLetterStore(NpgsqlDataSource dataSource)
+    public PostgresDeadLetterStore(NpgsqlDataSource dataSource, string? schema = null)
     {
         _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
+        _schema = new SchemaQualifier(schema);
     }
 
     /// <inheritdoc />
     public async Task StoreAsync(DeadLetterEntry entry, CancellationToken ct = default)
     {
-        const string sql = """
-            INSERT INTO dead_letter_events (id, processor_id, event_id, event_type, event_data, error_message, stack_trace, attempt_count, failed_at)
+        var sql = $"""
+            INSERT INTO {_schema.Table("dead_letter_events")} (id, processor_id, event_id, event_type, event_data, error_message, stack_trace, attempt_count, failed_at)
             VALUES (@id, @processorId, @eventId, @eventType, @eventData::jsonb, @errorMessage, @stackTrace, @attemptCount, @failedAt)
             """;
 
@@ -45,9 +47,9 @@ public sealed class PostgresDeadLetterStore : IDeadLetterStore
         int limit = 100,
         CancellationToken ct = default)
     {
-        const string sql = """
+        var sql = $"""
             SELECT id, processor_id, event_id, event_type, event_data, error_message, stack_trace, attempt_count, failed_at
-            FROM dead_letter_events
+            FROM {_schema.Table("dead_letter_events")}
             WHERE processor_id = @processorId
             ORDER BY failed_at DESC
             LIMIT @limit
@@ -82,7 +84,7 @@ public sealed class PostgresDeadLetterStore : IDeadLetterStore
     /// <inheritdoc />
     public async Task<int> CountAsync(string processorId, CancellationToken ct = default)
     {
-        const string sql = "SELECT COUNT(*) FROM dead_letter_events WHERE processor_id = @processorId";
+        var sql = $"SELECT COUNT(*) FROM {_schema.Table("dead_letter_events")} WHERE processor_id = @processorId";
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = conn.CreateCommand();
@@ -96,7 +98,7 @@ public sealed class PostgresDeadLetterStore : IDeadLetterStore
     /// <inheritdoc />
     public async Task RemoveAsync(Guid id, CancellationToken ct = default)
     {
-        const string sql = "DELETE FROM dead_letter_events WHERE id = @id";
+        var sql = $"DELETE FROM {_schema.Table("dead_letter_events")} WHERE id = @id";
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = conn.CreateCommand();
@@ -109,7 +111,7 @@ public sealed class PostgresDeadLetterStore : IDeadLetterStore
     /// <inheritdoc />
     public async Task ClearAsync(string processorId, CancellationToken ct = default)
     {
-        const string sql = "DELETE FROM dead_letter_events WHERE processor_id = @processorId";
+        var sql = $"DELETE FROM {_schema.Table("dead_letter_events")} WHERE processor_id = @processorId";
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = conn.CreateCommand();

@@ -10,17 +10,19 @@ namespace Alberto.Dcb.Postgres;
 public sealed class PostgresAdminDataAccess : IAdminDataAccess
 {
     private readonly NpgsqlDataSource _dataSource;
+    private readonly SchemaQualifier _schema;
 
-    public PostgresAdminDataAccess(NpgsqlDataSource dataSource)
+    public PostgresAdminDataAccess(NpgsqlDataSource dataSource, string? schema = null)
     {
         _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
+        _schema = new SchemaQualifier(schema);
     }
 
     public async Task<IReadOnlyList<CheckpointDto>> ListCheckpointsAsync(CancellationToken ct = default)
     {
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand(
-            "SELECT processor_id, last_position, updated_at FROM processor_checkpoints ORDER BY processor_id",
+            $"SELECT processor_id, last_position, updated_at FROM {_schema.Table("processor_checkpoints")} ORDER BY processor_id",
             connection);
 
         var checkpoints = new List<CheckpointDto>();
@@ -41,7 +43,7 @@ public sealed class PostgresAdminDataAccess : IAdminDataAccess
     {
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand(
-            "SELECT DISTINCT projection_type FROM projection_states ORDER BY projection_type",
+            $"SELECT DISTINCT projection_type FROM {_schema.Table("projection_states")} ORDER BY projection_type",
             connection);
 
         var types = new List<string>();
@@ -66,8 +68,8 @@ public sealed class PostgresAdminDataAccess : IAdminDataAccess
 
         // Count total
         var countSql = tenantId is null
-            ? "SELECT COUNT(*) FROM projection_states WHERE projection_type = @projection_type"
-            : "SELECT COUNT(*) FROM projection_states WHERE projection_type = @projection_type AND tenant_id = @tenant_id";
+            ? $"SELECT COUNT(*) FROM {_schema.Table("projection_states")} WHERE projection_type = @projection_type"
+            : $"SELECT COUNT(*) FROM {_schema.Table("projection_states")} WHERE projection_type = @projection_type AND tenant_id = @tenant_id";
 
         await using var countCmd = new NpgsqlCommand(countSql, connection);
         countCmd.Parameters.AddWithValue("projection_type", projectionType);
@@ -79,16 +81,16 @@ public sealed class PostgresAdminDataAccess : IAdminDataAccess
         // Fetch page
         var offset = (page - 1) * pageSize;
         var querySql = tenantId is null
-            ? """
+            ? $"""
               SELECT tenant_id, projection_type, document_id, state, updated_at
-              FROM projection_states
+              FROM {_schema.Table("projection_states")}
               WHERE projection_type = @projection_type
               ORDER BY document_id
               LIMIT @limit OFFSET @offset
               """
-            : """
+            : $"""
               SELECT tenant_id, projection_type, document_id, state, updated_at
-              FROM projection_states
+              FROM {_schema.Table("projection_states")}
               WHERE projection_type = @projection_type AND tenant_id = @tenant_id
               ORDER BY document_id
               LIMIT @limit OFFSET @offset
@@ -131,15 +133,15 @@ public sealed class PostgresAdminDataAccess : IAdminDataAccess
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
 
         var sql = tenantId is null
-            ? """
+            ? $"""
               SELECT tenant_id, projection_type, document_id, state, updated_at
-              FROM projection_states
+              FROM {_schema.Table("projection_states")}
               WHERE projection_type = @projection_type AND document_id = @document_id
               LIMIT 1
               """
-            : """
+            : $"""
               SELECT tenant_id, projection_type, document_id, state, updated_at
-              FROM projection_states
+              FROM {_schema.Table("projection_states")}
               WHERE projection_type = @projection_type AND document_id = @document_id AND tenant_id = @tenant_id
               """;
 
@@ -174,8 +176,8 @@ public sealed class PostgresAdminDataAccess : IAdminDataAccess
 
         // Count total
         var countSql = processorId is null
-            ? "SELECT COUNT(*) FROM dead_letter_events"
-            : "SELECT COUNT(*) FROM dead_letter_events WHERE processor_id = @processor_id";
+            ? $"SELECT COUNT(*) FROM {_schema.Table("dead_letter_events")}"
+            : $"SELECT COUNT(*) FROM {_schema.Table("dead_letter_events")} WHERE processor_id = @processor_id";
 
         await using var countCmd = new NpgsqlCommand(countSql, connection);
         if (processorId is not null)
@@ -186,15 +188,15 @@ public sealed class PostgresAdminDataAccess : IAdminDataAccess
         // Fetch page
         var offset = (page - 1) * pageSize;
         var querySql = processorId is null
-            ? """
+            ? $"""
               SELECT id, processor_id, event_id, event_type, event_data, error_message, stack_trace, attempt_count, failed_at
-              FROM dead_letter_events
+              FROM {_schema.Table("dead_letter_events")}
               ORDER BY failed_at DESC
               LIMIT @limit OFFSET @offset
               """
-            : """
+            : $"""
               SELECT id, processor_id, event_id, event_type, event_data, error_message, stack_trace, attempt_count, failed_at
-              FROM dead_letter_events
+              FROM {_schema.Table("dead_letter_events")}
               WHERE processor_id = @processor_id
               ORDER BY failed_at DESC
               LIMIT @limit OFFSET @offset
@@ -235,9 +237,9 @@ public sealed class PostgresAdminDataAccess : IAdminDataAccess
     {
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand(
-            """
+            $"""
             SELECT id, processor_id, event_id, event_type, event_data, error_message, stack_trace, attempt_count, failed_at
-            FROM dead_letter_events
+            FROM {_schema.Table("dead_letter_events")}
             WHERE id = @id
             """,
             connection);
@@ -268,8 +270,8 @@ public sealed class PostgresAdminDataAccess : IAdminDataAccess
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
 
         var sql = processorId is null
-            ? "SELECT COUNT(*) FROM dead_letter_events"
-            : "SELECT COUNT(*) FROM dead_letter_events WHERE processor_id = @processor_id";
+            ? $"SELECT COUNT(*) FROM {_schema.Table("dead_letter_events")}"
+            : $"SELECT COUNT(*) FROM {_schema.Table("dead_letter_events")} WHERE processor_id = @processor_id";
 
         await using var cmd = new NpgsqlCommand(sql, connection);
         if (processorId is not null)

@@ -5,7 +5,7 @@ var postgres = builder.AddPostgres("postgres")
     .WithDataVolume("alberto-postgres-data")
     .WithPgAdmin(pgAdmin => pgAdmin.WithHostPort(8080));
 
-var ordersDb = postgres.AddDatabase("orders");
+var albertoDb = postgres.AddDatabase("alberto");
 
 // Orders API (fixed port 5180, no proxy for direct access)
 var ordersApi = builder.AddProject<Projects.Alberto_Orders_Api>("orders-api")
@@ -14,14 +14,20 @@ var ordersApi = builder.AddProject<Projects.Alberto_Orders_Api>("orders-api")
         endpoint.Port = 5180;
         endpoint.IsProxied = false;
     })
-    .WithReference(ordersDb)
-    .WaitFor(ordersDb);
+    .WithReference(albertoDb)
+    .WaitFor(albertoDb);
 
 // Admin Web (Angular, fixed port 4200)
 builder.AddNpmApp("admin-web", "../Alberto.Admin.Web", "start")
     .WithReference(ordersApi)
     .WithHttpEndpoint(port: 4200, env: "PORT")
     .WithExternalHttpEndpoints()
+    .WaitFor(ordersApi);
+
+// K6 Load Tests (runs on-demand from dashboard)
+var loadTestsPath = Path.GetFullPath(Path.Combine(builder.AppHostDirectory, "../../tests/Alberto.Orders.LoadTests"));
+
+builder.AddK6("load-tests", loadTestsPath)
     .WaitFor(ordersApi);
 
 builder.Build().Run();

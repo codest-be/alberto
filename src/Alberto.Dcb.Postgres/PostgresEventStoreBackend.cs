@@ -12,11 +12,16 @@ public sealed class PostgresEventStoreBackend : IEventStoreBackend
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly TimeProvider _timeProvider;
+    private readonly SchemaQualifier _schema;
 
-    public PostgresEventStoreBackend(NpgsqlDataSource dataSource, TimeProvider? timeProvider = null)
+    public PostgresEventStoreBackend(
+        NpgsqlDataSource dataSource,
+        TimeProvider? timeProvider = null,
+        string? schema = null)
     {
         _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _schema = new SchemaQualifier(schema);
     }
 
     public async Task<IReadOnlyCollection<IEventEnvelope>> Stream(
@@ -55,7 +60,7 @@ public sealed class PostgresEventStoreBackend : IEventStoreBackend
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
-            "SELECT * FROM read_all_global(@p_after_position, @p_limit)",
+            $"SELECT * FROM {_schema.Function("read_all_global")}(@p_after_position, @p_limit)",
             connection);
 
         cmd.Parameters.AddWithValue("p_after_position", afterPosition);
@@ -89,7 +94,7 @@ public sealed class PostgresEventStoreBackend : IEventStoreBackend
         CancellationToken cancellationToken)
     {
         await using var cmd = new NpgsqlCommand(
-            "SELECT * FROM append_events(@p_tenant_id, @p_events, @p_dcb_types, @p_dcb_tags, @p_expected_position)",
+            $"SELECT * FROM {_schema.Function("append_events")}(@p_tenant_id, @p_events, @p_dcb_types, @p_dcb_tags, @p_expected_position)",
             connection,
             transaction);
 
@@ -137,7 +142,7 @@ public sealed class PostgresEventStoreBackend : IEventStoreBackend
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
-            "SELECT get_last_position(@p_tenant_id)",
+            $"SELECT {_schema.Function("get_last_position")}(@p_tenant_id)",
             connection);
 
         cmd.Parameters.AddWithValue("p_tenant_id", tenantId);
@@ -150,32 +155,32 @@ public sealed class PostgresEventStoreBackend : IEventStoreBackend
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
-            "SELECT get_last_position_global()",
+            $"SELECT {_schema.Function("get_last_position_global")}()",
             connection);
 
         var result = await cmd.ExecuteScalarAsync(cancellationToken);
         return result is long position ? position : 0;
     }
 
-    private static string BuildStreamQuery(DcbQuery query)
+    private string BuildStreamQuery(DcbQuery query)
     {
         if (query.IsEmpty)
         {
-            return "SELECT * FROM read_all(@p_tenant_id, @p_after_position, @p_limit)";
+            return $"SELECT * FROM {_schema.Function("read_all")}(@p_tenant_id, @p_after_position, @p_limit)";
         }
 
         if (query.HasTypesOnly)
         {
-            return "SELECT * FROM read_by_types(@p_tenant_id, @p_types, @p_after_position, @p_limit)";
+            return $"SELECT * FROM {_schema.Function("read_by_types")}(@p_tenant_id, @p_types, @p_after_position, @p_limit)";
         }
 
         if (query.HasTagsOnly)
         {
-            return "SELECT * FROM read_by_tags(@p_tenant_id, @p_tags, @p_after_position, @p_limit)";
+            return $"SELECT * FROM {_schema.Function("read_by_tags")}(@p_tenant_id, @p_tags, @p_after_position, @p_limit)";
         }
 
         // Has both types and tags
-        return "SELECT * FROM read_by_types_or_tags(@p_tenant_id, @p_types, @p_tags, @p_after_position, @p_limit)";
+        return $"SELECT * FROM {_schema.Function("read_by_types_or_tags")}(@p_tenant_id, @p_types, @p_tags, @p_after_position, @p_limit)";
     }
 
     private static string BuildEventsJson(List<IEventToPersist> events)

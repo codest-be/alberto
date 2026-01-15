@@ -15,15 +15,18 @@ public sealed class PostgresStateStore<TState> : IStateStore<TState>
     private readonly NpgsqlDataSource _dataSource;
     private readonly string _tenantId;
     private readonly string _projectionType;
+    private readonly SchemaQualifier _schema;
 
     public PostgresStateStore(
         NpgsqlDataSource dataSource,
         string tenantId,
-        string? projectionType = null)
+        string? projectionType = null,
+        string? schema = null)
     {
         _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
         _tenantId = tenantId ?? throw new ArgumentNullException(nameof(tenantId));
         _projectionType = projectionType ?? typeof(TState).Name;
+        _schema = new SchemaQualifier(schema);
     }
 
     public async Task<Dictionary<string, TState>> LoadManyAsync(
@@ -70,7 +73,7 @@ public sealed class PostgresStateStore<TState> : IStateStore<TState>
 
         var sql = $"""
             SELECT document_id, state
-            FROM projection_states
+            FROM {_schema.Table("projection_states")}
             WHERE tenant_id = @tenant_id
               AND projection_type = @projection_type
               AND document_id IN ({string.Join(", ", parameterNames)})
@@ -127,8 +130,8 @@ public sealed class PostgresStateStore<TState> : IStateStore<TState>
             var stateJson = JsonSerializer.Serialize(state);
 
             await using var cmd = new NpgsqlCommand(
-                """
-                INSERT INTO projection_states (tenant_id, projection_type, document_id, state, updated_at)
+                $"""
+                INSERT INTO {_schema.Table("projection_states")} (tenant_id, projection_type, document_id, state, updated_at)
                 VALUES (@tenant_id, @projection_type, @document_id, @state::jsonb, now())
                 ON CONFLICT (tenant_id, projection_type, document_id) DO UPDATE
                 SET state = @state::jsonb, updated_at = now()
@@ -147,8 +150,8 @@ public sealed class PostgresStateStore<TState> : IStateStore<TState>
         foreach (var docId in deletes)
         {
             await using var cmd = new NpgsqlCommand(
-                """
-                DELETE FROM projection_states
+                $"""
+                DELETE FROM {_schema.Table("projection_states")}
                 WHERE tenant_id = @tenant_id
                   AND projection_type = @projection_type
                   AND document_id = @document_id
@@ -171,9 +174,9 @@ public sealed class PostgresStateStore<TState> : IStateStore<TState>
 
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand(
-            """
+            $"""
             SELECT state
-            FROM projection_states
+            FROM {_schema.Table("projection_states")}
             WHERE tenant_id = @tenant_id
               AND projection_type = @projection_type
             ORDER BY updated_at DESC

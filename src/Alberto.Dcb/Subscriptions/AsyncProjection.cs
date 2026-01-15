@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+
 namespace Alberto.Dcb.Subscriptions;
 
 /// <summary>
@@ -8,12 +10,13 @@ internal sealed class AsyncProjection<TState, TProjection> : IEventProcessor
     where TProjection : Projection<TState>, new()
     where TState : new()
 {
-    private readonly IStateStore<TState> _stateStore;
+    private readonly Func<string, IStateStore<TState>> _stateStoreFactory;
+    private readonly ConcurrentDictionary<string, IStateStore<TState>> _stateStoreCache = new();
     private readonly TProjection _projection = new();
 
-    public AsyncProjection(IStateStore<TState> stateStore, string processorId)
+    public AsyncProjection(Func<string, IStateStore<TState>> stateStoreFactory, string processorId)
     {
-        _stateStore = stateStore ?? throw new ArgumentNullException(nameof(stateStore));
+        _stateStoreFactory = stateStoreFactory ?? throw new ArgumentNullException(nameof(stateStoreFactory));
         ProcessorId = processorId ?? throw new ArgumentNullException(nameof(processorId));
     }
 
@@ -30,9 +33,13 @@ internal sealed class AsyncProjection<TState, TProjection> : IEventProcessor
     public async Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
     {
         var docId = _projection.GetDocumentId(@event);
+        var tenantId = @event.TenantId;
+
+        // Get or create state store for this tenant
+        var stateStore = _stateStoreCache.GetOrAdd(tenantId, _stateStoreFactory);
 
         // Load current state
-        var states = await _stateStore.LoadManyAsync([docId], transaction: null, ct);
+        var states = await stateStore.LoadManyAsync([docId], transaction: null, ct);
         var state = states.GetValueOrDefault(docId) ?? new TState();
 
         // Apply event
@@ -42,14 +49,14 @@ internal sealed class AsyncProjection<TState, TProjection> : IEventProcessor
         switch (result)
         {
             case ProjectionResult<TState>.Set s:
-                await _stateStore.ApplyChangesAsync(
+                await stateStore.ApplyChangesAsync(
                     new Dictionary<string, TState> { [docId] = s.State },
                     [],
                     transaction: null,
                     ct);
                 break;
             case ProjectionResult<TState>.Delete:
-                await _stateStore.ApplyChangesAsync(
+                await stateStore.ApplyChangesAsync(
                     new Dictionary<string, TState>(),
                     [docId],
                     transaction: null,
