@@ -1,7 +1,9 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, inject, OnInit, OnDestroy, signal } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
+import { Subscription } from 'rxjs';
 import { AdminApiService } from '../../core/services/admin-api.service';
+import { AdminSubscriptionService } from '../../core/graphql/admin-subscription.service';
 import { SystemInfo, ProcessorStatus } from '../../core/models/admin.models';
 
 @Component({
@@ -10,8 +12,14 @@ import { SystemInfo, ProcessorStatus } from '../../core/models/admin.models';
   template: `
     <div class="dashboard">
       <header class="page-header">
-        <h1>Dashboard</h1>
-        <p class="subtitle">Event sourcing system overview</p>
+        <div>
+          <h1>Dashboard</h1>
+          <p class="subtitle">Event sourcing system overview</p>
+        </div>
+        <span class="live-indicator" [class.connected]="subscriptionService.connected()">
+          <span class="live-dot"></span>
+          {{ subscriptionService.connected() ? 'Live' : 'Connecting...' }}
+        </span>
       </header>
 
       @if (loading()) {
@@ -89,11 +97,46 @@ import { SystemInfo, ProcessorStatus } from '../../core/models/admin.models';
   `,
   styles: `
     .dashboard {
-      max-width: 1200px;
+      width: 100%;
     }
 
     .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
       margin-bottom: 2rem;
+    }
+
+    .live-indicator {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.8125rem;
+      color: #666;
+      padding: 0.375rem 0.75rem;
+      background: #1a1a1a;
+      border-radius: 6px;
+
+      &.connected {
+        color: #22c55e;
+      }
+    }
+
+    .live-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #666;
+
+      .connected & {
+        background: #22c55e;
+        animation: pulse 2s infinite;
+      }
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
     }
 
     h1 {
@@ -288,8 +331,10 @@ import { SystemInfo, ProcessorStatus } from '../../core/models/admin.models';
     }
   `,
 })
-export class DashboardComponent implements OnInit {
+export class DashboardComponent implements OnInit, OnDestroy {
   private readonly api = inject(AdminApiService);
+  readonly subscriptionService = inject(AdminSubscriptionService);
+  private subscriptions: Subscription[] = [];
 
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
@@ -298,6 +343,11 @@ export class DashboardComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadData();
+    this.startSubscriptions();
+  }
+
+  ngOnDestroy(): void {
+    this.subscriptions.forEach(s => s.unsubscribe());
   }
 
   loadData(): void {
@@ -327,5 +377,33 @@ export class DashboardComponent implements OnInit {
         this.loading.set(false);
       },
     });
+  }
+
+  private startSubscriptions(): void {
+    const moduleKey = this.api.moduleKey();
+
+    // Subscribe to system info updates
+    this.subscriptions.push(
+      this.subscriptionService.subscribeToSystemInfo(moduleKey).subscribe({
+        next: (update) => this.systemInfo.set(update.info),
+      })
+    );
+
+    // Subscribe to processor updates
+    this.subscriptions.push(
+      this.subscriptionService.subscribeToProcessorStatus(moduleKey).subscribe({
+        next: (update) => this.updateProcessor(update.processor),
+      })
+    );
+  }
+
+  private updateProcessor(updated: ProcessorStatus): void {
+    const current = this.processors();
+    const index = current.findIndex(p => p.processorId === updated.processorId);
+    if (index >= 0) {
+      const newList = [...current];
+      newList[index] = updated;
+      this.processors.set(newList);
+    }
   }
 }

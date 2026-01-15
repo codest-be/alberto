@@ -4,33 +4,21 @@ using Alberto.Dcb.Admin.Api.Models;
 namespace Alberto.Dcb.Admin.Subscriptions;
 
 /// <summary>
-/// In-memory implementation of processor status publisher using channels.
+/// Legacy processor status publisher - delegates to InMemoryAdminPublisher.
 /// </summary>
 public sealed class InMemoryProcessorStatusPublisher : IProcessorStatusPublisher
 {
-    private readonly Channel<ProcessorStatusUpdate> _channel;
+    private readonly InMemoryAdminPublisher _publisher;
 
-    public InMemoryProcessorStatusPublisher()
+    public InMemoryProcessorStatusPublisher(InMemoryAdminPublisher publisher)
     {
-        _channel = Channel.CreateBounded<ProcessorStatusUpdate>(
-            new BoundedChannelOptions(1000)
-            {
-                FullMode = BoundedChannelFullMode.DropOldest,
-                SingleReader = false,
-                SingleWriter = false
-            });
+        _publisher = publisher;
     }
 
-    public ChannelReader<ProcessorStatusUpdate> Reader => _channel.Reader;
+    public ChannelReader<ProcessorStatusUpdate> Reader => _publisher.ProcessorUpdates;
 
-    public async Task PublishAsync(string moduleKey, ProcessorStatusDto status, CancellationToken ct = default)
+    public Task PublishAsync(string moduleKey, ProcessorStatusDto status, CancellationToken ct = default)
     {
-        var update = new ProcessorStatusUpdate(moduleKey, status);
-        await _channel.Writer.WriteAsync(update, ct);
+        return _publisher.PublishProcessorAsync(moduleKey, status, ct);
     }
 }
-
-/// <summary>
-/// Wrapper for processor status update with module context.
-/// </summary>
-public sealed record ProcessorStatusUpdate(string ModuleKey, ProcessorStatusDto Status);

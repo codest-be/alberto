@@ -20,7 +20,7 @@ var ordersApi = builder.AddProject<Projects.Alberto_Orders_Api>("orders-api")
 // Admin Web (Angular, fixed port 4200)
 builder.AddNpmApp("admin-web", "../Alberto.Admin.Web", "start")
     .WithReference(ordersApi)
-    .WithHttpEndpoint(port: 4200, env: "PORT", isProxied: false)
+    .WithHttpEndpoint(port: 4200, env: "PORT")
     .WithExternalHttpEndpoints()
     .WaitFor(ordersApi);
 

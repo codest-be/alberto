@@ -1,6 +1,8 @@
-import { Component, inject, OnInit, signal, computed } from '@angular/core';
+import { Component, inject, OnInit, OnDestroy, signal, computed } from '@angular/core';
 import { DatePipe, SlicePipe } from '@angular/common';
+import { Subscription } from 'rxjs';
 import { AdminApiService } from '../../core/services/admin-api.service';
+import { AdminSubscriptionService } from '../../core/graphql/admin-subscription.service';
 import { DeadLetter, PagedResult } from '../../core/models/admin.models';
 
 @Component({
@@ -16,6 +18,10 @@ import { DeadLetter, PagedResult } from '../../core/models/admin.models';
         <div class="header-actions">
           <span class="count-badge" [class.warning]="totalCount() > 0">
             {{ totalCount() }} total
+          </span>
+          <span class="live-indicator" [class.connected]="subscriptionService.connected()">
+            <span class="live-dot"></span>
+            {{ subscriptionService.connected() ? 'Live' : 'Connecting...' }}
           </span>
           <button class="btn btn-secondary" (click)="loadData()">Refresh</button>
         </div>
@@ -45,7 +51,11 @@ import { DeadLetter, PagedResult } from '../../core/models/admin.models';
             </thead>
             <tbody>
               @for (dl of deadLetters(); track dl.id) {
-                <tr (click)="selectDeadLetter(dl)" [class.selected]="selectedId() === dl.id">
+                <tr
+                  (click)="selectDeadLetter(dl)"
+                  [class.selected]="selectedId() === dl.id"
+                  [class.new-item]="recentlyAdded().has(dl.id)"
+                >
                   <td class="event-type">{{ dl.eventType }}</td>
                   <td class="processor">{{ dl.processorId }}</td>
                   <td class="error-msg">{{ dl.errorMessage | slice: 0 : 80 }}...</td>
@@ -191,6 +201,38 @@ import { DeadLetter, PagedResult } from '../../core/models/admin.models';
       }
     }
 
+    .live-indicator {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.8125rem;
+      color: #666;
+      padding: 0.375rem 0.75rem;
+      background: #1a1a1a;
+      border-radius: 6px;
+
+      &.connected {
+        color: #22c55e;
+      }
+    }
+
+    .live-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #666;
+
+      .connected & {
+        background: #22c55e;
+        animation: pulse 2s infinite;
+      }
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
     .loading,
     .error,
     .empty {
@@ -289,7 +331,16 @@ import { DeadLetter, PagedResult } from '../../core/models/admin.models';
         &.selected {
           background: #252525;
         }
+
+        &.new-item {
+          animation: highlight-new 2s ease-out;
+        }
       }
+    }
+
+    @keyframes highlight-new {
+      0% { background: rgba(239, 68, 68, 0.3); }
+      100% { background: transparent; }
     }
 
     .event-type {
@@ -475,8 +526,10 @@ import { DeadLetter, PagedResult } from '../../core/models/admin.models';
     }
   `,
 })
-export class DeadLettersComponent implements OnInit {
+export class DeadLettersComponent implements OnInit, OnDestroy {
   private readonly api = inject(AdminApiService);
+  readonly subscriptionService = inject(AdminSubscriptionService);
+  private subscription: Subscription | null = null;
 
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
@@ -484,6 +537,7 @@ export class DeadLettersComponent implements OnInit {
   readonly selectedDeadLetter = signal<DeadLetter | null>(null);
   readonly confirmingRemove = signal<DeadLetter | null>(null);
   readonly actionInProgress = signal(false);
+  readonly recentlyAdded = signal<Set<string>>(new Set());
 
   readonly deadLetters = computed(() => this.pagedResult()?.items ?? []);
   readonly totalCount = computed(() => this.pagedResult()?.totalCount ?? 0);
@@ -493,6 +547,81 @@ export class DeadLettersComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadData();
+    this.startSubscription();
+  }
+
+  ngOnDestroy(): void {
+    this.subscription?.unsubscribe();
+  }
+
+  private startSubscription(): void {
+    this.subscription = this.subscriptionService
+      .subscribeToDeadLetters(this.api.moduleKey())
+      .subscribe({
+        next: (update) => {
+          if (update.changeType === 'Added') {
+            this.addDeadLetter(update.deadLetter);
+            this.highlightDeadLetter(update.deadLetter.id);
+          } else if (update.changeType === 'Removed') {
+            this.removeDeadLetterFromList(update.deadLetter.id);
+          }
+        },
+      });
+  }
+
+  private addDeadLetter(dl: DeadLetter): void {
+    const current = this.pagedResult();
+    if (!current) return;
+
+    // Add to beginning of list on first page
+    if (current.page === 1) {
+      const newItems = [dl, ...current.items.slice(0, current.pageSize - 1)];
+      this.pagedResult.set({
+        ...current,
+        items: newItems,
+        totalCount: current.totalCount + 1,
+        totalPages: Math.ceil((current.totalCount + 1) / current.pageSize),
+      });
+    } else {
+      // Just update count if not on first page
+      this.pagedResult.set({
+        ...current,
+        totalCount: current.totalCount + 1,
+        totalPages: Math.ceil((current.totalCount + 1) / current.pageSize),
+      });
+    }
+  }
+
+  private removeDeadLetterFromList(id: string): void {
+    const current = this.pagedResult();
+    if (!current) return;
+
+    const newItems = current.items.filter(dl => dl.id !== id);
+    if (newItems.length !== current.items.length) {
+      this.pagedResult.set({
+        ...current,
+        items: newItems,
+        totalCount: Math.max(0, current.totalCount - 1),
+        totalPages: Math.max(1, Math.ceil((current.totalCount - 1) / current.pageSize)),
+      });
+
+      // Clear selection if removed item was selected
+      if (this.selectedDeadLetter()?.id === id) {
+        this.selectedDeadLetter.set(null);
+      }
+    }
+  }
+
+  private highlightDeadLetter(id: string): void {
+    const added = new Set(this.recentlyAdded());
+    added.add(id);
+    this.recentlyAdded.set(added);
+
+    setTimeout(() => {
+      const current = new Set(this.recentlyAdded());
+      current.delete(id);
+      this.recentlyAdded.set(current);
+    }, 2000);
   }
 
   loadData(page: number = 1): void {

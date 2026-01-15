@@ -1,7 +1,9 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, inject, OnInit, OnDestroy, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Subscription } from 'rxjs';
 import { AdminApiService } from '../../core/services/admin-api.service';
+import { AdminSubscriptionService } from '../../core/graphql/admin-subscription.service';
 import { Checkpoint } from '../../core/models/admin.models';
 
 @Component({
@@ -14,7 +16,13 @@ import { Checkpoint } from '../../core/models/admin.models';
           <h1>Checkpoints</h1>
           <p class="subtitle">View and manage processor checkpoint positions</p>
         </div>
-        <button class="btn btn-secondary" (click)="loadData()">Refresh</button>
+        <div class="header-actions">
+          <span class="live-indicator" [class.connected]="subscriptionService.connected()">
+            <span class="live-dot"></span>
+            {{ subscriptionService.connected() ? 'Live' : 'Connecting...' }}
+          </span>
+          <button class="btn btn-secondary" (click)="loadData()">Refresh</button>
+        </div>
       </header>
 
       @if (loading()) {
@@ -39,7 +47,7 @@ import { Checkpoint } from '../../core/models/admin.models';
             </thead>
             <tbody>
               @for (checkpoint of checkpoints(); track checkpoint.processorId) {
-                <tr>
+                <tr [class.updated]="recentlyUpdated().has(checkpoint.processorId)">
                   <td class="processor-id">{{ checkpoint.processorId }}</td>
                   <td class="mono">{{ checkpoint.lastPosition }}</td>
                   <td class="muted">{{ checkpoint.updatedAt | date: 'medium' }}</td>
@@ -118,7 +126,7 @@ import { Checkpoint } from '../../core/models/admin.models';
   `,
   styles: `
     .checkpoints {
-      max-width: 1000px;
+      width: 100%;
     }
 
     .page-header {
@@ -126,6 +134,44 @@ import { Checkpoint } from '../../core/models/admin.models';
       justify-content: space-between;
       align-items: flex-start;
       margin-bottom: 2rem;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .live-indicator {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.8125rem;
+      color: #666;
+      padding: 0.375rem 0.75rem;
+      background: #1a1a1a;
+      border-radius: 6px;
+
+      &.connected {
+        color: #22c55e;
+      }
+    }
+
+    .live-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #666;
+
+      .connected & {
+        background: #22c55e;
+        animation: pulse 2s infinite;
+      }
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
     }
 
     h1 {
@@ -231,6 +277,15 @@ import { Checkpoint } from '../../core/models/admin.models';
       tr:last-child td {
         border-bottom: none;
       }
+
+      tr.updated {
+        animation: highlight 1s ease-out;
+      }
+    }
+
+    @keyframes highlight {
+      0% { background: rgba(139, 92, 246, 0.2); }
+      100% { background: transparent; }
     }
 
     .processor-id {
@@ -336,8 +391,10 @@ import { Checkpoint } from '../../core/models/admin.models';
     }
   `,
 })
-export class CheckpointsComponent implements OnInit {
+export class CheckpointsComponent implements OnInit, OnDestroy {
   private readonly api = inject(AdminApiService);
+  readonly subscriptionService = inject(AdminSubscriptionService);
+  private subscription: Subscription | null = null;
 
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
@@ -345,11 +402,50 @@ export class CheckpointsComponent implements OnInit {
   readonly actionInProgress = signal(false);
   readonly editingCheckpoint = signal<Checkpoint | null>(null);
   readonly confirmingReset = signal<string | null>(null);
+  readonly recentlyUpdated = signal<Set<string>>(new Set());
 
   newPosition: number | null = null;
 
   ngOnInit(): void {
     this.loadData();
+    this.startSubscription();
+  }
+
+  ngOnDestroy(): void {
+    this.subscription?.unsubscribe();
+  }
+
+  private startSubscription(): void {
+    this.subscription = this.subscriptionService
+      .subscribeToCheckpoints(this.api.moduleKey())
+      .subscribe({
+        next: (update) => {
+          this.updateCheckpoint(update.checkpoint);
+          this.highlightCheckpoint(update.checkpoint.processorId);
+        },
+      });
+  }
+
+  private updateCheckpoint(updated: Checkpoint): void {
+    const current = this.checkpoints();
+    const index = current.findIndex(c => c.processorId === updated.processorId);
+    if (index >= 0) {
+      const newList = [...current];
+      newList[index] = updated;
+      this.checkpoints.set(newList);
+    }
+  }
+
+  private highlightCheckpoint(processorId: string): void {
+    const updated = new Set(this.recentlyUpdated());
+    updated.add(processorId);
+    this.recentlyUpdated.set(updated);
+
+    setTimeout(() => {
+      const current = new Set(this.recentlyUpdated());
+      current.delete(processorId);
+      this.recentlyUpdated.set(current);
+    }, 1000);
   }
 
   loadData(): void {
