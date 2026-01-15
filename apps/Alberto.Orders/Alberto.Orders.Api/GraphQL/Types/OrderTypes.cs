@@ -1,4 +1,4 @@
-using Alberto.Orders.Core;
+using Alberto.Orders.Core.Order;
 using Alberto.Orders.Infrastructure.ReadModels;
 
 namespace Alberto.Orders.Api.GraphQL.Types;

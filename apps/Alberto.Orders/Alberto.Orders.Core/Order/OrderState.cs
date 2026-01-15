@@ -1,9 +1,18 @@
-namespace Alberto.Orders.Core;
+using Alberto.Orders.Core.Order.Actions;
+
+namespace Alberto.Orders.Core.Order;
 
 /// <summary>
 /// The current state of an order, rebuilt from events.
 /// </summary>
-public sealed record OrderState
+public sealed record OrderState :
+    ICreateOrderState,
+    IAddItemState,
+    IRemoveItemState,
+    IConfirmOrderState,
+    IShipOrderState,
+    IDeliverOrderState,
+    ICancelOrderState
 {
     public Guid OrderId { get; init; }
     public Guid CustomerId { get; init; }

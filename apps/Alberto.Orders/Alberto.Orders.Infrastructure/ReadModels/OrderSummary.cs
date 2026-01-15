@@ -1,4 +1,4 @@
-using Alberto.Orders.Core;
+using Alberto.Orders.Core.Order;
 
 namespace Alberto.Orders.Infrastructure.ReadModels;
 

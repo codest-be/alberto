@@ -103,15 +103,23 @@ public static class AdminEndpointRouteBuilderExtensions
             return $"window.DCB_ADMIN_CONFIG = {JsonSerializer.Serialize(config)};";
         }).ExcludeFromDescription();
 
-        // Serve index.html at root
-        app.MapGet($"{basePath}/{moduleKey}", async ctx =>
+        // Serve UI and static assets
+        app.MapGet($"{basePath}/{moduleKey}/{{*path}}", async (HttpContext ctx, string? path) =>
         {
-            await ServeResource(ctx, assembly, $"{resourcePrefix}index.html");
-        }).ExcludeFromDescription();
+            // Redirect to trailing slash for proper relative URL resolution
+            if (path is null && !ctx.Request.Path.Value!.EndsWith('/'))
+            {
+                ctx.Response.Redirect($"{ctx.Request.Path}/", permanent: false);
+                return;
+            }
 
-        // Serve static assets
-        app.MapGet($"{basePath}/{moduleKey}/{{*path}}", async (HttpContext ctx, string path) =>
-        {
+            // If no path or empty, serve index.html
+            if (string.IsNullOrEmpty(path))
+            {
+                await ServeResource(ctx, assembly, $"{resourcePrefix}index.html");
+                return;
+            }
+
             // Prevent path traversal
             if (path.Contains("..") || path.StartsWith("/"))
             {

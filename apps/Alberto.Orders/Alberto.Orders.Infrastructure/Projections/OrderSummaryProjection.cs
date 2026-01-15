@@ -1,6 +1,6 @@
 using Alberto.Dcb;
 using Alberto.Dcb.Subscriptions;
-using Alberto.Orders.Core;
+using Alberto.Orders.Core.Order;
 using Alberto.Orders.Infrastructure.ReadModels;
 
 namespace Alberto.Orders.Infrastructure.Projections;

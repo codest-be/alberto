@@ -1,6 +1,6 @@
 using Alberto.Dcb;
 
-namespace Alberto.Orders.Core;
+namespace Alberto.Orders.Core.Order;
 
 /// <summary>
 /// Order was created with initial line items.
