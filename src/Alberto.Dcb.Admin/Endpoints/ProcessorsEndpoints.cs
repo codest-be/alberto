@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace Alberto.Dcb.Admin.Endpoints;
 
@@ -24,9 +25,23 @@ internal static class ProcessorsEndpoints
 
         group.MapGet("/", async (HttpContext ctx, CancellationToken ct) =>
         {
-            var service = ctx.RequestServices.GetRequiredKeyedService<IAdminQueryService>(moduleKey);
-            var processors = await service.GetProcessorsAsync(ct);
-            return Results.Ok(processors);
+            try
+            {
+                var service = ctx.RequestServices.GetRequiredKeyedService<IAdminQueryService>(moduleKey);
+                var processors = await service.GetProcessorsAsync(ct);
+                return Results.Ok(processors);
+            }
+            catch (Exception ex)
+            {
+                var env = ctx.RequestServices.GetService<IHostEnvironment>();
+                if (env?.IsDevelopment() == true)
+                {
+                    return Results.Problem(
+                        detail: $"{ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}",
+                        title: "Error loading processors");
+                }
+                throw;
+            }
         }).WithName($"{moduleKey}_GetProcessors");
 
         if (!options.ReadOnly)

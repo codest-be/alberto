@@ -1,4 +1,5 @@
 using Alberto.Dcb.Admin;
+using Alberto.Dcb.Admin.Subscriptions;
 using Alberto.Orders.Infrastructure;
 using HotChocolate.Diagnostics;
 
@@ -13,7 +14,10 @@ builder.Services.AddSingleton(TimeProvider.System);
 // Add Orders module
 builder.Services.AddOrdersModule(builder.Configuration);
 
-// Add GraphQL
+// Add admin subscriptions (real-time monitoring)
+builder.Services.AddAdminSubscriptions();
+
+// Add GraphQL with subscriptions
 builder.Services
     .AddGraphQLServer()
     .AddInstrumentation(o =>
@@ -22,12 +26,14 @@ builder.Services
         o.Scopes = ActivityScopes.ExecuteHttpRequest;
         o.RenameRootActivity = true;
     })
-    .AddTypes();
+    .AddTypes()
+    .AddInMemorySubscriptions();
 
 var app = builder.Build();
 
 // Configure pipeline
 app.UseRouting();
+app.UseWebSockets();
 app.MapGraphQL();
 app.MapDcbAdmin();
 
