@@ -76,7 +76,7 @@ public static class K6ResourceBuilderExtensions
     {
         try
         {
-            // Build the project first
+            // Build the project first (quick, wait for this)
             var buildProcess = new Process
             {
                 StartInfo = new ProcessStartInfo
@@ -92,11 +92,14 @@ public static class K6ResourceBuilderExtensions
             };
 
             buildProcess.Start();
-            await buildProcess.WaitForExitAsync(context.CancellationToken);
+
+            // Use a longer timeout for build, ignore dashboard cancellation
+            using var buildCts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await buildProcess.WaitForExitAsync(buildCts.Token);
 
             if (buildProcess.ExitCode != 0)
             {
-                var buildError = await buildProcess.StandardError.ReadToEndAsync(context.CancellationToken);
+                var buildError = await buildProcess.StandardError.ReadToEndAsync();
                 throw new InvalidOperationException($"Build failed: {buildError}");
             }
 
@@ -110,7 +113,8 @@ public static class K6ResourceBuilderExtensions
                 _ => "dist/smoke.test.js"
             };
 
-            // Run K6
+            // Run K6 in background - don't wait for completion
+            // Load tests can run for minutes, we don't want to block the dashboard
             var k6Process = new Process
             {
                 StartInfo = new ProcessStartInfo
@@ -118,29 +122,14 @@ public static class K6ResourceBuilderExtensions
                     FileName = "k6",
                     Arguments = $"run {testScript}",
                     WorkingDirectory = resource.WorkingDirectory,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
+                    UseShellExecute = true,  // Opens in new terminal window
+                    CreateNoWindow = false   // Show the K6 output window
                 }
             };
 
             k6Process.Start();
 
-            // Read output asynchronously
-            var outputTask = k6Process.StandardOutput.ReadToEndAsync(context.CancellationToken);
-            var errorTask = k6Process.StandardError.ReadToEndAsync(context.CancellationToken);
-
-            await k6Process.WaitForExitAsync(context.CancellationToken);
-
-            var output = await outputTask;
-            var error = await errorTask;
-
-            if (k6Process.ExitCode != 0)
-            {
-                throw new InvalidOperationException($"K6 {testType} test failed:\n{error}\n{output}");
-            }
-
+            // Return immediately - test is running in background
             return CommandResults.Success();
         }
         catch (Exception ex) when (ex is not InvalidOperationException)

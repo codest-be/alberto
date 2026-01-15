@@ -117,7 +117,7 @@ public class ProjectorSpecificationTests
     {
         var stateStore = new InMemoryStateStore();
         var processor = new AsyncProjection<OrderSummary, OrderSummaryProjection>(
-            stateStore, "order-summary-v1");
+            _ => stateStore, "order-summary-v1");
         return (processor, stateStore);
     }
 

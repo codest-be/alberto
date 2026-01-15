@@ -61,10 +61,10 @@ import { ProjectionState, PagedResult } from '../../core/models/admin.models';
                       </tr>
                     </thead>
                     <tbody>
-                      @for (state of projectionStates(); track state.documentId) {
+                      @for (state of projectionStates(); track state.tenantId + ':' + state.documentId) {
                         <tr
                           (click)="selectState(state)"
-                          [class.selected]="selectedState()?.documentId === state.documentId"
+                          [class.selected]="selectedState()?.documentId === state.documentId && selectedState()?.tenantId === state.tenantId"
                         >
                           <td class="doc-id">{{ state.documentId }}</td>
                           <td class="tenant">{{ state.tenantId || '-' }}</td>

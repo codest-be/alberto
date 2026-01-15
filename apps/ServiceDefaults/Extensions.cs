@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.ServiceDiscovery;
+using Npgsql;
 using OpenTelemetry;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
@@ -60,6 +61,7 @@ public static class Extensions
                 metrics.AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation()
                     .AddRuntimeInstrumentation()
+                    .AddNpgsqlInstrumentation()
                     .AddAlbertoInstrumentation();
             })
             .WithTracing(tracing =>
@@ -73,6 +75,7 @@ public static class Extensions
                             && !context.Request.Path.StartsWithSegments(AlivenessEndpointPath);
                     })
                     .AddHttpClientInstrumentation()
+                    .AddNpgsql()
                     .AddHotChocolateInstrumentation()
                     .AddAlbertoInstrumentation();
             });
