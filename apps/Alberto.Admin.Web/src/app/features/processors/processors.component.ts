@@ -1,6 +1,6 @@
-import { Component, inject, OnInit, OnDestroy, signal } from '@angular/core';
+import { Component, inject, OnInit, signal, DestroyRef } from '@angular/core';
 import { DatePipe } from '@angular/common';
-import { Subscription } from 'rxjs';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AdminApiService } from '../../core/services/admin-api.service';
 import { ProcessorSubscriptionService } from '../../core/graphql/processor-subscription.service';
 import { ProcessorStatus } from '../../core/models/admin.models';
@@ -392,10 +392,10 @@ import { ProcessorStatus } from '../../core/models/admin.models';
     }
   `,
 })
-export class ProcessorsComponent implements OnInit, OnDestroy {
+export class ProcessorsComponent implements OnInit {
   private readonly api = inject(AdminApiService);
   private readonly subscriptionService = inject(ProcessorSubscriptionService);
-  private subscription: Subscription | null = null;
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
@@ -409,10 +409,6 @@ export class ProcessorsComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.loadData();
     this.startSubscription();
-  }
-
-  ngOnDestroy(): void {
-    this.subscription?.unsubscribe();
   }
 
   loadData(): void {
@@ -432,8 +428,9 @@ export class ProcessorsComponent implements OnInit, OnDestroy {
   }
 
   private startSubscription(): void {
-    this.subscription = this.subscriptionService
+    this.subscriptionService
       .subscribeToProcessorStatus(this.api.moduleKey())
+      .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (update) => {
           this.subscriptionActive.set(true);

@@ -1,7 +1,7 @@
-import { Component, inject, OnInit, OnDestroy, signal } from '@angular/core';
+import { Component, inject, OnInit, signal, DestroyRef } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
-import { Subscription } from 'rxjs';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AdminApiService } from '../../core/services/admin-api.service';
 import { AdminSubscriptionService } from '../../core/graphql/admin-subscription.service';
 import { SystemInfo, ProcessorStatus } from '../../core/models/admin.models';
@@ -331,10 +331,10 @@ import { SystemInfo, ProcessorStatus } from '../../core/models/admin.models';
     }
   `,
 })
-export class DashboardComponent implements OnInit, OnDestroy {
+export class DashboardComponent implements OnInit {
   private readonly api = inject(AdminApiService);
+  private readonly destroyRef = inject(DestroyRef);
   readonly subscriptionService = inject(AdminSubscriptionService);
-  private subscriptions: Subscription[] = [];
 
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
@@ -344,10 +344,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.loadData();
     this.startSubscriptions();
-  }
-
-  ngOnDestroy(): void {
-    this.subscriptions.forEach(s => s.unsubscribe());
   }
 
   loadData(): void {
@@ -383,18 +379,20 @@ export class DashboardComponent implements OnInit, OnDestroy {
     const moduleKey = this.api.moduleKey();
 
     // Subscribe to system info updates
-    this.subscriptions.push(
-      this.subscriptionService.subscribeToSystemInfo(moduleKey).subscribe({
+    this.subscriptionService
+      .subscribeToSystemInfo(moduleKey)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
         next: (update) => this.systemInfo.set(update.info),
-      })
-    );
+      });
 
     // Subscribe to processor updates
-    this.subscriptions.push(
-      this.subscriptionService.subscribeToProcessorStatus(moduleKey).subscribe({
+    this.subscriptionService
+      .subscribeToProcessorStatus(moduleKey)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
         next: (update) => this.updateProcessor(update.processor),
-      })
-    );
+      });
   }
 
   private updateProcessor(updated: ProcessorStatus): void {

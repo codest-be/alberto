@@ -1,7 +1,8 @@
-import { Component, inject, OnInit, OnDestroy, signal, computed } from '@angular/core';
+import { Component, inject, OnInit, signal, computed, DestroyRef } from '@angular/core';
 import { DatePipe, SlicePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Subscription, Subject, debounceTime, distinctUntilChanged } from 'rxjs';
+import { Subject, debounceTime, distinctUntilChanged } from 'rxjs';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AdminApiService } from '../../core/services/admin-api.service';
 import { AdminSubscriptionService } from '../../core/graphql/admin-subscription.service';
 import { DeadLetter, DeadLetterFilter, PagedResult, BulkRetryResult } from '../../core/models/admin.models';
@@ -773,10 +774,10 @@ import { DeadLetter, DeadLetterFilter, PagedResult, BulkRetryResult } from '../.
     }
   `,
 })
-export class DeadLettersComponent implements OnInit, OnDestroy {
+export class DeadLettersComponent implements OnInit {
   private readonly api = inject(AdminApiService);
+  private readonly destroyRef = inject(DestroyRef);
   readonly subscriptionService = inject(AdminSubscriptionService);
-  private subscription: Subscription | null = null;
   private searchSubject = new Subject<string>();
 
   readonly loading = signal(true);
@@ -822,7 +823,8 @@ export class DeadLettersComponent implements OnInit, OnDestroy {
   private setupSearchDebounce(): void {
     this.searchSubject.pipe(
       debounceTime(300),
-      distinctUntilChanged()
+      distinctUntilChanged(),
+      takeUntilDestroyed(this.destroyRef)
     ).subscribe(term => {
       this.filterSearchTerm.set(term);
       this.loadData(1);
@@ -885,14 +887,10 @@ export class DeadLettersComponent implements OnInit, OnDestroy {
     this.loadData(1);
   }
 
-  ngOnDestroy(): void {
-    this.subscription?.unsubscribe();
-    this.searchSubject.complete();
-  }
-
   private startSubscription(): void {
-    this.subscription = this.subscriptionService
+    this.subscriptionService
       .subscribeToDeadLetters(this.api.moduleKey())
+      .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (update) => {
           if (update.changeType === 'Added') {

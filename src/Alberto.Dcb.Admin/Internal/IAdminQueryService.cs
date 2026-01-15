@@ -56,9 +56,13 @@ public interface IAdminQueryService
 
     // Projection States
     Task<IReadOnlyList<string>> GetProjectionTypesAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<string>> GetProjectionTenantsAsync(string projectionType, CancellationToken ct = default);
     Task<PagedResult<ProjectionStateDto>> GetProjectionStatesAsync(
         string projectionType,
         string? tenantId = null,
+        string? searchTerm = null,
+        DateTimeOffset? updatedAfter = null,
+        DateTimeOffset? updatedBefore = null,
         int page = 1,
         int pageSize = 50,
         CancellationToken ct = default);

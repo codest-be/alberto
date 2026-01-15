@@ -62,46 +62,66 @@ public sealed class PostgresAdminDataAccess : IAdminDataAccess
     public async Task<PagedResult<ProjectionStateDto>> ListProjectionStatesAsync(
         string projectionType,
         string? tenantId,
+        string? searchTerm,
+        DateTimeOffset? updatedAfter,
+        DateTimeOffset? updatedBefore,
         int page,
         int pageSize,
         CancellationToken ct = default)
     {
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
 
-        // Count total
-        var countSql = tenantId is null
-            ? $"SELECT COUNT(*) FROM {_schema.Table("projection_states")} WHERE projection_type = @projection_type"
-            : $"SELECT COUNT(*) FROM {_schema.Table("projection_states")} WHERE projection_type = @projection_type AND tenant_id = @tenant_id";
+        // Build WHERE clause dynamically
+        var conditions = new List<string> { "projection_type = @projection_type" };
+        var parameters = new Dictionary<string, object> { ["projection_type"] = projectionType };
 
-        await using var countCmd = new NpgsqlCommand(countSql, connection);
-        countCmd.Parameters.AddWithValue("projection_type", projectionType);
         if (tenantId is not null)
-            countCmd.Parameters.AddWithValue("tenant_id", tenantId);
+        {
+            conditions.Add("tenant_id = @tenant_id");
+            parameters["tenant_id"] = tenantId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            conditions.Add("document_id ILIKE @search_term");
+            parameters["search_term"] = $"%{searchTerm}%";
+        }
+
+        if (updatedAfter is not null)
+        {
+            conditions.Add("updated_at >= @updated_after");
+            parameters["updated_after"] = updatedAfter.Value.UtcDateTime;
+        }
+
+        if (updatedBefore is not null)
+        {
+            conditions.Add("updated_at <= @updated_before");
+            parameters["updated_before"] = updatedBefore.Value.UtcDateTime;
+        }
+
+        var whereClause = $"WHERE {string.Join(" AND ", conditions)}";
+
+        // Count total
+        var countSql = $"SELECT COUNT(*) FROM {_schema.Table("projection_states")} {whereClause}";
+        await using var countCmd = new NpgsqlCommand(countSql, connection);
+        foreach (var param in parameters)
+            countCmd.Parameters.AddWithValue(param.Key, param.Value);
 
         var totalCount = Convert.ToInt32(await countCmd.ExecuteScalarAsync(ct));
 
         // Fetch page
         var offset = (page - 1) * pageSize;
-        var querySql = tenantId is null
-            ? $"""
-              SELECT tenant_id, projection_type, document_id, state, updated_at
-              FROM {_schema.Table("projection_states")}
-              WHERE projection_type = @projection_type
-              ORDER BY document_id
-              LIMIT @limit OFFSET @offset
-              """
-            : $"""
-              SELECT tenant_id, projection_type, document_id, state, updated_at
-              FROM {_schema.Table("projection_states")}
-              WHERE projection_type = @projection_type AND tenant_id = @tenant_id
-              ORDER BY document_id
-              LIMIT @limit OFFSET @offset
-              """;
+        var querySql = $"""
+            SELECT tenant_id, projection_type, document_id, state, updated_at
+            FROM {_schema.Table("projection_states")}
+            {whereClause}
+            ORDER BY document_id
+            LIMIT @limit OFFSET @offset
+            """;
 
         await using var queryCmd = new NpgsqlCommand(querySql, connection);
-        queryCmd.Parameters.AddWithValue("projection_type", projectionType);
-        if (tenantId is not null)
-            queryCmd.Parameters.AddWithValue("tenant_id", tenantId);
+        foreach (var param in parameters)
+            queryCmd.Parameters.AddWithValue(param.Key, param.Value);
         queryCmd.Parameters.AddWithValue("limit", pageSize);
         queryCmd.Parameters.AddWithValue("offset", offset);
 
@@ -124,6 +144,26 @@ public sealed class PostgresAdminDataAccess : IAdminDataAccess
             Page: page,
             PageSize: pageSize,
             TotalPages: (int)Math.Ceiling(totalCount / (double)pageSize));
+    }
+
+    public async Task<IReadOnlyList<string>> GetProjectionTenantsAsync(string projectionType, CancellationToken ct = default)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand(
+            $"SELECT DISTINCT tenant_id FROM {_schema.Table("projection_states")} WHERE projection_type = @projection_type ORDER BY tenant_id",
+            connection);
+
+        cmd.Parameters.AddWithValue("projection_type", projectionType);
+
+        var tenants = new List<string>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+
+        while (await reader.ReadAsync(ct))
+        {
+            tenants.Add(reader.GetString(0));
+        }
+
+        return tenants;
     }
 
     public async Task<ProjectionStateDto?> GetProjectionStateAsync(

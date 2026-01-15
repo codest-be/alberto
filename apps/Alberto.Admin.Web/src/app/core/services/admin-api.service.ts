@@ -7,6 +7,7 @@ import {
   DeadLetter,
   DeadLetterFilter,
   ProjectionState,
+  ProjectionFilter,
   SystemInfo,
   PagedResult,
   ModuleInfo,
@@ -137,15 +138,28 @@ export class AdminApiService {
     return this.http.get<string[]>(`${this.apiBase}/projection-states/types`);
   }
 
+  getProjectionTenants(projectionType: string): Observable<string[]> {
+    return this.http.get<string[]>(`${this.apiBase}/projection-states/${projectionType}/tenants`);
+  }
+
   getProjectionStates(
     projectionType: string,
-    tenantId?: string,
+    filter?: ProjectionFilter,
     page: number = 1,
     pageSize: number = 50
   ): Observable<PagedResult<ProjectionState>> {
     const params: Record<string, string | number> = { page, pageSize };
-    if (tenantId) {
-      params['tenantId'] = tenantId;
+    if (filter?.tenantId) {
+      params['tenantId'] = filter.tenantId;
+    }
+    if (filter?.searchTerm) {
+      params['searchTerm'] = filter.searchTerm;
+    }
+    if (filter?.updatedAfter) {
+      params['updatedAfter'] = filter.updatedAfter;
+    }
+    if (filter?.updatedBefore) {
+      params['updatedBefore'] = filter.updatedBefore;
     }
     return this.http.get<PagedResult<ProjectionState>>(
       `${this.apiBase}/projection-states/${projectionType}`,

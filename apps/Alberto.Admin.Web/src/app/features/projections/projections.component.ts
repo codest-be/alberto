@@ -1,8 +1,10 @@
-import { Component, inject, OnInit, OnDestroy, signal, computed } from '@angular/core';
+import { Component, inject, OnInit, OnDestroy, signal, computed, DestroyRef } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Subject, debounceTime, distinctUntilChanged } from 'rxjs';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AdminApiService } from '../../core/services/admin-api.service';
-import { ProjectionState, PagedResult, RebuildStatus } from '../../core/models/admin.models';
+import { ProjectionState, ProjectionFilter, PagedResult, RebuildStatus } from '../../core/models/admin.models';
 
 @Component({
   selector: 'app-projections',
@@ -54,6 +56,52 @@ import { ProjectionState, PagedResult, RebuildStatus } from '../../core/models/a
         </div>
 
         @if (selectedType()) {
+          <div class="filter-bar">
+            <div class="filter-group">
+              <label>Tenant</label>
+              <select [value]="filterTenantId() || ''" (change)="onTenantFilterChange($event)">
+                <option value="">All Tenants</option>
+                @for (tenant of tenants(); track tenant) {
+                  <option [value]="tenant">{{ tenant }}</option>
+                }
+              </select>
+            </div>
+
+            <div class="filter-group search-group">
+              <label>Search Document ID</label>
+              <input
+                type="text"
+                placeholder="Search by document ID..."
+                [ngModel]="filterSearchTerm()"
+                (ngModelChange)="onSearchTermChange($event)"
+              />
+            </div>
+
+            <div class="filter-group">
+              <label>Updated After</label>
+              <input
+                type="datetime-local"
+                [ngModel]="filterUpdatedAfter()"
+                (ngModelChange)="onUpdatedAfterChange($event)"
+              />
+            </div>
+
+            <div class="filter-group">
+              <label>Updated Before</label>
+              <input
+                type="datetime-local"
+                [ngModel]="filterUpdatedBefore()"
+                (ngModelChange)="onUpdatedBeforeChange($event)"
+              />
+            </div>
+
+            @if (hasActiveFilters()) {
+              <button class="btn btn-clear" (click)="clearFilters()">
+                Clear Filters
+              </button>
+            }
+          </div>
+
           @if (loadingStates()) {
             <div class="loading">Loading projection states...</div>
           } @else if (projectionStates().length === 0) {
@@ -251,6 +299,80 @@ import { ProjectionState, PagedResult, RebuildStatus } from '../../core/models/a
 
     .subtitle {
       color: #666;
+    }
+
+    .filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+      padding: 1rem;
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 8px;
+      align-items: flex-end;
+    }
+
+    .filter-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.375rem;
+
+      label {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #666;
+      }
+
+      select,
+      input {
+        padding: 0.5rem 0.75rem;
+        background: #252525;
+        border: 1px solid #3a3a3a;
+        border-radius: 6px;
+        font-size: 0.875rem;
+        color: #e0e0e0;
+        min-width: 150px;
+
+        &:hover {
+          border-color: #4a4a4a;
+        }
+
+        &:focus {
+          outline: none;
+          border-color: #6366f1;
+        }
+      }
+
+      select option {
+        background: #1a1a1a;
+        color: #e0e0e0;
+      }
+
+      input[type="datetime-local"] {
+        min-width: 180px;
+      }
+
+      &.search-group {
+        flex: 1;
+        min-width: 200px;
+
+        input {
+          width: 100%;
+        }
+      }
+    }
+
+    .btn-clear {
+      background: transparent;
+      border-color: #666;
+      color: #888;
+
+      &:hover:not(:disabled) {
+        background: #252525;
+        color: #e0e0e0;
+      }
     }
 
     .loading,
@@ -669,6 +791,8 @@ import { ProjectionState, PagedResult, RebuildStatus } from '../../core/models/a
 })
 export class ProjectionsComponent implements OnInit, OnDestroy {
   private readonly api = inject(AdminApiService);
+  private readonly destroyRef = inject(DestroyRef);
+  private searchSubject = new Subject<string>();
 
   readonly loadingTypes = signal(true);
   readonly loadingStates = signal(false);
@@ -677,6 +801,13 @@ export class ProjectionsComponent implements OnInit, OnDestroy {
   readonly selectedType = signal<string | null>(null);
   readonly pagedResult = signal<PagedResult<ProjectionState> | null>(null);
   readonly selectedState = signal<ProjectionState | null>(null);
+
+  // Filter state
+  readonly tenants = signal<string[]>([]);
+  readonly filterTenantId = signal<string | null>(null);
+  readonly filterSearchTerm = signal<string>('');
+  readonly filterUpdatedAfter = signal<string>('');
+  readonly filterUpdatedBefore = signal<string>('');
 
   // Rebuild modal state
   readonly showRebuildModal = signal(false);
@@ -689,9 +820,27 @@ export class ProjectionsComponent implements OnInit, OnDestroy {
   readonly projectionStates = computed(() => this.pagedResult()?.items ?? []);
   readonly page = computed(() => this.pagedResult()?.page ?? 1);
   readonly totalPages = computed(() => this.pagedResult()?.totalPages ?? 1);
+  readonly hasActiveFilters = computed(() =>
+    !!this.filterTenantId() ||
+    !!this.filterSearchTerm() ||
+    !!this.filterUpdatedAfter() ||
+    !!this.filterUpdatedBefore()
+  );
 
   ngOnInit(): void {
     this.loadTypes();
+    this.setupSearchDebounce();
+  }
+
+  private setupSearchDebounce(): void {
+    this.searchSubject.pipe(
+      debounceTime(300),
+      distinctUntilChanged(),
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe(term => {
+      this.filterSearchTerm.set(term);
+      this.loadStates(1);
+    });
   }
 
   loadTypes(): void {
@@ -717,7 +866,17 @@ export class ProjectionsComponent implements OnInit, OnDestroy {
   selectType(type: string): void {
     this.selectedType.set(type);
     this.selectedState.set(null);
+    this.clearFilters();
+    this.loadTenants(type);
     this.loadStates(1);
+  }
+
+  private loadTenants(type: string): void {
+    this.api.getProjectionTenants(type).subscribe({
+      next: (tenants) => {
+        this.tenants.set(tenants);
+      },
+    });
   }
 
   loadStates(page: number): void {
@@ -726,7 +885,13 @@ export class ProjectionsComponent implements OnInit, OnDestroy {
 
     this.loadingStates.set(true);
 
-    this.api.getProjectionStates(type, undefined, page, 20).subscribe({
+    const filter: ProjectionFilter = {};
+    if (this.filterTenantId()) filter.tenantId = this.filterTenantId()!;
+    if (this.filterSearchTerm()) filter.searchTerm = this.filterSearchTerm();
+    if (this.filterUpdatedAfter()) filter.updatedAfter = new Date(this.filterUpdatedAfter()).toISOString();
+    if (this.filterUpdatedBefore()) filter.updatedBefore = new Date(this.filterUpdatedBefore()).toISOString();
+
+    this.api.getProjectionStates(type, filter, page, 20).subscribe({
       next: (result) => {
         this.pagedResult.set(result);
         this.loadingStates.set(false);
@@ -735,6 +900,35 @@ export class ProjectionsComponent implements OnInit, OnDestroy {
         this.loadingStates.set(false);
       },
     });
+  }
+
+  // Filter methods
+  onTenantFilterChange(event: Event): void {
+    const select = event.target as HTMLSelectElement;
+    const value = select.value || null;
+    this.filterTenantId.set(value);
+    this.loadStates(1);
+  }
+
+  onSearchTermChange(term: string): void {
+    this.searchSubject.next(term);
+  }
+
+  onUpdatedAfterChange(value: string): void {
+    this.filterUpdatedAfter.set(value);
+    this.loadStates(1);
+  }
+
+  onUpdatedBeforeChange(value: string): void {
+    this.filterUpdatedBefore.set(value);
+    this.loadStates(1);
+  }
+
+  clearFilters(): void {
+    this.filterTenantId.set(null);
+    this.filterSearchTerm.set('');
+    this.filterUpdatedAfter.set('');
+    this.filterUpdatedBefore.set('');
   }
 
   goToPage(page: number): void {

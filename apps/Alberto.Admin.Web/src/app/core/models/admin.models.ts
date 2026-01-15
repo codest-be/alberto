@@ -103,3 +103,10 @@ export interface DeadLetterFilter {
   failedAfter?: string;
   failedBefore?: string;
 }
+
+export interface ProjectionFilter {
+  tenantId?: string;
+  searchTerm?: string;
+  updatedAfter?: string;
+  updatedBefore?: string;
+}

@@ -29,9 +29,22 @@ internal static class ProjectionStatesEndpoints
             return Results.Ok(types);
         }).WithName($"{moduleKey}_GetProjectionTypes");
 
+        group.MapGet("/{projectionType}/tenants", async (
+            string projectionType,
+            HttpContext ctx,
+            CancellationToken ct) =>
+        {
+            var service = ctx.RequestServices.GetRequiredKeyedService<IAdminQueryService>(moduleKey);
+            var tenants = await service.GetProjectionTenantsAsync(projectionType, ct);
+            return Results.Ok(tenants);
+        }).WithName($"{moduleKey}_GetProjectionTenants");
+
         group.MapGet("/{projectionType}", async (
             string projectionType,
             string? tenantId,
+            string? searchTerm,
+            DateTimeOffset? updatedAfter,
+            DateTimeOffset? updatedBefore,
             int page,
             int pageSize,
             HttpContext ctx,
@@ -41,6 +54,9 @@ internal static class ProjectionStatesEndpoints
             var result = await service.GetProjectionStatesAsync(
                 projectionType,
                 tenantId,
+                searchTerm,
+                updatedAfter,
+                updatedBefore,
                 page > 0 ? page : 1,
                 pageSize > 0 ? pageSize : 50,
                 ct);

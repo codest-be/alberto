@@ -281,14 +281,22 @@ internal sealed class AdminQueryService : IAdminQueryService
         return _dataAccess.ListProjectionTypesAsync(ct);
     }
 
+    public Task<IReadOnlyList<string>> GetProjectionTenantsAsync(string projectionType, CancellationToken ct = default)
+    {
+        return _dataAccess.GetProjectionTenantsAsync(projectionType, ct);
+    }
+
     public Task<PagedResult<ProjectionStateDto>> GetProjectionStatesAsync(
         string projectionType,
         string? tenantId = null,
+        string? searchTerm = null,
+        DateTimeOffset? updatedAfter = null,
+        DateTimeOffset? updatedBefore = null,
         int page = 1,
         int pageSize = 50,
         CancellationToken ct = default)
     {
-        return _dataAccess.ListProjectionStatesAsync(projectionType, tenantId, page, pageSize, ct);
+        return _dataAccess.ListProjectionStatesAsync(projectionType, tenantId, searchTerm, updatedAfter, updatedBefore, page, pageSize, ct);
     }
 
     public Task<ProjectionStateDto?> GetProjectionStateAsync(

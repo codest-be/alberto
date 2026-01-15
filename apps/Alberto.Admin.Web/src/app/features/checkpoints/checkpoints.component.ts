@@ -1,7 +1,7 @@
-import { Component, inject, OnInit, OnDestroy, signal, computed } from '@angular/core';
+import { Component, inject, OnInit, signal, computed, DestroyRef } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Subscription } from 'rxjs';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AdminApiService } from '../../core/services/admin-api.service';
 import { AdminSubscriptionService } from '../../core/graphql/admin-subscription.service';
 import { Checkpoint, BulkOperationResult } from '../../core/models/admin.models';
@@ -510,10 +510,10 @@ import { Checkpoint, BulkOperationResult } from '../../core/models/admin.models'
     }
   `,
 })
-export class CheckpointsComponent implements OnInit, OnDestroy {
+export class CheckpointsComponent implements OnInit {
   private readonly api = inject(AdminApiService);
+  private readonly destroyRef = inject(DestroyRef);
   readonly subscriptionService = inject(AdminSubscriptionService);
-  private subscription: Subscription | null = null;
 
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
@@ -540,13 +540,10 @@ export class CheckpointsComponent implements OnInit, OnDestroy {
     this.startSubscription();
   }
 
-  ngOnDestroy(): void {
-    this.subscription?.unsubscribe();
-  }
-
   private startSubscription(): void {
-    this.subscription = this.subscriptionService
+    this.subscriptionService
       .subscribeToCheckpoints(this.api.moduleKey())
+      .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (update) => {
           this.updateCheckpoint(update.checkpoint);
