@@ -1,3 +1,4 @@
+using Alberto.Dcb.Append;
 using Alberto.Dcb.Subscriptions;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -18,14 +19,32 @@ public static class InMemoryBuilderExtensions
     {
         var moduleKey = builder.ModuleKey;
 
-        // Create shared instances for the module
-        var backend = new InMemoryEventStoreBackend();
-        var eventStore = new InMemoryEventStore();
+        // Create shared instances for stores
         var checkpointStore = new InMemoryCheckpointStore();
         var deadLetterStore = new InMemoryDeadLetterStore();
 
-        builder.Services.AddKeyedSingleton<IEventStoreBackend>(moduleKey, backend);
-        builder.Services.AddKeyedSingleton<IEventStore>(moduleKey, eventStore);
+        // Register append interceptor pipeline
+        builder.Services.AddKeyedSingleton<IAppendInterceptorPipeline>(moduleKey, (sp, _) =>
+        {
+            var interceptors = sp.GetKeyedServices<IAppendInterceptor>(moduleKey);
+            return new AppendInterceptorPipeline(interceptors);
+        });
+
+        // Register event store backend with intercepting decorator
+        builder.Services.AddKeyedSingleton<IEventStoreBackend>(moduleKey, (sp, _) =>
+        {
+            var rawBackend = new InMemoryEventStoreBackend();
+            var pipeline = sp.GetRequiredKeyedService<IAppendInterceptorPipeline>(moduleKey);
+            return new InterceptingEventStoreBackend(rawBackend, pipeline);
+        });
+
+        // Register event store (uses intercepting backend)
+        builder.Services.AddKeyedSingleton<IEventStore>(moduleKey, (sp, _) =>
+        {
+            var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(moduleKey);
+            return new InMemoryEventStore(backend);
+        });
+
         builder.Services.AddKeyedSingleton<ICheckpointStore>(moduleKey, checkpointStore);
         builder.Services.AddKeyedSingleton<IDeadLetterStore>(moduleKey, deadLetterStore);
 

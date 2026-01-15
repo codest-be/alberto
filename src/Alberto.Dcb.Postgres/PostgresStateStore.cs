@@ -162,4 +162,40 @@ public sealed class PostgresStateStore<TState> : IStateStore<TState>
             await cmd.ExecuteNonQueryAsync(ct);
         }
     }
+
+    public async Task<IReadOnlyList<TState>> ListRecentAsync(
+        int limit = 20,
+        CancellationToken ct = default)
+    {
+        var result = new List<TState>();
+
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand(
+            """
+            SELECT state
+            FROM projection_states
+            WHERE tenant_id = @tenant_id
+              AND projection_type = @projection_type
+            ORDER BY updated_at DESC
+            LIMIT @limit
+            """,
+            connection);
+
+        cmd.Parameters.AddWithValue("tenant_id", _tenantId);
+        cmd.Parameters.AddWithValue("projection_type", _projectionType);
+        cmd.Parameters.AddWithValue("limit", limit);
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            var stateJson = reader.GetString(0);
+            var state = JsonSerializer.Deserialize<TState>(stateJson);
+            if (state is not null)
+            {
+                result.Add(state);
+            }
+        }
+
+        return result;
+    }
 }

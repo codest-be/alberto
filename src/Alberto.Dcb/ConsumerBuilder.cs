@@ -70,6 +70,48 @@ public sealed class ConsumerBuilder
     }
 
     /// <summary>
+    /// Registers an async projection processor with its state store.
+    /// </summary>
+    /// <typeparam name="TState">The state type.</typeparam>
+    /// <typeparam name="TProjection">The projection type.</typeparam>
+    /// <param name="stateStore">The state store for persisting projection state.</param>
+    /// <param name="processorId">Optional processor ID. Defaults to projection type name.</param>
+    public ConsumerBuilder AddProjection<TState, TProjection>(
+        IStateStore<TState> stateStore,
+        string? processorId = null)
+        where TProjection : Projection<TState>, new()
+        where TState : new()
+    {
+        var id = processorId ?? typeof(TProjection).Name;
+        var processor = new AsyncProjection<TState, TProjection>(stateStore, id);
+        _moduleBuilder.Services.AddKeyedSingleton<IEventProcessor>(_moduleBuilder.ModuleKey, processor);
+        return this;
+    }
+
+    /// <summary>
+    /// Registers an async projection processor with a state store factory.
+    /// Use this overload when the state store needs to be resolved from the service provider.
+    /// </summary>
+    /// <typeparam name="TState">The state type.</typeparam>
+    /// <typeparam name="TProjection">The projection type.</typeparam>
+    /// <param name="stateStoreFactory">Factory to create the state store.</param>
+    /// <param name="processorId">Optional processor ID. Defaults to projection type name.</param>
+    public ConsumerBuilder AddProjection<TState, TProjection>(
+        Func<IServiceProvider, IStateStore<TState>> stateStoreFactory,
+        string? processorId = null)
+        where TProjection : Projection<TState>, new()
+        where TState : new()
+    {
+        var id = processorId ?? typeof(TProjection).Name;
+        _moduleBuilder.Services.AddKeyedSingleton<IEventProcessor>(_moduleBuilder.ModuleKey, (sp, _) =>
+        {
+            var stateStore = stateStoreFactory(sp);
+            return new AsyncProjection<TState, TProjection>(stateStore, id);
+        });
+        return this;
+    }
+
+    /// <summary>
     /// Adds a consume filter to the pipeline.
     /// </summary>
     public ConsumerBuilder AddFilter<TFilter>() where TFilter : class, IConsumeFilter

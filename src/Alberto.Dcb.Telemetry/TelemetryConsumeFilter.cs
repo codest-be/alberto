@@ -1,14 +1,35 @@
 using System.Diagnostics;
+using Alberto.Dcb;
+using Alberto.Dcb.Diagnostics;
 using Alberto.Dcb.Subscriptions.Pipeline;
 
 namespace Alberto.Dcb.Telemetry;
 
 /// <summary>
 /// Consume filter that adds OpenTelemetry instrumentation.
+/// Links consumer activities to original append traces when trace context is present in metadata.
 /// Records traces, metrics, and timing for event processing.
 /// </summary>
 public sealed class TelemetryConsumeFilter : IConsumeFilter
 {
+    private readonly ITraceContextProvider? _traceContextProvider;
+
+    /// <summary>
+    /// Creates a new telemetry consume filter without trace linking.
+    /// </summary>
+    public TelemetryConsumeFilter() : this(null)
+    {
+    }
+
+    /// <summary>
+    /// Creates a new telemetry consume filter with trace context extraction for linking.
+    /// </summary>
+    /// <param name="traceContextProvider">Provider for extracting trace context from event metadata.</param>
+    public TelemetryConsumeFilter(ITraceContextProvider? traceContextProvider)
+    {
+        _traceContextProvider = traceContextProvider;
+    }
+
     /// <inheritdoc />
     public async Task OnConsumingAsync(
         IReadOnlyList<IEventEnvelope> events,
@@ -16,13 +37,22 @@ public sealed class TelemetryConsumeFilter : IConsumeFilter
         Func<Task> next,
         CancellationToken ct = default)
     {
+        // Extract trace links from event metadata
+        var links = ExtractTraceLinks(events);
+
+        // Include processor name in span for easy identification
+        var activityName = $"{AlbertoTelemetry.ConsumeActivityName} {context.ProcessorId}";
+
         using var activity = AlbertoTelemetry.Source.StartActivity(
-            AlbertoTelemetry.ConsumeActivityName,
-            ActivityKind.Consumer);
+            activityName,
+            ActivityKind.Consumer,
+            parentContext: default,
+            links: links);
 
         activity?.SetTag("processor.id", context.ProcessorId);
         activity?.SetTag("module.key", context.ModuleKey);
         activity?.SetTag("events.count", events.Count);
+        activity?.SetTag("trace.links.count", links.Count);
 
         if (events.Count > 0)
         {
@@ -61,5 +91,41 @@ public sealed class TelemetryConsumeFilter : IConsumeFilter
             AlbertoTelemetry.ProcessingDuration.Record(sw.ElapsedMilliseconds,
                 new KeyValuePair<string, object?>("processor", context.ProcessorId));
         }
+    }
+
+    private IReadOnlyList<ActivityLink> ExtractTraceLinks(IReadOnlyList<IEventEnvelope> events)
+    {
+        if (_traceContextProvider is null)
+            return [];
+
+        var links = new List<ActivityLink>();
+        var seenTraces = new HashSet<string>();
+
+        foreach (var evt in events)
+        {
+            var traceContext = _traceContextProvider.ExtractTraceContext(evt.Metadata);
+            if (traceContext is null)
+                continue;
+
+            // Deduplicate links by trace+span combination
+            var key = $"{traceContext.TraceId}:{traceContext.SpanId}";
+            if (!seenTraces.Add(key))
+                continue;
+
+            // Parse into ActivityContext for linking
+            // Format: "00-{traceId}-{spanId}-01" (W3C traceparent format)
+            if (ActivityContext.TryParse(
+                $"00-{traceContext.TraceId}-{traceContext.SpanId}-01",
+                null,
+                out var activityContext))
+            {
+                links.Add(new ActivityLink(activityContext, new ActivityTagsCollection
+                {
+                    { "event.position", evt.GlobalPosition }
+                }));
+            }
+        }
+
+        return links;
     }
 }

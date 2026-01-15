@@ -4,13 +4,19 @@ namespace Alberto.Dcb.InMemory;
 
 /// <summary>
 /// In-memory implementation of <see cref="IEventStore"/> with inline projection support.
-/// Wraps <see cref="InMemoryEventStoreBackend"/> and coordinates inline projections during append.
+/// Wraps <see cref="IEventStoreBackend"/> and coordinates inline projections during append.
 /// Useful for testing and development scenarios.
 /// </summary>
 public sealed class InMemoryEventStore : IEventStore
 {
-    private readonly InMemoryEventStoreBackend _backend = new();
+    private readonly IEventStoreBackend _backend;
     private readonly List<IInlineProjection> _inlineProjections = [];
+
+    public InMemoryEventStore(IEventStoreBackend backend)
+    {
+        ArgumentNullException.ThrowIfNull(backend);
+        _backend = backend;
+    }
 
     /// <inheritdoc/>
     public void RegisterInlineProjection<TState, TProjection>(IStateStore<TState> stateStore)

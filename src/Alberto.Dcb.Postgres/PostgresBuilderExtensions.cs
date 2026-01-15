@@ -1,4 +1,5 @@
 using Alberto.Dcb.Admin.Internal;
+using Alberto.Dcb.Append;
 using Alberto.Dcb.Subscriptions;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -46,20 +47,29 @@ public static class PostgresBuilderExtensions
         builder.Services.AddKeyedSingleton(moduleKey,
             NpgsqlDataSource.Create(options.ConnectionString));
 
-        // Register event store backend
+        // Register append interceptor pipeline
+        builder.Services.AddKeyedSingleton<IAppendInterceptorPipeline>(moduleKey, (sp, _) =>
+        {
+            var interceptors = sp.GetKeyedServices<IAppendInterceptor>(moduleKey);
+            return new AppendInterceptorPipeline(interceptors);
+        });
+
+        // Register event store backend with intercepting decorator
         builder.Services.AddKeyedSingleton<IEventStoreBackend>(moduleKey, (sp, _) =>
         {
             var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
             var timeProvider = sp.GetService<TimeProvider>() ?? TimeProvider.System;
-            return new PostgresEventStoreBackend(dataSource, timeProvider);
+            var rawBackend = new PostgresEventStoreBackend(dataSource, timeProvider);
+
+            var pipeline = sp.GetRequiredKeyedService<IAppendInterceptorPipeline>(moduleKey);
+            return new InterceptingEventStoreBackend(rawBackend, pipeline);
         });
 
-        // Register event store
+        // Register event store (uses intercepting backend)
         builder.Services.AddKeyedSingleton<IEventStore>(moduleKey, (sp, _) =>
         {
-            var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
-            var timeProvider = sp.GetService<TimeProvider>() ?? TimeProvider.System;
-            return new PostgresEventStore(dataSource, timeProvider);
+            var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(moduleKey);
+            return new PostgresEventStore(backend);
         });
 
         // Register checkpoint store

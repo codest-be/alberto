@@ -98,6 +98,14 @@ public class InlineProjectionTests
 
             return Task.CompletedTask;
         }
+
+        public Task<IReadOnlyList<OrderSummary>> ListRecentAsync(
+            int limit = 20,
+            CancellationToken ct = default)
+        {
+            IReadOnlyList<OrderSummary> result = _store.Values.Take(limit).ToList();
+            return Task.FromResult(result);
+        }
     }
 
     #endregion

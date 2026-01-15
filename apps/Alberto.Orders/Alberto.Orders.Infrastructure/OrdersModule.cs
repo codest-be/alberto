@@ -3,8 +3,10 @@ using Alberto.Dcb.Admin;
 using Alberto.Dcb.Postgres;
 using Alberto.Dcb.Telemetry;
 using Alberto.Orders.Infrastructure.Projections;
+using Alberto.Orders.Infrastructure.ReadModels;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 
 namespace Alberto.Orders.Infrastructure;
 
@@ -38,14 +40,47 @@ public static class OrdersModule
                 .WithErrorPolicy(policy => policy
                     .MaxRetries(3)
                     .RetryDelay(TimeSpan.FromSeconds(1))
-                    .DeadLetterOnMaxRetries(true)))
+                    .DeadLetterOnMaxRetries(true))
+                .AddProjection<OrdersOverview, OrdersOverviewProjection>(sp =>
+                {
+                    var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
+                    return new PostgresStateStore<OrdersOverview>(
+                        dataSource,
+                        "default",
+                        nameof(OrdersOverviewProjection));
+                })
+                .AddProjection<OrderSummary, OrderSummaryProjection>(sp =>
+                {
+                    var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
+                    return new PostgresStateStore<OrderSummary>(
+                        dataSource,
+                        "default",
+                        nameof(OrderSummaryProjection));
+                }))
             .WithAdmin(admin =>
             {
                 admin.Title = "Orders Admin";
             }));
 
-        // Register the projection for DI
-        services.AddSingleton<OrderSummaryProjection>();
+        // Register state store for querying OrdersOverview
+        services.AddSingleton(sp =>
+        {
+            var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
+            return new PostgresStateStore<OrdersOverview>(
+                dataSource,
+                "default",
+                nameof(OrdersOverviewProjection));
+        });
+
+        // Register state store for querying OrderSummary (recent orders)
+        services.AddSingleton(sp =>
+        {
+            var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
+            return new PostgresStateStore<OrderSummary>(
+                dataSource,
+                "default",
+                nameof(OrderSummaryProjection));
+        });
 
         return services;
     }

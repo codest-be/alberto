@@ -117,7 +117,7 @@ public sealed class OrderDecider
         if (!state.CanBeModified)
             return DecisionResult.Fail($"Order cannot be modified in {state.Status} status");
 
-        if (!state.LineItems.Any(x => x.ProductId == productId))
+        if (state.LineItems.All(x => x.ProductId != productId))
             return DecisionResult.Fail($"Product {productId} not found in order");
 
         return DecisionResult.Ok(new OrderItemRemoved(state.OrderId, productId));

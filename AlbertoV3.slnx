@@ -11,6 +11,7 @@
     <Project Path="apps/Alberto.Orders/Alberto.Orders.Core/Alberto.Orders.Core.csproj" />
     <Project Path="apps/Alberto.Orders/Alberto.Orders.Infrastructure/Alberto.Orders.Infrastructure.csproj" />
     <Project Path="apps/Alberto.Orders/Alberto.Orders.Api/Alberto.Orders.Api.csproj" />
+    <Project Path="apps/ServiceDefaults/ServiceDefaults.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Alberto.Dcb.Tests/Alberto.Dcb.Tests.csproj" />

@@ -1,8 +1,10 @@
 using System.Text.Json;
 using Alberto.Dcb;
+using Alberto.Dcb.Postgres;
 using Alberto.Orders.Api.GraphQL.Types;
 using Alberto.Orders.Core;
 using Alberto.Orders.Infrastructure;
+using Alberto.Orders.Infrastructure.Projections;
 using Alberto.Orders.Infrastructure.ReadModels;
 using HotChocolate;
 using Microsoft.Extensions.DependencyInjection;
@@ -34,78 +36,33 @@ public static class OrderQueries
     }
 
     /// <summary>
-    /// Gets recent orders from the event stream.
+    /// Gets the orders overview statistics from the async projection.
     /// </summary>
     [Query]
-    [GraphQLDescription("Gets recent orders (limited to last 100 events).")]
+    [GraphQLDescription("Gets aggregated order statistics from the async projection.")]
+    public static async Task<OrdersOverview?> GetOrdersOverview(
+        [Service] PostgresStateStore<OrdersOverview> stateStore,
+        CancellationToken ct)
+    {
+        var states = await stateStore.LoadManyAsync(
+            [OrdersOverviewProjection.DocumentId],
+            ct: ct);
+
+        return states.GetValueOrDefault(OrdersOverviewProjection.DocumentId);
+    }
+
+    /// <summary>
+    /// Gets recent orders from the async projection.
+    /// </summary>
+    [Query]
+    [GraphQLDescription("Gets recent orders from the projection, ordered by last update.")]
     public static async Task<IReadOnlyList<Order>> GetRecentOrders(
-        [Service] IServiceProvider sp,
+        [Service] PostgresStateStore<OrderSummary> stateStore,
         int limit = 20,
         CancellationToken ct = default)
     {
-        var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(OrdersModule.ModuleKey);
-
-        // Get recent events and rebuild unique orders
-        var events = await backend.StreamGlobal(0, 1000, ct);
-
-        var orderStates = new Dictionary<Guid, OrderState>();
-        var decider = new OrderDecider();
-
-        foreach (var envelope in events)
-        {
-            var eventType = envelope.EventType.Id;
-            object? domainEvent = eventType switch
-            {
-                "order-created" => JsonSerializer.Deserialize<OrderCreated>(envelope.EventData),
-                "order-item-added" => JsonSerializer.Deserialize<OrderItemAdded>(envelope.EventData),
-                "order-item-removed" => JsonSerializer.Deserialize<OrderItemRemoved>(envelope.EventData),
-                "order-confirmed" => JsonSerializer.Deserialize<OrderConfirmed>(envelope.EventData),
-                "order-shipped" => JsonSerializer.Deserialize<OrderShipped>(envelope.EventData),
-                "order-delivered" => JsonSerializer.Deserialize<OrderDelivered>(envelope.EventData),
-                "order-cancelled" => JsonSerializer.Deserialize<OrderCancelled>(envelope.EventData),
-                _ => null
-            };
-
-            if (domainEvent is null) continue;
-
-            var orderId = domainEvent switch
-            {
-                OrderCreated e => e.OrderId,
-                OrderItemAdded e => e.OrderId,
-                OrderItemRemoved e => e.OrderId,
-                OrderConfirmed e => e.OrderId,
-                OrderShipped e => e.OrderId,
-                OrderDelivered e => e.OrderId,
-                OrderCancelled e => e.OrderId,
-                _ => Guid.Empty
-            };
-
-            if (orderId == Guid.Empty) continue;
-
-            if (!orderStates.TryGetValue(orderId, out var state))
-                state = new OrderState();
-
-            state = domainEvent switch
-            {
-                OrderCreated e => decider.Apply(state, e),
-                OrderItemAdded e => decider.Apply(state, e),
-                OrderItemRemoved e => decider.Apply(state, e),
-                OrderConfirmed e => decider.Apply(state, e),
-                OrderShipped e => decider.Apply(state, e),
-                OrderDelivered e => decider.Apply(state, e),
-                OrderCancelled e => decider.Apply(state, e),
-                _ => state
-            };
-
-            orderStates[orderId] = state;
-        }
-
-        return orderStates.Values
-            .Where(s => s.Exists)
-            .OrderByDescending(s => s.OrderId) // Guid v7 is time-ordered
-            .Take(limit)
-            .Select(ToGraphQL)
-            .ToList();
+        var summaries = await stateStore.ListRecentAsync(limit, ct);
+        return summaries.Select(Order.FromSummary).ToList();
     }
 
     #region Helper Methods

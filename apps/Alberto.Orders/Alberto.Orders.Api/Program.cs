@@ -1,20 +1,11 @@
 using Alberto.Dcb.Admin;
-using Alberto.Dcb.Telemetry;
-using Alberto.Orders.Api.GraphQL;
 using Alberto.Orders.Infrastructure;
-using OpenTelemetry.Resources;
-using OpenTelemetry.Trace;
+using HotChocolate.Diagnostics;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add OpenTelemetry
-builder.Services.AddOpenTelemetry()
-    .ConfigureResource(r => r.AddService("orders-api"))
-    .WithTracing(tracing => tracing
-        .AddAspNetCoreInstrumentation()
-        .AddHttpClientInstrumentation()
-        .AddAlbertoInstrumentation()
-        .AddOtlpExporter());
+// Add Aspire service defaults (telemetry, health checks, etc.)
+builder.AddServiceDefaults();
 
 // Add services
 builder.Services.AddSingleton(TimeProvider.System);
@@ -25,6 +16,12 @@ builder.Services.AddOrdersModule(builder.Configuration);
 // Add GraphQL
 builder.Services
     .AddGraphQLServer()
+    .AddInstrumentation(o =>
+    {
+        o.RequestDetails = RequestDetails.Operation;
+        o.Scopes = ActivityScopes.ExecuteHttpRequest;
+        o.RenameRootActivity = true;
+    })
     .AddTypes();
 
 var app = builder.Build();
@@ -33,9 +30,6 @@ var app = builder.Build();
 app.UseRouting();
 app.MapGraphQL();
 app.MapDcbAdmin();
-
-// Health check endpoint
-app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
 
 app.Run();
 

@@ -9,13 +9,13 @@ namespace Alberto.Dcb.Postgres;
 /// </summary>
 public sealed class PostgresEventStore : IEventStore
 {
-    private readonly PostgresEventStoreBackend _backend;
+    private readonly IEventStoreBackend _backend;
     private readonly List<IInlineProjection> _inlineProjections = [];
 
-    public PostgresEventStore(NpgsqlDataSource dataSource, TimeProvider? timeProvider = null)
+    public PostgresEventStore(IEventStoreBackend backend)
     {
-        ArgumentNullException.ThrowIfNull(dataSource);
-        _backend = new PostgresEventStoreBackend(dataSource, timeProvider);
+        ArgumentNullException.ThrowIfNull(backend);
+        _backend = backend;
     }
 
     /// <inheritdoc/>

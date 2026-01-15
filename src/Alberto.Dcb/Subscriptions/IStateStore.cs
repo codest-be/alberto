@@ -33,4 +33,14 @@ public interface IStateStore<TState>
         IReadOnlyCollection<string> deletes,
         IDbTransaction? transaction = null,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Lists recent documents ordered by update time (most recent first).
+    /// </summary>
+    /// <param name="limit">Maximum number of documents to return.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>List of states ordered by most recently updated.</returns>
+    Task<IReadOnlyList<TState>> ListRecentAsync(
+        int limit = 20,
+        CancellationToken ct = default);
 }
