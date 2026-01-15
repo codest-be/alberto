@@ -24,6 +24,10 @@ public interface IAdminQueryService
     // Dead Letters
     Task<PagedResult<DeadLetterDto>> GetDeadLettersAsync(
         string? processorId = null,
+        string? eventType = null,
+        string? searchTerm = null,
+        DateTimeOffset? failedAfter = null,
+        DateTimeOffset? failedBefore = null,
         int page = 1,
         int pageSize = 50,
         CancellationToken ct = default);
@@ -31,6 +35,24 @@ public interface IAdminQueryService
     Task RemoveDeadLetterAsync(Guid id, CancellationToken ct = default);
     Task ClearDeadLettersAsync(string processorId, CancellationToken ct = default);
     Task<int> GetDeadLetterCountAsync(string? processorId = null, CancellationToken ct = default);
+    Task<IReadOnlyList<string>> GetDeadLetterEventTypesAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Retries a dead letter event by re-processing it through the processor.
+    /// </summary>
+    Task<DeadLetterRetryResult> RetryDeadLetterAsync(Guid id, CancellationToken ct = default);
+
+    /// <summary>
+    /// Retries all dead letters for a specific processor.
+    /// </summary>
+    Task<BulkRetryResult> RetryAllDeadLettersAsync(string processorId, CancellationToken ct = default);
+
+    // Checkpoints - Bulk Operations
+
+    /// <summary>
+    /// Resets multiple checkpoints at once.
+    /// </summary>
+    Task<BulkOperationResult> ResetCheckpointsAsync(IReadOnlyList<string> processorIds, CancellationToken ct = default);
 
     // Projection States
     Task<IReadOnlyList<string>> GetProjectionTypesAsync(CancellationToken ct = default);
@@ -45,6 +67,23 @@ public interface IAdminQueryService
         string documentId,
         string? tenantId = null,
         CancellationToken ct = default);
+
+    // Projection Rebuilds
+
+    /// <summary>
+    /// Starts a projection rebuild by clearing state and resetting the checkpoint.
+    /// </summary>
+    Task<RebuildStatus> StartRebuildAsync(string processorId, bool clearState = true, CancellationToken ct = default);
+
+    /// <summary>
+    /// Gets the current status of a rebuild operation.
+    /// </summary>
+    Task<RebuildStatus?> GetRebuildStatusAsync(string processorId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Cancels an ongoing rebuild operation.
+    /// </summary>
+    Task CancelRebuildAsync(string processorId, CancellationToken ct = default);
 
     // System
     Task<long> GetLastGlobalPositionAsync(CancellationToken ct = default);

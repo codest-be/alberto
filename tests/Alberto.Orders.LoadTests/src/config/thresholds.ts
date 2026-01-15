@@ -27,7 +27,7 @@ export const thresholds = {
   'http_req_duration{operation:GetOrdersOverview}': ['p(95)<200'],
 
   // Custom metrics
-  order_lifecycle_duration: ['p(95)<2000'], // Full lifecycle under 2s
+  order_lifecycle_duration: ['p(95)<3000'], // Full lifecycle under 3s (includes ~2s of intentional sleeps)
   orders_created: ['count>0'], // At least some orders created
 };
 

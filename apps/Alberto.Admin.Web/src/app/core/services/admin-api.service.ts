@@ -5,9 +5,15 @@ import {
   ProcessorStatus,
   Checkpoint,
   DeadLetter,
+  DeadLetterFilter,
   ProjectionState,
   SystemInfo,
   PagedResult,
+  ModuleInfo,
+  DeadLetterRetryResult,
+  BulkRetryResult,
+  BulkOperationResult,
+  RebuildStatus,
 } from '../models/admin.models';
 
 @Injectable({ providedIn: 'root' })
@@ -19,6 +25,11 @@ export class AdminApiService {
 
   private get apiBase(): string {
     return `${this.baseUrl()}/${this.moduleKey()}/api`;
+  }
+
+  // Modules
+  getModules(): Observable<ModuleInfo[]> {
+    return this.http.get<ModuleInfo[]>(`${this.baseUrl()}/api/modules`);
   }
 
   // System
@@ -56,17 +67,37 @@ export class AdminApiService {
     return this.http.put<void>(`${this.apiBase}/checkpoints/${processorId}`, { position });
   }
 
+  resetMultipleCheckpoints(processorIds: string[]): Observable<BulkOperationResult> {
+    return this.http.post<BulkOperationResult>(`${this.apiBase}/checkpoints/reset-multiple`, { processorIds });
+  }
+
   // Dead Letters
   getDeadLetters(
-    processorId?: string,
+    filter?: DeadLetterFilter,
     page: number = 1,
     pageSize: number = 50
   ): Observable<PagedResult<DeadLetter>> {
     const params: Record<string, string | number> = { page, pageSize };
-    if (processorId) {
-      params['processorId'] = processorId;
+    if (filter?.processorId) {
+      params['processorId'] = filter.processorId;
+    }
+    if (filter?.eventType) {
+      params['eventType'] = filter.eventType;
+    }
+    if (filter?.searchTerm) {
+      params['searchTerm'] = filter.searchTerm;
+    }
+    if (filter?.failedAfter) {
+      params['failedAfter'] = filter.failedAfter;
+    }
+    if (filter?.failedBefore) {
+      params['failedBefore'] = filter.failedBefore;
     }
     return this.http.get<PagedResult<DeadLetter>>(`${this.apiBase}/dead-letters`, { params });
+  }
+
+  getDeadLetterEventTypes(): Observable<string[]> {
+    return this.http.get<string[]>(`${this.apiBase}/dead-letters/event-types`);
   }
 
   getDeadLetterCount(processorId?: string): Observable<{ count: number }> {
@@ -85,8 +116,18 @@ export class AdminApiService {
     return this.http.delete<void>(`${this.apiBase}/dead-letters/${id}`);
   }
 
+  retryDeadLetter(id: string): Observable<DeadLetterRetryResult> {
+    return this.http.post<DeadLetterRetryResult>(`${this.apiBase}/dead-letters/${id}/retry`, {});
+  }
+
   clearDeadLetters(processorId: string): Observable<void> {
     return this.http.delete<void>(`${this.apiBase}/dead-letters`, {
+      params: { processorId },
+    });
+  }
+
+  retryAllDeadLetters(processorId: string): Observable<BulkRetryResult> {
+    return this.http.post<BulkRetryResult>(`${this.apiBase}/dead-letters/retry-all`, null, {
       params: { processorId },
     });
   }
@@ -124,6 +165,27 @@ export class AdminApiService {
     return this.http.get<ProjectionState>(
       `${this.apiBase}/projection-states/${projectionType}/${documentId}`,
       { params }
+    );
+  }
+
+  // Projection Rebuilds
+  startRebuild(processorId: string, clearState: boolean = true): Observable<RebuildStatus> {
+    return this.http.post<RebuildStatus>(
+      `${this.apiBase}/projection-states/${processorId}/rebuild`,
+      null,
+      { params: { clearState: clearState.toString() } }
+    );
+  }
+
+  getRebuildStatus(processorId: string): Observable<RebuildStatus | null> {
+    return this.http.get<RebuildStatus | null>(
+      `${this.apiBase}/projection-states/${processorId}/rebuild/status`
+    );
+  }
+
+  cancelRebuild(processorId: string): Observable<void> {
+    return this.http.delete<void>(
+      `${this.apiBase}/projection-states/${processorId}/rebuild`
     );
   }
 }

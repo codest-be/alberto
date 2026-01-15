@@ -1,10 +1,10 @@
-import { Component, inject, OnInit, OnDestroy, signal } from '@angular/core';
+import { Component, inject, OnInit, OnDestroy, signal, computed } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
 import { AdminApiService } from '../../core/services/admin-api.service';
 import { AdminSubscriptionService } from '../../core/graphql/admin-subscription.service';
-import { Checkpoint } from '../../core/models/admin.models';
+import { Checkpoint, BulkOperationResult } from '../../core/models/admin.models';
 
 @Component({
   selector: 'app-checkpoints',
@@ -17,6 +17,17 @@ import { Checkpoint } from '../../core/models/admin.models';
           <p class="subtitle">View and manage processor checkpoint positions</p>
         </div>
         <div class="header-actions">
+          @if (selectedCount() > 0) {
+            <span class="selection-badge">{{ selectedCount() }} selected</span>
+            <button
+              class="btn btn-danger"
+              (click)="confirmBulkReset()"
+              [disabled]="actionInProgress()"
+            >
+              Reset Selected
+            </button>
+            <button class="btn btn-secondary" (click)="clearSelection()">Clear</button>
+          }
           <span class="live-indicator" [class.connected]="subscriptionService.connected()">
             <span class="live-dot"></span>
             {{ subscriptionService.connected() ? 'Live' : 'Connecting...' }}
@@ -39,6 +50,13 @@ import { Checkpoint } from '../../core/models/admin.models';
           <table class="table">
             <thead>
               <tr>
+                <th class="checkbox-col">
+                  <input
+                    type="checkbox"
+                    [checked]="allSelected()"
+                    (change)="toggleSelectAll()"
+                  />
+                </th>
                 <th>Processor ID</th>
                 <th>Last Position</th>
                 <th>Updated At</th>
@@ -47,7 +65,17 @@ import { Checkpoint } from '../../core/models/admin.models';
             </thead>
             <tbody>
               @for (checkpoint of checkpoints(); track checkpoint.processorId) {
-                <tr [class.updated]="recentlyUpdated().has(checkpoint.processorId)">
+                <tr
+                  [class.updated]="recentlyUpdated().has(checkpoint.processorId)"
+                  [class.selected]="selected().has(checkpoint.processorId)"
+                >
+                  <td class="checkbox-col">
+                    <input
+                      type="checkbox"
+                      [checked]="selected().has(checkpoint.processorId)"
+                      (change)="toggleSelect(checkpoint.processorId)"
+                    />
+                  </td>
                   <td class="processor-id">{{ checkpoint.processorId }}</td>
                   <td class="mono">{{ checkpoint.lastPosition }}</td>
                   <td class="muted">{{ checkpoint.updatedAt | date: 'medium' }}</td>
@@ -122,6 +150,39 @@ import { Checkpoint } from '../../core/models/admin.models';
           </div>
         </div>
       }
+
+      @if (showBulkResetModal()) {
+        <div class="modal-overlay" (click)="closeModal()">
+          <div class="modal" (click)="$event.stopPropagation()">
+            <h3>Reset Multiple Checkpoints</h3>
+            <p class="warning-text">
+              Are you sure you want to reset {{ selectedCount() }} checkpoints?
+            </p>
+            <div class="selected-list">
+              @for (id of Array.from(selected()); track id) {
+                <span class="selected-item">{{ id }}</span>
+              }
+            </div>
+            <p class="warning-detail">
+              This will delete these checkpoints and cause the processors to start from the beginning.
+            </p>
+            @if (bulkResetResult()) {
+              <div class="bulk-result">
+                <p class="success-count">Success: {{ bulkResetResult()?.successCount }}</p>
+                <p class="fail-count">Failed: {{ bulkResetResult()?.failCount }}</p>
+              </div>
+            }
+            <div class="modal-actions">
+              <button class="btn" (click)="closeModal()">{{ bulkResetResult() ? 'Close' : 'Cancel' }}</button>
+              @if (!bulkResetResult()) {
+                <button class="btn btn-danger" (click)="bulkResetCheckpoints()" [disabled]="actionInProgress()">
+                  {{ actionInProgress() ? 'Resetting...' : 'Reset All' }}
+                </button>
+              }
+            </div>
+          </div>
+        </div>
+      }
     </div>
   `,
   styles: `
@@ -140,6 +201,30 @@ import { Checkpoint } from '../../core/models/admin.models';
       display: flex;
       align-items: center;
       gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .selection-badge {
+      padding: 0.375rem 0.75rem;
+      background: rgba(99, 102, 241, 0.15);
+      color: #6366f1;
+      border-radius: 6px;
+      font-size: 0.875rem;
+    }
+
+    .checkbox-col {
+      width: 40px;
+      text-align: center;
+    }
+
+    .checkbox-col input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+    }
+
+    tr.selected {
+      background: rgba(99, 102, 241, 0.1);
     }
 
     .live-indicator {
@@ -389,6 +474,40 @@ import { Checkpoint } from '../../core/models/admin.models';
       font-size: 0.875rem;
       margin-bottom: 1.25rem;
     }
+
+    .selected-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      max-height: 150px;
+      overflow-y: auto;
+    }
+
+    .selected-item {
+      padding: 0.25rem 0.5rem;
+      background: #252525;
+      border-radius: 4px;
+      font-family: 'SF Mono', Monaco, monospace;
+      font-size: 0.75rem;
+      color: #8b5cf6;
+    }
+
+    .bulk-result {
+      background: #252525;
+      border-radius: 6px;
+      padding: 0.75rem;
+      margin-bottom: 1rem;
+
+      .success-count {
+        color: #22c55e;
+        margin-bottom: 0.25rem;
+      }
+
+      .fail-count {
+        color: #ef4444;
+      }
+    }
   `,
 })
 export class CheckpointsComponent implements OnInit, OnDestroy {
@@ -403,6 +522,16 @@ export class CheckpointsComponent implements OnInit, OnDestroy {
   readonly editingCheckpoint = signal<Checkpoint | null>(null);
   readonly confirmingReset = signal<string | null>(null);
   readonly recentlyUpdated = signal<Set<string>>(new Set());
+  readonly selected = signal<Set<string>>(new Set());
+  readonly showBulkResetModal = signal(false);
+  readonly bulkResetResult = signal<BulkOperationResult | null>(null);
+
+  readonly selectedCount = computed(() => this.selected().size);
+  readonly allSelected = computed(() =>
+    this.checkpoints().length > 0 && this.selected().size === this.checkpoints().length
+  );
+
+  readonly Array = Array;
 
   newPosition: number | null = null;
 
@@ -476,7 +605,54 @@ export class CheckpointsComponent implements OnInit, OnDestroy {
   closeModal(): void {
     this.editingCheckpoint.set(null);
     this.confirmingReset.set(null);
+    this.showBulkResetModal.set(false);
+    this.bulkResetResult.set(null);
     this.newPosition = null;
+  }
+
+  toggleSelect(processorId: string): void {
+    const current = new Set(this.selected());
+    if (current.has(processorId)) {
+      current.delete(processorId);
+    } else {
+      current.add(processorId);
+    }
+    this.selected.set(current);
+  }
+
+  toggleSelectAll(): void {
+    if (this.allSelected()) {
+      this.selected.set(new Set());
+    } else {
+      this.selected.set(new Set(this.checkpoints().map(c => c.processorId)));
+    }
+  }
+
+  clearSelection(): void {
+    this.selected.set(new Set());
+  }
+
+  confirmBulkReset(): void {
+    this.bulkResetResult.set(null);
+    this.showBulkResetModal.set(true);
+  }
+
+  bulkResetCheckpoints(): void {
+    const processorIds = Array.from(this.selected());
+    if (processorIds.length === 0) return;
+
+    this.actionInProgress.set(true);
+    this.api.resetMultipleCheckpoints(processorIds).subscribe({
+      next: (result) => {
+        this.bulkResetResult.set(result);
+        this.clearSelection();
+        this.loadData();
+        this.actionInProgress.set(false);
+      },
+      error: () => {
+        this.actionInProgress.set(false);
+      },
+    });
   }
 
   setPosition(): void {

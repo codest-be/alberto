@@ -33,6 +33,7 @@ public static class OrdersModule
                 options.ConnectionString = connectionString;
                 options.AutoMigrate = true;
                 options.Schema = "orders";
+                options.MaxPoolSize = 30;
             })
             .WithTelemetry()
             .WithConsumer(consumer => consumer

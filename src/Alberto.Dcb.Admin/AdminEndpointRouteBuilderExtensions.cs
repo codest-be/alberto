@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text.Json;
+using Alberto.Dcb.Admin.Api.Models;
 using Alberto.Dcb.Admin.Endpoints;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -37,7 +38,28 @@ public static class AdminEndpointRouteBuilderExtensions
             MapModuleAdmin(app, moduleKey, options);
         }
 
+        // Map global modules discovery endpoint
+        MapModulesEndpoint(app, registry);
+
         return app;
+    }
+
+    private static void MapModulesEndpoint(IEndpointRouteBuilder app, AdminModuleRegistry registry)
+    {
+        // Determine base path from first module or use default
+        var basePath = registry.Modules.Values.FirstOrDefault()?.BasePath.TrimEnd('/') ?? "/alberto";
+
+        app.MapGet($"{basePath}/api/modules", () =>
+        {
+            var modules = registry.Modules.Select(m => new ModuleInfo(
+                m.Key,
+                m.Value.Title,
+                m.Value.ReadOnly)).ToList();
+
+            return Results.Ok(modules);
+        })
+        .WithName("GetModules")
+        .WithTags("Modules");
     }
 
     /// <summary>

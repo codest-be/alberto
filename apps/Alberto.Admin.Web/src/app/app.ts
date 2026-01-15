@@ -1,13 +1,12 @@
-import { Component, inject } from '@angular/core';
+import { Component } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { ShellComponent } from './shared/components/shell/shell.component';
-import { AdminApiService } from './core/services/admin-api.service';
 
 @Component({
   selector: 'app-root',
   imports: [RouterOutlet, ShellComponent],
   template: `
-    <app-shell [moduleKey]="adminApi.moduleKey()">
+    <app-shell>
       <router-outlet />
     </app-shell>
   `,
@@ -18,6 +17,4 @@ import { AdminApiService } from './core/services/admin-api.service';
     }
   `,
 })
-export class App {
-  protected readonly adminApi = inject(AdminApiService);
-}
+export class App {}

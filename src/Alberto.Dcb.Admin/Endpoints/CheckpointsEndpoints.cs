@@ -44,8 +44,19 @@ internal static class CheckpointsEndpoints
                 await service.SetCheckpointAsync(processorId, request.Position, ct);
                 return Results.NoContent();
             }).WithName($"{moduleKey}_SetCheckpoint");
+
+            group.MapPost("/reset-multiple", async (ResetMultipleRequest request, HttpContext ctx, CancellationToken ct) =>
+            {
+                if (request.ProcessorIds.Count == 0)
+                    return Results.BadRequest("At least one processorId is required");
+
+                var service = ctx.RequestServices.GetRequiredKeyedService<IAdminQueryService>(moduleKey);
+                var result = await service.ResetCheckpointsAsync(request.ProcessorIds, ct);
+                return Results.Ok(result);
+            }).WithName($"{moduleKey}_ResetMultipleCheckpoints");
         }
     }
 
     public record SetCheckpointRequest(long Position);
+    public record ResetMultipleRequest(IReadOnlyList<string> ProcessorIds);
 }

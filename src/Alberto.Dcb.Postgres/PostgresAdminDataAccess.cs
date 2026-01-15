@@ -1,3 +1,5 @@
+using System.Text.Json;
+using Alberto.Dcb;
 using Alberto.Dcb.Admin.Api.Models;
 using Alberto.Dcb.Admin.Internal;
 using Npgsql;
@@ -168,43 +170,73 @@ public sealed class PostgresAdminDataAccess : IAdminDataAccess
 
     public async Task<PagedResult<DeadLetterDto>> ListDeadLettersAsync(
         string? processorId,
+        string? eventType,
+        string? searchTerm,
+        DateTimeOffset? failedAfter,
+        DateTimeOffset? failedBefore,
         int page,
         int pageSize,
         CancellationToken ct = default)
     {
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
 
-        // Count total
-        var countSql = processorId is null
-            ? $"SELECT COUNT(*) FROM {_schema.Table("dead_letter_events")}"
-            : $"SELECT COUNT(*) FROM {_schema.Table("dead_letter_events")} WHERE processor_id = @processor_id";
+        // Build WHERE clause dynamically
+        var conditions = new List<string>();
+        var parameters = new Dictionary<string, object>();
 
-        await using var countCmd = new NpgsqlCommand(countSql, connection);
         if (processorId is not null)
-            countCmd.Parameters.AddWithValue("processor_id", processorId);
+        {
+            conditions.Add("processor_id = @processor_id");
+            parameters["processor_id"] = processorId;
+        }
+
+        if (eventType is not null)
+        {
+            conditions.Add("event_type = @event_type");
+            parameters["event_type"] = eventType;
+        }
+
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            conditions.Add("error_message ILIKE @search_term");
+            parameters["search_term"] = $"%{searchTerm}%";
+        }
+
+        if (failedAfter is not null)
+        {
+            conditions.Add("failed_at >= @failed_after");
+            parameters["failed_after"] = failedAfter.Value.UtcDateTime;
+        }
+
+        if (failedBefore is not null)
+        {
+            conditions.Add("failed_at <= @failed_before");
+            parameters["failed_before"] = failedBefore.Value.UtcDateTime;
+        }
+
+        var whereClause = conditions.Count > 0 ? $"WHERE {string.Join(" AND ", conditions)}" : "";
+
+        // Count total
+        var countSql = $"SELECT COUNT(*) FROM {_schema.Table("dead_letter_events")} {whereClause}";
+        await using var countCmd = new NpgsqlCommand(countSql, connection);
+        foreach (var param in parameters)
+            countCmd.Parameters.AddWithValue(param.Key, param.Value);
 
         var totalCount = Convert.ToInt32(await countCmd.ExecuteScalarAsync(ct));
 
         // Fetch page
         var offset = (page - 1) * pageSize;
-        var querySql = processorId is null
-            ? $"""
-              SELECT id, processor_id, event_id, event_type, event_data, error_message, stack_trace, attempt_count, failed_at
-              FROM {_schema.Table("dead_letter_events")}
-              ORDER BY failed_at DESC
-              LIMIT @limit OFFSET @offset
-              """
-            : $"""
-              SELECT id, processor_id, event_id, event_type, event_data, error_message, stack_trace, attempt_count, failed_at
-              FROM {_schema.Table("dead_letter_events")}
-              WHERE processor_id = @processor_id
-              ORDER BY failed_at DESC
-              LIMIT @limit OFFSET @offset
-              """;
+        var querySql = $"""
+            SELECT id, processor_id, event_id, event_type, event_data, error_message, stack_trace, attempt_count, failed_at
+            FROM {_schema.Table("dead_letter_events")}
+            {whereClause}
+            ORDER BY failed_at DESC
+            LIMIT @limit OFFSET @offset
+            """;
 
         await using var queryCmd = new NpgsqlCommand(querySql, connection);
-        if (processorId is not null)
-            queryCmd.Parameters.AddWithValue("processor_id", processorId);
+        foreach (var param in parameters)
+            queryCmd.Parameters.AddWithValue(param.Key, param.Value);
         queryCmd.Parameters.AddWithValue("limit", pageSize);
         queryCmd.Parameters.AddWithValue("offset", offset);
 
@@ -231,6 +263,24 @@ public sealed class PostgresAdminDataAccess : IAdminDataAccess
             Page: page,
             PageSize: pageSize,
             TotalPages: (int)Math.Ceiling(totalCount / (double)pageSize));
+    }
+
+    public async Task<IReadOnlyList<string>> GetDeadLetterEventTypesAsync(CancellationToken ct = default)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand(
+            $"SELECT DISTINCT event_type FROM {_schema.Table("dead_letter_events")} ORDER BY event_type",
+            connection);
+
+        var types = new List<string>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+
+        while (await reader.ReadAsync(ct))
+        {
+            types.Add(reader.GetString(0));
+        }
+
+        return types;
     }
 
     public async Task<DeadLetterDto?> GetDeadLetterAsync(Guid id, CancellationToken ct = default)
@@ -278,5 +328,60 @@ public sealed class PostgresAdminDataAccess : IAdminDataAccess
             cmd.Parameters.AddWithValue("processor_id", processorId);
 
         return Convert.ToInt32(await cmd.ExecuteScalarAsync(ct));
+    }
+
+    public async Task<IEventEnvelope?> GetEventByIdAsync(Guid eventId, CancellationToken ct = default)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand(
+            $"""
+            SELECT global_position, tenant_id, event_id, event_type, event_tags, event_data, event_metadata, created_at
+            FROM {_schema.Table("events")}
+            WHERE event_id = @event_id
+            """,
+            connection);
+
+        cmd.Parameters.AddWithValue("event_id", eventId);
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+
+        if (await reader.ReadAsync(ct))
+        {
+            var globalPosition = reader.GetInt64(0);
+            var tenantId = reader.GetString(1);
+            var id = reader.GetGuid(2);
+            var eventType = reader.GetString(3);
+            var eventTags = reader.GetFieldValue<string[]>(4);
+            var eventData = reader.GetString(5);
+            var eventMetadata = reader.GetString(6);
+            var createdAt = reader.GetDateTime(7);
+
+            var metadata = JsonSerializer.Deserialize<Dictionary<string, string>>(eventMetadata) ?? [];
+
+            return new EventEnvelope
+            {
+                Id = id,
+                TenantId = tenantId,
+                GlobalPosition = globalPosition,
+                EventType = new EventType(eventType),
+                Tags = eventTags.Select(EventTag.Parse).ToArray(),
+                EventData = eventData,
+                Metadata = metadata,
+                CreatedAt = DateTime.SpecifyKind(createdAt, DateTimeKind.Utc)
+            };
+        }
+
+        return null;
+    }
+
+    public async Task ClearProjectionStatesAsync(string projectionType, CancellationToken ct = default)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand(
+            $"DELETE FROM {_schema.Table("projection_states")} WHERE projection_type = @projection_type",
+            connection);
+
+        cmd.Parameters.AddWithValue("projection_type", projectionType);
+        await cmd.ExecuteNonQueryAsync(ct);
     }
 }

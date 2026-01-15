@@ -1,11 +1,12 @@
-import { Component, inject, OnInit, signal, computed } from '@angular/core';
+import { Component, inject, OnInit, OnDestroy, signal, computed } from '@angular/core';
 import { DatePipe } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { AdminApiService } from '../../core/services/admin-api.service';
-import { ProjectionState, PagedResult } from '../../core/models/admin.models';
+import { ProjectionState, PagedResult, RebuildStatus } from '../../core/models/admin.models';
 
 @Component({
   selector: 'app-projections',
-  imports: [DatePipe],
+  imports: [DatePipe, FormsModule],
   template: `
     <div class="projections">
       <header class="page-header">
@@ -28,13 +29,23 @@ import { ProjectionState, PagedResult } from '../../core/models/admin.models';
           <label>Projection Type</label>
           <div class="type-buttons">
             @for (type of projectionTypes(); track type) {
-              <button
-                class="type-btn"
-                [class.active]="selectedType() === type"
-                (click)="selectType(type)"
-              >
-                {{ type }}
-              </button>
+              <div class="type-item">
+                <button
+                  class="type-btn"
+                  [class.active]="selectedType() === type"
+                  (click)="selectType(type)"
+                >
+                  {{ type }}
+                </button>
+                <button
+                  class="rebuild-btn"
+                  (click)="openRebuildModal(type)"
+                  [disabled]="actionInProgress()"
+                  title="Rebuild projection"
+                >
+                  &#x21bb;
+                </button>
+              </div>
             }
             @if (projectionTypes().length === 0) {
               <span class="no-types">No projection types found</span>
@@ -130,6 +141,75 @@ import { ProjectionState, PagedResult } from '../../core/models/admin.models';
             </div>
           }
         }
+      }
+
+      @if (showRebuildModal()) {
+        <div class="modal-overlay" (click)="closeModal()">
+          <div class="modal" (click)="$event.stopPropagation()">
+            <h3>Rebuild Projection</h3>
+            <p class="modal-info">
+              Rebuild the processor: <strong>{{ rebuildingType() }}</strong>
+            </p>
+
+            @if (!rebuildStatus()) {
+              <div class="form-group">
+                <label>
+                  <input type="checkbox" [(ngModel)]="clearStateOnRebuild" />
+                  Clear existing state (start fresh)
+                </label>
+              </div>
+              <p class="warning-text">
+                This will reset the checkpoint and reprocess all events from the beginning.
+              </p>
+            }
+
+            @if (rebuildStatus()) {
+              <div class="rebuild-progress">
+                <div class="progress-header">
+                  <span class="progress-label">{{ getStateLabel(rebuildStatus()?.state) }}</span>
+                  <span class="progress-percent">{{ rebuildStatus()?.progressPercent?.toFixed(1) }}%</span>
+                </div>
+                <div class="progress-bar">
+                  <div
+                    class="progress-fill"
+                    [style.width.%]="rebuildStatus()?.progressPercent"
+                    [class.completed]="rebuildStatus()?.state === 'Completed'"
+                    [class.failed]="rebuildStatus()?.state === 'Failed' || rebuildStatus()?.state === 'Cancelled'"
+                  ></div>
+                </div>
+                <div class="progress-details">
+                  <span>Position: {{ rebuildStatus()?.currentPosition }} / {{ rebuildStatus()?.targetPosition }}</span>
+                </div>
+                @if (rebuildStatus()?.errorMessage) {
+                  <p class="error-message">{{ rebuildStatus()?.errorMessage }}</p>
+                }
+              </div>
+            }
+
+            <div class="modal-actions">
+              <button class="btn" (click)="closeModal()">
+                {{ isRebuildComplete() ? 'Close' : 'Cancel' }}
+              </button>
+              @if (!rebuildStatus()) {
+                <button
+                  class="btn btn-primary"
+                  (click)="startRebuild()"
+                  [disabled]="actionInProgress()"
+                >
+                  Start Rebuild
+                </button>
+              } @else if (!isRebuildComplete() && rebuildStatus()?.state !== 'Cancelled') {
+                <button
+                  class="btn btn-danger"
+                  (click)="cancelRebuild()"
+                  [disabled]="actionInProgress()"
+                >
+                  Cancel Rebuild
+                </button>
+              }
+            </div>
+          </div>
+        </div>
       }
     </div>
   `,
@@ -232,6 +312,33 @@ import { ProjectionState, PagedResult } from '../../core/models/admin.models';
       display: flex;
       flex-wrap: wrap;
       gap: 0.5rem;
+    }
+
+    .type-item {
+      display: flex;
+      gap: 0.25rem;
+    }
+
+    .rebuild-btn {
+      padding: 0.5rem 0.625rem;
+      background: transparent;
+      border: 1px solid #2a2a2a;
+      border-radius: 6px;
+      color: #666;
+      cursor: pointer;
+      font-size: 0.875rem;
+      transition: all 0.15s;
+
+      &:hover:not(:disabled) {
+        background: #252525;
+        color: #f59e0b;
+        border-color: #f59e0b;
+      }
+
+      &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
     }
 
     .type-btn {
@@ -415,9 +522,152 @@ import { ProjectionState, PagedResult } from '../../core/models/admin.models';
       max-height: 400px;
       overflow-y: auto;
     }
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    .modal {
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 12px;
+      padding: 1.5rem;
+      width: 100%;
+      max-width: 450px;
+
+      h3 {
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: #fff;
+        margin-bottom: 0.75rem;
+      }
+    }
+
+    .modal-info {
+      color: #888;
+      margin-bottom: 1rem;
+
+      strong {
+        color: #8b5cf6;
+        font-family: 'SF Mono', Monaco, monospace;
+      }
+    }
+
+    .form-group {
+      margin-bottom: 1rem;
+
+      label {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        cursor: pointer;
+        color: #e0e0e0;
+
+        input[type="checkbox"] {
+          width: 16px;
+          height: 16px;
+        }
+      }
+    }
+
+    .warning-text {
+      color: #f59e0b;
+      font-size: 0.875rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .rebuild-progress {
+      background: #252525;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .progress-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 0.5rem;
+    }
+
+    .progress-label {
+      color: #e0e0e0;
+      font-weight: 500;
+    }
+
+    .progress-percent {
+      color: #6366f1;
+      font-family: 'SF Mono', Monaco, monospace;
+    }
+
+    .progress-bar {
+      height: 8px;
+      background: #1a1a1a;
+      border-radius: 4px;
+      overflow: hidden;
+      margin-bottom: 0.5rem;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: #6366f1;
+      border-radius: 4px;
+      transition: width 0.3s ease;
+
+      &.completed {
+        background: #22c55e;
+      }
+
+      &.failed {
+        background: #ef4444;
+      }
+    }
+
+    .progress-details {
+      font-size: 0.8125rem;
+      color: #666;
+      font-family: 'SF Mono', Monaco, monospace;
+    }
+
+    .error-message {
+      color: #ef4444;
+      font-size: 0.875rem;
+      margin-top: 0.75rem;
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.75rem;
+    }
+
+    .btn-primary {
+      background: #6366f1;
+      border-color: #6366f1;
+      color: #fff;
+
+      &:hover:not(:disabled) {
+        background: #5558e3;
+      }
+    }
+
+    .btn-danger {
+      background: transparent;
+      border-color: #dc2626;
+      color: #dc2626;
+
+      &:hover:not(:disabled) {
+        background: rgba(220, 38, 38, 0.1);
+      }
+    }
   `,
 })
-export class ProjectionsComponent implements OnInit {
+export class ProjectionsComponent implements OnInit, OnDestroy {
   private readonly api = inject(AdminApiService);
 
   readonly loadingTypes = signal(true);
@@ -427,6 +677,14 @@ export class ProjectionsComponent implements OnInit {
   readonly selectedType = signal<string | null>(null);
   readonly pagedResult = signal<PagedResult<ProjectionState> | null>(null);
   readonly selectedState = signal<ProjectionState | null>(null);
+
+  // Rebuild modal state
+  readonly showRebuildModal = signal(false);
+  readonly rebuildingType = signal<string | null>(null);
+  readonly rebuildStatus = signal<RebuildStatus | null>(null);
+  readonly actionInProgress = signal(false);
+  clearStateOnRebuild = true;
+  private statusPollInterval: ReturnType<typeof setInterval> | null = null;
 
   readonly projectionStates = computed(() => this.pagedResult()?.items ?? []);
   readonly page = computed(() => this.pagedResult()?.page ?? 1);
@@ -494,5 +752,141 @@ export class ProjectionsComponent implements OnInit {
     } catch {
       return json;
     }
+  }
+
+  ngOnDestroy(): void {
+    this.stopPolling();
+  }
+
+  // Rebuild modal methods
+  openRebuildModal(type: string): void {
+    this.rebuildingType.set(type);
+    this.rebuildStatus.set(null);
+    this.clearStateOnRebuild = true;
+    this.showRebuildModal.set(true);
+  }
+
+  closeModal(): void {
+    this.stopPolling();
+    this.showRebuildModal.set(false);
+    this.rebuildingType.set(null);
+    this.rebuildStatus.set(null);
+  }
+
+  startRebuild(): void {
+    const processorId = this.rebuildingType();
+    if (!processorId) return;
+
+    this.actionInProgress.set(true);
+
+    this.api.startRebuild(processorId, this.clearStateOnRebuild).subscribe({
+      next: (status) => {
+        this.rebuildStatus.set(status);
+        this.actionInProgress.set(false);
+
+        // Start polling for status updates if rebuild is in progress
+        if (status.state === 'Rebuilding' || status.state === 'Clearing') {
+          this.startPolling();
+        }
+      },
+      error: (err) => {
+        this.rebuildStatus.set({
+          processorId,
+          state: 'Failed',
+          currentPosition: 0,
+          targetPosition: 0,
+          progressPercent: 0,
+          startedAt: null,
+          completedAt: null,
+          errorMessage: err.message || 'Failed to start rebuild',
+        });
+        this.actionInProgress.set(false);
+      },
+    });
+  }
+
+  cancelRebuild(): void {
+    const processorId = this.rebuildingType();
+    if (!processorId) return;
+
+    this.actionInProgress.set(true);
+
+    this.api.cancelRebuild(processorId).subscribe({
+      next: () => {
+        this.stopPolling();
+        const current = this.rebuildStatus();
+        if (current) {
+          this.rebuildStatus.set({ ...current, state: 'Cancelled' });
+        }
+        this.actionInProgress.set(false);
+      },
+      error: () => {
+        this.actionInProgress.set(false);
+      },
+    });
+  }
+
+  isRebuildComplete(): boolean {
+    const status = this.rebuildStatus();
+    if (!status) return false;
+    return status.state === 'Completed' || status.state === 'Failed' || status.state === 'Cancelled';
+  }
+
+  getStateLabel(state: string | undefined): string {
+    switch (state) {
+      case 'NotStarted':
+        return 'Not Started';
+      case 'Clearing':
+        return 'Clearing State...';
+      case 'Rebuilding':
+        return 'Rebuilding...';
+      case 'Completed':
+        return 'Completed';
+      case 'Failed':
+        return 'Failed';
+      case 'Cancelled':
+        return 'Cancelled';
+      default:
+        return state || 'Unknown';
+    }
+  }
+
+  private startPolling(): void {
+    this.stopPolling();
+
+    this.statusPollInterval = setInterval(() => {
+      this.pollRebuildStatus();
+    }, 1000);
+  }
+
+  private stopPolling(): void {
+    if (this.statusPollInterval) {
+      clearInterval(this.statusPollInterval);
+      this.statusPollInterval = null;
+    }
+  }
+
+  private pollRebuildStatus(): void {
+    const processorId = this.rebuildingType();
+    if (!processorId) {
+      this.stopPolling();
+      return;
+    }
+
+    this.api.getRebuildStatus(processorId).subscribe({
+      next: (status) => {
+        if (status) {
+          this.rebuildStatus.set(status);
+
+          // Stop polling if rebuild is complete
+          if (status.state === 'Completed' || status.state === 'Failed' || status.state === 'Cancelled') {
+            this.stopPolling();
+          }
+        }
+      },
+      error: () => {
+        // Continue polling on error
+      },
+    });
   }
 }

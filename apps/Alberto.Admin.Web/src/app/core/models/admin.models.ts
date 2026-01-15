@@ -50,3 +50,56 @@ export interface PagedResult<T> {
   pageSize: number;
   totalPages: number;
 }
+
+export interface ModuleInfo {
+  moduleKey: string;
+  title: string;
+  readOnly: boolean;
+}
+
+export interface DeadLetterRetryResult {
+  id: string;
+  success: boolean;
+  errorMessage: string | null;
+}
+
+export interface BulkRetryResult {
+  totalAttempted: number;
+  successCount: number;
+  failCount: number;
+  results: DeadLetterRetryResult[];
+}
+
+export interface BulkOperationResult {
+  totalCount: number;
+  successCount: number;
+  failCount: number;
+  items: OperationItemResult[];
+}
+
+export interface OperationItemResult {
+  id: string;
+  success: boolean;
+  errorMessage: string | null;
+}
+
+export type RebuildState = 'NotStarted' | 'Clearing' | 'Rebuilding' | 'Completed' | 'Failed' | 'Cancelled';
+
+export interface RebuildStatus {
+  processorId: string;
+  state: RebuildState;
+  currentPosition: number;
+  targetPosition: number;
+  progressPercent: number;
+  startedAt: string | null;
+  completedAt: string | null;
+  errorMessage: string | null;
+}
+
+export interface DeadLetterFilter {
+  processorId?: string;
+  eventType?: string;
+  searchTerm?: string;
+  failedAfter?: string;
+  failedBefore?: string;
+}

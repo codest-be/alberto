@@ -1,5 +1,7 @@
-import { Component, input } from '@angular/core';
-import { RouterLink, RouterLinkActive } from '@angular/router';
+import { Component, inject, OnInit, signal } from '@angular/core';
+import { RouterLink, RouterLinkActive, Router } from '@angular/router';
+import { AdminApiService } from '../../../core/services/admin-api.service';
+import { ModuleInfo } from '../../../core/models/admin.models';
 
 @Component({
   selector: 'app-shell',
@@ -25,7 +27,19 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
           }
         </nav>
         <div class="sidebar-footer">
-          <span class="module-badge">{{ moduleKey() }}</span>
+          @if (modules().length > 1) {
+            <select
+              class="module-select"
+              [value]="api.moduleKey()"
+              (change)="switchModule($event)"
+            >
+              @for (module of modules(); track module.moduleKey) {
+                <option [value]="module.moduleKey">{{ module.title }}</option>
+              }
+            </select>
+          } @else {
+            <span class="module-badge">{{ api.moduleKey() }}</span>
+          }
         </div>
       </aside>
       <main class="content">
@@ -138,6 +152,33 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
       color: #888;
     }
 
+    .module-select {
+      width: 100%;
+      padding: 0.5rem 0.75rem;
+      background: #252525;
+      border: 1px solid #3a3a3a;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: #e0e0e0;
+      cursor: pointer;
+      transition: all 0.15s ease;
+
+      &:hover {
+        border-color: #4a4a4a;
+      }
+
+      &:focus {
+        outline: none;
+        border-color: #6366f1;
+      }
+
+      option {
+        background: #1a1a1a;
+        color: #e0e0e0;
+      }
+    }
+
     .content {
       flex: 1;
       overflow-y: auto;
@@ -145,8 +186,11 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
     }
   `,
 })
-export class ShellComponent {
-  moduleKey = input<string>('orders');
+export class ShellComponent implements OnInit {
+  readonly api = inject(AdminApiService);
+  private readonly router = inject(Router);
+
+  readonly modules = signal<ModuleInfo[]>([]);
 
   navItems = [
     { path: '/dashboard', label: 'Dashboard', icon: '~' },
@@ -155,4 +199,38 @@ export class ShellComponent {
     { path: '/dead-letters', label: 'Dead Letters', icon: '!' },
     { path: '/projections', label: 'Projections', icon: '@' },
   ];
+
+  ngOnInit(): void {
+    this.loadModules();
+    this.restoreSelectedModule();
+  }
+
+  private loadModules(): void {
+    this.api.getModules().subscribe({
+      next: (modules) => {
+        this.modules.set(modules);
+      },
+      error: (err) => {
+        console.error('Failed to load modules:', err);
+      },
+    });
+  }
+
+  private restoreSelectedModule(): void {
+    const savedModule = localStorage.getItem('selectedModule');
+    if (savedModule) {
+      this.api.moduleKey.set(savedModule);
+    }
+  }
+
+  switchModule(event: Event): void {
+    const select = event.target as HTMLSelectElement;
+    const moduleKey = select.value;
+
+    this.api.moduleKey.set(moduleKey);
+    localStorage.setItem('selectedModule', moduleKey);
+
+    // Navigate to dashboard to refresh data for new module
+    this.router.navigate(['/dashboard']);
+  }
 }

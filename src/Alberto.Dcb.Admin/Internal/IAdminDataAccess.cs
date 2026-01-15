@@ -18,14 +18,22 @@ public interface IAdminDataAccess
     Task<IReadOnlyList<string>> ListProjectionTypesAsync(CancellationToken ct = default);
 
     /// <summary>
-    /// Lists projection states with pagination.
+    /// Lists projection states with pagination and filtering.
     /// </summary>
     Task<PagedResult<ProjectionStateDto>> ListProjectionStatesAsync(
         string projectionType,
         string? tenantId,
+        string? searchTerm,
+        DateTimeOffset? updatedAfter,
+        DateTimeOffset? updatedBefore,
         int page,
         int pageSize,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Gets all distinct tenant IDs from projection states for filtering.
+    /// </summary>
+    Task<IReadOnlyList<string>> GetProjectionTenantsAsync(string projectionType, CancellationToken ct = default);
 
     /// <summary>
     /// Gets a single projection state.
@@ -37,13 +45,22 @@ public interface IAdminDataAccess
         CancellationToken ct = default);
 
     /// <summary>
-    /// Lists dead letters with pagination.
+    /// Lists dead letters with pagination and filtering.
     /// </summary>
     Task<PagedResult<DeadLetterDto>> ListDeadLettersAsync(
         string? processorId,
+        string? eventType,
+        string? searchTerm,
+        DateTimeOffset? failedAfter,
+        DateTimeOffset? failedBefore,
         int page,
         int pageSize,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Gets all distinct event types from dead letters for filtering.
+    /// </summary>
+    Task<IReadOnlyList<string>> GetDeadLetterEventTypesAsync(CancellationToken ct = default);
 
     /// <summary>
     /// Gets a single dead letter by ID.
@@ -54,4 +71,14 @@ public interface IAdminDataAccess
     /// Gets total dead letter count.
     /// </summary>
     Task<int> GetDeadLetterCountAsync(string? processorId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Gets an event by its ID for retry purposes.
+    /// </summary>
+    Task<IEventEnvelope?> GetEventByIdAsync(Guid eventId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Clears all projection states for a specific projection type.
+    /// </summary>
+    Task ClearProjectionStatesAsync(string projectionType, CancellationToken ct = default);
 }

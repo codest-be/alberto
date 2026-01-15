@@ -61,6 +61,7 @@ public static class Extensions
                 metrics.AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation()
                     .AddRuntimeInstrumentation()
+                    .AddProcessInstrumentation()
                     .AddNpgsqlInstrumentation()
                     .AddAlbertoInstrumentation();
             })

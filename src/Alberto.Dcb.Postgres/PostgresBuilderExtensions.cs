@@ -44,9 +44,12 @@ public static class PostgresBuilderExtensions
         var moduleKey = builder.ModuleKey;
         var schema = options.Schema;
 
-        // Register NpgsqlDataSource
-        builder.Services.AddKeyedSingleton(moduleKey,
-            NpgsqlDataSource.Create(options.ConnectionString));
+        // Register NpgsqlDataSource with connection pool settings
+        var dataSourceBuilder = new NpgsqlDataSourceBuilder(options.ConnectionString);
+        dataSourceBuilder.ConnectionStringBuilder.MaxPoolSize = options.MaxPoolSize;
+        dataSourceBuilder.ConnectionStringBuilder.MinPoolSize = options.MinPoolSize;
+
+        builder.Services.AddKeyedSingleton(moduleKey, dataSourceBuilder.Build());
 
         // Register append interceptor pipeline
         builder.Services.AddKeyedSingleton<IAppendInterceptorPipeline>(moduleKey, (sp, _) =>

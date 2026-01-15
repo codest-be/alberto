@@ -1,13 +1,14 @@
 import { Component, inject, OnInit, OnDestroy, signal, computed } from '@angular/core';
 import { DatePipe, SlicePipe } from '@angular/common';
-import { Subscription } from 'rxjs';
+import { FormsModule } from '@angular/forms';
+import { Subscription, Subject, debounceTime, distinctUntilChanged } from 'rxjs';
 import { AdminApiService } from '../../core/services/admin-api.service';
 import { AdminSubscriptionService } from '../../core/graphql/admin-subscription.service';
-import { DeadLetter, PagedResult } from '../../core/models/admin.models';
+import { DeadLetter, DeadLetterFilter, PagedResult, BulkRetryResult } from '../../core/models/admin.models';
 
 @Component({
   selector: 'app-dead-letters',
-  imports: [DatePipe, SlicePipe],
+  imports: [DatePipe, SlicePipe, FormsModule],
   template: `
     <div class="dead-letters">
       <header class="page-header">
@@ -19,6 +20,15 @@ import { DeadLetter, PagedResult } from '../../core/models/admin.models';
           <span class="count-badge" [class.warning]="totalCount() > 0">
             {{ totalCount() }} total
           </span>
+          @if (filterProcessorId()) {
+            <button
+              class="btn btn-primary"
+              (click)="confirmRetryAll()"
+              [disabled]="actionInProgress() || totalCount() === 0"
+            >
+              Retry All ({{ totalCount() }})
+            </button>
+          }
           <span class="live-indicator" [class.connected]="subscriptionService.connected()">
             <span class="live-dot"></span>
             {{ subscriptionService.connected() ? 'Live' : 'Connecting...' }}
@@ -26,6 +36,62 @@ import { DeadLetter, PagedResult } from '../../core/models/admin.models';
           <button class="btn btn-secondary" (click)="loadData()">Refresh</button>
         </div>
       </header>
+
+      <div class="filter-bar">
+        <div class="filter-group">
+          <label>Processor</label>
+          <select [value]="filterProcessorId() || ''" (change)="onProcessorFilterChange($event)">
+            <option value="">All Processors</option>
+            @for (p of processors(); track p) {
+              <option [value]="p">{{ p }}</option>
+            }
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label>Event Type</label>
+          <select [value]="filterEventType() || ''" (change)="onEventTypeFilterChange($event)">
+            <option value="">All Types</option>
+            @for (type of eventTypes(); track type) {
+              <option [value]="type">{{ type }}</option>
+            }
+          </select>
+        </div>
+
+        <div class="filter-group search-group">
+          <label>Search Error</label>
+          <input
+            type="text"
+            placeholder="Search error messages..."
+            [ngModel]="filterSearchTerm()"
+            (ngModelChange)="onSearchTermChange($event)"
+          />
+        </div>
+
+        <div class="filter-group">
+          <label>Failed After</label>
+          <input
+            type="datetime-local"
+            [ngModel]="filterFailedAfter()"
+            (ngModelChange)="onFailedAfterChange($event)"
+          />
+        </div>
+
+        <div class="filter-group">
+          <label>Failed Before</label>
+          <input
+            type="datetime-local"
+            [ngModel]="filterFailedBefore()"
+            (ngModelChange)="onFailedBeforeChange($event)"
+          />
+        </div>
+
+        @if (hasActiveFilters()) {
+          <button class="btn btn-clear" (click)="clearFilters()">
+            Clear Filters
+          </button>
+        }
+      </div>
 
       @if (loading()) {
         <div class="loading">Loading dead letters...</div>
@@ -62,6 +128,13 @@ import { DeadLetter, PagedResult } from '../../core/models/admin.models';
                   <td class="attempts">{{ dl.attemptCount }}</td>
                   <td class="muted">{{ dl.failedAt | date: 'short' }}</td>
                   <td class="actions" (click)="$event.stopPropagation()">
+                    <button
+                      class="btn btn-sm btn-primary"
+                      (click)="confirmRetry(dl)"
+                      [disabled]="actionInProgress()"
+                    >
+                      Retry
+                    </button>
                     <button
                       class="btn btn-sm btn-danger"
                       (click)="confirmRemove(dl)"
@@ -157,6 +230,59 @@ import { DeadLetter, PagedResult } from '../../core/models/admin.models';
           </div>
         </div>
       }
+
+      @if (confirmingRetry()) {
+        <div class="modal-overlay" (click)="closeModal()">
+          <div class="modal" (click)="$event.stopPropagation()">
+            <h3>Retry Dead Letter</h3>
+            <p class="info-text">This will re-process the event through the processor.</p>
+            <p class="warning-detail">
+              Event: <strong>{{ confirmingRetry()?.eventType }}</strong><br />
+              Processor: <strong>{{ confirmingRetry()?.processorId }}</strong>
+            </p>
+            @if (retryError()) {
+              <p class="retry-error">{{ retryError() }}</p>
+            }
+            <div class="modal-actions">
+              <button class="btn" (click)="closeModal()">Cancel</button>
+              <button class="btn btn-primary" (click)="retryDeadLetter()" [disabled]="actionInProgress()">
+                {{ actionInProgress() ? 'Retrying...' : 'Retry' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      }
+
+      @if (showRetryAllModal()) {
+        <div class="modal-overlay" (click)="closeModal()">
+          <div class="modal" (click)="$event.stopPropagation()">
+            <h3>Retry All Dead Letters</h3>
+            <p class="info-text">
+              This will retry all {{ totalCount() }} dead letters for processor:
+            </p>
+            <p class="warning-detail">
+              <strong>{{ filterProcessorId() }}</strong>
+            </p>
+            @if (bulkRetryResult()) {
+              <div class="bulk-result">
+                <p class="success-count">Success: {{ bulkRetryResult()?.successCount }}</p>
+                <p class="fail-count">Failed: {{ bulkRetryResult()?.failCount }}</p>
+              </div>
+            }
+            @if (retryError()) {
+              <p class="retry-error">{{ retryError() }}</p>
+            }
+            <div class="modal-actions">
+              <button class="btn" (click)="closeModal()">{{ bulkRetryResult() ? 'Close' : 'Cancel' }}</button>
+              @if (!bulkRetryResult()) {
+                <button class="btn btn-primary" (click)="retryAllDeadLetters()" [disabled]="actionInProgress()">
+                  {{ actionInProgress() ? 'Retrying...' : 'Retry All' }}
+                </button>
+              }
+            </div>
+          </div>
+        </div>
+      }
     </div>
   `,
   styles: `
@@ -186,6 +312,81 @@ import { DeadLetter, PagedResult } from '../../core/models/admin.models';
       display: flex;
       align-items: center;
       gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+      padding: 1rem;
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 8px;
+      align-items: flex-end;
+    }
+
+    .filter-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.375rem;
+
+      label {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #666;
+      }
+
+      select,
+      input {
+        padding: 0.5rem 0.75rem;
+        background: #252525;
+        border: 1px solid #3a3a3a;
+        border-radius: 6px;
+        font-size: 0.875rem;
+        color: #e0e0e0;
+        min-width: 150px;
+
+        &:hover {
+          border-color: #4a4a4a;
+        }
+
+        &:focus {
+          outline: none;
+          border-color: #6366f1;
+        }
+      }
+
+      select option {
+        background: #1a1a1a;
+        color: #e0e0e0;
+      }
+
+      input[type="datetime-local"] {
+        min-width: 180px;
+      }
+
+      &.search-group {
+        flex: 1;
+        min-width: 200px;
+
+        input {
+          width: 100%;
+        }
+      }
+    }
+
+    .btn-clear {
+      background: transparent;
+      border-color: #666;
+      color: #888;
+
+      &:hover:not(:disabled) {
+        background: #252525;
+        color: #e0e0e0;
+      }
     }
 
     .count-badge {
@@ -284,9 +485,24 @@ import { DeadLetter, PagedResult } from '../../core/models/admin.models';
         }
       }
 
+      &.btn-primary {
+        background: #6366f1;
+        border-color: #6366f1;
+        color: #fff;
+
+        &:hover:not(:disabled) {
+          background: #5558e3;
+        }
+      }
+
       &.btn-secondary {
         background: transparent;
       }
+    }
+
+    .actions {
+      display: flex;
+      gap: 0.5rem;
     }
 
     .table-container {
@@ -508,6 +724,11 @@ import { DeadLetter, PagedResult } from '../../core/models/admin.models';
       margin-bottom: 0.5rem;
     }
 
+    .info-text {
+      color: #888;
+      margin-bottom: 0.5rem;
+    }
+
     .warning-detail {
       color: #666;
       font-size: 0.875rem;
@@ -516,6 +737,32 @@ import { DeadLetter, PagedResult } from '../../core/models/admin.models';
       strong {
         color: #8b5cf6;
         font-family: 'SF Mono', Monaco, monospace;
+      }
+    }
+
+    .retry-error {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      border-radius: 6px;
+      padding: 0.75rem;
+      color: #ef4444;
+      font-size: 0.875rem;
+      margin-bottom: 1rem;
+    }
+
+    .bulk-result {
+      background: #252525;
+      border-radius: 6px;
+      padding: 0.75rem;
+      margin-bottom: 1rem;
+
+      .success-count {
+        color: #22c55e;
+        margin-bottom: 0.25rem;
+      }
+
+      .fail-count {
+        color: #ef4444;
       }
     }
 
@@ -530,28 +777,117 @@ export class DeadLettersComponent implements OnInit, OnDestroy {
   private readonly api = inject(AdminApiService);
   readonly subscriptionService = inject(AdminSubscriptionService);
   private subscription: Subscription | null = null;
+  private searchSubject = new Subject<string>();
 
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
   readonly pagedResult = signal<PagedResult<DeadLetter> | null>(null);
   readonly selectedDeadLetter = signal<DeadLetter | null>(null);
   readonly confirmingRemove = signal<DeadLetter | null>(null);
+  readonly confirmingRetry = signal<DeadLetter | null>(null);
+  readonly retryError = signal<string | null>(null);
   readonly actionInProgress = signal(false);
   readonly recentlyAdded = signal<Set<string>>(new Set());
+  readonly processors = signal<string[]>([]);
+  readonly eventTypes = signal<string[]>([]);
+  readonly filterProcessorId = signal<string | null>(null);
+  readonly filterEventType = signal<string | null>(null);
+  readonly filterSearchTerm = signal<string>('');
+  readonly filterFailedAfter = signal<string>('');
+  readonly filterFailedBefore = signal<string>('');
+  readonly showRetryAllModal = signal(false);
+  readonly bulkRetryResult = signal<BulkRetryResult | null>(null);
 
   readonly deadLetters = computed(() => this.pagedResult()?.items ?? []);
   readonly totalCount = computed(() => this.pagedResult()?.totalCount ?? 0);
   readonly page = computed(() => this.pagedResult()?.page ?? 1);
   readonly totalPages = computed(() => this.pagedResult()?.totalPages ?? 1);
   readonly selectedId = computed(() => this.selectedDeadLetter()?.id ?? null);
+  readonly hasActiveFilters = computed(() =>
+    !!this.filterProcessorId() ||
+    !!this.filterEventType() ||
+    !!this.filterSearchTerm() ||
+    !!this.filterFailedAfter() ||
+    !!this.filterFailedBefore()
+  );
 
   ngOnInit(): void {
+    this.loadProcessors();
+    this.loadEventTypes();
     this.loadData();
     this.startSubscription();
+    this.setupSearchDebounce();
+  }
+
+  private setupSearchDebounce(): void {
+    this.searchSubject.pipe(
+      debounceTime(300),
+      distinctUntilChanged()
+    ).subscribe(term => {
+      this.filterSearchTerm.set(term);
+      this.loadData(1);
+    });
+  }
+
+  private loadProcessors(): void {
+    this.api.getProcessors().subscribe({
+      next: (procs) => {
+        const ids = procs
+          .filter(p => p.deadLetterCount > 0)
+          .map(p => p.processorId);
+        this.processors.set(ids);
+      },
+    });
+  }
+
+  private loadEventTypes(): void {
+    this.api.getDeadLetterEventTypes().subscribe({
+      next: (types) => {
+        this.eventTypes.set(types);
+      },
+    });
+  }
+
+  onProcessorFilterChange(event: Event): void {
+    const select = event.target as HTMLSelectElement;
+    const value = select.value || null;
+    this.filterProcessorId.set(value);
+    this.loadData(1);
+  }
+
+  onEventTypeFilterChange(event: Event): void {
+    const select = event.target as HTMLSelectElement;
+    const value = select.value || null;
+    this.filterEventType.set(value);
+    this.loadData(1);
+  }
+
+  onSearchTermChange(term: string): void {
+    this.searchSubject.next(term);
+  }
+
+  onFailedAfterChange(value: string): void {
+    this.filterFailedAfter.set(value);
+    this.loadData(1);
+  }
+
+  onFailedBeforeChange(value: string): void {
+    this.filterFailedBefore.set(value);
+    this.loadData(1);
+  }
+
+  clearFilters(): void {
+    this.filterProcessorId.set(null);
+    this.filterEventType.set(null);
+    this.filterSearchTerm.set('');
+    this.filterFailedAfter.set('');
+    this.filterFailedBefore.set('');
+    this.loadData(1);
   }
 
   ngOnDestroy(): void {
     this.subscription?.unsubscribe();
+    this.searchSubject.complete();
   }
 
   private startSubscription(): void {
@@ -628,7 +964,14 @@ export class DeadLettersComponent implements OnInit, OnDestroy {
     this.loading.set(true);
     this.error.set(null);
 
-    this.api.getDeadLetters(undefined, page, 20).subscribe({
+    const filter: DeadLetterFilter = {};
+    if (this.filterProcessorId()) filter.processorId = this.filterProcessorId()!;
+    if (this.filterEventType()) filter.eventType = this.filterEventType()!;
+    if (this.filterSearchTerm()) filter.searchTerm = this.filterSearchTerm();
+    if (this.filterFailedAfter()) filter.failedAfter = new Date(this.filterFailedAfter()).toISOString();
+    if (this.filterFailedBefore()) filter.failedBefore = new Date(this.filterFailedBefore()).toISOString();
+
+    this.api.getDeadLetters(filter, page, 20).subscribe({
       next: (result) => {
         this.pagedResult.set(result);
         this.loading.set(false);
@@ -652,8 +995,71 @@ export class DeadLettersComponent implements OnInit, OnDestroy {
     this.confirmingRemove.set(dl);
   }
 
+  confirmRetry(dl: DeadLetter): void {
+    this.retryError.set(null);
+    this.confirmingRetry.set(dl);
+  }
+
   closeModal(): void {
     this.confirmingRemove.set(null);
+    this.confirmingRetry.set(null);
+    this.retryError.set(null);
+    this.showRetryAllModal.set(false);
+    this.bulkRetryResult.set(null);
+  }
+
+  confirmRetryAll(): void {
+    this.retryError.set(null);
+    this.bulkRetryResult.set(null);
+    this.showRetryAllModal.set(true);
+  }
+
+  retryAllDeadLetters(): void {
+    const processorId = this.filterProcessorId();
+    if (!processorId) return;
+
+    this.actionInProgress.set(true);
+    this.retryError.set(null);
+
+    this.api.retryAllDeadLetters(processorId).subscribe({
+      next: (result) => {
+        this.bulkRetryResult.set(result);
+        this.loadData(1);
+        this.loadProcessors();
+        this.actionInProgress.set(false);
+      },
+      error: (err) => {
+        this.retryError.set(err.message || 'Bulk retry failed');
+        this.actionInProgress.set(false);
+      },
+    });
+  }
+
+  retryDeadLetter(): void {
+    const dl = this.confirmingRetry();
+    if (!dl) return;
+
+    this.actionInProgress.set(true);
+    this.retryError.set(null);
+
+    this.api.retryDeadLetter(dl.id).subscribe({
+      next: (result) => {
+        if (result.success) {
+          this.closeModal();
+          if (this.selectedDeadLetter()?.id === dl.id) {
+            this.selectedDeadLetter.set(null);
+          }
+          this.loadData(this.page());
+        } else {
+          this.retryError.set(result.errorMessage || 'Retry failed');
+        }
+        this.actionInProgress.set(false);
+      },
+      error: (err) => {
+        this.retryError.set(err.error?.errorMessage || err.message || 'Retry failed');
+        this.actionInProgress.set(false);
+      },
+    });
   }
 
   removeDeadLetter(): void {

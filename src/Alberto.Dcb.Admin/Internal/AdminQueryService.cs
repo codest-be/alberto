@@ -15,6 +15,19 @@ internal sealed class AdminQueryService : IAdminQueryService
     private readonly PollingConsumer? _consumer;
     private readonly AdminOptions _options;
 
+    // In-memory tracking of rebuild operations
+    private static readonly Dictionary<string, RebuildTracker> _rebuildTrackers = new();
+
+    private sealed class RebuildTracker
+    {
+        public required string ProcessorId { get; init; }
+        public required RebuildState State { get; set; }
+        public required long TargetPosition { get; init; }
+        public required DateTimeOffset StartedAt { get; init; }
+        public DateTimeOffset? CompletedAt { get; set; }
+        public string? ErrorMessage { get; set; }
+    }
+
     public AdminQueryService(
         string moduleKey,
         ICheckpointStore checkpointStore,
@@ -122,16 +135,25 @@ internal sealed class AdminQueryService : IAdminQueryService
 
     public Task<PagedResult<DeadLetterDto>> GetDeadLettersAsync(
         string? processorId = null,
+        string? eventType = null,
+        string? searchTerm = null,
+        DateTimeOffset? failedAfter = null,
+        DateTimeOffset? failedBefore = null,
         int page = 1,
         int pageSize = 50,
         CancellationToken ct = default)
     {
-        return _dataAccess.ListDeadLettersAsync(processorId, page, pageSize, ct);
+        return _dataAccess.ListDeadLettersAsync(processorId, eventType, searchTerm, failedAfter, failedBefore, page, pageSize, ct);
     }
 
     public Task<DeadLetterDto?> GetDeadLetterAsync(Guid id, CancellationToken ct = default)
     {
         return _dataAccess.GetDeadLetterAsync(id, ct);
+    }
+
+    public Task<IReadOnlyList<string>> GetDeadLetterEventTypesAsync(CancellationToken ct = default)
+    {
+        return _dataAccess.GetDeadLetterEventTypesAsync(ct);
     }
 
     public async Task RemoveDeadLetterAsync(Guid id, CancellationToken ct = default)
@@ -153,6 +175,101 @@ internal sealed class AdminQueryService : IAdminQueryService
     public Task<int> GetDeadLetterCountAsync(string? processorId = null, CancellationToken ct = default)
     {
         return _dataAccess.GetDeadLetterCountAsync(processorId, ct);
+    }
+
+    public async Task<DeadLetterRetryResult> RetryDeadLetterAsync(Guid id, CancellationToken ct = default)
+    {
+        if (_deadLetterStore is null)
+            return new DeadLetterRetryResult(id, false, "No dead letter store configured.");
+
+        if (_consumer is null)
+            return new DeadLetterRetryResult(id, false, "No consumer registered for this module.");
+
+        // Get the dead letter entry
+        var deadLetter = await _dataAccess.GetDeadLetterAsync(id, ct);
+        if (deadLetter is null)
+            return new DeadLetterRetryResult(id, false, "Dead letter not found.");
+
+        // Find the processor
+        var processorsField = typeof(PollingConsumer).GetField("_processors",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+        if (processorsField?.GetValue(_consumer) is not List<IEventProcessor> processorList)
+            return new DeadLetterRetryResult(id, false, "Could not access processor list.");
+
+        var processor = processorList.FirstOrDefault(p => p.ProcessorId == deadLetter.ProcessorId);
+        if (processor is null)
+            return new DeadLetterRetryResult(id, false, $"Processor '{deadLetter.ProcessorId}' not found.");
+
+        // Get the original event from the event store
+        var eventEnvelope = await _dataAccess.GetEventByIdAsync(deadLetter.EventId, ct);
+        if (eventEnvelope is null)
+            return new DeadLetterRetryResult(id, false, $"Original event '{deadLetter.EventId}' not found in event store.");
+
+        try
+        {
+            // Re-process the event
+            await processor.ProcessEventAsync(eventEnvelope, ct);
+
+            // Success - remove the dead letter
+            await _deadLetterStore.RemoveAsync(id, ct);
+
+            return new DeadLetterRetryResult(id, true, null);
+        }
+        catch (Exception ex)
+        {
+            return new DeadLetterRetryResult(id, false, $"Retry failed: {ex.Message}");
+        }
+    }
+
+    public async Task<BulkRetryResult> RetryAllDeadLettersAsync(string processorId, CancellationToken ct = default)
+    {
+        if (_deadLetterStore is null)
+            return new BulkRetryResult(0, 0, 0, []);
+
+        // Get all dead letters for this processor
+        var deadLetters = await _dataAccess.ListDeadLettersAsync(processorId, null, null, null, null, 1, 1000, ct);
+        var results = new List<DeadLetterRetryResult>();
+
+        foreach (var dl in deadLetters.Items)
+        {
+            var result = await RetryDeadLetterAsync(dl.Id, ct);
+            results.Add(result);
+        }
+
+        return new BulkRetryResult(
+            TotalAttempted: results.Count,
+            SuccessCount: results.Count(r => r.Success),
+            FailCount: results.Count(r => !r.Success),
+            Results: results);
+    }
+
+    #endregion
+
+    #region Checkpoints - Bulk Operations
+
+    public async Task<BulkOperationResult> ResetCheckpointsAsync(IReadOnlyList<string> processorIds, CancellationToken ct = default)
+    {
+        var results = new List<OperationItemResult>();
+
+        foreach (var processorId in processorIds)
+        {
+            try
+            {
+                await _checkpointStore.ResetAsync(processorId, ct);
+                results.Add(new OperationItemResult(processorId, true, null));
+            }
+            catch (Exception ex)
+            {
+                results.Add(new OperationItemResult(processorId, false, ex.Message));
+            }
+        }
+
+        return new BulkOperationResult(
+            TotalCount: results.Count,
+            SuccessCount: results.Count(r => r.Success),
+            FailCount: results.Count(r => !r.Success),
+            Items: results);
     }
 
     #endregion
@@ -181,6 +298,126 @@ internal sealed class AdminQueryService : IAdminQueryService
         CancellationToken ct = default)
     {
         return _dataAccess.GetProjectionStateAsync(projectionType, documentId, tenantId, ct);
+    }
+
+    #endregion
+
+    #region Projection Rebuilds
+
+    public async Task<RebuildStatus> StartRebuildAsync(string processorId, bool clearState = true, CancellationToken ct = default)
+    {
+        if (_consumer is null)
+            return new RebuildStatus(processorId, RebuildState.Failed, 0, 0, 0, null, null, "No consumer registered.");
+
+        // Check if already rebuilding
+        if (_rebuildTrackers.ContainsKey(processorId))
+        {
+            var existing = _rebuildTrackers[processorId];
+            if (existing.State == RebuildState.Rebuilding || existing.State == RebuildState.Clearing)
+            {
+                return await GetRebuildStatusAsync(processorId, ct) ?? new RebuildStatus(processorId, RebuildState.Failed, 0, 0, 0, null, null, "Rebuild in progress.");
+            }
+        }
+
+        // Get the processor
+        var processorsField = typeof(PollingConsumer).GetField("_processors",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+        if (processorsField?.GetValue(_consumer) is not List<IEventProcessor> processorList)
+            return new RebuildStatus(processorId, RebuildState.Failed, 0, 0, 0, null, null, "Could not access processor list.");
+
+        var processor = processorList.FirstOrDefault(p => p.ProcessorId == processorId);
+        if (processor is null)
+            return new RebuildStatus(processorId, RebuildState.Failed, 0, 0, 0, null, null, $"Processor '{processorId}' not found.");
+
+        var targetPosition = await _eventStore.GetLastPositionGlobal(ct);
+        var startedAt = DateTimeOffset.UtcNow;
+
+        // Create tracker
+        var tracker = new RebuildTracker
+        {
+            ProcessorId = processorId,
+            State = RebuildState.Clearing,
+            TargetPosition = targetPosition,
+            StartedAt = startedAt
+        };
+        _rebuildTrackers[processorId] = tracker;
+
+        try
+        {
+            // Step 1: Deactivate the processor
+            processor.IsActive = false;
+
+            // Step 2: Clear projection state if requested
+            if (clearState)
+            {
+                await _dataAccess.ClearProjectionStatesAsync(processorId, ct);
+            }
+
+            // Step 3: Reset checkpoint to 0
+            tracker.State = RebuildState.Rebuilding;
+            await _checkpointStore.ResetAsync(processorId, ct);
+
+            // Step 4: Reactivate the processor
+            processor.IsActive = true;
+
+            return await GetRebuildStatusAsync(processorId, ct) ?? new RebuildStatus(processorId, RebuildState.Rebuilding, 0, targetPosition, 0, startedAt, null, null);
+        }
+        catch (Exception ex)
+        {
+            tracker.State = RebuildState.Failed;
+            tracker.ErrorMessage = ex.Message;
+            tracker.CompletedAt = DateTimeOffset.UtcNow;
+            processor.IsActive = true; // Ensure processor is reactivated on failure
+            return new RebuildStatus(processorId, RebuildState.Failed, 0, targetPosition, 0, startedAt, tracker.CompletedAt, ex.Message);
+        }
+    }
+
+    public async Task<RebuildStatus?> GetRebuildStatusAsync(string processorId, CancellationToken ct = default)
+    {
+        if (!_rebuildTrackers.TryGetValue(processorId, out var tracker))
+            return null;
+
+        // Get current checkpoint position
+        var checkpoints = await _dataAccess.ListCheckpointsAsync(ct);
+        var checkpoint = checkpoints.FirstOrDefault(c => c.ProcessorId == processorId);
+        var currentPosition = checkpoint?.LastPosition ?? 0;
+
+        // Calculate progress
+        var progressPercent = tracker.TargetPosition > 0
+            ? Math.Min(100, (double)currentPosition / tracker.TargetPosition * 100)
+            : 100;
+
+        // Check if completed
+        if (tracker.State == RebuildState.Rebuilding && currentPosition >= tracker.TargetPosition)
+        {
+            tracker.State = RebuildState.Completed;
+            tracker.CompletedAt = DateTimeOffset.UtcNow;
+        }
+
+        return new RebuildStatus(
+            tracker.ProcessorId,
+            tracker.State,
+            currentPosition,
+            tracker.TargetPosition,
+            progressPercent,
+            tracker.StartedAt,
+            tracker.CompletedAt,
+            tracker.ErrorMessage);
+    }
+
+    public Task CancelRebuildAsync(string processorId, CancellationToken ct = default)
+    {
+        if (_rebuildTrackers.TryGetValue(processorId, out var tracker))
+        {
+            if (tracker.State == RebuildState.Rebuilding || tracker.State == RebuildState.Clearing)
+            {
+                tracker.State = RebuildState.Cancelled;
+                tracker.CompletedAt = DateTimeOffset.UtcNow;
+            }
+        }
+
+        return Task.CompletedTask;
     }
 
     #endregion

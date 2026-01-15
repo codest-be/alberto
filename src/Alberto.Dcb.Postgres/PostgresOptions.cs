@@ -22,4 +22,16 @@ public sealed class PostgresOptions
     /// Example: "orders" creates orders.events, orders.append_events(), etc.
     /// </summary>
     public string? Schema { get; set; }
+
+    /// <summary>
+    /// Maximum number of connections in the connection pool.
+    /// Default is 100 (Npgsql default).
+    /// </summary>
+    public int MaxPoolSize { get; set; } = 100;
+
+    /// <summary>
+    /// Minimum number of connections in the connection pool.
+    /// Default is 0.
+    /// </summary>
+    public int MinPoolSize { get; set; } = 0;
 }

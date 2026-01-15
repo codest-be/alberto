@@ -24,15 +24,34 @@ internal static class DeadLettersEndpoints
 
         group.MapGet("/", async (
             string? processorId,
+            string? eventType,
+            string? searchTerm,
+            DateTimeOffset? failedAfter,
+            DateTimeOffset? failedBefore,
             int page,
             int pageSize,
             HttpContext ctx,
             CancellationToken ct) =>
         {
             var service = ctx.RequestServices.GetRequiredKeyedService<IAdminQueryService>(moduleKey);
-            var result = await service.GetDeadLettersAsync(processorId, page > 0 ? page : 1, pageSize > 0 ? pageSize : 50, ct);
+            var result = await service.GetDeadLettersAsync(
+                processorId,
+                eventType,
+                searchTerm,
+                failedAfter,
+                failedBefore,
+                page > 0 ? page : 1,
+                pageSize > 0 ? pageSize : 50,
+                ct);
             return Results.Ok(result);
         }).WithName($"{moduleKey}_GetDeadLetters");
+
+        group.MapGet("/event-types", async (HttpContext ctx, CancellationToken ct) =>
+        {
+            var service = ctx.RequestServices.GetRequiredKeyedService<IAdminQueryService>(moduleKey);
+            var types = await service.GetDeadLetterEventTypesAsync(ct);
+            return Results.Ok(types);
+        }).WithName($"{moduleKey}_GetDeadLetterEventTypes");
 
         group.MapGet("/count", async (string? processorId, HttpContext ctx, CancellationToken ct) =>
         {
@@ -50,6 +69,23 @@ internal static class DeadLettersEndpoints
 
         if (!options.ReadOnly)
         {
+            group.MapPost("/{id:guid}/retry", async (Guid id, HttpContext ctx, CancellationToken ct) =>
+            {
+                var service = ctx.RequestServices.GetRequiredKeyedService<IAdminQueryService>(moduleKey);
+                var result = await service.RetryDeadLetterAsync(id, ct);
+                return result.Success ? Results.Ok(result) : Results.BadRequest(result);
+            }).WithName($"{moduleKey}_RetryDeadLetter");
+
+            group.MapPost("/retry-all", async (string processorId, HttpContext ctx, CancellationToken ct) =>
+            {
+                if (string.IsNullOrEmpty(processorId))
+                    return Results.BadRequest("processorId is required");
+
+                var service = ctx.RequestServices.GetRequiredKeyedService<IAdminQueryService>(moduleKey);
+                var result = await service.RetryAllDeadLettersAsync(processorId, ct);
+                return Results.Ok(result);
+            }).WithName($"{moduleKey}_RetryAllDeadLetters");
+
             group.MapDelete("/{id:guid}", async (Guid id, HttpContext ctx, CancellationToken ct) =>
             {
                 var service = ctx.RequestServices.GetRequiredKeyedService<IAdminQueryService>(moduleKey);

@@ -58,5 +58,40 @@ internal static class ProjectionStatesEndpoints
             var state = await service.GetProjectionStateAsync(projectionType, documentId, tenantId, ct);
             return state is null ? Results.NotFound() : Results.Ok(state);
         }).WithName($"{moduleKey}_GetProjectionState");
+
+        // Rebuild endpoints (only if not read-only)
+        if (!options.ReadOnly)
+        {
+            group.MapPost("/{processorId}/rebuild", async (
+                string processorId,
+                bool? clearState,
+                HttpContext ctx,
+                CancellationToken ct) =>
+            {
+                var service = ctx.RequestServices.GetRequiredKeyedService<IAdminQueryService>(moduleKey);
+                var result = await service.StartRebuildAsync(processorId, clearState ?? true, ct);
+                return Results.Ok(result);
+            }).WithName($"{moduleKey}_StartRebuild");
+
+            group.MapGet("/{processorId}/rebuild/status", async (
+                string processorId,
+                HttpContext ctx,
+                CancellationToken ct) =>
+            {
+                var service = ctx.RequestServices.GetRequiredKeyedService<IAdminQueryService>(moduleKey);
+                var status = await service.GetRebuildStatusAsync(processorId, ct);
+                return status is null ? Results.NotFound() : Results.Ok(status);
+            }).WithName($"{moduleKey}_GetRebuildStatus");
+
+            group.MapDelete("/{processorId}/rebuild", async (
+                string processorId,
+                HttpContext ctx,
+                CancellationToken ct) =>
+            {
+                var service = ctx.RequestServices.GetRequiredKeyedService<IAdminQueryService>(moduleKey);
+                await service.CancelRebuildAsync(processorId, ct);
+                return Results.NoContent();
+            }).WithName($"{moduleKey}_CancelRebuild");
+        }
     }
 }
