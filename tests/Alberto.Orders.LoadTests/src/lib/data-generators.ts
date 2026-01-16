@@ -146,3 +146,58 @@ export function generateCreateOrderInput(): {
     notes: generateNotes(),
   };
 }
+
+// Payment-related generators
+
+const PAYMENT_METHODS = ['credit_card', 'debit_card', 'paypal', 'bank_transfer', 'apple_pay'];
+const CURRENCIES = ['USD', 'EUR', 'GBP'];
+const REFUND_REASONS = [
+  'Customer requested refund',
+  'Item not as described',
+  'Duplicate charge',
+  'Order cancelled',
+  'Quality issues',
+];
+
+/**
+ * Generate payment method.
+ */
+export function generatePaymentMethod(): string {
+  return PAYMENT_METHODS[randomIntBetween(0, PAYMENT_METHODS.length - 1)];
+}
+
+/**
+ * Generate currency.
+ */
+export function generateCurrency(): string {
+  return CURRENCIES[randomIntBetween(0, CURRENCIES.length - 1)];
+}
+
+/**
+ * Generate authorization code (simulating payment provider response).
+ */
+export function generateAuthorizationCode(): string {
+  return `AUTH-${randomString(8).toUpperCase()}`;
+}
+
+/**
+ * Generate refund reason.
+ */
+export function generateRefundReason(): string {
+  return REFUND_REASONS[randomIntBetween(0, REFUND_REASONS.length - 1)];
+}
+
+/**
+ * Generate payment info for initiating a payment.
+ */
+export function generatePaymentInfo(orderTotal: number): {
+  amount: number;
+  currency: string;
+  paymentMethod: string;
+} {
+  return {
+    amount: orderTotal,
+    currency: generateCurrency(),
+    paymentMethod: generatePaymentMethod(),
+  };
+}

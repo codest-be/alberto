@@ -1,6 +1,7 @@
-import { Component, inject, OnInit, signal, DestroyRef } from '@angular/core';
+import { Component, inject, OnInit, signal, DestroyRef, effect } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Subscription } from 'rxjs';
 import { AdminApiService } from '../../core/services/admin-api.service';
 import { ProcessorSubscriptionService } from '../../core/graphql/processor-subscription.service';
 import { ProcessorStatus } from '../../core/models/admin.models';
@@ -406,9 +407,37 @@ export class ProcessorsComponent implements OnInit {
   readonly usingPolling = signal(false);
   readonly recentlyUpdated = signal<Set<string>>(new Set());
 
+  private subscriptions = new Subscription();
+  private currentModuleKey: string | null = null;
+
+  constructor() {
+    // React to module key changes
+    effect(() => {
+      const moduleKey = this.api.moduleKey();
+      if (this.currentModuleKey !== null && this.currentModuleKey !== moduleKey) {
+        // Module changed - reload everything
+        this.restartSubscription(moduleKey);
+        this.loadData();
+      }
+      this.currentModuleKey = moduleKey;
+    });
+
+    // Clean up subscriptions on destroy
+    this.destroyRef.onDestroy(() => {
+      this.subscriptions.unsubscribe();
+    });
+  }
+
   ngOnInit(): void {
     this.loadData();
     this.startSubscription();
+  }
+
+  private restartSubscription(moduleKey: string): void {
+    this.subscriptions.unsubscribe();
+    this.subscriptions = new Subscription();
+    this.subscriptionActive.set(false);
+    this.startSubscriptionForModule(moduleKey);
   }
 
   loadData(): void {
@@ -428,23 +457,28 @@ export class ProcessorsComponent implements OnInit {
   }
 
   private startSubscription(): void {
-    this.subscriptionService
-      .subscribeToProcessorStatus(this.api.moduleKey())
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (update) => {
-          this.subscriptionActive.set(true);
-          this.usingPolling.set(this.subscriptionService.usingPolling());
-          this.updateProcessor(update.processor);
-          this.highlightProcessor(update.processor.processorId);
-        },
-        error: (err) => {
-          console.error('Subscription error:', err);
-          this.subscriptionActive.set(false);
-          // Retry after delay
-          setTimeout(() => this.startSubscription(), 5000);
-        },
-      });
+    this.startSubscriptionForModule(this.api.moduleKey());
+  }
+
+  private startSubscriptionForModule(moduleKey: string): void {
+    this.subscriptions.add(
+      this.subscriptionService
+        .subscribeToProcessorStatus(moduleKey)
+        .subscribe({
+          next: (update) => {
+            this.subscriptionActive.set(true);
+            this.usingPolling.set(this.subscriptionService.usingPolling());
+            this.updateProcessor(update.processor);
+            this.highlightProcessor(update.processor.processorId);
+          },
+          error: (err) => {
+            console.error('Subscription error:', err);
+            this.subscriptionActive.set(false);
+            // Retry after delay
+            setTimeout(() => this.startSubscriptionForModule(moduleKey), 5000);
+          },
+        })
+    );
   }
 
   private updateProcessor(updated: ProcessorStatus): void {

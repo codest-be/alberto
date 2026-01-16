@@ -1,4 +1,8 @@
 <Solution>
+  <Folder Name="/apps/Alberto.Payments/">
+    <Project Path="apps/Alberto.Payments/Alberto.Payments.Core/Alberto.Payments.Core.csproj" />
+    <Project Path="apps/Alberto.Payments/Alberto.Payments.Infrastructure/Alberto.Payments.Infrastructure.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/Alberto.Dcb/Alberto.Dcb.csproj" />
     <Project Path="src/Alberto.Dcb.InMemory/Alberto.Dcb.InMemory.csproj" />

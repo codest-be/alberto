@@ -202,13 +202,19 @@ export class ShellComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadModules();
-    this.restoreSelectedModule();
   }
 
   private loadModules(): void {
     this.api.getModules().subscribe({
       next: (modules) => {
         this.modules.set(modules);
+        // Validate the current moduleKey exists
+        const currentKey = this.api.moduleKey();
+        const validModule = modules.find(m => m.moduleKey === currentKey);
+        if (!validModule && modules.length > 0) {
+          // Current module doesn't exist, reset to first available
+          this.api.setModuleKey(modules[0].moduleKey);
+        }
       },
       error: (err) => {
         console.error('Failed to load modules:', err);
@@ -216,19 +222,11 @@ export class ShellComponent implements OnInit {
     });
   }
 
-  private restoreSelectedModule(): void {
-    const savedModule = localStorage.getItem('selectedModule');
-    if (savedModule) {
-      this.api.moduleKey.set(savedModule);
-    }
-  }
-
   switchModule(event: Event): void {
     const select = event.target as HTMLSelectElement;
     const moduleKey = select.value;
 
-    this.api.moduleKey.set(moduleKey);
-    localStorage.setItem('selectedModule', moduleKey);
+    this.api.setModuleKey(moduleKey);
 
     // Navigate to dashboard to refresh data for new module
     this.router.navigate(['/dashboard']);

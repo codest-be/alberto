@@ -3,6 +3,7 @@ using Alberto.Dcb.Admin.Subscriptions;
 using Alberto.Dcb.Tenancy;
 using Alberto.Orders.Api.GraphQL;
 using Alberto.Orders.Infrastructure;
+using Alberto.Payments.Infrastructure;
 using HotChocolate.Diagnostics;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -18,6 +19,9 @@ builder.Services.AddTenancy();
 
 // Add Orders module
 builder.Services.AddOrdersModule(builder.Configuration);
+
+// Add Payments module
+builder.Services.AddPaymentsModule(builder.Configuration);
 
 // Add GraphQL with subscriptions (must be before AddAdminSubscriptions)
 builder.Services

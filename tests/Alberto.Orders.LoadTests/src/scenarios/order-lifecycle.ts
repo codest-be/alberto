@@ -12,10 +12,19 @@ import {
   DeliverOrderResult,
   GET_ORDER_QUERY,
   GetOrderResult,
+  INITIATE_PAYMENT_MUTATION,
+  InitiatePaymentResult,
+  AUTHORIZE_PAYMENT_MUTATION,
+  AuthorizePaymentResult,
+  CAPTURE_PAYMENT_MUTATION,
+  CapturePaymentResult,
 } from '../graphql';
 import {
   generateCreateOrderInput,
   generateShippingInfo,
+  generatePaymentInfo,
+  generateAuthorizationCode,
+  LineItem,
 } from '../lib/data-generators';
 import {
   trackCreatedOrder,
@@ -24,10 +33,17 @@ import {
 } from '../lib/order-tracker';
 
 /**
- * Complete order lifecycle scenario:
- * Create -> Verify -> Confirm -> Ship -> Deliver
+ * Calculate order total from line items.
+ */
+function calculateOrderTotal(lineItems: LineItem[]): number {
+  return lineItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+}
+
+/**
+ * Complete order lifecycle scenario with payment:
+ * Create -> Verify -> Confirm -> InitiatePayment -> AuthorizePayment -> CapturePayment -> Ship -> Deliver
  *
- * This simulates a happy path order flow.
+ * This simulates a happy path order flow including payment processing.
  */
 export function orderLifecycleScenario(): void {
   const startTime = Date.now();
@@ -84,7 +100,54 @@ export function orderLifecycleScenario(): void {
   updateOrderStatus(orderId, 'confirmed');
   sleep(0.5);
 
-  // Step 4: Ship order
+  // Step 4: Initiate payment
+  const orderTotal = calculateOrderTotal(createInput.lineItems);
+  const paymentInfo = generatePaymentInfo(orderTotal);
+  const initiatePaymentResponse = executeMutation<InitiatePaymentResult>(
+    INITIATE_PAYMENT_MUTATION,
+    { input: { orderId, ...paymentInfo } },
+    { tenantId, tags: { scenario: 'lifecycle', step: 'initiate-payment' } }
+  );
+
+  const initiateData = getData(initiatePaymentResponse);
+  if (!initiateData?.initiatePayment?.paymentId) {
+    console.error(`Failed to initiate payment for order ${orderId}`);
+    return;
+  }
+
+  const paymentId = initiateData.initiatePayment.paymentId;
+  sleep(0.3);
+
+  // Step 5: Authorize payment
+  const authCode = generateAuthorizationCode();
+  const authorizeResponse = executeMutation<AuthorizePaymentResult>(
+    AUTHORIZE_PAYMENT_MUTATION,
+    { paymentId, authorizationCode: authCode },
+    { tenantId, tags: { scenario: 'lifecycle', step: 'authorize-payment' } }
+  );
+
+  if (!isSuccess(authorizeResponse)) {
+    console.error(`Failed to authorize payment ${paymentId}`);
+    return;
+  }
+
+  sleep(0.3);
+
+  // Step 6: Capture payment
+  const captureResponse = executeMutation<CapturePaymentResult>(
+    CAPTURE_PAYMENT_MUTATION,
+    { input: { paymentId } },
+    { tenantId, tags: { scenario: 'lifecycle', step: 'capture-payment' } }
+  );
+
+  if (!isSuccess(captureResponse)) {
+    console.error(`Failed to capture payment ${paymentId}`);
+    return;
+  }
+
+  sleep(0.5);
+
+  // Step 7: Ship order
   const shippingInfo = generateShippingInfo();
   const shipResponse = executeMutation<ShipOrderResult>(
     SHIP_ORDER_MUTATION,
@@ -100,7 +163,7 @@ export function orderLifecycleScenario(): void {
   updateOrderStatus(orderId, 'shipped');
   sleep(0.5);
 
-  // Step 5: Deliver order
+  // Step 8: Deliver order
   const deliverResponse = executeMutation<DeliverOrderResult>(
     DELIVER_ORDER_MUTATION,
     { orderId },

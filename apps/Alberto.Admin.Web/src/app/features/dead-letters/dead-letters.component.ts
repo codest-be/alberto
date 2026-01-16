@@ -1,7 +1,7 @@
-import { Component, inject, OnInit, signal, computed, DestroyRef } from '@angular/core';
+import { Component, inject, OnInit, signal, computed, DestroyRef, effect } from '@angular/core';
 import { DatePipe, SlicePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Subject, debounceTime, distinctUntilChanged } from 'rxjs';
+import { Subject, Subscription, debounceTime, distinctUntilChanged } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AdminApiService } from '../../core/services/admin-api.service';
 import { AdminSubscriptionService } from '../../core/graphql/admin-subscription.service';
@@ -812,12 +812,42 @@ export class DeadLettersComponent implements OnInit {
     !!this.filterFailedBefore()
   );
 
+  private subscriptions = new Subscription();
+  private currentModuleKey: string | null = null;
+
+  constructor() {
+    // React to module key changes
+    effect(() => {
+      const moduleKey = this.api.moduleKey();
+      if (this.currentModuleKey !== null && this.currentModuleKey !== moduleKey) {
+        // Module changed - reload everything
+        this.restartSubscription(moduleKey);
+        this.clearFilters();
+        this.loadProcessors();
+        this.loadEventTypes();
+        this.loadData();
+      }
+      this.currentModuleKey = moduleKey;
+    });
+
+    // Clean up subscriptions on destroy
+    this.destroyRef.onDestroy(() => {
+      this.subscriptions.unsubscribe();
+    });
+  }
+
   ngOnInit(): void {
     this.loadProcessors();
     this.loadEventTypes();
     this.loadData();
     this.startSubscription();
     this.setupSearchDebounce();
+  }
+
+  private restartSubscription(moduleKey: string): void {
+    this.subscriptions.unsubscribe();
+    this.subscriptions = new Subscription();
+    this.startSubscriptionForModule(moduleKey);
   }
 
   private setupSearchDebounce(): void {
@@ -888,19 +918,24 @@ export class DeadLettersComponent implements OnInit {
   }
 
   private startSubscription(): void {
-    this.subscriptionService
-      .subscribeToDeadLetters(this.api.moduleKey())
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (update) => {
-          if (update.changeType === 'Added') {
-            this.addDeadLetter(update.deadLetter);
-            this.highlightDeadLetter(update.deadLetter.id);
-          } else if (update.changeType === 'Removed') {
-            this.removeDeadLetterFromList(update.deadLetter.id);
-          }
-        },
-      });
+    this.startSubscriptionForModule(this.api.moduleKey());
+  }
+
+  private startSubscriptionForModule(moduleKey: string): void {
+    this.subscriptions.add(
+      this.subscriptionService
+        .subscribeToDeadLetters(moduleKey)
+        .subscribe({
+          next: (update) => {
+            if (update.changeType === 'Added') {
+              this.addDeadLetter(update.deadLetter);
+              this.highlightDeadLetter(update.deadLetter.id);
+            } else if (update.changeType === 'Removed') {
+              this.removeDeadLetterFromList(update.deadLetter.id);
+            }
+          },
+        })
+    );
   }
 
   private addDeadLetter(dl: DeadLetter): void {

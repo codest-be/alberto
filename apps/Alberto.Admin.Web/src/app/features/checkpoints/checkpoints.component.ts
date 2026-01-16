@@ -1,7 +1,8 @@
-import { Component, inject, OnInit, signal, computed, DestroyRef } from '@angular/core';
+import { Component, inject, OnInit, signal, computed, DestroyRef, effect } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Subscription } from 'rxjs';
 import { AdminApiService } from '../../core/services/admin-api.service';
 import { AdminSubscriptionService } from '../../core/graphql/admin-subscription.service';
 import { Checkpoint, BulkOperationResult } from '../../core/models/admin.models';
@@ -535,21 +536,54 @@ export class CheckpointsComponent implements OnInit {
 
   newPosition: number | null = null;
 
+  private subscriptions = new Subscription();
+  private currentModuleKey: string | null = null;
+
+  constructor() {
+    // React to module key changes
+    effect(() => {
+      const moduleKey = this.api.moduleKey();
+      if (this.currentModuleKey !== null && this.currentModuleKey !== moduleKey) {
+        // Module changed - reload everything
+        this.restartSubscription(moduleKey);
+        this.loadData();
+        this.clearSelection();
+      }
+      this.currentModuleKey = moduleKey;
+    });
+
+    // Clean up subscriptions on destroy
+    this.destroyRef.onDestroy(() => {
+      this.subscriptions.unsubscribe();
+    });
+  }
+
   ngOnInit(): void {
     this.loadData();
     this.startSubscription();
   }
 
+  private restartSubscription(moduleKey: string): void {
+    this.subscriptions.unsubscribe();
+    this.subscriptions = new Subscription();
+    this.startSubscriptionForModule(moduleKey);
+  }
+
   private startSubscription(): void {
-    this.subscriptionService
-      .subscribeToCheckpoints(this.api.moduleKey())
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (update) => {
-          this.updateCheckpoint(update.checkpoint);
-          this.highlightCheckpoint(update.checkpoint.processorId);
-        },
-      });
+    this.startSubscriptionForModule(this.api.moduleKey());
+  }
+
+  private startSubscriptionForModule(moduleKey: string): void {
+    this.subscriptions.add(
+      this.subscriptionService
+        .subscribeToCheckpoints(moduleKey)
+        .subscribe({
+          next: (update) => {
+            this.updateCheckpoint(update.checkpoint);
+            this.highlightCheckpoint(update.checkpoint.processorId);
+          },
+        })
+    );
   }
 
   private updateCheckpoint(updated: Checkpoint): void {

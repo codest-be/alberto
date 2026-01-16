@@ -1,6 +1,7 @@
 using Alberto.Dcb.Subscriptions;
 using Alberto.Dcb.Subscriptions.Pipeline;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace Alberto.Dcb;
 
@@ -166,7 +167,10 @@ public sealed class ConsumerBuilder
         });
 
         // Register hosted service
-        _moduleBuilder.Services.AddHostedService(sp =>
+        // Note: We use AddSingleton<IHostedService> instead of AddHostedService because
+        // AddHostedService uses TryAddEnumerable which skips duplicates of the same
+        // implementation type. This allows multiple modules to each have their own consumer.
+        _moduleBuilder.Services.AddSingleton<IHostedService>(sp =>
         {
             var consumer = sp.GetRequiredKeyedService<PollingConsumer>(moduleKey);
             return new PollingConsumerHostedService(consumer);

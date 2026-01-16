@@ -1,5 +1,6 @@
 using System.Reflection;
 using DbUp;
+using Npgsql;
 
 namespace Alberto.Dcb.Postgres;
 
@@ -18,9 +19,18 @@ public static class PostgresMigrator
     {
         EnsureDatabase.For.PostgresqlDatabase(connectionString);
 
+        // Create schema if specified and doesn't exist
+        if (!string.IsNullOrWhiteSpace(schema))
+        {
+            EnsureSchemaExists(connectionString, schema);
+        }
+
         // Determine schema values for substitution
         var schemaName = string.IsNullOrWhiteSpace(schema) ? "public" : schema;
         var schemaPrefix = string.IsNullOrWhiteSpace(schema) ? "" : $"{schema}.";
+
+        // Use schema-specific journal table so each module tracks migrations independently
+        var journalSchema = string.IsNullOrWhiteSpace(schema) ? "public" : schema;
 
         var upgrader = DeployChanges.To
             .PostgresqlDatabase(connectionString)
@@ -29,6 +39,7 @@ public static class PostgresMigrator
             .LogToConsole()
             .WithVariable("schema", schemaName)
             .WithVariable("schema_prefix", schemaPrefix)
+            .JournalToPostgresqlTable(journalSchema, "schemaversions")
             .Build();
 
         var result = upgrader.PerformUpgrade();
@@ -60,6 +71,16 @@ public static class PostgresMigrator
         return upgrader.GetScriptsToExecute()
             .Select(s => s.Name)
             .ToArray();
+    }
+
+    private static void EnsureSchemaExists(string connectionString, string schema)
+    {
+        using var connection = new NpgsqlConnection(connectionString);
+        connection.Open();
+
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = $"CREATE SCHEMA IF NOT EXISTS {schema}";
+        cmd.ExecuteNonQuery();
     }
 }
 

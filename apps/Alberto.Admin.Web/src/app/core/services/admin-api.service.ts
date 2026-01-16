@@ -17,12 +17,29 @@ import {
   RebuildStatus,
 } from '../models/admin.models';
 
+const STORAGE_KEY = 'selectedModule';
+const DEFAULT_MODULE = 'orders';
+
+function getInitialModuleKey(): string {
+  if (typeof localStorage !== 'undefined') {
+    return localStorage.getItem(STORAGE_KEY) || DEFAULT_MODULE;
+  }
+  return DEFAULT_MODULE;
+}
+
 @Injectable({ providedIn: 'root' })
 export class AdminApiService {
   private readonly http = inject(HttpClient);
 
   readonly baseUrl = signal('/alberto');
-  readonly moduleKey = signal('orders');
+  readonly moduleKey = signal(getInitialModuleKey());
+
+  setModuleKey(key: string): void {
+    this.moduleKey.set(key);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(STORAGE_KEY, key);
+    }
+  }
 
   private get apiBase(): string {
     return `${this.baseUrl()}/${this.moduleKey()}/api`;
