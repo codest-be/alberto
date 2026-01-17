@@ -78,6 +78,7 @@ internal sealed class AdminQueryService : IAdminQueryService
                 processors.Add(new ProcessorStatusDto(
                     ProcessorId: processor.ProcessorId,
                     IsActive: processor.IsActive,
+                    IsRebuilding: processor.IsRebuilding,
                     LastPosition: checkpoint?.LastPosition,
                     GlobalPosition: globalPosition,
                     Lag: globalPosition - lastPosition,
@@ -317,17 +318,7 @@ internal sealed class AdminQueryService : IAdminQueryService
         if (_consumer is null)
             return new RebuildStatus(processorId, RebuildState.Failed, 0, 0, 0, null, null, "No consumer registered.");
 
-        // Check if already rebuilding
-        if (_rebuildTrackers.ContainsKey(processorId))
-        {
-            var existing = _rebuildTrackers[processorId];
-            if (existing.State == RebuildState.Rebuilding || existing.State == RebuildState.Clearing)
-            {
-                return await GetRebuildStatusAsync(processorId, ct) ?? new RebuildStatus(processorId, RebuildState.Failed, 0, 0, 0, null, null, "Rebuild in progress.");
-            }
-        }
-
-        // Get the processor
+        // Get the processor to check if already rebuilding
         var processorsField = typeof(PollingConsumer).GetField("_processors",
             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 
@@ -337,6 +328,20 @@ internal sealed class AdminQueryService : IAdminQueryService
         var processor = processorList.FirstOrDefault(p => p.ProcessorId == processorId);
         if (processor is null)
             return new RebuildStatus(processorId, RebuildState.Failed, 0, 0, 0, null, null, $"Processor '{processorId}' not found.");
+
+        // Check if processor is already rebuilding
+        if (processor.IsRebuilding)
+            return await GetRebuildStatusAsync(processorId, ct) ?? new RebuildStatus(processorId, RebuildState.Rebuilding, 0, 0, 0, null, null, "Rebuild already in progress.");
+
+        // Check if tracker says already rebuilding
+        if (_rebuildTrackers.ContainsKey(processorId))
+        {
+            var existing = _rebuildTrackers[processorId];
+            if (existing.State == RebuildState.Rebuilding || existing.State == RebuildState.Clearing)
+            {
+                return await GetRebuildStatusAsync(processorId, ct) ?? new RebuildStatus(processorId, RebuildState.Failed, 0, 0, 0, null, null, "Rebuild in progress.");
+            }
+        }
 
         var targetPosition = await _eventStore.GetLastPositionGlobal(ct);
         var startedAt = DateTimeOffset.UtcNow;
@@ -353,21 +358,23 @@ internal sealed class AdminQueryService : IAdminQueryService
 
         try
         {
-            // Step 1: Deactivate the processor
-            processor.IsActive = false;
-
-            // Step 2: Clear projection state if requested
+            // Step 1: Clear projection state if requested
             if (clearState)
             {
                 await _dataAccess.ClearProjectionStatesAsync(processorId, ct);
             }
 
-            // Step 3: Reset checkpoint to 0
+            // Step 2: Trigger rebuild via the consumer (resets checkpoint and starts independent task)
             tracker.State = RebuildState.Rebuilding;
-            await _checkpointStore.ResetAsync(processorId, ct);
+            var triggered = await _consumer.TriggerRebuildAsync(processorId, ct);
 
-            // Step 4: Reactivate the processor
-            processor.IsActive = true;
+            if (!triggered)
+            {
+                tracker.State = RebuildState.Failed;
+                tracker.ErrorMessage = "Failed to trigger rebuild - processor may already be rebuilding.";
+                tracker.CompletedAt = DateTimeOffset.UtcNow;
+                return new RebuildStatus(processorId, RebuildState.Failed, 0, targetPosition, 0, startedAt, tracker.CompletedAt, tracker.ErrorMessage);
+            }
 
             return await GetRebuildStatusAsync(processorId, ct) ?? new RebuildStatus(processorId, RebuildState.Rebuilding, 0, targetPosition, 0, startedAt, null, null);
         }
@@ -376,7 +383,6 @@ internal sealed class AdminQueryService : IAdminQueryService
             tracker.State = RebuildState.Failed;
             tracker.ErrorMessage = ex.Message;
             tracker.CompletedAt = DateTimeOffset.UtcNow;
-            processor.IsActive = true; // Ensure processor is reactivated on failure
             return new RebuildStatus(processorId, RebuildState.Failed, 0, targetPosition, 0, startedAt, tracker.CompletedAt, ex.Message);
         }
     }
@@ -396,11 +402,30 @@ internal sealed class AdminQueryService : IAdminQueryService
             ? Math.Min(100, (double)currentPosition / tracker.TargetPosition * 100)
             : 100;
 
-        // Check if completed
-        if (tracker.State == RebuildState.Rebuilding && currentPosition >= tracker.TargetPosition)
+        // Check if completed - either by position or by processor no longer rebuilding
+        if (tracker.State == RebuildState.Rebuilding)
         {
-            tracker.State = RebuildState.Completed;
-            tracker.CompletedAt = DateTimeOffset.UtcNow;
+            // Check if the processor's IsRebuilding flag is now false (meaning it caught up)
+            var processorsField = typeof(PollingConsumer).GetField("_processors",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+            if (_consumer is not null && processorsField?.GetValue(_consumer) is List<IEventProcessor> processorList)
+            {
+                var processor = processorList.FirstOrDefault(p => p.ProcessorId == processorId);
+                if (processor is not null && !processor.IsRebuilding)
+                {
+                    // Processor finished rebuilding (caught up within threshold)
+                    tracker.State = RebuildState.Completed;
+                    tracker.CompletedAt = DateTimeOffset.UtcNow;
+                }
+            }
+
+            // Also check by position
+            if (tracker.State == RebuildState.Rebuilding && currentPosition >= tracker.TargetPosition)
+            {
+                tracker.State = RebuildState.Completed;
+                tracker.CompletedAt = DateTimeOffset.UtcNow;
+            }
         }
 
         return new RebuildStatus(

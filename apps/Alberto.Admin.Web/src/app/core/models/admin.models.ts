@@ -1,6 +1,7 @@
 export interface ProcessorStatus {
   processorId: string;
   isActive: boolean;
+  isRebuilding: boolean;
   lastPosition: number | null;
   globalPosition: number;
   lag: number;

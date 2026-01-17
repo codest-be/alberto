@@ -14,6 +14,8 @@ public sealed class ConsumerBuilder
     private readonly List<Type> _processorTypes = [];
     private TimeSpan _pollingInterval = TimeSpan.FromMilliseconds(100);
     private int _batchSize = 100;
+    private int _rebuildBatchSize = 1000;
+    private long _rebuildThreshold = 1000;
     private ErrorPolicy _errorPolicy = ErrorPolicy.Default;
 
     internal ConsumerBuilder(DcbModuleBuilder moduleBuilder)
@@ -36,6 +38,27 @@ public sealed class ConsumerBuilder
     public ConsumerBuilder WithBatchSize(int batchSize)
     {
         _batchSize = batchSize;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the batch size used when rebuilding processors that are far behind.
+    /// Larger batches allow faster catch-up. Default is 1000.
+    /// </summary>
+    public ConsumerBuilder WithRebuildBatchSize(int rebuildBatchSize)
+    {
+        _rebuildBatchSize = rebuildBatchSize;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the position lag threshold that triggers rebuild mode.
+    /// Processors lagging more than this threshold will run independently.
+    /// Default is 1000 events.
+    /// </summary>
+    public ConsumerBuilder WithRebuildThreshold(long rebuildThreshold)
+    {
+        _rebuildThreshold = rebuildThreshold;
         return this;
     }
 
@@ -127,6 +150,8 @@ public sealed class ConsumerBuilder
         var moduleKey = _moduleBuilder.ModuleKey;
         var pollingInterval = _pollingInterval;
         var batchSize = _batchSize;
+        var rebuildBatchSize = _rebuildBatchSize;
+        var rebuildThreshold = _rebuildThreshold;
         var errorPolicy = _errorPolicy;
 
         // Register pipeline
@@ -154,7 +179,9 @@ public sealed class ConsumerBuilder
                 processorLock: null,
                 deadLetterStore,
                 pipeline,
-                errorPolicy);
+                errorPolicy,
+                rebuildBatchSize,
+                rebuildThreshold);
 
             // Register all processors
             var processors = sp.GetKeyedServices<IEventProcessor>(moduleKey);

@@ -31,6 +31,9 @@ internal sealed class AsyncReactor<TReactor> : IEventProcessor
     public bool IsActive { get; set; } = true;
 
     /// <inheritdoc/>
+    public bool IsRebuilding { get; set; }
+
+    /// <inheritdoc/>
     public IReadOnlySet<string> HandledEventTypes => _dispatcher.HandledEventTypes;
 
     /// <inheritdoc/>

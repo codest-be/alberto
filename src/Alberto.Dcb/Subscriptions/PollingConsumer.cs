@@ -14,11 +14,15 @@ public sealed class PollingConsumer : IEventConsumer
     private readonly IConsumeFilterPipeline? _pipeline;
     private readonly TimeSpan _pollingInterval;
     private readonly int _batchSize;
+    private readonly int _rebuildBatchSize;
+    private readonly long _rebuildThreshold;
     private readonly IProcessorLock? _processorLock;
     private readonly ErrorPolicy _errorPolicy;
     private readonly string _moduleKey;
 
     private readonly List<IEventProcessor> _processors = [];
+    private readonly Dictionary<string, Task> _rebuildTasks = [];
+    private readonly object _rebuildTasksLock = new();
     private IAsyncDisposable? _lockLease;
     private CancellationTokenSource? _cts;
     private Task? _pollingTask;
@@ -33,7 +37,9 @@ public sealed class PollingConsumer : IEventConsumer
         IProcessorLock? processorLock = null,
         IDeadLetterStore? deadLetterStore = null,
         IConsumeFilterPipeline? pipeline = null,
-        ErrorPolicy? errorPolicy = null)
+        ErrorPolicy? errorPolicy = null,
+        int rebuildBatchSize = 1000,
+        long rebuildThreshold = 1000)
     {
         _eventStore = eventStore ?? throw new ArgumentNullException(nameof(eventStore));
         _checkpointStore = checkpointStore ?? throw new ArgumentNullException(nameof(checkpointStore));
@@ -41,6 +47,8 @@ public sealed class PollingConsumer : IEventConsumer
         _moduleKey = moduleKey;
         _pollingInterval = pollingInterval ?? TimeSpan.FromMilliseconds(100);
         _batchSize = batchSize;
+        _rebuildBatchSize = rebuildBatchSize;
+        _rebuildThreshold = rebuildThreshold;
         _processorLock = processorLock;
         _deadLetterStore = deadLetterStore;
         _pipeline = pipeline;
@@ -86,11 +94,31 @@ public sealed class PollingConsumer : IEventConsumer
             await _cts.CancelAsync();
         }
 
+        // Wait for main polling task
         if (_pollingTask is not null)
         {
             try
             {
                 await _pollingTask;
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected on cancellation
+            }
+        }
+
+        // Wait for all rebuild tasks to complete
+        Task[] rebuildTasksCopy;
+        lock (_rebuildTasksLock)
+        {
+            rebuildTasksCopy = _rebuildTasks.Values.ToArray();
+        }
+
+        if (rebuildTasksCopy.Length > 0)
+        {
+            try
+            {
+                await Task.WhenAll(rebuildTasksCopy);
             }
             catch (OperationCanceledException)
             {
@@ -121,9 +149,32 @@ public sealed class PollingConsumer : IEventConsumer
         {
             try
             {
-                // Load all processor checkpoints
-                var checkpoints = await GetProcessorCheckpointsAsync(ct);
-                var minPosition = checkpoints.Count > 0 ? checkpoints.Values.Min() : 0;
+                // Get global position to classify processors
+                var globalPosition = await _eventStore.GetLastPositionGlobal(ct);
+
+                // Classify processors into active (caught-up) vs rebuilding
+                var (activeCheckpoints, newRebuilders) = await ClassifyProcessorsAsync(globalPosition, ct);
+
+                // Spawn independent tasks for newly identified rebuilding processors
+                foreach (var processor in newRebuilders)
+                {
+                    lock (_rebuildTasksLock)
+                    {
+                        if (!_rebuildTasks.ContainsKey(processor.ProcessorId))
+                        {
+                            _rebuildTasks[processor.ProcessorId] = RebuildProcessorAsync(processor, ct);
+                        }
+                    }
+                }
+
+                // Main loop only processes active (caught-up) processors
+                if (activeCheckpoints.Count == 0)
+                {
+                    await Task.Delay(_pollingInterval, ct);
+                    continue;
+                }
+
+                var minPosition = activeCheckpoints.Values.Min();
 
                 // Fetch events from global stream
                 var events = await _eventStore.StreamGlobal(minPosition, _batchSize, ct);
@@ -132,13 +183,13 @@ public sealed class PollingConsumer : IEventConsumer
 
                 if (events.Count > 0)
                 {
-                    // Route to each processor, filtering by their individual checkpoint
+                    // Route to each active processor, filtering by their individual checkpoint
                     foreach (var processor in _processors)
                     {
-                        if (!processor.IsActive)
+                        if (!processor.IsActive || processor.IsRebuilding)
                             continue;
 
-                        var processorCheckpoint = checkpoints.GetValueOrDefault(processor.ProcessorId, 0);
+                        var processorCheckpoint = activeCheckpoints.GetValueOrDefault(processor.ProcessorId, 0);
 
                         var relevant = events
                             .Where(e => e.GlobalPosition > processorCheckpoint)
@@ -285,5 +336,143 @@ public sealed class PollingConsumer : IEventConsumer
         }
 
         return checkpoints;
+    }
+
+    /// <summary>
+    /// Classifies processors into active (caught-up) and rebuilding (far behind) groups.
+    /// Processors lagging beyond the rebuild threshold are marked for independent rebuilding.
+    /// </summary>
+    private async Task<(Dictionary<string, long> ActiveCheckpoints, List<IEventProcessor> NewRebuilders)>
+        ClassifyProcessorsAsync(long globalPosition, CancellationToken ct)
+    {
+        var activeCheckpoints = new Dictionary<string, long>();
+        var newRebuilders = new List<IEventProcessor>();
+
+        foreach (var processor in _processors)
+        {
+            if (!processor.IsActive)
+                continue;
+
+            // Skip processors already rebuilding (they have their own task)
+            if (processor.IsRebuilding)
+                continue;
+
+            var position = await _checkpointStore.GetAsync(processor.ProcessorId, ct) ?? 0;
+            var lag = globalPosition - position;
+
+            if (lag > _rebuildThreshold)
+            {
+                // Mark as rebuilding - will spawn independent task
+                processor.IsRebuilding = true;
+                newRebuilders.Add(processor);
+            }
+            else
+            {
+                activeCheckpoints[processor.ProcessorId] = position;
+            }
+        }
+
+        return (activeCheckpoints, newRebuilders);
+    }
+
+    /// <summary>
+    /// Independent rebuild task for a processor that is far behind.
+    /// Runs until the processor catches up within the threshold, then rejoins the main loop.
+    /// </summary>
+    private async Task RebuildProcessorAsync(IEventProcessor processor, CancellationToken ct)
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested && processor.IsActive && processor.IsRebuilding)
+            {
+                var currentPos = await _checkpointStore.GetAsync(processor.ProcessorId, ct) ?? 0;
+                var globalPos = await _eventStore.GetLastPositionGlobal(ct);
+
+                // Check if caught up (within threshold)
+                if (globalPos - currentPos <= _rebuildThreshold)
+                {
+                    processor.IsRebuilding = false;
+                    return;
+                }
+
+                // Fetch larger batch for faster catch-up
+                var events = await _eventStore.StreamGlobal(currentPos, _rebuildBatchSize, ct);
+
+                if (events.Count == 0)
+                {
+                    await Task.Delay(_pollingInterval, ct);
+                    continue;
+                }
+
+                // Process events for this processor only
+                var relevant = events
+                    .Where(e => e.GlobalPosition > currentPos)
+                    .Where(e => processor.HandledEventTypes.Contains(e.EventType.Id))
+                    .ToList();
+
+                foreach (var evt in relevant)
+                {
+                    if (!processor.IsActive || !processor.IsRebuilding)
+                        break;
+
+                    await ProcessSingleEventAsync(processor, evt, ct);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // Normal shutdown
+        }
+        finally
+        {
+            processor.IsRebuilding = false;
+            lock (_rebuildTasksLock)
+            {
+                _rebuildTasks.Remove(processor.ProcessorId);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Triggers a manual rebuild for a specific processor.
+    /// Resets the checkpoint to 0 and starts rebuilding from the beginning.
+    /// </summary>
+    /// <param name="processorId">The processor ID to rebuild.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>True if rebuild was started, false if processor not found or already rebuilding.</returns>
+    public async Task<bool> TriggerRebuildAsync(string processorId, CancellationToken ct = default)
+    {
+        var processor = _processors.FirstOrDefault(p => p.ProcessorId == processorId);
+        if (processor is null)
+            return false;
+
+        if (processor.IsRebuilding)
+            return false;
+
+        // Reset checkpoint to 0
+        await _checkpointStore.SaveAsync(processorId, 0, ct);
+
+        // Mark as rebuilding and spawn task
+        processor.IsRebuilding = true;
+
+        lock (_rebuildTasksLock)
+        {
+            if (!_rebuildTasks.ContainsKey(processorId) && _cts is not null)
+            {
+                _rebuildTasks[processorId] = RebuildProcessorAsync(processor, _cts.Token);
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Gets the current rebuild status for all processors.
+    /// </summary>
+    public IReadOnlyList<(string ProcessorId, bool IsRebuilding)> GetRebuildStatuses()
+    {
+        return _processors
+            .Select(p => (p.ProcessorId, p.IsRebuilding))
+            .ToList();
     }
 }

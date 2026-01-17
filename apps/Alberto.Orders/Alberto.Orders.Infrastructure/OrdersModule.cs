@@ -1,9 +1,13 @@
 using Alberto.Dcb;
 using Alberto.Dcb.Admin;
+using Alberto.Dcb.EntityFramework;
 using Alberto.Dcb.Postgres;
 using Alberto.Dcb.Telemetry;
+using Alberto.Orders.Infrastructure.Data;
+using Alberto.Orders.Infrastructure.Entities;
 using Alberto.Orders.Infrastructure.Projections;
 using Alberto.Orders.Infrastructure.ReadModels;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -35,14 +39,20 @@ public static class OrdersModule
                 options.Schema = "orders";
                 options.MaxPoolSize = 30;
             })
+            .WithEntityFramework<OrdersDbContext>(options =>
+            {
+                options.UseNpgsql(connectionString, npgsql =>
+                    npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "orders"));
+            })
             .WithTelemetry()
             .WithConsumer(consumer => consumer
-                .WithPollingInterval(TimeSpan.FromMilliseconds(100))
+                .WithPollingInterval(TimeSpan.FromMilliseconds(500))
                 .WithBatchSize(100)
                 .WithErrorPolicy(policy => policy
                     .MaxRetries(3)
                     .RetryDelay(TimeSpan.FromSeconds(1))
                     .DeadLetterOnMaxRetries(true))
+                // JSONB projection for overview (aggregate stats)
                 .AddProjection<OrdersOverview, OrdersOverviewProjection>(sp =>
                 {
                     var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
@@ -52,15 +62,8 @@ public static class OrdersModule
                         nameof(OrdersOverviewProjection),
                         "orders");
                 })
-                .AddProjection<OrderSummary, OrderSummaryProjection>(sp =>
-                {
-                    var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
-                    return tenantId => new PostgresStateStore<OrderSummary>(
-                        dataSource,
-                        tenantId,
-                        nameof(OrderSummaryProjection),
-                        "orders");
-                }))
+                // EF projection for order summaries (enables filtering/querying)
+                .AddEfProjection<OrderSummaryEntity, OrderSummaryEfProjection, OrdersDbContext>())
             .WithAdmin(admin =>
             {
                 admin.Title = "Orders Admin";

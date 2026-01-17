@@ -8,7 +8,8 @@ namespace Alberto.Dcb.Admin.Subscriptions;
 public static class AdminSubscriptionExtensions
 {
     /// <summary>
-    /// Adds admin real-time subscription services.
+    /// Adds admin real-time subscription services (publisher only, no background monitor).
+    /// For push-based notifications, use AddPostgresAdminSubscriptions() from Alberto.Dcb.Postgres.
     /// Requires HotChocolate's AddInMemorySubscriptions() to be called first.
     /// </summary>
     public static IServiceCollection AddAdminSubscriptions(this IServiceCollection services)
@@ -19,9 +20,6 @@ public static class AdminSubscriptionExtensions
         // Legacy support - redirect to unified publisher
         services.AddSingleton<InMemoryProcessorStatusPublisher>();
         services.AddSingleton<IProcessorStatusPublisher>(sp => sp.GetRequiredService<InMemoryProcessorStatusPublisher>());
-
-        // Register monitor
-        services.AddHostedService<AdminMonitor>();
 
         return services;
     }

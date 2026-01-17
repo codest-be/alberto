@@ -59,6 +59,27 @@ internal static class ProcessorsEndpoints
                 await service.SetProcessorActiveAsync(processorId, false, ct);
                 return Results.NoContent();
             }).WithName($"{moduleKey}_DeactivateProcessor");
+
+            group.MapPost("/{processorId}/rebuild", async (string processorId, HttpContext ctx, bool clearState = true, CancellationToken ct = default) =>
+            {
+                var service = ctx.RequestServices.GetRequiredKeyedService<IAdminQueryService>(moduleKey);
+                var result = await service.StartRebuildAsync(processorId, clearState, ct);
+                return Results.Ok(result);
+            }).WithName($"{moduleKey}_StartRebuild");
+
+            group.MapGet("/{processorId}/rebuild/status", async (string processorId, HttpContext ctx, CancellationToken ct) =>
+            {
+                var service = ctx.RequestServices.GetRequiredKeyedService<IAdminQueryService>(moduleKey);
+                var result = await service.GetRebuildStatusAsync(processorId, ct);
+                return result is not null ? Results.Ok(result) : Results.NotFound();
+            }).WithName($"{moduleKey}_GetRebuildStatus");
+
+            group.MapPost("/{processorId}/rebuild/cancel", async (string processorId, HttpContext ctx, CancellationToken ct) =>
+            {
+                var service = ctx.RequestServices.GetRequiredKeyedService<IAdminQueryService>(moduleKey);
+                await service.CancelRebuildAsync(processorId, ct);
+                return Results.NoContent();
+            }).WithName($"{moduleKey}_CancelRebuild");
         }
     }
 }

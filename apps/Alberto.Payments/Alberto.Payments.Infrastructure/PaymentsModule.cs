@@ -37,7 +37,7 @@ public static class PaymentsModule
             })
             .WithTelemetry()
             .WithConsumer(consumer => consumer
-                .WithPollingInterval(TimeSpan.FromMilliseconds(100))
+                .WithPollingInterval(TimeSpan.FromMilliseconds(500))
                 .WithBatchSize(100)
                 .WithErrorPolicy(policy => policy
                     .MaxRetries(3)

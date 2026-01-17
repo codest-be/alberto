@@ -6,6 +6,7 @@ namespace Alberto.Dcb.Admin.Api.Models;
 public sealed record ProcessorStatusDto(
     string ProcessorId,
     bool IsActive,
+    bool IsRebuilding,
     long? LastPosition,
     long GlobalPosition,
     long Lag,

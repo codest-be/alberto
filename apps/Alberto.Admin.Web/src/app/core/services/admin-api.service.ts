@@ -199,10 +199,10 @@ export class AdminApiService {
     );
   }
 
-  // Projection Rebuilds
+  // Processor Rebuilds
   startRebuild(processorId: string, clearState: boolean = true): Observable<RebuildStatus> {
     return this.http.post<RebuildStatus>(
-      `${this.apiBase}/projection-states/${processorId}/rebuild`,
+      `${this.apiBase}/processors/${encodeURIComponent(processorId)}/rebuild`,
       null,
       { params: { clearState: clearState.toString() } }
     );
@@ -210,13 +210,14 @@ export class AdminApiService {
 
   getRebuildStatus(processorId: string): Observable<RebuildStatus | null> {
     return this.http.get<RebuildStatus | null>(
-      `${this.apiBase}/projection-states/${processorId}/rebuild/status`
+      `${this.apiBase}/processors/${encodeURIComponent(processorId)}/rebuild/status`
     );
   }
 
   cancelRebuild(processorId: string): Observable<void> {
-    return this.http.delete<void>(
-      `${this.apiBase}/projection-states/${processorId}/rebuild`
+    return this.http.post<void>(
+      `${this.apiBase}/processors/${encodeURIComponent(processorId)}/rebuild/cancel`,
+      {}
     );
   }
 }

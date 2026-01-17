@@ -4,11 +4,14 @@ using Alberto.Dcb.Postgres;
 using Alberto.Orders.Api.GraphQL.Types;
 using Alberto.Orders.Core.Order;
 using Alberto.Orders.Infrastructure;
+using Alberto.Orders.Infrastructure.Data;
+using Alberto.Orders.Infrastructure.Entities;
 using OrderDecider = Alberto.Orders.Core.Order.Actions.OrderDecider;
 using Alberto.Orders.Infrastructure.Projections;
 using Alberto.Orders.Infrastructure.ReadModels;
 using HotChocolate;
 using HotChocolate.Resolvers;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 
@@ -51,7 +54,9 @@ public static class OrderQueries
         CancellationToken ct)
     {
         var tenantId = GetTenantId(context);
-        var stateStore = CreateStateStore<OrdersOverview>(sp, tenantId, nameof(OrdersOverviewProjection));
+        var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(OrdersModule.ModuleKey);
+        var stateStore = new PostgresStateStore<OrdersOverview>(
+            dataSource, tenantId, nameof(OrdersOverviewProjection), "orders");
 
         var states = await stateStore.LoadManyAsync(
             [OrdersOverviewProjection.DocumentId],
@@ -61,21 +66,78 @@ public static class OrderQueries
     }
 
     /// <summary>
-    /// Gets recent orders from the async projection.
+    /// Gets orders with optional filtering, sorting, and pagination.
     /// </summary>
     [Query]
-    [GraphQLDescription("Gets recent orders from the projection, ordered by last update.")]
+    [GraphQLDescription("Gets orders with optional filtering by status, customer, and date range.")]
+    public static async Task<OrdersConnection> GetOrders(
+        IResolverContext context,
+        [Service] IDbContextFactory<OrdersDbContext> contextFactory,
+        OrderStatus? status = null,
+        Guid? customerId = null,
+        DateTimeOffset? createdAfter = null,
+        DateTimeOffset? createdBefore = null,
+        int skip = 0,
+        int take = 20,
+        CancellationToken ct = default)
+    {
+        var tenantId = GetTenantId(context);
+        await using var dbContext = await contextFactory.CreateDbContextAsync(ct);
+
+        var query = dbContext.OrderSummaries
+            .Where(o => o.TenantId == tenantId);
+
+        // Apply filters
+        if (status.HasValue)
+            query = query.Where(o => o.Status == status.Value);
+
+        if (customerId.HasValue)
+            query = query.Where(o => o.CustomerId == customerId.Value);
+
+        if (createdAfter.HasValue)
+            query = query.Where(o => o.CreatedAt >= createdAfter.Value);
+
+        if (createdBefore.HasValue)
+            query = query.Where(o => o.CreatedAt <= createdBefore.Value);
+
+        // Get total count for pagination
+        var totalCount = await query.CountAsync(ct);
+
+        // Get page of results
+        var entities = await query
+            .OrderByDescending(o => o.CreatedAt)
+            .Skip(skip)
+            .Take(take)
+            .ToListAsync(ct);
+
+        return new OrdersConnection(
+            entities.Select(Order.FromEntity).ToList(),
+            totalCount,
+            skip,
+            take);
+    }
+
+    /// <summary>
+    /// Gets recent orders (convenience method).
+    /// </summary>
+    [Query]
+    [GraphQLDescription("Gets recent orders, ordered by creation date.")]
     public static async Task<IReadOnlyList<Order>> GetRecentOrders(
         IResolverContext context,
-        [Service] IServiceProvider sp,
+        [Service] IDbContextFactory<OrdersDbContext> contextFactory,
         int limit = 20,
         CancellationToken ct = default)
     {
         var tenantId = GetTenantId(context);
-        var stateStore = CreateStateStore<OrderSummary>(sp, tenantId, nameof(OrderSummaryProjection));
+        await using var dbContext = await contextFactory.CreateDbContextAsync(ct);
 
-        var summaries = await stateStore.ListRecentAsync(limit, ct);
-        return summaries.Select(Order.FromSummary).ToList();
+        var entities = await dbContext.OrderSummaries
+            .Where(o => o.TenantId == tenantId)
+            .OrderByDescending(o => o.CreatedAt)
+            .Take(limit)
+            .ToListAsync(ct);
+
+        return entities.Select(Order.FromEntity).ToList();
     }
 
     #region Helper Methods
@@ -83,15 +145,6 @@ public static class OrderQueries
     private static string GetTenantId(IResolverContext context) =>
         context.GetGlobalState<string>(TenantHttpRequestInterceptor.TenantIdKey)
         ?? throw new InvalidOperationException("Tenant ID not found in resolver context");
-
-    private static PostgresStateStore<TState> CreateStateStore<TState>(
-        IServiceProvider sp,
-        string tenantId,
-        string projectionType)
-    {
-        var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(OrdersModule.ModuleKey);
-        return new PostgresStateStore<TState>(dataSource, tenantId, projectionType, "orders");
-    }
 
     private static async Task<OrderState> LoadOrderState(
         IEventStoreBackend backend,

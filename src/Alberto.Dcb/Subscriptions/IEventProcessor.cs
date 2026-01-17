@@ -19,6 +19,12 @@ public interface IEventProcessor
     bool IsActive { get; set; }
 
     /// <summary>
+    /// Whether this processor is currently rebuilding (catching up from behind).
+    /// Rebuilding processors run independently and don't block other processors.
+    /// </summary>
+    bool IsRebuilding { get; set; }
+
+    /// <summary>
     /// The event types this processor handles.
     /// Used by consumers to filter events before delivering them.
     /// </summary>

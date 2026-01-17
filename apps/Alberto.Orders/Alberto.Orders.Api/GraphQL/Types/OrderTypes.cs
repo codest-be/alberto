@@ -1,5 +1,5 @@
 using Alberto.Orders.Core.Order;
-using Alberto.Orders.Infrastructure.ReadModels;
+using Alberto.Orders.Infrastructure.Entities;
 
 namespace Alberto.Orders.Api.GraphQL.Types;
 
@@ -23,22 +23,22 @@ public sealed record Order(
     DateTimeOffset? CancelledAt,
     DateTimeOffset? UpdatedAt)
 {
-    public static Order FromSummary(OrderSummary s) => new(
-        s.OrderId,
-        s.CustomerId,
-        s.LineItems.Select(OrderItem.FromSummary).ToList(),
-        s.Notes,
-        s.Status,
-        s.Total,
-        s.TrackingNumber,
-        s.Carrier,
-        s.CancellationReason,
-        s.CreatedAt,
-        s.ConfirmedAt,
-        s.ShippedAt,
-        s.DeliveredAt,
-        s.CancelledAt,
-        s.UpdatedAt);
+    public static Order FromEntity(OrderSummaryEntity e) => new(
+        e.OrderId,
+        e.CustomerId,
+        e.LineItems.Select(OrderItem.FromEntity).ToList(),
+        e.Notes,
+        e.Status,
+        e.Total,
+        e.TrackingNumber,
+        e.Carrier,
+        e.CancellationReason,
+        e.CreatedAt,
+        e.ConfirmedAt,
+        e.ShippedAt,
+        e.DeliveredAt,
+        e.CancelledAt,
+        e.UpdatedAt);
 }
 
 /// <summary>
@@ -51,12 +51,25 @@ public sealed record OrderItem(
     decimal UnitPrice,
     decimal Total)
 {
-    public static OrderItem FromSummary(OrderLineItemSummary s) => new(
-        s.ProductId,
-        s.ProductName,
-        s.Quantity,
-        s.UnitPrice,
-        s.Total);
+    public static OrderItem FromEntity(OrderLineItemData e) => new(
+        e.ProductId,
+        e.ProductName,
+        e.Quantity,
+        e.UnitPrice,
+        e.Total);
+}
+
+/// <summary>
+/// Paginated connection for orders.
+/// </summary>
+public sealed record OrdersConnection(
+    IReadOnlyList<Order> Items,
+    int TotalCount,
+    int Skip,
+    int Take)
+{
+    public bool HasNextPage => Skip + Take < TotalCount;
+    public bool HasPreviousPage => Skip > 0;
 }
 
 /// <summary>

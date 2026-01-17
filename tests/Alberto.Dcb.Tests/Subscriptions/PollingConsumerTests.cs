@@ -35,6 +35,7 @@ public sealed class PollingConsumerTests
 
         public string ProcessorId { get; }
         public bool IsActive { get; set; } = true;
+        public bool IsRebuilding { get; set; }
         public IReadOnlySet<string> HandledEventTypes { get; }
 
         public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)

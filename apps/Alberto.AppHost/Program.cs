@@ -7,6 +7,11 @@ var postgres = builder.AddPostgres("postgres")
 
 var albertoDb = postgres.AddDatabase("alberto");
 
+// Orders EF Migrations (runs before API starts)
+var ordersMigrations = builder.AddProject<Projects.Alberto_Orders_Migrations>("orders-migrations")
+    .WithReference(albertoDb)
+    .WaitFor(albertoDb);
+
 // Orders API (fixed port 5180, no proxy for direct access)
 var ordersApi = builder.AddProject<Projects.Alberto_Orders_Api>("orders-api")
     .WithEndpoint("http", endpoint =>
@@ -15,7 +20,7 @@ var ordersApi = builder.AddProject<Projects.Alberto_Orders_Api>("orders-api")
         endpoint.IsProxied = false;
     })
     .WithReference(albertoDb)
-    .WaitFor(albertoDb);
+    .WaitFor(ordersMigrations);
 
 // Admin Web (Angular, fixed port 4200)
 builder.AddNpmApp("admin-web", "../Alberto.Admin.Web", "start")

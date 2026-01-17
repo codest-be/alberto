@@ -1,14 +1,14 @@
 import { Component, inject, OnInit, signal, DestroyRef, effect } from '@angular/core';
-import { DatePipe } from '@angular/common';
+import { DatePipe, DecimalPipe } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { Subscription } from 'rxjs';
+import { Subscription, interval } from 'rxjs';
 import { AdminApiService } from '../../core/services/admin-api.service';
 import { ProcessorSubscriptionService } from '../../core/graphql/processor-subscription.service';
-import { ProcessorStatus } from '../../core/models/admin.models';
+import { ProcessorStatus, RebuildStatus } from '../../core/models/admin.models';
 
 @Component({
   selector: 'app-processors',
-  imports: [DatePipe],
+  imports: [DatePipe, DecimalPipe],
   template: `
     <div class="processors">
       <header class="page-header">
@@ -57,6 +57,7 @@ import { ProcessorStatus } from '../../core/models/admin.models';
               @for (processor of processors(); track processor.processorId) {
                 <tr
                   [class.inactive]="!processor.isActive"
+                  [class.rebuilding]="processor.isRebuilding"
                   [class.updated]="recentlyUpdated().has(processor.processorId)"
                 >
                   <td class="processor-id">
@@ -66,14 +67,23 @@ import { ProcessorStatus } from '../../core/models/admin.models';
                     </span>
                   </td>
                   <td>
-                    <span class="status-badge" [class.active]="processor.isActive">
-                      {{ processor.isActive ? 'Active' : 'Inactive' }}
-                    </span>
+                    @if (processor.isRebuilding) {
+                      <span class="status-badge rebuilding">
+                        Rebuilding
+                        @if (rebuildStatuses().get(processor.processorId); as status) {
+                          ({{ status.progressPercent | number:'1.0-0' }}%)
+                        }
+                      </span>
+                    } @else {
+                      <span class="status-badge" [class.active]="processor.isActive">
+                        {{ processor.isActive ? 'Active' : 'Inactive' }}
+                      </span>
+                    }
                   </td>
                   <td class="mono">{{ processor.lastPosition ?? '-' }}</td>
                   <td class="mono">{{ processor.globalPosition }}</td>
                   <td>
-                    <span class="lag" [class.warning]="processor.lag > 100">
+                    <span class="lag" [class.warning]="processor.lag > 100" [class.rebuilding]="processor.isRebuilding">
                       {{ processor.lag }}
                     </span>
                   </td>
@@ -85,22 +95,40 @@ import { ProcessorStatus } from '../../core/models/admin.models';
                   <td class="muted">
                     {{ processor.lastUpdated | date: 'short' }}
                   </td>
-                  <td>
-                    @if (processor.isActive) {
+                  <td class="actions">
+                    @if (processor.isRebuilding) {
                       <button
-                        class="btn btn-sm"
-                        (click)="deactivate(processor.processorId)"
+                        class="btn btn-sm btn-danger"
+                        (click)="cancelRebuild(processor.processorId)"
                         [disabled]="actionInProgress()"
                       >
-                        Deactivate
+                        Cancel
                       </button>
                     } @else {
+                      @if (processor.isActive) {
+                        <button
+                          class="btn btn-sm"
+                          (click)="deactivate(processor.processorId)"
+                          [disabled]="actionInProgress()"
+                        >
+                          Deactivate
+                        </button>
+                      } @else {
+                        <button
+                          class="btn btn-sm btn-primary"
+                          (click)="activate(processor.processorId)"
+                          [disabled]="actionInProgress()"
+                        >
+                          Activate
+                        </button>
+                      }
                       <button
-                        class="btn btn-sm btn-primary"
-                        (click)="activate(processor.processorId)"
+                        class="btn btn-sm btn-secondary"
+                        (click)="startRebuild(processor.processorId)"
                         [disabled]="actionInProgress()"
+                        title="Rebuild projection from scratch"
                       >
-                        Activate
+                        Rebuild
                       </button>
                     }
                   </td>
@@ -251,6 +279,21 @@ import { ProcessorStatus } from '../../core/models/admin.models';
       &.btn-secondary {
         background: transparent;
       }
+
+      &.btn-danger {
+        background: #dc2626;
+        border-color: #dc2626;
+        color: #fff;
+
+        &:hover:not(:disabled) {
+          background: #b91c1c;
+        }
+      }
+    }
+
+    .actions {
+      display: flex;
+      gap: 0.5rem;
     }
 
     .table-container {
@@ -286,6 +329,10 @@ import { ProcessorStatus } from '../../core/models/admin.models';
 
       tr.inactive {
         opacity: 0.6;
+      }
+
+      tr.rebuilding {
+        background: rgba(245, 158, 11, 0.05);
       }
 
       tr.updated {
@@ -331,6 +378,12 @@ import { ProcessorStatus } from '../../core/models/admin.models';
         background: rgba(34, 197, 94, 0.15);
         color: #22c55e;
       }
+
+      &.rebuilding {
+        background: rgba(245, 158, 11, 0.15);
+        color: #f59e0b;
+        animation: pulse 2s infinite;
+      }
     }
 
     .mono {
@@ -342,6 +395,11 @@ import { ProcessorStatus } from '../../core/models/admin.models';
       &.warning {
         color: #f59e0b;
         font-weight: 500;
+      }
+
+      &.rebuilding {
+        color: #f59e0b;
+        font-style: italic;
       }
     }
 
@@ -406,9 +464,11 @@ export class ProcessorsComponent implements OnInit {
   readonly subscriptionActive = signal(false);
   readonly usingPolling = signal(false);
   readonly recentlyUpdated = signal<Set<string>>(new Set());
+  readonly rebuildStatuses = signal<Map<string, RebuildStatus>>(new Map());
 
   private subscriptions = new Subscription();
   private currentModuleKey: string | null = null;
+  private rebuildPollingSubscription: Subscription | null = null;
 
   constructor() {
     // React to module key changes
@@ -425,6 +485,7 @@ export class ProcessorsComponent implements OnInit {
     // Clean up subscriptions on destroy
     this.destroyRef.onDestroy(() => {
       this.subscriptions.unsubscribe();
+      this.rebuildPollingSubscription?.unsubscribe();
     });
   }
 
@@ -528,6 +589,73 @@ export class ProcessorsComponent implements OnInit {
       error: () => {
         this.actionInProgress.set(false);
       },
+    });
+  }
+
+  startRebuild(processorId: string): void {
+    if (!confirm(`Are you sure you want to rebuild ${processorId}? This will clear all projection state and reprocess from the beginning.`)) {
+      return;
+    }
+
+    this.actionInProgress.set(true);
+    this.api.startRebuild(processorId, true).subscribe({
+      next: (status) => {
+        // Update rebuild status
+        const statuses = new Map(this.rebuildStatuses());
+        statuses.set(processorId, status);
+        this.rebuildStatuses.set(statuses);
+
+        // Reload processors to get isRebuilding state
+        this.loadData();
+        this.actionInProgress.set(false);
+
+        // Start polling for rebuild status
+        this.startRebuildStatusPolling(processorId);
+      },
+      error: () => {
+        this.actionInProgress.set(false);
+      },
+    });
+  }
+
+  cancelRebuild(processorId: string): void {
+    this.actionInProgress.set(true);
+    this.api.cancelRebuild(processorId).subscribe({
+      next: () => {
+        // Remove from rebuild statuses
+        const statuses = new Map(this.rebuildStatuses());
+        statuses.delete(processorId);
+        this.rebuildStatuses.set(statuses);
+
+        this.loadData();
+        this.actionInProgress.set(false);
+      },
+      error: () => {
+        this.actionInProgress.set(false);
+      },
+    });
+  }
+
+  private startRebuildStatusPolling(processorId: string): void {
+    // Poll every 2 seconds for rebuild status
+    this.rebuildPollingSubscription?.unsubscribe();
+    this.rebuildPollingSubscription = interval(2000).subscribe(() => {
+      this.api.getRebuildStatus(processorId).subscribe({
+        next: (status) => {
+          if (status) {
+            const statuses = new Map(this.rebuildStatuses());
+            statuses.set(processorId, status);
+            this.rebuildStatuses.set(statuses);
+
+            // Stop polling if rebuild is complete or failed
+            if (status.state === 'Completed' || status.state === 'Failed' || status.state === 'Cancelled') {
+              this.rebuildPollingSubscription?.unsubscribe();
+              this.rebuildPollingSubscription = null;
+              this.loadData();
+            }
+          }
+        },
+      });
     });
   }
 

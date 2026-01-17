@@ -27,6 +27,9 @@ internal sealed class AsyncProjection<TState, TProjection> : IEventProcessor
     public bool IsActive { get; set; } = true;
 
     /// <inheritdoc/>
+    public bool IsRebuilding { get; set; }
+
+    /// <inheritdoc/>
     public IReadOnlySet<string> HandledEventTypes => _projection.HandledEventTypes;
 
     /// <inheritdoc/>

@@ -76,11 +76,12 @@ public static class PostgresBuilderExtensions
             return new PostgresEventStore(backend);
         });
 
-        // Register checkpoint store
+        // Register checkpoint store with caching layer
         builder.Services.AddKeyedSingleton<ICheckpointStore>(moduleKey, (sp, _) =>
         {
             var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
-            return new PostgresCheckpointStore(dataSource, schema);
+            var postgresStore = new PostgresCheckpointStore(dataSource, schema);
+            return new CachingCheckpointStore(postgresStore);
         });
 
         // Register dead letter store

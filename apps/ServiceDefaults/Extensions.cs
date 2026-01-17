@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Alberto.Dcb.Telemetry;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -77,6 +78,8 @@ public static class Extensions
                     })
                     .AddHttpClientInstrumentation()
                     .AddNpgsql()
+                    .AddProcessor(new FilteringProcessor(activity =>
+                        activity.Source.Name != "Npgsql" || activity.Parent != null))
                     .AddHotChocolateInstrumentation()
                     .AddAlbertoInstrumentation();
             });
@@ -133,5 +136,20 @@ public static class Extensions
         }
 
         return app;
+    }
+}
+
+/// <summary>
+/// A processor that filters activities based on a predicate.
+/// Activities that don't match the filter are not exported.
+/// </summary>
+internal sealed class FilteringProcessor(Func<Activity, bool> filter) : BaseProcessor<Activity>
+{
+    public override void OnEnd(Activity activity)
+    {
+        if (!filter(activity))
+        {
+            activity.ActivityTraceFlags &= ~ActivityTraceFlags.Recorded;
+        }
     }
 }
