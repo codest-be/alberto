@@ -28,7 +28,7 @@ public sealed class PollingConsumer : IEventConsumer
     private CancellationTokenSource? _cts;
     private Task? _pollingTask;
 
-    public PollingConsumer(
+    internal PollingConsumer(
         IEventStoreBackend eventStore,
         ICheckpointStore checkpointStore,
         string consumerId,

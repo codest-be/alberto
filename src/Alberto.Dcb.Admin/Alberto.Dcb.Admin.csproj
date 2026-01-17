@@ -8,6 +8,10 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <InternalsVisibleTo Include="Alberto.Dcb.Postgres" />
+    </ItemGroup>
+
+    <ItemGroup>
         <ProjectReference Include="..\Alberto.Dcb\Alberto.Dcb.csproj" />
     </ItemGroup>
 

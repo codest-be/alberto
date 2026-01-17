@@ -8,7 +8,7 @@ namespace Alberto.Dcb.Subscriptions;
 /// Updates are cached in-memory and periodically flushed to the underlying store.
 /// This significantly reduces database load during high-throughput scenarios.
 /// </summary>
-public sealed class CachingCheckpointStore : ICheckpointStore, IAsyncDisposable
+internal sealed class CachingCheckpointStore : ICheckpointStore, IAsyncDisposable
 {
     private readonly ICheckpointStore _inner;
     private readonly TimeSpan _flushInterval;

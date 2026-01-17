@@ -16,7 +16,7 @@ namespace Alberto.Dcb.Postgres.Admin;
 /// Background service that listens for PostgreSQL NOTIFY events and publishes admin updates.
 /// Uses debouncing to batch rapid notifications and reduce database queries.
 /// </summary>
-public sealed partial class PostgresAdminListener : BackgroundService
+internal sealed partial class PostgresAdminListener : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<PostgresAdminListener> _logger;

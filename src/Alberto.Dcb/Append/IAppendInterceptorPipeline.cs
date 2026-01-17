@@ -3,7 +3,7 @@ namespace Alberto.Dcb.Append;
 /// <summary>
 /// Pipeline for executing append interceptors around the actual persistence operation.
 /// </summary>
-public interface IAppendInterceptorPipeline
+internal interface IAppendInterceptorPipeline
 {
     /// <summary>
     /// Executes the append interceptor pipeline.

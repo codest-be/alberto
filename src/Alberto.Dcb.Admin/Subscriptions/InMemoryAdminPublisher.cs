@@ -17,7 +17,7 @@ public static class AdminTopics
 /// <summary>
 /// HotChocolate-based admin publisher that uses topic-based pub/sub for proper broadcast to all subscribers.
 /// </summary>
-public sealed class HotChocolateAdminPublisher : IAdminPublisher
+internal sealed class HotChocolateAdminPublisher : IAdminPublisher
 {
     private readonly ITopicEventSender _eventSender;
 

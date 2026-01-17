@@ -7,7 +7,7 @@ namespace Alberto.Dcb.Subscriptions;
 /// <summary>
 /// Default implementation of <see cref="IErrorClassifier"/> that classifies common exceptions.
 /// </summary>
-public sealed class DefaultErrorClassifier : IErrorClassifier
+internal sealed class DefaultErrorClassifier : IErrorClassifier
 {
     /// <summary>
     /// Singleton instance of the default error classifier.

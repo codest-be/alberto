@@ -5,7 +5,7 @@ namespace Alberto.Dcb.Telemetry;
 /// <summary>
 /// Extracts W3C trace context from event metadata.
 /// </summary>
-public sealed class ActivityTraceContextProvider : ITraceContextProvider
+internal sealed class ActivityTraceContextProvider : ITraceContextProvider
 {
     /// <inheritdoc />
     public TraceContext? ExtractTraceContext(IReadOnlyDictionary<string, string> metadata)

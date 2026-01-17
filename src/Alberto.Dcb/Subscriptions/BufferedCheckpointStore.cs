@@ -8,7 +8,7 @@ namespace Alberto.Dcb.Subscriptions;
 /// On crash: Some checkpoints may be lost, causing event reprocessing.
 /// Processors must be idempotent.
 /// </summary>
-public sealed class BufferedCheckpointStore : ICheckpointStore, IAsyncDisposable
+internal sealed class BufferedCheckpointStore : ICheckpointStore, IAsyncDisposable
 {
     private readonly ICheckpointStore _innerStore;
     private readonly TimeSpan _flushInterval;

@@ -5,7 +5,7 @@ namespace Alberto.Dcb.Admin.Subscriptions;
 /// <summary>
 /// Legacy processor status publisher - delegates to InMemoryAdminPublisher.
 /// </summary>
-public sealed class InMemoryProcessorStatusPublisher : IProcessorStatusPublisher
+internal sealed class InMemoryProcessorStatusPublisher : IProcessorStatusPublisher
 {
     private readonly IAdminPublisher _publisher;
 

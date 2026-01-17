@@ -4,7 +4,7 @@ namespace Alberto.Dcb.Append;
 /// Builds and executes the append interceptor pipeline.
 /// Interceptors are executed in registration order (first registered = outermost wrapper).
 /// </summary>
-public sealed class AppendInterceptorPipeline : IAppendInterceptorPipeline
+internal sealed class AppendInterceptorPipeline : IAppendInterceptorPipeline
 {
     private readonly IReadOnlyList<IAppendInterceptor> _interceptors;
 

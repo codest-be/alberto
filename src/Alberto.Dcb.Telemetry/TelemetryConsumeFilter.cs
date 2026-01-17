@@ -10,7 +10,7 @@ namespace Alberto.Dcb.Telemetry;
 /// Links consumer activities to original append traces when trace context is present in metadata.
 /// Records traces, metrics, and timing for event processing.
 /// </summary>
-public sealed class TelemetryConsumeFilter : IConsumeFilter
+internal sealed class TelemetryConsumeFilter : IConsumeFilter
 {
     private readonly ITraceContextProvider? _traceContextProvider;
 

@@ -9,6 +9,7 @@ namespace Alberto.Dcb.Telemetry;
 /// <remarks>
 /// This class forwards all members to <see cref="AlbertoMetrics"/> in Alberto.Dcb.
 /// </remarks>
+[Obsolete("Use AlbertoMetrics from Alberto.Dcb directly.")]
 public static class AlbertoTelemetry
 {
     /// <inheritdoc cref="AlbertoMetrics.Name"/>

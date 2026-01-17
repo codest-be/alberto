@@ -3,7 +3,7 @@ namespace Alberto.Dcb.Subscriptions.Pipeline;
 /// <summary>
 /// Executes the consume filter pipeline.
 /// </summary>
-public interface IConsumeFilterPipeline
+internal interface IConsumeFilterPipeline
 {
     /// <summary>
     /// Executes all registered filters around the processing action.

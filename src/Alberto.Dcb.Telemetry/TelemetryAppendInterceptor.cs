@@ -10,7 +10,7 @@ namespace Alberto.Dcb.Telemetry;
 /// - Creates "Alberto.Append" activity span
 /// - Records events being appended as Activity events (showing what was decided)
 /// </summary>
-public sealed class TelemetryAppendInterceptor : IAppendInterceptor
+internal sealed class TelemetryAppendInterceptor : IAppendInterceptor
 {
     /// <summary>
     /// Metadata key for the trace ID.
