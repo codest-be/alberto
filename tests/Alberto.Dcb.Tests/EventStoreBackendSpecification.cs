@@ -208,6 +208,151 @@ public abstract class EventStoreBackendSpecification
 
     #endregion
 
+    #region Wildcard Tag Query Tests
+
+    [Fact]
+    public async Task Stream_ByTagPrefix_ShouldReturnAllMatchingTags()
+    {
+        var backend = await CreateBackend();
+        await backend.Append(Tenant, [
+            CreateEvent("order-placed", "order:123"),
+            CreateEvent("order-confirmed", "order:456"),
+            CreateEvent("order-shipped", "order:789"),
+            CreateEvent("customer-updated", "customer:111")
+        ], cancellationToken: TestContext.Current.CancellationToken);
+
+        var result = await backend.Stream(Tenant, DcbQuery.ByTagPatterns("order:*"), cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(3, result.Count);
+        Assert.All(result, e => Assert.Contains(e.Tags, t => t.Concept == "order"));
+    }
+
+    [Fact]
+    public async Task Stream_ByMultipleTagPrefixes_ShouldReturnUnion()
+    {
+        var backend = await CreateBackend();
+        await backend.Append(Tenant, [
+            CreateEvent("order-placed", "order:123"),
+            CreateEvent("customer-created", "customer:456"),
+            CreateEvent("product-updated", "product:789")
+        ], cancellationToken: TestContext.Current.CancellationToken);
+
+        var query = DcbQuery.ByTagPatterns("order:*", "customer:*");
+        var result = await backend.Stream(Tenant, query, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, result.Count);
+    }
+
+    [Fact]
+    public async Task Stream_ByMixedExactAndWildcardTags_ShouldReturnUnion()
+    {
+        var backend = await CreateBackend();
+        await backend.Append(Tenant, [
+            CreateEvent("order-placed", "order:123"),
+            CreateEvent("order-confirmed", "order:456"),
+            CreateEvent("customer-created", "customer:789"),
+            CreateEvent("product-updated", "product:111")
+        ], cancellationToken: TestContext.Current.CancellationToken);
+
+        // Mix exact tag with wildcard pattern
+        var query = DcbQuery.Empty
+            .WithTags("product:111")
+            .WithTagPatterns("order:*");
+
+        var result = await backend.Stream(Tenant, query, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(3, result.Count);
+    }
+
+    [Fact]
+    public async Task Stream_ByTypesAndWildcardTags_ShouldReturnUnion()
+    {
+        var backend = await CreateBackend();
+        await backend.Append(Tenant, [
+            CreateEvent("order-placed", "order:123"),         // matches type
+            CreateEvent("order-confirmed", "order:456"),      // matches tag wildcard
+            CreateEvent("customer-created", "customer:789"),  // matches nothing
+            CreateEvent("order-placed", "product:111")        // matches type
+        ], cancellationToken: TestContext.Current.CancellationToken);
+
+        var query = DcbQuery.Empty
+            .WithTypes("customer-created")
+            .WithTagPatterns("order:*");
+
+        var result = await backend.Stream(Tenant, query, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(3, result.Count);
+    }
+
+    [Fact]
+    public async Task Stream_ByTagPrefix_WithAfterPosition_ShouldFilter()
+    {
+        var backend = await CreateBackend();
+        var firstBatch = await backend.Append(Tenant, [
+            CreateEvent("order-placed", "order:123"),
+            CreateEvent("order-confirmed", "order:456")
+        ], cancellationToken: TestContext.Current.CancellationToken);
+
+        await backend.Append(Tenant, [
+            CreateEvent("order-shipped", "order:789")
+        ], cancellationToken: TestContext.Current.CancellationToken);
+
+        var afterPosition = firstBatch.Last().GlobalPosition;
+        var result = await backend.Stream(Tenant, DcbQuery.ByTagPatterns("order:*"), afterPosition, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Single(result);
+        Assert.Equal("order-shipped", result.First().EventType.Id);
+    }
+
+    [Fact]
+    public async Task Append_WithDcbCheck_WildcardPattern_NoConflict_ShouldSucceed()
+    {
+        var backend = await CreateBackend();
+        var initial = await backend.Append(Tenant, [CreateEvent("order-placed", "order:123")], cancellationToken: TestContext.Current.CancellationToken);
+        var lastPosition = initial.Last().GlobalPosition;
+
+        // DCB check with wildcard: any order tag
+        var dcbQuery = DcbQuery.ByTagPatterns("order:*");
+        var result = await backend.Append(Tenant, [CreateEvent("order-confirmed", "order:456")], dcbQuery, lastPosition, TestContext.Current.CancellationToken);
+
+        Assert.Single(result);
+    }
+
+    [Fact]
+    public async Task Append_WithDcbCheck_WildcardPattern_WithConflict_ShouldThrow()
+    {
+        var backend = await CreateBackend();
+        var initial = await backend.Append(Tenant, [CreateEvent("order-placed", "order:123")], cancellationToken: TestContext.Current.CancellationToken);
+        var firstPosition = initial.First().GlobalPosition;
+
+        // Add a conflicting event with a different order ID
+        await backend.Append(Tenant, [CreateEvent("order-confirmed", "order:456")], cancellationToken: TestContext.Current.CancellationToken);
+
+        // DCB check with wildcard: should detect conflict on any order:* tag
+        var dcbQuery = DcbQuery.ByTagPatterns("order:*");
+
+        await Assert.ThrowsAsync<DcbConflictException>(() =>
+            backend.Append(Tenant, [CreateEvent("order-shipped", "order:789")], dcbQuery, firstPosition, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task Append_WithDcbCheck_WildcardPattern_DifferentConcept_ShouldNotConflict()
+    {
+        var backend = await CreateBackend();
+        await backend.Append(Tenant, [CreateEvent("order-placed", "order:123")], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.Append(Tenant, [CreateEvent("customer-updated", "customer:456")], cancellationToken: TestContext.Current.CancellationToken);
+
+        // DCB check only on customer wildcard, not order
+        var dcbQuery = DcbQuery.ByTagPatterns("customer:*");
+        var lastCustomerPosition = (await backend.Stream(Tenant, dcbQuery, cancellationToken: TestContext.Current.CancellationToken)).Last().GlobalPosition;
+
+        var result = await backend.Append(Tenant, [CreateEvent("customer-verified", "customer:789")], dcbQuery, lastCustomerPosition, TestContext.Current.CancellationToken);
+
+        Assert.Single(result);
+    }
+
+    #endregion
+
     #region Tenant Isolation Tests
 
     [Fact]

@@ -49,7 +49,7 @@ public sealed class InMemoryEventStoreBackend : IEventStoreBackend
             }
             else
             {
-                // Get positions matching types OR tags
+                // Get positions matching types OR tag patterns
                 var matchingPositions = new HashSet<long>();
 
                 foreach (var type in query.Types)
@@ -61,12 +61,27 @@ public sealed class InMemoryEventStoreBackend : IEventStoreBackend
                     }
                 }
 
-                foreach (var tag in query.Tags)
+                // Handle tag patterns (both exact and wildcard)
+                foreach (var pattern in query.TagPatterns)
                 {
-                    if (_tagIndex.TryGetValue((tenantId, tag.Value), out var positions))
+                    if (pattern.IsExact)
                     {
-                        foreach (var pos in positions.Where(p => p > afterPosition))
-                            matchingPositions.Add(pos);
+                        // Exact match
+                        if (_tagIndex.TryGetValue((tenantId, pattern.Value), out var positions))
+                        {
+                            foreach (var pos in positions.Where(p => p > afterPosition))
+                                matchingPositions.Add(pos);
+                        }
+                    }
+                    else
+                    {
+                        // Wildcard match: find all tags that start with the prefix
+                        var prefix = pattern.ConceptPrefix;
+                        foreach (var kvp in _tagIndex.Where(k => k.Key.TenantId == tenantId && k.Key.Tag.StartsWith(prefix, StringComparison.Ordinal)))
+                        {
+                            foreach (var pos in kvp.Value.Where(p => p > afterPosition))
+                                matchingPositions.Add(pos);
+                        }
                     }
                 }
 
@@ -217,15 +232,32 @@ public sealed class InMemoryEventStoreBackend : IEventStoreBackend
             }
         }
 
-        // Check tags (OR: any tag match is a conflict)
-        foreach (var tag in query.Tags)
+        // Check tag patterns (OR: any pattern match is a conflict)
+        foreach (var pattern in query.TagPatterns)
         {
-            if (_tagIndex.TryGetValue((tenantId, tag.Value), out var positions))
+            if (pattern.IsExact)
             {
-                var conflict = positions.FirstOrDefault(p => p > expectedPosition);
-                if (conflict > 0 && (conflictPos is null || conflict < conflictPos))
+                // Exact tag match
+                if (_tagIndex.TryGetValue((tenantId, pattern.Value), out var positions))
                 {
-                    conflictPos = conflict;
+                    var conflict = positions.FirstOrDefault(p => p > expectedPosition);
+                    if (conflict > 0 && (conflictPos is null || conflict < conflictPos))
+                    {
+                        conflictPos = conflict;
+                    }
+                }
+            }
+            else
+            {
+                // Wildcard pattern: check all tags with matching prefix
+                var prefix = pattern.ConceptPrefix;
+                foreach (var kvp in _tagIndex.Where(k => k.Key.TenantId == tenantId && k.Key.Tag.StartsWith(prefix, StringComparison.Ordinal)))
+                {
+                    var conflict = kvp.Value.FirstOrDefault(p => p > expectedPosition);
+                    if (conflict > 0 && (conflictPos is null || conflict < conflictPos))
+                    {
+                        conflictPos = conflict;
+                    }
                 }
             }
         }

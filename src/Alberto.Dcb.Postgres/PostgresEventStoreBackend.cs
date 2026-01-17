@@ -45,9 +45,23 @@ public sealed class PostgresEventStoreBackend : IEventStoreBackend
             cmd.Parameters.AddWithValue("p_types", query.Types.Select(t => t.Id).ToArray());
         }
 
-        if (query.Tags.Count > 0)
+        // Handle tag patterns (both exact and wildcards)
+        if (query.TagPatterns.Count > 0)
         {
-            cmd.Parameters.AddWithValue("p_tags", query.Tags.Select(t => t.Value).ToArray());
+            if (query.HasWildcardPatterns)
+            {
+                // New function with separate exact tags and prefixes
+                var exactTags = query.TagPatterns.Where(p => p.IsExact).Select(p => p.Value).ToArray();
+                var prefixes = query.TagPatterns.Where(p => p.IsWildcard).Select(p => p.ConceptPrefix).ToArray();
+
+                cmd.Parameters.AddWithValue("p_exact_tags", exactTags.Length > 0 ? exactTags : DBNull.Value);
+                cmd.Parameters.AddWithValue("p_tag_prefixes", prefixes.Length > 0 ? prefixes : DBNull.Value);
+            }
+            else
+            {
+                // Legacy function with just exact tags
+                cmd.Parameters.AddWithValue("p_tags", query.Tags.Select(t => t.Value).ToArray());
+            }
         }
 
         return await ReadEventsAsync(cmd, cancellationToken);
@@ -93,10 +107,13 @@ public sealed class PostgresEventStoreBackend : IEventStoreBackend
         long? expectedPosition,
         CancellationToken cancellationToken)
     {
-        await using var cmd = new NpgsqlCommand(
-            $"SELECT * FROM {_schema.Function("append_events")}(@p_tenant_id, @p_events, @p_dcb_types, @p_dcb_tags, @p_expected_position)",
-            connection,
-            transaction);
+        var useWildcardFunction = dcbQuery?.HasWildcardPatterns == true;
+        var functionName = useWildcardFunction ? "append_events_v2" : "append_events";
+        var sql = useWildcardFunction
+            ? $"SELECT * FROM {_schema.Function(functionName)}(@p_tenant_id, @p_events, @p_dcb_types, @p_dcb_exact_tags, @p_dcb_tag_prefixes, @p_expected_position)"
+            : $"SELECT * FROM {_schema.Function(functionName)}(@p_tenant_id, @p_events, @p_dcb_types, @p_dcb_tags, @p_expected_position)";
+
+        await using var cmd = new NpgsqlCommand(sql, connection, transaction);
 
         var eventsJson = BuildEventsJson(eventsList);
 
@@ -107,14 +124,39 @@ public sealed class PostgresEventStoreBackend : IEventStoreBackend
         {
             cmd.Parameters.AddWithValue("p_dcb_types",
                 dcbQuery.Types.Count > 0 ? dcbQuery.Types.Select(t => t.Id).ToArray() : DBNull.Value);
-            cmd.Parameters.AddWithValue("p_dcb_tags",
-                dcbQuery.Tags.Count > 0 ? dcbQuery.Tags.Select(t => t.Value).ToArray() : DBNull.Value);
+
+            if (useWildcardFunction)
+            {
+                // v2 function: separate exact tags and prefixes
+                var exactTags = dcbQuery.TagPatterns.Where(p => p.IsExact).Select(p => p.Value).ToArray();
+                var prefixes = dcbQuery.TagPatterns.Where(p => p.IsWildcard).Select(p => p.ConceptPrefix).ToArray();
+
+                cmd.Parameters.AddWithValue("p_dcb_exact_tags", exactTags.Length > 0 ? exactTags : DBNull.Value);
+                cmd.Parameters.AddWithValue("p_dcb_tag_prefixes", prefixes.Length > 0 ? prefixes : DBNull.Value);
+            }
+            else
+            {
+                // Legacy function: just exact tags
+                cmd.Parameters.AddWithValue("p_dcb_tags",
+                    dcbQuery.Tags.Count > 0 ? dcbQuery.Tags.Select(t => t.Value).ToArray() : DBNull.Value);
+            }
+
             cmd.Parameters.AddWithValue("p_expected_position", expectedPosition.Value);
         }
         else
         {
             cmd.Parameters.AddWithValue("p_dcb_types", DBNull.Value);
-            cmd.Parameters.AddWithValue("p_dcb_tags", DBNull.Value);
+
+            if (useWildcardFunction)
+            {
+                cmd.Parameters.AddWithValue("p_dcb_exact_tags", DBNull.Value);
+                cmd.Parameters.AddWithValue("p_dcb_tag_prefixes", DBNull.Value);
+            }
+            else
+            {
+                cmd.Parameters.AddWithValue("p_dcb_tags", DBNull.Value);
+            }
+
             cmd.Parameters.AddWithValue("p_expected_position", DBNull.Value);
         }
 
@@ -174,12 +216,25 @@ public sealed class PostgresEventStoreBackend : IEventStoreBackend
             return $"SELECT * FROM {_schema.Function("read_by_types")}(@p_tenant_id, @p_types, @p_after_position, @p_limit)";
         }
 
+        // Use new wildcard-aware functions when patterns contain wildcards
+        if (query.HasWildcardPatterns)
+        {
+            if (query.HasTagsOnly)
+            {
+                return $"SELECT * FROM {_schema.Function("read_by_tag_patterns")}(@p_tenant_id, @p_exact_tags, @p_tag_prefixes, @p_after_position, @p_limit)";
+            }
+
+            // Has both types and tag patterns with wildcards
+            return $"SELECT * FROM {_schema.Function("read_by_types_or_tag_patterns")}(@p_tenant_id, @p_types, @p_exact_tags, @p_tag_prefixes, @p_after_position, @p_limit)";
+        }
+
+        // Legacy functions for exact matches only
         if (query.HasTagsOnly)
         {
             return $"SELECT * FROM {_schema.Function("read_by_tags")}(@p_tenant_id, @p_tags, @p_after_position, @p_limit)";
         }
 
-        // Has both types and tags
+        // Has both types and exact tags
         return $"SELECT * FROM {_schema.Function("read_by_types_or_tags")}(@p_tenant_id, @p_types, @p_tags, @p_after_position, @p_limit)";
     }
 
