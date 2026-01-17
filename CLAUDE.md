@@ -67,6 +67,7 @@ npm run test:load               # Full load test (~14min)
 
 ### Key Patterns
 - **Event Sourcing with DCB**: Append-only event log with dynamic consistency boundaries
+- **Async Processing**: PollingConsumer routes events to projections/reactors. See [docs/architecture/async-processing.md](docs/architecture/async-processing.md)
 - **Multi-Tenant**: X-Tenant-Id header propagation, tenant-isolated queries
 - **GraphQL**: HotChocolate 15.x with real-time subscriptions via WebSockets
 - **Angular Signals**: Components use `signal()`, `computed()`, `takeUntilDestroyed()`

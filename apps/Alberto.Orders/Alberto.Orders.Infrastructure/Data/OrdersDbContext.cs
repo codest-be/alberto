@@ -81,6 +81,18 @@ public class OrdersDbContext : DbContext
                 .HasDatabaseName("ix_order_summaries_tenant_orderid")
                 .IsUnique();
 
+            // Idempotency: track last processed event position
+            entity.Property(e => e.LastProcessedPosition)
+                .HasDefaultValue(0L);
+
+            // Optimistic concurrency: use PostgreSQL xmin system column
+            // xmin is a system column - EF reads it via RETURNING clause, not INSERT
+            entity.Property(e => e.Version)
+                .HasColumnName("xmin")
+                .HasColumnType("xid")
+                .ValueGeneratedOnAddOrUpdate()
+                .IsConcurrencyToken();
+
             // Line items stored as JSON column
             entity.OwnsMany(e => e.LineItems, li => li.ToJson());
         });

@@ -4,10 +4,18 @@
  */
 
 // Predefined tenant IDs - configure these for your environment
+// Using 10 tenants to stress test multi-tenant scenarios and tenant cache eviction (Fix 4)
 const DEFAULT_TENANT_IDS = [
   'tenant-loadtest-001',
   'tenant-loadtest-002',
   'tenant-loadtest-003',
+  'tenant-loadtest-004',
+  'tenant-loadtest-005',
+  'tenant-loadtest-006',
+  'tenant-loadtest-007',
+  'tenant-loadtest-008',
+  'tenant-loadtest-009',
+  'tenant-loadtest-010',
 ];
 
 // Allow override via environment variable (comma-separated)

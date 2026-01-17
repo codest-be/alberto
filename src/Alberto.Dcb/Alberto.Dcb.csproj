@@ -23,6 +23,7 @@
         <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions"/>
         <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions"/>
         <PackageReference Include="Microsoft.Extensions.Logging.Abstractions"/>
+        <PackageReference Include="OpenTelemetry.Api"/>
         <PackageReference Include="System.Text.Json"/>
     </ItemGroup>
 </Project>

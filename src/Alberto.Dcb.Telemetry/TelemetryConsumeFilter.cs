@@ -60,9 +60,6 @@ public sealed class TelemetryConsumeFilter : IConsumeFilter
             activity?.SetTag("events.last_position", events[^1].GlobalPosition);
         }
 
-        AlbertoTelemetry.BatchSize.Record(events.Count,
-            new KeyValuePair<string, object?>("processor", context.ProcessorId));
-
         var sw = Stopwatch.StartNew();
         try
         {

@@ -1,4 +1,5 @@
 using Alberto.Dcb.Subscriptions.Pipeline;
+using Alberto.Dcb.Telemetry;
 
 namespace Alberto.Dcb.Subscriptions;
 
@@ -141,6 +142,14 @@ public sealed class PollingConsumer : IEventConsumer
     public async ValueTask DisposeAsync()
     {
         await StopAsync();
+
+        foreach (var processor in _processors)
+        {
+            if (processor is IAsyncDisposable disposable)
+            {
+                await disposable.DisposeAsync();
+            }
+        }
     }
 
     private async Task PollLoopAsync(CancellationToken ct)
@@ -236,6 +245,12 @@ public sealed class PollingConsumer : IEventConsumer
 
                 await ProcessSingleEventAsync(processor, evt, ct);
             }
+
+            // Flush batched changes after processing all events
+            if (processor is IFlushable flushable)
+            {
+                await flushable.FlushAsync(ct);
+            }
         }
 
         // Execute through pipeline if available
@@ -255,6 +270,8 @@ public sealed class PollingConsumer : IEventConsumer
         CancellationToken ct)
     {
         var attempts = 0;
+        var concurrencyRetries = 0;
+        const int maxConcurrencyRetries = 5;
 
         while (true)
         {
@@ -271,6 +288,21 @@ public sealed class PollingConsumer : IEventConsumer
             {
                 throw; // Propagate cancellation
             }
+            catch (ConcurrencyConflictException)
+            {
+                // Optimistic concurrency conflict - retry immediately without counting against retry limit
+                concurrencyRetries++;
+                if (concurrencyRetries >= maxConcurrencyRetries)
+                {
+                    // Too many concurrency conflicts, fall through to normal error handling
+                    throw;
+                }
+
+                // Brief delay to allow other transaction to complete
+                await Task.Delay(TimeSpan.FromMilliseconds(10 * concurrencyRetries), ct);
+                attempts--; // Don't count this against retry limit
+                continue;
+            }
             catch (Exception ex)
             {
                 var decision = processor.HandleError(evt, ex, attempts, _errorPolicy);
@@ -278,7 +310,14 @@ public sealed class PollingConsumer : IEventConsumer
                 switch (decision)
                 {
                     case ErrorHandlingDecision.Retry:
-                        await Task.Delay(_errorPolicy.RetryDelay, ct);
+                        // Record retry metric
+                        AlbertoMetrics.Retries.Add(1,
+                            new KeyValuePair<string, object?>("processor", processor.ProcessorId),
+                            new KeyValuePair<string, object?>("module", _moduleKey));
+
+                        // Use exponential backoff for retry delay
+                        var delay = _errorPolicy.CalculateDelay(attempts);
+                        await Task.Delay(delay, ct);
                         continue;
 
                     case ErrorHandlingDecision.DeadLetter:
@@ -305,6 +344,11 @@ public sealed class PollingConsumer : IEventConsumer
         int attempts,
         CancellationToken ct)
     {
+        // Record dead letter counter
+        AlbertoMetrics.DeadLetters.Add(1,
+            new KeyValuePair<string, object?>("processor", processorId),
+            new KeyValuePair<string, object?>("module", _moduleKey));
+
         if (_deadLetterStore is null)
             return;
 
@@ -320,22 +364,6 @@ public sealed class PollingConsumer : IEventConsumer
             FailedAt: DateTimeOffset.UtcNow);
 
         await _deadLetterStore.StoreAsync(entry, ct);
-    }
-
-    private async Task<Dictionary<string, long>> GetProcessorCheckpointsAsync(CancellationToken ct)
-    {
-        var checkpoints = new Dictionary<string, long>();
-
-        foreach (var processor in _processors)
-        {
-            if (!processor.IsActive)
-                continue;
-
-            var position = await _checkpointStore.GetAsync(processor.ProcessorId, ct) ?? 0;
-            checkpoints[processor.ProcessorId] = position;
-        }
-
-        return checkpoints;
     }
 
     /// <summary>
@@ -359,6 +387,9 @@ public sealed class PollingConsumer : IEventConsumer
 
             var position = await _checkpointStore.GetAsync(processor.ProcessorId, ct) ?? 0;
             var lag = globalPosition - position;
+
+            // Record processor lag metric
+            AlbertoMetrics.RecordProcessorLag(processor.ProcessorId, _moduleKey, lag);
 
             if (lag > _rebuildThreshold)
             {
@@ -416,6 +447,12 @@ public sealed class PollingConsumer : IEventConsumer
                         break;
 
                     await ProcessSingleEventAsync(processor, evt, ct);
+                }
+
+                // Flush after processing rebuild batch
+                if (processor is IFlushable flushable)
+                {
+                    await flushable.FlushAsync(ct);
                 }
             }
         }

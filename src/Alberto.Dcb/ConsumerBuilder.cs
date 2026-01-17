@@ -212,7 +212,10 @@ public sealed class ErrorPolicyBuilder
 {
     private int _maxRetries = 3;
     private TimeSpan _retryDelay = TimeSpan.FromSeconds(1);
+    private double _backoffMultiplier = 2.0;
+    private TimeSpan _maxRetryDelay = TimeSpan.FromSeconds(30);
     private bool _deadLetterOnMaxRetries = true;
+    private IErrorClassifier _errorClassifier = DefaultErrorClassifier.Instance;
 
     /// <summary>
     /// Sets the maximum number of retry attempts.
@@ -224,11 +227,31 @@ public sealed class ErrorPolicyBuilder
     }
 
     /// <summary>
-    /// Sets the delay between retry attempts.
+    /// Sets the base delay between retry attempts (first retry).
     /// </summary>
     public ErrorPolicyBuilder RetryDelay(TimeSpan delay)
     {
         _retryDelay = delay;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the multiplier for exponential backoff between retries.
+    /// Set to 1.0 for constant delay. Default is 2.0.
+    /// </summary>
+    public ErrorPolicyBuilder BackoffMultiplier(double multiplier)
+    {
+        _backoffMultiplier = multiplier;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the maximum delay between retries (cap for exponential backoff).
+    /// Default is 30 seconds.
+    /// </summary>
+    public ErrorPolicyBuilder MaxRetryDelay(TimeSpan maxDelay)
+    {
+        _maxRetryDelay = maxDelay;
         return this;
     }
 
@@ -241,10 +264,31 @@ public sealed class ErrorPolicyBuilder
         return this;
     }
 
+    /// <summary>
+    /// Sets a custom error classifier for determining transient vs permanent errors.
+    /// </summary>
+    public ErrorPolicyBuilder UseErrorClassifier(IErrorClassifier classifier)
+    {
+        _errorClassifier = classifier ?? throw new ArgumentNullException(nameof(classifier));
+        return this;
+    }
+
+    /// <summary>
+    /// Uses the default error classifier.
+    /// </summary>
+    public ErrorPolicyBuilder UseDefaultErrorClassifier()
+    {
+        _errorClassifier = DefaultErrorClassifier.Instance;
+        return this;
+    }
+
     internal ErrorPolicy Build() => new()
     {
         MaxRetries = _maxRetries,
         RetryDelay = _retryDelay,
-        DeadLetterOnMaxRetries = _deadLetterOnMaxRetries
+        BackoffMultiplier = _backoffMultiplier,
+        MaxRetryDelay = _maxRetryDelay,
+        DeadLetterOnMaxRetries = _deadLetterOnMaxRetries,
+        ErrorClassifier = _errorClassifier
     };
 }

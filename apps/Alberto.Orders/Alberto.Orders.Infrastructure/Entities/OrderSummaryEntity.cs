@@ -1,4 +1,4 @@
-using Alberto.Dcb.EntityFramework;
+using Alberto.Dcb.Subscriptions;
 using Alberto.Orders.Core.Order;
 
 namespace Alberto.Orders.Infrastructure.Entities;
@@ -87,6 +87,16 @@ public sealed class OrderSummaryEntity : IProjectionEntity
     /// When this entity was last updated.
     /// </summary>
     public DateTimeOffset UpdatedAt { get; set; }
+
+    /// <summary>
+    /// Global position of the last event processed for this entity (idempotency).
+    /// </summary>
+    public long LastProcessedPosition { get; set; }
+
+    /// <summary>
+    /// Row version for optimistic concurrency (mapped to PostgreSQL xmin).
+    /// </summary>
+    public uint Version { get; set; }
 
     /// <summary>
     /// Line items for this order (stored as JSON).

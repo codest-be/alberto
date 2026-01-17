@@ -1,5 +1,6 @@
 using System.Data;
 using Alberto.Dcb.Subscriptions;
+using Alberto.Dcb.Telemetry;
 using Microsoft.EntityFrameworkCore;
 
 namespace Alberto.Dcb.EntityFramework;
@@ -7,15 +8,19 @@ namespace Alberto.Dcb.EntityFramework;
 /// <summary>
 /// Entity Framework implementation of <see cref="IStateStore{TState}"/>.
 /// Stores entities with proper relational columns instead of JSONB.
+/// Caches the DbContext between LoadManyAsync and ApplyChangesAsync calls
+/// to benefit from change tracking and avoid redundant loads.
 /// </summary>
 /// <typeparam name="TEntity">The entity type implementing <see cref="IProjectionEntity"/>.</typeparam>
 /// <typeparam name="TDbContext">The DbContext type containing the entity DbSet.</typeparam>
-public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>
+public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IAsyncDisposable
     where TEntity : class, IProjectionEntity, new()
     where TDbContext : DbContext
 {
     private readonly IDbContextFactory<TDbContext> _contextFactory;
     private readonly string _tenantId;
+    private TDbContext? _context;
+    private readonly Dictionary<string, TEntity> _loadedEntities = new();
 
     /// <summary>
     /// Creates a new EF state store.
@@ -38,19 +43,26 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>
         if (ids.Count == 0)
             return new Dictionary<string, TEntity>();
 
-        await using var context = await _contextFactory.CreateDbContextAsync(ct);
+        // Reuse or create context
+        _context ??= await _contextFactory.CreateDbContextAsync(ct);
 
         if (transaction != null)
         {
-            await UseTransactionAsync(context, transaction, ct);
+            await UseTransactionAsync(_context, transaction, ct);
         }
 
         // Load with tracking so we can update in ApplyChangesAsync
-        var entities = await context.Set<TEntity>()
+        var entities = await _context.Set<TEntity>()
             .Where(e => e.TenantId == _tenantId && ids.Contains(e.DocumentId))
             .ToListAsync(ct);
 
-        return entities.ToDictionary(e => e.DocumentId);
+        var result = entities.ToDictionary(e => e.DocumentId);
+
+        // Cache for ApplyChangesAsync
+        foreach (var (docId, entity) in result)
+            _loadedEntities[docId] = entity;
+
+        return result;
     }
 
     /// <inheritdoc/>
@@ -63,56 +75,75 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>
         if (upserts.Count == 0 && deletes.Count == 0)
             return;
 
-        await using var context = await _contextFactory.CreateDbContextAsync(ct);
+        _context ??= await _contextFactory.CreateDbContextAsync(ct);
 
         if (transaction != null)
         {
-            await UseTransactionAsync(context, transaction, ct);
+            await UseTransactionAsync(_context, transaction, ct);
         }
 
-        // Load existing entities with tracking
-        var allDocIds = upserts.Keys.Concat(deletes).Distinct().ToList();
-        var existingEntities = await context.Set<TEntity>()
-            .Where(e => e.TenantId == _tenantId && allDocIds.Contains(e.DocumentId))
-            .ToDictionaryAsync(e => e.DocumentId, ct);
-
-        // Handle deletes
+        // Handle deletes - use cached tracked entities
         foreach (var docId in deletes)
         {
-            if (existingEntities.TryGetValue(docId, out var existing))
+            if (_loadedEntities.TryGetValue(docId, out var existing))
             {
-                context.Set<TEntity>().Remove(existing);
+                _context.Set<TEntity>().Remove(existing);
+                _loadedEntities.Remove(docId);
             }
         }
 
-        // Handle upserts
+        // Handle upserts - use cached tracked entities
         foreach (var (docId, newEntity) in upserts)
         {
             newEntity.TenantId = _tenantId;
             newEntity.DocumentId = docId;
             newEntity.UpdatedAt = DateTimeOffset.UtcNow;
 
-            if (existingEntities.TryGetValue(docId, out var existing))
+            if (_loadedEntities.TryGetValue(docId, out var existing))
             {
                 // Update all properties including owned types (JSON columns)
-                context.Entry(existing).CurrentValues.SetValues(newEntity);
+                _context.Entry(existing).CurrentValues.SetValues(newEntity);
 
                 // For owned collections (JSON), we need to replace the entire collection
-                foreach (var ownedNav in context.Entry(existing).Navigations
+                foreach (var ownedNav in _context.Entry(existing).Navigations
                     .Where(n => n.Metadata.TargetEntityType.IsOwned()))
                 {
-                    var newValue = context.Entry(newEntity).Navigation(ownedNav.Metadata.Name).CurrentValue;
+                    var newValue = _context.Entry(newEntity).Navigation(ownedNav.Metadata.Name).CurrentValue;
                     ownedNav.CurrentValue = newValue;
                 }
             }
             else
             {
                 // Insert new entity
-                context.Set<TEntity>().Add(newEntity);
+                _context.Set<TEntity>().Add(newEntity);
             }
         }
 
-        await context.SaveChangesAsync(ct);
+        try
+        {
+            await _context.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            // Record concurrency conflict metric
+            AlbertoMetrics.ConcurrencyConflicts.Add(1);
+
+            // Find the document ID that caused the conflict
+            var conflictedEntry = ex.Entries.FirstOrDefault();
+            var conflictedDocId = (conflictedEntry?.Entity as IProjectionEntity)?.DocumentId ?? "unknown";
+
+            // Reset for retry
+            _loadedEntities.Clear();
+            await _context.DisposeAsync();
+            _context = null;
+
+            throw new ConcurrencyConflictException(conflictedDocId, ex);
+        }
+
+        // Reset for next event
+        _loadedEntities.Clear();
+        await _context.DisposeAsync();
+        _context = null;
     }
 
     /// <inheritdoc/>
@@ -141,5 +172,16 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>
                 await context.Database.UseTransactionAsync(dbTransaction, ct);
             }
         }
+    }
+
+    /// <inheritdoc/>
+    public async ValueTask DisposeAsync()
+    {
+        if (_context != null)
+        {
+            await _context.DisposeAsync();
+            _context = null;
+        }
+        _loadedEntities.Clear();
     }
 }

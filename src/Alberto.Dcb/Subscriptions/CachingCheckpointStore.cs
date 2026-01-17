@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Microsoft.Extensions.Logging;
 
 namespace Alberto.Dcb.Subscriptions;
 
@@ -11,6 +12,7 @@ public sealed class CachingCheckpointStore : ICheckpointStore, IAsyncDisposable
 {
     private readonly ICheckpointStore _inner;
     private readonly TimeSpan _flushInterval;
+    private readonly ILogger<CachingCheckpointStore>? _logger;
     private readonly ConcurrentDictionary<string, long?> _cache = new();
     private readonly ConcurrentDictionary<string, long> _dirty = new();
     private readonly Timer _flushTimer;
@@ -22,10 +24,15 @@ public sealed class CachingCheckpointStore : ICheckpointStore, IAsyncDisposable
     /// </summary>
     /// <param name="inner">The underlying checkpoint store.</param>
     /// <param name="flushInterval">How often to flush dirty checkpoints to the database. Default is 1 second.</param>
-    public CachingCheckpointStore(ICheckpointStore inner, TimeSpan? flushInterval = null)
+    /// <param name="logger">Optional logger for error reporting.</param>
+    public CachingCheckpointStore(
+        ICheckpointStore inner,
+        TimeSpan? flushInterval = null,
+        ILogger<CachingCheckpointStore>? logger = null)
     {
         _inner = inner ?? throw new ArgumentNullException(nameof(inner));
         _flushInterval = flushInterval ?? TimeSpan.FromSeconds(1);
+        _logger = logger;
         _flushTimer = new Timer(OnFlushTimer, null, _flushInterval, _flushInterval);
     }
 
@@ -73,9 +80,9 @@ public sealed class CachingCheckpointStore : ICheckpointStore, IAsyncDisposable
         {
             await FlushAsync(CancellationToken.None);
         }
-        catch
+        catch (Exception ex)
         {
-            // Log but don't throw from timer callback
+            _logger?.LogError(ex, "Failed to flush checkpoints to underlying store");
         }
     }
 
@@ -89,17 +96,14 @@ public sealed class CachingCheckpointStore : ICheckpointStore, IAsyncDisposable
         await _flushLock.WaitAsync(ct);
         try
         {
-            // Snapshot and clear dirty set
             var toFlush = _dirty.ToArray();
-            foreach (var kvp in toFlush)
-            {
-                _dirty.TryRemove(kvp.Key, out _);
-            }
 
-            // Write all dirty checkpoints
+            // Write all dirty checkpoints FIRST, then remove only after success
             foreach (var (processorId, position) in toFlush)
             {
                 await _inner.SaveAsync(processorId, position, ct);
+                // Only remove AFTER successful write
+                _dirty.TryRemove(processorId, out _);
             }
         }
         finally

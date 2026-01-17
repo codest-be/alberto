@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using System.Threading.Channels;
 using Alberto.Dcb.Admin;
 using Alberto.Dcb.Admin.Api.Models;
@@ -15,13 +16,23 @@ namespace Alberto.Dcb.Postgres.Admin;
 /// Background service that listens for PostgreSQL NOTIFY events and publishes admin updates.
 /// Uses debouncing to batch rapid notifications and reduce database queries.
 /// </summary>
-public sealed class PostgresAdminListener : BackgroundService
+public sealed partial class PostgresAdminListener : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<PostgresAdminListener> _logger;
     private readonly AdminModuleRegistry _registry;
     private readonly IAdminPublisher _publisher;
     private readonly TimeSpan _debounceInterval = TimeSpan.FromMilliseconds(100);
+
+    [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9_]*$")]
+    private static partial Regex ValidSchemaPattern();
+
+    private static string ValidateSchemaName(string schema)
+    {
+        if (!ValidSchemaPattern().IsMatch(schema))
+            throw new ArgumentException($"Invalid schema name: {schema}. Must be alphanumeric with underscores.", nameof(schema));
+        return schema;
+    }
 
     public PostgresAdminListener(
         IServiceScopeFactory scopeFactory,
@@ -82,9 +93,10 @@ public sealed class PostgresAdminListener : BackgroundService
     {
         await using var connection = await dataSource.OpenConnectionAsync(ct);
 
-        var eventsChannel = $"{schema}_events";
-        var checkpointsChannel = $"{schema}_checkpoints";
-        var deadLettersChannel = $"{schema}_dead_letters";
+        var safeSchema = ValidateSchemaName(schema);
+        var eventsChannel = $"{safeSchema}_events";
+        var checkpointsChannel = $"{safeSchema}_checkpoints";
+        var deadLettersChannel = $"{safeSchema}_dead_letters";
 
         await using var listenEvents = new NpgsqlCommand($"LISTEN {eventsChannel}", connection);
         await using var listenCheckpoints = new NpgsqlCommand($"LISTEN {checkpointsChannel}", connection);
@@ -98,8 +110,14 @@ public sealed class PostgresAdminListener : BackgroundService
             "PostgresAdminListener connected for module {ModuleKey}, listening on channels: {Events}, {Checkpoints}, {DeadLetters}",
             moduleKey, eventsChannel, checkpointsChannel, deadLettersChannel);
 
-        // Use a channel for debouncing notifications
-        var notificationChannel = Channel.CreateUnbounded<(string Channel, string Payload)>();
+        // Use a bounded channel for debouncing notifications
+        var options = new BoundedChannelOptions(1000)
+        {
+            FullMode = BoundedChannelFullMode.DropOldest,
+            SingleReader = true,
+            SingleWriter = false
+        };
+        var notificationChannel = Channel.CreateBounded<(string Channel, string Payload)>(options);
 
         connection.Notification += (_, args) =>
         {

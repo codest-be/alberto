@@ -9,6 +9,8 @@ internal sealed class AsyncReactor<TReactor> : IEventProcessor
 {
     private readonly TReactor _reactor;
     private readonly ReactorDispatcher _dispatcher;
+    private volatile bool _isActive = true;
+    private volatile bool _isRebuilding;
 
     public AsyncReactor(TReactor reactor, string processorId)
     {
@@ -28,10 +30,18 @@ internal sealed class AsyncReactor<TReactor> : IEventProcessor
     public string ProcessorId { get; }
 
     /// <inheritdoc/>
-    public bool IsActive { get; set; } = true;
+    public bool IsActive
+    {
+        get => _isActive;
+        set => _isActive = value;
+    }
 
     /// <inheritdoc/>
-    public bool IsRebuilding { get; set; }
+    public bool IsRebuilding
+    {
+        get => _isRebuilding;
+        set => _isRebuilding = value;
+    }
 
     /// <inheritdoc/>
     public IReadOnlySet<string> HandledEventTypes => _dispatcher.HandledEventTypes;

@@ -40,7 +40,7 @@ public static class K6ResourceBuilderExtensions
                 State = new ResourceStateSnapshot("Idle", KnownResourceStateStyles.Info),
                 Properties = [
                     new("Working Directory", workingDirectory),
-                    new("Test Profiles", "smoke, load, stress, spike")
+                    new("Test Profiles", "smoke, load, stress, spike, consistency")
                 ]
             })
             .WithCommand(
@@ -66,6 +66,12 @@ public static class K6ResourceBuilderExtensions
                 displayName: "Spike Test",
                 executeCommand: context => RunK6TestAsync(resource, "spike", context),
                 iconName: "Flash",
+                iconVariant: IconVariant.Filled)
+            .WithCommand(
+                name: "run-consistency",
+                displayName: "Consistency Test",
+                executeCommand: context => RunK6TestAsync(resource, "consistency", context),
+                iconName: "Checkmark",
                 iconVariant: IconVariant.Filled);
     }
 
@@ -110,6 +116,7 @@ public static class K6ResourceBuilderExtensions
                 "load" => "dist/load.test.js",
                 "stress" => "dist/stress.test.js",
                 "spike" => "dist/spike.test.js",
+                "consistency" => "dist/consistency.test.js",
                 _ => "dist/smoke.test.js"
             };
 

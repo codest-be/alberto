@@ -4,109 +4,67 @@ using System.Diagnostics.Metrics;
 namespace Alberto.Dcb.Telemetry;
 
 /// <summary>
-/// Centralized telemetry instrumentation for Alberto.Dcb.
-/// Provides ActivitySource for tracing and Meter for metrics.
+/// Alias for backward compatibility. Use <see cref="AlbertoMetrics"/> directly.
 /// </summary>
+/// <remarks>
+/// This class forwards all members to <see cref="AlbertoMetrics"/> in Alberto.Dcb.
+/// </remarks>
 public static class AlbertoTelemetry
 {
-    /// <summary>
-    /// The name used for all Alberto telemetry.
-    /// </summary>
-    public const string Name = "Alberto.Dcb";
+    /// <inheritdoc cref="AlbertoMetrics.Name"/>
+    public const string Name = AlbertoMetrics.Name;
 
-    /// <summary>
-    /// The version of the telemetry instrumentation.
-    /// </summary>
-    public const string Version = "1.0.0";
+    /// <inheritdoc cref="AlbertoMetrics.Version"/>
+    public const string Version = AlbertoMetrics.Version;
 
-    /// <summary>
-    /// ActivitySource for distributed tracing.
-    /// </summary>
-    public static readonly ActivitySource Source = new(Name, Version);
+    /// <inheritdoc cref="AlbertoMetrics.Source"/>
+    public static ActivitySource Source => AlbertoMetrics.Source;
 
-    /// <summary>
-    /// Meter for metrics collection.
-    /// </summary>
-    public static readonly Meter Meter = new(Name, Version);
+    /// <inheritdoc cref="AlbertoMetrics.Meter"/>
+    public static Meter Meter => AlbertoMetrics.Meter;
 
     #region Counters
 
-    /// <summary>
-    /// Counter for events successfully appended to the store.
-    /// </summary>
-    public static readonly Counter<long> EventsAppended =
-        Meter.CreateCounter<long>("alberto.events.appended", "events", "Number of events appended to the store");
+    /// <inheritdoc cref="AlbertoMetrics.EventsAppended"/>
+    public static Counter<long> EventsAppended => AlbertoMetrics.EventsAppended;
 
-    /// <summary>
-    /// Counter for events successfully processed by consumers.
-    /// </summary>
-    public static readonly Counter<long> EventsProcessed =
-        Meter.CreateCounter<long>("alberto.events.processed", "events", "Number of events processed by consumers");
+    /// <inheritdoc cref="AlbertoMetrics.EventsProcessed"/>
+    public static Counter<long> EventsProcessed => AlbertoMetrics.EventsProcessed;
 
-    /// <summary>
-    /// Counter for event processing errors.
-    /// </summary>
-    public static readonly Counter<long> ProcessingErrors =
-        Meter.CreateCounter<long>("alberto.processing.errors", "errors", "Number of event processing errors");
+    /// <inheritdoc cref="AlbertoMetrics.ProcessingErrors"/>
+    public static Counter<long> ProcessingErrors => AlbertoMetrics.ProcessingErrors;
 
-    /// <summary>
-    /// Counter for events moved to dead letter.
-    /// </summary>
-    public static readonly Counter<long> DeadLetters =
-        Meter.CreateCounter<long>("alberto.dead_letters", "events", "Number of events moved to dead letter");
+    /// <inheritdoc cref="AlbertoMetrics.DeadLetters"/>
+    public static Counter<long> DeadLetters => AlbertoMetrics.DeadLetters;
 
-    /// <summary>
-    /// Counter for retry attempts.
-    /// </summary>
-    public static readonly Counter<long> Retries =
-        Meter.CreateCounter<long>("alberto.retries", "attempts", "Number of retry attempts");
+    /// <inheritdoc cref="AlbertoMetrics.Retries"/>
+    public static Counter<long> Retries => AlbertoMetrics.Retries;
 
-    /// <summary>
-    /// Counter for optimistic concurrency conflicts.
-    /// </summary>
-    public static readonly Counter<long> ConcurrencyConflicts =
-        Meter.CreateCounter<long>("alberto.concurrency.conflicts", "conflicts", "Number of optimistic concurrency conflicts");
+    /// <inheritdoc cref="AlbertoMetrics.ConcurrencyConflicts"/>
+    public static Counter<long> ConcurrencyConflicts => AlbertoMetrics.ConcurrencyConflicts;
 
     #endregion
 
     #region Histograms
 
-    /// <summary>
-    /// Histogram for event append duration.
-    /// </summary>
-    public static readonly Histogram<double> AppendDuration =
-        Meter.CreateHistogram<double>("alberto.append.duration", "ms", "Duration of event append operations");
+    /// <inheritdoc cref="AlbertoMetrics.AppendDuration"/>
+    public static Histogram<double> AppendDuration => AlbertoMetrics.AppendDuration;
 
-    /// <summary>
-    /// Histogram for event processing duration.
-    /// </summary>
-    public static readonly Histogram<double> ProcessingDuration =
-        Meter.CreateHistogram<double>("alberto.processing.duration", "ms", "Duration of event processing operations");
-
-    /// <summary>
-    /// Histogram for batch sizes.
-    /// </summary>
-    public static readonly Histogram<int> BatchSize =
-        Meter.CreateHistogram<int>("alberto.batch.size", "events", "Size of event batches");
+    /// <inheritdoc cref="AlbertoMetrics.ProcessingDuration"/>
+    public static Histogram<double> ProcessingDuration => AlbertoMetrics.ProcessingDuration;
 
     #endregion
 
     #region Activity Names
 
-    /// <summary>
-    /// Activity name for append operations.
-    /// </summary>
-    public const string AppendActivityName = "Alberto.Append";
+    /// <inheritdoc cref="AlbertoMetrics.AppendActivityName"/>
+    public const string AppendActivityName = AlbertoMetrics.AppendActivityName;
 
-    /// <summary>
-    /// Activity name for consume operations.
-    /// </summary>
-    public const string ConsumeActivityName = "Alberto.Consume";
+    /// <inheritdoc cref="AlbertoMetrics.ConsumeActivityName"/>
+    public const string ConsumeActivityName = AlbertoMetrics.ConsumeActivityName;
 
-    /// <summary>
-    /// Activity name for process operations.
-    /// </summary>
-    public const string ProcessActivityName = "Alberto.Process";
+    /// <inheritdoc cref="AlbertoMetrics.ProcessActivityName"/>
+    public const string ProcessActivityName = AlbertoMetrics.ProcessActivityName;
 
     #endregion
 }

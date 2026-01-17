@@ -24,6 +24,13 @@ export const getOrdersOverviewDuration = new Trend('get_orders_overview_duration
 export const activeOrders = new Gauge('active_orders');
 
 /**
+ * Projection consistency metrics.
+ * Used to verify async processing and IFlushable implementation.
+ */
+export const projectionLatency = new Trend('projection_latency_ms', true);
+export const projectionConsistencyFailures = new Counter('projection_consistency_failures');
+
+/**
  * Record a GraphQL operation result.
  */
 export function recordOperation(success: boolean, duration: number, operationType: string): void {

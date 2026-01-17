@@ -7,6 +7,7 @@ module.exports = {
     'load.test': './src/tests/load.test.ts',
     'stress.test': './src/tests/stress.test.ts',
     'spike.test': './src/tests/spike.test.ts',
+    'consistency.test': './src/tests/consistency.test.ts',
   },
   output: {
     path: path.resolve(__dirname, 'dist'),

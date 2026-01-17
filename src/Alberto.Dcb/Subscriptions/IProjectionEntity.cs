@@ -1,0 +1,39 @@
+namespace Alberto.Dcb.Subscriptions;
+
+/// <summary>
+/// Base interface for projection entities.
+/// Provides the required columns for tenant isolation, document identification,
+/// idempotency tracking, and optimistic concurrency.
+/// </summary>
+public interface IProjectionEntity
+{
+    /// <summary>
+    /// The tenant ID for multi-tenant isolation.
+    /// Part of the composite primary key.
+    /// </summary>
+    string TenantId { get; set; }
+
+    /// <summary>
+    /// The document ID that uniquely identifies this entity within a tenant.
+    /// Part of the composite primary key.
+    /// </summary>
+    string DocumentId { get; set; }
+
+    /// <summary>
+    /// Timestamp of the last update to this entity.
+    /// Used for ordering and tracking changes.
+    /// </summary>
+    DateTimeOffset UpdatedAt { get; set; }
+
+    /// <summary>
+    /// The global position of the last event processed for this entity.
+    /// Used for idempotency - events with positions less than or equal to this are skipped.
+    /// </summary>
+    long LastProcessedPosition { get; set; }
+
+    /// <summary>
+    /// Row version for optimistic concurrency.
+    /// For PostgreSQL, map this to the xmin system column.
+    /// </summary>
+    uint Version { get; set; }
+}

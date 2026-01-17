@@ -1,4 +1,5 @@
 using Alberto.Dcb.Subscriptions;
+using Alberto.Dcb.Telemetry;
 using Microsoft.EntityFrameworkCore;
 
 namespace Alberto.Dcb.EntityFramework.Batching;
@@ -9,7 +10,7 @@ namespace Alberto.Dcb.EntityFramework.Batching;
 /// </summary>
 /// <typeparam name="TDbContext">The DbContext type to use.</typeparam>
 /// <typeparam name="THandler">The batch handler implementation type.</typeparam>
-public sealed class BatchedEfProjection<TDbContext, THandler> : IEventProcessor
+public sealed class BatchedEfProjection<TDbContext, THandler> : IEventProcessor, IFlushable
     where TDbContext : DbContext
     where THandler : IEfBatchHandler<TDbContext>, new()
 {
@@ -17,6 +18,8 @@ public sealed class BatchedEfProjection<TDbContext, THandler> : IEventProcessor
     private readonly THandler _handler = new();
     private TDbContext? _currentContext;
     private int _pendingChanges;
+    private volatile bool _isActive = true;
+    private volatile bool _isRebuilding;
 
     /// <summary>
     /// Creates a new batched EF projection processor.
@@ -35,10 +38,18 @@ public sealed class BatchedEfProjection<TDbContext, THandler> : IEventProcessor
     public string ProcessorId { get; }
 
     /// <inheritdoc/>
-    public bool IsActive { get; set; } = true;
+    public bool IsActive
+    {
+        get => _isActive;
+        set => _isActive = value;
+    }
 
     /// <inheritdoc/>
-    public bool IsRebuilding { get; set; }
+    public bool IsRebuilding
+    {
+        get => _isRebuilding;
+        set => _isRebuilding = value;
+    }
 
     /// <inheritdoc/>
     public IReadOnlySet<string> HandledEventTypes => _handler.HandledEventTypes;
@@ -62,7 +73,27 @@ public sealed class BatchedEfProjection<TDbContext, THandler> : IEventProcessor
     {
         if (_currentContext != null && _pendingChanges > 0)
         {
-            await _currentContext.SaveChangesAsync(ct);
+            try
+            {
+                await _currentContext.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateConcurrencyException ex)
+            {
+                // Record concurrency conflict metric
+                AlbertoMetrics.ConcurrencyConflicts.Add(1);
+
+                // Find the document ID that caused the conflict
+                var conflictedEntry = ex.Entries.FirstOrDefault();
+                var conflictedDocId = (conflictedEntry?.Entity as IProjectionEntity)?.DocumentId ?? "unknown";
+
+                // Clean up
+                await _currentContext.DisposeAsync();
+                _currentContext = null;
+                _pendingChanges = 0;
+
+                throw new ConcurrencyConflictException(conflictedDocId, ex);
+            }
+
             await _currentContext.DisposeAsync();
             _currentContext = null;
             _pendingChanges = 0;

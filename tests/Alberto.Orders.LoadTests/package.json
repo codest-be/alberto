@@ -10,7 +10,8 @@
     "test:stress": "npm run build && k6 run dist/stress.test.js",
     "test:spike": "npm run build && k6 run dist/spike.test.js",
     "test:local": "npm run build && k6 run --env ENV=local dist/load.test.js",
-    "test:docker": "npm run build && k6 run --env ENV=docker dist/load.test.js"
+    "test:docker": "npm run build && k6 run --env ENV=docker dist/load.test.js",
+    "test:consistency": "npm run build && k6 run dist/consistency.test.js"
   },
   "devDependencies": {
     "@types/k6": "^0.54.0",
