@@ -81,4 +81,10 @@ public interface IAdminDataAccess
     /// Clears all projection states for a specific projection type.
     /// </summary>
     Task ClearProjectionStatesAsync(string projectionType, CancellationToken ct = default);
+
+    /// <summary>
+    /// Deletes all projection states for a specific projection type and version.
+    /// Used during cleanup of old versions after a versioned rebuild.
+    /// </summary>
+    Task DeleteProjectionVersionAsync(string projectionType, int version, CancellationToken ct = default);
 }

@@ -199,7 +199,7 @@ export class AdminApiService {
     );
   }
 
-  // Processor Rebuilds
+  // Processor Rebuilds (Legacy - clears state)
   startRebuild(processorId: string, clearState: boolean = true): Observable<RebuildStatus> {
     return this.http.post<RebuildStatus>(
       `${this.apiBase}/processors/${encodeURIComponent(processorId)}/rebuild`,
@@ -217,6 +217,35 @@ export class AdminApiService {
   cancelRebuild(processorId: string): Observable<void> {
     return this.http.post<void>(
       `${this.apiBase}/processors/${encodeURIComponent(processorId)}/rebuild/cancel`,
+      {}
+    );
+  }
+
+  // Versioned Rebuilds (Zero-downtime)
+  startVersionedRebuild(processorId: string): Observable<RebuildStatus> {
+    return this.http.post<RebuildStatus>(
+      `${this.apiBase}/processors/${encodeURIComponent(processorId)}/rebuild/start`,
+      {}
+    );
+  }
+
+  swapRebuildVersion(processorId: string): Observable<RebuildStatus> {
+    return this.http.post<RebuildStatus>(
+      `${this.apiBase}/processors/${encodeURIComponent(processorId)}/rebuild/swap`,
+      {}
+    );
+  }
+
+  rollbackRebuild(processorId: string): Observable<RebuildStatus> {
+    return this.http.post<RebuildStatus>(
+      `${this.apiBase}/processors/${encodeURIComponent(processorId)}/rebuild/rollback`,
+      {}
+    );
+  }
+
+  cleanupOldVersion(processorId: string, version: number): Observable<void> {
+    return this.http.post<void>(
+      `${this.apiBase}/processors/${encodeURIComponent(processorId)}/rebuild/cleanup/${version}`,
       {}
     );
   }

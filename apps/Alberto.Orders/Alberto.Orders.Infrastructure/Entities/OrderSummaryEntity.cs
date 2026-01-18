@@ -99,6 +99,11 @@ public sealed class OrderSummaryEntity : IProjectionEntity
     public uint Version { get; set; }
 
     /// <summary>
+    /// Rebuild version for zero-downtime rebuilds.
+    /// </summary>
+    public int RebuildVersion { get; set; } = 1;
+
+    /// <summary>
     /// Line items for this order (stored as JSON).
     /// </summary>
     public List<OrderLineItemData> LineItems { get; set; } = [];

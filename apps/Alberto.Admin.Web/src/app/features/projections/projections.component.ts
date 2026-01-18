@@ -993,6 +993,8 @@ export class ProjectionsComponent implements OnInit, OnDestroy {
           startedAt: null,
           completedAt: null,
           errorMessage: err.message || 'Failed to start rebuild',
+          activeVersion: null,
+          rebuildingVersion: null,
         });
         this.actionInProgress.set(false);
       },

@@ -3,6 +3,7 @@ using System;
 using Alberto.Orders.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Alberto.Orders.Infrastructure.Migrations
 {
     [DbContext(typeof(OrdersDbContext))]
-    partial class OrdersDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260118122739_version column")]
+    partial class versioncolumn
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -106,15 +109,15 @@ namespace Alberto.Orders.Infrastructure.Migrations
                     b.HasIndex("TenantId", "CustomerId")
                         .HasDatabaseName("ix_order_summaries_tenant_customer");
 
+                    b.HasIndex("TenantId", "OrderId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_order_summaries_tenant_orderid");
+
                     b.HasIndex("TenantId", "Status")
                         .HasDatabaseName("ix_order_summaries_tenant_status");
 
                     b.HasIndex("TenantId", "UpdatedAt")
                         .HasDatabaseName("ix_order_summaries_tenant_updated");
-
-                    b.HasIndex("TenantId", "OrderId", "RebuildVersion")
-                        .IsUnique()
-                        .HasDatabaseName("ix_order_summaries_tenant_orderid_version");
 
                     b.ToTable("order_summaries", "orders");
                 });

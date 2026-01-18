@@ -11,7 +11,12 @@
     "test:spike": "npm run build && k6 run dist/spike.test.js",
     "test:local": "npm run build && k6 run --env ENV=local dist/load.test.js",
     "test:docker": "npm run build && k6 run --env ENV=docker dist/load.test.js",
-    "test:consistency": "npm run build && k6 run dist/consistency.test.js"
+    "test:consistency": "npm run build && k6 run dist/consistency.test.js",
+    "test:throughput": "npm run build && k6 run dist/throughput.test.js",
+    "test:throughput:burst": "npm run build && k6 run --env SCENARIO=burst dist/throughput.test.js",
+    "test:throughput:extended": "npm run build && k6 run --env SCENARIO=extended dist/throughput.test.js",
+    "test:throughput:skip-seed": "npm run build && k6 run --env SKIP_SEEDING=true dist/throughput.test.js",
+    "test:throughput:quick-seed": "npm run build && k6 run --env SEED_ITERATIONS=1000 --env SEED_MAX_DURATION=5m dist/throughput.test.js"
   },
   "devDependencies": {
     "@types/k6": "^0.54.0",

@@ -31,6 +31,23 @@ export const projectionLatency = new Trend('projection_latency_ms', true);
 export const projectionConsistencyFailures = new Counter('projection_consistency_failures');
 
 /**
+ * Throughput metrics.
+ * Used to measure maximum sustainable event throughput.
+ */
+export const eventsCreated = new Counter('events_created_total');
+export const eventCreationDuration = new Trend('event_creation_duration_ms', true);
+export const ordersPerSecond = new Gauge('orders_per_second');
+export const eventsPerSecond = new Gauge('events_per_second');
+export const throughputIterations = new Counter('throughput_iterations_total');
+
+/**
+ * Seeding metrics.
+ * Used to track database pre-population before throughput tests.
+ */
+export const eventsSeeded = new Counter('events_seeded_total');
+export const seedingDuration = new Trend('seeding_duration_ms', true);
+
+/**
  * Record a GraphQL operation result.
  */
 export function recordOperation(success: boolean, duration: number, operationType: string): void {

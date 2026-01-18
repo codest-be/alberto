@@ -26,8 +26,8 @@ public class OrdersDbContext : DbContext
         {
             entity.ToTable("order_summaries");
 
-            // Composite primary key for tenant isolation
-            entity.HasKey(e => new { e.TenantId, e.DocumentId });
+            // Composite primary key for tenant isolation with rebuild version support
+            entity.HasKey(e => new { e.TenantId, e.DocumentId, e.RebuildVersion });
 
             // Property configurations
             entity.Property(e => e.TenantId)
@@ -77,13 +77,17 @@ public class OrdersDbContext : DbContext
             entity.HasIndex(e => new { e.TenantId, e.UpdatedAt })
                 .HasDatabaseName("ix_order_summaries_tenant_updated");
 
-            entity.HasIndex(e => new { e.TenantId, e.OrderId })
-                .HasDatabaseName("ix_order_summaries_tenant_orderid")
+            entity.HasIndex(e => new { e.TenantId, e.OrderId, e.RebuildVersion })
+                .HasDatabaseName("ix_order_summaries_tenant_orderid_version")
                 .IsUnique();
 
             // Idempotency: track last processed event position
             entity.Property(e => e.LastProcessedPosition)
                 .HasDefaultValue(0L);
+
+            // Rebuild version for zero-downtime rebuilds
+            entity.Property(e => e.RebuildVersion)
+                .HasDefaultValue(1);
 
             // Optimistic concurrency: use PostgreSQL xmin system column
             // xmin is a system column - EF reads it via RETURNING clause, not INSERT

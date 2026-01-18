@@ -7,7 +7,7 @@ namespace Alberto.Dcb.Postgres;
 
 /// <summary>
 /// PostgreSQL implementation of <see cref="IStateStore{TState}"/>.
-/// Stores state as JSONB, keyed by tenant + projection type + document ID.
+/// Stores state as JSONB, keyed by tenant + projection type + document ID + rebuild version.
 /// </summary>
 /// <typeparam name="TState">The type of state being stored.</typeparam>
 public sealed class PostgresStateStore<TState> : IStateStore<TState>
@@ -16,17 +16,20 @@ public sealed class PostgresStateStore<TState> : IStateStore<TState>
     private readonly string _tenantId;
     private readonly string _projectionType;
     private readonly SchemaQualifier _schema;
+    private readonly int _rebuildVersion;
 
     public PostgresStateStore(
         NpgsqlDataSource dataSource,
         string tenantId,
         string? projectionType = null,
-        string? schema = null)
+        string? schema = null,
+        int rebuildVersion = 1)
     {
         _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
         _tenantId = tenantId ?? throw new ArgumentNullException(nameof(tenantId));
         _projectionType = projectionType ?? typeof(TState).Name;
         _schema = new SchemaQualifier(schema);
+        _rebuildVersion = rebuildVersion;
     }
 
     public async Task<Dictionary<string, TState>> LoadManyAsync(
@@ -76,12 +79,14 @@ public sealed class PostgresStateStore<TState> : IStateStore<TState>
             FROM {_schema.Table("projection_states")}
             WHERE tenant_id = @tenant_id
               AND projection_type = @projection_type
+              AND rebuild_version = @rebuild_version
               AND document_id IN ({string.Join(", ", parameterNames)})
             """;
 
         await using var cmd = new NpgsqlCommand(sql, connection);
         cmd.Parameters.AddWithValue("tenant_id", _tenantId);
         cmd.Parameters.AddWithValue("projection_type", _projectionType);
+        cmd.Parameters.AddWithValue("rebuild_version", _rebuildVersion);
         cmd.Parameters.AddRange(parameters.ToArray());
 
         await using var reader = await cmd.ExecuteReaderAsync(ct);
@@ -131,9 +136,9 @@ public sealed class PostgresStateStore<TState> : IStateStore<TState>
 
             await using var cmd = new NpgsqlCommand(
                 $"""
-                INSERT INTO {_schema.Table("projection_states")} (tenant_id, projection_type, document_id, state, updated_at)
-                VALUES (@tenant_id, @projection_type, @document_id, @state::jsonb, now())
-                ON CONFLICT (tenant_id, projection_type, document_id) DO UPDATE
+                INSERT INTO {_schema.Table("projection_states")} (tenant_id, projection_type, document_id, rebuild_version, state, updated_at)
+                VALUES (@tenant_id, @projection_type, @document_id, @rebuild_version, @state::jsonb, now())
+                ON CONFLICT (tenant_id, projection_type, document_id, rebuild_version) DO UPDATE
                 SET state = @state::jsonb, updated_at = now()
                 """,
                 connection);
@@ -141,6 +146,7 @@ public sealed class PostgresStateStore<TState> : IStateStore<TState>
             cmd.Parameters.AddWithValue("tenant_id", _tenantId);
             cmd.Parameters.AddWithValue("projection_type", _projectionType);
             cmd.Parameters.AddWithValue("document_id", docId);
+            cmd.Parameters.AddWithValue("rebuild_version", _rebuildVersion);
             cmd.Parameters.AddWithValue("state", stateJson);
 
             await cmd.ExecuteNonQueryAsync(ct);
@@ -155,12 +161,14 @@ public sealed class PostgresStateStore<TState> : IStateStore<TState>
                 WHERE tenant_id = @tenant_id
                   AND projection_type = @projection_type
                   AND document_id = @document_id
+                  AND rebuild_version = @rebuild_version
                 """,
                 connection);
 
             cmd.Parameters.AddWithValue("tenant_id", _tenantId);
             cmd.Parameters.AddWithValue("projection_type", _projectionType);
             cmd.Parameters.AddWithValue("document_id", docId);
+            cmd.Parameters.AddWithValue("rebuild_version", _rebuildVersion);
 
             await cmd.ExecuteNonQueryAsync(ct);
         }
@@ -179,6 +187,7 @@ public sealed class PostgresStateStore<TState> : IStateStore<TState>
             FROM {_schema.Table("projection_states")}
             WHERE tenant_id = @tenant_id
               AND projection_type = @projection_type
+              AND rebuild_version = @rebuild_version
             ORDER BY updated_at DESC
             LIMIT @limit
             """,
@@ -186,6 +195,7 @@ public sealed class PostgresStateStore<TState> : IStateStore<TState>
 
         cmd.Parameters.AddWithValue("tenant_id", _tenantId);
         cmd.Parameters.AddWithValue("projection_type", _projectionType);
+        cmd.Parameters.AddWithValue("rebuild_version", _rebuildVersion);
         cmd.Parameters.AddWithValue("limit", limit);
 
         await using var reader = await cmd.ExecuteReaderAsync(ct);

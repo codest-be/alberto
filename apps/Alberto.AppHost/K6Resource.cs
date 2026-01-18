@@ -40,7 +40,7 @@ public static class K6ResourceBuilderExtensions
                 State = new ResourceStateSnapshot("Idle", KnownResourceStateStyles.Info),
                 Properties = [
                     new("Working Directory", workingDirectory),
-                    new("Test Profiles", "smoke, load, stress, spike, consistency")
+                    new("Test Profiles", "smoke, load, stress, spike, consistency, throughput, throughput-burst, throughput-extended, throughput-rerun, throughput-burst-rerun, throughput-extended-rerun")
                 ]
             })
             .WithCommand(
@@ -72,6 +72,42 @@ public static class K6ResourceBuilderExtensions
                 displayName: "Consistency Test",
                 executeCommand: context => RunK6TestAsync(resource, "consistency", context),
                 iconName: "Checkmark",
+                iconVariant: IconVariant.Filled)
+            .WithCommand(
+                name: "run-throughput",
+                displayName: "Throughput Test",
+                executeCommand: context => RunK6TestAsync(resource, "throughput", context),
+                iconName: "Gauge",
+                iconVariant: IconVariant.Filled)
+            .WithCommand(
+                name: "run-throughput-burst",
+                displayName: "Throughput (Burst)",
+                executeCommand: context => RunK6TestAsync(resource, "throughput-burst", context),
+                iconName: "Rocket",
+                iconVariant: IconVariant.Filled)
+            .WithCommand(
+                name: "run-throughput-extended",
+                displayName: "Throughput (Extended)",
+                executeCommand: context => RunK6TestAsync(resource, "throughput-extended", context),
+                iconName: "DataTrending",
+                iconVariant: IconVariant.Filled)
+            .WithCommand(
+                name: "run-throughput-rerun",
+                displayName: "Throughput (Skip Seeding)",
+                executeCommand: context => RunK6TestAsync(resource, "throughput-rerun", context),
+                iconName: "ArrowRepeatAll",
+                iconVariant: IconVariant.Filled)
+            .WithCommand(
+                name: "run-throughput-burst-rerun",
+                displayName: "Throughput Burst (Skip Seeding)",
+                executeCommand: context => RunK6TestAsync(resource, "throughput-burst-rerun", context),
+                iconName: "ArrowRepeatAll",
+                iconVariant: IconVariant.Filled)
+            .WithCommand(
+                name: "run-throughput-extended-rerun",
+                displayName: "Throughput Extended (Skip Seeding)",
+                executeCommand: context => RunK6TestAsync(resource, "throughput-extended-rerun", context),
+                iconName: "ArrowRepeatAll",
                 iconVariant: IconVariant.Filled);
     }
 
@@ -109,25 +145,35 @@ public static class K6ResourceBuilderExtensions
                 throw new InvalidOperationException($"Build failed: {buildError}");
             }
 
-            // Determine the test script based on type
-            var testScript = testType switch
+            // Determine the test script and args based on type
+            var (testScript, extraArgs) = testType switch
             {
-                "smoke" => "dist/smoke.test.js",
-                "load" => "dist/load.test.js",
-                "stress" => "dist/stress.test.js",
-                "spike" => "dist/spike.test.js",
-                "consistency" => "dist/consistency.test.js",
-                _ => "dist/smoke.test.js"
+                "smoke" => ("dist/smoke.test.js", ""),
+                "load" => ("dist/load.test.js", ""),
+                "stress" => ("dist/stress.test.js", ""),
+                "spike" => ("dist/spike.test.js", ""),
+                "consistency" => ("dist/consistency.test.js", ""),
+                "throughput" => ("dist/throughput.test.js", "--env SEED_WAIT_TIME=5m"),
+                "throughput-burst" => ("dist/throughput.test.js", "--env SCENARIO=burst --env SEED_WAIT_TIME=5m"),
+                "throughput-extended" => ("dist/throughput.test.js", "--env SCENARIO=extended --env SEED_WAIT_TIME=5m"),
+                "throughput-rerun" => ("dist/throughput.test.js", "--env SKIP_SEEDING=true"),
+                "throughput-burst-rerun" => ("dist/throughput.test.js", "--env SCENARIO=burst --env SKIP_SEEDING=true"),
+                "throughput-extended-rerun" => ("dist/throughput.test.js", "--env SCENARIO=extended --env SKIP_SEEDING=true"),
+                _ => ("dist/smoke.test.js", "")
             };
 
             // Run K6 in background - don't wait for completion
             // Load tests can run for minutes, we don't want to block the dashboard
+            var k6Args = string.IsNullOrEmpty(extraArgs)
+                ? $"run {testScript}"
+                : $"run {extraArgs} {testScript}";
+
             var k6Process = new Process
             {
                 StartInfo = new ProcessStartInfo
                 {
                     FileName = "k6",
-                    Arguments = $"run {testScript}",
+                    Arguments = k6Args,
                     WorkingDirectory = resource.WorkingDirectory,
                     UseShellExecute = true,  // Opens in new terminal window
                     CreateNoWindow = false   // Show the K6 output window

@@ -75,11 +75,22 @@ public sealed class PostgresAdminDataAccess : IAdminDataAccess
         int pageSize,
         CancellationToken ct = default)
     {
+        // Get active version for this projection type (default to 1 if not found)
+        var activeVersion = await GetActiveVersionAsync(projectionType, ct);
+
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
 
         // Build WHERE clause dynamically
-        var conditions = new List<string> { "projection_type = @projection_type" };
-        var parameters = new Dictionary<string, object> { ["projection_type"] = projectionType };
+        var conditions = new List<string>
+        {
+            "projection_type = @projection_type",
+            "rebuild_version = @rebuild_version"
+        };
+        var parameters = new Dictionary<string, object>
+        {
+            ["projection_type"] = projectionType,
+            ["rebuild_version"] = activeVersion
+        };
 
         if (tenantId is not null)
         {
@@ -154,12 +165,21 @@ public sealed class PostgresAdminDataAccess : IAdminDataAccess
 
     public async Task<IReadOnlyList<string>> GetProjectionTenantsAsync(string projectionType, CancellationToken ct = default)
     {
+        var activeVersion = await GetActiveVersionAsync(projectionType, ct);
+
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand(
-            $"SELECT DISTINCT tenant_id FROM {_schema.Table("projection_states")} WHERE projection_type = @projection_type ORDER BY tenant_id",
+            $"""
+            SELECT DISTINCT tenant_id
+            FROM {_schema.Table("projection_states")}
+            WHERE projection_type = @projection_type
+              AND rebuild_version = @rebuild_version
+            ORDER BY tenant_id
+            """,
             connection);
 
         cmd.Parameters.AddWithValue("projection_type", projectionType);
+        cmd.Parameters.AddWithValue("rebuild_version", activeVersion);
 
         var tenants = new List<string>();
         await using var reader = await cmd.ExecuteReaderAsync(ct);
@@ -178,24 +198,31 @@ public sealed class PostgresAdminDataAccess : IAdminDataAccess
         string? tenantId,
         CancellationToken ct = default)
     {
+        var activeVersion = await GetActiveVersionAsync(projectionType, ct);
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
 
         var sql = tenantId is null
             ? $"""
               SELECT tenant_id, projection_type, document_id, state, updated_at
               FROM {_schema.Table("projection_states")}
-              WHERE projection_type = @projection_type AND document_id = @document_id
+              WHERE projection_type = @projection_type
+                AND document_id = @document_id
+                AND rebuild_version = @rebuild_version
               LIMIT 1
               """
             : $"""
               SELECT tenant_id, projection_type, document_id, state, updated_at
               FROM {_schema.Table("projection_states")}
-              WHERE projection_type = @projection_type AND document_id = @document_id AND tenant_id = @tenant_id
+              WHERE projection_type = @projection_type
+                AND document_id = @document_id
+                AND tenant_id = @tenant_id
+                AND rebuild_version = @rebuild_version
               """;
 
         await using var cmd = new NpgsqlCommand(sql, connection);
         cmd.Parameters.AddWithValue("projection_type", projectionType);
         cmd.Parameters.AddWithValue("document_id", documentId);
+        cmd.Parameters.AddWithValue("rebuild_version", activeVersion);
         if (tenantId is not null)
             cmd.Parameters.AddWithValue("tenant_id", tenantId);
 
@@ -212,6 +239,23 @@ public sealed class PostgresAdminDataAccess : IAdminDataAccess
         }
 
         return null;
+    }
+
+    private async Task<int> GetActiveVersionAsync(string projectionType, CancellationToken ct)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand(
+            $"""
+            SELECT active_version
+            FROM {_schema.Table("projection_rebuild_meta")}
+            WHERE projection_type = @projection_type
+            """,
+            connection);
+
+        cmd.Parameters.AddWithValue("projection_type", projectionType);
+
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is int version ? version : 1;
     }
 
     public async Task<PagedResult<DeadLetterDto>> ListDeadLettersAsync(
@@ -428,6 +472,22 @@ public sealed class PostgresAdminDataAccess : IAdminDataAccess
             connection);
 
         cmd.Parameters.AddWithValue("projection_type", projectionType);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task DeleteProjectionVersionAsync(string projectionType, int version, CancellationToken ct = default)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand(
+            $"""
+            DELETE FROM {_schema.Table("projection_states")}
+            WHERE projection_type = @projection_type
+              AND rebuild_version = @rebuild_version
+            """,
+            connection);
+
+        cmd.Parameters.AddWithValue("projection_type", projectionType);
+        cmd.Parameters.AddWithValue("rebuild_version", version);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 }

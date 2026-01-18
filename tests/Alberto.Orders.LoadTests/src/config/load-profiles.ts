@@ -1,5 +1,5 @@
 import { Options } from 'k6/options';
-import { thresholds, stressThresholds, spikeThresholds } from './thresholds';
+import { thresholds, stressThresholds, spikeThresholds, throughputThresholds } from './thresholds';
 
 /**
  * Smoke test profile: Quick validation with minimal load.
@@ -60,4 +60,26 @@ export const spikeProfile: Options = {
     { duration: '30s', target: 0 },   // Ramp down
   ],
   thresholds: spikeThresholds,
+};
+
+/**
+ * Throughput test profile: Find maximum sustainable event throughput.
+ * Purpose: Measure the ceiling of events/second the system can handle.
+ *
+ * Strategy: Gradually increase VUs while monitoring error rate and latency.
+ * The goal is to find the saturation point where throughput plateaus.
+ */
+export const throughputProfile: Options = {
+  stages: [
+    { duration: '30s', target: 10 },   // Warm up
+    { duration: '2m', target: 25 },    // Low load baseline
+    { duration: '2m', target: 50 },    // Medium load
+    { duration: '2m', target: 75 },    // High load
+    { duration: '2m', target: 100 },   // Very high load
+    { duration: '3m', target: 150 },   // Push to saturation
+    { duration: '3m', target: 200 },   // Maximum pressure
+    { duration: '2m', target: 200 },   // Sustain max
+    { duration: '1m', target: 0 },     // Ramp down
+  ],
+  thresholds: throughputThresholds,
 };

@@ -72,10 +72,11 @@ public interface IAdminQueryService
         string? tenantId = null,
         CancellationToken ct = default);
 
-    // Projection Rebuilds
+    // Projection Rebuilds (Legacy - clears state during rebuild)
 
     /// <summary>
     /// Starts a projection rebuild by clearing state and resetting the checkpoint.
+    /// Note: This is the legacy approach that causes downtime. Consider using StartVersionedRebuildAsync instead.
     /// </summary>
     Task<RebuildStatus> StartRebuildAsync(string processorId, bool clearState = true, CancellationToken ct = default);
 
@@ -88,6 +89,30 @@ public interface IAdminQueryService
     /// Cancels an ongoing rebuild operation.
     /// </summary>
     Task CancelRebuildAsync(string processorId, CancellationToken ct = default);
+
+    // Versioned Rebuilds (Zero-downtime)
+
+    /// <summary>
+    /// Starts a zero-downtime versioned rebuild.
+    /// Creates a new version for the rebuild processor to write to while queries continue reading from the active version.
+    /// </summary>
+    Task<RebuildStatus> StartVersionedRebuildAsync(string processorId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Swaps the active version to the rebuilt version.
+    /// Queries will immediately start reading from the new version.
+    /// </summary>
+    Task<RebuildStatus> SwapRebuildVersionAsync(string processorId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Rolls back a versioned rebuild, discarding the rebuilding version data.
+    /// </summary>
+    Task<RebuildStatus> RollbackRebuildAsync(string processorId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Cleans up old version data after a successful swap.
+    /// </summary>
+    Task CleanupOldVersionAsync(string processorId, int versionToDelete, CancellationToken ct = default);
 
     // System
     Task<long> GetLastGlobalPositionAsync(CancellationToken ct = default);

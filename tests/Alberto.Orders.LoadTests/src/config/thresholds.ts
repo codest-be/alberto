@@ -43,3 +43,12 @@ export const spikeThresholds = {
   ...thresholds,
   http_req_failed: ['rate<0.10'], // Allow 10% errors during spike
 };
+
+// Throughput test thresholds - focused on measuring max throughput
+// Relaxed latency requirements to find ceiling
+export const throughputThresholds = {
+  http_req_failed: ['rate<0.05'],           // Allow 5% errors at max throughput
+  http_req_duration: ['p(95)<2000'],         // Relaxed latency for throughput focus
+  events_created_total: ['count>1000'],      // Ensure meaningful event volume
+  throughput_iterations_total: ['count>100'], // Ensure test ran enough iterations
+};

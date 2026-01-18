@@ -11,7 +11,9 @@ public sealed record RebuildStatus(
     double ProgressPercent,
     DateTimeOffset? StartedAt,
     DateTimeOffset? CompletedAt,
-    string? ErrorMessage);
+    string? ErrorMessage,
+    int? ActiveVersion = null,
+    int? RebuildingVersion = null);
 
 /// <summary>
 /// State of a rebuild operation.
@@ -21,7 +23,10 @@ public enum RebuildState
     NotStarted,
     Clearing,
     Rebuilding,
+    ReadyToSwap,
     Completed,
+    Swapped,
     Failed,
-    Cancelled
+    Cancelled,
+    RolledBack
 }

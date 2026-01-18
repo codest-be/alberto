@@ -36,4 +36,11 @@ public interface IProjectionEntity
     /// For PostgreSQL, map this to the xmin system column.
     /// </summary>
     uint Version { get; set; }
+
+    /// <summary>
+    /// The rebuild version for zero-downtime rebuilds.
+    /// Allows multiple versions of projection data to coexist during rebuilds.
+    /// Default is 1. During rebuild, new data is written to version N+1.
+    /// </summary>
+    int RebuildVersion { get; set; }
 }

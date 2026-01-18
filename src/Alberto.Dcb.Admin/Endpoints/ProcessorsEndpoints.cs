@@ -80,6 +80,35 @@ internal static class ProcessorsEndpoints
                 await service.CancelRebuildAsync(processorId, ct);
                 return Results.NoContent();
             }).WithName($"{moduleKey}_CancelRebuild");
+
+            // Versioned rebuild endpoints (zero-downtime)
+            group.MapPost("/{processorId}/rebuild/start", async (string processorId, HttpContext ctx, CancellationToken ct) =>
+            {
+                var service = ctx.RequestServices.GetRequiredKeyedService<IAdminQueryService>(moduleKey);
+                var result = await service.StartVersionedRebuildAsync(processorId, ct);
+                return Results.Ok(result);
+            }).WithName($"{moduleKey}_StartVersionedRebuild");
+
+            group.MapPost("/{processorId}/rebuild/swap", async (string processorId, HttpContext ctx, CancellationToken ct) =>
+            {
+                var service = ctx.RequestServices.GetRequiredKeyedService<IAdminQueryService>(moduleKey);
+                var result = await service.SwapRebuildVersionAsync(processorId, ct);
+                return Results.Ok(result);
+            }).WithName($"{moduleKey}_SwapRebuildVersion");
+
+            group.MapPost("/{processorId}/rebuild/rollback", async (string processorId, HttpContext ctx, CancellationToken ct) =>
+            {
+                var service = ctx.RequestServices.GetRequiredKeyedService<IAdminQueryService>(moduleKey);
+                var result = await service.RollbackRebuildAsync(processorId, ct);
+                return Results.Ok(result);
+            }).WithName($"{moduleKey}_RollbackRebuild");
+
+            group.MapPost("/{processorId}/rebuild/cleanup/{version:int}", async (string processorId, int version, HttpContext ctx, CancellationToken ct) =>
+            {
+                var service = ctx.RequestServices.GetRequiredKeyedService<IAdminQueryService>(moduleKey);
+                await service.CleanupOldVersionAsync(processorId, version, ct);
+                return Results.NoContent();
+            }).WithName($"{moduleKey}_CleanupRebuildVersion");
         }
     }
 }
