@@ -24,6 +24,7 @@ public sealed class PollingConsumer : IEventConsumer
     private readonly ITenantProcessorLock? _tenantProcessorLock;
     private readonly ConsumerDistributionMode _distributionMode;
     private readonly TimeSpan _tenantLockRetryInterval;
+    private readonly int _maxParallelProjections;
     private readonly ErrorPolicy _errorPolicy;
     private readonly string _moduleKey;
     private readonly ILogger<PollingConsumer>? _logger;
@@ -54,6 +55,7 @@ public sealed class PollingConsumer : IEventConsumer
         ITenantProcessorLock? tenantProcessorLock = null,
         ConsumerDistributionMode distributionMode = ConsumerDistributionMode.SingleLeader,
         TimeSpan? tenantLockRetryInterval = null,
+        int maxParallelProjections = 1,
         ILogger<PollingConsumer>? logger = null)
     {
         _eventStore = eventStore ?? throw new ArgumentNullException(nameof(eventStore));
@@ -68,6 +70,7 @@ public sealed class PollingConsumer : IEventConsumer
         _tenantProcessorLock = tenantProcessorLock;
         _distributionMode = distributionMode;
         _tenantLockRetryInterval = tenantLockRetryInterval ?? TimeSpan.FromSeconds(30);
+        _maxParallelProjections = maxParallelProjections;
         _deadLetterStore = deadLetterStore;
         _pipeline = pipeline;
         _errorPolicy = errorPolicy ?? ErrorPolicy.Default;
@@ -253,10 +256,14 @@ public sealed class PollingConsumer : IEventConsumer
                         : events;
 
                     // Route to each active processor, filtering by their individual checkpoint
-                    foreach (var processor in _processors)
+                    // Process in parallel with semaphore to limit concurrency
+                    using var semaphore = new SemaphoreSlim(_maxParallelProjections);
+                    var processedFlags = new ConcurrentBag<bool>();
+
+                    var tasks = _processors.Select(async processor =>
                     {
                         if (!processor.IsActive || processor.IsRebuilding)
-                            continue;
+                            return;
 
                         var processorCheckpoint = activeCheckpoints.GetValueOrDefault(processor.ProcessorId, 0);
 
@@ -267,10 +274,21 @@ public sealed class PollingConsumer : IEventConsumer
 
                         if (relevant.Count > 0)
                         {
-                            await ProcessEventsForProcessorAsync(processor, relevant, processorCheckpoint, ct);
-                            processedAny = true;
+                            await semaphore.WaitAsync(ct);
+                            try
+                            {
+                                await ProcessEventsForProcessorAsync(processor, relevant, processorCheckpoint, ct);
+                                processedFlags.Add(true);
+                            }
+                            finally
+                            {
+                                semaphore.Release();
+                            }
                         }
-                    }
+                    });
+
+                    await Task.WhenAll(tasks);
+                    processedAny = !processedFlags.IsEmpty;
                 }
 
                 // Wait before polling again if no events were processed

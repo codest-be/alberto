@@ -41,9 +41,9 @@ internal sealed class TelemetryConsumeFilter : IConsumeFilter
         var links = ExtractTraceLinks(events);
 
         // Include processor name in span for easy identification
-        var activityName = $"{AlbertoTelemetry.ConsumeActivityName} {context.ProcessorId}";
+        var activityName = $"{AlbertoMetrics.ConsumeActivityName} {context.ProcessorId}";
 
-        using var activity = AlbertoTelemetry.Source.StartActivity(
+        using var activity = AlbertoMetrics.Source.StartActivity(
             activityName,
             ActivityKind.Consumer,
             parentContext: default,
@@ -66,7 +66,7 @@ internal sealed class TelemetryConsumeFilter : IConsumeFilter
             await next();
 
             activity?.SetStatus(ActivityStatusCode.Ok);
-            AlbertoTelemetry.EventsProcessed.Add(events.Count,
+            AlbertoMetrics.EventsProcessed.Add(events.Count,
                 new KeyValuePair<string, object?>("processor", context.ProcessorId),
                 new KeyValuePair<string, object?>("module", context.ModuleKey));
         }
@@ -77,7 +77,7 @@ internal sealed class TelemetryConsumeFilter : IConsumeFilter
             activity?.AddTag("exception.message", ex.Message);
             activity?.AddTag("exception.stacktrace", ex.StackTrace);
 
-            AlbertoTelemetry.ProcessingErrors.Add(1,
+            AlbertoMetrics.ProcessingErrors.Add(1,
                 new KeyValuePair<string, object?>("processor", context.ProcessorId),
                 new KeyValuePair<string, object?>("exception.type", ex.GetType().Name));
 
@@ -85,7 +85,7 @@ internal sealed class TelemetryConsumeFilter : IConsumeFilter
         }
         finally
         {
-            AlbertoTelemetry.ProcessingDuration.Record(sw.ElapsedMilliseconds,
+            AlbertoMetrics.ProcessingDuration.Record(sw.ElapsedMilliseconds,
                 new KeyValuePair<string, object?>("processor", context.ProcessorId));
         }
     }

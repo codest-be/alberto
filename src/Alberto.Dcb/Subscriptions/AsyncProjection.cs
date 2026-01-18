@@ -24,7 +24,6 @@ internal sealed class AsyncProjection<TState, TProjection> : IEventProcessor, IF
     // Batching: accumulate changes per tenant, then flush all at once
     private readonly ConcurrentDictionary<string, Dictionary<string, TState>> _pendingUpserts = new();
     private readonly ConcurrentDictionary<string, HashSet<string>> _pendingDeletes = new();
-    private readonly ConcurrentDictionary<string, Dictionary<string, TState>> _inMemoryState = new();
 
     public AsyncProjection(Func<string, IStateStore<TState>> stateStoreFactory, string processorId)
     {
@@ -67,21 +66,18 @@ internal sealed class AsyncProjection<TState, TProjection> : IEventProcessor, IF
 
         var stateStore = entry.Store;
 
-        // Get in-memory state cache for this tenant
-        var tenantMemoryState = _inMemoryState.GetOrAdd(tenantId, _ => new Dictionary<string, TState>());
-
-        // Try to get state from in-memory cache first, then from pending upserts, then load from store
+        // Check pending upserts first (for events building on previous events in same batch)
+        // then load fresh from store (fixes EF parallel projection issues with detached entities)
         TState state;
-        if (tenantMemoryState.TryGetValue(docId, out var memState))
+        if (_pendingUpserts.TryGetValue(tenantId, out var pendingUpserts) &&
+            pendingUpserts.TryGetValue(docId, out var pendingState))
         {
-            state = memState;
+            state = pendingState;
         }
         else
         {
-            // Load from database
             var states = await stateStore.LoadManyAsync([docId], transaction: null, ct);
             state = states.GetValueOrDefault(docId) ?? new TState();
-            tenantMemoryState[docId] = state;
         }
 
         // Idempotency check: skip if this event was already processed
@@ -103,9 +99,6 @@ internal sealed class AsyncProjection<TState, TProjection> : IEventProcessor, IF
                     projEntity.LastProcessedPosition = @event.GlobalPosition;
                 }
 
-                // Update in-memory state
-                tenantMemoryState[docId] = s.State;
-
                 // Add to pending upserts
                 var upserts = _pendingUpserts.GetOrAdd(tenantId, _ => new Dictionary<string, TState>());
                 upserts[docId] = s.State;
@@ -118,17 +111,14 @@ internal sealed class AsyncProjection<TState, TProjection> : IEventProcessor, IF
                 break;
 
             case ProjectionResult<TState>.Delete:
-                // Remove from in-memory state
-                tenantMemoryState.Remove(docId);
-
                 // Add to pending deletes
                 var deleteSet = _pendingDeletes.GetOrAdd(tenantId, _ => new HashSet<string>());
                 deleteSet.Add(docId);
 
                 // Remove from pending upserts if it was there
-                if (_pendingUpserts.TryGetValue(tenantId, out var pendingUpserts))
+                if (_pendingUpserts.TryGetValue(tenantId, out var upsertsToRemoveFrom))
                 {
-                    pendingUpserts.Remove(docId);
+                    upsertsToRemoveFrom.Remove(docId);
                 }
                 break;
                 // Unchanged: no operation needed
@@ -171,9 +161,6 @@ internal sealed class AsyncProjection<TState, TProjection> : IEventProcessor, IF
                 transaction: null,
                 ct);
         }
-
-        // Clear in-memory state cache after flush
-        _inMemoryState.Clear();
     }
 
     private async void OnEvictionTimer(object? state)
@@ -228,6 +215,5 @@ internal sealed class AsyncProjection<TState, TProjection> : IEventProcessor, IF
         _stateStoreCache.Clear();
         _pendingUpserts.Clear();
         _pendingDeletes.Clear();
-        _inMemoryState.Clear();
     }
 }

@@ -47,8 +47,9 @@ public static class OrdersModule
             .WithTelemetry()
             .WithConsumer(consumer => consumer
                 .WithTenantDistribution()
-                .WithPollingInterval(TimeSpan.FromMilliseconds(250))
-                .WithBatchSize(100)
+                .WithPollingInterval(TimeSpan.FromMilliseconds(50))
+                .WithBatchSize(500)
+                .WithParallelProjections()
                 .WithErrorPolicy(policy => policy
                     .MaxRetries(3)
                     .RetryDelay(TimeSpan.FromSeconds(1))

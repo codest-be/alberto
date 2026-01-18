@@ -28,8 +28,8 @@ internal sealed class TelemetryAppendInterceptor : IAppendInterceptor
         Func<AppendContext, Task<IReadOnlyCollection<IEventEnvelope>>> next,
         CancellationToken ct = default)
     {
-        using var activity = AlbertoTelemetry.Source.StartActivity(
-            AlbertoTelemetry.AppendActivityName,
+        using var activity = AlbertoMetrics.Source.StartActivity(
+            AlbertoMetrics.AppendActivityName,
             ActivityKind.Producer);
 
         activity?.SetTag("tenant.id", context.TenantId);
@@ -66,7 +66,7 @@ internal sealed class TelemetryAppendInterceptor : IAppendInterceptor
                 activity?.SetTag("events.last_position", result.Last().GlobalPosition);
             }
 
-            AlbertoTelemetry.EventsAppended.Add(result.Count,
+            AlbertoMetrics.EventsAppended.Add(result.Count,
                 new KeyValuePair<string, object?>("tenant", context.TenantId));
 
             return result;
@@ -76,7 +76,7 @@ internal sealed class TelemetryAppendInterceptor : IAppendInterceptor
             activity?.SetStatus(ActivityStatusCode.Error, "DCB conflict");
             activity?.SetTag("dcb.conflict", true);
 
-            AlbertoTelemetry.ConcurrencyConflicts.Add(1,
+            AlbertoMetrics.ConcurrencyConflicts.Add(1,
                 new KeyValuePair<string, object?>("tenant", context.TenantId));
 
             throw;
@@ -90,7 +90,7 @@ internal sealed class TelemetryAppendInterceptor : IAppendInterceptor
         }
         finally
         {
-            AlbertoTelemetry.AppendDuration.Record(sw.ElapsedMilliseconds,
+            AlbertoMetrics.AppendDuration.Record(sw.ElapsedMilliseconds,
                 new KeyValuePair<string, object?>("tenant", context.TenantId));
         }
     }

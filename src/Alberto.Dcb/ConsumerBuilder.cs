@@ -21,6 +21,7 @@ public sealed class ConsumerBuilder
     private ConsumerDistributionMode _distributionMode = ConsumerDistributionMode.SingleLeader;
     private TimeSpan _tenantLockRetryInterval = TimeSpan.FromSeconds(30);
     private bool _enableProcessorLock = true; // Single-leader lock enabled by default
+    private int _maxParallelProjections = 1; // Default sequential - EF projections aren't thread-safe
 
     internal ConsumerBuilder(DcbModuleBuilder moduleBuilder)
     {
@@ -110,6 +111,17 @@ public sealed class ConsumerBuilder
     }
 
     /// <summary>
+    /// Enables parallel processing of projections within each batch.
+    /// Multiple projections can process events concurrently, improving throughput.
+    /// </summary>
+    /// <param name="maxDegree">Maximum number of projections to process in parallel. Default is unlimited.</param>
+    public ConsumerBuilder WithParallelProjections(int maxDegree = int.MaxValue)
+    {
+        _maxParallelProjections = maxDegree;
+        return this;
+    }
+
+    /// <summary>
     /// Registers an event processor to handle events.
     /// </summary>
     /// <typeparam name="TProcessor">The processor type implementing <see cref="IEventProcessor"/>.</typeparam>
@@ -183,6 +195,7 @@ public sealed class ConsumerBuilder
         var distributionMode = _distributionMode;
         var tenantLockRetryInterval = _tenantLockRetryInterval;
         var enableProcessorLock = _enableProcessorLock;
+        var maxParallelProjections = _maxParallelProjections;
 
         // Register pipeline
         _moduleBuilder.Services.AddKeyedSingleton<IConsumeFilterPipeline>(moduleKey, (sp, _) =>
@@ -229,6 +242,7 @@ public sealed class ConsumerBuilder
                 tenantProcessorLock,
                 distributionMode,
                 tenantLockRetryInterval,
+                maxParallelProjections,
                 logger);
 
             // Register all processors

@@ -19,7 +19,7 @@ var ordersApi = builder.AddProject<Projects.Alberto_Orders_Api>("orders-api")
         endpoint.Port = 5180;
         endpoint.IsProxied = true;
     })
-    .WithReplicas(1)
+    .WithReplicas(3)
     .WithReference(albertoDb)
     .WaitFor(ordersMigrations);
 

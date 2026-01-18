@@ -14,7 +14,7 @@ public static class ServiceCollectionExtensions
     /// </summary>
     public static TracerProviderBuilder AddAlbertoInstrumentation(this TracerProviderBuilder builder)
     {
-        return builder.AddSource(AlbertoTelemetry.Name);
+        return builder.AddSource(AlbertoMetrics.Name);
     }
 
     /// <summary>
@@ -22,6 +22,6 @@ public static class ServiceCollectionExtensions
     /// </summary>
     public static MeterProviderBuilder AddAlbertoInstrumentation(this MeterProviderBuilder builder)
     {
-        return builder.AddMeter(AlbertoTelemetry.Name);
+        return builder.AddMeter(AlbertoMetrics.Name);
     }
 }
