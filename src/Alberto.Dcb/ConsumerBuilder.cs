@@ -29,6 +29,16 @@ public sealed class ConsumerBuilder
     }
 
     /// <summary>
+    /// Gets the service collection for registering additional services.
+    /// </summary>
+    internal IServiceCollection Services => _moduleBuilder.Services;
+
+    /// <summary>
+    /// Gets the module key for keyed service registration.
+    /// </summary>
+    internal string ModuleKey => _moduleBuilder.ModuleKey;
+
+    /// <summary>
     /// Sets the polling interval for checking new events.
     /// </summary>
     public ConsumerBuilder WithPollingInterval(TimeSpan interval)

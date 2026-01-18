@@ -33,6 +33,7 @@ public sealed class PollingConsumer : IEventConsumer
     private readonly Dictionary<string, Task> _rebuildTasks = [];
     private readonly object _rebuildTasksLock = new();
     private readonly ConcurrentDictionary<string, IAsyncDisposable> _tenantLeases = new();
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _tenantLockCooldowns = new();
     private readonly HashSet<string> _ownedTenants = new();
     private readonly object _tenantLock = new();
     private IAsyncDisposable? _lockLease;
@@ -191,6 +192,8 @@ public sealed class PollingConsumer : IEventConsumer
             _ownedTenants.Clear();
         }
 
+        _tenantLockCooldowns.Clear();
+
         _cts?.Dispose();
         _cts = null;
         _pollingTask = null;
@@ -289,6 +292,16 @@ public sealed class PollingConsumer : IEventConsumer
 
                     await Task.WhenAll(tasks);
                     processedAny = !processedFlags.IsEmpty;
+
+                    // In tenant-distributed mode, advance checkpoints past filtered events
+                    // These events will be processed by other consumers that own those tenants
+                    if (_distributionMode == ConsumerDistributionMode.TenantDistributed &&
+                        eventsToProcess.Count < events.Count)
+                    {
+                        var maxOriginalPosition = events.Max(e => e.GlobalPosition);
+                        await AdvanceCheckpointsPastFilteredEventsAsync(
+                            activeCheckpoints, eventsToProcess, maxOriginalPosition, ct);
+                    }
                 }
 
                 // Wait before polling again if no events were processed
@@ -323,6 +336,8 @@ public sealed class PollingConsumer : IEventConsumer
         // Group events by tenant
         var eventsByTenant = events.GroupBy(e => e.TenantId);
 
+        var tenantsNotOwned = new List<string>();
+
         foreach (var tenantGroup in eventsByTenant)
         {
             var tenantId = tenantGroup.Key;
@@ -332,14 +347,75 @@ public sealed class PollingConsumer : IEventConsumer
             {
                 result.AddRange(tenantGroup);
             }
+            else
+            {
+                tenantsNotOwned.Add(tenantId);
+            }
+        }
+
+        // Record filtered events metric
+        var filteredCount = events.Count - result.Count;
+        if (filteredCount > 0)
+        {
+            AlbertoMetrics.EventsFilteredByTenant.Add(filteredCount,
+                new KeyValuePair<string, object?>("consumer.id", ConsumerId),
+                new KeyValuePair<string, object?>("module.key", _moduleKey));
+
+            _logger?.LogDebug(
+                "Consumer {ConsumerId} filtered {FilteredCount} events for {TenantCount} tenants not owned: [{Tenants}]",
+                ConsumerId, filteredCount, tenantsNotOwned.Count, string.Join(", ", tenantsNotOwned));
         }
 
         return result;
     }
 
     /// <summary>
+    /// Advances processor checkpoints past events that were filtered due to tenant ownership.
+    /// This allows progress when events at the front of the queue belong to tenants owned by other consumers.
+    /// </summary>
+    private async Task AdvanceCheckpointsPastFilteredEventsAsync(
+        Dictionary<string, long> activeCheckpoints,
+        IReadOnlyCollection<IEventEnvelope> processedEvents,
+        long maxOriginalPosition,
+        CancellationToken ct)
+    {
+        // For each processor, check if we need to advance its checkpoint past filtered events
+        foreach (var processor in _processors)
+        {
+            if (!processor.IsActive || processor.IsRebuilding)
+                continue;
+
+            var currentCheckpoint = activeCheckpoints.GetValueOrDefault(processor.ProcessorId, 0);
+
+            // Find the max position this processor actually processed
+            var maxProcessedPosition = processedEvents
+                .Where(e => e.GlobalPosition > currentCheckpoint)
+                .Where(e => processor.HandledEventTypes.Contains(e.EventType.Id))
+                .Select(e => e.GlobalPosition)
+                .DefaultIfEmpty(currentCheckpoint)
+                .Max();
+
+            // If there were filtered events beyond what we processed, advance the checkpoint
+            // This allows progress past events for tenants we don't own
+            if (maxOriginalPosition > maxProcessedPosition && maxProcessedPosition >= currentCheckpoint)
+            {
+                // Only advance to maxOriginalPosition if we didn't process any events,
+                // or if all our processed events are below the filtered events
+                var newCheckpoint = maxOriginalPosition;
+
+                await _checkpointStore.SaveAsync(processor.ProcessorId, newCheckpoint, ct);
+
+                _logger?.LogDebug(
+                    "Consumer {ConsumerId} advanced processor {ProcessorId} checkpoint from {OldCheckpoint} to {NewCheckpoint} (skipped filtered tenant events)",
+                    ConsumerId, processor.ProcessorId, currentCheckpoint, newCheckpoint);
+            }
+        }
+    }
+
+    /// <summary>
     /// Ensures this instance owns the lock for the specified tenant.
     /// Returns true if the lock is owned (either already held or just acquired).
+    /// Uses cooldown to prevent spamming lock acquisition attempts.
     /// </summary>
     private async Task<bool> EnsureTenantOwnershipAsync(string tenantId, CancellationToken ct)
     {
@@ -352,6 +428,22 @@ public sealed class PollingConsumer : IEventConsumer
             }
         }
 
+        // Check cooldown - don't spam lock attempts
+        if (_tenantLockCooldowns.TryGetValue(tenantId, out var cooldownUntil))
+        {
+            if (DateTimeOffset.UtcNow < cooldownUntil)
+            {
+                // Still in cooldown, skip this cycle
+                return false;
+            }
+
+            // Cooldown expired, remove and retry
+            _tenantLockCooldowns.TryRemove(tenantId, out _);
+            _logger?.LogDebug(
+                "Consumer {ConsumerId} cooldown expired for tenant {TenantId}, retrying lock acquisition",
+                ConsumerId, tenantId);
+        }
+
         // Try to acquire the lock
         if (_tenantProcessorLock is null)
         {
@@ -361,6 +453,19 @@ public sealed class PollingConsumer : IEventConsumer
         var lease = await _tenantProcessorLock.TryAcquireForTenantAsync(ConsumerId, tenantId, ct);
         if (lease is null)
         {
+            // Set cooldown before retrying
+            var newCooldownUntil = DateTimeOffset.UtcNow.Add(_tenantLockRetryInterval);
+            _tenantLockCooldowns[tenantId] = newCooldownUntil;
+
+            // Record metric
+            AlbertoMetrics.TenantLockFailures.Add(1,
+                new KeyValuePair<string, object?>("tenant.id", tenantId),
+                new KeyValuePair<string, object?>("consumer.id", ConsumerId));
+
+            _logger?.LogDebug(
+                "Consumer {ConsumerId} failed to acquire lock for tenant {TenantId}, cooldown until {CooldownUntil}",
+                ConsumerId, tenantId, newCooldownUntil);
+
             return false;
         }
 
@@ -371,6 +476,11 @@ public sealed class PollingConsumer : IEventConsumer
         {
             _ownedTenants.Add(tenantId);
         }
+
+        // Record metric
+        AlbertoMetrics.TenantLocksAcquired.Add(1,
+            new KeyValuePair<string, object?>("tenant.id", tenantId),
+            new KeyValuePair<string, object?>("consumer.id", ConsumerId));
 
         _logger?.LogInformation(
             "Consumer {ConsumerId} acquired lock for tenant {TenantId}. Now processing {TenantCount} tenant(s): [{Tenants}]",
@@ -556,6 +666,17 @@ public sealed class PollingConsumer : IEventConsumer
             {
                 activeCheckpoints[processor.ProcessorId] = position;
             }
+        }
+
+        // Record tenant ownership metrics (only in tenant-distributed mode)
+        if (_distributionMode == ConsumerDistributionMode.TenantDistributed)
+        {
+            int ownedCount;
+            lock (_tenantLock)
+            {
+                ownedCount = _ownedTenants.Count;
+            }
+            AlbertoMetrics.RecordTenantOwnership(ConsumerId, _moduleKey, ownedCount, _tenantLockCooldowns.Count);
         }
 
         return (activeCheckpoints, newRebuilders);

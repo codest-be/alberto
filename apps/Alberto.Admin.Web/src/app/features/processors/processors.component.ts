@@ -68,25 +68,14 @@ import { ProcessorStatus, RebuildStatus } from '../../core/models/admin.models';
                   </td>
                   <td>
                     @if (rebuildStatuses().get(processor.processorId); as status) {
-                      @if (status.state === 'Rebuilding') {
+                      @if (status.state === 'Rebuilding' || status.state === 'Clearing') {
                         <span class="status-badge rebuilding">
-                          Rebuilding v{{ status.rebuildingVersion }}
+                          {{ status.state === 'Clearing' ? 'Clearing' : 'Rebuilding' }}
                           ({{ status.progressPercent | number:'1.0-0' }}%)
-                        </span>
-                      } @else if (status.state === 'ReadyToSwap') {
-                        <span class="status-badge ready-to-swap">
-                          Ready to Swap v{{ status.rebuildingVersion }}
-                        </span>
-                      } @else if (status.state === 'Swapped') {
-                        <span class="status-badge swapped">
-                          Swapped to v{{ status.activeVersion }}
                         </span>
                       } @else {
                         <span class="status-badge" [class.active]="processor.isActive">
                           {{ processor.isActive ? 'Active' : 'Inactive' }}
-                          @if (status.activeVersion && status.activeVersion > 1) {
-                            (v{{ status.activeVersion }})
-                          }
                         </span>
                       }
                     } @else if (processor.isRebuilding) {
@@ -116,55 +105,38 @@ import { ProcessorStatus, RebuildStatus } from '../../core/models/admin.models';
                   </td>
                   <td class="actions">
                     @if (rebuildStatuses().get(processor.processorId); as status) {
-                      @if (status.state === 'Rebuilding') {
+                      @if (status.state === 'Rebuilding' || status.state === 'Clearing') {
                         <button
                           class="btn btn-sm btn-danger"
-                          (click)="rollbackRebuild(processor.processorId)"
+                          (click)="cancelRebuild(processor.processorId)"
                           [disabled]="actionInProgress()"
-                          title="Cancel and rollback rebuild"
+                          title="Cancel rebuild"
                         >
-                          Rollback
-                        </button>
-                      } @else if (status.state === 'ReadyToSwap') {
-                        <button
-                          class="btn btn-sm btn-success"
-                          (click)="swapVersion(processor.processorId)"
-                          [disabled]="actionInProgress()"
-                          title="Swap to rebuilt version"
-                        >
-                          Swap
-                        </button>
-                        <button
-                          class="btn btn-sm btn-danger"
-                          (click)="rollbackRebuild(processor.processorId)"
-                          [disabled]="actionInProgress()"
-                          title="Rollback rebuild"
-                        >
-                          Rollback
-                        </button>
-                      } @else if (status.state === 'Swapped' && status.activeVersion && status.activeVersion > 1) {
-                        <button
-                          class="btn btn-sm btn-secondary"
-                          (click)="cleanupOldVersion(processor.processorId, status.activeVersion - 1)"
-                          [disabled]="actionInProgress()"
-                          title="Delete old version data"
-                        >
-                          Cleanup v{{ status.activeVersion - 1 }}
-                        </button>
-                        <button
-                          class="btn btn-sm btn-secondary"
-                          (click)="startVersionedRebuild(processor.processorId)"
-                          [disabled]="actionInProgress()"
-                          title="Zero-downtime rebuild"
-                        >
-                          Rebuild
+                          Cancel
                         </button>
                       } @else {
+                        @if (processor.isActive) {
+                          <button
+                            class="btn btn-sm"
+                            (click)="deactivate(processor.processorId)"
+                            [disabled]="actionInProgress()"
+                          >
+                            Deactivate
+                          </button>
+                        } @else {
+                          <button
+                            class="btn btn-sm btn-primary"
+                            (click)="activate(processor.processorId)"
+                            [disabled]="actionInProgress()"
+                          >
+                            Activate
+                          </button>
+                        }
                         <button
                           class="btn btn-sm btn-secondary"
-                          (click)="startVersionedRebuild(processor.processorId)"
+                          (click)="startRebuild(processor.processorId)"
                           [disabled]="actionInProgress()"
-                          title="Zero-downtime rebuild"
+                          title="Rebuild projection"
                         >
                           Rebuild
                         </button>
@@ -197,9 +169,9 @@ import { ProcessorStatus, RebuildStatus } from '../../core/models/admin.models';
                       }
                       <button
                         class="btn btn-sm btn-secondary"
-                        (click)="startVersionedRebuild(processor.processorId)"
+                        (click)="startRebuild(processor.processorId)"
                         [disabled]="actionInProgress()"
-                        title="Zero-downtime rebuild"
+                        title="Rebuild projection"
                       >
                         Rebuild
                       </button>
@@ -467,17 +439,6 @@ import { ProcessorStatus, RebuildStatus } from '../../core/models/admin.models';
         color: #f59e0b;
         animation: pulse 2s infinite;
       }
-
-      &.ready-to-swap {
-        background: rgba(34, 197, 94, 0.15);
-        color: #22c55e;
-        animation: pulse 2s infinite;
-      }
-
-      &.swapped {
-        background: rgba(99, 102, 241, 0.15);
-        color: #6366f1;
-      }
     }
 
     .mono {
@@ -741,9 +702,8 @@ export class ProcessorsComponent implements OnInit {
             statuses.set(processorId, status);
             this.rebuildStatuses.set(statuses);
 
-            // Stop polling if rebuild reached a terminal state (keep polling for ReadyToSwap)
-            if (status.state === 'Completed' || status.state === 'Failed' ||
-                status.state === 'Cancelled' || status.state === 'RolledBack') {
+            // Stop polling if rebuild reached a terminal state
+            if (status.state === 'Completed' || status.state === 'Failed' || status.state === 'Cancelled') {
               this.rebuildPollingSubscription?.unsubscribe();
               this.rebuildPollingSubscription = null;
               this.loadData();
@@ -751,103 +711,6 @@ export class ProcessorsComponent implements OnInit {
           }
         },
       });
-    });
-  }
-
-  // Versioned Rebuild Operations (Zero-downtime)
-  startVersionedRebuild(processorId: string): void {
-    if (!confirm(`Start zero-downtime rebuild for ${processorId}?\n\nThis creates a new version while keeping the current version active. Queries continue working during the rebuild.`)) {
-      return;
-    }
-
-    this.actionInProgress.set(true);
-    this.api.startVersionedRebuild(processorId).subscribe({
-      next: (status) => {
-        const statuses = new Map(this.rebuildStatuses());
-        statuses.set(processorId, status);
-        this.rebuildStatuses.set(statuses);
-
-        this.loadData();
-        this.actionInProgress.set(false);
-
-        // Start polling for rebuild status
-        this.startRebuildStatusPolling(processorId);
-      },
-      error: (err) => {
-        alert(`Failed to start rebuild: ${err.message || 'Unknown error'}`);
-        this.actionInProgress.set(false);
-      },
-    });
-  }
-
-  swapVersion(processorId: string): void {
-    if (!confirm(`Swap to the rebuilt version for ${processorId}?\n\nQueries will immediately start reading from the new version.`)) {
-      return;
-    }
-
-    this.actionInProgress.set(true);
-    this.api.swapRebuildVersion(processorId).subscribe({
-      next: (status) => {
-        const statuses = new Map(this.rebuildStatuses());
-        statuses.set(processorId, status);
-        this.rebuildStatuses.set(statuses);
-
-        this.loadData();
-        this.actionInProgress.set(false);
-      },
-      error: (err) => {
-        alert(`Failed to swap version: ${err.message || 'Unknown error'}`);
-        this.actionInProgress.set(false);
-      },
-    });
-  }
-
-  rollbackRebuild(processorId: string): void {
-    if (!confirm(`Rollback the rebuild for ${processorId}?\n\nThis will discard the rebuilding version and keep the current active version.`)) {
-      return;
-    }
-
-    this.actionInProgress.set(true);
-    this.api.rollbackRebuild(processorId).subscribe({
-      next: (status) => {
-        const statuses = new Map(this.rebuildStatuses());
-        statuses.set(processorId, status);
-        this.rebuildStatuses.set(statuses);
-
-        // Stop polling
-        this.rebuildPollingSubscription?.unsubscribe();
-        this.rebuildPollingSubscription = null;
-
-        this.loadData();
-        this.actionInProgress.set(false);
-      },
-      error: (err) => {
-        alert(`Failed to rollback rebuild: ${err.message || 'Unknown error'}`);
-        this.actionInProgress.set(false);
-      },
-    });
-  }
-
-  cleanupOldVersion(processorId: string, version: number): void {
-    if (!confirm(`Delete old version ${version} data for ${processorId}?\n\nThis will free up storage. This action cannot be undone.`)) {
-      return;
-    }
-
-    this.actionInProgress.set(true);
-    this.api.cleanupOldVersion(processorId, version).subscribe({
-      next: () => {
-        // Clear the rebuild status since cleanup is complete
-        const statuses = new Map(this.rebuildStatuses());
-        statuses.delete(processorId);
-        this.rebuildStatuses.set(statuses);
-
-        this.loadData();
-        this.actionInProgress.set(false);
-      },
-      error: (err) => {
-        alert(`Failed to cleanup old version: ${err.message || 'Unknown error'}`);
-        this.actionInProgress.set(false);
-      },
     });
   }
 

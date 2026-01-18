@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using Alberto.Dcb.Admin.Api.Models;
 using Alberto.Dcb.Subscriptions;
 
@@ -14,10 +15,9 @@ internal sealed class AdminQueryService : IAdminQueryService
     private readonly IAdminDataAccess _dataAccess;
     private readonly PollingConsumer? _consumer;
     private readonly AdminOptions _options;
-    private readonly RebuildOrchestrator? _rebuildOrchestrator;
-    private readonly IRebuildMetadataStore? _rebuildMetadataStore;
+    private readonly FrozenDictionary<string, IProjectionStateClearer> _projectionClearers;
 
-    // In-memory tracking of rebuild operations (legacy)
+    // In-memory tracking of rebuild operations
     private static readonly Dictionary<string, RebuildTracker> _rebuildTrackers = new();
 
     private sealed class RebuildTracker
@@ -38,7 +38,7 @@ internal sealed class AdminQueryService : IAdminQueryService
         AdminOptions options,
         IDeadLetterStore? deadLetterStore = null,
         PollingConsumer? consumer = null,
-        IRebuildMetadataStore? rebuildMetadataStore = null)
+        IEnumerable<IProjectionStateClearer>? projectionClearers = null)
     {
         ModuleKey = moduleKey;
         _checkpointStore = checkpointStore;
@@ -47,15 +47,8 @@ internal sealed class AdminQueryService : IAdminQueryService
         _options = options;
         _deadLetterStore = deadLetterStore;
         _consumer = consumer;
-        _rebuildMetadataStore = rebuildMetadataStore;
-
-        if (rebuildMetadataStore is not null)
-        {
-            _rebuildOrchestrator = new RebuildOrchestrator(
-                rebuildMetadataStore,
-                checkpointStore,
-                eventStore);
-        }
+        _projectionClearers = (projectionClearers ?? [])
+            .ToFrozenDictionary(c => c.ProcessorId, StringComparer.Ordinal);
     }
 
     public string ModuleKey { get; }
@@ -373,7 +366,14 @@ internal sealed class AdminQueryService : IAdminQueryService
             // Step 1: Clear projection state if requested
             if (clearState)
             {
+                // Clear JSONB projection_states table
                 await _dataAccess.ClearProjectionStatesAsync(processorId, ct);
+
+                // Clear EF entity table (if an EF projection is registered for this processor)
+                if (_projectionClearers.TryGetValue(processorId, out var clearer))
+                {
+                    await clearer.ClearAsync(ct);
+                }
             }
 
             // Step 2: Trigger rebuild via the consumer (resets checkpoint and starts independent task)
@@ -463,134 +463,6 @@ internal sealed class AdminQueryService : IAdminQueryService
         }
 
         return Task.CompletedTask;
-    }
-
-    #endregion
-
-    #region Versioned Rebuilds
-
-    public async Task<RebuildStatus> StartVersionedRebuildAsync(string processorId, CancellationToken ct = default)
-    {
-        if (_rebuildOrchestrator is null || _rebuildMetadataStore is null)
-        {
-            return new RebuildStatus(processorId, RebuildState.Failed, 0, 0, 0, null, null,
-                "Versioned rebuilds not configured. Ensure IRebuildMetadataStore is registered.");
-        }
-
-        try
-        {
-            var handle = await _rebuildOrchestrator.StartAsync(processorId, ct);
-
-            // TODO: Start rebuild processor that writes to the new version
-            // For now, we'll need the consumer to support this (future enhancement)
-
-            return new RebuildStatus(
-                processorId,
-                RebuildState.Rebuilding,
-                0,
-                handle.TargetPosition,
-                0,
-                handle.StartedAt,
-                null,
-                null,
-                handle.ActiveVersion,
-                handle.RebuildingVersion);
-        }
-        catch (Exception ex)
-        {
-            return new RebuildStatus(processorId, RebuildState.Failed, 0, 0, 0,
-                DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, ex.Message);
-        }
-    }
-
-    public async Task<RebuildStatus> SwapRebuildVersionAsync(string processorId, CancellationToken ct = default)
-    {
-        if (_rebuildOrchestrator is null || _rebuildMetadataStore is null)
-        {
-            return new RebuildStatus(processorId, RebuildState.Failed, 0, 0, 0, null, null,
-                "Versioned rebuilds not configured. Ensure IRebuildMetadataStore is registered.");
-        }
-
-        try
-        {
-            await _rebuildOrchestrator.SwapAsync(processorId, ct);
-            var status = await _rebuildOrchestrator.GetStatusAsync(processorId, ct);
-
-            if (status is null)
-            {
-                return new RebuildStatus(processorId, RebuildState.Swapped, 0, 0, 100,
-                    null, DateTimeOffset.UtcNow, null);
-            }
-
-            return new RebuildStatus(
-                processorId,
-                RebuildState.Swapped,
-                status.CurrentPosition,
-                status.TargetPosition,
-                status.ProgressPercent,
-                status.StartedAt,
-                status.CompletedAt,
-                null,
-                status.ActiveVersion,
-                status.RebuildingVersion);
-        }
-        catch (Exception ex)
-        {
-            return new RebuildStatus(processorId, RebuildState.Failed, 0, 0, 0,
-                null, DateTimeOffset.UtcNow, ex.Message);
-        }
-    }
-
-    public async Task<RebuildStatus> RollbackRebuildAsync(string processorId, CancellationToken ct = default)
-    {
-        if (_rebuildOrchestrator is null || _rebuildMetadataStore is null)
-        {
-            return new RebuildStatus(processorId, RebuildState.Failed, 0, 0, 0, null, null,
-                "Versioned rebuilds not configured. Ensure IRebuildMetadataStore is registered.");
-        }
-
-        try
-        {
-            await _rebuildOrchestrator.RollbackAsync(processorId, ct);
-            var status = await _rebuildOrchestrator.GetStatusAsync(processorId, ct);
-
-            if (status is null)
-            {
-                return new RebuildStatus(processorId, RebuildState.RolledBack, 0, 0, 0,
-                    null, DateTimeOffset.UtcNow, null);
-            }
-
-            return new RebuildStatus(
-                processorId,
-                RebuildState.RolledBack,
-                status.CurrentPosition,
-                status.TargetPosition,
-                status.ProgressPercent,
-                status.StartedAt,
-                status.CompletedAt,
-                null,
-                status.ActiveVersion,
-                status.RebuildingVersion);
-        }
-        catch (Exception ex)
-        {
-            return new RebuildStatus(processorId, RebuildState.Failed, 0, 0, 0,
-                null, DateTimeOffset.UtcNow, ex.Message);
-        }
-    }
-
-    public async Task CleanupOldVersionAsync(string processorId, int versionToDelete, CancellationToken ct = default)
-    {
-        if (_rebuildOrchestrator is null || _rebuildMetadataStore is null)
-        {
-            throw new InvalidOperationException(
-                "Versioned rebuilds not configured. Ensure IRebuildMetadataStore is registered.");
-        }
-
-        await _rebuildOrchestrator.CleanupVersionAsync(processorId, versionToDelete, ct);
-
-        // Perform actual data deletion through the data access layer
-        await _dataAccess.DeleteProjectionVersionAsync(processorId, versionToDelete, ct);
     }
 
     #endregion

@@ -67,6 +67,24 @@ public static class AlbertoMetrics
     public static readonly Counter<long> ConcurrencyConflicts =
         Meter.CreateCounter<long>("alberto.concurrency.conflicts", "conflicts", "Number of optimistic concurrency conflicts");
 
+    /// <summary>
+    /// Counter for tenant locks successfully acquired.
+    /// </summary>
+    public static readonly Counter<long> TenantLocksAcquired =
+        Meter.CreateCounter<long>("alberto.tenant_locks_acquired", "locks", "Number of tenant locks successfully acquired");
+
+    /// <summary>
+    /// Counter for failed tenant lock acquisition attempts.
+    /// </summary>
+    public static readonly Counter<long> TenantLockFailures =
+        Meter.CreateCounter<long>("alberto.tenant_lock_failures", "failures", "Number of failed tenant lock acquisition attempts");
+
+    /// <summary>
+    /// Counter for events filtered out due to tenant ownership.
+    /// </summary>
+    public static readonly Counter<long> EventsFilteredByTenant =
+        Meter.CreateCounter<long>("alberto.events_filtered_by_tenant", "events", "Number of events filtered out due to tenant ownership");
+
     #endregion
 
     #region Gauges
@@ -97,6 +115,61 @@ public static class AlbertoMetrics
             _processorLagMeasurements.Add(new Measurement<long>(lag,
                 new KeyValuePair<string, object?>("processor", processorId),
                 new KeyValuePair<string, object?>("module", module)));
+        }
+    }
+
+    #endregion
+
+    #region Tenant Ownership Gauges
+
+    /// <summary>
+    /// Observable gauge for number of tenants owned by each consumer.
+    /// </summary>
+    public static readonly ObservableGauge<int> OwnedTenantCount =
+        Meter.CreateObservableGauge("alberto.owned_tenant_count", GetOwnedTenantMeasurements, "tenants", "Number of tenants currently owned by this consumer");
+
+    /// <summary>
+    /// Observable gauge for number of tenants in lock cooldown.
+    /// </summary>
+    public static readonly ObservableGauge<int> TenantCooldownCount =
+        Meter.CreateObservableGauge("alberto.tenant_cooldown_count", GetCooldownTenantMeasurements, "tenants", "Number of tenants in lock cooldown");
+
+    private record TenantOwnershipSnapshot(string ConsumerId, string ModuleKey, int OwnedCount, int CooldownCount);
+
+    private static readonly List<TenantOwnershipSnapshot> _tenantOwnershipSnapshots = [];
+    private static readonly object _tenantOwnershipLock = new();
+
+    private static IEnumerable<Measurement<int>> GetOwnedTenantMeasurements()
+    {
+        lock (_tenantOwnershipLock)
+        {
+            return _tenantOwnershipSnapshots.Select(s => new Measurement<int>(
+                s.OwnedCount,
+                new KeyValuePair<string, object?>("consumer.id", s.ConsumerId),
+                new KeyValuePair<string, object?>("module.key", s.ModuleKey))).ToArray();
+        }
+    }
+
+    private static IEnumerable<Measurement<int>> GetCooldownTenantMeasurements()
+    {
+        lock (_tenantOwnershipLock)
+        {
+            return _tenantOwnershipSnapshots.Select(s => new Measurement<int>(
+                s.CooldownCount,
+                new KeyValuePair<string, object?>("consumer.id", s.ConsumerId),
+                new KeyValuePair<string, object?>("module.key", s.ModuleKey))).ToArray();
+        }
+    }
+
+    /// <summary>
+    /// Updates tenant ownership metrics for observable gauges.
+    /// </summary>
+    public static void RecordTenantOwnership(string consumerId, string moduleKey, int ownedCount, int cooldownCount)
+    {
+        lock (_tenantOwnershipLock)
+        {
+            _tenantOwnershipSnapshots.RemoveAll(s => s.ConsumerId == consumerId);
+            _tenantOwnershipSnapshots.Add(new TenantOwnershipSnapshot(consumerId, moduleKey, ownedCount, cooldownCount));
         }
     }
 

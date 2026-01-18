@@ -11,6 +11,7 @@ public static class EfConsumerBuilderExtensions
 {
     /// <summary>
     /// Registers an async projection processor that uses Entity Framework for storage.
+    /// Also registers an <see cref="IProjectionStateClearer"/> for rebuild support.
     /// </summary>
     /// <typeparam name="TEntity">The EF entity type implementing <see cref="IProjectionEntity"/>.</typeparam>
     /// <typeparam name="TProjection">The projection type.</typeparam>
@@ -25,12 +26,23 @@ public static class EfConsumerBuilderExtensions
         where TProjection : Projection<TEntity>, new()
         where TDbContext : DbContext
     {
-        // Use the service provider overload to get the DbContextFactory
-        return builder.AddProjection<TEntity, TProjection>(sp =>
+        var id = processorId ?? typeof(TProjection).Name;
+
+        // Register the projection with the state store factory
+        builder.AddProjection<TEntity, TProjection>(sp =>
         {
             var contextFactory = sp.GetRequiredService<IDbContextFactory<TDbContext>>();
             return tenantId => new EfStateStore<TEntity, TDbContext>(contextFactory, tenantId);
-        }, processorId);
+        }, id);
+
+        // Register clearer for rebuild support (keyed by module key)
+        builder.Services.AddKeyedSingleton<IProjectionStateClearer>(
+            builder.ModuleKey,
+            (sp, _) => new EfProjectionStateClearer<TEntity, TDbContext>(
+                sp.GetRequiredService<IDbContextFactory<TDbContext>>(),
+                id));
+
+        return builder;
     }
 
 }

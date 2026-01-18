@@ -88,12 +88,9 @@ export type RebuildState =
   | 'NotStarted'
   | 'Clearing'
   | 'Rebuilding'
-  | 'ReadyToSwap'
   | 'Completed'
-  | 'Swapped'
   | 'Failed'
-  | 'Cancelled'
-  | 'RolledBack';
+  | 'Cancelled';
 
 export interface RebuildStatus {
   processorId: string;
@@ -104,8 +101,6 @@ export interface RebuildStatus {
   startedAt: string | null;
   completedAt: string | null;
   errorMessage: string | null;
-  activeVersion: number | null;
-  rebuildingVersion: number | null;
 }
 
 export interface DeadLetterFilter {

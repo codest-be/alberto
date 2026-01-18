@@ -33,6 +33,7 @@ public static class AdminBuilderExtensions
             var adminOptions = sp.GetRequiredKeyedService<AdminOptions>(moduleKey);
             var deadLetterStore = sp.GetKeyedService<IDeadLetterStore>(moduleKey);
             var consumer = sp.GetKeyedService<PollingConsumer>(moduleKey);
+            var projectionClearers = sp.GetKeyedServices<IProjectionStateClearer>(moduleKey);
 
             return new AdminQueryService(
                 moduleKey,
@@ -41,7 +42,8 @@ public static class AdminBuilderExtensions
                 dataAccess,
                 adminOptions,
                 deadLetterStore,
-                consumer);
+                consumer,
+                projectionClearers);
         });
 
         // Register module for discovery
