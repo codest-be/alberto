@@ -8,21 +8,15 @@ namespace Alberto.Dcb.Postgres;
 /// PostgreSQL implementation of the event store backend.
 /// Uses PostgreSQL functions with inverted indexes for efficient DCB queries.
 /// </summary>
-public sealed class PostgresEventStoreBackend : IEventStoreBackend
+public sealed class PostgresEventStoreBackend(
+    NpgsqlDataSource dataSource,
+    TimeProvider? timeProvider = null,
+    string? schema = null)
+    : IEventStoreBackend
 {
-    private readonly NpgsqlDataSource _dataSource;
-    private readonly TimeProvider _timeProvider;
-    private readonly SchemaQualifier _schema;
-
-    public PostgresEventStoreBackend(
-        NpgsqlDataSource dataSource,
-        TimeProvider? timeProvider = null,
-        string? schema = null)
-    {
-        _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
-        _timeProvider = timeProvider ?? TimeProvider.System;
-        _schema = new SchemaQualifier(schema);
-    }
+    private readonly NpgsqlDataSource _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+    private readonly SchemaQualifier _schema = new(schema);
 
     public async Task<IReadOnlyCollection<IEventEnvelope>> Stream(
         string tenantId,

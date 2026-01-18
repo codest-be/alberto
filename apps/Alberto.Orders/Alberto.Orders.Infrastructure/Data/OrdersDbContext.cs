@@ -7,12 +7,8 @@ namespace Alberto.Orders.Infrastructure.Data;
 /// <summary>
 /// DbContext for Orders module EF projections.
 /// </summary>
-public class OrdersDbContext : DbContext
+public class OrdersDbContext(DbContextOptions<OrdersDbContext> options) : DbContext(options)
 {
-    public OrdersDbContext(DbContextOptions<OrdersDbContext> options) : base(options)
-    {
-    }
-
     /// <summary>
     /// Order summary entities.
     /// </summary>

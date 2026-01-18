@@ -6,19 +6,12 @@ namespace Alberto.Dcb.Tests.Subscriptions;
 /// <summary>
 /// Tests for PostgresTenantProcessorLock (tenant-distributed leader election with PostgreSQL advisory locks).
 /// </summary>
-public class TenantProcessorLockTests : IClassFixture<PostgresFixture>
+public class TenantProcessorLockTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
-    private readonly PostgresFixture _fixture;
-
-    public TenantProcessorLockTests(PostgresFixture fixture)
-    {
-        _fixture = fixture;
-    }
-
     [Fact]
     public async Task TryAcquireForTenant_WhenNoExistingLock_ShouldSucceed()
     {
-        var lockManager = new PostgresTenantProcessorLock(_fixture.DataSource);
+        var lockManager = new PostgresTenantProcessorLock(fixture.DataSource);
         var consumerId = $"consumer-{Guid.NewGuid():N}";
         var tenantId = $"tenant-{Guid.NewGuid():N}";
 
@@ -33,7 +26,7 @@ public class TenantProcessorLockTests : IClassFixture<PostgresFixture>
     [Fact]
     public async Task TryAcquireForTenant_SameTenantSameConsumer_ShouldReturnExistingLease()
     {
-        var lockManager = new PostgresTenantProcessorLock(_fixture.DataSource);
+        var lockManager = new PostgresTenantProcessorLock(fixture.DataSource);
         var consumerId = $"consumer-{Guid.NewGuid():N}";
         var tenantId = $"tenant-{Guid.NewGuid():N}";
 
@@ -55,7 +48,7 @@ public class TenantProcessorLockTests : IClassFixture<PostgresFixture>
     [Fact]
     public async Task TryAcquireForTenant_DifferentTenantsSameConsumer_ShouldBothSucceed()
     {
-        var lockManager = new PostgresTenantProcessorLock(_fixture.DataSource);
+        var lockManager = new PostgresTenantProcessorLock(fixture.DataSource);
         var consumerId = $"consumer-{Guid.NewGuid():N}";
         var tenant1 = $"tenant-acme-{Guid.NewGuid():N}";
         var tenant2 = $"tenant-contoso-{Guid.NewGuid():N}";
@@ -77,8 +70,8 @@ public class TenantProcessorLockTests : IClassFixture<PostgresFixture>
     [Fact]
     public async Task TryAcquireForTenant_SameTenantDifferentInstances_ShouldOnlyOneSucceed()
     {
-        var lockManager1 = new PostgresTenantProcessorLock(_fixture.DataSource);
-        var lockManager2 = new PostgresTenantProcessorLock(_fixture.DataSource);
+        var lockManager1 = new PostgresTenantProcessorLock(fixture.DataSource);
+        var lockManager2 = new PostgresTenantProcessorLock(fixture.DataSource);
         var consumerId = $"consumer-{Guid.NewGuid():N}";
         var tenantId = $"tenant-{Guid.NewGuid():N}";
 
@@ -97,8 +90,8 @@ public class TenantProcessorLockTests : IClassFixture<PostgresFixture>
     [Fact]
     public async Task TryAcquireForTenant_DifferentInstancesDifferentTenants_ShouldBothSucceed()
     {
-        var lockManager1 = new PostgresTenantProcessorLock(_fixture.DataSource);
-        var lockManager2 = new PostgresTenantProcessorLock(_fixture.DataSource);
+        var lockManager1 = new PostgresTenantProcessorLock(fixture.DataSource);
+        var lockManager2 = new PostgresTenantProcessorLock(fixture.DataSource);
         var consumerId = $"consumer-{Guid.NewGuid():N}";
         var tenant1 = $"tenant-acme-{Guid.NewGuid():N}";
         var tenant2 = $"tenant-contoso-{Guid.NewGuid():N}";
@@ -119,8 +112,8 @@ public class TenantProcessorLockTests : IClassFixture<PostgresFixture>
     [Fact]
     public async Task TryAcquireForTenant_AfterLeaseDisposed_ShouldSucceed()
     {
-        var lockManager1 = new PostgresTenantProcessorLock(_fixture.DataSource);
-        var lockManager2 = new PostgresTenantProcessorLock(_fixture.DataSource);
+        var lockManager1 = new PostgresTenantProcessorLock(fixture.DataSource);
+        var lockManager2 = new PostgresTenantProcessorLock(fixture.DataSource);
         var consumerId = $"consumer-{Guid.NewGuid():N}";
         var tenantId = $"tenant-{Guid.NewGuid():N}";
 
@@ -140,7 +133,7 @@ public class TenantProcessorLockTests : IClassFixture<PostgresFixture>
     [Fact]
     public async Task Dispose_MultipleDispose_ShouldNotThrow()
     {
-        var lockManager = new PostgresTenantProcessorLock(_fixture.DataSource);
+        var lockManager = new PostgresTenantProcessorLock(fixture.DataSource);
         var consumerId = $"consumer-{Guid.NewGuid():N}";
         var tenantId = $"tenant-{Guid.NewGuid():N}";
 
@@ -180,7 +173,7 @@ public class TenantProcessorLockTests : IClassFixture<PostgresFixture>
     [Fact]
     public async Task TryAcquireForTenant_MultipleTenants_ShouldTrackAllLeases()
     {
-        var lockManager = new PostgresTenantProcessorLock(_fixture.DataSource);
+        var lockManager = new PostgresTenantProcessorLock(fixture.DataSource);
         var consumerId = $"consumer-{Guid.NewGuid():N}";
         var tenants = Enumerable.Range(1, 5).Select(i => $"tenant-{i}-{Guid.NewGuid():N}").ToList();
 
@@ -204,7 +197,7 @@ public class TenantProcessorLockTests : IClassFixture<PostgresFixture>
     [Fact]
     public async Task TryAcquireForTenant_DisposedLeaseAllowsReacquisition()
     {
-        var lockManager = new PostgresTenantProcessorLock(_fixture.DataSource);
+        var lockManager = new PostgresTenantProcessorLock(fixture.DataSource);
         var consumerId = $"consumer-{Guid.NewGuid():N}";
         var tenantId = $"tenant-{Guid.NewGuid():N}";
 

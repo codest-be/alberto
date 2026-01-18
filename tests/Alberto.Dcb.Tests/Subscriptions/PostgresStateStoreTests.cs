@@ -7,15 +7,8 @@ namespace Alberto.Dcb.Tests.Subscriptions;
 /// Integration tests for PostgresStateStore.
 /// Uses Testcontainers for real PostgreSQL testing.
 /// </summary>
-public sealed class PostgresStateStoreTests : IClassFixture<PostgresFixture>
+public sealed class PostgresStateStoreTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
-    private readonly PostgresFixture _fixture;
-
-    public PostgresStateStoreTests(PostgresFixture fixture)
-    {
-        _fixture = fixture;
-    }
-
     #region Test State
 
     public record OrderState
@@ -252,7 +245,7 @@ public sealed class PostgresStateStoreTests : IClassFixture<PostgresFixture>
         string? projectionType = null)
     {
         return new PostgresStateStore<TState>(
-            _fixture.DataSource,
+            fixture.DataSource,
             tenantId ?? Guid.NewGuid().ToString(),
             projectionType);
     }

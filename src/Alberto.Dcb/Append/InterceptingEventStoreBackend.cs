@@ -4,16 +4,11 @@ namespace Alberto.Dcb.Append;
 /// Decorator that executes the append interceptor pipeline around backend operations.
 /// All read operations are passed through to the inner backend.
 /// </summary>
-internal sealed class InterceptingEventStoreBackend : IEventStoreBackend
+internal sealed class InterceptingEventStoreBackend(IEventStoreBackend inner, IAppendInterceptorPipeline pipeline)
+    : IEventStoreBackend
 {
-    private readonly IEventStoreBackend _inner;
-    private readonly IAppendInterceptorPipeline _pipeline;
-
-    public InterceptingEventStoreBackend(IEventStoreBackend inner, IAppendInterceptorPipeline pipeline)
-    {
-        _inner = inner ?? throw new ArgumentNullException(nameof(inner));
-        _pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
-    }
+    private readonly IEventStoreBackend _inner = inner ?? throw new ArgumentNullException(nameof(inner));
+    private readonly IAppendInterceptorPipeline _pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
 
     /// <inheritdoc />
     public Task<IReadOnlyCollection<IEventEnvelope>> Append(

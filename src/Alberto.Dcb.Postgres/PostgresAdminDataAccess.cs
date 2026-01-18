@@ -9,22 +9,15 @@ namespace Alberto.Dcb.Postgres;
 /// <summary>
 /// PostgreSQL implementation of <see cref="IAdminDataAccess"/>.
 /// </summary>
-public sealed class PostgresAdminDataAccess : IAdminDataAccess
+public sealed class PostgresAdminDataAccess(NpgsqlDataSource dataSource, string? schema = null) : IAdminDataAccess
 {
-    private readonly NpgsqlDataSource _dataSource;
-    private readonly SchemaQualifier _schema;
+    private readonly NpgsqlDataSource _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
+    private readonly SchemaQualifier _schema = new(schema);
 
     /// <summary>
     /// The schema name used for this module's tables.
     /// </summary>
-    public string Schema { get; }
-
-    public PostgresAdminDataAccess(NpgsqlDataSource dataSource, string? schema = null)
-    {
-        _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
-        _schema = new SchemaQualifier(schema);
-        Schema = schema ?? "public";
-    }
+    public string Schema { get; } = schema ?? "public";
 
     public async Task<IReadOnlyList<CheckpointDto>> ListCheckpointsAsync(CancellationToken ct = default)
     {

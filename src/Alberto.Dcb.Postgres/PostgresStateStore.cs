@@ -10,27 +10,18 @@ namespace Alberto.Dcb.Postgres;
 /// Stores state as JSONB, keyed by tenant + projection type + document ID + rebuild version.
 /// </summary>
 /// <typeparam name="TState">The type of state being stored.</typeparam>
-public sealed class PostgresStateStore<TState> : IStateStore<TState>
+public sealed class PostgresStateStore<TState>(
+    NpgsqlDataSource dataSource,
+    string tenantId,
+    string? projectionType = null,
+    string? schema = null,
+    int rebuildVersion = 1)
+    : IStateStore<TState>
 {
-    private readonly NpgsqlDataSource _dataSource;
-    private readonly string _tenantId;
-    private readonly string _projectionType;
-    private readonly SchemaQualifier _schema;
-    private readonly int _rebuildVersion;
-
-    public PostgresStateStore(
-        NpgsqlDataSource dataSource,
-        string tenantId,
-        string? projectionType = null,
-        string? schema = null,
-        int rebuildVersion = 1)
-    {
-        _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
-        _tenantId = tenantId ?? throw new ArgumentNullException(nameof(tenantId));
-        _projectionType = projectionType ?? typeof(TState).Name;
-        _schema = new SchemaQualifier(schema);
-        _rebuildVersion = rebuildVersion;
-    }
+    private readonly NpgsqlDataSource _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
+    private readonly string _tenantId = tenantId ?? throw new ArgumentNullException(nameof(tenantId));
+    private readonly string _projectionType = projectionType ?? typeof(TState).Name;
+    private readonly SchemaQualifier _schema = new(schema);
 
     public async Task<Dictionary<string, TState>> LoadManyAsync(
         IEnumerable<string> documentIds,
@@ -86,7 +77,7 @@ public sealed class PostgresStateStore<TState> : IStateStore<TState>
         await using var cmd = new NpgsqlCommand(sql, connection);
         cmd.Parameters.AddWithValue("tenant_id", _tenantId);
         cmd.Parameters.AddWithValue("projection_type", _projectionType);
-        cmd.Parameters.AddWithValue("rebuild_version", _rebuildVersion);
+        cmd.Parameters.AddWithValue("rebuild_version", rebuildVersion);
         cmd.Parameters.AddRange(parameters.ToArray());
 
         await using var reader = await cmd.ExecuteReaderAsync(ct);
@@ -146,7 +137,7 @@ public sealed class PostgresStateStore<TState> : IStateStore<TState>
             cmd.Parameters.AddWithValue("tenant_id", _tenantId);
             cmd.Parameters.AddWithValue("projection_type", _projectionType);
             cmd.Parameters.AddWithValue("document_id", docId);
-            cmd.Parameters.AddWithValue("rebuild_version", _rebuildVersion);
+            cmd.Parameters.AddWithValue("rebuild_version", rebuildVersion);
             cmd.Parameters.AddWithValue("state", stateJson);
 
             await cmd.ExecuteNonQueryAsync(ct);
@@ -168,7 +159,7 @@ public sealed class PostgresStateStore<TState> : IStateStore<TState>
             cmd.Parameters.AddWithValue("tenant_id", _tenantId);
             cmd.Parameters.AddWithValue("projection_type", _projectionType);
             cmd.Parameters.AddWithValue("document_id", docId);
-            cmd.Parameters.AddWithValue("rebuild_version", _rebuildVersion);
+            cmd.Parameters.AddWithValue("rebuild_version", rebuildVersion);
 
             await cmd.ExecuteNonQueryAsync(ct);
         }
@@ -195,7 +186,7 @@ public sealed class PostgresStateStore<TState> : IStateStore<TState>
 
         cmd.Parameters.AddWithValue("tenant_id", _tenantId);
         cmd.Parameters.AddWithValue("projection_type", _projectionType);
-        cmd.Parameters.AddWithValue("rebuild_version", _rebuildVersion);
+        cmd.Parameters.AddWithValue("rebuild_version", rebuildVersion);
         cmd.Parameters.AddWithValue("limit", limit);
 
         await using var reader = await cmd.ExecuteReaderAsync(ct);

@@ -78,42 +78,29 @@ internal sealed class ProjectionDispatcher<TState>
         return handler.GetDocumentId(envelope);
     }
 
-    private sealed class Handler
+    private sealed class Handler(Type eventType, object projection, MethodInfo applyMethod, MethodInfo getDocIdMethod)
     {
-        private readonly Type _eventType;
-        private readonly object _projection;
-        private readonly MethodInfo _applyMethod;
-        private readonly MethodInfo _getDocIdMethod;
-
-        public Handler(Type eventType, object projection, MethodInfo applyMethod, MethodInfo getDocIdMethod)
-        {
-            _eventType = eventType;
-            _projection = projection;
-            _applyMethod = applyMethod;
-            _getDocIdMethod = getDocIdMethod;
-        }
-
         public ProjectionResult<TState> Apply(TState state, IEventEnvelope envelope)
         {
             var @event = DeserializeEvent(envelope);
             var context = ProjectionContext.FromEnvelope(envelope);
 
-            var result = _applyMethod.Invoke(_projection, [state, @event, context]);
+            var result = applyMethod.Invoke(projection, [state, @event, context]);
             return (ProjectionResult<TState>)result!;
         }
 
         public string GetDocumentId(IEventEnvelope envelope)
         {
             var @event = DeserializeEvent(envelope);
-            var result = _getDocIdMethod.Invoke(_projection, [@event]);
+            var result = getDocIdMethod.Invoke(projection, [@event]);
             return (string)result!;
         }
 
         private object DeserializeEvent(IEventEnvelope envelope)
         {
-            return JsonSerializer.Deserialize(envelope.EventData, _eventType)
+            return JsonSerializer.Deserialize(envelope.EventData, eventType)
                 ?? throw new InvalidOperationException(
-                    $"Failed to deserialize event '{envelope.EventType.Id}' to type '{_eventType.Name}'");
+                    $"Failed to deserialize event '{envelope.EventType.Id}' to type '{eventType.Name}'");
         }
     }
 }

@@ -16,12 +16,14 @@ namespace Alberto.Dcb.Postgres.Admin;
 /// Background service that listens for PostgreSQL NOTIFY events and publishes admin updates.
 /// Uses debouncing to batch rapid notifications and reduce database queries.
 /// </summary>
-internal sealed partial class PostgresAdminListener : BackgroundService
+internal sealed partial class PostgresAdminListener(
+    IServiceScopeFactory scopeFactory,
+    ILogger<PostgresAdminListener> logger,
+    IOptions<AdminModuleRegistry> registry,
+    IAdminPublisher publisher)
+    : BackgroundService
 {
-    private readonly IServiceScopeFactory _scopeFactory;
-    private readonly ILogger<PostgresAdminListener> _logger;
-    private readonly AdminModuleRegistry _registry;
-    private readonly IAdminPublisher _publisher;
+    private readonly AdminModuleRegistry _registry = registry.Value;
     private readonly TimeSpan _debounceInterval = TimeSpan.FromMilliseconds(100);
 
     [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9_]*$")]
@@ -34,21 +36,9 @@ internal sealed partial class PostgresAdminListener : BackgroundService
         return schema;
     }
 
-    public PostgresAdminListener(
-        IServiceScopeFactory scopeFactory,
-        ILogger<PostgresAdminListener> logger,
-        IOptions<AdminModuleRegistry> registry,
-        IAdminPublisher publisher)
-    {
-        _scopeFactory = scopeFactory;
-        _logger = logger;
-        _registry = registry.Value;
-        _publisher = publisher;
-    }
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("PostgresAdminListener starting for {ModuleCount} modules", _registry.Modules.Count);
+        logger.LogInformation("PostgresAdminListener starting for {ModuleCount} modules", _registry.Modules.Count);
 
         var listenerTasks = _registry.Modules
             .Select(kvp => ListenForModule(kvp.Key, stoppingToken))
@@ -59,12 +49,12 @@ internal sealed partial class PostgresAdminListener : BackgroundService
 
     private async Task ListenForModule(string moduleKey, CancellationToken ct)
     {
-        await using var scope = _scopeFactory.CreateAsyncScope();
+        await using var scope = scopeFactory.CreateAsyncScope();
         var dataSource = scope.ServiceProvider.GetKeyedService<NpgsqlDataSource>(moduleKey);
 
         if (dataSource is null)
         {
-            _logger.LogWarning("No NpgsqlDataSource found for module {ModuleKey}, skipping admin listener", moduleKey);
+            logger.LogWarning("No NpgsqlDataSource found for module {ModuleKey}, skipping admin listener", moduleKey);
             return;
         }
 
@@ -79,7 +69,7 @@ internal sealed partial class PostgresAdminListener : BackgroundService
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                _logger.LogError(ex, "Error in PostgresAdminListener for module {ModuleKey}, reconnecting in 5s", moduleKey);
+                logger.LogError(ex, "Error in PostgresAdminListener for module {ModuleKey}, reconnecting in 5s", moduleKey);
                 await Task.Delay(TimeSpan.FromSeconds(5), ct);
             }
         }
@@ -106,7 +96,7 @@ internal sealed partial class PostgresAdminListener : BackgroundService
         await listenCheckpoints.ExecuteNonQueryAsync(ct);
         await listenDeadLetters.ExecuteNonQueryAsync(ct);
 
-        _logger.LogInformation(
+        logger.LogInformation(
             "PostgresAdminListener connected for module {ModuleKey}, listening on channels: {Events}, {Checkpoints}, {DeadLetters}",
             moduleKey, eventsChannel, checkpointsChannel, deadLettersChannel);
 
@@ -197,7 +187,7 @@ internal sealed partial class PostgresAdminListener : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing notifications for module {ModuleKey}", moduleKey);
+                logger.LogError(ex, "Error processing notifications for module {ModuleKey}", moduleKey);
             }
         }
     }
@@ -209,7 +199,7 @@ internal sealed partial class PostgresAdminListener : BackgroundService
         bool hasDeadLetters,
         CancellationToken ct)
     {
-        await using var scope = _scopeFactory.CreateAsyncScope();
+        await using var scope = scopeFactory.CreateAsyncScope();
         var queryService = scope.ServiceProvider.GetKeyedService<IAdminQueryService>(moduleKey);
 
         if (queryService is null) return;
@@ -218,7 +208,7 @@ internal sealed partial class PostgresAdminListener : BackgroundService
         foreach (var (processorId, position) in checkpoints)
         {
             var checkpoint = new CheckpointDto(processorId, position, DateTimeOffset.UtcNow);
-            await _publisher.PublishCheckpointAsync(moduleKey, checkpoint, ct);
+            await publisher.PublishCheckpointAsync(moduleKey, checkpoint, ct);
         }
 
         // If events or checkpoints changed, fetch and publish processor status
@@ -227,7 +217,7 @@ internal sealed partial class PostgresAdminListener : BackgroundService
             var processors = await queryService.GetProcessorsAsync(ct);
             foreach (var processor in processors)
             {
-                await _publisher.PublishProcessorAsync(moduleKey, processor, ct);
+                await publisher.PublishProcessorAsync(moduleKey, processor, ct);
             }
         }
 
@@ -235,7 +225,7 @@ internal sealed partial class PostgresAdminListener : BackgroundService
         if (hasEvents || hasDeadLetters)
         {
             var info = await queryService.GetSystemInfoAsync(ct);
-            await _publisher.PublishSystemInfoAsync(moduleKey, info, ct);
+            await publisher.PublishSystemInfoAsync(moduleKey, info, ct);
         }
 
         // If dead letters changed, fetch latest
@@ -244,7 +234,7 @@ internal sealed partial class PostgresAdminListener : BackgroundService
             var deadLetters = await queryService.GetDeadLettersAsync(page: 1, pageSize: 10, ct: ct);
             foreach (var dl in deadLetters.Items)
             {
-                await _publisher.PublishDeadLetterAsync(moduleKey, dl, DeadLetterChangeType.Added, ct);
+                await publisher.PublishDeadLetterAsync(moduleKey, dl, DeadLetterChangeType.Added, ct);
             }
         }
     }

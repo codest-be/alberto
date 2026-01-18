@@ -88,27 +88,16 @@ public sealed class PostgresTenantProcessorLock : ITenantProcessorLock
         return result is bool acquired && acquired;
     }
 
-    private sealed class TenantLockLease : IAsyncDisposable
+    private sealed class TenantLockLease(
+        NpgsqlConnection connection,
+        long lockId,
+        string leaseKey,
+        Action<string> onDispose)
+        : IAsyncDisposable
     {
-        private readonly NpgsqlConnection _connection;
-        private readonly long _lockId;
-        private readonly string _leaseKey;
-        private readonly Action<string> _onDispose;
         private int _disposed;
 
         public bool IsDisposed => _disposed != 0;
-
-        public TenantLockLease(
-            NpgsqlConnection connection,
-            long lockId,
-            string leaseKey,
-            Action<string> onDispose)
-        {
-            _connection = connection;
-            _lockId = lockId;
-            _leaseKey = leaseKey;
-            _onDispose = onDispose;
-        }
 
         public async ValueTask DisposeAsync()
         {
@@ -117,15 +106,15 @@ public sealed class PostgresTenantProcessorLock : ITenantProcessorLock
 
             try
             {
-                _onDispose(_leaseKey);
+                onDispose(leaseKey);
 
-                await using var cmd = new NpgsqlCommand("SELECT pg_advisory_unlock(@lock_id)", _connection);
-                cmd.Parameters.AddWithValue("lock_id", _lockId);
+                await using var cmd = new NpgsqlCommand("SELECT pg_advisory_unlock(@lock_id)", connection);
+                cmd.Parameters.AddWithValue("lock_id", lockId);
                 await cmd.ExecuteNonQueryAsync();
             }
             finally
             {
-                await _connection.DisposeAsync();
+                await connection.DisposeAsync();
             }
         }
     }

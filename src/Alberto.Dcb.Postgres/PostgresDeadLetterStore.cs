@@ -6,16 +6,10 @@ namespace Alberto.Dcb.Postgres;
 /// <summary>
 /// PostgreSQL implementation of dead letter storage.
 /// </summary>
-public sealed class PostgresDeadLetterStore : IDeadLetterStore
+public sealed class PostgresDeadLetterStore(NpgsqlDataSource dataSource, string? schema = null) : IDeadLetterStore
 {
-    private readonly NpgsqlDataSource _dataSource;
-    private readonly SchemaQualifier _schema;
-
-    public PostgresDeadLetterStore(NpgsqlDataSource dataSource, string? schema = null)
-    {
-        _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
-        _schema = new SchemaQualifier(schema);
-    }
+    private readonly NpgsqlDataSource _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
+    private readonly SchemaQualifier _schema = new(schema);
 
     /// <inheritdoc />
     public async Task StoreAsync(DeadLetterEntry entry, CancellationToken ct = default)

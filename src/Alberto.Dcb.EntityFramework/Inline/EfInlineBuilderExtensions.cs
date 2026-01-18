@@ -54,17 +54,11 @@ public static class EfInlineBuilderExtensions
 /// Note: This is a simplified adapter that uses the first tenant from loaded documents.
 /// For inline projections, tenant context comes from the event envelope.
 /// </summary>
-internal sealed class EfInlineStateStoreAdapter<TEntity, TDbContext> : IStateStore<TEntity>
+internal sealed class EfInlineStateStoreAdapter<TEntity, TDbContext>(IDbContextFactory<TDbContext> contextFactory)
+    : IStateStore<TEntity>
     where TEntity : class, IProjectionEntity, new()
     where TDbContext : DbContext
 {
-    private readonly IDbContextFactory<TDbContext> _contextFactory;
-
-    public EfInlineStateStoreAdapter(IDbContextFactory<TDbContext> contextFactory)
-    {
-        _contextFactory = contextFactory;
-    }
-
     public async Task<Dictionary<string, TEntity>> LoadManyAsync(
         IEnumerable<string> documentIds,
         System.Data.IDbTransaction? transaction = null,
@@ -77,7 +71,7 @@ internal sealed class EfInlineStateStoreAdapter<TEntity, TDbContext> : IStateSto
         if (ids.Count == 0)
             return new Dictionary<string, TEntity>();
 
-        await using var context = await _contextFactory.CreateDbContextAsync(ct);
+        await using var context = await contextFactory.CreateDbContextAsync(ct);
 
         if (transaction is System.Data.Common.DbTransaction dbTransaction)
         {
@@ -102,7 +96,7 @@ internal sealed class EfInlineStateStoreAdapter<TEntity, TDbContext> : IStateSto
         if (upserts.Count == 0 && deletes.Count == 0)
             return;
 
-        await using var context = await _contextFactory.CreateDbContextAsync(ct);
+        await using var context = await contextFactory.CreateDbContextAsync(ct);
 
         if (transaction is System.Data.Common.DbTransaction dbTransaction)
         {
@@ -147,7 +141,7 @@ internal sealed class EfInlineStateStoreAdapter<TEntity, TDbContext> : IStateSto
         int limit = 20,
         CancellationToken ct = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync(ct);
+        await using var context = await contextFactory.CreateDbContextAsync(ct);
 
         return await context.Set<TEntity>()
             .AsNoTracking()

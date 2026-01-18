@@ -62,31 +62,20 @@ internal sealed class ReactorDispatcher
     /// </summary>
     public bool CanHandle(string eventTypeId) => _handlers.ContainsKey(eventTypeId);
 
-    private sealed class Handler
+    private sealed class Handler(Type eventType, object reactor, MethodInfo reactMethod)
     {
-        private readonly Type _eventType;
-        private readonly object _reactor;
-        private readonly MethodInfo _reactMethod;
-
-        public Handler(Type eventType, object reactor, MethodInfo reactMethod)
-        {
-            _eventType = eventType;
-            _reactor = reactor;
-            _reactMethod = reactMethod;
-        }
-
         public async Task ReactAsync(IEventEnvelope envelope, CancellationToken ct)
         {
             var @event = DeserializeEvent(envelope);
-            var task = (Task)_reactMethod.Invoke(_reactor, [@event, envelope, ct])!;
+            var task = (Task)reactMethod.Invoke(reactor, [@event, envelope, ct])!;
             await task;
         }
 
         private object DeserializeEvent(IEventEnvelope envelope)
         {
-            return JsonSerializer.Deserialize(envelope.EventData, _eventType)
+            return JsonSerializer.Deserialize(envelope.EventData, eventType)
                 ?? throw new InvalidOperationException(
-                    $"Failed to deserialize event '{envelope.EventType.Id}' to type '{_eventType.Name}'");
+                    $"Failed to deserialize event '{envelope.EventType.Id}' to type '{eventType.Name}'");
         }
     }
 }

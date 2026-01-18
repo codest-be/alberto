@@ -17,32 +17,25 @@ public static class AdminTopics
 /// <summary>
 /// HotChocolate-based admin publisher that uses topic-based pub/sub for proper broadcast to all subscribers.
 /// </summary>
-internal sealed class HotChocolateAdminPublisher : IAdminPublisher
+internal sealed class HotChocolateAdminPublisher(ITopicEventSender eventSender) : IAdminPublisher
 {
-    private readonly ITopicEventSender _eventSender;
-
-    public HotChocolateAdminPublisher(ITopicEventSender eventSender)
-    {
-        _eventSender = eventSender;
-    }
-
     public async Task PublishProcessorAsync(string moduleKey, ProcessorStatusDto status, CancellationToken ct = default)
     {
-        await _eventSender.SendAsync(AdminTopics.ProcessorStatus, new ProcessorStatusUpdate(moduleKey, status), ct);
+        await eventSender.SendAsync(AdminTopics.ProcessorStatus, new ProcessorStatusUpdate(moduleKey, status), ct);
     }
 
     public async Task PublishCheckpointAsync(string moduleKey, CheckpointDto checkpoint, CancellationToken ct = default)
     {
-        await _eventSender.SendAsync(AdminTopics.Checkpoint, new CheckpointUpdate(moduleKey, checkpoint), ct);
+        await eventSender.SendAsync(AdminTopics.Checkpoint, new CheckpointUpdate(moduleKey, checkpoint), ct);
     }
 
     public async Task PublishDeadLetterAsync(string moduleKey, DeadLetterDto deadLetter, DeadLetterChangeType changeType, CancellationToken ct = default)
     {
-        await _eventSender.SendAsync(AdminTopics.DeadLetter, new DeadLetterUpdate(moduleKey, deadLetter, changeType), ct);
+        await eventSender.SendAsync(AdminTopics.DeadLetter, new DeadLetterUpdate(moduleKey, deadLetter, changeType), ct);
     }
 
     public async Task PublishSystemInfoAsync(string moduleKey, SystemInfoDto info, CancellationToken ct = default)
     {
-        await _eventSender.SendAsync(AdminTopics.SystemInfo, new SystemInfoUpdate(moduleKey, info), ct);
+        await eventSender.SendAsync(AdminTopics.SystemInfo, new SystemInfoUpdate(moduleKey, info), ct);
     }
 }

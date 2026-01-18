@@ -25,26 +25,19 @@ public class ReactorSpecificationTests
 
     #region Test Reactor - No Base Class!
 
-    public class NotificationReactor :
+    public class NotificationReactor(List<string> sentNotifications) :
         IReact<OrderConfirmed>,
         IReact<OrderShipped>
     {
-        private readonly List<string> _sentNotifications;
-
-        public NotificationReactor(List<string> sentNotifications)
-        {
-            _sentNotifications = sentNotifications;
-        }
-
         public Task ReactAsync(OrderConfirmed @event, IEventEnvelope envelope, CancellationToken ct)
         {
-            _sentNotifications.Add($"Confirmation email sent to {@event.CustomerEmail} for order {@event.OrderId}");
+            sentNotifications.Add($"Confirmation email sent to {@event.CustomerEmail} for order {@event.OrderId}");
             return Task.CompletedTask;
         }
 
         public Task ReactAsync(OrderShipped @event, IEventEnvelope envelope, CancellationToken ct)
         {
-            _sentNotifications.Add($"Shipping notification for order {@event.OrderId}");
+            sentNotifications.Add($"Shipping notification for order {@event.OrderId}");
             return Task.CompletedTask;
         }
     }

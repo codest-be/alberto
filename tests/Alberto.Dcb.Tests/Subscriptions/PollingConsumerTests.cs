@@ -23,20 +23,14 @@ public sealed class PollingConsumerTests
 
     #region Test Processor
 
-    private class TestProcessor : IEventProcessor
+    private class TestProcessor(string processorId, IReadOnlySet<string> handledTypes) : IEventProcessor
     {
         public List<IEventEnvelope> ProcessedEvents { get; } = [];
 
-        public TestProcessor(string processorId, IReadOnlySet<string> handledTypes)
-        {
-            ProcessorId = processorId;
-            HandledEventTypes = handledTypes;
-        }
-
-        public string ProcessorId { get; }
+        public string ProcessorId { get; } = processorId;
         public bool IsActive { get; set; } = true;
         public bool IsRebuilding { get; set; }
-        public IReadOnlySet<string> HandledEventTypes { get; }
+        public IReadOnlySet<string> HandledEventTypes { get; } = handledTypes;
 
         public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
         {

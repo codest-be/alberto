@@ -6,19 +6,12 @@ namespace Alberto.Dcb.Tests.Subscriptions;
 /// <summary>
 /// Tests for PostgresProcessorLock (leader election with PostgreSQL advisory locks).
 /// </summary>
-public class ProcessorLockTests : IClassFixture<PostgresFixture>
+public class ProcessorLockTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
-    private readonly PostgresFixture _fixture;
-
-    public ProcessorLockTests(PostgresFixture fixture)
-    {
-        _fixture = fixture;
-    }
-
     [Fact]
     public async Task TryAcquire_WhenNoExistingLock_ShouldSucceed()
     {
-        var lockManager = new PostgresProcessorLock(_fixture.DataSource);
+        var lockManager = new PostgresProcessorLock(fixture.DataSource);
         var consumerId = $"consumer-{Guid.NewGuid():N}";
 
         var lease = await lockManager.TryAcquireAsync(consumerId, TestContext.Current.CancellationToken);
@@ -32,7 +25,7 @@ public class ProcessorLockTests : IClassFixture<PostgresFixture>
     [Fact]
     public async Task TryAcquire_WhenLockHeld_ShouldReturnNull()
     {
-        var lockManager = new PostgresProcessorLock(_fixture.DataSource);
+        var lockManager = new PostgresProcessorLock(fixture.DataSource);
         var consumerId = $"consumer-{Guid.NewGuid():N}";
 
         // First instance acquires
@@ -50,7 +43,7 @@ public class ProcessorLockTests : IClassFixture<PostgresFixture>
     [Fact]
     public async Task TryAcquire_AfterLeaseDisposed_ShouldSucceed()
     {
-        var lockManager = new PostgresProcessorLock(_fixture.DataSource);
+        var lockManager = new PostgresProcessorLock(fixture.DataSource);
         var consumerId = $"consumer-{Guid.NewGuid():N}";
 
         // First acquire and release
@@ -69,7 +62,7 @@ public class ProcessorLockTests : IClassFixture<PostgresFixture>
     [Fact]
     public async Task TryAcquire_DifferentConsumers_ShouldBothSucceed()
     {
-        var lockManager = new PostgresProcessorLock(_fixture.DataSource);
+        var lockManager = new PostgresProcessorLock(fixture.DataSource);
         var consumer1 = $"consumer-1-{Guid.NewGuid():N}";
         var consumer2 = $"consumer-2-{Guid.NewGuid():N}";
 
@@ -87,8 +80,8 @@ public class ProcessorLockTests : IClassFixture<PostgresFixture>
     [Fact]
     public async Task TryAcquire_SameConsumerDifferentInstances_ShouldOnlyOneSucceed()
     {
-        var lockManager1 = new PostgresProcessorLock(_fixture.DataSource);
-        var lockManager2 = new PostgresProcessorLock(_fixture.DataSource);
+        var lockManager1 = new PostgresProcessorLock(fixture.DataSource);
+        var lockManager2 = new PostgresProcessorLock(fixture.DataSource);
         var consumerId = $"consumer-{Guid.NewGuid():N}";
 
         // First instance acquires
@@ -106,7 +99,7 @@ public class ProcessorLockTests : IClassFixture<PostgresFixture>
     [Fact]
     public async Task Dispose_ShouldReleaseImmediately()
     {
-        var lockManager = new PostgresProcessorLock(_fixture.DataSource);
+        var lockManager = new PostgresProcessorLock(fixture.DataSource);
         var consumerId = $"consumer-{Guid.NewGuid():N}";
 
         // Acquire and immediately release
@@ -123,7 +116,7 @@ public class ProcessorLockTests : IClassFixture<PostgresFixture>
     [Fact]
     public async Task Dispose_MultipleDispose_ShouldNotThrow()
     {
-        var lockManager = new PostgresProcessorLock(_fixture.DataSource);
+        var lockManager = new PostgresProcessorLock(fixture.DataSource);
         var consumerId = $"consumer-{Guid.NewGuid():N}";
 
         var lease = await lockManager.TryAcquireAsync(consumerId, TestContext.Current.CancellationToken);

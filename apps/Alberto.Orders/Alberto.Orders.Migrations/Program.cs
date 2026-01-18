@@ -21,29 +21,19 @@ host.Run();
 /// <summary>
 /// Worker that applies EF migrations on startup and then signals completion.
 /// </summary>
-public class MigrationWorker : BackgroundService
+public class MigrationWorker(
+    IServiceProvider serviceProvider,
+    IHostApplicationLifetime lifetime,
+    ILogger<MigrationWorker> logger)
+    : BackgroundService
 {
-    private readonly IServiceProvider _serviceProvider;
-    private readonly IHostApplicationLifetime _lifetime;
-    private readonly ILogger<MigrationWorker> _logger;
-
-    public MigrationWorker(
-        IServiceProvider serviceProvider,
-        IHostApplicationLifetime lifetime,
-        ILogger<MigrationWorker> logger)
-    {
-        _serviceProvider = serviceProvider;
-        _lifetime = lifetime;
-        _logger = logger;
-    }
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         try
         {
-            _logger.LogInformation("Starting EF Core migrations for Orders module...");
+            logger.LogInformation("Starting EF Core migrations for Orders module...");
 
-            using var scope = _serviceProvider.CreateScope();
+            using var scope = serviceProvider.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<OrdersDbContext>();
 
             // Ensure schema exists
@@ -54,17 +44,17 @@ public class MigrationWorker : BackgroundService
             // Apply migrations
             await dbContext.Database.MigrateAsync(stoppingToken);
 
-            _logger.LogInformation("EF Core migrations completed successfully.");
+            logger.LogInformation("EF Core migrations completed successfully.");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "An error occurred while applying migrations.");
+            logger.LogError(ex, "An error occurred while applying migrations.");
             throw;
         }
         finally
         {
             // Stop the application after migrations complete
-            _lifetime.StopApplication();
+            lifetime.StopApplication();
         }
     }
 }

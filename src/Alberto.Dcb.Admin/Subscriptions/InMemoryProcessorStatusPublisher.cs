@@ -5,17 +5,10 @@ namespace Alberto.Dcb.Admin.Subscriptions;
 /// <summary>
 /// Legacy processor status publisher - delegates to InMemoryAdminPublisher.
 /// </summary>
-internal sealed class InMemoryProcessorStatusPublisher : IProcessorStatusPublisher
+internal sealed class InMemoryProcessorStatusPublisher(IAdminPublisher publisher) : IProcessorStatusPublisher
 {
-    private readonly IAdminPublisher _publisher;
-
-    public InMemoryProcessorStatusPublisher(IAdminPublisher publisher)
-    {
-        _publisher = publisher;
-    }
-
     public Task PublishAsync(string moduleKey, ProcessorStatusDto status, CancellationToken ct = default)
     {
-        return _publisher.PublishProcessorAsync(moduleKey, status, ct);
+        return publisher.PublishProcessorAsync(moduleKey, status, ct);
     }
 }

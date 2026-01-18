@@ -38,8 +38,8 @@ public static class PaymentsModule
             .WithTelemetry()
             .WithConsumer(consumer => consumer
                 .WithTenantDistribution()
-                .WithPollingInterval(TimeSpan.FromMilliseconds(500))
-                .WithBatchSize(100)
+                .WithPollingInterval(TimeSpan.FromMilliseconds(100))
+                .WithBatchSize(500)
                 .WithErrorPolicy(policy => policy
                     .MaxRetries(3)
                     .RetryDelay(TimeSpan.FromSeconds(1))

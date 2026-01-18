@@ -61,17 +61,9 @@ public sealed class PostgresProcessorLock : IProcessorLock
         return result is bool acquired && acquired;
     }
 
-    private sealed class AdvisoryLockLease : IAsyncDisposable
+    private sealed class AdvisoryLockLease(NpgsqlConnection connection, long lockId) : IAsyncDisposable
     {
-        private readonly NpgsqlConnection _connection;
-        private readonly long _lockId;
         private bool _disposed;
-
-        public AdvisoryLockLease(NpgsqlConnection connection, long lockId)
-        {
-            _connection = connection;
-            _lockId = lockId;
-        }
 
         public async ValueTask DisposeAsync()
         {
@@ -80,13 +72,13 @@ public sealed class PostgresProcessorLock : IProcessorLock
 
             try
             {
-                await using var cmd = new NpgsqlCommand("SELECT pg_advisory_unlock(@lock_id)", _connection);
-                cmd.Parameters.AddWithValue("lock_id", _lockId);
+                await using var cmd = new NpgsqlCommand("SELECT pg_advisory_unlock(@lock_id)", connection);
+                cmd.Parameters.AddWithValue("lock_id", lockId);
                 await cmd.ExecuteNonQueryAsync();
             }
             finally
             {
-                await _connection.DisposeAsync();
+                await connection.DisposeAsync();
             }
         }
     }

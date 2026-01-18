@@ -7,21 +7,14 @@ namespace Alberto.Dcb.Subscriptions;
 /// - Rebuilding version (new data written here)
 /// After rebuild completes, versions are atomically swapped.
 /// </summary>
-public sealed class RebuildOrchestrator
+public sealed class RebuildOrchestrator(
+    IRebuildMetadataStore metadataStore,
+    ICheckpointStore checkpointStore,
+    IEventStoreBackend eventStore)
 {
-    private readonly IRebuildMetadataStore _metadataStore;
-    private readonly ICheckpointStore _checkpointStore;
-    private readonly IEventStoreBackend _eventStore;
-
-    public RebuildOrchestrator(
-        IRebuildMetadataStore metadataStore,
-        ICheckpointStore checkpointStore,
-        IEventStoreBackend eventStore)
-    {
-        _metadataStore = metadataStore ?? throw new ArgumentNullException(nameof(metadataStore));
-        _checkpointStore = checkpointStore ?? throw new ArgumentNullException(nameof(checkpointStore));
-        _eventStore = eventStore ?? throw new ArgumentNullException(nameof(eventStore));
-    }
+    private readonly IRebuildMetadataStore _metadataStore = metadataStore ?? throw new ArgumentNullException(nameof(metadataStore));
+    private readonly ICheckpointStore _checkpointStore = checkpointStore ?? throw new ArgumentNullException(nameof(checkpointStore));
+    private readonly IEventStoreBackend _eventStore = eventStore ?? throw new ArgumentNullException(nameof(eventStore));
 
     /// <summary>
     /// Starts a versioned rebuild for a projection.

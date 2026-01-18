@@ -153,27 +153,21 @@ public static class AdminSubscriptions
 /// <summary>
 /// A source stream that filters and transforms messages, skipping nulls.
 /// </summary>
-internal sealed class FilteredSourceStream<TSource, TResult> : ISourceStream<TResult>
+internal sealed class FilteredSourceStream<TSource, TResult>(
+    ISourceStream<TSource> inner,
+    Func<TSource, TResult?> transform)
+    : ISourceStream<TResult>
     where TResult : class
 {
-    private readonly ISourceStream<TSource> _inner;
-    private readonly Func<TSource, TResult?> _transform;
-
-    public FilteredSourceStream(ISourceStream<TSource> inner, Func<TSource, TResult?> transform)
-    {
-        _inner = inner;
-        _transform = transform;
-    }
-
     public IAsyncEnumerable<TResult> ReadEventsAsync() => FilteredEnumerable();
 
     IAsyncEnumerable<object?> ISourceStream.ReadEventsAsync() => FilteredEnumerableBoxed();
 
     private async IAsyncEnumerable<TResult> FilteredEnumerable()
     {
-        await foreach (var item in _inner.ReadEventsAsync())
+        await foreach (var item in inner.ReadEventsAsync())
         {
-            var result = _transform(item);
+            var result = transform(item);
             if (result is not null)
             {
                 yield return result;
@@ -189,5 +183,5 @@ internal sealed class FilteredSourceStream<TSource, TResult> : ISourceStream<TRe
         }
     }
 
-    public ValueTask DisposeAsync() => _inner.DisposeAsync();
+    public ValueTask DisposeAsync() => inner.DisposeAsync();
 }

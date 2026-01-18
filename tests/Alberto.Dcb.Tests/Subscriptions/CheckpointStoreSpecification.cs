@@ -109,18 +109,12 @@ public class InMemoryCheckpointStoreTests : CheckpointStoreSpecification
 /// Tests for PostgresCheckpointStore.
 /// Uses a shared Testcontainers PostgreSQL instance.
 /// </summary>
-public class PostgresCheckpointStoreTests : CheckpointStoreSpecification, IClassFixture<PostgresFixture>
+public class PostgresCheckpointStoreTests(PostgresFixture fixture)
+    : CheckpointStoreSpecification, IClassFixture<PostgresFixture>
 {
-    private readonly PostgresFixture _fixture;
-
-    public PostgresCheckpointStoreTests(PostgresFixture fixture)
-    {
-        _fixture = fixture;
-    }
-
     protected override Task<ICheckpointStore> CreateStore()
     {
         return Task.FromResult<ICheckpointStore>(
-            new PostgresCheckpointStore(_fixture.DataSource));
+            new PostgresCheckpointStore(fixture.DataSource));
     }
 }

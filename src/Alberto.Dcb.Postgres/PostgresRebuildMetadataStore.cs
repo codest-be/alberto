@@ -7,16 +7,11 @@ namespace Alberto.Dcb.Postgres;
 /// PostgreSQL implementation of <see cref="IRebuildMetadataStore"/>.
 /// Stores rebuild version metadata in the projection_rebuild_meta table.
 /// </summary>
-public sealed class PostgresRebuildMetadataStore : IRebuildMetadataStore
+public sealed class PostgresRebuildMetadataStore(NpgsqlDataSource dataSource, string? schema = null)
+    : IRebuildMetadataStore
 {
-    private readonly NpgsqlDataSource _dataSource;
-    private readonly SchemaQualifier _schema;
-
-    public PostgresRebuildMetadataStore(NpgsqlDataSource dataSource, string? schema = null)
-    {
-        _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
-        _schema = new SchemaQualifier(schema);
-    }
+    private readonly NpgsqlDataSource _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
+    private readonly SchemaQualifier _schema = new(schema);
 
     public async Task<int> GetActiveVersionAsync(string projectionType, CancellationToken ct = default)
     {

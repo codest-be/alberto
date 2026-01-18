@@ -5,10 +5,9 @@ namespace Alberto.Dcb.InMemory;
 /// Mimics the PostgreSQL structure with inverted indexes for efficient querying.
 /// Thread-safe for concurrent access.
 /// </summary>
-public sealed class InMemoryEventStoreBackend : IEventStoreBackend
+public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEventStoreBackend
 {
     private readonly object _lock = new();
-    private readonly TimeProvider _timeProvider;
 
     // Main event storage (like 'events' table)
     private readonly List<EventEnvelope> _events = [];
@@ -23,11 +22,6 @@ public sealed class InMemoryEventStoreBackend : IEventStoreBackend
 
     public InMemoryEventStoreBackend() : this(TimeProvider.System)
     {
-    }
-
-    public InMemoryEventStoreBackend(TimeProvider timeProvider)
-    {
-        _timeProvider = timeProvider;
     }
 
     public Task<IReadOnlyCollection<IEventEnvelope>> Stream(
@@ -134,7 +128,7 @@ public sealed class InMemoryEventStoreBackend : IEventStoreBackend
 
             // Append events
             var appended = new List<EventEnvelope>();
-            var now = _timeProvider.GetUtcNow().UtcDateTime;
+            var now = timeProvider.GetUtcNow().UtcDateTime;
 
             foreach (var evt in events)
             {

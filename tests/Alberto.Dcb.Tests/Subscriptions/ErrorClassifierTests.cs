@@ -297,20 +297,12 @@ public class ErrorClassifierTests
 
     #region Test Helpers
 
-    private sealed class TestDbException : DbException
+    private sealed class TestDbException(string sqlState) : DbException("Test DB error")
     {
-        public TestDbException(string sqlState) : base("Test DB error")
-        {
-            SqlState = sqlState;
-        }
-
-        public override string? SqlState { get; }
+        public override string? SqlState { get; } = sqlState;
     }
 
-    private sealed class CustomTestException : Exception
-    {
-        public CustomTestException(string message) : base(message) { }
-    }
+    private sealed class CustomTestException(string message) : Exception(message);
 
     #endregion
 }

@@ -7,16 +7,10 @@ namespace Alberto.Dcb.Postgres;
 /// PostgreSQL implementation of <see cref="ICheckpointStore"/>.
 /// Uses the processor_checkpoints table.
 /// </summary>
-public sealed class PostgresCheckpointStore : ICheckpointStore
+public sealed class PostgresCheckpointStore(NpgsqlDataSource dataSource, string? schema = null) : ICheckpointStore
 {
-    private readonly NpgsqlDataSource _dataSource;
-    private readonly SchemaQualifier _schema;
-
-    public PostgresCheckpointStore(NpgsqlDataSource dataSource, string? schema = null)
-    {
-        _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
-        _schema = new SchemaQualifier(schema);
-    }
+    private readonly NpgsqlDataSource _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
+    private readonly SchemaQualifier _schema = new(schema);
 
     public async Task<long?> GetAsync(string processorId, CancellationToken ct = default)
     {

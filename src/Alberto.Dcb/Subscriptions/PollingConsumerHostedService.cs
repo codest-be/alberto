@@ -6,14 +6,9 @@ namespace Alberto.Dcb.Subscriptions;
 /// Hosted service wrapper for <see cref="PollingConsumer"/>.
 /// Enables running event consumers as background services in ASP.NET Core / Generic Host.
 /// </summary>
-internal sealed class PollingConsumerHostedService : IHostedService, IAsyncDisposable
+internal sealed class PollingConsumerHostedService(PollingConsumer consumer) : IHostedService, IAsyncDisposable
 {
-    private readonly PollingConsumer _consumer;
-
-    public PollingConsumerHostedService(PollingConsumer consumer)
-    {
-        _consumer = consumer ?? throw new ArgumentNullException(nameof(consumer));
-    }
+    private readonly PollingConsumer _consumer = consumer ?? throw new ArgumentNullException(nameof(consumer));
 
     /// <inheritdoc />
     public Task StartAsync(CancellationToken cancellationToken)
