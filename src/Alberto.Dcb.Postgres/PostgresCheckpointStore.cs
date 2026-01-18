@@ -39,7 +39,8 @@ public sealed class PostgresCheckpointStore : ICheckpointStore
             INSERT INTO {_schema.Table("processor_checkpoints")} (processor_id, last_position, updated_at)
             VALUES (@processor_id, @last_position, now())
             ON CONFLICT (processor_id) DO UPDATE
-            SET last_position = @last_position, updated_at = now()
+            SET last_position = GREATEST({_schema.Table("processor_checkpoints")}.last_position, @last_position),
+                updated_at = now()
             """,
             connection);
 
