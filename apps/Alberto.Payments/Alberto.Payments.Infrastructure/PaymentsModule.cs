@@ -37,6 +37,7 @@ public static class PaymentsModule
             })
             .WithTelemetry()
             .WithConsumer(consumer => consumer
+                .WithTenantDistribution()
                 .WithPollingInterval(TimeSpan.FromMilliseconds(500))
                 .WithBatchSize(100)
                 .WithErrorPolicy(policy => policy

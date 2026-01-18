@@ -11,10 +11,10 @@ public class CachingCheckpointStoreTests
     public async Task GetAsync_NotCached_ShouldLoadFromInner()
     {
         var inner = new InMemoryCheckpointStore();
-        await inner.SaveAsync("processor-1", 100);
+        await inner.SaveAsync("processor-1", 100, TestContext.Current.CancellationToken);
         await using var cache = new CachingCheckpointStore(inner);
 
-        var result = await cache.GetAsync("processor-1");
+        var result = await cache.GetAsync("processor-1", TestContext.Current.CancellationToken);
 
         Assert.Equal(100, result);
     }
@@ -246,7 +246,7 @@ public class CachingCheckpointStoreTests
         // All 10 processors should have values
         for (int i = 0; i < 10; i++)
         {
-            var value = await inner.GetAsync($"processor-{i}");
+            var value = await inner.GetAsync($"processor-{i}", TestContext.Current.CancellationToken);
             Assert.NotNull(value);
         }
     }

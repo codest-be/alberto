@@ -2,6 +2,7 @@ using Alberto.Dcb.Subscriptions;
 using Alberto.Dcb.Subscriptions.Pipeline;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace Alberto.Dcb;
 
@@ -17,6 +18,9 @@ public sealed class ConsumerBuilder
     private int _rebuildBatchSize = 1000;
     private long _rebuildThreshold = 1000;
     private ErrorPolicy _errorPolicy = ErrorPolicy.Default;
+    private ConsumerDistributionMode _distributionMode = ConsumerDistributionMode.SingleLeader;
+    private TimeSpan _tenantLockRetryInterval = TimeSpan.FromSeconds(30);
+    private bool _enableProcessorLock = true; // Single-leader lock enabled by default
 
     internal ConsumerBuilder(DcbModuleBuilder moduleBuilder)
     {
@@ -79,6 +83,29 @@ public sealed class ConsumerBuilder
         var builder = new ErrorPolicyBuilder();
         configure(builder);
         _errorPolicy = builder.Build();
+        return this;
+    }
+
+    /// <summary>
+    /// Explicitly sets single-leader mode (this is the default).
+    /// Only one instance will process events at a time. Other instances wait as standby.
+    /// </summary>
+    public ConsumerBuilder WithSingleLeaderLock()
+    {
+        _distributionMode = ConsumerDistributionMode.SingleLeader;
+        _enableProcessorLock = true;
+        return this;
+    }
+
+    /// <summary>
+    /// Enables tenant-distributed mode where multiple instances each claim different tenants.
+    /// Events are processed by the instance that holds the lock for each tenant.
+    /// </summary>
+    /// <param name="retryInterval">Interval between attempts to acquire locks for unowned tenants. Default is 30 seconds.</param>
+    public ConsumerBuilder WithTenantDistribution(TimeSpan? retryInterval = null)
+    {
+        _distributionMode = ConsumerDistributionMode.TenantDistributed;
+        _tenantLockRetryInterval = retryInterval ?? TimeSpan.FromSeconds(30);
         return this;
     }
 
@@ -153,6 +180,9 @@ public sealed class ConsumerBuilder
         var rebuildBatchSize = _rebuildBatchSize;
         var rebuildThreshold = _rebuildThreshold;
         var errorPolicy = _errorPolicy;
+        var distributionMode = _distributionMode;
+        var tenantLockRetryInterval = _tenantLockRetryInterval;
+        var enableProcessorLock = _enableProcessorLock;
 
         // Register pipeline
         _moduleBuilder.Services.AddKeyedSingleton<IConsumeFilterPipeline>(moduleKey, (sp, _) =>
@@ -168,6 +198,20 @@ public sealed class ConsumerBuilder
             var checkpointStore = sp.GetRequiredKeyedService<ICheckpointStore>(moduleKey);
             var deadLetterStore = sp.GetKeyedService<IDeadLetterStore>(moduleKey);
             var pipeline = sp.GetKeyedService<IConsumeFilterPipeline>(moduleKey);
+            var logger = sp.GetService<ILogger<PollingConsumer>>();
+
+            // Resolve locks based on distribution mode
+            IProcessorLock? processorLock = null;
+            ITenantProcessorLock? tenantProcessorLock = null;
+
+            if (distributionMode == ConsumerDistributionMode.TenantDistributed)
+            {
+                tenantProcessorLock = sp.GetKeyedService<ITenantProcessorLock>(moduleKey);
+            }
+            else if (enableProcessorLock)
+            {
+                processorLock = sp.GetKeyedService<IProcessorLock>(moduleKey);
+            }
 
             var consumer = new PollingConsumer(
                 backend,
@@ -176,12 +220,16 @@ public sealed class ConsumerBuilder
                 moduleKey,
                 pollingInterval,
                 batchSize,
-                processorLock: null,
+                processorLock,
                 deadLetterStore,
                 pipeline,
                 errorPolicy,
                 rebuildBatchSize,
-                rebuildThreshold);
+                rebuildThreshold,
+                tenantProcessorLock,
+                distributionMode,
+                tenantLockRetryInterval,
+                logger);
 
             // Register all processors
             var processors = sp.GetKeyedServices<IEventProcessor>(moduleKey);

@@ -1,16 +1,4 @@
 ﻿<wpf:ResourceDictionary xml:space="preserve" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:s="clr-namespace:System;assembly=mscorlib" xmlns:ss="urn:shemas-jetbrains-com:settings-storage-xaml" xmlns:wpf="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
 	<s:String x:Key="/Default/CodeInspection/ExcludedFiles/FilesAndFoldersToSkip2/=7020124F_002D9FFC_002D4AC3_002D8F3D_002DAAB8E0240759_002Ff_003AMutationAttribute_002Ecs_002Fl_003A_002E_002E_003F_002E_002E_003FLibrary_003FApplication_0020Support_003FJetBrains_003FRider2025_002E3_003Fresharper_002Dhost_003FSourcesCache_003Fe6ddbea418b28797e63d82f2f1545b2c3b4a18344dc4b47129c702cd8b421f2_003FMutationAttribute_002Ecs/@EntryIndexedValue">ForceIncluded</s:String>
 	<s:String x:Key="/Default/CodeInspection/ExcludedFiles/FilesAndFoldersToSkip2/=7020124F_002D9FFC_002D4AC3_002D8F3D_002DAAB8E0240759_002Ff_003AMutationTypeAttribute_002Ecs_002Fl_003A_002E_002E_003F_002E_002E_003FLibrary_003FApplication_0020Support_003FJetBrains_003FRider2025_002E3_003Fresharper_002Dhost_003FSourcesCache_003Ff0d2c49c43177977e8bb892f50bd37153c329fb5a65bed47819a2ac692fa873_003FMutationTypeAttribute_002Ecs/@EntryIndexedValue">ForceIncluded</s:String>
-	<s:String x:Key="/Default/Environment/UnitTesting/UnitTestSessionStore/Sessions/=aac4371f_002D1a09_002D4533_002Dbefc_002D3339c1ef261f/@EntryIndexedValue">&lt;SessionState ContinuousTestingMode="0" IsActive="True" Name="InMemoryEventStoreBackendTests" xmlns="urn:schemas-jetbrains-com:jetbrains-ut-session"&gt;
-  &lt;Or&gt;
-    &lt;TestAncestor&gt;
-      &lt;TestId&gt;xUnit::E9144920-97E9-DEF8-02F3-92C5877E5CE5::net9.0::Alberto.Dcb.Tests.InMemoryEventStoreBackendTests&lt;/TestId&gt;
-      &lt;TestId&gt;xUnit::E9144920-97E9-DEF8-02F3-92C5877E5CE5::net9.0::Alberto.Dcb.Tests.InMemoryEventStoreTests&lt;/TestId&gt;
-      &lt;TestId&gt;xUnit::E9144920-97E9-DEF8-02F3-92C5877E5CE5::net9.0::Alberto.Dcb.Tests.PostgresEventStoreBackendTests&lt;/TestId&gt;
-    &lt;/TestAncestor&gt;
-    &lt;And&gt;
-      &lt;Namespace&gt;Alberto.Dcb.Tests.Subscriptions&lt;/Namespace&gt;
-      &lt;Project Location="/Users/bjorn/dev/AlbertoV3/tests/Alberto.Dcb.Tests" Presentation="&amp;lt;Alberto.Dcb.Tests&amp;gt;" /&gt;
-    &lt;/And&gt;
-  &lt;/Or&gt;
-&lt;/SessionState&gt;</s:String></wpf:ResourceDictionary>
+	</wpf:ResourceDictionary>

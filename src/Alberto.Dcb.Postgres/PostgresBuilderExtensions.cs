@@ -98,6 +98,19 @@ public static class PostgresBuilderExtensions
             return new PostgresAdminDataAccess(dataSource, schema);
         });
 
+        // Register processor locks (consumer chooses which mode via WithSingleLeaderLock/WithTenantDistribution)
+        builder.Services.AddKeyedSingleton<IProcessorLock>(moduleKey, (sp, _) =>
+        {
+            var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
+            return new PostgresProcessorLock(dataSource);
+        });
+
+        builder.Services.AddKeyedSingleton<ITenantProcessorLock>(moduleKey, (sp, _) =>
+        {
+            var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
+            return new PostgresTenantProcessorLock(dataSource);
+        });
+
         return builder;
     }
 }

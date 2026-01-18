@@ -1,11 +1,14 @@
+using System.Collections.Concurrent;
 using Alberto.Dcb.Subscriptions.Pipeline;
 using Alberto.Dcb.Telemetry;
+using Microsoft.Extensions.Logging;
 
 namespace Alberto.Dcb.Subscriptions;
 
 /// <summary>
 /// Polling-based event consumer that routes events from the store to processors.
 /// Supports optional leader election for single-instance processing.
+/// Supports tenant-distributed mode where multiple instances each claim different tenants.
 /// </summary>
 public sealed class PollingConsumer : IEventConsumer
 {
@@ -18,12 +21,19 @@ public sealed class PollingConsumer : IEventConsumer
     private readonly int _rebuildBatchSize;
     private readonly long _rebuildThreshold;
     private readonly IProcessorLock? _processorLock;
+    private readonly ITenantProcessorLock? _tenantProcessorLock;
+    private readonly ConsumerDistributionMode _distributionMode;
+    private readonly TimeSpan _tenantLockRetryInterval;
     private readonly ErrorPolicy _errorPolicy;
     private readonly string _moduleKey;
+    private readonly ILogger<PollingConsumer>? _logger;
 
     private readonly List<IEventProcessor> _processors = [];
     private readonly Dictionary<string, Task> _rebuildTasks = [];
     private readonly object _rebuildTasksLock = new();
+    private readonly ConcurrentDictionary<string, IAsyncDisposable> _tenantLeases = new();
+    private readonly HashSet<string> _ownedTenants = new();
+    private readonly object _tenantLock = new();
     private IAsyncDisposable? _lockLease;
     private CancellationTokenSource? _cts;
     private Task? _pollingTask;
@@ -40,7 +50,11 @@ public sealed class PollingConsumer : IEventConsumer
         IConsumeFilterPipeline? pipeline = null,
         ErrorPolicy? errorPolicy = null,
         int rebuildBatchSize = 1000,
-        long rebuildThreshold = 1000)
+        long rebuildThreshold = 1000,
+        ITenantProcessorLock? tenantProcessorLock = null,
+        ConsumerDistributionMode distributionMode = ConsumerDistributionMode.SingleLeader,
+        TimeSpan? tenantLockRetryInterval = null,
+        ILogger<PollingConsumer>? logger = null)
     {
         _eventStore = eventStore ?? throw new ArgumentNullException(nameof(eventStore));
         _checkpointStore = checkpointStore ?? throw new ArgumentNullException(nameof(checkpointStore));
@@ -51,9 +65,13 @@ public sealed class PollingConsumer : IEventConsumer
         _rebuildBatchSize = rebuildBatchSize;
         _rebuildThreshold = rebuildThreshold;
         _processorLock = processorLock;
+        _tenantProcessorLock = tenantProcessorLock;
+        _distributionMode = distributionMode;
+        _tenantLockRetryInterval = tenantLockRetryInterval ?? TimeSpan.FromSeconds(30);
         _deadLetterStore = deadLetterStore;
         _pipeline = pipeline;
         _errorPolicy = errorPolicy ?? ErrorPolicy.Default;
+        _logger = logger;
     }
 
     /// <inheritdoc />
@@ -72,15 +90,27 @@ public sealed class PollingConsumer : IEventConsumer
         if (_pollingTask is not null)
             throw new InvalidOperationException("Consumer is already running.");
 
-        // Try to acquire leadership if lock is configured
+        // Try to acquire leadership if lock is configured (single-leader mode)
         if (_processorLock is not null)
         {
             _lockLease = await _processorLock.TryAcquireAsync(ConsumerId, ct);
             if (_lockLease is null)
             {
-                // Not leader - exit without starting
+                _logger?.LogInformation(
+                    "Consumer {ConsumerId} failed to acquire single-leader lock, running as standby",
+                    ConsumerId);
                 return;
             }
+
+            _logger?.LogInformation(
+                "Consumer {ConsumerId} acquired single-leader lock, processing all tenants",
+                ConsumerId);
+        }
+        else if (_distributionMode == ConsumerDistributionMode.TenantDistributed)
+        {
+            _logger?.LogInformation(
+                "Consumer {ConsumerId} starting in tenant-distributed mode, will acquire tenant locks dynamically",
+                ConsumerId);
         }
 
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -127,10 +157,35 @@ public sealed class PollingConsumer : IEventConsumer
             }
         }
 
+        // Release single-leader lock
         if (_lockLease is not null)
         {
+            _logger?.LogInformation(
+                "Consumer {ConsumerId} releasing single-leader lock",
+                ConsumerId);
             await _lockLease.DisposeAsync();
             _lockLease = null;
+        }
+
+        // Release all tenant leases
+        if (_tenantLeases.Count > 0)
+        {
+            _logger?.LogInformation(
+                "Consumer {ConsumerId} releasing locks for {TenantCount} tenant(s): [{Tenants}]",
+                ConsumerId,
+                _tenantLeases.Count,
+                string.Join(", ", _tenantLeases.Keys));
+
+            foreach (var kvp in _tenantLeases)
+            {
+                await kvp.Value.DisposeAsync();
+            }
+            _tenantLeases.Clear();
+        }
+
+        lock (_tenantLock)
+        {
+            _ownedTenants.Clear();
         }
 
         _cts?.Dispose();
@@ -192,6 +247,11 @@ public sealed class PollingConsumer : IEventConsumer
 
                 if (events.Count > 0)
                 {
+                    // In tenant-distributed mode, filter to events for owned tenants
+                    var eventsToProcess = _distributionMode == ConsumerDistributionMode.TenantDistributed
+                        ? await FilterEventsByTenantOwnershipAsync(events, ct)
+                        : events;
+
                     // Route to each active processor, filtering by their individual checkpoint
                     foreach (var processor in _processors)
                     {
@@ -200,7 +260,7 @@ public sealed class PollingConsumer : IEventConsumer
 
                         var processorCheckpoint = activeCheckpoints.GetValueOrDefault(processor.ProcessorId, 0);
 
-                        var relevant = events
+                        var relevant = eventsToProcess
                             .Where(e => e.GlobalPosition > processorCheckpoint)
                             .Where(e => processor.HandledEventTypes.Contains(e.EventType.Id))
                             .ToList();
@@ -225,6 +285,83 @@ public sealed class PollingConsumer : IEventConsumer
                 break;
             }
         }
+    }
+
+    /// <summary>
+    /// Filters events to only those for tenants this instance owns.
+    /// Attempts to acquire locks for new tenants encountered.
+    /// </summary>
+    private async Task<IReadOnlyCollection<IEventEnvelope>> FilterEventsByTenantOwnershipAsync(
+        IReadOnlyCollection<IEventEnvelope> events,
+        CancellationToken ct)
+    {
+        if (_tenantProcessorLock is null)
+        {
+            return events;
+        }
+
+        var result = new List<IEventEnvelope>();
+
+        // Group events by tenant
+        var eventsByTenant = events.GroupBy(e => e.TenantId);
+
+        foreach (var tenantGroup in eventsByTenant)
+        {
+            var tenantId = tenantGroup.Key;
+            var ownsLock = await EnsureTenantOwnershipAsync(tenantId, ct);
+
+            if (ownsLock)
+            {
+                result.AddRange(tenantGroup);
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Ensures this instance owns the lock for the specified tenant.
+    /// Returns true if the lock is owned (either already held or just acquired).
+    /// </summary>
+    private async Task<bool> EnsureTenantOwnershipAsync(string tenantId, CancellationToken ct)
+    {
+        // Fast path: check if already owned
+        lock (_tenantLock)
+        {
+            if (_ownedTenants.Contains(tenantId))
+            {
+                return true;
+            }
+        }
+
+        // Try to acquire the lock
+        if (_tenantProcessorLock is null)
+        {
+            return true;
+        }
+
+        var lease = await _tenantProcessorLock.TryAcquireForTenantAsync(ConsumerId, tenantId, ct);
+        if (lease is null)
+        {
+            return false;
+        }
+
+        // Track ownership
+        _tenantLeases[tenantId] = lease;
+
+        lock (_tenantLock)
+        {
+            _ownedTenants.Add(tenantId);
+        }
+
+        _logger?.LogInformation(
+            "Consumer {ConsumerId} acquired lock for tenant {TenantId}. Now processing {TenantCount} tenant(s): [{Tenants}]",
+            ConsumerId,
+            tenantId,
+            _ownedTenants.Count,
+            string.Join(", ", _ownedTenants));
+
+        return true;
     }
 
     private async Task ProcessEventsForProcessorAsync(
