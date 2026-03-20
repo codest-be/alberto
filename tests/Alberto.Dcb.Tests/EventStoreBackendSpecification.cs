@@ -144,6 +144,27 @@ public abstract class EventStoreBackendSpecification
         Assert.Equal(2, result.Count);    }
 
     [Fact]
+    public async Task Stream_ByAllTags_ShouldRequireAllTagsToMatch()
+    {
+        var backend = await CreateBackend();
+        await backend.Append(Tenant, [
+            CreateEvent("source-followed", "reader:123", "source:456"),
+            CreateEvent("source-unfollowed", "reader:123"),
+            CreateEvent("source-followed", "source:456")
+        ], cancellationToken: TestContext.Current.CancellationToken);
+
+        var result = await backend.Stream(
+            Tenant,
+            DcbQuery.ByAllTags("reader:123", "source:456"),
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        var matched = Assert.Single(result);
+        Assert.Equal("source-followed", matched.EventType.Id);
+        Assert.Contains(matched.Tags, tag => tag.Value == "reader:123");
+        Assert.Contains(matched.Tags, tag => tag.Value == "source:456");
+    }
+
+    [Fact]
     public async Task Stream_EmptyQuery_ShouldReturnAllTenantEvents()
     {
         var backend = await CreateBackend();
@@ -461,6 +482,57 @@ public abstract class EventStoreBackendSpecification
         var result = await backend.Append(Tenant, [CreateEvent("customer-verified", "customer:456")], dcbQuery, lastCustomerPosition, TestContext.Current.CancellationToken);
 
         Assert.Single(result);    }
+
+    [Fact]
+    public async Task Append_WithDcbCheck_AllTags_ShouldIgnoreEventsMatchingOnlyOneTag()
+    {
+        var backend = await CreateBackend();
+        var initial = await backend.Append(
+            Tenant,
+            [CreateEvent("source-followed", "reader:123", "source:456")],
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        var lastPosition = initial.Last().GlobalPosition;
+
+        await backend.Append(
+            Tenant,
+            [CreateEvent("reader-profile-updated", "reader:123")],
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        var result = await backend.Append(
+            Tenant,
+            [CreateEvent("source-followed", "reader:123", "source:456")],
+            DcbQuery.ByAllTags("reader:123", "source:456"),
+            lastPosition,
+            TestContext.Current.CancellationToken);
+
+        Assert.Single(result);
+    }
+
+    [Fact]
+    public async Task Append_WithDcbCheck_AllTags_ShouldDetectConflictsForMatchingTagSet()
+    {
+        var backend = await CreateBackend();
+        var initial = await backend.Append(
+            Tenant,
+            [CreateEvent("source-followed", "reader:123", "source:456")],
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        var lastPosition = initial.Last().GlobalPosition;
+
+        await backend.Append(
+            Tenant,
+            [CreateEvent("source-unfollowed", "reader:123", "source:456")],
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        await Assert.ThrowsAsync<DcbConflictException>(() =>
+            backend.Append(
+                Tenant,
+                [CreateEvent("source-followed", "reader:123", "source:456")],
+                DcbQuery.ByAllTags("reader:123", "source:456"),
+                lastPosition,
+                TestContext.Current.CancellationToken));
+    }
 
     #endregion
 

@@ -67,6 +67,23 @@ public class DcbQueryTests
     }
 
     [Fact]
+    public void ByAllTags_WithStrings_ShouldCreateAllTagsQuery()
+    {
+        var query = DcbQuery.ByAllTags("reader:123", "source:456");
+
+        Assert.Equal(2, query.Tags.Count);
+        Assert.True(query.RequiresAllTags);
+        Assert.True(query.HasTagsOnly);
+        Assert.False(query.HasWildcardPatterns);
+    }
+
+    [Fact]
+    public void ByAllTags_WithWildcardPattern_ShouldThrow()
+    {
+        Assert.Throws<ArgumentException>(() => DcbQuery.ByAllTags("reader:123", "source:*"));
+    }
+
+    [Fact]
     public void ByTagPatterns_WithWildcards_ShouldCreateWildcardQuery()
     {
         var query = DcbQuery.ByTagPatterns(TagPattern.Prefix("order"), TagPattern.Prefix("customer"));
@@ -266,6 +283,18 @@ public class DcbQueryTests
 
         Assert.Contains("tags=", result);
         Assert.Contains("order:123", result);
+    }
+
+    [Fact]
+    public void ToString_AllTagsOnly_ShouldShowAllTagsMarker()
+    {
+        var query = DcbQuery.ByAllTags("reader:123", "source:456");
+
+        var result = query.ToString();
+
+        Assert.Contains("tags(all)=", result);
+        Assert.Contains("reader:123", result);
+        Assert.Contains("source:456", result);
     }
 
     [Fact]

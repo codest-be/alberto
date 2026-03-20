@@ -55,26 +55,53 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
                     }
                 }
 
-                // Handle tag patterns (both exact and wildcard)
-                foreach (var pattern in query.TagPatterns)
+                // Handle tag patterns
+                if (query.RequiresAllTags)
                 {
-                    if (pattern.IsExact)
+                    IEnumerable<long>? intersectedPositions = null;
+
+                    foreach (var pattern in query.TagPatterns)
                     {
-                        // Exact match
-                        if (_tagIndex.TryGetValue((tenantId, pattern.Value), out var positions))
+                        if (!_tagIndex.TryGetValue((tenantId, pattern.Value), out var positions))
                         {
-                            foreach (var pos in positions.Where(p => p > afterPosition))
-                                matchingPositions.Add(pos);
+                            intersectedPositions = [];
+                            break;
                         }
+
+                        var filtered = positions.Where(p => p > afterPosition);
+                        intersectedPositions = intersectedPositions is null
+                            ? filtered.ToArray()
+                            : intersectedPositions.Intersect(filtered).ToArray();
                     }
-                    else
+
+                    if (intersectedPositions is not null)
                     {
-                        // Wildcard match: find all tags that start with the prefix
-                        var prefix = pattern.ConceptPrefix;
-                        foreach (var kvp in _tagIndex.Where(k => k.Key.TenantId == tenantId && k.Key.Tag.StartsWith(prefix, StringComparison.Ordinal)))
+                        foreach (var pos in intersectedPositions)
+                            matchingPositions.Add(pos);
+                    }
+                }
+                else
+                {
+                    foreach (var pattern in query.TagPatterns)
+                    {
+                        if (pattern.IsExact)
                         {
-                            foreach (var pos in kvp.Value.Where(p => p > afterPosition))
-                                matchingPositions.Add(pos);
+                            // Exact match
+                            if (_tagIndex.TryGetValue((tenantId, pattern.Value), out var positions))
+                            {
+                                foreach (var pos in positions.Where(p => p > afterPosition))
+                                    matchingPositions.Add(pos);
+                            }
+                        }
+                        else
+                        {
+                            // Wildcard match: find all tags that start with the prefix
+                            var prefix = pattern.ConceptPrefix;
+                            foreach (var kvp in _tagIndex.Where(k => k.Key.TenantId == tenantId && k.Key.Tag.StartsWith(prefix, StringComparison.Ordinal)))
+                            {
+                                foreach (var pos in kvp.Value.Where(p => p > afterPosition))
+                                    matchingPositions.Add(pos);
+                            }
                         }
                     }
                 }
@@ -226,31 +253,60 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
             }
         }
 
-        // Check tag patterns (OR: any pattern match is a conflict)
-        foreach (var pattern in query.TagPatterns)
+        if (query.RequiresAllTags)
         {
-            if (pattern.IsExact)
+            IEnumerable<long>? intersectedPositions = null;
+
+            foreach (var pattern in query.TagPatterns)
             {
-                // Exact tag match
                 if (_tagIndex.TryGetValue((tenantId, pattern.Value), out var positions))
                 {
-                    var conflict = positions.FirstOrDefault(p => p > expectedPosition);
-                    if (conflict > 0 && (conflictPos is null || conflict < conflictPos))
-                    {
-                        conflictPos = conflict;
-                    }
+                    var filtered = positions.Where(p => p > expectedPosition);
+                    intersectedPositions = intersectedPositions is null
+                        ? filtered.ToArray()
+                        : intersectedPositions.Intersect(filtered).ToArray();
+                }
+                else
+                {
+                    intersectedPositions = [];
+                    break;
                 }
             }
-            else
+
+            var conflict = intersectedPositions?.DefaultIfEmpty(0).Min() ?? 0;
+            if (conflict > 0 && (conflictPos is null || conflict < conflictPos))
             {
-                // Wildcard pattern: check all tags with matching prefix
-                var prefix = pattern.ConceptPrefix;
-                foreach (var kvp in _tagIndex.Where(k => k.Key.TenantId == tenantId && k.Key.Tag.StartsWith(prefix, StringComparison.Ordinal)))
+                conflictPos = conflict;
+            }
+        }
+        else
+        {
+            // Check tag patterns (OR: any pattern match is a conflict)
+            foreach (var pattern in query.TagPatterns)
+            {
+                if (pattern.IsExact)
                 {
-                    var conflict = kvp.Value.FirstOrDefault(p => p > expectedPosition);
-                    if (conflict > 0 && (conflictPos is null || conflict < conflictPos))
+                    // Exact tag match
+                    if (_tagIndex.TryGetValue((tenantId, pattern.Value), out var positions))
                     {
-                        conflictPos = conflict;
+                        var conflict = positions.FirstOrDefault(p => p > expectedPosition);
+                        if (conflict > 0 && (conflictPos is null || conflict < conflictPos))
+                        {
+                            conflictPos = conflict;
+                        }
+                    }
+                }
+                else
+                {
+                    // Wildcard pattern: check all tags with matching prefix
+                    var prefix = pattern.ConceptPrefix;
+                    foreach (var kvp in _tagIndex.Where(k => k.Key.TenantId == tenantId && k.Key.Tag.StartsWith(prefix, StringComparison.Ordinal)))
+                    {
+                        var conflict = kvp.Value.FirstOrDefault(p => p > expectedPosition);
+                        if (conflict > 0 && (conflictPos is null || conflict < conflictPos))
+                        {
+                            conflictPos = conflict;
+                        }
                     }
                 }
             }

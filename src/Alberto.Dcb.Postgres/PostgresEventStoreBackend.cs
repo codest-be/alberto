@@ -102,10 +102,13 @@ public sealed class PostgresEventStoreBackend(
         CancellationToken cancellationToken)
     {
         var useWildcardFunction = dcbQuery?.HasWildcardPatterns == true;
-        var functionName = useWildcardFunction ? "append_events_v2" : "append_events";
-        var sql = useWildcardFunction
-            ? $"SELECT * FROM {_schema.Function(functionName)}(@p_tenant_id, @p_events, @p_dcb_types, @p_dcb_exact_tags, @p_dcb_tag_prefixes, @p_expected_position)"
-            : $"SELECT * FROM {_schema.Function(functionName)}(@p_tenant_id, @p_events, @p_dcb_types, @p_dcb_tags, @p_expected_position)";
+        var useAllTagsFunction = dcbQuery?.RequiresAllTags == true;
+        var functionName = useAllTagsFunction ? "append_events_v3" : useWildcardFunction ? "append_events_v2" : "append_events";
+        var sql = useAllTagsFunction
+            ? $"SELECT * FROM {_schema.Function(functionName)}(@p_tenant_id, @p_events, @p_dcb_types, @p_dcb_all_tags, @p_expected_position)"
+            : useWildcardFunction
+                ? $"SELECT * FROM {_schema.Function(functionName)}(@p_tenant_id, @p_events, @p_dcb_types, @p_dcb_exact_tags, @p_dcb_tag_prefixes, @p_expected_position)"
+                : $"SELECT * FROM {_schema.Function(functionName)}(@p_tenant_id, @p_events, @p_dcb_types, @p_dcb_tags, @p_expected_position)";
 
         await using var cmd = new NpgsqlCommand(sql, connection, transaction);
 
@@ -119,7 +122,12 @@ public sealed class PostgresEventStoreBackend(
             cmd.Parameters.AddWithValue("p_dcb_types",
                 dcbQuery.Types.Count > 0 ? dcbQuery.Types.Select(t => t.Id).ToArray() : DBNull.Value);
 
-            if (useWildcardFunction)
+            if (useAllTagsFunction)
+            {
+                cmd.Parameters.AddWithValue("p_dcb_all_tags",
+                    dcbQuery.Tags.Count > 0 ? dcbQuery.Tags.Select(t => t.Value).ToArray() : DBNull.Value);
+            }
+            else if (useWildcardFunction)
             {
                 // v2 function: separate exact tags and prefixes
                 var exactTags = dcbQuery.TagPatterns.Where(p => p.IsExact).Select(p => p.Value).ToArray();
@@ -141,7 +149,11 @@ public sealed class PostgresEventStoreBackend(
         {
             cmd.Parameters.AddWithValue("p_dcb_types", DBNull.Value);
 
-            if (useWildcardFunction)
+            if (useAllTagsFunction)
+            {
+                cmd.Parameters.AddWithValue("p_dcb_all_tags", DBNull.Value);
+            }
+            else if (useWildcardFunction)
             {
                 cmd.Parameters.AddWithValue("p_dcb_exact_tags", DBNull.Value);
                 cmd.Parameters.AddWithValue("p_dcb_tag_prefixes", DBNull.Value);
@@ -211,6 +223,16 @@ public sealed class PostgresEventStoreBackend(
         }
 
         // Use new wildcard-aware functions when patterns contain wildcards
+        if (query.RequiresAllTags)
+        {
+            if (query.HasTagsOnly)
+            {
+                return $"SELECT * FROM {_schema.Function("read_by_all_tags")}(@p_tenant_id, @p_tags, @p_after_position, @p_limit)";
+            }
+
+            return $"SELECT * FROM {_schema.Function("read_by_types_or_all_tags")}(@p_tenant_id, @p_types, @p_tags, @p_after_position, @p_limit)";
+        }
+
         if (query.HasWildcardPatterns)
         {
             if (query.HasTagsOnly)
