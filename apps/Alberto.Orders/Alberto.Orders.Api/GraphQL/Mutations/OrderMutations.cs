@@ -7,7 +7,7 @@ using Alberto.Orders.Infrastructure;
 using HotChocolate;
 using HotChocolate.Resolvers;
 using Microsoft.Extensions.DependencyInjection;
-using OrderDecider = Alberto.Orders.Core.Order.Actions.OrderDecider;
+using OrderDecider = Alberto.Orders.Core.Order.OrderDecider;
 
 namespace Alberto.Orders.Api.GraphQL.Mutations;
 

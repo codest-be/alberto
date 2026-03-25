@@ -1,3 +1,5 @@
+using Alberto.AppHost;
+
 var builder = DistributedApplication.CreateBuilder(args);
 
 // PostgreSQL with persistent volume (port 5432)

@@ -1,7 +1,6 @@
 using Alberto.Dcb;
-using Alberto.Orders.Core.Order;
 
-namespace Alberto.Orders.Core.Order.Actions;
+namespace Alberto.Orders.Core.Order;
 
 /// <summary>
 /// Decider for order operations. Contains business logic as pure functions.

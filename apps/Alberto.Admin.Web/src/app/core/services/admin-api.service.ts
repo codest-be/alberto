@@ -15,6 +15,9 @@ import {
   BulkRetryResult,
   BulkOperationResult,
   RebuildStatus,
+  TenantLeasesResponse,
+  TenantOperationResult,
+  RebalanceResult,
 } from '../models/admin.models';
 
 const STORAGE_KEY = 'selectedModule';
@@ -219,5 +222,26 @@ export class AdminApiService {
       `${this.apiBase}/processors/${encodeURIComponent(processorId)}/rebuild/cancel`,
       {}
     );
+  }
+
+  // Tenant Leases
+  getTenantLeases(): Observable<TenantLeasesResponse> {
+    return this.http.get<TenantLeasesResponse>(`${this.apiBase}/tenants/leases`);
+  }
+
+  drainTenants(): Observable<TenantOperationResult> {
+    return this.http.post<TenantOperationResult>(`${this.apiBase}/tenants/drain`, {});
+  }
+
+  reclaimTenants(): Observable<TenantOperationResult> {
+    return this.http.post<TenantOperationResult>(`${this.apiBase}/tenants/reclaim`, {});
+  }
+
+  releaseTenants(): Observable<TenantOperationResult> {
+    return this.http.post<TenantOperationResult>(`${this.apiBase}/tenants/release`, {});
+  }
+
+  rebalanceTenants(): Observable<RebalanceResult> {
+    return this.http.post<RebalanceResult>(`${this.apiBase}/tenants/rebalance`, {});
   }
 }

@@ -34,4 +34,11 @@ public sealed class PostgresOptions
     /// Default is 0.
     /// </summary>
     public int MinPoolSize { get; set; } = 0;
+
+    /// <summary>
+    /// How long a tenant lease is valid before expiring.
+    /// Leases must be renewed before expiry to maintain ownership.
+    /// Default is 60 seconds.
+    /// </summary>
+    public TimeSpan LeaseDuration { get; set; } = TimeSpan.FromSeconds(60);
 }

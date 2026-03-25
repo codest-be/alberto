@@ -117,3 +117,28 @@ export interface ProjectionFilter {
   updatedAfter?: string;
   updatedBefore?: string;
 }
+
+export interface TenantLeaseInfo {
+  tenantId: string;
+  replicaId: string;
+  acquiredAt: string;
+  expiresAt: string;
+}
+
+export interface TenantLeasesResponse {
+  leases: TenantLeaseInfo[];
+  thisReplicaId: string | null;
+  ownedByThisReplica: number;
+  message?: string;
+}
+
+export interface TenantOperationResult {
+  status: string;
+  ownedTenants: number;
+}
+
+export interface RebalanceResult {
+  status: string;
+  releasedCount: number;
+  ownedTenants: number;
+}

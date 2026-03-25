@@ -93,6 +93,7 @@ public static class AdminEndpointRouteBuilderExtensions
         CheckpointsEndpoints.MapCheckpointsEndpoints(app, basePath, moduleKey, options);
         DeadLettersEndpoints.MapDeadLettersEndpoints(app, basePath, moduleKey, options);
         ProjectionStatesEndpoints.MapProjectionStatesEndpoints(app, basePath, moduleKey, options);
+        TenantsEndpoints.MapTenantsEndpoints(app, basePath, moduleKey, options);
         SystemEndpoints.MapSystemEndpoints(app, basePath, moduleKey, options);
 
         // Map embedded UI if enabled

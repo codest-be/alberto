@@ -4,6 +4,14 @@
     <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+    <!-- Package Metadata -->
+    <PackageId>Alberto.Dcb.Telemetry</PackageId>
+    <Title>Alberto DCB Event Store - OpenTelemetry Instrumentation</Title>
+    <Description>OpenTelemetry instrumentation for Alberto DCB event store. Provides traces and metrics for event processing.</Description>
+    <IsPackable>true</IsPackable>
+    <RootNamespace>Alberto.Dcb.Telemetry</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>

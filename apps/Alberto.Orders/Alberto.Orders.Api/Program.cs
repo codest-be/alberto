@@ -5,6 +5,7 @@ using Alberto.Orders.Api.GraphQL;
 using Alberto.Orders.Infrastructure;
 using Alberto.Payments.Infrastructure;
 using HotChocolate.Diagnostics;
+using ServiceDefaults;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -50,4 +51,7 @@ app.MapDcbAdmin();
 app.Run();
 
 // Make Program class accessible for testing
-public partial class Program;
+namespace Alberto.Orders.Api
+{
+    public partial class Program;
+}

@@ -12,6 +12,7 @@ using HotChocolate;
 using HotChocolate.Resolvers;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
+using PaymentDecider = Alberto.Payments.Core.Payment.PaymentDecider;
 
 namespace Alberto.Orders.Api.GraphQL.Queries;
 

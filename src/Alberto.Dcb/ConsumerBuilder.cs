@@ -12,7 +12,6 @@ namespace Alberto.Dcb;
 public sealed class ConsumerBuilder
 {
     private readonly DcbModuleBuilder _moduleBuilder;
-    private readonly List<Type> _processorTypes = [];
     private TimeSpan _pollingInterval = TimeSpan.FromMilliseconds(100);
     private int _batchSize = 100;
     private int _rebuildBatchSize = 1000;
@@ -22,6 +21,7 @@ public sealed class ConsumerBuilder
     private TimeSpan _tenantLockRetryInterval = TimeSpan.FromSeconds(30);
     private bool _enableProcessorLock = true; // Single-leader lock enabled by default
     private int _maxParallelProjections = 1; // Default sequential - EF projections aren't thread-safe
+    private int? _maxTenantsPerReplica; // null = unlimited
 
     internal ConsumerBuilder(DcbModuleBuilder moduleBuilder)
     {
@@ -121,6 +121,19 @@ public sealed class ConsumerBuilder
     }
 
     /// <summary>
+    /// Sets the maximum number of tenants a single replica can own.
+    /// When set, replicas will stop claiming new tenants after reaching this limit,
+    /// ensuring more even distribution across replicas.
+    /// </summary>
+    /// <param name="maxTenants">Maximum tenants per replica. Default is unlimited (null).</param>
+    public ConsumerBuilder WithMaxTenantsPerReplica(int maxTenants)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxTenants);
+        _maxTenantsPerReplica = maxTenants;
+        return this;
+    }
+
+    /// <summary>
     /// Enables parallel processing of projections within each batch.
     /// Multiple projections can process events concurrently, improving throughput.
     /// </summary>
@@ -128,17 +141,6 @@ public sealed class ConsumerBuilder
     public ConsumerBuilder WithParallelProjections(int maxDegree = int.MaxValue)
     {
         _maxParallelProjections = maxDegree;
-        return this;
-    }
-
-    /// <summary>
-    /// Registers an event processor to handle events.
-    /// </summary>
-    /// <typeparam name="TProcessor">The processor type implementing <see cref="IEventProcessor"/>.</typeparam>
-    public ConsumerBuilder AddProcessor<TProcessor>() where TProcessor : class, IEventProcessor
-    {
-        _processorTypes.Add(typeof(TProcessor));
-        _moduleBuilder.Services.AddKeyedScoped<IEventProcessor, TProcessor>(_moduleBuilder.ModuleKey);
         return this;
     }
 
@@ -206,6 +208,7 @@ public sealed class ConsumerBuilder
         var tenantLockRetryInterval = _tenantLockRetryInterval;
         var enableProcessorLock = _enableProcessorLock;
         var maxParallelProjections = _maxParallelProjections;
+        var maxTenantsPerReplica = _maxTenantsPerReplica;
 
         // Register pipeline
         _moduleBuilder.Services.AddKeyedSingleton<IConsumeFilterPipeline>(moduleKey, (sp, _) =>
@@ -253,6 +256,7 @@ public sealed class ConsumerBuilder
                 distributionMode,
                 tenantLockRetryInterval,
                 maxParallelProjections,
+                maxTenantsPerReplica,
                 logger);
 
             // Register all processors

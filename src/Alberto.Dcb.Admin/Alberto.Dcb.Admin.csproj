@@ -4,6 +4,12 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+        <!-- Package Metadata -->
+        <PackageId>Alberto.Dcb.Admin</PackageId>
+        <Title>Alberto DCB Event Store - Admin Dashboard</Title>
+        <Description>Admin REST and GraphQL endpoints for Alberto DCB event store. Provides processor management, checkpoint inspection, and dead letter handling.</Description>
+        <IsPackable>true</IsPackable>
         <RootNamespace>Alberto.Dcb.Admin</RootNamespace>
     </PropertyGroup>
 

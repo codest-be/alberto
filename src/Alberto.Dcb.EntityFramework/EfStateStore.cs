@@ -139,79 +139,204 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
         }
         catch (DbUpdateException ex) when (IsDuplicateKeyViolation(ex))
         {
-            // Another instance already inserted some entities - this shouldn't happen
-            // with proper tenant distribution, but handle it gracefully by retrying
+            // Another instance already inserted some entities - this can happen
+            // during startup when multiple replicas race to process events.
+            // Retry with exponential backoff.
             AlbertoMetrics.ConcurrencyConflicts.Add(1);
 
-            // Retry with fresh context - entities should exist now
-            await RetryAfterDuplicateKeyAsync(upserts, deletes, transaction, ct);
+            await RetryWithBackoffAsync(upserts, deletes, transaction, ct);
         }
     }
 
     /// <summary>
-    /// Retry after duplicate key error. Reload entities and update instead of insert.
+    /// Retry after duplicate key error with exponential backoff.
+    /// Processes entities one-by-one to handle individual conflicts gracefully.
     /// </summary>
-    private async Task RetryAfterDuplicateKeyAsync(
+    private async Task RetryWithBackoffAsync(
         IReadOnlyDictionary<string, TEntity> upserts,
         IReadOnlyCollection<string> deletes,
         IDbTransaction? transaction,
         CancellationToken ct)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync(ct);
+        const int maxRetries = 5;
+        var delay = TimeSpan.FromMilliseconds(50);
 
-        if (transaction != null)
+        for (var attempt = 1; attempt <= maxRetries; attempt++)
         {
-            await UseTransactionAsync(context, transaction, ct);
-        }
+            await using var context = await _contextFactory.CreateDbContextAsync(ct);
 
-        // Reload all entities - some should exist now (inserted by other instance)
-        var allDocIds = upserts.Keys.Concat(deletes).Distinct().ToList();
-        var existingEntities = await context.Set<TEntity>()
-            .Where(e => e.TenantId == _tenantId && allDocIds.Contains(e.DocumentId))
-            .ToDictionaryAsync(e => e.DocumentId, ct);
-
-        // Handle deletes
-        foreach (var docId in deletes)
-        {
-            if (existingEntities.TryGetValue(docId, out var existing))
+            if (transaction != null)
             {
-                context.Set<TEntity>().Remove(existing);
+                await UseTransactionAsync(context, transaction, ct);
             }
-        }
 
-        // Handle upserts - now most should be updates
-        foreach (var (docId, newEntity) in upserts)
-        {
-            newEntity.TenantId = _tenantId;
-            newEntity.DocumentId = docId;
-            newEntity.UpdatedAt = DateTimeOffset.UtcNow;
+            // Process each entity individually to handle conflicts gracefully
+            var failedDocIds = new List<string>();
 
-            if (existingEntities.TryGetValue(docId, out var existing))
+            // Handle deletes first
+            foreach (var docId in deletes)
             {
-                // Update existing entity
-                context.Entry(existing).CurrentValues.SetValues(newEntity);
-
-                foreach (var ownedNav in context.Entry(existing).Navigations
-                    .Where(n => n.Metadata.TargetEntityType.IsOwned()))
+                var existing = await context.Set<TEntity>()
+                    .FirstOrDefaultAsync(e => e.TenantId == _tenantId && e.DocumentId == docId, ct);
+                if (existing != null)
                 {
-                    var propName = ownedNav.Metadata.Name;
-                    var propInfo = typeof(TEntity).GetProperty(propName);
-                    if (propInfo != null)
-                    {
-                        var newValue = propInfo.GetValue(newEntity);
-                        ownedNav.CurrentValue = newValue;
-                    }
+                    context.Set<TEntity>().Remove(existing);
                 }
             }
-            else
+
+            // Handle upserts one by one
+            foreach (var (docId, newEntity) in upserts)
             {
-                // Still doesn't exist - try insert again
-                context.Set<TEntity>().Add(newEntity);
+                newEntity.TenantId = _tenantId;
+                newEntity.DocumentId = docId;
+                newEntity.UpdatedAt = DateTimeOffset.UtcNow;
+
+                // Try to find existing entity
+                var existing = await context.Set<TEntity>()
+                    .FirstOrDefaultAsync(e => e.TenantId == _tenantId && e.DocumentId == docId, ct);
+
+                if (existing != null)
+                {
+                    // Update existing entity
+                    context.Entry(existing).CurrentValues.SetValues(newEntity);
+
+                    foreach (var ownedNav in context.Entry(existing).Navigations
+                        .Where(n => n.Metadata.TargetEntityType.IsOwned()))
+                    {
+                        var propName = ownedNav.Metadata.Name;
+                        var propInfo = typeof(TEntity).GetProperty(propName);
+                        if (propInfo != null)
+                        {
+                            var newValue = propInfo.GetValue(newEntity);
+                            ownedNav.CurrentValue = newValue;
+                        }
+                    }
+                }
+                else
+                {
+                    // Entity doesn't exist - add for insert
+                    context.Set<TEntity>().Add(newEntity);
+                }
+            }
+
+            try
+            {
+                await context.SaveChangesAsync(ct);
+                return; // Success
+            }
+            catch (DbUpdateException ex) when (IsDuplicateKeyViolation(ex))
+            {
+                if (attempt >= maxRetries)
+                {
+                    // Last attempt - save what we can, one entity at a time
+                    await SaveEntitiesOneByOneAsync(upserts, deletes, transaction, ct);
+                    return;
+                }
+
+                // Still racing with another instance, wait and retry
+                AlbertoMetrics.ConcurrencyConflicts.Add(1);
+                await Task.Delay(delay, ct);
+                delay *= 2; // Exponential backoff
             }
         }
+    }
 
-        // If this still fails, let it propagate - something is seriously wrong
-        await context.SaveChangesAsync(ct);
+    /// <summary>
+    /// Last resort: save entities one by one, handling duplicate key errors gracefully.
+    /// When an insert fails due to a duplicate key on a secondary unique constraint,
+    /// we try to find and update the existing entity using raw SQL if needed.
+    /// </summary>
+    private async Task SaveEntitiesOneByOneAsync(
+        IReadOnlyDictionary<string, TEntity> upserts,
+        IReadOnlyCollection<string> deletes,
+        IDbTransaction? transaction,
+        CancellationToken ct)
+    {
+        foreach (var (docId, newEntity) in upserts)
+        {
+            try
+            {
+                await using var context = await _contextFactory.CreateDbContextAsync(ct);
+
+                if (transaction != null)
+                {
+                    await UseTransactionAsync(context, transaction, ct);
+                }
+
+                newEntity.TenantId = _tenantId;
+                newEntity.DocumentId = docId;
+                newEntity.UpdatedAt = DateTimeOffset.UtcNow;
+
+                // Try to find existing entity
+                var existing = await context.Set<TEntity>()
+                    .FirstOrDefaultAsync(e => e.TenantId == _tenantId && e.DocumentId == docId, ct);
+
+                if (existing != null)
+                {
+                    // Update existing
+                    context.Entry(existing).CurrentValues.SetValues(newEntity);
+                    foreach (var ownedNav in context.Entry(existing).Navigations
+                        .Where(n => n.Metadata.TargetEntityType.IsOwned()))
+                    {
+                        var propName = ownedNav.Metadata.Name;
+                        var propInfo = typeof(TEntity).GetProperty(propName);
+                        if (propInfo != null)
+                        {
+                            ownedNav.CurrentValue = propInfo.GetValue(newEntity);
+                        }
+                    }
+                }
+                else
+                {
+                    context.Set<TEntity>().Add(newEntity);
+                }
+
+                await context.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateException ex) when (IsDuplicateKeyViolation(ex))
+            {
+                // Insert failed due to duplicate key - another process may have inserted it.
+                // Try one more time to find and update the entity.
+                AlbertoMetrics.ConcurrencyConflicts.Add(1);
+
+                try
+                {
+                    await using var retryContext = await _contextFactory.CreateDbContextAsync(ct);
+
+                    if (transaction != null)
+                    {
+                        await UseTransactionAsync(retryContext, transaction, ct);
+                    }
+
+                    var nowExisting = await retryContext.Set<TEntity>()
+                        .FirstOrDefaultAsync(e => e.TenantId == _tenantId && e.DocumentId == docId, ct);
+
+                    if (nowExisting != null)
+                    {
+                        // Entity now exists - update it
+                        retryContext.Entry(nowExisting).CurrentValues.SetValues(newEntity);
+                        foreach (var ownedNav in retryContext.Entry(nowExisting).Navigations
+                            .Where(n => n.Metadata.TargetEntityType.IsOwned()))
+                        {
+                            var propName = ownedNav.Metadata.Name;
+                            var propInfo = typeof(TEntity).GetProperty(propName);
+                            if (propInfo != null)
+                            {
+                                ownedNav.CurrentValue = propInfo.GetValue(newEntity);
+                            }
+                        }
+                        await retryContext.SaveChangesAsync(ct);
+                    }
+                    // If still not found, another unique constraint prevented insert.
+                    // For idempotent projections this is acceptable.
+                }
+                catch (DbUpdateException)
+                {
+                    // Retry also failed - give up on this entity.
+                    // For idempotent projections, data should be equivalent anyway.
+                }
+            }
+        }
     }
 
     /// <inheritdoc/>

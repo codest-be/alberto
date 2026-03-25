@@ -1,0 +1,73 @@
+name: Publish NuGet Packages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'Directory.Build.props'
+      - 'Directory.Packages.props'
+
+  workflow_dispatch:
+    inputs:
+      version_suffix:
+        description: 'Version suffix (e.g. beta.1, beta.2). Leave empty to use run number.'
+        required: false
+        type: string
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Determine version
+        id: version
+        run: |
+          SUFFIX="${{ inputs.version_suffix }}"
+          if [ -z "$SUFFIX" ]; then
+            SUFFIX="beta.${{ github.run_number }}"
+          fi
+          echo "suffix=$SUFFIX" >> "$GITHUB_OUTPUT"
+          echo "Version suffix: $SUFFIX"
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build -c Release --no-restore
+
+      - name: Test
+        run: dotnet test -c Release --no-build
+
+      - name: Pack
+        run: |
+          dotnet pack src/Alberto.Dcb/Alberto.Dcb.csproj -c Release --no-build --version-suffix "${{ steps.version.outputs.suffix }}" -o artifacts
+          dotnet pack src/Alberto.Dcb.Admin/Alberto.Dcb.Admin.csproj -c Release --no-build --version-suffix "${{ steps.version.outputs.suffix }}" -o artifacts
+          dotnet pack src/Alberto.Dcb.EntityFramework/Alberto.Dcb.EntityFramework.csproj -c Release --no-build --version-suffix "${{ steps.version.outputs.suffix }}" -o artifacts
+          dotnet pack src/Alberto.Dcb.InMemory/Alberto.Dcb.InMemory.csproj -c Release --no-build --version-suffix "${{ steps.version.outputs.suffix }}" -o artifacts
+          dotnet pack src/Alberto.Dcb.Postgres/Alberto.Dcb.Postgres.csproj -c Release --no-build --version-suffix "${{ steps.version.outputs.suffix }}" -o artifacts
+          dotnet pack src/Alberto.Dcb.Telemetry/Alberto.Dcb.Telemetry.csproj -c Release --no-build --version-suffix "${{ steps.version.outputs.suffix }}" -o artifacts
+
+      - name: Push to GitHub Packages
+        run: |
+          dotnet nuget add source "https://nuget.pkg.github.com/codest-be/index.json" \
+            --name github \
+            --username ${{ github.actor }} \
+            --password ${{ secrets.GITHUB_TOKEN }} \
+            --store-password-in-clear-text
+          dotnet nuget push "artifacts/*.nupkg" --source github --skip-duplicate
+          dotnet nuget push "artifacts/*.snupkg" --source github --skip-duplicate || true

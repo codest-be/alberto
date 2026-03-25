@@ -1,7 +1,6 @@
 using System.Diagnostics;
-using Aspire.Hosting.ApplicationModel;
 
-namespace Aspire.Hosting;
+namespace Alberto.AppHost;
 
 /// <summary>
 /// Represents a K6 load testing resource.

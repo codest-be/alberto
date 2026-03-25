@@ -1,5 +1,7 @@
 using Alberto.Orders.Infrastructure.Data;
+using Alberto.Orders.Migrations;
 using Microsoft.EntityFrameworkCore;
+using ServiceDefaults;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -18,43 +20,46 @@ builder.Services.AddHostedService<MigrationWorker>();
 var host = builder.Build();
 host.Run();
 
-/// <summary>
-/// Worker that applies EF migrations on startup and then signals completion.
-/// </summary>
-public class MigrationWorker(
-    IServiceProvider serviceProvider,
-    IHostApplicationLifetime lifetime,
-    ILogger<MigrationWorker> logger)
-    : BackgroundService
+namespace Alberto.Orders.Migrations
 {
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    /// <summary>
+    /// Worker that applies EF migrations on startup and then signals completion.
+    /// </summary>
+    public class MigrationWorker(
+        IServiceProvider serviceProvider,
+        IHostApplicationLifetime lifetime,
+        ILogger<MigrationWorker> logger)
+        : BackgroundService
     {
-        try
+        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            logger.LogInformation("Starting EF Core migrations for Orders module...");
+            try
+            {
+                logger.LogInformation("Starting EF Core migrations for Orders module...");
 
-            using var scope = serviceProvider.CreateScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<OrdersDbContext>();
+                using var scope = serviceProvider.CreateScope();
+                var dbContext = scope.ServiceProvider.GetRequiredService<OrdersDbContext>();
 
-            // Ensure schema exists
-            await dbContext.Database.ExecuteSqlRawAsync(
-                "CREATE SCHEMA IF NOT EXISTS orders",
-                stoppingToken);
+                // Ensure schema exists
+                await dbContext.Database.ExecuteSqlRawAsync(
+                    "CREATE SCHEMA IF NOT EXISTS orders",
+                    stoppingToken);
 
-            // Apply migrations
-            await dbContext.Database.MigrateAsync(stoppingToken);
+                // Apply migrations
+                await dbContext.Database.MigrateAsync(stoppingToken);
 
-            logger.LogInformation("EF Core migrations completed successfully.");
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "An error occurred while applying migrations.");
-            throw;
-        }
-        finally
-        {
-            // Stop the application after migrations complete
-            lifetime.StopApplication();
+                logger.LogInformation("EF Core migrations completed successfully.");
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "An error occurred while applying migrations.");
+                throw;
+            }
+            finally
+            {
+                // Stop the application after migrations complete
+                lifetime.StopApplication();
+            }
         }
     }
 }

@@ -1053,6 +1053,15 @@ public sealed class PollingConsumer : IEventConsumer
                 {
                     await flushable.FlushAsync(ct);
                 }
+
+                // Advance checkpoint to end of batch even if no matching events were found,
+                // otherwise the rebuild loop re-fetches the same batch forever.
+                var maxBatchPosition = events.Max(e => e.GlobalPosition);
+                var savedPosition = await _checkpointStore.GetAsync(processor.ProcessorId, ct) ?? 0;
+                if (maxBatchPosition > savedPosition)
+                {
+                    await _checkpointStore.SaveAsync(processor.ProcessorId, maxBatchPosition, ct);
+                }
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)

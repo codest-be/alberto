@@ -31,4 +31,9 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./features/projections/projections.component').then((m) => m.ProjectionsComponent),
   },
+  {
+    path: 'tenants',
+    loadComponent: () =>
+      import('./features/tenants/tenants.component').then((m) => m.TenantsComponent),
+  },
 ];

@@ -85,6 +85,12 @@ public static class AlbertoMetrics
     public static readonly Counter<long> EventsFilteredByTenant =
         Meter.CreateCounter<long>("alberto.events_filtered_by_tenant", "events", "Number of events filtered out due to tenant ownership");
 
+    /// <summary>
+    /// Counter for tenant leases lost (not renewed in time, taken by another replica).
+    /// </summary>
+    public static readonly Counter<long> TenantLeasesLost =
+        Meter.CreateCounter<long>("alberto.tenant_leases_lost", "leases", "Number of tenant leases lost due to failed renewal");
+
     #endregion
 
     #region Gauges

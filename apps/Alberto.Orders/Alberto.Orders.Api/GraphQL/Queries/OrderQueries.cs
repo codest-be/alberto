@@ -6,7 +6,7 @@ using Alberto.Orders.Core.Order;
 using Alberto.Orders.Infrastructure;
 using Alberto.Orders.Infrastructure.Data;
 using Alberto.Orders.Infrastructure.Entities;
-using OrderDecider = Alberto.Orders.Core.Order.Actions.OrderDecider;
+using OrderDecider = Alberto.Orders.Core.Order.OrderDecider;
 using Alberto.Orders.Infrastructure.Projections;
 using Alberto.Orders.Infrastructure.ReadModels;
 using HotChocolate;

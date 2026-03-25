@@ -9,6 +9,7 @@ using Alberto.Payments.Infrastructure;
 using HotChocolate;
 using HotChocolate.Resolvers;
 using Microsoft.Extensions.DependencyInjection;
+using PaymentDecider = Alberto.Payments.Core.Payment.PaymentDecider;
 
 namespace Alberto.Orders.Api.GraphQL.Mutations;
 

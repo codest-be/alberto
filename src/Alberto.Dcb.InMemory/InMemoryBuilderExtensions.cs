@@ -33,12 +33,54 @@ public static class InMemoryBuilderExtensions
         // Register event store backend with intercepting decorator
         builder.Services.AddKeyedSingleton<IEventStoreBackend>(moduleKey, (sp, _) =>
         {
-            var rawBackend = new InMemoryEventStoreBackend();
+            var timeProvider = sp.GetService<TimeProvider>() ?? TimeProvider.System;
+            var rawBackend = new InMemoryEventStoreBackend(timeProvider);
             var pipeline = sp.GetRequiredKeyedService<IAppendInterceptorPipeline>(moduleKey);
             return new InterceptingEventStoreBackend(rawBackend, pipeline);
         });
 
         // Register event store (uses intercepting backend)
+        builder.Services.AddKeyedSingleton<IEventStore>(moduleKey, (sp, _) =>
+        {
+            var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(moduleKey);
+            return new InMemoryEventStore(backend);
+        });
+
+        builder.Services.AddKeyedSingleton<ICheckpointStore>(moduleKey, checkpointStore);
+        builder.Services.AddKeyedSingleton<IDeadLetterStore>(moduleKey, deadLetterStore);
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Configures the module to share the in-memory event store backend from another module.
+    /// The checkpoint and dead letter stores are independent, so each consumer tracks its own position.
+    /// </summary>
+    /// <param name="builder">The module builder.</param>
+    /// <param name="sharedModuleKey">The module key whose <see cref="IEventStoreBackend"/> to share.</param>
+    /// <returns>The module builder for chaining.</returns>
+    public static DcbModuleBuilder WithInMemory(this DcbModuleBuilder builder, string sharedModuleKey)
+    {
+        var moduleKey = builder.ModuleKey;
+
+        var checkpointStore = new InMemoryCheckpointStore();
+        var deadLetterStore = new InMemoryDeadLetterStore();
+
+        builder.Services.AddKeyedSingleton<IAppendInterceptorPipeline>(moduleKey, (sp, _) =>
+        {
+            var interceptors = sp.GetKeyedServices<IAppendInterceptor>(moduleKey);
+            return new AppendInterceptorPipeline(interceptors);
+        });
+
+        // Resolve the shared backend from the other module
+        builder.Services.AddKeyedSingleton<IEventStoreBackend>(moduleKey, (sp, _) =>
+        {
+            var sharedBackend = sp.GetRequiredKeyedService<IEventStoreBackend>(sharedModuleKey);
+            var pipeline = sp.GetRequiredKeyedService<IAppendInterceptorPipeline>(moduleKey);
+            return new InterceptingEventStoreBackend(sharedBackend, pipeline);
+        });
+
+        // Pass-through event store using the shared backend
         builder.Services.AddKeyedSingleton<IEventStore>(moduleKey, (sp, _) =>
         {
             var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(moduleKey);

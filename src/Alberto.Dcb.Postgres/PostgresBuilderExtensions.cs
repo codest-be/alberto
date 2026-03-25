@@ -105,10 +105,11 @@ public static class PostgresBuilderExtensions
             return new PostgresProcessorLock(dataSource);
         });
 
+        var leaseDuration = options.LeaseDuration;
         builder.Services.AddKeyedSingleton<ITenantProcessorLock>(moduleKey, (sp, _) =>
         {
             var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
-            return new PostgresTenantProcessorLock(dataSource);
+            return new PostgresTenantProcessorLock(dataSource, schema, leaseDuration);
         });
 
         return builder;

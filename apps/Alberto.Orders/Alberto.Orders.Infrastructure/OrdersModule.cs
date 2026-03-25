@@ -68,7 +68,7 @@ public static class OrdersModule
                 .AddEfProjection<OrderSummaryEntity, OrderSummaryEfProjection, OrdersDbContext>())
             .WithAdmin(admin =>
             {
-                admin.Title = "Orders Admin";
+                admin.Title = "Orders";
             }));
 
         // Note: Query-side state stores are created dynamically per-tenant in GraphQL queries.

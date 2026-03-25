@@ -198,6 +198,7 @@ export class ShellComponent implements OnInit {
     { path: '/checkpoints', label: 'Checkpoints', icon: '#' },
     { path: '/dead-letters', label: 'Dead Letters', icon: '!' },
     { path: '/projections', label: 'Projections', icon: '@' },
+    { path: '/tenants', label: 'Tenants', icon: '%' },
   ];
 
   ngOnInit(): void {

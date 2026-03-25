@@ -1,7 +1,6 @@
 using Alberto.Dcb;
-using Alberto.Payments.Core.Payment;
 
-namespace Alberto.Payments.Core.Payment.Actions;
+namespace Alberto.Payments.Core.Payment;
 
 /// <summary>
 /// Decider for payment operations. Contains business logic as pure functions.
