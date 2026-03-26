@@ -1,5 +1,6 @@
 using Alberto.Dcb.Subscriptions;
 
+#pragma warning disable CS0618 // Obsolete projection types used intentionally for backward-compatibility
 namespace Alberto.Dcb.InMemory;
 
 /// <summary>
@@ -28,21 +29,13 @@ public sealed class InMemoryEventStore : IEventStore
 
     /// <inheritdoc/>
     public async Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
-        string tenantId,
         IEnumerable<IEventToPersist> events,
         DcbQuery? dcbQuery = null,
         long? expectedPosition = null,
         CancellationToken cancellationToken = default)
     {
-        // Append events to the backend
-        var appended = await _backend.Append(
-            tenantId,
-            events,
-            dcbQuery,
-            expectedPosition,
-            cancellationToken);
+        var appended = await _backend.Append(events, dcbQuery, expectedPosition, cancellationToken);
 
-        // Run inline projections (no real transaction for in-memory)
         if (appended.Count > 0 && _inlineProjections.Count > 0)
         {
             var appendedList = appended.ToList();
@@ -54,7 +47,6 @@ public sealed class InMemoryEventStore : IEventStore
 
                 if (relevant.Count > 0)
                 {
-                    // Pass null for transaction - in-memory doesn't need it
                     await projection.ProcessAsync(relevant, null!, cancellationToken);
                 }
             }
@@ -65,36 +57,26 @@ public sealed class InMemoryEventStore : IEventStore
 
     /// <inheritdoc/>
     public Task<IReadOnlyCollection<IEventEnvelope>> StreamAsync(
-        string tenantId,
         DcbQuery query,
         long afterPosition = 0,
         int? limit = null,
         CancellationToken cancellationToken = default)
     {
-        return _backend.Stream(tenantId, query, afterPosition, limit, cancellationToken);
+        return _backend.Stream(query, afterPosition, limit, cancellationToken);
     }
 
     /// <inheritdoc/>
-    public Task<IReadOnlyCollection<IEventEnvelope>> StreamGlobalAsync(
+    public Task<IReadOnlyCollection<IEventEnvelope>> StreamAllAsync(
         long afterPosition = 0,
         int? limit = null,
         CancellationToken cancellationToken = default)
     {
-        return _backend.StreamGlobal(afterPosition, limit, cancellationToken);
+        return _backend.StreamAll(afterPosition, limit, cancellationToken);
     }
 
     /// <inheritdoc/>
-    public Task<long> GetLastPositionAsync(
-        string tenantId,
-        CancellationToken cancellationToken = default)
+    public Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default)
     {
-        return _backend.GetLastPosition(tenantId, cancellationToken);
-    }
-
-    /// <inheritdoc/>
-    public Task<long> GetLastPositionGlobalAsync(
-        CancellationToken cancellationToken = default)
-    {
-        return _backend.GetLastPositionGlobal(cancellationToken);
+        return _backend.GetLastPosition(cancellationToken);
     }
 }

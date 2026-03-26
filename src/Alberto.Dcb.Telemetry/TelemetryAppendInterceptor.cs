@@ -32,7 +32,6 @@ internal sealed class TelemetryAppendInterceptor : IAppendInterceptor
             AlbertoMetrics.AppendActivityName,
             ActivityKind.Producer);
 
-        activity?.SetTag("tenant.id", context.TenantId);
         activity?.SetTag("events.count", context.Events.Count);
 
         // Enrich events with trace context
@@ -66,8 +65,7 @@ internal sealed class TelemetryAppendInterceptor : IAppendInterceptor
                 activity?.SetTag("events.last_position", result.Last().GlobalPosition);
             }
 
-            AlbertoMetrics.EventsAppended.Add(result.Count,
-                new KeyValuePair<string, object?>("tenant", context.TenantId));
+            AlbertoMetrics.EventsAppended.Add(result.Count);
 
             return result;
         }
@@ -76,8 +74,7 @@ internal sealed class TelemetryAppendInterceptor : IAppendInterceptor
             activity?.SetStatus(ActivityStatusCode.Error, "DCB conflict");
             activity?.SetTag("dcb.conflict", true);
 
-            AlbertoMetrics.ConcurrencyConflicts.Add(1,
-                new KeyValuePair<string, object?>("tenant", context.TenantId));
+            AlbertoMetrics.ConcurrencyConflicts.Add(1);
 
             throw;
         }
@@ -90,8 +87,7 @@ internal sealed class TelemetryAppendInterceptor : IAppendInterceptor
         }
         finally
         {
-            AlbertoMetrics.AppendDuration.Record(sw.ElapsedMilliseconds,
-                new KeyValuePair<string, object?>("tenant", context.TenantId));
+            AlbertoMetrics.AppendDuration.Record(sw.ElapsedMilliseconds);
         }
     }
 
@@ -116,7 +112,6 @@ internal sealed class TelemetryAppendInterceptor : IAppendInterceptor
             return new EventToPersist
             {
                 Id = evt.Id,
-                TenantId = evt.TenantId,
                 EventType = evt.EventType,
                 Tags = evt.Tags,
                 EventData = evt.EventData,

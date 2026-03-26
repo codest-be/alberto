@@ -11,7 +11,7 @@ public sealed partial class OrderDecider
     /// Gets the DCB query for an order's consistency boundary.
     /// </summary>
     public static DcbQuery BoundaryFor(Guid orderId) =>
-        DcbQuery.Empty.WithTag(Tags.Order, orderId.ToString());
+        DcbQuery.For(Tags.Order, orderId);
 }
 
 /// <summary>

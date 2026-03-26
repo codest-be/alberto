@@ -4,6 +4,13 @@ using Microsoft.Extensions.Logging;
 namespace Alberto.Dcb.Subscriptions;
 
 /// <summary>
+/// Context used by <see cref="CachingCheckpointStore"/> when the underlying store supports
+/// lease-fenced writes. Provides the consumer and replica identity needed to verify the
+/// lease is still held at flush time.
+/// </summary>
+public record FencingContext(string ConsumerId, string ReplicaId);
+
+/// <summary>
 /// Checkpoint store that throttles database writes by batching updates.
 /// Updates are cached in-memory and periodically flushed to the underlying store.
 /// This significantly reduces database load during high-throughput scenarios.
@@ -18,6 +25,13 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IAsyncDisposabl
     private readonly Timer _flushTimer;
     private readonly SemaphoreSlim _flushLock = new(1, 1);
     private bool _disposed;
+    private FencingContext? _fencingContext;
+
+    /// <summary>
+    /// Called with the processor ID when a fenced checkpoint write is rejected because
+    /// the lease has expired. The caller should stop processing for that processor.
+    /// </summary>
+    public Action<string>? OnFenceViolation { get; set; }
 
     /// <summary>
     /// Creates a new caching checkpoint store.
@@ -72,6 +86,12 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IAsyncDisposabl
         await _inner.ResetAsync(processorId, ct);
     }
 
+    /// <summary>
+    /// Sets the fencing context so that periodic flushes use lease-fenced writes when the
+    /// underlying store implements <see cref="IFencedCheckpointStore"/>.
+    /// </summary>
+    public void SetFencingContext(FencingContext ctx) => _fencingContext = ctx;
+
     private async void OnFlushTimer(object? state)
     {
         if (_disposed) return;
@@ -88,6 +108,10 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IAsyncDisposabl
 
     /// <summary>
     /// Flushes all dirty checkpoints to the underlying store.
+    /// When a fencing context is set and the inner store implements
+    /// <see cref="IFencedCheckpointStore"/>, each write is guarded by a lease check.
+    /// If a fenced write is rejected, <see cref="OnFenceViolation"/> is invoked for that
+    /// processor ID and the checkpoint entry is removed from the dirty set without writing.
     /// </summary>
     public async Task FlushAsync(CancellationToken ct = default)
     {
@@ -97,11 +121,33 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IAsyncDisposabl
         try
         {
             var toFlush = _dirty.ToArray();
+            var fenced = _fencingContext is not null ? _inner as IFencedCheckpointStore : null;
 
             // Write all dirty checkpoints FIRST, then remove only after success
             foreach (var (processorId, position) in toFlush)
             {
-                await _inner.SaveAsync(processorId, position, ct);
+                if (fenced is not null)
+                {
+                    var leaseHeld = await fenced.SaveIfLeaseHeldAsync(
+                        processorId, position,
+                        _fencingContext!.ConsumerId, _fencingContext.ReplicaId,
+                        ct);
+
+                    if (!leaseHeld)
+                    {
+                        _logger?.LogWarning(
+                            "Fenced checkpoint flush rejected for processor {ProcessorId} — lease expired",
+                            processorId);
+                        _dirty.TryRemove(processorId, out _);
+                        OnFenceViolation?.Invoke(processorId);
+                        continue;
+                    }
+                }
+                else
+                {
+                    await _inner.SaveAsync(processorId, position, ct);
+                }
+
                 // Only remove AFTER successful write
                 _dirty.TryRemove(processorId, out _);
             }

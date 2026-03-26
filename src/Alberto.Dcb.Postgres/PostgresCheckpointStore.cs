@@ -7,7 +7,7 @@ namespace Alberto.Dcb.Postgres;
 /// PostgreSQL implementation of <see cref="ICheckpointStore"/>.
 /// Uses the processor_checkpoints table.
 /// </summary>
-public sealed class PostgresCheckpointStore(NpgsqlDataSource dataSource, string? schema = null) : ICheckpointStore
+public sealed class PostgresCheckpointStore(NpgsqlDataSource dataSource, string? schema = null) : IFencedCheckpointStore
 {
     private readonly NpgsqlDataSource _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
     private readonly SchemaQualifier _schema = new(schema);
@@ -54,5 +54,18 @@ public sealed class PostgresCheckpointStore(NpgsqlDataSource dataSource, string?
         cmd.Parameters.AddWithValue("processor_id", processorId);
 
         await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task<bool> SaveIfLeaseHeldAsync(
+        string processorId, long position, string consumerId, string replicaId, CancellationToken ct = default)
+    {
+        await using var cmd = _dataSource.CreateCommand();
+        cmd.CommandText = $"SELECT {_schema.Function("save_checkpoint_if_lease_held")}(@processorId, @consumerId, @replicaId, @position)";
+        cmd.Parameters.AddWithValue("processorId", processorId);
+        cmd.Parameters.AddWithValue("consumerId", consumerId);
+        cmd.Parameters.AddWithValue("replicaId", replicaId);
+        cmd.Parameters.AddWithValue("position", position);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is true;
     }
 }

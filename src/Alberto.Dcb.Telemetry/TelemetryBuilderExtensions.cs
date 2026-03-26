@@ -27,12 +27,14 @@ public static class TelemetryBuilderExtensions
         // Register append interceptor for trace context enrichment
         builder.Services.AddKeyedSingleton<IAppendInterceptor, TelemetryAppendInterceptor>(moduleKey);
 
-        // Register consume filter with trace context provider for linking
+        // Register consume filter with trace context provider for linking (legacy path)
+#pragma warning disable CS0618
         builder.Services.AddKeyedSingleton<IConsumeFilter>(moduleKey, (sp, _) =>
         {
             var provider = sp.GetKeyedService<ITraceContextProvider>(moduleKey);
             return new TelemetryConsumeFilter(provider);
         });
+#pragma warning restore CS0618
 
         return builder;
     }

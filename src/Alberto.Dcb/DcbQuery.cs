@@ -168,6 +168,43 @@ public sealed class DcbQuery
         => new([], patterns.Select(TagPattern.Parse).ToArray(), TagMatchMode.Any);
 
     /// <summary>
+    /// Creates a query for a single concept:id tag — the most common pattern.
+    /// Equivalent to <see cref="ByTags(EventTag[])"/> with a single tag.
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// var q = DcbQuery.For("order", orderId);
+    /// var q = DcbQuery.For("order", orderId).WithTypes("order-placed");
+    /// </code>
+    /// </example>
+    public static DcbQuery For(string concept, string id)
+        => ByTags(new EventTag(concept, id));
+
+    /// <summary>
+    /// Creates a query for a single concept:id tag using a Guid ID.
+    /// </summary>
+    public static DcbQuery For(string concept, Guid id)
+        => ByTags(new EventTag(concept, id.ToString()));
+
+    /// <summary>
+    /// Creates a query for a single concept:id tag using an int ID.
+    /// </summary>
+    public static DcbQuery For(string concept, int id)
+        => ByTags(new EventTag(concept, id.ToString()));
+
+    /// <summary>
+    /// Creates a query for a single concept:id tag using a long ID.
+    /// </summary>
+    public static DcbQuery For(string concept, long id)
+        => ByTags(new EventTag(concept, id.ToString()));
+
+    /// <summary>
+    /// Creates a query for a single concept:id tag. Calls ToString() on the id.
+    /// </summary>
+    public static DcbQuery For<TId>(string concept, TId id) where TId : notnull
+        => ByTags(new EventTag(concept, id.ToString()!));
+
+    /// <summary>
     /// Returns a new query with additional event types.
     /// </summary>
     public DcbQuery WithTypes(params EventType[] types)

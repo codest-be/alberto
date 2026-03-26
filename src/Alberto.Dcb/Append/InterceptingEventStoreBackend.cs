@@ -12,7 +12,6 @@ internal sealed class InterceptingEventStoreBackend(IEventStoreBackend inner, IA
 
     /// <inheritdoc />
     public Task<IReadOnlyCollection<IEventEnvelope>> Append(
-        string tenantId,
         IEnumerable<IEventToPersist> events,
         DcbQuery? dcbQuery = null,
         long? expectedPosition = null,
@@ -20,7 +19,6 @@ internal sealed class InterceptingEventStoreBackend(IEventStoreBackend inner, IA
     {
         var context = new AppendContext
         {
-            TenantId = tenantId,
             Events = events.ToList(),
             DcbQuery = dcbQuery,
             ExpectedPosition = expectedPosition
@@ -29,7 +27,6 @@ internal sealed class InterceptingEventStoreBackend(IEventStoreBackend inner, IA
         return _pipeline.ExecuteAsync(
             context,
             ctx => _inner.Append(
-                ctx.TenantId,
                 ctx.Events,
                 ctx.DcbQuery,
                 ctx.ExpectedPosition,
@@ -39,28 +36,20 @@ internal sealed class InterceptingEventStoreBackend(IEventStoreBackend inner, IA
 
     /// <inheritdoc />
     public Task<IReadOnlyCollection<IEventEnvelope>> Stream(
-        string tenantId,
         DcbQuery query,
         long afterPosition = 0,
         int? limit = null,
         CancellationToken cancellationToken = default)
-        => _inner.Stream(tenantId, query, afterPosition, limit, cancellationToken);
+        => _inner.Stream(query, afterPosition, limit, cancellationToken);
 
     /// <inheritdoc />
-    public Task<IReadOnlyCollection<IEventEnvelope>> StreamGlobal(
+    public Task<IReadOnlyCollection<IEventEnvelope>> StreamAll(
         long afterPosition = 0,
         int? limit = null,
         CancellationToken cancellationToken = default)
-        => _inner.StreamGlobal(afterPosition, limit, cancellationToken);
+        => _inner.StreamAll(afterPosition, limit, cancellationToken);
 
     /// <inheritdoc />
-    public Task<long> GetLastPosition(
-        string tenantId,
-        CancellationToken cancellationToken = default)
-        => _inner.GetLastPosition(tenantId, cancellationToken);
-
-    /// <inheritdoc />
-    public Task<long> GetLastPositionGlobal(
-        CancellationToken cancellationToken = default)
-        => _inner.GetLastPositionGlobal(cancellationToken);
+    public Task<long> GetLastPosition(CancellationToken cancellationToken = default)
+        => _inner.GetLastPosition(cancellationToken);
 }

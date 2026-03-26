@@ -6,10 +6,11 @@ namespace Alberto.Dcb.Tests;
 /// <summary>
 /// PostgreSQL implementation of the event store backend specification tests.
 /// Uses a shared Testcontainers PostgreSQL instance across all tests.
-/// Test isolation is achieved through unique tenant IDs per test.
+/// Runs with single-tenant migrations (no tenant_id on events tables).
+/// Test isolation is achieved through unique event tags per test.
 /// </summary>
-public sealed class PostgresEventStoreBackendTests(PostgresFixture fixture)
-    : EventStoreBackendSpecification, IClassFixture<PostgresFixture>
+public sealed class PostgresEventStoreBackendTests(SingleTenantPostgresFixture fixture)
+    : EventStoreBackendSpecification, IClassFixture<SingleTenantPostgresFixture>
 {
     protected override Task<IEventStoreBackend> CreateBackend()
     {

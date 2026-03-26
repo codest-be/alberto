@@ -1,3 +1,4 @@
+#pragma warning disable CS0618 // Type or member is obsolete — intentional, this class itself is obsolete infrastructure
 namespace Alberto.Dcb.Subscriptions;
 
 /// <summary>
@@ -21,6 +22,7 @@ namespace Alberto.Dcb.Subscriptions;
 /// }
 /// </code>
 /// </example>
+[Obsolete("Use DeclareProjection.For<TState>() instead. This type will be removed in a future version.")]
 public abstract class Projection<TState> where TState : new()
 {
     private readonly ProjectionDispatcher<TState> _dispatcher;

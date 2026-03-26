@@ -1,5 +1,4 @@
 using Alberto.Dcb;
-using Alberto.Dcb.Admin;
 using Alberto.Dcb.EntityFramework;
 using Alberto.Dcb.Postgres;
 using Alberto.Dcb.Telemetry;
@@ -32,6 +31,7 @@ public static class OrdersModule
             ?? throw new InvalidOperationException("Connection string 'alberto' not found");
 
         services.AddAlberto(ModuleKey, builder => builder
+            .WithTenancy()
             .WithPostgres(options =>
             {
                 options.ConnectionString = connectionString;
@@ -65,11 +65,7 @@ public static class OrdersModule
                         "orders");
                 })
                 // EF projection for order summaries (enables filtering/querying)
-                .AddEfProjection<OrderSummaryEntity, OrderSummaryEfProjection, OrdersDbContext>())
-            .WithAdmin(admin =>
-            {
-                admin.Title = "Orders";
-            }));
+                .AddEfProjection<OrderSummaryEntity, OrderSummaryEfProjection, OrdersDbContext>()));
 
         // Note: Query-side state stores are created dynamically per-tenant in GraphQL queries.
         // The projection state stores above use the tenant from the event envelope during writes.

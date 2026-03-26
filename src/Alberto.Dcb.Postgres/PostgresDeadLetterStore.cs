@@ -15,8 +15,8 @@ public sealed class PostgresDeadLetterStore(NpgsqlDataSource dataSource, string?
     public async Task StoreAsync(DeadLetterEntry entry, CancellationToken ct = default)
     {
         var sql = $"""
-            INSERT INTO {_schema.Table("dead_letter_events")} (id, processor_id, event_id, event_type, event_data, error_message, stack_trace, attempt_count, failed_at)
-            VALUES (@id, @processorId, @eventId, @eventType, @eventData::jsonb, @errorMessage, @stackTrace, @attemptCount, @failedAt)
+            INSERT INTO {_schema.Table("dead_letter_events")} (id, processor_id, event_id, event_type, event_data, error_message, stack_trace, attempt_count, failed_at, global_position)
+            VALUES (@id, @processorId, @eventId, @eventType, @eventData::jsonb, @errorMessage, @stackTrace, @attemptCount, @failedAt, @globalPosition)
             """;
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
@@ -31,6 +31,7 @@ public sealed class PostgresDeadLetterStore(NpgsqlDataSource dataSource, string?
         cmd.Parameters.AddWithValue("stackTrace", (object?)entry.StackTrace ?? DBNull.Value);
         cmd.Parameters.AddWithValue("attemptCount", entry.AttemptCount);
         cmd.Parameters.AddWithValue("failedAt", entry.FailedAt);
+        cmd.Parameters.AddWithValue("globalPosition", entry.GlobalPosition);
 
         await cmd.ExecuteNonQueryAsync(ct);
     }
@@ -42,7 +43,7 @@ public sealed class PostgresDeadLetterStore(NpgsqlDataSource dataSource, string?
         CancellationToken ct = default)
     {
         var sql = $"""
-            SELECT id, processor_id, event_id, event_type, event_data, error_message, stack_trace, attempt_count, failed_at
+            SELECT id, processor_id, event_id, event_type, event_data, error_message, stack_trace, attempt_count, failed_at, global_position
             FROM {_schema.Table("dead_letter_events")}
             WHERE processor_id = @processorId
             ORDER BY failed_at DESC
@@ -69,7 +70,8 @@ public sealed class PostgresDeadLetterStore(NpgsqlDataSource dataSource, string?
                 ErrorMessage: reader.GetString(5),
                 StackTrace: reader.IsDBNull(6) ? null : reader.GetString(6),
                 AttemptCount: reader.GetInt32(7),
-                FailedAt: reader.GetDateTime(8)));
+                FailedAt: reader.GetDateTime(8),
+                GlobalPosition: reader.GetInt64(9)));
         }
 
         return entries;

@@ -86,7 +86,6 @@ public sealed class InMemoryEventStoreTests
             int limit = 20,
             CancellationToken ct = default)
         {
-            // Simple implementation - just returns items in arbitrary order
             IReadOnlyList<TState> result = _store.Values.Take(limit).ToList();
             return Task.FromResult(result);
         }
@@ -104,7 +103,7 @@ public sealed class InMemoryEventStoreTests
         eventStore.RegisterInlineProjection<OrderSummary, OrderSummaryProjection>(stateStore);
 
         var orderId = Guid.NewGuid();
-        await eventStore.AppendAsync("tenant-1", [CreateEvent(new OrderCreated(orderId, 100m))], cancellationToken: TestContext.Current.CancellationToken);
+        await eventStore.AppendAsync([CreateEvent(new OrderCreated(orderId, 100m))], cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Single(stateStore.Store);
         var state = stateStore.Store[orderId.ToString()];
@@ -122,15 +121,12 @@ public sealed class InMemoryEventStoreTests
 
         var orderId = Guid.NewGuid();
 
-        // First append: create order
-        await eventStore.AppendAsync("tenant-1", [CreateEvent(new OrderCreated(orderId, 100m))], cancellationToken: TestContext.Current.CancellationToken);
-
-        // Second append: confirm order
-        await eventStore.AppendAsync("tenant-1", [CreateEvent(new OrderConfirmed(orderId))], cancellationToken: TestContext.Current.CancellationToken);
+        await eventStore.AppendAsync([CreateEvent(new OrderCreated(orderId, 100m))], cancellationToken: TestContext.Current.CancellationToken);
+        await eventStore.AppendAsync([CreateEvent(new OrderConfirmed(orderId))], cancellationToken: TestContext.Current.CancellationToken);
 
         var state = stateStore.Store[orderId.ToString()];
         Assert.Equal("Confirmed", state.Status);
-        Assert.Equal(100m, state.Amount); // Preserved from creation
+        Assert.Equal(100m, state.Amount);
     }
 
     [Fact]
@@ -142,8 +138,7 @@ public sealed class InMemoryEventStoreTests
 
         var orderId = Guid.NewGuid();
 
-        // Single append with both events
-        await eventStore.AppendAsync("tenant-1", [
+        await eventStore.AppendAsync([
                 CreateEvent(new OrderCreated(orderId, 100m)),
                 CreateEvent(new OrderConfirmed(orderId))
             ], cancellationToken: TestContext.Current.CancellationToken);
@@ -160,10 +155,8 @@ public sealed class InMemoryEventStoreTests
         var stateStore = new InMemoryStateStore<OrderSummary>();
         eventStore.RegisterInlineProjection<OrderSummary, OrderSummaryProjection>(stateStore);
 
-        // Append an event type that the projection doesn't handle
-        await eventStore.AppendAsync("tenant-1", [new EventToPersist
+        await eventStore.AppendAsync([new EventToPersist
             {
-                TenantId = "tenant-1",
                 EventType = new EventType("unrelated-event"),
                 Tags = [],
                 EventData = "{}"
@@ -178,7 +171,7 @@ public sealed class InMemoryEventStoreTests
         var eventStore = new InMemoryEventStore(new InMemoryEventStoreBackend());
 
         var orderId = Guid.NewGuid();
-        var result = await eventStore.AppendAsync("tenant-1", [CreateEvent(new OrderCreated(orderId, 100m))], cancellationToken: TestContext.Current.CancellationToken);
+        var result = await eventStore.AppendAsync([CreateEvent(new OrderCreated(orderId, 100m))], cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Single(result);
     }
@@ -193,23 +186,23 @@ public sealed class InMemoryEventStoreTests
         var eventStore = new InMemoryEventStore(new InMemoryEventStoreBackend());
         var orderId = Guid.NewGuid();
 
-        await eventStore.AppendAsync("tenant-1", [CreateEvent(new OrderCreated(orderId, 100m))], cancellationToken: TestContext.Current.CancellationToken);
+        await eventStore.AppendAsync([CreateEvent(new OrderCreated(orderId, 100m))], cancellationToken: TestContext.Current.CancellationToken);
 
-        var events = await eventStore.StreamAsync("tenant-1", DcbQuery.Empty, cancellationToken: TestContext.Current.CancellationToken);
+        var events = await eventStore.StreamAsync(DcbQuery.Empty, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Single(events);
         Assert.Equal("order-created", events.First().EventType.Id);
     }
 
     [Fact]
-    public async Task StreamGlobalAsync_ShouldDelegateToBackend()
+    public async Task StreamAllAsync_ShouldDelegateToBackend()
     {
         var eventStore = new InMemoryEventStore(new InMemoryEventStoreBackend());
 
-        await eventStore.AppendAsync("tenant-1", [CreateEvent(new OrderCreated(Guid.NewGuid(), 100m))], cancellationToken: TestContext.Current.CancellationToken);
-        await eventStore.AppendAsync("tenant-2", [CreateEvent(new OrderCreated(Guid.NewGuid(), 200m))], cancellationToken: TestContext.Current.CancellationToken);
+        await eventStore.AppendAsync([CreateEvent(new OrderCreated(Guid.NewGuid(), 100m))], cancellationToken: TestContext.Current.CancellationToken);
+        await eventStore.AppendAsync([CreateEvent(new OrderCreated(Guid.NewGuid(), 200m))], cancellationToken: TestContext.Current.CancellationToken);
 
-        var events = await eventStore.StreamGlobalAsync(cancellationToken: TestContext.Current.CancellationToken);
+        var events = await eventStore.StreamAllAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(2, events.Count);
     }
@@ -219,22 +212,10 @@ public sealed class InMemoryEventStoreTests
     {
         var eventStore = new InMemoryEventStore(new InMemoryEventStoreBackend());
 
-        await eventStore.AppendAsync("tenant-1", [CreateEvent(new OrderCreated(Guid.NewGuid(), 100m))], cancellationToken: TestContext.Current.CancellationToken);
+        await eventStore.AppendAsync([CreateEvent(new OrderCreated(Guid.NewGuid(), 100m))], cancellationToken: TestContext.Current.CancellationToken);
+        await eventStore.AppendAsync([CreateEvent(new OrderCreated(Guid.NewGuid(), 200m))], cancellationToken: TestContext.Current.CancellationToken);
 
-        var position = await eventStore.GetLastPositionAsync("tenant-1", TestContext.Current.CancellationToken);
-
-        Assert.Equal(1, position);
-    }
-
-    [Fact]
-    public async Task GetLastPositionGlobalAsync_ShouldDelegateToBackend()
-    {
-        var eventStore = new InMemoryEventStore(new InMemoryEventStoreBackend());
-
-        await eventStore.AppendAsync("tenant-1", [CreateEvent(new OrderCreated(Guid.NewGuid(), 100m))], cancellationToken: TestContext.Current.CancellationToken);
-        await eventStore.AppendAsync("tenant-2", [CreateEvent(new OrderCreated(Guid.NewGuid(), 200m))], cancellationToken: TestContext.Current.CancellationToken);
-
-        var position = await eventStore.GetLastPositionGlobalAsync(TestContext.Current.CancellationToken);
+        var position = await eventStore.GetLastPositionAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(2, position);
     }
@@ -243,12 +224,11 @@ public sealed class InMemoryEventStoreTests
 
     #region Helper Methods
 
-    private static EventToPersist CreateEvent<TEvent>(TEvent @event, string tenantId = "tenant-1") where TEvent : IEvent
+    private static EventToPersist CreateEvent<TEvent>(TEvent @event) where TEvent : IEvent
     {
         var eventTypeId = EventTypeAttribute.GetEventTypeId(typeof(TEvent));
         return new EventToPersist
         {
-            TenantId = tenantId,
             EventType = new EventType(eventTypeId),
             Tags = [],
             EventData = JsonSerializer.Serialize(@event)

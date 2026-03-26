@@ -2,6 +2,7 @@ using System.Data;
 using Alberto.Dcb.Subscriptions;
 using Microsoft.EntityFrameworkCore;
 
+#pragma warning disable CS0618 // Obsolete projection types used intentionally for backward-compatibility
 namespace Alberto.Dcb.EntityFramework.Inline;
 
 /// <summary>
@@ -40,7 +41,7 @@ internal sealed class EfInlineProjection<TEntity, TProjection, TDbContext> : IIn
         // Filter to events we handle and group by document ID
         var byDocument = events
             .Where(e => HandledEventTypes.Contains(e.EventType.Id))
-            .GroupBy(e => new { TenantId = e.TenantId, DocumentId = _projection.GetDocumentId(e) })
+            .GroupBy(e => new { TenantId = e.TenantId ?? string.Empty, DocumentId = _projection.GetDocumentId(e) })
             .ToDictionary(g => g.Key, g => g.ToList());
 
         if (byDocument.Count == 0)

@@ -9,7 +9,7 @@ namespace Alberto.Dcb.Tests;
 /// Integration tests for PostgresEventStore with inline projection support.
 /// Verifies that events are persisted and projections run immediately after.
 /// </summary>
-public sealed class PostgresEventStoreTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
+public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture) : IClassFixture<SingleTenantPostgresFixture>
 {
     #region Test Events
 
@@ -53,12 +53,10 @@ public sealed class PostgresEventStoreTests(PostgresFixture fixture) : IClassFix
     [Fact]
     public async Task AppendAsync_ShouldPersistEvents()
     {
-        var tenantId = Guid.NewGuid().ToString();
         var eventStore = new PostgresEventStore(new PostgresEventStoreBackend(fixture.DataSource));
 
         var orderId = Guid.NewGuid();
         var result = await eventStore.AppendAsync(
-            tenantId,
             [CreateEvent(new OrderCreated(orderId, 100m))],
             cancellationToken: TestContext.Current.CancellationToken);
 
@@ -69,16 +67,13 @@ public sealed class PostgresEventStoreTests(PostgresFixture fixture) : IClassFix
     [Fact]
     public async Task AppendAsync_ShouldReturnGlobalPosition()
     {
-        var tenantId = Guid.NewGuid().ToString();
         var eventStore = new PostgresEventStore(new PostgresEventStoreBackend(fixture.DataSource));
 
         var result1 = await eventStore.AppendAsync(
-            tenantId,
             [CreateEvent(new OrderCreated(Guid.NewGuid(), 100m))],
             cancellationToken: TestContext.Current.CancellationToken);
 
         var result2 = await eventStore.AppendAsync(
-            tenantId,
             [CreateEvent(new OrderCreated(Guid.NewGuid(), 200m))],
             cancellationToken: TestContext.Current.CancellationToken);
 
@@ -88,18 +83,16 @@ public sealed class PostgresEventStoreTests(PostgresFixture fixture) : IClassFix
     [Fact]
     public async Task StreamAsync_ShouldReturnAppendedEvents()
     {
-        var tenantId = Guid.NewGuid().ToString();
         var eventStore = new PostgresEventStore(new PostgresEventStoreBackend(fixture.DataSource));
 
         var orderId = Guid.NewGuid();
+        var tag = new EventTag("order", orderId.ToString());
         await eventStore.AppendAsync(
-            tenantId,
-            [CreateEvent(new OrderCreated(orderId, 100m))],
+            [CreateEvent(new OrderCreated(orderId, 100m), tag)],
             cancellationToken: TestContext.Current.CancellationToken);
 
         var events = await eventStore.StreamAsync(
-            tenantId,
-            DcbQuery.Empty,
+            DcbQuery.ByTags(tag.Value),
             cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Single(events);
@@ -121,7 +114,6 @@ public sealed class PostgresEventStoreTests(PostgresFixture fixture) : IClassFix
 
         var orderId = Guid.NewGuid();
         await eventStore.AppendAsync(
-            tenantId,
             [CreateEvent(new OrderCreated(orderId, 100m))],
             cancellationToken: TestContext.Current.CancellationToken);
 
@@ -147,12 +139,10 @@ public sealed class PostgresEventStoreTests(PostgresFixture fixture) : IClassFix
         var orderId = Guid.NewGuid();
 
         await eventStore.AppendAsync(
-            tenantId,
             [CreateEvent(new OrderCreated(orderId, 100m))],
             cancellationToken: TestContext.Current.CancellationToken);
 
         await eventStore.AppendAsync(
-            tenantId,
             [CreateEvent(new OrderConfirmed(orderId))],
             cancellationToken: TestContext.Current.CancellationToken);
 
@@ -176,7 +166,6 @@ public sealed class PostgresEventStoreTests(PostgresFixture fixture) : IClassFix
         var orderId = Guid.NewGuid();
 
         await eventStore.AppendAsync(
-            tenantId,
             [
                 CreateEvent(new OrderCreated(orderId, 100m)),
                 CreateEvent(new OrderConfirmed(orderId))
@@ -202,7 +191,6 @@ public sealed class PostgresEventStoreTests(PostgresFixture fixture) : IClassFix
 
         // OrderCancelled is not handled by OrderSummaryProjection
         await eventStore.AppendAsync(
-            tenantId,
             [CreateEvent(new OrderCancelled(Guid.NewGuid()))],
             cancellationToken: TestContext.Current.CancellationToken);
 
@@ -220,26 +208,21 @@ public sealed class PostgresEventStoreTests(PostgresFixture fixture) : IClassFix
     [Fact]
     public async Task AppendAsync_WithDcbConflict_ShouldThrowDcbConflictException()
     {
-        var tenantId = Guid.NewGuid().ToString();
         var eventStore = new PostgresEventStore(new PostgresEventStoreBackend(fixture.DataSource));
 
         var orderId = Guid.NewGuid();
         var tag = new EventTag("order", orderId.ToString());
 
-        // First append succeeds
         await eventStore.AppendAsync(
-            tenantId,
             [CreateEvent(new OrderCreated(orderId, 100m), tag)],
             cancellationToken: TestContext.Current.CancellationToken);
 
-        // Second append with DCB conflict check
         var dcbQuery = DcbQuery.Empty
             .WithTypes("order-created")
             .WithTags(tag);
 
         await Assert.ThrowsAsync<DcbConflictException>(() =>
             eventStore.AppendAsync(
-                tenantId,
                 [CreateEvent(new OrderConfirmed(orderId), tag)],
                 dcbQuery,
                 expectedPosition: 0,
@@ -249,25 +232,20 @@ public sealed class PostgresEventStoreTests(PostgresFixture fixture) : IClassFix
     [Fact]
     public async Task AppendAsync_WithCorrectExpectedPosition_ShouldSucceed()
     {
-        var tenantId = Guid.NewGuid().ToString();
         var eventStore = new PostgresEventStore(new PostgresEventStoreBackend(fixture.DataSource));
 
         var orderId = Guid.NewGuid();
         var tag = new EventTag("order", orderId.ToString());
 
-        // First append
         var result = await eventStore.AppendAsync(
-            tenantId,
             [CreateEvent(new OrderCreated(orderId, 100m), tag)],
             cancellationToken: TestContext.Current.CancellationToken);
 
-        // Second append with correct expected position
         var dcbQuery = DcbQuery.Empty
             .WithTypes("order-created")
             .WithTags(tag);
 
         var result2 = await eventStore.AppendAsync(
-            tenantId,
             [CreateEvent(new OrderConfirmed(orderId), tag)],
             dcbQuery,
             expectedPosition: result.First().GlobalPosition,
@@ -281,47 +259,15 @@ public sealed class PostgresEventStoreTests(PostgresFixture fixture) : IClassFix
     #region GetLastPosition Tests
 
     [Fact]
-    public async Task GetLastPositionAsync_WithNoEvents_ShouldReturnZero()
-    {
-        var tenantId = Guid.NewGuid().ToString();
-        var eventStore = new PostgresEventStore(new PostgresEventStoreBackend(fixture.DataSource));
-
-        var position = await eventStore.GetLastPositionAsync(
-            tenantId,
-            TestContext.Current.CancellationToken);
-
-        Assert.Equal(0, position);
-    }
-
-    [Fact]
-    public async Task GetLastPositionAsync_ShouldReturnLatestPosition()
-    {
-        var tenantId = Guid.NewGuid().ToString();
-        var eventStore = new PostgresEventStore(new PostgresEventStoreBackend(fixture.DataSource));
-
-        var result = await eventStore.AppendAsync(
-            tenantId,
-            [CreateEvent(new OrderCreated(Guid.NewGuid(), 100m))],
-            cancellationToken: TestContext.Current.CancellationToken);
-
-        var position = await eventStore.GetLastPositionAsync(
-            tenantId,
-            TestContext.Current.CancellationToken);
-
-        Assert.Equal(result.First().GlobalPosition, position);
-    }
-
-    [Fact]
-    public async Task GetLastPositionGlobalAsync_ShouldReturnGlobalPosition()
+    public async Task GetLastPositionAsync_ShouldReturnPositionAfterAppend()
     {
         var eventStore = new PostgresEventStore(new PostgresEventStoreBackend(fixture.DataSource));
 
         var result = await eventStore.AppendAsync(
-            Guid.NewGuid().ToString(),
             [CreateEvent(new OrderCreated(Guid.NewGuid(), 100m))],
             cancellationToken: TestContext.Current.CancellationToken);
 
-        var position = await eventStore.GetLastPositionGlobalAsync(
+        var position = await eventStore.GetLastPositionAsync(
             TestContext.Current.CancellationToken);
 
         Assert.True(position >= result.First().GlobalPosition);
@@ -329,31 +275,25 @@ public sealed class PostgresEventStoreTests(PostgresFixture fixture) : IClassFix
 
     #endregion
 
-    #region StreamGlobalAsync Tests
+    #region StreamAllAsync Tests
 
     [Fact]
-    public async Task StreamGlobalAsync_ShouldReturnEventsAcrossTenants()
+    public async Task StreamAllAsync_ShouldReturnAllEvents()
     {
         var eventStore = new PostgresEventStore(new PostgresEventStoreBackend(fixture.DataSource));
-        var tenant1 = Guid.NewGuid().ToString();
-        var tenant2 = Guid.NewGuid().ToString();
+
+        var startPosition = await eventStore.GetLastPositionAsync(TestContext.Current.CancellationToken);
 
         var result1 = await eventStore.AppendAsync(
-            tenant1,
             [CreateEvent(new OrderCreated(Guid.NewGuid(), 100m))],
             cancellationToken: TestContext.Current.CancellationToken);
 
         var result2 = await eventStore.AppendAsync(
-            tenant2,
             [CreateEvent(new OrderCreated(Guid.NewGuid(), 200m))],
             cancellationToken: TestContext.Current.CancellationToken);
 
-        var minPosition = Math.Min(
-            result1.First().GlobalPosition,
-            result2.First().GlobalPosition) - 1;
-
-        var events = await eventStore.StreamGlobalAsync(
-            afterPosition: minPosition,
+        var events = await eventStore.StreamAllAsync(
+            afterPosition: startPosition,
             cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.True(events.Count >= 2);
@@ -369,7 +309,6 @@ public sealed class PostgresEventStoreTests(PostgresFixture fixture) : IClassFix
         var eventTypeId = EventTypeAttribute.GetEventTypeId(typeof(TEvent));
         return new EventToPersist
         {
-            TenantId = "test",
             EventType = new EventType(eventTypeId),
             Tags = tag.HasValue ? [tag.Value] : [],
             EventData = JsonSerializer.Serialize(@event)

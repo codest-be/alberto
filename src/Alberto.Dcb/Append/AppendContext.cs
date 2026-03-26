@@ -6,11 +6,6 @@ namespace Alberto.Dcb.Append;
 public sealed record AppendContext
 {
     /// <summary>
-    /// The tenant the events belong to.
-    /// </summary>
-    public required string TenantId { get; init; }
-
-    /// <summary>
     /// The events to be persisted.
     /// </summary>
     public required IReadOnlyList<IEventToPersist> Events { get; init; }

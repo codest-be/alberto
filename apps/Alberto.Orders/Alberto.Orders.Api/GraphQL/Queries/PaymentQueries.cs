@@ -12,7 +12,8 @@ using HotChocolate;
 using HotChocolate.Resolvers;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
-using PaymentDecider = Alberto.Payments.Core.Payment.PaymentDecider;
+using PaymentActions = Alberto.Payments.Core.Payment.Actions.PaymentDecider;
+using PaymentBoundary = Alberto.Payments.Core.Payment.PaymentDecider;
 
 namespace Alberto.Orders.Api.GraphQL.Queries;
 
@@ -32,9 +33,8 @@ public static class PaymentQueries
         [Service] IServiceProvider sp,
         CancellationToken ct)
     {
-        var tenantId = GetTenantId(context);
         var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(PaymentsModule.ModuleKey);
-        var state = await LoadPaymentState(backend, tenantId, paymentId, ct);
+        var state = await LoadPaymentState(backend, paymentId, ct);
 
         if (!state.Exists)
             return null;
@@ -97,14 +97,13 @@ public static class PaymentQueries
 
     private static async Task<PaymentState> LoadPaymentState(
         IEventStoreBackend backend,
-        string tenantId,
         Guid paymentId,
         CancellationToken ct)
     {
-        var decider = new PaymentDecider();
+        var decider = new PaymentActions();
         var state = new PaymentState();
 
-        var events = await backend.Stream(tenantId, PaymentDecider.BoundaryFor(paymentId), cancellationToken: ct);
+        var events = await backend.Stream(PaymentBoundary.BoundaryFor(paymentId), cancellationToken: ct);
 
         foreach (var envelope in events)
         {

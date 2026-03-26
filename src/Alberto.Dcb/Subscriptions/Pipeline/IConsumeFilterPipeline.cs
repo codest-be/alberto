@@ -3,6 +3,7 @@ namespace Alberto.Dcb.Subscriptions.Pipeline;
 /// <summary>
 /// Executes the consume filter pipeline.
 /// </summary>
+[Obsolete("Use ConsumeMiddleware instead. IConsumeFilterPipeline will be removed in a future version.")]
 internal interface IConsumeFilterPipeline
 {
     /// <summary>

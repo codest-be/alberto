@@ -1,5 +1,3 @@
-using Alberto.Dcb.Admin;
-using Alberto.Dcb.Postgres.Admin;
 using Alberto.Dcb.Tenancy;
 using Alberto.Orders.Api.GraphQL;
 using Alberto.Orders.Infrastructure;
@@ -37,16 +35,12 @@ builder.Services
     .AddTypes()
     .AddInMemorySubscriptions();
 
-// Add admin subscriptions using PostgreSQL LISTEN/NOTIFY (push-based, no polling)
-builder.Services.AddPostgresAdminSubscriptions();
-
 var app = builder.Build();
 
 // Configure pipeline
 app.UseRouting();
 app.UseWebSockets();
 app.MapGraphQL();
-app.MapDcbAdmin();
 
 app.Run();
 

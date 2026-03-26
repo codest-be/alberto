@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>alberto</ToolCommandName>
+    <AssemblyName>Alberto.Cli</AssemblyName>
+    <RootNamespace>Alberto.Cli</RootNamespace>
+    <!-- Override global settings that don't apply to a tool project -->
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" />
+    <PackageReference Include="Spectre.Console" />
+    <PackageReference Include="Npgsql" />
+  </ItemGroup>
+</Project>

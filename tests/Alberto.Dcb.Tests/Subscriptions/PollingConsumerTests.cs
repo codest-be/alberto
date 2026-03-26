@@ -60,7 +60,7 @@ public sealed class PollingConsumerTests
         consumer.RegisterProcessor(processor);
 
         // Append event before starting consumer
-        await backend.Append("tenant-1", [CreateEvent(new TestEventA("hello"))], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.Append([CreateEvent(new TestEventA("hello"))], cancellationToken: TestContext.Current.CancellationToken);
 
         using var cts = new CancellationTokenSource();
         await consumer.StartAsync(cts.Token);
@@ -96,8 +96,8 @@ public sealed class PollingConsumerTests
         consumer.RegisterProcessor(processorB);
 
         // Append events of both types
-        await backend.Append("tenant-1", [CreateEvent(new TestEventA("hello"))], cancellationToken: TestContext.Current.CancellationToken);
-        await backend.Append("tenant-1", [CreateEvent(new TestEventB(42))], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.Append([CreateEvent(new TestEventA("hello"))], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.Append([CreateEvent(new TestEventB(42))], cancellationToken: TestContext.Current.CancellationToken);
 
         using var cts = new CancellationTokenSource();
         await consumer.StartAsync(cts.Token);
@@ -134,7 +134,7 @@ public sealed class PollingConsumerTests
         await consumer.StartAsync(cts.Token);
 
         // Append event while consumer is running
-        await backend.Append("tenant-1", [CreateEvent(new TestEventA("hello"))], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.Append([CreateEvent(new TestEventA("hello"))], cancellationToken: TestContext.Current.CancellationToken);
 
         // Wait for processing
         await Task.Delay(100, TestContext.Current.CancellationToken);
@@ -151,8 +151,8 @@ public sealed class PollingConsumerTests
         var checkpointStore = new InMemoryCheckpointStore();
 
         // Append two events
-        await backend.Append("tenant-1", [CreateEvent(new TestEventA("first"))], cancellationToken: TestContext.Current.CancellationToken);
-        await backend.Append("tenant-1", [CreateEvent(new TestEventA("second"))], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.Append([CreateEvent(new TestEventA("first"))], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.Append([CreateEvent(new TestEventA("second"))], cancellationToken: TestContext.Current.CancellationToken);
 
         // Save checkpoint after first event
         await checkpointStore.SaveAsync("test-processor", 1, TestContext.Current.CancellationToken);
@@ -200,7 +200,7 @@ public sealed class PollingConsumerTests
         };
         consumer.RegisterProcessor(processor);
 
-        await backend.Append("tenant-1", [CreateEvent(new TestEventA("hello"))], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.Append([CreateEvent(new TestEventA("hello"))], cancellationToken: TestContext.Current.CancellationToken);
 
         using var cts = new CancellationTokenSource();
         await consumer.StartAsync(cts.Token);
@@ -255,9 +255,9 @@ public sealed class PollingConsumerTests
         var checkpointStore = new InMemoryCheckpointStore();
 
         // Append 3 events
-        await backend.Append("tenant-1", [CreateEvent(new TestEventA("first"))], cancellationToken: TestContext.Current.CancellationToken);
-        await backend.Append("tenant-1", [CreateEvent(new TestEventA("second"))], cancellationToken: TestContext.Current.CancellationToken);
-        await backend.Append("tenant-1", [CreateEvent(new TestEventA("third"))], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.Append([CreateEvent(new TestEventA("first"))], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.Append([CreateEvent(new TestEventA("second"))], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.Append([CreateEvent(new TestEventA("third"))], cancellationToken: TestContext.Current.CancellationToken);
 
         // Processor A is at position 1, B is at position 2
         await checkpointStore.SaveAsync("processor-a", 1, TestContext.Current.CancellationToken);
@@ -298,12 +298,11 @@ public sealed class PollingConsumerTests
 
     #region Helper Methods
 
-    private static EventToPersist CreateEvent<TEvent>(TEvent @event, string tenantId = "tenant-1") where TEvent : IEvent
+    private static EventToPersist CreateEvent<TEvent>(TEvent @event) where TEvent : IEvent
     {
         var eventTypeId = EventTypeAttribute.GetEventTypeId(typeof(TEvent));
         return new EventToPersist
         {
-            TenantId = tenantId,
             EventType = new EventType(eventTypeId),
             Tags = [],
             EventData = JsonSerializer.Serialize(@event)

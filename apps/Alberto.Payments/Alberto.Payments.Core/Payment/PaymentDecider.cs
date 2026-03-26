@@ -11,7 +11,7 @@ public sealed partial class PaymentDecider
     /// Gets the DCB query for a payment's consistency boundary.
     /// </summary>
     public static DcbQuery BoundaryFor(Guid paymentId) =>
-        DcbQuery.Empty.WithTag(Tags.Payment, paymentId.ToString());
+        DcbQuery.For(Tags.Payment, paymentId);
 }
 
 /// <summary>

@@ -1,5 +1,4 @@
 using Alberto.Dcb;
-using Alberto.Dcb.Admin;
 using Alberto.Dcb.Postgres;
 using Alberto.Dcb.Telemetry;
 using Alberto.Payments.Infrastructure.Projections;
@@ -28,6 +27,7 @@ public static class PaymentsModule
             ?? throw new InvalidOperationException("Connection string 'alberto' not found");
 
         services.AddAlberto(ModuleKey, builder => builder
+            .WithTenancy()
             .WithPostgres(options =>
             {
                 options.ConnectionString = connectionString;
@@ -61,12 +61,7 @@ public static class PaymentsModule
                         tenantId,
                         nameof(PaymentSummaryProjection),
                         "payments");
-                }))
-            .WithAdmin(admin =>
-            {
-                admin.Title = "Payments";
-                // admin.ReadOnly = true;  // Uncomment to make this module read-only in the UI
-            }));
+                })));
 
         return services;
     }

@@ -3,11 +3,13 @@ using Alberto.Dcb;
 using Alberto.Orders.Api.GraphQL.Types;
 using Alberto.Orders.Core;
 using Alberto.Orders.Core.Order;
+using Alberto.Orders.Core.Order.Actions;
 using Alberto.Orders.Infrastructure;
 using HotChocolate;
 using HotChocolate.Resolvers;
 using Microsoft.Extensions.DependencyInjection;
-using OrderDecider = Alberto.Orders.Core.Order.OrderDecider;
+using OrderActions = Alberto.Orders.Core.Order.Actions.OrderDecider;
+using OrderBoundary = Alberto.Orders.Core.Order.OrderDecider;
 
 namespace Alberto.Orders.Api.GraphQL.Mutations;
 
@@ -27,7 +29,6 @@ public static class OrderMutations
         [Service] IServiceProvider sp,
         CancellationToken ct)
     {
-        var tenantId = GetTenantId(context);
         var eventStore = sp.GetRequiredKeyedService<IEventStore>(OrdersModule.ModuleKey);
         var orderId = Guid.CreateVersion7();
 
@@ -36,7 +37,7 @@ public static class OrderMutations
             .ToList();
 
         var state = new OrderState();
-        var decision = OrderDecider.Create(state, orderId, input.CustomerId, lineItems, input.Notes);
+        var decision = OrderActions.Create(state, orderId, input.CustomerId, lineItems, input.Notes);
 
         decision.EnsureSuccess();
 
@@ -44,14 +45,13 @@ public static class OrderMutations
         {
             new EventToPersist
             {
-                TenantId = tenantId,
                 EventType = EventType.FromType(decision.Event!.GetType()),
                 Tags = [new EventTag(Tags.Order, orderId.ToString())],
                 EventData = JsonSerializer.Serialize(decision.Event, decision.Event.GetType())
             }
         };
 
-        await eventStore.AppendAsync(tenantId, events, OrderDecider.BoundaryFor(orderId), cancellationToken: ct);
+        await eventStore.AppendAsync(events, OrderBoundary.BoundaryFor(orderId), cancellationToken: ct);
 
         return new CreateOrderResult(orderId);
     }
@@ -67,16 +67,15 @@ public static class OrderMutations
         [Service] IServiceProvider sp,
         CancellationToken ct)
     {
-        var tenantId = GetTenantId(context);
         var eventStore = sp.GetRequiredKeyedService<IEventStore>(OrdersModule.ModuleKey);
         var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(OrdersModule.ModuleKey);
 
-        var state = await LoadOrderState(backend, tenantId, input.OrderId, ct);
-        var decision = OrderDecider.AddItem(state, input.ProductId, input.ProductName, input.Quantity, input.UnitPrice);
+        var state = await LoadOrderState(backend, input.OrderId, ct);
+        var decision = OrderActions.AddItem(state, input.ProductId, input.ProductName, input.Quantity, input.UnitPrice);
 
         decision.EnsureSuccess();
 
-        await AppendEvent(eventStore, tenantId, input.OrderId, state.OrderId != Guid.Empty ? state : null, decision.Event!, ct);
+        await AppendEvent(eventStore, input.OrderId, state.OrderId != Guid.Empty ? state : null, decision.Event!, ct);
 
         return new MutationResult();
     }
@@ -93,16 +92,15 @@ public static class OrderMutations
         [Service] IServiceProvider sp,
         CancellationToken ct)
     {
-        var tenantId = GetTenantId(context);
         var eventStore = sp.GetRequiredKeyedService<IEventStore>(OrdersModule.ModuleKey);
         var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(OrdersModule.ModuleKey);
 
-        var state = await LoadOrderState(backend, tenantId, orderId, ct);
-        var decision = OrderDecider.RemoveItem(state, productId);
+        var state = await LoadOrderState(backend, orderId, ct);
+        var decision = OrderActions.RemoveItem(state, productId);
 
         decision.EnsureSuccess();
 
-        await AppendEvent(eventStore, tenantId, orderId, state, decision.Event!, ct);
+        await AppendEvent(eventStore, orderId, state, decision.Event!, ct);
 
         return new MutationResult();
     }
@@ -119,16 +117,15 @@ public static class OrderMutations
         [Service] TimeProvider timeProvider,
         CancellationToken ct)
     {
-        var tenantId = GetTenantId(context);
         var eventStore = sp.GetRequiredKeyedService<IEventStore>(OrdersModule.ModuleKey);
         var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(OrdersModule.ModuleKey);
 
-        var state = await LoadOrderState(backend, tenantId, orderId, ct);
-        var decision = OrderDecider.Confirm(state, timeProvider.GetUtcNow());
+        var state = await LoadOrderState(backend, orderId, ct);
+        var decision = OrderActions.Confirm(state, timeProvider.GetUtcNow());
 
         decision.EnsureSuccess();
 
-        await AppendEvent(eventStore, tenantId, orderId, state, decision.Event!, ct);
+        await AppendEvent(eventStore, orderId, state, decision.Event!, ct);
 
         return new MutationResult();
     }
@@ -145,16 +142,15 @@ public static class OrderMutations
         [Service] TimeProvider timeProvider,
         CancellationToken ct)
     {
-        var tenantId = GetTenantId(context);
         var eventStore = sp.GetRequiredKeyedService<IEventStore>(OrdersModule.ModuleKey);
         var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(OrdersModule.ModuleKey);
 
-        var state = await LoadOrderState(backend, tenantId, input.OrderId, ct);
-        var decision = OrderDecider.Ship(state, input.TrackingNumber, input.Carrier, timeProvider.GetUtcNow());
+        var state = await LoadOrderState(backend, input.OrderId, ct);
+        var decision = OrderActions.Ship(state, input.TrackingNumber, input.Carrier, timeProvider.GetUtcNow());
 
         decision.EnsureSuccess();
 
-        await AppendEvent(eventStore, tenantId, input.OrderId, state, decision.Event!, ct);
+        await AppendEvent(eventStore, input.OrderId, state, decision.Event!, ct);
 
         return new MutationResult();
     }
@@ -171,16 +167,15 @@ public static class OrderMutations
         [Service] TimeProvider timeProvider,
         CancellationToken ct)
     {
-        var tenantId = GetTenantId(context);
         var eventStore = sp.GetRequiredKeyedService<IEventStore>(OrdersModule.ModuleKey);
         var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(OrdersModule.ModuleKey);
 
-        var state = await LoadOrderState(backend, tenantId, orderId, ct);
-        var decision = OrderDecider.Deliver(state, timeProvider.GetUtcNow());
+        var state = await LoadOrderState(backend, orderId, ct);
+        var decision = OrderActions.Deliver(state, timeProvider.GetUtcNow());
 
         decision.EnsureSuccess();
 
-        await AppendEvent(eventStore, tenantId, orderId, state, decision.Event!, ct);
+        await AppendEvent(eventStore, orderId, state, decision.Event!, ct);
 
         return new MutationResult();
     }
@@ -197,36 +192,30 @@ public static class OrderMutations
         [Service] TimeProvider timeProvider,
         CancellationToken ct)
     {
-        var tenantId = GetTenantId(context);
         var eventStore = sp.GetRequiredKeyedService<IEventStore>(OrdersModule.ModuleKey);
         var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(OrdersModule.ModuleKey);
 
-        var state = await LoadOrderState(backend, tenantId, input.OrderId, ct);
-        var decision = OrderDecider.Cancel(state, input.Reason, timeProvider.GetUtcNow());
+        var state = await LoadOrderState(backend, input.OrderId, ct);
+        var decision = OrderActions.Cancel(state, input.Reason, timeProvider.GetUtcNow());
 
         decision.EnsureSuccess();
 
-        await AppendEvent(eventStore, tenantId, input.OrderId, state, decision.Event!, ct);
+        await AppendEvent(eventStore, input.OrderId, state, decision.Event!, ct);
 
         return new MutationResult();
     }
 
     #region Helper Methods
 
-    private static string GetTenantId(IResolverContext context) =>
-        context.GetGlobalState<string>(TenantHttpRequestInterceptor.TenantIdKey)
-        ?? throw new InvalidOperationException("Tenant ID not found in resolver context");
-
     private static async Task<OrderState> LoadOrderState(
         IEventStoreBackend backend,
-        string tenantId,
         Guid orderId,
         CancellationToken ct)
     {
-        var decider = new OrderDecider();
+        var decider = new OrderActions();
         var state = new OrderState();
 
-        var events = await backend.Stream(tenantId, OrderDecider.BoundaryFor(orderId), cancellationToken: ct);
+        var events = await backend.Stream(OrderBoundary.BoundaryFor(orderId), cancellationToken: ct);
 
         foreach (var envelope in events)
         {
@@ -263,7 +252,6 @@ public static class OrderMutations
 
     private static async Task AppendEvent(
         IEventStore eventStore,
-        string tenantId,
         Guid orderId,
         OrderState? existingState,
         IEvent @event,
@@ -273,14 +261,13 @@ public static class OrderMutations
         {
             new EventToPersist
             {
-                TenantId = tenantId,
                 EventType = EventType.FromType(@event.GetType()),
                 Tags = [new EventTag(Tags.Order, orderId.ToString())],
                 EventData = JsonSerializer.Serialize(@event, @event.GetType())
             }
         };
 
-        await eventStore.AppendAsync(tenantId, events, OrderDecider.BoundaryFor(orderId), cancellationToken: ct);
+        await eventStore.AppendAsync(events, OrderBoundary.BoundaryFor(orderId), cancellationToken: ct);
     }
 
     #endregion

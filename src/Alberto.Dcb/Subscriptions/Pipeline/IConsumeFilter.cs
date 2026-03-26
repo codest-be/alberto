@@ -5,6 +5,7 @@ namespace Alberto.Dcb.Subscriptions.Pipeline;
 /// Filters wrap event processing to add cross-cutting concerns like
 /// telemetry, logging, error handling, or transaction management.
 /// </summary>
+[Obsolete("Use ConsumeMiddleware instead. IConsumeFilter will be removed in a future version.")]
 public interface IConsumeFilter
 {
     /// <summary>

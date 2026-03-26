@@ -1,12 +1,14 @@
 using System.Reflection;
 using System.Text.Json;
 
+#pragma warning disable CS0618 // Type or member is obsolete — intentional, this class itself is obsolete infrastructure
 namespace Alberto.Dcb.Subscriptions;
 
 /// <summary>
 /// Reflection-based dispatcher that routes events to IProject&lt;TState, TEvent&gt; handlers.
 /// Discovered automatically from the projection class.
 /// </summary>
+[Obsolete("Use DeclareProjection.For<TState>() instead. This type will be removed in a future version.")]
 internal sealed class ProjectionDispatcher<TState>
 {
     private readonly Dictionary<string, Handler> _handlers = new();

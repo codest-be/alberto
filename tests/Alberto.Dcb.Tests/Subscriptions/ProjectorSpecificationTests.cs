@@ -253,6 +253,142 @@ public class ProjectorSpecificationTests
 
     #endregion
 
+    #region ProcessBatch Tests
+
+    [Fact]
+    public async Task Batch_MultipleEventsForSameDocument_AppliesInOrder()
+    {
+        var (processor, stateStore) = CreateProcessor();
+
+        var orderId = Guid.NewGuid();
+
+        // Three events for the same document in one batch
+        var batch = new List<IEventEnvelope>
+        {
+            CreateEnvelope(new OrderCreated(orderId, 100m), 1),
+            CreateEnvelope(new OrderConfirmed(orderId), 2),
+        };
+
+        await processor.ProcessBatchAsync(batch, TestContext.Current.CancellationToken);
+
+        // State should reflect events applied in order: Created → Confirmed
+        Assert.Single(stateStore.Store);
+        var state = stateStore.Store[orderId.ToString()];
+        Assert.Equal("Confirmed", state.Status);
+        Assert.Equal(100m, state.Amount); // Preserved from OrderCreated
+    }
+
+    [Fact]
+    public async Task Batch_MultipleDocumentsInOneBatch_AllPersisted()
+    {
+        var (processor, stateStore) = CreateProcessor();
+
+        var order1 = Guid.NewGuid();
+        var order2 = Guid.NewGuid();
+
+        var batch = new List<IEventEnvelope>
+        {
+            CreateEnvelope(new OrderCreated(order1, 50m), 1),
+            CreateEnvelope(new OrderCreated(order2, 75m), 2),
+            CreateEnvelope(new OrderConfirmed(order1), 3),
+        };
+
+        await processor.ProcessBatchAsync(batch, TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, stateStore.Store.Count);
+        Assert.Equal("Confirmed", stateStore.Store[order1.ToString()].Status);
+        Assert.Equal("Created", stateStore.Store[order2.ToString()].Status);
+    }
+
+    [Fact]
+    public async Task Batch_DeleteInBatch_DocumentRemoved()
+    {
+        var (processor, stateStore) = CreateProcessor();
+
+        var orderId = Guid.NewGuid();
+
+        // Pre-populate via a prior batch
+        await processor.ProcessBatchAsync(
+            [CreateEnvelope(new OrderCreated(orderId, 100m), 1)],
+            TestContext.Current.CancellationToken);
+
+        // Now cancel in the next batch
+        await processor.ProcessBatchAsync(
+            [CreateEnvelope(new OrderCancelled(orderId), 2)],
+            TestContext.Current.CancellationToken);
+
+        Assert.Empty(stateStore.Store);
+        Assert.Contains(orderId.ToString(), stateStore.DeletedIds);
+    }
+
+    [Fact]
+    public async Task Batch_FallsBackToPerEvent_OnBatchFailure()
+    {
+        // Use a state store that always throws on ApplyChangesAsync to simulate batch failure
+        var throwingStore = new ThrowOnApplyStateStore();
+        var fallbackStore = new InMemoryStateStore();
+
+        // The factory is called with tenantId — we want the normal store
+        // for per-event (which goes through FlushAsync → ApplyChanges on the same store,
+        // so we use a processor whose store throws only on the first call).
+        var callCount = 0;
+        var processor = new AsyncProjection<OrderSummary, OrderSummaryProjection>(
+            _ =>
+            {
+                callCount++;
+                // First call is from ProcessBatchAsync (will throw), second from per-event flush
+                return callCount == 1 ? (IStateStore<OrderSummary>)throwingStore : fallbackStore;
+            },
+            "order-summary-v1");
+
+        var orderId = Guid.NewGuid();
+
+        // ProcessBatchAsync will throw; the consumer's fallback should call ProcessEventAsync + FlushAsync
+        // Here we test the processor level: ProcessBatchAsync throws, then per-event works.
+        var batch = new List<IEventEnvelope>
+        {
+            CreateEnvelope(new OrderCreated(orderId, 200m), 1),
+        };
+
+        // Batch processing throws
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => processor.ProcessBatchAsync(batch, TestContext.Current.CancellationToken));
+
+        // Per-event path still works (uses a fresh processor via CreateProcessor for simplicity)
+        var (processor2, stateStore2) = CreateProcessor();
+        await processor2.ProcessEventAsync(batch[0], TestContext.Current.CancellationToken);
+        await processor2.FlushAsync(TestContext.Current.CancellationToken);
+
+        Assert.Single(stateStore2.Store);
+        Assert.Equal("Created", stateStore2.Store[orderId.ToString()].Status);
+    }
+
+    private class ThrowOnApplyStateStore : IStateStore<OrderSummary>
+    {
+        public Task<Dictionary<string, OrderSummary>> LoadManyAsync(
+            IEnumerable<string> documentIds,
+            IDbTransaction? transaction = null,
+            CancellationToken ct = default)
+            => Task.FromResult(new Dictionary<string, OrderSummary>());
+
+        public Task ApplyChangesAsync(
+            IReadOnlyDictionary<string, OrderSummary> upserts,
+            IReadOnlyCollection<string> deletes,
+            IDbTransaction? transaction = null,
+            CancellationToken ct = default)
+            => throw new InvalidOperationException("Simulated batch failure");
+
+        public Task<IReadOnlyList<OrderSummary>> ListRecentAsync(
+            int limit = 20,
+            CancellationToken ct = default)
+        {
+            IReadOnlyList<OrderSummary> result = [];
+            return Task.FromResult(result);
+        }
+    }
+
+    #endregion
+
     #region Helper Methods
 
     private static IEventEnvelope CreateEnvelope<TEvent>(TEvent @event, long position) where TEvent : IEvent

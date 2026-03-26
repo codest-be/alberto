@@ -8,8 +8,8 @@
     <Project Path="src/Alberto.Dcb.InMemory/Alberto.Dcb.InMemory.csproj" />
     <Project Path="src/Alberto.Dcb.Postgres/Alberto.Dcb.Postgres.csproj" />
     <Project Path="src/Alberto.Dcb.Telemetry/Alberto.Dcb.Telemetry.csproj" />
-    <Project Path="src/Alberto.Dcb.Admin/Alberto.Dcb.Admin.csproj" />
     <Project Path="src/Alberto.Dcb.EntityFramework/Alberto.Dcb.EntityFramework.csproj" />
+    <Project Path="src/Alberto.Dcb.Messaging/Alberto.Dcb.Messaging.csproj" />
   </Folder>
   <Folder Name="/apps/">
     <Project Path="apps/Alberto.AppHost/Alberto.AppHost.csproj" />
@@ -21,5 +21,8 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Alberto.Dcb.Tests/Alberto.Dcb.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Alberto.Cli/Alberto.Cli.csproj" />
   </Folder>
 </Solution>

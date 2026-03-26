@@ -1,6 +1,6 @@
-using Alberto.Dcb.Admin.Internal;
 using Alberto.Dcb.Append;
 using Alberto.Dcb.Subscriptions;
+using Alberto.Dcb.Tenancy;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 
@@ -13,6 +13,8 @@ public static class PostgresBuilderExtensions
 {
     /// <summary>
     /// Configures the module to use PostgreSQL for event storage.
+    /// By default, single-tenant mode is used. Call .WithTenancy() before .WithPostgres()
+    /// to enable multi-tenant mode.
     /// </summary>
     /// <param name="builder">The module builder.</param>
     /// <param name="configure">Action to configure PostgreSQL options.</param>
@@ -29,10 +31,16 @@ public static class PostgresBuilderExtensions
         if (string.IsNullOrEmpty(options.ConnectionString))
             throw new InvalidOperationException("PostgreSQL connection string is required.");
 
+        var isTenantMode = builder.HasTenancy;
+
         // Run migrations if enabled
         if (options.AutoMigrate)
         {
-            var migrationResult = PostgresMigrator.Migrate(options.ConnectionString, options.Schema);
+            var migrationResult = PostgresMigrator.Migrate(
+                options.ConnectionString,
+                options.Schema,
+                singleTenant: !isTenantMode);
+
             if (!migrationResult.Successful)
             {
                 throw new InvalidOperationException(
@@ -58,16 +66,16 @@ public static class PostgresBuilderExtensions
             return new AppendInterceptorPipeline(interceptors);
         });
 
-        // Register event store backend with intercepting decorator
-        builder.Services.AddKeyedSingleton<IEventStoreBackend>(moduleKey, (sp, _) =>
+        if (isTenantMode)
         {
-            var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
-            var timeProvider = sp.GetService<TimeProvider>() ?? TimeProvider.System;
-            var rawBackend = new PostgresEventStoreBackend(dataSource, timeProvider, schema);
-
-            var pipeline = sp.GetRequiredKeyedService<IAppendInterceptorPipeline>(moduleKey);
-            return new InterceptingEventStoreBackend(rawBackend, pipeline);
-        });
+            // Multi-tenant mode: register PostgresTenantEventStoreBackend + TenantEventStoreDecorator
+            RegisterTenantBackend(builder, moduleKey, schema);
+        }
+        else
+        {
+            // Single-tenant mode: register PostgresEventStoreBackend directly
+            RegisterSingleTenantBackend(builder, moduleKey, schema);
+        }
 
         // Register event store (uses intercepting backend)
         builder.Services.AddKeyedSingleton<IEventStore>(moduleKey, (sp, _) =>
@@ -91,11 +99,11 @@ public static class PostgresBuilderExtensions
             return new PostgresDeadLetterStore(dataSource, schema);
         });
 
-        // Register admin data access
-        builder.Services.AddKeyedSingleton<IAdminDataAccess>(moduleKey, (sp, _) =>
+        // Register audit store
+        builder.Services.AddKeyedSingleton<IAuditStore>(moduleKey, (sp, _) =>
         {
             var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
-            return new PostgresAdminDataAccess(dataSource, schema);
+            return new PostgresAuditStore(dataSource, schema);
         });
 
         // Register processor locks (consumer chooses which mode via WithSingleLeaderLock/WithTenantDistribution)
@@ -113,5 +121,44 @@ public static class PostgresBuilderExtensions
         });
 
         return builder;
+    }
+
+    private static void RegisterSingleTenantBackend(DcbModuleBuilder builder, string moduleKey, string? schema)
+    {
+        builder.Services.AddKeyedSingleton<IEventStoreBackend>(moduleKey, (sp, _) =>
+        {
+            var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
+            var timeProvider = sp.GetService<TimeProvider>() ?? TimeProvider.System;
+            var rawBackend = new PostgresEventStoreBackend(dataSource, timeProvider, schema);
+
+            var pipeline = sp.GetRequiredKeyedService<IAppendInterceptorPipeline>(moduleKey);
+            return new InterceptingEventStoreBackend(rawBackend, pipeline);
+        });
+    }
+
+    private static void RegisterTenantBackend(DcbModuleBuilder builder, string moduleKey, string? schema)
+    {
+        // Register tenancy services
+        builder.Services.AddScoped<TenantContext>();
+        builder.Services.AddScoped<ITenantAccessor, TenantAccessor>();
+
+        // Register the tenant-aware backend (not as IEventStoreBackend — only used by decorator)
+        builder.Services.AddKeyedSingleton<PostgresTenantEventStoreBackend>(moduleKey + ":tenant-raw", (sp, _) =>
+        {
+            var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
+            var timeProvider = sp.GetService<TimeProvider>() ?? TimeProvider.System;
+            return new PostgresTenantEventStoreBackend(dataSource, timeProvider, schema);
+        });
+
+        // Register IEventStoreBackend (keyed, scoped) as decorator chain: InterceptingBackend(TenantDecorator(TenantBackend))
+        builder.Services.AddKeyedScoped<IEventStoreBackend>(moduleKey, (sp, _) =>
+        {
+            var rawTenantBackend = sp.GetRequiredKeyedService<PostgresTenantEventStoreBackend>(moduleKey + ":tenant-raw");
+            var tenantAccessor = sp.GetRequiredService<ITenantAccessor>();
+            var decorator = new TenantEventStoreDecorator(rawTenantBackend, tenantAccessor);
+
+            var pipeline = sp.GetRequiredKeyedService<IAppendInterceptorPipeline>(moduleKey);
+            return new InterceptingEventStoreBackend(decorator, pipeline);
+        });
     }
 }

@@ -12,6 +12,7 @@ namespace Alberto.Dcb.Subscriptions;
 /// <param name="StackTrace">The stack trace from the last failure.</param>
 /// <param name="AttemptCount">Total number of processing attempts.</param>
 /// <param name="FailedAt">When the event was moved to dead letter.</param>
+/// <param name="GlobalPosition">Position of the original event in the global log (0 if unknown).</param>
 public sealed record DeadLetterEntry(
     Guid Id,
     string ProcessorId,
@@ -21,4 +22,5 @@ public sealed record DeadLetterEntry(
     string ErrorMessage,
     string? StackTrace,
     int AttemptCount,
-    DateTimeOffset FailedAt);
+    DateTimeOffset FailedAt,
+    long GlobalPosition = 0);

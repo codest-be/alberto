@@ -3,6 +3,10 @@ using Alberto.Dcb.Subscriptions.Pipeline;
 using Alberto.Dcb.Telemetry;
 using Microsoft.Extensions.Logging;
 
+// The IConsumeFilterPipeline and friends are deprecated but still supported here
+// during the transition period. Remove this pragma once the pipeline is fully removed.
+#pragma warning disable CS0618
+
 namespace Alberto.Dcb.Subscriptions;
 
 /// <summary>
@@ -29,6 +33,10 @@ public sealed class PollingConsumer : IEventConsumer
     private readonly ErrorPolicy _errorPolicy;
     private readonly string _moduleKey;
     private readonly ILogger<PollingConsumer>? _logger;
+
+    private readonly IReadOnlyList<ConsumeMiddleware> _middlewares;
+
+    private ITenantRing? _tenantRing;
 
     private readonly string _replicaId = Guid.NewGuid().ToString("N");
     private readonly List<IEventProcessor> _processors = [];
@@ -62,7 +70,8 @@ public sealed class PollingConsumer : IEventConsumer
         TimeSpan? tenantLockRetryInterval = null,
         int maxParallelProjections = 1,
         int? maxTenantsPerReplica = null,
-        ILogger<PollingConsumer>? logger = null)
+        ILogger<PollingConsumer>? logger = null,
+        IReadOnlyList<ConsumeMiddleware>? middlewares = null)
     {
         _eventStore = eventStore ?? throw new ArgumentNullException(nameof(eventStore));
         _checkpointStore = checkpointStore ?? throw new ArgumentNullException(nameof(checkpointStore));
@@ -82,10 +91,32 @@ public sealed class PollingConsumer : IEventConsumer
         _pipeline = pipeline;
         _errorPolicy = errorPolicy ?? ErrorPolicy.Default;
         _logger = logger;
+
+        // Build the middleware chain: use provided middlewares, or default to RetryAndDeadLetter
+        _middlewares = middlewares is { Count: > 0 }
+            ? middlewares
+            : [ConsumeMiddlewares.RetryAndDeadLetter(_errorPolicy, deadLetterStore)];
     }
 
     /// <inheritdoc />
     public string ConsumerId { get; }
+
+    /// <summary>
+    /// Called after each event is successfully processed by a processor.
+    /// Use for test observability. Do not perform heavy work in this callback.
+    /// </summary>
+    public Action<string, IEventEnvelope>? OnProjected { get; set; }
+
+    /// <summary>
+    /// Called when a processor completes a rebuild.
+    /// </summary>
+    public Action<string>? OnRebuildComplete { get; set; }
+
+    /// <summary>
+    /// Optional consistent hash ring for deterministic tenant assignment across replicas.
+    /// When set, tenant ownership is determined by hash ring rather than random acquisition.
+    /// </summary>
+    public ITenantRing? TenantRing { get => _tenantRing; set => _tenantRing = value; }
 
     /// <summary>
     /// Gets the unique identifier for this replica instance.
@@ -370,7 +401,7 @@ public sealed class PollingConsumer : IEventConsumer
             try
             {
                 // Get global position to classify processors
-                var globalPosition = await _eventStore.GetLastPositionGlobal(ct);
+                var globalPosition = await _eventStore.GetLastPosition(ct);
 
                 // Classify processors into active (caught-up) vs rebuilding
                 var (activeCheckpoints, newRebuilders) = await ClassifyProcessorsAsync(globalPosition, ct);
@@ -397,7 +428,7 @@ public sealed class PollingConsumer : IEventConsumer
                 var minPosition = activeCheckpoints.Values.Min();
 
                 // Fetch events from global stream
-                var events = await _eventStore.StreamGlobal(minPosition, _batchSize, ct);
+                var events = await _eventStore.StreamAll(minPosition, _batchSize, ct);
 
                 var processedAny = false;
 
@@ -462,7 +493,7 @@ public sealed class PollingConsumer : IEventConsumer
 
                         if (!hadRelevantEvents)
                         {
-                            await _checkpointStore.SaveAsync(processor.ProcessorId, maxBatchPosition, ct);
+                            await SaveTenantCheckpointAsync(processor.ProcessorId, maxBatchPosition, ct);
                         }
                     }
 
@@ -523,6 +554,35 @@ public sealed class PollingConsumer : IEventConsumer
     {
         if (_tenantProcessorLock is null)
             return;
+
+        // If a hash ring is configured, use deterministic assignment
+        if (_tenantRing is not null)
+        {
+            // Derive active node IDs from all current leases plus this replica
+            var allLeases = await _tenantProcessorLock.GetAllLeasesAsync(ConsumerId, ct);
+            var activeNodes = allLeases
+                .Select(l => l.ReplicaId)
+                .Append(_replicaId)
+                .Distinct()
+                .ToList();
+
+            await _tenantRing.RebalanceAsync(activeNodes, ct);
+            var myTenants = await _tenantRing.GetAssignedTenantsAsync(_replicaId, ct);
+
+            foreach (var tenantId in myTenants)
+            {
+                var lease = await _tenantProcessorLock.TryAcquireForTenantAsync(ConsumerId, tenantId, _replicaId, ct);
+                if (lease is not null)
+                {
+                    _tenantLeases[tenantId] = lease;
+                    lock (_tenantLock)
+                    {
+                        _ownedTenants.Add(tenantId);
+                    }
+                }
+            }
+            return; // Skip random acquisition
+        }
 
         var knownTenants = await _tenantProcessorLock.GetKnownTenantsAsync(ct);
         if (knownTenants.Count == 0)
@@ -624,7 +684,29 @@ public sealed class PollingConsumer : IEventConsumer
 
         foreach (var tenantGroup in eventsByTenant)
         {
-            var tenantId = tenantGroup.Key;
+            var tenantId = tenantGroup.Key ?? string.Empty;
+
+            // Register new tenant with hash ring if configured
+            if (_tenantRing is not null)
+            {
+                bool alreadyKnown;
+                lock (_tenantLock)
+                {
+                    alreadyKnown = _ownedTenants.Contains(tenantId);
+                }
+
+                if (!alreadyKnown && !_tenantLeases.ContainsKey(tenantId))
+                {
+                    var allLeases = await _tenantProcessorLock.GetAllLeasesAsync(ConsumerId, ct);
+                    var activeNodes = allLeases
+                        .Select(l => l.ReplicaId)
+                        .Append(_replicaId)
+                        .Distinct()
+                        .ToList();
+                    await _tenantRing.RegisterTenantAsync(tenantId, activeNodes, ct);
+                }
+            }
+
             var ownsLock = await EnsureTenantOwnershipAsync(tenantId, ct);
 
             if (ownsLock)
@@ -687,7 +769,7 @@ public sealed class PollingConsumer : IEventConsumer
                 // or if all our processed events are below the filtered events
                 var newCheckpoint = maxOriginalPosition;
 
-                await _checkpointStore.SaveAsync(processor.ProcessorId, newCheckpoint, ct);
+                await SaveTenantCheckpointAsync(processor.ProcessorId, newCheckpoint, ct);
 
                 _logger?.LogDebug(
                     "Consumer {ConsumerId} advanced processor {ProcessorId} checkpoint from {OldCheckpoint} to {NewCheckpoint} (skipped filtered tenant events)",
@@ -805,6 +887,36 @@ public sealed class PollingConsumer : IEventConsumer
         }
     }
 
+    /// <summary>
+    /// Saves a checkpoint in tenant-distributed mode using a lease-fenced write when
+    /// the store supports it.  Returns false if the fenced write was rejected (lease
+    /// expired), in which case the caller should evict the tenant from owned state.
+    /// Always returns true in single-leader mode (falls through to regular SaveAsync).
+    /// </summary>
+    private async Task<bool> SaveTenantCheckpointAsync(
+        string processorId, long position, CancellationToken ct)
+    {
+        if (_distributionMode == ConsumerDistributionMode.TenantDistributed
+            && _checkpointStore is IFencedCheckpointStore fenced)
+        {
+            var leaseHeld = await fenced.SaveIfLeaseHeldAsync(
+                processorId, position, ConsumerId, _replicaId, ct);
+
+            if (!leaseHeld)
+            {
+                _logger?.LogWarning(
+                    "Fenced checkpoint write rejected for processor {ProcessorId} — lease expired for replica {ReplicaId}",
+                    processorId, _replicaId);
+                return false;
+            }
+
+            return true;
+        }
+
+        await _checkpointStore.SaveAsync(processorId, position, ct);
+        return true;
+    }
+
     private async Task ProcessEventsForProcessorAsync(
         IEventProcessor processor,
         IReadOnlyList<IEventEnvelope> events,
@@ -816,6 +928,33 @@ public sealed class PollingConsumer : IEventConsumer
         // The processing action that handles each event with error handling
         async Task ProcessingAction()
         {
+            if (processor is IBatchableProcessor batchable)
+            {
+                try
+                {
+                    await batchable.ProcessBatchAsync(events, ct);
+
+                    // ONE checkpoint for the whole batch
+                    if (events.Count > 0)
+                        await SaveTenantCheckpointAsync(processor.ProcessorId, events[^1].GlobalPosition, ct);
+
+                    // Fire OnProjected for each event in the batch
+                    foreach (var evt in events)
+                        OnProjected?.Invoke(processor.ProcessorId, evt);
+
+                    return;
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch
+                {
+                    // Fallback: per-event processing with retry/dead-letter
+                }
+            }
+
+            // Per-event path (reactors, or batch failure fallback)
             foreach (var evt in events)
             {
                 if (!processor.IsActive)
@@ -824,7 +963,7 @@ public sealed class PollingConsumer : IEventConsumer
                 await ProcessSingleEventAsync(processor, evt, ct);
             }
 
-            // Flush batched changes after processing all events
+            // Flush batched changes after processing all events (per-event path)
             if (processor is IFlushable flushable)
             {
                 await flushable.FlushAsync(ct);
@@ -847,101 +986,31 @@ public sealed class PollingConsumer : IEventConsumer
         IEventEnvelope evt,
         CancellationToken ct)
     {
-        var attempts = 0;
-        var concurrencyRetries = 0;
-        const int maxConcurrencyRetries = 5;
-
-        while (true)
+        var context = new ConsumeEventContext
         {
-            try
-            {
-                attempts++;
-                await processor.ProcessEventAsync(evt, ct);
+            ProcessorId = processor.ProcessorId,
+            ModuleKey = _moduleKey,
+            Envelope = evt,
+            IsRebuild = processor.IsRebuilding,
+            CancellationToken = ct
+        };
 
-                // Success - save checkpoint and move on
-                await _checkpointStore.SaveAsync(processor.ProcessorId, evt.GlobalPosition, ct);
-                return;
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                throw; // Propagate cancellation
-            }
-            catch (ConcurrencyConflictException)
-            {
-                // Optimistic concurrency conflict - retry immediately without counting against retry limit
-                concurrencyRetries++;
-                if (concurrencyRetries >= maxConcurrencyRetries)
-                {
-                    // Too many concurrency conflicts, fall through to normal error handling
-                    throw;
-                }
+        await MiddlewareRunner.RunAsync(context, _middlewares, async () =>
+        {
+            await processor.ProcessEventAsync(evt, ct);
+        });
 
-                // Brief delay to allow other transaction to complete
-                await Task.Delay(TimeSpan.FromMilliseconds(10 * concurrencyRetries), ct);
-                attempts--; // Don't count this against retry limit
-                continue;
-            }
-            catch (Exception ex)
-            {
-                var decision = processor.HandleError(evt, ex, attempts, _errorPolicy);
-
-                switch (decision)
-                {
-                    case ErrorHandlingDecision.Retry:
-                        // Record retry metric
-                        AlbertoMetrics.Retries.Add(1,
-                            new KeyValuePair<string, object?>("processor", processor.ProcessorId),
-                            new KeyValuePair<string, object?>("module", _moduleKey));
-
-                        // Use exponential backoff for retry delay
-                        var delay = _errorPolicy.CalculateDelay(attempts);
-                        await Task.Delay(delay, ct);
-                        continue;
-
-                    case ErrorHandlingDecision.DeadLetter:
-                        await DeadLetterEventAsync(processor.ProcessorId, evt, ex, attempts, ct);
-                        await _checkpointStore.SaveAsync(processor.ProcessorId, evt.GlobalPosition, ct);
-                        return;
-
-                    case ErrorHandlingDecision.Skip:
-                        await _checkpointStore.SaveAsync(processor.ProcessorId, evt.GlobalPosition, ct);
-                        return;
-
-                    case ErrorHandlingDecision.Stop:
-                        processor.IsActive = false;
-                        return;
-                }
-            }
+        if (!context.DeadLettered)
+        {
+            var saved = await SaveTenantCheckpointAsync(processor.ProcessorId, evt.GlobalPosition, ct);
+            if (saved)
+                OnProjected?.Invoke(processor.ProcessorId, evt);
         }
-    }
-
-    private async Task DeadLetterEventAsync(
-        string processorId,
-        IEventEnvelope evt,
-        Exception ex,
-        int attempts,
-        CancellationToken ct)
-    {
-        // Record dead letter counter
-        AlbertoMetrics.DeadLetters.Add(1,
-            new KeyValuePair<string, object?>("processor", processorId),
-            new KeyValuePair<string, object?>("module", _moduleKey));
-
-        if (_deadLetterStore is null)
-            return;
-
-        var entry = new DeadLetterEntry(
-            Id: Guid.NewGuid(),
-            ProcessorId: processorId,
-            EventId: evt.Id,
-            EventType: evt.EventType.Id,
-            EventData: evt.EventData,
-            ErrorMessage: ex.Message,
-            StackTrace: ex.StackTrace,
-            AttemptCount: attempts,
-            FailedAt: DateTimeOffset.UtcNow);
-
-        await _deadLetterStore.StoreAsync(entry, ct);
+        else
+        {
+            // Dead-lettered events still advance the checkpoint so the consumer doesn't stall
+            await SaveTenantCheckpointAsync(processor.ProcessorId, evt.GlobalPosition, ct);
+        }
     }
 
     /// <summary>
@@ -1016,7 +1085,7 @@ public sealed class PollingConsumer : IEventConsumer
             while (!ct.IsCancellationRequested && processor.IsActive && processor.IsRebuilding)
             {
                 var currentPos = await _checkpointStore.GetAsync(processor.ProcessorId, ct) ?? 0;
-                var globalPos = await _eventStore.GetLastPositionGlobal(ct);
+                var globalPos = await _eventStore.GetLastPosition(ct);
 
                 // Check if caught up (within threshold)
                 if (globalPos - currentPos <= _rebuildThreshold)
@@ -1026,7 +1095,7 @@ public sealed class PollingConsumer : IEventConsumer
                 }
 
                 // Fetch larger batch for faster catch-up
-                var events = await _eventStore.StreamGlobal(currentPos, _rebuildBatchSize, ct);
+                var events = await _eventStore.StreamAll(currentPos, _rebuildBatchSize, ct);
 
                 if (events.Count == 0)
                 {
@@ -1040,18 +1109,28 @@ public sealed class PollingConsumer : IEventConsumer
                     .Where(e => processor.HandledEventTypes.Contains(e.EventType.Id))
                     .ToList();
 
-                foreach (var evt in relevant)
+                if (processor is IBatchableProcessor batchable && relevant.Count > 0)
                 {
-                    if (!processor.IsActive || !processor.IsRebuilding)
-                        break;
-
-                    await ProcessSingleEventAsync(processor, evt, ct);
+                    await batchable.ProcessBatchAsync(relevant, ct);
+                    await _checkpointStore.SaveAsync(processor.ProcessorId, relevant[^1].GlobalPosition, ct);
+                    foreach (var evt in relevant)
+                        OnProjected?.Invoke(processor.ProcessorId, evt);
                 }
-
-                // Flush after processing rebuild batch
-                if (processor is IFlushable flushable)
+                else
                 {
-                    await flushable.FlushAsync(ct);
+                    foreach (var evt in relevant)
+                    {
+                        if (!processor.IsActive || !processor.IsRebuilding)
+                            break;
+
+                        await ProcessSingleEventAsync(processor, evt, ct);
+                    }
+
+                    // Flush after processing rebuild batch (per-event path)
+                    if (processor is IFlushable flushable)
+                    {
+                        await flushable.FlushAsync(ct);
+                    }
                 }
 
                 // Advance checkpoint to end of batch even if no matching events were found,
@@ -1075,6 +1154,7 @@ public sealed class PollingConsumer : IEventConsumer
             {
                 _rebuildTasks.Remove(processor.ProcessorId);
             }
+            OnRebuildComplete?.Invoke(processor.ProcessorId);
         }
     }
 

@@ -1,6 +1,7 @@
 using Alberto.Dcb.Subscriptions;
 using Npgsql;
 
+#pragma warning disable CS0618 // Obsolete projection types used intentionally for backward-compatibility
 namespace Alberto.Dcb.Postgres;
 
 /// <summary>
@@ -28,13 +29,12 @@ public sealed class PostgresEventStore : IEventStore
 
     /// <inheritdoc/>
     public async Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
-        string tenantId,
         IEnumerable<IEventToPersist> events,
         DcbQuery? dcbQuery = null,
         long? expectedPosition = null,
         CancellationToken cancellationToken = default)
     {
-        var appended = await _backend.Append(tenantId, events, dcbQuery, expectedPosition, cancellationToken);
+        var appended = await _backend.Append(events, dcbQuery, expectedPosition, cancellationToken);
 
         if (appended.Count > 0 && _inlineProjections.Count > 0)
         {
@@ -55,20 +55,16 @@ public sealed class PostgresEventStore : IEventStore
 
     /// <inheritdoc/>
     public Task<IReadOnlyCollection<IEventEnvelope>> StreamAsync(
-        string tenantId, DcbQuery query, long afterPosition = 0,
+        DcbQuery query, long afterPosition = 0,
         int? limit = null, CancellationToken cancellationToken = default)
-        => _backend.Stream(tenantId, query, afterPosition, limit, cancellationToken);
+        => _backend.Stream(query, afterPosition, limit, cancellationToken);
 
     /// <inheritdoc/>
-    public Task<IReadOnlyCollection<IEventEnvelope>> StreamGlobalAsync(
+    public Task<IReadOnlyCollection<IEventEnvelope>> StreamAllAsync(
         long afterPosition = 0, int? limit = null, CancellationToken cancellationToken = default)
-        => _backend.StreamGlobal(afterPosition, limit, cancellationToken);
+        => _backend.StreamAll(afterPosition, limit, cancellationToken);
 
     /// <inheritdoc/>
-    public Task<long> GetLastPositionAsync(string tenantId, CancellationToken cancellationToken = default)
-        => _backend.GetLastPosition(tenantId, cancellationToken);
-
-    /// <inheritdoc/>
-    public Task<long> GetLastPositionGlobalAsync(CancellationToken cancellationToken = default)
-        => _backend.GetLastPositionGlobal(cancellationToken);
+    public Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default)
+        => _backend.GetLastPosition(cancellationToken);
 }

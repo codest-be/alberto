@@ -12,9 +12,9 @@ public interface IEventEnvelope
     Guid Id { get; }
 
     /// <summary>
-    /// The tenant this event belongs to.
+    /// The tenant this event belongs to. Null in single-tenant mode.
     /// </summary>
-    string TenantId { get; }
+    string? TenantId { get; }
 
     /// <summary>
     /// The global position in the event store (monotonically increasing).
@@ -70,9 +70,9 @@ public sealed record EventEnvelope : IEventEnvelope
     public required Guid Id { get; init; }
 
     /// <summary>
-    /// The tenant this event belongs to.
+    /// The tenant this event belongs to. Null in single-tenant mode.
     /// </summary>
-    public required string TenantId { get; init; }
+    public string? TenantId { get; init; }
 
     /// <summary>
     /// The global position in the event store.

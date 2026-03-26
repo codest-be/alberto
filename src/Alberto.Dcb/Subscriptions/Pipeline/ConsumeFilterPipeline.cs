@@ -4,6 +4,7 @@ namespace Alberto.Dcb.Subscriptions.Pipeline;
 /// Builds and executes the consume filter pipeline.
 /// Filters are executed in registration order (first registered = outermost wrapper).
 /// </summary>
+[Obsolete("Use ConsumeMiddleware instead. ConsumeFilterPipeline will be removed in a future version.")]
 internal sealed class ConsumeFilterPipeline(IEnumerable<IConsumeFilter> filters) : IConsumeFilterPipeline
 {
     private readonly IReadOnlyList<IConsumeFilter> _filters = filters.ToList();

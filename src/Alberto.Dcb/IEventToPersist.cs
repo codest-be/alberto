@@ -12,11 +12,6 @@ public interface IEventToPersist
     Guid Id { get; }
 
     /// <summary>
-    /// The tenant this event belongs to.
-    /// </summary>
-    string TenantId { get; }
-
-    /// <summary>
     /// The event type identifier (e.g., "order-placed").
     /// </summary>
     EventType EventType { get; }
@@ -46,11 +41,6 @@ public sealed record EventToPersist : IEventToPersist
     /// Unique identifier for the event. Defaults to a new UUIDv7.
     /// </summary>
     public Guid Id { get; init; } = Guid.CreateVersion7();
-
-    /// <summary>
-    /// The tenant this event belongs to.
-    /// </summary>
-    public required string TenantId { get; init; }
 
     /// <summary>
     /// The event type identifier.

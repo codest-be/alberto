@@ -15,7 +15,7 @@
 
     <ItemGroup>
         <ProjectReference Include="..\Alberto.Dcb\Alberto.Dcb.csproj" />
-        <ProjectReference Include="..\Alberto.Dcb.Admin\Alberto.Dcb.Admin.csproj" />
+        <ProjectReference Include="..\Alberto.Dcb.Messaging\Alberto.Dcb.Messaging.csproj" />
     </ItemGroup>
 
     <ItemGroup>
@@ -25,5 +25,6 @@
 
     <ItemGroup>
         <EmbeddedResource Include="Migrations\*.sql" />
+        <EmbeddedResource Include="Migrations\SingleTenant\*.sql" />
     </ItemGroup>
 </Project>

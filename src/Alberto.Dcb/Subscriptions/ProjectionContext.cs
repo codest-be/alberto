@@ -21,9 +21,9 @@ public sealed class ProjectionContext
     public required DateTimeOffset Timestamp { get; init; }
 
     /// <summary>
-    /// The tenant this event belongs to.
+    /// The tenant this event belongs to. Null in single-tenant mode.
     /// </summary>
-    public required string TenantId { get; init; }
+    public string? TenantId { get; init; }
 
     /// <summary>
     /// Additional metadata from the event.

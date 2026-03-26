@@ -11,6 +11,7 @@
         <ProjectReference Include="../../src/Alberto.Dcb/Alberto.Dcb.csproj" />
         <ProjectReference Include="../../src/Alberto.Dcb.InMemory/Alberto.Dcb.InMemory.csproj" />
         <ProjectReference Include="../../src/Alberto.Dcb.Postgres/Alberto.Dcb.Postgres.csproj" />
+        <ProjectReference Include="../../src/Alberto.Dcb.Messaging/Alberto.Dcb.Messaging.csproj" />
     </ItemGroup>
 
     <ItemGroup>

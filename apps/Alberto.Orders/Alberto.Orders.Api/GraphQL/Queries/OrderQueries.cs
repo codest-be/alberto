@@ -3,10 +3,12 @@ using Alberto.Dcb;
 using Alberto.Dcb.Postgres;
 using Alberto.Orders.Api.GraphQL.Types;
 using Alberto.Orders.Core.Order;
+using Alberto.Orders.Core.Order.Actions;
 using Alberto.Orders.Infrastructure;
 using Alberto.Orders.Infrastructure.Data;
 using Alberto.Orders.Infrastructure.Entities;
-using OrderDecider = Alberto.Orders.Core.Order.OrderDecider;
+using OrderActions = Alberto.Orders.Core.Order.Actions.OrderDecider;
+using OrderBoundary = Alberto.Orders.Core.Order.OrderDecider;
 using Alberto.Orders.Infrastructure.Projections;
 using Alberto.Orders.Infrastructure.ReadModels;
 using HotChocolate;
@@ -33,9 +35,8 @@ public static class OrderQueries
         [Service] IServiceProvider sp,
         CancellationToken ct)
     {
-        var tenantId = GetTenantId(context);
         var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(OrdersModule.ModuleKey);
-        var state = await LoadOrderState(backend, tenantId, orderId, ct);
+        var state = await LoadOrderState(backend, orderId, ct);
 
         if (!state.Exists)
             return null;
@@ -148,14 +149,13 @@ public static class OrderQueries
 
     private static async Task<OrderState> LoadOrderState(
         IEventStoreBackend backend,
-        string tenantId,
         Guid orderId,
         CancellationToken ct)
     {
-        var decider = new OrderDecider();
+        var decider = new OrderActions();
         var state = new OrderState();
 
-        var events = await backend.Stream(tenantId, OrderDecider.BoundaryFor(orderId), cancellationToken: ct);
+        var events = await backend.Stream(OrderBoundary.BoundaryFor(orderId), cancellationToken: ct);
 
         foreach (var envelope in events)
         {

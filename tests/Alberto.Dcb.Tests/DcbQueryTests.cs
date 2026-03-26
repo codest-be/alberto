@@ -106,6 +106,65 @@ public class DcbQueryTests
         Assert.True(query.HasWildcardPatterns);
     }
 
+    [Fact]
+    public void For_WithStringId_ShouldCreateSingleTagQuery()
+    {
+        var query = DcbQuery.For("order", "123");
+
+        Assert.Single(query.Tags);
+        Assert.Equal("order:123", query.Tags.First().Value);
+        Assert.True(query.HasTagsOnly);
+    }
+
+    [Fact]
+    public void For_WithGuidId_ShouldCreateSingleTagQuery()
+    {
+        var id = Guid.NewGuid();
+        var query = DcbQuery.For("order", id);
+
+        Assert.Single(query.Tags);
+        Assert.Equal($"order:{id}", query.Tags.First().Value);
+    }
+
+    [Fact]
+    public void For_WithIntId_ShouldCreateSingleTagQuery()
+    {
+        var query = DcbQuery.For("product", 42);
+
+        Assert.Single(query.Tags);
+        Assert.Equal("product:42", query.Tags.First().Value);
+    }
+
+    [Fact]
+    public void For_WithLongId_ShouldCreateSingleTagQuery()
+    {
+        var query = DcbQuery.For("product", 9999999999L);
+
+        Assert.Single(query.Tags);
+        Assert.Equal("product:9999999999", query.Tags.First().Value);
+    }
+
+    [Fact]
+    public void For_Generic_ShouldCreateSingleTagQuery()
+    {
+        var id = Guid.NewGuid();
+        var query = DcbQuery.For<Guid>("order", id);
+
+        Assert.Single(query.Tags);
+        Assert.Equal($"order:{id}", query.Tags.First().Value);
+    }
+
+    [Fact]
+    public void For_Chaining_ShouldAddTypes()
+    {
+        var id = Guid.NewGuid();
+        var query = DcbQuery.For("order", id).WithTypes("order-placed", "order-cancelled");
+
+        Assert.Single(query.Tags);
+        Assert.Equal(2, query.Types.Count);
+        Assert.True(query.HasTypesAndTags);
+    }
+
     #endregion
 
     #region Builder Method Tests

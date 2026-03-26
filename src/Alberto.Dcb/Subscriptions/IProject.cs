@@ -6,6 +6,7 @@ namespace Alberto.Dcb.Subscriptions;
 /// </summary>
 /// <typeparam name="TState">The projection state type.</typeparam>
 /// <typeparam name="TEvent">The event type to handle.</typeparam>
+[Obsolete("Use DeclareProjection.For<TState>() instead. This type will be removed in a future version.")]
 public interface IProject<TState, in TEvent> where TEvent : IEvent
 {
     /// <summary>

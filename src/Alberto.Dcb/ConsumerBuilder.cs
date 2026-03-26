@@ -22,6 +22,10 @@ public sealed class ConsumerBuilder
     private bool _enableProcessorLock = true; // Single-leader lock enabled by default
     private int _maxParallelProjections = 1; // Default sequential - EF projections aren't thread-safe
     private int? _maxTenantsPerReplica; // null = unlimited
+    private Action<string, IEventEnvelope>? _onProjected;
+    private Action<string>? _onRebuildComplete;
+    private readonly List<ConsumeMiddleware> _middlewares = [];
+    private ITenantRing? _tenantRing;
 
     internal ConsumerBuilder(DcbModuleBuilder moduleBuilder)
     {
@@ -145,6 +149,50 @@ public sealed class ConsumerBuilder
     }
 
     /// <summary>
+    /// Registers a callback to be invoked after each event is successfully processed by a processor.
+    /// Use for test observability. Do not perform heavy work in this callback.
+    /// </summary>
+    public ConsumerBuilder OnProjected(Action<string, IEventEnvelope> callback)
+    {
+        _onProjected = callback;
+        return this;
+    }
+
+    /// <summary>
+    /// Registers a callback to be invoked when a processor completes a rebuild.
+    /// </summary>
+    public ConsumerBuilder OnRebuildComplete(Action<string> callback)
+    {
+        _onRebuildComplete = callback;
+        return this;
+    }
+
+    /// <summary>
+    /// Configures a consistent hash ring for deterministic tenant assignment across replicas.
+    /// When set, tenants are assigned to specific replicas based on a hash of the tenant ID,
+    /// ensuring stable ownership and minimal tenant movement when the replica set changes.
+    /// </summary>
+    public ConsumerBuilder WithConsistentHashRing(ITenantRing tenantRing)
+    {
+        ArgumentNullException.ThrowIfNull(tenantRing);
+        _tenantRing = tenantRing;
+        return this;
+    }
+
+    /// <summary>
+    /// Adds a middleware to the per-event consume pipeline.
+    /// Middlewares are executed in registration order (first registered = outermost wrapper).
+    /// When at least one middleware is registered, the default RetryAndDeadLetter middleware
+    /// is not added automatically — include it explicitly if needed.
+    /// </summary>
+    public ConsumerBuilder WithMiddleware(ConsumeMiddleware middleware)
+    {
+        ArgumentNullException.ThrowIfNull(middleware);
+        _middlewares.Add(middleware);
+        return this;
+    }
+
+    /// <summary>
     /// Registers an async projection processor with a tenant-aware state store factory.
     /// The factory is called with the tenant ID from each event being processed.
     /// </summary>
@@ -152,15 +200,18 @@ public sealed class ConsumerBuilder
     /// <typeparam name="TProjection">The projection type.</typeparam>
     /// <param name="stateStoreFactory">Factory to create a state store for a given tenant ID.</param>
     /// <param name="processorId">Optional processor ID. Defaults to projection type name.</param>
+    [Obsolete("Use DeclareProjection.For<TState>() instead. This type will be removed in a future version.")]
     public ConsumerBuilder AddProjection<TState, TProjection>(
         Func<string, IStateStore<TState>> stateStoreFactory,
         string? processorId = null)
         where TProjection : Projection<TState>, new()
         where TState : new()
     {
+#pragma warning disable CS0618
         var id = processorId ?? typeof(TProjection).Name;
         var processor = new AsyncProjection<TState, TProjection>(stateStoreFactory, id);
         _moduleBuilder.Services.AddKeyedSingleton<IEventProcessor>(_moduleBuilder.ModuleKey, processor);
+#pragma warning restore CS0618
         return this;
     }
 
@@ -172,17 +223,47 @@ public sealed class ConsumerBuilder
     /// <typeparam name="TProjection">The projection type.</typeparam>
     /// <param name="stateStoreFactory">Factory to create a state store for a given tenant ID, with access to services.</param>
     /// <param name="processorId">Optional processor ID. Defaults to projection type name.</param>
+    [Obsolete("Use DeclareProjection.For<TState>() instead. This type will be removed in a future version.")]
     public ConsumerBuilder AddProjection<TState, TProjection>(
         Func<IServiceProvider, Func<string, IStateStore<TState>>> stateStoreFactory,
         string? processorId = null)
         where TProjection : Projection<TState>, new()
         where TState : new()
     {
+#pragma warning disable CS0618
         var id = processorId ?? typeof(TProjection).Name;
         _moduleBuilder.Services.AddKeyedSingleton<IEventProcessor>(_moduleBuilder.ModuleKey, (sp, _) =>
         {
             var tenantStoreFactory = stateStoreFactory(sp);
             return new AsyncProjection<TState, TProjection>(tenantStoreFactory, id);
+        });
+#pragma warning restore CS0618
+        return this;
+    }
+
+    /// <summary>
+    /// Registers an async projection processor using the declaration-based API.
+    /// This is the recommended approach — no reflection, no base classes required.
+    /// </summary>
+    /// <typeparam name="TState">The projection state type.</typeparam>
+    /// <param name="declaration">
+    /// A <see cref="ProjectionDeclaration{TState}"/> produced by
+    /// <see cref="DeclareProjection.For{TState}"/>.
+    /// </param>
+    /// <param name="stateStoreFactory">
+    /// A delegate that, given the service provider, returns a per-tenant state store factory.
+    /// </param>
+    public ConsumerBuilder AddProjection<TState>(
+        ProjectionDeclaration<TState> declaration,
+        Func<IServiceProvider, Func<string, IStateStore<TState>>> stateStoreFactory)
+        where TState : new()
+    {
+        ArgumentNullException.ThrowIfNull(declaration);
+        ArgumentNullException.ThrowIfNull(stateStoreFactory);
+        _moduleBuilder.Services.AddKeyedSingleton<IEventProcessor>(_moduleBuilder.ModuleKey, (sp, _) =>
+        {
+            var factory = stateStoreFactory(sp);
+            return new DeclaredAsyncProjection<TState>(declaration, factory);
         });
         return this;
     }
@@ -190,11 +271,17 @@ public sealed class ConsumerBuilder
     /// <summary>
     /// Adds a consume filter to the pipeline.
     /// </summary>
+    /// <remarks>
+    /// Deprecated. Use <see cref="WithMiddleware"/> to add per-event middleware instead.
+    /// </remarks>
+#pragma warning disable CS0618
+    [Obsolete("Use WithMiddleware instead. AddFilter will be removed in a future version.")]
     public ConsumerBuilder AddFilter<TFilter>() where TFilter : class, IConsumeFilter
     {
         _moduleBuilder.Services.AddKeyedSingleton<IConsumeFilter, TFilter>(_moduleBuilder.ModuleKey);
         return this;
     }
+#pragma warning restore CS0618
 
     internal void Build()
     {
@@ -209,13 +296,19 @@ public sealed class ConsumerBuilder
         var enableProcessorLock = _enableProcessorLock;
         var maxParallelProjections = _maxParallelProjections;
         var maxTenantsPerReplica = _maxTenantsPerReplica;
+        var onProjected = _onProjected;
+        var onRebuildComplete = _onRebuildComplete;
+        var middlewares = _middlewares.Count > 0 ? _middlewares.ToList() : null;
+        var tenantRing = _tenantRing;
 
-        // Register pipeline
+#pragma warning disable CS0618
+        // Register pipeline (legacy IConsumeFilter support — transitional)
         _moduleBuilder.Services.AddKeyedSingleton<IConsumeFilterPipeline>(moduleKey, (sp, _) =>
         {
             var filters = sp.GetKeyedServices<IConsumeFilter>(moduleKey);
             return new ConsumeFilterPipeline(filters);
         });
+#pragma warning restore CS0618
 
         // Register PollingConsumer
         _moduleBuilder.Services.AddKeyedSingleton<PollingConsumer>(moduleKey, (sp, _) =>
@@ -223,7 +316,9 @@ public sealed class ConsumerBuilder
             var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(moduleKey);
             var checkpointStore = sp.GetRequiredKeyedService<ICheckpointStore>(moduleKey);
             var deadLetterStore = sp.GetKeyedService<IDeadLetterStore>(moduleKey);
+#pragma warning disable CS0618
             var pipeline = sp.GetKeyedService<IConsumeFilterPipeline>(moduleKey);
+#pragma warning restore CS0618
             var logger = sp.GetService<ILogger<PollingConsumer>>();
 
             // Resolve locks based on distribution mode
@@ -257,7 +352,8 @@ public sealed class ConsumerBuilder
                 tenantLockRetryInterval,
                 maxParallelProjections,
                 maxTenantsPerReplica,
-                logger);
+                logger,
+                middlewares);
 
             // Register all processors
             var processors = sp.GetKeyedServices<IEventProcessor>(moduleKey);
@@ -265,6 +361,10 @@ public sealed class ConsumerBuilder
             {
                 consumer.RegisterProcessor(processor);
             }
+
+            consumer.OnProjected = onProjected;
+            consumer.OnRebuildComplete = onRebuildComplete;
+            consumer.TenantRing = tenantRing;
 
             return consumer;
         });

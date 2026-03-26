@@ -1,10 +1,12 @@
 using Alberto.Dcb.Subscriptions;
 
+#pragma warning disable CS0618 // Obsolete projection types used intentionally for backward-compatibility
 namespace Alberto.Dcb;
 
 /// <summary>
 /// High-level event store with support for inline projections.
 /// Wraps <see cref="IEventStoreBackend"/> and runs registered projections immediately after append.
+/// In multi-tenant mode, tenant scoping is handled transparently by the backend decorator.
 /// </summary>
 public interface IEventStore
 {
@@ -22,8 +24,8 @@ public interface IEventStore
 
     /// <summary>
     /// Appends events to the store and runs inline projections immediately after.
+    /// In multi-tenant mode, the tenant is resolved automatically from the current request context.
     /// </summary>
-    /// <param name="tenantId">The tenant to append events for.</param>
     /// <param name="events">The events to append.</param>
     /// <param name="dcbQuery">Optional DCB query for consistency check.</param>
     /// <param name="expectedPosition">The expected last position for the DCB check.</param>
@@ -33,50 +35,41 @@ public interface IEventStore
     /// Thrown when events matching the DCB query exist after the expected position.
     /// </exception>
     Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
-        string tenantId,
         IEnumerable<IEventToPersist> events,
         DcbQuery? dcbQuery = null,
         long? expectedPosition = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Reads events for a tenant matching the specified query.
+    /// Reads events matching the specified query.
+    /// In multi-tenant mode, automatically scoped to the current tenant.
     /// </summary>
-    /// <param name="tenantId">The tenant to read events for.</param>
     /// <param name="query">The query criteria.</param>
     /// <param name="afterPosition">Only return events with position greater than this value.</param>
     /// <param name="limit">Maximum number of events to return.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Collection of matching events ordered by global position.</returns>
     Task<IReadOnlyCollection<IEventEnvelope>> StreamAsync(
-        string tenantId,
         DcbQuery query,
         long afterPosition = 0,
         int? limit = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Reads all events across all tenants.
+    /// Reads all events (for system-wide queries).
+    /// In multi-tenant mode, returns events across all tenants.
     /// </summary>
     /// <param name="afterPosition">Only return events with position greater than this value.</param>
     /// <param name="limit">Maximum number of events to return.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Collection of all events ordered by global position.</returns>
-    Task<IReadOnlyCollection<IEventEnvelope>> StreamGlobalAsync(
+    Task<IReadOnlyCollection<IEventEnvelope>> StreamAllAsync(
         long afterPosition = 0,
         int? limit = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gets the last global position for a tenant.
+    /// Gets the last global position across all events.
     /// </summary>
-    Task<long> GetLastPositionAsync(
-        string tenantId,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Gets the last global position across all tenants.
-    /// </summary>
-    Task<long> GetLastPositionGlobalAsync(
-        CancellationToken cancellationToken = default);
+    Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default);
 }

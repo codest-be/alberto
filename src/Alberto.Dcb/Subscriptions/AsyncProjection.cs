@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 
+#pragma warning disable CS0618 // Type or member is obsolete — intentional, this class itself is obsolete infrastructure
 namespace Alberto.Dcb.Subscriptions;
 
 /// <summary>
@@ -8,7 +9,8 @@ namespace Alberto.Dcb.Subscriptions;
 /// Implements IFlushable to batch changes and write them all at once for better performance.
 /// Implements time-based eviction for inactive tenant state stores to prevent memory leaks.
 /// </summary>
-internal sealed class AsyncProjection<TState, TProjection> : IEventProcessor, IFlushable, IAsyncDisposable
+[Obsolete("Use DeclareProjection.For<TState>() instead. This type will be removed in a future version.")]
+internal sealed class AsyncProjection<TState, TProjection> : IEventProcessor, IFlushable, IBatchableProcessor, IAsyncDisposable
     where TProjection : Projection<TState>, new()
     where TState : new()
 {
@@ -56,7 +58,7 @@ internal sealed class AsyncProjection<TState, TProjection> : IEventProcessor, IF
     public async Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
     {
         var docId = _projection.GetDocumentId(@event);
-        var tenantId = @event.TenantId;
+        var tenantId = @event.TenantId ?? string.Empty;
 
         // Get or create state store, update last access time
         var entry = _stateStoreCache.AddOrUpdate(
@@ -122,6 +124,80 @@ internal sealed class AsyncProjection<TState, TProjection> : IEventProcessor, IF
                 }
                 break;
                 // Unchanged: no operation needed
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct = default)
+    {
+        // Group events by tenant so we can do one LoadMany + one ApplyChanges per tenant
+        var byTenant = events.GroupBy(e => e.TenantId ?? string.Empty);
+
+        foreach (var tenantGroup in byTenant)
+        {
+            var tenantId = tenantGroup.Key;
+
+            // Get or create state store, update last access time
+            var entry = _stateStoreCache.AddOrUpdate(
+                tenantId,
+                _ => (_stateStoreFactory(tenantId), DateTimeOffset.UtcNow),
+                (_, existing) => (existing.Store, DateTimeOffset.UtcNow));
+
+            var stateStore = entry.Store;
+
+            // Collect all document IDs touched in this tenant group
+            var docIds = tenantGroup.Select(e => _projection.GetDocumentId(e)).Distinct().ToList();
+
+            // ONE LoadMany for the whole batch
+            var states = await stateStore.LoadManyAsync(docIds, transaction: null, ct);
+
+            // Accumulate changes in memory
+            var upserts = new Dictionary<string, TState>();
+            var deletes = new HashSet<string>();
+
+            foreach (var evt in tenantGroup)
+            {
+                var docId = _projection.GetDocumentId(evt);
+
+                // State resolution order: pending upsert → pending delete reset → loaded → new
+                TState state;
+                if (upserts.TryGetValue(docId, out var pendingState))
+                    state = pendingState;
+                else if (deletes.Contains(docId))
+                    state = new TState();
+                else
+                    state = states.GetValueOrDefault(docId) ?? new TState();
+
+                // Idempotency check
+                if (state is IProjectionEntity entity && entity.LastProcessedPosition >= evt.GlobalPosition)
+                    continue;
+
+                var result = _projection.Apply(state, evt);
+
+                switch (result)
+                {
+                    case ProjectionResult<TState>.Set s:
+                        if (s.State is IProjectionEntity projEntity)
+                            projEntity.LastProcessedPosition = evt.GlobalPosition;
+
+                        upserts[docId] = s.State;
+                        deletes.Remove(docId);
+                        break;
+
+                    case ProjectionResult<TState>.Delete:
+                        deletes.Add(docId);
+                        upserts.Remove(docId);
+                        break;
+
+                    // Unchanged: no operation needed
+                }
+            }
+
+            // ONE ApplyChanges for the whole tenant batch
+            if (upserts.Count > 0 || deletes.Count > 0)
+            {
+                await stateStore.ApplyChangesAsync(upserts, deletes.ToList(), transaction: null, ct);
+            }
         }
     }
 

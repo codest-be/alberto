@@ -25,13 +25,6 @@ var ordersApi = builder.AddProject<Projects.Alberto_Orders_Api>("orders-api")
     .WithReference(albertoDb)
     .WaitFor(ordersMigrations);
 
-// Admin Web (Angular, fixed port 4200)
-builder.AddNpmApp("admin-web", "../Alberto.Admin.Web", "start")
-    .WithReference(ordersApi)
-    .WithHttpEndpoint(port: 4200, env: "PORT")
-    .WithExternalHttpEndpoints()
-    .WaitFor(ordersApi);
-
 // K6 Load Tests (runs on-demand from dashboard)
 var loadTestsPath = Path.GetFullPath(Path.Combine(builder.AppHostDirectory, "../../tests/Alberto.Orders.LoadTests"));
 
