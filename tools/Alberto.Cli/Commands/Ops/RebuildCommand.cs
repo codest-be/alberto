@@ -63,6 +63,13 @@ public static class RebuildCommand
 
                 if (!yes)
                 {
+                    if (!AnsiConsole.Profile.Capabilities.Interactive)
+                    {
+                        output.Error($"Destructive operation requires confirmation. Add --yes to confirm.\n  alberto ops rebuild {id} --yes");
+                        Environment.Exit(1);
+                        return;
+                    }
+
                     var confirmed = AnsiConsole.Confirm(
                         $"[yellow]Rebuild processor '[bold]{id}[/]'? This will reset the checkpoint and trigger a full replay.[/]",
                         defaultValue: false);

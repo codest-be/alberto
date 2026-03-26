@@ -140,6 +140,13 @@ public static class CheckpointOpsCommand
 
                 if (!yes)
                 {
+                    if (!AnsiConsole.Profile.Capabilities.Interactive)
+                    {
+                        output.Error($"Destructive operation requires confirmation. Add --yes to confirm.\n  alberto ops checkpoint reset {id} --yes");
+                        Environment.Exit(1);
+                        return;
+                    }
+
                     var confirmed = AnsiConsole.Confirm(
                         $"[yellow]Reset checkpoint for processor '[bold]{id}[/]'? This will trigger a full replay.[/]",
                         defaultValue: false);
@@ -221,6 +228,13 @@ public static class CheckpointOpsCommand
 
                 if (!yes)
                 {
+                    if (!AnsiConsole.Profile.Capabilities.Interactive)
+                    {
+                        output.Error($"Destructive operation requires confirmation. Add --yes to confirm.\n  alberto ops checkpoint set {id} {position} --yes");
+                        Environment.Exit(1);
+                        return;
+                    }
+
                     var confirmed = AnsiConsole.Confirm(
                         $"Set checkpoint for '[bold]{id}[/]' to position [bold]{position}[/]?",
                         defaultValue: false);

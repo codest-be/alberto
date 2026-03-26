@@ -61,11 +61,11 @@ public class HumanOutput : IOutput
 
     public void Warning(string message)
     {
-        AnsiConsole.MarkupLine($"[yellow]Warning: {Markup.Escape(message)}[/]");
+        Console.Error.WriteLine($"warning: {message}");
     }
 
     public void Error(string message)
     {
-        AnsiConsole.MarkupLine($"[red]Error: {Markup.Escape(message)}[/]");
+        Console.Error.WriteLine($"error: {message}");
     }
 }

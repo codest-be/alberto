@@ -13,7 +13,6 @@ public static class DeadLetterOpsCommand
         var command = new Command("dead-letters", "Manage dead letter entries");
 
         command.AddCommand(BuildDismiss());
-        command.AddCommand(BuildRetry());
         command.AddCommand(BuildRetryRewind());
 
         return command;
@@ -28,6 +27,7 @@ public static class DeadLetterOpsCommand
             Examples:
               alberto ops dead-letters dismiss --processor my-processor --dry-run
               alberto ops dead-letters dismiss --processor my-processor --yes
+              alberto ops dead-letters dismiss --processor my-processor --yes --json
               alberto ops dead-letters dismiss --all --dry-run
               alberto ops dead-letters dismiss --all --yes
             """);
@@ -38,6 +38,7 @@ public static class DeadLetterOpsCommand
         var allOption = new Option<bool>("--all", "Dismiss all dead letters (required if --processor not specified)");
         var dryRunOption = new Option<bool>("--dry-run", "Show what would be dismissed without executing");
         var yesOption = new Option<bool>("--yes", "Skip confirmation prompt");
+        var jsonOption = new Option<bool>("--json", "Output as JSON");
 
         command.AddOption(urlOption);
         command.AddOption(schemaOption);
@@ -45,14 +46,15 @@ public static class DeadLetterOpsCommand
         command.AddOption(allOption);
         command.AddOption(dryRunOption);
         command.AddOption(yesOption);
+        command.AddOption(jsonOption);
 
-        command.SetHandler(async (string? url, string? schema, string? processor, bool all, bool dryRun, bool yes) =>
+        command.SetHandler(async (string? url, string? schema, string? processor, bool all, bool dryRun, bool yes, bool json) =>
         {
-            IOutput output = new HumanOutput();
+            IOutput output = json ? new JsonOutput() : new HumanOutput();
 
             if (string.IsNullOrWhiteSpace(processor) && !all)
             {
-                output.Error("Specify --processor <id> or --all to dismiss dead letters.");
+                output.Error("Specify --processor <id> or --all to dismiss dead letters.\n  alberto ops dead-letters dismiss --processor <id> --yes\n  alberto ops dead-letters dismiss --all --yes");
                 Environment.Exit(1);
                 return;
             }
@@ -70,18 +72,31 @@ public static class DeadLetterOpsCommand
 
                 if (count == 0)
                 {
-                    output.Text($"No dead letters found for {scope}.");
+                    if (json)
+                        output.Json(new { action = "dismiss", dismissed = 0, scope, noOp = true });
+                    else
+                        output.Text($"No dead letters found for {scope}. No-op.");
                     return;
                 }
 
                 if (dryRun)
                 {
-                    output.Text($"[Dry run] Would dismiss {count} dead letter(s) for {scope}.");
+                    if (json)
+                        output.Json(new { dryRun = true, action = "dismiss", count, scope });
+                    else
+                        output.Text($"[Dry run] Would dismiss {count} dead letter(s) for {scope}.");
                     return;
                 }
 
                 if (!yes)
                 {
+                    if (!AnsiConsole.Profile.Capabilities.Interactive)
+                    {
+                        output.Error($"Destructive operation requires confirmation. Add --yes to confirm.\n  alberto ops dead-letters dismiss {(processor is not null ? $"--processor {processor}" : "--all")} --yes");
+                        Environment.Exit(1);
+                        return;
+                    }
+
                     var confirmed = AnsiConsole.Confirm(
                         $"Dismiss [bold]{count}[/] dead letter(s) for {scope}?",
                         defaultValue: false);
@@ -94,57 +109,51 @@ public static class DeadLetterOpsCommand
                 }
 
                 var deleted = await data.DismissDeadLettersAsync(processor);
-                output.Text($"Dismissed {deleted} dead letter(s).");
+
+                if (json)
+                    output.Json(new { action = "dismiss", dismissed = deleted, scope });
+                else
+                    output.Text($"Dismissed {deleted} dead letter(s).");
             }
             catch (Exception ex)
             {
                 output.Error(ex.Message);
                 Environment.Exit(1);
             }
-        }, urlOption, schemaOption, processorOption, allOption, dryRunOption, yesOption);
-
-        return command;
-    }
-
-    private static Command BuildRetry()
-    {
-        var command = new Command("retry", "Retry dead letter entries");
-
-        var processorOption = new Option<string?>("--processor", "Filter by processor ID");
-        var dryRunOption = new Option<bool>("--dry-run", "Show what would be retried without executing");
-        var yesOption = new Option<bool>("--yes", "Skip confirmation prompt");
-
-        command.AddOption(processorOption);
-        command.AddOption(dryRunOption);
-        command.AddOption(yesOption);
-
-        command.SetHandler((string? processor, bool dryRun, bool yes) =>
-        {
-            var output = new HumanOutput();
-            output.Warning("Retry is not implemented in the CLI. Use the admin API to retry dead letters.");
-            return Task.CompletedTask;
-        }, processorOption, dryRunOption, yesOption);
+        }, urlOption, schemaOption, processorOption, allOption, dryRunOption, yesOption, jsonOption);
 
         return command;
     }
 
     private static Command BuildRetryRewind()
     {
-        var command = new Command("retry-rewind", "Rewind a processor checkpoint to replay from its earliest dead letter position, then clear dead letters");
+        var command = new Command("retry-rewind",
+            """
+            Rewind a processor checkpoint to replay from its earliest dead letter position, then clear dead letters.
+
+            Examples:
+              alberto ops dead-letters retry-rewind my-processor --dry-run
+              alberto ops dead-letters retry-rewind my-processor --yes
+              alberto ops dead-letters retry-rewind my-processor --yes --json
+            """);
 
         var processorIdArgument = new Argument<string>("processor-id", "Processor ID to rewind");
         var urlOption = new Option<string?>("--url", "PostgreSQL connection string");
         var schemaOption = new Option<string?>("--schema", "Database schema name");
+        var dryRunOption = new Option<bool>("--dry-run", "Show what would happen without executing");
         var yesOption = new Option<bool>("--yes", "Skip confirmation prompt");
+        var jsonOption = new Option<bool>("--json", "Output as JSON");
 
         command.AddArgument(processorIdArgument);
         command.AddOption(urlOption);
         command.AddOption(schemaOption);
+        command.AddOption(dryRunOption);
         command.AddOption(yesOption);
+        command.AddOption(jsonOption);
 
-        command.SetHandler(async (string processorId, string? url, string? schema, bool yes) =>
+        command.SetHandler(async (string processorId, string? url, string? schema, bool dryRun, bool yes, bool json) =>
         {
-            IOutput output = new HumanOutput();
+            IOutput output = json ? new JsonOutput() : new HumanOutput();
 
             var connStr = ConnectionResolver.ResolveConnectionString(url);
             var schemaName = ConnectionResolver.ResolveSchema(schema);
@@ -157,12 +166,31 @@ public static class DeadLetterOpsCommand
                 var count = await data.CountDeadLettersAsync(processorId);
                 if (count == 0)
                 {
-                    output.Text($"No dead letters found for processor '{processorId}'.");
+                    if (json)
+                        output.Json(new { action = "retry-rewind", processorId, deadLetters = 0, noOp = true });
+                    else
+                        output.Text($"No dead letters found for processor '{processorId}'. No-op.");
+                    return;
+                }
+
+                if (dryRun)
+                {
+                    if (json)
+                        output.Json(new { dryRun = true, action = "retry-rewind", processorId, deadLetterCount = count });
+                    else
+                        output.Text($"[Dry run] Would rewind processor '{processorId}' to its earliest dead letter and clear {count} dead letter(s).");
                     return;
                 }
 
                 if (!yes)
                 {
+                    if (!AnsiConsole.Profile.Capabilities.Interactive)
+                    {
+                        output.Error($"Destructive operation requires confirmation. Add --yes to confirm.\n  alberto ops dead-letters retry-rewind {processorId} --yes");
+                        Environment.Exit(1);
+                        return;
+                    }
+
                     var confirmed = AnsiConsole.Confirm(
                         $"Rewind processor '[bold]{processorId}[/]' to replay from its earliest dead letter and clear {count} dead letter(s). Continue?",
                         defaultValue: false);
@@ -176,14 +204,17 @@ public static class DeadLetterOpsCommand
 
                 var (rewindPosition, deletedCount) = await data.RetryByRewindAsync(processorId);
 
-                output.Text($"Done. Consumer will replay from position {rewindPosition}.");
+                if (json)
+                    output.Json(new { action = "retry-rewind", processorId, rewindPosition, dismissedDeadLetters = deletedCount });
+                else
+                    output.Text($"Done. Consumer will replay from position {rewindPosition}. Cleared {deletedCount} dead letter(s).");
             }
             catch (Exception ex)
             {
                 output.Error(ex.Message);
                 Environment.Exit(1);
             }
-        }, processorIdArgument, urlOption, schemaOption, yesOption);
+        }, processorIdArgument, urlOption, schemaOption, dryRunOption, yesOption, jsonOption);
 
         return command;
     }
