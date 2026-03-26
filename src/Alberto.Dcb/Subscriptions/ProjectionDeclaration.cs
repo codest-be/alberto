@@ -44,6 +44,18 @@ public sealed class ProjectionDeclaration<TState> where TState : new()
     /// Applies an event to a state and returns the projection result.
     /// </summary>
     internal Func<TState, IEventEnvelope, ProjectionContext, ProjectionResult<TState>> EvolveFunc { get; }
+
+    /// <summary>
+    /// Applies an event envelope to the given state and returns the result.
+    /// This is the public entry point for testing and direct invocation.
+    /// </summary>
+    public ProjectionResult<TState> Apply(TState state, IEventEnvelope envelope, ProjectionContext context)
+        => EvolveFunc(state, envelope, context);
+
+    /// <summary>
+    /// Returns the document ID for the given event envelope, or <see langword="null"/> to skip.
+    /// </summary>
+    public string? GetDocumentId(IEventEnvelope envelope) => GetDocumentIdFunc(envelope);
 }
 
 /// <summary>
