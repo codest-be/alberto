@@ -48,9 +48,9 @@ jobs:
       - name: Build libraries
         run: |
           dotnet build src/Alberto.Dcb/Alberto.Dcb.csproj -c Release
-          dotnet build src/Alberto.Dcb.Admin/Alberto.Dcb.Admin.csproj -c Release
           dotnet build src/Alberto.Dcb.EntityFramework/Alberto.Dcb.EntityFramework.csproj -c Release
           dotnet build src/Alberto.Dcb.InMemory/Alberto.Dcb.InMemory.csproj -c Release
+          dotnet build src/Alberto.Dcb.Messaging/Alberto.Dcb.Messaging.csproj -c Release
           dotnet build src/Alberto.Dcb.Postgres/Alberto.Dcb.Postgres.csproj -c Release
           dotnet build src/Alberto.Dcb.Telemetry/Alberto.Dcb.Telemetry.csproj -c Release
 
@@ -60,7 +60,7 @@ jobs:
       - name: Pack
         run: |
           VERSION_SUFFIX="${{ steps.version.outputs.suffix }}"
-          for proj in Alberto.Dcb Alberto.Dcb.Admin Alberto.Dcb.EntityFramework Alberto.Dcb.InMemory Alberto.Dcb.Postgres Alberto.Dcb.Telemetry; do
+          for proj in Alberto.Dcb Alberto.Dcb.EntityFramework Alberto.Dcb.InMemory Alberto.Dcb.Messaging Alberto.Dcb.Postgres Alberto.Dcb.Telemetry; do
             dotnet pack "src/$proj/$proj.csproj" -c Release --no-build --version-suffix "$VERSION_SUFFIX" -o artifacts
           done
 
