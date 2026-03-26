@@ -21,7 +21,7 @@ public sealed class PostgresFixture : IAsyncLifetime
     {
         await _container.StartAsync();
 
-        var migrationResult = PostgresMigrator.Migrate(_container.GetConnectionString(), singleTenant: true);
+        var migrationResult = PostgresMigrator.Migrate(_container.GetConnectionString());
         if (!migrationResult.Successful)
         {
             throw new InvalidOperationException(

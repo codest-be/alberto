@@ -7,7 +7,7 @@ namespace Alberto.Dcb.Tests.Subscriptions;
 /// Integration tests for PostgresStateStore.
 /// Uses Testcontainers for real PostgreSQL testing.
 /// </summary>
-public sealed class PostgresStateStoreTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
+public sealed class PostgresStateStoreTests(SingleTenantPostgresFixture fixture) : IClassFixture<SingleTenantPostgresFixture>
 {
     #region Test State
 
