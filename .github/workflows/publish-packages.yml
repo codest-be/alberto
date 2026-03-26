@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'src/**'
+      - 'tools/**'
       - 'Directory.Build.props'
       - 'Directory.Packages.props'
       - '.github/workflows/publish-packages.yml'
@@ -53,6 +54,7 @@ jobs:
           dotnet build src/Alberto.Dcb.Messaging/Alberto.Dcb.Messaging.csproj -c Release
           dotnet build src/Alberto.Dcb.Postgres/Alberto.Dcb.Postgres.csproj -c Release
           dotnet build src/Alberto.Dcb.Telemetry/Alberto.Dcb.Telemetry.csproj -c Release
+          dotnet build tools/Alberto.Cli/Alberto.Cli.csproj -c Release
 
       - name: Test
         run: dotnet test tests/Alberto.Dcb.Tests/Alberto.Dcb.Tests.csproj -c Release
@@ -63,6 +65,7 @@ jobs:
           for proj in Alberto.Dcb Alberto.Dcb.EntityFramework Alberto.Dcb.InMemory Alberto.Dcb.Messaging Alberto.Dcb.Postgres Alberto.Dcb.Telemetry; do
             dotnet pack "src/$proj/$proj.csproj" -c Release --no-build --version-suffix "$VERSION_SUFFIX" -o artifacts
           done
+          dotnet pack tools/Alberto.Cli/Alberto.Cli.csproj -c Release --no-build --version-suffix "$VERSION_SUFFIX" -o artifacts
 
       - name: Push to GitHub Packages
         run: |
