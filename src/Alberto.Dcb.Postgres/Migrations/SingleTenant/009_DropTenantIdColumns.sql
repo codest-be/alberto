@@ -7,7 +7,7 @@ DROP INDEX IF EXISTS $schema_prefix$ix_events_tenant;
 ALTER TABLE $schema_prefix$events DROP COLUMN IF EXISTS tenant_id;
 
 -- event_type_positions: rebuild primary key without tenant_id
-DO $do$
+DO $$
 BEGIN
     IF EXISTS (
         SELECT 1 FROM information_schema.columns
@@ -19,10 +19,10 @@ BEGIN
         ALTER TABLE $schema_prefix$event_type_positions DROP COLUMN IF EXISTS tenant_id;
         ALTER TABLE $schema_prefix$event_type_positions ADD PRIMARY KEY (event_type, global_position);
     END IF;
-END $do$;
+END $$;
 
 -- event_tag_positions: rebuild primary key without tenant_id
-DO $do$
+DO $$
 BEGIN
     IF EXISTS (
         SELECT 1 FROM information_schema.columns
@@ -34,10 +34,10 @@ BEGIN
         ALTER TABLE $schema_prefix$event_tag_positions DROP COLUMN IF EXISTS tenant_id;
         ALTER TABLE $schema_prefix$event_tag_positions ADD PRIMARY KEY (tag, global_position);
     END IF;
-END $do$;
+END $$;
 
 -- projection_states: rebuild primary key without tenant_id (if upgrading from multi-tenant schema)
-DO $do$
+DO $$
 BEGIN
     IF EXISTS (
         SELECT 1 FROM information_schema.columns
@@ -50,4 +50,4 @@ BEGIN
         ALTER TABLE $schema_prefix$projection_states DROP COLUMN IF EXISTS tenant_id;
         ALTER TABLE $schema_prefix$projection_states ADD PRIMARY KEY (projection_type, document_id, rebuild_version);
     END IF;
-END $do$;
+END $$;
