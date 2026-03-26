@@ -313,7 +313,11 @@ public sealed class ConsumerBuilder
         // Register PollingConsumer
         _moduleBuilder.Services.AddKeyedSingleton<PollingConsumer>(moduleKey, (sp, _) =>
         {
-            var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(moduleKey);
+            // In tenant mode, a singleton ":consumer" backend is registered that skips the per-request
+            // tenant decorator (the consumer streams all events across tenants). Fall back to the
+            // standard key for single-tenant mode where IEventStoreBackend is already a singleton.
+            var backend = sp.GetKeyedService<IEventStoreBackend>(moduleKey + ":consumer")
+                         ?? sp.GetRequiredKeyedService<IEventStoreBackend>(moduleKey);
             var checkpointStore = sp.GetRequiredKeyedService<ICheckpointStore>(moduleKey);
             var deadLetterStore = sp.GetKeyedService<IDeadLetterStore>(moduleKey);
 #pragma warning disable CS0618

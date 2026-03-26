@@ -155,6 +155,7 @@ public static class PostgresBuilderExtensions
         });
 
         // Register IEventStoreBackend (keyed, scoped) as decorator chain: InterceptingBackend(TenantDecorator(TenantBackend))
+        // Used by the API request path — scoped so ITenantAccessor is resolved per request.
         builder.Services.AddKeyedScoped<IEventStoreBackend>(moduleKey, (sp, _) =>
         {
             var rawTenantBackend = sp.GetRequiredKeyedService<PostgresTenantEventStoreBackend>(moduleKey + ":tenant-raw");
@@ -164,5 +165,33 @@ public static class PostgresBuilderExtensions
             var pipeline = sp.GetRequiredKeyedService<IAppendInterceptorPipeline>(moduleKey);
             return new InterceptingEventStoreBackend(decorator, pipeline);
         });
+
+        // Register a singleton backend for the consumer (streams all events, no per-request tenant scoping).
+        // The PollingConsumer is a singleton and cannot consume scoped services, so it uses this key.
+        // The consumer only calls StreamAll and GetLastPosition — the null accessor is never exercised.
+        builder.Services.AddKeyedSingleton<IEventStoreBackend>(moduleKey + ":consumer", (sp, _) =>
+        {
+            var rawTenantBackend = sp.GetRequiredKeyedService<PostgresTenantEventStoreBackend>(moduleKey + ":tenant-raw");
+            var decorator = new TenantEventStoreDecorator(rawTenantBackend, ConsumerTenantAccessor.Instance);
+            var pipeline = sp.GetRequiredKeyedService<IAppendInterceptorPipeline>(moduleKey);
+            return new InterceptingEventStoreBackend(decorator, pipeline);
+        });
     }
+}
+
+/// <summary>
+/// No-op tenant accessor used for the consumer singleton backend.
+/// The PollingConsumer only calls StreamAll/GetLastPosition which do not use tenant context.
+/// </summary>
+file sealed class ConsumerTenantAccessor : Alberto.Dcb.Tenancy.ITenantAccessor
+{
+    public static readonly ConsumerTenantAccessor Instance = new();
+    private ConsumerTenantAccessor() { }
+
+    public string TenantId =>
+        throw new InvalidOperationException("Consumer backend does not support tenant-scoped operations.");
+
+    public string? TenantIdOrDefault => null;
+
+    public bool HasTenant => false;
 }
