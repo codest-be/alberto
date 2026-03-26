@@ -217,9 +217,9 @@ public sealed class PostgresStateStoreTests(PostgresFixture fixture) : IClassFix
     [Fact]
     public async Task ProjectionTypeIsolation_SameDocIdDifferentTypes()
     {
-        var tenantId = Guid.NewGuid().ToString();
-        var orderStore = CreateStore<OrderState>(tenantId, "OrderProjection");
-        var otherStore = CreateStore<DifferentState>(tenantId, "OtherProjection");
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var orderStore = CreateStore<OrderState>("OrderProjection-" + suffix);
+        var otherStore = CreateStore<DifferentState>("OtherProjection-" + suffix);
         var docId = "same-doc-id";
 
         var orderState = new OrderState { OrderId = Guid.NewGuid(), Amount = 100m, Status = "Order" };
@@ -240,14 +240,11 @@ public sealed class PostgresStateStoreTests(PostgresFixture fixture) : IClassFix
 
     #region Helper Methods
 
-    private PostgresStateStore<TState> CreateStore<TState>(
-        string? tenantId = null,
-        string? projectionType = null)
+    private PostgresStateStore<TState> CreateStore<TState>(string? projectionType = null)
     {
         return new PostgresStateStore<TState>(
             fixture.DataSource,
-            tenantId ?? Guid.NewGuid().ToString(),
-            projectionType);
+            projectionType ?? Guid.NewGuid().ToString());
     }
 
     #endregion

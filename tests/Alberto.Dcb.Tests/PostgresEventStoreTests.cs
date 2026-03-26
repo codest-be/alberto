@@ -109,7 +109,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
         var tenantId = Guid.NewGuid().ToString();
         var eventStore = new PostgresEventStore(new PostgresEventStoreBackend(fixture.DataSource));
         var stateStore = new PostgresStateStore<OrderSummary>(
-            fixture.DataSource, tenantId, "OrderSummaryProjection");
+            fixture.DataSource, "OrderSummaryProjection-" + tenantId);
         eventStore.RegisterInlineProjection<OrderSummary, OrderSummaryProjection>(stateStore);
 
         var orderId = Guid.NewGuid();
@@ -133,7 +133,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
         var tenantId = Guid.NewGuid().ToString();
         var eventStore = new PostgresEventStore(new PostgresEventStoreBackend(fixture.DataSource));
         var stateStore = new PostgresStateStore<OrderSummary>(
-            fixture.DataSource, tenantId, "OrderSummaryProjection");
+            fixture.DataSource, "OrderSummaryProjection-" + tenantId);
         eventStore.RegisterInlineProjection<OrderSummary, OrderSummaryProjection>(stateStore);
 
         var orderId = Guid.NewGuid();
@@ -160,7 +160,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
         var tenantId = Guid.NewGuid().ToString();
         var eventStore = new PostgresEventStore(new PostgresEventStoreBackend(fixture.DataSource));
         var stateStore = new PostgresStateStore<OrderSummary>(
-            fixture.DataSource, tenantId, "OrderSummaryProjection");
+            fixture.DataSource, "OrderSummaryProjection-" + tenantId);
         eventStore.RegisterInlineProjection<OrderSummary, OrderSummaryProjection>(stateStore);
 
         var orderId = Guid.NewGuid();
@@ -186,7 +186,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
         var tenantId = Guid.NewGuid().ToString();
         var eventStore = new PostgresEventStore(new PostgresEventStoreBackend(fixture.DataSource));
         var stateStore = new PostgresStateStore<OrderSummary>(
-            fixture.DataSource, tenantId, "OrderSummaryProjection");
+            fixture.DataSource, "OrderSummaryProjection-" + tenantId);
         eventStore.RegisterInlineProjection<OrderSummary, OrderSummaryProjection>(stateStore);
 
         // OrderCancelled is not handled by OrderSummaryProjection
