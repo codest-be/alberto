@@ -117,7 +117,7 @@ public class ProjectorSpecificationTests
     {
         var stateStore = new InMemoryStateStore();
         var processor = new AsyncProjection<OrderSummary, OrderSummaryProjection>(
-            _ => stateStore, "order-summary-v1");
+            () => stateStore, "order-summary-v1");
         return (processor, stateStore);
     }
 
@@ -333,7 +333,7 @@ public class ProjectorSpecificationTests
         // so we use a processor whose store throws only on the first call).
         var callCount = 0;
         var processor = new AsyncProjection<OrderSummary, OrderSummaryProjection>(
-            _ =>
+            () =>
             {
                 callCount++;
                 // First call is from ProcessBatchAsync (will throw), second from per-event flush
