@@ -1,3 +1,4 @@
+using Alberto.Dcb.Postgres;
 using Alberto.Orders.Infrastructure.Data;
 using Alberto.Orders.Migrations;
 using Microsoft.EntityFrameworkCore;
@@ -35,15 +36,22 @@ namespace Alberto.Orders.Migrations
         {
             try
             {
+                var connectionString = serviceProvider.GetRequiredService<IConfiguration>()
+                    .GetConnectionString("alberto")
+                    ?? throw new InvalidOperationException("Connection string 'alberto' not found");
+
+                // Run DCB schema migrations first (single process, no race condition)
+                logger.LogInformation("Starting DCB migrations for Orders module...");
+                var dcbResult = PostgresMigrator.Migrate(connectionString, schema: "orders", singleTenant: false);
+                if (!dcbResult.Successful)
+                    throw new InvalidOperationException($"DCB migration failed: {dcbResult.Error?.Message}", dcbResult.Error);
+                logger.LogInformation("DCB migrations completed ({Count} scripts applied).", dcbResult.ExecutedScripts.Count);
+
+                // Run EF Core migrations
                 logger.LogInformation("Starting EF Core migrations for Orders module...");
 
                 using var scope = serviceProvider.CreateScope();
                 var dbContext = scope.ServiceProvider.GetRequiredService<OrdersDbContext>();
-
-                // Ensure schema exists
-                await dbContext.Database.ExecuteSqlRawAsync(
-                    "CREATE SCHEMA IF NOT EXISTS orders",
-                    stoppingToken);
 
                 // Apply migrations
                 await dbContext.Database.MigrateAsync(stoppingToken);

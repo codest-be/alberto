@@ -15,5 +15,5 @@ CREATE TABLE IF NOT EXISTS $schema_prefix$outbox_entries (
     UNIQUE (source_event_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_$schema_prefix$outbox_pending
+CREATE INDEX IF NOT EXISTS idx_outbox_pending
     ON $schema_prefix$outbox_entries (created_at) WHERE status = 'pending';

@@ -69,20 +69,24 @@ public static class PostgresBuilderExtensions
         if (isTenantMode)
         {
             // Multi-tenant mode: register PostgresTenantEventStoreBackend + TenantEventStoreDecorator
+            // IEventStoreBackend and IEventStore are both scoped (backend captures ITenantAccessor per request)
             RegisterTenantBackend(builder, moduleKey, schema);
+            builder.Services.AddKeyedScoped<IEventStore>(moduleKey, (sp, _) =>
+            {
+                var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(moduleKey);
+                return new PostgresEventStore(backend);
+            });
         }
         else
         {
-            // Single-tenant mode: register PostgresEventStoreBackend directly
+            // Single-tenant mode: register PostgresEventStoreBackend directly (singleton — no per-request state)
             RegisterSingleTenantBackend(builder, moduleKey, schema);
+            builder.Services.AddKeyedSingleton<IEventStore>(moduleKey, (sp, _) =>
+            {
+                var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(moduleKey);
+                return new PostgresEventStore(backend);
+            });
         }
-
-        // Register event store (uses intercepting backend)
-        builder.Services.AddKeyedSingleton<IEventStore>(moduleKey, (sp, _) =>
-        {
-            var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(moduleKey);
-            return new PostgresEventStore(backend);
-        });
 
         // Register checkpoint store with caching layer
         builder.Services.AddKeyedSingleton<ICheckpointStore>(moduleKey, (sp, _) =>

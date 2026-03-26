@@ -35,7 +35,7 @@ public static class OrdersModule
             .WithPostgres(options =>
             {
                 options.ConnectionString = connectionString;
-                options.AutoMigrate = true;
+                options.AutoMigrate = false; // Migrations run in Alberto.Orders.Migrations (Aspire sequencing)
                 options.Schema = "orders";
                 options.MaxPoolSize = 30;
             })

@@ -9,8 +9,8 @@ CREATE TABLE IF NOT EXISTS $schema_prefix$processor_audit_log (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_$schema_prefix$audit_log_created
+CREATE INDEX IF NOT EXISTS idx_audit_log_created
     ON $schema_prefix$processor_audit_log (created_at DESC);
 
-CREATE INDEX IF NOT EXISTS idx_$schema_prefix$audit_log_processor
+CREATE INDEX IF NOT EXISTS idx_audit_log_processor
     ON $schema_prefix$processor_audit_log (processor_id, created_at DESC);
