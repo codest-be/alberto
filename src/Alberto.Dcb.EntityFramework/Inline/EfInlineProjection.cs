@@ -41,7 +41,7 @@ internal sealed class EfInlineProjection<TEntity, TProjection, TDbContext> : IIn
         // Filter to events we handle and group by document ID
         var byDocument = events
             .Where(e => HandledEventTypes.Contains(e.EventType.Id))
-            .GroupBy(e => new { TenantId = e.TenantId ?? string.Empty, DocumentId = _projection.GetDocumentId(e) })
+            .GroupBy(e => _projection.GetDocumentId(e) ?? string.Empty)
             .ToDictionary(g => g.Key, g => g.ToList());
 
         if (byDocument.Count == 0)
@@ -58,14 +58,14 @@ internal sealed class EfInlineProjection<TEntity, TProjection, TDbContext> : IIn
         // Load current state for all affected documents
         var documentKeys = byDocument.Keys.ToList();
         var existingEntities = await context.Set<TEntity>()
-            .Where(e => documentKeys.Any(k => e.TenantId == k.TenantId && e.DocumentId == k.DocumentId))
-            .ToDictionaryAsync(e => new { e.TenantId, e.DocumentId }, ct);
+            .Where(e => documentKeys.Contains(e.DocumentId))
+            .ToDictionaryAsync(e => e.DocumentId, ct);
 
         // Process events for each document
         foreach (var (key, docEvents) in byDocument)
         {
             existingEntities.TryGetValue(key, out var entity);
-            entity ??= new TEntity { TenantId = key.TenantId, DocumentId = key.DocumentId };
+            entity ??= new TEntity { DocumentId = key };
 
             // Fold all events for this document
             ProjectionResult<TEntity> result = ProjectionResults.Unchanged<TEntity>();
@@ -85,8 +85,7 @@ internal sealed class EfInlineProjection<TEntity, TProjection, TDbContext> : IIn
             {
                 case ProjectionResult<TEntity>.Set s:
                     var finalEntity = s.State;
-                    finalEntity.TenantId = key.TenantId;
-                    finalEntity.DocumentId = key.DocumentId;
+                    finalEntity.DocumentId = key;
                     finalEntity.UpdatedAt = DateTimeOffset.UtcNow;
 
                     if (existingEntities.ContainsKey(key))

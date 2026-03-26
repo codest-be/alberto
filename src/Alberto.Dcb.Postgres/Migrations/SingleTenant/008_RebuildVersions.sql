@@ -23,7 +23,7 @@ DROP CONSTRAINT IF EXISTS projection_states_pkey;
 
 -- Create new primary key including rebuild_version
 ALTER TABLE $schema_prefix$projection_states
-ADD PRIMARY KEY (tenant_id, projection_type, document_id, rebuild_version);
+ADD PRIMARY KEY (projection_type, document_id, rebuild_version);
 
 -- Create index for efficient version-aware queries
 CREATE INDEX IF NOT EXISTS idx_projection_states_version

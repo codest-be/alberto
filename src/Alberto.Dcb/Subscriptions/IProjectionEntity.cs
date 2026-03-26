@@ -2,19 +2,13 @@ namespace Alberto.Dcb.Subscriptions;
 
 /// <summary>
 /// Base interface for projection entities.
-/// Provides the required columns for tenant isolation, document identification,
+/// Provides the required columns for document identification,
 /// idempotency tracking, and optimistic concurrency.
 /// </summary>
 public interface IProjectionEntity
 {
     /// <summary>
-    /// The tenant ID for multi-tenant isolation.
-    /// Part of the composite primary key.
-    /// </summary>
-    string TenantId { get; set; }
-
-    /// <summary>
-    /// The document ID that uniquely identifies this entity within a tenant.
+    /// The document ID that uniquely identifies this entity.
     /// Part of the composite primary key.
     /// </summary>
     string DocumentId { get; set; }

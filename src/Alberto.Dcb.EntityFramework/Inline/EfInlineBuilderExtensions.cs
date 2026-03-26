@@ -123,7 +123,7 @@ internal sealed class EfInlineStateStoreAdapter<TEntity, TDbContext>(IDbContextF
 
             var existing = await context.Set<TEntity>()
                 .AsNoTracking()
-                .FirstOrDefaultAsync(e => e.TenantId == entity.TenantId && e.DocumentId == docId, ct);
+                .FirstOrDefaultAsync(e => e.DocumentId == docId, ct);
 
             if (existing != null)
             {

@@ -193,16 +193,15 @@ public sealed class ConsumerBuilder
     }
 
     /// <summary>
-    /// Registers an async projection processor with a tenant-aware state store factory.
-    /// The factory is called with the tenant ID from each event being processed.
+    /// Registers an async projection processor with a state store factory.
     /// </summary>
     /// <typeparam name="TState">The state type.</typeparam>
     /// <typeparam name="TProjection">The projection type.</typeparam>
-    /// <param name="stateStoreFactory">Factory to create a state store for a given tenant ID.</param>
+    /// <param name="stateStoreFactory">Factory to create a state store.</param>
     /// <param name="processorId">Optional processor ID. Defaults to projection type name.</param>
     [Obsolete("Use DeclareProjection.For<TState>() instead. This type will be removed in a future version.")]
     public ConsumerBuilder AddProjection<TState, TProjection>(
-        Func<string, IStateStore<TState>> stateStoreFactory,
+        Func<IStateStore<TState>> stateStoreFactory,
         string? processorId = null)
         where TProjection : Projection<TState>, new()
         where TState : new()
@@ -216,16 +215,16 @@ public sealed class ConsumerBuilder
     }
 
     /// <summary>
-    /// Registers an async projection processor with a tenant-aware state store factory.
+    /// Registers an async projection processor with a state store factory.
     /// Use this overload when the factory needs access to the service provider.
     /// </summary>
     /// <typeparam name="TState">The state type.</typeparam>
     /// <typeparam name="TProjection">The projection type.</typeparam>
-    /// <param name="stateStoreFactory">Factory to create a state store for a given tenant ID, with access to services.</param>
+    /// <param name="stateStoreFactory">Factory to create a state store, with access to services.</param>
     /// <param name="processorId">Optional processor ID. Defaults to projection type name.</param>
     [Obsolete("Use DeclareProjection.For<TState>() instead. This type will be removed in a future version.")]
     public ConsumerBuilder AddProjection<TState, TProjection>(
-        Func<IServiceProvider, Func<string, IStateStore<TState>>> stateStoreFactory,
+        Func<IServiceProvider, Func<IStateStore<TState>>> stateStoreFactory,
         string? processorId = null)
         where TProjection : Projection<TState>, new()
         where TState : new()
@@ -251,11 +250,11 @@ public sealed class ConsumerBuilder
     /// <see cref="DeclareProjection.For{TState}"/>.
     /// </param>
     /// <param name="stateStoreFactory">
-    /// A delegate that, given the service provider, returns a per-tenant state store factory.
+    /// A delegate that, given the service provider, returns a state store factory.
     /// </param>
     public ConsumerBuilder AddProjection<TState>(
         ProjectionDeclaration<TState> declaration,
-        Func<IServiceProvider, Func<string, IStateStore<TState>>> stateStoreFactory)
+        Func<IServiceProvider, Func<IStateStore<TState>>> stateStoreFactory)
         where TState : new()
     {
         ArgumentNullException.ThrowIfNull(declaration);
@@ -298,7 +297,7 @@ public sealed class ConsumerBuilder
         var maxTenantsPerReplica = _maxTenantsPerReplica;
         var onProjected = _onProjected;
         var onRebuildComplete = _onRebuildComplete;
-        var middlewares = _middlewares.Count > 0 ? _middlewares.ToList() : null;
+        var builderMiddlewares = _middlewares.ToList();
         var tenantRing = _tenantRing;
 
 #pragma warning disable CS0618
@@ -338,6 +337,23 @@ public sealed class ConsumerBuilder
                 processorLock = sp.GetKeyedService<IProcessorLock>(moduleKey);
             }
 
+            // Merge builder-configured middlewares with any keyed ConsumeMiddleware DI services.
+            // Keyed services are placed outermost (first), builder middlewares innermost.
+            // If only keyed services are added, RetryAndDeadLetter is included as the default inner layer.
+            var keyedMiddlewares = sp.GetKeyedServices<ConsumeMiddleware>(moduleKey).ToList();
+            IReadOnlyList<ConsumeMiddleware>? effectiveMiddlewares;
+            if (keyedMiddlewares.Count > 0)
+            {
+                var innerMiddlewares = builderMiddlewares.Count > 0
+                    ? (IReadOnlyList<ConsumeMiddleware>)builderMiddlewares
+                    : [ConsumeMiddlewares.RetryAndDeadLetter(errorPolicy, deadLetterStore)];
+                effectiveMiddlewares = [.. keyedMiddlewares, .. innerMiddlewares];
+            }
+            else
+            {
+                effectiveMiddlewares = builderMiddlewares.Count > 0 ? builderMiddlewares : null;
+            }
+
             var consumer = new PollingConsumer(
                 backend,
                 checkpointStore,
@@ -357,7 +373,7 @@ public sealed class ConsumerBuilder
                 maxParallelProjections,
                 maxTenantsPerReplica,
                 logger,
-                middlewares);
+                effectiveMiddlewares);
 
             // Register all processors
             var processors = sp.GetKeyedServices<IEventProcessor>(moduleKey);

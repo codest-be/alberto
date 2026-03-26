@@ -36,16 +36,15 @@ public static class EventConsumerExtensions
     /// <summary>
     /// Register a projection to run asynchronously via this consumer.
     /// Uses the same projection definition as inline projections.
-    /// The state store factory is called with the tenant ID from each event.
     /// </summary>
     /// <typeparam name="TState">The projection state type.</typeparam>
     /// <typeparam name="TProjection">The projection implementation type.</typeparam>
     /// <param name="consumer">The consumer to register with.</param>
-    /// <param name="stateStoreFactory">Factory to create a state store for a given tenant ID.</param>
+    /// <param name="stateStoreFactory">Factory to create a state store.</param>
     /// <param name="processorId">Optional processor ID. Defaults to projection type name.</param>
     public static void RegisterProjection<TState, TProjection>(
         this IEventConsumer consumer,
-        Func<string, IStateStore<TState>> stateStoreFactory,
+        Func<IStateStore<TState>> stateStoreFactory,
         string? processorId = null)
         where TProjection : Projection<TState>, new()
         where TState : new()
