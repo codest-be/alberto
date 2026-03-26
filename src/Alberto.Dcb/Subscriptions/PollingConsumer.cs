@@ -938,9 +938,25 @@ public sealed class PollingConsumer : IEventConsumer
                     if (events.Count > 0)
                         await SaveTenantCheckpointAsync(processor.ProcessorId, events[^1].GlobalPosition, ct);
 
-                    // Fire OnProjected for each event in the batch
+                    // Invoke per-event middlewares and OnProjected for each event in the batch.
+                    // The terminal action is a no-op since the event was already processed via ProcessBatchAsync.
                     foreach (var evt in events)
+                    {
+                        if (_middlewares.Count > 0)
+                        {
+                            var eventContext = new ConsumeEventContext
+                            {
+                                ProcessorId = processor.ProcessorId,
+                                ModuleKey = _moduleKey,
+                                Envelope = evt,
+                                IsRebuild = processor.IsRebuilding,
+                                CancellationToken = ct
+                            };
+                            await MiddlewareRunner.RunAsync(eventContext, _middlewares, () => Task.CompletedTask);
+                        }
+
                         OnProjected?.Invoke(processor.ProcessorId, evt);
+                    }
 
                     return;
                 }
