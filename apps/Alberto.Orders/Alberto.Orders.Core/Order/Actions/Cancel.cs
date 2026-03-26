@@ -1,3 +1,5 @@
+using Alberto.Dcb;
+
 namespace Alberto.Orders.Core.Order.Actions;
 
 public interface ICancelOrderState
@@ -13,18 +15,18 @@ public sealed partial class OrderDecider
     /// <summary>
     /// Cancels the order.
     /// </summary>
-    public static DecisionResult Cancel(ICancelOrderState state, string reason, DateTimeOffset cancelledAt)
+    public static DecisionResult<IEvent> Cancel(ICancelOrderState state, string reason, DateTimeOffset cancelledAt)
     {
         if (!state.Exists)
-            return DecisionResult.Fail("Order does not exist");
+            return DecisionResult<IEvent>.Failure("Order does not exist");
 
         if (!state.CanBeCancelled)
-            return DecisionResult.Fail($"Order cannot be cancelled in {state.Status} status");
+            return DecisionResult<IEvent>.Failure($"Order cannot be cancelled in {state.Status} status");
 
         if (string.IsNullOrWhiteSpace(reason))
-            return DecisionResult.Fail("Cancellation reason is required");
+            return DecisionResult<IEvent>.Failure("Cancellation reason is required");
 
-        return DecisionResult.Ok(new OrderCancelled(state.OrderId, reason, cancelledAt));
+        return DecisionResult<IEvent>.Success(new OrderCancelled(state.OrderId, reason, cancelledAt));
     }
 
     public OrderState Apply(OrderState state, OrderCancelled e) => state with

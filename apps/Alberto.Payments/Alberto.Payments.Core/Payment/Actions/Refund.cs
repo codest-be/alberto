@@ -1,3 +1,4 @@
+using Alberto.Dcb;
 using Alberto.Payments.Core.Events;
 
 namespace Alberto.Payments.Core.Payment.Actions;
@@ -16,23 +17,23 @@ public sealed partial class PaymentDecider
     /// <summary>
     /// Refunds a payment.
     /// </summary>
-    public static PaymentDecisionResult Refund(
+    public static DecisionResult<IEvent> Refund(
         IRefundPaymentState state,
         decimal refundedAmount,
         string reason,
         DateTimeOffset refundedAt)
     {
         if (!state.Exists)
-            return PaymentDecisionResult.Fail("Payment does not exist");
+            return DecisionResult<IEvent>.Failure("Payment does not exist");
 
         if (!state.CanBeRefunded)
-            return PaymentDecisionResult.Fail($"Payment cannot be refunded in {state.Status} status");
+            return DecisionResult<IEvent>.Failure($"Payment cannot be refunded in {state.Status} status");
 
         var maxRefundable = state.CapturedAmount ?? 0;
         if (refundedAmount <= 0 || refundedAmount > maxRefundable)
-            return PaymentDecisionResult.Fail($"Refund amount must be between 0 and {maxRefundable}");
+            return DecisionResult<IEvent>.Failure($"Refund amount must be between 0 and {maxRefundable}");
 
-        return PaymentDecisionResult.Ok(new PaymentRefunded(state.PaymentId, refundedAmount, reason ?? "", refundedAt));
+        return DecisionResult<IEvent>.Success(new PaymentRefunded(state.PaymentId, refundedAmount, reason ?? "", refundedAt));
     }
 
     public PaymentState Apply(PaymentState state, PaymentRefunded e) => state with

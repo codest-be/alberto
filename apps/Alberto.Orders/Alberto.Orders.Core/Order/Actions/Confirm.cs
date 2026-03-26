@@ -1,3 +1,5 @@
+using Alberto.Dcb;
+
 namespace Alberto.Orders.Core.Order.Actions;
 
 public interface IConfirmOrderState
@@ -14,17 +16,17 @@ public sealed partial class OrderDecider
     /// <summary>
     /// Confirms the order for processing.
     /// </summary>
-    public static DecisionResult Confirm(IConfirmOrderState state, DateTimeOffset confirmedAt)
+    public static DecisionResult<IEvent> Confirm(IConfirmOrderState state, DateTimeOffset confirmedAt)
     {
         if (!state.Exists)
-            return DecisionResult.Fail("Order does not exist");
+            return DecisionResult<IEvent>.Failure("Order does not exist");
 
         if (!state.CanBeConfirmed)
-            return DecisionResult.Fail(state.LineItems.Count == 0
+            return DecisionResult<IEvent>.Failure(state.LineItems.Count == 0
                 ? "Cannot confirm an empty order"
                 : $"Order cannot be confirmed in {state.Status} status");
 
-        return DecisionResult.Ok(new OrderConfirmed(state.OrderId, confirmedAt));
+        return DecisionResult<IEvent>.Success(new OrderConfirmed(state.OrderId, confirmedAt));
     }
 
     public OrderState Apply(OrderState state, OrderConfirmed e) => state with

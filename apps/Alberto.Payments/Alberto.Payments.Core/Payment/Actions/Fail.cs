@@ -1,3 +1,4 @@
+using Alberto.Dcb;
 using Alberto.Payments.Core.Events;
 
 namespace Alberto.Payments.Core.Payment.Actions;
@@ -15,21 +16,21 @@ public sealed partial class PaymentDecider
     /// <summary>
     /// Marks a payment as failed.
     /// </summary>
-    public static PaymentDecisionResult Fail(
+    public static DecisionResult<IEvent> Fail(
         IFailPaymentState state,
         string errorCode,
         string errorMessage)
     {
         if (!state.Exists)
-            return PaymentDecisionResult.Fail("Payment does not exist");
+            return DecisionResult<IEvent>.Failure("Payment does not exist");
 
         if (!state.CanBeFailed)
-            return PaymentDecisionResult.Fail($"Payment cannot be marked as failed in {state.Status} status");
+            return DecisionResult<IEvent>.Failure($"Payment cannot be marked as failed in {state.Status} status");
 
         if (string.IsNullOrWhiteSpace(errorCode))
-            return PaymentDecisionResult.Fail("Error code is required");
+            return DecisionResult<IEvent>.Failure("Error code is required");
 
-        return PaymentDecisionResult.Ok(new PaymentFailed(state.PaymentId, errorCode, errorMessage ?? ""));
+        return DecisionResult<IEvent>.Success(new PaymentFailed(state.PaymentId, errorCode, errorMessage ?? ""));
     }
 
     public PaymentState Apply(PaymentState state, PaymentFailed e) => state with

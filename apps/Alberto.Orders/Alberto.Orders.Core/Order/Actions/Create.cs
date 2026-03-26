@@ -1,3 +1,5 @@
+using Alberto.Dcb;
+
 namespace Alberto.Orders.Core.Order.Actions;
 
 public interface ICreateOrderState
@@ -10,7 +12,7 @@ public sealed partial class OrderDecider
     /// <summary>
     /// Creates a new order.
     /// </summary>
-    public static DecisionResult Create(
+    public static DecisionResult<IEvent> Create(
         ICreateOrderState state,
         Guid orderId,
         Guid customerId,
@@ -18,12 +20,12 @@ public sealed partial class OrderDecider
         string? notes = null)
     {
         if (state.Exists)
-            return DecisionResult.Fail($"Order {orderId} already exists");
+            return DecisionResult<IEvent>.Failure($"Order {orderId} already exists");
 
         if (customerId == Guid.Empty)
-            return DecisionResult.Fail("Customer ID is required");
+            return DecisionResult<IEvent>.Failure("Customer ID is required");
 
-        return DecisionResult.Ok(new OrderCreated(orderId, customerId, lineItems, notes));
+        return DecisionResult<IEvent>.Success(new OrderCreated(orderId, customerId, lineItems, notes));
     }
 
     public OrderState Apply(OrderState state, OrderCreated e) => state with

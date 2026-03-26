@@ -1,3 +1,5 @@
+using Alberto.Dcb;
+
 namespace Alberto.Orders.Core.Order.Actions;
 
 public interface IShipOrderState
@@ -13,25 +15,25 @@ public sealed partial class OrderDecider
     /// <summary>
     /// Ships the order.
     /// </summary>
-    public static DecisionResult Ship(
+    public static DecisionResult<IEvent> Ship(
         IShipOrderState state,
         string trackingNumber,
         string carrier,
         DateTimeOffset shippedAt)
     {
         if (!state.Exists)
-            return DecisionResult.Fail("Order does not exist");
+            return DecisionResult<IEvent>.Failure("Order does not exist");
 
         if (!state.CanBeShipped)
-            return DecisionResult.Fail($"Order cannot be shipped in {state.Status} status");
+            return DecisionResult<IEvent>.Failure($"Order cannot be shipped in {state.Status} status");
 
         if (string.IsNullOrWhiteSpace(trackingNumber))
-            return DecisionResult.Fail("Tracking number is required");
+            return DecisionResult<IEvent>.Failure("Tracking number is required");
 
         if (string.IsNullOrWhiteSpace(carrier))
-            return DecisionResult.Fail("Carrier is required");
+            return DecisionResult<IEvent>.Failure("Carrier is required");
 
-        return DecisionResult.Ok(new OrderShipped(state.OrderId, trackingNumber, carrier, shippedAt));
+        return DecisionResult<IEvent>.Success(new OrderShipped(state.OrderId, trackingNumber, carrier, shippedAt));
     }
 
     public OrderState Apply(OrderState state, OrderShipped e) => state with

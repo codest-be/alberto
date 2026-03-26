@@ -1,3 +1,5 @@
+using Alberto.Dcb;
+
 namespace Alberto.Orders.Core.Order.Actions;
 
 public interface IAddItemState
@@ -14,7 +16,7 @@ public sealed partial class OrderDecider
     /// <summary>
     /// Adds an item to the order.
     /// </summary>
-    public static DecisionResult AddItem(
+    public static DecisionResult<IEvent> AddItem(
         IAddItemState state,
         Guid productId,
         string productName,
@@ -22,18 +24,18 @@ public sealed partial class OrderDecider
         decimal unitPrice)
     {
         if (!state.Exists)
-            return DecisionResult.Fail("Order does not exist");
+            return DecisionResult<IEvent>.Failure("Order does not exist");
 
         if (!state.CanBeModified)
-            return DecisionResult.Fail($"Order cannot be modified in {state.Status} status");
+            return DecisionResult<IEvent>.Failure($"Order cannot be modified in {state.Status} status");
 
         if (quantity <= 0)
-            return DecisionResult.Fail("Quantity must be greater than zero");
+            return DecisionResult<IEvent>.Failure("Quantity must be greater than zero");
 
         if (unitPrice < 0)
-            return DecisionResult.Fail("Unit price cannot be negative");
+            return DecisionResult<IEvent>.Failure("Unit price cannot be negative");
 
-        return DecisionResult.Ok(new OrderItemAdded(state.OrderId, productId, productName, quantity, unitPrice));
+        return DecisionResult<IEvent>.Success(new OrderItemAdded(state.OrderId, productId, productName, quantity, unitPrice));
     }
 
     public OrderState Apply(OrderState state, OrderItemAdded e) => state with

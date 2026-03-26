@@ -1,3 +1,4 @@
+using Alberto.Dcb;
 using Alberto.Payments.Core.Events;
 
 namespace Alberto.Payments.Core.Payment.Actions;
@@ -16,22 +17,22 @@ public sealed partial class PaymentDecider
     /// <summary>
     /// Captures a payment.
     /// </summary>
-    public static PaymentDecisionResult Capture(
+    public static DecisionResult<IEvent> Capture(
         ICapturePaymentState state,
         decimal? capturedAmount,
         DateTimeOffset capturedAt)
     {
         if (!state.Exists)
-            return PaymentDecisionResult.Fail("Payment does not exist");
+            return DecisionResult<IEvent>.Failure("Payment does not exist");
 
         if (!state.CanBeCaptured)
-            return PaymentDecisionResult.Fail($"Payment cannot be captured in {state.Status} status");
+            return DecisionResult<IEvent>.Failure($"Payment cannot be captured in {state.Status} status");
 
         var amountToCapture = capturedAmount ?? state.Amount;
         if (amountToCapture <= 0 || amountToCapture > state.Amount)
-            return PaymentDecisionResult.Fail($"Captured amount must be between 0 and {state.Amount}");
+            return DecisionResult<IEvent>.Failure($"Captured amount must be between 0 and {state.Amount}");
 
-        return PaymentDecisionResult.Ok(new PaymentCaptured(state.PaymentId, amountToCapture, capturedAt));
+        return DecisionResult<IEvent>.Success(new PaymentCaptured(state.PaymentId, amountToCapture, capturedAt));
     }
 
     public PaymentState Apply(PaymentState state, PaymentCaptured e) => state with

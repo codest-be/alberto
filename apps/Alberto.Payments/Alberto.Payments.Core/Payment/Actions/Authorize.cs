@@ -1,3 +1,4 @@
+using Alberto.Dcb;
 using Alberto.Payments.Core.Events;
 
 namespace Alberto.Payments.Core.Payment.Actions;
@@ -15,21 +16,21 @@ public sealed partial class PaymentDecider
     /// <summary>
     /// Authorizes a payment.
     /// </summary>
-    public static PaymentDecisionResult Authorize(
+    public static DecisionResult<IEvent> Authorize(
         IAuthorizePaymentState state,
         string authorizationCode,
         DateTimeOffset authorizedAt)
     {
         if (!state.Exists)
-            return PaymentDecisionResult.Fail("Payment does not exist");
+            return DecisionResult<IEvent>.Failure("Payment does not exist");
 
         if (!state.CanBeAuthorized)
-            return PaymentDecisionResult.Fail($"Payment cannot be authorized in {state.Status} status");
+            return DecisionResult<IEvent>.Failure($"Payment cannot be authorized in {state.Status} status");
 
         if (string.IsNullOrWhiteSpace(authorizationCode))
-            return PaymentDecisionResult.Fail("Authorization code is required");
+            return DecisionResult<IEvent>.Failure("Authorization code is required");
 
-        return PaymentDecisionResult.Ok(new PaymentAuthorized(state.PaymentId, authorizationCode, authorizedAt));
+        return DecisionResult<IEvent>.Success(new PaymentAuthorized(state.PaymentId, authorizationCode, authorizedAt));
     }
 
     public PaymentState Apply(PaymentState state, PaymentAuthorized e) => state with

@@ -3,13 +3,13 @@ namespace Alberto.Payments.Infrastructure.ReadModels;
 /// <summary>
 /// Overview/aggregate read model for payments.
 /// </summary>
-public sealed class PaymentsOverview
+public sealed record PaymentsOverview
 {
-    public int TotalPayments { get; set; }
-    public int AuthorizedPayments { get; set; }
-    public int CapturedPayments { get; set; }
-    public int FailedPayments { get; set; }
-    public int RefundedPayments { get; set; }
-    public decimal TotalCapturedAmount { get; set; }
-    public decimal TotalRefundedAmount { get; set; }
+    public int TotalPayments { get; init; }
+    public int AuthorizedPayments { get; init; }
+    public int CapturedPayments { get; init; }
+    public int FailedPayments { get; init; }
+    public int RefundedPayments { get; init; }
+    public decimal TotalCapturedAmount { get; init; }
+    public decimal TotalRefundedAmount { get; init; }
 }

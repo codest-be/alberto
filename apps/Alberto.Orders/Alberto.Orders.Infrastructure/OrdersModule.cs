@@ -55,7 +55,7 @@ public static class OrdersModule
                     .RetryDelay(TimeSpan.FromSeconds(1))
                     .DeadLetterOnMaxRetries(true))
                 // JSONB projection for overview (aggregate stats)
-                .AddProjection<OrdersOverview, OrdersOverviewProjection>(sp =>
+                .AddProjection(OrdersOverviewProjection.Declaration, sp =>
                 {
                     var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
                     return tenantId => new PostgresStateStore<OrdersOverview>(
@@ -65,7 +65,7 @@ public static class OrdersModule
                         "orders");
                 })
                 // EF projection for order summaries (enables filtering/querying)
-                .AddEfProjection<OrderSummaryEntity, OrderSummaryEfProjection, OrdersDbContext>()));
+                .AddEfProjection<OrderSummaryEntity, OrdersDbContext>(OrderSummaryEfProjection.Declaration)));
 
         // Note: Query-side state stores are created dynamically per-tenant in GraphQL queries.
         // The projection state stores above use the tenant from the event envelope during writes.

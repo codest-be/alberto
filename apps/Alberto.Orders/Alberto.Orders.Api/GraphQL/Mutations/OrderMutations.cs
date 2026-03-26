@@ -18,6 +18,8 @@ namespace Alberto.Orders.Api.GraphQL.Mutations;
 /// </summary>
 public static class OrderMutations
 {
+    private static readonly OrderEvolver _evolver = new();
+
     /// <summary>
     /// Creates a new order.
     /// </summary>
@@ -37,21 +39,9 @@ public static class OrderMutations
             .ToList();
 
         var state = new OrderState();
-        var decision = OrderActions.Create(state, orderId, input.CustomerId, lineItems, input.Notes);
+        var result = OrderActions.Create(state, orderId, input.CustomerId, lineItems, input.Notes);
 
-        decision.EnsureSuccess();
-
-        var events = new[]
-        {
-            new EventToPersist
-            {
-                EventType = EventType.FromType(decision.Event!.GetType()),
-                Tags = [new EventTag(Tags.Order, orderId.ToString())],
-                EventData = JsonSerializer.Serialize(decision.Event, decision.Event.GetType())
-            }
-        };
-
-        await eventStore.AppendAsync(events, OrderBoundary.BoundaryFor(orderId), cancellationToken: ct);
+        await AppendEvents(eventStore, orderId, result.EnsureSuccess(), ct);
 
         return new CreateOrderResult(orderId);
     }
@@ -71,11 +61,9 @@ public static class OrderMutations
         var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(OrdersModule.ModuleKey);
 
         var state = await LoadOrderState(backend, input.OrderId, ct);
-        var decision = OrderActions.AddItem(state, input.ProductId, input.ProductName, input.Quantity, input.UnitPrice);
+        var result = OrderActions.AddItem(state, input.ProductId, input.ProductName, input.Quantity, input.UnitPrice);
 
-        decision.EnsureSuccess();
-
-        await AppendEvent(eventStore, input.OrderId, state.OrderId != Guid.Empty ? state : null, decision.Event!, ct);
+        await AppendEvents(eventStore, input.OrderId, result.EnsureSuccess(), ct);
 
         return new MutationResult();
     }
@@ -96,11 +84,9 @@ public static class OrderMutations
         var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(OrdersModule.ModuleKey);
 
         var state = await LoadOrderState(backend, orderId, ct);
-        var decision = OrderActions.RemoveItem(state, productId);
+        var result = OrderActions.RemoveItem(state, productId);
 
-        decision.EnsureSuccess();
-
-        await AppendEvent(eventStore, orderId, state, decision.Event!, ct);
+        await AppendEvents(eventStore, orderId, result.EnsureSuccess(), ct);
 
         return new MutationResult();
     }
@@ -121,11 +107,9 @@ public static class OrderMutations
         var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(OrdersModule.ModuleKey);
 
         var state = await LoadOrderState(backend, orderId, ct);
-        var decision = OrderActions.Confirm(state, timeProvider.GetUtcNow());
+        var result = OrderActions.Confirm(state, timeProvider.GetUtcNow());
 
-        decision.EnsureSuccess();
-
-        await AppendEvent(eventStore, orderId, state, decision.Event!, ct);
+        await AppendEvents(eventStore, orderId, result.EnsureSuccess(), ct);
 
         return new MutationResult();
     }
@@ -146,11 +130,9 @@ public static class OrderMutations
         var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(OrdersModule.ModuleKey);
 
         var state = await LoadOrderState(backend, input.OrderId, ct);
-        var decision = OrderActions.Ship(state, input.TrackingNumber, input.Carrier, timeProvider.GetUtcNow());
+        var result = OrderActions.Ship(state, input.TrackingNumber, input.Carrier, timeProvider.GetUtcNow());
 
-        decision.EnsureSuccess();
-
-        await AppendEvent(eventStore, input.OrderId, state, decision.Event!, ct);
+        await AppendEvents(eventStore, input.OrderId, result.EnsureSuccess(), ct);
 
         return new MutationResult();
     }
@@ -171,11 +153,9 @@ public static class OrderMutations
         var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(OrdersModule.ModuleKey);
 
         var state = await LoadOrderState(backend, orderId, ct);
-        var decision = OrderActions.Deliver(state, timeProvider.GetUtcNow());
+        var result = OrderActions.Deliver(state, timeProvider.GetUtcNow());
 
-        decision.EnsureSuccess();
-
-        await AppendEvent(eventStore, orderId, state, decision.Event!, ct);
+        await AppendEvents(eventStore, orderId, result.EnsureSuccess(), ct);
 
         return new MutationResult();
     }
@@ -196,11 +176,9 @@ public static class OrderMutations
         var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(OrdersModule.ModuleKey);
 
         var state = await LoadOrderState(backend, input.OrderId, ct);
-        var decision = OrderActions.Cancel(state, input.Reason, timeProvider.GetUtcNow());
+        var result = OrderActions.Cancel(state, input.Reason, timeProvider.GetUtcNow());
 
-        decision.EnsureSuccess();
-
-        await AppendEvent(eventStore, input.OrderId, state, decision.Event!, ct);
+        await AppendEvents(eventStore, input.OrderId, result.EnsureSuccess(), ct);
 
         return new MutationResult();
     }
@@ -212,62 +190,24 @@ public static class OrderMutations
         Guid orderId,
         CancellationToken ct)
     {
-        var decider = new OrderActions();
-        var state = new OrderState();
-
         var events = await backend.Stream(OrderBoundary.BoundaryFor(orderId), cancellationToken: ct);
-
-        foreach (var envelope in events)
-        {
-            var eventType = envelope.EventType.Id;
-            object? domainEvent = eventType switch
-            {
-                "order-created" => JsonSerializer.Deserialize<OrderCreated>(envelope.EventData),
-                "order-item-added" => JsonSerializer.Deserialize<OrderItemAdded>(envelope.EventData),
-                "order-item-removed" => JsonSerializer.Deserialize<OrderItemRemoved>(envelope.EventData),
-                "order-confirmed" => JsonSerializer.Deserialize<OrderConfirmed>(envelope.EventData),
-                "order-shipped" => JsonSerializer.Deserialize<OrderShipped>(envelope.EventData),
-                "order-delivered" => JsonSerializer.Deserialize<OrderDelivered>(envelope.EventData),
-                "order-cancelled" => JsonSerializer.Deserialize<OrderCancelled>(envelope.EventData),
-                _ => null
-            };
-
-            if (domainEvent is null) continue;
-
-            state = domainEvent switch
-            {
-                OrderCreated e => decider.Apply(state, e),
-                OrderItemAdded e => decider.Apply(state, e),
-                OrderItemRemoved e => decider.Apply(state, e),
-                OrderConfirmed e => decider.Apply(state, e),
-                OrderShipped e => decider.Apply(state, e),
-                OrderDelivered e => decider.Apply(state, e),
-                OrderCancelled e => decider.Apply(state, e),
-                _ => state
-            };
-        }
-
-        return state;
+        return _evolver.Reconstitute(events);
     }
 
-    private static async Task AppendEvent(
+    private static async Task AppendEvents(
         IEventStore eventStore,
         Guid orderId,
-        OrderState? existingState,
-        IEvent @event,
+        IReadOnlyList<IEvent> events,
         CancellationToken ct)
     {
-        var events = new[]
+        var toPersist = events.Select(@event => new EventToPersist
         {
-            new EventToPersist
-            {
-                EventType = EventType.FromType(@event.GetType()),
-                Tags = [new EventTag(Tags.Order, orderId.ToString())],
-                EventData = JsonSerializer.Serialize(@event, @event.GetType())
-            }
-        };
+            EventType = EventType.FromType(@event.GetType()),
+            Tags = [new EventTag(Tags.Order, orderId.ToString())],
+            EventData = JsonSerializer.Serialize(@event, @event.GetType())
+        }).ToArray();
 
-        await eventStore.AppendAsync(events, OrderBoundary.BoundaryFor(orderId), cancellationToken: ct);
+        await eventStore.AppendAsync(toPersist, OrderBoundary.BoundaryFor(orderId), cancellationToken: ct);
     }
 
     #endregion

@@ -1,3 +1,5 @@
+using Alberto.Dcb;
+
 namespace Alberto.Orders.Core.Order.Actions;
 
 public interface IRemoveItemState
@@ -14,18 +16,18 @@ public sealed partial class OrderDecider
     /// <summary>
     /// Removes an item from the order.
     /// </summary>
-    public static DecisionResult RemoveItem(IRemoveItemState state, Guid productId)
+    public static DecisionResult<IEvent> RemoveItem(IRemoveItemState state, Guid productId)
     {
         if (!state.Exists)
-            return DecisionResult.Fail("Order does not exist");
+            return DecisionResult<IEvent>.Failure("Order does not exist");
 
         if (!state.CanBeModified)
-            return DecisionResult.Fail($"Order cannot be modified in {state.Status} status");
+            return DecisionResult<IEvent>.Failure($"Order cannot be modified in {state.Status} status");
 
         if (state.LineItems.All(x => x.ProductId != productId))
-            return DecisionResult.Fail($"Product {productId} not found in order");
+            return DecisionResult<IEvent>.Failure($"Product {productId} not found in order");
 
-        return DecisionResult.Ok(new OrderItemRemoved(state.OrderId, productId));
+        return DecisionResult<IEvent>.Success(new OrderItemRemoved(state.OrderId, productId));
     }
 
     public OrderState Apply(OrderState state, OrderItemRemoved e) => state with

@@ -2,7 +2,6 @@ using System.Text.Json;
 using Alberto.Dcb;
 using Alberto.Orders.Api.GraphQL.Types;
 using Alberto.Payments.Core;
-using Alberto.Payments.Core.Events;
 using Alberto.Payments.Core.Payment;
 using Alberto.Payments.Core.Payment.Actions;
 using Alberto.Payments.Infrastructure;
@@ -19,6 +18,8 @@ namespace Alberto.Orders.Api.GraphQL.Mutations;
 /// </summary>
 public static class PaymentMutations
 {
+    private static readonly PaymentEvolver _evolver = new();
+
     /// <summary>
     /// Initiates a new payment for an order.
     /// </summary>
@@ -34,24 +35,9 @@ public static class PaymentMutations
         var paymentId = Guid.CreateVersion7();
 
         var state = new PaymentState();
-        var decision = PaymentActions.Initiate(state, paymentId, input.OrderId, input.Amount, input.Currency, input.PaymentMethod);
+        var result = PaymentActions.Initiate(state, paymentId, input.OrderId, input.Amount, input.Currency, input.PaymentMethod);
 
-        decision.EnsureSuccess();
-
-        var events = new[]
-        {
-            new EventToPersist
-            {
-                EventType = EventType.FromType(decision.Event!.GetType()),
-                Tags = [
-                    new EventTag(Tags.Payment, paymentId.ToString()),
-                    new EventTag(Tags.Order, input.OrderId.ToString())
-                ],
-                EventData = JsonSerializer.Serialize(decision.Event, decision.Event.GetType())
-            }
-        };
-
-        await eventStore.AppendAsync(events, PaymentBoundary.BoundaryFor(paymentId), cancellationToken: ct);
+        await AppendEvents(eventStore, paymentId, input.OrderId, result.EnsureSuccess(), ct);
 
         return new InitiatePaymentResult(paymentId);
     }
@@ -73,11 +59,9 @@ public static class PaymentMutations
         var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(PaymentsModule.ModuleKey);
 
         var state = await LoadPaymentState(backend, paymentId, ct);
-        var decision = PaymentActions.Authorize(state, authorizationCode, timeProvider.GetUtcNow());
+        var result = PaymentActions.Authorize(state, authorizationCode, timeProvider.GetUtcNow());
 
-        decision.EnsureSuccess();
-
-        await AppendEvent(eventStore, paymentId, state.OrderId, decision.Event!, ct);
+        await AppendEvents(eventStore, paymentId, state.OrderId, result.EnsureSuccess(), ct);
 
         return new MutationResult();
     }
@@ -98,11 +82,9 @@ public static class PaymentMutations
         var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(PaymentsModule.ModuleKey);
 
         var state = await LoadPaymentState(backend, input.PaymentId, ct);
-        var decision = PaymentActions.Capture(state, input.Amount, timeProvider.GetUtcNow());
+        var result = PaymentActions.Capture(state, input.Amount, timeProvider.GetUtcNow());
 
-        decision.EnsureSuccess();
-
-        await AppendEvent(eventStore, input.PaymentId, state.OrderId, decision.Event!, ct);
+        await AppendEvents(eventStore, input.PaymentId, state.OrderId, result.EnsureSuccess(), ct);
 
         return new MutationResult();
     }
@@ -122,11 +104,9 @@ public static class PaymentMutations
         var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(PaymentsModule.ModuleKey);
 
         var state = await LoadPaymentState(backend, input.PaymentId, ct);
-        var decision = PaymentActions.Fail(state, input.ErrorCode, input.ErrorMessage);
+        var result = PaymentActions.Fail(state, input.ErrorCode, input.ErrorMessage);
 
-        decision.EnsureSuccess();
-
-        await AppendEvent(eventStore, input.PaymentId, state.OrderId, decision.Event!, ct);
+        await AppendEvents(eventStore, input.PaymentId, state.OrderId, result.EnsureSuccess(), ct);
 
         return new MutationResult();
     }
@@ -147,11 +127,9 @@ public static class PaymentMutations
         var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(PaymentsModule.ModuleKey);
 
         var state = await LoadPaymentState(backend, input.PaymentId, ct);
-        var decision = PaymentActions.Refund(state, input.Amount, input.Reason, timeProvider.GetUtcNow());
+        var result = PaymentActions.Refund(state, input.Amount, input.Reason, timeProvider.GetUtcNow());
 
-        decision.EnsureSuccess();
-
-        await AppendEvent(eventStore, input.PaymentId, state.OrderId, decision.Event!, ct);
+        await AppendEvents(eventStore, input.PaymentId, state.OrderId, result.EnsureSuccess(), ct);
 
         return new MutationResult();
     }
@@ -163,61 +141,28 @@ public static class PaymentMutations
         Guid paymentId,
         CancellationToken ct)
     {
-        var decider = new PaymentActions();
-        var state = new PaymentState();
-
         var events = await backend.Stream(PaymentBoundary.BoundaryFor(paymentId), cancellationToken: ct);
-
-        foreach (var envelope in events)
-        {
-            var eventType = envelope.EventType.Id;
-            object? domainEvent = eventType switch
-            {
-                "payment-initiated" => JsonSerializer.Deserialize<PaymentInitiated>(envelope.EventData),
-                "payment-authorized" => JsonSerializer.Deserialize<PaymentAuthorized>(envelope.EventData),
-                "payment-captured" => JsonSerializer.Deserialize<PaymentCaptured>(envelope.EventData),
-                "payment-failed" => JsonSerializer.Deserialize<PaymentFailed>(envelope.EventData),
-                "payment-refunded" => JsonSerializer.Deserialize<PaymentRefunded>(envelope.EventData),
-                _ => null
-            };
-
-            if (domainEvent is null) continue;
-
-            state = domainEvent switch
-            {
-                PaymentInitiated e => decider.Apply(state, e),
-                PaymentAuthorized e => decider.Apply(state, e),
-                PaymentCaptured e => decider.Apply(state, e),
-                PaymentFailed e => decider.Apply(state, e),
-                PaymentRefunded e => decider.Apply(state, e),
-                _ => state
-            };
-        }
-
-        return state;
+        return _evolver.Reconstitute(events);
     }
 
-    private static async Task AppendEvent(
+    private static async Task AppendEvents(
         IEventStore eventStore,
         Guid paymentId,
         Guid orderId,
-        IEvent @event,
+        IReadOnlyList<IEvent> events,
         CancellationToken ct)
     {
-        var events = new[]
+        var toPersist = events.Select(@event => new EventToPersist
         {
-            new EventToPersist
-            {
-                EventType = EventType.FromType(@event.GetType()),
-                Tags = [
-                    new EventTag(Tags.Payment, paymentId.ToString()),
-                    new EventTag(Tags.Order, orderId.ToString())
-                ],
-                EventData = JsonSerializer.Serialize(@event, @event.GetType())
-            }
-        };
+            EventType = EventType.FromType(@event.GetType()),
+            Tags = [
+                new EventTag(Tags.Payment, paymentId.ToString()),
+                new EventTag(Tags.Order, orderId.ToString())
+            ],
+            EventData = JsonSerializer.Serialize(@event, @event.GetType())
+        }).ToArray();
 
-        await eventStore.AppendAsync(events, PaymentBoundary.BoundaryFor(paymentId), cancellationToken: ct);
+        await eventStore.AppendAsync(toPersist, PaymentBoundary.BoundaryFor(paymentId), cancellationToken: ct);
     }
 
     #endregion

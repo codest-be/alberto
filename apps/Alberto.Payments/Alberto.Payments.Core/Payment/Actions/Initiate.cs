@@ -1,3 +1,4 @@
+using Alberto.Dcb;
 using Alberto.Payments.Core.Events;
 
 namespace Alberto.Payments.Core.Payment.Actions;
@@ -12,7 +13,7 @@ public sealed partial class PaymentDecider
     /// <summary>
     /// Initiates a new payment.
     /// </summary>
-    public static PaymentDecisionResult Initiate(
+    public static DecisionResult<IEvent> Initiate(
         IInitiatePaymentState state,
         Guid paymentId,
         Guid orderId,
@@ -21,21 +22,21 @@ public sealed partial class PaymentDecider
         string paymentMethod)
     {
         if (state.Exists)
-            return PaymentDecisionResult.Fail($"Payment {paymentId} already exists");
+            return DecisionResult<IEvent>.Failure($"Payment {paymentId} already exists");
 
         if (orderId == Guid.Empty)
-            return PaymentDecisionResult.Fail("Order ID is required");
+            return DecisionResult<IEvent>.Failure("Order ID is required");
 
         if (amount <= 0)
-            return PaymentDecisionResult.Fail("Amount must be greater than zero");
+            return DecisionResult<IEvent>.Failure("Amount must be greater than zero");
 
         if (string.IsNullOrWhiteSpace(currency))
-            return PaymentDecisionResult.Fail("Currency is required");
+            return DecisionResult<IEvent>.Failure("Currency is required");
 
         if (string.IsNullOrWhiteSpace(paymentMethod))
-            return PaymentDecisionResult.Fail("Payment method is required");
+            return DecisionResult<IEvent>.Failure("Payment method is required");
 
-        return PaymentDecisionResult.Ok(new PaymentInitiated(paymentId, orderId, amount, currency, paymentMethod));
+        return DecisionResult<IEvent>.Success(new PaymentInitiated(paymentId, orderId, amount, currency, paymentMethod));
     }
 
     public PaymentState Apply(PaymentState state, PaymentInitiated e) => state with

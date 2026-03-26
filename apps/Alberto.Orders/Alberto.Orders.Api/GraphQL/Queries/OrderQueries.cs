@@ -1,13 +1,10 @@
-using System.Text.Json;
 using Alberto.Dcb;
 using Alberto.Dcb.Postgres;
 using Alberto.Orders.Api.GraphQL.Types;
 using Alberto.Orders.Core.Order;
-using Alberto.Orders.Core.Order.Actions;
 using Alberto.Orders.Infrastructure;
 using Alberto.Orders.Infrastructure.Data;
 using Alberto.Orders.Infrastructure.Entities;
-using OrderActions = Alberto.Orders.Core.Order.Actions.OrderDecider;
 using OrderBoundary = Alberto.Orders.Core.Order.OrderDecider;
 using Alberto.Orders.Infrastructure.Projections;
 using Alberto.Orders.Infrastructure.ReadModels;
@@ -24,6 +21,8 @@ namespace Alberto.Orders.Api.GraphQL.Queries;
 /// </summary>
 public static class OrderQueries
 {
+    private static readonly OrderEvolver _evolver = new();
+
     /// <summary>
     /// Gets an order by ID from the event store (real-time, consistent).
     /// </summary>
@@ -152,42 +151,8 @@ public static class OrderQueries
         Guid orderId,
         CancellationToken ct)
     {
-        var decider = new OrderActions();
-        var state = new OrderState();
-
         var events = await backend.Stream(OrderBoundary.BoundaryFor(orderId), cancellationToken: ct);
-
-        foreach (var envelope in events)
-        {
-            var eventType = envelope.EventType.Id;
-            object? domainEvent = eventType switch
-            {
-                "order-created" => JsonSerializer.Deserialize<OrderCreated>(envelope.EventData),
-                "order-item-added" => JsonSerializer.Deserialize<OrderItemAdded>(envelope.EventData),
-                "order-item-removed" => JsonSerializer.Deserialize<OrderItemRemoved>(envelope.EventData),
-                "order-confirmed" => JsonSerializer.Deserialize<OrderConfirmed>(envelope.EventData),
-                "order-shipped" => JsonSerializer.Deserialize<OrderShipped>(envelope.EventData),
-                "order-delivered" => JsonSerializer.Deserialize<OrderDelivered>(envelope.EventData),
-                "order-cancelled" => JsonSerializer.Deserialize<OrderCancelled>(envelope.EventData),
-                _ => null
-            };
-
-            if (domainEvent is null) continue;
-
-            state = domainEvent switch
-            {
-                OrderCreated e => decider.Apply(state, e),
-                OrderItemAdded e => decider.Apply(state, e),
-                OrderItemRemoved e => decider.Apply(state, e),
-                OrderConfirmed e => decider.Apply(state, e),
-                OrderShipped e => decider.Apply(state, e),
-                OrderDelivered e => decider.Apply(state, e),
-                OrderCancelled e => decider.Apply(state, e),
-                _ => state
-            };
-        }
-
-        return state;
+        return _evolver.Reconstitute(events);
     }
 
     private static Order ToGraphQL(OrderState state) => new(

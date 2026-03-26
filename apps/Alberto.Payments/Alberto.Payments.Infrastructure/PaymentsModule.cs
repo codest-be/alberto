@@ -44,7 +44,7 @@ public static class PaymentsModule
                     .MaxRetries(3)
                     .RetryDelay(TimeSpan.FromSeconds(1))
                     .DeadLetterOnMaxRetries(true))
-                .AddProjection<PaymentsOverview, PaymentsOverviewProjection>(sp =>
+                .AddProjection(PaymentsOverviewProjection.Declaration, sp =>
                 {
                     var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
                     return tenantId => new PostgresStateStore<PaymentsOverview>(
@@ -53,7 +53,7 @@ public static class PaymentsModule
                         nameof(PaymentsOverviewProjection),
                         "payments");
                 })
-                .AddProjection<PaymentSummary, PaymentSummaryProjection>(sp =>
+                .AddProjection(PaymentSummaryProjection.Declaration, sp =>
                 {
                     var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
                     return tenantId => new PostgresStateStore<PaymentSummary>(
