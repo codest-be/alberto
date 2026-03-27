@@ -152,15 +152,23 @@ public sealed class ConsumerBuilder
     /// <summary>
     /// Sets a per-handler timeout. If an individual event handler takes longer than this duration,
     /// its token is cancelled and the failure is handed to the error policy (retry + dead-letter).
-    /// Has no effect on graceful consumer shutdown.
-    /// Pass <c>null</c> to disable the timeout entirely (e.g. for AI handlers with long-running calls).
-    /// Default is 30 seconds.
+    /// Has no effect on graceful consumer shutdown. Default is 30 seconds.
     /// </summary>
-    public ConsumerBuilder WithHandlerTimeout(TimeSpan? timeout)
+    public ConsumerBuilder WithHandlerTimeout(TimeSpan timeout)
     {
-        if (timeout.HasValue && timeout.Value <= TimeSpan.Zero)
+        if (timeout <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(timeout), "Handler timeout must be positive.");
         _handlerTimeout = timeout;
+        return this;
+    }
+
+    /// <summary>
+    /// Disables the per-handler timeout. Use for consumers whose handlers make long-running
+    /// external calls (e.g. AI inference) where the call itself enforces its own timeout.
+    /// </summary>
+    public ConsumerBuilder WithoutHandlerTimeout()
+    {
+        _handlerTimeout = null;
         return this;
     }
 

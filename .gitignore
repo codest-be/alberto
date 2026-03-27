@@ -1,6 +1,10 @@
 bin/
 obj/
 /packages/
+artifacts/
+nupkg/
+*.nupkg
+*.snupkg
 riderModule.iml
 /_ReSharper.Caches/
 .idea/
