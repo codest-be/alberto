@@ -36,6 +36,7 @@ public class InlineProjectionTests
 
     #region Test Projection
 
+#pragma warning disable CS0618 // Testing with deprecated Projection<T> API
     public class OrderSummaryProjection : Projection<OrderSummary>,
         IProject<OrderSummary, OrderCreated>,
         IProject<OrderSummary, OrderConfirmed>,
@@ -53,6 +54,7 @@ public class InlineProjectionTests
         public ProjectionResult<OrderSummary> Apply(OrderSummary state, OrderCancelled @event, ProjectionContext context)
             => ProjectionResults.Delete<OrderSummary>();
     }
+#pragma warning restore CS0618
 
     #endregion
 

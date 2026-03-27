@@ -23,17 +23,17 @@ public class CachingCheckpointStoreTests
     public async Task GetAsync_Cached_ShouldReturnCachedValue()
     {
         var inner = new InMemoryCheckpointStore();
-        await inner.SaveAsync("processor-1", 100);
+        await inner.SaveAsync("processor-1", 100, TestContext.Current.CancellationToken);
         await using var cache = new CachingCheckpointStore(inner);
 
         // First call loads from inner
-        await cache.GetAsync("processor-1");
+        await cache.GetAsync("processor-1", TestContext.Current.CancellationToken);
 
         // Update inner directly
-        await inner.SaveAsync("processor-1", 200);
+        await inner.SaveAsync("processor-1", 200, TestContext.Current.CancellationToken);
 
         // Second call should return cached value, not updated inner value
-        var result = await cache.GetAsync("processor-1");
+        var result = await cache.GetAsync("processor-1", TestContext.Current.CancellationToken);
 
         Assert.Equal(100, result);
     }
@@ -44,7 +44,7 @@ public class CachingCheckpointStoreTests
         var inner = new InMemoryCheckpointStore();
         await using var cache = new CachingCheckpointStore(inner);
 
-        var result = await cache.GetAsync("nonexistent");
+        var result = await cache.GetAsync("nonexistent", TestContext.Current.CancellationToken);
 
         Assert.Null(result);
     }
@@ -55,9 +55,9 @@ public class CachingCheckpointStoreTests
         var inner = new InMemoryCheckpointStore();
         await using var cache = new CachingCheckpointStore(inner);
 
-        await cache.SaveAsync("processor-1", 50);
+        await cache.SaveAsync("processor-1", 50, TestContext.Current.CancellationToken);
 
-        var result = await cache.GetAsync("processor-1");
+        var result = await cache.GetAsync("processor-1", TestContext.Current.CancellationToken);
 
         Assert.Equal(50, result);
     }
@@ -72,14 +72,14 @@ public class CachingCheckpointStoreTests
         var inner = new InMemoryCheckpointStore();
         await using var cache = new CachingCheckpointStore(inner, TimeSpan.FromHours(1));
 
-        await cache.SaveAsync("processor-1", 100);
+        await cache.SaveAsync("processor-1", 100, TestContext.Current.CancellationToken);
 
         // Cache should have the value immediately
-        var cached = await cache.GetAsync("processor-1");
+        var cached = await cache.GetAsync("processor-1", TestContext.Current.CancellationToken);
         Assert.Equal(100, cached);
 
         // Inner should NOT have it yet (until flush)
-        var fromInner = await inner.GetAsync("processor-1");
+        var fromInner = await inner.GetAsync("processor-1", TestContext.Current.CancellationToken);
         Assert.Null(fromInner);
     }
 
@@ -89,11 +89,11 @@ public class CachingCheckpointStoreTests
         var inner = new InMemoryCheckpointStore();
         await using var cache = new CachingCheckpointStore(inner, TimeSpan.FromHours(1));
 
-        await cache.SaveAsync("processor-1", 100);
-        await cache.SaveAsync("processor-1", 200);
-        await cache.SaveAsync("processor-1", 300);
+        await cache.SaveAsync("processor-1", 100, TestContext.Current.CancellationToken);
+        await cache.SaveAsync("processor-1", 200, TestContext.Current.CancellationToken);
+        await cache.SaveAsync("processor-1", 300, TestContext.Current.CancellationToken);
 
-        var result = await cache.GetAsync("processor-1");
+        var result = await cache.GetAsync("processor-1", TestContext.Current.CancellationToken);
 
         Assert.Equal(300, result);
     }
@@ -108,13 +108,13 @@ public class CachingCheckpointStoreTests
         var inner = new InMemoryCheckpointStore();
         await using var cache = new CachingCheckpointStore(inner, TimeSpan.FromHours(1));
 
-        await cache.SaveAsync("processor-1", 100);
-        await cache.SaveAsync("processor-2", 200);
+        await cache.SaveAsync("processor-1", 100, TestContext.Current.CancellationToken);
+        await cache.SaveAsync("processor-2", 200, TestContext.Current.CancellationToken);
 
-        await cache.FlushAsync();
+        await cache.FlushAsync(TestContext.Current.CancellationToken);
 
-        Assert.Equal(100, await inner.GetAsync("processor-1"));
-        Assert.Equal(200, await inner.GetAsync("processor-2"));
+        Assert.Equal(100, await inner.GetAsync("processor-1", TestContext.Current.CancellationToken));
+        Assert.Equal(200, await inner.GetAsync("processor-2", TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -124,7 +124,7 @@ public class CachingCheckpointStoreTests
         await using var cache = new CachingCheckpointStore(inner, TimeSpan.FromHours(1));
 
         // Should not throw when nothing to flush
-        await cache.FlushAsync();
+        await cache.FlushAsync(TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -133,14 +133,14 @@ public class CachingCheckpointStoreTests
         var inner = new TrackingCheckpointStore();
         await using var cache = new CachingCheckpointStore(inner, TimeSpan.FromHours(1));
 
-        await cache.SaveAsync("processor-1", 100);
-        await cache.FlushAsync();
+        await cache.SaveAsync("processor-1", 100, TestContext.Current.CancellationToken);
+        await cache.FlushAsync(TestContext.Current.CancellationToken);
 
         // Save count should be 1
         Assert.Equal(1, inner.SaveCount);
 
         // Flush again should not write again (not dirty)
-        await cache.FlushAsync();
+        await cache.FlushAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(1, inner.SaveCount);
     }
@@ -153,17 +153,17 @@ public class CachingCheckpointStoreTests
     public async Task ResetAsync_ShouldClearCacheAndInner()
     {
         var inner = new InMemoryCheckpointStore();
-        await inner.SaveAsync("processor-1", 100);
+        await inner.SaveAsync("processor-1", 100, TestContext.Current.CancellationToken);
         await using var cache = new CachingCheckpointStore(inner);
 
         // Load into cache
-        await cache.GetAsync("processor-1");
+        await cache.GetAsync("processor-1", TestContext.Current.CancellationToken);
 
-        await cache.ResetAsync("processor-1");
+        await cache.ResetAsync("processor-1", TestContext.Current.CancellationToken);
 
         // Both cache and inner should be cleared
-        Assert.Null(await cache.GetAsync("processor-1"));
-        Assert.Null(await inner.GetAsync("processor-1"));
+        Assert.Null(await cache.GetAsync("processor-1", TestContext.Current.CancellationToken));
+        Assert.Null(await inner.GetAsync("processor-1", TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -172,9 +172,9 @@ public class CachingCheckpointStoreTests
         var inner = new TrackingCheckpointStore();
         await using var cache = new CachingCheckpointStore(inner, TimeSpan.FromHours(1));
 
-        await cache.SaveAsync("processor-1", 100);
-        await cache.ResetAsync("processor-1");
-        await cache.FlushAsync();
+        await cache.SaveAsync("processor-1", 100, TestContext.Current.CancellationToken);
+        await cache.ResetAsync("processor-1", TestContext.Current.CancellationToken);
+        await cache.FlushAsync(TestContext.Current.CancellationToken);
 
         // Should not have tried to save processor-1 (it was removed from dirty before flush)
         Assert.Equal(0, inner.SaveCount);
@@ -190,12 +190,12 @@ public class CachingCheckpointStoreTests
         var inner = new InMemoryCheckpointStore();
         var cache = new CachingCheckpointStore(inner, TimeSpan.FromHours(1));
 
-        await cache.SaveAsync("processor-1", 100);
+        await cache.SaveAsync("processor-1", 100, TestContext.Current.CancellationToken);
 
         // Dispose should flush
         await cache.DisposeAsync();
 
-        Assert.Equal(100, await inner.GetAsync("processor-1"));
+        Assert.Equal(100, await inner.GetAsync("processor-1", TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -218,12 +218,12 @@ public class CachingCheckpointStoreTests
         var inner = new InMemoryCheckpointStore();
         await using var cache = new CachingCheckpointStore(inner, TimeSpan.FromMilliseconds(50));
 
-        await cache.SaveAsync("processor-1", 100);
+        await cache.SaveAsync("processor-1", 100, TestContext.Current.CancellationToken);
 
         // Wait for timer to trigger flush
-        await Task.Delay(200);
+        await Task.Delay(200, TestContext.Current.CancellationToken);
 
-        Assert.Equal(100, await inner.GetAsync("processor-1"));
+        Assert.Equal(100, await inner.GetAsync("processor-1", TestContext.Current.CancellationToken));
     }
 
     #endregion
@@ -241,7 +241,7 @@ public class CachingCheckpointStoreTests
             .ToList();
 
         await Task.WhenAll(tasks);
-        await cache.FlushAsync();
+        await cache.FlushAsync(TestContext.Current.CancellationToken);
 
         // All 10 processors should have values
         for (int i = 0; i < 10; i++)

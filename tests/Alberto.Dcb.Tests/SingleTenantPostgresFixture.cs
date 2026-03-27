@@ -12,8 +12,7 @@ namespace Alberto.Dcb.Tests;
 /// </summary>
 public sealed class SingleTenantPostgresFixture : IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder()
-        .WithImage("postgres:16-alpine")
+    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:16-alpine")
         .Build();
 
     public NpgsqlDataSource DataSource { get; private set; } = null!;

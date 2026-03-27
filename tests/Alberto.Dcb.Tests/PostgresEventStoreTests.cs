@@ -33,6 +33,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
         public string Status { get; init; } = "";
     }
 
+#pragma warning disable CS0618 // Testing with deprecated Projection<T> API
     public class OrderSummaryProjection : Projection<OrderSummary>,
         IProject<OrderSummary, OrderCreated>,
         IProject<OrderSummary, OrderConfirmed>
@@ -45,6 +46,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
         public ProjectionResult<OrderSummary> Apply(OrderSummary state, OrderConfirmed @event, ProjectionContext context)
             => state with { Status = "Confirmed" };
     }
+#pragma warning restore CS0618
 
     #endregion
 

@@ -37,6 +37,7 @@ public class ProjectorSpecificationTests
 
     #region Test Projection
 
+#pragma warning disable CS0618 // Testing with deprecated Projection<T> / AsyncProjection<T,TProjection> API
     public class OrderSummaryProjection : Projection<OrderSummary>,
         IProject<OrderSummary, OrderCreated>,
         IProject<OrderSummary, OrderConfirmed>,
@@ -54,6 +55,7 @@ public class ProjectorSpecificationTests
         public ProjectionResult<OrderSummary> Apply(OrderSummary state, OrderCancelled @event, ProjectionContext context)
             => ProjectionResults.Delete<OrderSummary>();
     }
+#pragma warning restore CS0618
 
     #endregion
 
@@ -113,6 +115,7 @@ public class ProjectorSpecificationTests
 
     #region ProcessEvent Tests
 
+#pragma warning disable CS0618 // AsyncProjection is deprecated, suppressed for legacy tests
     private static (AsyncProjection<OrderSummary, OrderSummaryProjection> processor, InMemoryStateStore stateStore) CreateProcessor()
     {
         var stateStore = new InMemoryStateStore();
@@ -120,6 +123,7 @@ public class ProjectorSpecificationTests
             () => stateStore, "order-summary-v1");
         return (processor, stateStore);
     }
+#pragma warning restore CS0618
 
     [Fact]
     public async Task ProcessEvent_ShouldUpsertState()
@@ -332,6 +336,7 @@ public class ProjectorSpecificationTests
         // for per-event (which goes through FlushAsync → ApplyChanges on the same store,
         // so we use a processor whose store throws only on the first call).
         var callCount = 0;
+#pragma warning disable CS0618
         var processor = new AsyncProjection<OrderSummary, OrderSummaryProjection>(
             () =>
             {
@@ -340,6 +345,7 @@ public class ProjectorSpecificationTests
                 return callCount == 1 ? (IStateStore<OrderSummary>)throwingStore : fallbackStore;
             },
             "order-summary-v1");
+#pragma warning restore CS0618
 
         var orderId = Guid.NewGuid();
 

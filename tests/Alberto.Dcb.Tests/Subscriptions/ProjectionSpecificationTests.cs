@@ -5,9 +5,10 @@ using Xunit;
 namespace Alberto.Dcb.Tests.Subscriptions;
 
 /// <summary>
-/// Tests for the Projection<TState> base class.
+/// Tests for the Projection&lt;TState&gt; base class.
 /// Demonstrates that projections are pure and testable without infrastructure.
 /// </summary>
+#pragma warning disable CS0618 // Testing the deprecated Projection<T> API
 public class ProjectionSpecificationTests
 {
     #region Test Events

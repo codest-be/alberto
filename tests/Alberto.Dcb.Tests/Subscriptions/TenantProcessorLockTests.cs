@@ -40,7 +40,7 @@ public class TenantProcessorLockTests(PostgresFixture fixture) : IClassFixture<P
         Assert.NotNull(lease1);
 
         // Wait a bit
-        await Task.Delay(10);
+        await Task.Delay(10, TestContext.Current.CancellationToken);
 
         // Second acquire same tenant by same replica should renew
         var lease2 = await lockManager.TryAcquireForTenantAsync(consumerId, tenantId, replicaId, TestContext.Current.CancellationToken);
@@ -156,7 +156,7 @@ public class TenantProcessorLockTests(PostgresFixture fixture) : IClassFixture<P
         Assert.Null(lease2);
 
         // Wait for lease to expire
-        await Task.Delay(150);
+        await Task.Delay(150, TestContext.Current.CancellationToken);
 
         // Now second replica should succeed
         var lease3 = await lockManager.TryAcquireForTenantAsync(consumerId, tenantId, replica2, TestContext.Current.CancellationToken);
@@ -181,7 +181,7 @@ public class TenantProcessorLockTests(PostgresFixture fixture) : IClassFixture<P
         var originalExpiry = lease.ExpiresAt;
 
         // Wait a bit
-        await Task.Delay(50);
+        await Task.Delay(50, TestContext.Current.CancellationToken);
 
         // Renew
         var renewedTenants = await lockManager.RenewLeasesAsync(consumerId, replicaId, TestContext.Current.CancellationToken);

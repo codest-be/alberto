@@ -56,7 +56,7 @@ public sealed class MiddlewareTests
         };
 
         var middlewares = new List<ConsumeMiddleware> { first, second };
-        var context = MakeContext();
+        var context = MakeContext(TestContext.Current.CancellationToken);
 
         await MiddlewareRunner.RunAsync(context, middlewares, () =>
         {
@@ -71,7 +71,7 @@ public sealed class MiddlewareTests
     public async Task NoMiddlewares_InvokesTerminalDirectly()
     {
         var terminalCalled = false;
-        var context = MakeContext();
+        var context = MakeContext(TestContext.Current.CancellationToken);
 
         await MiddlewareRunner.RunAsync(context, [], () =>
         {
@@ -94,7 +94,7 @@ public sealed class MiddlewareTests
             log.Add("after");
         };
 
-        var context = MakeContext();
+        var context = MakeContext(TestContext.Current.CancellationToken);
 
         await MiddlewareRunner.RunAsync(context, [middleware], () =>
         {
@@ -126,7 +126,7 @@ public sealed class MiddlewareTests
             await next();
         };
 
-        var context = MakeContext();
+        var context = MakeContext(TestContext.Current.CancellationToken);
         await MiddlewareRunner.RunAsync(context, [shortCircuit, second], () =>
         {
             terminalCalled = true;
@@ -147,7 +147,7 @@ public sealed class MiddlewareTests
         var middleware = ConsumeMiddlewares.RetryAndDeadLetter(
             new ErrorPolicy { MaxRetries = 3 });
 
-        var context = MakeContext();
+        var context = MakeContext(TestContext.Current.CancellationToken);
 
         await MiddlewareRunner.RunAsync(context, [middleware], () => Task.CompletedTask);
 
@@ -172,7 +172,7 @@ public sealed class MiddlewareTests
         };
 
         var middleware = ConsumeMiddlewares.RetryAndDeadLetter(policy);
-        var context = MakeContext();
+        var context = MakeContext(TestContext.Current.CancellationToken);
 
         await MiddlewareRunner.RunAsync(context, [middleware], () =>
         {
@@ -199,7 +199,7 @@ public sealed class MiddlewareTests
 
         var deadLetterStore = new InMemoryDeadLetterStore();
         var middleware = ConsumeMiddlewares.RetryAndDeadLetter(policy, deadLetterStore);
-        var context = MakeContext();
+        var context = MakeContext(TestContext.Current.CancellationToken);
 
         await MiddlewareRunner.RunAsync(context, [middleware], () =>
             throw new Exception("always fails"));
@@ -228,7 +228,7 @@ public sealed class MiddlewareTests
 
         var deadLetterStore = new InMemoryDeadLetterStore();
         var middleware = ConsumeMiddlewares.RetryAndDeadLetter(policy, deadLetterStore);
-        var context = MakeContext();
+        var context = MakeContext(TestContext.Current.CancellationToken);
 
         await MiddlewareRunner.RunAsync(context, [middleware], () =>
         {
@@ -254,7 +254,7 @@ public sealed class MiddlewareTests
 
         // No dead letter store provided
         var middleware = ConsumeMiddlewares.RetryAndDeadLetter(policy, deadLetterStore: null);
-        var context = MakeContext();
+        var context = MakeContext(TestContext.Current.CancellationToken);
 
         await MiddlewareRunner.RunAsync(context, [middleware], () =>
             throw new ArgumentException("permanent"));
@@ -298,7 +298,7 @@ public sealed class MiddlewareTests
 
         var deadLetterStore = new InMemoryDeadLetterStore();
         var middleware = ConsumeMiddlewares.RetryAndDeadLetter(policy, deadLetterStore);
-        var context = MakeContext();
+        var context = MakeContext(TestContext.Current.CancellationToken);
 
         await MiddlewareRunner.RunAsync(context, [middleware], () =>
             throw new Exception("failure"));
@@ -322,7 +322,7 @@ public sealed class MiddlewareTests
         };
 
         int attemptSeenInTerminal = 0;
-        var context = MakeContext();
+        var context = MakeContext(TestContext.Current.CancellationToken);
 
         await MiddlewareRunner.RunAsync(context, [setter], () =>
         {
