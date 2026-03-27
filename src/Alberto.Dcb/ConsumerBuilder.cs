@@ -22,6 +22,7 @@ public sealed class ConsumerBuilder
     private bool _enableProcessorLock = true; // Single-leader lock enabled by default
     private int _maxParallelProjections = 1; // Default sequential - EF projections aren't thread-safe
     private int? _maxTenantsPerReplica; // null = unlimited
+    private TimeSpan? _handlerTimeout = TimeSpan.FromSeconds(30);
     private Action<string, IEventEnvelope>? _onProjected;
     private Action<string>? _onRebuildComplete;
     private readonly List<ConsumeMiddleware> _middlewares = [];
@@ -145,6 +146,21 @@ public sealed class ConsumerBuilder
     public ConsumerBuilder WithParallelProjections(int maxDegree = int.MaxValue)
     {
         _maxParallelProjections = maxDegree;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets a per-handler timeout. If an individual event handler takes longer than this duration,
+    /// its token is cancelled and the failure is handed to the error policy (retry + dead-letter).
+    /// Has no effect on graceful consumer shutdown.
+    /// Pass <c>null</c> to disable the timeout entirely (e.g. for AI handlers with long-running calls).
+    /// Default is 30 seconds.
+    /// </summary>
+    public ConsumerBuilder WithHandlerTimeout(TimeSpan? timeout)
+    {
+        if (timeout.HasValue && timeout.Value <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(timeout), "Handler timeout must be positive.");
+        _handlerTimeout = timeout;
         return this;
     }
 
@@ -299,6 +315,7 @@ public sealed class ConsumerBuilder
         var onRebuildComplete = _onRebuildComplete;
         var builderMiddlewares = _middlewares.ToList();
         var tenantRing = _tenantRing;
+        var handlerTimeout = _handlerTimeout;
 
 #pragma warning disable CS0618
         // Register pipeline (legacy IConsumeFilter support — transitional)
@@ -373,7 +390,8 @@ public sealed class ConsumerBuilder
                 maxParallelProjections,
                 maxTenantsPerReplica,
                 logger,
-                effectiveMiddlewares);
+                effectiveMiddlewares,
+                handlerTimeout);
 
             // Register all processors
             var processors = sp.GetKeyedServices<IEventProcessor>(moduleKey);

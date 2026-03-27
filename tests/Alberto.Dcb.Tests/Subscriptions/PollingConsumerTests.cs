@@ -39,6 +39,19 @@ public sealed class PollingConsumerTests
         }
     }
 
+    private class SlowProcessor(string processorId, IReadOnlySet<string> handledTypes, TimeSpan delay) : IEventProcessor
+    {
+        public string ProcessorId { get; } = processorId;
+        public bool IsActive { get; set; } = true;
+        public bool IsRebuilding { get; set; }
+        public IReadOnlySet<string> HandledEventTypes { get; } = handledTypes;
+
+        public async Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
+        {
+            await Task.Delay(delay, ct);
+        }
+    }
+
     #endregion
 
     #region Polling Tests
@@ -292,6 +305,53 @@ public sealed class PollingConsumerTests
 
         // Processor B should get event 3 only
         Assert.Single(processorB.ProcessedEvents);
+    }
+
+    [Fact]
+    public async Task Consumer_WhenHandlerExceedsTimeout_ShouldDeadLetterAndKeepRunning()
+    {
+        var backend = new InMemoryEventStoreBackend();
+        var checkpointStore = new InMemoryCheckpointStore();
+        var deadLetterStore = new InMemoryDeadLetterStore();
+
+        var consumerCts = new CancellationTokenSource();
+        var consumerCtWasCancelled = false;
+
+        // Processor that delays longer than the configured timeout
+        var slowProcessor = new SlowProcessor(
+            "slow-processor",
+            new HashSet<string> { "test-event-a" },
+            delay: TimeSpan.FromMilliseconds(500));
+
+        var consumer = new PollingConsumer(
+            backend,
+            checkpointStore,
+            "test-consumer",
+            pollingInterval: TimeSpan.FromMilliseconds(10),
+            deadLetterStore: deadLetterStore,
+            errorPolicy: new ErrorPolicy { MaxRetries = 1, RetryDelay = TimeSpan.FromMilliseconds(10) },
+            handlerTimeout: TimeSpan.FromMilliseconds(50));
+
+        consumer.RegisterProcessor(slowProcessor);
+
+        await backend.Append([CreateEvent(new TestEventA("slow"))], cancellationToken: TestContext.Current.CancellationToken);
+
+        await consumer.StartAsync(consumerCts.Token);
+
+        // Give enough time for processing (including 1 retry) to complete
+        await Task.Delay(2000, TestContext.Current.CancellationToken);
+
+        // Consumer should still be running — cancel it cleanly
+        consumerCtWasCancelled = consumerCts.IsCancellationRequested;
+        await consumerCts.CancelAsync();
+        await consumer.StopAsync(TestContext.Current.CancellationToken);
+
+        // The consumer's own token was never auto-cancelled (i.e. no shutdown triggered by timeout)
+        Assert.False(consumerCtWasCancelled);
+
+        // The event should be dead-lettered after exhausting retries
+        var deadLetters = await deadLetterStore.GetAsync("slow-processor", ct: TestContext.Current.CancellationToken);
+        Assert.NotEmpty(deadLetters);
     }
 
     #endregion

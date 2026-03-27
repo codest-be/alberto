@@ -31,6 +31,7 @@ public sealed class PollingConsumer : IEventConsumer
     private readonly int _maxParallelProjections;
     private readonly int? _maxTenantsPerReplica;
     private readonly ErrorPolicy _errorPolicy;
+    private readonly TimeSpan? _handlerTimeout;
     private readonly string _moduleKey;
     private readonly ILogger<PollingConsumer>? _logger;
 
@@ -71,7 +72,8 @@ public sealed class PollingConsumer : IEventConsumer
         int maxParallelProjections = 1,
         int? maxTenantsPerReplica = null,
         ILogger<PollingConsumer>? logger = null,
-        IReadOnlyList<ConsumeMiddleware>? middlewares = null)
+        IReadOnlyList<ConsumeMiddleware>? middlewares = null,
+        TimeSpan? handlerTimeout = null)
     {
         _eventStore = eventStore ?? throw new ArgumentNullException(nameof(eventStore));
         _checkpointStore = checkpointStore ?? throw new ArgumentNullException(nameof(checkpointStore));
@@ -90,6 +92,7 @@ public sealed class PollingConsumer : IEventConsumer
         _deadLetterStore = deadLetterStore;
         _pipeline = pipeline;
         _errorPolicy = errorPolicy ?? ErrorPolicy.Default;
+        _handlerTimeout = handlerTimeout;
         _logger = logger;
 
         // Build the middleware chain: use provided middlewares, or default to RetryAndDeadLetter
@@ -1013,7 +1016,16 @@ public sealed class PollingConsumer : IEventConsumer
 
         await MiddlewareRunner.RunAsync(context, _middlewares, async () =>
         {
-            await processor.ProcessEventAsync(evt, ct);
+            if (_handlerTimeout.HasValue)
+            {
+                using var handlerCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                handlerCts.CancelAfter(_handlerTimeout.Value);
+                await processor.ProcessEventAsync(evt, handlerCts.Token);
+            }
+            else
+            {
+                await processor.ProcessEventAsync(evt, ct);
+            }
         });
 
         if (!context.DeadLettered)
@@ -1127,7 +1139,16 @@ public sealed class PollingConsumer : IEventConsumer
 
                 if (processor is IBatchableProcessor batchable && relevant.Count > 0)
                 {
-                    await batchable.ProcessBatchAsync(relevant, ct);
+                    if (_handlerTimeout.HasValue)
+                    {
+                        using var handlerCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                        handlerCts.CancelAfter(_handlerTimeout.Value);
+                        await batchable.ProcessBatchAsync(relevant, handlerCts.Token);
+                    }
+                    else
+                    {
+                        await batchable.ProcessBatchAsync(relevant, ct);
+                    }
                     await _checkpointStore.SaveAsync(processor.ProcessorId, relevant[^1].GlobalPosition, ct);
                     foreach (var evt in relevant)
                         OnProjected?.Invoke(processor.ProcessorId, evt);
