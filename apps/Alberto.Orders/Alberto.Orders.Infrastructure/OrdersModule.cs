@@ -45,27 +45,18 @@ public static class OrdersModule
                     npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "orders"));
             })
             .WithTelemetry()
-            .WithConsumer(consumer => consumer
-                .WithTenantDistribution()
+            .AddProjection(OrdersOverviewProjection.Declaration, sp =>
+            {
+                var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
+                return () => new PostgresStateStore<OrdersOverview>(
+                    dataSource,
+                    nameof(OrdersOverviewProjection),
+                    "orders");
+            })
+            .AddEfProjection<OrderSummaryEntity, OrdersDbContext>(OrderSummaryEfProjection.Declaration)
+            .WithControlLoop(loop => loop
                 .WithPollingInterval(TimeSpan.FromMilliseconds(100))
-                .WithBatchSize(500)
-                .WithParallelProjections()
-                .WithErrorPolicy(policy => policy
-                    .MaxRetries(3)
-                    .RetryDelay(TimeSpan.FromSeconds(1))
-                    .DeadLetterOnMaxRetries(true))
-                // JSONB projection for overview (aggregate stats)
-                .AddProjection(OrdersOverviewProjection.Declaration, sp =>
-                {
-                    var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
-                    return tenantId => new PostgresStateStore<OrdersOverview>(
-                        dataSource,
-                        tenantId,
-                        nameof(OrdersOverviewProjection),
-                        "orders");
-                })
-                // EF projection for order summaries (enables filtering/querying)
-                .AddEfProjection<OrderSummaryEntity, OrdersDbContext>(OrderSummaryEfProjection.Declaration)));
+                .WithBatchSize(500)));
 
         // Note: Query-side state stores are created dynamically per-tenant in GraphQL queries.
         // The projection state stores above use the tenant from the event envelope during writes.

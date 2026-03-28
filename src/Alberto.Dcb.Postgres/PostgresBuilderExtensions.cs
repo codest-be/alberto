@@ -166,9 +166,9 @@ public static class PostgresBuilderExtensions
             return new InterceptingEventStoreBackend(decorator, pipeline);
         });
 
-        // Register a singleton backend for the consumer (streams all events, no per-request tenant scoping).
-        // The PollingConsumer is a singleton and cannot consume scoped services, so it uses this key.
-        // The consumer only calls StreamAll and GetLastPosition — the null accessor is never exercised.
+        // Register a singleton backend for ControlLoops (streams all events, no per-request tenant scoping).
+        // ControlLoops are singletons and cannot consume scoped services, so they use this key.
+        // ControlLoops only call StreamAll and GetPositionsAsync — the null accessor is never exercised.
         builder.Services.AddKeyedSingleton<IEventStoreBackend>(moduleKey + ":consumer", (sp, _) =>
         {
             var rawTenantBackend = sp.GetRequiredKeyedService<PostgresTenantEventStoreBackend>(moduleKey + ":tenant-raw");
@@ -180,8 +180,8 @@ public static class PostgresBuilderExtensions
 }
 
 /// <summary>
-/// No-op tenant accessor used for the consumer singleton backend.
-/// The PollingConsumer only calls StreamAll/GetLastPosition which do not use tenant context.
+/// No-op tenant accessor used for the ControlLoop singleton backend.
+/// ControlLoops only call StreamAll/GetPositionsAsync which do not use tenant context.
 /// </summary>
 file sealed class ConsumerTenantAccessor : Alberto.Dcb.Tenancy.ITenantAccessor
 {

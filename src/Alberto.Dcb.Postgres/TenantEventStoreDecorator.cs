@@ -49,4 +49,8 @@ internal sealed class TenantEventStoreDecorator : IEventStoreBackend
 
     public Task<long> GetLastPosition(CancellationToken cancellationToken = default)
         => _inner.GetLastPositionGlobal(cancellationToken);
+
+    public Task<IReadOnlyList<long>> GetPositionsAsync(
+        long afterPosition, int windowSize, CancellationToken cancellationToken = default)
+        => _inner.GetPositionsGlobalAsync(afterPosition, windowSize, cancellationToken);
 }

@@ -45,4 +45,13 @@ public interface IEventStoreBackend
     /// Returns 0 if no events exist.
     /// </summary>
     Task<long> GetLastPosition(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns global_position values of committed events in (afterPosition, afterPosition + windowSize].
+    /// Lightweight — no event data. Used by EventStoreHead for gap detection.
+    /// </summary>
+    Task<IReadOnlyList<long>> GetPositionsAsync(
+        long afterPosition,
+        int windowSize,
+        CancellationToken cancellationToken = default);
 }

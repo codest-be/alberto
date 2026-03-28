@@ -19,9 +19,7 @@ public static class ServiceCollectionExtensions
     /// <code>
     /// services.AddAlberto("orders", builder => builder
     ///     .WithPostgres(options => options.ConnectionString = "...")
-    ///     .WithConsumer(consumer => consumer
-    ///         .AddProcessor&lt;OrderProjector&gt;()
-    ///     )
+    ///     .WithControlLoop()
     /// );
     /// </code>
     /// </example>

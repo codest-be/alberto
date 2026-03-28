@@ -214,6 +214,21 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
         }
     }
 
+    public Task<IReadOnlyList<long>> GetPositionsAsync(
+        long afterPosition, int windowSize, CancellationToken cancellationToken = default)
+    {
+        lock (_lock)
+        {
+            var ceiling = afterPosition + windowSize;
+            var result = _events
+                .Where(e => e.GlobalPosition > afterPosition && e.GlobalPosition <= ceiling)
+                .Select(e => e.GlobalPosition)
+                .OrderBy(p => p)
+                .ToList();
+            return Task.FromResult<IReadOnlyList<long>>(result);
+        }
+    }
+
     /// <summary>
     /// Finds the first position after expectedPosition that matches the DCB query.
     /// Returns null if no conflict exists.

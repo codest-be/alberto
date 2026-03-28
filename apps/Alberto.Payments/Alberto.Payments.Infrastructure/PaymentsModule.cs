@@ -36,32 +36,25 @@ public static class PaymentsModule
                 options.MaxPoolSize = 30;
             })
             .WithTelemetry()
-            .WithConsumer(consumer => consumer
-                .WithTenantDistribution()
+            .AddProjection(PaymentsOverviewProjection.Declaration, sp =>
+            {
+                var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
+                return () => new PostgresStateStore<PaymentsOverview>(
+                    dataSource,
+                    nameof(PaymentsOverviewProjection),
+                    "payments");
+            })
+            .AddProjection(PaymentSummaryProjection.Declaration, sp =>
+            {
+                var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
+                return () => new PostgresStateStore<PaymentSummary>(
+                    dataSource,
+                    nameof(PaymentSummaryProjection),
+                    "payments");
+            })
+            .WithControlLoop(loop => loop
                 .WithPollingInterval(TimeSpan.FromMilliseconds(100))
-                .WithBatchSize(500)
-                .WithErrorPolicy(policy => policy
-                    .MaxRetries(3)
-                    .RetryDelay(TimeSpan.FromSeconds(1))
-                    .DeadLetterOnMaxRetries(true))
-                .AddProjection(PaymentsOverviewProjection.Declaration, sp =>
-                {
-                    var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
-                    return tenantId => new PostgresStateStore<PaymentsOverview>(
-                        dataSource,
-                        tenantId,
-                        nameof(PaymentsOverviewProjection),
-                        "payments");
-                })
-                .AddProjection(PaymentSummaryProjection.Declaration, sp =>
-                {
-                    var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
-                    return tenantId => new PostgresStateStore<PaymentSummary>(
-                        dataSource,
-                        tenantId,
-                        nameof(PaymentSummaryProjection),
-                        "payments");
-                })));
+                .WithBatchSize(500)));
 
         return services;
     }

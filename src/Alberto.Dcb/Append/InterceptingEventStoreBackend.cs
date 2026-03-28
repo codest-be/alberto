@@ -52,4 +52,9 @@ internal sealed class InterceptingEventStoreBackend(IEventStoreBackend inner, IA
     /// <inheritdoc />
     public Task<long> GetLastPosition(CancellationToken cancellationToken = default)
         => _inner.GetLastPosition(cancellationToken);
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<long>> GetPositionsAsync(
+        long afterPosition, int windowSize, CancellationToken cancellationToken = default)
+        => _inner.GetPositionsAsync(afterPosition, windowSize, cancellationToken);
 }

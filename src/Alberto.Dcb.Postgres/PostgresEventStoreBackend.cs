@@ -188,6 +188,23 @@ public sealed class PostgresEventStoreBackend(
         return result is long position ? position : 0;
     }
 
+    public async Task<IReadOnlyList<long>> GetPositionsAsync(
+        long afterPosition, int windowSize, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var cmd = new NpgsqlCommand(
+            $"SELECT global_position FROM {_schema.Table("events")} " +
+            "WHERE global_position > @after AND global_position <= @ceiling ORDER BY global_position",
+            connection);
+        cmd.Parameters.AddWithValue("after", afterPosition);
+        cmd.Parameters.AddWithValue("ceiling", afterPosition + windowSize);
+        var positions = new List<long>();
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            positions.Add(reader.GetInt64(0));
+        return positions;
+    }
+
     private string BuildStreamQuery(DcbQuery query)
     {
         if (query.IsEmpty)

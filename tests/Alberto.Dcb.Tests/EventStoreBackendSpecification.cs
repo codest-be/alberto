@@ -530,6 +530,54 @@ public abstract class EventStoreBackendSpecification
 
     #endregion
 
+    #region GetPositionsAsync Tests
+
+    [Fact]
+    public async Task GetPositionsAsync_ReturnsPositionsInWindow()
+    {
+        var backend = await CreateBackend();
+        var startPosition = await backend.GetLastPosition(TestContext.Current.CancellationToken);
+
+        await backend.Append([CreateEvent("event-a", $"tag:1{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.Append([CreateEvent("event-b", $"tag:2{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
+
+        var positions = await backend.GetPositionsAsync(startPosition, 100, TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, positions.Count);
+        Assert.Equal(startPosition + 1, positions[0]);
+        Assert.Equal(startPosition + 2, positions[1]);
+    }
+
+    [Fact]
+    public async Task GetPositionsAsync_ExcludesPositionsBeyondWindow()
+    {
+        var backend = await CreateBackend();
+        var startPosition = await backend.GetLastPosition(TestContext.Current.CancellationToken);
+
+        await backend.Append([CreateEvent("event-a", $"tag:1{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.Append([CreateEvent("event-b", $"tag:2{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.Append([CreateEvent("event-c", $"tag:3{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
+
+        // Window size of 1 — only one event fits
+        var positions = await backend.GetPositionsAsync(startPosition, 1, TestContext.Current.CancellationToken);
+
+        Assert.Single(positions);
+        Assert.Equal(startPosition + 1, positions[0]);
+    }
+
+    [Fact]
+    public async Task GetPositionsAsync_EmptyStoreReturnsEmpty()
+    {
+        var backend = await CreateBackend();
+        var startPosition = await backend.GetLastPosition(TestContext.Current.CancellationToken);
+
+        var positions = await backend.GetPositionsAsync(startPosition, 100, TestContext.Current.CancellationToken);
+
+        Assert.Empty(positions);
+    }
+
+    #endregion
+
     #region Helper Methods
 
     protected IEventToPersist CreateEvent(string eventType, params string[] tags)
