@@ -40,10 +40,12 @@ public static class InMemoryBuilderExtensions
         });
 
         // Register event store (uses intercepting backend)
-        builder.Services.AddKeyedSingleton<IEventStore>(moduleKey, (sp, _) =>
+        builder.Services.AddKeyedSingleton<IEventStore>(moduleKey, (sp, key) =>
         {
-            var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(moduleKey);
-            return new InMemoryEventStore(backend);
+            var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(key);
+            var eventStore = new InMemoryEventStore(backend);
+            RegisterPostAppendHandlers(sp, key, eventStore);
+            return eventStore;
         });
 
         builder.Services.AddKeyedSingleton<ICheckpointStore>(moduleKey, checkpointStore);
@@ -81,15 +83,23 @@ public static class InMemoryBuilderExtensions
         });
 
         // Pass-through event store using the shared backend
-        builder.Services.AddKeyedSingleton<IEventStore>(moduleKey, (sp, _) =>
+        builder.Services.AddKeyedSingleton<IEventStore>(moduleKey, (sp, key) =>
         {
-            var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(moduleKey);
-            return new InMemoryEventStore(backend);
+            var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(key);
+            var eventStore = new InMemoryEventStore(backend);
+            RegisterPostAppendHandlers(sp, key, eventStore);
+            return eventStore;
         });
 
         builder.Services.AddKeyedSingleton<ICheckpointStore>(moduleKey, checkpointStore);
         builder.Services.AddKeyedSingleton<IDeadLetterStore>(moduleKey, deadLetterStore);
 
         return builder;
+    }
+
+    private static void RegisterPostAppendHandlers(IServiceProvider sp, object? key, InMemoryEventStore eventStore)
+    {
+        foreach (var handler in sp.GetKeyedServices<IPostAppendHandler>(key))
+            eventStore.RegisterPostAppendHandler(handler);
     }
 }

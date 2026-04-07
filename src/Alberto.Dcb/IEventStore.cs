@@ -4,8 +4,8 @@ using Alberto.Dcb.Subscriptions;
 namespace Alberto.Dcb;
 
 /// <summary>
-/// High-level event store with support for inline projections.
-/// Wraps <see cref="IEventStoreBackend"/> and runs registered projections immediately after append.
+/// High-level event store with support for inline projections and post-append handlers.
+/// Wraps <see cref="IEventStoreBackend"/> and runs registered projections and handlers immediately after append.
 /// In multi-tenant mode, tenant scoping is handled transparently by the backend decorator.
 /// </summary>
 public interface IEventStore
@@ -21,6 +21,13 @@ public interface IEventStore
     void RegisterInlineProjection<TState, TProjection>(IStateStore<TState> stateStore)
         where TProjection : Projection<TState>, new()
         where TState : new();
+
+    /// <summary>
+    /// Registers a post-append handler that runs immediately after events are appended
+    /// and inline projections have completed. Used by <see cref="ReactorMode.Sync"/> reactors.
+    /// </summary>
+    /// <param name="handler">The handler to register.</param>
+    void RegisterPostAppendHandler(IPostAppendHandler handler);
 
     /// <summary>
     /// Appends events to the store and runs inline projections immediately after.

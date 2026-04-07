@@ -71,20 +71,24 @@ public static class PostgresBuilderExtensions
             // Multi-tenant mode: register PostgresTenantEventStoreBackend + TenantEventStoreDecorator
             // IEventStoreBackend and IEventStore are both scoped (backend captures ITenantAccessor per request)
             RegisterTenantBackend(builder, moduleKey, schema);
-            builder.Services.AddKeyedScoped<IEventStore>(moduleKey, (sp, _) =>
+            builder.Services.AddKeyedScoped<IEventStore>(moduleKey, (sp, key) =>
             {
-                var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(moduleKey);
-                return new PostgresEventStore(backend);
+                var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(key);
+                var eventStore = new PostgresEventStore(backend);
+                RegisterPostAppendHandlers(sp, key, eventStore);
+                return eventStore;
             });
         }
         else
         {
             // Single-tenant mode: register PostgresEventStoreBackend directly (singleton — no per-request state)
             RegisterSingleTenantBackend(builder, moduleKey, schema);
-            builder.Services.AddKeyedSingleton<IEventStore>(moduleKey, (sp, _) =>
+            builder.Services.AddKeyedSingleton<IEventStore>(moduleKey, (sp, key) =>
             {
-                var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(moduleKey);
-                return new PostgresEventStore(backend);
+                var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(key);
+                var eventStore = new PostgresEventStore(backend);
+                RegisterPostAppendHandlers(sp, key, eventStore);
+                return eventStore;
             });
         }
 
@@ -138,6 +142,12 @@ public static class PostgresBuilderExtensions
             var pipeline = sp.GetRequiredKeyedService<IAppendInterceptorPipeline>(moduleKey);
             return new InterceptingEventStoreBackend(rawBackend, pipeline);
         });
+    }
+
+    private static void RegisterPostAppendHandlers(IServiceProvider sp, object? key, PostgresEventStore eventStore)
+    {
+        foreach (var handler in sp.GetKeyedServices<IPostAppendHandler>(key))
+            eventStore.RegisterPostAppendHandler(handler);
     }
 
     private static void RegisterTenantBackend(DcbModuleBuilder builder, string moduleKey, string? schema)

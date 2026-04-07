@@ -12,6 +12,7 @@ public sealed class InMemoryEventStore : IEventStore
 {
     private readonly IEventStoreBackend _backend;
     private readonly List<IInlineProjection> _inlineProjections = [];
+    private readonly List<IPostAppendHandler> _postAppendHandlers = [];
 
     public InMemoryEventStore(IEventStoreBackend backend)
     {
@@ -28,6 +29,13 @@ public sealed class InMemoryEventStore : IEventStore
     }
 
     /// <inheritdoc/>
+    public void RegisterPostAppendHandler(IPostAppendHandler handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        _postAppendHandlers.Add(handler);
+    }
+
+    /// <inheritdoc/>
     public async Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
         IEnumerable<IEventToPersist> events,
         DcbQuery? dcbQuery = null,
@@ -36,9 +44,10 @@ public sealed class InMemoryEventStore : IEventStore
     {
         var appended = await _backend.Append(events, dcbQuery, expectedPosition, cancellationToken);
 
-        if (appended.Count > 0 && _inlineProjections.Count > 0)
+        if (appended.Count > 0)
         {
             var appendedList = appended.ToList();
+
             foreach (var projection in _inlineProjections)
             {
                 var relevant = appendedList
@@ -46,9 +55,17 @@ public sealed class InMemoryEventStore : IEventStore
                     .ToList();
 
                 if (relevant.Count > 0)
-                {
                     await projection.ProcessAsync(relevant, null!, cancellationToken);
-                }
+            }
+
+            foreach (var handler in _postAppendHandlers)
+            {
+                var relevant = appendedList
+                    .Where(e => handler.HandledEventTypes.Contains(e.EventType.Id))
+                    .ToList();
+
+                if (relevant.Count > 0)
+                    await handler.ProcessAsync(relevant, cancellationToken);
             }
         }
 
