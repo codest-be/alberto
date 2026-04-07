@@ -34,6 +34,10 @@ public static class ServiceCollectionExtensions
 
         var builder = new DcbModuleBuilder(services, moduleKey);
         configure(builder);
+
+        if (!builder.ControlLoopConfigured)
+            builder.WithControlLoop();
+
         return services;
     }
 }

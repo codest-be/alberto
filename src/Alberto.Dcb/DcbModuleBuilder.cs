@@ -43,4 +43,9 @@ public sealed class DcbModuleBuilder
     /// Gets whether multi-tenant mode has been enabled.
     /// </summary>
     internal bool HasTenancy => _withTenancy;
+
+    /// <summary>
+    /// Gets or sets whether a control loop has been explicitly configured.
+    /// </summary>
+    internal bool ControlLoopConfigured { get; set; }
 }

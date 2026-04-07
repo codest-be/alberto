@@ -53,7 +53,7 @@ internal sealed class DeclaredAsyncProjection<TState> : IBatchableProcessor, IFl
     {
         if (!_declaration.HandledEventTypes.Contains(@event.EventType.Id)) return;
 
-        var docId = _declaration.GetDocumentIdFunc(@event);
+        var docId = _declaration.GetDocumentId(@event);
         if (docId is null) return;
 
         var stateStore = GetStore();
@@ -64,7 +64,7 @@ internal sealed class DeclaredAsyncProjection<TState> : IBatchableProcessor, IFl
             return;
 
         var ctx = ProjectionContext.FromEnvelope(@event);
-        var result = _declaration.EvolveFunc(state, @event, ctx);
+        var result = _declaration.Apply(state, @event, ctx);
 
         switch (result)
         {
@@ -98,7 +98,7 @@ internal sealed class DeclaredAsyncProjection<TState> : IBatchableProcessor, IFl
         var docIdMap = new Dictionary<IEventEnvelope, string>(ReferenceEqualityComparer.Instance);
         foreach (var evt in relevant)
         {
-            var docId = _declaration.GetDocumentIdFunc(evt);
+            var docId = _declaration.GetDocumentId(evt);
             if (docId is not null)
                 docIdMap[evt] = docId;
         }
@@ -126,7 +126,7 @@ internal sealed class DeclaredAsyncProjection<TState> : IBatchableProcessor, IFl
                 continue;
 
             var ctx = ProjectionContext.FromEnvelope(evt);
-            var result = _declaration.EvolveFunc(state, evt, ctx);
+            var result = _declaration.Apply(state, evt, ctx);
 
             switch (result)
             {

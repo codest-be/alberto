@@ -4,7 +4,7 @@ namespace Alberto.Dcb.Subscriptions;
 /// Internal processor that wraps a reactor instance for async processing.
 /// The reactor should implement IReact&lt;TEvent&gt; interfaces - no base class needed.
 /// </summary>
-internal sealed class AsyncReactor<TReactor> : IEventProcessor
+public sealed class AsyncReactor<TReactor> : IEventProcessor
     where TReactor : class
 {
     private readonly TReactor _reactor;
