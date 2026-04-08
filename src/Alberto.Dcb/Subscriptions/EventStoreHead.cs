@@ -59,18 +59,63 @@ public sealed class EventStoreHead : IHostedService
     }
 
     /// <summary>
-    /// Advances from afterPosition through a gap-free prefix. Stops at first gap.
-    /// Pure static — easy to unit test.
-    /// (5, [6,7,8,10]) → 8 | (5, [6,7,8,9]) → 9 | (5, []) → 5 | (5, [7,8]) → 5
+    /// Advances from afterPosition through positions, skipping over permanent gaps
+    /// (deleted events) while still stopping at the tail where a gap might indicate
+    /// an in-flight transaction that hasn't committed yet.
+    ///
+    /// A gap is considered permanent if there are more committed events after it
+    /// within the window. A gap at the very end of the window is treated as a
+    /// potential concurrency boundary — we stop before it.
+    ///
+    /// (5, [6,7,8,10]) → 8   — gap at tail, could be in-flight
+    /// (5, [6,7,8,10,11]) → 11 — gap in middle, permanent, skip over
+    /// (5, [6,7,8,9]) → 9     — no gaps
+    /// (5, []) → 5             — no events
+    /// (5, [7,8]) → 8          — gap at start is permanent (events follow)
+    /// (5, [7]) → 5            — gap at start, nothing follows, could be in-flight
     /// </summary>
     internal static long FindContiguousHead(long afterPosition, IReadOnlyList<long> positions)
     {
+        if (positions.Count == 0)
+            return afterPosition;
+
+        // A gap at the tail might be an uncommitted transaction, so we cannot
+        // advance past the last position that is followed by another position.
+        // Walk backwards from the end to find the safe head: the last position
+        // whose *next* position also exists in the window, OR the very last
+        // position if the sequence ends gap-free.
+        //
+        // Strategy: advance through all positions. For each gap encountered,
+        // only skip it if there is at least one more position after it (proving
+        // the gap is permanent). Stop at the last position before a tail gap.
+
         var head = afterPosition;
-        foreach (var pos in positions)
+        for (var i = 0; i < positions.Count; i++)
         {
-            if (pos != head + 1) break;
-            head = pos;
+            var pos = positions[i];
+            if (pos != head + 1)
+            {
+                // Gap detected between head and pos.
+                // If this is the first position (gap from afterPosition) or a mid-stream gap,
+                // it's only safe to skip if there are more positions after this one.
+                if (i + 1 < positions.Count)
+                {
+                    // More positions follow — this gap is permanent, skip over it.
+                    head = pos;
+                }
+                else
+                {
+                    // This is the last position and there's a gap before it.
+                    // Could be an in-flight transaction — stop before it.
+                    break;
+                }
+            }
+            else
+            {
+                head = pos;
+            }
         }
+
         return head;
     }
 }

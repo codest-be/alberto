@@ -69,17 +69,27 @@ public sealed class ControlLoopTests
     }
 
     [Fact]
-    public void FindContiguousHead_GapInMiddle_StopsBeforeGap()
+    public void FindContiguousHead_GapAtTail_StopsBeforeGap()
     {
+        // Gap at end of window could be in-flight transaction — stop before it
         var result = EventStoreHead.FindContiguousHead(5, [6, 7, 8, 10]);
         Assert.Equal(8, result);
     }
 
     [Fact]
-    public void FindContiguousHead_GapAtStart_ReturnsAfterPosition()
+    public void FindContiguousHead_GapInMiddle_SkipsOver()
     {
+        // Gap followed by more positions — permanent gap, safe to skip
+        var result = EventStoreHead.FindContiguousHead(5, [6, 7, 8, 10, 11]);
+        Assert.Equal(11, result);
+    }
+
+    [Fact]
+    public void FindContiguousHead_GapAtStart_WithMorePositions_SkipsOver()
+    {
+        // Gap at start but more positions follow — permanent gap
         var result = EventStoreHead.FindContiguousHead(5, [7, 8, 9]);
-        Assert.Equal(5, result);
+        Assert.Equal(9, result);
     }
 
     [Fact]
@@ -92,8 +102,25 @@ public sealed class ControlLoopTests
     [Fact]
     public void FindContiguousHead_SingleGap_ReturnsAfterPosition()
     {
+        // Only one position after a gap, no proof it's permanent — stop
         var result = EventStoreHead.FindContiguousHead(5, [7]);
         Assert.Equal(5, result);
+    }
+
+    [Fact]
+    public void FindContiguousHead_MultipleGaps_SkipsAllButTail()
+    {
+        // Multiple permanent gaps, then contiguous at end
+        var result = EventStoreHead.FindContiguousHead(0, [1, 2, 5, 6, 9, 10, 11]);
+        Assert.Equal(11, result);
+    }
+
+    [Fact]
+    public void FindContiguousHead_MultipleGaps_StopsAtTailGap()
+    {
+        // Multiple permanent gaps, then a tail gap
+        var result = EventStoreHead.FindContiguousHead(0, [1, 2, 5, 6, 9, 10, 12]);
+        Assert.Equal(10, result);
     }
 
     #endregion
