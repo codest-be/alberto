@@ -9,6 +9,7 @@ internal sealed class DeclaredAsyncProjection<TState> : IBatchableProcessor, IFl
 {
     private readonly ProjectionDeclaration<TState> _declaration;
     private readonly Func<IStateStore<TState>> _stateStoreFactory;
+    private readonly Func<IReadOnlyList<IEventEnvelope>, CancellationToken, Task>? _afterCommit;
     private IStateStore<TState>? _stateStore;
     private volatile bool _isActive = true;
     private volatile bool _isRebuilding;
@@ -17,12 +18,14 @@ internal sealed class DeclaredAsyncProjection<TState> : IBatchableProcessor, IFl
     public DeclaredAsyncProjection(
         ProjectionDeclaration<TState> declaration,
         Func<IStateStore<TState>> stateStoreFactory,
-        string? processorIdOverride = null)
+        string? processorIdOverride = null,
+        Func<IReadOnlyList<IEventEnvelope>, CancellationToken, Task>? afterCommit = null)
     {
         ArgumentNullException.ThrowIfNull(declaration);
         ArgumentNullException.ThrowIfNull(stateStoreFactory);
         _declaration = declaration;
         _stateStoreFactory = stateStoreFactory;
+        _afterCommit = afterCommit;
         ProcessorId = processorIdOverride ?? declaration.ProcessorId;
     }
 
@@ -75,6 +78,8 @@ internal sealed class DeclaredAsyncProjection<TState> : IBatchableProcessor, IFl
                     [],
                     transaction: null,
                     ct);
+                if (_afterCommit is not null)
+                    await _afterCommit([@event], ct);
                 break;
 
             case ProjectionResult<TState>.Delete:
@@ -83,6 +88,8 @@ internal sealed class DeclaredAsyncProjection<TState> : IBatchableProcessor, IFl
                     [docId],
                     transaction: null,
                     ct);
+                if (_afterCommit is not null)
+                    await _afterCommit([@event], ct);
                 break;
         }
     }
@@ -144,7 +151,11 @@ internal sealed class DeclaredAsyncProjection<TState> : IBatchableProcessor, IFl
         }
 
         if (upserts.Count > 0 || deletes.Count > 0)
+        {
             await stateStore.ApplyChangesAsync(upserts, deletes.ToList(), transaction: null, ct);
+            if (_afterCommit is not null)
+                await _afterCommit(relevant, ct);
+        }
     }
 
     /// <inheritdoc/>

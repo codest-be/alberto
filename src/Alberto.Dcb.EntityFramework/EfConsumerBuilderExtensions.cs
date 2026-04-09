@@ -35,4 +35,34 @@ public static class EfConsumerBuilderExtensions
                 declaration.ProcessorId));
         return builder;
     }
+
+    /// <summary>
+    /// Registers an async projection processor with a post-commit callback.
+    /// The <paramref name="afterCommit"/> factory resolves dependencies at startup
+    /// and returns a callback invoked after each successful SaveChanges,
+    /// receiving only the events the projection actually handled.
+    /// </summary>
+    public static DcbModuleBuilder AddEfProjection<TEntity, TDbContext>(
+        this DcbModuleBuilder builder,
+        ProjectionDeclaration<TEntity> declaration,
+        Func<IServiceProvider, Func<IReadOnlyList<IEventEnvelope>, CancellationToken, Task>> afterCommit)
+        where TEntity : class, IProjectionEntity, new()
+        where TDbContext : DbContext
+    {
+        ArgumentNullException.ThrowIfNull(declaration);
+        ArgumentNullException.ThrowIfNull(afterCommit);
+
+        builder.Services.AddKeyedSingleton<IEventProcessor>(builder.ModuleKey, (sp, _) =>
+        {
+            var contextFactory = sp.GetRequiredService<IDbContextFactory<TDbContext>>();
+            return new DeclaredAsyncProjection<TEntity>(declaration,
+                () => new EfStateStore<TEntity, TDbContext>(contextFactory),
+                afterCommit: afterCommit(sp));
+        });
+        builder.Services.AddKeyedSingleton<IProjectionStateClearer>(builder.ModuleKey, (sp, _) =>
+            new EfProjectionStateClearer<TEntity, TDbContext>(
+                sp.GetRequiredService<IDbContextFactory<TDbContext>>(),
+                declaration.ProcessorId));
+        return builder;
+    }
 }
