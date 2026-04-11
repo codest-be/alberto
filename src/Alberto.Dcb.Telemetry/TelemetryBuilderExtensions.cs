@@ -1,6 +1,6 @@
 using Alberto.Dcb.Append;
 using Alberto.Dcb.Diagnostics;
-using Alberto.Dcb.Subscriptions.Pipeline;
+using Alberto.Dcb.Subscriptions;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Alberto.Dcb.Telemetry;
@@ -27,14 +27,14 @@ public static class TelemetryBuilderExtensions
         // Register append interceptor for trace context enrichment
         builder.Services.AddKeyedSingleton<IAppendInterceptor, TelemetryAppendInterceptor>(moduleKey);
 
-        // Register consume filter with trace context provider for linking (legacy path)
-#pragma warning disable CS0618
-        builder.Services.AddKeyedSingleton<IConsumeFilter>(moduleKey, (sp, _) =>
+        // Register consume middleware that traces every processed event.
+        // This is picked up by ControlLoopBuilder and runs as the outermost layer
+        // in the consume pipeline (one span per event including all retries).
+        builder.Services.AddKeyedSingleton<ConsumeMiddleware>(moduleKey, (sp, _) =>
         {
             var provider = sp.GetKeyedService<ITraceContextProvider>(moduleKey);
-            return new TelemetryConsumeFilter(provider);
+            return TelemetryConsumeMiddleware.Create(provider);
         });
-#pragma warning restore CS0618
 
         return builder;
     }

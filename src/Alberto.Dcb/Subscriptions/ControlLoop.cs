@@ -6,7 +6,11 @@ namespace Alberto.Dcb.Subscriptions;
 /// <summary>
 /// Runs a single IEventProcessor as an independent hosted service.
 /// Polls from its own checkpoint up to EventStoreHead.Current.
-/// On failure: stops, logs Critical, preserves checkpoint for retry on restart.
+/// Each event is dispatched through a <see cref="ConsumeMiddleware"/> chain
+/// (retry, dead-letter, telemetry, ...) before reaching the processor, so a
+/// single bad event cannot halt the loop.
+/// On unrecoverable failures (errors that escape the middleware chain): stops,
+/// logs Critical, preserves checkpoint for retry on restart.
 /// </summary>
 public sealed class ControlLoop : IHostedService, IAsyncDisposable
 {
@@ -16,6 +20,8 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
     private readonly ICheckpointStore _checkpointStore;
     private readonly TimeSpan _pollingInterval;
     private readonly int _batchSize;
+    private readonly string _moduleKey;
+    private readonly IReadOnlyList<ConsumeMiddleware> _middlewares;
     private readonly ILogger<ControlLoop>? _logger;
     private CancellationTokenSource? _cts;
     private Task? _loop;
@@ -23,13 +29,26 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
     public bool IsFaulted { get; private set; }
     public string ProcessorId => _processor.ProcessorId;
 
-    internal ControlLoop(IEventProcessor processor, EventStoreHead head,
-        IEventStoreBackend backend, ICheckpointStore checkpointStore,
-        TimeSpan pollingInterval, int batchSize, ILogger<ControlLoop>? logger = null)
+    internal ControlLoop(
+        IEventProcessor processor,
+        EventStoreHead head,
+        IEventStoreBackend backend,
+        ICheckpointStore checkpointStore,
+        TimeSpan pollingInterval,
+        int batchSize,
+        string moduleKey = "",
+        IReadOnlyList<ConsumeMiddleware>? middlewares = null,
+        ILogger<ControlLoop>? logger = null)
     {
-        _processor = processor; _head = head; _backend = backend;
-        _checkpointStore = checkpointStore; _pollingInterval = pollingInterval;
-        _batchSize = batchSize; _logger = logger;
+        _processor = processor;
+        _head = head;
+        _backend = backend;
+        _checkpointStore = checkpointStore;
+        _pollingInterval = pollingInterval;
+        _batchSize = batchSize;
+        _moduleKey = moduleKey;
+        _middlewares = middlewares ?? [];
+        _logger = logger;
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -79,8 +98,10 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
 
                 foreach (var evt in events.Where(e => e.GlobalPosition <= head))
                 {
-                    if (_processor.HandledEventTypes.Contains(evt.EventType.Id))
-                        await _processor.ProcessEventAsync(evt, ct);
+                    if (!_processor.HandledEventTypes.Contains(evt.EventType.Id))
+                        continue;
+
+                    await DispatchAsync(evt, ct);
                 }
 
                 var newCheckpoint = events
@@ -108,5 +129,25 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
             }
         }
         _logger?.LogInformation("ControlLoop {ProcessorId} stopped", ProcessorId);
+    }
+
+    private Task DispatchAsync(IEventEnvelope evt, CancellationToken ct)
+    {
+        if (_middlewares.Count == 0)
+            return _processor.ProcessEventAsync(evt, ct);
+
+        var context = new ConsumeEventContext
+        {
+            ProcessorId = _processor.ProcessorId,
+            ModuleKey = _moduleKey,
+            Envelope = evt,
+            IsRebuild = _processor.IsRebuilding,
+            CancellationToken = ct,
+        };
+
+        return MiddlewareRunner.RunAsync(
+            context,
+            _middlewares,
+            () => _processor.ProcessEventAsync(evt, ct));
     }
 }
