@@ -75,7 +75,7 @@ public static class DcbModuleBuilderExtensions
     /// method on the handler to invoke for each event.
     /// </summary>
     /// <typeparam name="TEvent">The event type to react to.</typeparam>
-    /// <typeparam name="THandler">The handler class holding dependencies. Registered as a singleton if not already registered.</typeparam>
+    /// <typeparam name="THandler">The handler class holding dependencies. Registered as scoped if not already registered.</typeparam>
     /// <param name="builder">The module builder.</param>
     /// <param name="methodSelector">Selects the handler method from the resolved handler instance.</param>
     /// <param name="processorId">Optional processor ID. Defaults to "{HandlerTypeName}.{MethodName}".</param>
@@ -92,14 +92,19 @@ public static class DcbModuleBuilderExtensions
         where THandler : class
     {
         ArgumentNullException.ThrowIfNull(methodSelector);
-        builder.Services.TryAddSingleton<THandler>();
+        builder.Services.TryAddScoped<THandler>();
 
         if (mode == ReactorMode.Sync)
         {
             builder.Services.AddKeyedSingleton<IPostAppendHandler>(builder.ModuleKey, (sp, _) =>
             {
-                var handler = sp.GetRequiredService<THandler>();
-                return new SyncReactor<TEvent>(methodSelector(handler));
+                var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
+                return new SyncReactor<TEvent>(async (e, ct) =>
+                {
+                    await using var scope = scopeFactory.CreateAsyncScope();
+                    var handler = scope.ServiceProvider.GetRequiredService<THandler>();
+                    await methodSelector(handler)(e, ct);
+                });
             });
         }
         else
@@ -107,8 +112,13 @@ public static class DcbModuleBuilderExtensions
             var id = processorId ?? $"{typeof(THandler).Name}.{typeof(TEvent).Name}";
             builder.Services.AddKeyedSingleton<IEventProcessor>(builder.ModuleKey, (sp, _) =>
             {
-                var handler = sp.GetRequiredService<THandler>();
-                return new FunctionalReactor<TEvent>(id, methodSelector(handler));
+                var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
+                return new FunctionalReactor<TEvent>(id, async (e, ct) =>
+                {
+                    await using var scope = scopeFactory.CreateAsyncScope();
+                    var handler = scope.ServiceProvider.GetRequiredService<THandler>();
+                    await methodSelector(handler)(e, ct);
+                });
             });
         }
 
