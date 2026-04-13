@@ -33,10 +33,9 @@ public static class MessagingBuilderExtensions
         var registry = new MessageMappingRegistry();
         configureMappings(registry);
 
-        var handler = new OutboxHandler(registry, outboxStore);
-
         // Register the handler as a keyed IEventProcessor so the ControlLoop picks it up
-        builder.Services.AddKeyedSingleton<IEventProcessor>(builder.ModuleKey, handler);
+        builder.Services.AddKeyedSingleton<IEventProcessor>(builder.ModuleKey, (sp, _) =>
+            new OutboxHandler(registry, outboxStore, sp));
 
         // Optionally wire up the relay as a hosted service
         if (transport is not null)

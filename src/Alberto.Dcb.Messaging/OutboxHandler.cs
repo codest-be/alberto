@@ -7,17 +7,11 @@ namespace Alberto.Dcb.Messaging;
 /// An <see cref="IEventProcessor"/> that writes mapped events into the outbox store.
 /// Register this processor with the consumer to capture events for reliable delivery.
 /// </summary>
-internal sealed class OutboxHandler : IEventProcessor
+internal sealed class OutboxHandler(
+    IMessageMappingRegistry registry,
+    IOutboxStore store,
+    IServiceProvider serviceProvider) : IEventProcessor
 {
-    private readonly IMessageMappingRegistry _registry;
-    private readonly IOutboxStore _store;
-
-    public OutboxHandler(IMessageMappingRegistry registry, IOutboxStore store)
-    {
-        _registry = registry;
-        _store = store;
-    }
-
     /// <inheritdoc/>
     public string ProcessorId => "outbox";
 
@@ -28,12 +22,12 @@ internal sealed class OutboxHandler : IEventProcessor
     public bool IsRebuilding { get; set; }
 
     /// <inheritdoc/>
-    public IReadOnlySet<string> HandledEventTypes => _registry.MappedEventTypes;
+    public IReadOnlySet<string> HandledEventTypes => registry.MappedEventTypes;
 
     /// <inheritdoc/>
     public async Task ProcessEventAsync(IEventEnvelope envelope, CancellationToken ct)
     {
-        var message = _registry.TryMap(envelope);
+        var message = await registry.TryMapAsync(envelope, serviceProvider, ct);
         if (message is null) return;
 
         var entry = new OutboxEntry(
@@ -49,6 +43,6 @@ internal sealed class OutboxHandler : IEventProcessor
             CreatedAt: DateTimeOffset.UtcNow,
             DeliveredAt: null);
 
-        await _store.InsertAsync(entry, ct);
+        await store.InsertAsync(entry, ct);
     }
 }

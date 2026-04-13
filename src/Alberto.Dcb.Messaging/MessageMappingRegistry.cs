@@ -18,8 +18,11 @@ public sealed class MessageMappingRegistry : IMessageMappingRegistry
         => _mappers[EventTypeAttribute.GetEventTypeId(typeof(TEvent))] = mapper;
 
     /// <inheritdoc/>
-    public ExternalMessage? TryMap(IEventEnvelope envelope)
-        => _mappers.TryGetValue(envelope.EventType.Id, out var mapper) ? mapper(envelope) : null;
+    public ValueTask<ExternalMessage?> TryMapAsync(
+        IEventEnvelope envelope, IServiceProvider serviceProvider, CancellationToken ct)
+        => _mappers.TryGetValue(envelope.EventType.Id, out var mapper)
+            ? mapper(envelope, serviceProvider, ct)
+            : ValueTask.FromResult<ExternalMessage?>(null);
 
     /// <inheritdoc/>
     public IReadOnlySet<string> MappedEventTypes => _mappers.Keys.ToHashSet();

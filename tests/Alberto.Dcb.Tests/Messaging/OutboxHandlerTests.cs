@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Alberto.Dcb.Messaging;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace Alberto.Dcb.Tests.Messaging;
@@ -9,7 +10,7 @@ namespace Alberto.Dcb.Tests.Messaging;
 /// </summary>
 public class OutboxHandlerTests
 {
-    #region Test Events
+    #region Test Events and Messages
 
     [EventType("order-placed")]
     public record OrderPlaced(Guid OrderId, decimal Amount) : IEvent;
@@ -19,6 +20,22 @@ public class OutboxHandlerTests
 
     [EventType("order-cancelled")]
     public record OrderCancelled(Guid OrderId) : IEvent;
+
+    // Has fewer fields than OrderPlaced — the public contract shape
+    [Message("order.placed", 1)]
+    public record OrderPlacedMessage(Guid OrderId);
+
+    [EventType("order-refunded")]
+    public record OrderRefunded(Guid OrderId, string Reason, decimal Amount) : IEvent;
+
+    // Projected contract with different fields
+    [Message("order.refunded", 2)]
+    public record OrderRefundedMessage(Guid OrderId, string Reason);
+
+    public interface IOrderEnricher
+    {
+        string GetLabel(Guid orderId);
+    }
 
     #endregion
 
@@ -107,12 +124,13 @@ public class OutboxHandlerTests
     }
 
     private static (OutboxHandler handler, InMemoryOutboxStore store) CreateHandler(
-        Action<IMessageMappingRegistry> configure)
+        Action<IMessageMappingRegistry> configure,
+        IServiceProvider? sp = null)
     {
         var registry = new MessageMappingRegistry();
         configure(registry);
         var store = new InMemoryOutboxStore();
-        var handler = new OutboxHandler(registry, store);
+        var handler = new OutboxHandler(registry, store, sp ?? new ServiceCollection().BuildServiceProvider());
         return (handler, store);
     }
 
@@ -123,7 +141,8 @@ public class OutboxHandlerTests
     [Fact]
     public void ProcessorId_IsOutbox()
     {
-        var (handler, _) = CreateHandler(r => r.Map<OrderPlaced>(_ => null));
+        var (handler, _) = CreateHandler(r =>
+            r.Map<OrderPlaced>((_, _, _) => ValueTask.FromResult<ExternalMessage?>(null)));
         Assert.Equal("outbox", handler.ProcessorId);
     }
 
@@ -132,8 +151,8 @@ public class OutboxHandlerTests
     {
         var (handler, _) = CreateHandler(r =>
         {
-            r.Map<OrderPlaced>(_ => null);
-            r.Map<OrderShipped>(_ => null);
+            r.Map<OrderPlaced>((_, _, _) => ValueTask.FromResult<ExternalMessage?>(null));
+            r.Map<OrderShipped>((_, _, _) => ValueTask.FromResult<ExternalMessage?>(null));
         });
 
         Assert.Contains("order-placed", handler.HandledEventTypes);
@@ -143,16 +162,17 @@ public class OutboxHandlerTests
 
     #endregion
 
-    #region ProcessEventAsync
+    #region ProcessEventAsync (raw delegate)
 
     [Fact]
     public async Task ProcessEventAsync_MappedEvent_WritesEntryToStore()
     {
         var (handler, store) = CreateHandler(r =>
-            r.Map<OrderPlaced>(env =>
+            r.Map<OrderPlaced>((env, _, _) =>
             {
                 var evt = JsonSerializer.Deserialize<OrderPlaced>(env.EventData)!;
-                return new ExternalMessage("order.placed", "1", env.EventData, new Dictionary<string, string>());
+                return ValueTask.FromResult<ExternalMessage?>(
+                    new ExternalMessage("order.placed", "1", env.EventData, new Dictionary<string, string>()));
             }));
 
         var envelope = CreateEnvelope(new OrderPlaced(Guid.NewGuid(), 99.99m));
@@ -173,7 +193,7 @@ public class OutboxHandlerTests
     public async Task ProcessEventAsync_MapperReturnsNull_DoesNotWriteEntry()
     {
         var (handler, store) = CreateHandler(r =>
-            r.Map<OrderPlaced>(_ => null));
+            r.Map<OrderPlaced>((_, _, _) => ValueTask.FromResult<ExternalMessage?>(null)));
 
         var envelope = CreateEnvelope(new OrderPlaced(Guid.NewGuid(), 10m));
         await handler.ProcessEventAsync(envelope, TestContext.Current.CancellationToken);
@@ -185,8 +205,9 @@ public class OutboxHandlerTests
     public async Task ProcessEventAsync_UnmappedEventType_DoesNotWriteEntry()
     {
         var (handler, store) = CreateHandler(r =>
-            r.Map<OrderPlaced>(env =>
-                new ExternalMessage("order.placed", "1", env.EventData, new Dictionary<string, string>())));
+            r.Map<OrderPlaced>((env, _, _) =>
+                ValueTask.FromResult<ExternalMessage?>(
+                    new ExternalMessage("order.placed", "1", env.EventData, new Dictionary<string, string>()))));
 
         // OrderCancelled is not mapped
         var envelope = CreateEnvelope(new OrderCancelled(Guid.NewGuid()));
@@ -200,8 +221,9 @@ public class OutboxHandlerTests
     {
         var expectedMeta = new Dictionary<string, string> { ["correlation-id"] = "abc123" };
         var (handler, store) = CreateHandler(r =>
-            r.Map<OrderPlaced>(_ =>
-                new ExternalMessage("order.placed", "1", "{}", expectedMeta)));
+            r.Map<OrderPlaced>((_, _, _) =>
+                ValueTask.FromResult<ExternalMessage?>(
+                    new ExternalMessage("order.placed", "1", "{}", expectedMeta))));
 
         await handler.ProcessEventAsync(CreateEnvelope(new OrderPlaced(Guid.NewGuid(), 1m)),
             TestContext.Current.CancellationToken);
@@ -214,8 +236,9 @@ public class OutboxHandlerTests
     public async Task ProcessEventAsync_MultipleEvents_WritesMultipleEntries()
     {
         var (handler, store) = CreateHandler(r =>
-            r.Map<OrderPlaced>(env =>
-                new ExternalMessage("order.placed", "1", env.EventData, new Dictionary<string, string>())));
+            r.Map<OrderPlaced>((env, _, _) =>
+                ValueTask.FromResult<ExternalMessage?>(
+                    new ExternalMessage("order.placed", "1", env.EventData, new Dictionary<string, string>()))));
 
         await handler.ProcessEventAsync(CreateEnvelope(new OrderPlaced(Guid.NewGuid(), 10m), 1),
             TestContext.Current.CancellationToken);
@@ -223,6 +246,89 @@ public class OutboxHandlerTests
             TestContext.Current.CancellationToken);
 
         Assert.Equal(2, store.Entries.Count);
+    }
+
+    #endregion
+
+    #region Map<TEvent, TMessage> extension (attribute-derived type/version)
+
+    [Fact]
+    public void Map_WithMessageType_RegistersEventTypeFromEventAttribute()
+    {
+        var registry = new MessageMappingRegistry();
+        registry.Map<OrderRefunded, OrderRefundedMessage>(evt => new OrderRefundedMessage(evt.OrderId, evt.Reason));
+        Assert.Contains("order-refunded", registry.MappedEventTypes);
+    }
+
+    [Fact]
+    public async Task Map_WithMessageType_UsesAttributeForTypeAndVersion()
+    {
+        var (handler, store) = CreateHandler(r =>
+            r.Map<OrderRefunded, OrderRefundedMessage>(evt => new OrderRefundedMessage(evt.OrderId, evt.Reason)));
+
+        var orderId = Guid.NewGuid();
+        await handler.ProcessEventAsync(
+            CreateEnvelope(new OrderRefunded(orderId, "duplicate", 50m)),
+            TestContext.Current.CancellationToken);
+
+        Assert.Single(store.Entries);
+        Assert.Equal("order.refunded", store.Entries[0].MessageType);
+        Assert.Equal("2", store.Entries[0].Version);
+    }
+
+    [Fact]
+    public async Task Map_WithMessageType_OnlyProjectsSelectedFields()
+    {
+        var (handler, store) = CreateHandler(r =>
+            r.Map<OrderRefunded, OrderRefundedMessage>(evt => new OrderRefundedMessage(evt.OrderId, evt.Reason)));
+
+        await handler.ProcessEventAsync(
+            CreateEnvelope(new OrderRefunded(Guid.NewGuid(), "duplicate", 99.99m)),
+            TestContext.Current.CancellationToken);
+
+        var payload = JsonDocument.Parse(store.Entries[0].Payload);
+        Assert.False(payload.RootElement.TryGetProperty("Amount", out _), "Amount should not be in the external message");
+        Assert.Equal("duplicate", payload.RootElement.GetProperty("Reason").GetString());
+    }
+
+    [Fact]
+    public void Map_WithMessageType_ThrowsWhenAttributeMissing()
+    {
+        var registry = new MessageMappingRegistry();
+        // OrderPlaced has [EventType] but no [Message]
+        Assert.Throws<InvalidOperationException>(() =>
+            registry.Map<OrderRefunded, OrderPlaced>(evt => new OrderPlaced(evt.OrderId, evt.Amount)));
+    }
+
+    #endregion
+
+    #region Map<TEvent, TDep, TMessage> extension (with service injection)
+
+    [Fact]
+    public async Task Map_WithDependency_ResolvesServiceAndProjectsMessage()
+    {
+        var enricher = new FakeOrderEnricher("vip");
+        var sp = new ServiceCollection()
+            .AddSingleton<IOrderEnricher>(enricher)
+            .BuildServiceProvider();
+
+        var (handler, store) = CreateHandler(
+            r => r.Map<OrderPlaced, IOrderEnricher, OrderPlacedMessage>(
+                (enricher, evt) => new OrderPlacedMessage(evt.OrderId)),
+            sp);
+
+        await handler.ProcessEventAsync(
+            CreateEnvelope(new OrderPlaced(Guid.NewGuid(), 10m)),
+            TestContext.Current.CancellationToken);
+
+        Assert.Single(store.Entries);
+        Assert.Equal("order.placed", store.Entries[0].MessageType);
+        Assert.Equal("1", store.Entries[0].Version);
+    }
+
+    private sealed class FakeOrderEnricher(string label) : IOrderEnricher
+    {
+        public string GetLabel(Guid orderId) => label;
     }
 
     #endregion
