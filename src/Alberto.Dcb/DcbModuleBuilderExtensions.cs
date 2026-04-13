@@ -71,6 +71,93 @@ public static class DcbModuleBuilderExtensions
 
     /// <summary>
     /// Registers a functional reactor that reacts to a specific event type,
+    /// resolving a single dependency from DI at startup.
+    /// </summary>
+    /// <typeparam name="TEvent">The event type to react to.</typeparam>
+    /// <typeparam name="TDep">The dependency type to resolve from DI.</typeparam>
+    /// <param name="builder">The module builder.</param>
+    /// <param name="handler">The static handler function receiving the resolved dependency, event, and cancellation token.</param>
+    /// <param name="processorId">Optional processor ID. Defaults to "ReactTo-{EventTypeName}".</param>
+    /// <param name="mode">Execution mode.</param>
+    public static DcbModuleBuilder ReactTo<TEvent, TDep>(
+        this DcbModuleBuilder builder,
+        Func<TDep, TEvent, CancellationToken, Task> handler,
+        string? processorId = null,
+        ReactorMode mode = ReactorMode.Async)
+        where TEvent : class, IEvent
+        where TDep : notnull
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        return builder.ReactTo<TEvent>(sp =>
+        {
+            var dep = sp.GetRequiredService<TDep>();
+            return (e, ct) => handler(dep, e, ct);
+        }, processorId, mode);
+    }
+
+    /// <summary>
+    /// Registers a functional reactor that reacts to a specific event type,
+    /// resolving two dependencies from DI at startup.
+    /// </summary>
+    /// <typeparam name="TEvent">The event type to react to.</typeparam>
+    /// <typeparam name="TDep1">The first dependency type to resolve from DI.</typeparam>
+    /// <typeparam name="TDep2">The second dependency type to resolve from DI.</typeparam>
+    /// <param name="builder">The module builder.</param>
+    /// <param name="handler">The static handler function receiving the resolved dependencies, event, and cancellation token.</param>
+    /// <param name="processorId">Optional processor ID. Defaults to "ReactTo-{EventTypeName}".</param>
+    /// <param name="mode">Execution mode.</param>
+    public static DcbModuleBuilder ReactTo<TEvent, TDep1, TDep2>(
+        this DcbModuleBuilder builder,
+        Func<TDep1, TDep2, TEvent, CancellationToken, Task> handler,
+        string? processorId = null,
+        ReactorMode mode = ReactorMode.Async)
+        where TEvent : class, IEvent
+        where TDep1 : notnull
+        where TDep2 : notnull
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        return builder.ReactTo<TEvent>(sp =>
+        {
+            var dep1 = sp.GetRequiredService<TDep1>();
+            var dep2 = sp.GetRequiredService<TDep2>();
+            return (e, ct) => handler(dep1, dep2, e, ct);
+        }, processorId, mode);
+    }
+
+    /// <summary>
+    /// Registers a functional reactor that reacts to a specific event type,
+    /// resolving three dependencies from DI at startup.
+    /// </summary>
+    /// <typeparam name="TEvent">The event type to react to.</typeparam>
+    /// <typeparam name="TDep1">The first dependency type to resolve from DI.</typeparam>
+    /// <typeparam name="TDep2">The second dependency type to resolve from DI.</typeparam>
+    /// <typeparam name="TDep3">The third dependency type to resolve from DI.</typeparam>
+    /// <param name="builder">The module builder.</param>
+    /// <param name="handler">The static handler function receiving the resolved dependencies, event, and cancellation token.</param>
+    /// <param name="processorId">Optional processor ID. Defaults to "ReactTo-{EventTypeName}".</param>
+    /// <param name="mode">Execution mode.</param>
+    public static DcbModuleBuilder ReactTo<TEvent, TDep1, TDep2, TDep3>(
+        this DcbModuleBuilder builder,
+        Func<TDep1, TDep2, TDep3, TEvent, CancellationToken, Task> handler,
+        string? processorId = null,
+        ReactorMode mode = ReactorMode.Async)
+        where TEvent : class, IEvent
+        where TDep1 : notnull
+        where TDep2 : notnull
+        where TDep3 : notnull
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        return builder.ReactTo<TEvent>(sp =>
+        {
+            var dep1 = sp.GetRequiredService<TDep1>();
+            var dep2 = sp.GetRequiredService<TDep2>();
+            var dep3 = sp.GetRequiredService<TDep3>();
+            return (e, ct) => handler(dep1, dep2, dep3, e, ct);
+        }, processorId, mode);
+    }
+
+    /// <summary>
+    /// Registers a functional reactor that reacts to a specific event type,
     /// using a handler class resolved from DI. The method selector picks which
     /// method on the handler to invoke for each event.
     /// </summary>
