@@ -40,7 +40,10 @@ public static class DcbModuleBuilderExtensions
     /// <typeparam name="TEvent">The event type to react to.</typeparam>
     /// <param name="builder">The module builder.</param>
     /// <param name="handlerFactory">A factory that resolves dependencies and returns the event handler.</param>
-    /// <param name="processorId">Optional processor ID. Defaults to "ReactTo-{EventTypeName}".</param>
+    /// <param name="processorId">
+    /// A unique processor ID within this module. Used as the checkpoint key — processors
+    /// sharing an ID would share checkpoint state and silently skip events.
+    /// </param>
     /// <param name="mode">
     /// <see cref="ReactorMode.Async"/> (default): runs via background polling.
     /// <see cref="ReactorMode.Sync"/>: runs immediately during <see cref="IEventStore.AppendAsync"/>.
@@ -48,11 +51,12 @@ public static class DcbModuleBuilderExtensions
     public static DcbModuleBuilder ReactTo<TEvent>(
         this DcbModuleBuilder builder,
         Func<IServiceProvider, Func<TEvent, CancellationToken, Task>> handlerFactory,
-        string? processorId = null,
+        string processorId,
         ReactorMode mode = ReactorMode.Async)
         where TEvent : class, IEvent
     {
         ArgumentNullException.ThrowIfNull(handlerFactory);
+        ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
 
         if (mode == ReactorMode.Sync)
         {
@@ -61,9 +65,8 @@ public static class DcbModuleBuilderExtensions
         }
         else
         {
-            var id = processorId ?? $"ReactTo-{typeof(TEvent).Name}";
             builder.Services.AddKeyedSingleton<IEventProcessor>(builder.ModuleKey, (sp, _) =>
-                new FunctionalReactor<TEvent>(id, handlerFactory(sp)));
+                new FunctionalReactor<TEvent>(processorId, handlerFactory(sp)));
         }
 
         return builder;
@@ -77,12 +80,12 @@ public static class DcbModuleBuilderExtensions
     /// <typeparam name="TDep">The dependency type to resolve from DI.</typeparam>
     /// <param name="builder">The module builder.</param>
     /// <param name="handler">The static handler function receiving the resolved dependency, event, and cancellation token.</param>
-    /// <param name="processorId">Optional processor ID. Defaults to "ReactTo-{EventTypeName}".</param>
+    /// <param name="processorId">A unique processor ID within this module.</param>
     /// <param name="mode">Execution mode.</param>
     public static DcbModuleBuilder ReactTo<TEvent, TDep>(
         this DcbModuleBuilder builder,
         Func<TDep, TEvent, CancellationToken, Task> handler,
-        string? processorId = null,
+        string processorId,
         ReactorMode mode = ReactorMode.Async)
         where TEvent : class, IEvent
         where TDep : notnull
@@ -104,12 +107,12 @@ public static class DcbModuleBuilderExtensions
     /// <typeparam name="TDep2">The second dependency type to resolve from DI.</typeparam>
     /// <param name="builder">The module builder.</param>
     /// <param name="handler">The static handler function receiving the resolved dependencies, event, and cancellation token.</param>
-    /// <param name="processorId">Optional processor ID. Defaults to "ReactTo-{EventTypeName}".</param>
+    /// <param name="processorId">A unique processor ID within this module.</param>
     /// <param name="mode">Execution mode.</param>
     public static DcbModuleBuilder ReactTo<TEvent, TDep1, TDep2>(
         this DcbModuleBuilder builder,
         Func<TDep1, TDep2, TEvent, CancellationToken, Task> handler,
-        string? processorId = null,
+        string processorId,
         ReactorMode mode = ReactorMode.Async)
         where TEvent : class, IEvent
         where TDep1 : notnull
@@ -134,12 +137,12 @@ public static class DcbModuleBuilderExtensions
     /// <typeparam name="TDep3">The third dependency type to resolve from DI.</typeparam>
     /// <param name="builder">The module builder.</param>
     /// <param name="handler">The static handler function receiving the resolved dependencies, event, and cancellation token.</param>
-    /// <param name="processorId">Optional processor ID. Defaults to "ReactTo-{EventTypeName}".</param>
+    /// <param name="processorId">A unique processor ID within this module.</param>
     /// <param name="mode">Execution mode.</param>
     public static DcbModuleBuilder ReactTo<TEvent, TDep1, TDep2, TDep3>(
         this DcbModuleBuilder builder,
         Func<TDep1, TDep2, TDep3, TEvent, CancellationToken, Task> handler,
-        string? processorId = null,
+        string processorId,
         ReactorMode mode = ReactorMode.Async)
         where TEvent : class, IEvent
         where TDep1 : notnull
@@ -158,14 +161,17 @@ public static class DcbModuleBuilderExtensions
 
     /// <summary>
     /// Registers a functional reactor that reacts to a specific event type,
-    /// using a handler class resolved from DI. The method selector picks which
+    /// using a handler class resolved from DI per event. The method selector picks which
     /// method on the handler to invoke for each event.
     /// </summary>
     /// <typeparam name="TEvent">The event type to react to.</typeparam>
     /// <typeparam name="THandler">The handler class holding dependencies. Registered as scoped if not already registered.</typeparam>
     /// <param name="builder">The module builder.</param>
     /// <param name="methodSelector">Selects the handler method from the resolved handler instance.</param>
-    /// <param name="processorId">Optional processor ID. Defaults to "{HandlerTypeName}.{MethodName}".</param>
+    /// <param name="processorId">
+    /// A unique processor ID within this module. Used as the checkpoint key — processors
+    /// sharing an ID would share checkpoint state and silently skip events.
+    /// </param>
     /// <param name="mode">
     /// <see cref="ReactorMode.Async"/> (default): runs via background polling.
     /// <see cref="ReactorMode.Sync"/>: runs immediately during <see cref="IEventStore.AppendAsync"/>.
@@ -173,12 +179,13 @@ public static class DcbModuleBuilderExtensions
     public static DcbModuleBuilder ReactTo<TEvent, THandler>(
         this DcbModuleBuilder builder,
         Func<THandler, Func<TEvent, CancellationToken, Task>> methodSelector,
-        string? processorId = null,
+        string processorId,
         ReactorMode mode = ReactorMode.Async)
         where TEvent : class, IEvent
         where THandler : class
     {
         ArgumentNullException.ThrowIfNull(methodSelector);
+        ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
         builder.Services.TryAddScoped<THandler>();
 
         if (mode == ReactorMode.Sync)
@@ -196,11 +203,10 @@ public static class DcbModuleBuilderExtensions
         }
         else
         {
-            var id = processorId ?? $"{typeof(THandler).Name}.{typeof(TEvent).Name}";
             builder.Services.AddKeyedSingleton<IEventProcessor>(builder.ModuleKey, (sp, _) =>
             {
                 var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
-                return new FunctionalReactor<TEvent>(id, async (e, ct) =>
+                return new FunctionalReactor<TEvent>(processorId, async (e, ct) =>
                 {
                     await using var scope = scopeFactory.CreateAsyncScope();
                     var handler = scope.ServiceProvider.GetRequiredService<THandler>();

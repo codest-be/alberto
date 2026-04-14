@@ -97,6 +97,20 @@ public sealed class ControlLoopBuilder
         services.AddSingleton<IHostedService>(sp =>
         {
             var processors = sp.GetKeyedServices<IEventProcessor>(moduleKey).ToList();
+
+            // Fail fast if two processors share the same ID — they'd share checkpoint
+            // state, causing one to silently skip events the other already advanced past.
+            var duplicates = processors
+                .GroupBy(p => p.ProcessorId)
+                .Where(g => g.Count() > 1)
+                .Select(g => g.Key)
+                .ToList();
+            if (duplicates.Count > 0)
+            {
+                throw new InvalidOperationException(
+                    $"Module '{moduleKey}' has duplicate processor IDs: [{string.Join(", ", duplicates)}]. " +
+                    "Each reactor and projection must have a unique processorId because they share checkpoint storage.");
+            }
             var head = sp.GetRequiredKeyedService<EventStoreHead>(moduleKey);
             var backend = sp.GetKeyedService<IEventStoreBackend>($"{moduleKey}:consumer")
                          ?? sp.GetRequiredKeyedService<IEventStoreBackend>(moduleKey);
