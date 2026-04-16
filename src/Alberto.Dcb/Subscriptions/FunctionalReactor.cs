@@ -4,11 +4,11 @@ namespace Alberto.Dcb.Subscriptions;
 
 /// <summary>
 /// A reactor that delegates event handling to a function.
-/// Used by <see cref="DcbModuleBuilderExtensions.ReactTo{TEvent}"/> for declarative side-effect registration.
+/// Used by the <c>ReactTo(...)</c> helpers for declarative side-effect registration.
 /// </summary>
 public sealed class FunctionalReactor<TEvent>(
     string processorId,
-    Func<TEvent, CancellationToken, Task> handler) : IEventProcessor
+    Func<TEvent, IEventEnvelope, CancellationToken, Task> handler) : IEventProcessor
     where TEvent : class, IEvent
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -33,6 +33,6 @@ public sealed class FunctionalReactor<TEvent>(
             ?? throw new InvalidOperationException(
                 $"Failed to deserialize event '{@event.EventType.Id}' to '{typeof(TEvent).Name}'.");
 
-        return handler(payload, ct);
+        return handler(payload, @event, ct);
     }
 }

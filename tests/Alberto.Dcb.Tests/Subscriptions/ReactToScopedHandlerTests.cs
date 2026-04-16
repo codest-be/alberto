@@ -15,6 +15,11 @@ public class ReactToScopedHandlerTests
     [EventType("item-processed")]
     public record ItemProcessed(string Name) : IEvent;
 
+    public sealed class EnvelopeCapture
+    {
+        public DateTime? CreatedAtUtc { get; set; }
+    }
+
     /// <summary>A scoped handler that records how many times it was instantiated.</summary>
     public sealed class ScopedHandler : IDisposable
     {
@@ -101,7 +106,33 @@ public class ReactToScopedHandlerTests
         Assert.Equal(["ok"], handled);
     }
 
-    private static IEventEnvelope CreateEnvelope<TEvent>(TEvent @event, long position) where TEvent : IEvent
+    [Fact]
+    public async Task DependencyOverload_CanAccessEnvelopeMetadata()
+    {
+        var capture = new EnvelopeCapture();
+        var createdAt = new DateTime(2026, 04, 16, 12, 34, 56, DateTimeKind.Utc);
+
+        var services = new ServiceCollection();
+        services.AddSingleton(capture);
+
+        var builder = new DcbModuleBuilder(services, "test");
+        builder.ReactTo<ItemProcessed, EnvelopeCapture>(
+            (state, _, envelope, ct) =>
+            {
+                state.CreatedAtUtc = envelope.CreatedAt;
+                return Task.CompletedTask;
+            },
+            "test-reactor");
+
+        var provider = services.BuildServiceProvider(validateScopes: true);
+        var processor = provider.GetKeyedServices<IEventProcessor>("test").Single();
+
+        await processor.ProcessEventAsync(CreateEnvelope(new ItemProcessed("timestamp"), 1, createdAt), CancellationToken.None);
+
+        Assert.Equal(createdAt, capture.CreatedAtUtc);
+    }
+
+    private static IEventEnvelope CreateEnvelope<TEvent>(TEvent @event, long position, DateTime? createdAt = null) where TEvent : IEvent
     {
         var eventTypeId = EventTypeAttribute.GetEventTypeId(typeof(TEvent));
         return new EventEnvelope
@@ -113,7 +144,7 @@ public class ReactToScopedHandlerTests
             Tags = [],
             EventData = JsonSerializer.Serialize(@event),
             Metadata = new Dictionary<string, string>(),
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = createdAt ?? DateTime.UtcNow,
         };
     }
 }

@@ -3,7 +3,7 @@ namespace Alberto.Dcb.Subscriptions;
 /// <summary>
 /// Handler that runs synchronously during <see cref="IEventStore.AppendAsync"/>,
 /// after event persistence and inline projections.
-/// Registered via <see cref="DcbModuleBuilderExtensions.ReactTo{TEvent}"/> with <see cref="ReactorMode.Sync"/>.
+/// Registered via the <c>ReactTo(..., mode: ReactorMode.Sync)</c> helpers.
 /// </summary>
 public interface IPostAppendHandler
 {
