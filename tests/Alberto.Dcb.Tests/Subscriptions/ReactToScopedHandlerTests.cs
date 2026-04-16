@@ -15,9 +15,9 @@ public class ReactToScopedHandlerTests
     [EventType("item-processed")]
     public record ItemProcessed(string Name) : IEvent;
 
-    public sealed class EnvelopeCapture
+    public sealed class ReactorContextCapture
     {
-        public DateTime? CreatedAtUtc { get; set; }
+        public DateTimeOffset? TimestampUtc { get; set; }
     }
 
     /// <summary>A scoped handler that records how many times it was instantiated.</summary>
@@ -107,19 +107,19 @@ public class ReactToScopedHandlerTests
     }
 
     [Fact]
-    public async Task DependencyOverload_CanAccessEnvelopeMetadata()
+    public async Task DependencyOverload_CanAccessReactorContextMetadata()
     {
-        var capture = new EnvelopeCapture();
+        var capture = new ReactorContextCapture();
         var createdAt = new DateTime(2026, 04, 16, 12, 34, 56, DateTimeKind.Utc);
 
         var services = new ServiceCollection();
         services.AddSingleton(capture);
 
         var builder = new DcbModuleBuilder(services, "test");
-        builder.ReactTo<ItemProcessed, EnvelopeCapture>(
-            (state, _, envelope, ct) =>
+        builder.ReactTo<ItemProcessed, ReactorContextCapture>(
+            (state, _, context, ct) =>
             {
-                state.CreatedAtUtc = envelope.CreatedAt;
+                state.TimestampUtc = context.Timestamp;
                 return Task.CompletedTask;
             },
             "test-reactor");
@@ -129,7 +129,7 @@ public class ReactToScopedHandlerTests
 
         await processor.ProcessEventAsync(CreateEnvelope(new ItemProcessed("timestamp"), 1, createdAt), CancellationToken.None);
 
-        Assert.Equal(createdAt, capture.CreatedAtUtc);
+        Assert.Equal(new DateTimeOffset(createdAt, TimeSpan.Zero), capture.TimestampUtc);
     }
 
     private static IEventEnvelope CreateEnvelope<TEvent>(TEvent @event, long position, DateTime? createdAt = null) where TEvent : IEvent

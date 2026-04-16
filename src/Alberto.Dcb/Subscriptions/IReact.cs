@@ -9,7 +9,7 @@ public interface IReact<in TEvent> where TEvent : IEvent
 {
     /// <summary>
     /// React to an event. This is where side effects happen.
-    /// The event is already deserialized.
+    /// The event is already deserialized and metadata is exposed via <paramref name="context"/>.
     /// </summary>
-    Task ReactAsync(TEvent @event, IEventEnvelope envelope, CancellationToken ct);
+    Task ReactAsync(TEvent @event, ReactorContext context, CancellationToken ct);
 }

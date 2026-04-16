@@ -29,13 +29,13 @@ public class ReactorSpecificationTests
         IReact<OrderConfirmed>,
         IReact<OrderShipped>
     {
-        public Task ReactAsync(OrderConfirmed @event, IEventEnvelope envelope, CancellationToken ct)
+        public Task ReactAsync(OrderConfirmed @event, ReactorContext context, CancellationToken ct)
         {
             sentNotifications.Add($"Confirmation email sent to {@event.CustomerEmail} for order {@event.OrderId}");
             return Task.CompletedTask;
         }
 
-        public Task ReactAsync(OrderShipped @event, IEventEnvelope envelope, CancellationToken ct)
+        public Task ReactAsync(OrderShipped @event, ReactorContext context, CancellationToken ct)
         {
             sentNotifications.Add($"Shipping notification for order {@event.OrderId}");
             return Task.CompletedTask;

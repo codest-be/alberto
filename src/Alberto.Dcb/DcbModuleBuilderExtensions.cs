@@ -74,7 +74,7 @@ public static class DcbModuleBuilderExtensions
 
     /// <summary>
     /// Registers a functional reactor that reacts to a specific event type and
-    /// receives the full event envelope, including metadata and CreatedAt.
+    /// receives a <see cref="ReactorContext"/> with event metadata.
     /// Dependencies are resolved once at startup, not per event.
     /// </summary>
     /// <typeparam name="TEvent">The event type to react to.</typeparam>
@@ -90,7 +90,7 @@ public static class DcbModuleBuilderExtensions
     /// </param>
     public static DcbModuleBuilder ReactTo<TEvent>(
         this DcbModuleBuilder builder,
-        Func<IServiceProvider, Func<TEvent, IEventEnvelope, CancellationToken, Task>> handlerFactory,
+        Func<IServiceProvider, Func<TEvent, ReactorContext, CancellationToken, Task>> handlerFactory,
         string processorId,
         ReactorMode mode = ReactorMode.Async)
         where TEvent : class, IEvent
@@ -140,11 +140,11 @@ public static class DcbModuleBuilderExtensions
 
     /// <summary>
     /// Registers a functional reactor that reacts to a specific event type,
-    /// resolving a single dependency from DI at startup and exposing the full envelope.
+    /// resolving a single dependency from DI at startup and exposing a <see cref="ReactorContext"/>.
     /// </summary>
     public static DcbModuleBuilder ReactTo<TEvent, TDep>(
         this DcbModuleBuilder builder,
-        Func<TDep, TEvent, IEventEnvelope, CancellationToken, Task> handler,
+        Func<TDep, TEvent, ReactorContext, CancellationToken, Task> handler,
         string processorId,
         ReactorMode mode = ReactorMode.Async)
         where TEvent : class, IEvent
@@ -154,7 +154,7 @@ public static class DcbModuleBuilderExtensions
         return builder.ReactTo<TEvent>(sp =>
         {
             var dep = sp.GetRequiredService<TDep>();
-            return (e, envelope, ct) => handler(dep, e, envelope, ct);
+            return (e, context, ct) => handler(dep, e, context, ct);
         }, processorId, mode);
     }
 
@@ -189,11 +189,11 @@ public static class DcbModuleBuilderExtensions
 
     /// <summary>
     /// Registers a functional reactor that reacts to a specific event type,
-    /// resolving two dependencies from DI at startup and exposing the full envelope.
+    /// resolving two dependencies from DI at startup and exposing a <see cref="ReactorContext"/>.
     /// </summary>
     public static DcbModuleBuilder ReactTo<TEvent, TDep1, TDep2>(
         this DcbModuleBuilder builder,
-        Func<TDep1, TDep2, TEvent, IEventEnvelope, CancellationToken, Task> handler,
+        Func<TDep1, TDep2, TEvent, ReactorContext, CancellationToken, Task> handler,
         string processorId,
         ReactorMode mode = ReactorMode.Async)
         where TEvent : class, IEvent
@@ -205,7 +205,7 @@ public static class DcbModuleBuilderExtensions
         {
             var dep1 = sp.GetRequiredService<TDep1>();
             var dep2 = sp.GetRequiredService<TDep2>();
-            return (e, envelope, ct) => handler(dep1, dep2, e, envelope, ct);
+            return (e, context, ct) => handler(dep1, dep2, e, context, ct);
         }, processorId, mode);
     }
 
@@ -243,11 +243,11 @@ public static class DcbModuleBuilderExtensions
 
     /// <summary>
     /// Registers a functional reactor that reacts to a specific event type,
-    /// resolving three dependencies from DI at startup and exposing the full envelope.
+    /// resolving three dependencies from DI at startup and exposing a <see cref="ReactorContext"/>.
     /// </summary>
     public static DcbModuleBuilder ReactTo<TEvent, TDep1, TDep2, TDep3>(
         this DcbModuleBuilder builder,
-        Func<TDep1, TDep2, TDep3, TEvent, IEventEnvelope, CancellationToken, Task> handler,
+        Func<TDep1, TDep2, TDep3, TEvent, ReactorContext, CancellationToken, Task> handler,
         string processorId,
         ReactorMode mode = ReactorMode.Async)
         where TEvent : class, IEvent
@@ -261,7 +261,7 @@ public static class DcbModuleBuilderExtensions
             var dep1 = sp.GetRequiredService<TDep1>();
             var dep2 = sp.GetRequiredService<TDep2>();
             var dep3 = sp.GetRequiredService<TDep3>();
-            return (e, envelope, ct) => handler(dep1, dep2, dep3, e, envelope, ct);
+            return (e, context, ct) => handler(dep1, dep2, dep3, e, context, ct);
         }, processorId, mode);
     }
 
@@ -326,11 +326,11 @@ public static class DcbModuleBuilderExtensions
 
     /// <summary>
     /// Registers a functional reactor that reacts to a specific event type,
-    /// using a handler class resolved from DI per event and exposing the full envelope.
+    /// using a handler class resolved from DI per event and exposing a <see cref="ReactorContext"/>.
     /// </summary>
     public static DcbModuleBuilder ReactTo<TEvent, THandler>(
         this DcbModuleBuilder builder,
-        Func<THandler, Func<TEvent, IEventEnvelope, CancellationToken, Task>> methodSelector,
+        Func<THandler, Func<TEvent, ReactorContext, CancellationToken, Task>> methodSelector,
         string processorId,
         ReactorMode mode = ReactorMode.Async)
         where TEvent : class, IEvent
@@ -345,11 +345,11 @@ public static class DcbModuleBuilderExtensions
             builder.Services.AddKeyedSingleton<IPostAppendHandler>(builder.ModuleKey, (sp, _) =>
             {
                 var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
-                return new SyncReactor<TEvent>(async (e, envelope, ct) =>
+                return new SyncReactor<TEvent>(async (e, context, ct) =>
                 {
                     await using var scope = scopeFactory.CreateAsyncScope();
                     var handler = scope.ServiceProvider.GetRequiredService<THandler>();
-                    await methodSelector(handler)(e, envelope, ct);
+                    await methodSelector(handler)(e, context, ct);
                 });
             });
         }
@@ -358,11 +358,11 @@ public static class DcbModuleBuilderExtensions
             builder.Services.AddKeyedSingleton<IEventProcessor>(builder.ModuleKey, (sp, _) =>
             {
                 var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
-                return new FunctionalReactor<TEvent>(processorId, async (e, envelope, ct) =>
+                return new FunctionalReactor<TEvent>(processorId, async (e, context, ct) =>
                 {
                     await using var scope = scopeFactory.CreateAsyncScope();
                     var handler = scope.ServiceProvider.GetRequiredService<THandler>();
-                    await methodSelector(handler)(e, envelope, ct);
+                    await methodSelector(handler)(e, context, ct);
                 });
             });
         }

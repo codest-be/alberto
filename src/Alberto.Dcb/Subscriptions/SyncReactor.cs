@@ -7,7 +7,7 @@ namespace Alberto.Dcb.Subscriptions;
 /// Delegates event handling to a function, similar to <see cref="FunctionalReactor{TEvent}"/>
 /// but implements <see cref="IPostAppendHandler"/> instead of <see cref="IEventProcessor"/>.
 /// </summary>
-internal sealed class SyncReactor<TEvent>(Func<TEvent, IEventEnvelope, CancellationToken, Task> handler) : IPostAppendHandler
+internal sealed class SyncReactor<TEvent>(Func<TEvent, ReactorContext, CancellationToken, Task> handler) : IPostAppendHandler
     where TEvent : class, IEvent
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -28,7 +28,7 @@ internal sealed class SyncReactor<TEvent>(Func<TEvent, IEventEnvelope, Cancellat
                 ?? throw new InvalidOperationException(
                     $"Failed to deserialize event '{@event.EventType.Id}' to '{typeof(TEvent).Name}'.");
 
-            await handler(payload, @event, ct);
+            await handler(payload, ReactorContext.FromEnvelope(@event), ct);
         }
     }
 }

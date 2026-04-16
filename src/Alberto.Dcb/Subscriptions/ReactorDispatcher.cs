@@ -67,7 +67,8 @@ internal sealed class ReactorDispatcher
         public async Task ReactAsync(IEventEnvelope envelope, CancellationToken ct)
         {
             var @event = DeserializeEvent(envelope);
-            var task = (Task)reactMethod.Invoke(reactor, [@event, envelope, ct])!;
+            var context = ReactorContext.FromEnvelope(envelope);
+            var task = (Task)reactMethod.Invoke(reactor, [@event, context, ct])!;
             await task;
         }
 
