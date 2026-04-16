@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
+using System.Threading;
 
 namespace Alberto.Dcb.Subscriptions;
 
@@ -43,7 +44,12 @@ public sealed class DeadLetterRetryLoop(
     {
         if (_cts is not null)
         {
-            _cts.Cancel();
+            try
+            {
+                _cts.Cancel();
+            }
+            catch (ObjectDisposedException) { }
+
             try
             {
                 if (_loop is not null)
@@ -57,9 +63,14 @@ public sealed class DeadLetterRetryLoop(
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
-        _cts?.Dispose();
-        if (_loop is not null)
-            await _loop;
+        try
+        {
+            await StopAsync(CancellationToken.None);
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _cts, null)?.Dispose();
+        }
     }
 
     private async Task RunAsync(CancellationToken ct)
