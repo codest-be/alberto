@@ -10,6 +10,7 @@ public sealed class PostgresDeadLetterStore(NpgsqlDataSource dataSource, string?
 {
     private readonly NpgsqlDataSource _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
     private readonly SchemaQualifier _schema = new(schema);
+    private string SchemaName => _schema.HasSchema ? _schema.Prefix.TrimEnd('.') : "public";
 
     /// <inheritdoc />
     public async Task StoreAsync(DeadLetterEntry entry, CancellationToken ct = default)
@@ -141,20 +142,8 @@ public sealed class PostgresDeadLetterStore(NpgsqlDataSource dataSource, string?
         int batchSize = 10,
         CancellationToken ct = default)
     {
-        var sql = $"""
-            SELECT
-                dl.id, dl.processor_id, dl.event_id, dl.event_type, dl.event_data,
-                dl.error_message, dl.stack_trace, dl.attempt_count, dl.failed_at, dl.global_position, dl.retry_requested,
-                e.tenant_id, e.event_tags, e.event_metadata, e.created_at
-            FROM {_schema.Table("dead_letter_events")} dl
-            LEFT JOIN {_schema.Table("events")} e ON dl.event_id = e.event_id
-            WHERE dl.retry_requested = TRUE AND dl.processor_id = @processorId
-            ORDER BY dl.failed_at ASC
-            LIMIT @batchSize
-            FOR UPDATE OF dl SKIP LOCKED
-            """;
-
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var sql = await BuildRetryLookupSqlAsync(conn, ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = sql;
         cmd.Parameters.AddWithValue("processorId", processorId);
@@ -208,5 +197,56 @@ public sealed class PostgresDeadLetterStore(NpgsqlDataSource dataSource, string?
         }
 
         return entries;
+    }
+
+    private async Task<string> BuildRetryLookupSqlAsync(NpgsqlConnection conn, CancellationToken ct)
+    {
+        if (await EventsTableHasTenantIdAsync(conn, ct))
+        {
+            return $"""
+                SELECT
+                    dl.id, dl.processor_id, dl.event_id, dl.event_type, dl.event_data,
+                    dl.error_message, dl.stack_trace, dl.attempt_count, dl.failed_at, dl.global_position, dl.retry_requested,
+                    e.tenant_id, e.event_tags, e.event_metadata, e.created_at
+                FROM {_schema.Table("dead_letter_events")} dl
+                LEFT JOIN {_schema.Table("events")} e ON dl.event_id = e.event_id
+                WHERE dl.retry_requested = TRUE AND dl.processor_id = @processorId
+                ORDER BY dl.failed_at ASC
+                LIMIT @batchSize
+                FOR UPDATE OF dl SKIP LOCKED
+                """;
+        }
+
+        return $"""
+            SELECT
+                dl.id, dl.processor_id, dl.event_id, dl.event_type, dl.event_data,
+                dl.error_message, dl.stack_trace, dl.attempt_count, dl.failed_at, dl.global_position, dl.retry_requested,
+                NULL::text AS tenant_id, e.event_tags, e.event_metadata, e.created_at
+            FROM {_schema.Table("dead_letter_events")} dl
+            LEFT JOIN {_schema.Table("events")} e ON dl.event_id = e.event_id
+            WHERE dl.retry_requested = TRUE AND dl.processor_id = @processorId
+            ORDER BY dl.failed_at ASC
+            LIMIT @batchSize
+            FOR UPDATE OF dl SKIP LOCKED
+            """;
+    }
+
+    private async Task<bool> EventsTableHasTenantIdAsync(NpgsqlConnection conn, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = @schemaName
+                  AND table_name = 'events'
+                  AND column_name = 'tenant_id')
+            """;
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        cmd.Parameters.AddWithValue("schemaName", SchemaName);
+
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is true;
     }
 }
