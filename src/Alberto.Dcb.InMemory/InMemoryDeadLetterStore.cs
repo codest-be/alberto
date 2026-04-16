@@ -57,4 +57,28 @@ public sealed class InMemoryDeadLetterStore : IDeadLetterStore
         }
         return Task.CompletedTask;
     }
+
+    /// <inheritdoc />
+    public Task MarkForRetryAsync(string processorId, CancellationToken ct = default)
+    {
+        foreach (var entry in _entries.Values.Where(e => e.ProcessorId == processorId))
+            _entries[entry.Id] = entry with { RetryRequested = true };
+
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<DeadLetterEntry>> GetRetryRequestedWithLockAsync(
+        string processorId,
+        int batchSize = 10,
+        CancellationToken ct = default)
+    {
+        var entries = _entries.Values
+            .Where(e => e.ProcessorId == processorId && e.RetryRequested)
+            .OrderBy(e => e.FailedAt)
+            .Take(batchSize)
+            .ToList();
+
+        return Task.FromResult<IReadOnlyList<DeadLetterEntry>>(entries);
+    }
 }

@@ -132,6 +132,43 @@ public class ReactToScopedHandlerTests
         Assert.Equal(new DateTimeOffset(createdAt, TimeSpan.Zero), capture.TimestampUtc);
     }
 
+    [Fact]
+    public void ReactTo_RegistersExecutionOptionsForProcessor()
+    {
+        var services = new ServiceCollection();
+        var builder = new DcbModuleBuilder(services, "test");
+
+        builder.ReactTo<ItemProcessed>(
+            _ => (_, _) => Task.CompletedTask,
+            "batched-reactor",
+            configure: options => options.RequireBatching());
+
+        var provider = services.BuildServiceProvider(validateScopes: true);
+        var processor = provider.GetKeyedServices<IEventProcessor>("test").Single();
+        var registration = provider
+            .GetKeyedServices<ProcessorExecutionRegistration>("test")
+            .Single();
+
+        Assert.IsAssignableFrom<IBatchableProcessor>(processor);
+        Assert.Equal("batched-reactor", registration.ProcessorId);
+        Assert.Equal(ProcessorBatchingMode.Required, registration.Options.BatchingMode);
+    }
+
+    [Fact]
+    public void ReactTo_SyncModeRejectsBatchingConfiguration()
+    {
+        var services = new ServiceCollection();
+        var builder = new DcbModuleBuilder(services, "test");
+
+        var exception = Assert.Throws<InvalidOperationException>(() => builder.ReactTo<ItemProcessed>(
+            _ => (_, _) => Task.CompletedTask,
+            "sync-reactor",
+            ReactorMode.Sync,
+            options => options.RequireBatching()));
+
+        Assert.Contains("cannot enable async batching", exception.Message);
+    }
+
     private static IEventEnvelope CreateEnvelope<TEvent>(TEvent @event, long position, DateTime? createdAt = null) where TEvent : IEvent
     {
         var eventTypeId = EventTypeAttribute.GetEventTypeId(typeof(TEvent));

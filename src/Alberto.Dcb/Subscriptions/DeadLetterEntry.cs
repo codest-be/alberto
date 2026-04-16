@@ -13,6 +13,11 @@ namespace Alberto.Dcb.Subscriptions;
 /// <param name="AttemptCount">Total number of processing attempts.</param>
 /// <param name="FailedAt">When the event was moved to dead letter.</param>
 /// <param name="GlobalPosition">Position of the original event in the global log (0 if unknown).</param>
+/// <param name="RetryRequested">Whether this entry is marked for retry via the CLI.</param>
+/// <param name="TenantId">The tenant ID from the original event (fetched from events table during retry). Null in single-tenant or if not retrieved.</param>
+/// <param name="Tags">Event tags from the original event (fetched from events table during retry). Empty if not retrieved.</param>
+/// <param name="Metadata">Event metadata from the original event (fetched from events table during retry). Empty if not retrieved.</param>
+/// <param name="CreatedAt">Original event creation timestamp (fetched from events table during retry). Defaults to FailedAt if not retrieved.</param>
 public sealed record DeadLetterEntry(
     Guid Id,
     string ProcessorId,
@@ -23,4 +28,9 @@ public sealed record DeadLetterEntry(
     string? StackTrace,
     int AttemptCount,
     DateTimeOffset FailedAt,
-    long GlobalPosition = 0);
+    long GlobalPosition = 0,
+    bool RetryRequested = false,
+    string? TenantId = null,
+    IReadOnlyCollection<string>? Tags = null,
+    IReadOnlyDictionary<string, string>? Metadata = null,
+    DateTime? CreatedAt = null);

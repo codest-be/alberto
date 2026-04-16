@@ -55,9 +55,9 @@ public static class DeadLettersCommand
                         d.Id,
                         d.ProcessorId,
                         d.EventType,
-                        d.EventPosition,
+                        d.GlobalPosition,
                         d.ErrorMessage,
-                        occurredAt = d.OccurredAt?.ToString("O")
+                        failedAt = d.FailedAt?.ToString("O")
                     }));
                 }
                 else if (deadLetters.Count == 0)
@@ -67,15 +67,15 @@ public static class DeadLettersCommand
                 else
                 {
                     output.Table(
-                        ["ID", "Processor ID", "Event Type", "Position", "Error", "Occurred At"],
+                        ["ID", "Processor ID", "Event Type", "Position", "Error", "Failed At"],
                         deadLetters.Select(d => new[]
                         {
                             d.Id.ToString(),
                             d.ProcessorId,
                             d.EventType ?? "-",
-                            d.EventPosition?.ToString() ?? "-",
+                            d.GlobalPosition?.ToString() ?? "-",
                             TruncateError(d.ErrorMessage),
-                            d.OccurredAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"
+                            d.FailedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"
                         })
                     );
                 }

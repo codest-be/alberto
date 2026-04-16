@@ -35,4 +35,21 @@ public interface IDeadLetterStore
     /// Removes all dead letter entries for a processor.
     /// </summary>
     Task ClearAsync(string processorId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Marks dead letter entries for retry via CLI. Sets retry_requested flag for reprocessing.
+    /// </summary>
+    Task MarkForRetryAsync(string processorId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Gets dead letter entries marked for retry with distributed locking.
+    /// Uses SELECT...FOR UPDATE SKIP LOCKED (in Postgres) to ensure concurrent instances don't process the same entries.
+    /// </summary>
+    /// <param name="processorId">The processor identifier.</param>
+    /// <param name="batchSize">Maximum entries to return and lock.</param>
+    /// <param name="ct">Cancellation token.</param>
+    Task<IReadOnlyList<DeadLetterEntry>> GetRetryRequestedWithLockAsync(
+        string processorId,
+        int batchSize = 10,
+        CancellationToken ct = default);
 }

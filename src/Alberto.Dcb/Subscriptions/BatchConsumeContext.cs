@@ -1,0 +1,16 @@
+namespace Alberto.Dcb.Subscriptions;
+
+/// <summary>
+/// Context passed through the batch middleware chain for a batch of events.
+/// </summary>
+public sealed class BatchConsumeContext
+{
+    public required string ProcessorId { get; init; }
+    public required string ModuleKey { get; init; }
+    public required IReadOnlyList<IEventEnvelope> Envelopes { get; init; }
+    public required bool IsRebuild { get; init; }
+    public int Attempt { get; set; }
+    public int DeadLetteredCount { get; set; }
+    public Exception? LastError { get; set; }
+    public CancellationToken CancellationToken { get; init; }
+}

@@ -22,6 +22,9 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
     private readonly int _batchSize;
     private readonly string _moduleKey;
     private readonly IReadOnlyList<ConsumeMiddleware> _middlewares;
+    private readonly IReadOnlyList<BatchConsumeMiddleware> _batchMiddlewares;
+    private readonly bool _hasUnpairedPerEventMiddlewares;
+    private readonly ProcessorExecutionOptions _executionOptions;
     private readonly ILogger<ControlLoop>? _logger;
     private CancellationTokenSource? _cts;
     private Task? _loop;
@@ -38,6 +41,9 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
         int batchSize,
         string moduleKey = "",
         IReadOnlyList<ConsumeMiddleware>? middlewares = null,
+        IReadOnlyList<BatchConsumeMiddleware>? batchMiddlewares = null,
+        bool hasUnpairedPerEventMiddlewares = false,
+        ProcessorExecutionOptions? executionOptions = null,
         ILogger<ControlLoop>? logger = null)
     {
         _processor = processor;
@@ -48,7 +54,25 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
         _batchSize = batchSize;
         _moduleKey = moduleKey;
         _middlewares = middlewares ?? [];
+        _batchMiddlewares = batchMiddlewares ?? [];
+        _hasUnpairedPerEventMiddlewares = hasUnpairedPerEventMiddlewares;
+        _executionOptions = executionOptions ?? ProcessorExecutionOptions.Default;
         _logger = logger;
+
+        if (_executionOptions.BatchingMode == ProcessorBatchingMode.Required &&
+            _processor is not IBatchableProcessor)
+        {
+            throw new InvalidOperationException(
+                $"Processor '{ProcessorId}' requires batching but does not implement {nameof(IBatchableProcessor)}.");
+        }
+
+        if (_executionOptions.BatchingMode == ProcessorBatchingMode.Required &&
+            _hasUnpairedPerEventMiddlewares)
+        {
+            throw new InvalidOperationException(
+                $"Processor '{ProcessorId}' requires batching, but not all configured per-event middleware " +
+                "has a batch equivalent. Register matching batch middleware before enabling batching.");
+        }
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -96,16 +120,20 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
                     continue;
                 }
 
-                foreach (var evt in events.Where(e => e.GlobalPosition <= head))
-                {
-                    if (!_processor.HandledEventTypes.Contains(evt.EventType.Id))
-                        continue;
-
-                    await DispatchAsync(evt, ct);
-                }
-
-                var newCheckpoint = events
+                var visibleEvents = events
                     .Where(e => e.GlobalPosition <= head)
+                    .ToList();
+                var relevantEvents = visibleEvents
+                    .Where(e => _processor.HandledEventTypes.Contains(e.EventType.Id))
+                    .ToList();
+
+                if (ShouldUseBatchDispatch && relevantEvents.Count > 0)
+                    await DispatchBatchAsync(relevantEvents, ct);
+                else
+                    foreach (var evt in relevantEvents)
+                        await DispatchAsync(evt, ct);
+
+                var newCheckpoint = visibleEvents
                     .Select(e => e.GlobalPosition)
                     .DefaultIfEmpty(checkpoint)
                     .Max();
@@ -150,4 +178,47 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
             _middlewares,
             () => _processor.ProcessEventAsync(evt, ct));
     }
+
+    private Task DispatchBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct)
+        => DispatchBatchAsync(events, ct, allowSplit: true);
+
+    private async Task DispatchBatchAsync(
+        IReadOnlyList<IEventEnvelope> events,
+        CancellationToken ct,
+        bool allowSplit)
+    {
+        if (_processor is not IBatchableProcessor batchableProcessor)
+        {
+            throw new InvalidOperationException(
+                $"Processor '{ProcessorId}' was configured for batching but does not implement {nameof(IBatchableProcessor)}.");
+        }
+
+        var context = new BatchConsumeContext
+        {
+            ProcessorId = _processor.ProcessorId,
+            ModuleKey = _moduleKey,
+            Envelopes = events,
+            IsRebuild = _processor.IsRebuilding,
+            CancellationToken = ct,
+        };
+
+        try
+        {
+            await BatchMiddlewareRunner.RunAsync(
+                context,
+                _batchMiddlewares,
+                () => batchableProcessor.ProcessBatchAsync(events, ct));
+        }
+        catch when (allowSplit && events.Count > 1)
+        {
+            var midpoint = events.Count / 2;
+            await DispatchBatchAsync(events.Take(midpoint).ToArray(), ct, allowSplit: true);
+            await DispatchBatchAsync(events.Skip(midpoint).ToArray(), ct, allowSplit: true);
+        }
+    }
+
+    private bool ShouldUseBatchDispatch =>
+        _executionOptions.BatchingMode != ProcessorBatchingMode.Disabled &&
+        !_hasUnpairedPerEventMiddlewares &&
+        _processor is IBatchableProcessor;
 }

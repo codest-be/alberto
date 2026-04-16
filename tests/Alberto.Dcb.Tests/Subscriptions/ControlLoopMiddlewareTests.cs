@@ -214,4 +214,91 @@ public sealed class ControlLoopMiddlewareTests
             return Task.CompletedTask;
         }
     }
+
+    private sealed class BatchSelectiveProcessor(
+        string processorId,
+        Func<IEventEnvelope, bool> shouldFault) : IBatchableProcessor
+    {
+        public List<IEventEnvelope> ProcessedEvents { get; } = [];
+        public List<IReadOnlyList<IEventEnvelope>> ProcessedBatches { get; } = [];
+        public Dictionary<string, int> AttemptsByBatch { get; } = [];
+
+        public string ProcessorId { get; } = processorId;
+        public bool IsActive { get; set; } = true;
+        public bool IsRebuilding { get; set; }
+        public IReadOnlySet<string> HandledEventTypes { get; } =
+            new HashSet<string> { "middleware-test-event" };
+
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
+        {
+            ProcessedEvents.Add(@event);
+            return Task.CompletedTask;
+        }
+
+        public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct = default)
+        {
+            var key = string.Join(",", events.Select(e => e.GlobalPosition));
+            AttemptsByBatch[key] = AttemptsByBatch.GetValueOrDefault(key) + 1;
+
+            if (events.Any(shouldFault))
+                throw new InvalidOperationException("Simulated permanent fault");
+
+            ProcessedBatches.Add(events.ToList());
+            return Task.CompletedTask;
+        }
+    }
+
+    [Fact]
+    public async Task BatchedPoisonEvent_IsolatedDeadLettered_HealthyEventsStillAdvance()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var backend = new InMemoryEventStoreBackend();
+        var checkpoints = new InMemoryCheckpointStore();
+        var deadLetters = new InMemoryDeadLetterStore();
+
+        await backend.Append([CreateEvent(new TestEvent("poison"))], cancellationToken: ct);
+        await backend.Append([CreateEvent(new TestEvent("ok-1"))], cancellationToken: ct);
+        await backend.Append([CreateEvent(new TestEvent("ok-2"))], cancellationToken: ct);
+
+        var processor = new BatchSelectiveProcessor(
+            "batch-selective",
+            e => e.GlobalPosition == 1);
+
+        var middleware = BatchConsumeMiddlewares.RetryAndDeadLetter(
+            new ErrorPolicy { MaxRetries = 0 },
+            deadLetters);
+
+        var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
+        var loop = new ControlLoop(
+            processor,
+            head,
+            backend,
+            checkpoints,
+            TimeSpan.FromMilliseconds(10),
+            100,
+            moduleKey: "test",
+            batchMiddlewares: [middleware],
+            executionOptions: new ProcessorExecutionOptions(ProcessorBatchingMode.Required));
+
+        using var cts = new CancellationTokenSource();
+        await head.StartAsync(cts.Token);
+        await loop.StartAsync(cts.Token);
+
+        await Task.Delay(250, TestContext.Current.CancellationToken);
+        await cts.CancelAsync();
+        await loop.StopAsync(CancellationToken.None);
+        await head.StopAsync(CancellationToken.None);
+
+        Assert.False(loop.IsFaulted);
+        Assert.Equal([2L, 3L], processor.ProcessedBatches.SelectMany(b => b.Select(e => e.GlobalPosition)).Order().ToArray());
+        Assert.Empty(processor.ProcessedEvents);
+
+        var checkpoint = await checkpoints.GetAsync("batch-selective", ct);
+        Assert.Equal(3, checkpoint);
+
+        var entries = await deadLetters.GetAsync("batch-selective", ct: ct);
+        var entry = Assert.Single(entries);
+        Assert.Equal(1, entry.GlobalPosition);
+        Assert.Contains("Simulated permanent fault", entry.ErrorMessage);
+    }
 }

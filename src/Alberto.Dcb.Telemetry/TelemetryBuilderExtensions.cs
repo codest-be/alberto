@@ -35,6 +35,11 @@ public static class TelemetryBuilderExtensions
             var provider = sp.GetKeyedService<ITraceContextProvider>(moduleKey);
             return TelemetryConsumeMiddleware.Create(provider);
         });
+        builder.Services.AddKeyedSingleton<BatchConsumeMiddleware>(moduleKey, (sp, _) =>
+        {
+            var provider = sp.GetKeyedService<ITraceContextProvider>(moduleKey);
+            return TelemetryBatchConsumeMiddleware.Create(provider);
+        });
 
         return builder;
     }

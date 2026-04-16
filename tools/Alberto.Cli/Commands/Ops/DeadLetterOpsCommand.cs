@@ -13,6 +13,7 @@ public static class DeadLetterOpsCommand
         var command = new Command("dead-letters", "Manage dead letter entries");
 
         command.AddCommand(BuildDismiss());
+        command.AddCommand(BuildRetry());
         command.AddCommand(BuildRetryRewind());
 
         return command;
@@ -121,6 +122,102 @@ public static class DeadLetterOpsCommand
                 Environment.Exit(1);
             }
         }, urlOption, schemaOption, processorOption, allOption, dryRunOption, yesOption, jsonOption);
+
+        return command;
+    }
+
+    private static Command BuildRetry()
+    {
+        var command = new Command("retry",
+            """
+            Mark dead letter entries for retry. The running processor will reprocess them on its next dead letter retry loop cycle (default: every 1 minute).
+            Unlike retry-rewind, this does not change the checkpoint — only the flagged dead letters are reprocessed.
+
+            Examples:
+              alberto ops dead-letters retry my-processor --dry-run
+              alberto ops dead-letters retry my-processor --yes
+              alberto ops dead-letters retry my-processor --yes --json
+            """);
+
+        var processorIdArgument = new Argument<string>("processor-id", "Processor ID to retry dead letters for");
+        var urlOption = new Option<string?>("--url", "PostgreSQL connection string");
+        var schemaOption = new Option<string?>("--schema", "Database schema name");
+        var dryRunOption = new Option<bool>("--dry-run", "Show what would happen without executing");
+        var yesOption = new Option<bool>("--yes", "Skip confirmation prompt");
+        var jsonOption = new Option<bool>("--json", "Output as JSON");
+
+        command.AddArgument(processorIdArgument);
+        command.AddOption(urlOption);
+        command.AddOption(schemaOption);
+        command.AddOption(dryRunOption);
+        command.AddOption(yesOption);
+        command.AddOption(jsonOption);
+
+        command.SetHandler(async (string processorId, string? url, string? schema, bool dryRun, bool yes, bool json) =>
+        {
+            IOutput output = json ? new JsonOutput() : new HumanOutput();
+
+            var connStr = ConnectionResolver.ResolveConnectionString(url);
+            var schemaName = ConnectionResolver.ResolveSchema(schema);
+
+            try
+            {
+                await using var dataSource = new NpgsqlDataSourceBuilder(connStr).Build();
+                var data = new CliDataAccess(dataSource, schemaName);
+
+                var count = await data.CountDeadLettersAsync(processorId);
+                if (count == 0)
+                {
+                    if (json)
+                        output.Json(new { action = "retry", processorId, deadLetters = 0, noOp = true });
+                    else
+                        output.Text($"No dead letters found for processor '{processorId}'. No-op.");
+                    return;
+                }
+
+                if (dryRun)
+                {
+                    if (json)
+                        output.Json(new { dryRun = true, action = "retry", processorId, count });
+                    else
+                        output.Text($"[Dry run] Would mark {count} dead letter(s) for retry for processor '{processorId}'.");
+                    return;
+                }
+
+                if (!yes)
+                {
+                    if (!AnsiConsole.Profile.Capabilities.Interactive)
+                    {
+                        output.Error($"Destructive operation requires confirmation. Add --yes to confirm.\n  alberto ops dead-letters retry {processorId} --yes");
+                        Environment.Exit(1);
+                        return;
+                    }
+
+                    var confirmed = AnsiConsole.Confirm(
+                        $"Mark [bold]{count}[/] dead letter(s) for retry for processor '[bold]{processorId}[/]'? " +
+                        "The processor will reprocess them on its next retry loop cycle.",
+                        defaultValue: false);
+
+                    if (!confirmed)
+                    {
+                        output.Text("Aborted.");
+                        return;
+                    }
+                }
+
+                await data.MarkDeadLettersForRetryAsync(processorId);
+
+                if (json)
+                    output.Json(new { action = "retry", processorId, markedForRetry = count });
+                else
+                    output.Text($"Marked {count} dead letter(s) for retry. The processor will pick them up on its next retry loop cycle.");
+            }
+            catch (Exception ex)
+            {
+                output.Error(ex.Message);
+                Environment.Exit(1);
+            }
+        }, processorIdArgument, urlOption, schemaOption, dryRunOption, yesOption, jsonOption);
 
         return command;
     }

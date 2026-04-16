@@ -50,6 +50,51 @@ public sealed class ControlLoopTests
             => throw new InvalidOperationException("Simulated fault");
     }
 
+    private class BatchProcessor(string processorId, IReadOnlySet<string> handledTypes) : IBatchableProcessor
+    {
+        public List<IEventEnvelope> ProcessedEvents { get; } = [];
+        public List<IReadOnlyList<IEventEnvelope>> ProcessedBatches { get; } = [];
+
+        public string ProcessorId { get; } = processorId;
+        public bool IsActive { get; set; } = true;
+        public bool IsRebuilding { get; set; }
+        public IReadOnlySet<string> HandledEventTypes { get; } = handledTypes;
+
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
+        {
+            ProcessedEvents.Add(@event);
+            return Task.CompletedTask;
+        }
+
+        public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct = default)
+        {
+            ProcessedBatches.Add(events.ToList());
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class TrackingMiddleware
+    {
+        public List<long> SeenPositions { get; } = [];
+
+        public ConsumeMiddleware ToMiddleware() => async (context, next) =>
+        {
+            SeenPositions.Add(context.Envelope.GlobalPosition);
+            await next();
+        };
+    }
+
+    private sealed class TrackingBatchMiddleware
+    {
+        public List<long[]> SeenBatches { get; } = [];
+
+        public BatchConsumeMiddleware ToMiddleware() => async (context, next) =>
+        {
+            SeenBatches.Add(context.Envelopes.Select(e => e.GlobalPosition).ToArray());
+            await next();
+        };
+    }
+
     #endregion
 
     #region EventStoreHead.FindContiguousHead — pure static tests
@@ -294,6 +339,162 @@ public sealed class ControlLoopTests
 
         Assert.Single(processorB.ProcessedEvents);
         Assert.Equal("test-event-b", processorB.ProcessedEvents[0].EventType.Id);
+    }
+
+    [Fact]
+    public async Task ControlLoop_UsesBatchProcessor_WhenBatchingIsRequired()
+    {
+        var backend = new InMemoryEventStoreBackend();
+        var checkpoints = new InMemoryCheckpointStore();
+
+        await backend.Append([CreateEvent(new TestEventA("a"))]);
+        await backend.Append([CreateEvent(new TestEventB(1))]);
+        await backend.Append([CreateEvent(new TestEventA("b"))]);
+
+        var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
+        var processor = new BatchProcessor("batch-proc", new HashSet<string> { "test-event-a" });
+        var loop = new ControlLoop(
+            processor,
+            head,
+            backend,
+            checkpoints,
+            TimeSpan.FromMilliseconds(10),
+            100,
+            executionOptions: new ProcessorExecutionOptions(ProcessorBatchingMode.Required));
+
+        using var cts = new CancellationTokenSource();
+        await head.StartAsync(cts.Token);
+        await loop.StartAsync(cts.Token);
+
+        await Task.Delay(150, TestContext.Current.CancellationToken);
+        await cts.CancelAsync();
+        await loop.StopAsync(CancellationToken.None);
+        await head.StopAsync(CancellationToken.None);
+
+        var batch = Assert.Single(processor.ProcessedBatches);
+        Assert.Equal([1L, 3L], batch.Select(e => e.GlobalPosition).ToArray());
+        Assert.Empty(processor.ProcessedEvents);
+
+        var checkpoint = await checkpoints.GetAsync("batch-proc");
+        Assert.Equal(3, checkpoint);
+    }
+
+    [Fact]
+    public void ControlLoop_RequireBatching_ThrowsForNonBatchableProcessor()
+    {
+        var backend = new InMemoryEventStoreBackend();
+        var checkpoints = new InMemoryCheckpointStore();
+        var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
+        var processor = new TestProcessor("non-batch", new HashSet<string> { "test-event-a" });
+
+        var exception = Assert.Throws<InvalidOperationException>(() => new ControlLoop(
+            processor,
+            head,
+            backend,
+            checkpoints,
+            TimeSpan.FromMilliseconds(10),
+            100,
+            executionOptions: new ProcessorExecutionOptions(ProcessorBatchingMode.Required)));
+
+        Assert.Contains("requires batching", exception.Message);
+    }
+
+    [Fact]
+    public void ControlLoop_RequireBatching_ThrowsWhenMiddlewareIsConfigured()
+    {
+        var backend = new InMemoryEventStoreBackend();
+        var checkpoints = new InMemoryCheckpointStore();
+        var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
+        var processor = new BatchProcessor("batch-proc", new HashSet<string> { "test-event-a" });
+        var middleware = new TrackingMiddleware();
+
+        var exception = Assert.Throws<InvalidOperationException>(() => new ControlLoop(
+            processor,
+            head,
+            backend,
+            checkpoints,
+            TimeSpan.FromMilliseconds(10),
+            100,
+            middlewares: [middleware.ToMiddleware()],
+            hasUnpairedPerEventMiddlewares: true,
+            executionOptions: new ProcessorExecutionOptions(ProcessorBatchingMode.Required)));
+
+        Assert.Contains("not all configured per-event middleware has a batch equivalent", exception.Message);
+    }
+
+    [Fact]
+    public async Task ControlLoop_BatchIfSupported_FallsBackToPerEventWhenMiddlewareIsConfigured()
+    {
+        var backend = new InMemoryEventStoreBackend();
+        var checkpoints = new InMemoryCheckpointStore();
+        var middleware = new TrackingMiddleware();
+
+        await backend.Append([CreateEvent(new TestEventA("a"))]);
+        await backend.Append([CreateEvent(new TestEventA("b"))]);
+
+        var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
+        var processor = new BatchProcessor("batch-proc", new HashSet<string> { "test-event-a" });
+        var loop = new ControlLoop(
+            processor,
+            head,
+            backend,
+            checkpoints,
+            TimeSpan.FromMilliseconds(10),
+            100,
+            middlewares: [middleware.ToMiddleware()],
+            hasUnpairedPerEventMiddlewares: true,
+            executionOptions: new ProcessorExecutionOptions(ProcessorBatchingMode.IfSupported));
+
+        using var cts = new CancellationTokenSource();
+        await head.StartAsync(cts.Token);
+        await loop.StartAsync(cts.Token);
+
+        await Task.Delay(150, TestContext.Current.CancellationToken);
+        await cts.CancelAsync();
+        await loop.StopAsync(CancellationToken.None);
+        await head.StopAsync(CancellationToken.None);
+
+        Assert.Equal([1L, 2L], middleware.SeenPositions);
+        Assert.Equal([1L, 2L], processor.ProcessedEvents.Select(e => e.GlobalPosition).ToArray());
+        Assert.Empty(processor.ProcessedBatches);
+    }
+
+    [Fact]
+    public async Task ControlLoop_UsesBatchPath_WhenBatchMiddlewareIsConfigured()
+    {
+        var backend = new InMemoryEventStoreBackend();
+        var checkpoints = new InMemoryCheckpointStore();
+        var batchMiddleware = new TrackingBatchMiddleware();
+
+        await backend.Append([CreateEvent(new TestEventA("a"))]);
+        await backend.Append([CreateEvent(new TestEventA("b"))]);
+
+        var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
+        var processor = new BatchProcessor("batch-proc", new HashSet<string> { "test-event-a" });
+        var loop = new ControlLoop(
+            processor,
+            head,
+            backend,
+            checkpoints,
+            TimeSpan.FromMilliseconds(10),
+            100,
+            batchMiddlewares: [batchMiddleware.ToMiddleware()],
+            executionOptions: new ProcessorExecutionOptions(ProcessorBatchingMode.Required));
+
+        using var cts = new CancellationTokenSource();
+        await head.StartAsync(cts.Token);
+        await loop.StartAsync(cts.Token);
+
+        await Task.Delay(150, TestContext.Current.CancellationToken);
+        await cts.CancelAsync();
+        await loop.StopAsync(CancellationToken.None);
+        await head.StopAsync(CancellationToken.None);
+
+        var seenBatches = Assert.Single(batchMiddleware.SeenBatches);
+        Assert.Equal([1L, 2L], seenBatches);
+        Assert.Empty(processor.ProcessedEvents);
+        var processedBatch = Assert.Single(processor.ProcessedBatches);
+        Assert.Equal([1L, 2L], processedBatch.Select(e => e.GlobalPosition).ToArray());
     }
 
     #endregion

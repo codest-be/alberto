@@ -58,7 +58,7 @@ public static class EventsCommand
                         e.GlobalPosition,
                         e.EventType,
                         e.Tags,
-                        occurredAt = e.OccurredAt?.ToString("O")
+                        createdAt = e.CreatedAt?.ToString("O")
                     }));
                 }
                 else if (events.Count == 0)
@@ -68,13 +68,13 @@ public static class EventsCommand
                 else
                 {
                     output.Table(
-                        ["Position", "Event Type", "Tags", "Occurred At"],
+                        ["Position", "Event Type", "Tags", "Created At"],
                         events.Select(e => new[]
                         {
                             e.GlobalPosition.ToString(),
                             e.EventType,
                             e.Tags ?? "-",
-                            e.OccurredAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"
+                            e.CreatedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"
                         })
                     );
                 }

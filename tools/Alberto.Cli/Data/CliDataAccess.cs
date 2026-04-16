@@ -7,19 +7,19 @@ public record ProcessorInfo(string ProcessorId, long LastPosition, DateTime? Upd
 public record CheckpointInfo(string ProcessorId, long LastPosition, DateTime? UpdatedAt);
 
 public record DeadLetterInfo(
-    long Id,
+    Guid Id,
     string ProcessorId,
     string? EventType,
-    long? EventPosition,
+    long? GlobalPosition,
     string? ErrorMessage,
-    DateTime? OccurredAt
+    DateTime? FailedAt
 );
 
 public record EventInfo(
     long GlobalPosition,
     string EventType,
     string? Tags,
-    DateTime? OccurredAt
+    DateTime? CreatedAt
 );
 
 public record AuditLogEntry(
@@ -168,10 +168,10 @@ public class CliDataAccess
         cmd.Parameters.AddWithValue("limit", limit);
 
         cmd.CommandText = $"""
-            SELECT id, processor_id, event_type, event_position, error_message, occurred_at
-            FROM {_schema}.processor_dead_letters
+            SELECT id, processor_id, event_type, global_position, error_message, failed_at
+            FROM {_schema}.dead_letter_events
             {whereClause}
-            ORDER BY id DESC
+            ORDER BY failed_at DESC
             LIMIT @limit
             """;
 
@@ -180,7 +180,7 @@ public class CliDataAccess
         while (await reader.ReadAsync(ct))
         {
             result.Add(new DeadLetterInfo(
-                reader.GetInt64(0),
+                reader.GetGuid(0),
                 reader.GetString(1),
                 reader.IsDBNull(2) ? null : reader.GetString(2),
                 reader.IsDBNull(3) ? null : reader.GetInt64(3),
@@ -212,14 +212,14 @@ public class CliDataAccess
         }
         if (!string.IsNullOrWhiteSpace(tag))
         {
-            where.Add("tags @> ARRAY[@tag]");
+            where.Add("event_tags @> ARRAY[@tag]");
             cmd.Parameters.AddWithValue("tag", tag);
         }
 
         cmd.Parameters.AddWithValue("limit", limit);
 
         cmd.CommandText = $"""
-            SELECT global_position, event_type, array_to_string(tags, ','), occurred_at
+            SELECT global_position, event_type, array_to_string(event_tags, ','), created_at
             FROM {_schema}.events
             WHERE {string.Join(" AND ", where)}
             ORDER BY global_position
@@ -272,12 +272,12 @@ public class CliDataAccess
 
         if (!string.IsNullOrWhiteSpace(processorId))
         {
-            cmd.CommandText = $"DELETE FROM {_schema}.processor_dead_letters WHERE processor_id = @processorId";
+            cmd.CommandText = $"DELETE FROM {_schema}.dead_letter_events WHERE processor_id = @processorId";
             cmd.Parameters.AddWithValue("processorId", processorId);
         }
         else
         {
-            cmd.CommandText = $"DELETE FROM {_schema}.processor_dead_letters";
+            cmd.CommandText = $"DELETE FROM {_schema}.dead_letter_events";
         }
 
         return await cmd.ExecuteNonQueryAsync(ct);
@@ -290,12 +290,12 @@ public class CliDataAccess
 
         if (!string.IsNullOrWhiteSpace(processorId))
         {
-            cmd.CommandText = $"SELECT COUNT(*) FROM {_schema}.processor_dead_letters WHERE processor_id = @processorId";
+            cmd.CommandText = $"SELECT COUNT(*) FROM {_schema}.dead_letter_events WHERE processor_id = @processorId";
             cmd.Parameters.AddWithValue("processorId", processorId);
         }
         else
         {
-            cmd.CommandText = $"SELECT COUNT(*) FROM {_schema}.processor_dead_letters";
+            cmd.CommandText = $"SELECT COUNT(*) FROM {_schema}.dead_letter_events";
         }
 
         var result = await cmd.ExecuteScalarAsync(ct);
@@ -389,7 +389,7 @@ public class CliDataAccess
         long deadLetterCount = 0;
         await using (var cmd = conn.CreateCommand())
         {
-            cmd.CommandText = $"SELECT COUNT(*) FROM {_schema}.processor_dead_letters";
+            cmd.CommandText = $"SELECT COUNT(*) FROM {_schema}.dead_letter_events";
             var result = await cmd.ExecuteScalarAsync(ct);
             deadLetterCount = Convert.ToInt64(result);
         }
@@ -525,7 +525,7 @@ public class CliDataAccess
         long earliestPosition;
         await using (var cmd = conn.CreateCommand())
         {
-            cmd.CommandText = $"SELECT MIN(global_position) FROM {_schema}.processor_dead_letters WHERE processor_id = @processorId";
+            cmd.CommandText = $"SELECT MIN(global_position) FROM {_schema}.dead_letter_events WHERE processor_id = @processorId";
             cmd.Parameters.AddWithValue("processorId", processorId);
             var result = await cmd.ExecuteScalarAsync(ct);
             earliestPosition = result is DBNull or null ? 0 : Convert.ToInt64(result);
@@ -548,11 +548,24 @@ public class CliDataAccess
         int deletedCount;
         await using (var cmd = conn.CreateCommand())
         {
-            cmd.CommandText = $"DELETE FROM {_schema}.processor_dead_letters WHERE processor_id = @processorId";
+            cmd.CommandText = $"DELETE FROM {_schema}.dead_letter_events WHERE processor_id = @processorId";
             cmd.Parameters.AddWithValue("processorId", processorId);
             deletedCount = await cmd.ExecuteNonQueryAsync(ct);
         }
 
         return (rewindPosition, deletedCount);
+    }
+
+    public async Task MarkDeadLettersForRetryAsync(string processorId, CancellationToken ct = default)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"""
+            UPDATE {_schema}.dead_letter_events
+            SET retry_requested = TRUE
+            WHERE processor_id = @processorId
+            """;
+        cmd.Parameters.AddWithValue("processorId", processorId);
+        await cmd.ExecuteNonQueryAsync(ct);
     }
 }

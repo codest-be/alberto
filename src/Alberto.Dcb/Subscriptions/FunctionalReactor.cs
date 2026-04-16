@@ -8,7 +8,7 @@ namespace Alberto.Dcb.Subscriptions;
 /// </summary>
 public sealed class FunctionalReactor<TEvent>(
     string processorId,
-    Func<TEvent, ReactorContext, CancellationToken, Task> handler) : IEventProcessor
+    Func<TEvent, ReactorContext, CancellationToken, Task> handler) : IBatchableProcessor
     where TEvent : class, IEvent
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -29,9 +29,23 @@ public sealed class FunctionalReactor<TEvent>(
         if (!IsActive || !HandledEventTypes.Contains(@event.EventType.Id))
             return Task.CompletedTask;
 
+        return ProcessAsync(@event, ct);
+    }
+
+    public async Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct = default)
+    {
+        if (!IsActive)
+            return;
+
+        foreach (var @event in events)
+            await ProcessAsync(@event, ct);
+    }
+
+    private Task ProcessAsync(IEventEnvelope @event, CancellationToken ct)
+    {
         var payload = JsonSerializer.Deserialize<TEvent>(@event.EventData, JsonOptions)
-            ?? throw new InvalidOperationException(
-                $"Failed to deserialize event '{@event.EventType.Id}' to '{typeof(TEvent).Name}'.");
+                      ?? throw new InvalidOperationException(
+                          $"Failed to deserialize event '{@event.EventType.Id}' to '{typeof(TEvent).Name}'.");
 
         return handler(payload, ReactorContext.FromEnvelope(@event), ct);
     }

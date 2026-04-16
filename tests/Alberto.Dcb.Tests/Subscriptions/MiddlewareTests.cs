@@ -374,6 +374,26 @@ public sealed class MiddlewareTests
             Entries.RemoveAll(e => e.ProcessorId == processorId);
             return Task.CompletedTask;
         }
+
+        public Task MarkForRetryAsync(string processorId, CancellationToken ct = default)
+        {
+            for (var index = 0; index < Entries.Count; index++)
+            {
+                if (Entries[index].ProcessorId == processorId)
+                    Entries[index] = Entries[index] with { RetryRequested = true };
+            }
+
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<DeadLetterEntry>> GetRetryRequestedWithLockAsync(
+            string processorId,
+            int batchSize = 10,
+            CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<DeadLetterEntry>>(Entries
+                .Where(e => e.ProcessorId == processorId && e.RetryRequested)
+                .Take(batchSize)
+                .ToList());
     }
 
     #endregion
