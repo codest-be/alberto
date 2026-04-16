@@ -1,5 +1,7 @@
 namespace Alberto.Dcb;
 
+internal readonly record struct DcbBoundary(DcbQuery Query, long? ExpectedPosition);
+
 public readonly struct CommandPipeline<TCommand>
 {
     private readonly AlbertoStore _store;
@@ -47,22 +49,52 @@ public readonly struct ValidatedPipeline<TCommand>
 
     public LoadedPipeline<TCommand, TState> Load<TState>(
         Func<TCommand, CancellationToken, Task<TState>> load) =>
-        new(_store, _command, load, _problems);
+        new(_store, _command, async (command, ct) => (await load(command, ct), (DcbBoundary?)null), _problems);
 
     public LoadedPipeline<TCommand, TState> Load<TState>(
         Func<TCommand, Task<TState>> load) =>
-        new(_store, _command, (c, _) => load(c), _problems);
+        new(_store, _command, async (command, _) => (await load(command), (DcbBoundary?)null), _problems);
 
     public LoadedPipeline<TCommand, TState> Load<TState>(
         Func<TCommand, Task<TState>> load,
         Func<TState, DcbQuery> query) =>
-        new(_store, _command, (c, _) => load(c), query, _problems);
+        new(
+            _store,
+            _command,
+            async (command, _) =>
+            {
+                var state = await load(command);
+                return (state, new DcbBoundary(query(state), null));
+            },
+            _problems);
+
+    public LoadedPipeline<TCommand, TState> Load<TState>(
+        Func<TCommand, Task<TState>> load,
+        Func<TState, DcbQuery> query,
+        Func<TState, long> expectedPosition) =>
+        new(
+            _store,
+            _command,
+            async (command, _) =>
+            {
+                var state = await load(command);
+                return (state, new DcbBoundary(query(state), expectedPosition(state)));
+            },
+            _problems);
 
     public LoadedPipeline<TCommand, TState> Load<TState>(
         DcbQuery query, TState initial, Func<TState, IEvent, TState> apply)
     {
         var store = _store;
-        return new(store, _command, async (_, ct) => await store.Fold(query, initial, apply, ct), _problems);
+        return new(
+            store,
+            _command,
+            async (_, ct) =>
+            {
+                var (state, lastPosition) = await store.FoldWithPosition(query, initial, apply, ct);
+                return (state, new DcbBoundary(query, lastPosition));
+            },
+            _problems);
     }
 
     public DecidedPipeline<TValue> Decide<TValue>(
@@ -82,34 +114,18 @@ public readonly struct LoadedPipeline<TCommand, TState>
 {
     private readonly AlbertoStore _store;
     private readonly TCommand _command;
-    private readonly Func<TCommand, CancellationToken, Task<TState>> _load;
-    private readonly Func<TState, DcbQuery>? _queryFromState;
+    private readonly Func<TCommand, CancellationToken, Task<(TState State, DcbBoundary? Boundary)>> _load;
     private readonly IReadOnlyList<Problem>? _problems;
 
     internal LoadedPipeline(
         AlbertoStore store,
         TCommand command,
-        Func<TCommand, CancellationToken, Task<TState>> load,
+        Func<TCommand, CancellationToken, Task<(TState State, DcbBoundary? Boundary)>> load,
         IReadOnlyList<Problem>? problems)
     {
         _store = store;
         _command = command;
         _load = load;
-        _queryFromState = null;
-        _problems = problems;
-    }
-
-    internal LoadedPipeline(
-        AlbertoStore store,
-        TCommand command,
-        Func<TCommand, CancellationToken, Task<TState>> load,
-        Func<TState, DcbQuery> queryFromState,
-        IReadOnlyList<Problem>? problems)
-    {
-        _store = store;
-        _command = command;
-        _load = load;
-        _queryFromState = queryFromState;
         _problems = problems;
     }
 
@@ -121,11 +137,10 @@ public readonly struct LoadedPipeline<TCommand, TState>
 
         var command = _command;
         var load = _load;
-        var q = _queryFromState;
         return new DecidedPipeline<TValue>(_store, async ct =>
         {
-            var state = await load(command, ct);
-            return (decide(command, state), q?.Invoke(state));
+            var (state, boundary) = await load(command, ct);
+            return (decide(command, state), boundary);
         });
     }
 
@@ -137,11 +152,10 @@ public readonly struct LoadedPipeline<TCommand, TState>
 
         var command = _command;
         var load = _load;
-        var q = _queryFromState;
         return new DecidedPipeline(_store, async ct =>
         {
-            var state = await load(command, ct);
-            return (decide(command, state), q?.Invoke(state));
+            var (state, boundary) = await load(command, ct);
+            return (decide(command, state), boundary);
         });
     }
 
@@ -153,11 +167,10 @@ public readonly struct LoadedPipeline<TCommand, TState>
 
         var command = _command;
         var load = _load;
-        var q = _queryFromState;
         return new DecidedPipeline<TValue>(_store, async ct =>
         {
-            var state = await load(command, ct);
-            return (await decide(command, state, ct), q?.Invoke(state));
+            var (state, boundary) = await load(command, ct);
+            return (await decide(command, state, ct), boundary);
         });
     }
 
@@ -169,11 +182,10 @@ public readonly struct LoadedPipeline<TCommand, TState>
 
         var command = _command;
         var load = _load;
-        var q = _queryFromState;
         return new DecidedPipeline(_store, async ct =>
         {
-            var state = await load(command, ct);
-            return (await decide(command, state, ct), q?.Invoke(state));
+            var (state, boundary) = await load(command, ct);
+            return (await decide(command, state, ct), boundary);
         });
     }
 }
@@ -181,17 +193,17 @@ public readonly struct LoadedPipeline<TCommand, TState>
 public readonly struct DecidedPipeline<TValue>
 {
     private readonly AlbertoStore _store;
-    private readonly Func<CancellationToken, Task<(Decision<TValue> Decision, DcbQuery? Query)>> _resolve;
+    private readonly Func<CancellationToken, Task<(Decision<TValue> Decision, DcbBoundary? Boundary)>> _resolve;
 
     internal DecidedPipeline(AlbertoStore store, Decision<TValue> decision)
     {
         _store = store;
-        _resolve = _ => Task.FromResult<(Decision<TValue>, DcbQuery?)>((decision, null));
+        _resolve = _ => Task.FromResult<(Decision<TValue>, DcbBoundary?)>((decision, null));
     }
 
     internal DecidedPipeline(
         AlbertoStore store,
-        Func<CancellationToken, Task<(Decision<TValue> Decision, DcbQuery? Query)>> resolve)
+        Func<CancellationToken, Task<(Decision<TValue> Decision, DcbBoundary? Boundary)>> resolve)
     {
         _store = store;
         _resolve = resolve;
@@ -202,38 +214,38 @@ public readonly struct DecidedPipeline<TValue>
         var resolve = _resolve;
         return new DecidedPipeline<TNew>(_store, async ct =>
         {
-            var (decision, query) = await resolve(ct);
-            return (decision.Map(map), query);
+            var (decision, boundary) = await resolve(ct);
+            return (decision.Map(map), boundary);
         });
     }
 
     public async Task<Result<TValue>> Persist(DcbQuery query, CancellationToken ct)
     {
         var (decision, _) = await _resolve(ct);
-        return await _store.Persist(decision, query, ct);
+        return await _store.Persist(decision, query, null, ct);
     }
 
     public async Task<Result<TValue>> Persist(CancellationToken ct)
     {
-        var (decision, query) = await _resolve(ct);
-        return await _store.Persist(decision, query!, ct);
+        var (decision, boundary) = await _resolve(ct);
+        return await _store.Persist(decision, boundary!.Value.Query, boundary.Value.ExpectedPosition, ct);
     }
 }
 
 public readonly struct DecidedPipeline
 {
     private readonly AlbertoStore _store;
-    private readonly Func<CancellationToken, Task<(Decision Decision, DcbQuery? Query)>> _resolve;
+    private readonly Func<CancellationToken, Task<(Decision Decision, DcbBoundary? Boundary)>> _resolve;
 
     internal DecidedPipeline(AlbertoStore store, Decision decision)
     {
         _store = store;
-        _resolve = _ => Task.FromResult<(Decision, DcbQuery?)>((decision, null));
+        _resolve = _ => Task.FromResult<(Decision, DcbBoundary?)>((decision, null));
     }
 
     internal DecidedPipeline(
         AlbertoStore store,
-        Func<CancellationToken, Task<(Decision Decision, DcbQuery? Query)>> resolve)
+        Func<CancellationToken, Task<(Decision Decision, DcbBoundary? Boundary)>> resolve)
     {
         _store = store;
         _resolve = resolve;
@@ -242,12 +254,12 @@ public readonly struct DecidedPipeline
     public async Task<Result> Persist(DcbQuery query, CancellationToken ct)
     {
         var (decision, _) = await _resolve(ct);
-        return await _store.Persist(decision, query, ct);
+        return await _store.Persist(decision, query, null, ct);
     }
 
     public async Task<Result> Persist(CancellationToken ct)
     {
-        var (decision, query) = await _resolve(ct);
-        return await _store.Persist(decision, query!, ct);
+        var (decision, boundary) = await _resolve(ct);
+        return await _store.Persist(decision, boundary!.Value.Query, boundary.Value.ExpectedPosition, ct);
     }
 }
