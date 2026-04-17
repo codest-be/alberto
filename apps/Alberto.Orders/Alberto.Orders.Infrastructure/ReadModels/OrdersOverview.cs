@@ -1,5 +1,3 @@
-using Alberto.Orders.Core.Order;
-
 namespace Alberto.Orders.Infrastructure.ReadModels;
 
 /// <summary>

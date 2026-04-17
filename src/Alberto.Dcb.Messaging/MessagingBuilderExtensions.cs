@@ -1,4 +1,3 @@
-using Alberto.Dcb;
 using Alberto.Dcb.Subscriptions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;

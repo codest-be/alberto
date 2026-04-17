@@ -209,7 +209,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
                 _batchMiddlewares,
                 () => batchableProcessor.ProcessBatchAsync(events, ct));
         }
-        catch when (allowSplit && events.Count > 1)
+        catch (Exception ex) when (allowSplit && events.Count > 1 && ex is not OperationCanceledException)
         {
             var midpoint = events.Count / 2;
             await DispatchBatchAsync(events.Take(midpoint).ToArray(), ct, allowSplit: true);

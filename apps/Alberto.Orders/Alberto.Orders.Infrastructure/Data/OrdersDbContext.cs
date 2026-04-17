@@ -1,4 +1,3 @@
-using Alberto.Orders.Core.Order;
 using Alberto.Orders.Infrastructure.Entities;
 using Microsoft.EntityFrameworkCore;
 

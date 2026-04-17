@@ -8,7 +8,8 @@ namespace Alberto.Dcb.Subscriptions;
 /// </summary>
 public sealed class FunctionalReactor<TEvent>(
     string processorId,
-    Func<TEvent, ReactorContext, CancellationToken, Task> handler) : IBatchableProcessor
+    Func<TEvent, ReactorContext, CancellationToken, Task> handler,
+    int maxConcurrency = 1) : IBatchableProcessor
     where TEvent : class, IEvent
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -37,8 +38,17 @@ public sealed class FunctionalReactor<TEvent>(
         if (!IsActive)
             return;
 
-        foreach (var @event in events)
-            await ProcessAsync(@event, ct);
+        if (maxConcurrency <= 1)
+        {
+            foreach (var @event in events)
+                await ProcessAsync(@event, ct);
+            return;
+        }
+
+        await Parallel.ForEachAsync(
+            events,
+            new ParallelOptions { MaxDegreeOfParallelism = maxConcurrency, CancellationToken = ct },
+            async (@event, token) => await ProcessAsync(@event, token));
     }
 
     private Task ProcessAsync(IEventEnvelope @event, CancellationToken ct)

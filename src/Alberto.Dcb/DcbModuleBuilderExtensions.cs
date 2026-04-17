@@ -79,7 +79,8 @@ public static class DcbModuleBuilderExtensions
                 executionOptions,
                 sp => new FunctionalReactor<TEvent>(
                     processorId,
-                    (e, _, ct) => handlerFactory(sp)(e, ct)));
+                    (e, _, ct) => handlerFactory(sp)(e, ct),
+                    executionOptions.MaxConcurrency));
         }
 
         return builder;
@@ -130,7 +131,10 @@ public static class DcbModuleBuilderExtensions
                 builder,
                 processorId,
                 executionOptions,
-                sp => new FunctionalReactor<TEvent>(processorId, handlerFactory(sp)));
+                sp => new FunctionalReactor<TEvent>(
+                    processorId,
+                    handlerFactory(sp),
+                    executionOptions.MaxConcurrency));
         }
 
         return builder;
@@ -355,7 +359,7 @@ public static class DcbModuleBuilderExtensions
                     await using var scope = scopeFactory.CreateAsyncScope();
                     var handler = scope.ServiceProvider.GetRequiredService<THandler>();
                     await methodSelector(handler)(e, ct);
-                });
+                }, executionOptions.MaxConcurrency);
             });
         }
 
@@ -405,7 +409,7 @@ public static class DcbModuleBuilderExtensions
                     await using var scope = scopeFactory.CreateAsyncScope();
                     var handler = scope.ServiceProvider.GetRequiredService<THandler>();
                     await methodSelector(handler)(e, context, ct);
-                });
+                }, executionOptions.MaxConcurrency);
             });
         }
 

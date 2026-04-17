@@ -1,5 +1,4 @@
 using System.Text.Json;
-using Alberto.Dcb.InMemory;
 using Alberto.Dcb.Subscriptions;
 using Xunit;
 

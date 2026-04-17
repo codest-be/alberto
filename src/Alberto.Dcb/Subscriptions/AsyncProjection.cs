@@ -1,5 +1,3 @@
-using System.Collections.Concurrent;
-
 #pragma warning disable CS0618 // Type or member is obsolete — intentional, this class itself is obsolete infrastructure
 namespace Alberto.Dcb.Subscriptions;
 

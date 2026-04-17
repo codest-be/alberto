@@ -4,14 +4,11 @@ using Alberto.Orders.Api.GraphQL.Types;
 using Alberto.Orders.Core.Order;
 using Alberto.Orders.Infrastructure;
 using Alberto.Orders.Infrastructure.Data;
-using Alberto.Orders.Infrastructure.Entities;
 using OrderBoundary = Alberto.Orders.Core.Order.OrderDecider;
 using Alberto.Orders.Infrastructure.Projections;
 using Alberto.Orders.Infrastructure.ReadModels;
-using HotChocolate;
 using HotChocolate.Resolvers;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 
 namespace Alberto.Orders.Api.GraphQL.Queries;

@@ -1,6 +1,5 @@
 using System.Reflection;
 using System.Text.Json;
-using Alberto.Dcb;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Alberto.Dcb.Messaging;

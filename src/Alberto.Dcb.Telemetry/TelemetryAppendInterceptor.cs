@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using Alberto.Dcb;
 using Alberto.Dcb.Append;
 
 namespace Alberto.Dcb.Telemetry;

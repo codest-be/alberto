@@ -3,11 +3,8 @@ using Alberto.Dcb;
 using Alberto.Orders.Api.GraphQL.Types;
 using Alberto.Payments.Core;
 using Alberto.Payments.Core.Payment;
-using Alberto.Payments.Core.Payment.Actions;
 using Alberto.Payments.Infrastructure;
-using HotChocolate;
 using HotChocolate.Resolvers;
-using Microsoft.Extensions.DependencyInjection;
 using PaymentActions = Alberto.Payments.Core.Payment.Actions.PaymentDecider;
 using PaymentBoundary = Alberto.Payments.Core.Payment.PaymentDecider;
 

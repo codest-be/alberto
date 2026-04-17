@@ -1,4 +1,3 @@
-using Alberto.Dcb;
 using Alberto.Dcb.Tenancy;
 
 namespace Alberto.Dcb.Postgres;

@@ -1,6 +1,5 @@
 using Alberto.Dcb;
 using Alberto.Payments.Core.Events;
-using Alberto.Payments.Core.Payment.Actions;
 using PaymentActions = Alberto.Payments.Core.Payment.Actions.PaymentDecider;
 
 namespace Alberto.Payments.Core.Payment;

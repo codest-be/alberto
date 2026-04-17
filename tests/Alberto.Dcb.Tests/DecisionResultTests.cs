@@ -1,4 +1,3 @@
-using Alberto.Dcb;
 using Xunit;
 
 namespace Alberto.Dcb.Tests;

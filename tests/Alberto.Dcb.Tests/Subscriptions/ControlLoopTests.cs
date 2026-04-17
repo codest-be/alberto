@@ -497,9 +497,117 @@ public sealed class ControlLoopTests
         Assert.Equal([1L, 2L], processedBatch.Select(e => e.GlobalPosition).ToArray());
     }
 
+    [Fact]
+    public async Task FunctionalReactor_ProcessBatchAsync_RunsConcurrently_WhenMaxConcurrencySet()
+    {
+        var concurrentCount = 0;
+        var maxConcurrent = 0;
+        var syncLock = new Lock();
+
+        var reactor = new FunctionalReactor<TestEventA>(
+            "parallel-test",
+            async (_, _, ct) =>
+            {
+                int current;
+                lock (syncLock)
+                {
+                    concurrentCount++;
+                    current = concurrentCount;
+                    if (current > maxConcurrent) maxConcurrent = current;
+                }
+
+                await Task.Delay(50, ct);
+                lock (syncLock) { concurrentCount--; }
+            },
+            maxConcurrency: 5);
+
+        var events = Enumerable.Range(1, 10)
+            .Select(i => CreateEnvelope(new TestEventA($"e-{i}"), i))
+            .ToList();
+
+        await reactor.ProcessBatchAsync(events, TestContext.Current.CancellationToken);
+
+        Assert.True(maxConcurrent > 1, $"Expected concurrent execution but max concurrent was {maxConcurrent}");
+    }
+
+    [Fact]
+    public async Task FunctionalReactor_ProcessBatchAsync_IsSequential_WhenMaxConcurrencyIsOne()
+    {
+        var concurrentCount = 0;
+        var maxConcurrent = 0;
+        var syncLock = new Lock();
+
+        var reactor = new FunctionalReactor<TestEventA>(
+            "sequential-test",
+            async (_, _, ct) =>
+            {
+                lock (syncLock)
+                {
+                    concurrentCount++;
+                    if (concurrentCount > maxConcurrent) maxConcurrent = concurrentCount;
+                }
+
+                await Task.Delay(10, ct);
+                lock (syncLock) { concurrentCount--; }
+            },
+            maxConcurrency: 1);
+
+        var events = Enumerable.Range(1, 5)
+            .Select(i => CreateEnvelope(new TestEventA($"e-{i}"), i))
+            .ToList();
+
+        await reactor.ProcessBatchAsync(events, TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, maxConcurrent);
+    }
+
+    [Fact]
+    public void WithConcurrency_ThrowsWhenBatchingIsExplicitlyDisabled()
+    {
+        var configurator = new ProcessorExecutionConfigurator();
+        configurator.DisableBatching().WithConcurrency(5);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => configurator.Build());
+        Assert.Contains("WithConcurrency requires batching", exception.Message);
+    }
+
+    [Fact]
+    public void WithConcurrency_WorksWithDefaultBatching()
+    {
+        var configurator = new ProcessorExecutionConfigurator();
+        var options = configurator.WithConcurrency(10).Build();
+
+        Assert.Equal(ProcessorBatchingMode.IfSupported, options.BatchingMode);
+        Assert.Equal(10, options.MaxConcurrency);
+    }
+
+    [Fact]
+    public void DefaultConfigurator_UsesBatchIfSupported()
+    {
+        var configurator = new ProcessorExecutionConfigurator();
+        var options = configurator.Build();
+
+        Assert.Equal(ProcessorBatchingMode.IfSupported, options.BatchingMode);
+    }
+
     #endregion
 
     #region Helper Methods
+
+    private static IEventEnvelope CreateEnvelope<TEvent>(TEvent @event, long position) where TEvent : IEvent
+    {
+        var eventTypeId = EventTypeAttribute.GetEventTypeId(typeof(TEvent));
+        return new EventEnvelope
+        {
+            Id = Guid.NewGuid(),
+            EventType = new EventType(eventTypeId),
+            EventData = JsonSerializer.Serialize(@event),
+            Tags = [],
+            GlobalPosition = position,
+            Metadata = new Dictionary<string, string>(),
+            CreatedAt = DateTime.UtcNow,
+        };
+    }
 
     private static EventToPersist CreateEvent<TEvent>(TEvent @event) where TEvent : IEvent
     {

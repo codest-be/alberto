@@ -1,6 +1,5 @@
 using System.Reflection;
 using DbUp;
-using DbUp.Engine;
 using Npgsql;
 
 namespace Alberto.Dcb.Postgres;

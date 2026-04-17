@@ -1,4 +1,3 @@
-using Alberto.Dcb;
 using Alberto.Dcb.Subscriptions;
 
 namespace Alberto.Dcb.Messaging;

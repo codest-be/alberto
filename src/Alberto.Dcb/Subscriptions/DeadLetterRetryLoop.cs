@@ -1,7 +1,5 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using System.Text.Json;
-using System.Threading;
 
 namespace Alberto.Dcb.Subscriptions;
 

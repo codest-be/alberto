@@ -24,10 +24,12 @@ public enum ProcessorBatchingMode
 /// <summary>
 /// Immutable execution settings attached to a processor registration.
 /// </summary>
-public sealed record ProcessorExecutionOptions(ProcessorBatchingMode BatchingMode)
+public sealed record ProcessorExecutionOptions(
+    ProcessorBatchingMode BatchingMode,
+    int MaxConcurrency = 1)
 {
     public static ProcessorExecutionOptions Default { get; } =
-        new(ProcessorBatchingMode.Disabled);
+        new(ProcessorBatchingMode.IfSupported);
 }
 
 /// <summary>
@@ -35,7 +37,8 @@ public sealed record ProcessorExecutionOptions(ProcessorBatchingMode BatchingMod
 /// </summary>
 public sealed class ProcessorExecutionConfigurator
 {
-    private ProcessorBatchingMode _batchingMode = ProcessorBatchingMode.Disabled;
+    private ProcessorBatchingMode _batchingMode = ProcessorBatchingMode.IfSupported;
+    private int _maxConcurrency = 1;
 
     /// <summary>
     /// Prefer batch dispatch when the processor supports it.
@@ -67,7 +70,28 @@ public sealed class ProcessorExecutionConfigurator
         return this;
     }
 
-    internal ProcessorExecutionOptions Build() => new(_batchingMode);
+    /// <summary>
+    /// Sets the maximum number of events processed concurrently within a batch.
+    /// Default is 1 (sequential). Requires batching to be enabled.
+    /// </summary>
+    public ProcessorExecutionConfigurator WithConcurrency(int maxConcurrency)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxConcurrency, 1);
+        _maxConcurrency = maxConcurrency;
+        return this;
+    }
+
+    internal ProcessorExecutionOptions Build()
+    {
+        if (_maxConcurrency > 1 && _batchingMode == ProcessorBatchingMode.Disabled)
+        {
+            throw new InvalidOperationException(
+                "WithConcurrency requires batching to be enabled. " +
+                "Call RequireBatching() or BatchIfSupported() first.");
+        }
+
+        return new(_batchingMode, _maxConcurrency);
+    }
 }
 
 internal sealed record ProcessorExecutionRegistration(

@@ -1,5 +1,3 @@
-using Alberto.Dcb;
-
 namespace Alberto.Dcb.Tests.Testing;
 
 /// <summary>

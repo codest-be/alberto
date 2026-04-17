@@ -1,5 +1,4 @@
 using Alberto.Dcb.Subscriptions;
-using Npgsql;
 
 #pragma warning disable CS0618 // Obsolete projection types used intentionally for backward-compatibility
 namespace Alberto.Dcb.Postgres;

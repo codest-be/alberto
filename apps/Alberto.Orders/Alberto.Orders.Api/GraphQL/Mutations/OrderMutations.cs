@@ -3,11 +3,8 @@ using Alberto.Dcb;
 using Alberto.Orders.Api.GraphQL.Types;
 using Alberto.Orders.Core;
 using Alberto.Orders.Core.Order;
-using Alberto.Orders.Core.Order.Actions;
 using Alberto.Orders.Infrastructure;
-using HotChocolate;
 using HotChocolate.Resolvers;
-using Microsoft.Extensions.DependencyInjection;
 using OrderActions = Alberto.Orders.Core.Order.Actions.OrderDecider;
 using OrderBoundary = Alberto.Orders.Core.Order.OrderDecider;
 
