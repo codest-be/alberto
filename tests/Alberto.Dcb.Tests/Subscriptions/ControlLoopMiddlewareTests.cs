@@ -82,7 +82,8 @@ public sealed class ControlLoopMiddlewareTests
         var loop = new ControlLoop(processor, head, backend, checkpoints,
             TimeSpan.FromMilliseconds(10), 100,
             moduleKey: "test",
-            middlewares: [middleware]);
+            middlewares: [middleware],
+            executionOptions: new ProcessorExecutionOptions(ProcessorBatchingMode.Disabled));
 
         using var cts = new CancellationTokenSource();
         await head.StartAsync(cts.Token);
@@ -134,7 +135,8 @@ public sealed class ControlLoopMiddlewareTests
         var loop = new ControlLoop(processor, head, backend, checkpoints,
             TimeSpan.FromMilliseconds(10), 100,
             moduleKey: "test",
-            middlewares: [middleware]);
+            middlewares: [middleware],
+            executionOptions: new ProcessorExecutionOptions(ProcessorBatchingMode.Disabled));
 
         using var cts = new CancellationTokenSource();
         await head.StartAsync(cts.Token);
@@ -181,7 +183,8 @@ public sealed class ControlLoopMiddlewareTests
         var loop = new ControlLoop(processor, head, backend, checkpoints,
             TimeSpan.FromMilliseconds(10), 100,
             moduleKey: "test",
-            middlewares: [middleware]);
+            middlewares: [middleware],
+            executionOptions: new ProcessorExecutionOptions(ProcessorBatchingMode.Disabled));
 
         using var cts = new CancellationTokenSource();
         await head.StartAsync(cts.Token);

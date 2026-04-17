@@ -23,7 +23,7 @@ public sealed class ControlLoopTests
 
     #region Test Processor
 
-    private class TestProcessor(string processorId, IReadOnlySet<string> handledTypes) : IEventProcessor
+    private class TestProcessor(string processorId, IReadOnlySet<string> handledTypes) : IBatchableProcessor
     {
         public List<IEventEnvelope> ProcessedEvents { get; } = [];
 
@@ -37,9 +37,15 @@ public sealed class ControlLoopTests
             ProcessedEvents.Add(@event);
             return Task.CompletedTask;
         }
+
+        public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct = default)
+        {
+            ProcessedEvents.AddRange(events);
+            return Task.CompletedTask;
+        }
     }
 
-    private class FaultingProcessor(string processorId, IReadOnlySet<string> handledTypes) : IEventProcessor
+    private class FaultingProcessor(string processorId, IReadOnlySet<string> handledTypes) : IBatchableProcessor
     {
         public string ProcessorId { get; } = processorId;
         public bool IsActive { get; set; } = true;
@@ -48,6 +54,20 @@ public sealed class ControlLoopTests
 
         public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
             => throw new InvalidOperationException("Simulated fault");
+
+        public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct = default)
+            => throw new InvalidOperationException("Simulated fault");
+    }
+
+    private class NonBatchableProcessor(string processorId, IReadOnlySet<string> handledTypes) : IEventProcessor
+    {
+        public string ProcessorId { get; } = processorId;
+        public bool IsActive { get; set; } = true;
+        public bool IsRebuilding { get; set; }
+        public IReadOnlySet<string> HandledEventTypes { get; } = handledTypes;
+
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
+            => Task.CompletedTask;
     }
 
     private class BatchProcessor(string processorId, IReadOnlySet<string> handledTypes) : IBatchableProcessor
@@ -385,7 +405,7 @@ public sealed class ControlLoopTests
         var backend = new InMemoryEventStoreBackend();
         var checkpoints = new InMemoryCheckpointStore();
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
-        var processor = new TestProcessor("non-batch", new HashSet<string> { "test-event-a" });
+        var processor = new NonBatchableProcessor("non-batch", new HashSet<string> { "test-event-a" });
 
         var exception = Assert.Throws<InvalidOperationException>(() => new ControlLoop(
             processor,
@@ -577,17 +597,17 @@ public sealed class ControlLoopTests
         var configurator = new ProcessorExecutionConfigurator();
         var options = configurator.WithConcurrency(10).Build();
 
-        Assert.Equal(ProcessorBatchingMode.IfSupported, options.BatchingMode);
+        Assert.Equal(ProcessorBatchingMode.Required, options.BatchingMode);
         Assert.Equal(10, options.MaxConcurrency);
     }
 
     [Fact]
-    public void DefaultConfigurator_UsesBatchIfSupported()
+    public void DefaultConfigurator_UsesRequired()
     {
         var configurator = new ProcessorExecutionConfigurator();
         var options = configurator.Build();
 
-        Assert.Equal(ProcessorBatchingMode.IfSupported, options.BatchingMode);
+        Assert.Equal(ProcessorBatchingMode.Required, options.BatchingMode);
     }
 
     #endregion

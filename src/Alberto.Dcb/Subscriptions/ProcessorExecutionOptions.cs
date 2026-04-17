@@ -29,7 +29,7 @@ public sealed record ProcessorExecutionOptions(
     int MaxConcurrency = 1)
 {
     public static ProcessorExecutionOptions Default { get; } =
-        new(ProcessorBatchingMode.IfSupported);
+        new(ProcessorBatchingMode.Required);
 }
 
 /// <summary>
@@ -37,7 +37,7 @@ public sealed record ProcessorExecutionOptions(
 /// </summary>
 public sealed class ProcessorExecutionConfigurator
 {
-    private ProcessorBatchingMode _batchingMode = ProcessorBatchingMode.IfSupported;
+    private ProcessorBatchingMode _batchingMode = ProcessorBatchingMode.Required;
     private int _maxConcurrency = 1;
 
     /// <summary>

@@ -63,7 +63,9 @@ public static class DcbModuleBuilderExtensions
         ArgumentNullException.ThrowIfNull(handlerFactory);
         ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
 
-        var executionOptions = BuildProcessorExecutionOptions(configure);
+        var executionOptions = mode == ReactorMode.Sync && configure is null
+            ? SyncExecutionDefault
+            : BuildProcessorExecutionOptions(configure);
 
         if (mode == ReactorMode.Sync)
         {
@@ -117,7 +119,9 @@ public static class DcbModuleBuilderExtensions
         ArgumentNullException.ThrowIfNull(handlerFactory);
         ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
 
-        var executionOptions = BuildProcessorExecutionOptions(configure);
+        var executionOptions = mode == ReactorMode.Sync && configure is null
+            ? SyncExecutionDefault
+            : BuildProcessorExecutionOptions(configure);
 
         if (mode == ReactorMode.Sync)
         {
@@ -333,7 +337,9 @@ public static class DcbModuleBuilderExtensions
         ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
         builder.Services.TryAddScoped<THandler>();
 
-        var executionOptions = BuildProcessorExecutionOptions(configure);
+        var executionOptions = mode == ReactorMode.Sync && configure is null
+            ? SyncExecutionDefault
+            : BuildProcessorExecutionOptions(configure);
 
         if (mode == ReactorMode.Sync)
         {
@@ -383,7 +389,9 @@ public static class DcbModuleBuilderExtensions
         ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
         builder.Services.TryAddScoped<THandler>();
 
-        var executionOptions = BuildProcessorExecutionOptions(configure);
+        var executionOptions = mode == ReactorMode.Sync && configure is null
+            ? SyncExecutionDefault
+            : BuildProcessorExecutionOptions(configure);
 
         if (mode == ReactorMode.Sync)
         {
@@ -434,6 +442,9 @@ public static class DcbModuleBuilderExtensions
         loopBuilder.Build();
         return builder;
     }
+
+    private static readonly ProcessorExecutionOptions SyncExecutionDefault =
+        new(ProcessorBatchingMode.Disabled);
 
     private static ProcessorExecutionOptions BuildProcessorExecutionOptions(
         Action<ProcessorExecutionConfigurator>? configure)
