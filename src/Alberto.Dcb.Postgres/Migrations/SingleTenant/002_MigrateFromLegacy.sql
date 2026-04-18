@@ -1,8 +1,83 @@
--- Alberto DCB Event Store - PostgreSQL Functions (Single-Tenant)
--- No tenant_id parameters - single tenant per schema/database
+-- Alberto DCB Event Store - Migrate from Legacy (Single-Tenant)
+-- Renames old un-prefixed tables to alberto_-prefixed names on existing databases.
+-- Also recreates all functions with the new names and drops old function names.
+-- Safe to run on fresh installs (all guards use IF EXISTS).
 
--- Append events with optional DCB conflict check
-CREATE OR REPLACE FUNCTION $schema_prefix$append_events(
+-- ============================================================
+-- TABLE RENAMES
+-- ============================================================
+
+DO $$ BEGIN
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = current_schema() AND tablename = 'events') THEN
+        ALTER TABLE $schema_prefix$events RENAME TO $schema_prefix$alberto_events;
+    END IF;
+END $$;
+
+DO $$ BEGIN
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = current_schema() AND tablename = 'event_type_positions') THEN
+        ALTER TABLE $schema_prefix$event_type_positions RENAME TO $schema_prefix$alberto_event_type_positions;
+    END IF;
+END $$;
+
+DO $$ BEGIN
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = current_schema() AND tablename = 'event_tag_positions') THEN
+        ALTER TABLE $schema_prefix$event_tag_positions RENAME TO $schema_prefix$alberto_event_tag_positions;
+    END IF;
+END $$;
+
+DO $$ BEGIN
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = current_schema() AND tablename = 'processor_checkpoints') THEN
+        ALTER TABLE $schema_prefix$processor_checkpoints RENAME TO $schema_prefix$alberto_processor_checkpoints;
+    END IF;
+END $$;
+
+DO $$ BEGIN
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = current_schema() AND tablename = 'projection_states') THEN
+        ALTER TABLE $schema_prefix$projection_states RENAME TO $schema_prefix$alberto_projection_states;
+    END IF;
+END $$;
+
+DO $$ BEGIN
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = current_schema() AND tablename = 'projection_rebuild_meta') THEN
+        ALTER TABLE $schema_prefix$projection_rebuild_meta RENAME TO $schema_prefix$alberto_projection_rebuild_meta;
+    END IF;
+END $$;
+
+DO $$ BEGIN
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = current_schema() AND tablename = 'dead_letter_events') THEN
+        ALTER TABLE $schema_prefix$dead_letter_events RENAME TO $schema_prefix$alberto_dead_letter_events;
+    END IF;
+END $$;
+
+DO $$ BEGIN
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = current_schema() AND tablename = 'outbox_entries') THEN
+        ALTER TABLE $schema_prefix$outbox_entries RENAME TO $schema_prefix$alberto_outbox_entries;
+    END IF;
+END $$;
+
+DO $$ BEGIN
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = current_schema() AND tablename = 'processor_leases') THEN
+        ALTER TABLE $schema_prefix$processor_leases RENAME TO $schema_prefix$alberto_processor_leases;
+    END IF;
+END $$;
+
+-- ============================================================
+-- DROP OLD TRIGGER NAMES (they bound to old table names, recreated below)
+-- ============================================================
+
+-- These triggers may exist on old table names; they are gone after the rename.
+-- If old triggers bound to new names need removal:
+DROP TRIGGER IF EXISTS tr_events_notify ON $schema_prefix$alberto_events;
+DROP TRIGGER IF EXISTS tr_checkpoints_notify ON $schema_prefix$alberto_processor_checkpoints;
+DROP TRIGGER IF EXISTS tr_dead_letter_insert_notify ON $schema_prefix$alberto_dead_letter_events;
+DROP TRIGGER IF EXISTS tr_dead_letter_delete_notify ON $schema_prefix$alberto_dead_letter_events;
+
+-- ============================================================
+-- RECREATE ALL FUNCTIONS WITH alberto_ PREFIX
+-- (These use the renamed tables and ensure updated function bodies)
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION $schema_prefix$alberto_append_events(
     p_events JSONB,
     p_dcb_types VARCHAR(500)[] DEFAULT NULL,
     p_dcb_tags VARCHAR(500)[] DEFAULT NULL,
@@ -29,12 +104,10 @@ DECLARE
     v_tag VARCHAR(500);
     v_conflict_position BIGINT;
 BEGIN
-    -- Perform DCB conflict check if expected position is provided
     IF p_expected_position IS NOT NULL THEN
-        -- Check for conflicts by types
         IF p_dcb_types IS NOT NULL AND array_length(p_dcb_types, 1) > 0 THEN
             SELECT etp.global_position INTO v_conflict_position
-            FROM $schema_prefix$event_type_positions etp
+            FROM $schema_prefix$alberto_event_type_positions etp
             WHERE etp.event_type = ANY(p_dcb_types)
               AND etp.global_position > p_expected_position
             LIMIT 1;
@@ -45,10 +118,9 @@ BEGIN
             END IF;
         END IF;
 
-        -- Check for conflicts by tags
         IF p_dcb_tags IS NOT NULL AND array_length(p_dcb_tags, 1) > 0 THEN
             SELECT etagp.global_position INTO v_conflict_position
-            FROM $schema_prefix$event_tag_positions etagp
+            FROM $schema_prefix$alberto_event_tag_positions etagp
             WHERE etagp.tag = ANY(p_dcb_tags)
               AND etagp.global_position > p_expected_position
             LIMIT 1;
@@ -60,7 +132,6 @@ BEGIN
         END IF;
     END IF;
 
-    -- Insert each event
     FOR v_event IN SELECT * FROM jsonb_array_elements(p_events)
     LOOP
         v_event_id := COALESCE((v_event->>'event_id')::UUID, gen_random_uuid());
@@ -70,23 +141,19 @@ BEGIN
         v_event_metadata := COALESCE(v_event->'event_metadata', '{}'::JSONB);
         v_created_at := now();
 
-        -- Insert into events table
-        INSERT INTO $schema_prefix$events (event_id, event_type, event_tags, event_data, event_metadata, created_at)
+        INSERT INTO $schema_prefix$alberto_events (event_id, event_type, event_tags, event_data, event_metadata, created_at)
         VALUES (v_event_id, v_event_type, v_event_tags, v_event_data, v_event_metadata, v_created_at)
-        RETURNING $schema_prefix$events.global_position INTO v_new_position;
+        RETURNING $schema_prefix$alberto_events.global_position INTO v_new_position;
 
-        -- Update type inverted index
-        INSERT INTO $schema_prefix$event_type_positions (event_type, global_position)
+        INSERT INTO $schema_prefix$alberto_event_type_positions (event_type, global_position)
         VALUES (v_event_type, v_new_position);
 
-        -- Update tag inverted index
         FOREACH v_tag IN ARRAY v_event_tags
         LOOP
-            INSERT INTO $schema_prefix$event_tag_positions (tag, global_position)
+            INSERT INTO $schema_prefix$alberto_event_tag_positions (tag, global_position)
             VALUES (v_tag, v_new_position);
         END LOOP;
 
-        -- Return the inserted event
         global_position := v_new_position;
         event_id := v_event_id;
         event_type := v_event_type;
@@ -99,8 +166,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Append events with DCB conflict check supporting wildcard patterns (v2)
-CREATE OR REPLACE FUNCTION $schema_prefix$append_events_v2(
+CREATE OR REPLACE FUNCTION $schema_prefix$alberto_append_events_v2(
     p_events JSONB,
     p_dcb_types VARCHAR(500)[] DEFAULT NULL,
     p_dcb_exact_tags VARCHAR(500)[] DEFAULT NULL,
@@ -131,7 +197,7 @@ BEGIN
     IF p_expected_position IS NOT NULL THEN
         IF p_dcb_types IS NOT NULL AND array_length(p_dcb_types, 1) > 0 THEN
             SELECT etp.global_position INTO v_conflict_position
-            FROM $schema_prefix$event_type_positions etp
+            FROM $schema_prefix$alberto_event_type_positions etp
             WHERE etp.event_type = ANY(p_dcb_types)
               AND etp.global_position > p_expected_position
             LIMIT 1;
@@ -144,7 +210,7 @@ BEGIN
 
         IF p_dcb_exact_tags IS NOT NULL AND array_length(p_dcb_exact_tags, 1) > 0 THEN
             SELECT etagp.global_position INTO v_conflict_position
-            FROM $schema_prefix$event_tag_positions etagp
+            FROM $schema_prefix$alberto_event_tag_positions etagp
             WHERE etagp.tag = ANY(p_dcb_exact_tags)
               AND etagp.global_position > p_expected_position
             LIMIT 1;
@@ -157,7 +223,7 @@ BEGIN
 
         IF p_dcb_tag_prefixes IS NOT NULL AND array_length(p_dcb_tag_prefixes, 1) > 0 THEN
             SELECT etagp.global_position INTO v_conflict_position
-            FROM $schema_prefix$event_tag_positions etagp
+            FROM $schema_prefix$alberto_event_tag_positions etagp
             WHERE etagp.global_position > p_expected_position
               AND EXISTS (
                   SELECT 1 FROM unnest(p_dcb_tag_prefixes) AS prefix
@@ -181,16 +247,16 @@ BEGIN
         v_event_metadata := COALESCE(v_event->'event_metadata', '{}'::JSONB);
         v_created_at := now();
 
-        INSERT INTO $schema_prefix$events (event_id, event_type, event_tags, event_data, event_metadata, created_at)
+        INSERT INTO $schema_prefix$alberto_events (event_id, event_type, event_tags, event_data, event_metadata, created_at)
         VALUES (v_event_id, v_event_type, v_event_tags, v_event_data, v_event_metadata, v_created_at)
-        RETURNING $schema_prefix$events.global_position INTO v_new_position;
+        RETURNING $schema_prefix$alberto_events.global_position INTO v_new_position;
 
-        INSERT INTO $schema_prefix$event_type_positions (event_type, global_position)
+        INSERT INTO $schema_prefix$alberto_event_type_positions (event_type, global_position)
         VALUES (v_event_type, v_new_position);
 
         FOREACH v_tag IN ARRAY v_event_tags
         LOOP
-            INSERT INTO $schema_prefix$event_tag_positions (tag, global_position)
+            INSERT INTO $schema_prefix$alberto_event_tag_positions (tag, global_position)
             VALUES (v_tag, v_new_position);
         END LOOP;
 
@@ -206,8 +272,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Append events with DCB conflict check for all-tags queries (v3)
-CREATE OR REPLACE FUNCTION $schema_prefix$append_events_v3(
+CREATE OR REPLACE FUNCTION $schema_prefix$alberto_append_events_v3(
     p_events JSONB,
     p_dcb_types VARCHAR(500)[] DEFAULT NULL,
     p_dcb_all_tags VARCHAR(500)[] DEFAULT NULL,
@@ -237,7 +302,7 @@ BEGIN
     IF p_expected_position IS NOT NULL THEN
         IF p_dcb_types IS NOT NULL AND array_length(p_dcb_types, 1) > 0 THEN
             SELECT etp.global_position INTO v_conflict_position
-            FROM $schema_prefix$event_type_positions etp
+            FROM $schema_prefix$alberto_event_type_positions etp
             WHERE etp.event_type = ANY(p_dcb_types)
               AND etp.global_position > p_expected_position
             LIMIT 1;
@@ -252,7 +317,7 @@ BEGIN
             SELECT matching_positions.global_position INTO v_conflict_position
             FROM (
                 SELECT etagp.global_position
-                FROM $schema_prefix$event_tag_positions etagp
+                FROM $schema_prefix$alberto_event_tag_positions etagp
                 WHERE etagp.tag = ANY(p_dcb_all_tags)
                   AND etagp.global_position > p_expected_position
                 GROUP BY etagp.global_position
@@ -277,16 +342,16 @@ BEGIN
         v_event_metadata := COALESCE(v_event->'event_metadata', '{}'::JSONB);
         v_created_at := now();
 
-        INSERT INTO $schema_prefix$events (event_id, event_type, event_tags, event_data, event_metadata, created_at)
+        INSERT INTO $schema_prefix$alberto_events (event_id, event_type, event_tags, event_data, event_metadata, created_at)
         VALUES (v_event_id, v_event_type, v_event_tags, v_event_data, v_event_metadata, v_created_at)
-        RETURNING $schema_prefix$events.global_position INTO v_new_position;
+        RETURNING $schema_prefix$alberto_events.global_position INTO v_new_position;
 
-        INSERT INTO $schema_prefix$event_type_positions (event_type, global_position)
+        INSERT INTO $schema_prefix$alberto_event_type_positions (event_type, global_position)
         VALUES (v_event_type, v_new_position);
 
         FOREACH v_tag IN ARRAY v_event_tags
         LOOP
-            INSERT INTO $schema_prefix$event_tag_positions (tag, global_position)
+            INSERT INTO $schema_prefix$alberto_event_tag_positions (tag, global_position)
             VALUES (v_tag, v_new_position);
         END LOOP;
 
@@ -302,8 +367,30 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Read events by types (OR logic)
-CREATE OR REPLACE FUNCTION $schema_prefix$read_by_types(
+CREATE OR REPLACE FUNCTION $schema_prefix$alberto_read_all(
+    p_after_position BIGINT DEFAULT 0,
+    p_limit INT DEFAULT NULL
+)
+RETURNS TABLE (
+    global_position BIGINT,
+    event_id UUID,
+    event_type VARCHAR(500),
+    event_tags VARCHAR(500)[],
+    event_data JSONB,
+    event_metadata JSONB,
+    created_at TIMESTAMPTZ
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT e.global_position, e.event_id, e.event_type, e.event_tags, e.event_data, e.event_metadata, e.created_at
+    FROM $schema_prefix$alberto_events e
+    WHERE e.global_position > p_after_position
+    ORDER BY e.global_position
+    LIMIT p_limit;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION $schema_prefix$alberto_read_by_types(
     p_types VARCHAR(500)[],
     p_after_position BIGINT DEFAULT 0,
     p_limit INT DEFAULT NULL
@@ -320,8 +407,8 @@ RETURNS TABLE (
 BEGIN
     RETURN QUERY
     SELECT e.global_position, e.event_id, e.event_type, e.event_tags, e.event_data, e.event_metadata, e.created_at
-    FROM $schema_prefix$events e
-    INNER JOIN $schema_prefix$event_type_positions etp ON e.global_position = etp.global_position
+    FROM $schema_prefix$alberto_events e
+    INNER JOIN $schema_prefix$alberto_event_type_positions etp ON e.global_position = etp.global_position
     WHERE etp.event_type = ANY(p_types)
       AND e.global_position > p_after_position
     ORDER BY e.global_position
@@ -329,8 +416,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Read events by exact tags (OR logic)
-CREATE OR REPLACE FUNCTION $schema_prefix$read_by_tags(
+CREATE OR REPLACE FUNCTION $schema_prefix$alberto_read_by_tags(
     p_tags VARCHAR(500)[],
     p_after_position BIGINT DEFAULT 0,
     p_limit INT DEFAULT NULL
@@ -347,8 +433,8 @@ RETURNS TABLE (
 BEGIN
     RETURN QUERY
     SELECT DISTINCT e.global_position, e.event_id, e.event_type, e.event_tags, e.event_data, e.event_metadata, e.created_at
-    FROM $schema_prefix$events e
-    INNER JOIN $schema_prefix$event_tag_positions etagp ON e.global_position = etagp.global_position
+    FROM $schema_prefix$alberto_events e
+    INNER JOIN $schema_prefix$alberto_event_tag_positions etagp ON e.global_position = etagp.global_position
     WHERE etagp.tag = ANY(p_tags)
       AND e.global_position > p_after_position
     ORDER BY e.global_position
@@ -356,8 +442,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Read events by types OR tags (DCB query)
-CREATE OR REPLACE FUNCTION $schema_prefix$read_by_types_or_tags(
+CREATE OR REPLACE FUNCTION $schema_prefix$alberto_read_by_types_or_tags(
     p_types VARCHAR(500)[] DEFAULT NULL,
     p_tags VARCHAR(500)[] DEFAULT NULL,
     p_after_position BIGINT DEFAULT 0,
@@ -375,9 +460,9 @@ RETURNS TABLE (
 BEGIN
     RETURN QUERY
     SELECT DISTINCT e.global_position, e.event_id, e.event_type, e.event_tags, e.event_data, e.event_metadata, e.created_at
-    FROM $schema_prefix$events e
-    LEFT JOIN $schema_prefix$event_type_positions etp ON e.global_position = etp.global_position
-    LEFT JOIN $schema_prefix$event_tag_positions etagp ON e.global_position = etagp.global_position
+    FROM $schema_prefix$alberto_events e
+    LEFT JOIN $schema_prefix$alberto_event_type_positions etp ON e.global_position = etp.global_position
+    LEFT JOIN $schema_prefix$alberto_event_tag_positions etagp ON e.global_position = etagp.global_position
     WHERE e.global_position > p_after_position
       AND (
           (p_types IS NOT NULL AND array_length(p_types, 1) > 0 AND etp.event_type = ANY(p_types))
@@ -388,32 +473,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Read all events
-CREATE OR REPLACE FUNCTION $schema_prefix$read_all(
-    p_after_position BIGINT DEFAULT 0,
-    p_limit INT DEFAULT NULL
-)
-RETURNS TABLE (
-    global_position BIGINT,
-    event_id UUID,
-    event_type VARCHAR(500),
-    event_tags VARCHAR(500)[],
-    event_data JSONB,
-    event_metadata JSONB,
-    created_at TIMESTAMPTZ
-) AS $$
-BEGIN
-    RETURN QUERY
-    SELECT e.global_position, e.event_id, e.event_type, e.event_tags, e.event_data, e.event_metadata, e.created_at
-    FROM $schema_prefix$events e
-    WHERE e.global_position > p_after_position
-    ORDER BY e.global_position
-    LIMIT p_limit;
-END;
-$$ LANGUAGE plpgsql;
-
--- Read events by tag patterns (exact and/or prefix wildcards)
-CREATE OR REPLACE FUNCTION $schema_prefix$read_by_tag_patterns(
+CREATE OR REPLACE FUNCTION $schema_prefix$alberto_read_by_tag_patterns(
     p_exact_tags VARCHAR(500)[] DEFAULT NULL,
     p_tag_prefixes VARCHAR(500)[] DEFAULT NULL,
     p_after_position BIGINT DEFAULT 0,
@@ -438,8 +498,8 @@ BEGIN
 
     RETURN QUERY
     SELECT DISTINCT e.global_position, e.event_id, e.event_type, e.event_tags, e.event_data, e.event_metadata, e.created_at
-    FROM $schema_prefix$events e
-    INNER JOIN $schema_prefix$event_tag_positions etagp ON e.global_position = etagp.global_position
+    FROM $schema_prefix$alberto_events e
+    INNER JOIN $schema_prefix$alberto_event_tag_positions etagp ON e.global_position = etagp.global_position
     WHERE e.global_position > p_after_position
       AND (
           (v_has_exact AND etagp.tag = ANY(p_exact_tags))
@@ -453,8 +513,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Read events by types OR tag patterns (wildcards)
-CREATE OR REPLACE FUNCTION $schema_prefix$read_by_types_or_tag_patterns(
+CREATE OR REPLACE FUNCTION $schema_prefix$alberto_read_by_types_or_tag_patterns(
     p_types VARCHAR(500)[] DEFAULT NULL,
     p_exact_tags VARCHAR(500)[] DEFAULT NULL,
     p_tag_prefixes VARCHAR(500)[] DEFAULT NULL,
@@ -477,9 +536,9 @@ DECLARE
 BEGIN
     RETURN QUERY
     SELECT DISTINCT e.global_position, e.event_id, e.event_type, e.event_tags, e.event_data, e.event_metadata, e.created_at
-    FROM $schema_prefix$events e
-    LEFT JOIN $schema_prefix$event_type_positions etp ON e.global_position = etp.global_position
-    LEFT JOIN $schema_prefix$event_tag_positions etagp ON e.global_position = etagp.global_position
+    FROM $schema_prefix$alberto_events e
+    LEFT JOIN $schema_prefix$alberto_event_type_positions etp ON e.global_position = etp.global_position
+    LEFT JOIN $schema_prefix$alberto_event_tag_positions etagp ON e.global_position = etagp.global_position
     WHERE e.global_position > p_after_position
       AND (
           (v_has_types AND etp.event_type = ANY(p_types))
@@ -494,8 +553,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Read events matching all specified tags (AND logic)
-CREATE OR REPLACE FUNCTION $schema_prefix$read_by_all_tags(
+CREATE OR REPLACE FUNCTION $schema_prefix$alberto_read_by_all_tags(
     p_tags VARCHAR(500)[],
     p_after_position BIGINT DEFAULT 0,
     p_limit INT DEFAULT NULL
@@ -512,10 +570,10 @@ RETURNS TABLE (
 BEGIN
     RETURN QUERY
     SELECT e.global_position, e.event_id, e.event_type, e.event_tags, e.event_data, e.event_metadata, e.created_at
-    FROM $schema_prefix$events e
+    FROM $schema_prefix$alberto_events e
     INNER JOIN (
         SELECT etagp.global_position
-        FROM $schema_prefix$event_tag_positions etagp
+        FROM $schema_prefix$alberto_event_tag_positions etagp
         WHERE etagp.tag = ANY(p_tags)
           AND etagp.global_position > p_after_position
         GROUP BY etagp.global_position
@@ -526,8 +584,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Read events by types OR all-tags match
-CREATE OR REPLACE FUNCTION $schema_prefix$read_by_types_or_all_tags(
+CREATE OR REPLACE FUNCTION $schema_prefix$alberto_read_by_types_or_all_tags(
     p_types VARCHAR(500)[] DEFAULT NULL,
     p_tags VARCHAR(500)[] DEFAULT NULL,
     p_after_position BIGINT DEFAULT 0,
@@ -545,11 +602,11 @@ RETURNS TABLE (
 BEGIN
     RETURN QUERY
     SELECT DISTINCT e.global_position, e.event_id, e.event_type, e.event_tags, e.event_data, e.event_metadata, e.created_at
-    FROM $schema_prefix$events e
-    LEFT JOIN $schema_prefix$event_type_positions etp ON e.global_position = etp.global_position
+    FROM $schema_prefix$alberto_events e
+    LEFT JOIN $schema_prefix$alberto_event_type_positions etp ON e.global_position = etp.global_position
     LEFT JOIN (
         SELECT etagp.global_position
-        FROM $schema_prefix$event_tag_positions etagp
+        FROM $schema_prefix$alberto_event_tag_positions etagp
         WHERE p_tags IS NOT NULL
           AND array_length(p_tags, 1) > 0
           AND etagp.tag = ANY(p_tags)
@@ -567,15 +624,124 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Get last position
-CREATE OR REPLACE FUNCTION $schema_prefix$get_last_position()
+CREATE OR REPLACE FUNCTION $schema_prefix$alberto_get_last_position()
 RETURNS BIGINT AS $$
 DECLARE
     v_position BIGINT;
 BEGIN
     SELECT COALESCE(MAX(e.global_position), 0) INTO v_position
-    FROM $schema_prefix$events e;
+    FROM $schema_prefix$alberto_events e;
 
     RETURN v_position;
 END;
 $$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION $schema_prefix$alberto_notify_events()
+RETURNS TRIGGER AS $$
+BEGIN
+    PERFORM pg_notify('$schema$_events', NEW.global_position::TEXT);
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION $schema_prefix$alberto_notify_checkpoint()
+RETURNS TRIGGER AS $$
+BEGIN
+    PERFORM pg_notify('$schema$_checkpoints', NEW.processor_id || ':' || NEW.last_position::TEXT);
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION $schema_prefix$alberto_notify_dead_letter_insert()
+RETURNS TRIGGER AS $$
+BEGIN
+    PERFORM pg_notify('$schema$_dead_letters', 'added:' || NEW.processor_id);
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION $schema_prefix$alberto_notify_dead_letter_delete()
+RETURNS TRIGGER AS $$
+BEGIN
+    PERFORM pg_notify('$schema$_dead_letters', 'removed:' || OLD.processor_id);
+    RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION $schema_prefix$alberto_save_checkpoint_if_processor_lease_held(
+    p_processor_id TEXT,
+    p_consumer_id TEXT,
+    p_replica_id TEXT,
+    p_position BIGINT
+) RETURNS BOOLEAN AS $$
+DECLARE
+    v_rows INTEGER;
+BEGIN
+    UPDATE $schema_prefix$alberto_processor_checkpoints
+    SET last_position = p_position, updated_at = now()
+    WHERE processor_id = p_processor_id
+    AND EXISTS (
+        SELECT 1 FROM $schema_prefix$alberto_processor_leases
+        WHERE consumer_id = p_consumer_id
+        AND processor_id = p_processor_id
+        AND replica_id = p_replica_id
+        AND expires_at > now()
+    );
+
+    GET DIAGNOSTICS v_rows = ROW_COUNT;
+    RETURN v_rows > 0;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================================
+-- RECREATE TRIGGERS WITH NEW NAMES ON NEW TABLE NAMES
+-- ============================================================
+
+DROP TRIGGER IF EXISTS alberto_trg_notify_events ON $schema_prefix$alberto_events;
+CREATE TRIGGER alberto_trg_notify_events
+    AFTER INSERT ON $schema_prefix$alberto_events
+    FOR EACH ROW
+    EXECUTE FUNCTION $schema_prefix$alberto_notify_events();
+
+DROP TRIGGER IF EXISTS alberto_trg_notify_checkpoint ON $schema_prefix$alberto_processor_checkpoints;
+CREATE TRIGGER alberto_trg_notify_checkpoint
+    AFTER INSERT OR UPDATE ON $schema_prefix$alberto_processor_checkpoints
+    FOR EACH ROW
+    EXECUTE FUNCTION $schema_prefix$alberto_notify_checkpoint();
+
+DROP TRIGGER IF EXISTS alberto_trg_dead_letter_insert_notify ON $schema_prefix$alberto_dead_letter_events;
+CREATE TRIGGER alberto_trg_dead_letter_insert_notify
+    AFTER INSERT ON $schema_prefix$alberto_dead_letter_events
+    FOR EACH ROW
+    EXECUTE FUNCTION $schema_prefix$alberto_notify_dead_letter_insert();
+
+DROP TRIGGER IF EXISTS alberto_trg_dead_letter_delete_notify ON $schema_prefix$alberto_dead_letter_events;
+CREATE TRIGGER alberto_trg_dead_letter_delete_notify
+    AFTER DELETE ON $schema_prefix$alberto_dead_letter_events
+    FOR EACH ROW
+    EXECUTE FUNCTION $schema_prefix$alberto_notify_dead_letter_delete();
+
+-- ============================================================
+-- DROP OLD FUNCTION NAMES
+-- ============================================================
+
+DROP FUNCTION IF EXISTS $schema_prefix$append_events(JSONB, VARCHAR(500)[], VARCHAR(500)[], BIGINT);
+DROP FUNCTION IF EXISTS $schema_prefix$append_events_v2(JSONB, VARCHAR(500)[], VARCHAR(500)[], VARCHAR(500)[], BIGINT);
+DROP FUNCTION IF EXISTS $schema_prefix$append_events_v3(JSONB, VARCHAR(500)[], VARCHAR(500)[], BIGINT);
+DROP FUNCTION IF EXISTS $schema_prefix$read_all(BIGINT, INT);
+DROP FUNCTION IF EXISTS $schema_prefix$read_by_types(VARCHAR(500)[], BIGINT, INT);
+DROP FUNCTION IF EXISTS $schema_prefix$read_by_tags(VARCHAR(500)[], BIGINT, INT);
+DROP FUNCTION IF EXISTS $schema_prefix$read_by_types_or_tags(VARCHAR(500)[], VARCHAR(500)[], BIGINT, INT);
+DROP FUNCTION IF EXISTS $schema_prefix$read_by_tag_patterns(VARCHAR(500)[], VARCHAR(500)[], BIGINT, INT);
+DROP FUNCTION IF EXISTS $schema_prefix$read_by_types_or_tag_patterns(VARCHAR(500)[], VARCHAR(500)[], VARCHAR(500)[], BIGINT, INT);
+DROP FUNCTION IF EXISTS $schema_prefix$read_by_all_tags(VARCHAR(500)[], BIGINT, INT);
+DROP FUNCTION IF EXISTS $schema_prefix$read_by_types_or_all_tags(VARCHAR(500)[], VARCHAR(500)[], BIGINT, INT);
+DROP FUNCTION IF EXISTS $schema_prefix$get_last_position();
+DROP FUNCTION IF EXISTS $schema_prefix$notify_events();
+DROP FUNCTION IF EXISTS $schema_prefix$notify_checkpoint();
+DROP FUNCTION IF EXISTS $schema_prefix$notify_dead_letter_insert();
+DROP FUNCTION IF EXISTS $schema_prefix$notify_dead_letter_delete();
+DROP FUNCTION IF EXISTS $schema_prefix$save_checkpoint_if_processor_lease_held(TEXT, TEXT, TEXT, BIGINT);
+DROP FUNCTION IF EXISTS $schema_prefix$save_checkpoint_if_processor_lease_held(TEXT, TEXT, TEXT, BIGINT);
+DROP FUNCTION IF EXISTS $schema_prefix$save_checkpoint_if_processor_lease_held(TEXT, TEXT, TEXT, BIGINT);
+DROP FUNCTION IF EXISTS $schema_prefix$save_checkpoint_if_processor_lease_held(TEXT, TEXT, TEXT, BIGINT);

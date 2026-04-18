@@ -57,7 +57,7 @@ public class CliDataAccess
     {
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = conn.CreateCommand();
-        cmd.CommandText = $"SELECT MAX(global_position) FROM {_schema}.events";
+        cmd.CommandText = $"SELECT MAX(global_position) FROM {_schema}.alberto_events";
         var result = await cmd.ExecuteScalarAsync(ct);
         return result is DBNull or null ? null : Convert.ToInt64(result);
     }
@@ -68,7 +68,7 @@ public class CliDataAccess
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = $"""
             SELECT processor_id, last_position, updated_at
-            FROM {_schema}.processor_checkpoints
+            FROM {_schema}.alberto_processor_checkpoints
             ORDER BY processor_id
             """;
 
@@ -92,7 +92,7 @@ public class CliDataAccess
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = $"""
             SELECT processor_id, last_position, updated_at
-            FROM {_schema}.processor_checkpoints
+            FROM {_schema}.alberto_processor_checkpoints
             ORDER BY processor_id
             """;
 
@@ -116,7 +116,7 @@ public class CliDataAccess
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = $"""
             SELECT processor_id, last_position, updated_at
-            FROM {_schema}.processor_checkpoints
+            FROM {_schema}.alberto_processor_checkpoints
             WHERE processor_id = @processorId
             """;
         cmd.Parameters.AddWithValue("processorId", processorId);
@@ -160,7 +160,7 @@ public class CliDataAccess
 
         cmd.CommandText = $"""
             SELECT id, processor_id, event_type, global_position, error_message, failed_at
-            FROM {_schema}.dead_letter_events
+            FROM {_schema}.alberto_dead_letter_events
             {whereClause}
             ORDER BY failed_at DESC
             LIMIT @limit
@@ -211,7 +211,7 @@ public class CliDataAccess
 
         cmd.CommandText = $"""
             SELECT global_position, event_type, array_to_string(event_tags, ','), created_at
-            FROM {_schema}.events
+            FROM {_schema}.alberto_events
             WHERE {string.Join(" AND ", where)}
             ORDER BY global_position
             LIMIT @limit
@@ -236,7 +236,7 @@ public class CliDataAccess
     {
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = conn.CreateCommand();
-        cmd.CommandText = $"DELETE FROM {_schema}.processor_checkpoints WHERE processor_id = @processorId";
+        cmd.CommandText = $"DELETE FROM {_schema}.alberto_processor_checkpoints WHERE processor_id = @processorId";
         cmd.Parameters.AddWithValue("processorId", processorId);
         await cmd.ExecuteNonQueryAsync(ct);
     }
@@ -246,7 +246,7 @@ public class CliDataAccess
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = $"""
-            INSERT INTO {_schema}.processor_checkpoints (processor_id, last_position, updated_at)
+            INSERT INTO {_schema}.alberto_processor_checkpoints (processor_id, last_position, updated_at)
             VALUES (@processorId, @position, NOW())
             ON CONFLICT (processor_id) DO UPDATE
               SET last_position = @position, updated_at = NOW()
@@ -263,12 +263,12 @@ public class CliDataAccess
 
         if (!string.IsNullOrWhiteSpace(processorId))
         {
-            cmd.CommandText = $"DELETE FROM {_schema}.dead_letter_events WHERE processor_id = @processorId";
+            cmd.CommandText = $"DELETE FROM {_schema}.alberto_dead_letter_events WHERE processor_id = @processorId";
             cmd.Parameters.AddWithValue("processorId", processorId);
         }
         else
         {
-            cmd.CommandText = $"DELETE FROM {_schema}.dead_letter_events";
+            cmd.CommandText = $"DELETE FROM {_schema}.alberto_dead_letter_events";
         }
 
         return await cmd.ExecuteNonQueryAsync(ct);
@@ -281,12 +281,12 @@ public class CliDataAccess
 
         if (!string.IsNullOrWhiteSpace(processorId))
         {
-            cmd.CommandText = $"SELECT COUNT(*) FROM {_schema}.dead_letter_events WHERE processor_id = @processorId";
+            cmd.CommandText = $"SELECT COUNT(*) FROM {_schema}.alberto_dead_letter_events WHERE processor_id = @processorId";
             cmd.Parameters.AddWithValue("processorId", processorId);
         }
         else
         {
-            cmd.CommandText = $"SELECT COUNT(*) FROM {_schema}.dead_letter_events";
+            cmd.CommandText = $"SELECT COUNT(*) FROM {_schema}.alberto_dead_letter_events";
         }
 
         var result = await cmd.ExecuteScalarAsync(ct);
@@ -300,7 +300,7 @@ public class CliDataAccess
         long? globalPosition = null;
         await using (var cmd = conn.CreateCommand())
         {
-            cmd.CommandText = $"SELECT MAX(global_position) FROM {_schema}.events";
+            cmd.CommandText = $"SELECT MAX(global_position) FROM {_schema}.alberto_events";
             var result = await cmd.ExecuteScalarAsync(ct);
             globalPosition = result is DBNull or null ? null : Convert.ToInt64(result);
         }
@@ -308,7 +308,7 @@ public class CliDataAccess
         long processorCount = 0;
         await using (var cmd = conn.CreateCommand())
         {
-            cmd.CommandText = $"SELECT COUNT(*) FROM {_schema}.processor_checkpoints";
+            cmd.CommandText = $"SELECT COUNT(*) FROM {_schema}.alberto_processor_checkpoints";
             var result = await cmd.ExecuteScalarAsync(ct);
             processorCount = Convert.ToInt64(result);
         }
@@ -316,7 +316,7 @@ public class CliDataAccess
         long deadLetterCount = 0;
         await using (var cmd = conn.CreateCommand())
         {
-            cmd.CommandText = $"SELECT COUNT(*) FROM {_schema}.dead_letter_events";
+            cmd.CommandText = $"SELECT COUNT(*) FROM {_schema}.alberto_dead_letter_events";
             var result = await cmd.ExecuteScalarAsync(ct);
             deadLetterCount = Convert.ToInt64(result);
         }
@@ -324,7 +324,7 @@ public class CliDataAccess
         DateTime? lastEventAt = null;
         await using (var cmd = conn.CreateCommand())
         {
-            cmd.CommandText = $"SELECT created_at FROM {_schema}.events ORDER BY global_position DESC LIMIT 1";
+            cmd.CommandText = $"SELECT created_at FROM {_schema}.alberto_events ORDER BY global_position DESC LIMIT 1";
             var result = await cmd.ExecuteScalarAsync(ct);
             lastEventAt = result is DBNull or null ? null : Convert.ToDateTime(result);
         }
@@ -337,7 +337,7 @@ public class CliDataAccess
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = $"""
-            SELECT DISTINCT projection_type FROM {_schema}.projection_states ORDER BY 1
+            SELECT DISTINCT projection_type FROM {_schema}.alberto_projection_states ORDER BY 1
             """;
 
         var result = new List<string>();
@@ -367,7 +367,7 @@ public class CliDataAccess
 
         cmd.CommandText = $"""
             SELECT document_id, tenant_id, updated_at
-            FROM {_schema}.projection_states
+            FROM {_schema}.alberto_projection_states
             WHERE projection_type = @type
             AND (@tenant IS NULL OR tenant_id = @tenant)
             AND (@search IS NULL OR document_id ILIKE '%' || @search || '%')
@@ -396,7 +396,7 @@ public class CliDataAccess
         cmd.CommandText = """
             SELECT EXISTS (
                 SELECT 1 FROM pg_tables
-                WHERE schemaname = @schema AND tablename = 'tenant_leases'
+                WHERE schemaname = @schema AND tablename = 'alberto_tenant_leases'
             )
             """;
         cmd.Parameters.AddWithValue("schema", _schema);
@@ -410,7 +410,7 @@ public class CliDataAccess
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = $"""
             SELECT tenant_id, consumer_id, replica_id, expires_at
-            FROM {_schema}.tenant_leases
+            FROM {_schema}.alberto_tenant_leases
             ORDER BY tenant_id
             """;
 
@@ -436,7 +436,7 @@ public class CliDataAccess
 
         cmd.Parameters.AddWithValue("processorId", (object?)processorId ?? DBNull.Value);
         cmd.CommandText = $"""
-            DELETE FROM {_schema}.tenant_leases
+            DELETE FROM {_schema}.alberto_tenant_leases
             WHERE (@processorId IS NULL OR consumer_id = @processorId)
             """;
 
@@ -452,7 +452,7 @@ public class CliDataAccess
         long earliestPosition;
         await using (var cmd = conn.CreateCommand())
         {
-            cmd.CommandText = $"SELECT MIN(global_position) FROM {_schema}.dead_letter_events WHERE processor_id = @processorId";
+            cmd.CommandText = $"SELECT MIN(global_position) FROM {_schema}.alberto_dead_letter_events WHERE processor_id = @processorId";
             cmd.Parameters.AddWithValue("processorId", processorId);
             var result = await cmd.ExecuteScalarAsync(ct);
             earliestPosition = result is DBNull or null ? 0 : Convert.ToInt64(result);
@@ -463,7 +463,7 @@ public class CliDataAccess
         await using (var cmd = conn.CreateCommand())
         {
             cmd.CommandText = $"""
-                UPDATE {_schema}.processor_checkpoints
+                UPDATE {_schema}.alberto_processor_checkpoints
                 SET last_position = @position, updated_at = now()
                 WHERE processor_id = @processorId
                 """;
@@ -475,7 +475,7 @@ public class CliDataAccess
         int deletedCount;
         await using (var cmd = conn.CreateCommand())
         {
-            cmd.CommandText = $"DELETE FROM {_schema}.dead_letter_events WHERE processor_id = @processorId";
+            cmd.CommandText = $"DELETE FROM {_schema}.alberto_dead_letter_events WHERE processor_id = @processorId";
             cmd.Parameters.AddWithValue("processorId", processorId);
             deletedCount = await cmd.ExecuteNonQueryAsync(ct);
         }
@@ -488,7 +488,7 @@ public class CliDataAccess
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = $"""
-            UPDATE {_schema}.dead_letter_events
+            UPDATE {_schema}.alberto_dead_letter_events
             SET retry_requested = TRUE
             WHERE processor_id = @processorId
             """;

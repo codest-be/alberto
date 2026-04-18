@@ -35,17 +35,17 @@ public sealed class PostgresProcessorLeaseManager : IProcessorLeaseManager
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
 
         await using var cmd = new NpgsqlCommand($@"
-            INSERT INTO {_schema.Table("processor_leases")} (consumer_id, processor_id, replica_id, acquired_at, expires_at)
+            INSERT INTO {_schema.Table("alberto_processor_leases")} (consumer_id, processor_id, replica_id, acquired_at, expires_at)
             VALUES (@consumer_id, @processor_id, @replica_id, NOW(), @expires_at)
             ON CONFLICT (consumer_id, processor_id) DO UPDATE
             SET replica_id = @replica_id,
                 acquired_at = CASE
-                    WHEN {_schema.Table("processor_leases")}.replica_id = @replica_id THEN {_schema.Table("processor_leases")}.acquired_at
+                    WHEN {_schema.Table("alberto_processor_leases")}.replica_id = @replica_id THEN {_schema.Table("alberto_processor_leases")}.acquired_at
                     ELSE NOW()
                 END,
                 expires_at = @expires_at
-            WHERE {_schema.Table("processor_leases")}.expires_at < NOW()
-               OR {_schema.Table("processor_leases")}.replica_id = @replica_id
+            WHERE {_schema.Table("alberto_processor_leases")}.expires_at < NOW()
+               OR {_schema.Table("alberto_processor_leases")}.replica_id = @replica_id
             RETURNING expires_at", connection);
 
         cmd.Parameters.AddWithValue("consumer_id", consumerId);
@@ -73,7 +73,7 @@ public sealed class PostgresProcessorLeaseManager : IProcessorLeaseManager
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
 
         await using var cmd = new NpgsqlCommand($@"
-            UPDATE {_schema.Table("processor_leases")}
+            UPDATE {_schema.Table("alberto_processor_leases")}
             SET expires_at = @expires_at
             WHERE consumer_id = @consumer_id
               AND replica_id = @replica_id
@@ -101,7 +101,7 @@ public sealed class PostgresProcessorLeaseManager : IProcessorLeaseManager
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
 
         await using var cmd = new NpgsqlCommand($@"
-            DELETE FROM {_schema.Table("processor_leases")}
+            DELETE FROM {_schema.Table("alberto_processor_leases")}
             WHERE consumer_id = @consumer_id AND replica_id = @replica_id", connection);
 
         cmd.Parameters.AddWithValue("consumer_id", consumerId);
@@ -117,7 +117,7 @@ public sealed class PostgresProcessorLeaseManager : IProcessorLeaseManager
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand($@"
             SELECT processor_id, replica_id, acquired_at, expires_at
-            FROM {_schema.Table("processor_leases")}
+            FROM {_schema.Table("alberto_processor_leases")}
             WHERE consumer_id = @consumer_id
             ORDER BY processor_id", connection);
 

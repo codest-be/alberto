@@ -68,7 +68,7 @@ internal sealed class PostgresTenantEventStoreBackend(
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
-            $"SELECT * FROM {_schema.Function("read_all_global")}(@p_after_position, @p_limit)",
+            $"SELECT * FROM {_schema.Function("alberto_read_all_global")}(@p_after_position, @p_limit)",
             connection);
 
         cmd.Parameters.AddWithValue("p_after_position", afterPosition);
@@ -98,7 +98,7 @@ internal sealed class PostgresTenantEventStoreBackend(
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
-            $"SELECT {_schema.Function("get_last_position")}(@p_tenant_id)",
+            $"SELECT {_schema.Function("alberto_get_last_position")}(@p_tenant_id)",
             connection);
 
         cmd.Parameters.AddWithValue("p_tenant_id", tenantId);
@@ -111,7 +111,7 @@ internal sealed class PostgresTenantEventStoreBackend(
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
-            $"SELECT {_schema.Function("get_last_position_global")}()",
+            $"SELECT {_schema.Function("alberto_get_last_position_global")}()",
             connection);
 
         var result = await cmd.ExecuteScalarAsync(cancellationToken);
@@ -123,7 +123,7 @@ internal sealed class PostgresTenantEventStoreBackend(
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
-            $"SELECT global_position FROM {_schema.Table("events")} " +
+            $"SELECT global_position FROM {_schema.Table("alberto_events")} " +
             "WHERE global_position > @after AND global_position <= @ceiling ORDER BY global_position",
             connection);
         cmd.Parameters.AddWithValue("after", afterPosition);
@@ -146,7 +146,7 @@ internal sealed class PostgresTenantEventStoreBackend(
     {
         var useWildcardFunction = dcbQuery?.HasWildcardPatterns == true;
         var useAllTagsFunction = dcbQuery?.RequiresAllTags == true;
-        var functionName = useAllTagsFunction ? "append_events_v3" : useWildcardFunction ? "append_events_v2" : "append_events";
+        var functionName = useAllTagsFunction ? "alberto_append_events_v3" : useWildcardFunction ? "alberto_append_events_v2" : "alberto_append_events";
         var sql = useAllTagsFunction
             ? $"SELECT * FROM {_schema.Function(functionName)}(@p_tenant_id, @p_events, @p_dcb_types, @p_dcb_all_tags, @p_expected_position)"
             : useWildcardFunction
@@ -231,12 +231,12 @@ internal sealed class PostgresTenantEventStoreBackend(
     {
         if (query.IsEmpty)
         {
-            return $"SELECT * FROM {_schema.Function("read_all")}(@p_tenant_id, @p_after_position, @p_limit)";
+            return $"SELECT * FROM {_schema.Function("alberto_read_all")}(@p_tenant_id, @p_after_position, @p_limit)";
         }
 
         if (query.HasTypesOnly)
         {
-            return $"SELECT * FROM {_schema.Function("read_by_types")}(@p_tenant_id, @p_types, @p_after_position, @p_limit)";
+            return $"SELECT * FROM {_schema.Function("alberto_read_by_types")}(@p_tenant_id, @p_types, @p_after_position, @p_limit)";
         }
 
         // Use new wildcard-aware functions when patterns contain wildcards
@@ -244,31 +244,31 @@ internal sealed class PostgresTenantEventStoreBackend(
         {
             if (query.HasTagsOnly)
             {
-                return $"SELECT * FROM {_schema.Function("read_by_all_tags")}(@p_tenant_id, @p_tags, @p_after_position, @p_limit)";
+                return $"SELECT * FROM {_schema.Function("alberto_read_by_all_tags")}(@p_tenant_id, @p_tags, @p_after_position, @p_limit)";
             }
 
-            return $"SELECT * FROM {_schema.Function("read_by_types_or_all_tags")}(@p_tenant_id, @p_types, @p_tags, @p_after_position, @p_limit)";
+            return $"SELECT * FROM {_schema.Function("alberto_read_by_types_or_all_tags")}(@p_tenant_id, @p_types, @p_tags, @p_after_position, @p_limit)";
         }
 
         if (query.HasWildcardPatterns)
         {
             if (query.HasTagsOnly)
             {
-                return $"SELECT * FROM {_schema.Function("read_by_tag_patterns")}(@p_tenant_id, @p_exact_tags, @p_tag_prefixes, @p_after_position, @p_limit)";
+                return $"SELECT * FROM {_schema.Function("alberto_read_by_tag_patterns")}(@p_tenant_id, @p_exact_tags, @p_tag_prefixes, @p_after_position, @p_limit)";
             }
 
             // Has both types and tag patterns with wildcards
-            return $"SELECT * FROM {_schema.Function("read_by_types_or_tag_patterns")}(@p_tenant_id, @p_types, @p_exact_tags, @p_tag_prefixes, @p_after_position, @p_limit)";
+            return $"SELECT * FROM {_schema.Function("alberto_read_by_types_or_tag_patterns")}(@p_tenant_id, @p_types, @p_exact_tags, @p_tag_prefixes, @p_after_position, @p_limit)";
         }
 
         // Legacy functions for exact matches only
         if (query.HasTagsOnly)
         {
-            return $"SELECT * FROM {_schema.Function("read_by_tags")}(@p_tenant_id, @p_tags, @p_after_position, @p_limit)";
+            return $"SELECT * FROM {_schema.Function("alberto_read_by_tags")}(@p_tenant_id, @p_tags, @p_after_position, @p_limit)";
         }
 
         // Has both types and exact tags
-        return $"SELECT * FROM {_schema.Function("read_by_types_or_tags")}(@p_tenant_id, @p_types, @p_tags, @p_after_position, @p_limit)";
+        return $"SELECT * FROM {_schema.Function("alberto_read_by_types_or_tags")}(@p_tenant_id, @p_types, @p_tags, @p_after_position, @p_limit)";
     }
 
     private static string BuildEventsJson(List<IEventToPersist> events)

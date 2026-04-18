@@ -18,7 +18,7 @@ public sealed class PostgresOutboxStore(NpgsqlDataSource dataSource, string? sch
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand(
             $"""
-            INSERT INTO {_schema.Table("outbox_entries")}
+            INSERT INTO {_schema.Table("alberto_outbox_entries")}
                 (id, source_event_id, message_type, version, payload, metadata, status, retry_count, last_error, created_at, delivered_at)
             VALUES
                 (@id, @source_event_id, @message_type, @version, @payload::jsonb, @metadata::jsonb, @status, @retry_count, @last_error, @created_at, @delivered_at)
@@ -55,7 +55,7 @@ public sealed class PostgresOutboxStore(NpgsqlDataSource dataSource, string? sch
             $"""
             SELECT id, source_event_id, message_type, version, payload, metadata,
                    status, retry_count, last_error, created_at, delivered_at
-            FROM {_schema.Table("outbox_entries")}
+            FROM {_schema.Table("alberto_outbox_entries")}
             WHERE status = 'pending'
             ORDER BY created_at
             LIMIT @limit
@@ -81,7 +81,7 @@ public sealed class PostgresOutboxStore(NpgsqlDataSource dataSource, string? sch
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand(
             $"""
-            UPDATE {_schema.Table("outbox_entries")}
+            UPDATE {_schema.Table("alberto_outbox_entries")}
             SET status = 'delivered', delivered_at = now()
             WHERE id = @id
             """,
@@ -97,7 +97,7 @@ public sealed class PostgresOutboxStore(NpgsqlDataSource dataSource, string? sch
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand(
             $"""
-            UPDATE {_schema.Table("outbox_entries")}
+            UPDATE {_schema.Table("alberto_outbox_entries")}
             SET status = 'failed', retry_count = retry_count + 1, last_error = @error
             WHERE id = @id
             """,
@@ -119,7 +119,7 @@ public sealed class PostgresOutboxStore(NpgsqlDataSource dataSource, string? sch
         if (messageType is not null)
         {
             sql = $"""
-                UPDATE {_schema.Table("outbox_entries")}
+                UPDATE {_schema.Table("alberto_outbox_entries")}
                 SET status = 'pending', retry_count = 0, last_error = NULL
                 WHERE status = 'failed' AND message_type = @message_type
                 """;
@@ -129,7 +129,7 @@ public sealed class PostgresOutboxStore(NpgsqlDataSource dataSource, string? sch
         else
         {
             sql = $"""
-                UPDATE {_schema.Table("outbox_entries")}
+                UPDATE {_schema.Table("alberto_outbox_entries")}
                 SET status = 'pending', retry_count = 0, last_error = NULL
                 WHERE status = 'failed'
                 """;
@@ -146,7 +146,7 @@ public sealed class PostgresOutboxStore(NpgsqlDataSource dataSource, string? sch
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand(
             $"""
-            DELETE FROM {_schema.Table("outbox_entries")}
+            DELETE FROM {_schema.Table("alberto_outbox_entries")}
             WHERE status = 'delivered' AND delivered_at < @before
             """,
             connection);

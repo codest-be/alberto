@@ -25,7 +25,7 @@ public sealed class PostgresTenantRing(NpgsqlDataSource dataSource, string? sche
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
 
         await using (var selectCmd = new NpgsqlCommand(
-            $"SELECT tenant_id, node_id FROM {_schema.Table("tenant_assignments")}",
+            $"SELECT tenant_id, node_id FROM {_schema.Table("alberto_tenant_assignments")}",
             connection))
         await using (var reader = await selectCmd.ExecuteReaderAsync(ct))
         {
@@ -50,7 +50,7 @@ public sealed class PostgresTenantRing(NpgsqlDataSource dataSource, string? sche
 
             await using var updateCmd = new NpgsqlCommand(
                 $"""
-                UPDATE {_schema.Table("tenant_assignments")}
+                UPDATE {_schema.Table("alberto_tenant_assignments")}
                 SET node_id = @nodeId,
                     assigned_at = now(),
                     ring_version = ring_version + 1
@@ -74,7 +74,7 @@ public sealed class PostgresTenantRing(NpgsqlDataSource dataSource, string? sche
     {
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand(
-            $"SELECT tenant_id FROM {_schema.Table("tenant_assignments")} WHERE node_id = @nodeId",
+            $"SELECT tenant_id FROM {_schema.Table("alberto_tenant_assignments")} WHERE node_id = @nodeId",
             connection);
 
         cmd.Parameters.AddWithValue("nodeId", nodeId);
@@ -101,7 +101,7 @@ public sealed class PostgresTenantRing(NpgsqlDataSource dataSource, string? sche
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand(
             $"""
-            INSERT INTO {_schema.Table("tenant_assignments")} (tenant_id, node_id)
+            INSERT INTO {_schema.Table("alberto_tenant_assignments")} (tenant_id, node_id)
             VALUES (@tenantId, @nodeId)
             ON CONFLICT (tenant_id) DO NOTHING
             """,

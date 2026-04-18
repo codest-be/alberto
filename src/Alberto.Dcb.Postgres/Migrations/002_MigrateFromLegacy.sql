@@ -1,164 +1,85 @@
--- Alberto DCB Event Store - Initial Schema (Multi-Tenant)
--- Complete final-state schema with alberto_ prefix on all tables and functions.
--- Includes tenant_id columns for multi-tenant support.
-
--- Create schema if not using public
-CREATE SCHEMA IF NOT EXISTS $schema$;
+-- Alberto DCB Event Store - Migrate from Legacy (Multi-Tenant)
+-- Renames old un-prefixed tables to alberto_-prefixed names on existing databases.
+-- Also recreates all functions with the new names and drops old function names.
+-- Safe to run on fresh installs (all guards use IF EXISTS).
 
 -- ============================================================
--- TABLES
+-- TABLE RENAMES
 -- ============================================================
 
--- Events table (with tenant_id)
-CREATE TABLE IF NOT EXISTS $schema_prefix$alberto_events (
-    global_position   BIGSERIAL PRIMARY KEY,
-    tenant_id         VARCHAR(100) NOT NULL,
-    event_id          UUID NOT NULL DEFAULT gen_random_uuid(),
-    event_type        VARCHAR(500) NOT NULL,
-    event_tags        VARCHAR(500)[] NOT NULL DEFAULT '{}',
-    event_data        JSONB NOT NULL DEFAULT '{}',
-    event_metadata    JSONB NOT NULL DEFAULT '{}',
-    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (event_id)
-);
+DO $$ BEGIN
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = current_schema() AND tablename = 'events') THEN
+        ALTER TABLE $schema_prefix$events RENAME TO $schema_prefix$alberto_events;
+    END IF;
+END $$;
 
-CREATE INDEX IF NOT EXISTS ix_alberto_events_tenant ON $schema_prefix$alberto_events (tenant_id, global_position);
+DO $$ BEGIN
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = current_schema() AND tablename = 'event_type_positions') THEN
+        ALTER TABLE $schema_prefix$event_type_positions RENAME TO $schema_prefix$alberto_event_type_positions;
+    END IF;
+END $$;
 
--- Inverted index for event types (tenant-scoped)
-CREATE TABLE IF NOT EXISTS $schema_prefix$alberto_event_type_positions (
-    tenant_id         VARCHAR(100) NOT NULL,
-    event_type        VARCHAR(500) NOT NULL,
-    global_position   BIGINT NOT NULL REFERENCES $schema_prefix$alberto_events(global_position) ON DELETE CASCADE,
-    PRIMARY KEY (tenant_id, event_type, global_position)
-);
+DO $$ BEGIN
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = current_schema() AND tablename = 'event_tag_positions') THEN
+        ALTER TABLE $schema_prefix$event_tag_positions RENAME TO $schema_prefix$alberto_event_tag_positions;
+    END IF;
+END $$;
 
--- Inverted index for event tags (tenant-scoped)
-CREATE TABLE IF NOT EXISTS $schema_prefix$alberto_event_tag_positions (
-    tenant_id         VARCHAR(100) NOT NULL,
-    tag               VARCHAR(500) NOT NULL,
-    global_position   BIGINT NOT NULL REFERENCES $schema_prefix$alberto_events(global_position) ON DELETE CASCADE,
-    PRIMARY KEY (tenant_id, tag, global_position)
-);
+DO $$ BEGIN
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = current_schema() AND tablename = 'processor_checkpoints') THEN
+        ALTER TABLE $schema_prefix$processor_checkpoints RENAME TO $schema_prefix$alberto_processor_checkpoints;
+    END IF;
+END $$;
 
--- Processor checkpoints
-CREATE TABLE IF NOT EXISTS $schema_prefix$alberto_processor_checkpoints (
-    processor_id      VARCHAR(200) PRIMARY KEY,
-    last_position     BIGINT NOT NULL,
-    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+DO $$ BEGIN
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = current_schema() AND tablename = 'projection_states') THEN
+        ALTER TABLE $schema_prefix$projection_states RENAME TO $schema_prefix$alberto_projection_states;
+    END IF;
+END $$;
 
--- Projection states (with tenant_id and rebuild_version support)
-CREATE TABLE IF NOT EXISTS $schema_prefix$alberto_projection_states (
-    tenant_id         TEXT NOT NULL,
-    projection_type   TEXT NOT NULL,
-    document_id       TEXT NOT NULL,
-    rebuild_version   INT NOT NULL DEFAULT 1,
-    state             JSONB NOT NULL,
-    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (tenant_id, projection_type, document_id, rebuild_version)
-);
+DO $$ BEGIN
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = current_schema() AND tablename = 'projection_rebuild_meta') THEN
+        ALTER TABLE $schema_prefix$projection_rebuild_meta RENAME TO $schema_prefix$alberto_projection_rebuild_meta;
+    END IF;
+END $$;
 
-CREATE INDEX IF NOT EXISTS idx_alberto_projection_states_tenant_type
-    ON $schema_prefix$alberto_projection_states(tenant_id, projection_type);
+DO $$ BEGIN
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = current_schema() AND tablename = 'dead_letter_events') THEN
+        ALTER TABLE $schema_prefix$dead_letter_events RENAME TO $schema_prefix$alberto_dead_letter_events;
+    END IF;
+END $$;
 
-CREATE INDEX IF NOT EXISTS idx_alberto_projection_states_version
-    ON $schema_prefix$alberto_projection_states(projection_type, rebuild_version);
+DO $$ BEGIN
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = current_schema() AND tablename = 'outbox_entries') THEN
+        ALTER TABLE $schema_prefix$outbox_entries RENAME TO $schema_prefix$alberto_outbox_entries;
+    END IF;
+END $$;
 
-CREATE INDEX IF NOT EXISTS idx_alberto_projection_states_type_version_cleanup
-    ON $schema_prefix$alberto_projection_states(projection_type, rebuild_version)
-    WHERE rebuild_version > 0;
+DO $$ BEGIN
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = current_schema() AND tablename = 'tenant_leases') THEN
+        ALTER TABLE $schema_prefix$tenant_leases RENAME TO $schema_prefix$alberto_tenant_leases;
+    END IF;
+END $$;
 
-COMMENT ON COLUMN $schema_prefix$alberto_projection_states.rebuild_version IS 'Version number for zero-downtime rebuilds. Active version is tracked in alberto_projection_rebuild_meta.';
-
--- Projection rebuild metadata for zero-downtime rebuilds
-CREATE TABLE IF NOT EXISTS $schema_prefix$alberto_projection_rebuild_meta (
-    projection_type       TEXT PRIMARY KEY,
-    active_version        INT NOT NULL DEFAULT 1,
-    rebuilding_version    INT,
-    rebuild_status        TEXT,
-    rebuild_started_at    TIMESTAMPTZ,
-    rebuild_target_position BIGINT,
-    rebuild_completed_at  TIMESTAMPTZ
-);
-
-COMMENT ON TABLE $schema_prefix$alberto_projection_rebuild_meta IS 'Tracks active and rebuilding versions for zero-downtime projection rebuilds.';
-
--- Dead letter events (with global_position and retry_requested)
-CREATE TABLE IF NOT EXISTS $schema_prefix$alberto_dead_letter_events (
-    id                UUID PRIMARY KEY,
-    processor_id      VARCHAR(200) NOT NULL,
-    event_id          UUID NOT NULL,
-    event_type        VARCHAR(200) NOT NULL,
-    event_data        JSONB NOT NULL,
-    error_message     TEXT NOT NULL,
-    stack_trace       TEXT,
-    attempt_count     INT NOT NULL,
-    failed_at         TIMESTAMPTZ NOT NULL,
-    global_position   BIGINT NOT NULL DEFAULT 0,
-    retry_requested   BOOLEAN NOT NULL DEFAULT FALSE
-);
-
-CREATE INDEX IF NOT EXISTS idx_alberto_dead_letter_processor ON $schema_prefix$alberto_dead_letter_events(processor_id);
-CREATE INDEX IF NOT EXISTS idx_alberto_dead_letter_failed_at ON $schema_prefix$alberto_dead_letter_events(failed_at DESC);
-
--- Transactional outbox
-CREATE TABLE IF NOT EXISTS $schema_prefix$alberto_outbox_entries (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    source_event_id UUID NOT NULL,
-    message_type TEXT NOT NULL,
-    version TEXT NOT NULL DEFAULT '1',
-    payload JSONB NOT NULL,
-    metadata JSONB NOT NULL DEFAULT '{}',
-    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'delivered', 'failed')),
-    retry_count INT NOT NULL DEFAULT 0,
-    last_error TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    delivered_at TIMESTAMPTZ,
-    UNIQUE (source_event_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_alberto_outbox_pending
-    ON $schema_prefix$alberto_outbox_entries (created_at) WHERE status = 'pending';
-
--- Tenant leases for fair distribution (multi-tenant only)
-CREATE TABLE IF NOT EXISTS $schema_prefix$alberto_tenant_leases (
-    consumer_id TEXT NOT NULL,
-    tenant_id TEXT NOT NULL,
-    replica_id TEXT NOT NULL,
-    acquired_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    expires_at TIMESTAMPTZ NOT NULL,
-    PRIMARY KEY (consumer_id, tenant_id)
-);
-
-CREATE INDEX IF NOT EXISTS ix_alberto_tenant_leases_expires
-    ON $schema_prefix$alberto_tenant_leases (expires_at);
-
-CREATE INDEX IF NOT EXISTS ix_alberto_tenant_leases_replica
-    ON $schema_prefix$alberto_tenant_leases (replica_id);
-
-COMMENT ON TABLE $schema_prefix$alberto_tenant_leases IS 'Tracks tenant ownership with expiring leases for fair distribution across replicas.';
-COMMENT ON COLUMN $schema_prefix$alberto_tenant_leases.consumer_id IS 'Unique identifier for the consumer group.';
-COMMENT ON COLUMN $schema_prefix$alberto_tenant_leases.tenant_id IS 'The tenant ID being claimed.';
-COMMENT ON COLUMN $schema_prefix$alberto_tenant_leases.replica_id IS 'Unique identifier for the replica holding the lease.';
-COMMENT ON COLUMN $schema_prefix$alberto_tenant_leases.acquired_at IS 'When the lease was first acquired.';
-COMMENT ON COLUMN $schema_prefix$alberto_tenant_leases.expires_at IS 'When the lease expires if not renewed.';
-
--- Tenant assignments for consistent hash ring (multi-tenant only)
-CREATE TABLE IF NOT EXISTS $schema_prefix$alberto_tenant_assignments (
-    tenant_id TEXT PRIMARY KEY,
-    node_id TEXT NOT NULL,
-    assigned_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    ring_version BIGINT NOT NULL DEFAULT 1
-);
-
-CREATE INDEX IF NOT EXISTS ix_alberto_tenant_assignments_node_id
-    ON $schema_prefix$alberto_tenant_assignments (node_id);
+DO $$ BEGIN
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = current_schema() AND tablename = 'tenant_assignments') THEN
+        ALTER TABLE $schema_prefix$tenant_assignments RENAME TO $schema_prefix$alberto_tenant_assignments;
+    END IF;
+END $$;
 
 -- ============================================================
--- FUNCTIONS
+-- DROP OLD TRIGGER NAMES
 -- ============================================================
 
--- Append events with optional DCB conflict check (v1)
+DROP TRIGGER IF EXISTS tr_events_notify ON $schema_prefix$alberto_events;
+DROP TRIGGER IF EXISTS tr_checkpoints_notify ON $schema_prefix$alberto_processor_checkpoints;
+DROP TRIGGER IF EXISTS tr_dead_letter_insert_notify ON $schema_prefix$alberto_dead_letter_events;
+DROP TRIGGER IF EXISTS tr_dead_letter_delete_notify ON $schema_prefix$alberto_dead_letter_events;
+
+-- ============================================================
+-- RECREATE ALL FUNCTIONS WITH alberto_ PREFIX
+-- ============================================================
+
 CREATE OR REPLACE FUNCTION $schema_prefix$alberto_append_events(
     p_tenant_id VARCHAR(100),
     p_events JSONB,
@@ -251,7 +172,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Append events with DCB conflict check supporting wildcard patterns (v2)
 CREATE OR REPLACE FUNCTION $schema_prefix$alberto_append_events_v2(
     p_tenant_id VARCHAR(100),
     p_events JSONB,
@@ -362,7 +282,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Append events with DCB conflict check for all-tags queries (v3)
 CREATE OR REPLACE FUNCTION $schema_prefix$alberto_append_events_v3(
     p_tenant_id VARCHAR(100),
     p_events JSONB,
@@ -461,7 +380,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Read all events for a tenant
 CREATE OR REPLACE FUNCTION $schema_prefix$alberto_read_all(
     p_tenant_id VARCHAR(100),
     p_after_position BIGINT DEFAULT 0,
@@ -488,7 +406,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Read all events globally (for system-wide subscriptions)
 CREATE OR REPLACE FUNCTION $schema_prefix$alberto_read_all_global(
     p_after_position BIGINT DEFAULT 0,
     p_limit INT DEFAULT NULL
@@ -513,7 +430,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Read events by types (OR logic)
 CREATE OR REPLACE FUNCTION $schema_prefix$alberto_read_by_types(
     p_tenant_id VARCHAR(100),
     p_types VARCHAR(500)[],
@@ -543,7 +459,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Read events by exact tags (OR logic)
 CREATE OR REPLACE FUNCTION $schema_prefix$alberto_read_by_tags(
     p_tenant_id VARCHAR(100),
     p_tags VARCHAR(500)[],
@@ -573,7 +488,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Read events by types OR tags (DCB query)
 CREATE OR REPLACE FUNCTION $schema_prefix$alberto_read_by_types_or_tags(
     p_tenant_id VARCHAR(100),
     p_types VARCHAR(500)[] DEFAULT NULL,
@@ -608,7 +522,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Read events by tag patterns (exact and/or prefix wildcards)
 CREATE OR REPLACE FUNCTION $schema_prefix$alberto_read_by_tag_patterns(
     p_tenant_id VARCHAR(100),
     p_exact_tags VARCHAR(500)[] DEFAULT NULL,
@@ -652,7 +565,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Read events by types OR tag patterns (wildcards)
 CREATE OR REPLACE FUNCTION $schema_prefix$alberto_read_by_types_or_tag_patterns(
     p_tenant_id VARCHAR(100),
     p_types VARCHAR(500)[] DEFAULT NULL,
@@ -696,7 +608,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Read events matching all specified tags (AND logic)
 CREATE OR REPLACE FUNCTION $schema_prefix$alberto_read_by_all_tags(
     p_tenant_id VARCHAR(100),
     p_tags VARCHAR(500)[],
@@ -731,7 +642,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Read events by types OR all-tags match
 CREATE OR REPLACE FUNCTION $schema_prefix$alberto_read_by_types_or_all_tags(
     p_tenant_id VARCHAR(100),
     p_types VARCHAR(500)[] DEFAULT NULL,
@@ -778,7 +688,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Get last position for a tenant
 CREATE OR REPLACE FUNCTION $schema_prefix$alberto_get_last_position(p_tenant_id VARCHAR(100))
 RETURNS BIGINT AS $$
 DECLARE
@@ -792,7 +701,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Get last position globally
 CREATE OR REPLACE FUNCTION $schema_prefix$alberto_get_last_position_global()
 RETURNS BIGINT AS $$
 DECLARE
@@ -804,10 +712,6 @@ BEGIN
     RETURN v_position;
 END;
 $$ LANGUAGE plpgsql;
-
--- ============================================================
--- NOTIFICATION FUNCTIONS
--- ============================================================
 
 CREATE OR REPLACE FUNCTION $schema_prefix$alberto_notify_events()
 RETURNS TRIGGER AS $$
@@ -841,10 +745,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- ============================================================
--- FENCED CHECKPOINT FUNCTION (uses tenant_leases)
--- ============================================================
-
 CREATE OR REPLACE FUNCTION $schema_prefix$alberto_save_checkpoint_if_lease_held(
     p_processor_id TEXT,
     p_consumer_id TEXT,
@@ -870,7 +770,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- ============================================================
--- TRIGGERS
+-- RECREATE TRIGGERS WITH NEW NAMES ON NEW TABLE NAMES
 -- ============================================================
 
 DROP TRIGGER IF EXISTS alberto_trg_notify_events ON $schema_prefix$alberto_events;
@@ -896,3 +796,27 @@ CREATE TRIGGER alberto_trg_dead_letter_delete_notify
     AFTER DELETE ON $schema_prefix$alberto_dead_letter_events
     FOR EACH ROW
     EXECUTE FUNCTION $schema_prefix$alberto_notify_dead_letter_delete();
+
+-- ============================================================
+-- DROP OLD FUNCTION NAMES
+-- ============================================================
+
+DROP FUNCTION IF EXISTS $schema_prefix$append_events(VARCHAR(100), JSONB, VARCHAR(500)[], VARCHAR(500)[], BIGINT);
+DROP FUNCTION IF EXISTS $schema_prefix$append_events_v2(VARCHAR(100), JSONB, VARCHAR(500)[], VARCHAR(500)[], VARCHAR(500)[], BIGINT);
+DROP FUNCTION IF EXISTS $schema_prefix$append_events_v3(VARCHAR(100), JSONB, VARCHAR(500)[], VARCHAR(500)[], BIGINT);
+DROP FUNCTION IF EXISTS $schema_prefix$read_all(VARCHAR(100), BIGINT, INT);
+DROP FUNCTION IF EXISTS $schema_prefix$read_all_global(BIGINT, INT);
+DROP FUNCTION IF EXISTS $schema_prefix$read_by_types(VARCHAR(100), VARCHAR(500)[], BIGINT, INT);
+DROP FUNCTION IF EXISTS $schema_prefix$read_by_tags(VARCHAR(100), VARCHAR(500)[], BIGINT, INT);
+DROP FUNCTION IF EXISTS $schema_prefix$read_by_types_or_tags(VARCHAR(100), VARCHAR(500)[], VARCHAR(500)[], BIGINT, INT);
+DROP FUNCTION IF EXISTS $schema_prefix$read_by_tag_patterns(VARCHAR(100), VARCHAR(500)[], VARCHAR(500)[], BIGINT, INT);
+DROP FUNCTION IF EXISTS $schema_prefix$read_by_types_or_tag_patterns(VARCHAR(100), VARCHAR(500)[], VARCHAR(500)[], VARCHAR(500)[], BIGINT, INT);
+DROP FUNCTION IF EXISTS $schema_prefix$read_by_all_tags(VARCHAR(100), VARCHAR(500)[], BIGINT, INT);
+DROP FUNCTION IF EXISTS $schema_prefix$read_by_types_or_all_tags(VARCHAR(100), VARCHAR(500)[], VARCHAR(500)[], BIGINT, INT);
+DROP FUNCTION IF EXISTS $schema_prefix$get_last_position(VARCHAR(100));
+DROP FUNCTION IF EXISTS $schema_prefix$get_last_position_global();
+DROP FUNCTION IF EXISTS $schema_prefix$notify_events();
+DROP FUNCTION IF EXISTS $schema_prefix$notify_checkpoint();
+DROP FUNCTION IF EXISTS $schema_prefix$notify_dead_letter_insert();
+DROP FUNCTION IF EXISTS $schema_prefix$notify_dead_letter_delete();
+DROP FUNCTION IF EXISTS $schema_prefix$save_checkpoint_if_lease_held(TEXT, TEXT, TEXT, BIGINT);

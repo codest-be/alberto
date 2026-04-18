@@ -60,7 +60,7 @@ public sealed class PostgresStateStore<TState>(
 
         var sql = $"""
             SELECT document_id, state
-            FROM {_schema.Table("projection_states")}
+            FROM {_schema.Table("alberto_projection_states")}
             WHERE projection_type = @projection_type
               AND rebuild_version = @rebuild_version
               AND document_id IN ({string.Join(", ", parameterNames)})
@@ -112,7 +112,7 @@ public sealed class PostgresStateStore<TState>(
 
             await using var cmd = new NpgsqlCommand(
                 $"""
-                INSERT INTO {_schema.Table("projection_states")} (projection_type, document_id, rebuild_version, state, updated_at)
+                INSERT INTO {_schema.Table("alberto_projection_states")} (projection_type, document_id, rebuild_version, state, updated_at)
                 VALUES (@projection_type, @document_id, @rebuild_version, @state::jsonb, now())
                 ON CONFLICT (projection_type, document_id, rebuild_version) DO UPDATE
                 SET state = @state::jsonb, updated_at = now()
@@ -131,7 +131,7 @@ public sealed class PostgresStateStore<TState>(
         {
             await using var cmd = new NpgsqlCommand(
                 $"""
-                DELETE FROM {_schema.Table("projection_states")}
+                DELETE FROM {_schema.Table("alberto_projection_states")}
                 WHERE projection_type = @projection_type
                   AND document_id = @document_id
                   AND rebuild_version = @rebuild_version
@@ -156,7 +156,7 @@ public sealed class PostgresStateStore<TState>(
         await using var cmd = new NpgsqlCommand(
             $"""
             SELECT state
-            FROM {_schema.Table("projection_states")}
+            FROM {_schema.Table("alberto_projection_states")}
             WHERE projection_type = @projection_type
               AND rebuild_version = @rebuild_version
             ORDER BY updated_at DESC

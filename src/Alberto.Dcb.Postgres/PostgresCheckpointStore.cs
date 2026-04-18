@@ -5,7 +5,7 @@ namespace Alberto.Dcb.Postgres;
 
 /// <summary>
 /// PostgreSQL implementation of <see cref="ICheckpointStore"/>.
-/// Uses the processor_checkpoints table.
+/// Uses the alberto_processor_checkpoints table.
 /// </summary>
 public sealed class PostgresCheckpointStore : IFencedCheckpointStore
 {
@@ -27,7 +27,7 @@ public sealed class PostgresCheckpointStore : IFencedCheckpointStore
     {
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand(
-            $"SELECT last_position FROM {_schema.Table("processor_checkpoints")} WHERE processor_id = @processor_id",
+            $"SELECT last_position FROM {_schema.Table("alberto_processor_checkpoints")} WHERE processor_id = @processor_id",
             connection);
 
         cmd.Parameters.AddWithValue("processor_id", processorId);
@@ -41,10 +41,10 @@ public sealed class PostgresCheckpointStore : IFencedCheckpointStore
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand(
             $"""
-            INSERT INTO {_schema.Table("processor_checkpoints")} (processor_id, last_position, updated_at)
+            INSERT INTO {_schema.Table("alberto_processor_checkpoints")} (processor_id, last_position, updated_at)
             VALUES (@processor_id, @last_position, now())
             ON CONFLICT (processor_id) DO UPDATE
-            SET last_position = GREATEST({_schema.Table("processor_checkpoints")}.last_position, @last_position),
+            SET last_position = GREATEST({_schema.Table("alberto_processor_checkpoints")}.last_position, @last_position),
                 updated_at = now()
             """,
             connection);
@@ -59,7 +59,7 @@ public sealed class PostgresCheckpointStore : IFencedCheckpointStore
     {
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand(
-            $"DELETE FROM {_schema.Table("processor_checkpoints")} WHERE processor_id = @processor_id",
+            $"DELETE FROM {_schema.Table("alberto_processor_checkpoints")} WHERE processor_id = @processor_id",
             connection);
 
         cmd.Parameters.AddWithValue("processor_id", processorId);
@@ -72,8 +72,8 @@ public sealed class PostgresCheckpointStore : IFencedCheckpointStore
         bool useProcessorLeaseFencing = false, CancellationToken ct = default)
     {
         var functionName = useProcessorLeaseFencing
-            ? "save_checkpoint_if_processor_lease_held"
-            : "save_checkpoint_if_lease_held";
+            ? "alberto_save_checkpoint_if_processor_lease_held"
+            : "alberto_save_checkpoint_if_lease_held";
 
         await using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = $"SELECT {_schema.Function(functionName)}(@processorId, @consumerId, @replicaId, @position)";

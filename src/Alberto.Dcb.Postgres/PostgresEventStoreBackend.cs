@@ -66,7 +66,7 @@ public sealed class PostgresEventStoreBackend(
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
-            $"SELECT * FROM {_schema.Function("read_all")}(@p_after_position, @p_limit)",
+            $"SELECT * FROM {_schema.Function("alberto_read_all")}(@p_after_position, @p_limit)",
             connection);
 
         cmd.Parameters.AddWithValue("p_after_position", afterPosition);
@@ -99,7 +99,7 @@ public sealed class PostgresEventStoreBackend(
     {
         var useWildcardFunction = dcbQuery?.HasWildcardPatterns == true;
         var useAllTagsFunction = dcbQuery?.RequiresAllTags == true;
-        var functionName = useAllTagsFunction ? "append_events_v3" : useWildcardFunction ? "append_events_v2" : "append_events";
+        var functionName = useAllTagsFunction ? "alberto_append_events_v3" : useWildcardFunction ? "alberto_append_events_v2" : "alberto_append_events";
         var sql = useAllTagsFunction
             ? $"SELECT * FROM {_schema.Function(functionName)}(@p_events, @p_dcb_types, @p_dcb_all_tags, @p_expected_position)"
             : useWildcardFunction
@@ -181,7 +181,7 @@ public sealed class PostgresEventStoreBackend(
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
-            $"SELECT {_schema.Function("get_last_position")}()",
+            $"SELECT {_schema.Function("alberto_get_last_position")}()",
             connection);
 
         var result = await cmd.ExecuteScalarAsync(cancellationToken);
@@ -193,7 +193,7 @@ public sealed class PostgresEventStoreBackend(
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
-            $"SELECT global_position FROM {_schema.Table("events")} " +
+            $"SELECT global_position FROM {_schema.Table("alberto_events")} " +
             "WHERE global_position > @after AND global_position <= @ceiling ORDER BY global_position",
             connection);
         cmd.Parameters.AddWithValue("after", afterPosition);
@@ -209,40 +209,40 @@ public sealed class PostgresEventStoreBackend(
     {
         if (query.IsEmpty)
         {
-            return $"SELECT * FROM {_schema.Function("read_all")}(@p_after_position, @p_limit)";
+            return $"SELECT * FROM {_schema.Function("alberto_read_all")}(@p_after_position, @p_limit)";
         }
 
         if (query.HasTypesOnly)
         {
-            return $"SELECT * FROM {_schema.Function("read_by_types")}(@p_types, @p_after_position, @p_limit)";
+            return $"SELECT * FROM {_schema.Function("alberto_read_by_types")}(@p_types, @p_after_position, @p_limit)";
         }
 
         if (query.RequiresAllTags)
         {
             if (query.HasTagsOnly)
             {
-                return $"SELECT * FROM {_schema.Function("read_by_all_tags")}(@p_tags, @p_after_position, @p_limit)";
+                return $"SELECT * FROM {_schema.Function("alberto_read_by_all_tags")}(@p_tags, @p_after_position, @p_limit)";
             }
 
-            return $"SELECT * FROM {_schema.Function("read_by_types_or_all_tags")}(@p_types, @p_tags, @p_after_position, @p_limit)";
+            return $"SELECT * FROM {_schema.Function("alberto_read_by_types_or_all_tags")}(@p_types, @p_tags, @p_after_position, @p_limit)";
         }
 
         if (query.HasWildcardPatterns)
         {
             if (query.HasTagsOnly)
             {
-                return $"SELECT * FROM {_schema.Function("read_by_tag_patterns")}(@p_exact_tags, @p_tag_prefixes, @p_after_position, @p_limit)";
+                return $"SELECT * FROM {_schema.Function("alberto_read_by_tag_patterns")}(@p_exact_tags, @p_tag_prefixes, @p_after_position, @p_limit)";
             }
 
-            return $"SELECT * FROM {_schema.Function("read_by_types_or_tag_patterns")}(@p_types, @p_exact_tags, @p_tag_prefixes, @p_after_position, @p_limit)";
+            return $"SELECT * FROM {_schema.Function("alberto_read_by_types_or_tag_patterns")}(@p_types, @p_exact_tags, @p_tag_prefixes, @p_after_position, @p_limit)";
         }
 
         if (query.HasTagsOnly)
         {
-            return $"SELECT * FROM {_schema.Function("read_by_tags")}(@p_tags, @p_after_position, @p_limit)";
+            return $"SELECT * FROM {_schema.Function("alberto_read_by_tags")}(@p_tags, @p_after_position, @p_limit)";
         }
 
-        return $"SELECT * FROM {_schema.Function("read_by_types_or_tags")}(@p_types, @p_tags, @p_after_position, @p_limit)";
+        return $"SELECT * FROM {_schema.Function("alberto_read_by_types_or_tags")}(@p_types, @p_tags, @p_after_position, @p_limit)";
     }
 
     private static string BuildEventsJson(List<IEventToPersist> events)

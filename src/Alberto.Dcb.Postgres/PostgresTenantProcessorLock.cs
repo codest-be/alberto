@@ -43,17 +43,17 @@ public sealed class PostgresTenantProcessorLock : ITenantProcessorLock
         // Try to insert a new lease, or update an existing one if it has expired.
         // The UPDATE only succeeds if expires_at < NOW() (expired) OR replica_id matches (own lease).
         await using var cmd = new NpgsqlCommand($@"
-            INSERT INTO {_schema.Table("tenant_leases")} (consumer_id, tenant_id, replica_id, acquired_at, expires_at)
+            INSERT INTO {_schema.Table("alberto_tenant_leases")} (consumer_id, tenant_id, replica_id, acquired_at, expires_at)
             VALUES (@consumer_id, @tenant_id, @replica_id, NOW(), @expires_at)
             ON CONFLICT (consumer_id, tenant_id) DO UPDATE
             SET replica_id = @replica_id,
                 acquired_at = CASE
-                    WHEN {_schema.Table("tenant_leases")}.replica_id = @replica_id THEN {_schema.Table("tenant_leases")}.acquired_at
+                    WHEN {_schema.Table("alberto_tenant_leases")}.replica_id = @replica_id THEN {_schema.Table("alberto_tenant_leases")}.acquired_at
                     ELSE NOW()
                 END,
                 expires_at = @expires_at
-            WHERE {_schema.Table("tenant_leases")}.expires_at < NOW()
-               OR {_schema.Table("tenant_leases")}.replica_id = @replica_id
+            WHERE {_schema.Table("alberto_tenant_leases")}.expires_at < NOW()
+               OR {_schema.Table("alberto_tenant_leases")}.replica_id = @replica_id
             RETURNING expires_at", connection);
 
         cmd.Parameters.AddWithValue("consumer_id", consumerId);
@@ -83,7 +83,7 @@ public sealed class PostgresTenantProcessorLock : ITenantProcessorLock
 
         // Update expires_at for all leases owned by this replica
         await using var cmd = new NpgsqlCommand($@"
-            UPDATE {_schema.Table("tenant_leases")}
+            UPDATE {_schema.Table("alberto_tenant_leases")}
             SET expires_at = @expires_at
             WHERE consumer_id = @consumer_id
               AND replica_id = @replica_id
@@ -111,7 +111,7 @@ public sealed class PostgresTenantProcessorLock : ITenantProcessorLock
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
 
         await using var cmd = new NpgsqlCommand($@"
-            DELETE FROM {_schema.Table("tenant_leases")}
+            DELETE FROM {_schema.Table("alberto_tenant_leases")}
             WHERE consumer_id = @consumer_id AND tenant_id = @tenant_id", connection);
 
         cmd.Parameters.AddWithValue("consumer_id", consumerId);
@@ -127,7 +127,7 @@ public sealed class PostgresTenantProcessorLock : ITenantProcessorLock
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
 
         await using var cmd = new NpgsqlCommand($@"
-            DELETE FROM {_schema.Table("tenant_leases")}
+            DELETE FROM {_schema.Table("alberto_tenant_leases")}
             WHERE consumer_id = @consumer_id
               AND tenant_id = @tenant_id
               AND replica_id = @replica_id", connection);
@@ -146,7 +146,7 @@ public sealed class PostgresTenantProcessorLock : ITenantProcessorLock
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
 
         await using var cmd = new NpgsqlCommand($@"
-            DELETE FROM {_schema.Table("tenant_leases")}
+            DELETE FROM {_schema.Table("alberto_tenant_leases")}
             WHERE consumer_id = @consumer_id AND replica_id = @replica_id", connection);
 
         cmd.Parameters.AddWithValue("consumer_id", consumerId);
@@ -160,7 +160,7 @@ public sealed class PostgresTenantProcessorLock : ITenantProcessorLock
     {
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand(
-            $"SELECT DISTINCT tenant_id FROM {_schema.Table("events")} ORDER BY tenant_id",
+            $"SELECT DISTINCT tenant_id FROM {_schema.Table("alberto_events")} ORDER BY tenant_id",
             connection);
 
         var tenants = new List<string>();
@@ -180,7 +180,7 @@ public sealed class PostgresTenantProcessorLock : ITenantProcessorLock
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand($@"
             SELECT tenant_id, replica_id, acquired_at, expires_at
-            FROM {_schema.Table("tenant_leases")}
+            FROM {_schema.Table("alberto_tenant_leases")}
             WHERE consumer_id = @consumer_id
             ORDER BY tenant_id", connection);
 
