@@ -117,7 +117,7 @@ public class FencedCheckpointTests
 
         public Task<bool> SaveIfLeaseHeldAsync(
             string processorId, long position, string consumerId, string replicaId,
-            CancellationToken ct = default)
+            bool useProcessorLeaseFencing = false, CancellationToken ct = default)
         {
             if (leaseHeld)
                 _checkpoints[processorId] = position;
@@ -159,7 +159,7 @@ public class FencedCheckpointTests
 
         public async Task<bool> SaveIfLeaseHeldAsync(
             string processorId, long position, string consumerId, string replicaId,
-            CancellationToken ct = default)
+            bool useProcessorLeaseFencing = false, CancellationToken ct = default)
         {
             // Delegate to regular save — lease is always considered held in this implementation
             await SaveAsync(processorId, position, ct);

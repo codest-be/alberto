@@ -23,6 +23,8 @@ public sealed class ControlLoopBuilder
     private readonly List<BatchConsumeMiddleware> _batchMiddlewares = [];
     private TimeSpan _retryLoopPollingInterval = TimeSpan.FromMinutes(1);
     private int _retryLoopBatchSize = 10;
+    private bool _useProcessorLeases;
+    private string? _replicaId;
 
     internal ControlLoopBuilder(DcbModuleBuilder moduleBuilder) =>
         _moduleBuilder = moduleBuilder;
@@ -75,6 +77,22 @@ public sealed class ControlLoopBuilder
     }
 
     /// <summary>
+    /// Enables processor-level lease distribution. Each processor acquires a database-backed
+    /// lease before starting, ensuring only one replica runs each processor at a time.
+    /// On graceful shutdown, leases are released immediately for fast handoff.
+    /// </summary>
+    /// <param name="replicaId">
+    /// Unique identifier for this replica instance.
+    /// Defaults to <see cref="Environment.MachineName"/> (the container ID in Docker).
+    /// </param>
+    public ControlLoopBuilder WithProcessorLeases(string? replicaId = null)
+    {
+        _useProcessorLeases = true;
+        _replicaId = replicaId;
+        return this;
+    }
+
+    /// <summary>
     /// Adds a custom middleware to the consume pipeline.
     /// Middlewares run in registration order (first added = outermost wrapper).
     /// The default retry-and-dead-letter middleware is always installed as the
@@ -114,6 +132,8 @@ public sealed class ControlLoopBuilder
         var explicitBatchMiddlewares = _batchMiddlewares.ToArray();
         var retryLoopPollingInterval = _retryLoopPollingInterval;
         var retryLoopBatchSize = _retryLoopBatchSize;
+        var useProcessorLeases = _useProcessorLeases;
+        var replicaId = _replicaId ?? Environment.MachineName;
 
         // EventStoreHead keyed by moduleKey — resolves same backend as ConsumerBuilder used to
         services.AddKeyedSingleton<EventStoreHead>(moduleKey, (sp, _) =>
@@ -201,6 +221,22 @@ public sealed class ControlLoopBuilder
                         ProcessorExecutionOptions.Default),
                     logger))
                 .ToList();
+
+            if (useProcessorLeases)
+            {
+                var leaseManager = sp.GetRequiredKeyedService<IProcessorLeaseManager>(moduleKey);
+
+                // Enable fenced checkpoint writes to prevent zombie processors
+                if (checkpoints is CachingCheckpointStore cachingStore)
+                {
+                    cachingStore.SetFencingContext(new FencingContext(moduleKey, replicaId, UseProcessorLeaseFencing: true));
+                }
+
+                return new LeaseAwareControlLoopGroup(
+                    loops, leaseManager, moduleKey, replicaId,
+                    sp.GetService<ILogger<LeaseAwareControlLoopGroup>>());
+            }
+
             return new ControlLoopGroup(loops);
         });
 

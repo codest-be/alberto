@@ -7,10 +7,21 @@ namespace Alberto.Dcb.Postgres;
 /// PostgreSQL implementation of <see cref="ICheckpointStore"/>.
 /// Uses the processor_checkpoints table.
 /// </summary>
-public sealed class PostgresCheckpointStore(NpgsqlDataSource dataSource, string? schema = null) : IFencedCheckpointStore
+public sealed class PostgresCheckpointStore : IFencedCheckpointStore
 {
-    private readonly NpgsqlDataSource _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
-    private readonly SchemaQualifier _schema = new(schema);
+    private readonly NpgsqlDataSource _dataSource;
+    private readonly SchemaQualifier _schema;
+
+    /// <summary>
+    /// Creates a new PostgresCheckpointStore.
+    /// </summary>
+    /// <param name="dataSource">The PostgreSQL data source.</param>
+    /// <param name="schema">The database schema name. Can be null for default schema.</param>
+    public PostgresCheckpointStore(NpgsqlDataSource dataSource, string? schema = null)
+    {
+        _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
+        _schema = new SchemaQualifier(schema);
+    }
 
     public async Task<long?> GetAsync(string processorId, CancellationToken ct = default)
     {
@@ -57,10 +68,15 @@ public sealed class PostgresCheckpointStore(NpgsqlDataSource dataSource, string?
     }
 
     public async Task<bool> SaveIfLeaseHeldAsync(
-        string processorId, long position, string consumerId, string replicaId, CancellationToken ct = default)
+        string processorId, long position, string consumerId, string replicaId,
+        bool useProcessorLeaseFencing = false, CancellationToken ct = default)
     {
+        var functionName = useProcessorLeaseFencing
+            ? "save_checkpoint_if_processor_lease_held"
+            : "save_checkpoint_if_lease_held";
+
         await using var cmd = _dataSource.CreateCommand();
-        cmd.CommandText = $"SELECT {_schema.Function("save_checkpoint_if_lease_held")}(@processorId, @consumerId, @replicaId, @position)";
+        cmd.CommandText = $"SELECT {_schema.Function(functionName)}(@processorId, @consumerId, @replicaId, @position)";
         cmd.Parameters.AddWithValue("processorId", processorId);
         cmd.Parameters.AddWithValue("consumerId", consumerId);
         cmd.Parameters.AddWithValue("replicaId", replicaId);

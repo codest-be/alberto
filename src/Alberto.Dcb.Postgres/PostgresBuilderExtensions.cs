@@ -128,6 +128,12 @@ public static class PostgresBuilderExtensions
             return new PostgresTenantProcessorLock(dataSource, schema, leaseDuration);
         });
 
+        builder.Services.AddKeyedSingleton<IProcessorLeaseManager>(moduleKey, (sp, _) =>
+        {
+            var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
+            return new PostgresProcessorLeaseManager(dataSource, schema, leaseDuration);
+        });
+
         return builder;
     }
 

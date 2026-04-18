@@ -8,7 +8,7 @@ namespace Alberto.Dcb.Subscriptions;
 /// lease-fenced writes. Provides the consumer and replica identity needed to verify the
 /// lease is still held at flush time.
 /// </summary>
-public record FencingContext(string ConsumerId, string ReplicaId);
+public record FencingContext(string ConsumerId, string ReplicaId, bool UseProcessorLeaseFencing = false);
 
 /// <summary>
 /// Checkpoint store that throttles database writes by batching updates.
@@ -131,7 +131,7 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IAsyncDisposabl
                     var leaseHeld = await fenced.SaveIfLeaseHeldAsync(
                         processorId, position,
                         _fencingContext!.ConsumerId, _fencingContext.ReplicaId,
-                        ct);
+                        _fencingContext.UseProcessorLeaseFencing, ct);
 
                     if (!leaseHeld)
                     {
