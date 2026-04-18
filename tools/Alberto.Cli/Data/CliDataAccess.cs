@@ -22,15 +22,6 @@ public record EventInfo(
     DateTime? CreatedAt
 );
 
-public record AuditLogEntry(
-    long Id,
-    string Action,
-    string? ProcessorId,
-    string? Operator,
-    DateTime? OccurredAt,
-    string? Details
-);
-
 public record SystemInfo(
     long? GlobalPosition,
     long ProcessorCount,
@@ -300,70 +291,6 @@ public class CliDataAccess
 
         var result = await cmd.ExecuteScalarAsync(ct);
         return Convert.ToInt32(result);
-    }
-
-    public async Task<bool> AuditLogExistsAsync(CancellationToken ct = default)
-    {
-        await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = """
-            SELECT EXISTS (
-                SELECT 1 FROM pg_tables
-                WHERE schemaname = @schema AND tablename = 'processor_audit_log'
-            )
-            """;
-        cmd.Parameters.AddWithValue("schema", _schema);
-        var result = await cmd.ExecuteScalarAsync(ct);
-        return result is true;
-    }
-
-    public async Task<List<AuditLogEntry>> GetAuditLogAsync(int limit, CancellationToken ct = default)
-    {
-        await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        await using var cmd = conn.CreateCommand();
-        cmd.Parameters.AddWithValue("limit", limit);
-        cmd.CommandText = $"""
-            SELECT id, action, processor_id, operator, occurred_at, details
-            FROM {_schema}.processor_audit_log
-            ORDER BY id DESC
-            LIMIT @limit
-            """;
-
-        var result = new List<AuditLogEntry>();
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
-        {
-            result.Add(new AuditLogEntry(
-                reader.GetInt64(0),
-                reader.GetString(1),
-                reader.IsDBNull(2) ? null : reader.GetString(2),
-                reader.IsDBNull(3) ? null : reader.GetString(3),
-                reader.IsDBNull(4) ? null : reader.GetDateTime(4),
-                reader.IsDBNull(5) ? null : reader.GetString(5)
-            ));
-        }
-
-        return result;
-    }
-
-    public async Task WriteAuditLogAsync(
-        string action,
-        string processorId,
-        string operatorName,
-        string? details,
-        CancellationToken ct = default)
-    {
-        await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = $"""
-            INSERT INTO {_schema}.processor_audit_log (action, processor_id, operator, occurred_at, details)
-            VALUES (@action, @processorId, @operator, NOW(), @details)
-            """;
-        cmd.Parameters.AddWithValue("action", action);
-        cmd.Parameters.AddWithValue("processorId", processorId);
-        cmd.Parameters.AddWithValue("operator", operatorName);
-        cmd.Parameters.AddWithValue("details", (object?)details ?? DBNull.Value);
-        await cmd.ExecuteNonQueryAsync(ct);
     }
 
     public async Task<SystemInfo> GetSystemInfoAsync(CancellationToken ct = default)

@@ -48,28 +48,13 @@ alberto ops rebuild <id>                       # reset checkpoint → full repla
 alberto ops checkpoint reset <id>              # reset checkpoint
 alberto ops dead-letters retry-rewind <id>     # rewind to earliest dead letter
 alberto ops tenants release                    # release all tenant leases
-alberto ops audit                              # recent audit log
 ```
 
 Connection defaults to `Host=localhost;Database=postgres`. Override via `--url`, `ALBERTO_URL` env var, or `.alberto/config.json`.
 
 ---
 
-### 2. `IAuditStore` namespace changed
-
-If you reference `IAuditStore` or `AuditEntry` directly, update the using:
-
-```csharp
-// Before
-using Alberto.Dcb.Admin;
-
-// After
-using Alberto.Dcb;
-```
-
----
-
-### 3. Multi-tenant apps must opt in to tenancy
+### 2. Multi-tenant apps must opt in to tenancy
 
 Single-tenant is now the default. If your app uses `X-Tenant-Id` header routing and per-tenant event isolation, add `.WithTenancy()`:
 
@@ -94,7 +79,6 @@ Five new migrations are applied automatically when the application starts:
 
 | # | Name | What it adds |
 |---|------|-------------|
-| 012 | AuditLog | `processor_audit_log` table |
 | 013 | DeadLetterPosition | `global_position` column on dead letters |
 | 014 | Outbox | `outbox_entries` table (if using `Alberto.Dcb.Messaging`) |
 | 015 | TenantAssignments | `tenant_assignments` table for consistent hash ring |

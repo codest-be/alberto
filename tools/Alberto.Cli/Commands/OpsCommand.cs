@@ -12,8 +12,7 @@ public static class OpsCommand
         command.AddCommand(CheckpointOpsCommand.Build());
         command.AddCommand(DeadLetterOpsCommand.Build());
         command.AddCommand(RebuildCommand.Build());
-        command.AddCommand(AuditCommand.Build());
-        command.AddCommand(TenantOpsCommand.Build());
+command.AddCommand(TenantOpsCommand.Build());
 
         return command;
     }

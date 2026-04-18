@@ -24,7 +24,7 @@ public static class RebuildCommand
         var idArgument = new Argument<string>("processor-id", "Processor ID to rebuild");
         var urlOption = new Option<string?>("--url", "PostgreSQL connection string");
         var schemaOption = new Option<string?>("--schema", "Database schema name");
-        var operatorOption = new Option<string?>("--operator", "Operator name recorded in audit log");
+        var operatorOption = new Option<string?>("--operator", "Operator name to include in output");
         var dryRunOption = new Option<bool>("--dry-run", "Show what would happen without executing");
         var yesOption = new Option<bool>("--yes", "Skip confirmation prompt");
         var jsonOption = new Option<bool>("--json", "Output as JSON");
@@ -82,11 +82,6 @@ public static class RebuildCommand
                 }
 
                 await data.ResetCheckpointAsync(id);
-
-                if (await data.AuditLogExistsAsync())
-                {
-                    await data.WriteAuditLogAsync("rebuild", id, resolvedOperator, null);
-                }
 
                 if (json)
                     output.Json(new { action = "rebuild", processorId = id, previousPosition, @operator = resolvedOperator });

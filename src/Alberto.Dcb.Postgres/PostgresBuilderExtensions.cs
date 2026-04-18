@@ -107,13 +107,6 @@ public static class PostgresBuilderExtensions
             return new PostgresDeadLetterStore(dataSource, schema);
         });
 
-        // Register audit store
-        builder.Services.AddKeyedSingleton<IAuditStore>(moduleKey, (sp, _) =>
-        {
-            var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
-            return new PostgresAuditStore(dataSource, schema);
-        });
-
         // Register processor locks (consumer chooses which mode via WithSingleLeaderLock/WithTenantDistribution)
         builder.Services.AddKeyedSingleton<IProcessorLock>(moduleKey, (sp, _) =>
         {
