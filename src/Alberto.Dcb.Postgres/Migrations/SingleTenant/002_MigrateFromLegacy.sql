@@ -8,56 +8,56 @@
 -- ============================================================
 
 DO $$ BEGIN
-    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = current_schema() AND tablename = 'events') THEN
-        ALTER TABLE $schema_prefix$events RENAME TO $schema_prefix$alberto_events;
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = '$schema$' AND tablename = 'events') THEN
+        ALTER TABLE $schema_prefix$events RENAME TO alberto_events;
     END IF;
 END $$;
 
 DO $$ BEGIN
-    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = current_schema() AND tablename = 'event_type_positions') THEN
-        ALTER TABLE $schema_prefix$event_type_positions RENAME TO $schema_prefix$alberto_event_type_positions;
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = '$schema$' AND tablename = 'event_type_positions') THEN
+        ALTER TABLE $schema_prefix$event_type_positions RENAME TO alberto_event_type_positions;
     END IF;
 END $$;
 
 DO $$ BEGIN
-    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = current_schema() AND tablename = 'event_tag_positions') THEN
-        ALTER TABLE $schema_prefix$event_tag_positions RENAME TO $schema_prefix$alberto_event_tag_positions;
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = '$schema$' AND tablename = 'event_tag_positions') THEN
+        ALTER TABLE $schema_prefix$event_tag_positions RENAME TO alberto_event_tag_positions;
     END IF;
 END $$;
 
 DO $$ BEGIN
-    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = current_schema() AND tablename = 'processor_checkpoints') THEN
-        ALTER TABLE $schema_prefix$processor_checkpoints RENAME TO $schema_prefix$alberto_processor_checkpoints;
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = '$schema$' AND tablename = 'processor_checkpoints') THEN
+        ALTER TABLE $schema_prefix$processor_checkpoints RENAME TO alberto_processor_checkpoints;
     END IF;
 END $$;
 
 DO $$ BEGIN
-    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = current_schema() AND tablename = 'projection_states') THEN
-        ALTER TABLE $schema_prefix$projection_states RENAME TO $schema_prefix$alberto_projection_states;
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = '$schema$' AND tablename = 'projection_states') THEN
+        ALTER TABLE $schema_prefix$projection_states RENAME TO alberto_projection_states;
     END IF;
 END $$;
 
 DO $$ BEGIN
-    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = current_schema() AND tablename = 'projection_rebuild_meta') THEN
-        ALTER TABLE $schema_prefix$projection_rebuild_meta RENAME TO $schema_prefix$alberto_projection_rebuild_meta;
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = '$schema$' AND tablename = 'projection_rebuild_meta') THEN
+        ALTER TABLE $schema_prefix$projection_rebuild_meta RENAME TO alberto_projection_rebuild_meta;
     END IF;
 END $$;
 
 DO $$ BEGIN
-    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = current_schema() AND tablename = 'dead_letter_events') THEN
-        ALTER TABLE $schema_prefix$dead_letter_events RENAME TO $schema_prefix$alberto_dead_letter_events;
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = '$schema$' AND tablename = 'dead_letter_events') THEN
+        ALTER TABLE $schema_prefix$dead_letter_events RENAME TO alberto_dead_letter_events;
     END IF;
 END $$;
 
 DO $$ BEGIN
-    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = current_schema() AND tablename = 'outbox_entries') THEN
-        ALTER TABLE $schema_prefix$outbox_entries RENAME TO $schema_prefix$alberto_outbox_entries;
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = '$schema$' AND tablename = 'outbox_entries') THEN
+        ALTER TABLE $schema_prefix$outbox_entries RENAME TO alberto_outbox_entries;
     END IF;
 END $$;
 
 DO $$ BEGIN
-    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = current_schema() AND tablename = 'processor_leases') THEN
-        ALTER TABLE $schema_prefix$processor_leases RENAME TO $schema_prefix$alberto_processor_leases;
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = '$schema$' AND tablename = 'processor_leases') THEN
+        ALTER TABLE $schema_prefix$processor_leases RENAME TO alberto_processor_leases;
     END IF;
 END $$;
 
