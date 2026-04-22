@@ -20,11 +20,15 @@ public static class MessagingBuilderExtensions
     /// Optional transport used by an <see cref="OutboxRelay"/> hosted service.
     /// When provided, an <see cref="OutboxRelay"/> is registered as a hosted service automatically.
     /// </param>
+    /// <param name="relayBatchSize">
+    /// Maximum number of outbox entries the relay processes per poll cycle. Defaults to 10.
+    /// </param>
     public static DcbModuleBuilder WithOutbox(
         this DcbModuleBuilder builder,
         Action<IMessageMappingRegistry> configureMappings,
         IOutboxStore outboxStore,
-        IMessageTransport? transport = null)
+        IMessageTransport? transport = null,
+        int relayBatchSize = 10)
     {
         ArgumentNullException.ThrowIfNull(configureMappings);
         ArgumentNullException.ThrowIfNull(outboxStore);
@@ -41,7 +45,7 @@ public static class MessagingBuilderExtensions
         if (transport is not null)
         {
             builder.Services.AddSingleton<IHostedService>(
-                _ => new OutboxRelay(outboxStore, transport));
+                _ => new OutboxRelay(outboxStore, transport, batchSize: relayBatchSize));
         }
 
         return builder;
