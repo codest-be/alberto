@@ -33,14 +33,9 @@ public static class MessagingBuilderExtensions
         configureMappings(registry);
 
         // Register the handler as a keyed IEventProcessor so the ControlLoop picks it up.
-        // OutboxHandler processes events one-at-a-time; register Disabled batching so the
-        // ControlLoop does not require IBatchableProcessor on it.
+        // OutboxHandler implements IBatchableProcessor, satisfying the default Required batching mode.
         builder.Services.AddKeyedSingleton<IEventProcessor>(builder.ModuleKey, (sp, _) =>
             new OutboxHandler(registry, outboxStore, sp));
-        builder.Services.AddKeyedSingleton<ProcessorExecutionRegistration>(builder.ModuleKey,
-            (_, _) => new ProcessorExecutionRegistration(
-                OutboxHandler.ProcessorIdValue,
-                new ProcessorExecutionOptions(ProcessorBatchingMode.Disabled)));
 
         // Optionally wire up the relay as a hosted service
         if (transport is not null)

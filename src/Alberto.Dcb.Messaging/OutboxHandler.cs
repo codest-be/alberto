@@ -9,7 +9,7 @@ namespace Alberto.Dcb.Messaging;
 internal sealed class OutboxHandler(
     IMessageMappingRegistry registry,
     IOutboxStore store,
-    IServiceProvider serviceProvider) : IEventProcessor
+    IServiceProvider serviceProvider) : IEventProcessor, IBatchableProcessor
 {
     internal const string ProcessorIdValue = "outbox";
 
@@ -30,10 +30,32 @@ internal sealed class OutboxHandler(
     {
         var message = await registry.TryMapAsync(envelope, serviceProvider, ct);
         if (message is null) return;
+        await store.InsertAsync(BuildEntry(message, envelope.Id), ct);
+    }
 
-        var entry = new OutboxEntry(
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Maps all events concurrently — mapper calls are independent I/O (e.g. DB enrichment
+    /// queries) so there is no ordering constraint between them. Non-null results are then
+    /// inserted concurrently; each insert targets a distinct row identified by its source
+    /// event ID, so there are no write conflicts.
+    /// </remarks>
+    public async Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct)
+    {
+        var messages = await Task.WhenAll(
+            events.Select(e => registry.TryMapAsync(e, serviceProvider, ct).AsTask()));
+
+        await Task.WhenAll(
+            messages
+                .Select((m, i) => (Message: m, EventId: events[i].Id))
+                .Where(x => x.Message is not null)
+                .Select(x => store.InsertAsync(BuildEntry(x.Message!, x.EventId), ct)));
+    }
+
+    private static OutboxEntry BuildEntry(ExternalMessage message, Guid sourceEventId) =>
+        new(
             Id: Guid.NewGuid(),
-            SourceEventId: envelope.Id,
+            SourceEventId: sourceEventId,
             MessageType: message.MessageType,
             Version: message.Version,
             Payload: message.Payload,
@@ -43,7 +65,4 @@ internal sealed class OutboxHandler(
             LastError: null,
             CreatedAt: DateTimeOffset.UtcNow,
             DeliveredAt: null);
-
-        await store.InsertAsync(entry, ct);
-    }
 }

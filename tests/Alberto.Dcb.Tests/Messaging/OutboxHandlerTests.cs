@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Alberto.Dcb.Messaging;
+using Alberto.Dcb.Subscriptions;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -298,6 +299,92 @@ public class OutboxHandlerTests
         // OrderPlaced has [EventType] but no [Message]
         Assert.Throws<InvalidOperationException>(() =>
             registry.Map<OrderRefunded, OrderPlaced>(evt => new OrderPlaced(evt.OrderId, evt.Amount)));
+    }
+
+    #endregion
+
+    #region ProcessBatchAsync (IBatchableProcessor)
+
+    [Fact]
+    public void OutboxHandler_ImplementsIBatchableProcessor()
+    {
+        var (handler, _) = CreateHandler(r =>
+            r.Map<OrderPlaced>((_, _, _) => ValueTask.FromResult<ExternalMessage?>(null)));
+        Assert.IsAssignableFrom<IBatchableProcessor>(handler);
+    }
+
+    [Fact]
+    public async Task ProcessBatchAsync_AllMapped_WritesAllEntries()
+    {
+        var (handler, store) = CreateHandler(r =>
+            r.Map<OrderPlaced>((env, _, _) =>
+                ValueTask.FromResult<ExternalMessage?>(
+                    new ExternalMessage("order.placed", "1", env.EventData, new Dictionary<string, string>()))));
+
+        var envelopes = Enumerable.Range(1, 5)
+            .Select(i => CreateEnvelope(new OrderPlaced(Guid.NewGuid(), i * 10m), i))
+            .ToList();
+
+        await handler.ProcessBatchAsync(envelopes, TestContext.Current.CancellationToken);
+
+        Assert.Equal(5, store.Entries.Count);
+        Assert.All(store.Entries, e => Assert.Equal("order.placed", e.MessageType));
+    }
+
+    [Fact]
+    public async Task ProcessBatchAsync_SomeMappersReturnNull_OnlyInsertsNonNull()
+    {
+        var (handler, store) = CreateHandler(r =>
+        {
+            r.Map<OrderPlaced>((env, _, _) =>
+                ValueTask.FromResult<ExternalMessage?>(
+                    new ExternalMessage("order.placed", "1", env.EventData, new Dictionary<string, string>())));
+            // OrderShipped mapper suppresses
+            r.Map<OrderShipped>((_, _, _) => ValueTask.FromResult<ExternalMessage?>(null));
+        });
+
+        var envelopes = new List<IEventEnvelope>
+        {
+            CreateEnvelope(new OrderPlaced(Guid.NewGuid(), 10m), 1),
+            CreateEnvelope(new OrderShipped(Guid.NewGuid()), 2),
+            CreateEnvelope(new OrderPlaced(Guid.NewGuid(), 20m), 3),
+        };
+
+        await handler.ProcessBatchAsync(envelopes, TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, store.Entries.Count);
+        Assert.All(store.Entries, e => Assert.Equal("order.placed", e.MessageType));
+    }
+
+    [Fact]
+    public async Task ProcessBatchAsync_SourceEventIdsPreserved()
+    {
+        var (handler, store) = CreateHandler(r =>
+            r.Map<OrderPlaced>((env, _, _) =>
+                ValueTask.FromResult<ExternalMessage?>(
+                    new ExternalMessage("order.placed", "1", env.EventData, new Dictionary<string, string>()))));
+
+        var envelopes = Enumerable.Range(1, 3)
+            .Select(i => CreateEnvelope(new OrderPlaced(Guid.NewGuid(), i), i))
+            .ToList();
+
+        await handler.ProcessBatchAsync(envelopes, TestContext.Current.CancellationToken);
+
+        var expectedIds = envelopes.Select(e => e.Id).ToHashSet();
+        Assert.All(store.Entries, e => Assert.Contains(e.SourceEventId, expectedIds));
+    }
+
+    [Fact]
+    public async Task ProcessBatchAsync_EmptyBatch_WritesNothing()
+    {
+        var (handler, store) = CreateHandler(r =>
+            r.Map<OrderPlaced>((env, _, _) =>
+                ValueTask.FromResult<ExternalMessage?>(
+                    new ExternalMessage("order.placed", "1", env.EventData, new Dictionary<string, string>()))));
+
+        await handler.ProcessBatchAsync([], TestContext.Current.CancellationToken);
+
+        Assert.Empty(store.Entries);
     }
 
     #endregion
