@@ -11,8 +11,10 @@ internal sealed class OutboxHandler(
     IOutboxStore store,
     IServiceProvider serviceProvider) : IEventProcessor
 {
+    internal const string ProcessorIdValue = "outbox";
+
     /// <inheritdoc/>
-    public string ProcessorId => "outbox";
+    public string ProcessorId => ProcessorIdValue;
 
     /// <inheritdoc/>
     public bool IsActive { get; set; } = true;
