@@ -21,14 +21,14 @@ public static class MessagingBuilderExtensions
     /// When provided, an <see cref="OutboxRelay"/> is registered as a hosted service automatically.
     /// </param>
     /// <param name="relayBatchSize">
-    /// Maximum number of outbox entries the relay processes per poll cycle. Defaults to 10.
+    /// Maximum number of outbox entries the relay processes per poll cycle. Defaults to 1.
     /// </param>
     public static DcbModuleBuilder WithOutbox(
         this DcbModuleBuilder builder,
         Action<IMessageMappingRegistry> configureMappings,
         IOutboxStore outboxStore,
         IMessageTransport? transport = null,
-        int relayBatchSize = 10)
+        int relayBatchSize = 1)
     {
         ArgumentNullException.ThrowIfNull(configureMappings);
         ArgumentNullException.ThrowIfNull(outboxStore);
