@@ -1,3 +1,4 @@
+using System.Threading.Channels;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -97,6 +98,13 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
     private async Task RunAsync(CancellationToken ct)
     {
         _logger?.LogInformation("ControlLoop {ProcessorId} starting", ProcessorId);
+
+        if (_executionOptions.MaxConcurrency > 1)
+        {
+            await RunPipelinedAsync(ct);
+            return;
+        }
+
         while (!ct.IsCancellationRequested)
         {
             try
@@ -157,6 +165,134 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
             }
         }
         _logger?.LogInformation("ControlLoop {ProcessorId} stopped", ProcessorId);
+    }
+
+    /// <summary>
+    /// Pipelined processing mode: N worker tasks read from a bounded channel concurrently.
+    /// The producer keeps reading batches from the event store and feeding matching events
+    /// into the channel. Backpressure kicks in when all worker slots are busy.
+    /// Checkpoint advances to the highest contiguous completed position (watermark).
+    /// </summary>
+    private async Task RunPipelinedAsync(CancellationToken ct)
+    {
+        var maxConcurrency = _executionOptions.MaxConcurrency;
+        var initialCheckpoint = await _checkpointStore.GetAsync(ProcessorId, ct) ?? 0L;
+        var watermark = new PositionWatermark(initialCheckpoint);
+
+        var channel = Channel.CreateBounded<IEventEnvelope>(
+            new BoundedChannelOptions(maxConcurrency)
+            {
+                SingleWriter = true,
+                FullMode = BoundedChannelFullMode.Wait,
+            });
+
+        // Start worker tasks
+        var workers = new Task[maxConcurrency];
+        for (var i = 0; i < maxConcurrency; i++)
+            workers[i] = RunWorkerAsync(channel.Reader, watermark, ct);
+
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                var head = _head.Current;
+                var readPosition = watermark.ReadPosition;
+
+                if (readPosition >= head)
+                {
+                    // Caught up — flush and wait
+                    await SaveWatermarkCheckpointAsync(watermark, ct);
+                    await Task.Delay(_pollingInterval, ct);
+                    continue;
+                }
+
+                var events = await _backend.StreamAll(readPosition, _batchSize, ct);
+
+                if (events.Count == 0)
+                {
+                    watermark.AdvanceReadPosition(head);
+                    await SaveWatermarkCheckpointAsync(watermark, ct);
+                    await Task.Delay(_pollingInterval, ct);
+                    continue;
+                }
+
+                var visibleEvents = events
+                    .Where(e => e.GlobalPosition <= head)
+                    .ToList();
+
+                foreach (var evt in visibleEvents)
+                {
+                    watermark.AdvanceReadPosition(evt.GlobalPosition);
+
+                    if (_processor.HandledEventTypes.Contains(evt.EventType.Id))
+                    {
+                        watermark.MarkDispatched(evt.GlobalPosition);
+                        // Blocks when all worker slots are busy (backpressure)
+                        await channel.Writer.WriteAsync(evt, ct);
+                    }
+                }
+
+                // Save checkpoint after each batch of reads
+                await SaveWatermarkCheckpointAsync(watermark, ct);
+
+                if (events.Count < _batchSize)
+                    await Task.Delay(_pollingInterval, ct);
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { /* shutting down */ }
+        catch (Exception ex)
+        {
+            IsFaulted = true;
+            _logger?.LogCritical(ex,
+                "ControlLoop {ProcessorId} pipelined producer faulted. Draining workers.",
+                ProcessorId);
+        }
+        finally
+        {
+            channel.Writer.Complete();
+            await Task.WhenAll(workers);
+            // Final flush after all workers have drained
+            await SaveWatermarkCheckpointAsync(watermark, CancellationToken.None);
+            _logger?.LogInformation("ControlLoop {ProcessorId} stopped", ProcessorId);
+        }
+    }
+
+    private async Task RunWorkerAsync(
+        ChannelReader<IEventEnvelope> reader,
+        PositionWatermark watermark,
+        CancellationToken ct)
+    {
+        try
+        {
+            await foreach (var evt in reader.ReadAllAsync(ct))
+            {
+                try
+                {
+                    await DispatchAsync(evt, ct);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // Middleware (retry + dead-letter) should have handled this.
+                    // If it still escapes, log and continue — don't block other events.
+                    _logger?.LogError(ex,
+                        "ControlLoop {ProcessorId} worker: unhandled error at position {Position}",
+                        ProcessorId, evt.GlobalPosition);
+                }
+                finally
+                {
+                    watermark.MarkCompleted(evt.GlobalPosition);
+                }
+            }
+        }
+        catch (OperationCanceledException) { /* shutting down */ }
+    }
+
+    private async Task SaveWatermarkCheckpointAsync(PositionWatermark watermark, CancellationToken ct)
+    {
+        var safeCheckpoint = watermark.SafeCheckpoint;
+        var current = await _checkpointStore.GetAsync(ProcessorId, ct) ?? 0L;
+        if (safeCheckpoint > current)
+            await _checkpointStore.SaveAsync(ProcessorId, safeCheckpoint, ct);
     }
 
     private Task DispatchAsync(IEventEnvelope evt, CancellationToken ct)
