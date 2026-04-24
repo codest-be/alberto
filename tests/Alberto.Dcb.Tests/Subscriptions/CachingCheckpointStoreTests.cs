@@ -253,6 +253,118 @@ public class CachingCheckpointStoreTests
 
     #endregion
 
+    #region Resync Tests
+
+    [Fact]
+    public async Task ResyncFromStore_ExternalReset_ShouldUpdateCache()
+    {
+        var inner = new InMemoryCheckpointStore();
+        await inner.SaveAsync("processor-1", 500, TestContext.Current.CancellationToken);
+        await using var cache = new CachingCheckpointStore(inner, TimeSpan.FromHours(1));
+
+        // Load into cache
+        await cache.GetAsync("processor-1", TestContext.Current.CancellationToken);
+        Assert.Equal(500, await cache.GetAsync("processor-1", TestContext.Current.CancellationToken));
+
+        // Simulate external reset in DB
+        await inner.SaveAsync("processor-1", 0, TestContext.Current.CancellationToken);
+
+        // Resync should detect the reset
+        await cache.ResyncFromStoreAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, await cache.GetAsync("processor-1", TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ResyncFromStore_ExternalDelete_ShouldUpdateCache()
+    {
+        var inner = new InMemoryCheckpointStore();
+        await inner.SaveAsync("processor-1", 500, TestContext.Current.CancellationToken);
+        await using var cache = new CachingCheckpointStore(inner, TimeSpan.FromHours(1));
+
+        // Load into cache
+        await cache.GetAsync("processor-1", TestContext.Current.CancellationToken);
+
+        // Simulate external delete in DB
+        await inner.ResetAsync("processor-1", TestContext.Current.CancellationToken);
+
+        // Resync should detect the deletion
+        await cache.ResyncFromStoreAsync(TestContext.Current.CancellationToken);
+
+        Assert.Null(await cache.GetAsync("processor-1", TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ResyncFromStore_DirtyEntry_ShouldNotOverwrite()
+    {
+        var inner = new InMemoryCheckpointStore();
+        await using var cache = new CachingCheckpointStore(inner, TimeSpan.FromHours(1));
+
+        // Save via cache (marks as dirty)
+        await cache.SaveAsync("processor-1", 500, TestContext.Current.CancellationToken);
+
+        // Inner still has nothing — but the dirty flag should protect the cache
+        await cache.ResyncFromStoreAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(500, await cache.GetAsync("processor-1", TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ResyncFromStore_NoExternalChange_ShouldNotAffectCache()
+    {
+        var inner = new InMemoryCheckpointStore();
+        await inner.SaveAsync("processor-1", 500, TestContext.Current.CancellationToken);
+        await using var cache = new CachingCheckpointStore(inner, TimeSpan.FromHours(1));
+
+        // Load into cache and flush so it's clean
+        await cache.GetAsync("processor-1", TestContext.Current.CancellationToken);
+
+        // Resync when DB value matches — should be a no-op
+        await cache.ResyncFromStoreAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(500, await cache.GetAsync("processor-1", TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ResyncFromStore_DbValueHigher_ShouldNotAffectCache()
+    {
+        var inner = new InMemoryCheckpointStore();
+        await inner.SaveAsync("processor-1", 500, TestContext.Current.CancellationToken);
+        await using var cache = new CachingCheckpointStore(inner, TimeSpan.FromHours(1));
+
+        // Load into cache
+        await cache.GetAsync("processor-1", TestContext.Current.CancellationToken);
+
+        // Simulate DB moving ahead (e.g. another replica wrote)
+        await inner.SaveAsync("processor-1", 1000, TestContext.Current.CancellationToken);
+
+        // Resync should NOT overwrite — DB ahead is normal, not a reset
+        await cache.ResyncFromStoreAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(500, await cache.GetAsync("processor-1", TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ResyncTimer_ShouldDetectExternalReset()
+    {
+        var inner = new InMemoryCheckpointStore();
+        await inner.SaveAsync("processor-1", 500, TestContext.Current.CancellationToken);
+        await using var cache = new CachingCheckpointStore(inner, TimeSpan.FromHours(1), TimeSpan.FromMilliseconds(50));
+
+        // Load into cache
+        await cache.GetAsync("processor-1", TestContext.Current.CancellationToken);
+
+        // Simulate external reset
+        await inner.SaveAsync("processor-1", 0, TestContext.Current.CancellationToken);
+
+        // Wait for resync timer to fire
+        await Task.Delay(200, TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, await cache.GetAsync("processor-1", TestContext.Current.CancellationToken));
+    }
+
+    #endregion
+
     #region Test Helpers
 
     private sealed class InMemoryCheckpointStore : ICheckpointStore

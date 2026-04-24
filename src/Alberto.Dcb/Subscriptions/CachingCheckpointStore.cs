@@ -19,10 +19,12 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IAsyncDisposabl
 {
     private readonly ICheckpointStore _inner;
     private readonly TimeSpan _flushInterval;
+    private readonly TimeSpan _resyncInterval;
     private readonly ILogger<CachingCheckpointStore>? _logger;
     private readonly ConcurrentDictionary<string, long?> _cache = new();
     private readonly ConcurrentDictionary<string, long> _dirty = new();
     private readonly Timer _flushTimer;
+    private readonly Timer _resyncTimer;
     private readonly SemaphoreSlim _flushLock = new(1, 1);
     private bool _disposed;
     private FencingContext? _fencingContext;
@@ -37,17 +39,21 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IAsyncDisposabl
     /// Creates a new caching checkpoint store.
     /// </summary>
     /// <param name="inner">The underlying checkpoint store.</param>
-    /// <param name="flushInterval">How often to flush dirty checkpoints to the database. Default is 1 second.</param>
+    /// <param name="flushInterval">How often to flush dirty checkpoints to the database. Default is 30 seconds.</param>
+    /// <param name="resyncInterval">How often to re-read checkpoints from the database to detect external resets. Default is 30 seconds.</param>
     /// <param name="logger">Optional logger for error reporting.</param>
     public CachingCheckpointStore(
         ICheckpointStore inner,
         TimeSpan? flushInterval = null,
+        TimeSpan? resyncInterval = null,
         ILogger<CachingCheckpointStore>? logger = null)
     {
         _inner = inner ?? throw new ArgumentNullException(nameof(inner));
-        _flushInterval = flushInterval ?? TimeSpan.FromSeconds(1);
+        _flushInterval = flushInterval ?? TimeSpan.FromSeconds(30);
+        _resyncInterval = resyncInterval ?? TimeSpan.FromSeconds(30);
         _logger = logger;
         _flushTimer = new Timer(OnFlushTimer, null, _flushInterval, _flushInterval);
+        _resyncTimer = new Timer(OnResyncTimer, null, _resyncInterval, _resyncInterval);
     }
 
     public async Task<long?> GetAsync(string processorId, CancellationToken ct = default)
@@ -103,6 +109,48 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IAsyncDisposabl
         catch (Exception ex)
         {
             _logger?.LogError(ex, "Failed to flush checkpoints to underlying store");
+        }
+    }
+
+    private async void OnResyncTimer(object? state)
+    {
+        if (_disposed) return;
+
+        try
+        {
+            await ResyncFromStoreAsync(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Failed to resync checkpoints from underlying store");
+        }
+    }
+
+    /// <summary>
+    /// Re-reads all cached checkpoints from the underlying store and detects external resets.
+    /// If the database value is lower than the cached value (and the entry is not dirty),
+    /// the cache is updated to the database value so the control loop replays from there.
+    /// </summary>
+    internal async Task ResyncFromStoreAsync(CancellationToken ct)
+    {
+        var cachedEntries = _cache.ToArray();
+
+        foreach (var (processorId, cachedPosition) in cachedEntries)
+        {
+            // Skip entries that have pending writes — our value is ahead of the DB intentionally
+            if (_dirty.ContainsKey(processorId))
+                continue;
+
+            var storePosition = await _inner.GetAsync(processorId, ct);
+
+            // Detect external reset: DB value is lower than (or deleted vs) our cached value
+            if (cachedPosition is not null && (storePosition is null || storePosition < cachedPosition))
+            {
+                _cache[processorId] = storePosition;
+                _logger?.LogWarning(
+                    "Checkpoint for processor {ProcessorId} was externally reset from {CachedPosition} to {StorePosition}",
+                    processorId, cachedPosition, storePosition?.ToString() ?? "null");
+            }
         }
     }
 
@@ -164,6 +212,7 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IAsyncDisposabl
         _disposed = true;
 
         await _flushTimer.DisposeAsync();
+        await _resyncTimer.DisposeAsync();
 
         // Flush any remaining dirty checkpoints
         await FlushAsync(CancellationToken.None);
