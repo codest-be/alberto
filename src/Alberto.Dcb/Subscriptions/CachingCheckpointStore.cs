@@ -22,6 +22,7 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IAsyncDisposabl
     private readonly TimeSpan _resyncInterval;
     private readonly ILogger<CachingCheckpointStore>? _logger;
     private readonly ConcurrentDictionary<string, long?> _cache = new();
+    private readonly ConcurrentDictionary<string, long?> _persisted = new();
     private readonly ConcurrentDictionary<string, long> _dirty = new();
     private readonly Timer _flushTimer;
     private readonly Timer _resyncTimer;
@@ -67,6 +68,7 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IAsyncDisposabl
         // Load from store and cache
         var position = await _inner.GetAsync(processorId, ct);
         _cache[processorId] = position;
+        _persisted[processorId] = position;
         return position;
     }
 
@@ -86,6 +88,7 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IAsyncDisposabl
     {
         // Clear from cache and dirty set
         _cache.TryRemove(processorId, out _);
+        _persisted.TryRemove(processorId, out _);
         _dirty.TryRemove(processorId, out _);
 
         // Reset in underlying store immediately
@@ -147,6 +150,7 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IAsyncDisposabl
             if (cachedPosition is not null && (storePosition is null || storePosition < cachedPosition))
             {
                 _cache[processorId] = storePosition;
+                _persisted[processorId] = storePosition;
                 _logger?.LogWarning(
                     "Checkpoint for processor {ProcessorId} was externally reset from {CachedPosition} to {StorePosition}",
                     processorId, cachedPosition, storePosition?.ToString() ?? "null");
@@ -174,6 +178,9 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IAsyncDisposabl
             // Write all dirty checkpoints FIRST, then remove only after success
             foreach (var (processorId, position) in toFlush)
             {
+                if (await ApplyExternalResetIfDetectedAsync(processorId, ct))
+                    continue;
+
                 if (fenced is not null)
                 {
                     var leaseHeld = await fenced.SaveIfLeaseHeldAsync(
@@ -196,6 +203,8 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IAsyncDisposabl
                     await _inner.SaveAsync(processorId, position, ct);
                 }
 
+                _persisted[processorId] = position;
+
                 // Only remove AFTER successful write
                 _dirty.TryRemove(processorId, out _);
             }
@@ -204,6 +213,26 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IAsyncDisposabl
         {
             _flushLock.Release();
         }
+    }
+
+    private async Task<bool> ApplyExternalResetIfDetectedAsync(string processorId, CancellationToken ct)
+    {
+        if (!_persisted.TryGetValue(processorId, out var persistedPosition) || persistedPosition is null)
+            return false;
+
+        var storePosition = await _inner.GetAsync(processorId, ct);
+        if (storePosition is not null && storePosition >= persistedPosition)
+            return false;
+
+        _cache[processorId] = storePosition;
+        _persisted[processorId] = storePosition;
+        _dirty.TryRemove(processorId, out _);
+
+        _logger?.LogWarning(
+            "Checkpoint for processor {ProcessorId} was externally reset from {PersistedPosition} to {StorePosition}; dropping pending checkpoint write",
+            processorId, persistedPosition, storePosition?.ToString() ?? "null");
+
+        return true;
     }
 
     public async ValueTask DisposeAsync()

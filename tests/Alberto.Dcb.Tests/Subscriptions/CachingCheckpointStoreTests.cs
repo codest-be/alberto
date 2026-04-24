@@ -145,6 +145,44 @@ public class CachingCheckpointStoreTests
         Assert.Equal(1, inner.SaveCount);
     }
 
+    [Fact]
+    public async Task FlushAsync_WhenDirtyEntryWasExternallyReset_ShouldNotOverwriteReset()
+    {
+        var inner = new InMemoryCheckpointStore();
+        await inner.SaveAsync("processor-1", 100, TestContext.Current.CancellationToken);
+        await using var cache = new CachingCheckpointStore(inner, TimeSpan.FromHours(1));
+
+        // Load the persisted checkpoint into the cache, then move forward without flushing.
+        Assert.Equal(100, await cache.GetAsync("processor-1", TestContext.Current.CancellationToken));
+        await cache.SaveAsync("processor-1", 150, TestContext.Current.CancellationToken);
+
+        // Simulate an operator reset while the cache still has a dirty pending write.
+        await inner.SaveAsync("processor-1", 0, TestContext.Current.CancellationToken);
+
+        await cache.FlushAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, await inner.GetAsync("processor-1", TestContext.Current.CancellationToken));
+        Assert.Equal(0, await cache.GetAsync("processor-1", TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task FlushAsync_WhenDirtyEntryWasExternallyDeleted_ShouldNotRecreateCheckpoint()
+    {
+        var inner = new InMemoryCheckpointStore();
+        await inner.SaveAsync("processor-1", 100, TestContext.Current.CancellationToken);
+        await using var cache = new CachingCheckpointStore(inner, TimeSpan.FromHours(1));
+
+        Assert.Equal(100, await cache.GetAsync("processor-1", TestContext.Current.CancellationToken));
+        await cache.SaveAsync("processor-1", 150, TestContext.Current.CancellationToken);
+
+        await inner.ResetAsync("processor-1", TestContext.Current.CancellationToken);
+
+        await cache.FlushAsync(TestContext.Current.CancellationToken);
+
+        Assert.Null(await inner.GetAsync("processor-1", TestContext.Current.CancellationToken));
+        Assert.Null(await cache.GetAsync("processor-1", TestContext.Current.CancellationToken));
+    }
+
     #endregion
 
     #region ResetAsync Tests
