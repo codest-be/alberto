@@ -612,6 +612,244 @@ public sealed class ControlLoopTests
 
     #endregion
 
+    #region Pipelined ControlLoop Tests
+
+    [Fact]
+    public async Task Pipelined_ProcessesAllEvents()
+    {
+        var backend = new InMemoryEventStoreBackend();
+        var checkpoints = new InMemoryCheckpointStore();
+
+        await backend.Append([CreateEvent(new TestEventA("a"))]);
+        await backend.Append([CreateEvent(new TestEventA("b"))]);
+        await backend.Append([CreateEvent(new TestEventA("c"))]);
+
+        var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
+        var processor = new TestProcessor("pipelined", new HashSet<string> { "test-event-a" });
+        var loop = new ControlLoop(processor, head, backend, checkpoints,
+            TimeSpan.FromMilliseconds(10), 100,
+            executionOptions: new ProcessorExecutionOptions(ProcessorBatchingMode.Required, MaxConcurrency: 3));
+
+        using var cts = new CancellationTokenSource();
+        await head.StartAsync(cts.Token);
+        await loop.StartAsync(cts.Token);
+
+        await Task.Delay(300, TestContext.Current.CancellationToken);
+        await cts.CancelAsync();
+        await loop.StopAsync(CancellationToken.None);
+        await head.StopAsync(CancellationToken.None);
+
+        Assert.Equal(3, processor.ProcessedEvents.Count);
+        var checkpoint = await checkpoints.GetAsync("pipelined");
+        Assert.Equal(3, checkpoint);
+    }
+
+    [Fact]
+    public async Task Pipelined_ProcessesConcurrently()
+    {
+        var backend = new InMemoryEventStoreBackend();
+        var checkpoints = new InMemoryCheckpointStore();
+        var concurrentCount = 0;
+        var maxConcurrent = 0;
+        var syncLock = new Lock();
+
+        for (var i = 0; i < 10; i++)
+            await backend.Append([CreateEvent(new TestEventA($"e-{i}"))]);
+
+        var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
+
+        var processor = new DelegatingProcessor("pipelined-concurrent",
+            new HashSet<string> { "test-event-a" },
+            async (_, ct) =>
+            {
+                lock (syncLock)
+                {
+                    concurrentCount++;
+                    if (concurrentCount > maxConcurrent) maxConcurrent = concurrentCount;
+                }
+                await Task.Delay(50, ct);
+                lock (syncLock) { concurrentCount--; }
+            });
+
+        var loop = new ControlLoop(processor, head, backend, checkpoints,
+            TimeSpan.FromMilliseconds(10), 100,
+            executionOptions: new ProcessorExecutionOptions(ProcessorBatchingMode.Required, MaxConcurrency: 5));
+
+        using var cts = new CancellationTokenSource();
+        await head.StartAsync(cts.Token);
+        await loop.StartAsync(cts.Token);
+
+        await Task.Delay(500, TestContext.Current.CancellationToken);
+        await cts.CancelAsync();
+        await loop.StopAsync(CancellationToken.None);
+        await head.StopAsync(CancellationToken.None);
+
+        Assert.True(maxConcurrent > 1, $"Expected concurrent execution but max concurrent was {maxConcurrent}");
+        var checkpoint = await checkpoints.GetAsync("pipelined-concurrent");
+        Assert.Equal(10, checkpoint);
+    }
+
+    [Fact]
+    public async Task Pipelined_AdvancesCheckpoint_WhileSlowEventProcesses()
+    {
+        var backend = new InMemoryEventStoreBackend();
+        var checkpoints = new InMemoryCheckpointStore();
+        var gate = new TaskCompletionSource();
+
+        // Event 1: fast, Event 2: slow (blocked), Event 3: fast
+        await backend.Append([CreateEvent(new TestEventA("fast-1"))]);
+        await backend.Append([CreateEvent(new TestEventA("slow"))]);
+        await backend.Append([CreateEvent(new TestEventA("fast-2"))]);
+
+        var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
+
+        var callCount = 0;
+        var processor = new DelegatingProcessor("watermark-test",
+            new HashSet<string> { "test-event-a" },
+            async (evt, ct) =>
+            {
+                var n = Interlocked.Increment(ref callCount);
+                if (evt.GlobalPosition == 2) // the slow event
+                    await gate.Task.WaitAsync(ct);
+            });
+
+        var loop = new ControlLoop(processor, head, backend, checkpoints,
+            TimeSpan.FromMilliseconds(10), 100,
+            executionOptions: new ProcessorExecutionOptions(ProcessorBatchingMode.Required, MaxConcurrency: 3));
+
+        using var cts = new CancellationTokenSource();
+        await head.StartAsync(cts.Token);
+        await loop.StartAsync(cts.Token);
+
+        // Wait for fast events to process
+        await Task.Delay(300, TestContext.Current.CancellationToken);
+
+        // Checkpoint should be at 1 (before the slow event at position 2)
+        var midCheckpoint = await checkpoints.GetAsync("watermark-test");
+        Assert.Equal(1, midCheckpoint);
+
+        // Unblock the slow event
+        gate.SetResult();
+        await Task.Delay(200, TestContext.Current.CancellationToken);
+
+        await cts.CancelAsync();
+        await loop.StopAsync(CancellationToken.None);
+        await head.StopAsync(CancellationToken.None);
+
+        // Now checkpoint should be fully caught up
+        var finalCheckpoint = await checkpoints.GetAsync("watermark-test");
+        Assert.Equal(3, finalCheckpoint);
+    }
+
+    [Fact]
+    public async Task Pipelined_SkipsNonMatchingEventTypes()
+    {
+        var backend = new InMemoryEventStoreBackend();
+        var checkpoints = new InMemoryCheckpointStore();
+
+        await backend.Append([CreateEvent(new TestEventA("a"))]);
+        await backend.Append([CreateEvent(new TestEventB(1))]); // not handled
+        await backend.Append([CreateEvent(new TestEventA("c"))]);
+
+        var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
+        var processor = new TestProcessor("pipelined-filter", new HashSet<string> { "test-event-a" });
+        var loop = new ControlLoop(processor, head, backend, checkpoints,
+            TimeSpan.FromMilliseconds(10), 100,
+            executionOptions: new ProcessorExecutionOptions(ProcessorBatchingMode.Required, MaxConcurrency: 2));
+
+        using var cts = new CancellationTokenSource();
+        await head.StartAsync(cts.Token);
+        await loop.StartAsync(cts.Token);
+
+        await Task.Delay(300, TestContext.Current.CancellationToken);
+        await cts.CancelAsync();
+        await loop.StopAsync(CancellationToken.None);
+        await head.StopAsync(CancellationToken.None);
+
+        Assert.Equal(2, processor.ProcessedEvents.Count);
+        Assert.All(processor.ProcessedEvents, e => Assert.Equal("test-event-a", e.EventType.Id));
+        var checkpoint = await checkpoints.GetAsync("pipelined-filter");
+        Assert.Equal(3, checkpoint);
+    }
+
+    private class DelegatingProcessor(
+        string processorId,
+        IReadOnlySet<string> handledTypes,
+        Func<IEventEnvelope, CancellationToken, Task> handler) : IEventProcessor
+    {
+        public string ProcessorId { get; } = processorId;
+        public bool IsActive { get; set; } = true;
+        public bool IsRebuilding { get; set; }
+        public IReadOnlySet<string> HandledEventTypes { get; } = handledTypes;
+
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
+            => handler(@event, ct);
+    }
+
+    #endregion
+
+    #region PositionWatermark Tests
+
+    [Fact]
+    public void Watermark_SafeCheckpoint_NoInFlight_ReturnsReadPosition()
+    {
+        var watermark = new PositionWatermark(100);
+        Assert.Equal(100, watermark.SafeCheckpoint);
+
+        watermark.AdvanceReadPosition(200);
+        Assert.Equal(200, watermark.SafeCheckpoint);
+    }
+
+    [Fact]
+    public void Watermark_SafeCheckpoint_WithInFlight_ReturnsBeforeEarliest()
+    {
+        var watermark = new PositionWatermark(0);
+        watermark.AdvanceReadPosition(100);
+
+        watermark.MarkDispatched(50);
+        watermark.MarkDispatched(80);
+
+        // Safe checkpoint is just before the earliest in-flight (50 - 1 = 49)
+        Assert.Equal(49, watermark.SafeCheckpoint);
+    }
+
+    [Fact]
+    public void Watermark_SafeCheckpoint_AfterCompletion_Advances()
+    {
+        var watermark = new PositionWatermark(0);
+        watermark.AdvanceReadPosition(100);
+
+        watermark.MarkDispatched(50);
+        watermark.MarkDispatched(80);
+
+        watermark.MarkCompleted(50);
+        // Now earliest in-flight is 80 → safe checkpoint = 79
+        Assert.Equal(79, watermark.SafeCheckpoint);
+
+        watermark.MarkCompleted(80);
+        // Nothing in-flight → safe checkpoint = read position = 100
+        Assert.Equal(100, watermark.SafeCheckpoint);
+    }
+
+    [Fact]
+    public void Watermark_InFlightCount_TracksCorrectly()
+    {
+        var watermark = new PositionWatermark(0);
+        Assert.Equal(0, watermark.InFlightCount);
+
+        watermark.MarkDispatched(1);
+        watermark.MarkDispatched(2);
+        Assert.Equal(2, watermark.InFlightCount);
+
+        watermark.MarkCompleted(1);
+        Assert.Equal(1, watermark.InFlightCount);
+
+        watermark.MarkCompleted(2);
+        Assert.Equal(0, watermark.InFlightCount);
+    }
+
+    #endregion
+
     #region Helper Methods
 
     private static IEventEnvelope CreateEnvelope<TEvent>(TEvent @event, long position) where TEvent : IEvent

@@ -60,19 +60,24 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
         _executionOptions = executionOptions ?? ProcessorExecutionOptions.Default;
         _logger = logger;
 
-        if (_executionOptions.BatchingMode == ProcessorBatchingMode.Required &&
-            _processor is not IBatchableProcessor)
+        // Pipelined mode (MaxConcurrency > 1) uses per-event dispatch with N workers,
+        // so it doesn't require IBatchableProcessor or batch middleware.
+        if (_executionOptions.MaxConcurrency <= 1)
         {
-            throw new InvalidOperationException(
-                $"Processor '{ProcessorId}' requires batching but does not implement {nameof(IBatchableProcessor)}.");
-        }
+            if (_executionOptions.BatchingMode == ProcessorBatchingMode.Required &&
+                _processor is not IBatchableProcessor)
+            {
+                throw new InvalidOperationException(
+                    $"Processor '{ProcessorId}' requires batching but does not implement {nameof(IBatchableProcessor)}.");
+            }
 
-        if (_executionOptions.BatchingMode == ProcessorBatchingMode.Required &&
-            _hasUnpairedPerEventMiddlewares)
-        {
-            throw new InvalidOperationException(
-                $"Processor '{ProcessorId}' requires batching, but not all configured per-event middleware " +
-                "has a batch equivalent. Register matching batch middleware before enabling batching.");
+            if (_executionOptions.BatchingMode == ProcessorBatchingMode.Required &&
+                _hasUnpairedPerEventMiddlewares)
+            {
+                throw new InvalidOperationException(
+                    $"Processor '{ProcessorId}' requires batching, but not all configured per-event middleware " +
+                    "has a batch equivalent. Register matching batch middleware before enabling batching.");
+            }
         }
     }
 
