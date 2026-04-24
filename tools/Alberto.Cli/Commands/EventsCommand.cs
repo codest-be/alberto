@@ -21,13 +21,13 @@ public static class EventsCommand
               alberto events --json
             """);
 
-        var urlOption = new Option<string?>("--url", "PostgreSQL connection string");
-        var schemaOption = new Option<string?>("--schema", "Database schema name");
-        var typeOption = new Option<string?>("--type", "Filter by event type");
-        var tagOption = new Option<string?>("--tag", "Filter by tag");
-        var afterOption = new Option<long>("--after", () => 0, "Return events after this global position");
-        var limitOption = new Option<int>("--limit", () => 20, "Maximum number of results");
-        var jsonOption = new Option<bool>("--json", "Output as JSON");
+        var urlOption = new Option<string?>("--url") { Description = "PostgreSQL connection string" };
+        var schemaOption = new Option<string?>("--schema") { Description = "Database schema name" };
+        var typeOption = new Option<string?>("--type") { Description = "Filter by event type" };
+        var tagOption = new Option<string?>("--tag") { Description = "Filter by tag" };
+        var afterOption = new Option<long>("--after") { DefaultValueFactory = _ => 0, Description = "Return events after this global position" };
+        var limitOption = new Option<int>("--limit") { DefaultValueFactory = _ => 20, Description = "Maximum number of results" };
+        var jsonOption = new Option<bool>("--json") { Description = "Output as JSON" };
 
         command.AddOption(urlOption);
         command.AddOption(schemaOption);

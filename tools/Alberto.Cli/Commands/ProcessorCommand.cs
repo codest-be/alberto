@@ -18,10 +18,10 @@ public static class ProcessorCommand
               alberto processor my-processor --json
             """);
 
-        var idArgument = new Argument<string>("id", "Processor ID");
-        var urlOption = new Option<string?>("--url", "PostgreSQL connection string");
-        var schemaOption = new Option<string?>("--schema", "Database schema name");
-        var jsonOption = new Option<bool>("--json", "Output as JSON");
+        var idArgument = new Argument<string>("id") { Description = "Processor ID" };
+        var urlOption = new Option<string?>("--url") { Description = "PostgreSQL connection string" };
+        var schemaOption = new Option<string?>("--schema") { Description = "Database schema name" };
+        var jsonOption = new Option<bool>("--json") { Description = "Output as JSON" };
 
         command.AddArgument(idArgument);
         command.AddOption(urlOption);

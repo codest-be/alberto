@@ -11,9 +11,9 @@ public static class TenantsCommand
     {
         var command = new Command("tenants", "List current tenant lease assignments");
 
-        var urlOption = new Option<string?>("--url", "PostgreSQL connection string");
-        var schemaOption = new Option<string?>("--schema", "Database schema name");
-        var jsonOption = new Option<bool>("--json", "Output as JSON");
+        var urlOption = new Option<string?>("--url") { Description = "PostgreSQL connection string" };
+        var schemaOption = new Option<string?>("--schema") { Description = "Database schema name" };
+        var jsonOption = new Option<bool>("--json") { Description = "Output as JSON" };
 
         command.AddOption(urlOption);
         command.AddOption(schemaOption);

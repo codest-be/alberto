@@ -20,12 +20,12 @@ public static class DeadLettersCommand
               alberto dead-letters --limit 50 --json
             """);
 
-        var urlOption = new Option<string?>("--url", "PostgreSQL connection string");
-        var schemaOption = new Option<string?>("--schema", "Database schema name");
-        var processorOption = new Option<string?>("--processor", "Filter by processor ID");
-        var typeOption = new Option<string?>("--type", "Filter by event type");
-        var limitOption = new Option<int>("--limit", () => 20, "Maximum number of results");
-        var jsonOption = new Option<bool>("--json", "Output as JSON");
+        var urlOption = new Option<string?>("--url") { Description = "PostgreSQL connection string" };
+        var schemaOption = new Option<string?>("--schema") { Description = "Database schema name" };
+        var processorOption = new Option<string?>("--processor") { Description = "Filter by processor ID" };
+        var typeOption = new Option<string?>("--type") { Description = "Filter by event type" };
+        var limitOption = new Option<int>("--limit") { DefaultValueFactory = _ => 20, Description = "Maximum number of results" };
+        var jsonOption = new Option<bool>("--json") { Description = "Output as JSON" };
 
         command.AddOption(urlOption);
         command.AddOption(schemaOption);

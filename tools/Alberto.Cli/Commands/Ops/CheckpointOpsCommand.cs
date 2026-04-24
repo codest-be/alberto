@@ -30,10 +30,10 @@ public static class CheckpointOpsCommand
               alberto ops checkpoint get my-processor --json
             """);
 
-        var idArgument = new Argument<string>("processor-id", "Processor ID");
-        var urlOption = new Option<string?>("--url", "PostgreSQL connection string");
-        var schemaOption = new Option<string?>("--schema", "Database schema name");
-        var jsonOption = new Option<bool>("--json", "Output as JSON");
+        var idArgument = new Argument<string>("processor-id") { Description = "Processor ID" };
+        var urlOption = new Option<string?>("--url") { Description = "PostgreSQL connection string" };
+        var schemaOption = new Option<string?>("--schema") { Description = "Database schema name" };
+        var jsonOption = new Option<bool>("--json") { Description = "Output as JSON" };
 
         command.AddArgument(idArgument);
         command.AddOption(urlOption);
@@ -101,12 +101,12 @@ public static class CheckpointOpsCommand
               alberto ops checkpoint reset my-processor --yes --json
             """);
 
-        var idArgument = new Argument<string>("processor-id", "Processor ID");
-        var urlOption = new Option<string?>("--url", "PostgreSQL connection string");
-        var schemaOption = new Option<string?>("--schema", "Database schema name");
-        var dryRunOption = new Option<bool>("--dry-run", "Show what would be reset without executing");
-        var yesOption = new Option<bool>("--yes", "Skip confirmation prompt");
-        var jsonOption = new Option<bool>("--json", "Output as JSON");
+        var idArgument = new Argument<string>("processor-id") { Description = "Processor ID" };
+        var urlOption = new Option<string?>("--url") { Description = "PostgreSQL connection string" };
+        var schemaOption = new Option<string?>("--schema") { Description = "Database schema name" };
+        var dryRunOption = new Option<bool>("--dry-run") { Description = "Show what would be reset without executing" };
+        var yesOption = new Option<bool>("--yes") { Description = "Skip confirmation prompt" };
+        var jsonOption = new Option<bool>("--json") { Description = "Output as JSON" };
 
         command.AddArgument(idArgument);
         command.AddOption(urlOption);
@@ -187,13 +187,13 @@ public static class CheckpointOpsCommand
               alberto ops checkpoint set my-processor 1000 --yes --json
             """);
 
-        var idArgument = new Argument<string>("processor-id", "Processor ID");
-        var positionArgument = new Argument<long>("position", "Global position to set");
-        var urlOption = new Option<string?>("--url", "PostgreSQL connection string");
-        var schemaOption = new Option<string?>("--schema", "Database schema name");
-        var dryRunOption = new Option<bool>("--dry-run", "Show what would change without executing");
-        var yesOption = new Option<bool>("--yes", "Skip confirmation prompt");
-        var jsonOption = new Option<bool>("--json", "Output as JSON");
+        var idArgument = new Argument<string>("processor-id") { Description = "Processor ID" };
+        var positionArgument = new Argument<long>("position") { Description = "Global position to set" };
+        var urlOption = new Option<string?>("--url") { Description = "PostgreSQL connection string" };
+        var schemaOption = new Option<string?>("--schema") { Description = "Database schema name" };
+        var dryRunOption = new Option<bool>("--dry-run") { Description = "Show what would change without executing" };
+        var yesOption = new Option<bool>("--yes") { Description = "Skip confirmation prompt" };
+        var jsonOption = new Option<bool>("--json") { Description = "Output as JSON" };
 
         command.AddArgument(idArgument);
         command.AddArgument(positionArgument);

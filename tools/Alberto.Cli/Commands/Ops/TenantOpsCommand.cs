@@ -21,10 +21,10 @@ public static class TenantOpsCommand
     {
         var command = new Command("release", "Release tenant leases, forcing the application to reacquire them");
 
-        var urlOption = new Option<string?>("--url", "PostgreSQL connection string");
-        var schemaOption = new Option<string?>("--schema", "Database schema name");
-        var processorIdOption = new Option<string?>("--processor-id", "Release leases only for this consumer ID");
-        var yesOption = new Option<bool>("--yes", "Skip confirmation prompt");
+        var urlOption = new Option<string?>("--url") { Description = "PostgreSQL connection string" };
+        var schemaOption = new Option<string?>("--schema") { Description = "Database schema name" };
+        var processorIdOption = new Option<string?>("--processor-id") { Description = "Release leases only for this consumer ID" };
+        var yesOption = new Option<bool>("--yes") { Description = "Skip confirmation prompt" };
 
         command.AddOption(urlOption);
         command.AddOption(schemaOption);

@@ -21,13 +21,13 @@ public static class RebuildCommand
               alberto ops rebuild my-processor --yes --operator "deploy-script"
             """);
 
-        var idArgument = new Argument<string>("processor-id", "Processor ID to rebuild");
-        var urlOption = new Option<string?>("--url", "PostgreSQL connection string");
-        var schemaOption = new Option<string?>("--schema", "Database schema name");
-        var operatorOption = new Option<string?>("--operator", "Operator name to include in output");
-        var dryRunOption = new Option<bool>("--dry-run", "Show what would happen without executing");
-        var yesOption = new Option<bool>("--yes", "Skip confirmation prompt");
-        var jsonOption = new Option<bool>("--json", "Output as JSON");
+        var idArgument = new Argument<string>("processor-id") { Description = "Processor ID to rebuild" };
+        var urlOption = new Option<string?>("--url") { Description = "PostgreSQL connection string" };
+        var schemaOption = new Option<string?>("--schema") { Description = "Database schema name" };
+        var operatorOption = new Option<string?>("--operator") { Description = "Operator name to include in output" };
+        var dryRunOption = new Option<bool>("--dry-run") { Description = "Show what would happen without executing" };
+        var yesOption = new Option<bool>("--yes") { Description = "Skip confirmation prompt" };
+        var jsonOption = new Option<bool>("--json") { Description = "Output as JSON" };
 
         command.AddArgument(idArgument);
         command.AddOption(urlOption);

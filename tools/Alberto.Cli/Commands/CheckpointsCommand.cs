@@ -18,9 +18,9 @@ public static class CheckpointsCommand
               alberto checkpoints --json
             """);
 
-        var urlOption = new Option<string?>("--url", "PostgreSQL connection string");
-        var schemaOption = new Option<string?>("--schema", "Database schema name");
-        var jsonOption = new Option<bool>("--json", "Output as JSON");
+        var urlOption = new Option<string?>("--url") { Description = "PostgreSQL connection string" };
+        var schemaOption = new Option<string?>("--schema") { Description = "Database schema name" };
+        var jsonOption = new Option<bool>("--json") { Description = "Output as JSON" };
 
         command.AddOption(urlOption);
         command.AddOption(schemaOption);

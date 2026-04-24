@@ -21,9 +21,9 @@ public static class ProjectionsCommand
     {
         var command = new Command("types", "List all distinct projection types");
 
-        var urlOption = new Option<string?>("--url", "PostgreSQL connection string");
-        var schemaOption = new Option<string?>("--schema", "Database schema name");
-        var jsonOption = new Option<bool>("--json", "Output as JSON");
+        var urlOption = new Option<string?>("--url") { Description = "PostgreSQL connection string" };
+        var schemaOption = new Option<string?>("--schema") { Description = "Database schema name" };
+        var jsonOption = new Option<bool>("--json") { Description = "Output as JSON" };
 
         command.AddOption(urlOption);
         command.AddOption(schemaOption);
@@ -73,13 +73,13 @@ public static class ProjectionsCommand
     {
         var command = new Command("list", "List projection states for a given type");
 
-        var typeArgument = new Argument<string>("type", "Projection type (e.g. OrderSummary)");
-        var urlOption = new Option<string?>("--url", "PostgreSQL connection string");
-        var schemaOption = new Option<string?>("--schema", "Database schema name");
-        var tenantOption = new Option<string?>("--tenant", "Filter by tenant ID");
-        var searchOption = new Option<string?>("--search", "Filter document IDs by substring");
-        var limitOption = new Option<int>("--limit", () => 50, "Maximum number of rows to return");
-        var jsonOption = new Option<bool>("--json", "Output as JSON");
+        var typeArgument = new Argument<string>("type") { Description = "Projection type (e.g. OrderSummary)" };
+        var urlOption = new Option<string?>("--url") { Description = "PostgreSQL connection string" };
+        var schemaOption = new Option<string?>("--schema") { Description = "Database schema name" };
+        var tenantOption = new Option<string?>("--tenant") { Description = "Filter by tenant ID" };
+        var searchOption = new Option<string?>("--search") { Description = "Filter document IDs by substring" };
+        var limitOption = new Option<int>("--limit") { DefaultValueFactory = _ => 50, Description = "Maximum number of rows to return" };
+        var jsonOption = new Option<bool>("--json") { Description = "Output as JSON" };
 
         command.AddArgument(typeArgument);
         command.AddOption(urlOption);

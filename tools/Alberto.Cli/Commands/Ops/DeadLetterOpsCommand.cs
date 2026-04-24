@@ -33,13 +33,13 @@ public static class DeadLetterOpsCommand
               alberto ops dead-letters dismiss --all --yes
             """);
 
-        var urlOption = new Option<string?>("--url", "PostgreSQL connection string");
-        var schemaOption = new Option<string?>("--schema", "Database schema name");
-        var processorOption = new Option<string?>("--processor", "Filter by processor ID");
-        var allOption = new Option<bool>("--all", "Dismiss all dead letters (required if --processor not specified)");
-        var dryRunOption = new Option<bool>("--dry-run", "Show what would be dismissed without executing");
-        var yesOption = new Option<bool>("--yes", "Skip confirmation prompt");
-        var jsonOption = new Option<bool>("--json", "Output as JSON");
+        var urlOption = new Option<string?>("--url") { Description = "PostgreSQL connection string" };
+        var schemaOption = new Option<string?>("--schema") { Description = "Database schema name" };
+        var processorOption = new Option<string?>("--processor") { Description = "Filter by processor ID" };
+        var allOption = new Option<bool>("--all") { Description = "Dismiss all dead letters (required if --processor not specified)" };
+        var dryRunOption = new Option<bool>("--dry-run") { Description = "Show what would be dismissed without executing" };
+        var yesOption = new Option<bool>("--yes") { Description = "Skip confirmation prompt" };
+        var jsonOption = new Option<bool>("--json") { Description = "Output as JSON" };
 
         command.AddOption(urlOption);
         command.AddOption(schemaOption);
@@ -139,12 +139,12 @@ public static class DeadLetterOpsCommand
               alberto ops dead-letters retry my-processor --yes --json
             """);
 
-        var processorIdArgument = new Argument<string>("processor-id", "Processor ID to retry dead letters for");
-        var urlOption = new Option<string?>("--url", "PostgreSQL connection string");
-        var schemaOption = new Option<string?>("--schema", "Database schema name");
-        var dryRunOption = new Option<bool>("--dry-run", "Show what would happen without executing");
-        var yesOption = new Option<bool>("--yes", "Skip confirmation prompt");
-        var jsonOption = new Option<bool>("--json", "Output as JSON");
+        var processorIdArgument = new Argument<string>("processor-id") { Description = "Processor ID to retry dead letters for" };
+        var urlOption = new Option<string?>("--url") { Description = "PostgreSQL connection string" };
+        var schemaOption = new Option<string?>("--schema") { Description = "Database schema name" };
+        var dryRunOption = new Option<bool>("--dry-run") { Description = "Show what would happen without executing" };
+        var yesOption = new Option<bool>("--yes") { Description = "Skip confirmation prompt" };
+        var jsonOption = new Option<bool>("--json") { Description = "Output as JSON" };
 
         command.AddArgument(processorIdArgument);
         command.AddOption(urlOption);
@@ -234,12 +234,12 @@ public static class DeadLetterOpsCommand
               alberto ops dead-letters retry-rewind my-processor --yes --json
             """);
 
-        var processorIdArgument = new Argument<string>("processor-id", "Processor ID to rewind");
-        var urlOption = new Option<string?>("--url", "PostgreSQL connection string");
-        var schemaOption = new Option<string?>("--schema", "Database schema name");
-        var dryRunOption = new Option<bool>("--dry-run", "Show what would happen without executing");
-        var yesOption = new Option<bool>("--yes", "Skip confirmation prompt");
-        var jsonOption = new Option<bool>("--json", "Output as JSON");
+        var processorIdArgument = new Argument<string>("processor-id") { Description = "Processor ID to rewind" };
+        var urlOption = new Option<string?>("--url") { Description = "PostgreSQL connection string" };
+        var schemaOption = new Option<string?>("--schema") { Description = "Database schema name" };
+        var dryRunOption = new Option<bool>("--dry-run") { Description = "Show what would happen without executing" };
+        var yesOption = new Option<bool>("--yes") { Description = "Skip confirmation prompt" };
+        var jsonOption = new Option<bool>("--json") { Description = "Output as JSON" };
 
         command.AddArgument(processorIdArgument);
         command.AddOption(urlOption);
