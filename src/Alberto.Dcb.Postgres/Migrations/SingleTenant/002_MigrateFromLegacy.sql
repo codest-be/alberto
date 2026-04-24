@@ -675,21 +675,27 @@ CREATE OR REPLACE FUNCTION $schema_prefix$alberto_save_checkpoint_if_processor_l
     p_position BIGINT
 ) RETURNS BOOLEAN AS $$
 DECLARE
-    v_rows INTEGER;
+    v_lease_held BOOLEAN;
 BEGIN
-    UPDATE $schema_prefix$alberto_processor_checkpoints
-    SET last_position = p_position, updated_at = now()
-    WHERE processor_id = p_processor_id
-    AND EXISTS (
+    SELECT EXISTS (
         SELECT 1 FROM $schema_prefix$alberto_processor_leases
         WHERE consumer_id = p_consumer_id
         AND processor_id = p_processor_id
         AND replica_id = p_replica_id
         AND expires_at > now()
-    );
+    ) INTO v_lease_held;
 
-    GET DIAGNOSTICS v_rows = ROW_COUNT;
-    RETURN v_rows > 0;
+    IF NOT v_lease_held THEN
+        RETURN FALSE;
+    END IF;
+
+    INSERT INTO $schema_prefix$alberto_processor_checkpoints (processor_id, last_position, updated_at)
+    VALUES (p_processor_id, p_position, now())
+    ON CONFLICT (processor_id) DO UPDATE
+    SET last_position = GREATEST($schema_prefix$alberto_processor_checkpoints.last_position, p_position),
+        updated_at = now();
+
+    RETURN TRUE;
 END;
 $$ LANGUAGE plpgsql;
 
