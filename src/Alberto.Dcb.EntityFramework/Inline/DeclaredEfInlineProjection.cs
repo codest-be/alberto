@@ -76,7 +76,11 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : IInlineP
         }
 
         var documentKeys = docIdMap.Values.Distinct().ToList();
+        // Load existing rows untracked: the projection rebuilds the entity by `with`-ing the
+        // loaded state, producing a new instance that we then Update/Add. If the original
+        // instance were tracked, Update would throw an identity-map conflict on the same key.
         var existing = await context.Set<TEntity>()
+            .AsNoTracking()
             .Where(e => documentKeys.Contains(e.DocumentId))
             .ToDictionaryAsync(e => e.DocumentId, ct);
 

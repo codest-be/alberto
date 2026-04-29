@@ -55,9 +55,12 @@ internal sealed class EfInlineProjection<TEntity, TProjection, TDbContext> : IIn
             await context.Database.UseTransactionAsync(dbTransaction, ct);
         }
 
-        // Load current state for all affected documents
+        // Load current state for all affected documents.
+        // Untracked: Apply may produce a fresh entity instance that we then Update; if the
+        // original were tracked, Update would throw an identity-map conflict on the same key.
         var documentKeys = byDocument.Keys.ToList();
         var existingEntities = await context.Set<TEntity>()
+            .AsNoTracking()
             .Where(e => documentKeys.Contains(e.DocumentId))
             .ToDictionaryAsync(e => e.DocumentId, ct);
 
