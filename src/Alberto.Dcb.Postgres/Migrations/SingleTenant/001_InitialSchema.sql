@@ -506,12 +506,16 @@ BEGIN
     IF array_length(p_tags, 1) = 1 THEN
         RETURN QUERY
         SELECT e.global_position, e.event_id, e.event_type, e.event_tags, e.event_data, e.event_metadata, e.created_at
-        FROM $schema_prefix$alberto_event_tag_positions etagp
-        INNER JOIN $schema_prefix$alberto_events e ON e.global_position = etagp.global_position
-        WHERE etagp.tag = p_tags[1]
-          AND etagp.global_position > p_after_position
-        ORDER BY etagp.global_position
-        LIMIT p_limit;
+        FROM (
+            SELECT etagp.global_position
+            FROM $schema_prefix$alberto_event_tag_positions etagp
+            WHERE etagp.tag = p_tags[1]
+              AND etagp.global_position > p_after_position
+            ORDER BY etagp.global_position
+            LIMIT p_limit
+        ) matching_positions
+        INNER JOIN $schema_prefix$alberto_events e ON e.global_position = matching_positions.global_position
+        ORDER BY matching_positions.global_position;
         RETURN;
     END IF;
 
@@ -526,8 +530,7 @@ BEGIN
         LIMIT p_limit
     ) matching_positions
     INNER JOIN $schema_prefix$alberto_events e ON e.global_position = matching_positions.global_position
-    ORDER BY e.global_position
-    LIMIT p_limit;
+    ORDER BY matching_positions.global_position;
 END;
 $$ LANGUAGE plpgsql;
 

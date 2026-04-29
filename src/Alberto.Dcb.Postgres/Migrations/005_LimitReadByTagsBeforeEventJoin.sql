@@ -1,4 +1,4 @@
--- Optimize tag-only event reads by applying the position predicate to the
+-- Refine tag-only event reads so matching positions are limited from the
 -- inverted tag index before joining back to alberto_events.
 
 CREATE OR REPLACE FUNCTION $schema_prefix$alberto_read_by_tags(
