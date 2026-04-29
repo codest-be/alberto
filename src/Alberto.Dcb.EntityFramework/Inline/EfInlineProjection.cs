@@ -110,16 +110,3 @@ internal sealed class EfInlineProjection<TEntity, TProjection, TDbContext> : IIn
         await context.SaveChangesAsync(ct);
     }
 }
-
-/// <summary>
-/// Internal interface for inline projections.
-/// Matches the interface in Alberto.Dcb.
-/// </summary>
-internal interface IInlineProjection
-{
-    IReadOnlySet<string> HandledEventTypes { get; }
-    Task ProcessAsync(
-        IReadOnlyList<IEventEnvelope> events,
-        IDbTransaction? transaction = null,
-        CancellationToken ct = default);
-}

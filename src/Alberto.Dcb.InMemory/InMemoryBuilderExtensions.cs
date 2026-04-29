@@ -44,6 +44,7 @@ public static class InMemoryBuilderExtensions
         {
             var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(key);
             var eventStore = new InMemoryEventStore(backend);
+            RegisterInlineProjections(sp, key, eventStore);
             RegisterPostAppendHandlers(sp, key, eventStore);
             return eventStore;
         });
@@ -87,6 +88,7 @@ public static class InMemoryBuilderExtensions
         {
             var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(key);
             var eventStore = new InMemoryEventStore(backend);
+            RegisterInlineProjections(sp, key, eventStore);
             RegisterPostAppendHandlers(sp, key, eventStore);
             return eventStore;
         });
@@ -101,5 +103,11 @@ public static class InMemoryBuilderExtensions
     {
         foreach (var handler in sp.GetKeyedServices<IPostAppendHandler>(key))
             eventStore.RegisterPostAppendHandler(handler);
+    }
+
+    private static void RegisterInlineProjections(IServiceProvider sp, object? key, InMemoryEventStore eventStore)
+    {
+        foreach (var projection in sp.GetKeyedServices<IInlineProjection>(key))
+            eventStore.RegisterInlineProjection(projection);
     }
 }

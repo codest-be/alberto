@@ -13,39 +13,28 @@ public static class OrderSummaryEfProjection
 {
     public static readonly ProjectionDeclaration<OrderSummaryEntity> Declaration =
         DeclareProjection.For<OrderSummaryEntity>(nameof(OrderSummaryEfProjection))
-            .Handles<OrderCreated>()
-            .Handles<OrderItemAdded>()
-            .Handles<OrderItemRemoved>()
-            .Handles<OrderConfirmed>()
-            .Handles<OrderShipped>()
-            .Handles<OrderDelivered>()
-            .Handles<OrderCancelled>()
-            .DocumentId(e => e.EventType.Id switch
-            {
-                "order-created" => e.ParseEvent<OrderCreated>()!.OrderId.ToString(),
-                "order-item-added" => e.ParseEvent<OrderItemAdded>()!.OrderId.ToString(),
-                "order-item-removed" => e.ParseEvent<OrderItemRemoved>()!.OrderId.ToString(),
-                "order-confirmed" => e.ParseEvent<OrderConfirmed>()!.OrderId.ToString(),
-                "order-shipped" => e.ParseEvent<OrderShipped>()!.OrderId.ToString(),
-                "order-delivered" => e.ParseEvent<OrderDelivered>()!.OrderId.ToString(),
-                "order-cancelled" => e.ParseEvent<OrderCancelled>()!.OrderId.ToString(),
-                _ => null
-            })
-            .Evolve(Evolve)
+            .On<OrderCreated>(
+                id: e => e.OrderId.ToString(),
+                apply: Apply)
+            .On<OrderItemAdded>(
+                id: e => e.OrderId.ToString(),
+                apply: Apply)
+            .On<OrderItemRemoved>(
+                id: e => e.OrderId.ToString(),
+                apply: Apply)
+            .On<OrderConfirmed>(
+                id: e => e.OrderId.ToString(),
+                apply: Apply)
+            .On<OrderShipped>(
+                id: e => e.OrderId.ToString(),
+                apply: Apply)
+            .On<OrderDelivered>(
+                id: e => e.OrderId.ToString(),
+                apply: Apply)
+            .On<OrderCancelled>(
+                id: e => e.OrderId.ToString(),
+                apply: Apply)
             .Build();
-
-    private static ProjectionResult<OrderSummaryEntity> Evolve(OrderSummaryEntity state, IEventEnvelope e, ProjectionContext ctx)
-        => e.EventType.Id switch
-        {
-            "order-created" => Apply(state, e.ParseEvent<OrderCreated>()!, ctx),
-            "order-item-added" => Apply(state, e.ParseEvent<OrderItemAdded>()!, ctx),
-            "order-item-removed" => Apply(state, e.ParseEvent<OrderItemRemoved>()!, ctx),
-            "order-confirmed" => Apply(state, e.ParseEvent<OrderConfirmed>()!, ctx),
-            "order-shipped" => Apply(state, e.ParseEvent<OrderShipped>()!, ctx),
-            "order-delivered" => Apply(state, e.ParseEvent<OrderDelivered>()!, ctx),
-            "order-cancelled" => Apply(state, e.ParseEvent<OrderCancelled>()!, ctx),
-            _ => state
-        };
 
     private static OrderSummaryEntity Apply(OrderSummaryEntity state, OrderCreated e, ProjectionContext ctx)
     {

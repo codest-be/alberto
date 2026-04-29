@@ -29,6 +29,13 @@ public sealed class InMemoryEventStore : IEventStore
     }
 
     /// <inheritdoc/>
+    public void RegisterInlineProjection(IInlineProjection projection)
+    {
+        ArgumentNullException.ThrowIfNull(projection);
+        _inlineProjections.Add(projection);
+    }
+
+    /// <inheritdoc/>
     public void RegisterPostAppendHandler(IPostAppendHandler handler)
     {
         ArgumentNullException.ThrowIfNull(handler);

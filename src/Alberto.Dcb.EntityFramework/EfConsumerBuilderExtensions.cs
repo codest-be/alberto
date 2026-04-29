@@ -1,3 +1,4 @@
+using Alberto.Dcb.EntityFramework.Inline;
 using Alberto.Dcb.Subscriptions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -10,17 +11,38 @@ namespace Alberto.Dcb.EntityFramework;
 public static class EfConsumerBuilderExtensions
 {
     /// <summary>
-    /// Registers an async projection processor using the declaration-based API with Entity Framework storage.
-    /// Also registers an <see cref="IProjectionStateClearer"/> for rebuild support.
-    /// This is the recommended approach — no reflection, no base classes required.
+    /// Registers an EF projection using the declaration-based API.
+    /// Defaults to <see cref="ProjectionMode.Async"/> — processed via the background polling consumer.
+    /// Pass <see cref="ProjectionMode.Inline"/> to instead run the projection inside the
+    /// <see cref="IEventStore.AppendAsync"/> call for read-your-writes consistency.
     /// </summary>
+    /// <typeparam name="TEntity">The projection entity type.</typeparam>
+    /// <typeparam name="TDbContext">The EF DbContext containing the entity DbSet.</typeparam>
+    /// <param name="builder">The module builder.</param>
+    /// <param name="declaration">The projection declaration.</param>
+    /// <param name="mode">
+    /// <see cref="ProjectionMode.Async"/> (default) registers a polling-consumer processor and a
+    /// rebuildable state clearer. <see cref="ProjectionMode.Inline"/> registers an
+    /// <see cref="IInlineProjection"/> that runs immediately after each append.
+    /// </param>
     public static DcbModuleBuilder AddEfProjection<TEntity, TDbContext>(
         this DcbModuleBuilder builder,
-        ProjectionDeclaration<TEntity> declaration)
+        ProjectionDeclaration<TEntity> declaration,
+        ProjectionMode mode = ProjectionMode.Async)
         where TEntity : class, IProjectionEntity, new()
         where TDbContext : DbContext
     {
         ArgumentNullException.ThrowIfNull(declaration);
+
+        if (mode == ProjectionMode.Inline)
+        {
+            builder.Services.AddKeyedSingleton<IInlineProjection>(builder.ModuleKey, (sp, _) =>
+            {
+                var contextFactory = sp.GetRequiredService<IDbContextFactory<TDbContext>>();
+                return new DeclaredEfInlineProjection<TEntity, TDbContext>(declaration, contextFactory);
+            });
+            return builder;
+        }
 
         builder.Services.AddKeyedSingleton<IEventProcessor>(builder.ModuleKey, (sp, _) =>
         {

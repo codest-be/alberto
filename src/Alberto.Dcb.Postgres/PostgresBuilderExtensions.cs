@@ -75,6 +75,7 @@ public static class PostgresBuilderExtensions
             {
                 var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(key);
                 var eventStore = new PostgresEventStore(backend);
+                RegisterInlineProjections(sp, key, eventStore);
                 RegisterPostAppendHandlers(sp, key, eventStore);
                 return eventStore;
             });
@@ -87,6 +88,7 @@ public static class PostgresBuilderExtensions
             {
                 var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(key);
                 var eventStore = new PostgresEventStore(backend);
+                RegisterInlineProjections(sp, key, eventStore);
                 RegisterPostAppendHandlers(sp, key, eventStore);
                 return eventStore;
             });
@@ -147,6 +149,12 @@ public static class PostgresBuilderExtensions
     {
         foreach (var handler in sp.GetKeyedServices<IPostAppendHandler>(key))
             eventStore.RegisterPostAppendHandler(handler);
+    }
+
+    private static void RegisterInlineProjections(IServiceProvider sp, object? key, PostgresEventStore eventStore)
+    {
+        foreach (var projection in sp.GetKeyedServices<IInlineProjection>(key))
+            eventStore.RegisterInlineProjection(projection);
     }
 
     private static void RegisterTenantBackend(DcbModuleBuilder builder, string moduleKey, string? schema)

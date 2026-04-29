@@ -23,6 +23,14 @@ public interface IEventStore
         where TState : new();
 
     /// <summary>
+    /// Registers an inline projection that runs immediately after events are appended.
+    /// Lower-level overload that accepts any <see cref="IInlineProjection"/> implementation —
+    /// used by declaration-based projection wiring.
+    /// </summary>
+    /// <param name="projection">The inline projection to register.</param>
+    void RegisterInlineProjection(IInlineProjection projection);
+
+    /// <summary>
     /// Registers a post-append handler that runs immediately after events are appended
     /// and inline projections have completed. Used by <see cref="ReactorMode.Sync"/> reactors.
     /// </summary>

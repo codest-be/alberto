@@ -11,25 +11,22 @@ public static class OrdersOverviewProjection
 
     public static readonly ProjectionDeclaration<OrdersOverview> Declaration =
         DeclareProjection.For<OrdersOverview>(nameof(OrdersOverviewProjection))
-            .Handles<OrderCreated>()
-            .Handles<OrderConfirmed>()
-            .Handles<OrderShipped>()
-            .Handles<OrderDelivered>()
-            .Handles<OrderCancelled>()
-            .DocumentId(_ => DocumentId)
-            .Evolve(Evolve)
+            .On<OrderCreated>(
+                id: _ => DocumentId,
+                apply: (state, e, ctx) => ApplyOrderCreated(state, e, ctx))
+            .On<OrderConfirmed>(
+                id: _ => DocumentId,
+                apply: (state, _, ctx) => state with { DraftOrders = Math.Max(0, state.DraftOrders - 1), ConfirmedOrders = state.ConfirmedOrders + 1, UpdatedAt = ctx.Timestamp })
+            .On<OrderShipped>(
+                id: _ => DocumentId,
+                apply: (state, _, ctx) => state with { ConfirmedOrders = Math.Max(0, state.ConfirmedOrders - 1), ShippedOrders = state.ShippedOrders + 1, UpdatedAt = ctx.Timestamp })
+            .On<OrderDelivered>(
+                id: _ => DocumentId,
+                apply: (state, _, ctx) => state with { ShippedOrders = Math.Max(0, state.ShippedOrders - 1), DeliveredOrders = state.DeliveredOrders + 1, UpdatedAt = ctx.Timestamp })
+            .On<OrderCancelled>(
+                id: _ => DocumentId,
+                apply: (state, _, ctx) => state with { DraftOrders = Math.Max(0, state.DraftOrders - 1), CancelledOrders = state.CancelledOrders + 1, UpdatedAt = ctx.Timestamp })
             .Build();
-
-    private static ProjectionResult<OrdersOverview> Evolve(OrdersOverview state, IEventEnvelope e, ProjectionContext ctx)
-        => e.EventType.Id switch
-        {
-            "order-created" => ApplyOrderCreated(state, e.ParseEvent<OrderCreated>()!, ctx),
-            "order-confirmed" => state with { DraftOrders = Math.Max(0, state.DraftOrders - 1), ConfirmedOrders = state.ConfirmedOrders + 1, UpdatedAt = ctx.Timestamp },
-            "order-shipped" => state with { ConfirmedOrders = Math.Max(0, state.ConfirmedOrders - 1), ShippedOrders = state.ShippedOrders + 1, UpdatedAt = ctx.Timestamp },
-            "order-delivered" => state with { ShippedOrders = Math.Max(0, state.ShippedOrders - 1), DeliveredOrders = state.DeliveredOrders + 1, UpdatedAt = ctx.Timestamp },
-            "order-cancelled" => state with { DraftOrders = Math.Max(0, state.DraftOrders - 1), CancelledOrders = state.CancelledOrders + 1, UpdatedAt = ctx.Timestamp },
-            _ => state
-        };
 
     private static OrdersOverview ApplyOrderCreated(OrdersOverview state, OrderCreated e, ProjectionContext ctx)
     {
