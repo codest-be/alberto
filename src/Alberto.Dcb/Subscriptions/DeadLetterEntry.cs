@@ -18,6 +18,9 @@ namespace Alberto.Dcb.Subscriptions;
 /// <param name="Tags">Event tags from the original event (fetched from events table during retry). Empty if not retrieved.</param>
 /// <param name="Metadata">Event metadata from the original event (fetched from events table during retry). Empty if not retrieved.</param>
 /// <param name="CreatedAt">Original event creation timestamp (fetched from events table during retry). Defaults to FailedAt if not retrieved.</param>
+/// <param name="ClaimedAt">When a retry loop most recently claimed this entry for dispatch, or null if never claimed / already released.</param>
+/// <param name="ClaimExpiresAt">When the active claim lease expires; if in the past the entry is eligible for re-claim by another worker.</param>
+/// <param name="ClaimedBy">Identifier of the worker that holds the active claim (e.g. replica id), for diagnostics. Null when not claimed.</param>
 public sealed record DeadLetterEntry(
     Guid Id,
     string ProcessorId,
@@ -33,4 +36,7 @@ public sealed record DeadLetterEntry(
     string? TenantId = null,
     IReadOnlyCollection<string>? Tags = null,
     IReadOnlyDictionary<string, string>? Metadata = null,
-    DateTime? CreatedAt = null);
+    DateTime? CreatedAt = null,
+    DateTimeOffset? ClaimedAt = null,
+    DateTimeOffset? ClaimExpiresAt = null,
+    string? ClaimedBy = null);

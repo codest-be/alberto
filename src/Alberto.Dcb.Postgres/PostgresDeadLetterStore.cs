@@ -137,17 +137,24 @@ public sealed class PostgresDeadLetterStore(NpgsqlDataSource dataSource, string?
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<DeadLetterEntry>> GetRetryRequestedWithLockAsync(
+    public async Task<IReadOnlyList<DeadLetterEntry>> ClaimRetryRequestedAsync(
         string processorId,
-        int batchSize = 10,
+        int batchSize,
+        TimeSpan leaseDuration,
+        string claimedBy,
         CancellationToken ct = default)
     {
+        if (leaseDuration <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(leaseDuration), "Lease duration must be positive.");
+
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        var sql = await BuildRetryLookupSqlAsync(conn, ct);
+        var sql = await BuildClaimSqlAsync(conn, ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = sql;
         cmd.Parameters.AddWithValue("processorId", processorId);
         cmd.Parameters.AddWithValue("batchSize", batchSize);
+        cmd.Parameters.AddWithValue("leaseSeconds", leaseDuration.TotalSeconds);
+        cmd.Parameters.AddWithValue("claimedBy", claimedBy);
 
         var entries = new List<DeadLetterEntry>();
         await using var reader = await cmd.ExecuteReaderAsync(ct);
@@ -156,17 +163,17 @@ public sealed class PostgresDeadLetterStore(NpgsqlDataSource dataSource, string?
         {
             // Parse tags from array
             IReadOnlyCollection<string>? tags = null;
-            if (!reader.IsDBNull(12))
+            if (!reader.IsDBNull(15))
             {
-                var tagsArray = reader.GetFieldValue<string[]>(12);
+                var tagsArray = reader.GetFieldValue<string[]>(15);
                 tags = tagsArray ?? [];
             }
 
             // Parse metadata from JSONB
             IReadOnlyDictionary<string, string>? metadata = null;
-            if (!reader.IsDBNull(13))
+            if (!reader.IsDBNull(16))
             {
-                var metadataJson = reader.GetString(13);
+                var metadataJson = reader.GetString(16);
                 try
                 {
                     var parsed = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(metadataJson);
@@ -190,44 +197,78 @@ public sealed class PostgresDeadLetterStore(NpgsqlDataSource dataSource, string?
                 FailedAt: reader.GetDateTime(8),
                 GlobalPosition: reader.GetInt64(9),
                 RetryRequested: reader.GetBoolean(10),
-                TenantId: reader.IsDBNull(11) ? null : reader.GetString(11),
+                TenantId: reader.IsDBNull(14) ? null : reader.GetString(14),
                 Tags: tags ?? Array.Empty<string>(),
                 Metadata: metadata ?? new Dictionary<string, string>(),
-                CreatedAt: reader.IsDBNull(14) ? null : reader.GetDateTime(14)));
+                CreatedAt: reader.IsDBNull(17) ? null : reader.GetDateTime(17),
+                ClaimedAt: reader.IsDBNull(11) ? null : reader.GetFieldValue<DateTimeOffset>(11),
+                ClaimExpiresAt: reader.IsDBNull(12) ? null : reader.GetFieldValue<DateTimeOffset>(12),
+                ClaimedBy: reader.IsDBNull(13) ? null : reader.GetString(13)));
         }
 
         return entries;
     }
 
-    private async Task<string> BuildRetryLookupSqlAsync(NpgsqlConnection conn, CancellationToken ct)
+    /// <inheritdoc />
+    public async Task ReleaseClaimAsync(Guid id, CancellationToken ct = default)
     {
-        if (await EventsTableHasTenantIdAsync(conn, ct))
-        {
-            return $"""
-                SELECT
-                    dl.id, dl.processor_id, dl.event_id, dl.event_type, dl.event_data,
-                    dl.error_message, dl.stack_trace, dl.attempt_count, dl.failed_at, dl.global_position, dl.retry_requested,
-                    e.tenant_id, e.event_tags, e.event_metadata, e.created_at
-                FROM {_schema.Table("alberto_dead_letter_events")} dl
-                LEFT JOIN {_schema.Table("alberto_events")} e ON dl.event_id = e.event_id
-                WHERE dl.retry_requested = TRUE AND dl.processor_id = @processorId
-                ORDER BY dl.failed_at ASC
-                LIMIT @batchSize
-                FOR UPDATE OF dl SKIP LOCKED
-                """;
-        }
+        var sql = $"""
+            UPDATE {_schema.Table("alberto_dead_letter_events")}
+            SET claimed_at = NULL, claim_expires_at = NULL, claimed_by = NULL
+            WHERE id = @id
+            """;
+
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        cmd.Parameters.AddWithValue("id", id);
+
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    // Atomically:
+    //  1. picks up to @batchSize rows for the processor that are flagged for
+    //     retry AND not currently claimed (or the existing claim has expired),
+    //     using FOR UPDATE SKIP LOCKED so concurrent workers don't fight,
+    //  2. stamps them with claimed_at / claim_expires_at / claimed_by,
+    //  3. returns the claimed rows joined with the original event for tags/metadata.
+    private async Task<string> BuildClaimSqlAsync(NpgsqlConnection conn, CancellationToken ct)
+    {
+        var hasTenantId = await EventsTableHasTenantIdAsync(conn, ct);
+        var tenantSelect = hasTenantId ? "e.tenant_id" : "NULL::text AS tenant_id";
 
         return $"""
+            WITH candidates AS (
+                SELECT id
+                FROM {_schema.Table("alberto_dead_letter_events")}
+                WHERE retry_requested = TRUE
+                  AND processor_id = @processorId
+                  AND (claim_expires_at IS NULL OR claim_expires_at < now())
+                ORDER BY failed_at ASC
+                LIMIT @batchSize
+                FOR UPDATE SKIP LOCKED
+            ),
+            claimed AS (
+                UPDATE {_schema.Table("alberto_dead_letter_events")} dl
+                SET claimed_at       = now(),
+                    claim_expires_at = now() + (@leaseSeconds || ' seconds')::interval,
+                    claimed_by       = @claimedBy
+                FROM candidates c
+                WHERE dl.id = c.id
+                RETURNING dl.id, dl.processor_id, dl.event_id, dl.event_type, dl.event_data,
+                          dl.error_message, dl.stack_trace, dl.attempt_count, dl.failed_at,
+                          dl.global_position, dl.retry_requested,
+                          dl.claimed_at, dl.claim_expires_at, dl.claimed_by
+            )
             SELECT
-                dl.id, dl.processor_id, dl.event_id, dl.event_type, dl.event_data,
-                dl.error_message, dl.stack_trace, dl.attempt_count, dl.failed_at, dl.global_position, dl.retry_requested,
-                NULL::text AS tenant_id, e.event_tags, e.event_metadata, e.created_at
-            FROM {_schema.Table("alberto_dead_letter_events")} dl
-            LEFT JOIN {_schema.Table("alberto_events")} e ON dl.event_id = e.event_id
-            WHERE dl.retry_requested = TRUE AND dl.processor_id = @processorId
-            ORDER BY dl.failed_at ASC
-            LIMIT @batchSize
-            FOR UPDATE OF dl SKIP LOCKED
+                cl.id, cl.processor_id, cl.event_id, cl.event_type, cl.event_data,
+                cl.error_message, cl.stack_trace, cl.attempt_count, cl.failed_at,
+                cl.global_position, cl.retry_requested,
+                cl.claimed_at, cl.claim_expires_at, cl.claimed_by,
+                {tenantSelect}, e.event_tags, e.event_metadata, e.created_at
+            FROM claimed cl
+            LEFT JOIN {_schema.Table("alberto_events")} e ON cl.event_id = e.event_id
+            ORDER BY cl.failed_at ASC
             """;
     }
 

@@ -12,7 +12,102 @@ public sealed class PostgresDeadLetterStoreTests(SingleTenantPostgresFixture fix
     public sealed record OrderCreated(Guid OrderId) : IEvent;
 
     [Fact]
-    public async Task GetRetryRequestedWithLockAsync_ShouldWorkAgainstSingleTenantSchema()
+    public async Task ClaimRetryRequestedAsync_ShouldWorkAgainstSingleTenantSchema()
+    {
+        var (deadLetterStore, entry, tag) = await SeedRetryRequestedEntryAsync();
+
+        var retries = await deadLetterStore.ClaimRetryRequestedAsync(
+            entry.ProcessorId,
+            batchSize: 10,
+            leaseDuration: TimeSpan.FromMinutes(5),
+            claimedBy: "test-worker",
+            ct: TestContext.Current.CancellationToken);
+
+        var retry = Assert.Single(retries);
+        Assert.Null(retry.TenantId);
+        Assert.Contains(tag.Value, retry.Tags ?? []);
+        Assert.NotNull(retry.CreatedAt);
+        Assert.NotNull(retry.ClaimedAt);
+        Assert.NotNull(retry.ClaimExpiresAt);
+        Assert.Equal("test-worker", retry.ClaimedBy);
+    }
+
+    [Fact]
+    public async Task ClaimRetryRequestedAsync_ShouldNotReturnAlreadyClaimedEntry()
+    {
+        var (deadLetterStore, entry, _) = await SeedRetryRequestedEntryAsync();
+
+        var first = await deadLetterStore.ClaimRetryRequestedAsync(
+            entry.ProcessorId,
+            batchSize: 10,
+            leaseDuration: TimeSpan.FromMinutes(5),
+            claimedBy: "worker-1",
+            ct: TestContext.Current.CancellationToken);
+        Assert.Single(first);
+
+        // Second call before the lease expires should return nothing.
+        var second = await deadLetterStore.ClaimRetryRequestedAsync(
+            entry.ProcessorId,
+            batchSize: 10,
+            leaseDuration: TimeSpan.FromMinutes(5),
+            claimedBy: "worker-2",
+            ct: TestContext.Current.CancellationToken);
+        Assert.Empty(second);
+    }
+
+    [Fact]
+    public async Task ClaimRetryRequestedAsync_ShouldReclaimAfterLeaseExpires()
+    {
+        var (deadLetterStore, entry, _) = await SeedRetryRequestedEntryAsync();
+
+        // Claim with an already-expired lease (negative-ish: a 1ms lease that we sleep past).
+        var first = await deadLetterStore.ClaimRetryRequestedAsync(
+            entry.ProcessorId,
+            batchSize: 10,
+            leaseDuration: TimeSpan.FromMilliseconds(1),
+            claimedBy: "worker-1",
+            ct: TestContext.Current.CancellationToken);
+        Assert.Single(first);
+
+        await Task.Delay(50, TestContext.Current.CancellationToken);
+
+        // Lease has expired — a different worker should be able to re-claim.
+        var second = await deadLetterStore.ClaimRetryRequestedAsync(
+            entry.ProcessorId,
+            batchSize: 10,
+            leaseDuration: TimeSpan.FromMinutes(5),
+            claimedBy: "worker-2",
+            ct: TestContext.Current.CancellationToken);
+        var reclaimed = Assert.Single(second);
+        Assert.Equal("worker-2", reclaimed.ClaimedBy);
+    }
+
+    [Fact]
+    public async Task ReleaseClaimAsync_ShouldMakeEntryEligibleForReclaim()
+    {
+        var (deadLetterStore, entry, _) = await SeedRetryRequestedEntryAsync();
+
+        var first = await deadLetterStore.ClaimRetryRequestedAsync(
+            entry.ProcessorId,
+            batchSize: 10,
+            leaseDuration: TimeSpan.FromMinutes(5),
+            claimedBy: "worker-1",
+            ct: TestContext.Current.CancellationToken);
+        var claimed = Assert.Single(first);
+
+        await deadLetterStore.ReleaseClaimAsync(claimed.Id, TestContext.Current.CancellationToken);
+
+        var second = await deadLetterStore.ClaimRetryRequestedAsync(
+            entry.ProcessorId,
+            batchSize: 10,
+            leaseDuration: TimeSpan.FromMinutes(5),
+            claimedBy: "worker-2",
+            ct: TestContext.Current.CancellationToken);
+        var reclaimed = Assert.Single(second);
+        Assert.Equal("worker-2", reclaimed.ClaimedBy);
+    }
+
+    private async Task<(PostgresDeadLetterStore Store, DeadLetterEntry Entry, EventTag Tag)> SeedRetryRequestedEntryAsync()
     {
         var eventStore = new PostgresEventStore(new PostgresEventStoreBackend(fixture.DataSource));
         var deadLetterStore = new PostgresDeadLetterStore(fixture.DataSource);
@@ -26,7 +121,7 @@ public sealed class PostgresDeadLetterStoreTests(SingleTenantPostgresFixture fix
         var persisted = appended.Single();
         var entry = new DeadLetterEntry(
             Id: Guid.NewGuid(),
-            ProcessorId: "processor-1",
+            ProcessorId: $"processor-{Guid.NewGuid():N}",
             EventId: persisted.Id,
             EventType: persisted.EventType.Id,
             EventData: persisted.EventData,
@@ -39,14 +134,7 @@ public sealed class PostgresDeadLetterStoreTests(SingleTenantPostgresFixture fix
         await deadLetterStore.StoreAsync(entry, TestContext.Current.CancellationToken);
         await deadLetterStore.MarkForRetryAsync(entry.ProcessorId, TestContext.Current.CancellationToken);
 
-        var retries = await deadLetterStore.GetRetryRequestedWithLockAsync(
-            entry.ProcessorId,
-            ct: TestContext.Current.CancellationToken);
-
-        var retry = Assert.Single(retries);
-        Assert.Null(retry.TenantId);
-        Assert.Contains(tag.Value, retry.Tags ?? []);
-        Assert.NotNull(retry.CreatedAt);
+        return (deadLetterStore, entry, tag);
     }
 
     private static EventToPersist CreateEvent<TEvent>(TEvent @event, EventTag? tag = null)

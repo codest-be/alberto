@@ -23,6 +23,7 @@ public sealed class ControlLoopBuilder
     private readonly List<BatchConsumeMiddleware> _batchMiddlewares = [];
     private TimeSpan _retryLoopPollingInterval = TimeSpan.FromMinutes(1);
     private int _retryLoopBatchSize = 10;
+    private TimeSpan _retryLoopClaimLease = DeadLetterRetryLoop.DefaultClaimLeaseDuration;
     private bool _useProcessorLeases;
     private string? _replicaId;
 
@@ -51,6 +52,20 @@ public sealed class ControlLoopBuilder
     /// </summary>
     public ControlLoopBuilder WithRetryLoopBatchSize(int batchSize)
     { _retryLoopBatchSize = batchSize; return this; }
+
+    /// <summary>
+    /// Configures how long the dead letter retry loop holds a claim on an entry while dispatching.
+    /// Should be longer than the slowest expected handler (e.g. long-form audio transcription) so a
+    /// healthy worker won't lose its claim mid-dispatch, and short enough that a crashed worker's
+    /// claims become re-dispatchable within an operationally acceptable window. Default: 15 minutes.
+    /// </summary>
+    public ControlLoopBuilder WithRetryLoopClaimLease(TimeSpan leaseDuration)
+    {
+        if (leaseDuration <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(leaseDuration), "Lease duration must be positive.");
+        _retryLoopClaimLease = leaseDuration;
+        return this;
+    }
 
     /// <summary>
     /// Replaces the default error-handling policy used by the built-in
@@ -132,6 +147,7 @@ public sealed class ControlLoopBuilder
         var explicitBatchMiddlewares = _batchMiddlewares.ToArray();
         var retryLoopPollingInterval = _retryLoopPollingInterval;
         var retryLoopBatchSize = _retryLoopBatchSize;
+        var retryLoopClaimLease = _retryLoopClaimLease;
         var useProcessorLeases = _useProcessorLeases;
         var replicaId = _replicaId ?? Environment.MachineName;
 
@@ -264,7 +280,9 @@ public sealed class ControlLoopBuilder
                     retryLoopPollingInterval,
                     retryLoopBatchSize,
                     middlewares,
-                    logger))
+                    logger,
+                    retryLoopClaimLease,
+                    replicaId))
                 .ToList();
             return new DeadLetterRetryLoopGroup(retryLoops);
         });

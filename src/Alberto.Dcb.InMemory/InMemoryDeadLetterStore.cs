@@ -68,17 +68,55 @@ public sealed class InMemoryDeadLetterStore : IDeadLetterStore
     }
 
     /// <inheritdoc />
-    public Task<IReadOnlyList<DeadLetterEntry>> GetRetryRequestedWithLockAsync(
+    public Task<IReadOnlyList<DeadLetterEntry>> ClaimRetryRequestedAsync(
         string processorId,
-        int batchSize = 10,
+        int batchSize,
+        TimeSpan leaseDuration,
+        string claimedBy,
         CancellationToken ct = default)
     {
-        var entries = _entries.Values
-            .Where(e => e.ProcessorId == processorId && e.RetryRequested)
+        if (leaseDuration <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(leaseDuration), "Lease duration must be positive.");
+
+        var now = DateTimeOffset.UtcNow;
+        var lease = now + leaseDuration;
+
+        // Select-and-stamp under the dictionary's atomic per-key swap. Two
+        // concurrent claims for the same row will both see the same snapshot,
+        // so we use TryUpdate with the original entry as the comparand to
+        // make the claim CAS-style.
+        var candidates = _entries.Values
+            .Where(e => e.ProcessorId == processorId
+                        && e.RetryRequested
+                        && (e.ClaimExpiresAt is null || e.ClaimExpiresAt < now))
             .OrderBy(e => e.FailedAt)
             .Take(batchSize)
             .ToList();
 
-        return Task.FromResult<IReadOnlyList<DeadLetterEntry>>(entries);
+        var claimed = new List<DeadLetterEntry>();
+        foreach (var original in candidates)
+        {
+            var updated = original with
+            {
+                ClaimedAt = now,
+                ClaimExpiresAt = lease,
+                ClaimedBy = claimedBy,
+            };
+            if (_entries.TryUpdate(original.Id, updated, original))
+                claimed.Add(updated);
+        }
+
+        return Task.FromResult<IReadOnlyList<DeadLetterEntry>>(claimed);
+    }
+
+    /// <inheritdoc />
+    public Task ReleaseClaimAsync(Guid id, CancellationToken ct = default)
+    {
+        if (_entries.TryGetValue(id, out var existing))
+        {
+            var released = existing with { ClaimedAt = null, ClaimExpiresAt = null, ClaimedBy = null };
+            _entries.TryUpdate(id, released, existing);
+        }
+        return Task.CompletedTask;
     }
 }

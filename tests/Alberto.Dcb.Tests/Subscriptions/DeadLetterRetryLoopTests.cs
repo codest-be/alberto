@@ -62,10 +62,14 @@ public sealed class DeadLetterRetryLoopTests
 
         public Task MarkForRetryAsync(string processorId, CancellationToken ct = default) => Task.CompletedTask;
 
-        public Task<IReadOnlyList<DeadLetterEntry>> GetRetryRequestedWithLockAsync(
+        public Task<IReadOnlyList<DeadLetterEntry>> ClaimRetryRequestedAsync(
             string processorId,
-            int batchSize = 10,
+            int batchSize,
+            TimeSpan leaseDuration,
+            string claimedBy,
             CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<DeadLetterEntry>>([]);
+
+        public Task ReleaseClaimAsync(Guid id, CancellationToken ct = default) => Task.CompletedTask;
     }
 }

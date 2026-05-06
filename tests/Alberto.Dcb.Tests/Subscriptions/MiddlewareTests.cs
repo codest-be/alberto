@@ -386,14 +386,48 @@ public sealed class MiddlewareTests
             return Task.CompletedTask;
         }
 
-        public Task<IReadOnlyList<DeadLetterEntry>> GetRetryRequestedWithLockAsync(
+        public Task<IReadOnlyList<DeadLetterEntry>> ClaimRetryRequestedAsync(
             string processorId,
-            int batchSize = 10,
+            int batchSize,
+            TimeSpan leaseDuration,
+            string claimedBy,
             CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<DeadLetterEntry>>(Entries
-                .Where(e => e.ProcessorId == processorId && e.RetryRequested)
-                .Take(batchSize)
-                .ToList());
+        {
+            var now = DateTimeOffset.UtcNow;
+            var lease = now + leaseDuration;
+            var claimed = new List<DeadLetterEntry>();
+            for (var index = 0; index < Entries.Count && claimed.Count < batchSize; index++)
+            {
+                var existing = Entries[index];
+                if (existing.ProcessorId != processorId || !existing.RetryRequested)
+                    continue;
+                if (existing.ClaimExpiresAt is { } exp && exp >= now)
+                    continue;
+
+                var updated = existing with
+                {
+                    ClaimedAt = now,
+                    ClaimExpiresAt = lease,
+                    ClaimedBy = claimedBy,
+                };
+                Entries[index] = updated;
+                claimed.Add(updated);
+            }
+            return Task.FromResult<IReadOnlyList<DeadLetterEntry>>(claimed);
+        }
+
+        public Task ReleaseClaimAsync(Guid id, CancellationToken ct = default)
+        {
+            for (var index = 0; index < Entries.Count; index++)
+            {
+                if (Entries[index].Id == id)
+                {
+                    Entries[index] = Entries[index] with { ClaimedAt = null, ClaimExpiresAt = null, ClaimedBy = null };
+                    break;
+                }
+            }
+            return Task.CompletedTask;
+        }
     }
 
     #endregion

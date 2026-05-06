@@ -6,7 +6,9 @@ namespace Alberto.Dcb.Subscriptions;
 /// <summary>
 /// Runs a dedicated loop for reprocessing dead-lettered events marked for retry via CLI.
 /// Separate from the main ControlLoop to ensure fast retry turnaround (default 1 minute interval).
-/// Uses SELECT...FOR UPDATE SKIP LOCKED for distributed safety across multiple service instances.
+/// Each entry is claimed with a time-bounded lease before dispatch — if the worker dies mid-dispatch
+/// the lease expires and another worker re-claims the entry, instead of the row being deleted up-front
+/// and the event lost.
 /// </summary>
 public sealed class DeadLetterRetryLoop(
     IEventProcessor processor,
@@ -14,7 +16,9 @@ public sealed class DeadLetterRetryLoop(
     TimeSpan? pollingInterval = null,
     int batchSize = 10,
     IReadOnlyList<ConsumeMiddleware>? middlewares = null,
-    ILogger<DeadLetterRetryLoop>? logger = null) : IHostedService, IAsyncDisposable
+    ILogger<DeadLetterRetryLoop>? logger = null,
+    TimeSpan? claimLeaseDuration = null,
+    string? claimedBy = null) : IHostedService, IAsyncDisposable
 {
     private readonly IEventProcessor _processor = processor ?? throw new ArgumentNullException(nameof(processor));
     private readonly IDeadLetterStore _deadLetterStore = deadLetterStore ?? throw new ArgumentNullException(nameof(deadLetterStore));
@@ -22,8 +26,22 @@ public sealed class DeadLetterRetryLoop(
     private readonly int _batchSize = batchSize;
     private readonly IReadOnlyList<ConsumeMiddleware> _middlewares = middlewares ?? [];
     private readonly ILogger<DeadLetterRetryLoop>? _logger = logger;
+    private readonly TimeSpan _claimLeaseDuration = claimLeaseDuration is { } d && d > TimeSpan.Zero
+        ? d
+        : DefaultClaimLeaseDuration;
+    private readonly string _claimedBy = string.IsNullOrWhiteSpace(claimedBy)
+        ? $"{Environment.MachineName}:{Environment.ProcessId}"
+        : claimedBy!;
     private CancellationTokenSource? _cts;
     private Task? _loop;
+
+    /// <summary>
+    /// Default lease duration for a claimed dead-letter entry. Picked to be longer than the slowest
+    /// realistic handler (e.g. transcribing a long-form podcast) so a healthy worker won't lose its
+    /// claim mid-dispatch, but short enough that a crashed worker's claims become available again
+    /// within an operationally acceptable window.
+    /// </summary>
+    public static readonly TimeSpan DefaultClaimLeaseDuration = TimeSpan.FromMinutes(15);
 
     /// <inheritdoc />
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -31,9 +49,11 @@ public sealed class DeadLetterRetryLoop(
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _loop = RunAsync(_cts.Token);
         _logger?.LogInformation(
-            "DeadLetterRetryLoop for processor '{ProcessorId}' started (polling interval: {Interval})",
+            "DeadLetterRetryLoop for processor '{ProcessorId}' started (polling interval: {Interval}, claim lease: {Lease}, claimed by: {ClaimedBy})",
             _processor.ProcessorId,
-            _pollingInterval);
+            _pollingInterval,
+            _claimLeaseDuration,
+            _claimedBy);
         await Task.CompletedTask;
     }
 
@@ -77,24 +97,30 @@ public sealed class DeadLetterRetryLoop(
         {
             try
             {
-                // Fetch batch of retry-requested entries with distributed lock
-                var retries = await _deadLetterStore.GetRetryRequestedWithLockAsync(
+                // Atomically claim a batch with a time-bounded lease. Until the lease expires
+                // (or we explicitly delete/release the row) no other worker will pick it up.
+                var retries = await _deadLetterStore.ClaimRetryRequestedAsync(
                     _processor.ProcessorId,
                     _batchSize,
+                    _claimLeaseDuration,
+                    _claimedBy,
                     ct);
 
                 foreach (var entry in retries)
                 {
+                    var dispatchSucceeded = false;
                     try
                     {
-                        // Remove the entry BEFORE dispatch to avoid duplicates if the retry also fails
-                        await _deadLetterStore.RemoveAsync(entry.Id, ct);
-
                         // Reconstruct the event envelope from dead letter data
                         var envelope = entry.ToEnvelope();
 
-                        // Dispatch through full middleware chain (retry policy applies)
+                        // Dispatch through full middleware chain (retry policy applies). The
+                        // built-in RetryAndDeadLetter middleware swallows non-cancellation failures
+                        // and writes a fresh dead-letter row on exhaustion, so a normal return here
+                        // covers both "handler succeeded" and "handler failed but is now in a new
+                        // dead-letter row". In both cases the claimed entry is no longer needed.
                         await DispatchAsync(envelope, ct);
+                        dispatchSucceeded = true;
 
                         _logger?.LogInformation(
                             "DeadLetterRetryLoop successfully reprocessed event {EventId} for processor '{ProcessorId}'",
@@ -103,17 +129,49 @@ public sealed class DeadLetterRetryLoop(
                     }
                     catch (OperationCanceledException) when (ct.IsCancellationRequested)
                     {
+                        // Shutdown: leave the claim in place. The lease will expire and another
+                        // worker (or this one on restart) will re-claim and dispatch.
                         throw;
                     }
                     catch (Exception ex)
                     {
+                        // Custom middleware that re-throws despite RetryAndDeadLetter, or an error
+                        // outside the middleware chain. Release the claim so it becomes eligible
+                        // for re-claim immediately rather than waiting for the lease to expire.
                         _logger?.LogWarning(ex,
                             "DeadLetterRetryLoop failed to reprocess event {EventId} for processor '{ProcessorId}'. " +
-                            "Processor's retry policy will handle this failure.",
+                            "Releasing claim for retry.",
                             entry.EventId,
                             _processor.ProcessorId);
-                        // The processor's middleware chain (ConsumeMiddleware) will handle this failure
-                        // and may create a fresh dead letter entry if exhausted
+                        try
+                        {
+                            await _deadLetterStore.ReleaseClaimAsync(entry.Id, ct);
+                        }
+                        catch (Exception releaseEx)
+                        {
+                            _logger?.LogWarning(releaseEx,
+                                "DeadLetterRetryLoop failed to release claim on entry {EntryId}; lease will expire.",
+                                entry.Id);
+                        }
+                    }
+
+                    if (dispatchSucceeded)
+                    {
+                        try
+                        {
+                            await _deadLetterStore.RemoveAsync(entry.Id, ct);
+                        }
+                        catch (Exception removeEx) when (!ct.IsCancellationRequested)
+                        {
+                            // The dispatch itself succeeded; a transient delete failure isn't
+                            // catastrophic. The lease prevents anyone else from picking the row up,
+                            // and once the lease expires the row will be re-dispatched (the handler
+                            // is expected to be idempotent — it's a re-run of an already-failed event).
+                            _logger?.LogWarning(removeEx,
+                                "DeadLetterRetryLoop failed to remove entry {EntryId} after successful dispatch; " +
+                                "lease will expire and the entry will be re-dispatched (handler must be idempotent).",
+                                entry.Id);
+                        }
                     }
                 }
 
