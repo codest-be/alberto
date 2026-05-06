@@ -37,77 +37,31 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
 
             if (query.IsEmpty)
             {
-                // Return all events
-                result = _events
-                    .Where(e => e.GlobalPosition > afterPosition);
+                result = _events.Where(e => e.GlobalPosition > afterPosition);
             }
             else
             {
-                // Get positions matching types OR tag patterns
-                var matchingPositions = new HashSet<long>();
+                var typeMatches = query.Types.Count > 0
+                    ? CollectTypeMatches(query, afterPosition)
+                    : null;
 
-                foreach (var type in query.Types)
+                var tagMatches = query.TagPatterns.Count > 0
+                    ? CollectTagMatches(query, afterPosition)
+                    : null;
+
+                HashSet<long> matchingPositions;
+                if (typeMatches is not null && tagMatches is not null)
                 {
-                    if (_typeIndex.TryGetValue(type.Id, out var positions))
-                    {
-                        foreach (var pos in positions.Where(p => p > afterPosition))
-                            matchingPositions.Add(pos);
-                    }
-                }
-
-                // Handle tag patterns
-                if (query.RequiresAllTags)
-                {
-                    IEnumerable<long>? intersectedPositions = null;
-
-                    foreach (var pattern in query.TagPatterns)
-                    {
-                        if (!_tagIndex.TryGetValue(pattern.Value, out var positions))
-                        {
-                            intersectedPositions = [];
-                            break;
-                        }
-
-                        var filtered = positions.Where(p => p > afterPosition);
-                        intersectedPositions = intersectedPositions is null
-                            ? filtered.ToArray()
-                            : intersectedPositions.Intersect(filtered).ToArray();
-                    }
-
-                    if (intersectedPositions is not null)
-                    {
-                        foreach (var pos in intersectedPositions)
-                            matchingPositions.Add(pos);
-                    }
+                    matchingPositions = query.IntersectsTypesAndTags
+                        ? new HashSet<long>(typeMatches.Where(tagMatches.Contains))
+                        : Union(typeMatches, tagMatches);
                 }
                 else
                 {
-                    foreach (var pattern in query.TagPatterns)
-                    {
-                        if (pattern.IsExact)
-                        {
-                            // Exact match
-                            if (_tagIndex.TryGetValue(pattern.Value, out var positions))
-                            {
-                                foreach (var pos in positions.Where(p => p > afterPosition))
-                                    matchingPositions.Add(pos);
-                            }
-                        }
-                        else
-                        {
-                            // Wildcard match: find all tags that start with the prefix
-                            var prefix = pattern.ConceptPrefix;
-                            foreach (var kvp in _tagIndex.Where(k => k.Key.StartsWith(prefix, StringComparison.Ordinal)))
-                            {
-                                foreach (var pos in kvp.Value.Where(p => p > afterPosition))
-                                    matchingPositions.Add(pos);
-                            }
-                        }
-                    }
+                    matchingPositions = typeMatches ?? tagMatches!;
                 }
 
-                result = _events
-                    .Where(e => matchingPositions.Contains(e.GlobalPosition));
+                result = _events.Where(e => matchingPositions.Contains(e.GlobalPosition));
             }
 
             var ordered = result.OrderBy(e => e.GlobalPosition);
@@ -115,6 +69,81 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
 
             return Task.FromResult<IReadOnlyCollection<IEventEnvelope>>(limited.ToList());
         }
+    }
+
+    private HashSet<long> CollectTypeMatches(DcbQuery query, long afterPosition)
+    {
+        var matches = new HashSet<long>();
+        foreach (var type in query.Types)
+        {
+            if (_typeIndex.TryGetValue(type.Id, out var positions))
+            {
+                foreach (var pos in positions.Where(p => p > afterPosition))
+                    matches.Add(pos);
+            }
+        }
+        return matches;
+    }
+
+    private HashSet<long> CollectTagMatches(DcbQuery query, long afterPosition)
+    {
+        var matches = new HashSet<long>();
+
+        if (query.RequiresAllTags)
+        {
+            IEnumerable<long>? intersected = null;
+            foreach (var pattern in query.TagPatterns)
+            {
+                if (!_tagIndex.TryGetValue(pattern.Value, out var positions))
+                {
+                    intersected = [];
+                    break;
+                }
+
+                var filtered = positions.Where(p => p > afterPosition);
+                intersected = intersected is null
+                    ? filtered.ToArray()
+                    : intersected.Intersect(filtered).ToArray();
+            }
+
+            if (intersected is not null)
+            {
+                foreach (var pos in intersected)
+                    matches.Add(pos);
+            }
+
+            return matches;
+        }
+
+        foreach (var pattern in query.TagPatterns)
+        {
+            if (pattern.IsExact)
+            {
+                if (_tagIndex.TryGetValue(pattern.Value, out var positions))
+                {
+                    foreach (var pos in positions.Where(p => p > afterPosition))
+                        matches.Add(pos);
+                }
+            }
+            else
+            {
+                var prefix = pattern.ConceptPrefix;
+                foreach (var kvp in _tagIndex.Where(k => k.Key.StartsWith(prefix, StringComparison.Ordinal)))
+                {
+                    foreach (var pos in kvp.Value.Where(p => p > afterPosition))
+                        matches.Add(pos);
+                }
+            }
+        }
+
+        return matches;
+    }
+
+    private static HashSet<long> Union(HashSet<long> a, HashSet<long> b)
+    {
+        var result = new HashSet<long>(a);
+        result.UnionWith(b);
+        return result;
     }
 
     public Task<IReadOnlyCollection<IEventEnvelope>> StreamAll(
@@ -235,81 +264,37 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
     /// </summary>
     private long? FindConflictPosition(DcbQuery query, long expectedPosition)
     {
-        long? conflictPos = null;
+        if (query.IsEmpty)
+            return null;
 
-        // Check types (OR: any type match is a conflict)
-        foreach (var type in query.Types)
+        var typeMatches = query.Types.Count > 0
+            ? CollectTypeMatches(query, expectedPosition)
+            : null;
+
+        var tagMatches = query.TagPatterns.Count > 0
+            ? CollectTagMatches(query, expectedPosition)
+            : null;
+
+        IEnumerable<long> matches;
+        if (typeMatches is not null && tagMatches is not null)
         {
-            if (_typeIndex.TryGetValue(type.Id, out var positions))
-            {
-                var conflict = positions.FirstOrDefault(p => p > expectedPosition);
-                if (conflict > 0 && (conflictPos is null || conflict < conflictPos))
-                {
-                    conflictPos = conflict;
-                }
-            }
-        }
-
-        if (query.RequiresAllTags)
-        {
-            IEnumerable<long>? intersectedPositions = null;
-
-            foreach (var pattern in query.TagPatterns)
-            {
-                if (_tagIndex.TryGetValue(pattern.Value, out var positions))
-                {
-                    var filtered = positions.Where(p => p > expectedPosition);
-                    intersectedPositions = intersectedPositions is null
-                        ? filtered.ToArray()
-                        : intersectedPositions.Intersect(filtered).ToArray();
-                }
-                else
-                {
-                    intersectedPositions = [];
-                    break;
-                }
-            }
-
-            var conflict = intersectedPositions?.DefaultIfEmpty(0).Min() ?? 0;
-            if (conflict > 0 && (conflictPos is null || conflict < conflictPos))
-            {
-                conflictPos = conflict;
-            }
+            matches = query.IntersectsTypesAndTags
+                ? typeMatches.Where(tagMatches.Contains)
+                : typeMatches.Concat(tagMatches);
         }
         else
         {
-            // Check tag patterns (OR: any pattern match is a conflict)
-            foreach (var pattern in query.TagPatterns)
-            {
-                if (pattern.IsExact)
-                {
-                    // Exact tag match
-                    if (_tagIndex.TryGetValue(pattern.Value, out var positions))
-                    {
-                        var conflict = positions.FirstOrDefault(p => p > expectedPosition);
-                        if (conflict > 0 && (conflictPos is null || conflict < conflictPos))
-                        {
-                            conflictPos = conflict;
-                        }
-                    }
-                }
-                else
-                {
-                    // Wildcard pattern: check all tags with matching prefix
-                    var prefix = pattern.ConceptPrefix;
-                    foreach (var kvp in _tagIndex.Where(k => k.Key.StartsWith(prefix, StringComparison.Ordinal)))
-                    {
-                        var conflict = kvp.Value.FirstOrDefault(p => p > expectedPosition);
-                        if (conflict > 0 && (conflictPos is null || conflict < conflictPos))
-                        {
-                            conflictPos = conflict;
-                        }
-                    }
-                }
-            }
+            matches = (IEnumerable<long>?)typeMatches ?? tagMatches!;
         }
 
-        return conflictPos;
+        long? conflict = null;
+        foreach (var pos in matches)
+        {
+            if (conflict is null || pos < conflict)
+                conflict = pos;
+        }
+
+        return conflict;
     }
 
     /// <summary>

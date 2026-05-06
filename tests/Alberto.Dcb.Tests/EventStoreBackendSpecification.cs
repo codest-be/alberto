@@ -126,7 +126,7 @@ public abstract class EventStoreBackendSpecification
         Assert.All(result, e => Assert.Equal($"order-placed-{TestId}", e.EventType.Id));    }
 
     [Fact]
-    public async Task Stream_ByTypesOrTags_ShouldReturnUnion()
+    public async Task Stream_ByTypesOrTags_AsUnion_ShouldReturnUnion()
     {
         var backend = await CreateBackend();
         await backend.Append([
@@ -137,11 +137,34 @@ public abstract class EventStoreBackendSpecification
 
         var query = DcbQuery.Empty
             .WithTypes($"order-placed-{TestId}")
-            .WithTags(new EventTag("order", $"2{TestId}"));
+            .WithTags(new EventTag("order", $"2{TestId}"))
+            .AsUnion();
 
         var result = await backend.Stream(query, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(2, result.Count);    }
+
+    [Fact]
+    public async Task Stream_ByTypesAndTags_DefaultsToIntersect()
+    {
+        var backend = await CreateBackend();
+        await backend.Append([
+            CreateEvent($"order-placed-{TestId}", $"order:1{TestId}"),      // matches type only
+            CreateEvent($"order-placed-{TestId}", $"order:2{TestId}"),      // matches both
+            CreateEvent($"order-confirmed-{TestId}", $"order:2{TestId}"),   // matches tag only
+            CreateEvent($"customer-updated-{TestId}", $"customer:3{TestId}") // matches neither
+        ], cancellationToken: TestContext.Current.CancellationToken);
+
+        var query = DcbQuery.Empty
+            .WithTypes($"order-placed-{TestId}")
+            .WithTags(new EventTag("order", $"2{TestId}"));
+
+        var result = await backend.Stream(query, cancellationToken: TestContext.Current.CancellationToken);
+
+        var matched = Assert.Single(result);
+        Assert.Equal($"order-placed-{TestId}", matched.EventType.Id);
+        Assert.Contains(matched.Tags, t => t.Value == $"order:2{TestId}");
+    }
 
     [Fact]
     public async Task Stream_ByAllTags_ShouldRequireAllTagsToMatch()
@@ -288,7 +311,7 @@ public abstract class EventStoreBackendSpecification
     }
 
     [Fact]
-    public async Task Stream_ByTypesAndWildcardTags_ShouldReturnUnion()
+    public async Task Stream_ByTypesAndWildcardTags_AsUnion_ShouldReturnUnion()
     {
         var backend = await CreateBackend();
         await backend.Append([
@@ -300,11 +323,106 @@ public abstract class EventStoreBackendSpecification
 
         var query = DcbQuery.Empty
             .WithTypes($"customer-created-{TestId}")
-            .WithTagPatterns($"ord{TestId}:*");
+            .WithTagPatterns($"ord{TestId}:*")
+            .AsUnion();
 
         var result = await backend.Stream(query, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(3, result.Count);
+    }
+
+    [Fact]
+    public async Task Stream_ByTypesAndWildcardTags_DefaultsToIntersect()
+    {
+        var backend = await CreateBackend();
+        await backend.Append([
+            CreateEvent($"order-placed-{TestId}", $"ord{TestId}:123"),         // matches type AND tag prefix
+            CreateEvent($"order-confirmed-{TestId}", $"ord{TestId}:456"),      // matches tag prefix only
+            CreateEvent($"order-placed-{TestId}", $"prod{TestId}:111"),        // matches type only
+            CreateEvent($"customer-created-{TestId}", $"cust{TestId}:789")     // matches neither
+        ], cancellationToken: TestContext.Current.CancellationToken);
+
+        var query = DcbQuery.Empty
+            .WithTypes($"order-placed-{TestId}")
+            .WithTagPatterns($"ord{TestId}:*");
+
+        var result = await backend.Stream(query, cancellationToken: TestContext.Current.CancellationToken);
+
+        var matched = Assert.Single(result);
+        Assert.Equal($"order-placed-{TestId}", matched.EventType.Id);
+        Assert.Contains(matched.Tags, t => t.Value == $"ord{TestId}:123");
+    }
+
+    [Fact]
+    public async Task Append_WithDcbCheck_TypesAndTags_DefaultsToIntersect_NoConflict()
+    {
+        var backend = await CreateBackend();
+        var initial = await backend.Append(
+            [CreateEvent($"order-placed-{TestId}", $"order:{TestId}")],
+            cancellationToken: TestContext.Current.CancellationToken);
+        var lastPosition = initial.Last().GlobalPosition;
+
+        // Tag matches but type does not — under Intersect this is NOT a conflict.
+        await backend.Append(
+            [CreateEvent($"customer-updated-{TestId}", $"order:{TestId}")],
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        var dcbQuery = DcbQuery.ByTags($"order:{TestId}").WithTypes($"order-placed-{TestId}");
+        var result = await backend.Append(
+            [CreateEvent($"order-placed-{TestId}", $"order:{TestId}")],
+            dcbQuery,
+            lastPosition,
+            TestContext.Current.CancellationToken);
+
+        Assert.Single(result);
+    }
+
+    [Fact]
+    public async Task Append_WithDcbCheck_TypesAndTags_DefaultsToIntersect_WithConflict()
+    {
+        var backend = await CreateBackend();
+        var initial = await backend.Append(
+            [CreateEvent($"order-placed-{TestId}", $"order:{TestId}")],
+            cancellationToken: TestContext.Current.CancellationToken);
+        var lastPosition = initial.Last().GlobalPosition;
+
+        // Same type AND same tag — this should conflict under Intersect.
+        await backend.Append(
+            [CreateEvent($"order-placed-{TestId}", $"order:{TestId}")],
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        var dcbQuery = DcbQuery.ByTags($"order:{TestId}").WithTypes($"order-placed-{TestId}");
+
+        await Assert.ThrowsAsync<DcbConflictException>(() =>
+            backend.Append(
+                [CreateEvent($"order-placed-{TestId}", $"order:{TestId}")],
+                dcbQuery,
+                lastPosition,
+                TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task Append_WithDcbCheck_TypesAndTags_AsUnion_StillTreatsTagOnlyMatchAsConflict()
+    {
+        var backend = await CreateBackend();
+        var initial = await backend.Append(
+            [CreateEvent($"order-placed-{TestId}", $"order:{TestId}")],
+            cancellationToken: TestContext.Current.CancellationToken);
+        var lastPosition = initial.Last().GlobalPosition;
+
+        // Tag-only match — under Union semantics this conflicts with the boundary.
+        await backend.Append(
+            [CreateEvent($"customer-updated-{TestId}", $"order:{TestId}")],
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        var dcbQuery = DcbQuery.ByTags($"order:{TestId}").WithTypes($"order-placed-{TestId}").AsUnion();
+
+        await Assert.ThrowsAsync<DcbConflictException>(() =>
+            backend.Append(
+                [CreateEvent($"order-placed-{TestId}", $"order:{TestId}")],
+                dcbQuery,
+                lastPosition,
+                TestContext.Current.CancellationToken));
     }
 
     [Fact]

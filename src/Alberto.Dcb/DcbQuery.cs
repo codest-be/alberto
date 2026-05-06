@@ -7,12 +7,41 @@ public enum TagMatchMode
 }
 
 /// <summary>
+/// Controls how the type axis and the tag axis combine when both are specified
+/// in a <see cref="DcbQuery"/>.
+/// </summary>
+public enum CompositionMode
+{
+    /// <summary>
+    /// Default. When both types and tags are specified, an event must match BOTH a type
+    /// and a tag pattern to be included. This is the natural reading for state-folding and
+    /// for DCB consistency boundaries scoped to a particular aggregate ("events of these
+    /// types <i>for this entity</i>").
+    /// </summary>
+    Intersect,
+
+    /// <summary>
+    /// Legacy / heterogeneous mode. When both types and tags are specified, an event matches
+    /// if it has any of the types OR any of the tag patterns. Useful only when intentionally
+    /// widening a boundary to include unrelated events (e.g. "any of these global types,
+    /// regardless of tag, plus any event for this aggregate"). Opt in explicitly via
+    /// <see cref="DcbQuery.AsUnion"/>.
+    /// </summary>
+    Union,
+}
+
+/// <summary>
 /// Represents a query to filter events by event types and/or tag patterns.
 /// Used for both reading events and defining DCB consistency boundaries.
 ///
-/// By default, the query uses OR logic: matches events that have ANY of the specified types
-/// OR ANY of the specified tag patterns. Exact-tag queries can also be created in
-/// "match all tags" mode via <see cref="ByAllTags(EventTag[])"/>.
+/// Composition rules:
+/// <list type="bullet">
+/// <item>Multiple types are always OR'd: an event matches if it has ANY of the listed types.</item>
+/// <item>Multiple tag patterns OR by default; <see cref="ByAllTags(EventTag[])"/> requires ALL.</item>
+/// <item>When both types and tags are specified, the default is <see cref="CompositionMode.Intersect"/>:
+///       an event must match the type axis AND the tag axis. Use <see cref="AsUnion"/> for the
+///       legacy OR-across-axes behavior.</item>
+/// </list>
 /// </summary>
 /// <example>
 /// <code>
@@ -26,10 +55,11 @@ public enum TagMatchMode
 /// var query = DcbQuery.ByTagPatterns(TagPattern.Prefix("order"));
 /// var query = DcbQuery.ByTagPatterns("order:*");
 ///
-/// // Query by both (OR logic)
-/// var query = DcbQuery.Empty
-///     .WithTypes("order-placed")
-///     .WithTags(new EventTag("customer", customerId));
+/// // Narrow: events of these types AND tagged with this order (Intersect, the default)
+/// var query = DcbQuery.For("order", orderId).WithType&lt;OrderPlaced&gt;();
+///
+/// // Widen: events of these types OR tagged with this order (Union, opt-in)
+/// var query = DcbQuery.For("order", orderId).WithType&lt;OrderPlaced&gt;().AsUnion();
 /// </code>
 /// </example>
 public sealed class DcbQuery
@@ -37,7 +67,7 @@ public sealed class DcbQuery
     /// <summary>
     /// An empty query that matches all events.
     /// </summary>
-    public static DcbQuery Empty { get; } = new([], [], TagMatchMode.Any);
+    public static DcbQuery Empty { get; } = new([], [], TagMatchMode.Any, CompositionMode.Intersect);
 
     /// <summary>
     /// Event types to filter by. Events matching ANY of these types are included.
@@ -55,6 +85,12 @@ public sealed class DcbQuery
     /// Wildcard tag patterns are only supported in <see cref="TagMatchMode.Any"/>.
     /// </summary>
     public TagMatchMode TagMatchMode { get; }
+
+    /// <summary>
+    /// Controls how the type axis combines with the tag axis when both are specified.
+    /// Defaults to <see cref="CompositionMode.Intersect"/> (AND).
+    /// </summary>
+    public CompositionMode CompositionMode { get; }
 
     /// <summary>
     /// Gets exact tag matches only (excludes wildcard patterns).
@@ -102,7 +138,24 @@ public sealed class DcbQuery
     /// </summary>
     public bool HasTypesAndTags => Types.Count > 0 && TagPatterns.Count > 0;
 
-    private DcbQuery(IReadOnlyCollection<EventType> types, IReadOnlyCollection<TagPattern> tagPatterns, TagMatchMode tagMatchMode)
+    /// <summary>
+    /// Returns true when both axes are present and are combined with AND semantics
+    /// (the default). Backends route to intersection-aware functions when this is true.
+    /// </summary>
+    public bool IntersectsTypesAndTags =>
+        HasTypesAndTags && CompositionMode == CompositionMode.Intersect;
+
+    /// <summary>
+    /// Returns true when both axes are present and are combined with OR semantics.
+    /// </summary>
+    public bool UnionsTypesAndTags =>
+        HasTypesAndTags && CompositionMode == CompositionMode.Union;
+
+    private DcbQuery(
+        IReadOnlyCollection<EventType> types,
+        IReadOnlyCollection<TagPattern> tagPatterns,
+        TagMatchMode tagMatchMode,
+        CompositionMode compositionMode)
     {
         if (tagMatchMode == TagMatchMode.All && tagPatterns.Any(p => p.IsWildcard))
             throw new ArgumentException("Wildcard tag patterns are not supported when all tags must match.", nameof(tagPatterns));
@@ -110,62 +163,63 @@ public sealed class DcbQuery
         Types = types;
         TagPatterns = tagPatterns;
         TagMatchMode = tagMatchMode;
+        CompositionMode = compositionMode;
     }
 
     /// <summary>
     /// Creates a query that filters by event types.
     /// </summary>
     public static DcbQuery ByTypes(params EventType[] types)
-        => new(types, [], TagMatchMode.Any);
+        => new(types, [], TagMatchMode.Any, CompositionMode.Intersect);
 
     /// <summary>
     /// Creates a query that filters by event types (string overload).
     /// </summary>
     public static DcbQuery ByTypes(params string[] typeIds)
-        => new(typeIds.Select(id => new EventType(id)).ToArray(), [], TagMatchMode.Any);
+        => new(typeIds.Select(id => new EventType(id)).ToArray(), [], TagMatchMode.Any, CompositionMode.Intersect);
 
     /// <summary>
     /// Creates a query that filters by event types from CLR types.
     /// </summary>
     public static DcbQuery ByTypes(params Type[] eventTypes)
-        => new(eventTypes.Select(EventType.FromType).ToArray(), [], TagMatchMode.Any);
+        => new(eventTypes.Select(EventType.FromType).ToArray(), [], TagMatchMode.Any, CompositionMode.Intersect);
 
     /// <summary>
     /// Creates a query that filters by exact tags.
     /// </summary>
     public static DcbQuery ByTags(params EventTag[] tags)
-        => new([], tags.Select(TagPattern.Exact).ToArray(), TagMatchMode.Any);
+        => new([], tags.Select(TagPattern.Exact).ToArray(), TagMatchMode.Any, CompositionMode.Intersect);
 
     /// <summary>
     /// Creates a query that filters by exact tags (string overload).
     /// </summary>
     public static DcbQuery ByTags(params string[] tags)
-        => new([], tags.Select(t => TagPattern.Exact(EventTag.Parse(t))).ToArray(), TagMatchMode.Any);
+        => new([], tags.Select(t => TagPattern.Exact(EventTag.Parse(t))).ToArray(), TagMatchMode.Any, CompositionMode.Intersect);
 
     /// <summary>
     /// Creates a query that requires events to match all specified exact tags.
     /// </summary>
     public static DcbQuery ByAllTags(params EventTag[] tags)
-        => new([], tags.Select(TagPattern.Exact).ToArray(), TagMatchMode.All);
+        => new([], tags.Select(TagPattern.Exact).ToArray(), TagMatchMode.All, CompositionMode.Intersect);
 
     /// <summary>
     /// Creates a query that requires events to match all specified exact tags (string overload).
     /// </summary>
     public static DcbQuery ByAllTags(params string[] tags)
-        => new([], tags.Select(t => TagPattern.Exact(EventTag.Parse(t))).ToArray(), TagMatchMode.All);
+        => new([], tags.Select(t => TagPattern.Exact(EventTag.Parse(t))).ToArray(), TagMatchMode.All, CompositionMode.Intersect);
 
     /// <summary>
     /// Creates a query that filters by tag patterns (supports wildcards).
     /// </summary>
     public static DcbQuery ByTagPatterns(params TagPattern[] patterns)
-        => new([], patterns, TagMatchMode.Any);
+        => new([], patterns, TagMatchMode.Any, CompositionMode.Intersect);
 
     /// <summary>
     /// Creates a query that filters by tag patterns (string overload, supports wildcards).
     /// Use "concept:id" for exact match or "concept:*" for wildcard.
     /// </summary>
     public static DcbQuery ByTagPatterns(params string[] patterns)
-        => new([], patterns.Select(TagPattern.Parse).ToArray(), TagMatchMode.Any);
+        => new([], patterns.Select(TagPattern.Parse).ToArray(), TagMatchMode.Any, CompositionMode.Intersect);
 
     /// <summary>
     /// Creates a query for a single concept:id tag — the most common pattern.
@@ -208,7 +262,7 @@ public sealed class DcbQuery
     /// Returns a new query with additional event types.
     /// </summary>
     public DcbQuery WithTypes(params EventType[] types)
-        => new([..Types, ..types], TagPatterns, TagMatchMode);
+        => new([..Types, ..types], TagPatterns, TagMatchMode, CompositionMode);
 
     /// <summary>
     /// Returns a new query with additional event types (string overload).
@@ -226,7 +280,7 @@ public sealed class DcbQuery
     /// Returns a new query with additional exact tag matches.
     /// </summary>
     public DcbQuery WithTags(params EventTag[] tags)
-        => new(Types, [..TagPatterns, ..tags.Select(TagPattern.Exact)], TagMatchMode);
+        => new(Types, [..TagPatterns, ..tags.Select(TagPattern.Exact)], TagMatchMode, CompositionMode);
 
     /// <summary>
     /// Returns a new query with additional exact tag matches (string overload).
@@ -244,7 +298,7 @@ public sealed class DcbQuery
     /// Returns a new query with additional tag patterns (supports wildcards).
     /// </summary>
     public DcbQuery WithTagPatterns(params TagPattern[] patterns)
-        => new(Types, [..TagPatterns, ..patterns], TagMatchMode);
+        => new(Types, [..TagPatterns, ..patterns], TagMatchMode, CompositionMode);
 
     /// <summary>
     /// Returns a new query with additional tag patterns (string overload, supports wildcards).
@@ -258,6 +312,25 @@ public sealed class DcbQuery
     /// </summary>
     public DcbQuery WithTagPrefix(string concept)
         => WithTagPatterns(TagPattern.Prefix(concept));
+
+    /// <summary>
+    /// Returns a new query whose type axis and tag axis combine with OR semantics
+    /// (the legacy behavior). Use only when intentionally widening the boundary to
+    /// include unrelated events.
+    /// </summary>
+    public DcbQuery AsUnion() =>
+        CompositionMode == CompositionMode.Union
+            ? this
+            : new DcbQuery(Types, TagPatterns, TagMatchMode, CompositionMode.Union);
+
+    /// <summary>
+    /// Returns a new query whose type axis and tag axis combine with AND semantics
+    /// (the default). Useful for explicitly converting back from <see cref="AsUnion"/>.
+    /// </summary>
+    public DcbQuery AsIntersect() =>
+        CompositionMode == CompositionMode.Intersect
+            ? this
+            : new DcbQuery(Types, TagPatterns, TagMatchMode, CompositionMode.Intersect);
 
     /// <summary>
     /// Returns a string representation of the query for debugging and logging.
@@ -281,6 +354,7 @@ public sealed class DcbQuery
             parts.Add(RequiresAllTags ? $"tags(all)=[{patternValues}]" : $"tags=[{patternValues}]");
         }
 
-        return string.Join(" OR ", parts);
+        var separator = HasTypesAndTags && CompositionMode == CompositionMode.Intersect ? " AND " : " OR ";
+        return string.Join(separator, parts);
     }
 }

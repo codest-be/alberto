@@ -99,7 +99,12 @@ public sealed class PostgresEventStoreBackend(
     {
         var useWildcardFunction = dcbQuery?.HasWildcardPatterns == true;
         var useAllTagsFunction = dcbQuery?.RequiresAllTags == true;
-        var functionName = useAllTagsFunction ? "alberto_append_events_v3" : useWildcardFunction ? "alberto_append_events_v2" : "alberto_append_events";
+        var useIntersect = dcbQuery?.IntersectsTypesAndTags == true;
+        // v4: intersect with exact tags. v5: intersect with wildcards. v6: intersect with all-tags.
+        // v3: union with all-tags. v2: union with wildcards. v1: union with exact tags.
+        var functionName = useIntersect
+            ? (useAllTagsFunction ? "alberto_append_events_v6" : useWildcardFunction ? "alberto_append_events_v5" : "alberto_append_events_v4")
+            : (useAllTagsFunction ? "alberto_append_events_v3" : useWildcardFunction ? "alberto_append_events_v2" : "alberto_append_events");
         var sql = useAllTagsFunction
             ? $"SELECT * FROM {_schema.Function(functionName)}(@p_events, @p_dcb_types, @p_dcb_all_tags, @p_expected_position)"
             : useWildcardFunction
@@ -224,6 +229,11 @@ public sealed class PostgresEventStoreBackend(
                 return $"SELECT * FROM {_schema.Function("alberto_read_by_all_tags")}(@p_tags, @p_after_position, @p_limit)";
             }
 
+            if (query.IntersectsTypesAndTags)
+            {
+                return $"SELECT * FROM {_schema.Function("alberto_read_by_types_and_all_tags")}(@p_types, @p_tags, @p_after_position, @p_limit)";
+            }
+
             return $"SELECT * FROM {_schema.Function("alberto_read_by_types_or_all_tags")}(@p_types, @p_tags, @p_after_position, @p_limit)";
         }
 
@@ -234,12 +244,22 @@ public sealed class PostgresEventStoreBackend(
                 return $"SELECT * FROM {_schema.Function("alberto_read_by_tag_patterns")}(@p_exact_tags, @p_tag_prefixes, @p_after_position, @p_limit)";
             }
 
+            if (query.IntersectsTypesAndTags)
+            {
+                return $"SELECT * FROM {_schema.Function("alberto_read_by_types_and_tag_patterns")}(@p_types, @p_exact_tags, @p_tag_prefixes, @p_after_position, @p_limit)";
+            }
+
             return $"SELECT * FROM {_schema.Function("alberto_read_by_types_or_tag_patterns")}(@p_types, @p_exact_tags, @p_tag_prefixes, @p_after_position, @p_limit)";
         }
 
         if (query.HasTagsOnly)
         {
             return $"SELECT * FROM {_schema.Function("alberto_read_by_tags")}(@p_tags, @p_after_position, @p_limit)";
+        }
+
+        if (query.IntersectsTypesAndTags)
+        {
+            return $"SELECT * FROM {_schema.Function("alberto_read_by_types_and_tags")}(@p_types, @p_tags, @p_after_position, @p_limit)";
         }
 
         return $"SELECT * FROM {_schema.Function("alberto_read_by_types_or_tags")}(@p_types, @p_tags, @p_after_position, @p_limit)";

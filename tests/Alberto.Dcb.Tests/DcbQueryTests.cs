@@ -368,7 +368,7 @@ public class DcbQueryTests
     }
 
     [Fact]
-    public void ToString_TypesAndTags_ShouldShowBothWithOr()
+    public void ToString_TypesAndTags_ShouldShowBothWithAndByDefault()
     {
         var query = DcbQuery.Empty
             .WithTypes("order-placed")
@@ -378,7 +378,83 @@ public class DcbQueryTests
 
         Assert.Contains("types=", result);
         Assert.Contains("tags=", result);
+        Assert.Contains("AND", result);
+    }
+
+    [Fact]
+    public void ToString_TypesAndTags_AsUnion_ShouldShowOr()
+    {
+        var query = DcbQuery.Empty
+            .WithTypes("order-placed")
+            .WithTags("customer:123")
+            .AsUnion();
+
+        var result = query.ToString();
+
+        Assert.Contains("types=", result);
+        Assert.Contains("tags=", result);
         Assert.Contains("OR", result);
+    }
+
+    #endregion
+
+    #region CompositionMode Tests
+
+    [Fact]
+    public void Default_CompositionMode_ShouldBeIntersect()
+    {
+        var query = DcbQuery.Empty
+            .WithTypes("order-placed")
+            .WithTags("customer:123");
+
+        Assert.Equal(CompositionMode.Intersect, query.CompositionMode);
+        Assert.True(query.IntersectsTypesAndTags);
+        Assert.False(query.UnionsTypesAndTags);
+    }
+
+    [Fact]
+    public void AsUnion_ShouldFlipToUnion()
+    {
+        var query = DcbQuery.Empty
+            .WithTypes("order-placed")
+            .WithTags("customer:123")
+            .AsUnion();
+
+        Assert.Equal(CompositionMode.Union, query.CompositionMode);
+        Assert.False(query.IntersectsTypesAndTags);
+        Assert.True(query.UnionsTypesAndTags);
+    }
+
+    [Fact]
+    public void AsIntersect_ShouldFlipBackToIntersect()
+    {
+        var query = DcbQuery.Empty
+            .WithTypes("order-placed")
+            .WithTags("customer:123")
+            .AsUnion()
+            .AsIntersect();
+
+        Assert.Equal(CompositionMode.Intersect, query.CompositionMode);
+    }
+
+    [Fact]
+    public void IntersectsTypesAndTags_RequiresBothAxes()
+    {
+        Assert.False(DcbQuery.ByTypes("order-placed").IntersectsTypesAndTags);
+        Assert.False(DcbQuery.ByTags("order:123").IntersectsTypesAndTags);
+    }
+
+    [Fact]
+    public void AsUnion_ShouldPreserveTypesTagsAndMatchMode()
+    {
+        var query = DcbQuery.ByAllTags("reader:1", "source:2")
+            .WithTypes("source-followed")
+            .AsUnion();
+
+        Assert.Equal(2, query.TagPatterns.Count);
+        Assert.Single(query.Types);
+        Assert.Equal(TagMatchMode.All, query.TagMatchMode);
+        Assert.Equal(CompositionMode.Union, query.CompositionMode);
     }
 
     #endregion
