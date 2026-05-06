@@ -61,9 +61,11 @@ public interface IDeadLetterStore
         CancellationToken ct = default);
 
     /// <summary>
-    /// Releases an active claim on a dead letter entry without deleting it, making it eligible for
-    /// immediate re-claim. Used when a worker fails to make progress and wants to hand the entry back.
-    /// No-op if the entry is gone or no longer claimed.
+    /// Abandons a retry attempt: clears <c>retry_requested</c> and the claim columns so the entry
+    /// stays in the dead letter table but is no longer scheduled for automatic retry. Used when a
+    /// dispatch throws — the handler is still failing, so re-running it on the next poll would just
+    /// busy-loop. The entry must be explicitly re-marked via <see cref="MarkForRetryAsync"/> to
+    /// retry again. Worker crashes are handled by lease expiry, not this method.
     /// </summary>
-    Task ReleaseClaimAsync(Guid id, CancellationToken ct = default);
+    Task AbandonRetryAsync(Guid id, CancellationToken ct = default);
 }

@@ -136,21 +136,24 @@ public sealed class DeadLetterRetryLoop(
                     catch (Exception ex)
                     {
                         // Custom middleware that re-throws despite RetryAndDeadLetter, or an error
-                        // outside the middleware chain. Release the claim so it becomes eligible
-                        // for re-claim immediately rather than waiting for the lease to expire.
+                        // outside the middleware chain. The handler is still failing, so retrying on
+                        // the next poll would just busy-loop. Abandon the retry: clear retry_requested
+                        // and the claim columns. The row stays in the dead letter table for inspection
+                        // and must be explicitly re-marked via MarkForRetryAsync to be tried again.
                         _logger?.LogWarning(ex,
                             "DeadLetterRetryLoop failed to reprocess event {EventId} for processor '{ProcessorId}'. " +
-                            "Releasing claim for retry.",
+                            "Abandoning retry; entry must be re-marked manually to retry again.",
                             entry.EventId,
                             _processor.ProcessorId);
                         try
                         {
-                            await _deadLetterStore.ReleaseClaimAsync(entry.Id, ct);
+                            await _deadLetterStore.AbandonRetryAsync(entry.Id, ct);
                         }
-                        catch (Exception releaseEx)
+                        catch (Exception abandonEx)
                         {
-                            _logger?.LogWarning(releaseEx,
-                                "DeadLetterRetryLoop failed to release claim on entry {EntryId}; lease will expire.",
+                            _logger?.LogWarning(abandonEx,
+                                "DeadLetterRetryLoop failed to abandon retry on entry {EntryId}; " +
+                                "lease will expire and entry may be re-dispatched.",
                                 entry.Id);
                         }
                     }

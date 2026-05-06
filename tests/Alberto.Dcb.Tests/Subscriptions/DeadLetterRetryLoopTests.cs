@@ -70,6 +70,6 @@ public sealed class DeadLetterRetryLoopTests
             CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<DeadLetterEntry>>([]);
 
-        public Task ReleaseClaimAsync(Guid id, CancellationToken ct = default) => Task.CompletedTask;
+        public Task AbandonRetryAsync(Guid id, CancellationToken ct = default) => Task.CompletedTask;
     }
 }

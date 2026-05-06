@@ -83,7 +83,7 @@ public sealed class PostgresDeadLetterStoreTests(SingleTenantPostgresFixture fix
     }
 
     [Fact]
-    public async Task ReleaseClaimAsync_ShouldMakeEntryEligibleForReclaim()
+    public async Task AbandonRetryAsync_ShouldPreventReclaimUntilReMarked()
     {
         var (deadLetterStore, entry, _) = await SeedRetryRequestedEntryAsync();
 
@@ -95,15 +95,26 @@ public sealed class PostgresDeadLetterStoreTests(SingleTenantPostgresFixture fix
             ct: TestContext.Current.CancellationToken);
         var claimed = Assert.Single(first);
 
-        await deadLetterStore.ReleaseClaimAsync(claimed.Id, TestContext.Current.CancellationToken);
+        await deadLetterStore.AbandonRetryAsync(claimed.Id, TestContext.Current.CancellationToken);
 
+        // Abandoning clears retry_requested, so the row is no longer eligible.
         var second = await deadLetterStore.ClaimRetryRequestedAsync(
             entry.ProcessorId,
             batchSize: 10,
             leaseDuration: TimeSpan.FromMinutes(5),
             claimedBy: "worker-2",
             ct: TestContext.Current.CancellationToken);
-        var reclaimed = Assert.Single(second);
+        Assert.Empty(second);
+
+        // Re-marking puts it back in the retry pool.
+        await deadLetterStore.MarkForRetryAsync(entry.ProcessorId, TestContext.Current.CancellationToken);
+        var third = await deadLetterStore.ClaimRetryRequestedAsync(
+            entry.ProcessorId,
+            batchSize: 10,
+            leaseDuration: TimeSpan.FromMinutes(5),
+            claimedBy: "worker-2",
+            ct: TestContext.Current.CancellationToken);
+        var reclaimed = Assert.Single(third);
         Assert.Equal("worker-2", reclaimed.ClaimedBy);
     }
 

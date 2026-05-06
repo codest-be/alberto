@@ -416,13 +416,19 @@ public sealed class MiddlewareTests
             return Task.FromResult<IReadOnlyList<DeadLetterEntry>>(claimed);
         }
 
-        public Task ReleaseClaimAsync(Guid id, CancellationToken ct = default)
+        public Task AbandonRetryAsync(Guid id, CancellationToken ct = default)
         {
             for (var index = 0; index < Entries.Count; index++)
             {
                 if (Entries[index].Id == id)
                 {
-                    Entries[index] = Entries[index] with { ClaimedAt = null, ClaimExpiresAt = null, ClaimedBy = null };
+                    Entries[index] = Entries[index] with
+                    {
+                        RetryRequested = false,
+                        ClaimedAt = null,
+                        ClaimExpiresAt = null,
+                        ClaimedBy = null,
+                    };
                     break;
                 }
             }

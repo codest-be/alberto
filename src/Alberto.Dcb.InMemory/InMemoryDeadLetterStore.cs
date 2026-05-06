@@ -110,12 +110,18 @@ public sealed class InMemoryDeadLetterStore : IDeadLetterStore
     }
 
     /// <inheritdoc />
-    public Task ReleaseClaimAsync(Guid id, CancellationToken ct = default)
+    public Task AbandonRetryAsync(Guid id, CancellationToken ct = default)
     {
         if (_entries.TryGetValue(id, out var existing))
         {
-            var released = existing with { ClaimedAt = null, ClaimExpiresAt = null, ClaimedBy = null };
-            _entries.TryUpdate(id, released, existing);
+            var abandoned = existing with
+            {
+                RetryRequested = false,
+                ClaimedAt = null,
+                ClaimExpiresAt = null,
+                ClaimedBy = null,
+            };
+            _entries.TryUpdate(id, abandoned, existing);
         }
         return Task.CompletedTask;
     }

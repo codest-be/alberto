@@ -210,11 +210,14 @@ public sealed class PostgresDeadLetterStore(NpgsqlDataSource dataSource, string?
     }
 
     /// <inheritdoc />
-    public async Task ReleaseClaimAsync(Guid id, CancellationToken ct = default)
+    public async Task AbandonRetryAsync(Guid id, CancellationToken ct = default)
     {
         var sql = $"""
             UPDATE {_schema.Table("alberto_dead_letter_events")}
-            SET claimed_at = NULL, claim_expires_at = NULL, claimed_by = NULL
+            SET retry_requested = FALSE,
+                claimed_at = NULL,
+                claim_expires_at = NULL,
+                claimed_by = NULL
             WHERE id = @id
             """;
 
