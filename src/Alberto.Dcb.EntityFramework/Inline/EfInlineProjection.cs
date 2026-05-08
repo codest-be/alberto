@@ -17,6 +17,10 @@ internal sealed class EfInlineProjection<TEntity, TProjection, TDbContext> : IIn
     where TProjection : Projection<TEntity>, new()
     where TDbContext : DbContext
 {
+    // See DeclaredEfInlineProjection for rationale — same retry shape applies here.
+    private const int MaxConcurrencyRetries = 5;
+    private static readonly TimeSpan InitialRetryDelay = TimeSpan.FromMilliseconds(10);
+
     private readonly TProjection _projection = new();
     private readonly IDbContextFactory<TDbContext> _contextFactory;
 
@@ -47,6 +51,31 @@ internal sealed class EfInlineProjection<TEntity, TProjection, TDbContext> : IIn
         if (byDocument.Count == 0)
             return;
 
+        var ownsTransaction = transaction is null;
+
+        var attempt = 0;
+        while (true)
+        {
+            try
+            {
+                await ProcessOnceAsync(byDocument, transaction, ct);
+                return;
+            }
+            catch (DbUpdateConcurrencyException) when (ownsTransaction && attempt < MaxConcurrencyRetries - 1)
+            {
+                attempt++;
+                var delayMs = (int)(InitialRetryDelay.TotalMilliseconds * Math.Pow(2, attempt - 1));
+                var jitter = Random.Shared.Next(0, delayMs);
+                await Task.Delay(delayMs + jitter, ct);
+            }
+        }
+    }
+
+    private async Task ProcessOnceAsync(
+        Dictionary<string, List<IEventEnvelope>> byDocument,
+        IDbTransaction? transaction,
+        CancellationToken ct)
+    {
         await using var context = await _contextFactory.CreateDbContextAsync(ct);
 
         // Join the transaction if provided

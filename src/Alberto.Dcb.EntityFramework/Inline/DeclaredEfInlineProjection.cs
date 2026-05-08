@@ -29,6 +29,13 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : IInlineP
     where TEntity : class, IProjectionEntity, new()
     where TDbContext : DbContext
 {
+    // Concurrency-token retries. When two inline projections fan into the same row from
+    // different appends (e.g. multiple event types projected onto a shared aggregate row
+    // like Source), a stale `xmin` can cause "0 rows affected". The fold is a pure function
+    // of `existing + events`, so we can safely re-read and re-apply.
+    private const int MaxConcurrencyRetries = 5;
+    private static readonly TimeSpan InitialRetryDelay = TimeSpan.FromMilliseconds(10);
+
     private readonly ProjectionDeclaration<TEntity> _declaration;
     private readonly IDbContextFactory<TDbContext> _contextFactory;
 
@@ -66,6 +73,39 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : IInlineP
         if (docIdMap.Count == 0)
             return;
 
+        var documentKeys = docIdMap.Values.Distinct().ToList();
+
+        // Retry only makes sense when we own the transaction. With an external transaction,
+        // a concurrency exception aborts the whole transaction and reissuing SaveChanges
+        // would fail; the caller has to retry the entire append.
+        var ownsTransaction = transaction is null;
+
+        var attempt = 0;
+        while (true)
+        {
+            try
+            {
+                await ProcessOnceAsync(events, docIdMap, documentKeys, transaction, ct);
+                return;
+            }
+            catch (DbUpdateConcurrencyException) when (ownsTransaction && attempt < MaxConcurrencyRetries - 1)
+            {
+                attempt++;
+                // Exponential backoff with mild jitter to scatter concurrent retriers.
+                var delayMs = (int)(InitialRetryDelay.TotalMilliseconds * Math.Pow(2, attempt - 1));
+                var jitter = Random.Shared.Next(0, delayMs);
+                await Task.Delay(delayMs + jitter, ct);
+            }
+        }
+    }
+
+    private async Task ProcessOnceAsync(
+        IReadOnlyList<IEventEnvelope> events,
+        Dictionary<IEventEnvelope, string> docIdMap,
+        List<string> documentKeys,
+        IDbTransaction? transaction,
+        CancellationToken ct)
+    {
         await using var context = await _contextFactory.CreateDbContextAsync(ct);
 
         // Join the append transaction if one was provided. Today the event store always
@@ -75,7 +115,6 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : IInlineP
             await context.Database.UseTransactionAsync(dbTransaction, ct);
         }
 
-        var documentKeys = docIdMap.Values.Distinct().ToList();
         // Load existing rows untracked: the projection rebuilds the entity by `with`-ing the
         // loaded state, producing a new instance that we then Update/Add. If the original
         // instance were tracked, Update would throw an identity-map conflict on the same key.
