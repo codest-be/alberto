@@ -1,4 +1,5 @@
 using System.Data;
+using System.Data.Common;
 using Alberto.Dcb.Subscriptions;
 using Microsoft.EntityFrameworkCore;
 
@@ -20,6 +21,9 @@ internal sealed class EfInlineProjection<TEntity, TProjection, TDbContext> : IIn
     // See DeclaredEfInlineProjection for rationale — same retry shape applies here.
     private const int MaxConcurrencyRetries = 5;
     private static readonly TimeSpan InitialRetryDelay = TimeSpan.FromMilliseconds(10);
+
+    // ANSI SQLSTATE "23505" is Postgres' unique_violation. Provider-agnostic via DbException.SqlState.
+    private const string UniqueViolationSqlState = "23505";
 
     private readonly TProjection _projection = new();
     private readonly IDbContextFactory<TDbContext> _contextFactory;
@@ -61,7 +65,9 @@ internal sealed class EfInlineProjection<TEntity, TProjection, TDbContext> : IIn
                 await ProcessOnceAsync(byDocument, transaction, ct);
                 return;
             }
-            catch (DbUpdateConcurrencyException) when (ownsTransaction && attempt < MaxConcurrencyRetries - 1)
+            catch (Exception ex) when (ownsTransaction
+                && attempt < MaxConcurrencyRetries - 1
+                && IsRetryableConflict(ex))
             {
                 attempt++;
                 var delayMs = (int)(InitialRetryDelay.TotalMilliseconds * Math.Pow(2, attempt - 1));
@@ -141,4 +147,11 @@ internal sealed class EfInlineProjection<TEntity, TProjection, TDbContext> : IIn
 
         await context.SaveChangesAsync(ct);
     }
+
+    private static bool IsRetryableConflict(Exception ex) => ex switch
+    {
+        DbUpdateConcurrencyException => true,
+        DbUpdateException { InnerException: DbException { SqlState: UniqueViolationSqlState } } => true,
+        _ => false,
+    };
 }

@@ -1,4 +1,5 @@
 using System.Data;
+using System.Data.Common;
 using Alberto.Dcb.Subscriptions;
 using Microsoft.EntityFrameworkCore;
 
@@ -31,10 +32,16 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : IInlineP
 {
     // Concurrency-token retries. When two inline projections fan into the same row from
     // different appends (e.g. multiple event types projected onto a shared aggregate row
-    // like Source), a stale `xmin` can cause "0 rows affected". The fold is a pure function
-    // of `existing + events`, so we can safely re-read and re-apply.
+    // like Source), a stale `xmin` can cause "0 rows affected" (DbUpdateConcurrencyException)
+    // or — if the concurrent writer just inserted the row between our pre-load and SaveChanges
+    // — a unique-constraint violation on the primary key (DbUpdateException, PG SqlState 23505).
+    // The fold is a pure function of `existing + events`, so we can safely re-read and re-apply
+    // under both shapes.
     private const int MaxConcurrencyRetries = 5;
     private static readonly TimeSpan InitialRetryDelay = TimeSpan.FromMilliseconds(10);
+
+    // ANSI SQLSTATE "23505" is Postgres' unique_violation. Provider-agnostic via DbException.SqlState.
+    private const string UniqueViolationSqlState = "23505";
 
     private readonly ProjectionDeclaration<TEntity> _declaration;
     private readonly IDbContextFactory<TDbContext> _contextFactory;
@@ -88,7 +95,9 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : IInlineP
                 await ProcessOnceAsync(events, docIdMap, documentKeys, transaction, ct);
                 return;
             }
-            catch (DbUpdateConcurrencyException) when (ownsTransaction && attempt < MaxConcurrencyRetries - 1)
+            catch (Exception ex) when (ownsTransaction
+                && attempt < MaxConcurrencyRetries - 1
+                && IsRetryableConflict(ex))
             {
                 attempt++;
                 // Exponential backoff with mild jitter to scatter concurrent retriers.
@@ -185,4 +194,11 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : IInlineP
 
         await context.SaveChangesAsync(ct);
     }
+
+    private static bool IsRetryableConflict(Exception ex) => ex switch
+    {
+        DbUpdateConcurrencyException => true,
+        DbUpdateException { InnerException: DbException { SqlState: UniqueViolationSqlState } } => true,
+        _ => false,
+    };
 }
