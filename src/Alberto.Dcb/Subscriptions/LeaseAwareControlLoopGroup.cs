@@ -117,15 +117,25 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
                 _replicaId);
         }
 
-        if (_cts is not null) await _cts.CancelAsync();
+        if (_cts is not null)
+        {
+            try { await _cts.CancelAsync(); }
+            catch (ObjectDisposedException) { }
+        }
     }
 
     public async ValueTask DisposeAsync()
     {
-        await StopAsync(CancellationToken.None);
-        await Task.WhenAll(_allLoops.Select(l => l.DisposeAsync().AsTask()));
-        _scanLock.Dispose();
-        _cts?.Dispose();
+        try
+        {
+            await StopAsync(CancellationToken.None);
+            await Task.WhenAll(_allLoops.Select(l => l.DisposeAsync().AsTask()));
+            _scanLock.Dispose();
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _cts, null)?.Dispose();
+        }
     }
 
     private async void OnRenewalTimer(object? state)

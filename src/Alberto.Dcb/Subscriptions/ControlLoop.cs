@@ -90,14 +90,25 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        if (_cts is not null) await _cts.CancelAsync();
+        if (_cts is not null)
+        {
+            try { await _cts.CancelAsync(); }
+            catch (ObjectDisposedException) { }
+        }
         if (_loop is not null) try { await _loop; } catch (OperationCanceledException) { }
     }
 
     public async ValueTask DisposeAsync()
     {
-        await StopAsync(CancellationToken.None);
-        if (_processor is IAsyncDisposable d) await d.DisposeAsync();
+        try
+        {
+            await StopAsync(CancellationToken.None);
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _cts, null)?.Dispose();
+            if (_processor is IAsyncDisposable d) await d.DisposeAsync();
+        }
     }
 
     private async Task RunAsync(CancellationToken ct)
