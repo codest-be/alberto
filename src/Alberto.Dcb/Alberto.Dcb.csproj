@@ -19,6 +19,7 @@
         <InternalsVisibleTo Include="Alberto.Dcb.Postgres"/>
         <InternalsVisibleTo Include="Alberto.Dcb.Messaging"/>
         <InternalsVisibleTo Include="Alberto.Dcb.EntityFramework"/>
+        <InternalsVisibleTo Include="Alberto.Dcb.Telemetry"/>
     </ItemGroup>
 
     <ItemGroup>

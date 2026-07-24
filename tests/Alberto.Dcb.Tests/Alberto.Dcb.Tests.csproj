@@ -15,6 +15,7 @@
         <ProjectReference Include="../../src/Alberto.Dcb.Messaging/Alberto.Dcb.Messaging.csproj" />
         <ProjectReference Include="../../src/Alberto.Dcb.Postgres.Messaging/Alberto.Dcb.Postgres.Messaging.csproj" />
         <ProjectReference Include="../../src/Alberto.Dcb.EntityFramework/Alberto.Dcb.EntityFramework.csproj" />
+        <ProjectReference Include="../../src/Alberto.Dcb.Telemetry/Alberto.Dcb.Telemetry.csproj" />
     </ItemGroup>
 
     <ItemGroup>
@@ -31,5 +32,7 @@
         <PackageReference Include="Testcontainers.PostgreSql" />
         <PackageReference Include="Microsoft.EntityFrameworkCore" />
         <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+        <PackageReference Include="OpenTelemetry.Exporter.InMemory" />
+        <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
     </ItemGroup>
 </Project>

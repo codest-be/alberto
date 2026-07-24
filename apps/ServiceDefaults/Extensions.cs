@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using Alberto.Dcb.Telemetry;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.DependencyInjection;
@@ -63,8 +62,7 @@ public static class Extensions
                     .AddHttpClientInstrumentation()
                     .AddRuntimeInstrumentation()
                     .AddProcessInstrumentation()
-                    .AddNpgsqlInstrumentation()
-                    .AddAlbertoInstrumentation();
+                    .AddNpgsqlInstrumentation();
             })
             .WithTracing(tracing =>
             {
@@ -80,8 +78,7 @@ public static class Extensions
                     .AddNpgsql()
                     .AddProcessor(new FilteringProcessor(activity =>
                         activity.Source.Name != "Npgsql" || activity.Parent != null))
-                    .AddHotChocolateInstrumentation()
-                    .AddAlbertoInstrumentation();
+                    .AddHotChocolateInstrumentation();
             });
 
         builder.AddOpenTelemetryExporters();
