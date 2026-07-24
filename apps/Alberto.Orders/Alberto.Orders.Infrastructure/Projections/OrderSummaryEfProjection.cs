@@ -1,4 +1,3 @@
-using Alberto.Dcb;
 using Alberto.Dcb.Subscriptions;
 using Alberto.Orders.Core.Order;
 using Alberto.Orders.Infrastructure.Entities;
@@ -6,65 +5,63 @@ using Alberto.Orders.Infrastructure.Entities;
 namespace Alberto.Orders.Infrastructure.Projections;
 
 /// <summary>
-/// EF-based projection that builds OrderSummaryEntity read models from order events.
+/// EF-based projection that builds <see cref="OrderSummaryEntity"/> read models from order events.
 /// Uses proper relational columns instead of JSONB for rich SQL querying.
 /// </summary>
+/// <remarks>
+/// <para>
+/// The handlers mutate the supplied state and return it. That is safe — and deliberate — because
+/// the state store hands out detached (<c>AsNoTracking</c>) instances, and the batch dispatcher
+/// threads the same instance through every event for a document before persisting it once.
+/// </para>
+/// <para>
+/// Mutating beats rebuilding the entity field-by-field: infrastructure columns
+/// (<see cref="IProjectionEntity.Version"/>, <see cref="IProjectionEntity.RebuildVersion"/>)
+/// and any future column survive without a copy line each, so adding a property to the entity
+/// cannot silently drop it here.
+/// </para>
+/// </remarks>
 public static class OrderSummaryEfProjection
 {
     public static readonly ProjectionDeclaration<OrderSummaryEntity> Declaration =
         DeclareProjection.For<OrderSummaryEntity>(nameof(OrderSummaryEfProjection))
-            .On<OrderCreated>(
-                id: e => e.OrderId.ToString(),
-                apply: Apply)
-            .On<OrderItemAdded>(
-                id: e => e.OrderId.ToString(),
-                apply: Apply)
-            .On<OrderItemRemoved>(
-                id: e => e.OrderId.ToString(),
-                apply: Apply)
-            .On<OrderConfirmed>(
-                id: e => e.OrderId.ToString(),
-                apply: Apply)
-            .On<OrderShipped>(
-                id: e => e.OrderId.ToString(),
-                apply: Apply)
-            .On<OrderDelivered>(
-                id: e => e.OrderId.ToString(),
-                apply: Apply)
-            .On<OrderCancelled>(
-                id: e => e.OrderId.ToString(),
-                apply: Apply)
+            .On<OrderCreated>(id: e => e.OrderId.ToString(), apply: Apply)
+            .On<OrderItemAdded>(id: e => e.OrderId.ToString(), apply: Apply)
+            .On<OrderItemRemoved>(id: e => e.OrderId.ToString(), apply: Apply)
+            .On<OrderConfirmed>(id: e => e.OrderId.ToString(), apply: Apply)
+            .On<OrderShipped>(id: e => e.OrderId.ToString(), apply: Apply)
+            .On<OrderDelivered>(id: e => e.OrderId.ToString(), apply: Apply)
+            .On<OrderCancelled>(id: e => e.OrderId.ToString(), apply: Apply)
             .Build();
 
-    private static OrderSummaryEntity Apply(OrderSummaryEntity state, OrderCreated e, ProjectionContext ctx)
+    private static ProjectionResult<OrderSummaryEntity> Apply(
+        OrderSummaryEntity state, OrderCreated e, ProjectionContext ctx)
     {
-        return new OrderSummaryEntity
+        state.TenantId = ctx.TenantId ?? string.Empty;
+        state.DocumentId = e.OrderId.ToString();
+        state.OrderId = e.OrderId;
+        state.CustomerId = e.CustomerId;
+        state.LineItems = [.. e.LineItems.Select(li => new OrderLineItemData
         {
-            TenantId = ctx.TenantId,
-            DocumentId = e.OrderId.ToString(),
-            OrderId = e.OrderId,
-            CustomerId = e.CustomerId,
-            LineItems = e.LineItems.Select(li => new OrderLineItemData
-            {
-                ProductId = li.ProductId,
-                ProductName = li.ProductName,
-                Quantity = li.Quantity,
-                UnitPrice = li.UnitPrice,
-                Total = li.Total
-            }).ToList(),
-            Notes = e.Notes,
-            Status = OrderStatus.Draft,
-            Total = e.LineItems.Sum(x => x.Total),
-            CreatedAt = ctx.Timestamp,
-            UpdatedAt = ctx.Timestamp
-        };
+            ProductId = li.ProductId,
+            ProductName = li.ProductName,
+            Quantity = li.Quantity,
+            UnitPrice = li.UnitPrice,
+            Total = li.Total
+        })];
+        state.Notes = e.Notes;
+        state.Status = OrderStatus.Draft;
+        state.Total = state.LineItems.Sum(x => x.Total);
+        state.CreatedAt = ctx.Timestamp;
+        return Touch(state, ctx);
     }
 
-    private static OrderSummaryEntity Apply(OrderSummaryEntity state, OrderItemAdded e, ProjectionContext ctx)
+    private static ProjectionResult<OrderSummaryEntity> Apply(
+        OrderSummaryEntity state, OrderItemAdded e, ProjectionContext ctx)
     {
-        // Remove existing item with same product (if any) and add new
-        var items = state.LineItems.Where(x => x.ProductId != e.ProductId).ToList();
-        items.Add(new OrderLineItemData
+        // Adding a product that is already on the order replaces the existing line.
+        state.LineItems.RemoveAll(x => x.ProductId == e.ProductId);
+        state.LineItems.Add(new OrderLineItemData
         {
             ProductId = e.ProductId,
             ProductName = e.ProductName,
@@ -72,148 +69,59 @@ public static class OrderSummaryEfProjection
             UnitPrice = e.UnitPrice,
             Total = e.Quantity * e.UnitPrice
         });
-
-        return new OrderSummaryEntity
-        {
-            TenantId = state.TenantId,
-            DocumentId = state.DocumentId,
-            OrderId = state.OrderId,
-            CustomerId = state.CustomerId,
-            LineItems = items,
-            Notes = state.Notes,
-            Status = state.Status,
-            Total = items.Sum(x => x.Total),
-            CreatedAt = state.CreatedAt,
-            ConfirmedAt = state.ConfirmedAt,
-            ShippedAt = state.ShippedAt,
-            DeliveredAt = state.DeliveredAt,
-            CancelledAt = state.CancelledAt,
-            TrackingNumber = state.TrackingNumber,
-            Carrier = state.Carrier,
-            CancellationReason = state.CancellationReason,
-            UpdatedAt = ctx.Timestamp
-        };
+        state.Total = state.LineItems.Sum(x => x.Total);
+        return Touch(state, ctx);
     }
 
-    private static OrderSummaryEntity Apply(OrderSummaryEntity state, OrderItemRemoved e, ProjectionContext ctx)
+    private static ProjectionResult<OrderSummaryEntity> Apply(
+        OrderSummaryEntity state, OrderItemRemoved e, ProjectionContext ctx)
     {
-        var items = state.LineItems.Where(x => x.ProductId != e.ProductId).ToList();
-
-        return new OrderSummaryEntity
-        {
-            TenantId = state.TenantId,
-            DocumentId = state.DocumentId,
-            OrderId = state.OrderId,
-            CustomerId = state.CustomerId,
-            LineItems = items,
-            Notes = state.Notes,
-            Status = state.Status,
-            Total = items.Sum(x => x.Total),
-            CreatedAt = state.CreatedAt,
-            ConfirmedAt = state.ConfirmedAt,
-            ShippedAt = state.ShippedAt,
-            DeliveredAt = state.DeliveredAt,
-            CancelledAt = state.CancelledAt,
-            TrackingNumber = state.TrackingNumber,
-            Carrier = state.Carrier,
-            CancellationReason = state.CancellationReason,
-            UpdatedAt = ctx.Timestamp
-        };
+        state.LineItems.RemoveAll(x => x.ProductId == e.ProductId);
+        state.Total = state.LineItems.Sum(x => x.Total);
+        return Touch(state, ctx);
     }
 
-    private static OrderSummaryEntity Apply(OrderSummaryEntity state, OrderConfirmed e, ProjectionContext ctx)
+    private static ProjectionResult<OrderSummaryEntity> Apply(
+        OrderSummaryEntity state, OrderConfirmed e, ProjectionContext ctx)
     {
-        return new OrderSummaryEntity
-        {
-            TenantId = state.TenantId,
-            DocumentId = state.DocumentId,
-            OrderId = state.OrderId,
-            CustomerId = state.CustomerId,
-            LineItems = state.LineItems,
-            Notes = state.Notes,
-            Status = OrderStatus.Confirmed,
-            Total = state.Total,
-            CreatedAt = state.CreatedAt,
-            ConfirmedAt = e.ConfirmedAt,
-            ShippedAt = state.ShippedAt,
-            DeliveredAt = state.DeliveredAt,
-            CancelledAt = state.CancelledAt,
-            TrackingNumber = state.TrackingNumber,
-            Carrier = state.Carrier,
-            CancellationReason = state.CancellationReason,
-            UpdatedAt = ctx.Timestamp
-        };
+        state.Status = OrderStatus.Confirmed;
+        state.ConfirmedAt = e.ConfirmedAt;
+        return Touch(state, ctx);
     }
 
-    private static OrderSummaryEntity Apply(OrderSummaryEntity state, OrderShipped e, ProjectionContext ctx)
+    private static ProjectionResult<OrderSummaryEntity> Apply(
+        OrderSummaryEntity state, OrderShipped e, ProjectionContext ctx)
     {
-        return new OrderSummaryEntity
-        {
-            TenantId = state.TenantId,
-            DocumentId = state.DocumentId,
-            OrderId = state.OrderId,
-            CustomerId = state.CustomerId,
-            LineItems = state.LineItems,
-            Notes = state.Notes,
-            Status = OrderStatus.Shipped,
-            Total = state.Total,
-            CreatedAt = state.CreatedAt,
-            ConfirmedAt = state.ConfirmedAt,
-            ShippedAt = e.ShippedAt,
-            DeliveredAt = state.DeliveredAt,
-            CancelledAt = state.CancelledAt,
-            TrackingNumber = e.TrackingNumber,
-            Carrier = e.Carrier,
-            CancellationReason = state.CancellationReason,
-            UpdatedAt = ctx.Timestamp
-        };
+        state.Status = OrderStatus.Shipped;
+        state.ShippedAt = e.ShippedAt;
+        state.TrackingNumber = e.TrackingNumber;
+        state.Carrier = e.Carrier;
+        return Touch(state, ctx);
     }
 
-    private static OrderSummaryEntity Apply(OrderSummaryEntity state, OrderDelivered e, ProjectionContext ctx)
+    private static ProjectionResult<OrderSummaryEntity> Apply(
+        OrderSummaryEntity state, OrderDelivered e, ProjectionContext ctx)
     {
-        return new OrderSummaryEntity
-        {
-            TenantId = state.TenantId,
-            DocumentId = state.DocumentId,
-            OrderId = state.OrderId,
-            CustomerId = state.CustomerId,
-            LineItems = state.LineItems,
-            Notes = state.Notes,
-            Status = OrderStatus.Delivered,
-            Total = state.Total,
-            CreatedAt = state.CreatedAt,
-            ConfirmedAt = state.ConfirmedAt,
-            ShippedAt = state.ShippedAt,
-            DeliveredAt = e.DeliveredAt,
-            CancelledAt = state.CancelledAt,
-            TrackingNumber = state.TrackingNumber,
-            Carrier = state.Carrier,
-            CancellationReason = state.CancellationReason,
-            UpdatedAt = ctx.Timestamp
-        };
+        state.Status = OrderStatus.Delivered;
+        state.DeliveredAt = e.DeliveredAt;
+        return Touch(state, ctx);
     }
 
-    private static OrderSummaryEntity Apply(OrderSummaryEntity state, OrderCancelled e, ProjectionContext ctx)
+    private static ProjectionResult<OrderSummaryEntity> Apply(
+        OrderSummaryEntity state, OrderCancelled e, ProjectionContext ctx)
     {
-        return new OrderSummaryEntity
-        {
-            TenantId = state.TenantId,
-            DocumentId = state.DocumentId,
-            OrderId = state.OrderId,
-            CustomerId = state.CustomerId,
-            LineItems = state.LineItems,
-            Notes = state.Notes,
-            Status = OrderStatus.Cancelled,
-            Total = state.Total,
-            CreatedAt = state.CreatedAt,
-            ConfirmedAt = state.ConfirmedAt,
-            ShippedAt = state.ShippedAt,
-            DeliveredAt = state.DeliveredAt,
-            CancelledAt = e.CancelledAt,
-            TrackingNumber = state.TrackingNumber,
-            Carrier = state.Carrier,
-            CancellationReason = e.Reason,
-            UpdatedAt = ctx.Timestamp
-        };
+        state.Status = OrderStatus.Cancelled;
+        state.CancelledAt = e.CancelledAt;
+        state.CancellationReason = e.Reason;
+        return Touch(state, ctx);
+    }
+
+    /// <summary>
+    /// Stamps the event timestamp and hands the state back as a <c>Set</c> result.
+    /// </summary>
+    private static ProjectionResult<OrderSummaryEntity> Touch(OrderSummaryEntity state, ProjectionContext ctx)
+    {
+        state.UpdatedAt = ctx.Timestamp;
+        return state;
     }
 }

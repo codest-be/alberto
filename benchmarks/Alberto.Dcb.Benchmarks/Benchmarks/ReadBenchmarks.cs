@@ -76,7 +76,7 @@ public class ReadBenchmarks
             var type = eventTypes[rng.Next(eventTypes.Length)];
             // 100 distinct order ids — realistic tag-fan-out for a busy service.
             var orderId = (i % 100 + 1).ToString();
-            await _backend.Append(
+            await _backend.AppendAsync(
             [
                 new EventToPersist
                 {
@@ -110,7 +110,7 @@ public class ReadBenchmarks
     /// </summary>
     [Benchmark(Baseline = true)]
     public Task<IReadOnlyCollection<IEventEnvelope>> StreamAll()
-        => _backend.StreamAll(afterPosition: 0, limit: PageSize);
+        => _backend.StreamAllAsync(afterPosition: 0, limit: PageSize);
 
     /// <summary>
     /// Filtered catch-up read by a single event type.
@@ -118,7 +118,7 @@ public class ReadBenchmarks
     /// </summary>
     [Benchmark]
     public Task<IReadOnlyCollection<IEventEnvelope>> StreamByType()
-        => _backend.Stream(_byTypeQuery, afterPosition: 0, limit: PageSize);
+        => _backend.StreamAsync(_byTypeQuery, afterPosition: 0, limit: PageSize);
 
     /// <summary>
     /// Filtered catch-up read by a single exact tag.
@@ -126,7 +126,7 @@ public class ReadBenchmarks
     /// </summary>
     [Benchmark]
     public Task<IReadOnlyCollection<IEventEnvelope>> StreamByTag()
-        => _backend.Stream(_byTagQuery, afterPosition: 0, limit: PageSize);
+        => _backend.StreamAsync(_byTagQuery, afterPosition: 0, limit: PageSize);
 
     /// <summary>
     /// Filtered catch-up read by event type AND tag (intersection).
@@ -134,7 +134,7 @@ public class ReadBenchmarks
     /// </summary>
     [Benchmark]
     public Task<IReadOnlyCollection<IEventEnvelope>> StreamByTypeAndTag()
-        => _backend.Stream(_byTypeAndTagQuery, afterPosition: 0, limit: PageSize);
+        => _backend.StreamAsync(_byTypeAndTagQuery, afterPosition: 0, limit: PageSize);
 
     /// <summary>
     /// Filtered catch-up read across two distinct tags (union).
@@ -143,5 +143,5 @@ public class ReadBenchmarks
     /// </summary>
     [Benchmark]
     public Task<IReadOnlyCollection<IEventEnvelope>> StreamByMultiTag()
-        => _backend.Stream(_byMultiTagQuery, afterPosition: 0, limit: PageSize);
+        => _backend.StreamAsync(_byMultiTagQuery, afterPosition: 0, limit: PageSize);
 }

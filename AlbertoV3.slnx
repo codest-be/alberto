@@ -27,4 +27,7 @@
   <Folder Name="/tools/">
     <Project Path="tools/Alberto.Cli/Alberto.Cli.csproj" />
   </Folder>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/Alberto.Dcb.Benchmarks/Alberto.Dcb.Benchmarks.csproj" />
+  </Folder>
 </Solution>

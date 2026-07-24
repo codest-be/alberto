@@ -38,6 +38,11 @@ npm run test:load               # Full load test
 dotnet run --project tools/Alberto.Cli -- status
 ```
 
+### Benchmarks
+```bash
+dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks -- --filter '*Append*'
+```
+
 ## Architecture
 
 ### Directory Structure
@@ -68,9 +73,12 @@ dotnet run --project tools/Alberto.Cli -- status
 /tests/
   Alberto.Dcb.Tests/            # Unit + Testcontainers integration tests (xUnit 3)
   Alberto.Orders.LoadTests/     # K6 load tests (TypeScript)
+
+/benchmarks/
+  Alberto.Dcb.Benchmarks/       # BenchmarkDotNet append/read/checkpoint benchmarks
 ```
 
-Note: `apps/Alberto.Payments` is in the solution but is not orchestrated by the AppHost, and it does not currently build — see Known Gaps.
+Note: `apps/Alberto.Payments` builds and is in the solution, but it is not orchestrated by the AppHost. Its domain and projections are consumed by `Alberto.Orders.Api`, which exposes the payment queries and mutations.
 
 ### Key Patterns
 - **Event Sourcing with DCB**: Append-only event log with dynamic consistency boundaries
@@ -118,4 +126,4 @@ Documented so they are not mistaken for working features:
 - **Projection rebuild orchestration is scaffolding only.** The schema (`alberto_projection_states.rebuild_version`, `alberto_projection_rebuild_meta`), the `IProjectionStateClearer` interface, its `EfProjectionStateClearer` implementation and its DI registration all exist, but nothing resolves the clearer and nothing reads or writes `alberto_projection_rebuild_meta`. `PostgresStateStore`'s `rebuildVersion` is always its default of `1`. `alberto ops rebuild` resets the checkpoint; it does not clear projection state, and no running application does either.
 - **`BufferedCheckpointStore` is unreachable.** It is `internal sealed`, fully implemented and unit-tested, but nothing constructs it — `PostgresBuilderExtensions` wires `CachingCheckpointStore` directly over `PostgresCheckpointStore`, and being `internal` it cannot be wired by a package consumer either.
 - **Orphaned outbox entries have no reclaim path.** A relay that dies between claiming an entry (`processing`) and marking it `delivered`/`failed` strands the row. `alberto_outbox_entries` has no claim-lease columns, and `RetryFailedAsync` only matches `failed`. See the skipped test `DiscoveredIssuesTests.OutboxStore_ProcessingEntriesOrphaned_CannotBeRecoveredByRetryFailed`.
-- **`apps/Alberto.Payments` and part of `apps/Alberto.Orders` do not compile.** `OrderSummaryEfProjection`, `PaymentsOverviewProjection` and `PaymentSummaryProjection` fail to build. `dotnet build` on the whole solution reports these errors; the `/src`, `/tools` and `/tests` projects build clean.
+- **JSONB projections cannot be tenant-scoped.** `AddProjection` registers the processor as a keyed singleton and `DeclaredAsyncProjection` caches its state store (`_stateStore ??= _stateStoreFactory()`), so the writer's `PostgresStateStore` is built once and cannot carry a per-event tenant; the consumer path also runs under `ConsumerTenantAccessor` with `HasTenant=false`. `ProjectionDeclarationBuilder.On<TEvent>` hands the document-ID selector only the parsed event (`Func<TEvent, string?>`), so the tenant cannot be folded into the key either. `OrdersOverviewProjection`, `PaymentsOverviewProjection` and `PaymentSummaryProjection` are therefore cross-tenant, and their readers must construct `PostgresStateStore` tenant-agnostically to match — a tenant-scoped store queries a different primary key and returns nothing. Tenant-isolated read models go through the EF path (`OrderSummaryEfProjection`), which persists the tenant as a column that queries filter on.
