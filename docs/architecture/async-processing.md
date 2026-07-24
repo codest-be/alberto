@@ -1,318 +1,212 @@
 # Async Processing Architecture
 
-This document describes how events flow through the async processing pipeline in Alberto, from being written to the event store through projection/reaction processing to real-time admin updates.
+This document describes how events flow through the async processing pipeline in Alberto, from being written to the event store through the control loop to projection and reactor processing.
 
 ## High-Level Flow
 
 ```
-Event Appended to Store
+Event appended to store
     ↓
-PostgreSQL Event Table
+PostgreSQL alberto_events table
     ↓
-PollingConsumer Polls Global Stream
+NOTIFY on {schema}_events refreshes EventStoreHead ahead of its timer
     ↓
-Events Routed to Processors (AsyncProjection/AsyncReactor)
+ControlLoop reads a batch from the global stream
     ↓
-Processor Applies Business Logic
+Batch dispatched through the middleware chain
     ↓
-State Updated in EF or PostgreSQL
+Events routed to processors (AsyncProjection / AsyncReactor / BatchedEfProjection)
     ↓
-Checkpoint Saved (via CachingCheckpointStore)
+State written via IStateStore (PostgresStateStore or EfStateStore)
     ↓
-PostgreSQL NOTIFY Triggers
-    ↓
-PostgresAdminListener Receives Notification
-    ↓
-Admin Dashboard Updated (Real-time)
+Checkpoint saved (CachingCheckpointStore → PostgresCheckpointStore)
 ```
 
-## Architecture Diagram
+## The control loop
+
+`ControlLoop` (`src/Alberto.Dcb/Subscriptions/ControlLoop.cs`) is the central coordinator. One loop runs per module; `ControlLoopGroup` owns the set.
+
+Each cycle:
+
+1. Read the current head position from `EventStoreHead`, which refreshes on its own interval and is nudged early by `IEventAppendedSignal` when Postgres NOTIFY fires.
+2. Read a batch of events after the processor's checkpoint.
+3. Dispatch the batch through the middleware chain.
+4. Save the checkpoint.
+5. Back off to the polling interval if there was nothing to do.
+
+### Middleware
+
+`MiddlewareRunner` (`src/Alberto.Dcb/Subscriptions/MiddlewareRunner.cs`) builds two chains from the same generic core:
+
+| Chain | Context | Middleware file |
+|-------|---------|-----------------|
+| Single-event | `ConsumeEventContext` | `ConsumeMiddleware.cs` |
+| Batch | `BatchConsumeContext` | `BatchConsumeMiddleware.cs` |
+
+Both contexts implement `IMiddlewareContext` (`ProcessorId`, `ModuleKey`, `Attempt`, `LastError`, `CancellationToken`). The retry-and-dead-letter behaviour that used to be duplicated across the two middlewares now lives once in `RetryAndDeadLetterCore.ExecuteAsync`, which drives the attempt loop and returns the final error (or `null` on success). The two middlewares differ only in what they do with that error:
+
+- **Single event** — dead-letter it and advance.
+- **Batch** — if the batch holds more than one event, rethrow so the caller can split the batch and isolate the poison event; a single-event batch is dead-lettered directly.
+
+`ErrorPolicy.MaxRetries` rejects negative values, which guarantees the attempt loop always runs at least once and therefore always produces an error to act on.
+
+### Error handling
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                         ASYNC PROCESSING ARCHITECTURE                           │
-└─────────────────────────────────────────────────────────────────────────────────┘
-
-                              ┌──────────────────┐
-                              │   APPLICATION    │
-                              │  (Orders API)    │
-                              └────────┬─────────┘
-                                       │ Append Events
-                                       ▼
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                           POSTGRESQL EVENT STORE                                │
-│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────────────────┐ │
-│  │  events table   │    │  checkpoints    │    │      NOTIFY Triggers        │ │
-│  │  (global log)   │    │    table        │    │  • {schema}_events          │ │
-│  │                 │    │                 │    │  • {schema}_checkpoints     │ │
-│  │  position: 1001 │    │  processor:pos  │    │  • {schema}_dead_letters    │ │
-│  └────────┬────────┘    └────────▲────────┘    └──────────────┬──────────────┘ │
-└───────────┼──────────────────────┼────────────────────────────┼─────────────────┘
-            │                      │                            │
-            │ Poll every 100ms     │ Batch flush (1s)           │ LISTEN
-            ▼                      │                            ▼
-┌───────────────────────────────────────────────────┐  ┌────────────────────────┐
-│              POLLING CONSUMER                     │  │ PostgresAdminListener  │
-│  ┌─────────────────────────────────────────────┐  │  │    (BackgroundService) │
-│  │          Main Polling Loop                  │  │  │                        │
-│  │  1. Get global position                     │  │  │  • Debounce 100ms      │
-│  │  2. Classify processors (active/rebuilding) │  │  │  • Batch notifications │
-│  │  3. Fetch batch of events (100)             │  │  │  • Query changed data  │
-│  │  4. Route to relevant processors            │  │  └───────────┬────────────┘
-│  │  5. Adaptive backoff if no events           │  │              │
-│  └─────────────────────────────────────────────┘  │              ▼
-│                                                   │  ┌────────────────────────┐
-│  ┌─────────────────┐  ┌─────────────────────────┐│  │  HotChocolate GraphQL  │
-│  │ Active Processor│  │   Rebuild Task          ││  │    Subscriptions       │
-│  │ lag < 1000      │  │   (independent loop)    ││  │                        │
-│  │                 │  │   batch size: 1000      ││  │  • ProcessorUpdated    │
-│  │ Processes with  │  │   catches up then       ││  │  • CheckpointUpdated   │
-│  │ main loop       │  │   rejoins main loop     ││  │  • DeadLetterAdded     │
-│  └────────┬────────┘  └─────────────────────────┘│  └───────────┬────────────┘
-└───────────┼──────────────────────────────────────┘              │
-            │                                                      │ WebSocket
-            ▼                                                      ▼
-┌─────────────────────────────────────────────────┐   ┌────────────────────────┐
-│              EVENT PROCESSORS                    │   │   Angular Admin Web    │
-│                                                  │   │                        │
-│  ┌────────────────────────────────────────────┐ │   │  Real-time dashboard   │
-│  │         AsyncProjection<TState>            │ │   └────────────────────────┘
-│  │                                            │ │
-│  │  ┌──────────────┐    ┌─────────────────┐  │ │
-│  │  │ Load State   │───▶│  Apply Event    │  │ │
-│  │  │ (per docId)  │    │  (pure func)    │  │ │
-│  │  └──────────────┘    └───────┬─────────┘  │ │
-│  │                              │            │ │
-│  │                 ┌────────────┼────────────┤ │
-│  │                 ▼            ▼            ▼ │
-│  │            Set(state)   Delete    Unchanged │
-│  │                 │            │              │
-│  │                 ▼            ▼              │
-│  │           ┌──────────────────────┐         │ │
-│  │           │   State Store        │         │ │
-│  │           │   (EfStateStore)     │         │ │
-│  │           └──────────────────────┘         │ │
-│  └────────────────────────────────────────────┘ │
-│                                                  │
-│  ┌────────────────────────────────────────────┐ │
-│  │         AsyncReactor<TReactor>             │ │
-│  │                                            │ │
-│  │  ┌──────────────────┐                     │ │
-│  │  │ Reflection-based │  Side effects:      │ │
-│  │  │ dispatch to      │  • Send emails      │ │
-│  │  │ IReact<TEvent>   │  • Update analytics │ │
-│  │  │ handlers         │  • Call APIs        │ │
-│  │  └──────────────────┘                     │ │
-│  └────────────────────────────────────────────┘ │
-│                                                  │
-│  ┌────────────────────────────────────────────┐ │
-│  │      BatchedEfProjection<THandler>         │ │
-│  │                                            │ │
-│  │  Multiple events ──▶ Single SaveChanges   │ │
-│  │  (Change tracker accumulates, flush once)  │ │
-│  └────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────┘
-                        │
-                        ▼
-┌─────────────────────────────────────────────────┐
-│          CHECKPOINT MANAGEMENT                   │
-│                                                  │
-│  ┌────────────────────────────────────────────┐ │
-│  │         CachingCheckpointStore             │ │
-│  │                                            │ │
-│  │  Write: Cache immediately, mark dirty     │ │
-│  │  Read:  Cache hit → return                │ │
-│  │         Cache miss → DB → cache           │ │
-│  │  Flush: Timer (1s) → batch write to DB    │ │
-│  │                                            │ │
-│  │  ┌──────────┐     ┌──────────┐            │ │
-│  │  │ _cache   │     │ _dirty   │            │ │
-│  │  │ proc:pos │     │ proc:pos │            │ │
-│  │  └──────────┘     └────┬─────┘            │ │
-│  │                        │ every 1s         │ │
-│  │                        ▼                  │ │
-│  │              PostgresCheckpointStore      │ │
-│  └────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────┘
-                        │
-                        ▼
-┌─────────────────────────────────────────────────┐
-│             READ MODEL STORAGE                   │
-│                                                  │
-│  ┌─────────────────────────────────────────────┐│
-│  │          EfStateStore<TEntity>              ││
-│  │                                             ││
-│  │  • Pooled DbContext factory                 ││
-│  │  • Batch load-then-save pattern             ││
-│  │  • Tenant isolation (TenantId filter)       ││
-│  │  • Owned type handling (JSON columns)       ││
-│  └─────────────────────────────────────────────┘│
-│                                                  │
-│  ┌─────────────────────────────────────────────┐│
-│  │        OrdersDbContext Tables               ││
-│  │                                             ││
-│  │  • order_summaries (projection output)     ││
-│  │  • order_line_items (JSON column)          ││
-│  └─────────────────────────────────────────────┘│
-└─────────────────────────────────────────────────┘
+Event processing fails
+    ↓
+ErrorClassifier.Classify(ex)
+    ↓
+Permanent ──────────────────────────────┐
+    ↓                                   │
+Transient: retry up to MaxRetries       │
+with exponential backoff                │
+(RetryDelay × BackoffMultiplier^n,      │
+ capped at MaxRetryDelay)               │
+    ↓                                   │
+Attempts exhausted ─────────────────────┤
+                                        ▼
+                          DeadLetterOnMaxRetries?
+                             ├─ yes → IDeadLetterStore.AddAsync, skip event
+                             └─ no  → skip event
 ```
 
-## Error Handling Flow
-
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                              ERROR HANDLING FLOW                                │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                 │
-│   Event Processing Failed                                                       │
-│          │                                                                      │
-│          ▼                                                                      │
-│   ┌─────────────┐     ┌─────────────┐     ┌─────────────────────┐             │
-│   │  Retry 1    │────▶│  Retry 2    │────▶│  Retry 3 (max)      │             │
-│   │  (1s delay) │     │  (1s delay) │     │                     │             │
-│   └─────────────┘     └─────────────┘     └──────────┬──────────┘             │
-│                                                       │                        │
-│                                           ┌───────────▼───────────┐            │
-│                                           │    Dead Letter        │            │
-│                                           │    (if enabled)       │            │
-│                                           │                       │            │
-│                                           │  • Stores failed evt  │            │
-│                                           │  • Triggers NOTIFY    │            │
-│                                           │  • Skips to next evt  │            │
-│                                           └───────────────────────┘            │
-│                                                                                 │
-└─────────────────────────────────────────────────────────────────────────────────┘
-```
+`DeadLetterRetryLoop` separately picks up dead letters that an operator has marked for retry (`IDeadLetterStore.MarkForRetryAsync`, exposed as `alberto ops dead-letters retry`).
 
 ## Key Components
 
-### PollingConsumer
-
-The central coordinator that continuously polls the event store and routes events to processors.
-
-**Location:** `src/Alberto.Dcb/Subscriptions/PollingConsumer.cs`
-
-**Responsibilities:**
-- Polls event store at configurable intervals (default: 100ms)
-- Manages multiple processors with independent checkpoints
-- Classifies processors as "active" (caught-up) or "rebuilding" (far behind)
-- Handles automatic rebuild when processors fall behind threshold
-- Routes events only to processors that handle specific event types
-
-**Classification Logic:**
-```csharp
-// Processors are classified based on lag threshold
-if (lag > rebuildThreshold)  // Default: 1000 events
-{
-    processor.IsRebuilding = true;  // Run independently
-}
-else
-{
-    activeCheckpoints[processorId] = position;  // Included in main loop
-}
-```
-
 ### AsyncProjection
 
-Transforms events into read model state using pure functions.
+Transforms events into read-model state using pure functions.
 
 **Location:** `src/Alberto.Dcb/Subscriptions/AsyncProjection.cs`
 
-**Processing Flow:**
-1. Extract document ID from event
-2. Get tenant-specific state store
+1. Extract document ID from the event
+2. Get the tenant-scoped state store
 3. Load current state (or create new)
-4. Apply event (pure function) → returns `Set`, `Delete`, or `Unchanged`
-5. Persist result to state store
+4. Apply the event → `Set`, `Delete`, or `Unchanged`
+5. Persist the result
 
 ### AsyncReactor
 
-Handles side effects in response to events (emails, notifications, external API calls).
+Handles side effects in response to events.
 
 **Location:** `src/Alberto.Dcb/Subscriptions/AsyncReactor.cs`
 
-**Features:**
 - Reflection-based dispatch to `IReact<TEvent>` handlers
-- No state persistence (fire-and-forget side effects)
-- Scans reactor type for implemented interfaces at startup
+- No state persistence
+- Scans the reactor type for implemented interfaces at startup
 
-### CachingCheckpointStore
+### BatchedEfProjection
 
-Optimizes checkpoint persistence by batching writes.
+**Location:** `src/Alberto.Dcb.EntityFramework/Batching/BatchedEfProjection.cs`
 
-**Location:** `src/Alberto.Dcb/Subscriptions/CachingCheckpointStore.cs`
+Accumulates a batch of events in the EF change tracker and flushes with a single `SaveChanges`.
 
-**Strategy:**
-- **Write path:** Update in-memory cache immediately, mark dirty, return without DB wait
-- **Read path:** Check cache first, fallback to DB on miss
-- **Flush:** Timer fires every 1 second, batch writes all dirty entries
+### Checkpoint stores
 
-This reduces DB writes by 40-50x during high throughput.
+The Postgres backend wires `CachingCheckpointStore` over `PostgresCheckpointStore`:
 
-### PostgresAdminListener
+| Store | Role |
+|-------|------|
+| `CachingCheckpointStore` | In-memory read/write cache; marks entries dirty and flushes on a timer |
+| `PostgresCheckpointStore` | The durable store; also implements `IFencedCheckpointStore` |
 
-Provides real-time admin dashboard updates via PostgreSQL NOTIFY.
+`BufferedCheckpointStore` also exists in `src/Alberto.Dcb/Subscriptions` but is `internal` and constructed nowhere — see Not implemented.
 
-**Location:** `src/Alberto.Dcb.Postgres/Admin/PostgresAdminListener.cs`
+`SaveAsync` is **monotonic** — the Postgres upsert uses `GREATEST`, so a processor can never move its own checkpoint backwards. `RewindAsync` is the deliberate escape hatch that writes unconditionally; it is intended only for operator-initiated rewinds and both decorators bypass their caches and write straight through.
 
-**Flow:**
-1. LISTEN on three channels per module: `{schema}_events`, `{schema}_checkpoints`, `{schema}_dead_letters`
-2. Debounce notifications (100ms window) to prevent duplicate queries
-3. Batch process: query changed data, publish to GraphQL subscriptions
-4. WebSocket pushes updates to connected admin clients
+`SaveIfLeaseHeldAsync` on `IFencedCheckpointStore` makes the write conditional on the caller still holding the processor or tenant lease, so a partitioned replica cannot overwrite a newer checkpoint.
+
+### PostgresEventListener
+
+**Location:** `src/Alberto.Dcb.Postgres/PostgresEventListener.cs`
+
+LISTENs on the `{schema}_events` channel and raises `IEventAppendedSignal` so the control loop wakes immediately instead of waiting for the next poll. The trigger that emits the notification is in `010_BatchNotifyTrigger.sql` and fires once per append batch, not once per event.
 
 ## Configuration
 
-| Setting | Default | Purpose |
-|---------|---------|---------|
-| `PollingInterval` | 100ms | How often to check for new events |
-| `BatchSize` | 100 | Events per poll cycle |
-| `RebuildBatchSize` | 1000 | Events per rebuild cycle (faster catch-up) |
-| `RebuildThreshold` | 1000 | Lag before processor enters rebuild mode |
-| `MaxRetries` | 3 | Attempts before dead-lettering |
-| `RetryDelay` | 1s | Wait between retries |
-| `CheckpointFlushInterval` | 1s | Batch checkpoint writes |
-| `DebounceInterval` | 100ms | Admin notification batching |
+Defaults as of `ControlLoopBuilder`:
+
+| Setting | Builder method | Default |
+|---------|----------------|---------|
+| Polling interval | `WithPollingInterval` | 250ms |
+| Batch size | `WithBatchSize` | 100 |
+| Head refresh interval | `WithHeadRefreshInterval` | 100ms |
+| Max retries | `WithErrorPolicy` | 3 |
+| Retry delay | `WithErrorPolicy` | 1s, doubling, capped at 30s |
+| Dead-letter on exhaustion | `WithErrorPolicy` | true |
 
 ## Module Configuration Example
 
+Taken from `apps/Alberto.Orders/Alberto.Orders.Infrastructure/OrdersModule.cs`:
+
 ```csharp
-services.AddAlberto("orders", builder => builder
+services.AddAlberto(ModuleKey, builder => builder
+    .WithTenancy()
     .WithPostgres(options =>
     {
+        options.ConnectionString = connectionString;
+        options.AutoMigrate = false;
         options.Schema = "orders";
-        options.AutoMigrate = true;
+        options.MaxPoolSize = 30;
     })
     .WithEntityFramework<OrdersDbContext>(options =>
     {
-        options.UseNpgsql(connectionString);
+        options.UseNpgsql(connectionString, npgsql =>
+            npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "orders"));
     })
-    .WithConsumer(consumer => consumer
-        .WithPollingInterval(TimeSpan.FromMilliseconds(500))
-        .WithBatchSize(100)
-        .WithRebuildBatchSize(1000)
-        .WithRebuildThreshold(1000)
-        .WithErrorPolicy(policy =>
-        {
-            policy.MaxRetries(3);
-            policy.RetryDelay(TimeSpan.FromSeconds(1));
-            policy.DeadLetterOnMaxRetries(true);
-        })
-        .AddProjection<OrdersOverview, OrdersOverviewProjection>(...)
-        .AddEfProjection<OrderSummaryEntity, OrderSummaryEfProjection, OrdersDbContext>()
-    )
-);
+    .WithTelemetry()
+    .AddProjection(OrdersOverviewProjection.Declaration, sp =>
+    {
+        var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
+        return () => new PostgresStateStore<OrdersOverview>(
+            dataSource, nameof(OrdersOverviewProjection), "orders");
+    })
+    .AddEfProjection<OrderSummaryEntity, OrdersDbContext>(OrderSummaryEfProjection.Declaration)
+    .WithControlLoop(loop => loop
+        .WithPollingInterval(TimeSpan.FromMilliseconds(100))
+        .WithBatchSize(500)));
 ```
+
+`ErrorPolicy` is a class, not a record, so `WithErrorPolicy` takes a function that returns a new instance:
+
+```csharp
+.WithControlLoop(loop => loop
+    .WithErrorPolicy(p => new ErrorPolicy
+    {
+        MaxRetries = 5,
+        RetryDelay = TimeSpan.FromSeconds(2),
+        ErrorClassifier = p.ErrorClassifier,
+    }))
+```
+
+## Not implemented
+
+The following appear in the schema or the type system but have no orchestration behind them. Do not rely on them.
+
+- **Projection rebuild.** `alberto_projection_states.rebuild_version` and `alberto_projection_rebuild_meta` exist, as do `IProjectionStateClearer` and `EfProjectionStateClearer`, but nothing resolves the clearer and nothing reads or writes the meta table. `PostgresStateStore`'s `rebuildVersion` is always its default of `1`. `alberto ops rebuild` resets the checkpoint and nothing else — replayed events are applied on top of whatever state is already there.
+- **Rebuild-mode processor classification.** `IEventProcessor.IsRebuilding` exists, but there is no lag threshold, no separate rebuild batch size, and no independent catch-up loop. All processors run in the one control loop.
+- **Real-time admin push.** There is no admin HTTP API, no GraphQL admin subscriptions, and no admin dashboard in this repository. The `{schema}_events` NOTIFY channel exists to refresh `EventStoreHead`, not to feed a UI. The operator surface is the CLI in `tools/Alberto.Cli`.
+- **`BufferedCheckpointStore`.** `internal sealed`, fully implemented and unit-tested, but nothing constructs it — `PostgresBuilderExtensions` wires `CachingCheckpointStore` directly over `PostgresCheckpointStore`. Being `internal`, it cannot be wired by a package consumer either.
 
 ## Key Files
 
 | Component | File |
 |-----------|------|
-| PollingConsumer | `src/Alberto.Dcb/Subscriptions/PollingConsumer.cs` |
+| ControlLoop | `src/Alberto.Dcb/Subscriptions/ControlLoop.cs` |
+| ControlLoopGroup | `src/Alberto.Dcb/Subscriptions/ControlLoopGroup.cs` |
+| MiddlewareRunner | `src/Alberto.Dcb/Subscriptions/MiddlewareRunner.cs` |
+| Retry / dead-letter core | `src/Alberto.Dcb/Subscriptions/RetryAndDeadLetterCore.cs` |
+| Single-event middleware | `src/Alberto.Dcb/Subscriptions/ConsumeMiddleware.cs` |
+| Batch middleware | `src/Alberto.Dcb/Subscriptions/BatchConsumeMiddleware.cs` |
+| ErrorPolicy | `src/Alberto.Dcb/Subscriptions/ErrorPolicy.cs` |
 | AsyncProjection | `src/Alberto.Dcb/Subscriptions/AsyncProjection.cs` |
 | AsyncReactor | `src/Alberto.Dcb/Subscriptions/AsyncReactor.cs` |
 | CachingCheckpointStore | `src/Alberto.Dcb/Subscriptions/CachingCheckpointStore.cs` |
+| BufferedCheckpointStore | `src/Alberto.Dcb/Subscriptions/BufferedCheckpointStore.cs` |
+| PostgresCheckpointStore | `src/Alberto.Dcb.Postgres/PostgresCheckpointStore.cs` |
+| PostgresEventListener | `src/Alberto.Dcb.Postgres/PostgresEventListener.cs` |
 | EfStateStore | `src/Alberto.Dcb.EntityFramework/EfStateStore.cs` |
 | BatchedEfProjection | `src/Alberto.Dcb.EntityFramework/Batching/BatchedEfProjection.cs` |
-| PostgresAdminListener | `src/Alberto.Dcb.Postgres/Admin/PostgresAdminListener.cs` |
-| NOTIFY Triggers | `src/Alberto.Dcb.Postgres/Migrations/006_AdminNotifications.sql` |
+| NOTIFY trigger | `src/Alberto.Dcb.Postgres/Migrations/010_BatchNotifyTrigger.sql` |
