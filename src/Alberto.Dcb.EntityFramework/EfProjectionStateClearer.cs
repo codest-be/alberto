@@ -5,7 +5,7 @@ namespace Alberto.Dcb.EntityFramework;
 
 /// <summary>
 /// Entity Framework implementation of <see cref="IProjectionStateClearer"/>.
-/// Clears all entities from the backing table during a projection rebuild.
+/// Deletes one rebuild version's rows from the backing table.
 /// </summary>
 /// <typeparam name="TEntity">The entity type implementing <see cref="IProjectionEntity"/>.</typeparam>
 /// <typeparam name="TDbContext">The DbContext type containing the entity DbSet.</typeparam>
@@ -30,11 +30,15 @@ internal sealed class EfProjectionStateClearer<TEntity, TDbContext> : IProjectio
     public string ProcessorId { get; }
 
     /// <inheritdoc/>
-    public async Task ClearAsync(CancellationToken ct = default)
+    public async Task ClearVersionAsync(int rebuildVersion, CancellationToken ct = default)
     {
         await using var context = await _contextFactory.CreateDbContextAsync(ct);
 
-        // ExecuteDeleteAsync performs a bulk delete without loading entities into memory
-        await context.Set<TEntity>().ExecuteDeleteAsync(ct);
+        // ExecuteDeleteAsync performs a bulk delete without loading entities into memory.
+        // Deleting no rows is a success, which is what makes this safe to re-run after a
+        // coordinator crash.
+        await context.Set<TEntity>()
+            .Where(e => e.RebuildVersion == rebuildVersion)
+            .ExecuteDeleteAsync(ct);
     }
 }

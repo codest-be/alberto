@@ -71,6 +71,19 @@ public sealed record ProjectionRebuildState(
 }
 
 /// <summary>
+/// The result of ending a rebuild, either by promoting it or by aborting it.
+/// </summary>
+/// <param name="State">The processor's state after the transition.</param>
+/// <param name="DiscardedVersion">
+/// The version that is no longer reachable: the superseded one after a promotion, the
+/// abandoned one after an abort. State rows in <c>alberto_projection_states</c> are already
+/// gone — the transition deleted them in its own transaction. Backends that keep state
+/// elsewhere, EF projections in particular, still have to be told, which is what
+/// <see cref="IProjectionStateClearer.ClearVersionAsync"/> is for.
+/// </param>
+public sealed record RebuildOutcome(ProjectionRebuildState State, int DiscardedVersion);
+
+/// <summary>
 /// Thrown when a rebuild operation is attempted from a state that does not permit it —
 /// starting a second rebuild for a processor that already has one in flight, or promoting
 /// one that has not finished replaying.
@@ -134,7 +147,7 @@ public interface IProjectionRebuildStore
     /// The rebuild has not reached <see cref="RebuildStatus.Ready"/> and <paramref name="force"/>
     /// was not set, or no rebuild is in flight at all.
     /// </exception>
-    Task<ProjectionRebuildState> PromoteAsync(
+    Task<RebuildOutcome> PromoteAsync(
         string processorId, bool force = false, CancellationToken ct = default);
 
     /// <summary>
@@ -142,5 +155,5 @@ public interface IProjectionRebuildStore
     /// version is untouched, so readers never notice.
     /// </summary>
     /// <exception cref="RebuildStateException">No rebuild is in flight for this processor.</exception>
-    Task<ProjectionRebuildState> AbortAsync(string processorId, CancellationToken ct = default);
+    Task<RebuildOutcome> AbortAsync(string processorId, CancellationToken ct = default);
 }

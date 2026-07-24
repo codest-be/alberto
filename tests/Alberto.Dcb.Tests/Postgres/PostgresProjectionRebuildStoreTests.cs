@@ -203,13 +203,17 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
         await InsertStateAsync(projectionType, "doc-1", rebuildVersion: 2, ct);
         await store.MarkReadyAsync(processorId, ct);
 
-        var promoted = await store.PromoteAsync(processorId, force: false, ct);
+        var outcome = await store.PromoteAsync(processorId, force: false, ct);
+        var promoted = outcome.State;
 
         promoted.Status.Should().Be(RebuildStatus.Completed);
         promoted.ActiveVersion.Should().Be(2);
         promoted.RebuildingVersion.Should().BeNull();
         promoted.CompletedAt.Should().NotBeNull();
         promoted.IsRebuildInFlight.Should().BeFalse();
+        outcome.DiscardedVersion.Should().Be(
+            1, "the coordinator needs the superseded version to clear EF-backed projections, " +
+               "which live outside this transaction");
 
         (await CountStateAsync(projectionType, 1, ct)).Should().Be(
             0, "the superseded version's rows are dropped in the same transaction as the flip");
@@ -236,8 +240,9 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
         afterRejection.ActiveVersion.Should().Be(1);
 
         var forced = await store.PromoteAsync(processorId, force: true, ct);
-        forced.ActiveVersion.Should().Be(2);
-        forced.Status.Should().Be(RebuildStatus.Completed);
+        forced.State.ActiveVersion.Should().Be(2);
+        forced.State.Status.Should().Be(RebuildStatus.Completed);
+        forced.DiscardedVersion.Should().Be(1);
     }
 
     [Fact]
@@ -265,12 +270,15 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
         await InsertStateAsync(projectionType, "doc-1", rebuildVersion: 2, ct);
         await InsertStateAsync(projectionType, "doc-2", rebuildVersion: 2, ct);
 
-        var aborted = await store.AbortAsync(processorId, ct);
+        var outcome = await store.AbortAsync(processorId, ct);
+        var aborted = outcome.State;
 
         aborted.Status.Should().Be(RebuildStatus.Aborted);
         aborted.ActiveVersion.Should().Be(1, "readers must not notice an abandoned rebuild");
         aborted.RebuildingVersion.Should().BeNull();
         aborted.IsRebuildInFlight.Should().BeFalse();
+        outcome.DiscardedVersion.Should().Be(
+            2, "an abort discards the version it abandoned, not the live one");
 
         (await CountStateAsync(projectionType, 1, ct)).Should().Be(1);
         (await CountStateAsync(projectionType, 2, ct)).Should().Be(

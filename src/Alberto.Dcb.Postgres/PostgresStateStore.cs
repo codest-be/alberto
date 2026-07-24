@@ -10,17 +10,25 @@ namespace Alberto.Dcb.Postgres;
 /// Stores state as JSONB, keyed by projection type + document ID + rebuild version.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Pass <paramref name="tenantId"/> to enable multi-tenant mode: every DML statement is
 /// scoped to that tenant via the <c>tenant_id</c> column on
 /// <c>alberto_projection_states</c>. Omit (or pass <see langword="null"/>) for
 /// single-tenant deployments; the column is then absent from all queries and
 /// the single-tenant primary key constraint is used.
+/// </para>
+/// <para>
+/// <paramref name="rebuildVersion"/> is resolved on every operation rather than captured at
+/// construction, because the version a projection reads and writes changes underneath a
+/// long-lived store when a rebuild is promoted. Omit it for the overwhelmingly common case
+/// of a projection that is never rebuilt; it then resolves to version 1 forever at no cost.
+/// </para>
 /// </remarks>
 public sealed class PostgresStateStore<TState>(
     NpgsqlDataSource dataSource,
     string? projectionType = null,
     string? schema = null,
-    int rebuildVersion = 1,
+    Func<int>? rebuildVersion = null,
     string? tenantId = null)
     : IStateStore<TState>
 {
@@ -29,6 +37,7 @@ public sealed class PostgresStateStore<TState>(
     private readonly SchemaQualifier _schema = new(schema);
     private readonly bool _multiTenant = tenantId is not null;
     private readonly string? _tenantId = tenantId;
+    private readonly Func<int> _rebuildVersion = rebuildVersion ?? ProjectionVersions.NeverRebuilt;
 
     /// <inheritdoc/>
     public async Task<Dictionary<string, TState>> LoadManyAsync(
@@ -91,7 +100,7 @@ public sealed class PostgresStateStore<TState>(
             cmd.Parameters.AddWithValue("tenant_id", _tenantId!);
 
         cmd.Parameters.AddWithValue("projection_type", _projectionType);
-        cmd.Parameters.AddWithValue("rebuild_version", rebuildVersion);
+        cmd.Parameters.AddWithValue("rebuild_version", _rebuildVersion());
         cmd.Parameters.Add(new NpgsqlParameter<string[]>("document_ids", documentIds.ToArray()));
 
         await using var reader = await cmd.ExecuteReaderAsync(ct);
@@ -136,6 +145,10 @@ public sealed class PostgresStateStore<TState>(
         NpgsqlTransaction? ownedTransaction = externalTransaction is null
             ? await connection.BeginTransactionAsync(ct)
             : null;
+
+        // Resolved once for the whole batch. Resolving per statement would let a promotion
+        // landing mid-batch split the upserts and deletes across two versions.
+        var version = _rebuildVersion();
 
         try
         {
@@ -191,7 +204,7 @@ public sealed class PostgresStateStore<TState>(
                     batchCmd.Parameters.AddWithValue("tenant_id", _tenantId!);
                 batchCmd.Parameters.AddWithValue("projection_type", _projectionType);
                 batchCmd.Parameters.AddWithValue("document_id", docId);
-                batchCmd.Parameters.AddWithValue("rebuild_version", rebuildVersion);
+                batchCmd.Parameters.AddWithValue("rebuild_version", version);
                 batchCmd.Parameters.AddWithValue("state", stateJson);
                 batch.BatchCommands.Add(batchCmd);
             }
@@ -203,7 +216,7 @@ public sealed class PostgresStateStore<TState>(
                     batchCmd.Parameters.AddWithValue("tenant_id", _tenantId!);
                 batchCmd.Parameters.AddWithValue("projection_type", _projectionType);
                 batchCmd.Parameters.AddWithValue("document_id", docId);
-                batchCmd.Parameters.AddWithValue("rebuild_version", rebuildVersion);
+                batchCmd.Parameters.AddWithValue("rebuild_version", version);
                 batch.BatchCommands.Add(batchCmd);
             }
 
@@ -265,7 +278,7 @@ public sealed class PostgresStateStore<TState>(
             cmd.Parameters.AddWithValue("tenant_id", _tenantId!);
 
         cmd.Parameters.AddWithValue("projection_type", _projectionType);
-        cmd.Parameters.AddWithValue("rebuild_version", rebuildVersion);
+        cmd.Parameters.AddWithValue("rebuild_version", _rebuildVersion());
         cmd.Parameters.AddWithValue("limit", limit);
 
         await using var reader = await cmd.ExecuteReaderAsync(ct);

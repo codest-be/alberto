@@ -149,7 +149,7 @@ public sealed class PostgresProjectionRebuildStore : IProjectionRebuildStore
     }
 
     /// <inheritdoc/>
-    public async Task<ProjectionRebuildState> PromoteAsync(
+    public async Task<RebuildOutcome> PromoteAsync(
         string processorId, bool force = false, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
@@ -197,11 +197,12 @@ public sealed class PostgresProjectionRebuildStore : IProjectionRebuildStore
         await DeleteStateVersionAsync(conn, tx, current.ProjectionType, current.ActiveVersion, ct);
         await tx.CommitAsync(ct);
 
-        return await GetAsync(processorId, current.ProjectionType, ct);
+        return new RebuildOutcome(
+            await GetAsync(processorId, current.ProjectionType, ct), current.ActiveVersion);
     }
 
     /// <inheritdoc/>
-    public async Task<ProjectionRebuildState> AbortAsync(
+    public async Task<RebuildOutcome> AbortAsync(
         string processorId, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
@@ -239,7 +240,8 @@ public sealed class PostgresProjectionRebuildStore : IProjectionRebuildStore
         await DeleteStateVersionAsync(conn, tx, current.ProjectionType, abandonedVersion, ct);
         await tx.CommitAsync(ct);
 
-        return await GetAsync(processorId, current.ProjectionType, ct);
+        return new RebuildOutcome(
+            await GetAsync(processorId, current.ProjectionType, ct), abandonedVersion);
     }
 
     /// <summary>

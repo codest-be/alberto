@@ -44,11 +44,12 @@ public static class EfConsumerBuilderExtensions
             return builder;
         }
 
-        builder.Services.AddKeyedSingleton<IEventProcessor>(builder.ModuleKey, (sp, _) =>
+        builder.Services.AddKeyedSingleton<IEventProcessor>(builder.ModuleKey, (sp, key) =>
         {
             var contextFactory = sp.GetRequiredService<IDbContextFactory<TDbContext>>();
+            var version = LiveVersionSelector(sp, key, declaration.ProcessorId);
             return new DeclaredAsyncProjection<TEntity>(declaration,
-                () => new EfStateStore<TEntity, TDbContext>(contextFactory));
+                () => new EfStateStore<TEntity, TDbContext>(contextFactory, version));
         });
         builder.Services.AddKeyedSingleton<IProjectionStateClearer>(builder.ModuleKey, (sp, _) =>
             new EfProjectionStateClearer<TEntity, TDbContext>(
@@ -73,11 +74,12 @@ public static class EfConsumerBuilderExtensions
         ArgumentNullException.ThrowIfNull(declaration);
         ArgumentNullException.ThrowIfNull(afterCommit);
 
-        builder.Services.AddKeyedSingleton<IEventProcessor>(builder.ModuleKey, (sp, _) =>
+        builder.Services.AddKeyedSingleton<IEventProcessor>(builder.ModuleKey, (sp, key) =>
         {
             var contextFactory = sp.GetRequiredService<IDbContextFactory<TDbContext>>();
+            var version = LiveVersionSelector(sp, key, declaration.ProcessorId);
             return new DeclaredAsyncProjection<TEntity>(declaration,
-                () => new EfStateStore<TEntity, TDbContext>(contextFactory),
+                () => new EfStateStore<TEntity, TDbContext>(contextFactory, version),
                 afterCommit: afterCommit(sp));
         });
         builder.Services.AddKeyedSingleton<IProjectionStateClearer>(builder.ModuleKey, (sp, _) =>
@@ -86,4 +88,13 @@ public static class EfConsumerBuilderExtensions
                 declaration.ProcessorId));
         return builder;
     }
+
+    /// <summary>
+    /// The version selector for the live projection: tracks promotions when the module has a
+    /// rebuild pipeline, and resolves to version 1 forever when it does not.
+    /// </summary>
+    private static Func<int> LiveVersionSelector(
+        IServiceProvider sp, object? moduleKey, string processorId)
+        => sp.GetKeyedService<ProjectionVersions>(moduleKey)?.ForLive(processorId)
+           ?? ProjectionVersions.NeverRebuilt;
 }
