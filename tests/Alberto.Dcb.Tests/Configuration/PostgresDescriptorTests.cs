@@ -4,6 +4,7 @@ using Alberto.Dcb.Postgres;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Xunit;
 
@@ -116,5 +117,26 @@ public class PostgresDescriptorTests
         new AlbertoModuleValidator()
             .Collect(definition)
             .Should().Contain(f => f.Code == "ALB1003");
+    }
+
+    [Fact]
+    public async Task A_failed_migration_prevents_host_start_and_names_the_module()
+    {
+        // Use a port nothing listens on with a short timeout so the test completes quickly
+        // without requiring Docker or a real Postgres instance.
+        const string unreachable =
+            "Host=127.0.0.1;Port=19999;Database=alberto;Username=x;Password=y;Timeout=1";
+
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddAlberto("orders", module => module
+            .WithPostgres(o => o with { ConnectionString = unreachable }));
+
+        using var host = builder.Build();
+
+        var act = async () => await host.StartAsync(TestContext.Current.CancellationToken);
+
+        var exception = await act.Should().ThrowAsync<InvalidOperationException>();
+        exception.Which.Message.Should().Contain("orders");
+        exception.Which.Message.Should().Contain("migration");
     }
 }

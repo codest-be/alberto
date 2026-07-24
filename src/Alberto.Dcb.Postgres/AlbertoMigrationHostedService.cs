@@ -36,7 +36,25 @@ internal sealed class AlbertoMigrationHostedService(
             // inline WithPostgres code passed singleTenant: !isTenantMode; the brief's
             // hosted-service snippet omits it (a likely oversight). Omitting it would
             // silently run the multi-tenant scripts for single-tenant modules.
-            PostgresMigrator.Migrate(options.ConnectionString, options.Schema, singleTenant: !definition.TenancyEnabled);
+            //
+            // DbUp's EnsureDatabase step may throw directly (e.g. NpgsqlException) rather than
+            // returning a failed MigrationResult, so wrap both paths into one consistent
+            // InvalidOperationException so callers see the module name and a clear "migration
+            // failed" message regardless of which failure mode occurs.
+            MigrationResult result;
+            try
+            {
+                result = PostgresMigrator.Migrate(options.ConnectionString, options.Schema, singleTenant: !definition.TenancyEnabled);
+            }
+            catch (Exception ex) when (ex is not InvalidOperationException)
+            {
+                throw new InvalidOperationException(
+                    $"Alberto schema migration failed for module '{moduleKey}': {ex.Message}", ex);
+            }
+
+            if (!result.Successful)
+                throw new InvalidOperationException(
+                    $"Alberto schema migration failed for module '{moduleKey}': {result.Error?.Message}", result.Error);
         }
 
         // Catches the case where a schema was created single-tenant and the module is now
