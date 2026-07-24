@@ -109,7 +109,7 @@ CREATE TABLE IF NOT EXISTS $schema_prefix$alberto_outbox_entries (
     version TEXT NOT NULL DEFAULT '1',
     payload JSONB NOT NULL,
     metadata JSONB NOT NULL DEFAULT '{}',
-    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'delivered', 'failed')),
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'delivered', 'failed')),
     retry_count INT NOT NULL DEFAULT 0,
     last_error TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),

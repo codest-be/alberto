@@ -8,22 +8,10 @@ using Xunit;
 namespace Alberto.Dcb.Tests.Postgres;
 
 /// <summary>
-/// Fixture that spins up a real PostgreSQL container, runs single-tenant migrations,
-/// and then patches the outbox status CHECK constraint to include 'processing'.
+/// Fixture that spins up a real PostgreSQL container and runs the shipped single-tenant
+/// migrations.  No manual schema patching is applied — the tests exercise the schema
+/// exactly as it is delivered to production.
 /// </summary>
-/// <remarks>
-/// CROSS-FILE NOTE (crossFileNeeds): The single-tenant migration
-/// <c>Migrations/SingleTenant/001_InitialSchema.sql</c> and its multi-tenant
-/// counterpart <c>Migrations/001_InitialSchema.sql</c> both define the constraint
-/// as <c>CHECK (status IN ('pending', 'delivered', 'failed'))</c>.  The
-/// <see cref="PostgresOutboxStore.GetPendingAsync"/> implementation claims rows by
-/// updating their status to <c>'processing'</c>, which violates that constraint
-/// at runtime.  A new migration must extend the constraint to
-/// <c>('pending', 'processing', 'delivered', 'failed')</c> and update the partial
-/// index so the planner can use it for 'processing' status too.
-/// Until that migration ships this fixture patches the constraint manually so
-/// that these tests can run against the current schema.
-/// </remarks>
 public sealed class PostgresOutboxStoreFixture : IAsyncLifetime
 {
     private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:16-alpine")
@@ -45,18 +33,6 @@ public sealed class PostgresOutboxStoreFixture : IAsyncLifetime
         }
 
         DataSource = NpgsqlDataSource.Create(connectionString);
-
-        // Patch the CHECK constraint until the migration is updated (see class remarks above).
-        await using var conn = await DataSource.OpenConnectionAsync();
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = """
-            ALTER TABLE alberto_outbox_entries
-                DROP CONSTRAINT IF EXISTS alberto_outbox_entries_status_check;
-            ALTER TABLE alberto_outbox_entries
-                ADD CONSTRAINT alberto_outbox_entries_status_check
-                CHECK (status IN ('pending', 'processing', 'delivered', 'failed'));
-            """;
-        await cmd.ExecuteNonQueryAsync();
     }
 
     public async ValueTask DisposeAsync()
@@ -444,6 +420,41 @@ public sealed class PostgresOutboxStoreTests(PostgresOutboxStoreFixture fixture)
 
         // entryB must now be 'processing' (relay 2 claimed it).
         Assert.Equal("processing", await ReadStatusAsync(entryB.Id, TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="PostgresOutboxStore.GetPendingAsync"/> returns claimed
+    /// entries with status <see cref="OutboxEntryStatus.Processing"/>.
+    /// </summary>
+    /// <remarks>
+    /// This test would fail against the pre-fix code in two distinct ways:
+    /// <list type="bullet">
+    ///   <item>The claim UPDATE (SET status = 'processing') would be rejected by the
+    ///         original CHECK constraint <c>(status IN ('pending', 'delivered', 'failed'))</c>,
+    ///         so <see cref="PostgresOutboxStore.GetPendingAsync"/> would throw a
+    ///         PostgreSQL exception instead of returning a result.</item>
+    ///   <item>If the constraint was somehow already extended, the read-time alias
+    ///         <c>"processing" =&gt; OutboxEntryStatus.Pending</c> would cause this
+    ///         assertion to fail because <see cref="OutboxEntryStatus.Pending"/> ≠
+    ///         <see cref="OutboxEntryStatus.Processing"/>.</item>
+    /// </list>
+    /// Migration 013 adds 'processing' to the CHECK constraint and
+    /// <see cref="OutboxEntryStatus.Processing"/> to the enum, fixing both issues.
+    /// </remarks>
+    [Fact]
+    public async Task GetPendingAsync_ClaimedEntry_HasProcessingStatus()
+    {
+        var store = CreateStore();
+        var entry = MakeEntry();
+        await store.InsertAsync(entry, TestContext.Current.CancellationToken);
+
+        var claimed = await store.GetPendingAsync(limit: 10, TestContext.Current.CancellationToken);
+        var claimedEntry = claimed.FirstOrDefault(e => e.Id == entry.Id);
+
+        Assert.NotNull(claimedEntry);
+        // Pre-fix: this returned Pending (the 'processing' DB value was aliased to Pending).
+        // Post-fix: must return Processing.
+        Assert.Equal(OutboxEntryStatus.Processing, claimedEntry.Status);
     }
 
     /// <summary>
