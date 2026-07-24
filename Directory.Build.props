@@ -10,11 +10,11 @@
         <VersionPrefix>0.1.0</VersionPrefix>
 
         <!-- Repository Information -->
-        <RepositoryUrl>https://github.com/codest-be/alberto</RepositoryUrl>
+        <RepositoryUrl>https://github.com/codest-be/albertoo</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
 
         <!-- Package Configuration -->
-        <PackageProjectUrl>https://github.com/codest-be/alberto</PackageProjectUrl>
+        <PackageProjectUrl>https://github.com/codest-be/albertoo</PackageProjectUrl>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
         <PackageTags>DCB;events;eventsourcing;dotnet;postgresql;dynamic-consistency-boundary</PackageTags>

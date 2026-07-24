@@ -131,6 +131,15 @@ public static class PostgresBuilderExtensions
             return new PostgresDeadLetterStore(dataSource, schema);
         });
 
+        // Register the projection rebuild state machine. Always registered, never started:
+        // nothing happens until an operator starts a rebuild, and a module that never calls
+        // WithRebuilds() simply has no coordinator to act on it.
+        builder.Services.AddKeyedSingleton<IProjectionRebuildStore>(moduleKey, (sp, _) =>
+        {
+            var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
+            return new PostgresProjectionRebuildStore(dataSource, schema);
+        });
+
         // Register processor locks (consumer chooses which mode via WithSingleLeaderLock/WithTenantDistribution)
         builder.Services.AddKeyedSingleton<IProcessorLock>(moduleKey, (sp, _) =>
         {

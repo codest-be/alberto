@@ -112,8 +112,6 @@ The Postgres backend wires `CachingCheckpointStore` over `PostgresCheckpointStor
 | `CachingCheckpointStore` | In-memory read/write cache; marks entries dirty and flushes on a timer |
 | `PostgresCheckpointStore` | The durable store; also implements `IFencedCheckpointStore` |
 
-`BufferedCheckpointStore` also exists in `src/Alberto.Dcb/Subscriptions` but is `internal` and constructed nowhere — see Not implemented.
-
 `SaveAsync` is **monotonic** — the Postgres upsert uses `GREATEST`, so a processor can never move its own checkpoint backwards. `RewindAsync` is the deliberate escape hatch that writes unconditionally; it is intended only for operator-initiated rewinds and both decorators bypass their caches and write straight through.
 
 `SaveIfLeaseHeldAsync` on `IFencedCheckpointStore` makes the write conditional on the caller still holding the processor or tenant lease, so a partitioned replica cannot overwrite a newer checkpoint.
@@ -157,11 +155,14 @@ services.AddAlberto(ModuleKey, builder => builder
             npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "orders"));
     })
     .WithTelemetry()
-    .AddProjection(OrdersOverviewProjection.Declaration, sp =>
+    .AddProjection(OrdersOverviewProjection.Declaration, ctx =>
     {
-        var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
+        var dataSource = ctx.Services.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
         return () => new PostgresStateStore<OrdersOverview>(
-            dataSource, nameof(OrdersOverviewProjection), "orders");
+            dataSource,
+            projectionType: nameof(OrdersOverviewProjection),
+            schema: "orders",
+            rebuildVersion: ctx.RebuildVersion);
     })
     .AddEfProjection<OrderSummaryEntity, OrdersDbContext>(OrderSummaryEfProjection.Declaration)
     .WithControlLoop(loop => loop
@@ -181,14 +182,75 @@ services.AddAlberto(ModuleKey, builder => builder
     }))
 ```
 
+## Projection rebuilds
+
+Changing how a projection interprets history means its stored state is wrong. A rebuild replays the whole log into a *second copy* of that projection's state while the live copy keeps serving reads, then swaps the two in one transaction. Readers move from a complete old projection to a complete new one; there is no window in which the projection is empty or half-built.
+
+Every projection state row carries a `rebuild_version`. One version is *active* — the one readers and the live control loop use. While a rebuild runs, a second version exists that only the shadow loop can see.
+
+```
+              live loop ──────────────────────────────▶  version 1  ◀── readers
+                                                              │
+  start ──▶  shadow loop (own checkpoint, from position 0) ─▶ version 2
+                                                              │
+  promote ──▶ version 2 becomes active, version 1 deleted ────┘  (one transaction)
+```
+
+### Enabling it
+
+```csharp
+services.AddAlberto("orders", builder => builder
+    .WithPostgres(...)
+    .AddProjection(OrdersOverviewProjection.Declaration, ctx =>
+    {
+        var dataSource = ctx.Services.GetRequiredKeyedService<NpgsqlDataSource>("orders");
+        return () => new PostgresStateStore<OrdersOverview>(
+            dataSource, nameof(OrdersOverviewProjection), "orders",
+            rebuildVersion: ctx.RebuildVersion);   // <- the projection follows the version
+    })
+    .WithControlLoop(loop => loop.WithRebuilds()));
+```
+
+Two requirements, and a projection that meets neither will have its live state overwritten by the replay instead of shadowed:
+
+- **State stores must resolve their version through `ctx.RebuildVersion`.** It is a `Func<int>` rather than a value because promotion has to take effect underneath a store that is already running. Pass it straight through; do not call it once and cache the result.
+- **EF projection entities must be configured with `ProjectionEntity<TEntity>()`** in `OnModelCreating`, which makes the key `(DocumentId, RebuildVersion)`. Without the version in the key the shadow rows collide with the live rows on insert.
+
+`WithRebuilds()` registers the machinery but starts nothing. A rebuild only happens when an operator asks for one.
+
+### Running one
+
+```bash
+alberto ops rebuild start OrdersOverviewProjection
+alberto ops rebuild status
+alberto ops rebuild abort OrdersOverviewProjection
+```
+
+The replay runs *in the application*, not in the CLI: the CLI only moves the state machine, and a module without `WithRebuilds()` will leave a started rebuild sitting at `rebuilding` forever. With `WithRebuilds(autoPromote: false)` a finished rebuild parks at `ready` until `alberto ops rebuild promote <processor>`.
+
+### How it works
+
+`RebuildCoordinator` is a hosted service that owns no state of its own — everything it does is derived from `alberto_projection_rebuild_meta`, so a rebuild started from the CLI in one process is picked up in another, and a coordinator that crashes mid-rebuild resumes on restart. Each tick it:
+
+1. Refreshes `ProjectionVersions`, the module's single cached view of the state machine. Every version selector resolves from this cache, so the coordinator and the stores it configures always agree.
+2. Starts a shadow control loop for each rebuild in flight. The shadow loop uses its own checkpoint key (`<processor>::rebuild`) so replaying from position 0 does not drag the live projection back with it, and it always takes the batch path.
+3. Marks a rebuild `ready` once its shadow checkpoint passes the target position captured at start. The shadow loop keeps running past that point, so events that arrive during the replay are in the rebuilt version too.
+4. Promotes: stops the shadow loop, flips the version and deletes the superseded state rows in one transaction, then tells any `IProjectionStateClearer` about backends the transaction could not reach (EF projections, in particular).
+
+Versions are allocated one at a time and never reused, so the coordinator sweeps `1..active+1` at startup to clean up after a promotion or abort that happened while it was down.
+
+### Limits
+
+- One rebuild per processor at a time. `StartAsync` is guarded against the state it is leaving, so two operators racing cannot both win.
+- The shadow loop runs under the same lease-free assumption as the rest of the module. Enable `WithProcessorLeases` if more than one replica runs the module, or two replicas will replay into the same version.
+- A rebuild reprocesses every event through the projection. Reactors are not rebuilt — replaying side effects is not something the coordinator can make safe.
+
 ## Not implemented
 
 The following appear in the schema or the type system but have no orchestration behind them. Do not rely on them.
 
-- **Projection rebuild.** `alberto_projection_states.rebuild_version` and `alberto_projection_rebuild_meta` exist, as do `IProjectionStateClearer` and `EfProjectionStateClearer`, but nothing resolves the clearer and nothing reads or writes the meta table. `PostgresStateStore`'s `rebuildVersion` is always its default of `1`. `alberto ops rebuild` resets the checkpoint and nothing else — replayed events are applied on top of whatever state is already there.
-- **Rebuild-mode processor classification.** `IEventProcessor.IsRebuilding` exists, but there is no lag threshold, no separate rebuild batch size, and no independent catch-up loop. All processors run in the one control loop.
+- **Rebuild-mode processor tuning.** `IEventProcessor.IsRebuilding` is set for shadow loops, but there is no lag threshold and no separate rebuild batch size — a shadow loop runs on the module's configured batch size.
 - **Real-time admin push.** There is no admin HTTP API, no GraphQL admin subscriptions, and no admin dashboard in this repository. The `{schema}_events` NOTIFY channel exists to refresh `EventStoreHead`, not to feed a UI. The operator surface is the CLI in `tools/Alberto.Cli`.
-- **`BufferedCheckpointStore`.** `internal sealed`, fully implemented and unit-tested, but nothing constructs it — `PostgresBuilderExtensions` wires `CachingCheckpointStore` directly over `PostgresCheckpointStore`. Being `internal`, it cannot be wired by a package consumer either.
 
 ## Key Files
 
@@ -204,9 +266,12 @@ The following appear in the schema or the type system but have no orchestration 
 | AsyncProjection | `src/Alberto.Dcb/Subscriptions/AsyncProjection.cs` |
 | AsyncReactor | `src/Alberto.Dcb/Subscriptions/AsyncReactor.cs` |
 | CachingCheckpointStore | `src/Alberto.Dcb/Subscriptions/CachingCheckpointStore.cs` |
-| BufferedCheckpointStore | `src/Alberto.Dcb/Subscriptions/BufferedCheckpointStore.cs` |
 | PostgresCheckpointStore | `src/Alberto.Dcb.Postgres/PostgresCheckpointStore.cs` |
 | PostgresEventListener | `src/Alberto.Dcb.Postgres/PostgresEventListener.cs` |
 | EfStateStore | `src/Alberto.Dcb.EntityFramework/EfStateStore.cs` |
 | BatchedEfProjection | `src/Alberto.Dcb.EntityFramework/Batching/BatchedEfProjection.cs` |
+| RebuildCoordinator | `src/Alberto.Dcb/Subscriptions/RebuildCoordinator.cs` |
+| ProjectionVersions | `src/Alberto.Dcb/Subscriptions/ProjectionVersions.cs` |
+| IProjectionRebuildStore | `src/Alberto.Dcb/Subscriptions/IProjectionRebuildStore.cs` |
+| PostgresProjectionRebuildStore | `src/Alberto.Dcb.Postgres/PostgresProjectionRebuildStore.cs` |
 | NOTIFY trigger | `src/Alberto.Dcb.Postgres/Migrations/010_BatchNotifyTrigger.sql` |

@@ -45,18 +45,20 @@ public static class OrdersModule
                     npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "orders"));
             })
             .WithTelemetry()
-            .AddProjection(OrdersOverviewProjection.Declaration, sp =>
+            .AddProjection(OrdersOverviewProjection.Declaration, ctx =>
             {
-                var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
+                var dataSource = ctx.Services.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
                 return () => new PostgresStateStore<OrdersOverview>(
                     dataSource,
                     nameof(OrdersOverviewProjection),
-                    "orders");
+                    "orders",
+                    rebuildVersion: ctx.RebuildVersion);
             })
             .AddEfProjection<OrderSummaryEntity, OrdersDbContext>(OrderSummaryEfProjection.Declaration)
             .WithControlLoop(loop => loop
                 .WithPollingInterval(TimeSpan.FromMilliseconds(100))
-                .WithBatchSize(500)));
+                .WithBatchSize(500)
+                .WithRebuilds()));
 
         // Note: Query-side state stores are created dynamically per-tenant in GraphQL queries.
         // The projection state stores above use the tenant from the event envelope during writes.

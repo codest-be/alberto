@@ -36,7 +36,7 @@ public static class OrderSummaryEfProjection
                 apply: Apply)
             .Build();
 
-    private static OrderSummaryEntity Apply(OrderSummaryEntity state, OrderCreated e, ProjectionContext ctx)
+    private static ProjectionResult<OrderSummaryEntity> Apply(OrderSummaryEntity state, OrderCreated e, ProjectionContext ctx)
     {
         return new OrderSummaryEntity
         {
@@ -60,7 +60,7 @@ public static class OrderSummaryEfProjection
         };
     }
 
-    private static OrderSummaryEntity Apply(OrderSummaryEntity state, OrderItemAdded e, ProjectionContext ctx)
+    private static ProjectionResult<OrderSummaryEntity> Apply(OrderSummaryEntity state, OrderItemAdded e, ProjectionContext ctx)
     {
         // Remove existing item with same product (if any) and add new
         var items = state.LineItems.Where(x => x.ProductId != e.ProductId).ToList();
@@ -95,7 +95,7 @@ public static class OrderSummaryEfProjection
         };
     }
 
-    private static OrderSummaryEntity Apply(OrderSummaryEntity state, OrderItemRemoved e, ProjectionContext ctx)
+    private static ProjectionResult<OrderSummaryEntity> Apply(OrderSummaryEntity state, OrderItemRemoved e, ProjectionContext ctx)
     {
         var items = state.LineItems.Where(x => x.ProductId != e.ProductId).ToList();
 
@@ -121,7 +121,7 @@ public static class OrderSummaryEfProjection
         };
     }
 
-    private static OrderSummaryEntity Apply(OrderSummaryEntity state, OrderConfirmed e, ProjectionContext ctx)
+    private static ProjectionResult<OrderSummaryEntity> Apply(OrderSummaryEntity state, OrderConfirmed e, ProjectionContext ctx)
     {
         return new OrderSummaryEntity
         {
@@ -145,7 +145,7 @@ public static class OrderSummaryEfProjection
         };
     }
 
-    private static OrderSummaryEntity Apply(OrderSummaryEntity state, OrderShipped e, ProjectionContext ctx)
+    private static ProjectionResult<OrderSummaryEntity> Apply(OrderSummaryEntity state, OrderShipped e, ProjectionContext ctx)
     {
         return new OrderSummaryEntity
         {
@@ -169,7 +169,7 @@ public static class OrderSummaryEfProjection
         };
     }
 
-    private static OrderSummaryEntity Apply(OrderSummaryEntity state, OrderDelivered e, ProjectionContext ctx)
+    private static ProjectionResult<OrderSummaryEntity> Apply(OrderSummaryEntity state, OrderDelivered e, ProjectionContext ctx)
     {
         return new OrderSummaryEntity
         {
@@ -193,7 +193,7 @@ public static class OrderSummaryEfProjection
         };
     }
 
-    private static OrderSummaryEntity Apply(OrderSummaryEntity state, OrderCancelled e, ProjectionContext ctx)
+    private static ProjectionResult<OrderSummaryEntity> Apply(OrderSummaryEntity state, OrderCancelled e, ProjectionContext ctx)
     {
         return new OrderSummaryEntity
         {

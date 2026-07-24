@@ -38,7 +38,13 @@ public sealed class BatchedEfProjectionTests(EfProjectionTestFixture fixture)
             // ProcessEventAsync call adds the entity to the tracker and subsequent
             // calls within the same batch see the tracked instance instead of querying
             // (and potentially re-inserting) via the DB.
-            var existing = await context.Counters.FindAsync([payload.EntityId], ct);
+            //
+            // A projection entity is keyed by (DocumentId, RebuildVersion) so a rebuild can
+            // write a second copy of the projection alongside the live one. A hand-written
+            // batch handler is not version-aware, so it works at the version a projection
+            // that has never been rebuilt writes to.
+            var existing = await context.Counters.FindAsync(
+                [payload.EntityId, ProjectionVersions.Initial], ct);
 
             if (existing is not null)
             {

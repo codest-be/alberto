@@ -187,7 +187,7 @@ public static class OrderMutations
         Guid orderId,
         CancellationToken ct)
     {
-        var events = await backend.Stream(OrderBoundary.BoundaryFor(orderId), cancellationToken: ct);
+        var events = await backend.StreamAsync(OrderBoundary.BoundaryFor(orderId), cancellationToken: ct);
         return _evolver.Reconstitute(events);
     }
 
