@@ -7,7 +7,7 @@ namespace Alberto.Dcb.Postgres;
 /// PostgreSQL implementation of <see cref="ICheckpointStore"/>.
 /// Uses the alberto_processor_checkpoints table.
 /// </summary>
-public sealed class PostgresCheckpointStore : IFencedCheckpointStore
+public sealed class PostgresCheckpointStore : IFencedCheckpointStore, ICheckpointInventory
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly SchemaQualifier _schema;
@@ -65,6 +65,22 @@ public sealed class PostgresCheckpointStore : IFencedCheckpointStore
         cmd.Parameters.AddWithValue("processor_id", processorId);
 
         await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<string>> ListProcessorIdsAsync(CancellationToken ct = default)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var command = new NpgsqlCommand(
+            $"SELECT processor_id FROM {_schema.Table("alberto_processor_checkpoints")}",
+            connection);
+
+        var ids = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            ids.Add(reader.GetString(0));
+
+        return ids;
     }
 
     public async Task<bool> SaveIfLeaseHeldAsync(

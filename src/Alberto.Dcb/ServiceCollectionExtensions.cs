@@ -1,7 +1,11 @@
 using Alberto.Dcb.Configuration;
+using Alberto.Dcb.Subscriptions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Alberto.Dcb;
@@ -64,6 +68,17 @@ public static class ServiceCollectionExtensions
                     ? declared
                     : AlbertoModuleDefinition.ApplyConfiguration(declared, configuration);
 
+                var environment = provider.GetService<IHostEnvironment>();
+                if (environment is not null && !environment.IsDevelopment()
+                    && bound.Checkpoints.OrphanPolicy == OrphanCheckpointPolicy.Warn
+                    && declared.Checkpoints.OrphanPolicy == OrphanCheckpointPolicy.Warn)
+                {
+                    bound = bound with
+                    {
+                        Checkpoints = bound.Checkpoints with { OrphanPolicy = OrphanCheckpointPolicy.Strict },
+                    };
+                }
+
                 CopyInto(bound, definition);
             })
             .ValidateOnStart();
@@ -73,6 +88,12 @@ public static class ServiceCollectionExtensions
         var context = new AlbertoModuleContext(services, final);
 
         final.Backend?.Register(context);
+
+        services.AddSingleton<IHostedService>(sp => new OrphanCheckpointHostedService(
+            sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>().Get(moduleKey),
+            sp.GetKeyedService<ICheckpointStore>(moduleKey) as ICheckpointInventory,
+            sp.GetService<ILogger<OrphanCheckpointHostedService>>()
+                ?? NullLogger<OrphanCheckpointHostedService>.Instance));
 
         foreach (var register in builder.DeferredRegistrations)
             register(context);

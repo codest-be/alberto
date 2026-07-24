@@ -7,7 +7,7 @@ namespace Alberto.Dcb.InMemory;
 /// Thread-safe for concurrent access.
 /// Useful for testing.
 /// </summary>
-public sealed class InMemoryCheckpointStore : ICheckpointStore
+public sealed class InMemoryCheckpointStore : ICheckpointStore, ICheckpointInventory
 {
     private readonly object _lock = new();
     private readonly Dictionary<string, long> _checkpoints = new();
@@ -48,6 +48,15 @@ public sealed class InMemoryCheckpointStore : ICheckpointStore
         lock (_lock)
         {
             _checkpoints.Clear();
+        }
+    }
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<string>> ListProcessorIdsAsync(CancellationToken ct = default)
+    {
+        lock (_lock)
+        {
+            return Task.FromResult<IReadOnlyList<string>>(_checkpoints.Keys.ToList());
         }
     }
 }
