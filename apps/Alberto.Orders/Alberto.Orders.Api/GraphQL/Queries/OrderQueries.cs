@@ -44,16 +44,18 @@ public static class OrderQueries
     /// Gets the orders overview statistics from the async projection.
     /// </summary>
     [Query]
-    [GraphQLDescription("Gets aggregated order statistics from the async projection.")]
+    [GraphQLDescription("Gets aggregated order statistics from the async projection. Spans all tenants.")]
     public static async Task<OrdersOverview?> GetOrdersOverview(
-        IResolverContext context,
         [Service] IServiceProvider sp,
         CancellationToken ct)
     {
-        var tenantId = GetTenantId(context);
+        // Constructed exactly like the writer in OrdersModule: no tenant. The async projection
+        // runs across tenants through one singleton store, so its rows live under the
+        // single-tenant primary key. Passing a tenant here would query (tenant_id, ...) instead
+        // and always come back empty. See OrdersOverviewProjection for why.
         var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(OrdersModule.ModuleKey);
         var stateStore = new PostgresStateStore<OrdersOverview>(
-            dataSource, tenantId, nameof(OrdersOverviewProjection), "orders");
+            dataSource, nameof(OrdersOverviewProjection), "orders");
 
         var states = await stateStore.LoadManyAsync(
             [OrdersOverviewProjection.DocumentId],
@@ -148,7 +150,7 @@ public static class OrderQueries
         Guid orderId,
         CancellationToken ct)
     {
-        var events = await backend.Stream(OrderBoundary.BoundaryFor(orderId), cancellationToken: ct);
+        var events = await backend.StreamAsync(OrderBoundary.BoundaryFor(orderId), cancellationToken: ct);
         return _evolver.Reconstitute(events);
     }
 

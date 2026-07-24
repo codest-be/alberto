@@ -5,8 +5,25 @@ using Alberto.Orders.Infrastructure.ReadModels;
 
 namespace Alberto.Orders.Infrastructure.Projections;
 
+/// <summary>
+/// Running counters over all order activity, kept in a single JSONB document.
+/// </summary>
+/// <remarks>
+/// This is a <strong>cross-tenant</strong> aggregate. The async control loop consumes events for
+/// every tenant through one singleton state store, and <c>On&lt;TEvent&gt;</c> hands the document-ID
+/// selector only the parsed event — never the tenant — so there is no seam at which a per-tenant
+/// key could be derived. Readers must construct their store the same tenant-agnostic way
+/// (see <c>OrderQueries.GetOrdersOverview</c>); a tenant-scoped store queries a different primary
+/// key and would silently return nothing.
+///
+/// For a genuinely tenant-isolated read model, see <see cref="OrderSummaryEfProjection"/>, which
+/// stores the tenant as a column and lets the query filter on it.
+/// </remarks>
 public static class OrdersOverviewProjection
 {
+    /// <summary>
+    /// The single document this projection maintains.
+    /// </summary>
     public const string DocumentId = "overview";
 
     public static readonly ProjectionDeclaration<OrdersOverview> Declaration =

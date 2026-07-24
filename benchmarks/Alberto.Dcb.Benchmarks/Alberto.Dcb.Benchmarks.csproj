@@ -12,11 +12,6 @@
       the repo has it enabled per-project.
     -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <!--
-      Not included in AlbertoV3.slnx because the solution's apps/ projects do not
-      currently compile. Run directly with:
-        dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks
-    -->
   </PropertyGroup>
 
   <ItemGroup>
@@ -25,13 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!--
-      BenchmarkDotNet is not listed in Directory.Packages.props.
-      VersionOverride is the CPM-approved escape hatch for packages outside the
-      central version catalogue (https://learn.microsoft.com/en-us/nuget/consume-packages/Central-Package-Management#overriding-package-versions).
-      When BenchmarkDotNet is added to Directory.Packages.props, remove VersionOverride here.
-    -->
-    <PackageReference Include="BenchmarkDotNet" VersionOverride="0.14.0" />
+    <PackageReference Include="BenchmarkDotNet" />
   </ItemGroup>
 
 </Project>

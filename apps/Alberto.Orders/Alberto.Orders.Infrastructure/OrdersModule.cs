@@ -58,8 +58,11 @@ public static class OrdersModule
                 .WithPollingInterval(TimeSpan.FromMilliseconds(100))
                 .WithBatchSize(500)));
 
-        // Note: Query-side state stores are created dynamically per-tenant in GraphQL queries.
-        // The projection state stores above use the tenant from the event envelope during writes.
+        // Note on tenancy: the async control loop consumes every tenant's events through these
+        // singleton state stores, so the JSONB projection above is a cross-tenant aggregate and
+        // its rows carry no tenant_id. Query-side stores must be constructed the same way.
+        // Per-tenant read models go through the EF projection, which persists the tenant as a
+        // column that queries can filter on.
 
         return services;
     }

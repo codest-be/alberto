@@ -93,7 +93,7 @@ public class AppendBenchmarks
     /// </summary>
     [Benchmark(Baseline = true)]
     public Task<IReadOnlyCollection<IEventEnvelope>> SingleAppend()
-        => _backend.Append([_singleEventPrebuilt]);
+        => _backend.AppendAsync([_singleEventPrebuilt]);
 
     /// <summary>
     /// Appends a batch of events (parameterized by <see cref="BatchSize"/>) in one call.
@@ -101,7 +101,7 @@ public class AppendBenchmarks
     /// </summary>
     [Benchmark]
     public Task<IReadOnlyCollection<IEventEnvelope>> BatchAppend()
-        => _backend.Append(_batchEvents);
+        => _backend.AppendAsync(_batchEvents);
 
     /// <summary>
     /// Single append where the EventTag is constructed inside the benchmark invocation —
@@ -117,7 +117,7 @@ public class AppendBenchmarks
             Tags = [new EventTag("order", "1")],   // <-- regex fires here
             EventData = """{"orderId":"1","amount":99.99}""",
         };
-        return _backend.Append([evt]);
+        return _backend.AppendAsync([evt]);
     }
 
     /// <summary>
@@ -132,5 +132,5 @@ public class AppendBenchmarks
     /// </summary>
     [Benchmark]
     public Task<IReadOnlyCollection<IEventEnvelope>> SingleAppend_WithDcbCheck()
-        => _backend.Append([_singleEventPrebuilt], dcbQuery: _neverConflictingQuery, expectedPosition: 0);
+        => _backend.AppendAsync([_singleEventPrebuilt], dcbQuery: _neverConflictingQuery, expectedPosition: 0);
 }
