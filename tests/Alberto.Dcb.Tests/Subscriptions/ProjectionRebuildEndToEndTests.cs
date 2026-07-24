@@ -212,22 +212,21 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
             async () => await ReadAsync(versionBefore, player, ct) is { Points: 8 },
             "the live projection to catch up", ct);
 
-        var started = await StartRebuildAsync(ct);
+        // Seed the version being rebuilt, so the abort has state to discard rather than
+        // trivially succeeding on an empty one. Written by hand rather than by waiting for the
+        // real shadow loop: the fixture auto-promotes, and waiting is long enough for the
+        // rebuild to finish and leave nothing to abort.
+        var (started, outcome) = await AbortAFreshRebuildAsync(
+            version => WriteAsync(version, player, new Totals { Points = 8 }, ct), ct);
+
         var abandonedVersion = started.RebuildingVersion!.Value;
 
-        // Let the shadow loop actually write something, so the abort has state to discard
-        // rather than trivially succeeding on an empty version.
-        await WaitUntilAsync(
-            async () => await ReadAsync(abandonedVersion, player, ct) is not null,
-            "the shadow loop to write into the rebuilding version", ct);
-
-        var outcome = await RebuildStore.AbortAsync(TotalsProjection.ProcessorId, ct);
-
         outcome.DiscardedVersion.Should().Be(abandonedVersion);
-        outcome.State.ActiveVersion.Should().Be(versionBefore);
+        outcome.State.ActiveVersion.Should().Be(started.ActiveVersion,
+            "an abort must not move the version readers are served from");
         outcome.State.RebuildingVersion.Should().BeNull();
 
-        (await ReadAsync(versionBefore, player, ct))!.Points.Should().Be(8);
+        (await ReadAsync(started.ActiveVersion, player, ct))!.Points.Should().Be(8);
         (await ReadAsync(abandonedVersion, player, ct)).Should().BeNull();
     }
 
@@ -251,7 +250,8 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
             async () => await ReadAsync(before, player, ct) is { Points: 6 },
             "the live projection to catch up", ct);
 
-        var abandonedVersion = await AbortAFreshRebuildAsync(ct);
+        var abandonedVersion = (await AbortAFreshRebuildAsync(afterStart: null, ct))
+            .Started.RebuildingVersion!.Value;
 
         // The write the abort could not prevent: the shadow loop lives in the application
         // process and only learns of the abort on a later tick, so anything it has in hand lands
@@ -297,20 +297,28 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
     /// </summary>
     /// <remarks>
     /// The fixture auto-promotes, and the log here is short enough that a loaded machine can
-    /// take a rebuild all the way from started to promoted between these two calls — at which
+    /// take a rebuild all the way from started to promoted before the abort lands — at which
     /// point there is nothing left to abort. That is the coordinator working, not failing, so
-    /// the answer is to try again rather than to assert about it.
+    /// the answer is to try again rather than to assert about which got there first. Nothing
+    /// after this point may assume the active version is the one the caller last read.
     /// </remarks>
-    private async Task<int> AbortAFreshRebuildAsync(CancellationToken ct)
+    /// <param name="afterStart">
+    /// Runs against the freshly allocated rebuilding version before the abort, for tests that
+    /// need that version to hold something. Re-runs on each attempt.
+    /// </param>
+    private async Task<(ProjectionRebuildState Started, RebuildOutcome Outcome)>
+        AbortAFreshRebuildAsync(Func<int, Task>? afterStart, CancellationToken ct)
     {
         for (var attempt = 1; ; attempt++)
         {
             var started = await StartRebuildAsync(ct);
 
+            if (afterStart is not null)
+                await afterStart(started.RebuildingVersion!.Value);
+
             try
             {
-                await RebuildStore.AbortAsync(TotalsProjection.ProcessorId, ct);
-                return started.RebuildingVersion!.Value;
+                return (started, await RebuildStore.AbortAsync(TotalsProjection.ProcessorId, ct));
             }
             catch (RebuildStateException) when (attempt < 10)
             {
