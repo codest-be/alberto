@@ -121,18 +121,25 @@ does not block the ones behind it.
 
 ```csharp
 .WithControlLoop(loop => loop
-    .WithErrorPolicy(p => p with
+    .WithErrorPolicy(p => new ErrorPolicy
     {
         MaxRetries = 5,                                  // default 3; 0 = one attempt, no retry
         RetryDelay = TimeSpan.FromSeconds(1),            // default
         BackoffMultiplier = 2.0,                         // default; 1.0 = constant delay
         MaxRetryDelay = TimeSpan.FromSeconds(30),        // default backoff cap
         DeadLetterOnMaxRetries = true,                   // default; false skips instead
+        ErrorClassifier = p.ErrorClassifier,             // carry through what you are not changing
     }))
 ```
 
+`ErrorPolicy` is a class with `init` properties, not a record, so there is no `with` expression —
+the configurator hands you the current policy and you return a **new** instance. Anything you do
+not set reverts to its default rather than to the current policy's value, which is why
+`ErrorClassifier` is carried across explicitly above.
+
 `DeadLetterOnMaxRetries = false` means a failing event is **dropped silently**. Only set it for
-processors where losing an event is genuinely acceptable.
+processors where losing an event is genuinely acceptable. A negative `MaxRetries` throws at
+construction rather than silently skipping the dispatch loop.
 
 ### Which failures are transient
 
@@ -301,7 +308,11 @@ services.AddOpenTelemetry()
 
 Both halves are needed: `.WithTelemetry()` on the module inserts the instrumentation middleware;
 `AddAlbertoInstrumentation()` subscribes the OpenTelemetry providers to the meter and activity
-source. The meter is `Alberto.Dcb`.
+source. Wire only the first and nothing is exported; wire only the second and there is nothing to
+export. The meter is `Alberto.Dcb`.
+
+Both extensions live in `Alberto.Dcb.Telemetry`; `AddOpenTelemetry()` itself comes from
+`OpenTelemetry.Extensions.Hosting`, which you reference yourself.
 
 **Activities**
 
