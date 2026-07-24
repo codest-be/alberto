@@ -4,19 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Alberto is a DCB (Dynamic Consistency Boundary) Event Store system with a .NET 10.0 backend and Angular 21.1.0 admin dashboard. The repository is a monorepo containing core libraries, applications, and tests.
+Alberto is a DCB (Dynamic Consistency Boundary) Event Store for .NET 10.0. The repository is a monorepo containing packable core libraries (`/src`), example applications (`/apps`), an operator CLI (`/tools`), and tests (`/tests`).
+
+There is no frontend in this repository — the event store is a library plus a terminal CLI.
 
 ## Build & Run Commands
 
 ### Full Stack (Recommended)
 ```bash
-# Start all services via .NET Aspire (PostgreSQL, Orders API, Admin Web, K6)
 dotnet run --project apps/Alberto.AppHost
 ```
-This starts:
-- PostgreSQL on port 5432 (with PgAdmin on 8080)
-- Orders API on port 5180
-- Angular Admin Web on port 4200
+Aspire starts PostgreSQL, runs the Orders migrations, then starts the Orders API. K6 load tests are registered as a manually-triggered resource in the Aspire dashboard.
 
 ### .NET Backend
 ```bash
@@ -25,84 +23,82 @@ dotnet test                     # Run all xUnit tests
 dotnet test --filter "FullyQualifiedName~TestName"  # Run single test
 ```
 
-### Angular Frontend
-```bash
-cd apps/Alberto.Admin.Web
-npm start                       # Dev server on port 4200 (proxies to backend)
-npm run build                   # Production build
-npm test                        # Run Vitest tests
-```
+Postgres-backed tests use Testcontainers and need a running Docker daemon.
 
 ### Load Tests
 ```bash
 cd tests/Alberto.Orders.LoadTests
 npm install && npm run build
-npm run test:smoke              # Quick validation (30s)
-npm run test:load               # Full load test (~14min)
+npm run test:smoke              # Quick validation
+npm run test:load               # Full load test
+```
+
+### Operator CLI
+```bash
+dotnet run --project tools/Alberto.Cli -- status
 ```
 
 ## Architecture
 
 ### Directory Structure
 ```
-/apps/                          # Applications
-  Alberto.AppHost/              # Aspire orchestration (runs everything)
-  Alberto.Admin.Web/            # Angular 21 admin SPA
-  Alberto.Orders/               # Orders microservice
+/src/                           # Core libraries (packable NuGet)
+  Alberto.Dcb/                  # Event store abstractions, control loop, middleware
+  Alberto.Dcb.Commands/         # Command handling
+  Alberto.Dcb.InMemory/         # In-memory backend (dev/test)
+  Alberto.Dcb.Postgres/         # PostgreSQL backend, migrations, admin data access
+  Alberto.Dcb.EntityFramework/  # EF-backed projections
+  Alberto.Dcb.Messaging/        # Transactional outbox abstractions
+  Alberto.Dcb.Postgres.Messaging/  # PostgreSQL outbox store
+  Alberto.Dcb.Telemetry/        # OpenTelemetry instrumentation
+
+/apps/                          # Example applications
+  Alberto.AppHost/              # Aspire orchestration
+  ServiceDefaults/              # Shared Aspire service configuration
+  Alberto.Orders/               # Orders example
     Alberto.Orders.Api/         # GraphQL API
     Alberto.Orders.Core/        # Domain models
     Alberto.Orders.Infrastructure/  # Data access
+    Alberto.Orders.Migrations/  # EF migrations runner
+  Alberto.Payments/             # Payments example (Core + Infrastructure only)
 
-/src/                           # Core libraries (packable NuGet)
-  Alberto.Dcb/                  # Event store abstractions
-  Alberto.Dcb.Admin/            # Admin REST/GraphQL endpoints
-  Alberto.Dcb.Postgres/         # PostgreSQL backend
-  Alberto.Dcb.InMemory/         # In-memory backend (dev/test)
-  Alberto.Dcb.Telemetry/        # OpenTelemetry instrumentation
+/tools/
+  Alberto.Cli/                  # Operator CLI (Spectre.Console + System.CommandLine)
 
-/tests/                         # Test projects
-  Alberto.Dcb.Tests/            # Unit tests (xUnit 3)
+/tests/
+  Alberto.Dcb.Tests/            # Unit + Testcontainers integration tests (xUnit 3)
   Alberto.Orders.LoadTests/     # K6 load tests (TypeScript)
 ```
 
+Note: `apps/Alberto.Payments` is in the solution but is not orchestrated by the AppHost, and it does not currently build — see Known Gaps.
+
 ### Key Patterns
 - **Event Sourcing with DCB**: Append-only event log with dynamic consistency boundaries
-- **Async Processing**: PollingConsumer routes events to projections/reactors. See [docs/architecture/async-processing.md](docs/architecture/async-processing.md)
-- **Multi-Tenant**: X-Tenant-Id header propagation, tenant-isolated queries
-- **GraphQL**: HotChocolate 15.x with real-time subscriptions via WebSockets
-- **Angular Signals**: Components use `signal()`, `computed()`, `takeUntilDestroyed()`
-- **Zoneless**: Angular 21 zoneless change detection enabled
+- **Async Processing**: `ControlLoop` polls the event log and dispatches through a middleware chain to projections/reactors. See [docs/architecture/async-processing.md](docs/architecture/async-processing.md)
+- **Middleware**: `MiddlewareRunner` builds both the single-event (`ConsumeEventContext`) and batch (`BatchConsumeContext`) chains. Retry/dead-letter logic is shared via `RetryAndDeadLetterCore` behind `IMiddlewareContext`
+- **Multi-Tenant**: X-Tenant-Id header propagation, tenant-isolated queries, tenant leases
+- **Leases and fencing**: checkpoint writes can be fenced against a held lease via `IFencedCheckpointStore`
+- **Transactional outbox**: `IOutboxStore` with `pending → processing → delivered/failed`, claimed via `FOR UPDATE SKIP LOCKED`
+- **GraphQL** (Orders example only): HotChocolate 15.x
 
-### Angular Frontend Structure
-```
-src/app/
-├── core/                       # Services, GraphQL client, models
-├── features/                   # Lazy-loaded feature modules
-│   ├── dashboard/
-│   ├── processors/
-│   ├── checkpoints/
-│   ├── dead-letters/
-│   └── projections/
-└── shared/                     # Reusable components
-```
+### Admin surface
+The operator surface is the CLI in `tools/Alberto.Cli`. There is no admin HTTP API or admin package.
 
-### Backend Services
-- **AdminApiService**: REST endpoints for processor/checkpoint management
-- **AdminSubscriptionService**: GraphQL subscriptions for real-time updates
-- **PostgresAdminDataAccess**: Direct PostgreSQL queries for admin data
+- **Per-processor mutations** go through the core interfaces: `ICheckpointStore` (`SaveAsync`, `ResetAsync`, `RewindAsync`) and `IDeadLetterStore` (`CountAsync`, `ClearAsync`, `MarkForRetryAsync`).
+- **`PostgresAdminDataAccess`** (`src/Alberto.Dcb.Postgres`) holds the inspection queries and the composite transactional mutations (`RetryByRewindAsync`, `ReleaseTenantLeasesAsync`) that span multiple tables and so cannot be composed from per-processor interfaces.
+- `SaveAsync` is monotonic by design (`GREATEST`). `RewindAsync` is the deliberate escape hatch for operator-initiated rewinds and is the only way to move a checkpoint backwards.
 
 ## Technology Stack
 
 | Layer | Technology |
 |-------|------------|
-| Backend Framework | .NET 10.0, ASP.NET Core |
-| GraphQL | HotChocolate 15.1.12 |
-| Database | PostgreSQL 15+ (Npgsql 10.0.1) |
-| Migrations | DbUp-PostgreSQL |
-| Frontend | Angular 21.1.0 (standalone components) |
-| GraphQL Client | Apollo Angular 13.0.0 |
-| Observability | OpenTelemetry 1.14.0 |
-| Testing | xUnit 3.2.2, FluentAssertions, Testcontainers |
+| Framework | .NET 10.0, ASP.NET Core |
+| GraphQL (Orders example) | HotChocolate 15.1.15 |
+| Database | PostgreSQL (Npgsql 10.0.2) |
+| Migrations | DbUp-PostgreSQL 7.0.1 (event store), EF Core 10.0.7 (Orders) |
+| Observability | OpenTelemetry 1.15.3 |
+| Testing | xUnit v3 3.2.2, FluentAssertions 8.9.0, Testcontainers 4.11.0 |
+| CLI | Spectre.Console 0.55.2, System.CommandLine 2.0.7 |
 | Load Testing | K6 with TypeScript |
 
 ## Package Management
@@ -114,4 +110,12 @@ src/app/
 
 - **Solution file**: `AlbertoV3.slnx` (modern .NET format)
 - **Build settings**: `Directory.Build.props`
-- **Angular proxy**: `apps/Alberto.Admin.Web/proxy.conf.js` (proxies `/graphql` and `/alberto` to backend)
+
+## Known Gaps
+
+Documented so they are not mistaken for working features:
+
+- **Projection rebuild orchestration is scaffolding only.** The schema (`alberto_projection_states.rebuild_version`, `alberto_projection_rebuild_meta`), the `IProjectionStateClearer` interface, its `EfProjectionStateClearer` implementation and its DI registration all exist, but nothing resolves the clearer and nothing reads or writes `alberto_projection_rebuild_meta`. `PostgresStateStore`'s `rebuildVersion` is always its default of `1`. `alberto ops rebuild` resets the checkpoint; it does not clear projection state, and no running application does either.
+- **`BufferedCheckpointStore` is unreachable.** It is `internal sealed`, fully implemented and unit-tested, but nothing constructs it — `PostgresBuilderExtensions` wires `CachingCheckpointStore` directly over `PostgresCheckpointStore`, and being `internal` it cannot be wired by a package consumer either.
+- **Orphaned outbox entries have no reclaim path.** A relay that dies between claiming an entry (`processing`) and marking it `delivered`/`failed` strands the row. `alberto_outbox_entries` has no claim-lease columns, and `RetryFailedAsync` only matches `failed`. See the skipped test `DiscoveredIssuesTests.OutboxStore_ProcessingEntriesOrphaned_CannotBeRecoveredByRetryFailed`.
+- **`apps/Alberto.Payments` and part of `apps/Alberto.Orders` do not compile.** `OrderSummaryEfProjection`, `PaymentsOverviewProjection` and `PaymentSummaryProjection` fail to build. `dotnet build` on the whole solution reports these errors; the `/src`, `/tools` and `/tests` projects build clean.

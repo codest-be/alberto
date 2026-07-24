@@ -80,8 +80,16 @@ public sealed class ControlLoopBuilder
 
     /// <summary>
     /// Configures the error-handling policy by transforming the current value.
-    /// Useful with <c>with</c>-style record updates:
-    /// <code>.WithErrorPolicy(p => p with { MaxRetries = 5 })</code>
+    /// <see cref="ErrorPolicy"/> is a class, not a record, so the configurator returns a new
+    /// instance and reads whatever it wants to keep off the current one:
+    /// <code>
+    /// .WithErrorPolicy(p => new ErrorPolicy
+    /// {
+    ///     MaxRetries = 5,
+    ///     RetryDelay = p.RetryDelay,
+    ///     ErrorClassifier = p.ErrorClassifier,
+    /// })
+    /// </code>
     /// </summary>
     public ControlLoopBuilder WithErrorPolicy(Func<ErrorPolicy, ErrorPolicy> configure)
     {
