@@ -306,9 +306,12 @@ source. The meter is `Alberto.Dcb`.
 | `Alberto.Consume` | One event through the middleware chain |
 | `Alberto.Process` | One handler's work |
 
-Trace context is carried in the event's `metadata`, so an `Alberto.Consume` span links back to the
-`Alberto.Append` that wrote the event — the seam between the synchronous write and the asynchronous
-consumer stays connected in the trace.
+The append writes its trace and span ids into the event's `metadata` (as `_traceId` and `_spanId`),
+and the consume middleware turns them back into an **`ActivityLink`** on the `Alberto.Consume`
+span. A link rather than a parent, because the consumer runs minutes later on a different loop and
+is not a child of the request that wrote the event — but the seam between the synchronous write and
+the asynchronous consumer is still navigable in the trace, which is the thing that is otherwise
+impossible to debug.
 
 **Metrics**
 
