@@ -5,8 +5,8 @@ namespace Alberto.Dcb;
 
 /// <summary>
 /// Setup-time surface for configuring an <see cref="IEventStore"/> before it is used at runtime.
-/// Implemented by the concrete event-store classes (<c>PostgresEventStore</c>, <c>InMemoryEventStore</c>)
-/// and consumed exclusively by builder/registration code — never by runtime consumers.
+/// Implemented by <see cref="EventStore"/> and consumed exclusively by builder/registration
+/// code — never by runtime consumers.
 /// </summary>
 /// <remarks>
 /// Keeping setup methods here rather than on <see cref="IEventStore"/> prevents runtime code that

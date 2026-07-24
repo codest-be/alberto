@@ -35,8 +35,7 @@ public static class MessageMappingRegistryExtensions
     /// <summary>
     /// Registers a mapper that projects <typeparamref name="TEvent"/> to <typeparamref name="TMessage"/>
     /// using the <see cref="MessageAttribute"/> on <typeparamref name="TMessage"/> for type and version.
-    /// <typeparamref name="TDep"/> is resolved from the <see cref="IServiceProvider"/> at map time,
-    /// mirroring the factory-form <c>ReactTo&lt;TEvent&gt;</c> pattern.
+    /// <typeparamref name="TDep"/> is resolved from an event-specific dependency scope at map time.
     /// </summary>
     public static void Map<TEvent, TDep, TMessage>(
         this IMessageMappingRegistry registry,

@@ -120,7 +120,7 @@ public sealed class PostgresDeadLetterStoreTests(SingleTenantPostgresFixture fix
 
     private async Task<(PostgresDeadLetterStore Store, DeadLetterEntry Entry, EventTag Tag)> SeedRetryRequestedEntryAsync()
     {
-        var eventStore = new PostgresEventStore(new PostgresEventStoreBackend(fixture.DataSource));
+        var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
         var deadLetterStore = new PostgresDeadLetterStore(fixture.DataSource);
 
         var orderId = Guid.NewGuid();

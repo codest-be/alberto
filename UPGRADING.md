@@ -7,10 +7,13 @@ The most recent cycle (2026-07-24 library audit) is at the top. Older changes fo
 
 ## Summary — 2026-07-24 audit cycle
 
-Twelve breaking changes were introduced. They fall into five areas:
+Fifteen breaking changes were introduced. They fall into the areas below:
 
 | Finding | Area | Severity | What broke |
 |---------|------|----------|------------|
+| Architecture review | Event-store module | High | Backend-specific event-store types replaced by `EventStore` |
+| Architecture review | Projection state | High | Unreachable transaction/list members removed from projection interfaces |
+| Architecture review | Dependency lifetimes | High | `AlbertoStore` is scoped; outbox mappings get one scope per event |
 | DX-15 / P3.1 | Event-store interface | High | `IEventStoreBackend` method renames + `IEventStoreHeadBackend` split |
 | DX-10 | Event-store interface | Medium | `Register*` methods removed from `IEventStore` |
 | DX-2 / DX-3 / DX-12 | Command/result API | Medium | `DecisionResult<TEvent>` obsoleted; `DecideAndAppendAsync` moved; `AddAlbertoStore` chained from builder |
@@ -23,6 +26,63 @@ Twelve breaking changes were introduced. They fall into five areas:
 | P1.5 | Tenancy | Low | `TenantContext.SetTenant` now validates tenant ID format |
 | P0.7 | Consumer pipeline | Low | Inline-projection retry exhaustion wraps exception |
 | DX-11 | Event-store interface | Low | `[Tag]` no longer valid on bare primary-constructor parameters |
+
+---
+
+## Architecture deepening
+
+### Backend-specific event-store types replaced by `EventStore`
+
+`PostgresEventStore` and `InMemoryEventStore` contained the same append, synchronous-projection,
+and post-append orchestration. That behavior now lives once in `Alberto.Dcb.EventStore`; storage
+variation remains behind the existing `IEventStoreBackend` seam.
+
+```csharp
+// Before
+var store = new InMemoryEventStore(new InMemoryEventStoreBackend());
+var postgresStore = new PostgresEventStore(postgresBackend);
+
+// After
+var store = new EventStore(new InMemoryEventStoreBackend());
+var postgresStore = new EventStore(postgresBackend);
+```
+
+`EventStore` still implements both `IEventStore` and `IEventStoreConfigurator`.
+
+### Projection state interface narrowed
+
+`IStateStore<TState>.LoadManyAsync` and `ApplyChangesAsync` no longer accept an
+`IDbTransaction`. No reachable event-store path supplied one: synchronous projections run after
+the event append commits, and every built-in caller passed `null`. Each state-store adapter now
+owns the transaction needed to apply its changes atomically.
+
+`IStateStore<TState>.ListRecentAsync` was also removed. Projection persistence never called it;
+inspection belongs on a query/admin surface instead of forcing every persistence adapter and
+test fake to implement it.
+
+`IInlineProjection.ProcessAsync` consequently no longer accepts an `IDbTransaction`.
+
+```csharp
+// Before
+await stateStore.LoadManyAsync(ids, transaction, ct);
+await stateStore.ApplyChangesAsync(upserts, deletes, transaction, ct);
+await projection.ProcessAsync(events, transaction, ct);
+
+// After
+await stateStore.LoadManyAsync(ids, ct);
+await stateStore.ApplyChangesAsync(upserts, deletes, ct);
+await projection.ProcessAsync(events, ct);
+```
+
+### Scoped command and outbox dependencies
+
+`AddAlbertoStore` now registers `AlbertoStore` as scoped. This matches the scoped event-store
+adapter used by multi-tenant Postgres modules and prevents a singleton command store from
+capturing the first tenant context.
+
+Outbox mappings now receive a fresh dependency scope per event. Scoped mapper dependencies are
+disposed after mapping, including when mapping fails; concurrent batch mappings never share a
+scoped dependency.
 
 ---
 
@@ -144,11 +204,6 @@ catch (InlineProjectionExhaustedException ex)
     // All 5 retries exhausted: ex.ProcessorId, ex.Attempts, ex.DocumentCount available.
     // Schedule an async replay for the affected projection.
     logger.LogCritical("Projection {Id} diverged — replay required", ex.ProcessorId);
-}
-catch (DbUpdateConcurrencyException ex)
-{
-    // Single-attempt failure not covered by the retry path
-    // (e.g., external-transaction mode where ownsTransaction == false).
 }
 ```
 
@@ -463,9 +518,9 @@ directly is affected.
 - `RegisterInlineProjection(IInlineProjection)`
 - `RegisterPostAppendHandler(IPostAppendHandler)`
 
-They now live on a new `IEventStoreConfigurator` interface (in `Alberto.Dcb`). The concrete
-store classes (`PostgresEventStore`, `InMemoryEventStore`) implement **both** `IEventStore` and
-`IEventStoreConfigurator`. `RegisterEfInlineProjection` extension methods in
+They now live on a new `IEventStoreConfigurator` interface (in `Alberto.Dcb`).
+`EventStore` implements **both** `IEventStore` and `IEventStoreConfigurator`.
+`RegisterEfInlineProjection` extension methods in
 `Alberto.Dcb.EntityFramework` now extend `IEventStoreConfigurator` rather than `IEventStore`.
 
 **Why:** `IEventStore` is the runtime consumer surface. Exposing setup-only methods on it lets
@@ -473,8 +528,7 @@ runtime code accidentally register projections or handlers after the store has a
 serving requests, leading to unpredictable ordering or missed events.
 
 **Impact:** breaking for code that calls `Register*` through a variable typed as `IEventStore`,
-or that implements `IEventStore` in a custom class with those methods. Code that calls them on
-concrete types directly (e.g. in tests with `new InMemoryEventStore(...)`) is **not affected**.
+or that implements `IEventStore` in a custom class with those methods.
 
 **Migration — calling `Register*` through `IEventStore`:**
 
@@ -492,7 +546,7 @@ if (store is IEventStoreConfigurator configurator)
 }
 
 // After — option B (resolve IEventStoreConfigurator directly)
-IEventStoreConfigurator configurator = new PostgresEventStore(backend);
+IEventStoreConfigurator configurator = new EventStore(backend);
 configurator.RegisterInlineProjection(myProjection);
 ```
 

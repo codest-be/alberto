@@ -1,4 +1,3 @@
-using System.Data;
 using System.Text.Json;
 using Alberto.Dcb.Subscriptions;
 using Npgsql;
@@ -30,10 +29,13 @@ public sealed class PostgresStateStore<TState>(
     private readonly bool _multiTenant = tenantId is not null;
     private readonly string? _tenantId = tenantId;
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Lists recent projection documents for the current projection and tenant.
+    /// This concrete query remains available for operator/inspection code without
+    /// widening the projection persistence interface.
+    /// </summary>
     public async Task<Dictionary<string, TState>> LoadManyAsync(
         IEnumerable<string> documentIds,
-        IDbTransaction? transaction = null,
         CancellationToken ct = default)
     {
         var ids = documentIds.ToList();
@@ -42,13 +44,8 @@ public sealed class PostgresStateStore<TState>(
 
         var result = new Dictionary<string, TState>();
 
-        if (transaction is NpgsqlTransaction npgsqlTransaction)
-            await LoadWithConnectionAsync(npgsqlTransaction.Connection!, ids, result, ct);
-        else
-        {
-            await using var connection = await _dataSource.OpenConnectionAsync(ct);
-            await LoadWithConnectionAsync(connection, ids, result, ct);
-        }
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await LoadWithConnectionAsync(connection, ids, result, ct);
 
         return result;
     }
@@ -109,33 +106,23 @@ public sealed class PostgresStateStore<TState>(
     public async Task ApplyChangesAsync(
         IReadOnlyDictionary<string, TState> upserts,
         IReadOnlyCollection<string> deletes,
-        IDbTransaction? transaction = null,
         CancellationToken ct = default)
     {
         if (upserts.Count == 0 && deletes.Count == 0)
             return;
 
-        if (transaction is NpgsqlTransaction npgsqlTransaction)
-            await ApplyWithConnectionAsync(npgsqlTransaction.Connection!, npgsqlTransaction, upserts, deletes, ct);
-        else
-        {
-            await using var connection = await _dataSource.OpenConnectionAsync(ct);
-            await ApplyWithConnectionAsync(connection, externalTransaction: null, upserts, deletes, ct);
-        }
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await ApplyWithConnectionAsync(connection, upserts, deletes, ct);
     }
 
     private async Task ApplyWithConnectionAsync(
         NpgsqlConnection connection,
-        NpgsqlTransaction? externalTransaction,
         IReadOnlyDictionary<string, TState> upserts,
         IReadOnlyCollection<string> deletes,
         CancellationToken ct)
     {
-        // When no caller-supplied transaction is present, wrap all batch commands in
-        // our own transaction so the upserts + deletes land atomically.
-        NpgsqlTransaction? ownedTransaction = externalTransaction is null
-            ? await connection.BeginTransactionAsync(ct)
-            : null;
+        // The adapter owns the transaction so the upserts + deletes land atomically.
+        await using var transaction = await connection.BeginTransactionAsync(ct);
 
         try
         {
@@ -180,7 +167,7 @@ public sealed class PostgresStateStore<TState>(
 
             await using var batch = new NpgsqlBatch(connection)
             {
-                Transaction = externalTransaction ?? ownedTransaction
+                Transaction = transaction
             };
 
             foreach (var (docId, state) in upserts)
@@ -210,19 +197,12 @@ public sealed class PostgresStateStore<TState>(
             if (batch.BatchCommands.Count > 0)
                 await batch.ExecuteNonQueryAsync(ct);
 
-            if (ownedTransaction is not null)
-                await ownedTransaction.CommitAsync(ct);
+            await transaction.CommitAsync(ct);
         }
         catch
         {
-            if (ownedTransaction is not null)
-                await ownedTransaction.RollbackAsync(ct);
+            await transaction.RollbackAsync(ct);
             throw;
-        }
-        finally
-        {
-            if (ownedTransaction is not null)
-                await ownedTransaction.DisposeAsync();
         }
     }
 

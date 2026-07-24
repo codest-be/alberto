@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using Alberto.Dcb.Messaging;
 using Alberto.Dcb.Subscriptions;
@@ -131,7 +132,11 @@ public class OutboxHandlerTests
         var registry = new MessageMappingRegistry();
         configure(registry);
         var store = new InMemoryOutboxStore();
-        var handler = new OutboxHandler(registry, store, sp ?? new ServiceCollection().BuildServiceProvider());
+        var provider = sp ?? new ServiceCollection().BuildServiceProvider();
+        var handler = new OutboxHandler(
+            registry,
+            store,
+            provider.GetRequiredService<IServiceScopeFactory>());
         return (handler, store);
     }
 
@@ -413,9 +418,131 @@ public class OutboxHandlerTests
         Assert.Equal("1", store.Entries[0].Version);
     }
 
+    [Fact]
+    public async Task Map_WithScopedDependency_CreatesAndDisposesOneScopePerEvent()
+    {
+        var tracker = new MappingScopeTracker();
+        var resolvedIds = new ConcurrentBag<Guid>();
+        var services = new ServiceCollection()
+            .AddSingleton(tracker)
+            .AddScoped<IOrderEnricher, ScopedOrderEnricher>();
+
+        await using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+
+        var (handler, store) = CreateHandler(
+            r => r.Map<OrderPlaced, IOrderEnricher, OrderPlacedMessage>(
+                (enricher, evt) =>
+                {
+                    resolvedIds.Add(((ScopedOrderEnricher)enricher).InstanceId);
+                    return new OrderPlacedMessage(evt.OrderId);
+                }),
+            provider);
+
+        await handler.ProcessEventAsync(
+            CreateEnvelope(new OrderPlaced(Guid.NewGuid(), 10m), 1),
+            TestContext.Current.CancellationToken);
+        await handler.ProcessEventAsync(
+            CreateEnvelope(new OrderPlaced(Guid.NewGuid(), 20m), 2),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, store.Entries.Count);
+        Assert.Equal(2, resolvedIds.Distinct().Count());
+        Assert.Equal(tracker.Created.Order(), tracker.Disposed.Order());
+    }
+
+    [Fact]
+    public async Task ProcessBatchAsync_ScopedDependenciesAreNotSharedAcrossConcurrentMappings()
+    {
+        var tracker = new MappingScopeTracker();
+        var resolvedIds = new ConcurrentBag<Guid>();
+        var services = new ServiceCollection()
+            .AddSingleton(tracker)
+            .AddScoped<IOrderEnricher, ScopedOrderEnricher>();
+
+        await using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+
+        var (handler, store) = CreateHandler(
+            r => r.Map<OrderPlaced, IOrderEnricher, OrderPlacedMessage>(
+                (enricher, evt) =>
+                {
+                    resolvedIds.Add(((ScopedOrderEnricher)enricher).InstanceId);
+                    return new OrderPlacedMessage(evt.OrderId);
+                }),
+            provider);
+
+        var events = Enumerable.Range(1, 8)
+            .Select(i => CreateEnvelope(new OrderPlaced(Guid.NewGuid(), i), i))
+            .ToList();
+
+        await handler.ProcessBatchAsync(events, TestContext.Current.CancellationToken);
+
+        Assert.Equal(events.Count, store.Entries.Count);
+        Assert.Equal(events.Count, resolvedIds.Distinct().Count());
+        Assert.Equal(tracker.Created.Order(), tracker.Disposed.Order());
+    }
+
+    [Fact]
+    public async Task ProcessEventAsync_MapperFailureStillDisposesItsDependencyScope()
+    {
+        var tracker = new MappingScopeTracker();
+        var services = new ServiceCollection()
+            .AddSingleton(tracker)
+            .AddScoped<IOrderEnricher, ScopedOrderEnricher>();
+
+        await using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+
+        var (handler, _) = CreateHandler(
+            r => r.Map<OrderPlaced>(async (_, sp, _) =>
+            {
+                _ = sp.GetRequiredService<IOrderEnricher>();
+                await Task.Yield();
+                throw new InvalidOperationException("mapping failed");
+            }),
+            provider);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            handler.ProcessEventAsync(
+                CreateEnvelope(new OrderPlaced(Guid.NewGuid(), 10m)),
+                TestContext.Current.CancellationToken));
+
+        Assert.Single(tracker.Created);
+        Assert.Equal(tracker.Created, tracker.Disposed);
+    }
+
     private sealed class FakeOrderEnricher(string label) : IOrderEnricher
     {
         public string GetLabel(Guid orderId) => label;
+    }
+
+    private sealed class ScopedOrderEnricher : IOrderEnricher, IAsyncDisposable
+    {
+        private readonly MappingScopeTracker _tracker;
+
+        public ScopedOrderEnricher(MappingScopeTracker tracker)
+        {
+            _tracker = tracker;
+            InstanceId = Guid.NewGuid();
+            tracker.Created.Add(InstanceId);
+        }
+
+        public Guid InstanceId { get; }
+
+        public string GetLabel(Guid orderId) => InstanceId.ToString();
+
+        public ValueTask DisposeAsync()
+        {
+            _tracker.Disposed.Add(InstanceId);
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class MappingScopeTracker
+    {
+        public ConcurrentBag<Guid> Created { get; } = [];
+        public ConcurrentBag<Guid> Disposed { get; } = [];
     }
 
     #endregion

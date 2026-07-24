@@ -2,7 +2,7 @@ namespace Alberto.Dcb.Messaging;
 
 /// <summary>
 /// Delegate that maps a persisted event envelope to an outgoing external message.
-/// Receives a <see cref="IServiceProvider"/> for optional service resolution.
+/// Receives an event-scoped <see cref="IServiceProvider"/> for optional dependency resolution.
 /// Return <c>null</c> to suppress publishing for this event.
 /// </summary>
 public delegate ValueTask<ExternalMessage?> EventToMessageMapper(

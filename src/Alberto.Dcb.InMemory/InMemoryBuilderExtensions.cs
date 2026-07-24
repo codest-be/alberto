@@ -43,10 +43,10 @@ public static class InMemoryBuilderExtensions
         builder.Services.AddKeyedSingleton<IEventStore>(moduleKey, (sp, key) =>
         {
             var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(key);
-            var eventStore = new InMemoryEventStore(backend);
-            RegisterInlineProjections(sp, key, eventStore);
-            RegisterPostAppendHandlers(sp, key, eventStore);
-            return eventStore;
+            return new EventStore(
+                backend,
+                sp.GetKeyedServices<IInlineProjection>(key),
+                sp.GetKeyedServices<IPostAppendHandler>(key));
         });
 
         builder.Services.AddKeyedSingleton<ICheckpointStore>(moduleKey, checkpointStore);
@@ -87,10 +87,10 @@ public static class InMemoryBuilderExtensions
         builder.Services.AddKeyedSingleton<IEventStore>(moduleKey, (sp, key) =>
         {
             var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(key);
-            var eventStore = new InMemoryEventStore(backend);
-            RegisterInlineProjections(sp, key, eventStore);
-            RegisterPostAppendHandlers(sp, key, eventStore);
-            return eventStore;
+            return new EventStore(
+                backend,
+                sp.GetKeyedServices<IInlineProjection>(key),
+                sp.GetKeyedServices<IPostAppendHandler>(key));
         });
 
         builder.Services.AddKeyedSingleton<ICheckpointStore>(moduleKey, checkpointStore);
@@ -99,15 +99,4 @@ public static class InMemoryBuilderExtensions
         return builder;
     }
 
-    private static void RegisterPostAppendHandlers(IServiceProvider sp, object? key, InMemoryEventStore eventStore)
-    {
-        foreach (var handler in sp.GetKeyedServices<IPostAppendHandler>(key))
-            eventStore.RegisterPostAppendHandler(handler);
-    }
-
-    private static void RegisterInlineProjections(IServiceProvider sp, object? key, InMemoryEventStore eventStore)
-    {
-        foreach (var projection in sp.GetKeyedServices<IInlineProjection>(key))
-            eventStore.RegisterInlineProjection(projection);
-    }
 }
