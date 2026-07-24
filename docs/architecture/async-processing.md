@@ -155,11 +155,14 @@ services.AddAlberto(ModuleKey, builder => builder
             npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "orders"));
     })
     .WithTelemetry()
-    .AddProjection(OrdersOverviewProjection.Declaration, sp =>
+    .AddProjection(OrdersOverviewProjection.Declaration, ctx =>
     {
-        var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
+        var dataSource = ctx.Services.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
         return () => new PostgresStateStore<OrdersOverview>(
-            dataSource, nameof(OrdersOverviewProjection), "orders");
+            dataSource,
+            projectionType: nameof(OrdersOverviewProjection),
+            schema: "orders",
+            rebuildVersion: ctx.RebuildVersion);
     })
     .AddEfProjection<OrderSummaryEntity, OrdersDbContext>(OrderSummaryEfProjection.Declaration)
     .WithControlLoop(loop => loop

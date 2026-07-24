@@ -49,6 +49,26 @@ for projections whose state rows are keyed by something other than the processor
 replays into. The only difference between them is which version they write to, so that is what
 the context carries.
 
+#### Stores built outside the module builder
+
+`ProjectionStoreContext` only exists inside an `AddProjection` factory. Code that constructs a
+state store elsewhere — a query handler, a GraphQL resolver — has no context to draw a version
+from, and a store left on the default pins itself to version 1 and keeps serving the *pre-rebuild*
+copy forever after a promotion.
+
+`ProjectionVersions.LiveVersion` is the reader-side entry point:
+
+```csharp
+new PostgresStateStore<OrdersOverview>(
+    dataSource,
+    projectionType: nameof(OrdersOverviewProjection),
+    schema: "orders",
+    rebuildVersion: ProjectionVersions.LiveVersion(sp, ModuleKey, nameof(OrdersOverviewProjection)));
+```
+
+It resolves to version 1 forever in a module with no rebuild pipeline, so it is safe to use
+unconditionally.
+
 ### RB-2 — EF projection entities are keyed by `(DocumentId, RebuildVersion)`
 
 Configure every entity registered with `AddEfProjection` in `OnModelCreating`:
