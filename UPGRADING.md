@@ -1,7 +1,108 @@
 # Alberto DCB — Upgrade Notes
 
 This file collects **every breaking change** introduced across all release cycles.
-The most recent cycle (2026-07-24 library audit) is at the top. Older changes follow.
+The most recent cycle (projection rebuilds) is at the top. Older changes follow.
+
+---
+
+## Summary — projection rebuild cycle
+
+Zero-downtime projection rebuilds landed. Projection state is now versioned, which is a
+source-breaking change for anyone registering projections and a schema change for anyone
+using `AddEfProjection`.
+
+| Change | Area | Severity | What broke |
+|---|---|---|---|
+| RB-1 | Projections | **High** | `AddProjection` takes a `ProjectionStoreContext`, not an `IServiceProvider` |
+| RB-2 | EF projections | **High** | Projection entities need a `(DocumentId, RebuildVersion)` key — schema change |
+| RB-3 | Rebuilds | Medium | `IProjectionStateClearer.ClearAsync` → `ClearVersionAsync(int, ct)` |
+| RB-4 | CLI | Low | `alberto ops rebuild` is now a parent command with subcommands |
+
+### RB-1 — `AddProjection` hands you a context, not a provider
+
+```csharp
+// before
+.AddProjection(decl, sp =>
+{
+    var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
+    return () => new PostgresStateStore<OrdersOverview>(dataSource, "OrdersOverview", "orders");
+})
+
+// after
+.AddProjection(decl, ctx =>
+{
+    var dataSource = ctx.Services.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
+    return () => new PostgresStateStore<OrdersOverview>(
+        dataSource, "OrdersOverview", "orders", rebuildVersion: ctx.RebuildVersion);
+})
+```
+
+`ctx.Services` is the old parameter. `ctx.RebuildVersion` is a `Func<int>` the store resolves on
+every operation — pass it through rather than calling it once, because a promotion has to take
+effect underneath a store that is already running.
+
+Passing it is optional. A store that ignores it keeps working exactly as before; it just cannot
+be rebuilt without downtime. `AddProjection` also gained an optional `projectionType` parameter
+for projections whose state rows are keyed by something other than the processor id.
+
+**Why:** the same factory has to build both the live projection and the shadow copy a rebuild
+replays into. The only difference between them is which version they write to, so that is what
+the context carries.
+
+### RB-2 — EF projection entities are keyed by `(DocumentId, RebuildVersion)`
+
+Configure every entity registered with `AddEfProjection` in `OnModelCreating`:
+
+```csharp
+protected override void OnModelCreating(ModelBuilder modelBuilder)
+{
+    modelBuilder.ProjectionEntity<OrderSummaryEntity>(entity =>
+    {
+        entity.ToTable("order_summaries");
+        entity.Property(e => e.CustomerName).HasMaxLength(200);
+    });
+}
+```
+
+This makes the key composite and defaults `RebuildVersion` to `1`, so existing rows read as
+version 1 and nothing moves. **Generate and apply an EF migration for it** — it is a primary-key
+change plus a new index.
+
+Anything that called `FindAsync` on a projection entity with one key value now needs two:
+
+```csharp
+await context.Counters.FindAsync([documentId, ProjectionVersions.Initial], ct);
+```
+
+**Why:** without the version in the key, the shadow rebuild's rows collide with the live rows on
+insert, and the rebuild silently overwrites the projection it was supposed to be shadowing.
+
+### RB-3 — `IProjectionStateClearer` clears one version
+
+`ClearAsync(ct)` is now `ClearVersionAsync(int rebuildVersion, ct)`. A rebuild cannot truncate
+the table: the other version is live and being read. Implementations must filter on the version.
+
+`EfProjectionStateClearer` is registered automatically by `AddEfProjection`; only hand-written
+implementations need changing.
+
+### RB-4 — `alberto ops rebuild` gained subcommands
+
+`alberto ops rebuild <processor>` used to reset the checkpoint and nothing else. It is now:
+
+```bash
+alberto ops rebuild start <processor> [--projection-type <type>] [--dry-run] [--yes]
+alberto ops rebuild status [processor]
+alberto ops rebuild promote <processor> [--force]
+alberto ops rebuild abort <processor>
+```
+
+The replay runs in the application, not in the CLI. A module must opt in with
+`.WithControlLoop(loop => loop.WithRebuilds())` or a started rebuild sits at `rebuilding` forever.
+
+### Also removed
+
+`BufferedCheckpointStore` is gone. It was `internal` and never constructed, so no consumer can be
+affected; `CachingCheckpointStore` is and always was the one in the pipeline.
 
 ---
 

@@ -68,6 +68,9 @@ dotnet run --project tools/Alberto.Cli -- status
 /tests/
   Alberto.Dcb.Tests/            # Unit + Testcontainers integration tests (xUnit 3)
   Alberto.Orders.LoadTests/     # K6 load tests (TypeScript)
+
+/benchmarks/
+  Alberto.Dcb.Benchmarks/       # BenchmarkDotNet suites (not in AlbertoV3.slnx)
 ```
 
 Note: `apps/Alberto.Payments` is in the solution but is not orchestrated by the AppHost, and it does not currently build — see Known Gaps.
@@ -76,6 +79,7 @@ Note: `apps/Alberto.Payments` is in the solution but is not orchestrated by the 
 - **Event Sourcing with DCB**: Append-only event log with dynamic consistency boundaries
 - **Async Processing**: `ControlLoop` polls the event log and dispatches through a middleware chain to projections/reactors. See [docs/architecture/async-processing.md](docs/architecture/async-processing.md)
 - **Middleware**: `MiddlewareRunner` builds both the single-event (`ConsumeEventContext`) and batch (`BatchConsumeContext`) chains. Retry/dead-letter logic is shared via `RetryAndDeadLetterCore` behind `IMiddlewareContext`
+- **Zero-downtime projection rebuilds**: opt in with `.WithControlLoop(loop => loop.WithRebuilds())`. `RebuildCoordinator` replays the log into a shadow copy of a projection's state under its own checkpoint, then swaps versions in one transaction. Driven by `alberto ops rebuild start|status|promote|abort`
 - **Multi-Tenant**: X-Tenant-Id header propagation, tenant-isolated queries, tenant leases
 - **Leases and fencing**: checkpoint writes can be fenced against a held lease via `IFencedCheckpointStore`
 - **Transactional outbox**: `IOutboxStore` with `pending → processing → delivered/failed`, claimed via `FOR UPDATE SKIP LOCKED`
@@ -115,6 +119,5 @@ The operator surface is the CLI in `tools/Alberto.Cli`. There is no admin HTTP A
 
 Documented so they are not mistaken for working features:
 
-- **Projection rebuild orchestration is scaffolding only.** The schema (`alberto_projection_states.rebuild_version`, `alberto_projection_rebuild_meta`), the `IProjectionStateClearer` interface, its `EfProjectionStateClearer` implementation and its DI registration all exist, but nothing resolves the clearer and nothing reads or writes `alberto_projection_rebuild_meta`. `PostgresStateStore`'s `rebuildVersion` is always its default of `1`. `alberto ops rebuild` resets the checkpoint; it does not clear projection state, and no running application does either.
 - **Orphaned outbox entries have no reclaim path.** A relay that dies between claiming an entry (`processing`) and marking it `delivered`/`failed` strands the row. `alberto_outbox_entries` has no claim-lease columns, and `RetryFailedAsync` only matches `failed`. See the skipped test `DiscoveredIssuesTests.OutboxStore_ProcessingEntriesOrphaned_CannotBeRecoveredByRetryFailed`.
 - **`apps/Alberto.Payments` and part of `apps/Alberto.Orders` do not compile.** `OrderSummaryEfProjection`, `PaymentsOverviewProjection` and `PaymentSummaryProjection` fail to build. `dotnet build` on the whole solution reports these errors; the `/src`, `/tools` and `/tests` projects build clean.
