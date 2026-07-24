@@ -104,16 +104,22 @@ internal sealed class RebuildCoordinator(
 
             _lastSeen[projection.ProcessorId] = state.Status;
 
+            // The shadow loop runs for as long as the rebuild is in flight, Ready included. A
+            // rebuild parked at Ready still has to track the live loop, or the copy it finally
+            // publishes is stale by however long an operator took to promote it — and a replica
+            // that restarted while one was already Ready would otherwise have no loop at all,
+            // leaving a promotion that waits for it to catch up waiting forever.
+            await EnsureShadowLoopAsync(projection, state, ct);
+
             if (state.Status is RebuildStatus.Rebuilding)
             {
-                await EnsureShadowLoopAsync(projection, state, ct);
                 await CheckForCatchUpAsync(projection, state, ct);
                 continue;
             }
 
             // Ready: the replay is complete and the rebuilt version is sitting there waiting.
             if (options.AutoPromote)
-                await PromoteAsync(projection, ct);
+                await PromoteAsync(projection, state, ct);
         }
     }
 
@@ -206,14 +212,35 @@ internal sealed class RebuildCoordinator(
         // with events that arrived during the replay. It only stops at promotion, which is what
         // keeps the swap seamless.
         if (options.AutoPromote)
-            await PromoteAsync(projection, ct);
+            await PromoteAsync(projection, state, ct);
     }
 
     /// <summary>
-    /// Flips the rebuilt version to active and discards the one it replaced.
+    /// Flips the rebuilt version to active and discards the one it replaced, once the rebuilt
+    /// version is at least as current as the one it is replacing.
     /// </summary>
-    private async Task PromoteAsync(RebuildableProjection projection, CancellationToken ct)
+    private async Task PromoteAsync(
+        RebuildableProjection projection, ProjectionRebuildState state, CancellationToken ct)
     {
+        if (state.RebuildingVersion is not { } rebuildingVersion)
+            return;
+
+        var shadowId = RebuildableProjection.ShadowProcessorId(
+            projection.ProcessorId, rebuildingVersion);
+
+        var shadowPosition = await checkpoints.GetAsync(shadowId, ct) ?? 0L;
+        var livePosition = await checkpoints.GetAsync(projection.ProcessorId, ct) ?? 0L;
+
+        // Reaching the target position only means the historical replay is done. The target was
+        // the head of the log when the rebuild started, and everything appended since has been
+        // applied by the live loop to the version this promotion is about to delete. Flipping
+        // while the shadow is still behind it publishes a copy that is missing exactly those
+        // events, and nothing afterwards goes back for them — the live loop's checkpoint is
+        // already past. Wait for the rebuilt version to draw level instead; the shadow loop is
+        // still running and still catching up, so this settles within a poll or two.
+        if (shadowPosition < livePosition)
+            return;
+
         // Stop the shadow loop first. Its version selector would follow the promotion and keep
         // writing into the newly-active version under the shadow checkpoint, racing the live
         // loop for the same rows.
@@ -224,6 +251,11 @@ internal sealed class RebuildCoordinator(
         // Before anything else: the local state stores must stop writing to the version that is
         // about to be deleted.
         await versions.RefreshAsync(ct);
+
+        // Hand the live loop the position the shadow reached. Left where it was, it would apply
+        // everything between the two positions a second time — the shadow has already written
+        // those events into the version that now serves reads.
+        await checkpoints.SaveAsync(projection.ProcessorId, shadowPosition, ct);
 
         await ClearAsync(projection.ProcessorId, outcome.DiscardedVersion, ct);
 

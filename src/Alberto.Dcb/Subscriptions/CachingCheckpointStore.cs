@@ -92,12 +92,18 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
 
     public Task SaveAsync(string processorId, long position, CancellationToken ct = default)
     {
-        // Update cache immediately
-        _cache[processorId] = position;
+        // Update cache immediately, monotonically. PostgresCheckpointStore's write is a
+        // GREATEST, so a cache that let a position go backwards would disagree with the store
+        // it fronts — and a processor whose checkpoint slips back re-delivers everything in
+        // between. RewindAsync is how a checkpoint moves backwards, and it bypasses this buffer.
+        _cache.AddOrUpdate(processorId, position, (_, existing) => Ahead(existing, position));
 
         // Stamp the current generation so FlushAsync can discard entries written during
         // a fence-violation race window (generation will have been bumped past this value).
-        _dirty[processorId] = (position, _cacheGeneration);
+        _dirty.AddOrUpdate(
+            processorId,
+            (position, _cacheGeneration),
+            (_, existing) => (Math.Max(existing.Position, position), _cacheGeneration));
 
         // Don't write to DB immediately - the timer will flush periodically
         return Task.CompletedTask;
