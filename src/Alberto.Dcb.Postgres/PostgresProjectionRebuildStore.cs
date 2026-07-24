@@ -88,20 +88,26 @@ public sealed class PostgresProjectionRebuildStore : IProjectionRebuildStore
         // The WHERE on the DO UPDATE branch is what makes this safe under a race: a row
         // already in 'rebuilding' or 'ready' matches nothing, so the second caller gets no
         // row back and throws. The new rebuilding version is derived from the row's own
-        // active_version inside the same statement, so it cannot be computed from a stale read.
+        // high-water mark inside the same statement, so it cannot be computed from a stale read.
+        //
+        // It advances last_allocated_version rather than active_version + 1 because abort
+        // leaves active_version where it was. Handing the aborted rebuild's number to the next
+        // one lets a shadow loop that has not yet noticed the abort seed the fresh replay with
+        // its own leftovers, and every event is then applied twice. See migration 015.
         await using var cmd = new NpgsqlCommand(
             $"""
             INSERT INTO {MetaTable} (
                 processor_id, projection_type, active_version, rebuilding_version,
-                rebuild_status, rebuild_started_at, rebuild_target_position,
-                rebuild_completed_at, updated_at)
+                last_allocated_version, rebuild_status, rebuild_started_at,
+                rebuild_target_position, rebuild_completed_at, updated_at)
             VALUES (
                 @processor_id, @projection_type, 1, 2,
-                'rebuilding', now(), @target_position,
-                NULL, now())
+                2, 'rebuilding', now(),
+                @target_position, NULL, now())
             ON CONFLICT (processor_id) DO UPDATE SET
                 projection_type         = @projection_type,
-                rebuilding_version      = {MetaTable}.active_version + 1,
+                rebuilding_version      = {MetaTable}.last_allocated_version + 1,
+                last_allocated_version  = {MetaTable}.last_allocated_version + 1,
                 rebuild_status          = 'rebuilding',
                 rebuild_started_at      = now(),
                 rebuild_target_position = @target_position,

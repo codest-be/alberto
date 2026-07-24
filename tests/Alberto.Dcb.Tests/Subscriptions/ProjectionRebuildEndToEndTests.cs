@@ -231,6 +231,51 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
         (await ReadAsync(abandonedVersion, player, ct)).Should().BeNull();
     }
 
+    /// <summary>
+    /// A rebuild started after an aborted one must not be handed the aborted one's version
+    /// number. Abort deletes that version's rows and flips the status in one transaction, but
+    /// the shadow loop writing into it lives in the application process and only stops on a
+    /// later poll — so anything it writes in between outlives the delete. Reusing the number
+    /// seeds the fresh replay with those orphans and applies every event twice.
+    /// </summary>
+    [Fact]
+    public async Task RebuildAfterAnAbort_GetsAFreshVersionNumber()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var player = NewPlayer();
+
+        await AppendAsync(player, 6, ct);
+
+        var before = await ActiveVersionAsync(ct);
+        await WaitUntilAsync(
+            async () => await ReadAsync(before, player, ct) is { Points: 6 },
+            "the live projection to catch up", ct);
+
+        var aborted = await StartRebuildAsync(ct);
+        var abandonedVersion = aborted.RebuildingVersion!.Value;
+
+        await WaitUntilAsync(
+            async () => await ReadAsync(abandonedVersion, player, ct) is not null,
+            "the shadow loop to write into the rebuilding version", ct);
+
+        await RebuildStore.AbortAsync(TotalsProjection.ProcessorId, ct);
+
+        var second = await StartRebuildAsync(ct);
+
+        second.ActiveVersion.Should().Be(before,
+            "aborting must not move the version readers are served from");
+        second.RebuildingVersion.Should().NotBe(abandonedVersion,
+            "a version a shadow loop may still be writing into cannot be reallocated");
+
+        await WaitUntilAsync(
+            async () => await StateAsync(ct) is { Status: RebuildStatus.Completed } s
+                        && s.ActiveVersion == second.RebuildingVersion,
+            "the second rebuild to be promoted", ct);
+
+        (await ReadAsync(second.RebuildingVersion!.Value, player, ct))!.Points.Should().Be(6,
+            "replaying one event of 6 points onto an aborted rebuild's leftovers would read 12");
+    }
+
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------

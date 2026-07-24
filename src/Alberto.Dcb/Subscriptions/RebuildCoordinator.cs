@@ -55,7 +55,7 @@ internal sealed class RebuildCoordinator(
     RebuildCoordinatorOptions options,
     ILogger<RebuildCoordinator>? logger = null) : BackgroundService
 {
-    private readonly Dictionary<string, ControlLoop> _shadowLoops = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ShadowLoop> _shadowLoops = new(StringComparer.Ordinal);
     private readonly Dictionary<string, RebuildStatus> _lastSeen = new(StringComparer.Ordinal);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -108,7 +108,7 @@ internal sealed class RebuildCoordinator(
 
             if (state.Status is RebuildStatus.Rebuilding)
             {
-                await EnsureShadowLoopAsync(projection, ct);
+                await EnsureShadowLoopAsync(projection, state, ct);
                 await CheckForCatchUpAsync(projection, state, ct);
                 continue;
             }
@@ -123,18 +123,36 @@ internal sealed class RebuildCoordinator(
     /// Starts the shadow loop for a rebuild if it is not already running. The loop replays from
     /// the start of the log under its own checkpoint key, writing into the rebuilding version.
     /// </summary>
-    private async Task EnsureShadowLoopAsync(RebuildableProjection projection, CancellationToken ct)
+    /// <remarks>
+    /// Cached by the version being rebuilt, not just by the processor. A loop is stopped one poll
+    /// after its rebuild leaves the state machine, so a second rebuild started inside that window
+    /// finds the previous one still cached. Matching on the processor alone would reuse it — and
+    /// its version selector is latched to the version the last rebuild was writing to, which
+    /// promotion has since made the live one. The stale loop would then keep writing into the
+    /// live projection, racing the live loop for the same rows.
+    /// </remarks>
+    private async Task EnsureShadowLoopAsync(
+        RebuildableProjection projection, ProjectionRebuildState state, CancellationToken ct)
     {
-        if (_shadowLoops.ContainsKey(projection.ProcessorId))
+        if (state.RebuildingVersion is not { } rebuildingVersion)
             return;
 
-        var shadowId = RebuildableProjection.ShadowProcessorId(projection.ProcessorId);
+        if (_shadowLoops.TryGetValue(projection.ProcessorId, out var running))
+        {
+            if (running.Version == rebuildingVersion)
+                return;
+
+            await StopShadowLoopAsync(projection.ProcessorId, ct);
+        }
+
+        var shadowId = RebuildableProjection.ShadowProcessorId(
+            projection.ProcessorId, rebuildingVersion);
         var processor = new ShadowProcessor(
             projection.CreateProcessor(versions.ForShadow(projection.ProcessorId)), shadowId);
 
         var loop = loopFactory.Create(processor);
         await loop.StartAsync(ct);
-        _shadowLoops[projection.ProcessorId] = loop;
+        _shadowLoops[projection.ProcessorId] = new ShadowLoop(loop, rebuildingVersion);
 
         logger?.LogInformation(
             "Rebuild of projection {ProcessorId} started replaying under checkpoint {ShadowId}.",
@@ -143,12 +161,15 @@ internal sealed class RebuildCoordinator(
 
     private async Task StopShadowLoopAsync(string processorId, CancellationToken ct)
     {
-        if (!_shadowLoops.Remove(processorId, out var loop))
+        if (!_shadowLoops.Remove(processorId, out var shadow))
             return;
 
-        await loop.StopAsync(ct);
-        await loop.DisposeAsync();
+        await shadow.Loop.StopAsync(ct);
+        await shadow.Loop.DisposeAsync();
     }
+
+    /// <summary>A running shadow loop, and the rebuilding version it was started for.</summary>
+    private readonly record struct ShadowLoop(ControlLoop Loop, int Version);
 
     /// <summary>
     /// Moves a rebuild to <see cref="RebuildStatus.Ready"/> once its shadow checkpoint has
@@ -157,10 +178,14 @@ internal sealed class RebuildCoordinator(
     private async Task CheckForCatchUpAsync(
         RebuildableProjection projection, ProjectionRebuildState state, CancellationToken ct)
     {
-        if (state.TargetPosition is not { } target)
+        if (state.TargetPosition is not { } target ||
+            state.RebuildingVersion is not { } rebuildingVersion)
+        {
             return;
+        }
 
-        var shadowId = RebuildableProjection.ShadowProcessorId(projection.ProcessorId);
+        var shadowId = RebuildableProjection.ShadowProcessorId(
+            projection.ProcessorId, rebuildingVersion);
         var position = await checkpoints.GetAsync(shadowId, ct);
 
         if (position is null || position < target)
@@ -197,7 +222,6 @@ internal sealed class RebuildCoordinator(
         await versions.RefreshAsync(ct);
 
         await ClearAsync(projection.ProcessorId, outcome.DiscardedVersion, ct);
-        await ResetShadowCheckpointAsync(projection.ProcessorId, ct);
 
         _lastSeen[projection.ProcessorId] = outcome.State.Status;
 
@@ -231,7 +255,6 @@ internal sealed class RebuildCoordinator(
 
         await versions.RefreshAsync(ct);
         await SweepAsync(projection, state, ct);
-        await ResetShadowCheckpointAsync(projection.ProcessorId, ct);
     }
 
     private async Task SweepAllAsync(CancellationToken ct)
@@ -255,14 +278,22 @@ internal sealed class RebuildCoordinator(
     /// in flight, the one being rebuilt.
     /// </summary>
     /// <remarks>
-    /// Versions are allocated one at a time and never reused, so the whole reachable range is
-    /// 1..active+1. Clearing a version that holds nothing is a no-op, which is what lets this
+    /// Versions are allocated one at a time and never reused, so the whole reachable range runs
+    /// from 1 to one past the highest version this processor knows about — which is the version
+    /// being rebuilt when one is in flight, and the active one otherwise. Aborts leave the active
+    /// version alone while still consuming numbers, so bounding on it would strand them.
+    /// Clearing a version that holds nothing is a no-op, which is what lets this
     /// run without knowing what a previous coordinator got as far as doing.
     /// </remarks>
     private async Task SweepAsync(
         RebuildableProjection projection, ProjectionRebuildState state, CancellationToken ct)
     {
-        for (var version = ProjectionVersions.Initial; version <= state.ActiveVersion + 1; version++)
+        // Version numbers are monotonic, so every dead version sits below the highest one this
+        // processor knows about. Bounding on the active version alone would leave the versions
+        // that a run of aborted rebuilds burned through unswept, since abort does not advance it.
+        var highest = Math.Max(state.ActiveVersion, state.RebuildingVersion ?? state.ActiveVersion);
+
+        for (var version = ProjectionVersions.Initial; version <= highest + 1; version++)
         {
             if (version == state.ActiveVersion || version == state.RebuildingVersion)
                 continue;
@@ -276,13 +307,6 @@ internal sealed class RebuildCoordinator(
         foreach (var clearer in clearers.Where(c => c.ProcessorId == processorId))
             await clearer.ClearVersionAsync(version, ct);
     }
-
-    /// <summary>
-    /// Puts the shadow checkpoint back to the start so the next rebuild replays from the
-    /// beginning rather than resuming where the last one stopped.
-    /// </summary>
-    private Task ResetShadowCheckpointAsync(string processorId, CancellationToken ct)
-        => checkpoints.ResetAsync(RebuildableProjection.ShadowProcessorId(processorId), ct);
 
     /// <summary>
     /// Runs one unit of coordinator work, logging and swallowing failures.

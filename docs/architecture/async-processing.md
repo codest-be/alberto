@@ -233,11 +233,16 @@ The replay runs *in the application*, not in the CLI: the CLI only moves the sta
 `RebuildCoordinator` is a hosted service that owns no state of its own — everything it does is derived from `alberto_projection_rebuild_meta`, so a rebuild started from the CLI in one process is picked up in another, and a coordinator that crashes mid-rebuild resumes on restart. Each tick it:
 
 1. Refreshes `ProjectionVersions`, the module's single cached view of the state machine. Every version selector resolves from this cache, so the coordinator and the stores it configures always agree.
-2. Starts a shadow control loop for each rebuild in flight. The shadow loop uses its own checkpoint key (`<processor>::rebuild`) so replaying from position 0 does not drag the live projection back with it, and it always takes the batch path.
+2. Starts a shadow control loop for each rebuild in flight. The shadow loop uses its own checkpoint key (`<processor>::rebuild::<version>`) so replaying from position 0 does not drag the live projection back with it, and it always takes the batch path.
 3. Marks a rebuild `ready` once its shadow checkpoint passes the target position captured at start. The shadow loop keeps running past that point, so events that arrive during the replay are in the rebuilt version too.
 4. Promotes: stops the shadow loop, flips the version and deletes the superseded state rows in one transaction, then tells any `IProjectionStateClearer` about backends the transaction could not reach (EF projections, in particular).
 
-Versions are allocated one at a time and never reused, so the coordinator sweeps `1..active+1` at startup to clean up after a promotion or abort that happened while it was down.
+Two properties do most of the safety work here, and both are load-bearing rather than tidiness:
+
+- **Version numbers are never reused.** `alberto_projection_rebuild_meta.last_allocated_version` is a high-water mark, and a rebuild takes `last_allocated_version + 1`. Allocating `active_version + 1` instead would be correct after a promotion — which advances the active version — but not after an abort, which deliberately leaves it alone. Abort deletes the abandoned version's rows and flips the status in one transaction, but the shadow loop writing into that version lives in the application process and only learns of the abort on its next tick, so its late writes outlive the delete. Reallocating that number seeds the next replay with those leftovers and applies every event twice.
+- **The shadow checkpoint belongs to the version, not to the processor.** A key per processor has to be reset between rebuilds, and every moment the coordinator could do that is a moment an operator can start the next rebuild ahead of. A rebuild begun in that window would resume from a checkpoint already at the head of the log, replay nothing, and promote an empty projection. A version-scoped key has no such window: a version nobody has replayed has no checkpoint, and one being resumed after a restart has exactly the position it left off at.
+
+Because aborts consume numbers without moving the active one, the startup sweep runs from `1` to one past the highest version the processor knows about — the version being rebuilt if one is in flight, the active one otherwise — cleaning up after a promotion or abort that happened while the coordinator was down.
 
 ### Limits
 

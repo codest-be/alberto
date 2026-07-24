@@ -193,8 +193,11 @@ public static class RebuildCommand
                 var progress = new Dictionary<string, long?>(StringComparer.Ordinal);
                 foreach (var state in states.Where(s => s.IsRebuildInFlight))
                 {
+                    // The shadow checkpoint is keyed by the version being rebuilt, so this reads
+                    // the progress of *this* rebuild and never of one that came before it.
                     var checkpoint = await admin.GetSingleCheckpointAsync(
-                        RebuildableProjection.ShadowProcessorId(state.ProcessorId));
+                        RebuildableProjection.ShadowProcessorId(
+                            state.ProcessorId, state.RebuildingVersion!.Value));
                     progress[state.ProcessorId] = checkpoint?.LastPosition;
                 }
 

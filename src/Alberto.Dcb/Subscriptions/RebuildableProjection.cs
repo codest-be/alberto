@@ -59,7 +59,18 @@ public sealed class RebuildableProjection
     /// so that replaying from the start of history does not drag the live projection back
     /// with it.
     /// </summary>
-    public static string ShadowProcessorId(string processorId) => $"{processorId}::rebuild";
+    /// <remarks>
+    /// The version is part of the key, which is what makes a replay's progress belong to the
+    /// version it is filling rather than to the processor. A key per processor has to be reset
+    /// between rebuilds, and the only moments a coordinator can do that are moments an operator
+    /// can start the next rebuild ahead of: a rebuild begun before the previous one's reset
+    /// resumes from a checkpoint already at the head of the log, replays nothing, and promotes
+    /// an empty projection. Keying by version has no such window — a version nobody has replayed
+    /// yet simply has no checkpoint, and one that is being resumed after a restart has exactly
+    /// the checkpoint it left off at.
+    /// </remarks>
+    public static string ShadowProcessorId(string processorId, int rebuildVersion) =>
+        $"{processorId}::rebuild::{rebuildVersion}";
 }
 
 /// <summary>

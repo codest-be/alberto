@@ -259,6 +259,10 @@ and a coordinator that crashes mid-rebuild resumes on restart.
 ### Limits
 
 - One rebuild per processor at a time; two operators racing cannot both win.
+- Version numbers only ever go up, including across aborts, so `alberto ops rebuild status` will
+  show gaps after a few abandoned attempts. That is deliberate: an abort cannot stop the shadow
+  loop in the application process synchronously, so handing its number to the next rebuild would
+  let its last few writes seed the replay.
 - Run more than one replica of the module and you need `WithProcessorLeases`, or two replicas
   replay into the same version.
 - A rebuild reprocesses every event. **Reactors are not rebuilt** — replaying side effects is not
