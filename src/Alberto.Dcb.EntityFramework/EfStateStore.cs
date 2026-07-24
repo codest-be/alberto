@@ -1,7 +1,9 @@
 using System.Data;
+using System.Data.Common;
 using Alberto.Dcb.Subscriptions;
 using Alberto.Dcb.Telemetry;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace Alberto.Dcb.EntityFramework;
 
@@ -16,6 +18,9 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
     where TEntity : class, IProjectionEntity, new()
     where TDbContext : DbContext
 {
+    // ANSI SQLSTATE "23505" is Postgres' unique_violation. Same constant as the inline projections.
+    private const string UniqueViolationSqlState = "23505";
+
     private readonly IDbContextFactory<TDbContext> _contextFactory;
 
     /// <summary>
@@ -84,15 +89,7 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
             if (existingEntities.TryGetValue(docId, out var existing))
             {
                 context.Entry(existing).CurrentValues.SetValues(newEntity);
-
-                foreach (var ownedNav in context.Entry(existing).Navigations
-                    .Where(n => n.Metadata.TargetEntityType.IsOwned()))
-                {
-                    var propName = ownedNav.Metadata.Name;
-                    var propInfo = typeof(TEntity).GetProperty(propName);
-                    if (propInfo != null)
-                        ownedNav.CurrentValue = propInfo.GetValue(newEntity);
-                }
+                CopyOwnedNavigations(context.Entry(existing), newEntity);
             }
             else
             {
@@ -153,15 +150,7 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
                 if (existing != null)
                 {
                     context.Entry(existing).CurrentValues.SetValues(newEntity);
-
-                    foreach (var ownedNav in context.Entry(existing).Navigations
-                        .Where(n => n.Metadata.TargetEntityType.IsOwned()))
-                    {
-                        var propName = ownedNav.Metadata.Name;
-                        var propInfo = typeof(TEntity).GetProperty(propName);
-                        if (propInfo != null)
-                            ownedNav.CurrentValue = propInfo.GetValue(newEntity);
-                    }
+                    CopyOwnedNavigations(context.Entry(existing), newEntity);
                 }
                 else
                 {
@@ -213,14 +202,7 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
                 if (existing != null)
                 {
                     context.Entry(existing).CurrentValues.SetValues(newEntity);
-                    foreach (var ownedNav in context.Entry(existing).Navigations
-                        .Where(n => n.Metadata.TargetEntityType.IsOwned()))
-                    {
-                        var propName = ownedNav.Metadata.Name;
-                        var propInfo = typeof(TEntity).GetProperty(propName);
-                        if (propInfo != null)
-                            ownedNav.CurrentValue = propInfo.GetValue(newEntity);
-                    }
+                    CopyOwnedNavigations(context.Entry(existing), newEntity);
                 }
                 else
                 {
@@ -246,14 +228,7 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
                     if (nowExisting != null)
                     {
                         retryContext.Entry(nowExisting).CurrentValues.SetValues(newEntity);
-                        foreach (var ownedNav in retryContext.Entry(nowExisting).Navigations
-                            .Where(n => n.Metadata.TargetEntityType.IsOwned()))
-                        {
-                            var propName = ownedNav.Metadata.Name;
-                            var propInfo = typeof(TEntity).GetProperty(propName);
-                            if (propInfo != null)
-                                ownedNav.CurrentValue = propInfo.GetValue(newEntity);
-                        }
+                        CopyOwnedNavigations(retryContext.Entry(nowExisting), newEntity);
                         await retryContext.SaveChangesAsync(ct);
                     }
                 }
@@ -283,34 +258,35 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
     {
         if (context.Database.CurrentTransaction == null)
         {
-            var dbTransaction = transaction as System.Data.Common.DbTransaction;
-            if (dbTransaction != null)
+            if (transaction is DbTransaction dbTransaction)
                 await context.Database.UseTransactionAsync(dbTransaction, ct);
         }
     }
 
-    private static bool IsDuplicateKeyViolation(DbUpdateException ex)
+    /// <summary>
+    /// Copies owned-navigation values from <paramref name="source"/> onto a tracked entry in
+    /// one reflection pass. Extracted to eliminate the identical three-line loop that previously
+    /// appeared four times across ApplyChangesAsync, RetryWithBackoffAsync, and
+    /// SaveEntitiesOneByOneAsync (twice).
+    /// </summary>
+    private static void CopyOwnedNavigations(EntityEntry<TEntity> trackedEntry, TEntity source)
     {
-        var currentEx = ex as Exception;
-        while (currentEx != null)
+        foreach (var nav in trackedEntry.Navigations
+                     .Where(n => n.Metadata.TargetEntityType.IsOwned()))
         {
-            var sqlStateProp = currentEx.GetType().GetProperty("SqlState");
-            if (sqlStateProp?.GetValue(currentEx) is string sqlState && sqlState == "23505")
-                return true;
-
-            if (currentEx.Data.Contains("SqlState") && currentEx.Data["SqlState"]?.ToString() == "23505")
-                return true;
-
-            if (currentEx.Message.Contains("23505") ||
-                currentEx.Message.Contains("duplicate key", StringComparison.OrdinalIgnoreCase) ||
-                currentEx.Message.Contains("unique constraint", StringComparison.OrdinalIgnoreCase))
-                return true;
-
-            currentEx = currentEx.InnerException;
+            var propInfo = typeof(TEntity).GetProperty(nav.Metadata.Name);
+            if (propInfo != null)
+                nav.CurrentValue = propInfo.GetValue(source);
         }
-
-        return false;
     }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when the exception is a duplicate-key (unique-constraint)
+    /// violation, using the same <c>DbException.SqlState</c> pattern as the inline projections
+    /// instead of reflection-based or message-string matching.
+    /// </summary>
+    private static bool IsDuplicateKeyViolation(DbUpdateException ex) =>
+        ex.InnerException is DbException { SqlState: UniqueViolationSqlState };
 
     /// <inheritdoc/>
     public ValueTask DisposeAsync()

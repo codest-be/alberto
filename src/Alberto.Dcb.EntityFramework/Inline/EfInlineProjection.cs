@@ -2,6 +2,7 @@ using System.Data;
 using System.Data.Common;
 using Alberto.Dcb.Subscriptions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 #pragma warning disable CS0618 // Obsolete projection types used intentionally for backward-compatibility
 namespace Alberto.Dcb.EntityFramework.Inline;
@@ -27,14 +28,19 @@ internal sealed class EfInlineProjection<TEntity, TProjection, TDbContext> : IIn
 
     private readonly TProjection _projection = new();
     private readonly IDbContextFactory<TDbContext> _contextFactory;
+    private readonly ILogger<EfInlineProjection<TEntity, TProjection, TDbContext>>? _logger;
 
     /// <summary>
     /// Creates a new inline EF projection.
     /// </summary>
     /// <param name="contextFactory">Factory for creating DbContext instances.</param>
-    public EfInlineProjection(IDbContextFactory<TDbContext> contextFactory)
+    /// <param name="logger">Optional logger for retry-exhaustion alerts.</param>
+    public EfInlineProjection(
+        IDbContextFactory<TDbContext> contextFactory,
+        ILogger<EfInlineProjection<TEntity, TProjection, TDbContext>>? logger = null)
     {
         _contextFactory = contextFactory ?? throw new ArgumentNullException(nameof(contextFactory));
+        _logger = logger;
     }
 
     /// <inheritdoc/>
@@ -46,14 +52,29 @@ internal sealed class EfInlineProjection<TEntity, TProjection, TDbContext> : IIn
         IDbTransaction? transaction = null,
         CancellationToken ct = default)
     {
-        // Filter to events we handle and group by document ID
-        var byDocument = events
-            .Where(e => HandledEventTypes.Contains(e.EventType.Id))
-            .GroupBy(e => _projection.GetDocumentId(e) ?? string.Empty)
-            .ToDictionary(g => g.Key, g => g.ToList());
+        // Filter to events we handle and group by document ID using an explicit loop to avoid
+        // the intermediate IGrouping allocations that LINQ GroupBy would produce (PERF-17).
+        var byDocument = new Dictionary<string, List<IEventEnvelope>>();
+        foreach (var e in events)
+        {
+            if (!HandledEventTypes.Contains(e.EventType.Id))
+                continue;
+
+            var docId = _projection.GetDocumentId(e) ?? string.Empty;
+            if (!byDocument.TryGetValue(docId, out var list))
+            {
+                list = [];
+                byDocument[docId] = list;
+            }
+
+            list.Add(e);
+        }
 
         if (byDocument.Count == 0)
             return;
+
+        // Hoist the key list once — it doesn't change between retries.
+        var documentKeys = byDocument.Keys.ToList();
 
         var ownsTransaction = transaction is null;
 
@@ -62,14 +83,33 @@ internal sealed class EfInlineProjection<TEntity, TProjection, TDbContext> : IIn
         {
             try
             {
-                await ProcessOnceAsync(byDocument, transaction, ct);
+                await ProcessOnceAsync(byDocument, documentKeys, transaction, ct);
                 return;
             }
-            catch (Exception ex) when (ownsTransaction
-                && attempt < MaxConcurrencyRetries - 1
-                && IsRetryableConflict(ex))
+            catch (Exception ex) when (ownsTransaction && IsRetryableConflict(ex))
             {
                 attempt++;
+                if (attempt >= MaxConcurrencyRetries)
+                {
+                    // All retries exhausted. The events are durable in the store but the
+                    // inline projection has not reflected them. Log a critical alert so
+                    // operators can trigger a manual replay and prevent silent divergence.
+                    _logger?.LogCritical(
+                        ex,
+                        "Inline EF projection '{ProjectionType}' failed after {Attempts} concurrency retries " +
+                        "for {DocumentCount} document(s). The projection is now diverged from the event " +
+                        "store for the affected documents. Manual replay or async catch-up is required.",
+                        typeof(TProjection).Name,
+                        attempt,
+                        documentKeys.Count);
+
+                    throw new InlineProjectionExhaustedException(
+                        typeof(TProjection).Name,
+                        attempts: attempt,
+                        documentCount: documentKeys.Count,
+                        innerException: ex);
+                }
+
                 var delayMs = (int)(InitialRetryDelay.TotalMilliseconds * Math.Pow(2, attempt - 1));
                 var jitter = Random.Shared.Next(0, delayMs);
                 await Task.Delay(delayMs + jitter, ct);
@@ -79,6 +119,7 @@ internal sealed class EfInlineProjection<TEntity, TProjection, TDbContext> : IIn
 
     private async Task ProcessOnceAsync(
         Dictionary<string, List<IEventEnvelope>> byDocument,
+        List<string> documentKeys,
         IDbTransaction? transaction,
         CancellationToken ct)
     {
@@ -93,7 +134,6 @@ internal sealed class EfInlineProjection<TEntity, TProjection, TDbContext> : IIn
         // Load current state for all affected documents.
         // Untracked: Apply may produce a fresh entity instance that we then Update; if the
         // original were tracked, Update would throw an identity-map conflict on the same key.
-        var documentKeys = byDocument.Keys.ToList();
         var existingEntities = await context.Set<TEntity>()
             .AsNoTracking()
             .Where(e => documentKeys.Contains(e.DocumentId))

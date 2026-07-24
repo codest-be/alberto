@@ -26,3 +26,24 @@ public interface IFencedCheckpointStore : ICheckpointStore
         bool useProcessorLeaseFencing = false,
         CancellationToken ct = default);
 }
+
+/// <summary>
+/// Client-facing interface for a checkpoint store that can be configured with
+/// lease-fencing parameters. Decouples <see cref="ControlLoopBuilder"/> from
+/// the concrete <see cref="CachingCheckpointStore"/> type so that wrapping the
+/// store cannot silently drop fencing, and the fence-violation callback is always wired.
+/// </summary>
+internal interface IFencableCheckpointStore
+{
+    /// <summary>
+    /// Provides the fencing context so that periodic flushes use lease-fenced writes
+    /// when the underlying store implements <see cref="IFencedCheckpointStore"/>.
+    /// </summary>
+    void SetFencingContext(FencingContext ctx);
+
+    /// <summary>
+    /// Called with the processor ID when a fenced checkpoint write is rejected because
+    /// the lease has expired. The caller should stop processing for that processor.
+    /// </summary>
+    Action<string>? OnFenceViolation { get; set; }
+}

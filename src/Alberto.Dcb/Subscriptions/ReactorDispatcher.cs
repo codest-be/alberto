@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Reflection;
 using System.Text.Json;
 
@@ -10,13 +11,14 @@ namespace Alberto.Dcb.Subscriptions;
 internal sealed class ReactorDispatcher
 {
     private readonly Dictionary<string, Handler> _handlers = new();
+    private FrozenSet<string> _handledEventTypes = FrozenSet<string>.Empty;
 
     private ReactorDispatcher() { }
 
     /// <summary>
     /// The event types this reactor handles.
     /// </summary>
-    public IReadOnlySet<string> HandledEventTypes => _handlers.Keys.ToHashSet();
+    public IReadOnlySet<string> HandledEventTypes => _handledEventTypes;
 
     /// <summary>
     /// Create a dispatcher for a reactor instance.
@@ -43,6 +45,7 @@ internal sealed class ReactorDispatcher
             dispatcher._handlers[eventTypeId] = new Handler(eventType, reactor, reactMethod);
         }
 
+        dispatcher._handledEventTypes = dispatcher._handlers.Keys.ToFrozenSet(StringComparer.Ordinal);
         return dispatcher;
     }
 

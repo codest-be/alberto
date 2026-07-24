@@ -7,7 +7,11 @@ namespace Alberto.Dcb.Postgres;
 /// PostgreSQL implementation of <see cref="IEventStore"/> with inline projection support.
 /// Inline projections run immediately after events are appended.
 /// </summary>
-public sealed class PostgresEventStore : IEventStore
+/// <remarks>
+/// Implements <see cref="IEventStoreConfigurator"/> so builder code can register projections
+/// and post-append handlers at setup time without exposing those methods on <see cref="IEventStore"/>.
+/// </remarks>
+public sealed class PostgresEventStore : IEventStore, IEventStoreConfigurator
 {
     private readonly IEventStoreBackend _backend;
     private readonly List<IInlineProjection> _inlineProjections = [];
@@ -48,7 +52,7 @@ public sealed class PostgresEventStore : IEventStore
         long? expectedPosition = null,
         CancellationToken cancellationToken = default)
     {
-        var appended = await _backend.Append(events, dcbQuery, expectedPosition, cancellationToken);
+        var appended = await _backend.AppendAsync(events, dcbQuery, expectedPosition, cancellationToken);
 
         if (appended.Count > 0)
         {
@@ -82,14 +86,14 @@ public sealed class PostgresEventStore : IEventStore
     public Task<IReadOnlyCollection<IEventEnvelope>> StreamAsync(
         DcbQuery query, long afterPosition = 0,
         int? limit = null, CancellationToken cancellationToken = default)
-        => _backend.Stream(query, afterPosition, limit, cancellationToken);
+        => _backend.StreamAsync(query, afterPosition, limit, cancellationToken);
 
     /// <inheritdoc/>
     public Task<IReadOnlyCollection<IEventEnvelope>> StreamAllAsync(
         long afterPosition = 0, int? limit = null, CancellationToken cancellationToken = default)
-        => _backend.StreamAll(afterPosition, limit, cancellationToken);
+        => _backend.StreamAllAsync(afterPosition, limit, cancellationToken);
 
     /// <inheritdoc/>
     public Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default)
-        => _backend.GetLastPosition(cancellationToken);
+        => _backend.GetLastPositionAsync(cancellationToken);
 }

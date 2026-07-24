@@ -5,13 +5,16 @@ namespace Alberto.Dcb.Append;
 /// All read operations are passed through to the inner backend.
 /// </summary>
 internal sealed class InterceptingEventStoreBackend(IEventStoreBackend inner, IAppendInterceptorPipeline pipeline)
-    : IEventStoreBackend
+    : IEventStoreBackend, IEventStoreHeadBackend
 {
     private readonly IEventStoreBackend _inner = inner ?? throw new ArgumentNullException(nameof(inner));
     private readonly IAppendInterceptorPipeline _pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
+    private readonly IEventStoreHeadBackend _innerHead = inner as IEventStoreHeadBackend
+        ?? throw new ArgumentException(
+            "Inner backend must implement IEventStoreHeadBackend", nameof(inner));
 
     /// <inheritdoc />
-    public Task<IReadOnlyCollection<IEventEnvelope>> Append(
+    public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
         IEnumerable<IEventToPersist> events,
         DcbQuery? dcbQuery = null,
         long? expectedPosition = null,
@@ -26,7 +29,7 @@ internal sealed class InterceptingEventStoreBackend(IEventStoreBackend inner, IA
 
         return _pipeline.ExecuteAsync(
             context,
-            ctx => _inner.Append(
+            ctx => _inner.AppendAsync(
                 ctx.Events,
                 ctx.DcbQuery,
                 ctx.ExpectedPosition,
@@ -35,31 +38,31 @@ internal sealed class InterceptingEventStoreBackend(IEventStoreBackend inner, IA
     }
 
     /// <inheritdoc />
-    public Task<IReadOnlyCollection<IEventEnvelope>> Stream(
+    public Task<IReadOnlyCollection<IEventEnvelope>> StreamAsync(
         DcbQuery query,
         long afterPosition = 0,
         int? limit = null,
         CancellationToken cancellationToken = default)
-        => _inner.Stream(query, afterPosition, limit, cancellationToken);
+        => _inner.StreamAsync(query, afterPosition, limit, cancellationToken);
 
     /// <inheritdoc />
-    public Task<IReadOnlyCollection<IEventEnvelope>> StreamAll(
+    public Task<IReadOnlyCollection<IEventEnvelope>> StreamAllAsync(
         long afterPosition = 0,
         int? limit = null,
         CancellationToken cancellationToken = default)
-        => _inner.StreamAll(afterPosition, limit, cancellationToken);
+        => _inner.StreamAllAsync(afterPosition, limit, cancellationToken);
 
     /// <inheritdoc />
-    public Task<long> GetLastPosition(CancellationToken cancellationToken = default)
-        => _inner.GetLastPosition(cancellationToken);
+    public Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default)
+        => _inner.GetLastPositionAsync(cancellationToken);
 
     /// <inheritdoc />
     public Task<IReadOnlyList<long>> GetPositionsAsync(
         long afterPosition, int windowSize, CancellationToken cancellationToken = default)
-        => _inner.GetPositionsAsync(afterPosition, windowSize, cancellationToken);
+        => _innerHead.GetPositionsAsync(afterPosition, windowSize, cancellationToken);
 
     /// <inheritdoc />
     public Task<long> GetStableHeadAsync(
         long afterPosition, CancellationToken cancellationToken = default)
-        => _inner.GetStableHeadAsync(afterPosition, cancellationToken);
+        => _innerHead.GetStableHeadAsync(afterPosition, cancellationToken);
 }

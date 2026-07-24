@@ -101,12 +101,14 @@ public static class AlbertoMetrics
     public static readonly ObservableGauge<long> ProcessorLag =
         Meter.CreateObservableGauge("alberto.processor.lag", GetProcessorLagMeasurements, "events", "Number of events a processor is behind the global position");
 
-    private static readonly List<Measurement<long>> _processorLagMeasurements = [];
+    // Keyed by processorId for O(1) upsert — avoids the per-call Tags.ToArray()+LINQ scan
+    // that the old List-based implementation required on every poll cycle.
+    private static readonly Dictionary<string, Measurement<long>> _processorLagMeasurements = new();
     private static readonly object _measurementsLock = new();
 
     private static IEnumerable<Measurement<long>> GetProcessorLagMeasurements()
     {
-        lock (_measurementsLock) { return _processorLagMeasurements.ToArray(); }
+        lock (_measurementsLock) { return _processorLagMeasurements.Values.ToArray(); }
     }
 
     /// <summary>
@@ -116,11 +118,9 @@ public static class AlbertoMetrics
     {
         lock (_measurementsLock)
         {
-            _processorLagMeasurements.RemoveAll(m =>
-                m.Tags.ToArray().Any(t => t.Key == "processor" && t.Value?.ToString() == processorId));
-            _processorLagMeasurements.Add(new Measurement<long>(lag,
+            _processorLagMeasurements[processorId] = new Measurement<long>(lag,
                 new KeyValuePair<string, object?>("processor", processorId),
-                new KeyValuePair<string, object?>("module", module)));
+                new KeyValuePair<string, object?>("module", module));
         }
     }
 

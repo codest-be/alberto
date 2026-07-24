@@ -51,6 +51,24 @@ public static class PostgresBuilderExtensions
             }
         }
 
+        // P1.4 (TEN-6): Validate that the schema was created with a tenancy mode consistent
+        // with the application configuration. Runs even when AutoMigrate is false so a
+        // wrong-mode migration applied manually is caught before any damage is done.
+        // When AutoMigrate is false the DB is expected to already exist and be fully migrated;
+        // a connection failure here means the DB is unavailable at startup (appropriate to fail).
+        PostgresMigrator.ValidateTenancyMode(
+            options.ConnectionString,
+            options.Schema,
+            singleTenant: !isTenantMode);
+
+        // DX-6: Detect .WithTenancy() called AFTER .WithPostgres(). When the builder's HasTenancy
+        // flag is read here it reflects the state at registration time. The startup validator
+        // below re-reads it after the fluent chain is complete and fails fast if the flags differ,
+        // meaning WithTenancy() was chained too late for the backend wiring to pick it up.
+        // The hosted service runs before the application starts serving requests.
+        builder.Services.AddSingleton<IHostedService>(
+            _ => new TenancyOrderingValidator(builder, isTenantMode));
+
         var moduleKey = builder.ModuleKey;
         var schema = options.Schema;
 
@@ -206,7 +224,7 @@ public static class PostgresBuilderExtensions
 
         // Register a singleton backend for ControlLoops (streams all events, no per-request tenant scoping).
         // ControlLoops are singletons and cannot consume scoped services, so they use this key.
-        // ControlLoops only call StreamAll and GetPositionsAsync — the null accessor is never exercised.
+        // ControlLoops only call StreamAllAsync (IEventStoreBackend) and GetPositionsAsync (IEventStoreHeadBackend) — the null accessor is never exercised.
         builder.Services.AddKeyedSingleton<IEventStoreBackend>(moduleKey + ":consumer", (sp, _) =>
         {
             var rawTenantBackend = sp.GetRequiredKeyedService<PostgresTenantEventStoreBackend>(moduleKey + ":tenant-raw");
@@ -218,8 +236,39 @@ public static class PostgresBuilderExtensions
 }
 
 /// <summary>
+/// Startup validator that fails fast when <c>.WithTenancy()</c> was called after
+/// <c>.WithPostgres()</c> on the same builder — a mis-ordering that causes the backend to be
+/// wired in single-tenant mode even though the application intends multi-tenant operation.
+/// </summary>
+/// <remarks>
+/// The validator captures the tenancy mode seen by <see cref="PostgresBuilderExtensions.WithPostgres"/>
+/// at registration time (<paramref name="tenancyModeAtRegistration"/>), then re-reads
+/// <see cref="DcbModuleBuilder.HasTenancy"/> at <see cref="StartAsync"/> time (after the
+/// fluent chain is complete). A difference means the ordering was wrong.
+/// </remarks>
+file sealed class TenancyOrderingValidator(
+    DcbModuleBuilder builder,
+    bool tenancyModeAtRegistration) : IHostedService
+{
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        var currentTenancyMode = builder.HasTenancy;
+        if (currentTenancyMode != tenancyModeAtRegistration)
+            throw new InvalidOperationException(
+                $"Alberto configuration error for module '{builder.ModuleKey}': " +
+                ".WithTenancy() was called AFTER .WithPostgres(), so the backend was wired " +
+                "in single-tenant mode and will silently ignore the tenancy flag. " +
+                "Fix: call .WithTenancy() before .WithPostgres() in your configuration chain.");
+
+        return Task.CompletedTask;
+    }
+
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+}
+
+/// <summary>
 /// No-op tenant accessor used for the ControlLoop singleton backend.
-/// ControlLoops only call StreamAll/GetPositionsAsync which do not use tenant context.
+/// ControlLoops only call StreamAllAsync/GetPositionsAsync which do not use tenant context.
 /// </summary>
 file sealed class ConsumerTenantAccessor : Alberto.Dcb.Tenancy.ITenantAccessor
 {

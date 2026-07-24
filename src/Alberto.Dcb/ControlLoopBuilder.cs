@@ -155,10 +155,20 @@ public sealed class ControlLoopBuilder
         services.AddKeyedSingleton<EventStoreHead>(moduleKey, (sp, _) =>
         {
             var backend = sp.GetKeyedService<IEventStoreBackend>($"{moduleKey}:consumer")
-                         ?? sp.GetRequiredKeyedService<IEventStoreBackend>(moduleKey);
+                         ?? sp.GetKeyedService<IEventStoreBackend>(moduleKey)
+                         ?? throw new InvalidOperationException(
+                             $"No event store backend is registered for Alberto module '{moduleKey}'. " +
+                             "Call .WithPostgres() or .WithInMemory() (or another backend) on the module " +
+                             "builder before configuring a control loop.");
+            var headBackend = backend as IEventStoreHeadBackend
+                ?? throw new InvalidOperationException(
+                    $"The event store backend registered for Alberto module '{moduleKey}' does not " +
+                    "implement IEventStoreHeadBackend. All built-in backends implement this interface. " +
+                    "If you are using a custom backend, implement IEventStoreHeadBackend alongside " +
+                    "IEventStoreBackend to enable subscriber head tracking.");
             // Optional push-wakeup — present only when a backend registers it (e.g. Postgres LISTEN/NOTIFY).
             var signal = sp.GetKeyedService<IEventAppendedSignal>(moduleKey);
-            return new EventStoreHead(backend, headRefreshInterval, headWindowSize,
+            return new EventStoreHead(headBackend, headRefreshInterval, headWindowSize,
                 sp.GetService<ILogger<EventStoreHead>>(), signal);
         });
         services.AddSingleton<IHostedService>(sp =>
@@ -202,8 +212,13 @@ public sealed class ControlLoopBuilder
                 .ToDictionary(r => r.ProcessorId, r => r.Options, StringComparer.Ordinal);
 
             var head = sp.GetRequiredKeyedService<EventStoreHead>(moduleKey);
+            // DX-7: surface a clear Alberto-specific message instead of a raw keyed-DI exception.
             var backend = sp.GetKeyedService<IEventStoreBackend>($"{moduleKey}:consumer")
-                         ?? sp.GetRequiredKeyedService<IEventStoreBackend>(moduleKey);
+                         ?? sp.GetKeyedService<IEventStoreBackend>(moduleKey)
+                         ?? throw new InvalidOperationException(
+                             $"No event store backend is registered for Alberto module '{moduleKey}'. " +
+                             "Call .WithPostgres() or .WithInMemory() (or another backend) on the module " +
+                             "builder before configuring a control loop.");
             var checkpoints = sp.GetRequiredKeyedService<ICheckpointStore>(moduleKey);
             var logger = sp.GetService<ILogger<ControlLoop>>();
 
@@ -244,15 +259,35 @@ public sealed class ControlLoopBuilder
             {
                 var leaseManager = sp.GetRequiredKeyedService<IProcessorLeaseManager>(moduleKey);
 
-                // Enable fenced checkpoint writes to prevent zombie processors
-                if (checkpoints is CachingCheckpointStore cachingStore)
+                // Enable fenced checkpoint writes and wire the fence-violation callback
+                // through IFencableCheckpointStore so we don't downcast to the concrete
+                // type (P3.4 / COR-5). Any wrapper around CachingCheckpointStore that
+                // also implements IFencableCheckpointStore will be reached correctly;
+                // wrapping without implementing IFencableCheckpointStore will still
+                // compile — the fencing block is simply skipped — which is visible to
+                // the integrator rather than silently dropping the callback.
+                LeaseAwareControlLoopGroup? leaseGroup = null;
+                if (checkpoints is IFencableCheckpointStore fencable)
                 {
-                    cachingStore.SetFencingContext(new FencingContext(moduleKey, replicaId, UseProcessorLeaseFencing: true));
+                    fencable.SetFencingContext(new FencingContext(moduleKey, replicaId, UseProcessorLeaseFencing: true));
+                    // Wire the fence-violation callback BEFORE the group is returned so
+                    // the variable is captured by reference and will be set when the
+                    // lambda is first invoked (from a periodic timer, always after init).
+                    fencable.OnFenceViolation = violatingProcessorId =>
+                    {
+                        // Fire-and-forget: cancel the control loop group immediately so
+                        // the fenced-out replica stops dispatching duplicate side effects.
+                        // The callback is Action<string> (synchronous); discarding the
+                        // Task is intentional — CancelAsync() returns quickly and the
+                        // async tail only waits on already-draining workers.
+                        _ = leaseGroup?.StopAsync(CancellationToken.None);
+                    };
                 }
 
-                return new LeaseAwareControlLoopGroup(
+                leaseGroup = new LeaseAwareControlLoopGroup(
                     loops, leaseManager, moduleKey, replicaId,
                     sp.GetService<ILogger<LeaseAwareControlLoopGroup>>());
+                return leaseGroup;
             }
 
             return new ControlLoopGroup(loops);

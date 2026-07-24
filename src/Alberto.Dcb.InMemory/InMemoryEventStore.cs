@@ -8,7 +8,11 @@ namespace Alberto.Dcb.InMemory;
 /// Wraps <see cref="IEventStoreBackend"/> and coordinates inline projections during append.
 /// Useful for testing and development scenarios.
 /// </summary>
-public sealed class InMemoryEventStore : IEventStore
+/// <remarks>
+/// Implements <see cref="IEventStoreConfigurator"/> so builder code can register projections
+/// and post-append handlers at setup time without exposing those methods on <see cref="IEventStore"/>.
+/// </remarks>
+public sealed class InMemoryEventStore : IEventStore, IEventStoreConfigurator
 {
     private readonly IEventStoreBackend _backend;
     private readonly List<IInlineProjection> _inlineProjections = [];
@@ -49,7 +53,7 @@ public sealed class InMemoryEventStore : IEventStore
         long? expectedPosition = null,
         CancellationToken cancellationToken = default)
     {
-        var appended = await _backend.Append(events, dcbQuery, expectedPosition, cancellationToken);
+        var appended = await _backend.AppendAsync(events, dcbQuery, expectedPosition, cancellationToken);
 
         if (appended.Count > 0)
         {
@@ -86,7 +90,7 @@ public sealed class InMemoryEventStore : IEventStore
         int? limit = null,
         CancellationToken cancellationToken = default)
     {
-        return _backend.Stream(query, afterPosition, limit, cancellationToken);
+        return _backend.StreamAsync(query, afterPosition, limit, cancellationToken);
     }
 
     /// <inheritdoc/>
@@ -95,12 +99,12 @@ public sealed class InMemoryEventStore : IEventStore
         int? limit = null,
         CancellationToken cancellationToken = default)
     {
-        return _backend.StreamAll(afterPosition, limit, cancellationToken);
+        return _backend.StreamAllAsync(afterPosition, limit, cancellationToken);
     }
 
     /// <inheritdoc/>
     public Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default)
     {
-        return _backend.GetLastPosition(cancellationToken);
+        return _backend.GetLastPositionAsync(cancellationToken);
     }
 }

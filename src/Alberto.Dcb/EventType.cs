@@ -6,6 +6,13 @@ namespace Alberto.Dcb;
 /// Attribute to specify the event type identifier for an event class.
 /// The event type is used for filtering and routing events.
 /// </summary>
+/// <remarks>
+/// Event-type slugs are restricted to <b>lowercase</b> letters, digits, hyphens, and
+/// underscores (<c>[a-z0-9_-]+</c>). This is deliberately more restrictive than
+/// <see cref="EventTag"/>, which also accepts uppercase letters in both concept and id.
+/// The lowercase requirement makes event types case-insensitive by construction, avoids
+/// ambiguity in type registries, and mirrors common slug conventions in messaging systems.
+/// </remarks>
 /// <example>
 /// <code>
 /// [EventType("order-placed")]
@@ -67,6 +74,13 @@ public sealed partial class EventTypeAttribute : Attribute
 /// Represents an event type identifier as a value type.
 /// Used in queries and event metadata.
 /// </summary>
+/// <remarks>
+/// The identifier string passed to the constructor is <b>not</b> validated against the
+/// lowercase-only rule enforced by <see cref="EventTypeAttribute"/>; validation happens
+/// at attribute construction time (decoration site). When creating an <see cref="EventType"/>
+/// manually, follow the same convention: lowercase letters, digits, hyphens, and underscores
+/// only (e.g., <c>"order-placed"</c>, <c>"customer_created"</c>).
+/// </remarks>
 public readonly struct EventType : IEquatable<EventType>
 {
     public EventType(string id)

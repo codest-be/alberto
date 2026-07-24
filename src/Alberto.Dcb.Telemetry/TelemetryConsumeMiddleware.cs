@@ -21,21 +21,27 @@ public static class TelemetryConsumeMiddleware
     {
         return async (context, next) =>
         {
-            var link = ExtractTraceLink(context.Envelope, traceContextProvider);
-            var links = link is null ? [] : new[] { link.Value };
+            // Skip all trace-related allocations (string interpolation, link extraction,
+            // ActivityLink array) when no ActivitySource listener is subscribed.
+            // Metric counters and histograms are recorded unconditionally via the Meter.
+            Activity? activity = null;
+            if (AlbertoMetrics.Source.HasListeners())
+            {
+                var link = ExtractTraceLink(context.Envelope, traceContextProvider);
+                var links = link is null ? null : new[] { link.Value };
+                var activityName = $"{AlbertoMetrics.ConsumeActivityName} {context.ProcessorId}";
+                activity = AlbertoMetrics.Source.StartActivity(
+                    activityName,
+                    ActivityKind.Consumer,
+                    parentContext: default,
+                    links: links);
 
-            var activityName = $"{AlbertoMetrics.ConsumeActivityName} {context.ProcessorId}";
-            using var activity = AlbertoMetrics.Source.StartActivity(
-                activityName,
-                ActivityKind.Consumer,
-                parentContext: default,
-                links: links);
-
-            activity?.SetTag("processor.id", context.ProcessorId);
-            activity?.SetTag("module.key", context.ModuleKey);
-            activity?.SetTag("event.position", context.Envelope.GlobalPosition);
-            activity?.SetTag("event.type", context.Envelope.EventType.Id);
-            activity?.SetTag("trace.links.count", links.Length);
+                activity?.SetTag("processor.id", context.ProcessorId);
+                activity?.SetTag("module.key", context.ModuleKey);
+                activity?.SetTag("event.position", context.Envelope.GlobalPosition);
+                activity?.SetTag("event.type", context.Envelope.EventType.Id);
+                activity?.SetTag("trace.links.count", links?.Length ?? 0);
+            }
 
             var sw = Stopwatch.StartNew();
             try
@@ -80,6 +86,7 @@ public static class TelemetryConsumeMiddleware
             }
             finally
             {
+                activity?.Dispose();
                 AlbertoMetrics.ProcessingDuration.Record(sw.ElapsedMilliseconds,
                     new KeyValuePair<string, object?>("processor", context.ProcessorId));
             }

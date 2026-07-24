@@ -35,8 +35,17 @@ public sealed class ControlLoopMiddlewareTests
         Func<IEventEnvelope, bool> shouldFault)
         : IEventProcessor
     {
+        private int _processedCount;
+        private int _attemptCount;
+
         public List<IEventEnvelope> ProcessedEvents { get; } = [];
         public Dictionary<long, int> AttemptsByPosition { get; } = [];
+
+        /// <summary>Thread-safe processed event count for use with polling waits.</summary>
+        public int ProcessedCount => Volatile.Read(ref _processedCount);
+
+        /// <summary>Thread-safe total attempt count for use with polling waits.</summary>
+        public int AttemptCount => Volatile.Read(ref _attemptCount);
 
         public string ProcessorId { get; } = processorId;
         public bool IsActive { get; set; } = true;
@@ -48,11 +57,13 @@ public sealed class ControlLoopMiddlewareTests
         {
             AttemptsByPosition[@event.GlobalPosition] =
                 AttemptsByPosition.GetValueOrDefault(@event.GlobalPosition) + 1;
+            Interlocked.Increment(ref _attemptCount);
 
             if (shouldFault(@event))
                 throw new InvalidOperationException("Simulated permanent fault");
 
             ProcessedEvents.Add(@event);
+            Interlocked.Increment(ref _processedCount);
             return Task.CompletedTask;
         }
     }
@@ -66,9 +77,9 @@ public sealed class ControlLoopMiddlewareTests
         var deadLetters = new InMemoryDeadLetterStore();
 
         // Position 1 = poison, positions 2..3 should still be processed
-        await backend.Append([CreateEvent(new TestEvent("poison"))], cancellationToken: ct);
-        await backend.Append([CreateEvent(new TestEvent("ok-1"))], cancellationToken: ct);
-        await backend.Append([CreateEvent(new TestEvent("ok-2"))], cancellationToken: ct);
+        await backend.AppendAsync([CreateEvent(new TestEvent("poison"))], cancellationToken: ct);
+        await backend.AppendAsync([CreateEvent(new TestEvent("ok-1"))], cancellationToken: ct);
+        await backend.AppendAsync([CreateEvent(new TestEvent("ok-2"))], cancellationToken: ct);
 
         var processor = new SelectivelyFaultingProcessor(
             "selective",
@@ -89,7 +100,8 @@ public sealed class ControlLoopMiddlewareTests
         await head.StartAsync(cts.Token);
         await loop.StartAsync(cts.Token);
 
-        await Task.Delay(250, TestContext.Current.CancellationToken);
+        // Wait until both healthy events have been processed.
+        await WaitForAsync(() => processor.ProcessedCount >= 2, TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
         await cts.CancelAsync();
         await loop.StopAsync(CancellationToken.None);
         await head.StopAsync(CancellationToken.None);
@@ -121,7 +133,7 @@ public sealed class ControlLoopMiddlewareTests
         var deadLetters = new InMemoryDeadLetterStore();
         var ct = TestContext.Current.CancellationToken;
 
-        await backend.Append([CreateEvent(new TestEvent("poison"))], cancellationToken: ct);
+        await backend.AppendAsync([CreateEvent(new TestEvent("poison"))], cancellationToken: ct);
 
         var processor = new SelectivelyFaultingProcessor("perm", _ => true);
 
@@ -142,7 +154,8 @@ public sealed class ControlLoopMiddlewareTests
         await head.StartAsync(cts.Token);
         await loop.StartAsync(cts.Token);
 
-        await Task.Delay(200, TestContext.Current.CancellationToken);
+        // Wait until at least one attempt has been made (then the middleware dead-letters it).
+        await WaitForAsync(() => processor.AttemptCount >= 1, TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
         await cts.CancelAsync();
         await loop.StopAsync(CancellationToken.None);
         await head.StopAsync(CancellationToken.None);
@@ -160,12 +173,12 @@ public sealed class ControlLoopMiddlewareTests
         var deadLetters = new InMemoryDeadLetterStore();
         var ct = TestContext.Current.CancellationToken;
 
-        await backend.Append([CreateEvent(new TestEvent("transient"))], cancellationToken: ct);
+        await backend.AppendAsync([CreateEvent(new TestEvent("transient"))], cancellationToken: ct);
 
         var attempts = 0;
         var processor = new ThrowingProcessor("trans", () =>
         {
-            attempts++;
+            Interlocked.Increment(ref attempts);
             // TimeoutException → classified as Transient → retried
             throw new TimeoutException("simulated timeout");
         });
@@ -190,7 +203,8 @@ public sealed class ControlLoopMiddlewareTests
         await head.StartAsync(cts.Token);
         await loop.StartAsync(cts.Token);
 
-        await Task.Delay(300, TestContext.Current.CancellationToken);
+        // Wait until all 3 attempts (1 initial + 2 retries) have been made.
+        await WaitForAsync(() => Volatile.Read(ref attempts) >= 3, TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
         await cts.CancelAsync();
         await loop.StopAsync(CancellationToken.None);
         await head.StopAsync(CancellationToken.None);
@@ -222,9 +236,14 @@ public sealed class ControlLoopMiddlewareTests
         string processorId,
         Func<IEventEnvelope, bool> shouldFault) : IBatchableProcessor
     {
+        private int _processedBatchCount;
+
         public List<IEventEnvelope> ProcessedEvents { get; } = [];
         public List<IReadOnlyList<IEventEnvelope>> ProcessedBatches { get; } = [];
         public Dictionary<string, int> AttemptsByBatch { get; } = [];
+
+        /// <summary>Thread-safe batch count for use with polling waits.</summary>
+        public int ProcessedBatchCount => Volatile.Read(ref _processedBatchCount);
 
         public string ProcessorId { get; } = processorId;
         public bool IsActive { get; set; } = true;
@@ -247,8 +266,25 @@ public sealed class ControlLoopMiddlewareTests
                 throw new InvalidOperationException("Simulated permanent fault");
 
             ProcessedBatches.Add(events.ToList());
+            Interlocked.Increment(ref _processedBatchCount);
             return Task.CompletedTask;
         }
+    }
+
+    /// <summary>
+    /// Polls <paramref name="condition"/> every 15 ms until it returns <see langword="true"/>
+    /// or <paramref name="timeout"/> elapses, then calls <see cref="Assert.Fail"/>.
+    /// Replaces wall-clock <c>Task.Delay</c> waits with deterministic condition-based synchronization.
+    /// </summary>
+    private static async Task WaitForAsync(Func<bool> condition, TimeSpan timeout, CancellationToken ct = default)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            if (condition()) return;
+            await Task.Delay(15, ct);
+        }
+        Assert.Fail($"Condition not met within {timeout}");
     }
 
     [Fact]
@@ -259,9 +295,9 @@ public sealed class ControlLoopMiddlewareTests
         var checkpoints = new InMemoryCheckpointStore();
         var deadLetters = new InMemoryDeadLetterStore();
 
-        await backend.Append([CreateEvent(new TestEvent("poison"))], cancellationToken: ct);
-        await backend.Append([CreateEvent(new TestEvent("ok-1"))], cancellationToken: ct);
-        await backend.Append([CreateEvent(new TestEvent("ok-2"))], cancellationToken: ct);
+        await backend.AppendAsync([CreateEvent(new TestEvent("poison"))], cancellationToken: ct);
+        await backend.AppendAsync([CreateEvent(new TestEvent("ok-1"))], cancellationToken: ct);
+        await backend.AppendAsync([CreateEvent(new TestEvent("ok-2"))], cancellationToken: ct);
 
         var processor = new BatchSelectiveProcessor(
             "batch-selective",
@@ -287,7 +323,8 @@ public sealed class ControlLoopMiddlewareTests
         await head.StartAsync(cts.Token);
         await loop.StartAsync(cts.Token);
 
-        await Task.Delay(250, TestContext.Current.CancellationToken);
+        // Wait until the healthy batch (positions 2 and 3) has been processed.
+        await WaitForAsync(() => processor.ProcessedBatchCount >= 1, TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
         await cts.CancelAsync();
         await loop.StopAsync(CancellationToken.None);
         await head.StopAsync(CancellationToken.None);

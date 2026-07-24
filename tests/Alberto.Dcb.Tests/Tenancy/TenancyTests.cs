@@ -20,20 +20,20 @@ public class TenancyTests
     {
         var context = new TenantContext();
 
-        context.SetTenant("tenant-123");
+        context.SetTenant("tenant_123");
 
-        Assert.Equal("tenant-123", context.TenantId);
+        Assert.Equal("tenant_123", context.TenantId);
     }
 
     [Fact]
     public void TenantContext_SetTenant_ShouldOverwritePreviousTenant()
     {
         var context = new TenantContext();
-        context.SetTenant("tenant-1");
+        context.SetTenant("tenant1");
 
-        context.SetTenant("tenant-2");
+        context.SetTenant("tenant2");
 
-        Assert.Equal("tenant-2", context.TenantId);
+        Assert.Equal("tenant2", context.TenantId);
     }
 
     [Theory]
@@ -56,10 +56,10 @@ public class TenancyTests
     public void TenantAccessor_TenantId_WhenSet_ShouldReturnValue()
     {
         var context = new TenantContext();
-        context.SetTenant("tenant-123");
+        context.SetTenant("tenant_123");
         var accessor = new TenantAccessor(context);
 
-        Assert.Equal("tenant-123", accessor.TenantId);
+        Assert.Equal("tenant_123", accessor.TenantId);
     }
 
     [Fact]
@@ -76,10 +76,10 @@ public class TenancyTests
     public void TenantAccessor_TenantIdOrDefault_WhenSet_ShouldReturnValue()
     {
         var context = new TenantContext();
-        context.SetTenant("tenant-456");
+        context.SetTenant("tenant456");
         var accessor = new TenantAccessor(context);
 
-        Assert.Equal("tenant-456", accessor.TenantIdOrDefault);
+        Assert.Equal("tenant456", accessor.TenantIdOrDefault);
     }
 
     [Fact]
@@ -95,7 +95,7 @@ public class TenancyTests
     public void TenantAccessor_HasTenant_WhenSet_ShouldReturnTrue()
     {
         var context = new TenantContext();
-        context.SetTenant("tenant-789");
+        context.SetTenant("tenant789");
         var accessor = new TenantAccessor(context);
 
         Assert.True(accessor.HasTenant);
@@ -118,10 +118,10 @@ public class TenancyTests
 
         Assert.False(accessor.HasTenant);
 
-        context.SetTenant("new-tenant");
+        context.SetTenant("newtenant");
 
         Assert.True(accessor.HasTenant);
-        Assert.Equal("new-tenant", accessor.TenantId);
+        Assert.Equal("newtenant", accessor.TenantId);
     }
 
     #endregion

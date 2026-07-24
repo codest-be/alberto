@@ -3,6 +3,18 @@ namespace Alberto.Dcb;
 /// <summary>
 /// Result of a decision — either events to append or a failure reason.
 /// </summary>
+/// <remarks>
+/// <b>Obsolete:</b> Use <c>Decision</c> or <c>Decision&lt;T&gt;</c> (from Alberto.Dcb.Commands) together with
+/// <see cref="Result"/> / <see cref="Result{T}"/> instead.
+/// <c>Decision</c> carries both the success/failure signal and the events to append.
+/// <see cref="Result"/> / <see cref="Result{T}"/> are returned by the persist step after events
+/// have been written. This type will be removed in a future version.
+/// </remarks>
+[Obsolete(
+    "Use Decision or Decision<T> instead of DecisionResult<TEvent>. " +
+    "Decision carries events and problems; Result/Result<T> are returned after persisting. " +
+    "This type will be removed in a future version.",
+    error: false)]
 public abstract record DecisionResult<TEvent> where TEvent : IEvent
 {
     private DecisionResult() { }

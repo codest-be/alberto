@@ -29,7 +29,7 @@ public abstract class EventStoreBackendSpecification
         var backend = await CreateBackend();
         var eventToPersist = CreateEvent("order-placed", $"order:{TestId}");
 
-        var result = await backend.Append([eventToPersist], cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.AppendAsync([eventToPersist], cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Single(result);
         Assert.Equal(eventToPersist.Id, result.First().Id);
@@ -46,7 +46,7 @@ public abstract class EventStoreBackendSpecification
             CreateEvent("event-c", $"order:{TestId}")
         };
 
-        var result = await backend.Append(events, cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.AppendAsync(events, cancellationToken: TestContext.Current.CancellationToken);
 
         var positions = result.Select(e => e.GlobalPosition).ToList();
         Assert.Equal(3, positions.Count);
@@ -58,7 +58,7 @@ public abstract class EventStoreBackendSpecification
         var backend = await CreateBackend();
         var eventToPersist = CreateEvent("order-placed", $"order:{TestId}");
 
-        var result = await backend.Append([eventToPersist], cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.AppendAsync([eventToPersist], cancellationToken: TestContext.Current.CancellationToken);
 
         var appended = result.First();
         Assert.Equal(eventToPersist.EventData, appended.EventData);
@@ -75,7 +75,7 @@ public abstract class EventStoreBackendSpecification
         };
         var eventToPersist = CreateEvent("order-placed", metadata, $"order:{TestId}");
 
-        var result = await backend.Append([eventToPersist], cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.AppendAsync([eventToPersist], cancellationToken: TestContext.Current.CancellationToken);
 
         var appended = result.First();
         Assert.Equal("corr-123", appended.Metadata["correlation-id"]);
@@ -91,7 +91,7 @@ public abstract class EventStoreBackendSpecification
         var backend = await CreateBackend();
         var query = DcbQuery.ByTags($"order:{TestId}-empty");
 
-        var result = await backend.Stream(query, cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.StreamAsync(query, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Empty(result);    }
 
@@ -99,13 +99,13 @@ public abstract class EventStoreBackendSpecification
     public async Task Stream_ByTags_ShouldReturnMatchingEvents()
     {
         var backend = await CreateBackend();
-        await backend.Append([
+        await backend.AppendAsync([
             CreateEvent("order-placed", $"order:{TestId}"),
             CreateEvent("order-confirmed", $"order:{TestId}"),
             CreateEvent("customer-updated", $"customer:{TestId}")
         ], cancellationToken: TestContext.Current.CancellationToken);
 
-        var result = await backend.Stream(DcbQuery.ByTags($"order:{TestId}"), cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.StreamAsync(DcbQuery.ByTags($"order:{TestId}"), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(2, result.Count);
         Assert.All(result, e => Assert.Contains(e.Tags, t => t.Value == $"order:{TestId}"));    }
@@ -114,13 +114,13 @@ public abstract class EventStoreBackendSpecification
     public async Task Stream_ByTypes_ShouldReturnMatchingEvents()
     {
         var backend = await CreateBackend();
-        await backend.Append([
+        await backend.AppendAsync([
             CreateEvent($"order-placed-{TestId}", $"order:1{TestId}"),
             CreateEvent($"order-confirmed-{TestId}", $"order:1{TestId}"),
             CreateEvent($"order-placed-{TestId}", $"order:2{TestId}")
         ], cancellationToken: TestContext.Current.CancellationToken);
 
-        var result = await backend.Stream(DcbQuery.ByTypes($"order-placed-{TestId}"), cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.StreamAsync(DcbQuery.ByTypes($"order-placed-{TestId}"), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(2, result.Count);
         Assert.All(result, e => Assert.Equal($"order-placed-{TestId}", e.EventType.Id));    }
@@ -129,7 +129,7 @@ public abstract class EventStoreBackendSpecification
     public async Task Stream_ByTypesOrTags_AsUnion_ShouldReturnUnion()
     {
         var backend = await CreateBackend();
-        await backend.Append([
+        await backend.AppendAsync([
             CreateEvent($"order-placed-{TestId}", $"order:1{TestId}"),      // matches type
             CreateEvent($"order-confirmed-{TestId}", $"order:2{TestId}"),   // matches tag
             CreateEvent($"customer-updated-{TestId}", $"customer:3{TestId}") // matches neither
@@ -140,7 +140,7 @@ public abstract class EventStoreBackendSpecification
             .WithTags(new EventTag("order", $"2{TestId}"))
             .AsUnion();
 
-        var result = await backend.Stream(query, cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.StreamAsync(query, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(2, result.Count);    }
 
@@ -148,7 +148,7 @@ public abstract class EventStoreBackendSpecification
     public async Task Stream_ByTypesAndTags_DefaultsToIntersect()
     {
         var backend = await CreateBackend();
-        await backend.Append([
+        await backend.AppendAsync([
             CreateEvent($"order-placed-{TestId}", $"order:1{TestId}"),      // matches type only
             CreateEvent($"order-placed-{TestId}", $"order:2{TestId}"),      // matches both
             CreateEvent($"order-confirmed-{TestId}", $"order:2{TestId}"),   // matches tag only
@@ -159,7 +159,7 @@ public abstract class EventStoreBackendSpecification
             .WithTypes($"order-placed-{TestId}")
             .WithTags(new EventTag("order", $"2{TestId}"));
 
-        var result = await backend.Stream(query, cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.StreamAsync(query, cancellationToken: TestContext.Current.CancellationToken);
 
         var matched = Assert.Single(result);
         Assert.Equal($"order-placed-{TestId}", matched.EventType.Id);
@@ -170,13 +170,13 @@ public abstract class EventStoreBackendSpecification
     public async Task Stream_ByAllTags_ShouldRequireAllTagsToMatch()
     {
         var backend = await CreateBackend();
-        await backend.Append([
+        await backend.AppendAsync([
             CreateEvent("source-followed", $"reader:{TestId}", $"source:{TestId}"),
             CreateEvent("source-unfollowed", $"reader:{TestId}"),
             CreateEvent("source-followed", $"source:{TestId}")
         ], cancellationToken: TestContext.Current.CancellationToken);
 
-        var result = await backend.Stream(
+        var result = await backend.StreamAsync(
             DcbQuery.ByAllTags($"reader:{TestId}", $"source:{TestId}"),
             cancellationToken: TestContext.Current.CancellationToken);
 
@@ -192,15 +192,15 @@ public abstract class EventStoreBackendSpecification
         var backend = await CreateBackend();
 
         // Get starting position to filter out events from other tests
-        var startPosition = await backend.GetLastPosition(TestContext.Current.CancellationToken);
+        var startPosition = await backend.GetLastPositionAsync(TestContext.Current.CancellationToken);
 
-        await backend.Append([
+        await backend.AppendAsync([
             CreateEvent("event-a", $"tag:1{TestId}"),
             CreateEvent("event-b", $"tag:2{TestId}"),
             CreateEvent("event-c", $"tag:3{TestId}")
         ], cancellationToken: TestContext.Current.CancellationToken);
 
-        var result = await backend.StreamAll(afterPosition: startPosition, cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.StreamAllAsync(afterPosition: startPosition, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(3, result.Count);    }
 
@@ -208,16 +208,16 @@ public abstract class EventStoreBackendSpecification
     public async Task Stream_WithAfterPosition_ShouldFilterByPosition()
     {
         var backend = await CreateBackend();
-        var firstBatch = await backend.Append([
+        var firstBatch = await backend.AppendAsync([
             CreateEvent("event-a", $"order:{TestId}"),
             CreateEvent("event-b", $"order:{TestId}")
         ], cancellationToken: TestContext.Current.CancellationToken);
-        await backend.Append([
+        await backend.AppendAsync([
             CreateEvent("event-c", $"order:{TestId}")
         ], cancellationToken: TestContext.Current.CancellationToken);
 
         var afterPosition = firstBatch.Last().GlobalPosition;
-        var result = await backend.Stream(DcbQuery.ByTags($"order:{TestId}"), afterPosition, cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.StreamAsync(DcbQuery.ByTags($"order:{TestId}"), afterPosition, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Single(result);
         Assert.Equal("event-c", result.First().EventType.Id);    }
@@ -226,7 +226,7 @@ public abstract class EventStoreBackendSpecification
     public async Task Stream_WithLimit_ShouldLimitResults()
     {
         var backend = await CreateBackend();
-        await backend.Append([
+        await backend.AppendAsync([
             CreateEvent("event-a", $"order:{TestId}"),
             CreateEvent("event-b", $"order:{TestId}"),
             CreateEvent("event-c", $"order:{TestId}"),
@@ -234,7 +234,7 @@ public abstract class EventStoreBackendSpecification
             CreateEvent("event-e", $"order:{TestId}")
         ], cancellationToken: TestContext.Current.CancellationToken);
 
-        var result = await backend.Stream(DcbQuery.ByTags($"order:{TestId}"), limit: 3, cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.StreamAsync(DcbQuery.ByTags($"order:{TestId}"), limit: 3, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(3, result.Count);    }
 
@@ -242,13 +242,13 @@ public abstract class EventStoreBackendSpecification
     public async Task Stream_ShouldOrderByPosition()
     {
         var backend = await CreateBackend();
-        await backend.Append([
+        await backend.AppendAsync([
             CreateEvent("event-c", $"order:{TestId}"),
             CreateEvent("event-a", $"order:{TestId}"),
             CreateEvent("event-b", $"order:{TestId}")
         ], cancellationToken: TestContext.Current.CancellationToken);
 
-        var result = await backend.Stream(DcbQuery.ByTags($"order:{TestId}"), cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.StreamAsync(DcbQuery.ByTags($"order:{TestId}"), cancellationToken: TestContext.Current.CancellationToken);
 
         var positions = result.Select(e => e.GlobalPosition).ToList();
         Assert.True(positions.SequenceEqual(positions.OrderBy(p => p)));    }
@@ -261,14 +261,14 @@ public abstract class EventStoreBackendSpecification
     public async Task Stream_ByTagPrefix_ShouldReturnAllMatchingTags()
     {
         var backend = await CreateBackend();
-        await backend.Append([
+        await backend.AppendAsync([
             CreateEvent("order-placed", $"ord{TestId}:123"),
             CreateEvent("order-confirmed", $"ord{TestId}:456"),
             CreateEvent("order-shipped", $"ord{TestId}:789"),
             CreateEvent("customer-updated", $"cust{TestId}:111")
         ], cancellationToken: TestContext.Current.CancellationToken);
 
-        var result = await backend.Stream(DcbQuery.ByTagPatterns($"ord{TestId}:*"), cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.StreamAsync(DcbQuery.ByTagPatterns($"ord{TestId}:*"), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(3, result.Count);
         Assert.All(result, e => Assert.Contains(e.Tags, t => t.Concept == $"ord{TestId}"));
@@ -278,14 +278,14 @@ public abstract class EventStoreBackendSpecification
     public async Task Stream_ByMultipleTagPrefixes_ShouldReturnUnion()
     {
         var backend = await CreateBackend();
-        await backend.Append([
+        await backend.AppendAsync([
             CreateEvent("order-placed", $"ord{TestId}:123"),
             CreateEvent("customer-created", $"cust{TestId}:456"),
             CreateEvent("product-updated", $"prod{TestId}:789")
         ], cancellationToken: TestContext.Current.CancellationToken);
 
         var query = DcbQuery.ByTagPatterns($"ord{TestId}:*", $"cust{TestId}:*");
-        var result = await backend.Stream(query, cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.StreamAsync(query, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(2, result.Count);
     }
@@ -294,7 +294,7 @@ public abstract class EventStoreBackendSpecification
     public async Task Stream_ByMixedExactAndWildcardTags_ShouldReturnUnion()
     {
         var backend = await CreateBackend();
-        await backend.Append([
+        await backend.AppendAsync([
             CreateEvent("order-placed", $"ord{TestId}:123"),
             CreateEvent("order-confirmed", $"ord{TestId}:456"),
             CreateEvent("customer-created", $"cust{TestId}:789"),
@@ -305,7 +305,7 @@ public abstract class EventStoreBackendSpecification
             .WithTags($"prod{TestId}:111")
             .WithTagPatterns($"ord{TestId}:*");
 
-        var result = await backend.Stream(query, cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.StreamAsync(query, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(3, result.Count);
     }
@@ -314,7 +314,7 @@ public abstract class EventStoreBackendSpecification
     public async Task Stream_ByTypesAndWildcardTags_AsUnion_ShouldReturnUnion()
     {
         var backend = await CreateBackend();
-        await backend.Append([
+        await backend.AppendAsync([
             CreateEvent($"order-placed-{TestId}", $"ord{TestId}:123"),         // matches type
             CreateEvent($"order-confirmed-{TestId}", $"ord{TestId}:456"),      // matches tag wildcard
             CreateEvent($"customer-created-{TestId}", $"cust{TestId}:789"),  // matches nothing
@@ -326,7 +326,7 @@ public abstract class EventStoreBackendSpecification
             .WithTagPatterns($"ord{TestId}:*")
             .AsUnion();
 
-        var result = await backend.Stream(query, cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.StreamAsync(query, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(3, result.Count);
     }
@@ -335,7 +335,7 @@ public abstract class EventStoreBackendSpecification
     public async Task Stream_ByTypesAndWildcardTags_DefaultsToIntersect()
     {
         var backend = await CreateBackend();
-        await backend.Append([
+        await backend.AppendAsync([
             CreateEvent($"order-placed-{TestId}", $"ord{TestId}:123"),         // matches type AND tag prefix
             CreateEvent($"order-confirmed-{TestId}", $"ord{TestId}:456"),      // matches tag prefix only
             CreateEvent($"order-placed-{TestId}", $"prod{TestId}:111"),        // matches type only
@@ -346,7 +346,7 @@ public abstract class EventStoreBackendSpecification
             .WithTypes($"order-placed-{TestId}")
             .WithTagPatterns($"ord{TestId}:*");
 
-        var result = await backend.Stream(query, cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.StreamAsync(query, cancellationToken: TestContext.Current.CancellationToken);
 
         var matched = Assert.Single(result);
         Assert.Equal($"order-placed-{TestId}", matched.EventType.Id);
@@ -357,18 +357,18 @@ public abstract class EventStoreBackendSpecification
     public async Task Append_WithDcbCheck_TypesAndTags_DefaultsToIntersect_NoConflict()
     {
         var backend = await CreateBackend();
-        var initial = await backend.Append(
+        var initial = await backend.AppendAsync(
             [CreateEvent($"order-placed-{TestId}", $"order:{TestId}")],
             cancellationToken: TestContext.Current.CancellationToken);
         var lastPosition = initial.Last().GlobalPosition;
 
         // Tag matches but type does not — under Intersect this is NOT a conflict.
-        await backend.Append(
+        await backend.AppendAsync(
             [CreateEvent($"customer-updated-{TestId}", $"order:{TestId}")],
             cancellationToken: TestContext.Current.CancellationToken);
 
         var dcbQuery = DcbQuery.ByTags($"order:{TestId}").WithTypes($"order-placed-{TestId}");
-        var result = await backend.Append(
+        var result = await backend.AppendAsync(
             [CreateEvent($"order-placed-{TestId}", $"order:{TestId}")],
             dcbQuery,
             lastPosition,
@@ -381,20 +381,20 @@ public abstract class EventStoreBackendSpecification
     public async Task Append_WithDcbCheck_TypesAndTags_DefaultsToIntersect_WithConflict()
     {
         var backend = await CreateBackend();
-        var initial = await backend.Append(
+        var initial = await backend.AppendAsync(
             [CreateEvent($"order-placed-{TestId}", $"order:{TestId}")],
             cancellationToken: TestContext.Current.CancellationToken);
         var lastPosition = initial.Last().GlobalPosition;
 
         // Same type AND same tag — this should conflict under Intersect.
-        await backend.Append(
+        await backend.AppendAsync(
             [CreateEvent($"order-placed-{TestId}", $"order:{TestId}")],
             cancellationToken: TestContext.Current.CancellationToken);
 
         var dcbQuery = DcbQuery.ByTags($"order:{TestId}").WithTypes($"order-placed-{TestId}");
 
         await Assert.ThrowsAsync<DcbConflictException>(() =>
-            backend.Append(
+            backend.AppendAsync(
                 [CreateEvent($"order-placed-{TestId}", $"order:{TestId}")],
                 dcbQuery,
                 lastPosition,
@@ -405,20 +405,20 @@ public abstract class EventStoreBackendSpecification
     public async Task Append_WithDcbCheck_TypesAndTags_AsUnion_StillTreatsTagOnlyMatchAsConflict()
     {
         var backend = await CreateBackend();
-        var initial = await backend.Append(
+        var initial = await backend.AppendAsync(
             [CreateEvent($"order-placed-{TestId}", $"order:{TestId}")],
             cancellationToken: TestContext.Current.CancellationToken);
         var lastPosition = initial.Last().GlobalPosition;
 
         // Tag-only match — under Union semantics this conflicts with the boundary.
-        await backend.Append(
+        await backend.AppendAsync(
             [CreateEvent($"customer-updated-{TestId}", $"order:{TestId}")],
             cancellationToken: TestContext.Current.CancellationToken);
 
         var dcbQuery = DcbQuery.ByTags($"order:{TestId}").WithTypes($"order-placed-{TestId}").AsUnion();
 
         await Assert.ThrowsAsync<DcbConflictException>(() =>
-            backend.Append(
+            backend.AppendAsync(
                 [CreateEvent($"order-placed-{TestId}", $"order:{TestId}")],
                 dcbQuery,
                 lastPosition,
@@ -429,17 +429,17 @@ public abstract class EventStoreBackendSpecification
     public async Task Stream_ByTagPrefix_WithAfterPosition_ShouldFilter()
     {
         var backend = await CreateBackend();
-        var firstBatch = await backend.Append([
+        var firstBatch = await backend.AppendAsync([
             CreateEvent("order-placed", $"ord{TestId}:123"),
             CreateEvent("order-confirmed", $"ord{TestId}:456")
         ], cancellationToken: TestContext.Current.CancellationToken);
 
-        await backend.Append([
+        await backend.AppendAsync([
             CreateEvent("order-shipped", $"ord{TestId}:789")
         ], cancellationToken: TestContext.Current.CancellationToken);
 
         var afterPosition = firstBatch.Last().GlobalPosition;
-        var result = await backend.Stream(DcbQuery.ByTagPatterns($"ord{TestId}:*"), afterPosition, cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.StreamAsync(DcbQuery.ByTagPatterns($"ord{TestId}:*"), afterPosition, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Single(result);
         Assert.Equal("order-shipped", result.First().EventType.Id);
@@ -449,11 +449,11 @@ public abstract class EventStoreBackendSpecification
     public async Task Append_WithDcbCheck_WildcardPattern_NoConflict_ShouldSucceed()
     {
         var backend = await CreateBackend();
-        var initial = await backend.Append([CreateEvent("order-placed", $"ord{TestId}:123")], cancellationToken: TestContext.Current.CancellationToken);
+        var initial = await backend.AppendAsync([CreateEvent("order-placed", $"ord{TestId}:123")], cancellationToken: TestContext.Current.CancellationToken);
         var lastPosition = initial.Last().GlobalPosition;
 
         var dcbQuery = DcbQuery.ByTagPatterns($"ord{TestId}:*");
-        var result = await backend.Append([CreateEvent("order-confirmed", $"ord{TestId}:456")], dcbQuery, lastPosition, TestContext.Current.CancellationToken);
+        var result = await backend.AppendAsync([CreateEvent("order-confirmed", $"ord{TestId}:456")], dcbQuery, lastPosition, TestContext.Current.CancellationToken);
 
         Assert.Single(result);
     }
@@ -462,28 +462,28 @@ public abstract class EventStoreBackendSpecification
     public async Task Append_WithDcbCheck_WildcardPattern_WithConflict_ShouldThrow()
     {
         var backend = await CreateBackend();
-        var initial = await backend.Append([CreateEvent("order-placed", $"ord{TestId}:123")], cancellationToken: TestContext.Current.CancellationToken);
+        var initial = await backend.AppendAsync([CreateEvent("order-placed", $"ord{TestId}:123")], cancellationToken: TestContext.Current.CancellationToken);
         var firstPosition = initial.First().GlobalPosition;
 
-        await backend.Append([CreateEvent("order-confirmed", $"ord{TestId}:456")], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent("order-confirmed", $"ord{TestId}:456")], cancellationToken: TestContext.Current.CancellationToken);
 
         var dcbQuery = DcbQuery.ByTagPatterns($"ord{TestId}:*");
 
         await Assert.ThrowsAsync<DcbConflictException>(() =>
-            backend.Append([CreateEvent("order-shipped", $"ord{TestId}:789")], dcbQuery, firstPosition, TestContext.Current.CancellationToken));
+            backend.AppendAsync([CreateEvent("order-shipped", $"ord{TestId}:789")], dcbQuery, firstPosition, TestContext.Current.CancellationToken));
     }
 
     [Fact]
     public async Task Append_WithDcbCheck_WildcardPattern_DifferentConcept_ShouldNotConflict()
     {
         var backend = await CreateBackend();
-        await backend.Append([CreateEvent("order-placed", $"ord{TestId}:123")], cancellationToken: TestContext.Current.CancellationToken);
-        await backend.Append([CreateEvent("customer-updated", $"cust{TestId}:456")], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent("order-placed", $"ord{TestId}:123")], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent("customer-updated", $"cust{TestId}:456")], cancellationToken: TestContext.Current.CancellationToken);
 
         var dcbQuery = DcbQuery.ByTagPatterns($"cust{TestId}:*");
-        var lastCustomerPosition = (await backend.Stream(dcbQuery, cancellationToken: TestContext.Current.CancellationToken)).Last().GlobalPosition;
+        var lastCustomerPosition = (await backend.StreamAsync(dcbQuery, cancellationToken: TestContext.Current.CancellationToken)).Last().GlobalPosition;
 
-        var result = await backend.Append([CreateEvent("customer-verified", $"cust{TestId}:789")], dcbQuery, lastCustomerPosition, TestContext.Current.CancellationToken);
+        var result = await backend.AppendAsync([CreateEvent("customer-verified", $"cust{TestId}:789")], dcbQuery, lastCustomerPosition, TestContext.Current.CancellationToken);
 
         Assert.Single(result);
     }
@@ -498,12 +498,12 @@ public abstract class EventStoreBackendSpecification
         var backend = await CreateBackend();
 
         // Get starting position to filter out events from other tests
-        var startPosition = await backend.GetLastPosition(TestContext.Current.CancellationToken);
+        var startPosition = await backend.GetLastPositionAsync(TestContext.Current.CancellationToken);
 
-        await backend.Append([CreateEvent("event-a", $"tag:1{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
-        await backend.Append([CreateEvent("event-b", $"tag:2{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent("event-a", $"tag:1{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent("event-b", $"tag:2{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
 
-        var result = await backend.StreamAll(afterPosition: startPosition, cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.StreamAllAsync(afterPosition: startPosition, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(2, result.Count);
     }
@@ -516,11 +516,11 @@ public abstract class EventStoreBackendSpecification
     public async Task Append_WithDcbCheck_NoConflict_ShouldSucceed()
     {
         var backend = await CreateBackend();
-        var initial = await backend.Append([CreateEvent("order-placed", $"order:{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
+        var initial = await backend.AppendAsync([CreateEvent("order-placed", $"order:{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
         var lastPosition = initial.Last().GlobalPosition;
 
         var dcbQuery = DcbQuery.ByTags($"order:{TestId}");
-        var result = await backend.Append([CreateEvent("order-confirmed", $"order:{TestId}")], dcbQuery, lastPosition, TestContext.Current.CancellationToken);
+        var result = await backend.AppendAsync([CreateEvent("order-confirmed", $"order:{TestId}")], dcbQuery, lastPosition, TestContext.Current.CancellationToken);
 
         Assert.Single(result);    }
 
@@ -528,15 +528,15 @@ public abstract class EventStoreBackendSpecification
     public async Task Append_WithDcbCheck_WithConflict_ShouldThrow()
     {
         var backend = await CreateBackend();
-        var initial = await backend.Append([CreateEvent("order-placed", $"order:{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
+        var initial = await backend.AppendAsync([CreateEvent("order-placed", $"order:{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
         var firstPosition = initial.First().GlobalPosition;
 
-        await backend.Append([CreateEvent("order-confirmed", $"order:{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent("order-confirmed", $"order:{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
 
         var dcbQuery = DcbQuery.ByTags($"order:{TestId}");
 
         await Assert.ThrowsAsync<DcbConflictException>(() =>
-            backend.Append([CreateEvent("order-shipped", $"order:{TestId}")], dcbQuery, firstPosition, TestContext.Current.CancellationToken));    }
+            backend.AppendAsync([CreateEvent("order-shipped", $"order:{TestId}")], dcbQuery, firstPosition, TestContext.Current.CancellationToken));    }
 
     [Fact]
     public async Task Append_ConcurrentDcbChecks_SameBoundary_OnlyOneSucceeds()
@@ -557,7 +557,7 @@ public abstract class EventStoreBackendSpecification
             await gate.Task;
             try
             {
-                await backend.Append([CreateEvent($"evt-{i}-{TestId}", tag)], query, 0L);
+                await backend.AppendAsync([CreateEvent($"evt-{i}-{TestId}", tag)], query, 0L);
                 return true;
             }
             catch (DcbConflictException)
@@ -571,7 +571,7 @@ public abstract class EventStoreBackendSpecification
 
         Assert.Equal(1, results.Count(succeeded => succeeded));
 
-        var stored = await backend.Stream(query, cancellationToken: TestContext.Current.CancellationToken);
+        var stored = await backend.StreamAsync(query, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Single(stored);
     }
 
@@ -579,12 +579,12 @@ public abstract class EventStoreBackendSpecification
     public async Task Append_WithDcbCheck_ExpectingNoEvents_WithExisting_ShouldThrow()
     {
         var backend = await CreateBackend();
-        await backend.Append([CreateEvent("order-placed", $"order:{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent("order-placed", $"order:{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
 
         var dcbQuery = DcbQuery.ByTags($"order:{TestId}");
 
         await Assert.ThrowsAsync<DcbConflictException>(() =>
-            backend.Append([CreateEvent("order-created", $"order:{TestId}")], dcbQuery, 0, TestContext.Current.CancellationToken));    }
+            backend.AppendAsync([CreateEvent("order-created", $"order:{TestId}")], dcbQuery, 0, TestContext.Current.CancellationToken));    }
 
     [Fact]
     public async Task Append_WithDcbCheck_ExpectingNoEvents_WithNone_ShouldSucceed()
@@ -593,7 +593,7 @@ public abstract class EventStoreBackendSpecification
 
         var dcbQuery = DcbQuery.ByTags($"order:{TestId}");
 
-        var result = await backend.Append([CreateEvent("order-created", $"order:{TestId}")], dcbQuery, 0, TestContext.Current.CancellationToken);
+        var result = await backend.AppendAsync([CreateEvent("order-created", $"order:{TestId}")], dcbQuery, 0, TestContext.Current.CancellationToken);
 
         Assert.Single(result);    }
 
@@ -601,13 +601,13 @@ public abstract class EventStoreBackendSpecification
     public async Task Append_WithDcbCheck_DifferentBoundary_ShouldNotConflict()
     {
         var backend = await CreateBackend();
-        await backend.Append([CreateEvent("order-placed", $"order:{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
-        await backend.Append([CreateEvent("customer-updated", $"customer:{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent("order-placed", $"order:{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent("customer-updated", $"customer:{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
 
         var dcbQuery = DcbQuery.ByTags($"customer:{TestId}");
-        var lastCustomerPosition = (await backend.Stream(dcbQuery, cancellationToken: TestContext.Current.CancellationToken)).Last().GlobalPosition;
+        var lastCustomerPosition = (await backend.StreamAsync(dcbQuery, cancellationToken: TestContext.Current.CancellationToken)).Last().GlobalPosition;
 
-        var result = await backend.Append([CreateEvent("customer-verified", $"customer:{TestId}")], dcbQuery, lastCustomerPosition, TestContext.Current.CancellationToken);
+        var result = await backend.AppendAsync([CreateEvent("customer-verified", $"customer:{TestId}")], dcbQuery, lastCustomerPosition, TestContext.Current.CancellationToken);
 
         Assert.Single(result);    }
 
@@ -615,17 +615,17 @@ public abstract class EventStoreBackendSpecification
     public async Task Append_WithDcbCheck_AllTags_ShouldIgnoreEventsMatchingOnlyOneTag()
     {
         var backend = await CreateBackend();
-        var initial = await backend.Append(
+        var initial = await backend.AppendAsync(
             [CreateEvent("source-followed", $"reader:{TestId}", $"source:{TestId}")],
             cancellationToken: TestContext.Current.CancellationToken);
 
         var lastPosition = initial.Last().GlobalPosition;
 
-        await backend.Append(
+        await backend.AppendAsync(
             [CreateEvent("reader-profile-updated", $"reader:{TestId}")],
             cancellationToken: TestContext.Current.CancellationToken);
 
-        var result = await backend.Append(
+        var result = await backend.AppendAsync(
             [CreateEvent("source-followed", $"reader:{TestId}", $"source:{TestId}")],
             DcbQuery.ByAllTags($"reader:{TestId}", $"source:{TestId}"),
             lastPosition,
@@ -638,18 +638,18 @@ public abstract class EventStoreBackendSpecification
     public async Task Append_WithDcbCheck_AllTags_ShouldDetectConflictsForMatchingTagSet()
     {
         var backend = await CreateBackend();
-        var initial = await backend.Append(
+        var initial = await backend.AppendAsync(
             [CreateEvent("source-followed", $"reader:{TestId}", $"source:{TestId}")],
             cancellationToken: TestContext.Current.CancellationToken);
 
         var lastPosition = initial.Last().GlobalPosition;
 
-        await backend.Append(
+        await backend.AppendAsync(
             [CreateEvent("source-unfollowed", $"reader:{TestId}", $"source:{TestId}")],
             cancellationToken: TestContext.Current.CancellationToken);
 
         await Assert.ThrowsAsync<DcbConflictException>(() =>
-            backend.Append(
+            backend.AppendAsync(
                 [CreateEvent("source-followed", $"reader:{TestId}", $"source:{TestId}")],
                 DcbQuery.ByAllTags($"reader:{TestId}", $"source:{TestId}"),
                 lastPosition,
@@ -666,7 +666,7 @@ public abstract class EventStoreBackendSpecification
         var backend = await CreateBackend();
 
         // Use a fresh backend that has no events (in-memory only; for Postgres use starting position)
-        var position = await backend.GetLastPosition(TestContext.Current.CancellationToken);
+        var position = await backend.GetLastPositionAsync(TestContext.Current.CancellationToken);
 
         Assert.True(position >= 0);    }
 
@@ -674,12 +674,12 @@ public abstract class EventStoreBackendSpecification
     public async Task GetLastPosition_AfterAppend_ShouldReturnLastPosition()
     {
         var backend = await CreateBackend();
-        var appended = await backend.Append([
+        var appended = await backend.AppendAsync([
             CreateEvent("event-a", $"tag:1{TestId}"),
             CreateEvent("event-b", $"tag:2{TestId}")
         ], cancellationToken: TestContext.Current.CancellationToken);
 
-        var position = await backend.GetLastPosition(TestContext.Current.CancellationToken);
+        var position = await backend.GetLastPositionAsync(TestContext.Current.CancellationToken);
 
         Assert.True(position >= appended.Last().GlobalPosition);    }
 
@@ -691,12 +691,13 @@ public abstract class EventStoreBackendSpecification
     public async Task GetPositionsAsync_ReturnsPositionsInWindow()
     {
         var backend = await CreateBackend();
-        var startPosition = await backend.GetLastPosition(TestContext.Current.CancellationToken);
+        var headBackend = (IEventStoreHeadBackend)backend;
+        var startPosition = await backend.GetLastPositionAsync(TestContext.Current.CancellationToken);
 
-        await backend.Append([CreateEvent("event-a", $"tag:1{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
-        await backend.Append([CreateEvent("event-b", $"tag:2{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent("event-a", $"tag:1{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent("event-b", $"tag:2{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
 
-        var positions = await backend.GetPositionsAsync(startPosition, 100, TestContext.Current.CancellationToken);
+        var positions = await headBackend.GetPositionsAsync(startPosition, 100, TestContext.Current.CancellationToken);
 
         Assert.Equal(2, positions.Count);
         Assert.Equal(startPosition + 1, positions[0]);
@@ -707,14 +708,15 @@ public abstract class EventStoreBackendSpecification
     public async Task GetPositionsAsync_ExcludesPositionsBeyondWindow()
     {
         var backend = await CreateBackend();
-        var startPosition = await backend.GetLastPosition(TestContext.Current.CancellationToken);
+        var headBackend = (IEventStoreHeadBackend)backend;
+        var startPosition = await backend.GetLastPositionAsync(TestContext.Current.CancellationToken);
 
-        await backend.Append([CreateEvent("event-a", $"tag:1{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
-        await backend.Append([CreateEvent("event-b", $"tag:2{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
-        await backend.Append([CreateEvent("event-c", $"tag:3{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent("event-a", $"tag:1{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent("event-b", $"tag:2{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent("event-c", $"tag:3{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
 
         // Window size of 1 — only one event fits
-        var positions = await backend.GetPositionsAsync(startPosition, 1, TestContext.Current.CancellationToken);
+        var positions = await headBackend.GetPositionsAsync(startPosition, 1, TestContext.Current.CancellationToken);
 
         Assert.Single(positions);
         Assert.Equal(startPosition + 1, positions[0]);
@@ -724,9 +726,10 @@ public abstract class EventStoreBackendSpecification
     public async Task GetPositionsAsync_EmptyStoreReturnsEmpty()
     {
         var backend = await CreateBackend();
-        var startPosition = await backend.GetLastPosition(TestContext.Current.CancellationToken);
+        var headBackend = (IEventStoreHeadBackend)backend;
+        var startPosition = await backend.GetLastPositionAsync(TestContext.Current.CancellationToken);
 
-        var positions = await backend.GetPositionsAsync(startPosition, 100, TestContext.Current.CancellationToken);
+        var positions = await headBackend.GetPositionsAsync(startPosition, 100, TestContext.Current.CancellationToken);
 
         Assert.Empty(positions);
     }

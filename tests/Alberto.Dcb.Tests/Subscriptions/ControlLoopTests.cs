@@ -25,7 +25,13 @@ public sealed class ControlLoopTests
 
     private class TestProcessor(string processorId, IReadOnlySet<string> handledTypes) : IBatchableProcessor
     {
+        private int _processedCount;
+        private readonly Lock _lock = new();
+
         public List<IEventEnvelope> ProcessedEvents { get; } = [];
+
+        /// <summary>Thread-safe count for use with polling waits.</summary>
+        public int ProcessedCount => Volatile.Read(ref _processedCount);
 
         public string ProcessorId { get; } = processorId;
         public bool IsActive { get; set; } = true;
@@ -34,13 +40,15 @@ public sealed class ControlLoopTests
 
         public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
         {
-            ProcessedEvents.Add(@event);
+            lock (_lock) ProcessedEvents.Add(@event);
+            Interlocked.Increment(ref _processedCount);
             return Task.CompletedTask;
         }
 
         public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct = default)
         {
-            ProcessedEvents.AddRange(events);
+            lock (_lock) ProcessedEvents.AddRange(events);
+            Interlocked.Add(ref _processedCount, events.Count);
             return Task.CompletedTask;
         }
     }
@@ -72,8 +80,17 @@ public sealed class ControlLoopTests
 
     private class BatchProcessor(string processorId, IReadOnlySet<string> handledTypes) : IBatchableProcessor
     {
+        private int _processedCount;
+        private int _processedBatchCount;
+
         public List<IEventEnvelope> ProcessedEvents { get; } = [];
         public List<IReadOnlyList<IEventEnvelope>> ProcessedBatches { get; } = [];
+
+        /// <summary>Thread-safe event count for use with polling waits.</summary>
+        public int ProcessedCount => Volatile.Read(ref _processedCount);
+
+        /// <summary>Thread-safe batch count for use with polling waits.</summary>
+        public int ProcessedBatchCount => Volatile.Read(ref _processedBatchCount);
 
         public string ProcessorId { get; } = processorId;
         public bool IsActive { get; set; } = true;
@@ -83,12 +100,15 @@ public sealed class ControlLoopTests
         public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
         {
             ProcessedEvents.Add(@event);
+            Interlocked.Increment(ref _processedCount);
             return Task.CompletedTask;
         }
 
         public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct = default)
         {
             ProcessedBatches.Add(events.ToList());
+            Interlocked.Add(ref _processedCount, events.Count);
+            Interlocked.Increment(ref _processedBatchCount);
             return Task.CompletedTask;
         }
     }
@@ -106,11 +126,17 @@ public sealed class ControlLoopTests
 
     private sealed class TrackingBatchMiddleware
     {
+        private int _seenBatchCount;
+
         public List<long[]> SeenBatches { get; } = [];
+
+        /// <summary>Thread-safe batch count for use with polling waits.</summary>
+        public int SeenBatchCount => Volatile.Read(ref _seenBatchCount);
 
         public BatchConsumeMiddleware ToMiddleware() => async (context, next) =>
         {
             SeenBatches.Add(context.Envelopes.Select(e => e.GlobalPosition).ToArray());
+            Interlocked.Increment(ref _seenBatchCount);
             await next();
         };
     }
@@ -203,11 +229,11 @@ public sealed class ControlLoopTests
 
         Assert.Equal(0, head.Current);
 
-        await backend.Append([CreateEvent(new TestEventA("first"))], cancellationToken: TestContext.Current.CancellationToken);
-        await backend.Append([CreateEvent(new TestEventA("second"))], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent(new TestEventA("first"))], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent(new TestEventA("second"))], cancellationToken: TestContext.Current.CancellationToken);
 
-        // Wait for refresh to catch up
-        await Task.Delay(100, TestContext.Current.CancellationToken);
+        // Wait for the head to catch up to both appended events.
+        await WaitForAsync(() => head.Current >= 2, TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
 
         await cts.CancelAsync();
         await head.StopAsync(CancellationToken.None);
@@ -225,7 +251,7 @@ public sealed class ControlLoopTests
         var backend = new InMemoryEventStoreBackend();
         var checkpoints = new InMemoryCheckpointStore();
 
-        await backend.Append([CreateEvent(new TestEventA("hello"))], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent(new TestEventA("hello"))], cancellationToken: TestContext.Current.CancellationToken);
 
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
         var processor = new TestProcessor("test", new HashSet<string> { "test-event-a" });
@@ -236,7 +262,7 @@ public sealed class ControlLoopTests
         await head.StartAsync(cts.Token);
         await loop.StartAsync(cts.Token);
 
-        await Task.Delay(150, TestContext.Current.CancellationToken);
+        await WaitForAsync(() => processor.ProcessedCount >= 1, TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
         await cts.CancelAsync();
         await loop.StopAsync(CancellationToken.None);
         await head.StopAsync(CancellationToken.None);
@@ -250,8 +276,8 @@ public sealed class ControlLoopTests
         var backend = new InMemoryEventStoreBackend();
         var checkpoints = new InMemoryCheckpointStore();
 
-        await backend.Append([CreateEvent(new TestEventA("first"))], cancellationToken: TestContext.Current.CancellationToken);
-        await backend.Append([CreateEvent(new TestEventA("second"))], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent(new TestEventA("first"))], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent(new TestEventA("second"))], cancellationToken: TestContext.Current.CancellationToken);
 
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
         var processor = new TestProcessor("test", new HashSet<string> { "test-event-a" });
@@ -262,7 +288,7 @@ public sealed class ControlLoopTests
         await head.StartAsync(cts.Token);
         await loop.StartAsync(cts.Token);
 
-        await Task.Delay(200, TestContext.Current.CancellationToken);
+        await WaitForAsync(() => processor.ProcessedCount >= 2, TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
         await cts.CancelAsync();
         await loop.StopAsync(CancellationToken.None);
         await head.StopAsync(CancellationToken.None);
@@ -280,7 +306,7 @@ public sealed class ControlLoopTests
         // Save an existing checkpoint so we know what it was before the fault
         await checkpoints.SaveAsync("faulting", 0, TestContext.Current.CancellationToken);
 
-        await backend.Append([CreateEvent(new TestEventA("trigger"))], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent(new TestEventA("trigger"))], cancellationToken: TestContext.Current.CancellationToken);
 
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
         var processor = new FaultingProcessor("faulting", new HashSet<string> { "test-event-a" });
@@ -291,8 +317,8 @@ public sealed class ControlLoopTests
         await head.StartAsync(cts.Token);
         await loop.StartAsync(cts.Token);
 
-        // Give the loop time to fault
-        await Task.Delay(200, TestContext.Current.CancellationToken);
+        // Wait until the loop has faulted (processor throws on its first event).
+        await WaitForAsync(() => loop.IsFaulted, TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
 
         await cts.CancelAsync();
         await loop.StopAsync(CancellationToken.None);
@@ -333,8 +359,8 @@ public sealed class ControlLoopTests
         var backend = new InMemoryEventStoreBackend();
         var checkpoints = new InMemoryCheckpointStore();
 
-        await backend.Append([CreateEvent(new TestEventA("a"))], cancellationToken: TestContext.Current.CancellationToken);
-        await backend.Append([CreateEvent(new TestEventB(1))], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent(new TestEventA("a"))], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent(new TestEventB(1))], cancellationToken: TestContext.Current.CancellationToken);
 
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
         var processorA = new TestProcessor("proc-a", new HashSet<string> { "test-event-a" });
@@ -348,7 +374,10 @@ public sealed class ControlLoopTests
         await loopA.StartAsync(cts.Token);
         await loopB.StartAsync(cts.Token);
 
-        await Task.Delay(200, TestContext.Current.CancellationToken);
+        await WaitForAsync(
+            () => processorA.ProcessedCount >= 1 && processorB.ProcessedCount >= 1,
+            TimeSpan.FromSeconds(10),
+            TestContext.Current.CancellationToken);
         await cts.CancelAsync();
         await loopA.StopAsync(CancellationToken.None);
         await loopB.StopAsync(CancellationToken.None);
@@ -367,9 +396,9 @@ public sealed class ControlLoopTests
         var backend = new InMemoryEventStoreBackend();
         var checkpoints = new InMemoryCheckpointStore();
 
-        await backend.Append([CreateEvent(new TestEventA("a"))], cancellationToken: TestContext.Current.CancellationToken);
-        await backend.Append([CreateEvent(new TestEventB(1))], cancellationToken: TestContext.Current.CancellationToken);
-        await backend.Append([CreateEvent(new TestEventA("b"))], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent(new TestEventA("a"))], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent(new TestEventB(1))], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent(new TestEventA("b"))], cancellationToken: TestContext.Current.CancellationToken);
 
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
         var processor = new BatchProcessor("batch-proc", new HashSet<string> { "test-event-a" });
@@ -386,7 +415,7 @@ public sealed class ControlLoopTests
         await head.StartAsync(cts.Token);
         await loop.StartAsync(cts.Token);
 
-        await Task.Delay(150, TestContext.Current.CancellationToken);
+        await WaitForAsync(() => processor.ProcessedBatchCount >= 1, TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
         await cts.CancelAsync();
         await loop.StopAsync(CancellationToken.None);
         await head.StopAsync(CancellationToken.None);
@@ -449,8 +478,8 @@ public sealed class ControlLoopTests
         var checkpoints = new InMemoryCheckpointStore();
         var middleware = new TrackingMiddleware();
 
-        await backend.Append([CreateEvent(new TestEventA("a"))], cancellationToken: TestContext.Current.CancellationToken);
-        await backend.Append([CreateEvent(new TestEventA("b"))], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent(new TestEventA("a"))], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent(new TestEventA("b"))], cancellationToken: TestContext.Current.CancellationToken);
 
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
         var processor = new BatchProcessor("batch-proc", new HashSet<string> { "test-event-a" });
@@ -469,7 +498,7 @@ public sealed class ControlLoopTests
         await head.StartAsync(cts.Token);
         await loop.StartAsync(cts.Token);
 
-        await Task.Delay(150, TestContext.Current.CancellationToken);
+        await WaitForAsync(() => processor.ProcessedCount >= 2, TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
         await cts.CancelAsync();
         await loop.StopAsync(CancellationToken.None);
         await head.StopAsync(CancellationToken.None);
@@ -486,8 +515,8 @@ public sealed class ControlLoopTests
         var checkpoints = new InMemoryCheckpointStore();
         var batchMiddleware = new TrackingBatchMiddleware();
 
-        await backend.Append([CreateEvent(new TestEventA("a"))], cancellationToken: TestContext.Current.CancellationToken);
-        await backend.Append([CreateEvent(new TestEventA("b"))], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent(new TestEventA("a"))], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent(new TestEventA("b"))], cancellationToken: TestContext.Current.CancellationToken);
 
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
         var processor = new BatchProcessor("batch-proc", new HashSet<string> { "test-event-a" });
@@ -505,7 +534,7 @@ public sealed class ControlLoopTests
         await head.StartAsync(cts.Token);
         await loop.StartAsync(cts.Token);
 
-        await Task.Delay(150, TestContext.Current.CancellationToken);
+        await WaitForAsync(() => batchMiddleware.SeenBatchCount >= 1, TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
         await cts.CancelAsync();
         await loop.StopAsync(CancellationToken.None);
         await head.StopAsync(CancellationToken.None);
@@ -620,9 +649,9 @@ public sealed class ControlLoopTests
         var backend = new InMemoryEventStoreBackend();
         var checkpoints = new InMemoryCheckpointStore();
 
-        await backend.Append([CreateEvent(new TestEventA("a"))], cancellationToken: TestContext.Current.CancellationToken);
-        await backend.Append([CreateEvent(new TestEventA("b"))], cancellationToken: TestContext.Current.CancellationToken);
-        await backend.Append([CreateEvent(new TestEventA("c"))], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent(new TestEventA("a"))], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent(new TestEventA("b"))], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent(new TestEventA("c"))], cancellationToken: TestContext.Current.CancellationToken);
 
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
         var processor = new TestProcessor("pipelined", new HashSet<string> { "test-event-a" });
@@ -634,7 +663,7 @@ public sealed class ControlLoopTests
         await head.StartAsync(cts.Token);
         await loop.StartAsync(cts.Token);
 
-        await Task.Delay(300, TestContext.Current.CancellationToken);
+        await WaitForAsync(() => processor.ProcessedCount >= 3, TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
         await cts.CancelAsync();
         await loop.StopAsync(CancellationToken.None);
         await head.StopAsync(CancellationToken.None);
@@ -651,10 +680,11 @@ public sealed class ControlLoopTests
         var checkpoints = new InMemoryCheckpointStore();
         var concurrentCount = 0;
         var maxConcurrent = 0;
+        var processedCount = 0;
         var syncLock = new Lock();
 
         for (var i = 0; i < 10; i++)
-            await backend.Append([CreateEvent(new TestEventA($"e-{i}"))], cancellationToken: TestContext.Current.CancellationToken);
+            await backend.AppendAsync([CreateEvent(new TestEventA($"e-{i}"))], cancellationToken: TestContext.Current.CancellationToken);
 
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
 
@@ -669,6 +699,7 @@ public sealed class ControlLoopTests
                 }
                 await Task.Delay(50, ct);
                 lock (syncLock) { concurrentCount--; }
+                Interlocked.Increment(ref processedCount);
             });
 
         var loop = new ControlLoop(processor, head, backend, checkpoints,
@@ -679,7 +710,8 @@ public sealed class ControlLoopTests
         await head.StartAsync(cts.Token);
         await loop.StartAsync(cts.Token);
 
-        await Task.Delay(500, TestContext.Current.CancellationToken);
+        // Wait until all 10 events have completed processing.
+        await WaitForAsync(() => Volatile.Read(ref processedCount) >= 10, TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
         await cts.CancelAsync();
         await loop.StopAsync(CancellationToken.None);
         await head.StopAsync(CancellationToken.None);
@@ -694,23 +726,29 @@ public sealed class ControlLoopTests
     {
         var backend = new InMemoryEventStoreBackend();
         var checkpoints = new InMemoryCheckpointStore();
-        var gate = new TaskCompletionSource();
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // RunContinuationsAsynchronously prevents a deadlock where the continuation runs
+        // inline on the worker thread that already holds internal locks.
+        var handlerEnteredForPos2 = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         // Event 1: fast, Event 2: slow (blocked), Event 3: fast
-        await backend.Append([CreateEvent(new TestEventA("fast-1"))], cancellationToken: TestContext.Current.CancellationToken);
-        await backend.Append([CreateEvent(new TestEventA("slow"))], cancellationToken: TestContext.Current.CancellationToken);
-        await backend.Append([CreateEvent(new TestEventA("fast-2"))], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent(new TestEventA("fast-1"))], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent(new TestEventA("slow"))], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent(new TestEventA("fast-2"))], cancellationToken: TestContext.Current.CancellationToken);
 
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
 
-        var callCount = 0;
         var processor = new DelegatingProcessor("watermark-test",
             new HashSet<string> { "test-event-a" },
             async (evt, ct) =>
             {
-                var n = Interlocked.Increment(ref callCount);
                 if (evt.GlobalPosition == 2) // the slow event
+                {
+                    // Signal that the slow handler is verifiably in-flight.
+                    handlerEnteredForPos2.TrySetResult();
                     await gate.Task.WaitAsync(ct);
+                }
             });
 
         var loop = new ControlLoop(processor, head, backend, checkpoints,
@@ -721,16 +759,24 @@ public sealed class ControlLoopTests
         await head.StartAsync(cts.Token);
         await loop.StartAsync(cts.Token);
 
-        // Wait for fast events to process
-        await Task.Delay(300, TestContext.Current.CancellationToken);
+        // Wait until position 2's handler is running, then poll until the checkpoint
+        // advances to 1 (positions 1 and 3 completed; position 2 still in-flight).
+        await handlerEnteredForPos2.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        await WaitForAsync(
+            () => checkpoints.GetAsync("watermark-test", CancellationToken.None).GetAwaiter().GetResult() == 1,
+            TimeSpan.FromSeconds(10),
+            TestContext.Current.CancellationToken);
 
         // Checkpoint should be at 1 (before the slow event at position 2)
         var midCheckpoint = await checkpoints.GetAsync("watermark-test", TestContext.Current.CancellationToken);
         Assert.Equal(1, midCheckpoint);
 
-        // Unblock the slow event
+        // Unblock the slow event, then poll until checkpoint advances to 3.
         gate.SetResult();
-        await Task.Delay(200, TestContext.Current.CancellationToken);
+        await WaitForAsync(
+            () => checkpoints.GetAsync("watermark-test", CancellationToken.None).GetAwaiter().GetResult() == 3,
+            TimeSpan.FromSeconds(10),
+            TestContext.Current.CancellationToken);
 
         await cts.CancelAsync();
         await loop.StopAsync(CancellationToken.None);
@@ -747,9 +793,9 @@ public sealed class ControlLoopTests
         var backend = new InMemoryEventStoreBackend();
         var checkpoints = new InMemoryCheckpointStore();
 
-        await backend.Append([CreateEvent(new TestEventA("a"))], cancellationToken: TestContext.Current.CancellationToken);
-        await backend.Append([CreateEvent(new TestEventB(1))], cancellationToken: TestContext.Current.CancellationToken); // not handled
-        await backend.Append([CreateEvent(new TestEventA("c"))], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent(new TestEventA("a"))], cancellationToken: TestContext.Current.CancellationToken);
+        await backend.AppendAsync([CreateEvent(new TestEventB(1))], cancellationToken: TestContext.Current.CancellationToken); // not handled
+        await backend.AppendAsync([CreateEvent(new TestEventA("c"))], cancellationToken: TestContext.Current.CancellationToken);
 
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
         var processor = new TestProcessor("pipelined-filter", new HashSet<string> { "test-event-a" });
@@ -761,7 +807,7 @@ public sealed class ControlLoopTests
         await head.StartAsync(cts.Token);
         await loop.StartAsync(cts.Token);
 
-        await Task.Delay(300, TestContext.Current.CancellationToken);
+        await WaitForAsync(() => processor.ProcessedCount >= 2, TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
         await cts.CancelAsync();
         await loop.StopAsync(CancellationToken.None);
         await head.StopAsync(CancellationToken.None);
@@ -851,6 +897,22 @@ public sealed class ControlLoopTests
     #endregion
 
     #region Helper Methods
+
+    /// <summary>
+    /// Polls <paramref name="condition"/> every 15 ms until it returns <see langword="true"/>
+    /// or <paramref name="timeout"/> elapses, then calls <see cref="Assert.Fail"/>.
+    /// Replaces wall-clock <c>Task.Delay</c> waits with deterministic condition-based synchronization.
+    /// </summary>
+    private static async Task WaitForAsync(Func<bool> condition, TimeSpan timeout, CancellationToken ct = default)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            if (condition()) return;
+            await Task.Delay(15, ct);
+        }
+        Assert.Fail($"Condition not met within {timeout}");
+    }
 
     private static IEventEnvelope CreateEnvelope<TEvent>(TEvent @event, long position) where TEvent : IEvent
     {

@@ -92,26 +92,25 @@ public sealed class DcbQuery
     /// </summary>
     public CompositionMode CompositionMode { get; }
 
+    // Materialized at construction to avoid per-access LINQ recomputation.
+    private readonly IReadOnlyCollection<EventTag> _tags;
+    private readonly IReadOnlyCollection<TagPattern> _wildcardPatterns;
+
     /// <summary>
     /// Gets exact tag matches only (excludes wildcard patterns).
     /// For backward compatibility with code expecting EventTag instances.
     /// </summary>
-    public IReadOnlyCollection<EventTag> Tags =>
-        TagPatterns
-            .Where(p => p.IsExact)
-            .Select(p => new EventTag(p.Concept, p.Id!))
-            .ToArray();
+    public IReadOnlyCollection<EventTag> Tags => _tags;
 
     /// <summary>
     /// Gets wildcard tag patterns only (excludes exact matches).
     /// </summary>
-    public IReadOnlyCollection<TagPattern> WildcardPatterns =>
-        TagPatterns.Where(p => p.IsWildcard).ToArray();
+    public IReadOnlyCollection<TagPattern> WildcardPatterns => _wildcardPatterns;
 
     /// <summary>
     /// Returns true if any tag patterns are wildcards.
     /// </summary>
-    public bool HasWildcardPatterns => TagPatterns.Any(p => p.IsWildcard);
+    public bool HasWildcardPatterns => _wildcardPatterns.Count > 0;
 
     /// <summary>
     /// Returns true if this query requires an event to match all specified exact tags.
@@ -157,7 +156,14 @@ public sealed class DcbQuery
         TagMatchMode tagMatchMode,
         CompositionMode compositionMode)
     {
-        if (tagMatchMode == TagMatchMode.All && tagPatterns.Any(p => p.IsWildcard))
+        // Materialize derived views eagerly so callers never pay LINQ costs on the hot path.
+        _wildcardPatterns = tagPatterns.Where(p => p.IsWildcard).ToArray();
+        _tags = tagPatterns
+            .Where(p => p.IsExact)
+            .Select(p => EventTag.FromStorage(p.Concept, p.Id!))
+            .ToArray();
+
+        if (tagMatchMode == TagMatchMode.All && _wildcardPatterns.Count > 0)
             throw new ArgumentException("Wildcard tag patterns are not supported when all tags must match.", nameof(tagPatterns));
 
         Types = types;

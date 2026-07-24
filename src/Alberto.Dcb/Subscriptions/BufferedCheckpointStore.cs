@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Microsoft.Extensions.Logging;
 
 namespace Alberto.Dcb.Subscriptions;
 
@@ -12,6 +13,7 @@ internal sealed class BufferedCheckpointStore : ICheckpointStore, IAsyncDisposab
 {
     private readonly ICheckpointStore _innerStore;
     private readonly TimeSpan _flushInterval;
+    private readonly ILogger<BufferedCheckpointStore>? _logger;
     private readonly ConcurrentDictionary<string, long> _pendingCheckpoints = new();
     private readonly Timer _flushTimer;
     private readonly SemaphoreSlim _flushLock = new(1, 1);
@@ -22,13 +24,29 @@ internal sealed class BufferedCheckpointStore : ICheckpointStore, IAsyncDisposab
     /// </summary>
     /// <param name="innerStore">The underlying checkpoint store to flush to.</param>
     /// <param name="flushInterval">How often to flush. Defaults to 5 seconds.</param>
+    /// <param name="logger">Optional logger for error reporting.</param>
     public BufferedCheckpointStore(
         ICheckpointStore innerStore,
-        TimeSpan? flushInterval = null)
+        TimeSpan? flushInterval = null,
+        ILogger<BufferedCheckpointStore>? logger = null)
     {
         _innerStore = innerStore ?? throw new ArgumentNullException(nameof(innerStore));
         _flushInterval = flushInterval ?? TimeSpan.FromSeconds(5);
-        _flushTimer = new Timer(_ => _ = FlushAsync(), null, _flushInterval, _flushInterval);
+        _logger = logger;
+        _flushTimer = new Timer(OnFlushTimer, null, _flushInterval, _flushInterval);
+    }
+
+    private async void OnFlushTimer(object? state)
+    {
+        if (_disposed) return;
+        try
+        {
+            await FlushAsync(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Failed to flush buffered checkpoints to underlying store");
+        }
     }
 
     /// <inheritdoc/>

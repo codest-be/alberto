@@ -2,6 +2,7 @@ using System.Data;
 using System.Data.Common;
 using Alberto.Dcb.Subscriptions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Alberto.Dcb.EntityFramework.Inline;
 
@@ -45,15 +46,18 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : IInlineP
 
     private readonly ProjectionDeclaration<TEntity> _declaration;
     private readonly IDbContextFactory<TDbContext> _contextFactory;
+    private readonly ILogger<DeclaredEfInlineProjection<TEntity, TDbContext>>? _logger;
 
     public DeclaredEfInlineProjection(
         ProjectionDeclaration<TEntity> declaration,
-        IDbContextFactory<TDbContext> contextFactory)
+        IDbContextFactory<TDbContext> contextFactory,
+        ILogger<DeclaredEfInlineProjection<TEntity, TDbContext>>? logger = null)
     {
         ArgumentNullException.ThrowIfNull(declaration);
         ArgumentNullException.ThrowIfNull(contextFactory);
         _declaration = declaration;
         _contextFactory = contextFactory;
+        _logger = logger;
     }
 
     /// <inheritdoc/>
@@ -95,11 +99,30 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : IInlineP
                 await ProcessOnceAsync(events, docIdMap, documentKeys, transaction, ct);
                 return;
             }
-            catch (Exception ex) when (ownsTransaction
-                && attempt < MaxConcurrencyRetries - 1
-                && IsRetryableConflict(ex))
+            catch (Exception ex) when (ownsTransaction && IsRetryableConflict(ex))
             {
                 attempt++;
+                if (attempt >= MaxConcurrencyRetries)
+                {
+                    // All retries exhausted. The events are durable in the store but the
+                    // inline projection has not reflected them. Log a critical alert so
+                    // operators can trigger a manual replay and prevent silent divergence.
+                    _logger?.LogCritical(
+                        ex,
+                        "Inline EF projection '{ProcessorId}' failed after {Attempts} concurrency retries " +
+                        "for {DocumentCount} document(s). The projection is now diverged from the event " +
+                        "store for the affected documents. Manual replay or async catch-up is required.",
+                        _declaration.ProcessorId,
+                        attempt,
+                        documentKeys.Count);
+
+                    throw new InlineProjectionExhaustedException(
+                        _declaration.ProcessorId,
+                        attempts: attempt,
+                        documentCount: documentKeys.Count,
+                        innerException: ex);
+                }
+
                 // Exponential backoff with mild jitter to scatter concurrent retriers.
                 var delayMs = (int)(InitialRetryDelay.TotalMilliseconds * Math.Pow(2, attempt - 1));
                 var jitter = Random.Shared.Next(0, delayMs);
@@ -201,4 +224,39 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : IInlineP
         DbUpdateException { InnerException: DbException { SqlState: UniqueViolationSqlState } } => true,
         _ => false,
     };
+}
+
+/// <summary>
+/// Thrown when an inline EF projection exhausts all concurrency retries without successfully
+/// committing. The events are durable in the event store, but the inline projection view is
+/// diverged for the affected documents. Operators should trigger an async replay to recover.
+/// </summary>
+public sealed class InlineProjectionExhaustedException : Exception
+{
+    /// <summary>The processor ID of the projection that exhausted its retries.</summary>
+    public string ProcessorId { get; }
+
+    /// <summary>The number of attempts made before giving up.</summary>
+    public int Attempts { get; }
+
+    /// <summary>The number of documents whose projection state is now diverged.</summary>
+    public int DocumentCount { get; }
+
+    /// <summary>
+    /// Initializes a new instance of <see cref="InlineProjectionExhaustedException"/>.
+    /// </summary>
+    public InlineProjectionExhaustedException(
+        string processorId,
+        int attempts,
+        int documentCount,
+        Exception? innerException = null)
+        : base(
+            $"Inline projection '{processorId}' exhausted {attempts} concurrency retries for " +
+            $"{documentCount} document(s). The projection view is diverged; async replay is required.",
+            innerException)
+    {
+        ProcessorId = processorId;
+        Attempts = attempts;
+        DocumentCount = documentCount;
+    }
 }

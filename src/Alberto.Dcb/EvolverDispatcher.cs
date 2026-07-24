@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Reflection;
 using System.Text.Json;
 
@@ -9,10 +10,11 @@ namespace Alberto.Dcb;
 internal sealed class EvolverDispatcher<TState>
 {
     private readonly Dictionary<string, Handler> _handlers = new();
+    private FrozenSet<string> _handledEventTypes = FrozenSet<string>.Empty;
 
     private EvolverDispatcher() { }
 
-    public IReadOnlySet<string> HandledEventTypes => _handlers.Keys.ToHashSet();
+    public IReadOnlySet<string> HandledEventTypes => _handledEventTypes;
 
     public static EvolverDispatcher<TState> For(object evolver)
     {
@@ -33,6 +35,7 @@ internal sealed class EvolverDispatcher<TState>
             dispatcher._handlers[eventTypeId] = new Handler(eventType, evolver, applyMethod);
         }
 
+        dispatcher._handledEventTypes = dispatcher._handlers.Keys.ToFrozenSet(StringComparer.Ordinal);
         return dispatcher;
     }
 

@@ -15,7 +15,13 @@ namespace Alberto.Dcb;
 ///     decimal Amount) : IEvent;
 /// </code>
 /// </example>
-[AttributeUsage(AttributeTargets.Property | AttributeTargets.Parameter)]
+/// <remarks>
+/// On record primary-constructor parameters, use the explicit <c>[property: Tag(...)]</c> target
+/// specifier so the attribute lands on the synthesised property, which is where tag extraction
+/// reads from. Writing <c>[Tag(...)]</c> without a target on a parameter was previously accepted
+/// but silently produced no tags; that misuse now fails at compile time.
+/// </remarks>
+[AttributeUsage(AttributeTargets.Property)]
 public sealed class TagAttribute(string concept) : Attribute
 {
     /// <summary>
