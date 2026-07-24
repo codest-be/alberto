@@ -1,4 +1,3 @@
-using System.Data;
 using System.Data.Common;
 using Alberto.Dcb.Subscriptions;
 using Alberto.Dcb.Telemetry;
@@ -35,7 +34,6 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
     /// <inheritdoc/>
     public async Task<Dictionary<string, TEntity>> LoadManyAsync(
         IEnumerable<string> documentIds,
-        IDbTransaction? transaction = null,
         CancellationToken ct = default)
     {
         var ids = documentIds.ToList();
@@ -43,9 +41,6 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
             return new Dictionary<string, TEntity>();
 
         await using var context = await _contextFactory.CreateDbContextAsync(ct);
-
-        if (transaction != null)
-            await UseTransactionAsync(context, transaction, ct);
 
         var entities = await context.Set<TEntity>()
             .AsNoTracking()
@@ -59,16 +54,12 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
     public async Task ApplyChangesAsync(
         IReadOnlyDictionary<string, TEntity> upserts,
         IReadOnlyCollection<string> deletes,
-        IDbTransaction? transaction = null,
         CancellationToken ct = default)
     {
         if (upserts.Count == 0 && deletes.Count == 0)
             return;
 
         await using var context = await _contextFactory.CreateDbContextAsync(ct);
-
-        if (transaction != null)
-            await UseTransactionAsync(context, transaction, ct);
 
         var allDocIds = upserts.Keys.Concat(deletes).Distinct().ToList();
         var existingEntities = await context.Set<TEntity>()
@@ -111,14 +102,13 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
         catch (DbUpdateException ex) when (IsDuplicateKeyViolation(ex))
         {
             AlbertoMetrics.ConcurrencyConflicts.Add(1);
-            await RetryWithBackoffAsync(upserts, deletes, transaction, ct);
+            await RetryWithBackoffAsync(upserts, deletes, ct);
         }
     }
 
     private async Task RetryWithBackoffAsync(
         IReadOnlyDictionary<string, TEntity> upserts,
         IReadOnlyCollection<string> deletes,
-        IDbTransaction? transaction,
         CancellationToken ct)
     {
         const int maxRetries = 5;
@@ -127,9 +117,6 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
         for (var attempt = 1; attempt <= maxRetries; attempt++)
         {
             await using var context = await _contextFactory.CreateDbContextAsync(ct);
-
-            if (transaction != null)
-                await UseTransactionAsync(context, transaction, ct);
 
             foreach (var docId in deletes)
             {
@@ -167,7 +154,7 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
             {
                 if (attempt >= maxRetries)
                 {
-                    await SaveEntitiesOneByOneAsync(upserts, deletes, transaction, ct);
+                    await SaveEntitiesOneByOneAsync(upserts, deletes, ct);
                     return;
                 }
 
@@ -181,7 +168,6 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
     private async Task SaveEntitiesOneByOneAsync(
         IReadOnlyDictionary<string, TEntity> upserts,
         IReadOnlyCollection<string> deletes,
-        IDbTransaction? transaction,
         CancellationToken ct)
     {
         foreach (var (docId, newEntity) in upserts)
@@ -189,9 +175,6 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
             try
             {
                 await using var context = await _contextFactory.CreateDbContextAsync(ct);
-
-                if (transaction != null)
-                    await UseTransactionAsync(context, transaction, ct);
 
                 newEntity.DocumentId = docId;
                 newEntity.UpdatedAt = DateTimeOffset.UtcNow;
@@ -219,9 +202,6 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
                 {
                     await using var retryContext = await _contextFactory.CreateDbContextAsync(ct);
 
-                    if (transaction != null)
-                        await UseTransactionAsync(retryContext, transaction, ct);
-
                     var nowExisting = await retryContext.Set<TEntity>()
                         .FirstOrDefaultAsync(e => e.DocumentId == docId, ct);
 
@@ -237,29 +217,6 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
                     // Give up on this entity.
                 }
             }
-        }
-    }
-
-    /// <inheritdoc/>
-    public async Task<IReadOnlyList<TEntity>> ListRecentAsync(
-        int limit = 20,
-        CancellationToken ct = default)
-    {
-        await using var context = await _contextFactory.CreateDbContextAsync(ct);
-
-        return await context.Set<TEntity>()
-            .AsNoTracking()
-            .OrderByDescending(e => e.UpdatedAt)
-            .Take(limit)
-            .ToListAsync(ct);
-    }
-
-    private static async Task UseTransactionAsync(TDbContext context, IDbTransaction transaction, CancellationToken ct)
-    {
-        if (context.Database.CurrentTransaction == null)
-        {
-            if (transaction is DbTransaction dbTransaction)
-                await context.Database.UseTransactionAsync(dbTransaction, ct);
         }
     }
 

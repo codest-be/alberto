@@ -9,7 +9,7 @@ namespace Alberto.Dcb;
 public static class AlbertoStoreServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers <see cref="AlbertoStore"/> as a singleton for this module.
+    /// Registers <see cref="AlbertoStore"/> as scoped for this module.
     /// Chain this from the <c>AddAlberto</c> builder so the keyed module key is captured
     /// automatically and the registration stays alongside all other module configuration.
     /// </summary>
@@ -36,15 +36,16 @@ public static class AlbertoStoreServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(eventsAssembly);
 
         var moduleKey = builder.ModuleKey;
-        builder.Services.AddSingleton(sp => new AlbertoStore(
+        var serializer = EventSerializer.FromAssembly(eventsAssembly);
+        builder.Services.AddScoped(sp => new AlbertoStore(
             sp.GetRequiredKeyedService<IEventStore>(moduleKey),
-            EventSerializer.FromAssembly(eventsAssembly)));
+            serializer));
 
         return builder;
     }
 
     /// <summary>
-    /// Registers <see cref="AlbertoStore"/> as a singleton using an explicit module key.
+    /// Registers <see cref="AlbertoStore"/> as scoped using an explicit module key.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="moduleKey">The keyed-service key used when calling <c>AddAlberto</c>.</param>
@@ -58,8 +59,15 @@ public static class AlbertoStoreServiceCollectionExtensions
     public static IServiceCollection AddAlbertoStore(
         this IServiceCollection services,
         object moduleKey,
-        Assembly eventsAssembly) =>
-        services.AddSingleton(sp => new AlbertoStore(
+        Assembly eventsAssembly)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(moduleKey);
+        ArgumentNullException.ThrowIfNull(eventsAssembly);
+
+        var serializer = EventSerializer.FromAssembly(eventsAssembly);
+        return services.AddScoped(sp => new AlbertoStore(
             sp.GetRequiredKeyedService<IEventStore>(moduleKey),
-            EventSerializer.FromAssembly(eventsAssembly)));
+            serializer));
+    }
 }

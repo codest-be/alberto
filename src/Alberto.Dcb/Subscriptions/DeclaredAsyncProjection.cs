@@ -65,7 +65,7 @@ internal sealed class DeclaredAsyncProjection<TState> : IBatchableProcessor, IFl
         if (docId is null) return;
 
         var stateStore = GetStore();
-        var states = await stateStore.LoadManyAsync([docId], transaction: null, ct);
+        var states = await stateStore.LoadManyAsync([docId], ct);
         var state = states.GetValueOrDefault(docId) ?? _declaration.InitialState();
 
         if (state is IProjectionEntity entity && entity.LastProcessedPosition >= @event.GlobalPosition)
@@ -81,7 +81,6 @@ internal sealed class DeclaredAsyncProjection<TState> : IBatchableProcessor, IFl
                 await stateStore.ApplyChangesAsync(
                     new Dictionary<string, TState> { [docId] = s.State },
                     [],
-                    transaction: null,
                     ct);
                 if (_afterCommit is not null)
                     await _afterCommit([@event], ct);
@@ -91,7 +90,6 @@ internal sealed class DeclaredAsyncProjection<TState> : IBatchableProcessor, IFl
                 await stateStore.ApplyChangesAsync(
                     new Dictionary<string, TState>(),
                     [docId],
-                    transaction: null,
                     ct);
                 if (_afterCommit is not null)
                     await _afterCommit([@event], ct);
@@ -131,7 +129,7 @@ internal sealed class DeclaredAsyncProjection<TState> : IBatchableProcessor, IFl
         if (docIdMap.Count == 0) return;
 
         var stateStore = GetStore();
-        var states = await stateStore.LoadManyAsync(docIdMap.Values.Distinct(), transaction: null, ct);
+        var states = await stateStore.LoadManyAsync(docIdMap.Values.Distinct(), ct);
 
         var upserts = new Dictionary<string, TState>();
         var deletes = new HashSet<string>();
@@ -172,7 +170,7 @@ internal sealed class DeclaredAsyncProjection<TState> : IBatchableProcessor, IFl
 
         if (upserts.Count > 0 || deletes.Count > 0)
         {
-            await stateStore.ApplyChangesAsync(upserts, deletes.ToList(), transaction: null, ct);
+            await stateStore.ApplyChangesAsync(upserts, deletes.ToList(), ct);
             if (_afterCommit is not null)
                 await _afterCommit(relevant, ct);
         }

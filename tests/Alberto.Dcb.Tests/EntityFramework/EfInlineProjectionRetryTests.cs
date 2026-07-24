@@ -1,4 +1,3 @@
-using System.Data;
 using Alberto.Dcb.EntityFramework.Inline;
 using Alberto.Dcb.Subscriptions;
 using FluentAssertions;
@@ -11,8 +10,8 @@ namespace Alberto.Dcb.Tests.EntityFramework;
 /// <summary>
 /// TEST-1: Behavioural tests for the EF inline projection retry loop.
 /// Covers the normal path, retry-then-succeed, exhaustion (P0.7 recovery signal),
-/// non-retryable exception passthrough, external-transaction no-retry, and
-/// idempotency via <see cref="IProjectionEntity.LastProcessedPosition"/>.
+/// non-retryable exception passthrough and idempotency via
+/// <see cref="IProjectionEntity.LastProcessedPosition"/>.
 ///
 /// Uses <see cref="EfProjectionTestFixture"/> for a shared Postgres container so the
 /// real EF query path (entity load via <c>ToDictionaryAsync</c>) exercises actual SQL.
@@ -40,7 +39,7 @@ public sealed class EfInlineProjectionRetryTests(EfProjectionTestFixture fixture
         var entityId = Guid.NewGuid().ToString();
         var events = new[] { EfTestEnvelopes.ForCounterIncremented(entityId, amount: 7, position: 1) };
 
-        await projection.ProcessAsync(events, transaction: null, ct: TestContext.Current.CancellationToken);
+        await projection.ProcessAsync(events, ct: TestContext.Current.CancellationToken);
 
         var entity = await fixture.ReadEntityAsync(entityId);
         entity.Should().NotBeNull();
@@ -69,7 +68,7 @@ public sealed class EfInlineProjectionRetryTests(EfProjectionTestFixture fixture
         var entityId = Guid.NewGuid().ToString();
         var events = new[] { EfTestEnvelopes.ForCounterIncremented(entityId, amount: 3, position: 1) };
 
-        await projection.ProcessAsync(events, transaction: null, ct: TestContext.Current.CancellationToken);
+        await projection.ProcessAsync(events, ct: TestContext.Current.CancellationToken);
 
         var entity = await fixture.ReadEntityAsync(entityId);
         entity.Should().NotBeNull("the projection should have committed on the third attempt");
@@ -100,7 +99,7 @@ public sealed class EfInlineProjectionRetryTests(EfProjectionTestFixture fixture
         var entityId = Guid.NewGuid().ToString();
         var events = new[] { EfTestEnvelopes.ForCounterIncremented(entityId, amount: 5, position: 1) };
 
-        await projection.ProcessAsync(events, transaction: null, ct: TestContext.Current.CancellationToken);
+        await projection.ProcessAsync(events, ct: TestContext.Current.CancellationToken);
 
         var entity = await fixture.ReadEntityAsync(entityId);
         entity.Should().NotBeNull("the projection should have committed on the second attempt");
@@ -129,7 +128,7 @@ public sealed class EfInlineProjectionRetryTests(EfProjectionTestFixture fixture
         var events = new[] { EfTestEnvelopes.ForCounterIncremented(entityId, amount: 1, position: 1) };
 
         var act = async () => await projection.ProcessAsync(
-            events, transaction: null, ct: TestContext.Current.CancellationToken);
+            events, ct: TestContext.Current.CancellationToken);
 
         var thrown = await act.Should().ThrowAsync<InlineProjectionExhaustedException>();
         thrown.Which.ProcessorId.Should().Be(processorId);
@@ -155,7 +154,7 @@ public sealed class EfInlineProjectionRetryTests(EfProjectionTestFixture fixture
 
         try
         {
-            await projection.ProcessAsync(events, transaction: null, ct: TestContext.Current.CancellationToken);
+            await projection.ProcessAsync(events, ct: TestContext.Current.CancellationToken);
         }
         catch (InlineProjectionExhaustedException)
         {
@@ -186,7 +185,7 @@ public sealed class EfInlineProjectionRetryTests(EfProjectionTestFixture fixture
         var events = new[] { EfTestEnvelopes.ForCounterIncremented(entityId, amount: 1, position: 1) };
 
         var act = async () => await projection.ProcessAsync(
-            events, transaction: null, ct: TestContext.Current.CancellationToken);
+            events, ct: TestContext.Current.CancellationToken);
 
         // Should throw the original exception, not InlineProjectionExhaustedException.
         await act.Should().ThrowAsync<InvalidOperationException>()
@@ -194,34 +193,6 @@ public sealed class EfInlineProjectionRetryTests(EfProjectionTestFixture fixture
 
         // Only one factory call should have been made (no retries).
         factory.EnqueueSuccess(); // guard: if a second call were made it would succeed, but it won't be
-    }
-
-    // -----------------------------------------------------------------------
-    // External transaction — no retry
-    // -----------------------------------------------------------------------
-
-    [Fact]
-    public async Task ProcessAsync_ExternalTransaction_ConcurrencyExceptionNotRetried()
-    {
-        var factory = fixture.CreateFactory();
-
-        var concurrencyEx = new DbUpdateConcurrencyException("conflict");
-        factory.PermanentInterceptor = (_, _) => throw concurrencyEx;
-
-        var declaration = EfProjectionTestFixture.BuildDeclaration("external-tx-test");
-        var projection = new DeclaredEfInlineProjection<CounterEntity, EfTestDbContext>(
-            declaration, factory);
-
-        var entityId = Guid.NewGuid().ToString();
-        var events = new[] { EfTestEnvelopes.ForCounterIncremented(entityId, amount: 1, position: 1) };
-
-        // Passing a non-null transaction signals ownsTransaction=false; retries are suppressed.
-        using var fakeTransaction = new FakeDbTransaction();
-        var act = async () => await projection.ProcessAsync(
-            events, transaction: fakeTransaction, ct: TestContext.Current.CancellationToken);
-
-        // Exception propagates immediately — NOT wrapped in InlineProjectionExhaustedException.
-        await act.Should().ThrowAsync<DbUpdateConcurrencyException>();
     }
 
     // -----------------------------------------------------------------------
@@ -240,10 +211,10 @@ public sealed class EfInlineProjectionRetryTests(EfProjectionTestFixture fixture
         var evt = EfTestEnvelopes.ForCounterIncremented(entityId, amount: 10, position: 42);
 
         // First processing: entity is persisted with Counter=10, LastProcessedPosition=42.
-        await projection.ProcessAsync([evt], transaction: null, ct: TestContext.Current.CancellationToken);
+        await projection.ProcessAsync([evt], ct: TestContext.Current.CancellationToken);
 
         // Second processing of the same event: position 42 <= stored 42, so it is skipped.
-        await projection.ProcessAsync([evt], transaction: null, ct: TestContext.Current.CancellationToken);
+        await projection.ProcessAsync([evt], ct: TestContext.Current.CancellationToken);
 
         var entity = await fixture.ReadEntityAsync(entityId);
         entity!.Counter.Should().Be(10, "the event should have been applied exactly once");
@@ -267,7 +238,7 @@ public sealed class EfInlineProjectionRetryTests(EfProjectionTestFixture fixture
 
         // Empty batch: no events handled by this projection.
         var act = async () => await projection.ProcessAsync(
-            [], transaction: null, ct: TestContext.Current.CancellationToken);
+            [], ct: TestContext.Current.CancellationToken);
 
         await act.Should().NotThrowAsync();
     }
@@ -293,7 +264,7 @@ public sealed class EfInlineProjectionRetryTests(EfProjectionTestFixture fixture
             EfTestEnvelopes.ForCounterIncremented(id1, amount: 1, position: 3), // fold with first for id1
         };
 
-        await projection.ProcessAsync(events, transaction: null, ct: TestContext.Current.CancellationToken);
+        await projection.ProcessAsync(events, ct: TestContext.Current.CancellationToken);
 
         var entity1 = await fixture.ReadEntityAsync(id1);
         var entity2 = await fixture.ReadEntityAsync(id2);
@@ -308,20 +279,6 @@ public sealed class EfInlineProjectionRetryTests(EfProjectionTestFixture fixture
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
-
-    /// <summary>
-    /// Minimal <see cref="IDbTransaction"/> stub for testing the external-transaction path.
-    /// The EF code checks <c>transaction is null</c> to decide whether it owns the transaction;
-    /// passing a non-null value — even this stub — is sufficient.
-    /// </summary>
-    private sealed class FakeDbTransaction : IDbTransaction
-    {
-        public IDbConnection? Connection => null;
-        public IsolationLevel IsolationLevel => IsolationLevel.Unspecified;
-        public void Commit() { }
-        public void Rollback() { }
-        public void Dispose() { }
-    }
 
     /// <summary>
     /// Simple <see cref="ILogger{T}"/> that captures messages so tests can assert on log output.
