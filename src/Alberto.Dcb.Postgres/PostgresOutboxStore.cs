@@ -48,17 +48,41 @@ public sealed class PostgresOutboxStore(NpgsqlDataSource dataSource, string? sch
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Atomically claims returned entries by setting their <c>status</c> to
+    /// <c>'processing'</c> via <c>FOR UPDATE SKIP LOCKED</c>.  Concurrent relay
+    /// instances will skip any row already locked by another worker, preventing
+    /// double-delivery.  The SQL migration cluster must include <c>'processing'</c>
+    /// in the <c>alberto_outbox_entries.status</c> CHECK constraint for this to
+    /// succeed.  On failure the relay's <see cref="IOutboxStore.MarkFailedAsync"/>
+    /// call resets the entry (from <c>'processing'</c> to <c>'failed'</c>).
+    /// </remarks>
     public async Task<IReadOnlyList<OutboxEntry>> GetPendingAsync(int limit = 100, CancellationToken ct = default)
     {
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand(
             $"""
+            WITH candidates AS (
+                SELECT id
+                FROM {_schema.Table("alberto_outbox_entries")}
+                WHERE status = 'pending'
+                ORDER BY created_at
+                LIMIT @limit
+                FOR UPDATE SKIP LOCKED
+            ),
+            claimed AS (
+                UPDATE {_schema.Table("alberto_outbox_entries")} e
+                SET status = 'processing'
+                FROM candidates
+                WHERE e.id = candidates.id
+                RETURNING e.id, e.source_event_id, e.message_type, e.version, e.payload,
+                          e.metadata, e.status, e.retry_count, e.last_error,
+                          e.created_at, e.delivered_at
+            )
             SELECT id, source_event_id, message_type, version, payload, metadata,
                    status, retry_count, last_error, created_at, delivered_at
-            FROM {_schema.Table("alberto_outbox_entries")}
-            WHERE status = 'pending'
+            FROM claimed
             ORDER BY created_at
-            LIMIT @limit
             """,
             connection);
 
@@ -163,6 +187,9 @@ public sealed class PostgresOutboxStore(NpgsqlDataSource dataSource, string? sch
             "pending" => OutboxEntryStatus.Pending,
             "delivered" => OutboxEntryStatus.Delivered,
             "failed" => OutboxEntryStatus.Failed,
+            // 'processing' means the row has been claimed by GetPendingAsync.
+            // Mapped to Pending until OutboxEntryStatus gains a Processing member.
+            "processing" => OutboxEntryStatus.Pending,
             _ => OutboxEntryStatus.Pending
         };
 

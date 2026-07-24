@@ -55,20 +55,26 @@ public readonly partial struct TagPattern : IEquatable<TagPattern>
     /// </summary>
     public bool IsExact => Id is not null;
 
+    // Cached string representations — computed once at construction, never reallocated on access.
+    private readonly string _value;
+    private readonly string _conceptPrefix;
+
     /// <summary>
     /// Gets the pattern as a string for display/debugging.
     /// </summary>
-    public string Value => IsWildcard ? $"{Concept}:*" : $"{Concept}:{Id}";
+    public string Value => _value;
 
     /// <summary>
     /// Gets the concept prefix for LIKE queries (e.g., "order:" for wildcard patterns).
     /// </summary>
-    public string ConceptPrefix => $"{Concept}:";
+    public string ConceptPrefix => _conceptPrefix;
 
     private TagPattern(string concept, string? id)
     {
         Concept = concept;
         Id = id;
+        _conceptPrefix = string.Concat(concept, ":");
+        _value = id is null ? string.Concat(concept, ":*") : string.Concat(concept, ":", id);
     }
 
     /// <summary>
@@ -165,13 +171,14 @@ public readonly partial struct TagPattern : IEquatable<TagPattern>
 
     /// <summary>
     /// Checks if the given tag value string matches this pattern.
+    /// Uses cached string values — no per-call allocation.
     /// </summary>
     public bool Matches(string tagValue)
     {
         if (IsWildcard)
-            return tagValue.StartsWith(ConceptPrefix, StringComparison.Ordinal);
+            return tagValue.StartsWith(_conceptPrefix, StringComparison.Ordinal);
 
-        return string.Equals(tagValue, $"{Concept}:{Id}", StringComparison.Ordinal);
+        return string.Equals(tagValue, _value, StringComparison.Ordinal);
     }
 
     private static void ValidateConcept(string concept)
@@ -207,9 +214,9 @@ public readonly partial struct TagPattern : IEquatable<TagPattern>
     public static bool operator ==(TagPattern left, TagPattern right) => left.Equals(right);
     public static bool operator !=(TagPattern left, TagPattern right) => !left.Equals(right);
 
-    public override string ToString() => Value;
+    public override string ToString() => _value;
 
-    public static implicit operator string(TagPattern pattern) => pattern.Value;
+    public static implicit operator string(TagPattern pattern) => pattern._value;
 
     /// <summary>
     /// Implicit conversion from EventTag creates an exact match pattern.

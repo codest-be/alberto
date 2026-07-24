@@ -1,3 +1,5 @@
+using Alberto.Dcb.Tenancy;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -18,7 +20,8 @@ public sealed class DeadLetterRetryLoop(
     IReadOnlyList<ConsumeMiddleware>? middlewares = null,
     ILogger<DeadLetterRetryLoop>? logger = null,
     TimeSpan? claimLeaseDuration = null,
-    string? claimedBy = null) : IHostedService, IAsyncDisposable
+    string? claimedBy = null,
+    IServiceScopeFactory? scopeFactory = null) : IHostedService, IAsyncDisposable
 {
     private readonly IEventProcessor _processor = processor ?? throw new ArgumentNullException(nameof(processor));
     private readonly IDeadLetterStore _deadLetterStore = deadLetterStore ?? throw new ArgumentNullException(nameof(deadLetterStore));
@@ -119,7 +122,7 @@ public sealed class DeadLetterRetryLoop(
                         // and writes a fresh dead-letter row on exhaustion, so a normal return here
                         // covers both "handler succeeded" and "handler failed but is now in a new
                         // dead-letter row". In both cases the claimed entry is no longer needed.
-                        await DispatchAsync(envelope, ct);
+                        await DispatchWithTenantScopeAsync(envelope, entry, ct);
                         dispatchSucceeded = true;
 
                         _logger?.LogInformation(
@@ -191,6 +194,31 @@ public sealed class DeadLetterRetryLoop(
                     _processor.ProcessorId);
                 await Task.Delay(_pollingInterval, ct);
             }
+        }
+    }
+
+    // P0.6 (TEN-5): Create a DI scope per retry entry and set the tenant context so any
+    // scoped service resolved within the dispatch (e.g. ITenantAccessor, scoped handler classes)
+    // sees the correct tenant for this event.
+    //
+    // NOTE: _processor is a singleton — its constructor-injected ITenantAccessor was captured at
+    // build time from its own construction scope and will NOT be updated by the scope created here.
+    // The scope benefits code paths that explicitly resolve scoped services per-call (e.g. scoped
+    // reactor handler classes wired via ReactTo<TEvent, THandler>). A complete fix would resolve
+    // the processor itself from the scope using the module key — that requires DeadLetterRetryLoop
+    // to know the module key, tracked as a follow-up in the breaking-changes phase.
+    private async Task DispatchWithTenantScopeAsync(IEventEnvelope envelope, DeadLetterEntry entry, CancellationToken ct)
+    {
+        if (scopeFactory is not null && !string.IsNullOrEmpty(entry.TenantId))
+        {
+            await using var scope = scopeFactory.CreateAsyncScope();
+            var tenantCtx = scope.ServiceProvider.GetService<TenantContext>();
+            tenantCtx?.SetTenant(entry.TenantId);
+            await DispatchAsync(envelope, ct);
+        }
+        else
+        {
+            await DispatchAsync(envelope, ct);
         }
     }
 

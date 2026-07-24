@@ -30,11 +30,27 @@ internal sealed class TenantEventStoreDecorator : IEventStoreBackend
         return _inner.StreamForTenant(tenantId, query, afterPosition, limit, cancellationToken);
     }
 
+    // NOTE: P1.3 interim guard — full interface split (tenant-scoped store vs consumer feed)
+    // is planned for the breaking-changes phase. Until then, guard the request-scoped path:
+    // if a caller has an active tenant (i.e. this is a request-scoped context), StreamAll would
+    // silently return every tenant's events, bypassing isolation — throw instead.
+    // The consumer-feed backend uses ConsumerTenantAccessor (HasTenant=false) and is allowed
+    // to call StreamAll; it legitimately streams across all tenants for background loops.
     public Task<IReadOnlyCollection<IEventEnvelope>> StreamAll(
         long afterPosition = 0,
         int? limit = null,
         CancellationToken cancellationToken = default)
-        => _inner.StreamAllTenants(afterPosition, limit, cancellationToken);
+    {
+        if (_tenantAccessor.HasTenant)
+            throw new InvalidOperationException(
+                "StreamAll() is not permitted on the request-scoped tenant event store: it would " +
+                "return events for all tenants, bypassing tenant isolation. " +
+                "Use the consumer-feed backend (registered under the ':consumer' key) for " +
+                "cross-tenant streaming from ControlLoops, or await the interface split that " +
+                "will formally separate the two concerns.");
+
+        return _inner.StreamAllTenants(afterPosition, limit, cancellationToken);
+    }
 
     public Task<IReadOnlyCollection<IEventEnvelope>> Append(
         IEnumerable<IEventToPersist> events,

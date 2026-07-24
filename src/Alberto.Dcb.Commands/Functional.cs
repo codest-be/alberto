@@ -228,7 +228,11 @@ public readonly struct DecidedPipeline<TValue>
     public async Task<Result<TValue>> Persist(CancellationToken ct)
     {
         var (decision, boundary) = await _resolve(ct);
-        return await _store.Persist(decision, boundary!.Value.Query, boundary.Value.ExpectedPosition, ct);
+        if (boundary is null)
+            throw new InvalidOperationException(
+                "Persist() requires a DCB boundary established by Load(), but no boundary was set. " +
+                "Call Load() before Decide(), or use the Persist(DcbQuery, CancellationToken) overload to supply the query explicitly.");
+        return await _store.Persist(decision, boundary.Value.Query, boundary.Value.ExpectedPosition, ct);
     }
 }
 
@@ -260,6 +264,10 @@ public readonly struct DecidedPipeline
     public async Task<Result> Persist(CancellationToken ct)
     {
         var (decision, boundary) = await _resolve(ct);
-        return await _store.Persist(decision, boundary!.Value.Query, boundary.Value.ExpectedPosition, ct);
+        if (boundary is null)
+            throw new InvalidOperationException(
+                "Persist() requires a DCB boundary established by Load(), but no boundary was set. " +
+                "Call Load() before Decide(), or use the Persist(DcbQuery, CancellationToken) overload to supply the query explicitly.");
+        return await _store.Persist(decision, boundary.Value.Query, boundary.Value.ExpectedPosition, ct);
     }
 }

@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Reflection;
 using System.Text.Json;
 
@@ -12,13 +13,14 @@ namespace Alberto.Dcb.Subscriptions;
 internal sealed class ProjectionDispatcher<TState>
 {
     private readonly Dictionary<string, Handler> _handlers = new();
+    private FrozenSet<string> _handledEventTypes = FrozenSet<string>.Empty;
 
     private ProjectionDispatcher() { }
 
     /// <summary>
     /// The event types this projection handles.
     /// </summary>
-    public IReadOnlySet<string> HandledEventTypes => _handlers.Keys.ToHashSet();
+    public IReadOnlySet<string> HandledEventTypes => _handledEventTypes;
 
     /// <summary>
     /// Create a dispatcher for a projection instance.
@@ -54,6 +56,7 @@ internal sealed class ProjectionDispatcher<TState>
                 getDocIdMethod);
         }
 
+        dispatcher._handledEventTypes = dispatcher._handlers.Keys.ToFrozenSet(StringComparer.Ordinal);
         return dispatcher;
     }
 

@@ -17,6 +17,14 @@ internal interface IProjectionEventHandler<TState>
 
     /// <summary>Applies an already-parsed event to the current state (for testing).</summary>
     ProjectionResult<TState> Apply(TState state, object parsedEvent, ProjectionContext ctx);
+
+    /// <summary>
+    /// Parses (deserializes) the event payload from the envelope exactly once.
+    /// Callers that need both <see cref="GetDocumentId(object)"/> and
+    /// <see cref="Apply(TState,object,ProjectionContext)"/> should call this first
+    /// and pass the result to the object-overloads to avoid double deserialization.
+    /// </summary>
+    object ParseEvent(IEventEnvelope envelope);
 }
 
 /// <summary>
@@ -29,6 +37,8 @@ internal sealed class ProjectionEventHandler<TState, TEvent>(
     : IProjectionEventHandler<TState>
     where TEvent : IEvent
 {
+    public object ParseEvent(IEventEnvelope envelope) => envelope.ParseEvent<TEvent>();
+
     public string? GetDocumentId(IEventEnvelope envelope)
         => getId(envelope.ParseEvent<TEvent>());
 

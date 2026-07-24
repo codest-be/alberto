@@ -8,7 +8,10 @@ namespace Alberto.Dcb.Subscriptions;
 internal sealed class PositionWatermark
 {
     private long _readPosition;
-    private readonly SortedSet<long> _inFlight = new();
+    // Kept in ascending sorted order for O(1) minimum lookup.
+    // MaxConcurrency is typically small (4–32) so List<long> avoids
+    // the per-element tree-node allocation of SortedSet<long>.
+    private readonly List<long> _inFlight = new();
     private readonly Lock _lock = new();
 
     public PositionWatermark(long initialPosition)
@@ -42,15 +45,27 @@ internal sealed class PositionWatermark
     /// </summary>
     public void MarkDispatched(long position)
     {
-        lock (_lock) _inFlight.Add(position);
+        lock (_lock)
+        {
+            var idx = _inFlight.BinarySearch(position);
+            // idx < 0 means not found; ~idx is the insertion point
+            if (idx < 0) _inFlight.Insert(~idx, position);
+        }
     }
 
     /// <summary>
     /// Marks a dispatched event as completed. Called by the worker after processing.
+    /// Only call this when dispatch actually finished (success or handled failure) — do
+    /// NOT call it when processing was cancelled so the safe checkpoint stays behind the
+    /// in-flight position.
     /// </summary>
     public void MarkCompleted(long position)
     {
-        lock (_lock) _inFlight.Remove(position);
+        lock (_lock)
+        {
+            var idx = _inFlight.BinarySearch(position);
+            if (idx >= 0) _inFlight.RemoveAt(idx);
+        }
     }
 
     /// <summary>
@@ -66,8 +81,8 @@ internal sealed class PositionWatermark
                 if (_inFlight.Count == 0)
                     return _readPosition;
 
-                // Can only checkpoint up to just before the earliest in-flight event
-                return _inFlight.Min - 1;
+                // _inFlight[0] is the minimum because the list is kept sorted
+                return _inFlight[0] - 1;
             }
         }
     }

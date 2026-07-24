@@ -6,19 +6,57 @@ namespace Alberto.Dcb.Postgres;
 /// <summary>
 /// PostgreSQL implementation of dead letter storage.
 /// </summary>
-public sealed class PostgresDeadLetterStore(NpgsqlDataSource dataSource, string? schema = null) : IDeadLetterStore
+/// <remarks>
+/// Pass <paramref name="multiTenant"/> as <see langword="true"/> when the deployment
+/// uses the multi-tenant schema (i.e. <c>alberto_events</c> carries a
+/// <c>tenant_id</c> column).  This resolves the tenancy mode once at construction
+/// instead of probing <c>information_schema.columns</c> on every
+/// <see cref="ClaimRetryRequestedAsync"/> call (SQL-4).  When
+/// <paramref name="multiTenant"/> is <see langword="true"/>, <see cref="StoreAsync"/>
+/// also persists <see cref="DeadLetterEntry.TenantId"/> into the
+/// <c>tenant_id</c> column added by the multi-tenant migration (TEN-3).
+/// </remarks>
+public sealed class PostgresDeadLetterStore(
+    NpgsqlDataSource dataSource,
+    string? schema = null,
+    bool multiTenant = false) : IDeadLetterStore
 {
     private readonly NpgsqlDataSource _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
     private readonly SchemaQualifier _schema = new(schema);
+    private readonly bool _multiTenant = multiTenant;
+
+    // Resolved once: true  → alberto_events has tenant_id (multi-tenant schema)
+    //                false → single-tenant schema (no tenant_id column)
+    // Initialized to true when the caller declares multi-tenant mode at construction
+    // to skip the catalog probe entirely.  Otherwise resolved lazily on first claim
+    // and cached for all subsequent calls.
+    private bool? _hasTenantIdCache = multiTenant ? true : null;
+
     private string SchemaName => _schema.HasSchema ? _schema.Prefix.TrimEnd('.') : "public";
 
     /// <inheritdoc />
     public async Task StoreAsync(DeadLetterEntry entry, CancellationToken ct = default)
     {
-        var sql = $"""
-            INSERT INTO {_schema.Table("alberto_dead_letter_events")} (id, processor_id, event_id, event_type, event_data, error_message, stack_trace, attempt_count, failed_at, global_position, retry_requested)
-            VALUES (@id, @processorId, @eventId, @eventType, @eventData::jsonb, @errorMessage, @stackTrace, @attemptCount, @failedAt, @globalPosition, FALSE)
-            """;
+        // In multi-tenant mode include tenant_id so the column (added by the multi-tenant
+        // migration) is populated.  In single-tenant mode the column does not exist, so
+        // keep the original column list unchanged.
+        string sql;
+        if (_multiTenant)
+        {
+            sql = $"""
+                INSERT INTO {_schema.Table("alberto_dead_letter_events")}
+                    (id, processor_id, event_id, event_type, event_data, error_message, stack_trace, attempt_count, failed_at, global_position, retry_requested, tenant_id)
+                VALUES (@id, @processorId, @eventId, @eventType, @eventData::jsonb, @errorMessage, @stackTrace, @attemptCount, @failedAt, @globalPosition, FALSE, @tenantId)
+                """;
+        }
+        else
+        {
+            sql = $"""
+                INSERT INTO {_schema.Table("alberto_dead_letter_events")}
+                    (id, processor_id, event_id, event_type, event_data, error_message, stack_trace, attempt_count, failed_at, global_position, retry_requested)
+                VALUES (@id, @processorId, @eventId, @eventType, @eventData::jsonb, @errorMessage, @stackTrace, @attemptCount, @failedAt, @globalPosition, FALSE)
+                """;
+        }
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = conn.CreateCommand();
@@ -33,6 +71,11 @@ public sealed class PostgresDeadLetterStore(NpgsqlDataSource dataSource, string?
         cmd.Parameters.AddWithValue("attemptCount", entry.AttemptCount);
         cmd.Parameters.AddWithValue("failedAt", entry.FailedAt);
         cmd.Parameters.AddWithValue("globalPosition", entry.GlobalPosition);
+        if (_multiTenant)
+            cmd.Parameters.Add(new NpgsqlParameter("tenantId", NpgsqlTypes.NpgsqlDbType.Text)
+            {
+                Value = (object?)entry.TenantId ?? DBNull.Value
+            });
 
         await cmd.ExecuteNonQueryAsync(ct);
     }
@@ -235,9 +278,13 @@ public sealed class PostgresDeadLetterStore(NpgsqlDataSource dataSource, string?
     //     using FOR UPDATE SKIP LOCKED so concurrent workers don't fight,
     //  2. stamps them with claimed_at / claim_expires_at / claimed_by,
     //  3. returns the claimed rows joined with the original event for tags/metadata.
+    //
+    // The tenant_id column in the SELECT comes from alberto_events (not dead_letter_events)
+    // because it reflects the event's origin tenant.  The probe result is cached so the
+    // catalog is not queried on every call (SQL-4).
     private async Task<string> BuildClaimSqlAsync(NpgsqlConnection conn, CancellationToken ct)
     {
-        var hasTenantId = await EventsTableHasTenantIdAsync(conn, ct);
+        var hasTenantId = await ResolveHasTenantIdAsync(conn, ct);
         var tenantSelect = hasTenantId ? "e.tenant_id" : "NULL::text AS tenant_id";
 
         return $"""
@@ -273,6 +320,20 @@ public sealed class PostgresDeadLetterStore(NpgsqlDataSource dataSource, string?
             LEFT JOIN {_schema.Table("alberto_events")} e ON cl.event_id = e.event_id
             ORDER BY cl.failed_at ASC
             """;
+    }
+
+    // Returns (and caches) whether alberto_events has a tenant_id column.
+    // When multiTenant was declared at construction the answer is already known (true)
+    // and the catalog is never queried.  Otherwise the probe runs once and the result
+    // is stored so subsequent calls skip the information_schema round-trip (SQL-4).
+    // Worst-case two concurrent first calls both probe and write the same value — benign.
+    private async ValueTask<bool> ResolveHasTenantIdAsync(NpgsqlConnection conn, CancellationToken ct)
+    {
+        if (_hasTenantIdCache.HasValue)
+            return _hasTenantIdCache.Value;
+
+        _hasTenantIdCache = await EventsTableHasTenantIdAsync(conn, ct);
+        return _hasTenantIdCache.Value;
     }
 
     private async Task<bool> EventsTableHasTenantIdAsync(NpgsqlConnection conn, CancellationToken ct)

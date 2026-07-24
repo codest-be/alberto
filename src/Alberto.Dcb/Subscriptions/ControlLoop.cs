@@ -27,6 +27,9 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
     private readonly bool _hasUnpairedPerEventMiddlewares;
     private readonly ProcessorExecutionOptions _executionOptions;
     private readonly ILogger<ControlLoop>? _logger;
+    // Pre-composed middleware chains built once at construction time (PERF-6).
+    private readonly Func<ConsumeEventContext, Func<Task>, Task> _composedMiddleware;
+    private readonly Func<BatchConsumeContext, Func<Task>, Task> _composedBatchMiddleware;
     private CancellationTokenSource? _cts;
     private Task? _loop;
 
@@ -60,6 +63,11 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
         _executionOptions = executionOptions ?? ProcessorExecutionOptions.Default;
         _logger = logger;
 
+        // Pre-build the composed middleware chains once so per-event dispatch does not
+        // allocate a recursive Dispatch state-machine stack (PERF-6).
+        _composedMiddleware = MiddlewareRunner.Build(_middlewares);
+        _composedBatchMiddleware = BatchMiddlewareRunner.Build(_batchMiddlewares);
+
         // Pipelined mode (MaxConcurrency > 1) uses per-event dispatch with N workers,
         // so it doesn't require IBatchableProcessor or batch middleware.
         if (_executionOptions.MaxConcurrency <= 1)
@@ -78,6 +86,19 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
                     $"Processor '{ProcessorId}' requires batching, but not all configured per-event middleware " +
                     "has a batch equivalent. Register matching batch middleware before enabling batching.");
             }
+        }
+
+        // Wire the fence-violation callback so a fenced-out replica self-terminates
+        // immediately instead of continuing to dispatch under a stale checkpoint (P0.8).
+        // The lambda reads _cts at invocation time (after StartAsync has set it).
+        if (_checkpointStore is CachingCheckpointStore cachingStore)
+        {
+            cachingStore.OnFenceViolation = fencedProcessorId =>
+            {
+                if (fencedProcessorId != _processor.ProcessorId) return;
+                try { Volatile.Read(ref _cts)?.Cancel(); }
+                catch (ObjectDisposedException) { }
+            };
         }
     }
 
@@ -144,12 +165,17 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
                     continue;
                 }
 
-                var visibleEvents = events
-                    .Where(e => e.GlobalPosition <= head)
-                    .ToList();
-                var relevantEvents = visibleEvents
-                    .Where(e => _processor.HandledEventTypes.Contains(e.EventType.Id))
-                    .ToList();
+                // Single-pass filter: collect visible events and relevant events together
+                // to avoid iterating the batch twice (PERF-12).
+                var visibleEvents = new List<IEventEnvelope>(events.Count);
+                var relevantEvents = new List<IEventEnvelope>(events.Count);
+                foreach (var e in events)
+                {
+                    if (e.GlobalPosition > head) continue;
+                    visibleEvents.Add(e);
+                    if (_processor.HandledEventTypes.Contains(e.EventType.Id))
+                        relevantEvents.Add(e);
+                }
 
                 if (ShouldUseBatchDispatch && relevantEvents.Count > 0)
                     await DispatchBatchAsync(relevantEvents, ct);
@@ -157,10 +183,9 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
                     foreach (var evt in relevantEvents)
                         await DispatchAsync(evt, ct);
 
-                var newCheckpoint = visibleEvents
-                    .Select(e => e.GlobalPosition)
-                    .DefaultIfEmpty(checkpoint)
-                    .Max();
+                var newCheckpoint = visibleEvents.Count > 0
+                    ? visibleEvents[visibleEvents.Count - 1].GlobalPosition
+                    : checkpoint;
 
                 if (newCheckpoint > checkpoint)
                     await _checkpointStore.SaveAsync(ProcessorId, newCheckpoint, ct);
@@ -286,6 +311,13 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
                 {
                     await DispatchAsync(evt, ct);
                 }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    // Shutdown cancellation: leave this position in-flight so the
+                    // watermark checkpoint does not advance past an unprocessed event.
+                    // The event will be re-processed after restart (at-least-once).
+                    break;
+                }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     // Middleware (retry + dead-letter) should have handled this.
@@ -294,10 +326,10 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
                         "ControlLoop {ProcessorId} worker: unhandled error at position {Position}",
                         ProcessorId, evt.GlobalPosition);
                 }
-                finally
-                {
-                    watermark.MarkCompleted(evt.GlobalPosition);
-                }
+                // Only mark completed when dispatch actually finished (success or handled
+                // failure). Cancelled events must NOT be marked — the position stays
+                // in-flight so SaveWatermarkCheckpointAsync won't advance past it (COR-1).
+                watermark.MarkCompleted(evt.GlobalPosition);
             }
         }
         catch (OperationCanceledException) { /* shutting down */ }
@@ -325,10 +357,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
             CancellationToken = ct,
         };
 
-        return MiddlewareRunner.RunAsync(
-            context,
-            _middlewares,
-            () => _processor.ProcessEventAsync(evt, ct));
+        return _composedMiddleware(context, () => _processor.ProcessEventAsync(evt, ct));
     }
 
     private Task DispatchBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct)
@@ -356,10 +385,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
 
         try
         {
-            await BatchMiddlewareRunner.RunAsync(
-                context,
-                _batchMiddlewares,
-                () => batchableProcessor.ProcessBatchAsync(events, ct));
+            await _composedBatchMiddleware(context, () => batchableProcessor.ProcessBatchAsync(events, ct));
         }
         catch (Exception ex) when (allowSplit && events.Count > 1 && ex is not OperationCanceledException)
         {

@@ -19,23 +19,29 @@ public static class TelemetryBatchConsumeMiddleware
     {
         return async (context, next) =>
         {
-            var firstEnvelope = context.Envelopes[0];
-            var link = ExtractTraceLink(firstEnvelope, traceContextProvider);
-            var links = link is null ? [] : new[] { link.Value };
+            // Skip all trace-related allocations (string interpolation, link extraction,
+            // ActivityLink array) when no ActivitySource listener is subscribed.
+            // Metric counters and histograms are recorded unconditionally via the Meter.
+            Activity? activity = null;
+            if (AlbertoMetrics.Source.HasListeners())
+            {
+                var firstEnvelope = context.Envelopes[0];
+                var link = ExtractTraceLink(firstEnvelope, traceContextProvider);
+                var links = link is null ? null : new[] { link.Value };
+                var activityName = $"{AlbertoMetrics.ConsumeActivityName} {context.ProcessorId} batch";
+                activity = AlbertoMetrics.Source.StartActivity(
+                    activityName,
+                    ActivityKind.Consumer,
+                    parentContext: default,
+                    links: links);
 
-            var activityName = $"{AlbertoMetrics.ConsumeActivityName} {context.ProcessorId} batch";
-            using var activity = AlbertoMetrics.Source.StartActivity(
-                activityName,
-                ActivityKind.Consumer,
-                parentContext: default,
-                links: links);
-
-            activity?.SetTag("processor.id", context.ProcessorId);
-            activity?.SetTag("module.key", context.ModuleKey);
-            activity?.SetTag("batch.size", context.Envelopes.Count);
-            activity?.SetTag("event.position.first", firstEnvelope.GlobalPosition);
-            activity?.SetTag("event.position.last", context.Envelopes[^1].GlobalPosition);
-            activity?.SetTag("trace.links.count", links.Length);
+                activity?.SetTag("processor.id", context.ProcessorId);
+                activity?.SetTag("module.key", context.ModuleKey);
+                activity?.SetTag("batch.size", context.Envelopes.Count);
+                activity?.SetTag("event.position.first", firstEnvelope.GlobalPosition);
+                activity?.SetTag("event.position.last", context.Envelopes[^1].GlobalPosition);
+                activity?.SetTag("trace.links.count", links?.Length ?? 0);
+            }
 
             var sw = Stopwatch.StartNew();
             try
@@ -82,6 +88,7 @@ public static class TelemetryBatchConsumeMiddleware
             }
             finally
             {
+                activity?.Dispose();
                 AlbertoMetrics.ProcessingDuration.Record(
                     sw.ElapsedMilliseconds,
                     new KeyValuePair<string, object?>("processor", context.ProcessorId));

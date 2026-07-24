@@ -19,14 +19,18 @@ public sealed class PostgresTenantRing(NpgsqlDataSource dataSource, string? sche
         if (activeNodeIds.Count == 0)
             return 0;
 
-        // Read all current assignments
-        var assignments = new List<(string tenantId, string currentNodeId)>();
-
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
+
+        // Read all current assignments inside the same transaction that will perform
+        // the bulk update, so the read and write are serialised together.
+        await using var transaction = await connection.BeginTransactionAsync(ct);
+
+        var assignments = new List<(string tenantId, string currentNodeId)>();
 
         await using (var selectCmd = new NpgsqlCommand(
             $"SELECT tenant_id, node_id FROM {_schema.Table("alberto_tenant_assignments")}",
-            connection))
+            connection,
+            transaction))
         await using (var reader = await selectCmd.ExecuteReaderAsync(ct))
         {
             while (await reader.ReadAsync(ct))
@@ -36,36 +40,53 @@ public sealed class PostgresTenantRing(NpgsqlDataSource dataSource, string? sche
         }
 
         if (assignments.Count == 0)
+        {
+            await transaction.CommitAsync(ct);
             return 0;
+        }
 
         var ring = ConsistentHashRing.Build(activeNodeIds);
-        var changedCount = 0;
 
-        // Update any tenant whose assigned node has changed
+        // Collect only the tenants whose assigned node actually changes.
+        var changedTenantIds = new List<string>();
+        var changedNewNodeIds = new List<string>();
+
         foreach (var (tenantId, currentNodeId) in assignments)
         {
             var newNodeId = ConsistentHashRing.GetNodeForTenant(ring, tenantId);
             if (newNodeId == currentNodeId)
                 continue;
 
-            await using var updateCmd = new NpgsqlCommand(
-                $"""
-                UPDATE {_schema.Table("alberto_tenant_assignments")}
-                SET node_id = @nodeId,
-                    assigned_at = now(),
-                    ring_version = ring_version + 1
-                WHERE tenant_id = @tenantId
-                  AND node_id != @nodeId
-                """,
-                connection);
-
-            updateCmd.Parameters.AddWithValue("nodeId", newNodeId);
-            updateCmd.Parameters.AddWithValue("tenantId", tenantId);
-
-            var rows = await updateCmd.ExecuteNonQueryAsync(ct);
-            changedCount += rows;
+            changedTenantIds.Add(tenantId);
+            changedNewNodeIds.Add(newNodeId);
         }
 
+        if (changedTenantIds.Count == 0)
+        {
+            await transaction.CommitAsync(ct);
+            return 0;
+        }
+
+        // Single-statement bulk UPDATE: one round-trip, fully transactional (SQL-9/TEN-9).
+        await using var updateCmd = new NpgsqlCommand(
+            $"""
+            UPDATE {_schema.Table("alberto_tenant_assignments")} t
+            SET node_id     = v.new_node_id,
+                assigned_at = now(),
+                ring_version = ring_version + 1
+            FROM unnest(@tenantIds::text[], @newNodeIds::text[]) AS v(tenant_id, new_node_id)
+            WHERE t.tenant_id = v.tenant_id
+              AND t.node_id  != v.new_node_id
+            """,
+            connection,
+            transaction);
+
+        updateCmd.Parameters.Add(new NpgsqlParameter<string[]>("tenantIds", changedTenantIds.ToArray()));
+        updateCmd.Parameters.Add(new NpgsqlParameter<string[]>("newNodeIds", changedNewNodeIds.ToArray()));
+
+        var changedCount = await updateCmd.ExecuteNonQueryAsync(ct);
+
+        await transaction.CommitAsync(ct);
         return changedCount;
     }
 

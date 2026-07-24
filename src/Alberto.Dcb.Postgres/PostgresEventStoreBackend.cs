@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -62,7 +61,7 @@ public sealed class PostgresEventStoreBackend(
             }
         }
 
-        return await ReadEventsAsync(cmd, cancellationToken);
+        return await PostgresBackendHelpers.ReadEventsAsync(cmd, includeTenantId: false, tenantId: null, cancellationToken);
     }
 
     public async Task<IReadOnlyCollection<IEventEnvelope>> StreamAll(
@@ -78,7 +77,7 @@ public sealed class PostgresEventStoreBackend(
         cmd.Parameters.AddWithValue("p_after_position", afterPosition);
         cmd.Parameters.AddWithValue("p_limit", limit.HasValue ? limit.Value : DBNull.Value);
 
-        return await ReadEventsAsync(cmd, cancellationToken);
+        return await PostgresBackendHelpers.ReadEventsAsync(cmd, includeTenantId: false, tenantId: null, cancellationToken);
     }
 
     public async Task<IReadOnlyCollection<IEventEnvelope>> Append(
@@ -106,11 +105,17 @@ public sealed class PostgresEventStoreBackend(
         var useWildcardFunction = dcbQuery?.HasWildcardPatterns == true;
         var useAllTagsFunction = dcbQuery?.RequiresAllTags == true;
         var useIntersect = dcbQuery?.IntersectsTypesAndTags == true;
+
+        // Resolve the append function name from the 3-flag matrix via the shared
+        // helper — single-tenant and multi-tenant use the same name set so they
+        // cannot drift independently.
+        var functionName = PostgresBackendHelpers.ResolveAppendFunctionName(
+            useWildcard: useWildcardFunction,
+            useAllTags: useAllTagsFunction,
+            useIntersect: useIntersect);
+
         // v4: intersect with exact tags. v5: intersect with wildcards. v6: intersect with all-tags.
         // v3: union with all-tags. v2: union with wildcards. v1: union with exact tags.
-        var functionName = useIntersect
-            ? (useAllTagsFunction ? "alberto_append_events_v6" : useWildcardFunction ? "alberto_append_events_v5" : "alberto_append_events_v4")
-            : (useAllTagsFunction ? "alberto_append_events_v3" : useWildcardFunction ? "alberto_append_events_v2" : "alberto_append_events");
         var sql = useAllTagsFunction
             ? $"SELECT * FROM {_schema.Function(functionName)}(@p_events, @p_dcb_types, @p_dcb_all_tags, @p_expected_position)"
             : useWildcardFunction
@@ -172,7 +177,9 @@ public sealed class PostgresEventStoreBackend(
     {
         await using var cmd = new NpgsqlCommand(sql, connection, transaction);
 
-        var eventsJson = BuildEventsJson(eventsList);
+        // BuildEventsJson uses Utf8JsonWriter.WriteRawValue so the caller-supplied
+        // event_data JSON is written verbatim — no JsonDocument.Parse / ArrayPool leak.
+        var eventsJson = PostgresBackendHelpers.BuildEventsJson(eventsList);
 
         cmd.Parameters.Add(new NpgsqlParameter("p_events", NpgsqlDbType.Jsonb) { Value = eventsJson });
 
@@ -228,10 +235,11 @@ public sealed class PostgresEventStoreBackend(
             var results = new List<IEventEnvelope>();
             await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
 
+            // Resolve ordinals once per reader — not per row.
+            // The append result set does not include tenant_id (single-tenant backend).
+            var ord = new PostgresBackendHelpers.EventColumnOrdinals(reader, includeTenantId: false);
             while (await reader.ReadAsync(cancellationToken))
-            {
-                results.Add(ReadEventFromAppendResult(reader));
-            }
+                results.Add(PostgresBackendHelpers.ReadEvent(reader, in ord, tenantId: null));
 
             return results;
         }
@@ -291,7 +299,7 @@ public sealed class PostgresEventStoreBackend(
             $"SELECT global_position FROM {_schema.Table("alberto_events")} " +
             "WHERE global_position > @after " +
             "AND pg_xact_id IS NOT NULL " +
-            "AND pg_xact_id >= pg_snapshot_xmin(pg_current_snapshot())::TEXT::BIGINT " +
+            "AND pg_xact_id >= pg_snapshot_xmin(pg_current_snapshot())::BIGINT " +
             "ORDER BY global_position ASC LIMIT 1",
             connection);
         cmd.Parameters.AddWithValue("after", afterPosition);
@@ -352,84 +360,5 @@ public sealed class PostgresEventStoreBackend(
         }
 
         return $"SELECT * FROM {_schema.Function("alberto_read_by_types_or_tags")}(@p_types, @p_tags, @p_after_position, @p_limit)";
-    }
-
-    private static string BuildEventsJson(List<IEventToPersist> events)
-    {
-        var eventsArray = events.Select(e => new
-        {
-            event_id = e.Id,
-            event_type = e.EventType.Id,
-            event_tags = e.Tags.Select(t => t.Value).ToArray(),
-            event_data = JsonDocument.Parse(e.EventData).RootElement,
-            event_metadata = e.Metadata.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
-        });
-
-        return JsonSerializer.Serialize(eventsArray);
-    }
-
-    private static async Task<List<IEventEnvelope>> ReadEventsAsync(
-        NpgsqlCommand cmd,
-        CancellationToken cancellationToken)
-    {
-        var results = new List<IEventEnvelope>();
-        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
-
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            results.Add(ReadEventFromReader(reader));
-        }
-
-        return results;
-    }
-
-    private static IEventEnvelope ReadEventFromReader(NpgsqlDataReader reader)
-    {
-        var globalPosition = reader.GetInt64(reader.GetOrdinal("global_position"));
-        var eventId = reader.GetGuid(reader.GetOrdinal("event_id"));
-        var eventType = reader.GetString(reader.GetOrdinal("event_type"));
-        var eventTags = reader.GetFieldValue<string[]>(reader.GetOrdinal("event_tags"));
-        var eventData = reader.GetString(reader.GetOrdinal("event_data"));
-        var eventMetadata = reader.GetString(reader.GetOrdinal("event_metadata"));
-        var createdAt = reader.GetDateTime(reader.GetOrdinal("created_at"));
-
-        var metadata = JsonSerializer.Deserialize<Dictionary<string, string>>(eventMetadata) ?? [];
-
-        return new EventEnvelope
-        {
-            Id = eventId,
-            TenantId = null,
-            GlobalPosition = globalPosition,
-            EventType = new EventType(eventType),
-            Tags = eventTags.Select(EventTag.Parse).ToArray(),
-            EventData = eventData,
-            Metadata = metadata,
-            CreatedAt = DateTime.SpecifyKind(createdAt, DateTimeKind.Utc)
-        };
-    }
-
-    private static IEventEnvelope ReadEventFromAppendResult(NpgsqlDataReader reader)
-    {
-        var globalPosition = reader.GetInt64(reader.GetOrdinal("global_position"));
-        var eventId = reader.GetGuid(reader.GetOrdinal("event_id"));
-        var eventType = reader.GetString(reader.GetOrdinal("event_type"));
-        var eventTags = reader.GetFieldValue<string[]>(reader.GetOrdinal("event_tags"));
-        var eventData = reader.GetString(reader.GetOrdinal("event_data"));
-        var eventMetadata = reader.GetString(reader.GetOrdinal("event_metadata"));
-        var createdAt = reader.GetDateTime(reader.GetOrdinal("created_at"));
-
-        var metadata = JsonSerializer.Deserialize<Dictionary<string, string>>(eventMetadata) ?? [];
-
-        return new EventEnvelope
-        {
-            Id = eventId,
-            TenantId = null,
-            GlobalPosition = globalPosition,
-            EventType = new EventType(eventType),
-            Tags = eventTags.Select(EventTag.Parse).ToArray(),
-            EventData = eventData,
-            Metadata = metadata,
-            CreatedAt = DateTime.SpecifyKind(createdAt, DateTimeKind.Utc)
-        };
     }
 }

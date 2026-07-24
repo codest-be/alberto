@@ -15,7 +15,7 @@ public record FencingContext(string ConsumerId, string ReplicaId, bool UseProces
 /// Updates are cached in-memory and periodically flushed to the underlying store.
 /// This significantly reduces database load during high-throughput scenarios.
 /// </summary>
-internal sealed class CachingCheckpointStore : ICheckpointStore, IAsyncDisposable
+internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckpointStore, IAsyncDisposable
 {
     private readonly ICheckpointStore _inner;
     private readonly TimeSpan _flushInterval;
@@ -23,7 +23,12 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IAsyncDisposabl
     private readonly ILogger<CachingCheckpointStore>? _logger;
     private readonly ConcurrentDictionary<string, long?> _cache = new();
     private readonly ConcurrentDictionary<string, long?> _persisted = new();
-    private readonly ConcurrentDictionary<string, long> _dirty = new();
+    // Each dirty entry carries the cache generation at the time it was written.
+    // On fence-violation cleanup the generation is bumped (after all three removes);
+    // entries written during the race window between _dirty.TryRemove and the bump
+    // carry the old generation and are discarded by the next flush (COR-2).
+    private readonly ConcurrentDictionary<string, (long Position, int Generation)> _dirty = new();
+    private volatile int _cacheGeneration;
     private readonly Timer _flushTimer;
     private readonly Timer _resyncTimer;
     private readonly SemaphoreSlim _flushLock = new(1, 1);
@@ -77,8 +82,9 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IAsyncDisposabl
         // Update cache immediately
         _cache[processorId] = position;
 
-        // Mark as dirty for later flush
-        _dirty[processorId] = position;
+        // Stamp the current generation so FlushAsync can discard entries written during
+        // a fence-violation race window (generation will have been bumped past this value).
+        _dirty[processorId] = (position, _cacheGeneration);
 
         // Don't write to DB immediately - the timer will flush periodically
         return Task.CompletedTask;
@@ -172,12 +178,24 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IAsyncDisposabl
         await _flushLock.WaitAsync(ct);
         try
         {
+            // Capture the current generation inside the lock, before snapshotting dirty.
+            // Entries whose stamped generation is older than flushGen were written during
+            // a fence-violation race window (see SaveAsync) and must be discarded (COR-2).
+            var flushGen = _cacheGeneration;
             var toFlush = _dirty.ToArray();
             var fenced = _fencingContext is not null ? _inner as IFencedCheckpointStore : null;
 
             // Write all dirty checkpoints FIRST, then remove only after success
-            foreach (var (processorId, position) in toFlush)
+            foreach (var (processorId, (position, entryGen)) in toFlush)
             {
+                // Discard entries stamped with an older generation: they were written from
+                // a stale cache that survived a prior fence-violation cleanup window.
+                if (entryGen < flushGen)
+                {
+                    _dirty.TryRemove(processorId, out _);
+                    continue;
+                }
+
                 if (await ApplyExternalResetIfDetectedAsync(processorId, ct))
                     continue;
 
@@ -193,7 +211,17 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IAsyncDisposabl
                         _logger?.LogWarning(
                             "Fenced checkpoint flush rejected for processor {ProcessorId} — lease expired",
                             processorId);
+                        // Remove all three dictionaries first, then bump the generation.
+                        // Any concurrent SaveAsync that races into the window between
+                        // _dirty.TryRemove and the Increment captures the old generation;
+                        // the next flush filters those entries via entryGen < flushGen (COR-2).
                         _dirty.TryRemove(processorId, out _);
+                        // Reset the cache so the next GetAsync re-reads the true DB value.
+                        // Keeping the stale high-water mark would cause the processor to skip
+                        // events between the real DB checkpoint and the cached position.
+                        _cache.TryRemove(processorId, out _);
+                        _persisted.TryRemove(processorId, out _);
+                        Interlocked.Increment(ref _cacheGeneration);
                         OnFenceViolation?.Invoke(processorId);
                         continue;
                     }
