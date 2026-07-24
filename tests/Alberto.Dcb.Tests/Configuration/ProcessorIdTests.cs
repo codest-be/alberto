@@ -4,23 +4,33 @@ using Xunit;
 
 namespace Alberto.Dcb.Tests.Configuration;
 
+internal sealed class OrderSummaryHandler;
+
+[ProcessorId("orders.legacy-summary")]
+internal sealed class RenamedHandler;
+
+internal sealed class GenericHandler<T>;
+
+internal sealed class Outer
+{
+    internal sealed class Inner;
+}
+
+[ProcessorId("  ")]
+internal sealed class BlankIdHandler;
+
+internal sealed class Orders
+{
+    internal sealed class SummaryHandler;
+}
+
+internal sealed class Invoices
+{
+    internal sealed class SummaryHandler;
+}
+
 public class ProcessorIdTests
 {
-    private sealed class OrderSummaryHandler;
-
-    [ProcessorId("orders.legacy-summary")]
-    private sealed class RenamedHandler;
-
-    private sealed class GenericHandler<T>;
-
-    private sealed class Outer
-    {
-        internal sealed class Inner;
-    }
-
-    [ProcessorId("  ")]
-    private sealed class BlankIdHandler;
-
     [Fact]
     public void An_unattributed_type_derives_its_own_name()
     {
@@ -67,5 +77,16 @@ public class ProcessorIdTests
         var act = () => ProcessorId.For(null!);
 
         act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void Same_named_handlers_in_different_declaring_types_get_different_ids()
+    {
+        var ordersId = ProcessorId.For<Orders.SummaryHandler>();
+        var invoicesId = ProcessorId.For<Invoices.SummaryHandler>();
+
+        ordersId.Should().Be("Orders.SummaryHandler");
+        invoicesId.Should().Be("Invoices.SummaryHandler");
+        ordersId.Should().NotBe(invoicesId);
     }
 }

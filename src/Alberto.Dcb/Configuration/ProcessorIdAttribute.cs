@@ -69,12 +69,6 @@ public static class ProcessorId
         if (type.IsGenericType)
             name = $"{name}_{string.Join('_', type.GetGenericArguments().Select(Describe))}";
 
-        // Only qualify by a declaring type when that declaring type is itself nested.
-        // This avoids prepending the outermost enclosing class (which is usually the
-        // module or test fixture, not a meaningful part of the processor identity).
-        if (type.DeclaringType is { DeclaringType: not null } declaring)
-            return $"{Describe(declaring)}.{name}";
-
-        return name;
+        return type.DeclaringType is null ? name : $"{Describe(type.DeclaringType)}.{name}";
     }
 }
