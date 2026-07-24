@@ -70,8 +70,9 @@ contend; two people reserving the same seat always do.
   events that are already durable, so at-least-once delivery needs no distributed transaction.
   See [docs/reactors-and-outbox.md](docs/reactors-and-outbox.md).
 - **An operator CLI.** Inspect checkpoints, events, projections, dead letters and tenant leases;
-  rewind a processor; retry or dismiss dead letters; run a rebuild. Every mutating command takes
-  `--dry-run`. See [docs/operations.md](docs/operations.md).
+  rewind a processor; retry or dismiss dead letters; run a rebuild. Mutating commands confirm before
+  they act and most of them take `--dry-run`; every command takes `--json`, so the tool you use
+  interactively is the one your runbooks call. See [docs/operations.md](docs/operations.md).
 - **OpenTelemetry throughout** — traces across the append→consume seam and metrics for lag,
   conflicts, retries and dead letters.
 

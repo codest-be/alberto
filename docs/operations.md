@@ -57,8 +57,13 @@ command currently uses the value — it is reserved for attributing mutations an
 |---|---|---|
 | `--url`, `--schema` | Everything | Connection and schema |
 | `--json` | Everything | Machine-readable output — pipe it to `jq` |
-| `--dry-run` | Mutating commands | Prints what would change, changes nothing |
-| `--yes` | Mutating commands | Skips the confirmation prompt — for scripts |
+| `--dry-run` | Most mutating commands | Prints what would change, changes nothing |
+| `--yes` | Every mutating command | Skips the confirmation prompt — for scripts |
+
+`--dry-run` is on `ops checkpoint reset`/`set`, all three `ops dead-letters` verbs, and
+`ops rebuild start`. It is **not** on `ops rebuild promote`, `ops rebuild abort` or
+`ops tenants release` — those three take `--yes` and nothing else, so read `ops rebuild status`
+or `alberto tenants` first.
 
 `--json` on every command is deliberate: the same binary you use interactively is the one your
 runbook scripts and alerting checks call.
@@ -215,8 +220,8 @@ alberto status --json | jq .globalPosition                    # → 48213
 alberto ops checkpoint set order-emails-v2 48213 --yes
 ```
 
-Every mutating command takes `--dry-run`. Use it: it prints the processor, the position and the
-number of rows the real run would touch, and then does nothing.
+Both take `--dry-run`. Use it: it prints the processor, the position and the number of rows the real
+run would touch, and then does nothing.
 
 Without `--yes`, mutating commands prompt. In a non-interactive shell — CI, a container, a pipe —
 there is nothing to prompt with, so they refuse and tell you to add `--yes` rather than proceeding
