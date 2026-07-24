@@ -86,11 +86,9 @@ internal sealed class RebuildCoordinator(
     private async Task ReconcileAsync(CancellationToken ct)
     {
         // Read the state machine through ProjectionVersions rather than directly, so the
-        // coordinator and the version selectors it hands to shadow stores are looking at the
-        // same snapshot. Reading it separately here is a correctness bug, not an efficiency
-        // one: ForShadow falls back to the live version when it cannot see a rebuild in
-        // flight, so a coordinator that starts a shadow loop off a fresher read than the
-        // version cache has replays the whole log straight into the live projection.
+        // coordinator and the live stores it configures are looking at the same snapshot. A
+        // coordinator deciding from a fresher read than the version cache has would promote a
+        // version the live stores are not yet serving from.
         await versions.RefreshAsync(ct);
 
         foreach (var projection in projections)
@@ -147,8 +145,14 @@ internal sealed class RebuildCoordinator(
 
         var shadowId = RebuildableProjection.ShadowProcessorId(
             projection.ProcessorId, rebuildingVersion);
+
+        // Pinned, not resolved from the state machine. A loop exists to fill exactly one
+        // version, and it is stopped one tick after that version leaves flight — so a selector
+        // that followed the state machine would hand a loop still draining from an aborted
+        // rebuild the *next* rebuild's version, and its replay would land on top of the one
+        // already running there. Both loops would then apply the same events to the same rows.
         var processor = new ShadowProcessor(
-            projection.CreateProcessor(versions.ForShadow(projection.ProcessorId)), shadowId);
+            projection.CreateProcessor(() => rebuildingVersion), shadowId);
 
         var loop = loopFactory.Create(processor);
         await loop.StartAsync(ct);

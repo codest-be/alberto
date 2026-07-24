@@ -467,4 +467,63 @@ public class CachingCheckpointStoreTests
     }
 
     #endregion
+
+    #region Concurrent read/write Tests
+
+    /// <summary>
+    /// A checkpoint store whose reads block until the test releases them, so a write can be
+    /// made to land in the middle of one.
+    /// </summary>
+    private sealed class GatedCheckpointStore : ICheckpointStore
+    {
+        private readonly InMemoryCheckpointStore _inner = new();
+
+        public TaskCompletionSource ReadStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource ReleaseRead { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task<long?> GetAsync(string processorId, CancellationToken ct = default)
+        {
+            ReadStarted.TrySetResult();
+            await ReleaseRead.Task;
+            return await _inner.GetAsync(processorId, ct);
+        }
+
+        public Task SaveAsync(string processorId, long position, CancellationToken ct = default)
+            => _inner.SaveAsync(processorId, position, ct);
+
+        public Task ResetAsync(string processorId, CancellationToken ct = default)
+            => _inner.ResetAsync(processorId, ct);
+
+        public Task RewindAsync(string processorId, long position, CancellationToken ct = default)
+            => _inner.RewindAsync(processorId, position, ct);
+    }
+
+    /// <summary>
+    /// Two callers share one store: a control loop saving its progress, and anything else that
+    /// reads the same processor's checkpoint — the rebuild coordinator polling a shadow loop, say.
+    /// Seeding the cache from a read that started before the save must not roll the save back,
+    /// because the loop re-streams from its checkpoint on every pass and would deliver the whole
+    /// batch a second time. A projection that counts would then count it twice.
+    /// </summary>
+    [Fact]
+    public async Task GetAsync_WhenASaveLandsMidRead_DoesNotRollTheCheckpointBack()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var inner = new GatedCheckpointStore();
+        await using var cache = new CachingCheckpointStore(inner, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
+
+        // A reader misses the cache and goes to the database, which has no row for this processor.
+        var read = cache.GetAsync("processor-1", ct);
+        await inner.ReadStarted.Task;
+
+        // While that read is in flight, the loop processes a batch and records position 4.
+        await cache.SaveAsync("processor-1", 4, ct);
+
+        inner.ReleaseRead.TrySetResult();
+        await read;
+
+        Assert.Equal(4, await cache.GetAsync("processor-1", ct));
+    }
+
+    #endregion
 }
