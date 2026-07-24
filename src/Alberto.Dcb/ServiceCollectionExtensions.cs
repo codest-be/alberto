@@ -73,10 +73,18 @@ public static class ServiceCollectionExtensions
                     && bound.Checkpoints.OrphanPolicy == OrphanCheckpointPolicy.Warn
                     && declared.Checkpoints.OrphanPolicy == OrphanCheckpointPolicy.Warn)
                 {
-                    bound = bound with
+                    // Only escalate when neither code nor configuration explicitly chose Warn.
+                    // An operator who writes OrphanPolicy = Warn in appsettings.Production.json
+                    // is making a deliberate choice and must not be overridden.
+                    var orphanPolicySection = configuration?.GetSection(
+                        $"{declared.ConfigurationPath}:Checkpoints:OrphanPolicy");
+                    if (orphanPolicySection?.Exists() != true)
                     {
-                        Checkpoints = bound.Checkpoints with { OrphanPolicy = OrphanCheckpointPolicy.Strict },
-                    };
+                        bound = bound with
+                        {
+                            Checkpoints = bound.Checkpoints with { OrphanPolicy = OrphanCheckpointPolicy.Strict },
+                        };
+                    }
                 }
 
                 CopyInto(bound, definition);
