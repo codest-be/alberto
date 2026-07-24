@@ -6,7 +6,7 @@ namespace Alberto.Dcb.Tests.Subscriptions;
 
 /// <summary>
 /// Tests that <see cref="EventStoreHead"/> clamps the contiguous head by the
-/// backend's in-flight visibility barrier (<see cref="IEventStoreBackend.GetStableHeadAsync"/>)
+/// backend's in-flight visibility barrier (<see cref="IEventStoreHeadBackend.GetStableHeadAsync"/>)
 /// and wakes early on an append signal.
 /// </summary>
 public sealed class EventStoreHeadBarrierTests
@@ -75,7 +75,7 @@ public sealed class EventStoreHeadBarrierTests
         return condition();
     }
 
-    private sealed class FakeHeadBackend : IEventStoreBackend
+    private sealed class FakeHeadBackend : IEventStoreHeadBackend
     {
         public IReadOnlyList<long> Positions { get; set; } = [];
         public long StableHead { get; set; } = long.MaxValue;
@@ -93,22 +93,5 @@ public sealed class EventStoreHeadBarrierTests
 
         public Task<long> GetStableHeadAsync(long afterPosition, CancellationToken cancellationToken = default)
             => Task.FromResult(StableHead);
-
-        // Unused by EventStoreHead.
-        public Task<IReadOnlyCollection<IEventEnvelope>> Stream(
-            DcbQuery query, long afterPosition = 0, int? limit = null, CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
-
-        public Task<IReadOnlyCollection<IEventEnvelope>> StreamAll(
-            long afterPosition = 0, int? limit = null, CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
-
-        public Task<IReadOnlyCollection<IEventEnvelope>> Append(
-            IEnumerable<IEventToPersist> events, DcbQuery? dcbQuery = null, long? expectedPosition = null,
-            CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
-
-        public Task<long> GetLastPosition(CancellationToken cancellationToken = default)
-            => Task.FromResult(Positions.Count > 0 ? Positions[^1] : 0L);
     }
 }

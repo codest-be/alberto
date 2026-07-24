@@ -16,7 +16,7 @@ public static class DeciderExtensions
         where TState : new()
         where TEvent : IEvent
     {
-        var events = await backend.Stream(boundary, cancellationToken: ct);
+        var events = await backend.StreamAsync(boundary, cancellationToken: ct);
         var state = evolver.Reconstitute(events);
         var lastPosition = events.Count > 0 ? events.Max(e => e.GlobalPosition) : 0L;
 
@@ -26,7 +26,7 @@ public static class DeciderExtensions
 
         var ok = (DecisionResult<TEvent>.Ok)result;
         var toPersist = ok.Events.Select(toEventToPersist);
-        await backend.Append(toPersist, boundary, lastPosition, ct);
+        await backend.AppendAsync(toPersist, boundary, lastPosition, ct);
         return result;
     }
 }

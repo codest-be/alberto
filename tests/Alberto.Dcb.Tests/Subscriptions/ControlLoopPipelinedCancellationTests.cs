@@ -149,13 +149,13 @@ public sealed class ControlLoopPipelinedCancellationTests
         var checkpoints = new InMemoryCheckpointStore();
 
         // Three events; InMemory assigns sequential positions starting at 1.
-        await backend.Append(
+        await backend.AppendAsync(
             [CreateEvent("fast-1")],
             cancellationToken: TestContext.Current.CancellationToken);    // position 1
-        await backend.Append(
+        await backend.AppendAsync(
             [CreateEvent("slow-cancelled")],
             cancellationToken: TestContext.Current.CancellationToken);    // position 2
-        await backend.Append(
+        await backend.AppendAsync(
             [CreateEvent("fast-3")],
             cancellationToken: TestContext.Current.CancellationToken);    // position 3
 

@@ -250,13 +250,13 @@ public sealed class DiscoveredIssuesTests
         var checkpoints = new InMemoryCheckpointStore();
 
         // Three events; InMemory assigns sequential positions starting at 1.
-        await backend.Append(
+        await backend.AppendAsync(
             [CreateRegressionEvent("fast-1")],
             cancellationToken: TestContext.Current.CancellationToken);    // position 1
-        await backend.Append(
+        await backend.AppendAsync(
             [CreateRegressionEvent("non-shutdown-oce")],
             cancellationToken: TestContext.Current.CancellationToken);    // position 2
-        await backend.Append(
+        await backend.AppendAsync(
             [CreateRegressionEvent("fast-3")],
             cancellationToken: TestContext.Current.CancellationToken);    // position 3
 

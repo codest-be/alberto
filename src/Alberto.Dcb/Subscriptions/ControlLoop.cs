@@ -155,7 +155,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
                     continue;
                 }
 
-                var events = await _backend.StreamAll(checkpoint, _batchSize, ct);
+                var events = await _backend.StreamAllAsync(checkpoint, _batchSize, ct);
 
                 if (events.Count == 0)
                 {
@@ -247,7 +247,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
                     continue;
                 }
 
-                var events = await _backend.StreamAll(readPosition, _batchSize, ct);
+                var events = await _backend.StreamAllAsync(readPosition, _batchSize, ct);
 
                 if (events.Count == 0)
                 {

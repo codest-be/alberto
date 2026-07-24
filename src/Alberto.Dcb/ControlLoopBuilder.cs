@@ -160,9 +160,15 @@ public sealed class ControlLoopBuilder
                              $"No event store backend is registered for Alberto module '{moduleKey}'. " +
                              "Call .WithPostgres() or .WithInMemory() (or another backend) on the module " +
                              "builder before configuring a control loop.");
+            var headBackend = backend as IEventStoreHeadBackend
+                ?? throw new InvalidOperationException(
+                    $"The event store backend registered for Alberto module '{moduleKey}' does not " +
+                    "implement IEventStoreHeadBackend. All built-in backends implement this interface. " +
+                    "If you are using a custom backend, implement IEventStoreHeadBackend alongside " +
+                    "IEventStoreBackend to enable subscriber head tracking.");
             // Optional push-wakeup — present only when a backend registers it (e.g. Postgres LISTEN/NOTIFY).
             var signal = sp.GetKeyedService<IEventAppendedSignal>(moduleKey);
-            return new EventStoreHead(backend, headRefreshInterval, headWindowSize,
+            return new EventStoreHead(headBackend, headRefreshInterval, headWindowSize,
                 sp.GetService<ILogger<EventStoreHead>>(), signal);
         });
         services.AddSingleton<IHostedService>(sp =>

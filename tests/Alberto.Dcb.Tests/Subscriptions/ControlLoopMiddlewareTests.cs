@@ -77,9 +77,9 @@ public sealed class ControlLoopMiddlewareTests
         var deadLetters = new InMemoryDeadLetterStore();
 
         // Position 1 = poison, positions 2..3 should still be processed
-        await backend.Append([CreateEvent(new TestEvent("poison"))], cancellationToken: ct);
-        await backend.Append([CreateEvent(new TestEvent("ok-1"))], cancellationToken: ct);
-        await backend.Append([CreateEvent(new TestEvent("ok-2"))], cancellationToken: ct);
+        await backend.AppendAsync([CreateEvent(new TestEvent("poison"))], cancellationToken: ct);
+        await backend.AppendAsync([CreateEvent(new TestEvent("ok-1"))], cancellationToken: ct);
+        await backend.AppendAsync([CreateEvent(new TestEvent("ok-2"))], cancellationToken: ct);
 
         var processor = new SelectivelyFaultingProcessor(
             "selective",
@@ -133,7 +133,7 @@ public sealed class ControlLoopMiddlewareTests
         var deadLetters = new InMemoryDeadLetterStore();
         var ct = TestContext.Current.CancellationToken;
 
-        await backend.Append([CreateEvent(new TestEvent("poison"))], cancellationToken: ct);
+        await backend.AppendAsync([CreateEvent(new TestEvent("poison"))], cancellationToken: ct);
 
         var processor = new SelectivelyFaultingProcessor("perm", _ => true);
 
@@ -173,7 +173,7 @@ public sealed class ControlLoopMiddlewareTests
         var deadLetters = new InMemoryDeadLetterStore();
         var ct = TestContext.Current.CancellationToken;
 
-        await backend.Append([CreateEvent(new TestEvent("transient"))], cancellationToken: ct);
+        await backend.AppendAsync([CreateEvent(new TestEvent("transient"))], cancellationToken: ct);
 
         var attempts = 0;
         var processor = new ThrowingProcessor("trans", () =>
@@ -295,9 +295,9 @@ public sealed class ControlLoopMiddlewareTests
         var checkpoints = new InMemoryCheckpointStore();
         var deadLetters = new InMemoryDeadLetterStore();
 
-        await backend.Append([CreateEvent(new TestEvent("poison"))], cancellationToken: ct);
-        await backend.Append([CreateEvent(new TestEvent("ok-1"))], cancellationToken: ct);
-        await backend.Append([CreateEvent(new TestEvent("ok-2"))], cancellationToken: ct);
+        await backend.AppendAsync([CreateEvent(new TestEvent("poison"))], cancellationToken: ct);
+        await backend.AppendAsync([CreateEvent(new TestEvent("ok-1"))], cancellationToken: ct);
+        await backend.AppendAsync([CreateEvent(new TestEvent("ok-2"))], cancellationToken: ct);
 
         var processor = new BatchSelectiveProcessor(
             "batch-selective",

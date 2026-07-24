@@ -14,7 +14,7 @@ public sealed class PostgresEventStoreBackend(
     TimeProvider? timeProvider = null,
     string? schema = null,
     bool enableStableHeadBarrier = true)
-    : IEventStoreBackend
+    : IEventStoreBackend, IEventStoreHeadBackend
 {
     private readonly NpgsqlDataSource _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
@@ -25,7 +25,7 @@ public sealed class PostgresEventStoreBackend(
     // for this store so the DCB conflict-check and insert are atomic — see AppendCore.
     private readonly string _appendLockKey = $"alberto-append:{schema ?? ""}";
 
-    public async Task<IReadOnlyCollection<IEventEnvelope>> Stream(
+    public async Task<IReadOnlyCollection<IEventEnvelope>> StreamAsync(
         DcbQuery query,
         long afterPosition = 0,
         int? limit = null,
@@ -64,7 +64,7 @@ public sealed class PostgresEventStoreBackend(
         return await PostgresBackendHelpers.ReadEventsAsync(cmd, includeTenantId: false, tenantId: null, cancellationToken);
     }
 
-    public async Task<IReadOnlyCollection<IEventEnvelope>> StreamAll(
+    public async Task<IReadOnlyCollection<IEventEnvelope>> StreamAllAsync(
         long afterPosition = 0,
         int? limit = null,
         CancellationToken cancellationToken = default)
@@ -80,7 +80,7 @@ public sealed class PostgresEventStoreBackend(
         return await PostgresBackendHelpers.ReadEventsAsync(cmd, includeTenantId: false, tenantId: null, cancellationToken);
     }
 
-    public async Task<IReadOnlyCollection<IEventEnvelope>> Append(
+    public async Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
         IEnumerable<IEventToPersist> events,
         DcbQuery? dcbQuery = null,
         long? expectedPosition = null,
@@ -249,7 +249,7 @@ public sealed class PostgresEventStoreBackend(
         }
     }
 
-    public async Task<long> GetLastPosition(CancellationToken cancellationToken = default)
+    public async Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default)
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(

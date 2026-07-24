@@ -6,7 +6,7 @@ namespace Alberto.Dcb.InMemory;
 /// Mimics the PostgreSQL structure with inverted indexes for efficient querying.
 /// Thread-safe for concurrent access.
 /// </summary>
-public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEventStoreBackend
+public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEventStoreBackend, IEventStoreHeadBackend
 {
     private readonly object _lock = new();
 
@@ -25,7 +25,7 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
     {
     }
 
-    public Task<IReadOnlyCollection<IEventEnvelope>> Stream(
+    public Task<IReadOnlyCollection<IEventEnvelope>> StreamAsync(
         DcbQuery query,
         long afterPosition = 0,
         int? limit = null,
@@ -146,7 +146,7 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
         return result;
     }
 
-    public Task<IReadOnlyCollection<IEventEnvelope>> StreamAll(
+    public Task<IReadOnlyCollection<IEventEnvelope>> StreamAllAsync(
         long afterPosition = 0,
         int? limit = null,
         CancellationToken cancellationToken = default)
@@ -163,7 +163,7 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
         }
     }
 
-    public Task<IReadOnlyCollection<IEventEnvelope>> Append(
+    public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
         IEnumerable<IEventToPersist> events,
         DcbQuery? dcbQuery = null,
         long? expectedPosition = null,
@@ -230,7 +230,7 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
         }
     }
 
-    public Task<long> GetLastPosition(CancellationToken cancellationToken = default)
+    public Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default)
     {
         lock (_lock)
         {

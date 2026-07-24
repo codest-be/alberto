@@ -224,7 +224,7 @@ public static class PostgresBuilderExtensions
 
         // Register a singleton backend for ControlLoops (streams all events, no per-request tenant scoping).
         // ControlLoops are singletons and cannot consume scoped services, so they use this key.
-        // ControlLoops only call StreamAll and GetPositionsAsync — the null accessor is never exercised.
+        // ControlLoops only call StreamAllAsync (IEventStoreBackend) and GetPositionsAsync (IEventStoreHeadBackend) — the null accessor is never exercised.
         builder.Services.AddKeyedSingleton<IEventStoreBackend>(moduleKey + ":consumer", (sp, _) =>
         {
             var rawTenantBackend = sp.GetRequiredKeyedService<PostgresTenantEventStoreBackend>(moduleKey + ":tenant-raw");
@@ -268,7 +268,7 @@ file sealed class TenancyOrderingValidator(
 
 /// <summary>
 /// No-op tenant accessor used for the ControlLoop singleton backend.
-/// ControlLoops only call StreamAll/GetPositionsAsync which do not use tenant context.
+/// ControlLoops only call StreamAllAsync/GetPositionsAsync which do not use tenant context.
 /// </summary>
 file sealed class ConsumerTenantAccessor : Alberto.Dcb.Tenancy.ITenantAccessor
 {

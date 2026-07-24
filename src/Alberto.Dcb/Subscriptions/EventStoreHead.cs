@@ -5,7 +5,7 @@ namespace Alberto.Dcb.Subscriptions;
 
 public sealed class EventStoreHead : IHostedService
 {
-    private readonly IEventStoreBackend _backend;
+    private readonly IEventStoreHeadBackend _backend;
     private readonly TimeSpan _refreshInterval;
     private readonly int _windowSize;
     private readonly ILogger<EventStoreHead>? _logger;
@@ -14,7 +14,7 @@ public sealed class EventStoreHead : IHostedService
     private CancellationTokenSource? _cts;
     private Task? _loop;
 
-    internal EventStoreHead(IEventStoreBackend backend,
+    internal EventStoreHead(IEventStoreHeadBackend backend,
         TimeSpan? refreshInterval = null, int windowSize = 2000,
         ILogger<EventStoreHead>? logger = null,
         IEventAppendedSignal? signal = null)
@@ -73,7 +73,8 @@ public sealed class EventStoreHead : IHostedService
 
         // Clamp to the in-flight visibility barrier: never advance past an append
         // whose transaction has not committed yet. Backends without a barrier
-        // return long.MaxValue, leaving the contiguous head unchanged.
+        // (IEventStoreHeadBackend default) return long.MaxValue, leaving the
+        // contiguous head unchanged.
         var stableHead = await _backend.GetStableHeadAsync(current, ct);
         if (stableHead < head)
             head = stableHead;
