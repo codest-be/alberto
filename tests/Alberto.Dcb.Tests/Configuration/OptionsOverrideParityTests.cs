@@ -17,6 +17,7 @@ public class OptionsOverrideParityTests
         var assemblies = new[]
         {
             typeof(ControlLoopOptions).Assembly,
+            typeof(Alberto.Dcb.Postgres.PostgresOptions).Assembly,
         };
 
         return assemblies

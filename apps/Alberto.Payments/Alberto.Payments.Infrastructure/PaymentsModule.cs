@@ -28,12 +28,12 @@ public static class PaymentsModule
 
         services.AddAlberto(ModuleKey, builder => builder
             .WithTenancy()
-            .WithPostgres(options =>
+            .WithPostgres(o => o with
             {
-                options.ConnectionString = connectionString;
-                options.AutoMigrate = true;
-                options.Schema = "payments";
-                options.MaxPoolSize = 30;
+                ConnectionString = connectionString,
+                AutoMigrate = true,
+                Schema = "payments",
+                MaxPoolSize = 30,
             })
             .WithTelemetry()
             .AddProjection(PaymentsOverviewProjection.Declaration, sp =>

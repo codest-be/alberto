@@ -32,12 +32,12 @@ public static class OrdersModule
 
         services.AddAlberto(ModuleKey, builder => builder
             .WithTenancy()
-            .WithPostgres(options =>
+            .WithPostgres(o => o with
             {
-                options.ConnectionString = connectionString;
-                options.AutoMigrate = false; // Migrations run in Alberto.Orders.Migrations (Aspire sequencing)
-                options.Schema = "orders";
-                options.MaxPoolSize = 30;
+                ConnectionString = connectionString,
+                AutoMigrate = false, // Migrations run in Alberto.Orders.Migrations (Aspire sequencing)
+                Schema = "orders",
+                MaxPoolSize = 30,
             })
             .WithEntityFramework<OrdersDbContext>(options =>
             {
