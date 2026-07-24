@@ -89,7 +89,10 @@ public static class PaymentQueries
         string projectionType)
     {
         var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(PaymentsModule.ModuleKey);
-        return new PostgresStateStore<TState>(dataSource, tenantId, projectionType, "payments");
+        return new PostgresStateStore<TState>(dataSource,
+            projectionType: projectionType,
+            schema: "payments",
+            tenantId: tenantId);
     }
 
     private static async Task<PaymentState> LoadPaymentState(
@@ -100,7 +103,7 @@ public static class PaymentQueries
         var decider = new PaymentActions();
         var state = new PaymentState();
 
-        var events = await backend.Stream(PaymentBoundary.BoundaryFor(paymentId), cancellationToken: ct);
+        var events = await backend.StreamAsync(PaymentBoundary.BoundaryFor(paymentId), cancellationToken: ct);
 
         foreach (var envelope in events)
         {

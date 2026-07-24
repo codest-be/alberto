@@ -1,4 +1,3 @@
-using Alberto.Dcb;
 using Alberto.Dcb.Subscriptions;
 using Alberto.Payments.Core.Events;
 using Alberto.Payments.Infrastructure.ReadModels;
@@ -9,25 +8,22 @@ public static class PaymentsOverviewProjection
 {
     public static readonly ProjectionDeclaration<PaymentsOverview> Declaration =
         DeclareProjection.For<PaymentsOverview>(nameof(PaymentsOverviewProjection))
-            .Handles<PaymentInitiated>()
-            .Handles<PaymentAuthorized>()
-            .Handles<PaymentCaptured>()
-            .Handles<PaymentFailed>()
-            .Handles<PaymentRefunded>()
-            .DocumentId(_ => "overview")   // singleton, all events map to same doc
-            .Evolve(Evolve)
+            .On<PaymentInitiated>(
+                id: _ => "overview",
+                apply: (state, _, _) => state with { TotalPayments = state.TotalPayments + 1 })
+            .On<PaymentAuthorized>(
+                id: _ => "overview",
+                apply: (state, _, _) => state with { AuthorizedPayments = state.AuthorizedPayments + 1 })
+            .On<PaymentCaptured>(
+                id: _ => "overview",
+                apply: (state, e, _) => Apply(state, e))
+            .On<PaymentFailed>(
+                id: _ => "overview",
+                apply: (state, _, _) => state with { FailedPayments = state.FailedPayments + 1 })
+            .On<PaymentRefunded>(
+                id: _ => "overview",
+                apply: (state, e, _) => Apply(state, e))
             .Build();
-
-    private static ProjectionResult<PaymentsOverview> Evolve(PaymentsOverview state, IEventEnvelope e, ProjectionContext ctx)
-        => e.EventType.Id switch
-        {
-            "payment-initiated" => state with { TotalPayments = state.TotalPayments + 1 },
-            "payment-authorized" => state with { AuthorizedPayments = state.AuthorizedPayments + 1 },
-            "payment-captured" => Apply(state, e.ParseEvent<PaymentCaptured>()!),
-            "payment-failed" => state with { FailedPayments = state.FailedPayments + 1 },
-            "payment-refunded" => Apply(state, e.ParseEvent<PaymentRefunded>()!),
-            _ => state
-        };
 
     private static PaymentsOverview Apply(PaymentsOverview state, PaymentCaptured e)
         => state with

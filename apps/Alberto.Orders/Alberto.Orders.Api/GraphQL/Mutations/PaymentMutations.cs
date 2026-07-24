@@ -138,7 +138,7 @@ public static class PaymentMutations
         Guid paymentId,
         CancellationToken ct)
     {
-        var events = await backend.Stream(PaymentBoundary.BoundaryFor(paymentId), cancellationToken: ct);
+        var events = await backend.StreamAsync(PaymentBoundary.BoundaryFor(paymentId), cancellationToken: ct);
         return _evolver.Reconstitute(events);
     }
 
