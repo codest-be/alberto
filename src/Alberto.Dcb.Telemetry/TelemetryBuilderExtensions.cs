@@ -52,11 +52,27 @@ public static class TelemetryBuilderExtensions
                 .WithTracing(tracing => tracing.AddSource(AlbertoMetrics.Name))
                 .WithMetrics(metrics => metrics.AddMeter(AlbertoMetrics.Name));
 
-            // Register trace context provider for extracting trace IDs from metadata.
-            services.AddKeyedSingleton<ITraceContextProvider, ActivityTraceContextProvider>(moduleKey);
+            // Register trace context provider and append interceptor guarded by the resolved
+            // Enabled flag — consistent with the consume middleware factories below.
+            // Resolved once at DI resolution time (factory lambda), matching the pattern
+            // used at lines 64–80.
+            services.AddKeyedSingleton<ITraceContextProvider>(moduleKey, (sp, _) =>
+            {
+                var enabled = sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>()
+                    .Get(moduleKey).Telemetry.Enabled;
+                return enabled
+                    ? (ITraceContextProvider)new ActivityTraceContextProvider()
+                    : NoOpTraceContextProvider.Instance;
+            });
 
-            // Register append interceptor for trace context enrichment.
-            services.AddKeyedSingleton<IAppendInterceptor, TelemetryAppendInterceptor>(moduleKey);
+            services.AddKeyedSingleton<IAppendInterceptor>(moduleKey, (sp, _) =>
+            {
+                var enabled = sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>()
+                    .Get(moduleKey).Telemetry.Enabled;
+                return enabled
+                    ? (IAppendInterceptor)new TelemetryAppendInterceptor()
+                    : NoOpAppendInterceptor.Instance;
+            });
 
             // Register consume middleware that traces every processed event.
             // Guard on the resolved options so Telemetry:Enabled = false in configuration

@@ -10,6 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using OpenTelemetry;
+using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 
 namespace Alberto.Dcb.Tests.Configuration;
@@ -72,5 +73,157 @@ public class TelemetryRegistrationTests
         tracerProvider.ForceFlush();
 
         exported.Should().ContainSingle(a => a.OperationName == "test-span");
+    }
+
+    // ── Finding 1 ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task TelemetryEnabled_false_suppresses_Alberto_append_activities()
+    {
+        var exported = new List<Activity>();
+
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Alberto:Modules:orders:Telemetry:Enabled"] = "false",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(configuration);
+        services.AddAlberto("orders", module => module.WithInMemory().WithTelemetry());
+        services.AddOpenTelemetry().WithTracing(tracing => tracing
+            .AddSource(AlbertoMetrics.Name)
+            .AddInMemoryExporter(exported));
+
+        await using var provider = services.BuildServiceProvider();
+        var tracerProvider = provider.GetRequiredService<TracerProvider>();
+        provider.GetRequiredService<IEnumerable<IHostedService>>();
+
+        var eventStore = provider.GetRequiredKeyedService<IEventStore>("orders");
+        await eventStore.AppendAsync(
+            [new EventToPersist
+            {
+                EventType = new EventType("test-event"),
+                Tags = [],
+                EventData = "{}",
+            }],
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        tracerProvider.ForceFlush();
+
+        exported.Should().NotContain(a => a.OperationName == AlbertoMetrics.AppendActivityName,
+            "Telemetry:Enabled = false must suppress Alberto append activities");
+    }
+
+    [Fact]
+    public async Task TelemetryEnabled_true_produces_Alberto_append_activity()
+    {
+        var exported = new List<Activity>();
+
+        var services = new ServiceCollection();
+        services.AddAlberto("orders", module => module.WithInMemory().WithTelemetry());
+        services.AddOpenTelemetry().WithTracing(tracing => tracing
+            .AddSource(AlbertoMetrics.Name)
+            .AddInMemoryExporter(exported));
+
+        await using var provider = services.BuildServiceProvider();
+        var tracerProvider = provider.GetRequiredService<TracerProvider>();
+        provider.GetRequiredService<IEnumerable<IHostedService>>();
+
+        var eventStore = provider.GetRequiredKeyedService<IEventStore>("orders");
+        await eventStore.AppendAsync(
+            [new EventToPersist
+            {
+                EventType = new EventType("test-event"),
+                Tags = [],
+                EventData = "{}",
+            }],
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        tracerProvider.ForceFlush();
+
+        exported.Should().ContainSingle(a => a.OperationName == AlbertoMetrics.AppendActivityName,
+            "Telemetry:Enabled = true (default) must produce exactly one Alberto append activity");
+    }
+
+    // ── Finding 2 ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task WithTelemetry_called_by_two_modules_produces_exactly_one_append_activity()
+    {
+        // Proves that calling AddSource(AlbertoMetrics.Name) from two modules does not
+        // duplicate telemetry: one append on one module → exactly one Alberto.Append activity.
+        var exported = new List<Activity>();
+
+        var services = new ServiceCollection();
+        services.AddAlberto("mod-a", module => module.WithInMemory().WithTelemetry());
+        services.AddAlberto("mod-b", module => module.WithInMemory().WithTelemetry());
+        services.AddOpenTelemetry().WithTracing(tracing => tracing
+            .AddSource(AlbertoMetrics.Name)
+            .AddInMemoryExporter(exported));
+
+        await using var provider = services.BuildServiceProvider();
+        var tracerProvider = provider.GetRequiredService<TracerProvider>();
+        provider.GetRequiredService<IEnumerable<IHostedService>>();
+
+        var eventStore = provider.GetRequiredKeyedService<IEventStore>("mod-a");
+        await eventStore.AppendAsync(
+            [new EventToPersist
+            {
+                EventType = new EventType("test-event"),
+                Tags = [],
+                EventData = "{}",
+            }],
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        tracerProvider.ForceFlush();
+
+        exported.Count(a => a.OperationName == AlbertoMetrics.AppendActivityName)
+            .Should().Be(1, "one append on one module must produce exactly one Alberto.Append activity, not one per WithTelemetry() call");
+    }
+
+    [Fact]
+    public async Task Pre_existing_OpenTelemetry_setup_survives_AddAlberto()
+    {
+        // Proves Alberto does not clobber an app's own AddOpenTelemetry() setup
+        // that was registered before AddAlberto().
+        var exported = new List<Activity>();
+        using var appSource = new ActivitySource("MyApp");
+
+        var services = new ServiceCollection();
+
+        // App configures OTel first, before AddAlberto.
+        services.AddOpenTelemetry().WithTracing(tracing => tracing
+            .AddSource("MyApp")
+            .AddInMemoryExporter(exported));
+
+        services.AddAlberto("orders", module => module.WithInMemory().WithTelemetry());
+
+        await using var provider = services.BuildServiceProvider();
+        var tracerProvider = provider.GetRequiredService<TracerProvider>();
+        provider.GetRequiredService<IEnumerable<IHostedService>>();
+
+        // App's own activity
+        using var appActivity = appSource.StartActivity("my-app-span");
+        appActivity?.Stop();
+
+        // Alberto append activity
+        var eventStore = provider.GetRequiredKeyedService<IEventStore>("orders");
+        await eventStore.AppendAsync(
+            [new EventToPersist
+            {
+                EventType = new EventType("test-event"),
+                Tags = [],
+                EventData = "{}",
+            }],
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        tracerProvider.ForceFlush();
+
+        exported.Should().ContainSingle(a => a.OperationName == "my-app-span",
+            "the app's own OTel source must still be collected after AddAlberto");
+        exported.Should().ContainSingle(a => a.OperationName == AlbertoMetrics.AppendActivityName,
+            "Alberto's append activity must also be collected");
     }
 }
