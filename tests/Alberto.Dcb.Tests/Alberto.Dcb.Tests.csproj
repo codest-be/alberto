@@ -13,6 +13,7 @@
         <ProjectReference Include="../../src/Alberto.Dcb.InMemory/Alberto.Dcb.InMemory.csproj" />
         <ProjectReference Include="../../src/Alberto.Dcb.Postgres/Alberto.Dcb.Postgres.csproj" />
         <ProjectReference Include="../../src/Alberto.Dcb.Messaging/Alberto.Dcb.Messaging.csproj" />
+        <ProjectReference Include="../../src/Alberto.Dcb.Postgres.Messaging/Alberto.Dcb.Postgres.Messaging.csproj" />
         <ProjectReference Include="../../src/Alberto.Dcb.EntityFramework/Alberto.Dcb.EntityFramework.csproj" />
     </ItemGroup>
 

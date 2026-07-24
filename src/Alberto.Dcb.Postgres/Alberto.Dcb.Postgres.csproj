@@ -15,11 +15,11 @@
 
     <ItemGroup>
         <InternalsVisibleTo Include="Alberto.Dcb.Tests"/>
+        <InternalsVisibleTo Include="Alberto.Dcb.Postgres.Messaging"/>
     </ItemGroup>
 
     <ItemGroup>
         <ProjectReference Include="..\Alberto.Dcb\Alberto.Dcb.csproj" />
-        <ProjectReference Include="..\Alberto.Dcb.Messaging\Alberto.Dcb.Messaging.csproj" />
     </ItemGroup>
 
     <ItemGroup>

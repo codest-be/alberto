@@ -1,8 +1,9 @@
 using System.Text.Json;
 using Alberto.Dcb.Messaging;
+using Alberto.Dcb.Postgres;
 using Npgsql;
 
-namespace Alberto.Dcb.Postgres;
+namespace Alberto.Dcb.Postgres.Messaging;
 
 /// <summary>
 /// PostgreSQL implementation of <see cref="IOutboxStore"/>.

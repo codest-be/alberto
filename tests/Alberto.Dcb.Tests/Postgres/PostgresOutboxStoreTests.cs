@@ -1,5 +1,6 @@
 using Alberto.Dcb.Messaging;
 using Alberto.Dcb.Postgres;
+using Alberto.Dcb.Postgres.Messaging;
 using Npgsql;
 using Testcontainers.PostgreSql;
 using Xunit;
