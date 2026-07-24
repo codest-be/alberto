@@ -143,3 +143,74 @@ This is identical to the constraint in the pre-Task-8 code (all values were capt
 ### Stale XML doc comment
 
 `src/Alberto.Dcb/ServiceCollectionExtensions.cs` likely contains doc-comment text referencing the old `Action<PostgresOptions>` signature pattern. This is cosmetic and doesn't affect compilation. Flagged for Task 12 cleanup.
+
+## Fix pass (review findings)
+
+### Finding applied
+
+**File:** `src/Alberto.Dcb.Postgres/AlbertoMigrationHostedService.cs`
+**Issue:** `PostgresMigrator.Migrate` return value was discarded; a failed migration silently let the host start with an incomplete schema.
+
+### Diff applied
+
+```diff
+-            PostgresMigrator.Migrate(options.ConnectionString, options.Schema, singleTenant: !definition.TenancyEnabled);
++            //
++            // DbUp's EnsureDatabase step may throw directly (e.g. NpgsqlException) rather than
++            // returning a failed MigrationResult, so wrap both paths into one consistent
++            // InvalidOperationException so callers see the module name and a clear "migration
++            // failed" message regardless of which failure mode occurs.
++            MigrationResult result;
++            try
++            {
++                result = PostgresMigrator.Migrate(options.ConnectionString, options.Schema, singleTenant: !definition.TenancyEnabled);
++            }
++            catch (Exception ex) when (ex is not InvalidOperationException)
++            {
++                throw new InvalidOperationException(
++                    $"Alberto schema migration failed for module '{moduleKey}': {ex.Message}", ex);
++            }
++
++            if (!result.Successful)
++                throw new InvalidOperationException(
++                    $"Alberto schema migration failed for module '{moduleKey}': {result.Error?.Message}", result.Error);
+```
+
+**Note on DbUp 7.0.1 behaviour:** `EnsureDatabase.For.PostgresqlDatabase` in this version throws `NpgsqlException` directly when the server is unreachable (it does not swallow the exception). `PerformUpgrade` would catch connection failures and return `Successful = false`. Both code paths are now wrapped, producing a consistent `InvalidOperationException` that names the module and mentions migration failure.
+
+**Actual `MigrationResult` member names used:** `Successful` (bool), `Error` (Exception?), `ExecutedScripts` (IReadOnlyCollection<string>, not used in the fix).
+
+### Test added
+
+`tests/Alberto.Dcb.Tests/Configuration/PostgresDescriptorTests.cs` — `A_failed_migration_prevents_host_start_and_names_the_module`
+
+Uses connection string `Host=127.0.0.1;Port=19999;Database=alberto;Username=x;Password=y;Timeout=1` (no Docker required). Asserts `host.StartAsync` throws `InvalidOperationException` whose message contains `"orders"` and `"migration"`.
+
+### Before-fix test run (fix stashed)
+
+```
+Expected a <System.InvalidOperationException> to be thrown, but found <Npgsql.NpgsqlException>:
+Npgsql.NpgsqlException (0x80004005): Failed to connect to 127.0.0.1:19999
+ ---> System.Net.Sockets.SocketException (61): Connection refused
+
+Failed!  - Failed: 1, Passed: 0, Skipped: 0, Total: 1, Duration: 167 ms
+```
+
+### After-fix test run
+
+```
+Passed!  - Failed: 0, Passed: 1, Skipped: 0, Total: 1, Duration: 147 ms
+```
+
+### Full suite (after fix)
+
+```
+dotnet test tests/Alberto.Dcb.Tests/Alberto.Dcb.Tests.csproj
+Passed!  - Failed: 0, Passed: 646, Skipped: 4, Total: 650, Duration: 8 s
+```
+
+### Commit
+
+```
+5b9121c fix(postgres): fail host start when schema migration fails
+```

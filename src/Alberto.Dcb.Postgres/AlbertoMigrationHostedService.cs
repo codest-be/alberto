@@ -46,7 +46,7 @@ internal sealed class AlbertoMigrationHostedService(
             {
                 result = PostgresMigrator.Migrate(options.ConnectionString, options.Schema, singleTenant: !definition.TenancyEnabled);
             }
-            catch (Exception ex) when (ex is not InvalidOperationException)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 throw new InvalidOperationException(
                     $"Alberto schema migration failed for module '{moduleKey}': {ex.Message}", ex);
