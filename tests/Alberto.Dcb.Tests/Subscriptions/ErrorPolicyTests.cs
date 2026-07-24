@@ -168,6 +168,29 @@ public class ErrorPolicyTests
         Assert.Same(customClassifier, policy.ErrorClassifier);
     }
 
+    [Fact]
+    public void MaxRetries_Zero_IsAllowed()
+    {
+        // Zero means "attempt once, never retry" - the attempt loop still runs.
+        var policy = new ErrorPolicy { MaxRetries = 0 };
+
+        Assert.Equal(0, policy.MaxRetries);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(int.MinValue)]
+    public void MaxRetries_Negative_Throws(int maxRetries)
+    {
+        // A negative value would skip the attempt loop entirely: the event would be
+        // neither dispatched, retried nor dead-lettered, and a multi-event batch would
+        // be reported as successfully processed. Reject it at construction instead.
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(
+            () => new ErrorPolicy { MaxRetries = maxRetries });
+
+        Assert.Equal(nameof(ErrorPolicy.MaxRetries), ex.ParamName);
+    }
+
     #endregion
 
     #region Test Helpers

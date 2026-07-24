@@ -15,6 +15,10 @@ public static class ConsumeMiddlewares
 {
     /// <summary>
     /// Retry with exponential backoff, dead-letter on exhaustion.
+    /// The retry loop is shared with <see cref="BatchConsumeMiddlewares.RetryAndDeadLetter"/>
+    /// via <see cref="RetryAndDeadLetterCore"/>; this method owns only the
+    /// single-event tail: marking <see cref="ConsumeEventContext.DeadLettered"/>
+    /// and writing the <see cref="DeadLetterEntry"/> for the envelope.
     /// </summary>
     public static ConsumeMiddleware RetryAndDeadLetter(
         ErrorPolicy? policy = null,
@@ -24,51 +28,20 @@ public static class ConsumeMiddlewares
 
         return async (context, next) =>
         {
-            Exception? lastError = null;
+            var lastError = await RetryAndDeadLetterCore.ExecuteAsync(
+                context, p, next, retryMetricCount: 1);
 
-            for (var attempt = 1; attempt <= p.MaxRetries + 1; attempt++)
-            {
-                context.Attempt = attempt;
-                try
-                {
-                    await next();
-                    context.LastError = null;
-                    return; // Success
-                }
-                catch (OperationCanceledException) when (context.CancellationToken.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    lastError = ex;
-                    context.LastError = ex;
+            if (lastError is null)
+                return; // success
 
-                    var classification = p.ErrorClassifier.Classify(ex);
-                    if (classification == ErrorClassification.Permanent)
-                        break;
-
-                    if (attempt <= p.MaxRetries)
-                    {
-                        // Record retry metric
-                        AlbertoMetrics.Retries.Add(1,
-                            new KeyValuePair<string, object?>("processor", context.ProcessorId),
-                            new KeyValuePair<string, object?>("module", context.ModuleKey));
-
-                        await Task.Delay(p.CalculateDelay(attempt), context.CancellationToken);
-                    }
-                }
-            }
-
-            // Exhausted retries or permanent error — dead-letter
+            // Exhausted retries or permanent error — dead-letter this event.
             context.DeadLettered = true;
 
-            // Record dead letter metric
             AlbertoMetrics.DeadLetters.Add(1,
                 new KeyValuePair<string, object?>("processor", context.ProcessorId),
                 new KeyValuePair<string, object?>("module", context.ModuleKey));
 
-            if (p.DeadLetterOnMaxRetries && deadLetterStore is not null && lastError is not null)
+            if (p.DeadLetterOnMaxRetries && deadLetterStore is not null)
             {
                 await deadLetterStore.StoreAsync(new DeadLetterEntry(
                     Id: Guid.NewGuid(),

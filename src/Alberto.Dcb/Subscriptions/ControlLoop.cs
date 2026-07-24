@@ -66,7 +66,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
         // Pre-build the composed middleware chains once so per-event dispatch does not
         // allocate a recursive Dispatch state-machine stack (PERF-6).
         _composedMiddleware = MiddlewareRunner.Build(_middlewares);
-        _composedBatchMiddleware = BatchMiddlewareRunner.Build(_batchMiddlewares);
+        _composedBatchMiddleware = MiddlewareRunner.Build(_batchMiddlewares);
 
         // Pipelined mode (MaxConcurrency > 1) uses per-event dispatch with N workers,
         // so it doesn't require IBatchableProcessor or batch middleware.

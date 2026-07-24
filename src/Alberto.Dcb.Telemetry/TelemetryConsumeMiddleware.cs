@@ -15,7 +15,9 @@ public static class TelemetryConsumeMiddleware
     /// <summary>
     /// Creates a telemetry middleware. When <paramref name="traceContextProvider"/>
     /// is supplied, the consumer span is linked to the trace that originally
-    /// appended the event.
+    /// appended the event. Trace-link extraction is handled by
+    /// <see cref="TraceContextExtractor.ExtractTraceLink"/>, shared with
+    /// <see cref="TelemetryBatchConsumeMiddleware"/>.
     /// </summary>
     public static ConsumeMiddleware Create(ITraceContextProvider? traceContextProvider = null)
     {
@@ -27,7 +29,7 @@ public static class TelemetryConsumeMiddleware
             Activity? activity = null;
             if (AlbertoMetrics.Source.HasListeners())
             {
-                var link = ExtractTraceLink(context.Envelope, traceContextProvider);
+                var link = TraceContextExtractor.ExtractTraceLink(context.Envelope, traceContextProvider);
                 var links = link is null ? null : new[] { link.Value };
                 var activityName = $"{AlbertoMetrics.ConsumeActivityName} {context.ProcessorId}";
                 activity = AlbertoMetrics.Source.StartActivity(
@@ -91,27 +93,5 @@ public static class TelemetryConsumeMiddleware
                     new KeyValuePair<string, object?>("processor", context.ProcessorId));
             }
         };
-    }
-
-    private static ActivityLink? ExtractTraceLink(IEventEnvelope envelope, ITraceContextProvider? provider)
-    {
-        if (provider is null)
-            return null;
-
-        var traceContext = provider.ExtractTraceContext(envelope.Metadata);
-        if (traceContext is null)
-            return null;
-
-        // W3C traceparent format: 00-{traceId}-{spanId}-01
-        if (!ActivityContext.TryParse(
-            $"00-{traceContext.TraceId}-{traceContext.SpanId}-01",
-            null,
-            out var activityContext))
-            return null;
-
-        return new ActivityLink(activityContext, new ActivityTagsCollection
-        {
-            { "event.position", envelope.GlobalPosition }
-        });
     }
 }

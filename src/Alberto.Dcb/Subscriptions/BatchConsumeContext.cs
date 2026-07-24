@@ -3,7 +3,7 @@ namespace Alberto.Dcb.Subscriptions;
 /// <summary>
 /// Context passed through the batch middleware chain for a batch of events.
 /// </summary>
-public sealed class BatchConsumeContext
+public sealed class BatchConsumeContext : IMiddlewareContext
 {
     public required string ProcessorId { get; init; }
     public required string ModuleKey { get; init; }
