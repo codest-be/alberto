@@ -74,6 +74,15 @@ internal sealed class BufferedCheckpointStore : ICheckpointStore, IAsyncDisposab
         await _innerStore.ResetAsync(processorId, ct);
     }
 
+    /// <inheritdoc/>
+    public async Task RewindAsync(string processorId, long position, CancellationToken ct = default)
+    {
+        // Operator rewinds bypass the write buffer and go directly to the underlying store
+        // so the write is unconditional and immediately durable.
+        _pendingCheckpoints.TryRemove(processorId, out _);
+        await _innerStore.RewindAsync(processorId, position, ct);
+    }
+
     /// <summary>
     /// Flushes all pending checkpoints to the underlying store.
     /// </summary>

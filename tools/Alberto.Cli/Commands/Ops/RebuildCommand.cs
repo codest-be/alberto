@@ -1,6 +1,6 @@
 using System.CommandLine;
-using Alberto.Cli.Data;
 using Alberto.Cli.Output;
+using Alberto.Dcb.Postgres;
 using Npgsql;
 using Spectre.Console;
 
@@ -48,8 +48,9 @@ public static class RebuildCommand
             try
             {
                 await using var dataSource = new NpgsqlDataSourceBuilder(connStr).Build();
-                var data = new CliDataAccess(dataSource, schemaName);
-                var checkpoint = await data.GetSingleCheckpointAsync(id);
+                var admin = new PostgresAdminDataAccess(dataSource, schemaName);
+                var checkpointStore = new PostgresCheckpointStore(dataSource, schemaName);
+                var checkpoint = await admin.GetSingleCheckpointAsync(id);
                 var previousPosition = checkpoint?.LastPosition;
 
                 if (dryRun)
@@ -81,12 +82,15 @@ public static class RebuildCommand
                     }
                 }
 
-                await data.ResetCheckpointAsync(id);
+                await checkpointStore.ResetAsync(id);
 
                 if (json)
                     output.Json(new { action = "rebuild", processorId = id, previousPosition, @operator = resolvedOperator });
                 else
+                {
                     output.Text($"Rebuild initiated for processor '{id}' (was at position {previousPosition?.ToString() ?? "none"}).");
+                    output.Warning("Checkpoint reset. The processor will replay all events from the beginning on next start.\nNote: existing projection state rows are NOT cleared, by this command or by anything else. Rebuild orchestration is not implemented — replayed events are applied on top of the current state. Clear the projection tables yourself if the projection is not idempotent.");
+                }
             }
             catch (Exception ex)
             {

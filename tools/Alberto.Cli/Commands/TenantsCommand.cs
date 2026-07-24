@@ -1,6 +1,6 @@
 using System.CommandLine;
-using Alberto.Cli.Data;
 using Alberto.Cli.Output;
+using Alberto.Dcb.Postgres;
 using Npgsql;
 
 namespace Alberto.Cli.Commands;
@@ -29,9 +29,9 @@ public static class TenantsCommand
             try
             {
                 await using var dataSource = new NpgsqlDataSourceBuilder(connStr).Build();
-                var data = new CliDataAccess(dataSource, schemaName);
+                var admin = new PostgresAdminDataAccess(dataSource, schemaName);
 
-                var tableExists = await data.TenantLeasesTableExistsAsync();
+                var tableExists = await admin.TenantLeasesTableExistsAsync();
                 if (!tableExists)
                 {
                     if (json)
@@ -45,7 +45,7 @@ public static class TenantsCommand
                     return;
                 }
 
-                var leases = await data.GetTenantLeasesAsync();
+                var leases = await admin.GetTenantLeasesAsync();
 
                 if (json)
                 {

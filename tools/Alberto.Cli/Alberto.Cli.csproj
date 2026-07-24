@@ -17,4 +17,7 @@
     <PackageReference Include="Spectre.Console" />
     <PackageReference Include="Npgsql" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Alberto.Dcb.Postgres/Alberto.Dcb.Postgres.csproj" />
+  </ItemGroup>
 </Project>

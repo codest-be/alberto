@@ -1,6 +1,6 @@
 using System.CommandLine;
-using Alberto.Cli.Data;
 using Alberto.Cli.Output;
+using Alberto.Dcb.Postgres;
 using Npgsql;
 
 namespace Alberto.Cli.Commands;
@@ -38,9 +38,9 @@ public static class ProcessorCommand
             try
             {
                 await using var dataSource = new NpgsqlDataSourceBuilder(connStr).Build();
-                var data = new CliDataAccess(dataSource, schemaName);
+                var admin = new PostgresAdminDataAccess(dataSource, schemaName);
 
-                var checkpoint = await data.GetSingleCheckpointAsync(id);
+                var checkpoint = await admin.GetSingleCheckpointAsync(id);
 
                 if (checkpoint is null)
                 {

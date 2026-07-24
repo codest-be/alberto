@@ -101,6 +101,18 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
         await _inner.ResetAsync(processorId, ct);
     }
 
+    public async Task RewindAsync(string processorId, long position, CancellationToken ct = default)
+    {
+        // Operator rewinds bypass the write buffer and go directly to the underlying store
+        // so the write is unconditional and immediately durable.
+        // Update all cache layers so subsequent in-process reads reflect the new position.
+        _cache[processorId] = position;
+        _persisted[processorId] = position;
+        _dirty.TryRemove(processorId, out _);
+
+        await _inner.RewindAsync(processorId, position, ct);
+    }
+
     /// <summary>
     /// Sets the fencing context so that periodic flushes use lease-fenced writes when the
     /// underlying store implements <see cref="IFencedCheckpointStore"/>.
