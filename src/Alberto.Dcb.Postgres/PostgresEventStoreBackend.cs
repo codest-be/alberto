@@ -13,12 +13,18 @@ namespace Alberto.Dcb.Postgres;
 public sealed class PostgresEventStoreBackend(
     NpgsqlDataSource dataSource,
     TimeProvider? timeProvider = null,
-    string? schema = null)
+    string? schema = null,
+    bool enableStableHeadBarrier = true)
     : IEventStoreBackend
 {
     private readonly NpgsqlDataSource _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly SchemaQualifier _schema = new(schema);
+    private readonly bool _enableStableHeadBarrier = enableStableHeadBarrier;
+
+    // Single-tenant: one append lock per store (schema). Serializes all appends
+    // for this store so the DCB conflict-check and insert are atomic — see AppendCore.
+    private readonly string _appendLockKey = $"alberto-append:{schema ?? ""}";
 
     public async Task<IReadOnlyCollection<IEventEnvelope>> Stream(
         DcbQuery query,
@@ -111,6 +117,59 @@ public sealed class PostgresEventStoreBackend(
                 ? $"SELECT * FROM {_schema.Function(functionName)}(@p_events, @p_dcb_types, @p_dcb_exact_tags, @p_dcb_tag_prefixes, @p_expected_position)"
                 : $"SELECT * FROM {_schema.Function(functionName)}(@p_events, @p_dcb_types, @p_dcb_tags, @p_expected_position)";
 
+        // #1 Write-skew fix: serialize appends for this store with a
+        // transaction-scoped advisory lock so the DCB conflict-check inside the
+        // append function and the subsequent insert happen atomically. Without
+        // it, two concurrent appends can both pass the "no event after
+        // expectedPosition" check and both commit, violating the boundary.
+        // The lock is held for the whole transaction and released on commit/rollback.
+        NpgsqlTransaction? ownedTransaction =
+            transaction is null ? await connection.BeginTransactionAsync(cancellationToken) : null;
+        var effectiveTransaction = transaction ?? ownedTransaction!;
+
+        try
+        {
+            await AcquireAppendLockAsync(connection, effectiveTransaction, _appendLockKey, cancellationToken);
+
+            var results = await ExecuteAppendAsync(
+                sql, connection, effectiveTransaction, eventsList, dcbQuery, expectedPosition,
+                useAllTagsFunction, useWildcardFunction, cancellationToken);
+
+            if (ownedTransaction is not null)
+                await ownedTransaction.CommitAsync(cancellationToken);
+
+            return results;
+        }
+        finally
+        {
+            if (ownedTransaction is not null)
+                await ownedTransaction.DisposeAsync();
+        }
+    }
+
+    internal static async Task AcquireAppendLockAsync(
+        NpgsqlConnection connection, NpgsqlTransaction transaction, string lockKey, CancellationToken cancellationToken)
+    {
+        // Two-argument advisory-lock form (classid 1 = append serialization). This
+        // occupies a separate advisory-lock namespace from the single-argument
+        // processor-leadership locks, so the two never collide.
+        await using var lockCmd = new NpgsqlCommand(
+            "SELECT pg_advisory_xact_lock(1, hashtext(@lock_key))", connection, transaction);
+        lockCmd.Parameters.AddWithValue("lock_key", lockKey);
+        await lockCmd.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private async Task<IReadOnlyCollection<IEventEnvelope>> ExecuteAppendAsync(
+        string sql,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        List<IEventToPersist> eventsList,
+        DcbQuery? dcbQuery,
+        long? expectedPosition,
+        bool useAllTagsFunction,
+        bool useWildcardFunction,
+        CancellationToken cancellationToken)
+    {
         await using var cmd = new NpgsqlCommand(sql, connection, transaction);
 
         var eventsJson = BuildEventsJson(eventsList);
@@ -208,6 +267,36 @@ public sealed class PostgresEventStoreBackend(
         while (await reader.ReadAsync(cancellationToken))
             positions.Add(reader.GetInt64(0));
         return positions;
+    }
+
+    public async Task<long> GetStableHeadAsync(
+        long afterPosition, CancellationToken cancellationToken = default)
+    {
+        if (!_enableStableHeadBarrier)
+            return long.MaxValue;
+
+        // The head may safely advance through the contiguous prefix of events whose
+        // inserting transaction has committed and is older than every currently
+        // in-flight transaction (pg_snapshot_xmin). We find the FIRST position after
+        // `afterPosition` that is NOT yet stable (committed but younger than the
+        // oldest running transaction) and clamp the head just below it. Because the
+        // append path assigns global_position and the xid under the same advisory
+        // lock, a committed event above an uncommitted one is itself non-stable, so
+        // this boundary never advances past an in-flight append. Rows with NULL
+        // pg_xact_id predate migration 008 and are always stable. Ascending index
+        // scan from the head — stops at the first non-stable row (the recent tail),
+        // so it stays cheap even when a long-running transaction pins xmin.
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var cmd = new NpgsqlCommand(
+            $"SELECT global_position FROM {_schema.Table("alberto_events")} " +
+            "WHERE global_position > @after " +
+            "AND pg_xact_id IS NOT NULL " +
+            "AND pg_xact_id >= pg_snapshot_xmin(pg_current_snapshot())::TEXT::BIGINT " +
+            "ORDER BY global_position ASC LIMIT 1",
+            connection);
+        cmd.Parameters.AddWithValue("after", afterPosition);
+        var result = await cmd.ExecuteScalarAsync(cancellationToken);
+        return result is long firstNonStable ? firstNonStable - 1 : long.MaxValue;
     }
 
     private string BuildStreamQuery(DcbQuery query)

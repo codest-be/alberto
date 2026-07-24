@@ -54,4 +54,22 @@ public interface IEventStoreBackend
         long afterPosition,
         int windowSize,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns the highest global position that is safe to expose to subscribers:
+    /// the newest event whose inserting transaction has committed and is older than
+    /// every currently in-flight transaction. This prevents advancing the
+    /// subscription head past an append that drew a lower position but has not
+    /// committed yet — which a naive contiguous-gap scan could otherwise skip once
+    /// later positions commit ahead of it.
+    ///
+    /// The default returns <see cref="long.MaxValue"/> ("no barrier"), so backends
+    /// that assign positions synchronously (e.g. in-memory) impose no clamp and the
+    /// caller relies solely on contiguous-gap detection. Decorators must forward to
+    /// their inner backend.
+    /// </summary>
+    Task<long> GetStableHeadAsync(
+        long afterPosition,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult(long.MaxValue);
 }

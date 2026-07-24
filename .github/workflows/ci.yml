@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # Building the test project restores and compiles every referenced library
+      # (Alberto.Dcb, Alberto.Dcb.Postgres, Alberto.Dcb.InMemory, ...). The app /
+      # Aspire host projects are intentionally excluded — they require the Aspire
+      # workload and are not exercised by these tests.
+      - name: Build
+        run: dotnet build tests/Alberto.Dcb.Tests/Alberto.Dcb.Tests.csproj -c Release
+
+      # Runs unit tests plus the Testcontainers-backed PostgreSQL integration
+      # tests (Docker is available on ubuntu-latest runners).
+      - name: Test
+        run: dotnet test tests/Alberto.Dcb.Tests/Alberto.Dcb.Tests.csproj -c Release --no-build --logger "console;verbosity=normal"

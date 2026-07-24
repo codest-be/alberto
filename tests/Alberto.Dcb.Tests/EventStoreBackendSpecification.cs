@@ -539,6 +539,43 @@ public abstract class EventStoreBackendSpecification
             backend.Append([CreateEvent("order-shipped", $"order:{TestId}")], dcbQuery, firstPosition, TestContext.Current.CancellationToken));    }
 
     [Fact]
+    public async Task Append_ConcurrentDcbChecks_SameBoundary_OnlyOneSucceeds()
+    {
+        // Regression guard for the DCB write-skew window: many writers race to
+        // append the first event to the same boundary, all expecting it to be empty
+        // (position 0). Exactly one must win; the rest must see the conflict. Without
+        // append serialization, more than one could pass the check and commit.
+        var backend = await CreateBackend();
+        var tag = $"order:{TestId}-concurrency";
+        var query = DcbQuery.ByTags(tag);
+        const int writers = 12;
+
+        // Release all writers together to maximise contention.
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var tasks = Enumerable.Range(0, writers).Select(async i =>
+        {
+            await gate.Task;
+            try
+            {
+                await backend.Append([CreateEvent($"evt-{i}-{TestId}", tag)], query, 0L);
+                return true;
+            }
+            catch (DcbConflictException)
+            {
+                return false;
+            }
+        }).ToArray();
+
+        gate.SetResult();
+        var results = await Task.WhenAll(tasks);
+
+        Assert.Equal(1, results.Count(succeeded => succeeded));
+
+        var stored = await backend.Stream(query, cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Single(stored);
+    }
+
+    [Fact]
     public async Task Append_WithDcbCheck_ExpectingNoEvents_WithExisting_ShouldThrow()
     {
         var backend = await CreateBackend();

@@ -2,6 +2,8 @@ using Alberto.Dcb.Append;
 using Alberto.Dcb.Subscriptions;
 using Alberto.Dcb.Tenancy;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 
 namespace Alberto.Dcb.Postgres;
@@ -66,11 +68,13 @@ public static class PostgresBuilderExtensions
             return new AppendInterceptorPipeline(interceptors);
         });
 
+        var enableStableHeadBarrier = options.EnableStableHeadBarrier;
+
         if (isTenantMode)
         {
             // Multi-tenant mode: register PostgresTenantEventStoreBackend + TenantEventStoreDecorator
             // IEventStoreBackend and IEventStore are both scoped (backend captures ITenantAccessor per request)
-            RegisterTenantBackend(builder, moduleKey, schema);
+            RegisterTenantBackend(builder, moduleKey, schema, enableStableHeadBarrier);
             builder.Services.AddKeyedScoped<IEventStore>(moduleKey, (sp, key) =>
             {
                 var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(key);
@@ -83,7 +87,7 @@ public static class PostgresBuilderExtensions
         else
         {
             // Single-tenant mode: register PostgresEventStoreBackend directly (singleton — no per-request state)
-            RegisterSingleTenantBackend(builder, moduleKey, schema);
+            RegisterSingleTenantBackend(builder, moduleKey, schema, enableStableHeadBarrier);
             builder.Services.AddKeyedSingleton<IEventStore>(moduleKey, (sp, key) =>
             {
                 var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(key);
@@ -129,16 +133,32 @@ public static class PostgresBuilderExtensions
             return new PostgresProcessorLeaseManager(dataSource, schema, leaseDuration);
         });
 
+        // Append signal shared by the LISTEN/NOTIFY listener and EventStoreHead so
+        // the head wakes immediately on append instead of waiting for its interval.
+        builder.Services.AddKeyedSingleton<IEventAppendedSignal>(moduleKey, (_, _) => new EventAppendedSignal());
+
+        if (options.EnableNotifyListener)
+        {
+            builder.Services.AddSingleton<IHostedService>(sp =>
+            {
+                var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
+                var signal = sp.GetRequiredKeyedService<IEventAppendedSignal>(moduleKey);
+                return new PostgresEventListener(
+                    dataSource, schema, signal, sp.GetService<ILogger<PostgresEventListener>>());
+            });
+        }
+
         return builder;
     }
 
-    private static void RegisterSingleTenantBackend(DcbModuleBuilder builder, string moduleKey, string? schema)
+    private static void RegisterSingleTenantBackend(
+        DcbModuleBuilder builder, string moduleKey, string? schema, bool enableStableHeadBarrier)
     {
         builder.Services.AddKeyedSingleton<IEventStoreBackend>(moduleKey, (sp, _) =>
         {
             var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
             var timeProvider = sp.GetService<TimeProvider>() ?? TimeProvider.System;
-            var rawBackend = new PostgresEventStoreBackend(dataSource, timeProvider, schema);
+            var rawBackend = new PostgresEventStoreBackend(dataSource, timeProvider, schema, enableStableHeadBarrier);
 
             var pipeline = sp.GetRequiredKeyedService<IAppendInterceptorPipeline>(moduleKey);
             return new InterceptingEventStoreBackend(rawBackend, pipeline);
@@ -157,7 +177,8 @@ public static class PostgresBuilderExtensions
             eventStore.RegisterInlineProjection(projection);
     }
 
-    private static void RegisterTenantBackend(DcbModuleBuilder builder, string moduleKey, string? schema)
+    private static void RegisterTenantBackend(
+        DcbModuleBuilder builder, string moduleKey, string? schema, bool enableStableHeadBarrier)
     {
         // Register tenancy services
         builder.Services.AddScoped<TenantContext>();
@@ -168,7 +189,7 @@ public static class PostgresBuilderExtensions
         {
             var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
             var timeProvider = sp.GetService<TimeProvider>() ?? TimeProvider.System;
-            return new PostgresTenantEventStoreBackend(dataSource, timeProvider, schema);
+            return new PostgresTenantEventStoreBackend(dataSource, timeProvider, schema, enableStableHeadBarrier);
         });
 
         // Register IEventStoreBackend (keyed, scoped) as decorator chain: InterceptingBackend(TenantDecorator(TenantBackend))
