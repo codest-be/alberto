@@ -215,6 +215,42 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
             () => storeA.StreamAllAsync(cancellationToken: ct));
     }
 
+    // ─── Regression: multi-tenant stable-head barrier SQL ───────────────────
+
+    /// <summary>
+    /// Regression guard for the multi-tenant stable-head barrier. The SQL evaluates
+    /// <c>pg_snapshot_xmin(pg_current_snapshot())::TEXT::BIGINT</c>; the <c>::TEXT</c>
+    /// round-trip is required because PostgreSQL has no direct xid8→bigint cast, and
+    /// "simplifying" it to <c>::BIGINT</c> throws "cannot cast type xid8 to bigint" at
+    /// runtime. The fake-backend head tests cannot catch this because they never touch
+    /// the real SQL; this exercises it against the multi-tenant schema with a committed row.
+    /// </summary>
+    [Fact]
+    public async Task GetStableHeadGlobal_AfterCommittedAppend_ExecutesBarrierSql()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var tag = new EventTag("ti-stablehead", Guid.NewGuid().ToString());
+
+        // Commit at least one row so the barrier's ascending index scan has a row to evaluate.
+        await using (var scopeA = CreateScopeForTenant(TenantA))
+        {
+            var storeA = scopeA.ServiceProvider.GetRequiredKeyedService<IEventStore>(ModuleKey);
+            await storeA.AppendAsync(
+                [CreateEvent(new OrderCreated(Guid.NewGuid()), tag)],
+                dcbQuery: null,
+                expectedPosition: null,
+                cancellationToken: ct);
+        }
+
+        var backend = new PostgresTenantEventStoreBackend(fixture.DataSource);
+
+        // The append has committed, so nothing is in flight: the barrier must not throw
+        // "cannot cast type xid8 to bigint" and must return a non-negative head.
+        var stableHead = await backend.GetStableHeadGlobalAsync(0, ct);
+
+        Assert.True(stableHead >= 0, $"expected non-negative stable head, got {stableHead}");
+    }
+
     // ─── P0.3: PostgresStateStore tenant isolation ──────────────────────────
 
     /// <summary>

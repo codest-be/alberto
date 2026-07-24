@@ -150,12 +150,18 @@ internal sealed class PostgresTenantEventStoreBackend(
         // pg_snapshot_xmin), so it never advances past an in-flight append. Rows with
         // NULL pg_xact_id predate migration 008 and are always stable. Ascending
         // index scan from the head — stops at the first non-stable row.
+        //
+        // The ::TEXT::BIGINT double-cast is REQUIRED and must not be "simplified" to
+        // ::BIGINT: pg_snapshot_xmin returns xid8, and PostgreSQL has no direct
+        // xid8→bigint cast (fails at runtime with "cannot cast type xid8 to bigint").
+        // It is a single per-query STABLE scalar used as an index scan bound, so the
+        // text round-trip is evaluated once per call, not per row — negligible cost.
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
             $"SELECT global_position FROM {_schema.Table("alberto_events")} " +
             "WHERE global_position > @after " +
             "AND pg_xact_id IS NOT NULL " +
-            "AND pg_xact_id >= pg_snapshot_xmin(pg_current_snapshot())::BIGINT " +
+            "AND pg_xact_id >= pg_snapshot_xmin(pg_current_snapshot())::TEXT::BIGINT " +
             "ORDER BY global_position ASC LIMIT 1",
             connection);
         cmd.Parameters.AddWithValue("after", afterPosition);

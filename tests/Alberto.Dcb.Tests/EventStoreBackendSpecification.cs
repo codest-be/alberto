@@ -736,6 +736,35 @@ public abstract class EventStoreBackendSpecification
 
     #endregion
 
+    #region GetStableHeadAsync Tests
+
+    [Fact]
+    public async Task GetStableHeadAsync_AfterCommittedAppend_ExecutesBarrier()
+    {
+        // Regression guard for the PostgreSQL stable-head barrier. The SQL evaluates
+        // pg_snapshot_xmin(pg_current_snapshot())::TEXT::BIGINT; the ::TEXT round-trip
+        // is REQUIRED because PostgreSQL has no direct xid8→bigint cast. "Simplifying"
+        // it to ::BIGINT throws "cannot cast type xid8 to bigint" at runtime — a defect
+        // the pure-fake head tests cannot catch because they never touch the real SQL.
+        // Appending a committed row first ensures the index scan has a row to evaluate.
+        var backend = await CreateBackend();
+        var headBackend = (IEventStoreHeadBackend)backend;
+        var startPosition = await backend.GetLastPositionAsync(TestContext.Current.CancellationToken);
+
+        await backend.AppendAsync(
+            [CreateEvent("event-a", $"tag:1{TestId}")],
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        // Every appended transaction has committed, so nothing is in flight: the barrier
+        // must not throw and must not clamp below the pre-append head.
+        var stableHead = await headBackend.GetStableHeadAsync(startPosition, TestContext.Current.CancellationToken);
+
+        Assert.True(stableHead >= startPosition,
+            $"expected stable head >= {startPosition}, got {stableHead}");
+    }
+
+    #endregion
+
     #region Helper Methods
 
     protected IEventToPersist CreateEvent(string eventType, params string[] tags)
