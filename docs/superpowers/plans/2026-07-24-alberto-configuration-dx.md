@@ -3601,8 +3601,14 @@ public class InMemoryDescriptorTests
         builder.Services.AddAlberto("orders", module => module.WithInMemory());
         using var host = builder.Build();
 
-        await host.StartAsync(TestContext.Current.CancellationToken);
-        await host.StopAsync(TestContext.Current.CancellationToken);
+        var act = async () =>
+        {
+            await host.StartAsync(TestContext.Current.CancellationToken);
+            await host.StopAsync(TestContext.Current.CancellationToken);
+        };
+
+        await act.Should().NotThrowAsync();
+        host.Services.GetRequiredKeyedService<IEventStore>("orders").Should().NotBeNull();
     }
 }
 ```
@@ -4007,8 +4013,13 @@ public class OrphanCheckpointTests
 {
     private sealed class FakeInventory(params string[] processorIds) : ICheckpointInventory
     {
-        public Task<IReadOnlyList<string>> ListProcessorIdsAsync(CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<string>>(processorIds);
+        public int Calls { get; private set; }
+
+        public Task<IReadOnlyList<string>> ListProcessorIdsAsync(CancellationToken ct = default)
+        {
+            Calls++;
+            return Task.FromResult<IReadOnlyList<string>>(processorIds);
+        }
     }
 
     private static AlbertoModuleDefinition Definition(
@@ -4051,29 +4062,42 @@ public class OrphanCheckpointTests
     [Fact]
     public async Task Strict_is_silent_when_every_checkpoint_is_claimed()
     {
-        await RunAsync(
+        var act = () => RunAsync(
             Definition(OrphanCheckpointPolicy.Strict, "OrderSummary"),
             new FakeInventory("OrderSummary"));
+
+        await act.Should().NotThrowAsync();
     }
 
     [Fact]
     public async Task Warn_does_not_fail_startup()
     {
-        await RunAsync(
+        var act = () => RunAsync(
             Definition(OrphanCheckpointPolicy.Warn, "OrderSummary"),
             new FakeInventory("OldReactorName"));
+
+        await act.Should().NotThrowAsync();
     }
 
     [Fact]
     public async Task Off_does_not_read_the_inventory()
     {
-        await RunAsync(Definition(OrphanCheckpointPolicy.Off, "OrderSummary"), inventory: null);
+        var inventory = new FakeInventory("OldReactorName");
+
+        var act = () => RunAsync(Definition(OrphanCheckpointPolicy.Off, "OrderSummary"), inventory);
+
+        await act.Should().NotThrowAsync();
+        inventory.Calls.Should().Be(0);
     }
 
     [Fact]
     public async Task A_store_that_cannot_enumerate_is_skipped_rather_than_failing()
     {
-        await RunAsync(Definition(OrphanCheckpointPolicy.Strict, "OrderSummary"), inventory: null);
+        var act = () => RunAsync(
+            Definition(OrphanCheckpointPolicy.Strict, "OrderSummary"),
+            inventory: null);
+
+        await act.Should().NotThrowAsync();
     }
 }
 ```
