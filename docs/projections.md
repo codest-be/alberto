@@ -265,6 +265,11 @@ and a coordinator that crashes mid-rebuild resumes on restart.
   let its last few writes seed the replay.
 - Run more than one replica of the module and you need `WithProcessorLeases`, or two replicas
   replay into the same version.
+- A reader that resolves the active version and *then* queries can find nothing, if the promotion
+  lands between the two steps: promotion deletes the superseded rows in the same transaction that
+  flips the version, so the number the reader is holding stops existing. The window is a single
+  query and only opens at the moment of a promotion, but it is real. Retry a read that comes back
+  empty when the document should exist.
 - A rebuild reprocesses every event. **Reactors are not rebuilt** — replaying side effects is not
   something the coordinator can make safe.
 - Inline projections cannot be rebuilt this way.
