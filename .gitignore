@@ -8,3 +8,5 @@ nupkg/
 riderModule.iml
 /_ReSharper.Caches/
 .idea/
+# serena tool cache
+.serena/
