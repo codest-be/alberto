@@ -1,8 +1,8 @@
 using Alberto.Dcb;
 using Alberto.Dcb.Configuration;
+using Alberto.Dcb.InMemory;
 using Alberto.Dcb.Subscriptions;
 using FluentAssertions;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -26,19 +26,6 @@ internal sealed class RenamedShipmentNotifier
 
 public class ProcessorRegistrationTests
 {
-    /// <summary>
-    /// Minimal backend that satisfies the ALB0001 validator without registering any real services.
-    /// Replace with <c>.WithInMemory()</c> once Task 9 creates the InMemory backend descriptor.
-    /// </summary>
-    private sealed class StubBackend : IAlbertoBackendDescriptor
-    {
-        public string Name => "Stub";
-        public bool SupportsTenancy => false;
-        public IAlbertoBackendDescriptor ApplyConfiguration(IConfiguration moduleSection) => this;
-        public IEnumerable<AlbertoValidationFailure> Validate(AlbertoModuleDefinition definition) => [];
-        public void Register(AlbertoModuleContext context) { }
-    }
-
     private static AlbertoModuleDefinition Resolve(IServiceCollection services) =>
         services.BuildServiceProvider()
             .GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>()
@@ -51,7 +38,7 @@ public class ProcessorRegistrationTests
         services.AddSingleton<RenamedShipmentNotifier>();
         services.AddAlberto("orders", module =>
         {
-            module.UseBackend(new StubBackend());
+            module.WithInMemory();
             configure(module);
         });
         return services;
@@ -116,7 +103,7 @@ public class ProcessorRegistrationTests
         services.AddSingleton<ShipmentNotifier>();
         services.AddAlberto("orders", module =>
         {
-            module.UseBackend(new StubBackend());
+            module.WithInMemory();
             module.ReactTo<ShipmentDispatched, ShipmentNotifier>(h => h.HandleAsync);
             module.ReactTo<ShipmentDispatched, ShipmentNotifier>(h => h.HandleAsync);
             captured = module.Definition;

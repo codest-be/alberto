@@ -1,9 +1,8 @@
+using Alberto.Dcb.Configuration;
 using Alberto.Dcb.EntityFramework.Inline;
 using Alberto.Dcb.Subscriptions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-
-#pragma warning disable CS0618 // Task 12 removes DcbModuleBuilder.Services; delete this pragma then.
 
 namespace Alberto.Dcb.EntityFramework;
 
@@ -27,6 +26,7 @@ public static class EfConsumerBuilderExtensions
     /// rebuildable state clearer. <see cref="ProjectionMode.Inline"/> registers an
     /// <see cref="IInlineProjection"/> that runs immediately after each append.
     /// </param>
+    /// <returns>The module builder for chaining.</returns>
     public static DcbModuleBuilder AddEfProjection<TEntity, TDbContext>(
         this DcbModuleBuilder builder,
         ProjectionDeclaration<TEntity> declaration,
@@ -38,25 +38,33 @@ public static class EfConsumerBuilderExtensions
 
         if (mode == ProjectionMode.Inline)
         {
-            builder.Services.AddKeyedSingleton<IInlineProjection>(builder.ModuleKey, (sp, _) =>
-            {
-                var contextFactory = sp.GetRequiredService<IDbContextFactory<TDbContext>>();
-                return new DeclaredEfInlineProjection<TEntity, TDbContext>(declaration, contextFactory);
-            });
-            return builder;
+            return builder.Register(context =>
+                context.Services.AddKeyedSingleton<IInlineProjection>(context.ModuleKey, (sp, _) =>
+                {
+                    var contextFactory = sp.GetRequiredService<IDbContextFactory<TDbContext>>();
+                    return new DeclaredEfInlineProjection<TEntity, TDbContext>(declaration, contextFactory);
+                }));
         }
 
-        builder.Services.AddKeyedSingleton<IEventProcessor>(builder.ModuleKey, (sp, _) =>
+        builder.DeclareProcessor(new ProcessorDeclaration
         {
-            var contextFactory = sp.GetRequiredService<IDbContextFactory<TDbContext>>();
-            return new DeclaredAsyncProjection<TEntity>(declaration,
-                () => new EfStateStore<TEntity, TDbContext>(contextFactory));
+            ProcessorId = declaration.ProcessorId,
+            Kind = ProcessorKind.Projection,
         });
-        builder.Services.AddKeyedSingleton<IProjectionStateClearer>(builder.ModuleKey, (sp, _) =>
-            new EfProjectionStateClearer<TEntity, TDbContext>(
-                sp.GetRequiredService<IDbContextFactory<TDbContext>>(),
-                declaration.ProcessorId));
-        return builder;
+
+        return builder.Register(context =>
+        {
+            context.Services.AddKeyedSingleton<IEventProcessor>(context.ModuleKey, (sp, _) =>
+            {
+                var contextFactory = sp.GetRequiredService<IDbContextFactory<TDbContext>>();
+                return new DeclaredAsyncProjection<TEntity>(declaration,
+                    () => new EfStateStore<TEntity, TDbContext>(contextFactory));
+            });
+            context.Services.AddKeyedSingleton<IProjectionStateClearer>(context.ModuleKey, (sp, _) =>
+                new EfProjectionStateClearer<TEntity, TDbContext>(
+                    sp.GetRequiredService<IDbContextFactory<TDbContext>>(),
+                    declaration.ProcessorId));
+        });
     }
 
     /// <summary>
@@ -65,6 +73,14 @@ public static class EfConsumerBuilderExtensions
     /// and returns a callback invoked after each successful SaveChanges,
     /// receiving only the events the projection actually handled.
     /// </summary>
+    /// <typeparam name="TEntity">The projection entity type.</typeparam>
+    /// <typeparam name="TDbContext">The EF DbContext containing the entity DbSet.</typeparam>
+    /// <param name="builder">The module builder.</param>
+    /// <param name="declaration">The projection declaration.</param>
+    /// <param name="afterCommit">
+    /// A factory that resolves dependencies at startup and returns the post-commit callback.
+    /// </param>
+    /// <returns>The module builder for chaining.</returns>
     public static DcbModuleBuilder AddEfProjection<TEntity, TDbContext>(
         this DcbModuleBuilder builder,
         ProjectionDeclaration<TEntity> declaration,
@@ -75,17 +91,25 @@ public static class EfConsumerBuilderExtensions
         ArgumentNullException.ThrowIfNull(declaration);
         ArgumentNullException.ThrowIfNull(afterCommit);
 
-        builder.Services.AddKeyedSingleton<IEventProcessor>(builder.ModuleKey, (sp, _) =>
+        builder.DeclareProcessor(new ProcessorDeclaration
         {
-            var contextFactory = sp.GetRequiredService<IDbContextFactory<TDbContext>>();
-            return new DeclaredAsyncProjection<TEntity>(declaration,
-                () => new EfStateStore<TEntity, TDbContext>(contextFactory),
-                afterCommit: afterCommit(sp));
+            ProcessorId = declaration.ProcessorId,
+            Kind = ProcessorKind.Projection,
         });
-        builder.Services.AddKeyedSingleton<IProjectionStateClearer>(builder.ModuleKey, (sp, _) =>
-            new EfProjectionStateClearer<TEntity, TDbContext>(
-                sp.GetRequiredService<IDbContextFactory<TDbContext>>(),
-                declaration.ProcessorId));
-        return builder;
+
+        return builder.Register(context =>
+        {
+            context.Services.AddKeyedSingleton<IEventProcessor>(context.ModuleKey, (sp, _) =>
+            {
+                var contextFactory = sp.GetRequiredService<IDbContextFactory<TDbContext>>();
+                return new DeclaredAsyncProjection<TEntity>(declaration,
+                    () => new EfStateStore<TEntity, TDbContext>(contextFactory),
+                    afterCommit: afterCommit(sp));
+            });
+            context.Services.AddKeyedSingleton<IProjectionStateClearer>(context.ModuleKey, (sp, _) =>
+                new EfProjectionStateClearer<TEntity, TDbContext>(
+                    sp.GetRequiredService<IDbContextFactory<TDbContext>>(),
+                    declaration.ProcessorId));
+        });
     }
 }

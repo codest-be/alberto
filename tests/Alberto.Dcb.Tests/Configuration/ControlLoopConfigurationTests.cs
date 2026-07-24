@@ -1,5 +1,6 @@
 using Alberto.Dcb;
 using Alberto.Dcb.Configuration;
+using Alberto.Dcb.InMemory;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,11 +12,6 @@ namespace Alberto.Dcb.Tests.Configuration;
 /// <summary>
 /// Tests that <see cref="DcbModuleBuilderExtensions.WithControlLoop"/> correctly records intent
 /// into the <see cref="AlbertoModuleDefinition"/> and that configuration wins over code defaults.
-///
-/// NOTE: the brief specifies <c>.WithInMemory()</c> in these tests, but <c>WithInMemory()</c>
-/// does not yet implement <c>IAlbertoBackendDescriptor</c> (that is Task 9). A <see cref="StubBackend"/>
-/// is used instead so the validator (ALB0001) does not fail. Task 9 can update these to use
-/// <c>.WithInMemory()</c> once the descriptor exists.
 /// </summary>
 public class ControlLoopConfigurationTests
 {
@@ -29,7 +25,7 @@ public class ControlLoopConfigurationTests
     {
         var services = new ServiceCollection();
         services.AddAlberto("orders", module => module
-            .UseBackend(new StubBackend())
+            .WithInMemory()
             .WithControlLoop(o => o with
             {
                 PollingInterval = TimeSpan.FromMilliseconds(10),
@@ -47,7 +43,7 @@ public class ControlLoopConfigurationTests
     public void WithControlLoop_is_implied_when_it_is_never_called()
     {
         var services = new ServiceCollection();
-        services.AddAlberto("orders", module => module.UseBackend(new StubBackend()));
+        services.AddAlberto("orders", module => module.WithInMemory());
 
         Resolve(services, "orders").ControlLoop.Should().Be(ControlLoopOptions.Default);
     }
@@ -57,7 +53,7 @@ public class ControlLoopConfigurationTests
     {
         var services = new ServiceCollection();
         services.AddAlberto("orders", module => module
-            .UseBackend(new StubBackend())
+            .WithInMemory()
             .WithControlLoop(o => o with { Retry = o.Retry with { MaxRetries = 5 } }));
 
         Resolve(services, "orders").ControlLoop.Retry.MaxRetries.Should().Be(5);
@@ -77,7 +73,7 @@ public class ControlLoopConfigurationTests
         var services = new ServiceCollection();
         services.AddSingleton<IConfiguration>(configuration);
         services.AddAlberto("orders", module => module
-            .UseBackend(new StubBackend())
+            .WithInMemory()
             .WithControlLoop(o => o with { BatchSize = 500, Retry = o.Retry with { MaxRetries = 5 } }));
 
         var loop = Resolve(services, "orders").ControlLoop;
@@ -91,7 +87,7 @@ public class ControlLoopConfigurationTests
     {
         var services = new ServiceCollection();
         services.AddAlberto("orders", module => module
-            .UseBackend(new StubBackend())
+            .WithInMemory()
             .WithControlLoop(o => o with { Leases = o.Leases with { Enabled = true, ReplicaId = "pod-1" } }));
 
         var leases = Resolve(services, "orders").ControlLoop.Leases;
@@ -100,21 +96,4 @@ public class ControlLoopConfigurationTests
         leases.ReplicaId.Should().Be("pod-1");
     }
 
-    /// <summary>
-    /// Minimal backend that satisfies the ALB0001 validator without registering any real services.
-    /// Replace with <c>.WithInMemory()</c> once Task 9 creates the InMemory backend descriptor.
-    /// </summary>
-    private sealed class StubBackend : IAlbertoBackendDescriptor
-    {
-        public string Name => "Stub";
-        public bool SupportsTenancy => false;
-
-        public IAlbertoBackendDescriptor ApplyConfiguration(Microsoft.Extensions.Configuration.IConfiguration moduleSection)
-            => this;
-
-        public IEnumerable<AlbertoValidationFailure> Validate(AlbertoModuleDefinition definition)
-            => [];
-
-        public void Register(AlbertoModuleContext context) { }
-    }
 }
