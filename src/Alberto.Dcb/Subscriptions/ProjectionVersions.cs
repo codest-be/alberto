@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Alberto.Dcb.Subscriptions;
 
@@ -80,6 +81,29 @@ public sealed class ProjectionVersions : IAsyncDisposable
     /// readers. Tracks promotions without the store having to know rebuilds exist.
     /// </summary>
     public Func<int> ForLive(string processorId) => () => ActiveVersion(processorId);
+
+    /// <summary>
+    /// The live version selector for a projection in a given module, resolved from the
+    /// container. Use this when building a state store for reads outside the module builder —
+    /// a query handler, say — so those reads follow a promotion instead of pinning the
+    /// version that was active when the store was constructed:
+    /// <code>
+    /// new PostgresStateStore&lt;OrdersOverview&gt;(
+    ///     dataSource, nameof(OrdersOverviewProjection), "orders",
+    ///     rebuildVersion: ProjectionVersions.LiveVersion(sp, ModuleKey, nameof(OrdersOverviewProjection)));
+    /// </code>
+    /// </summary>
+    /// <remarks>
+    /// Resolves to version 1 forever in a module that has no rebuild pipeline, so it is safe to
+    /// use unconditionally.
+    /// </remarks>
+    public static Func<int> LiveVersion(IServiceProvider services, object? moduleKey, string processorId)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        return services.GetKeyedService<ProjectionVersions>(moduleKey)?.ForLive(processorId)
+               ?? NeverRebuilt;
+    }
 
     /// <summary>
     /// A version selector to hand to a state store serving a shadow rebuild loop.

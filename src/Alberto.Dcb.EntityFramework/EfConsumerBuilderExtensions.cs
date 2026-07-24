@@ -47,7 +47,7 @@ public static class EfConsumerBuilderExtensions
         builder.Services.AddKeyedSingleton<IEventProcessor>(builder.ModuleKey, (sp, key) =>
         {
             var contextFactory = sp.GetRequiredService<IDbContextFactory<TDbContext>>();
-            var version = ProjectionStoreContext.LiveVersion(sp, key, declaration.ProcessorId);
+            var version = ProjectionVersions.LiveVersion(sp, key, declaration.ProcessorId);
             return new DeclaredAsyncProjection<TEntity>(declaration,
                 () => new EfStateStore<TEntity, TDbContext>(contextFactory, version));
         });
@@ -74,7 +74,7 @@ public static class EfConsumerBuilderExtensions
         builder.Services.AddKeyedSingleton<IEventProcessor>(builder.ModuleKey, (sp, key) =>
         {
             var contextFactory = sp.GetRequiredService<IDbContextFactory<TDbContext>>();
-            var version = ProjectionStoreContext.LiveVersion(sp, key, declaration.ProcessorId);
+            var version = ProjectionVersions.LiveVersion(sp, key, declaration.ProcessorId);
             return new DeclaredAsyncProjection<TEntity>(declaration,
                 () => new EfStateStore<TEntity, TDbContext>(contextFactory, version),
                 afterCommit: afterCommit(sp));

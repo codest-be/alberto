@@ -1,5 +1,3 @@
-using Microsoft.Extensions.DependencyInjection;
-
 namespace Alberto.Dcb.Subscriptions;
 
 /// <summary>
@@ -19,14 +17,4 @@ namespace Alberto.Dcb.Subscriptions;
 /// </param>
 public readonly record struct ProjectionStoreContext(
     IServiceProvider Services,
-    Func<int> RebuildVersion)
-{
-    /// <summary>
-    /// The version selector for a module's live projection: follows promotions where the module
-    /// has a rebuild pipeline, and resolves to version 1 forever where it does not.
-    /// </summary>
-    internal static Func<int> LiveVersion(
-        IServiceProvider sp, object? moduleKey, string processorId)
-        => sp.GetKeyedService<ProjectionVersions>(moduleKey)?.ForLive(processorId)
-           ?? ProjectionVersions.NeverRebuilt;
-}
+    Func<int> RebuildVersion);

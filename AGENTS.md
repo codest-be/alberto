@@ -73,7 +73,7 @@ dotnet run --project tools/Alberto.Cli -- status
   Alberto.Dcb.Benchmarks/       # BenchmarkDotNet suites (not in AlbertoV3.slnx)
 ```
 
-Note: `apps/Alberto.Payments` is in the solution but is not orchestrated by the AppHost, and it does not currently build — see Known Gaps.
+Note: `apps/Alberto.Payments` is in the solution and builds, but it is not orchestrated by the AppHost — its projections and read models are consumed by the Orders API.
 
 ### Key Patterns
 - **Event Sourcing with DCB**: Append-only event log with dynamic consistency boundaries
@@ -120,4 +120,3 @@ The operator surface is the CLI in `tools/Alberto.Cli`. There is no admin HTTP A
 Documented so they are not mistaken for working features:
 
 - **Orphaned outbox entries have no reclaim path.** A relay that dies between claiming an entry (`processing`) and marking it `delivered`/`failed` strands the row. `alberto_outbox_entries` has no claim-lease columns, and `RetryFailedAsync` only matches `failed`. See the skipped test `DiscoveredIssuesTests.OutboxStore_ProcessingEntriesOrphaned_CannotBeRecoveredByRetryFailed`.
-- **`apps/Alberto.Payments` and part of `apps/Alberto.Orders` do not compile.** `OrderSummaryEfProjection`, `PaymentsOverviewProjection` and `PaymentSummaryProjection` fail to build. `dotnet build` on the whole solution reports these errors; the `/src`, `/tools` and `/tests` projects build clean.

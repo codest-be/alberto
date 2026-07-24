@@ -49,7 +49,7 @@ public static class DcbModuleBuilderExtensions
 
         builder.Services.AddKeyedSingleton<IEventProcessor>(moduleKey, (sp, key) =>
         {
-            var version = ProjectionStoreContext.LiveVersion(sp, key, declaration.ProcessorId);
+            var version = ProjectionVersions.LiveVersion(sp, key, declaration.ProcessorId);
             var factory = stateStoreFactory(new ProjectionStoreContext(sp, version));
             return new DeclaredAsyncProjection<TState>(declaration, factory);
         });
