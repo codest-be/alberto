@@ -1,42 +1,17 @@
-using Alberto.Dcb.Subscriptions;
-
-#pragma warning disable CS0618 // Obsolete projection types used intentionally for backward-compatibility
 namespace Alberto.Dcb;
 
 /// <summary>
-/// High-level event store with support for inline projections and post-append handlers.
-/// Wraps <see cref="IEventStoreBackend"/> and runs registered projections and handlers immediately after append.
+/// Runtime surface of the event store: append events and read them back.
 /// In multi-tenant mode, tenant scoping is handled transparently by the backend decorator.
 /// </summary>
+/// <remarks>
+/// Setup-time operations (registering inline projections and post-append handlers) are on
+/// <see cref="IEventStoreConfigurator"/>, which the concrete store classes also implement.
+/// Builder and registration code should resolve <see cref="IEventStoreConfigurator"/> at
+/// startup; runtime consumers should depend only on <see cref="IEventStore"/>.
+/// </remarks>
 public interface IEventStore
 {
-    /// <summary>
-    /// Registers an inline projection that runs immediately after events are appended.
-    /// Uses the same <see cref="Projection{TState}"/> definition as async projections,
-    /// but updates state synchronously for lower latency.
-    /// </summary>
-    /// <typeparam name="TState">The projection state type.</typeparam>
-    /// <typeparam name="TProjection">The projection implementation type.</typeparam>
-    /// <param name="stateStore">The state store for persisting projection state.</param>
-    void RegisterInlineProjection<TState, TProjection>(IStateStore<TState> stateStore)
-        where TProjection : Projection<TState>, new()
-        where TState : new();
-
-    /// <summary>
-    /// Registers an inline projection that runs immediately after events are appended.
-    /// Lower-level overload that accepts any <see cref="IInlineProjection"/> implementation —
-    /// used by declaration-based projection wiring.
-    /// </summary>
-    /// <param name="projection">The inline projection to register.</param>
-    void RegisterInlineProjection(IInlineProjection projection);
-
-    /// <summary>
-    /// Registers a post-append handler that runs immediately after events are appended
-    /// and inline projections have completed. Used by <see cref="ReactorMode.Sync"/> reactors.
-    /// </summary>
-    /// <param name="handler">The handler to register.</param>
-    void RegisterPostAppendHandler(IPostAppendHandler handler);
-
     /// <summary>
     /// Appends events to the store and runs inline projections immediately after.
     /// In multi-tenant mode, the tenant is resolved automatically from the current request context.

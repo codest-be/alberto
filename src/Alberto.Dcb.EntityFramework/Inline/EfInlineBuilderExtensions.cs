@@ -16,17 +16,17 @@ public static class EfInlineBuilderExtensions
     /// <typeparam name="TEntity">The EF entity type implementing <see cref="IProjectionEntity"/>.</typeparam>
     /// <typeparam name="TProjection">The projection type.</typeparam>
     /// <typeparam name="TDbContext">The DbContext type containing the entity DbSet.</typeparam>
-    /// <param name="eventStore">The event store to register the projection with.</param>
+    /// <param name="configurator">The event store configurator (setup-time surface of the event store).</param>
     /// <param name="contextFactory">Factory for creating DbContext instances.</param>
     public static void RegisterEfInlineProjection<TEntity, TProjection, TDbContext>(
-        this IEventStore eventStore,
+        this IEventStoreConfigurator configurator,
         IDbContextFactory<TDbContext> contextFactory)
         where TEntity : class, IProjectionEntity, new()
         where TProjection : Projection<TEntity>, new()
         where TDbContext : DbContext
     {
         var stateStore = new EfInlineStateStoreAdapter<TEntity, TDbContext>(contextFactory);
-        eventStore.RegisterInlineProjection<TEntity, TProjection>(stateStore);
+        configurator.RegisterInlineProjection<TEntity, TProjection>(stateStore);
     }
 
     /// <summary>
@@ -36,17 +36,17 @@ public static class EfInlineBuilderExtensions
     /// <typeparam name="TEntity">The EF entity type implementing <see cref="IProjectionEntity"/>.</typeparam>
     /// <typeparam name="TProjection">The projection type.</typeparam>
     /// <typeparam name="TDbContext">The DbContext type containing the entity DbSet.</typeparam>
-    /// <param name="eventStore">The event store to register the projection with.</param>
+    /// <param name="configurator">The event store configurator (setup-time surface of the event store).</param>
     /// <param name="serviceProvider">The service provider.</param>
     public static void RegisterEfInlineProjection<TEntity, TProjection, TDbContext>(
-        this IEventStore eventStore,
+        this IEventStoreConfigurator configurator,
         IServiceProvider serviceProvider)
         where TEntity : class, IProjectionEntity, new()
         where TProjection : Projection<TEntity>, new()
         where TDbContext : DbContext
     {
         var contextFactory = serviceProvider.GetRequiredService<IDbContextFactory<TDbContext>>();
-        eventStore.RegisterEfInlineProjection<TEntity, TProjection, TDbContext>(contextFactory);
+        configurator.RegisterEfInlineProjection<TEntity, TProjection, TDbContext>(contextFactory);
     }
 }
 

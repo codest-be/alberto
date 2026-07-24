@@ -8,7 +8,11 @@ namespace Alberto.Dcb.InMemory;
 /// Wraps <see cref="IEventStoreBackend"/> and coordinates inline projections during append.
 /// Useful for testing and development scenarios.
 /// </summary>
-public sealed class InMemoryEventStore : IEventStore
+/// <remarks>
+/// Implements <see cref="IEventStoreConfigurator"/> so builder code can register projections
+/// and post-append handlers at setup time without exposing those methods on <see cref="IEventStore"/>.
+/// </remarks>
+public sealed class InMemoryEventStore : IEventStore, IEventStoreConfigurator
 {
     private readonly IEventStoreBackend _backend;
     private readonly List<IInlineProjection> _inlineProjections = [];
