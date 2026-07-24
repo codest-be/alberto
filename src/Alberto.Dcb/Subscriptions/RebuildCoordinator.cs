@@ -85,12 +85,17 @@ internal sealed class RebuildCoordinator(
     /// </summary>
     private async Task ReconcileAsync(CancellationToken ct)
     {
-        var states = (await rebuildStore.ListAsync(ct))
-            .ToDictionary(s => s.ProcessorId, StringComparer.Ordinal);
+        // Read the state machine through ProjectionVersions rather than directly, so the
+        // coordinator and the version selectors it hands to shadow stores are looking at the
+        // same snapshot. Reading it separately here is a correctness bug, not an efficiency
+        // one: ForShadow falls back to the live version when it cannot see a rebuild in
+        // flight, so a coordinator that starts a shadow loop off a fresher read than the
+        // version cache has replays the whole log straight into the live projection.
+        await versions.RefreshAsync(ct);
 
         foreach (var projection in projections)
         {
-            var state = states.GetValueOrDefault(projection.ProcessorId);
+            var state = versions.Current(projection.ProcessorId);
 
             if (state is null || !state.IsRebuildInFlight)
             {
@@ -231,17 +236,17 @@ internal sealed class RebuildCoordinator(
 
     private async Task SweepAllAsync(CancellationToken ct)
     {
-        var states = (await rebuildStore.ListAsync(ct))
-            .ToDictionary(s => s.ProcessorId, StringComparer.Ordinal);
+        await versions.RefreshAsync(ct);
 
         foreach (var projection in projections)
         {
-            if (states.TryGetValue(projection.ProcessorId, out var state))
-            {
-                _lastSeen[projection.ProcessorId] = state.Status;
-                if (!state.IsRebuildInFlight)
-                    await SweepAsync(projection, state, ct);
-            }
+            if (versions.Current(projection.ProcessorId) is not { } state)
+                continue;
+
+            _lastSeen[projection.ProcessorId] = state.Status;
+
+            if (!state.IsRebuildInFlight)
+                await SweepAsync(projection, state, ct);
         }
     }
 

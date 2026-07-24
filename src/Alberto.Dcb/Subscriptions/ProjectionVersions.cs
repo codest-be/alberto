@@ -82,12 +82,46 @@ public sealed class ProjectionVersions : IAsyncDisposable
     public Func<int> ForLive(string processorId) => () => ActiveVersion(processorId);
 
     /// <summary>
-    /// A version selector to hand to a state store serving a shadow rebuild loop. Falls back
-    /// to the active version once the rebuild is promoted, so a shadow loop that outlives its
-    /// own promotion by a few events writes to the right place rather than to a deleted one.
+    /// A version selector to hand to a state store serving a shadow rebuild loop.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A shadow loop outlives its own rebuild by a few events — it is stopped, not killed, and
+    /// a batch can still be in flight when the rebuild is promoted or aborted. Once the rebuild
+    /// is gone from the state machine this keeps returning the version it was last writing to,
+    /// so those last writes land in a version that is on its way out. Orphaned rows there are
+    /// swept; a write to the wrong live version is not recoverable, which is why this never
+    /// falls back to the active version.
+    /// </para>
+    /// <para>
+    /// Throws if it is asked for a version before it has ever seen a rebuild in flight for the
+    /// processor. That means a shadow loop was started against a stale view of the state
+    /// machine — refresh before building the selector.
+    /// </para>
+    /// </remarks>
     public Func<int> ForShadow(string processorId)
-        => () => RebuildingVersion(processorId) ?? ActiveVersion(processorId);
+    {
+        var lastSeen = 0;
+
+        return () =>
+        {
+            if (RebuildingVersion(processorId) is { } rebuilding)
+            {
+                Volatile.Write(ref lastSeen, rebuilding);
+                return rebuilding;
+            }
+
+            var remembered = Volatile.Read(ref lastSeen);
+            if (remembered != 0)
+                return remembered;
+
+            throw new InvalidOperationException(
+                $"No rebuild is in flight for processor '{processorId}', so there is no version " +
+                "for its shadow rebuild loop to write to. The loop was started against a stale " +
+                $"view of the rebuild state machine; call {nameof(RefreshAsync)} before building " +
+                "the shadow version selector.");
+        };
+    }
 
     /// <summary>
     /// Re-reads every processor's rebuild state now. Call this straight after promoting or
