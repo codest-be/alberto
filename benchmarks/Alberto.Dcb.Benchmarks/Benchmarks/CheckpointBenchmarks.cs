@@ -11,16 +11,13 @@ namespace Alberto.Dcb.Benchmarks.Benchmarks;
 /// Establishes the performance floor for checkpoint operations and provides a
 /// before/after baseline for P2 and P0 checkpoint fixes:
 ///
-///   P0.5  — BufferedCheckpointStore silently swallowed flush failures
-///            (the fix adds a try/catch + logging path; this benchmark confirms
-///            the cold path adds negligible overhead to the hot path)
 ///   P0.2  — CachingCheckpointStore stale cache after fence rejection
 ///            (the fix forces a DB read on the next GetAsync call; this benchmark
 ///            shows the cost of the cold-path read vs the cached hot path)
 ///
 /// Implementation note
 /// -------------------
-/// BufferedCheckpointStore is internal to Alberto.Dcb, so it cannot be benchmarked
+/// CachingCheckpointStore is internal to Alberto.Dcb, so it cannot be benchmarked
 /// directly from this project without an InternalsVisibleTo addition (recorded in
 /// crossFileNeeds). InMemoryCheckpointStore is used as a proxy for the pure
 /// in-memory hot-path cost, which is the lower bound all checkpoint implementations
@@ -28,7 +25,7 @@ namespace Alberto.Dcb.Benchmarks.Benchmarks;
 ///
 /// Multi-processor scenario
 /// ------------------------
-/// <see cref="FlushMultipleProcessors"/> simulates what BufferedCheckpointStore does
+/// <see cref="FlushMultipleProcessors"/> simulates what CachingCheckpointStore does
 /// on every timer tick: save one position per processor. The <see cref="ProcessorCount"/>
 /// parameter covers single-processor deployments and typical multi-tenant fan-outs.
 ///
@@ -93,10 +90,8 @@ public class CheckpointBenchmarks
 
     /// <summary>
     /// Saves checkpoints for <see cref="ProcessorCount"/> processors in a sequential loop.
-    /// Models what BufferedCheckpointStore.FlushAsync does on every timer tick:
-    /// drain all pending processor entries to the underlying store.
-    /// Used to quantify whether the P0.5 fix (observe flush errors) adds per-processor
-    /// overhead in the normal (no-error) path.
+    /// Models what CachingCheckpointStore.FlushAsync does on every timer tick:
+    /// drain all dirty processor entries to the underlying store.
     /// </summary>
     [Benchmark]
     public async Task FlushMultipleProcessors()

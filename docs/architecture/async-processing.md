@@ -112,8 +112,6 @@ The Postgres backend wires `CachingCheckpointStore` over `PostgresCheckpointStor
 | `CachingCheckpointStore` | In-memory read/write cache; marks entries dirty and flushes on a timer |
 | `PostgresCheckpointStore` | The durable store; also implements `IFencedCheckpointStore` |
 
-`BufferedCheckpointStore` also exists in `src/Alberto.Dcb/Subscriptions` but is `internal` and constructed nowhere — see Not implemented.
-
 `SaveAsync` is **monotonic** — the Postgres upsert uses `GREATEST`, so a processor can never move its own checkpoint backwards. `RewindAsync` is the deliberate escape hatch that writes unconditionally; it is intended only for operator-initiated rewinds and both decorators bypass their caches and write straight through.
 
 `SaveIfLeaseHeldAsync` on `IFencedCheckpointStore` makes the write conditional on the caller still holding the processor or tenant lease, so a partitioned replica cannot overwrite a newer checkpoint.
@@ -188,7 +186,6 @@ The following appear in the schema or the type system but have no orchestration 
 - **Projection rebuild.** `alberto_projection_states.rebuild_version` and `alberto_projection_rebuild_meta` exist, as do `IProjectionStateClearer` and `EfProjectionStateClearer`, but nothing resolves the clearer and nothing reads or writes the meta table. `PostgresStateStore`'s `rebuildVersion` is always its default of `1`. `alberto ops rebuild` resets the checkpoint and nothing else — replayed events are applied on top of whatever state is already there.
 - **Rebuild-mode processor classification.** `IEventProcessor.IsRebuilding` exists, but there is no lag threshold, no separate rebuild batch size, and no independent catch-up loop. All processors run in the one control loop.
 - **Real-time admin push.** There is no admin HTTP API, no GraphQL admin subscriptions, and no admin dashboard in this repository. The `{schema}_events` NOTIFY channel exists to refresh `EventStoreHead`, not to feed a UI. The operator surface is the CLI in `tools/Alberto.Cli`.
-- **`BufferedCheckpointStore`.** `internal sealed`, fully implemented and unit-tested, but nothing constructs it — `PostgresBuilderExtensions` wires `CachingCheckpointStore` directly over `PostgresCheckpointStore`. Being `internal`, it cannot be wired by a package consumer either.
 
 ## Key Files
 
@@ -204,7 +201,6 @@ The following appear in the schema or the type system but have no orchestration 
 | AsyncProjection | `src/Alberto.Dcb/Subscriptions/AsyncProjection.cs` |
 | AsyncReactor | `src/Alberto.Dcb/Subscriptions/AsyncReactor.cs` |
 | CachingCheckpointStore | `src/Alberto.Dcb/Subscriptions/CachingCheckpointStore.cs` |
-| BufferedCheckpointStore | `src/Alberto.Dcb/Subscriptions/BufferedCheckpointStore.cs` |
 | PostgresCheckpointStore | `src/Alberto.Dcb.Postgres/PostgresCheckpointStore.cs` |
 | PostgresEventListener | `src/Alberto.Dcb.Postgres/PostgresEventListener.cs` |
 | EfStateStore | `src/Alberto.Dcb.EntityFramework/EfStateStore.cs` |
