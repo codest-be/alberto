@@ -1,3 +1,4 @@
+using Alberto.Dcb.Configuration;
 using Alberto.Dcb.Telemetry;
 
 namespace Alberto.Dcb.Subscriptions;
@@ -19,16 +20,15 @@ public static class BatchConsumeMiddlewares
     /// failure so the control loop can isolate the poison event by splitting.
     /// </summary>
     public static BatchConsumeMiddleware RetryAndDeadLetter(
-        ErrorPolicy? policy = null,
-        IDeadLetterStore? deadLetterStore = null)
+        RetryOptions retry,
+        IErrorClassifier classifier,
+        IDeadLetterStore? deadLetterStore)
     {
-        var p = policy ?? ErrorPolicy.Default;
-
         return async (context, next) =>
         {
             Exception? lastError = null;
 
-            for (var attempt = 1; attempt <= p.MaxRetries + 1; attempt++)
+            for (var attempt = 1; attempt <= retry.MaxRetries + 1; attempt++)
             {
                 context.Attempt = attempt;
                 try
@@ -46,18 +46,18 @@ public static class BatchConsumeMiddlewares
                     lastError = ex;
                     context.LastError = ex;
 
-                    var classification = p.ErrorClassifier.Classify(ex);
+                    var classification = classifier.Classify(ex);
                     if (classification == ErrorClassification.Permanent)
                         break;
 
-                    if (attempt <= p.MaxRetries)
+                    if (attempt <= retry.MaxRetries)
                     {
                         AlbertoMetrics.Retries.Add(
                             context.Envelopes.Count,
                             new KeyValuePair<string, object?>("processor", context.ProcessorId),
                             new KeyValuePair<string, object?>("module", context.ModuleKey));
 
-                        await Task.Delay(p.CalculateDelay(attempt), context.CancellationToken);
+                        await Task.Delay(retry.CalculateDelay(attempt), context.CancellationToken);
                     }
                 }
             }
@@ -72,7 +72,7 @@ public static class BatchConsumeMiddlewares
                 new KeyValuePair<string, object?>("processor", context.ProcessorId),
                 new KeyValuePair<string, object?>("module", context.ModuleKey));
 
-            if (!p.DeadLetterOnMaxRetries || deadLetterStore is null || lastError is null)
+            if (!retry.DeadLetterOnMaxRetries || deadLetterStore is null || lastError is null)
                 return;
 
             var envelope = context.Envelopes[0];

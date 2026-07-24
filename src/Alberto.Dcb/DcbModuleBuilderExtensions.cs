@@ -1,3 +1,4 @@
+using Alberto.Dcb.Configuration;
 using Alberto.Dcb.Subscriptions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -265,22 +266,96 @@ public static class DcbModuleBuilderExtensions
     }
 
     /// <summary>
-    /// Configures independent per-processor control loops.
-    /// Each registered <see cref="Subscriptions.IEventProcessor"/> gets its own polling loop
-    /// that advances its own checkpoint independently up to <see cref="Subscriptions.EventStoreHead.Current"/>.
+    /// Configures the async control loop. Called implicitly with defaults when omitted.
     /// </summary>
     /// <param name="builder">The module builder.</param>
-    /// <param name="configure">Optional action to configure the control loops.</param>
-    /// <returns>The module builder for chaining.</returns>
+    /// <param name="configure">
+    /// Transforms the current options. Use a <c>with</c> expression:
+    /// <c>o => o with { BatchSize = 500 }</c>. Anything set here is still overridable from
+    /// <c>Alberto:Modules:{moduleKey}:ControlLoop</c>.
+    /// </param>
     public static DcbModuleBuilder WithControlLoop(
         this DcbModuleBuilder builder,
-        Action<ControlLoopBuilder>? configure = null)
+        Func<ControlLoopOptions, ControlLoopOptions>? configure = null)
     {
-        builder.ControlLoopConfigured = true;
-        var loopBuilder = new ControlLoopBuilder(builder);
-        configure?.Invoke(loopBuilder);
-        loopBuilder.Build();
+        ArgumentNullException.ThrowIfNull(builder);
+
+        if (configure is not null)
+        {
+            builder.Configure(d => d with
+            {
+                ControlLoop = configure(d.ControlLoop)
+                    ?? throw new InvalidOperationException("WithControlLoop configurator returned null."),
+            });
+        }
+
+        if (!builder.ControlLoopConfigured)
+        {
+            builder.ControlLoopConfigured = true;
+            builder.Register(ControlLoopRegistration.Register);
+        }
+
         return builder;
+    }
+
+    /// <summary>
+    /// Adds a middleware to the per-event consume pipeline. Middlewares run in registration order
+    /// (first added is outermost). The built-in retry-and-dead-letter middleware is always the
+    /// innermost layer, so custom middleware observes the outcome of the whole retry sequence.
+    /// </summary>
+    public static DcbModuleBuilder AddConsumeMiddleware(
+        this DcbModuleBuilder builder,
+        Func<IServiceProvider, ConsumeMiddleware> factory)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(factory);
+
+        return builder.Register(context =>
+            context.Services.AddKeyedSingleton(context.ModuleKey, (sp, _) => factory(sp)));
+    }
+
+    /// <summary>
+    /// Adds a middleware to the batch consume pipeline. A per-event middleware without a batch
+    /// counterpart forces the control loop back onto per-event dispatch, so register both when a
+    /// processor should keep batching.
+    /// </summary>
+    public static DcbModuleBuilder AddBatchConsumeMiddleware(
+        this DcbModuleBuilder builder,
+        Func<IServiceProvider, BatchConsumeMiddleware> factory)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(factory);
+
+        return builder.Register(context =>
+            context.Services.AddKeyedSingleton(context.ModuleKey, (sp, _) => factory(sp)));
+    }
+
+    /// <summary>
+    /// Replaces the classifier that decides whether a handler failure is transient (retry) or
+    /// permanent (dead-letter immediately). Defaults to <see cref="DefaultErrorClassifier"/>.
+    /// </summary>
+    public static DcbModuleBuilder UseErrorClassifier(
+        this DcbModuleBuilder builder,
+        IErrorClassifier classifier)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(classifier);
+
+        return builder.Register(context =>
+            context.Services.AddKeyedSingleton(context.ModuleKey, classifier));
+    }
+
+    /// <summary>
+    /// Replaces the error classifier with one resolved from the container, so it can take
+    /// dependencies. Defaults to <see cref="DefaultErrorClassifier"/>.
+    /// </summary>
+    public static DcbModuleBuilder UseErrorClassifier<TClassifier>(this DcbModuleBuilder builder)
+        where TClassifier : class, IErrorClassifier
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        return builder.Register(context =>
+            context.Services.AddKeyedSingleton<IErrorClassifier, TClassifier>(context.ModuleKey));
     }
 
     private static readonly ProcessorExecutionOptions SyncExecutionDefault =

@@ -41,6 +41,14 @@ public static class ServiceCollectionExtensions
         var builder = new DcbModuleBuilder(services, moduleKey);
         configure(builder);
 
+        // Auto-add the control loop with defaults if the user never called WithControlLoop.
+        // Done as a deferred registration so nothing resolves a service during composition.
+        if (!builder.ControlLoopConfigured)
+        {
+            builder.ControlLoopConfigured = true;
+            builder.Register(ControlLoopRegistration.Register);
+        }
+
         var declared = builder.Definition;
 
         // Phase 2 — bind and validate. The definition becomes a named options instance so it can
