@@ -115,6 +115,12 @@ public class FencedCheckpointTests
             return Task.CompletedTask;
         }
 
+        public Task RewindAsync(string processorId, long position, CancellationToken ct = default)
+        {
+            _checkpoints[processorId] = position;
+            return Task.CompletedTask;
+        }
+
         public Task<bool> SaveIfLeaseHeldAsync(
             string processorId, long position, string consumerId, string replicaId,
             bool useProcessorLeaseFencing = false, CancellationToken ct = default)
@@ -154,6 +160,12 @@ public class FencedCheckpointTests
         public Task ResetAsync(string processorId, CancellationToken ct = default)
         {
             _checkpoints.Remove(processorId);
+            return Task.CompletedTask;
+        }
+
+        public Task RewindAsync(string processorId, long position, CancellationToken ct = default)
+        {
+            _checkpoints[processorId] = position;
             return Task.CompletedTask;
         }
 

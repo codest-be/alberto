@@ -426,6 +426,12 @@ public class CachingCheckpointStoreTests
             _checkpoints.Remove(processorId);
             return Task.CompletedTask;
         }
+
+        public Task RewindAsync(string processorId, long position, CancellationToken ct = default)
+        {
+            _checkpoints[processorId] = position;
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class TrackingCheckpointStore : ICheckpointStore
@@ -450,6 +456,12 @@ public class CachingCheckpointStoreTests
         public Task ResetAsync(string processorId, CancellationToken ct = default)
         {
             _checkpoints.Remove(processorId);
+            return Task.CompletedTask;
+        }
+
+        public Task RewindAsync(string processorId, long position, CancellationToken ct = default)
+        {
+            _checkpoints[processorId] = position;
             return Task.CompletedTask;
         }
     }

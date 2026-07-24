@@ -217,6 +217,12 @@ public class CachingCheckpointStoreFenceRejectionTests
             return Task.CompletedTask;
         }
 
+        public Task RewindAsync(string processorId, long position, CancellationToken ct = default)
+        {
+            _data[processorId] = position;
+            return Task.CompletedTask;
+        }
+
         public Task<bool> SaveIfLeaseHeldAsync(
             string processorId,
             long position,

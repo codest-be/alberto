@@ -21,4 +21,11 @@ public interface ICheckpointStore
     /// Resets the checkpoint for a processor, allowing it to reprocess from the beginning.
     /// </summary>
     Task ResetAsync(string processorId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Unconditionally sets the checkpoint to the given position, bypassing monotonicity guards.
+    /// Unlike <see cref="SaveAsync"/>, this allows moving the position backwards. Intended exclusively
+    /// for operator-initiated rewinds; normal processors must use <see cref="SaveAsync"/>.
+    /// </summary>
+    Task RewindAsync(string processorId, long position, CancellationToken ct = default);
 }

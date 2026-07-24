@@ -159,5 +159,8 @@ public class BufferedCheckpointStoreTests
 
         public Task ResetAsync(string processorId, CancellationToken ct = default)
             => _inner.ResetAsync(processorId, ct);
+
+        public Task RewindAsync(string processorId, long position, CancellationToken ct = default)
+            => _inner.RewindAsync(processorId, position, ct);
     }
 }

@@ -1,6 +1,6 @@
 using System.CommandLine;
-using Alberto.Cli.Data;
 using Alberto.Cli.Output;
+using Alberto.Dcb.Postgres;
 using Npgsql;
 using Spectre.Console;
 
@@ -58,9 +58,9 @@ public static class TenantOpsCommand
             try
             {
                 await using var dataSource = new NpgsqlDataSourceBuilder(connStr).Build();
-                var data = new CliDataAccess(dataSource, schemaName);
+                var admin = new PostgresAdminDataAccess(dataSource, schemaName);
 
-                var deleted = await data.ReleaseTenantLeasesAsync(processorId);
+                var deleted = await admin.ReleaseTenantLeasesAsync(processorId);
                 output.Text($"Released {deleted} tenant lease(s) for {scope}.");
             }
             catch (Exception ex)
