@@ -52,9 +52,7 @@ public static class PaymentsModule
                     nameof(PaymentSummaryProjection),
                     "payments");
             })
-            .WithControlLoop(loop => loop
-                .WithPollingInterval(TimeSpan.FromMilliseconds(100))
-                .WithBatchSize(500)));
+            .WithControlLoop(o => o with { PollingInterval = TimeSpan.FromMilliseconds(100), BatchSize = 500 }));
 
         return services;
     }

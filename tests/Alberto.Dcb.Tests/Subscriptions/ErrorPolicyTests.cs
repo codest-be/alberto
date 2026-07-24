@@ -171,12 +171,4 @@ public class ErrorPolicyTests
 
     #endregion
 
-    #region Test Helpers
-
-    private sealed class TestErrorClassifier : IErrorClassifier
-    {
-        public ErrorClassification Classify(Exception exception) => ErrorClassification.Unknown;
-    }
-
-    #endregion
 }

@@ -54,9 +54,7 @@ public static class OrdersModule
                     "orders");
             })
             .AddEfProjection<OrderSummaryEntity, OrdersDbContext>(OrderSummaryEfProjection.Declaration)
-            .WithControlLoop(loop => loop
-                .WithPollingInterval(TimeSpan.FromMilliseconds(100))
-                .WithBatchSize(500)));
+            .WithControlLoop(o => o with { PollingInterval = TimeSpan.FromMilliseconds(100), BatchSize = 500 }));
 
         // Note: Query-side state stores are created dynamically per-tenant in GraphQL queries.
         // The projection state stores above use the tenant from the event envelope during writes.
