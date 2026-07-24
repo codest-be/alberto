@@ -102,8 +102,8 @@ dotnet add package Alberto.Dcb --prerelease
 | `Alberto.Dcb.Telemetry` | OpenTelemetry tracing and metrics |
 | `Alberto.Cli` | The `alberto` operator CLI (`dotnet tool install`) |
 
-Everything targets **net9.0 and net10.0**, except `Alberto.Dcb.EntityFramework`, which is net10.0
-only.
+The libraries target **net9.0 and net10.0**, except `Alberto.Dcb.EntityFramework`, which is net10.0
+only. The CLI is a net10.0 tool.
 
 ## Sixty seconds
 
@@ -136,7 +136,7 @@ The full, runnable version of that program is
 
 ```
 /src        Packable core libraries
-/apps       Example applications (Orders, Payments) orchestrated by .NET Aspire
+/apps       Example applications — Orders (run by .NET Aspire) and Payments (a library the Orders API reads from)
 /tools      The alberto operator CLI
 /tests      xUnit v3 unit + Testcontainers integration tests, and K6 load tests
 ```
@@ -149,8 +149,8 @@ dotnet run --project apps/Alberto.AppHost
 
 ## Project status
 
-Alberto is **pre-1.0** and published as `0.1.0-beta.*`. The core, the CLI and the tests build
-clean and the suite is green; the API still moves between betas, and every break is recorded in
+Alberto is **pre-1.0** and published as `0.1.0-beta.*`. The whole solution builds clean and the
+suite is green; the API still moves between betas, and every break is recorded in
 [UPGRADING.md](UPGRADING.md).
 
 One known gap is documented rather than hidden: an outbox relay that dies between claiming an
