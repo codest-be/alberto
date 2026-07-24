@@ -6,6 +6,8 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
+#pragma warning disable CS0618 // Task 12 removes DcbModuleBuilder.Services; delete this pragma then.
+
 namespace Alberto.Dcb.Postgres;
 
 /// <summary>

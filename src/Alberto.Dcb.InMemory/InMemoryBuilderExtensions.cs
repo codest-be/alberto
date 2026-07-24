@@ -2,6 +2,8 @@ using Alberto.Dcb.Append;
 using Alberto.Dcb.Subscriptions;
 using Microsoft.Extensions.DependencyInjection;
 
+#pragma warning disable CS0618 // Task 12 removes DcbModuleBuilder.Services; delete this pragma then.
+
 namespace Alberto.Dcb.InMemory;
 
 /// <summary>

@@ -3,6 +3,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
+#pragma warning disable CS0618 // Task 12 removes DcbModuleBuilder.Services; delete this pragma then.
+
 namespace Alberto.Dcb;
 
 /// <summary>
