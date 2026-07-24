@@ -5,11 +5,26 @@ namespace Alberto.Dcb.Subscriptions;
 /// </summary>
 public sealed class ErrorPolicy
 {
+    private readonly int _maxRetries = 3;
+
     /// <summary>
     /// Maximum number of retry attempts before escalating.
-    /// Default is 3.
+    /// Default is 3. Zero means the event is attempted once with no retry.
     /// </summary>
-    public int MaxRetries { get; init; } = 3;
+    /// <remarks>
+    /// Must not be negative. A negative value would skip the attempt loop entirely,
+    /// silently dropping the event without dispatching, retrying or dead-lettering it.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">The value is negative.</exception>
+    public int MaxRetries
+    {
+        get => _maxRetries;
+        init
+        {
+            ArgumentOutOfRangeException.ThrowIfNegative(value, nameof(MaxRetries));
+            _maxRetries = value;
+        }
+    }
 
     /// <summary>
     /// Base delay between retry attempts (used for first retry).

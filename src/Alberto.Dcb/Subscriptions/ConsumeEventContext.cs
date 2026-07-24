@@ -3,7 +3,7 @@ namespace Alberto.Dcb.Subscriptions;
 /// <summary>
 /// Context passed through the middleware chain for a single event.
 /// </summary>
-public sealed class ConsumeEventContext
+public sealed class ConsumeEventContext : IMiddlewareContext
 {
     public required string ProcessorId { get; init; }
     public required string ModuleKey { get; init; }
