@@ -23,10 +23,17 @@ namespace Alberto.Dcb.Subscriptions;
 public sealed class ProjectionVersions : IAsyncDisposable
 {
     /// <summary>
+    /// The version a projection writes to before it has ever been rebuilt. Versions count up
+    /// from here and are never reused, so this is also the lower bound of the range a cleanup
+    /// sweep has to consider.
+    /// </summary>
+    public const int Initial = 1;
+
+    /// <summary>
     /// The version selector for a projection that is not participating in rebuilds. Shared
     /// rather than allocated per store, since it is the default for almost every projection.
     /// </summary>
-    public static readonly Func<int> NeverRebuilt = () => 1;
+    public static readonly Func<int> NeverRebuilt = () => Initial;
 
     private readonly IProjectionRebuildStore _store;
     private readonly ConcurrentDictionary<string, ProjectionRebuildState> _cache = new();

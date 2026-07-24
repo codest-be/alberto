@@ -15,20 +15,52 @@ public static class DcbModuleBuilderExtensions
     /// <typeparam name="TState">The projection state type.</typeparam>
     /// <param name="builder">The module builder.</param>
     /// <param name="declaration">The projection declaration.</param>
-    /// <param name="stateStoreFactory">A delegate that, given the service provider, returns a state store factory.</param>
+    /// <param name="stateStoreFactory">
+    /// Builds the projection's state store. The <see cref="ProjectionStoreContext"/> carries the
+    /// service provider and the rebuild-version selector the store must resolve on every
+    /// operation:
+    /// <code>
+    /// .AddProjection(OrdersOverviewProjection.Declaration, ctx =>
+    /// {
+    ///     var dataSource = ctx.Services.GetRequiredKeyedService&lt;NpgsqlDataSource&gt;(ModuleKey);
+    ///     return () => new PostgresStateStore&lt;OrdersOverview&gt;(
+    ///         dataSource, nameof(OrdersOverviewProjection), "orders", ctx.RebuildVersion);
+    /// })
+    /// </code>
+    /// A store that ignores <see cref="ProjectionStoreContext.RebuildVersion"/> still works — it
+    /// simply cannot be rebuilt without downtime.
+    /// </param>
+    /// <param name="projectionType">
+    /// The key this projection's state rows are stored under, when it differs from the
+    /// processor id. Only the rebuild pipeline needs this: promotion deletes the superseded
+    /// version's rows from the state table, which is keyed by projection type.
+    /// </param>
     public static DcbModuleBuilder AddProjection<TState>(
         this DcbModuleBuilder builder,
         ProjectionDeclaration<TState> declaration,
-        Func<IServiceProvider, Func<IStateStore<TState>>> stateStoreFactory)
+        Func<ProjectionStoreContext, Func<IStateStore<TState>>> stateStoreFactory,
+        string? projectionType = null)
         where TState : new()
     {
         ArgumentNullException.ThrowIfNull(declaration);
         ArgumentNullException.ThrowIfNull(stateStoreFactory);
-        builder.Services.AddKeyedSingleton<IEventProcessor>(builder.ModuleKey, (sp, _) =>
+
+        var moduleKey = builder.ModuleKey;
+
+        builder.Services.AddKeyedSingleton<IEventProcessor>(moduleKey, (sp, key) =>
         {
-            var factory = stateStoreFactory(sp);
+            var version = ProjectionStoreContext.LiveVersion(sp, key, declaration.ProcessorId);
+            var factory = stateStoreFactory(new ProjectionStoreContext(sp, version));
             return new DeclaredAsyncProjection<TState>(declaration, factory);
         });
+
+        builder.Services.AddKeyedSingleton(moduleKey, (sp, _) =>
+            new RebuildableProjection(
+                declaration.ProcessorId,
+                projectionType ?? declaration.ProcessorId,
+                version => new DeclaredAsyncProjection<TState>(
+                    declaration, stateStoreFactory(new ProjectionStoreContext(sp, version)))));
+
         return builder;
     }
 

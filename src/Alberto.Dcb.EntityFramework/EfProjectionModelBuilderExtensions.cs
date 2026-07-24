@@ -1,3 +1,4 @@
+using Alberto.Dcb.Subscriptions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -54,7 +55,7 @@ public static class EfProjectionModelBuilderExtensions
         var entity = modelBuilder.Entity<TEntity>();
 
         entity.HasKey(e => new { e.DocumentId, e.RebuildVersion });
-        entity.Property(e => e.RebuildVersion).HasDefaultValue(1);
+        entity.Property(e => e.RebuildVersion).HasDefaultValue(ProjectionVersions.Initial);
 
         // The live version is the only one anything queries by document id, and a rebuild
         // doubles the row count while it runs, so the version leads the index.

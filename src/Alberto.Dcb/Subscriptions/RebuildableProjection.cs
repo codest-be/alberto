@@ -1,0 +1,111 @@
+namespace Alberto.Dcb.Subscriptions;
+
+/// <summary>
+/// Everything the rebuild coordinator needs to stand a projection up a second time, writing
+/// into a different version of its own state.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Registered by <c>AddProjection</c> and <c>AddEfProjection</c> alongside the live processor.
+/// The coordinator calls <see cref="CreateProcessor"/> with a shadow version selector to get a
+/// second, independent processor over the same declaration, then runs it from position 0.
+/// </para>
+/// <para>
+/// The rebuild version is a selector rather than a value because a rebuild outlives its own
+/// promotion by a few events: the shadow processor keeps running until the coordinator has
+/// stopped it, and by then the version it should be writing to may have changed.
+/// </para>
+/// </remarks>
+public sealed class RebuildableProjection
+{
+    /// <summary>Creates a registration.</summary>
+    /// <param name="processorId">
+    /// The live processor's id — the checkpoint key, and what an operator names on the CLI.
+    /// </param>
+    /// <param name="projectionType">
+    /// The key the projection's state rows are stored under. Equal to
+    /// <paramref name="processorId"/> unless the projection was registered with an explicit
+    /// projection type.
+    /// </param>
+    /// <param name="createProcessor">
+    /// Builds a processor whose state store resolves its rebuild version through the supplied
+    /// selector.
+    /// </param>
+    public RebuildableProjection(
+        string processorId,
+        string projectionType,
+        Func<Func<int>, IEventProcessor> createProcessor)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(projectionType);
+        ArgumentNullException.ThrowIfNull(createProcessor);
+
+        ProcessorId = processorId;
+        ProjectionType = projectionType;
+        CreateProcessor = createProcessor;
+    }
+
+    /// <summary>The live processor's id.</summary>
+    public string ProcessorId { get; }
+
+    /// <summary>The key this projection's state rows are stored under.</summary>
+    public string ProjectionType { get; }
+
+    /// <summary>Builds a processor bound to the supplied version selector.</summary>
+    public Func<Func<int>, IEventProcessor> CreateProcessor { get; }
+
+    /// <summary>
+    /// The checkpoint key a shadow rebuild loop advances. Separate from the live processor's
+    /// so that replaying from the start of history does not drag the live projection back
+    /// with it.
+    /// </summary>
+    public static string ShadowProcessorId(string processorId) => $"{processorId}::rebuild";
+}
+
+/// <summary>
+/// Presents a processor under the shadow checkpoint key, so the same declaration can run twice
+/// in one host without the two runs sharing a position.
+/// </summary>
+internal sealed class ShadowProcessor(IEventProcessor inner, string processorId)
+    : IBatchableProcessor, IAsyncDisposable
+{
+    public string ProcessorId { get; } = processorId;
+
+    public bool IsActive { get => inner.IsActive; set => inner.IsActive = value; }
+
+    /// <summary>
+    /// Always true. A shadow loop is by definition catching up from behind, and processors use
+    /// this to opt out of behaviour that only makes sense at the head of the log.
+    /// </summary>
+    public bool IsRebuilding { get => true; set { } }
+
+    public IReadOnlySet<string> HandledEventTypes => inner.HandledEventTypes;
+
+    public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
+        => inner.ProcessEventAsync(@event, ct);
+
+    /// <summary>
+    /// A rebuild replays the whole log, so it takes the batch path whenever the projection
+    /// offers one. Projections that do not are dispatched event by event — slower, but the
+    /// alternative would be refusing to rebuild them.
+    /// </summary>
+    public async Task ProcessBatchAsync(
+        IReadOnlyList<IEventEnvelope> events, CancellationToken ct = default)
+    {
+        if (inner is IBatchableProcessor batchable)
+        {
+            await batchable.ProcessBatchAsync(events, ct);
+            return;
+        }
+
+        foreach (var e in events)
+            await inner.ProcessEventAsync(e, ct);
+    }
+
+    public ErrorHandlingDecision HandleError(
+        IEventEnvelope failedEvent, Exception exception, int attemptNumber, ErrorPolicy policy)
+        => inner.HandleError(failedEvent, exception, attemptNumber, policy);
+
+    public ValueTask DisposeAsync()
+        => inner is IAsyncDisposable d ? d.DisposeAsync() : ValueTask.CompletedTask;
+}

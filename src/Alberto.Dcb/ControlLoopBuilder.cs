@@ -26,6 +26,10 @@ public sealed class ControlLoopBuilder
     private TimeSpan _retryLoopClaimLease = DeadLetterRetryLoop.DefaultClaimLeaseDuration;
     private bool _useProcessorLeases;
     private string? _replicaId;
+    private bool _rebuildsEnabled;
+    private bool _autoPromote = true;
+    private TimeSpan _rebuildPollingInterval = TimeSpan.FromSeconds(5);
+    private TimeSpan _versionRefreshInterval = TimeSpan.FromSeconds(5);
 
     internal ControlLoopBuilder(DcbModuleBuilder moduleBuilder) =>
         _moduleBuilder = moduleBuilder;
@@ -112,6 +116,52 @@ public sealed class ControlLoopBuilder
     {
         _useProcessorLeases = true;
         _replicaId = replicaId;
+        return this;
+    }
+
+    /// <summary>
+    /// Enables zero-downtime projection rebuilds for this module.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A rebuild replays the whole log into a second, invisible copy of a projection's state
+    /// while the live one keeps serving reads, then swaps the two in a single transaction.
+    /// Nothing happens until an operator starts one — <c>alberto ops rebuild start
+    /// &lt;processor&gt;</c>, or a direct call to <see cref="IProjectionRebuildStore"/> — and
+    /// this method is what makes the application able to carry one out.
+    /// </para>
+    /// <para>
+    /// Requires a backend that registers an <see cref="IProjectionRebuildStore"/>; Postgres
+    /// does. Projections must resolve their rebuild version through
+    /// <see cref="ProjectionStoreContext.RebuildVersion"/>, and EF projection entities must be
+    /// configured with <c>ProjectionEntity</c> so their key includes the version. A projection
+    /// that does neither will have its live state overwritten by the replay instead of shadowed.
+    /// </para>
+    /// </remarks>
+    /// <param name="autoPromote">
+    /// Promote a rebuild as soon as it has caught up (the default). Set false to make promotion
+    /// an explicit operator step, leaving finished rebuilds parked at
+    /// <see cref="RebuildStatus.Ready"/> until <c>alberto ops rebuild promote</c>.
+    /// </param>
+    /// <param name="pollingInterval">
+    /// How often the coordinator re-reads the rebuild state machine — which is also how long an
+    /// operator waits between starting a rebuild and seeing it move. Default: 5 seconds.
+    /// </param>
+    public ControlLoopBuilder WithRebuilds(
+        bool autoPromote = true,
+        TimeSpan? pollingInterval = null)
+    {
+        _rebuildsEnabled = true;
+        _autoPromote = autoPromote;
+
+        if (pollingInterval is { } interval)
+        {
+            if (interval <= TimeSpan.Zero)
+                throw new ArgumentOutOfRangeException(nameof(pollingInterval), "Interval must be positive.");
+            _rebuildPollingInterval = interval;
+            _versionRefreshInterval = interval;
+        }
+
         return this;
     }
 
@@ -235,23 +285,9 @@ public sealed class ControlLoopBuilder
             //   [explicit middlewares...]        ← .WithMiddleware(...)
             //   RetryAndDeadLetter               ← always innermost
             //   processor.ProcessEventAsync       ← terminal
-            var diMiddlewares = sp.GetKeyedServices<ConsumeMiddleware>(moduleKey);
-            var diBatchMiddlewares = sp.GetKeyedServices<BatchConsumeMiddleware>(moduleKey);
-            var deadLetterStore = sp.GetKeyedService<IDeadLetterStore>(moduleKey);
-
-            var middlewares = new List<ConsumeMiddleware>();
-            middlewares.AddRange(diMiddlewares);
-            middlewares.AddRange(explicitMiddlewares);
-            middlewares.Add(ConsumeMiddlewares.RetryAndDeadLetter(errorPolicy, deadLetterStore));
-
-            var batchMiddlewares = new List<BatchConsumeMiddleware>();
-            batchMiddlewares.AddRange(diBatchMiddlewares);
-            batchMiddlewares.AddRange(explicitBatchMiddlewares);
-            batchMiddlewares.Add(BatchConsumeMiddlewares.RetryAndDeadLetter(errorPolicy, deadLetterStore));
-
-            var hasUnpairedPerEventMiddlewares =
-                diMiddlewares.Count() > diBatchMiddlewares.Count() ||
-                explicitMiddlewares.Length > explicitBatchMiddlewares.Length;
+            var (middlewares, batchMiddlewares, hasUnpairedPerEventMiddlewares) =
+                ComposeMiddleware(sp, moduleKey, errorPolicy,
+                    explicitMiddlewares, explicitBatchMiddlewares);
 
             var loops = processors
                 .Select(p => new ControlLoop(p, head, backend, checkpoints,
@@ -309,14 +345,11 @@ public sealed class ControlLoopBuilder
                 ?? throw new InvalidOperationException(
                     $"No IDeadLetterStore registered for module '{moduleKey}'. " +
                     "Dead letter retry loop requires a dead letter store.");
-            var diMiddlewares = sp.GetKeyedServices<ConsumeMiddleware>(moduleKey);
             var logger = sp.GetService<ILogger<DeadLetterRetryLoop>>();
 
             // Compose middleware chain (same as ControlLoop)
-            var middlewares = new List<ConsumeMiddleware>();
-            middlewares.AddRange(diMiddlewares);
-            middlewares.AddRange(explicitMiddlewares);
-            middlewares.Add(ConsumeMiddlewares.RetryAndDeadLetter(errorPolicy, deadLetterStore));
+            var (middlewares, _, _) = ComposeMiddleware(
+                sp, moduleKey, errorPolicy, explicitMiddlewares, explicitBatchMiddlewares);
 
             var retryLoops = processors
                 .Select(p => new DeadLetterRetryLoop(
@@ -331,5 +364,102 @@ public sealed class ControlLoopBuilder
                 .ToList();
             return new DeadLetterRetryLoopGroup(retryLoops);
         });
+
+        if (_rebuildsEnabled)
+            BuildRebuildPipeline();
+    }
+
+    /// <summary>
+    /// Registers the pieces that let this module carry out a zero-downtime projection rebuild:
+    /// the version source every state store resolves through, a factory for shadow control
+    /// loops, and the coordinator that drives them.
+    /// </summary>
+    private void BuildRebuildPipeline()
+    {
+        var moduleKey = _moduleBuilder.ModuleKey;
+        var services = _moduleBuilder.Services;
+        var pollingInterval = _pollingInterval;
+        var batchSize = _batchSize;
+        var errorPolicy = _errorPolicy;
+        var explicitMiddlewares = _middlewares.ToArray();
+        var explicitBatchMiddlewares = _batchMiddlewares.ToArray();
+        var versionRefreshInterval = _versionRefreshInterval;
+        var coordinatorOptions = new RebuildCoordinatorOptions(_rebuildPollingInterval, _autoPromote);
+
+        services.AddKeyedSingleton(moduleKey, (sp, _) =>
+        {
+            var store = sp.GetKeyedService<IProjectionRebuildStore>(moduleKey)
+                ?? throw new InvalidOperationException(
+                    $"Alberto module '{moduleKey}' enables projection rebuilds, but its event store " +
+                    "backend does not register an IProjectionRebuildStore. Rebuilds need a backend " +
+                    "that can hold the rebuild state machine — call .WithPostgres() on the module.");
+            return new ProjectionVersions(store, versionRefreshInterval);
+        });
+
+        services.AddKeyedSingleton(moduleKey, (sp, _) => new ShadowControlLoopFactory(processor =>
+        {
+            var head = sp.GetRequiredKeyedService<EventStoreHead>(moduleKey);
+            var backend = sp.GetKeyedService<IEventStoreBackend>($"{moduleKey}:consumer")
+                          ?? sp.GetRequiredKeyedService<IEventStoreBackend>(moduleKey);
+            var checkpoints = sp.GetRequiredKeyedService<ICheckpointStore>(moduleKey);
+            var (middlewares, batchMiddlewares, hasUnpaired) = ComposeMiddleware(
+                sp, moduleKey, errorPolicy, explicitMiddlewares, explicitBatchMiddlewares);
+
+            // The shadow loop runs on the module's default execution settings rather than the
+            // live processor's registration: a rebuild replays the whole log and always wants
+            // batching, which ShadowProcessor supplies even for a projection that does not
+            // implement IBatchableProcessor itself.
+            return new ControlLoop(
+                processor, head, backend, checkpoints, pollingInterval, batchSize, moduleKey,
+                middlewares, batchMiddlewares, hasUnpaired,
+                ProcessorExecutionOptions.Default,
+                sp.GetService<ILogger<ControlLoop>>());
+        }));
+
+        services.AddSingleton<IHostedService>(sp => new RebuildCoordinator(
+            sp.GetKeyedServices<RebuildableProjection>(moduleKey).ToList(),
+            sp.GetRequiredKeyedService<IProjectionRebuildStore>(moduleKey),
+            sp.GetRequiredKeyedService<ProjectionVersions>(moduleKey),
+            sp.GetRequiredKeyedService<ICheckpointStore>(moduleKey),
+            sp.GetRequiredKeyedService<ShadowControlLoopFactory>(moduleKey),
+            sp.GetKeyedServices<IProjectionStateClearer>(moduleKey).ToList(),
+            coordinatorOptions,
+            sp.GetService<ILogger<RebuildCoordinator>>()));
+    }
+
+    /// <summary>
+    /// Builds the consume chains for a loop, outermost first: DI-registered middleware, then
+    /// explicitly configured middleware, then retry-and-dead-letter closest to the processor.
+    /// </summary>
+    /// <returns>
+    /// The per-event chain, the batch chain, and whether some per-event middleware has no batch
+    /// equivalent — which a processor that requires batching must be told about rather than
+    /// silently losing.
+    /// </returns>
+    private static (List<ConsumeMiddleware> PerEvent, List<BatchConsumeMiddleware> Batch, bool HasUnpaired)
+        ComposeMiddleware(
+            IServiceProvider sp,
+            string moduleKey,
+            ErrorPolicy errorPolicy,
+            ConsumeMiddleware[] explicitMiddlewares,
+            BatchConsumeMiddleware[] explicitBatchMiddlewares)
+    {
+        var diMiddlewares = sp.GetKeyedServices<ConsumeMiddleware>(moduleKey).ToList();
+        var diBatchMiddlewares = sp.GetKeyedServices<BatchConsumeMiddleware>(moduleKey).ToList();
+        var deadLetterStore = sp.GetKeyedService<IDeadLetterStore>(moduleKey);
+
+        var middlewares = new List<ConsumeMiddleware>(diMiddlewares);
+        middlewares.AddRange(explicitMiddlewares);
+        middlewares.Add(ConsumeMiddlewares.RetryAndDeadLetter(errorPolicy, deadLetterStore));
+
+        var batchMiddlewares = new List<BatchConsumeMiddleware>(diBatchMiddlewares);
+        batchMiddlewares.AddRange(explicitBatchMiddlewares);
+        batchMiddlewares.Add(BatchConsumeMiddlewares.RetryAndDeadLetter(errorPolicy, deadLetterStore));
+
+        var hasUnpaired =
+            diMiddlewares.Count > diBatchMiddlewares.Count ||
+            explicitMiddlewares.Length > explicitBatchMiddlewares.Length;
+
+        return (middlewares, batchMiddlewares, hasUnpaired);
     }
 }
