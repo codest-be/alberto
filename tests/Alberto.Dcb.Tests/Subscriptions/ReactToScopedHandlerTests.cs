@@ -144,7 +144,7 @@ public class ReactToScopedHandlerTests
         builder.ReactTo<ItemProcessed>(
             _ => (_, _) => Task.CompletedTask,
             "batched-reactor",
-            configure: options => options.RequireBatching());
+            configure: o => o with { BatchingMode = ProcessorBatchingMode.Required });
 
         var provider = services.BuildServiceProvider(validateScopes: true);
         var processor = provider.GetKeyedServices<IEventProcessor>("test").Single();
@@ -167,7 +167,7 @@ public class ReactToScopedHandlerTests
             _ => (_, _) => Task.CompletedTask,
             "sync-reactor",
             ReactorMode.Sync,
-            options => options.RequireBatching()));
+            o => o with { BatchingMode = ProcessorBatchingMode.IfSupported }));
 
         Assert.Contains("cannot enable async batching", exception.Message);
     }

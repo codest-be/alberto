@@ -32,67 +32,6 @@ public sealed record ProcessorExecutionOptions(
         new(ProcessorBatchingMode.Required);
 }
 
-/// <summary>
-/// Fluent configurator used by registration helpers such as <c>ReactTo(..., configure: ...)</c>.
-/// </summary>
-public sealed class ProcessorExecutionConfigurator
-{
-    private ProcessorBatchingMode _batchingMode = ProcessorBatchingMode.Required;
-    private int _maxConcurrency = 1;
-
-    /// <summary>
-    /// Prefer batch dispatch when the processor supports it.
-    /// Falls back to the normal per-event path otherwise, including when
-    /// per-event consume middleware is configured.
-    /// </summary>
-    public ProcessorExecutionConfigurator BatchIfSupported()
-    {
-        _batchingMode = ProcessorBatchingMode.IfSupported;
-        return this;
-    }
-
-    /// <summary>
-    /// Require batch dispatch and fail fast if the processor is not batch-capable
-    /// or if the runtime cannot preserve configured middleware semantics.
-    /// </summary>
-    public ProcessorExecutionConfigurator RequireBatching()
-    {
-        _batchingMode = ProcessorBatchingMode.Required;
-        return this;
-    }
-
-    /// <summary>
-    /// Force the default per-event execution path.
-    /// </summary>
-    public ProcessorExecutionConfigurator DisableBatching()
-    {
-        _batchingMode = ProcessorBatchingMode.Disabled;
-        return this;
-    }
-
-    /// <summary>
-    /// Sets the maximum number of events processed concurrently within a batch.
-    /// Default is 1 (sequential). Requires batching to be enabled.
-    /// </summary>
-    public ProcessorExecutionConfigurator WithConcurrency(int maxConcurrency)
-    {
-        ArgumentOutOfRangeException.ThrowIfLessThan(maxConcurrency, 1);
-        _maxConcurrency = maxConcurrency;
-        return this;
-    }
-
-    internal ProcessorExecutionOptions Build()
-    {
-        if (_maxConcurrency > 1 && _batchingMode == ProcessorBatchingMode.Disabled)
-        {
-            throw new InvalidOperationException(
-                "WithConcurrency requires batching to be enabled. " +
-                "Call RequireBatching() or BatchIfSupported() first.");
-        }
-
-        return new(_batchingMode, _maxConcurrency);
-    }
-}
 
 internal sealed record ProcessorExecutionRegistration(
     string ProcessorId,

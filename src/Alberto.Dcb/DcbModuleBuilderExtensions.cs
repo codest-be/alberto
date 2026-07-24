@@ -27,6 +27,13 @@ public static class DcbModuleBuilderExtensions
     {
         ArgumentNullException.ThrowIfNull(declaration);
         ArgumentNullException.ThrowIfNull(stateStoreFactory);
+
+        builder.DeclareProcessor(new ProcessorDeclaration
+        {
+            ProcessorId = declaration.ProcessorId,
+            Kind = ProcessorKind.Projection,
+        });
+
         builder.Services.AddKeyedSingleton<IEventProcessor>(builder.ModuleKey, (sp, _) =>
         {
             var factory = stateStoreFactory(sp);
@@ -60,15 +67,20 @@ public static class DcbModuleBuilderExtensions
         Func<IServiceProvider, Func<TEvent, CancellationToken, Task>> handlerFactory,
         string processorId,
         ReactorMode mode = ReactorMode.Async,
-        Action<ProcessorExecutionConfigurator>? configure = null)
+        Func<ProcessorExecutionOptions, ProcessorExecutionOptions>? configure = null)
         where TEvent : class, IEvent
     {
         ArgumentNullException.ThrowIfNull(handlerFactory);
         ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
 
-        var executionOptions = mode == ReactorMode.Sync && configure is null
-            ? SyncExecutionDefault
-            : BuildProcessorExecutionOptions(configure);
+        var executionOptions = BuildProcessorExecutionOptions(mode, configure);
+
+        builder.DeclareProcessor(new ProcessorDeclaration
+        {
+            ProcessorId = processorId,
+            Kind = ProcessorKind.Reactor,
+            Execution = executionOptions,
+        });
 
         if (mode == ReactorMode.Sync)
         {
@@ -116,15 +128,20 @@ public static class DcbModuleBuilderExtensions
         Func<IServiceProvider, Func<TEvent, ReactorContext, CancellationToken, Task>> handlerFactory,
         string processorId,
         ReactorMode mode = ReactorMode.Async,
-        Action<ProcessorExecutionConfigurator>? configure = null)
+        Func<ProcessorExecutionOptions, ProcessorExecutionOptions>? configure = null)
         where TEvent : class, IEvent
     {
         ArgumentNullException.ThrowIfNull(handlerFactory);
         ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
 
-        var executionOptions = mode == ReactorMode.Sync && configure is null
-            ? SyncExecutionDefault
-            : BuildProcessorExecutionOptions(configure);
+        var executionOptions = BuildProcessorExecutionOptions(mode, configure);
+
+        builder.DeclareProcessor(new ProcessorDeclaration
+        {
+            ProcessorId = processorId,
+            Kind = ProcessorKind.Reactor,
+            Execution = executionOptions,
+        });
 
         if (mode == ReactorMode.Sync)
         {
@@ -157,8 +174,10 @@ public static class DcbModuleBuilderExtensions
     /// <param name="builder">The module builder.</param>
     /// <param name="methodSelector">Selects the handler method from the resolved handler instance.</param>
     /// <param name="processorId">
-    /// A unique processor ID within this module. Used as the checkpoint key — processors
-    /// sharing an ID would share checkpoint state and silently skip events.
+    /// Optional. When omitted, the id is derived from <typeparamref name="THandler"/> via
+    /// <see cref="ProcessorId.For{T}"/> (reading <see cref="ProcessorIdAttribute"/> if present,
+    /// otherwise building a qualified name from the type hierarchy). Must be unique within the
+    /// module — processors sharing an id share checkpoint state and silently skip events.
     /// </param>
     /// <param name="mode">
     /// <see cref="ReactorMode.Async"/> (default): runs via background polling.
@@ -168,23 +187,33 @@ public static class DcbModuleBuilderExtensions
     public static DcbModuleBuilder ReactTo<TEvent, THandler>(
         this DcbModuleBuilder builder,
         Func<THandler, Func<TEvent, CancellationToken, Task>> methodSelector,
-        string processorId,
+        string? processorId = null,
         ReactorMode mode = ReactorMode.Async,
-        Action<ProcessorExecutionConfigurator>? configure = null)
+        Func<ProcessorExecutionOptions, ProcessorExecutionOptions>? configure = null)
         where TEvent : class, IEvent
         where THandler : class
     {
+        ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(methodSelector);
-        ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
+
+        var resolvedProcessorId = processorId ?? ProcessorId.For<THandler>();
+        ArgumentException.ThrowIfNullOrWhiteSpace(resolvedProcessorId);
+
         builder.Services.TryAddScoped<THandler>();
 
-        var executionOptions = mode == ReactorMode.Sync && configure is null
-            ? SyncExecutionDefault
-            : BuildProcessorExecutionOptions(configure);
+        var executionOptions = BuildProcessorExecutionOptions(mode, configure);
+
+        builder.DeclareProcessor(new ProcessorDeclaration
+        {
+            ProcessorId = resolvedProcessorId,
+            Kind = ProcessorKind.Reactor,
+            Execution = executionOptions,
+            HandlerType = typeof(THandler),
+        });
 
         if (mode == ReactorMode.Sync)
         {
-            ValidateSyncExecutionOptions(processorId, executionOptions);
+            ValidateSyncExecutionOptions(resolvedProcessorId, executionOptions);
             builder.Services.AddKeyedSingleton<IPostAppendHandler>(builder.ModuleKey, (sp, _) =>
             {
                 var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
@@ -198,10 +227,10 @@ public static class DcbModuleBuilderExtensions
         }
         else
         {
-            RegisterAsyncProcessor(builder, processorId, executionOptions, sp =>
+            RegisterAsyncProcessor(builder, resolvedProcessorId, executionOptions, sp =>
             {
                 var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
-                return new FunctionalReactor<TEvent>(processorId, async (e, _, ct) =>
+                return new FunctionalReactor<TEvent>(resolvedProcessorId, async (e, _, ct) =>
                 {
                     await using var scope = scopeFactory.CreateAsyncScope();
                     var handler = scope.ServiceProvider.GetRequiredService<THandler>();
@@ -217,26 +246,51 @@ public static class DcbModuleBuilderExtensions
     /// Registers a functional reactor that reacts to a specific event type,
     /// using a handler class resolved from DI per event and exposing a <see cref="ReactorContext"/>.
     /// </summary>
+    /// <typeparam name="TEvent">The event type to react to.</typeparam>
+    /// <typeparam name="THandler">The handler class holding dependencies. Registered as scoped if not already registered.</typeparam>
+    /// <param name="builder">The module builder.</param>
+    /// <param name="methodSelector">Selects the handler method from the resolved handler instance.</param>
+    /// <param name="processorId">
+    /// Optional. When omitted, the id is derived from <typeparamref name="THandler"/> via
+    /// <see cref="ProcessorId.For{T}"/> (reading <see cref="ProcessorIdAttribute"/> if present,
+    /// otherwise building a qualified name from the type hierarchy). Must be unique within the
+    /// module — processors sharing an id share checkpoint state and silently skip events.
+    /// </param>
+    /// <param name="mode">
+    /// <see cref="ReactorMode.Async"/> (default): runs via background polling.
+    /// <see cref="ReactorMode.Sync"/>: runs immediately during <see cref="IEventStore.AppendAsync"/>.
+    /// </param>
+    /// <param name="configure">Optional per-processor execution settings for the async control loop.</param>
     public static DcbModuleBuilder ReactTo<TEvent, THandler>(
         this DcbModuleBuilder builder,
         Func<THandler, Func<TEvent, ReactorContext, CancellationToken, Task>> methodSelector,
-        string processorId,
+        string? processorId = null,
         ReactorMode mode = ReactorMode.Async,
-        Action<ProcessorExecutionConfigurator>? configure = null)
+        Func<ProcessorExecutionOptions, ProcessorExecutionOptions>? configure = null)
         where TEvent : class, IEvent
         where THandler : class
     {
+        ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(methodSelector);
-        ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
+
+        var resolvedProcessorId = processorId ?? ProcessorId.For<THandler>();
+        ArgumentException.ThrowIfNullOrWhiteSpace(resolvedProcessorId);
+
         builder.Services.TryAddScoped<THandler>();
 
-        var executionOptions = mode == ReactorMode.Sync && configure is null
-            ? SyncExecutionDefault
-            : BuildProcessorExecutionOptions(configure);
+        var executionOptions = BuildProcessorExecutionOptions(mode, configure);
+
+        builder.DeclareProcessor(new ProcessorDeclaration
+        {
+            ProcessorId = resolvedProcessorId,
+            Kind = ProcessorKind.Reactor,
+            Execution = executionOptions,
+            HandlerType = typeof(THandler),
+        });
 
         if (mode == ReactorMode.Sync)
         {
-            ValidateSyncExecutionOptions(processorId, executionOptions);
+            ValidateSyncExecutionOptions(resolvedProcessorId, executionOptions);
             builder.Services.AddKeyedSingleton<IPostAppendHandler>(builder.ModuleKey, (sp, _) =>
             {
                 var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
@@ -250,10 +304,10 @@ public static class DcbModuleBuilderExtensions
         }
         else
         {
-            RegisterAsyncProcessor(builder, processorId, executionOptions, sp =>
+            RegisterAsyncProcessor(builder, resolvedProcessorId, executionOptions, sp =>
             {
                 var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
-                return new FunctionalReactor<TEvent>(processorId, async (e, context, ct) =>
+                return new FunctionalReactor<TEvent>(resolvedProcessorId, async (e, context, ct) =>
                 {
                     await using var scope = scopeFactory.CreateAsyncScope();
                     var handler = scope.ServiceProvider.GetRequiredService<THandler>();
@@ -362,14 +416,18 @@ public static class DcbModuleBuilderExtensions
         new(ProcessorBatchingMode.Disabled);
 
     private static ProcessorExecutionOptions BuildProcessorExecutionOptions(
-        Action<ProcessorExecutionConfigurator>? configure)
+        ReactorMode mode,
+        Func<ProcessorExecutionOptions, ProcessorExecutionOptions>? configure)
     {
-        if (configure is null)
-            return ProcessorExecutionOptions.Default;
+        var options = mode == ReactorMode.Sync
+            ? SyncExecutionDefault
+            : ProcessorExecutionOptions.Default;
 
-        var configurator = new ProcessorExecutionConfigurator();
-        configure(configurator);
-        return configurator.Build();
+        if (configure is null)
+            return options;
+
+        return configure(options)
+            ?? throw new InvalidOperationException("Processor execution configurator returned null.");
     }
 
     private static void RegisterAsyncProcessor(
