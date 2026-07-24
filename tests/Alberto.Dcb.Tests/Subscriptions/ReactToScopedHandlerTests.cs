@@ -115,11 +115,15 @@ public class ReactToScopedHandlerTests
         services.AddSingleton(capture);
 
         var builder = new DcbModuleBuilder(services, "test");
-        builder.ReactTo<ItemProcessed, ReactorContextCapture>(
-            (state, _, context, ct) =>
+        builder.ReactTo<ItemProcessed>(
+            sp =>
             {
-                state.TimestampUtc = context.Timestamp;
-                return Task.CompletedTask;
+                var state = sp.GetRequiredService<ReactorContextCapture>();
+                return (_, context, ct) =>
+                {
+                    state.TimestampUtc = context.Timestamp;
+                    return Task.CompletedTask;
+                };
             },
             "test-reactor");
 
