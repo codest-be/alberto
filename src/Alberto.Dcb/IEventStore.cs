@@ -6,7 +6,7 @@ namespace Alberto.Dcb;
 /// </summary>
 /// <remarks>
 /// Setup-time operations (registering inline projections and post-append handlers) are on
-/// <see cref="IEventStoreConfigurator"/>, which the concrete store classes also implement.
+/// <see cref="IEventStoreConfigurator"/>, which <see cref="EventStore"/> also implements.
 /// Builder and registration code should resolve <see cref="IEventStoreConfigurator"/> at
 /// startup; runtime consumers should depend only on <see cref="IEventStore"/>.
 /// </remarks>

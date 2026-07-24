@@ -57,26 +57,6 @@ public sealed class InMemoryStateStoreTests
     }
 
     [Fact]
-    public async Task ListRecent_returns_most_recently_written_first_and_honours_the_limit()
-    {
-        var store = new InMemoryStateStore<Counter>();
-
-        foreach (var value in Enumerable.Range(1, 3))
-        {
-            await store.ApplyChangesAsync(
-                new Dictionary<string, Counter> { [$"doc-{value}"] = new() { Value = value } },
-                [],
-                ct: Ct);
-        }
-
-        (await store.ListRecentAsync(ct: Ct)).Select(c => c.Value)
-            .Should().ContainInOrder(3, 2, 1);
-
-        (await store.ListRecentAsync(limit: 2, ct: Ct)).Select(c => c.Value)
-            .Should().ContainInOrder(3, 2).And.HaveCount(2);
-    }
-
-    [Fact]
     public async Task State_written_under_one_rebuild_version_is_invisible_to_another()
     {
         var version = ProjectionVersions.Initial;
@@ -92,7 +72,6 @@ public sealed class InMemoryStateStoreTests
         // A shadow rebuild replaying into version 2 must start from nothing, not inherit the
         // live version's rows.
         (await store.LoadManyAsync(["a"], ct: Ct)).Should().BeEmpty();
-        (await store.ListRecentAsync(ct: Ct)).Should().BeEmpty();
 
         await store.ApplyChangesAsync(
             new Dictionary<string, Counter> { ["a"] = new() { Value = 99 } },

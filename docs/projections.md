@@ -11,8 +11,8 @@ Alberto has two families:
 | State is | Any type, stored as JSON | An EF entity, in your own table |
 | Store | `PostgresStateStore<T>` / `InMemoryStateStore<T>` | `EfStateStore<TEntity, TDbContext>` |
 | Register with | `AddProjection` | `AddEfProjection` |
-| Query it with | The store's `LoadManyAsync` / `ListRecentAsync` | LINQ over your `DbSet` |
-| Good for | Documents, counters, summaries | Anything you want to filter, join or sort in SQL |
+| Query it with | The store's `LoadManyAsync`, by document id | LINQ over your `DbSet` |
+| Good for | Documents, counters, summaries you look up by key | Anything you want to filter, join or sort in SQL |
 
 Both are driven by the same declaration API and both support live rebuilds.
 
@@ -99,21 +99,24 @@ var overview = new InMemoryStateStore<OrdersOverview>();
 
 ### Reading it back
 
-`IStateStore<TState>` is deliberately small:
+`IStateStore<TState>` is deliberately small — two methods, both keyed by document id:
 
 ```csharp
 Task<Dictionary<string, TState>> LoadManyAsync(IEnumerable<string> documentIds,
-                                               IDbTransaction? transaction = null,
                                                CancellationToken ct = default);
 Task ApplyChangesAsync(IReadOnlyDictionary<string, TState> upserts,
                        IReadOnlyCollection<string> deletes,
-                       IDbTransaction? transaction = null,
                        CancellationToken ct = default);
-Task<IReadOnlyList<TState>> ListRecentAsync(int limit = 20, CancellationToken ct = default);
 ```
 
-`ListRecentAsync` orders by `updated_at DESC`. If you need to filter or sort by anything else, that
-is the signal to use an EF projection instead of forcing it through a document store.
+Each adapter owns the transaction it applies a change set under; the interface does not hand one
+across, because a projection processor commits its own batch and there is nothing outside it to
+enlist in.
+
+That is the whole read surface: **fetch documents whose ids you already know.** There is no list,
+no filter and no sort. Wanting any of those is the signal to use an EF projection instead of
+forcing it through a document store — with EF you get LINQ over a `DbSet` and real columns to
+index, which is the trade the two options exist to let you make.
 
 **Building a store outside the module builder** — a query handler, a GraphQL resolver — is where a
 subtle bug lives. A store constructed with the default rebuild version pins itself to version 1 and

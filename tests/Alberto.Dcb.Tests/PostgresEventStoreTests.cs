@@ -6,7 +6,7 @@ using Xunit;
 namespace Alberto.Dcb.Tests;
 
 /// <summary>
-/// Integration tests for PostgresEventStore with inline projection support.
+/// Integration tests for <see cref="EventStore"/> over the Postgres backend.
 /// Verifies that events are persisted and projections run immediately after.
 /// </summary>
 public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture) : IClassFixture<SingleTenantPostgresFixture>
@@ -55,7 +55,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
     [Fact]
     public async Task AppendAsync_ShouldPersistEvents()
     {
-        var eventStore = new PostgresEventStore(new PostgresEventStoreBackend(fixture.DataSource));
+        var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
 
         var orderId = Guid.NewGuid();
         var result = await eventStore.AppendAsync(
@@ -69,7 +69,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
     [Fact]
     public async Task AppendAsync_ShouldReturnGlobalPosition()
     {
-        var eventStore = new PostgresEventStore(new PostgresEventStoreBackend(fixture.DataSource));
+        var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
 
         var result1 = await eventStore.AppendAsync(
             [CreateEvent(new OrderCreated(Guid.NewGuid(), 100m))],
@@ -85,7 +85,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
     [Fact]
     public async Task StreamAsync_ShouldReturnAppendedEvents()
     {
-        var eventStore = new PostgresEventStore(new PostgresEventStoreBackend(fixture.DataSource));
+        var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
 
         var orderId = Guid.NewGuid();
         var tag = new EventTag("order", orderId.ToString());
@@ -109,7 +109,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
     public async Task AppendAsync_ShouldRunInlineProjection()
     {
         var tenantId = Guid.NewGuid().ToString();
-        var eventStore = new PostgresEventStore(new PostgresEventStoreBackend(fixture.DataSource));
+        var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
         var stateStore = new PostgresStateStore<OrderSummary>(
             fixture.DataSource, "OrderSummaryProjection-" + tenantId);
         eventStore.RegisterInlineProjection<OrderSummary, OrderSummaryProjection>(stateStore);
@@ -133,7 +133,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
     public async Task AppendAsync_ShouldUpdateProjectionWithSubsequentEvents()
     {
         var tenantId = Guid.NewGuid().ToString();
-        var eventStore = new PostgresEventStore(new PostgresEventStoreBackend(fixture.DataSource));
+        var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
         var stateStore = new PostgresStateStore<OrderSummary>(
             fixture.DataSource, "OrderSummaryProjection-" + tenantId);
         eventStore.RegisterInlineProjection<OrderSummary, OrderSummaryProjection>(stateStore);
@@ -160,7 +160,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
     public async Task AppendAsync_ShouldHandleMultipleEventsInSingleAppend()
     {
         var tenantId = Guid.NewGuid().ToString();
-        var eventStore = new PostgresEventStore(new PostgresEventStoreBackend(fixture.DataSource));
+        var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
         var stateStore = new PostgresStateStore<OrderSummary>(
             fixture.DataSource, "OrderSummaryProjection-" + tenantId);
         eventStore.RegisterInlineProjection<OrderSummary, OrderSummaryProjection>(stateStore);
@@ -186,7 +186,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
     public async Task AppendAsync_ShouldNotRunProjectionsWhenNoRelevantEvents()
     {
         var tenantId = Guid.NewGuid().ToString();
-        var eventStore = new PostgresEventStore(new PostgresEventStoreBackend(fixture.DataSource));
+        var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
         var stateStore = new PostgresStateStore<OrderSummary>(
             fixture.DataSource, "OrderSummaryProjection-" + tenantId);
         eventStore.RegisterInlineProjection<OrderSummary, OrderSummaryProjection>(stateStore);
@@ -210,7 +210,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
     [Fact]
     public async Task AppendAsync_WithDcbConflict_ShouldThrowDcbConflictException()
     {
-        var eventStore = new PostgresEventStore(new PostgresEventStoreBackend(fixture.DataSource));
+        var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
 
         var orderId = Guid.NewGuid();
         var tag = new EventTag("order", orderId.ToString());
@@ -234,7 +234,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
     [Fact]
     public async Task AppendAsync_WithCorrectExpectedPosition_ShouldSucceed()
     {
-        var eventStore = new PostgresEventStore(new PostgresEventStoreBackend(fixture.DataSource));
+        var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
 
         var orderId = Guid.NewGuid();
         var tag = new EventTag("order", orderId.ToString());
@@ -263,7 +263,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
     [Fact]
     public async Task GetLastPositionAsync_ShouldReturnPositionAfterAppend()
     {
-        var eventStore = new PostgresEventStore(new PostgresEventStoreBackend(fixture.DataSource));
+        var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
 
         var result = await eventStore.AppendAsync(
             [CreateEvent(new OrderCreated(Guid.NewGuid(), 100m))],
@@ -282,7 +282,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
     [Fact]
     public async Task StreamAllAsync_ShouldReturnAllEvents()
     {
-        var eventStore = new PostgresEventStore(new PostgresEventStoreBackend(fixture.DataSource));
+        var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
 
         var startPosition = await eventStore.GetLastPositionAsync(TestContext.Current.CancellationToken);
 

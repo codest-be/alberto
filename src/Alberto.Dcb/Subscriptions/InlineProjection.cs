@@ -1,12 +1,10 @@
-using System.Data;
-
 #pragma warning disable CS0618 // Obsolete projection types used intentionally for backward-compatibility
 namespace Alberto.Dcb.Subscriptions;
 
 /// <summary>
-/// Wraps a Projection&lt;TState&gt; for inline execution within an event commit transaction.
-/// Uses the same pure projection definition as async projections, but runs in the same
-/// transaction as the event append for strong consistency.
+/// Wraps a Projection&lt;TState&gt; for synchronous execution after event persistence.
+/// Uses the same pure projection definition as async projections and provides
+/// read-your-writes consistency before <see cref="IEventStore.AppendAsync"/> returns.
 /// </summary>
 /// <typeparam name="TState">The projection state type.</typeparam>
 /// <typeparam name="TProjection">The projection implementation type.</typeparam>
@@ -37,7 +35,6 @@ internal class InlineProjection<TState, TProjection> : IInlineProjection
     /// <inheritdoc/>
     public async Task ProcessAsync(
         IReadOnlyList<IEventEnvelope> events,
-        IDbTransaction? transaction = null,
         CancellationToken ct = default)
     {
         // Filter to events we handle and group by document ID
@@ -50,7 +47,7 @@ internal class InlineProjection<TState, TProjection> : IInlineProjection
             return;
 
         // Load current state for all affected documents
-        var states = await _stateStore.LoadManyAsync(byDocument.Keys, transaction, ct);
+        var states = await _stateStore.LoadManyAsync(byDocument.Keys, ct);
 
         var upserts = new Dictionary<string, TState>();
         var deletes = new List<string>();
@@ -87,10 +84,10 @@ internal class InlineProjection<TState, TProjection> : IInlineProjection
             }
         }
 
-        // Apply all changes within the transaction
+        // Apply all changes atomically through the state-store adapter.
         if (upserts.Count > 0 || deletes.Count > 0)
         {
-            await _stateStore.ApplyChangesAsync(upserts, deletes, transaction, ct);
+            await _stateStore.ApplyChangesAsync(upserts, deletes, ct);
         }
     }
 }

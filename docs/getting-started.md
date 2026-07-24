@@ -159,6 +159,9 @@ services.AddAlberto("tickets", builder => builder
 - `WithControlLoop` configures the background loop. Omit it entirely and you still get one on
   defaults.
 
+`AlbertoStore` itself is registered **scoped**, so resolve it from a scope — the request scope in a
+web application, or an explicit `provider.CreateScope()` in a console one.
+
 Going to production is the same shape with one line swapped:
 
 ```csharp
@@ -254,11 +257,13 @@ public static class Program
             .WithControlLoop(loop => loop
                 .WithPollingInterval(TimeSpan.FromMilliseconds(50))));
 
-        var provider = services.BuildServiceProvider();
+        var provider = services.BuildServiceProvider(validateScopes: true);
         foreach (var hosted in provider.GetServices<IHostedService>())
             await hosted.StartAsync(CancellationToken.None);
 
-        var store = provider.GetRequiredService<AlbertoStore>();
+        // AlbertoStore is scoped — in a web app that is the request scope. Here we open one by hand.
+        using var scope = provider.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<AlbertoStore>();
         var showId = Guid.NewGuid();
 
         Task<Result> Reserve(string seat) =>

@@ -1,5 +1,3 @@
-using System.Data;
-
 namespace Alberto.Dcb.Subscriptions;
 
 /// <summary>
@@ -24,10 +22,8 @@ public interface IInlineProjection
     /// Processes events after they have been appended.
     /// </summary>
     /// <param name="events">The events to process.</param>
-    /// <param name="transaction">Optional database transaction for state store operations.</param>
     /// <param name="ct">Cancellation token.</param>
     Task ProcessAsync(
         IReadOnlyList<IEventEnvelope> events,
-        IDbTransaction? transaction = null,
         CancellationToken ct = default);
 }

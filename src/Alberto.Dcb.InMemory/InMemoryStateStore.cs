@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Data;
 using Alberto.Dcb.Subscriptions;
 
 namespace Alberto.Dcb.InMemory;
@@ -10,11 +9,10 @@ namespace Alberto.Dcb.InMemory;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The <c>transaction</c> argument on the interface is ignored: there is nothing to
-/// enlist in. A projection writing here is therefore not atomic with the checkpoint the way a
-/// Postgres or EF projection is — after a crash it can be replayed and apply an event twice.
-/// That is the price of having no database, and the reason this store belongs in tests and
-/// samples rather than in production.
+/// There is no transaction to apply changes under: a projection writing here is not atomic with
+/// the checkpoint the way a Postgres or EF projection is, so after a crash it can be replayed and
+/// apply an event twice. That is the price of having no database, and the reason this store
+/// belongs in tests and samples rather than in production.
 /// </para>
 /// <para>
 /// Like the durable stores, it keys state by rebuild version, so a projection wired for
@@ -28,16 +26,12 @@ namespace Alberto.Dcb.InMemory;
 /// </param>
 public sealed class InMemoryStateStore<TState>(Func<int>? rebuildVersion = null) : IStateStore<TState>
 {
-    private readonly ConcurrentDictionary<(int Version, string DocumentId), Entry> _documents = new();
+    private readonly ConcurrentDictionary<(int Version, string DocumentId), TState> _documents = new();
     private readonly Func<int> _rebuildVersion = rebuildVersion ?? ProjectionVersions.NeverRebuilt;
-    private long _sequence;
-
-    private readonly record struct Entry(TState State, long Sequence);
 
     /// <inheritdoc/>
     public Task<Dictionary<string, TState>> LoadManyAsync(
         IEnumerable<string> documentIds,
-        IDbTransaction? transaction = null,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(documentIds);
@@ -47,8 +41,8 @@ public sealed class InMemoryStateStore<TState>(Func<int>? rebuildVersion = null)
 
         foreach (var id in documentIds)
         {
-            if (_documents.TryGetValue((version, id), out var entry))
-                result[id] = entry.State;
+            if (_documents.TryGetValue((version, id), out var state))
+                result[id] = state;
         }
 
         return Task.FromResult(result);
@@ -58,7 +52,6 @@ public sealed class InMemoryStateStore<TState>(Func<int>? rebuildVersion = null)
     public Task ApplyChangesAsync(
         IReadOnlyDictionary<string, TState> upserts,
         IReadOnlyCollection<string> deletes,
-        IDbTransaction? transaction = null,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(upserts);
@@ -67,31 +60,11 @@ public sealed class InMemoryStateStore<TState>(Func<int>? rebuildVersion = null)
         var version = _rebuildVersion();
 
         foreach (var (id, state) in upserts)
-            _documents[(version, id)] = new Entry(state, Interlocked.Increment(ref _sequence));
+            _documents[(version, id)] = state;
 
         foreach (var id in deletes)
             _documents.TryRemove((version, id), out _);
 
         return Task.CompletedTask;
-    }
-
-    /// <summary>
-    /// The most recently written documents first — the in-memory stand-in for ordering by
-    /// <c>updated_at</c>.
-    /// </summary>
-    public Task<IReadOnlyList<TState>> ListRecentAsync(
-        int limit = 20,
-        CancellationToken ct = default)
-    {
-        var version = _rebuildVersion();
-
-        IReadOnlyList<TState> result = _documents
-            .Where(pair => pair.Key.Version == version)
-            .OrderByDescending(pair => pair.Value.Sequence)
-            .Take(limit)
-            .Select(pair => pair.Value.State)
-            .ToList();
-
-        return Task.FromResult(result);
     }
 }
