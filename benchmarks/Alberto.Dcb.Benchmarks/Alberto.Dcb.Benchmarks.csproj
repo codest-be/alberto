@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!--
+      TreatWarningsAsErrors is intentionally omitted: BenchmarkDotNet generates
+      code that can raise diagnostics warnings (CS8618, CS0649, etc.) that we do
+      not own. Keeping it off avoids a red herring build failure when the rest of
+      the repo has it enabled per-project.
+    -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!--
+      Not included in AlbertoV3.slnx because the solution's apps/ projects do not
+      currently compile. Run directly with:
+        dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks
+    -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/Alberto.Dcb/Alberto.Dcb.csproj" />
+    <ProjectReference Include="../../src/Alberto.Dcb.InMemory/Alberto.Dcb.InMemory.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      BenchmarkDotNet is not listed in Directory.Packages.props.
+      VersionOverride is the CPM-approved escape hatch for packages outside the
+      central version catalogue (https://learn.microsoft.com/en-us/nuget/consume-packages/Central-Package-Management#overriding-package-versions).
+      When BenchmarkDotNet is added to Directory.Packages.props, remove VersionOverride here.
+    -->
+    <PackageReference Include="BenchmarkDotNet" VersionOverride="0.14.0" />
+  </ItemGroup>
+
+</Project>

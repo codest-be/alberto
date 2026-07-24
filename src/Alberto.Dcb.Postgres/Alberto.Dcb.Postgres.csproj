@@ -14,6 +14,10 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <InternalsVisibleTo Include="Alberto.Dcb.Tests"/>
+    </ItemGroup>
+
+    <ItemGroup>
         <ProjectReference Include="..\Alberto.Dcb\Alberto.Dcb.csproj" />
         <ProjectReference Include="..\Alberto.Dcb.Messaging\Alberto.Dcb.Messaging.csproj" />
     </ItemGroup>
