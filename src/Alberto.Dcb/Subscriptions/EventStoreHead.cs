@@ -9,18 +9,21 @@ public sealed class EventStoreHead : IHostedService
     private readonly TimeSpan _refreshInterval;
     private readonly int _windowSize;
     private readonly ILogger<EventStoreHead>? _logger;
+    private readonly IEventAppendedSignal? _signal;
     private long _current;
     private CancellationTokenSource? _cts;
     private Task? _loop;
 
     internal EventStoreHead(IEventStoreBackend backend,
         TimeSpan? refreshInterval = null, int windowSize = 2000,
-        ILogger<EventStoreHead>? logger = null)
+        ILogger<EventStoreHead>? logger = null,
+        IEventAppendedSignal? signal = null)
     {
         _backend = backend;
         _refreshInterval = refreshInterval ?? TimeSpan.FromMilliseconds(100);
         _windowSize = windowSize;
         _logger = logger;
+        _signal = signal;
     }
 
     public long Current => Volatile.Read(ref _current);
@@ -44,7 +47,7 @@ public sealed class EventStoreHead : IHostedService
         {
             try
             {
-                await Task.Delay(_refreshInterval, ct);
+                await WaitForNextRefreshAsync(ct);
                 await RefreshAsync(ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
@@ -52,10 +55,30 @@ public sealed class EventStoreHead : IHostedService
         }
     }
 
+    /// <summary>
+    /// Waits for the polling interval, or wakes early when the backend pushes an
+    /// append notification (LISTEN/NOTIFY). The interval remains an upper bound so
+    /// the head still advances if a notification is missed or unavailable.
+    /// </summary>
+    private Task WaitForNextRefreshAsync(CancellationToken ct)
+        => _signal is null
+            ? Task.Delay(_refreshInterval, ct)
+            : _signal.WaitAsync(_refreshInterval, ct);
+
     private async Task RefreshAsync(CancellationToken ct)
     {
-        var positions = await _backend.GetPositionsAsync(_current, _windowSize, ct);
-        Volatile.Write(ref _current, FindContiguousHead(_current, positions));
+        var current = _current;
+        var positions = await _backend.GetPositionsAsync(current, _windowSize, ct);
+        var head = FindContiguousHead(current, positions);
+
+        // Clamp to the in-flight visibility barrier: never advance past an append
+        // whose transaction has not committed yet. Backends without a barrier
+        // return long.MaxValue, leaving the contiguous head unchanged.
+        var stableHead = await _backend.GetStableHeadAsync(current, ct);
+        if (stableHead < head)
+            head = stableHead;
+
+        Volatile.Write(ref _current, head);
     }
 
     /// <summary>

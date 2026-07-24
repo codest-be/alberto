@@ -156,8 +156,10 @@ public sealed class ControlLoopBuilder
         {
             var backend = sp.GetKeyedService<IEventStoreBackend>($"{moduleKey}:consumer")
                          ?? sp.GetRequiredKeyedService<IEventStoreBackend>(moduleKey);
+            // Optional push-wakeup — present only when a backend registers it (e.g. Postgres LISTEN/NOTIFY).
+            var signal = sp.GetKeyedService<IEventAppendedSignal>(moduleKey);
             return new EventStoreHead(backend, headRefreshInterval, headWindowSize,
-                sp.GetService<ILogger<EventStoreHead>>());
+                sp.GetService<ILogger<EventStoreHead>>(), signal);
         });
         services.AddSingleton<IHostedService>(sp =>
             sp.GetRequiredKeyedService<EventStoreHead>(moduleKey));

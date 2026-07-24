@@ -57,4 +57,9 @@ internal sealed class InterceptingEventStoreBackend(IEventStoreBackend inner, IA
     public Task<IReadOnlyList<long>> GetPositionsAsync(
         long afterPosition, int windowSize, CancellationToken cancellationToken = default)
         => _inner.GetPositionsAsync(afterPosition, windowSize, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<long> GetStableHeadAsync(
+        long afterPosition, CancellationToken cancellationToken = default)
+        => _inner.GetStableHeadAsync(afterPosition, cancellationToken);
 }

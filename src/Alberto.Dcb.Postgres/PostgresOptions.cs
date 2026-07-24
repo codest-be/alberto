@@ -41,4 +41,23 @@ public sealed class PostgresOptions
     /// Default is 60 seconds.
     /// </summary>
     public TimeSpan LeaseDuration { get; set; } = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// When true (default), the subscription head is clamped by an in-flight
+    /// visibility barrier (pg_xact_id / pg_snapshot_xmin) so it never advances past
+    /// an append whose transaction has not committed yet. This prevents a
+    /// slow-committing append from being skipped when later positions commit ahead
+    /// of it. The head then lags by at most the duration of concurrently in-flight
+    /// appends; a long-running *writing* transaction on the same database can hold
+    /// it back further, so set this to false if that trade-off is undesirable.
+    /// </summary>
+    public bool EnableStableHeadBarrier { get; set; } = true;
+
+    /// <summary>
+    /// When true (default), a background listener consumes PostgreSQL LISTEN/NOTIFY
+    /// on the events channel and wakes the subscription head immediately on append,
+    /// instead of waiting for the polling interval. The interval still applies as a
+    /// fallback. Uses one dedicated connection per module.
+    /// </summary>
+    public bool EnableNotifyListener { get; set; } = true;
 }

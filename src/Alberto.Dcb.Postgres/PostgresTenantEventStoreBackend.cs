@@ -12,11 +12,14 @@ namespace Alberto.Dcb.Postgres;
 internal sealed class PostgresTenantEventStoreBackend(
     NpgsqlDataSource dataSource,
     TimeProvider? timeProvider = null,
-    string? schema = null)
+    string? schema = null,
+    bool enableStableHeadBarrier = true)
 {
     private readonly NpgsqlDataSource _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly SchemaQualifier _schema = new(schema);
+    private readonly bool _enableStableHeadBarrier = enableStableHeadBarrier;
+    private readonly string? _schemaName = schema;
 
     public async Task<IReadOnlyCollection<IEventEnvelope>> StreamForTenant(
         string tenantId,
@@ -135,6 +138,31 @@ internal sealed class PostgresTenantEventStoreBackend(
         return positions;
     }
 
+    public async Task<long> GetStableHeadGlobalAsync(
+        long afterPosition, CancellationToken cancellationToken = default)
+    {
+        if (!_enableStableHeadBarrier)
+            return long.MaxValue;
+
+        // Global (all-tenant) stable head — the subscription axis is global. Clamp
+        // the head just below the FIRST position after `afterPosition` that is not
+        // yet stable (committed but younger than the oldest running transaction per
+        // pg_snapshot_xmin), so it never advances past an in-flight append. Rows with
+        // NULL pg_xact_id predate migration 008 and are always stable. Ascending
+        // index scan from the head — stops at the first non-stable row.
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var cmd = new NpgsqlCommand(
+            $"SELECT global_position FROM {_schema.Table("alberto_events")} " +
+            "WHERE global_position > @after " +
+            "AND pg_xact_id IS NOT NULL " +
+            "AND pg_xact_id >= pg_snapshot_xmin(pg_current_snapshot())::TEXT::BIGINT " +
+            "ORDER BY global_position ASC LIMIT 1",
+            connection);
+        cmd.Parameters.AddWithValue("after", afterPosition);
+        var result = await cmd.ExecuteScalarAsync(cancellationToken);
+        return result is long firstNonStable ? firstNonStable - 1 : long.MaxValue;
+    }
+
     private async Task<IReadOnlyCollection<IEventEnvelope>> AppendCore(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
@@ -156,6 +184,49 @@ internal sealed class PostgresTenantEventStoreBackend(
                 ? $"SELECT * FROM {_schema.Function(functionName)}(@p_tenant_id, @p_events, @p_dcb_types, @p_dcb_exact_tags, @p_dcb_tag_prefixes, @p_expected_position)"
                 : $"SELECT * FROM {_schema.Function(functionName)}(@p_tenant_id, @p_events, @p_dcb_types, @p_dcb_tags, @p_expected_position)";
 
+        // #1 Write-skew fix: serialize appends per (schema, tenant) with a
+        // transaction-scoped advisory lock so the DCB conflict-check inside the
+        // append function and the subsequent insert happen atomically. Per-tenant
+        // granularity is sufficient because DCB queries are tenant-scoped — appends
+        // to different tenants can never conflict — and preserves cross-tenant
+        // append concurrency. Released on commit/rollback.
+        NpgsqlTransaction? ownedTransaction =
+            transaction is null ? await connection.BeginTransactionAsync(cancellationToken) : null;
+        var effectiveTransaction = transaction ?? ownedTransaction!;
+
+        try
+        {
+            await PostgresEventStoreBackend.AcquireAppendLockAsync(
+                connection, effectiveTransaction, $"alberto-append:{_schemaName ?? ""}:{tenantId}", cancellationToken);
+
+            var results = await ExecuteAppendAsync(
+                sql, connection, effectiveTransaction, tenantId, eventsList, dcbQuery, expectedPosition,
+                useAllTagsFunction, useWildcardFunction, cancellationToken);
+
+            if (ownedTransaction is not null)
+                await ownedTransaction.CommitAsync(cancellationToken);
+
+            return results;
+        }
+        finally
+        {
+            if (ownedTransaction is not null)
+                await ownedTransaction.DisposeAsync();
+        }
+    }
+
+    private async Task<IReadOnlyCollection<IEventEnvelope>> ExecuteAppendAsync(
+        string sql,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string tenantId,
+        List<IEventToPersist> eventsList,
+        DcbQuery? dcbQuery,
+        long? expectedPosition,
+        bool useAllTagsFunction,
+        bool useWildcardFunction,
+        CancellationToken cancellationToken)
+    {
         await using var cmd = new NpgsqlCommand(sql, connection, transaction);
 
         var eventsJson = BuildEventsJson(eventsList);
