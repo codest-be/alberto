@@ -316,7 +316,7 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
     }
 
     [Fact]
-    public async Task StartAsync_AfterAnAbort_ReusesTheAbandonedVersionNumber()
+    public async Task StartAsync_AfterAnAbort_DoesNotReuseTheAbandonedVersionNumber()
     {
         var ct = TestContext.Current.CancellationToken;
         var (processorId, projectionType) = NewIdentity();
@@ -327,9 +327,42 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
 
         var retried = await store.StartAsync(processorId, projectionType, targetPosition: 20, ct);
 
-        // Safe precisely because AbortAsync deleted every row at that version.
-        retried.RebuildingVersion.Should().Be(2);
+        // AbortAsync deleted every row at version 2, but it could not stop the shadow loop that
+        // was writing them — that lives in the application process and finds out one poll later.
+        // Handing version 2 back would let those late writes seed the retry, and every event
+        // would be applied twice.
+        retried.ActiveVersion.Should().Be(1, "an abort leaves the version readers see alone");
+        retried.RebuildingVersion.Should().Be(3);
         retried.Status.Should().Be(RebuildStatus.Rebuilding);
+    }
+
+    [Fact]
+    public async Task StartAsync_AllocatesAFreshVersion_ForEveryRebuildHoweverItEnded()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (processorId, projectionType) = NewIdentity();
+        var store = CreateStore();
+
+        var seen = new List<int>();
+
+        for (var i = 0; i < 3; i++)
+        {
+            seen.Add((await store.StartAsync(processorId, projectionType, 10, ct))
+                .RebuildingVersion!.Value);
+            await store.AbortAsync(processorId, ct);
+        }
+
+        var promoted = await store.StartAsync(processorId, projectionType, 10, ct);
+        seen.Add(promoted.RebuildingVersion!.Value);
+        await store.MarkReadyAsync(processorId, ct);
+        await store.PromoteAsync(processorId, force: false, ct);
+
+        seen.Add((await store.StartAsync(processorId, projectionType, 10, ct))
+            .RebuildingVersion!.Value);
+
+        seen.Should().Equal([2, 3, 4, 5, 6],
+            "the high-water mark advances on every allocation, so no run of aborts can make two "
+            + "rebuilds share a version");
     }
 
     [Fact]
