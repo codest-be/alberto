@@ -1,7 +1,6 @@
 using System.CommandLine;
 using Alberto.Cli.Output;
 using Alberto.Dcb.Postgres;
-using Npgsql;
 
 namespace Alberto.Cli.Commands;
 
@@ -9,7 +8,15 @@ public static class TenantsCommand
 {
     public static Command Build()
     {
-        var command = new Command("tenants", "List current tenant lease assignments");
+        var command = new Command("tenants",
+            """
+            List current tenant lease assignments.
+
+            Examples:
+              alberto tenants
+              alberto tenants --json
+              alberto tenants --shard db2
+            """);
 
         var urlOption = new Option<string?>("--url") { Description = "PostgreSQL connection string" };
         var schemaOption = new Option<string?>("--schema") { Description = "Database schema name" };
@@ -18,74 +25,85 @@ public static class TenantsCommand
         command.AddOption(urlOption);
         command.AddOption(schemaOption);
         command.AddOption(jsonOption);
+        var shardOption = ShardRun.AddReadOption(command);
 
-        command.SetHandler(async (string? url, string? schema, bool json) =>
+        command.SetHandler(async (string? url, string? schema, bool json, string? shard) =>
         {
             IOutput output = json ? new JsonOutput() : new HumanOutput();
 
-            var connStr = ConnectionResolver.ResolveConnectionString(url);
-            var schemaName = ConnectionResolver.ResolveSchema(schema);
-
             try
             {
-                await using var dataSource = new NpgsqlDataSourceBuilder(connStr).Build();
-                var admin = new PostgresAdminDataAccess(dataSource, schemaName);
+                // Leases are held per database — a tenant on db2 is leased by the consumer running
+                // against db2 — so this reads every shard rather than one.
+                var targets = ShardResolver.ResolveForRead(shard, url, schema);
+                var results = await ShardRun.CollectAsync(
+                    targets, admin => admin.GetTenantLeaseInventoryAsync());
 
-                var inventory = await admin.GetTenantLeaseInventoryAsync();
-                if (inventory.TenancyMode is AdminTenancyMode.SingleTenant)
-                {
-                    if (json)
-                    {
-                        output.Json(new { singleTenantMode = true, leases = Array.Empty<object>() });
-                    }
-                    else
-                    {
-                        output.Text("No tenant leases found (single-tenant mode).");
-                    }
-                    return;
-                }
+                var showShard = ShardRun.ShowsShard(targets);
+                var succeeded = results.Where(r => r.Succeeded).ToArray();
 
-                var leases = inventory.Leases;
+                // Single-tenant is a property of a database, so it is only the whole answer when
+                // every database Alberto looked at reported it.
+                var allSingleTenant = succeeded.Length > 0
+                    && succeeded.All(r => r.Value!.TenancyMode is AdminTenancyMode.SingleTenant);
+
+                var leaseRows = succeeded
+                    .Where(r => r.Value!.TenancyMode is not AdminTenancyMode.SingleTenant)
+                    .SelectMany(r => r.Value!.Leases.Select(l => (r.Target.ShardId, Lease: l)))
+                    .ToArray();
 
                 if (json)
                 {
                     output.Json(new
                     {
-                        singleTenantMode = false,
-                        count = leases.Count,
-                        leases = leases.Select(l => new
+                        singleTenantMode = allSingleTenant,
+                        count = leaseRows.Length,
+                        leases = leaseRows.Select(row => new
                         {
-                            l.TenantId,
-                            l.ConsumerId,
-                            l.ReplicaId,
-                            expiresAt = l.ExpiresAt?.ToString("O")
+                            shard = showShard ? row.ShardId : null,
+                            row.Lease.TenantId,
+                            row.Lease.ConsumerId,
+                            row.Lease.ReplicaId,
+                            expiresAt = row.Lease.ExpiresAt?.ToString("O")
                         })
                     });
                 }
-                else if (leases.Count == 0)
+                else if (allSingleTenant)
+                {
+                    output.Text("No tenant leases found (single-tenant mode).");
+                }
+                else if (leaseRows.Length == 0)
                 {
                     output.Text("No active tenant leases.");
                 }
                 else
                 {
                     output.Table(
-                        ["Tenant ID", "Consumer ID", "Replica ID", "Expires At"],
-                        leases.Select(l => new[]
+                        showShard
+                            ? ["Shard", "Tenant ID", "Consumer ID", "Replica ID", "Expires At"]
+                            : ["Tenant ID", "Consumer ID", "Replica ID", "Expires At"],
+                        leaseRows.Select(row =>
                         {
-                            l.TenantId,
-                            l.ConsumerId,
-                            l.ReplicaId ?? "-",
-                            l.ExpiresAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"
-                        })
-                    );
+                            string[] cells =
+                            [
+                                row.Lease.TenantId,
+                                row.Lease.ConsumerId,
+                                row.Lease.ReplicaId ?? "-",
+                                row.Lease.ExpiresAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"
+                            ];
+                            return showShard ? [row.ShardId!, .. cells] : cells;
+                        }));
                 }
+
+                if (ShardRun.ReportFailures(output, results))
+                    Environment.Exit(1);
             }
             catch (Exception ex)
             {
                 output.Error(ex.Message);
                 Environment.Exit(1);
             }
-        }, urlOption, schemaOption, jsonOption);
+        }, urlOption, schemaOption, jsonOption, shardOption);
 
         return command;
     }

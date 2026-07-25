@@ -38,6 +38,9 @@ public sealed class MigrationUpgradeAndParityTests
     /// <summary>Embedded-resource name prefix for single-tenant migration scripts.</summary>
     private const string SingleTenantPrefix = "Alberto.Dcb.Postgres.Migrations.SingleTenant.";
 
+    /// <summary>Embedded-resource name prefix for the tenant shard catalog's own scripts.</summary>
+    private const string CatalogPrefix = "Alberto.Dcb.Postgres.Migrations.Catalog.";
+
     private static readonly Assembly MigratorAssembly = typeof(PostgresMigrator).Assembly;
 
     /// <summary>
@@ -57,6 +60,12 @@ public sealed class MigrationUpgradeAndParityTests
                 // Multi-tenant prefix is a substring of the single-tenant prefix.
                 // Exclude single-tenant names when listing multi-tenant names.
                 if (!singleTenant && n.StartsWith(SingleTenantPrefix, StringComparison.Ordinal))
+                    return false;
+
+                // The tenant shard catalog is a separate schema in a separate database with its
+                // own journal — not a variant of the event store's scripts, so parity does not
+                // apply to it.
+                if (!singleTenant && n.StartsWith(CatalogPrefix, StringComparison.Ordinal))
                     return false;
 
                 return true;

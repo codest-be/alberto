@@ -16,6 +16,7 @@ public static class CheckpointsCommand
             Examples:
               alberto checkpoints
               alberto checkpoints --json
+              alberto checkpoints --shard db2
             """);
 
         var urlOption = new Option<string?>("--url") { Description = "PostgreSQL connection string" };
@@ -25,53 +26,52 @@ public static class CheckpointsCommand
         command.AddOption(urlOption);
         command.AddOption(schemaOption);
         command.AddOption(jsonOption);
+        var shardOption = ShardRun.AddReadOption(command);
 
-        command.SetHandler(async (string? url, string? schema, bool json) =>
+        command.SetHandler(async (string? url, string? schema, bool json, string? shard) =>
         {
             IOutput output = json ? new JsonOutput() : new HumanOutput();
 
-            var connStr = ConnectionResolver.ResolveConnectionString(url);
-            var schemaName = ConnectionResolver.ResolveSchema(schema);
-
             try
             {
-                await using var dataSource = new NpgsqlDataSourceBuilder(connStr).Build();
-                var admin = new PostgresAdminDataAccess(dataSource, schemaName);
-
-                var checkpoints = await admin.GetCheckpointsAsync();
+                // A position is a per-database sequence, so the Shard column is not decoration:
+                // two rows for the same processor are two unrelated numbers.
+                var targets = ShardResolver.ResolveForRead(shard, url, schema);
+                var results = await ShardRun.CollectAsync(
+                    targets, async admin => (IReadOnlyList<CheckpointInfo>)await admin.GetCheckpointsAsync());
 
                 if (json)
                 {
-                    output.Json(checkpoints.Select(c => new
+                    output.Json(ShardRun.Flatten(targets, results, c => new
                     {
                         c.ProcessorId,
                         c.LastPosition,
                         updatedAt = c.UpdatedAt?.ToString("O")
                     }));
                 }
-                else if (checkpoints.Count == 0)
-                {
-                    output.Text("No checkpoints found.");
-                }
                 else
                 {
-                    output.Table(
+                    ShardRun.Table(
+                        output, targets, results,
                         ["Processor ID", "Last Position", "Updated At"],
-                        checkpoints.Select(c => new[]
-                        {
+                        c =>
+                        [
                             c.ProcessorId,
                             c.LastPosition.ToString(),
                             c.UpdatedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"
-                        })
-                    );
+                        ],
+                        "No checkpoints found.");
                 }
+
+                if (ShardRun.ReportFailures(output, results))
+                    Environment.Exit(1);
             }
             catch (Exception ex)
             {
                 output.Error(ex.Message);
                 Environment.Exit(1);
             }
-        }, urlOption, schemaOption, jsonOption);
+        }, urlOption, schemaOption, jsonOption, shardOption);
 
         return command;
     }

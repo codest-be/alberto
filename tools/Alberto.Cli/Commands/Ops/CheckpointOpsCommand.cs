@@ -40,38 +40,66 @@ public static class CheckpointOpsCommand
         command.AddOption(urlOption);
         command.AddOption(schemaOption);
         command.AddOption(jsonOption);
+        var shardOption = ShardRun.AddReadOption(command);
 
-        command.SetHandler(async (string id, string? url, string? schema, bool json) =>
+        command.SetHandler(async (string id, string? url, string? schema, bool json, string? shard) =>
         {
             IOutput output = json ? new JsonOutput() : new HumanOutput();
 
-            var connStr = ConnectionResolver.ResolveConnectionString(url);
-            var schemaName = ConnectionResolver.ResolveSchema(schema);
-
             try
             {
-                await using var dataSource = new NpgsqlDataSourceBuilder(connStr).Build();
-                var admin = new PostgresAdminDataAccess(dataSource, schemaName);
-                var checkpoint = await admin.GetSingleCheckpointAsync(id);
+                var targets = ShardResolver.ResolveForRead(shard, url, schema);
+                var results = await ShardRun.CollectAsync(
+                    targets,
+                    async admin =>
+                    {
+                        var checkpoint = await admin.GetSingleCheckpointAsync(id);
+                        return checkpoint is null
+                            ? (IReadOnlyList<CheckpointInfo>)[]
+                            : [checkpoint];
+                    });
 
-                if (checkpoint is null)
+                var showShard = ShardRun.ShowsShard(targets);
+                var found = results.Where(r => r.Succeeded).SelectMany(r => r.Value!).Any();
+
+                if (!found && !json)
                 {
                     output.Warning($"No checkpoint found for processor '{id}'.");
-                    Environment.Exit(1);
-                    return;
                 }
-
-                if (json)
+                else if (json)
                 {
-                    output.Json(new
-                    {
-                        checkpoint.ProcessorId,
-                        checkpoint.LastPosition,
-                        updatedAt = checkpoint.UpdatedAt?.ToString("O")
-                    });
+                    var payloads = results
+                        .Where(r => r.Succeeded)
+                        .SelectMany(r => r.Value!.Select(c => new
+                        {
+                            shard = showShard ? r.Target.ShardId : null,
+                            c.ProcessorId,
+                            c.LastPosition,
+                            updatedAt = c.UpdatedAt?.ToString("O")
+                        }))
+                        .ToArray();
+
+                    if (showShard)
+                        output.Json(payloads);
+                    else if (payloads.Length > 0)
+                        output.Json(payloads[0]);
+                }
+                else if (showShard)
+                {
+                    ShardRun.Table(
+                        output, targets, results,
+                        ["Processor ID", "Last Position", "Updated At"],
+                        c =>
+                        [
+                            c.ProcessorId,
+                            c.LastPosition.ToString(),
+                            c.UpdatedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"
+                        ],
+                        $"No checkpoint found for processor '{id}'.");
                 }
                 else
                 {
+                    var checkpoint = results[0].Value![0];
                     output.Box($"Checkpoint: {id}", new Dictionary<string, string>
                     {
                         ["Processor ID"] = checkpoint.ProcessorId,
@@ -79,13 +107,16 @@ public static class CheckpointOpsCommand
                         ["Updated At"] = checkpoint.UpdatedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"
                     });
                 }
+
+                if (ShardRun.ReportFailures(output, results) || !found)
+                    Environment.Exit(1);
             }
             catch (Exception ex)
             {
                 output.Error(ex.Message);
                 Environment.Exit(1);
             }
-        }, idArgument, urlOption, schemaOption, jsonOption);
+        }, idArgument, urlOption, schemaOption, jsonOption, shardOption);
 
         return command;
     }
@@ -100,6 +131,8 @@ public static class CheckpointOpsCommand
               alberto ops checkpoint reset my-processor --dry-run
               alberto ops checkpoint reset my-processor --yes
               alberto ops checkpoint reset my-processor --yes --json
+              alberto ops checkpoint reset my-processor --shard db2 --yes
+              alberto ops checkpoint reset my-processor --all-shards --yes
             """);
 
         var idArgument = new Argument<string>("processor-id") { Description = "Processor ID" };
@@ -115,32 +148,17 @@ public static class CheckpointOpsCommand
         command.AddOption(dryRunOption);
         command.AddOption(yesOption);
         command.AddOption(jsonOption);
+        var (shardOption, allShardsOption) = ShardRun.AddMutationOptions(command);
 
-        command.SetHandler(async (string id, string? url, string? schema, bool dryRun, bool yes, bool json) =>
+        command.SetHandler(async (string id, string? url, string? schema, bool dryRun, bool yes, bool json, string? shard, bool allShards) =>
         {
             IOutput output = json ? new JsonOutput() : new HumanOutput();
 
-            var connStr = ConnectionResolver.ResolveConnectionString(url);
-            var schemaName = ConnectionResolver.ResolveSchema(schema);
-
             try
             {
-                await using var dataSource = new NpgsqlDataSourceBuilder(connStr).Build();
-                var admin = new PostgresAdminDataAccess(dataSource, schemaName);
-                var checkpointStore = new PostgresCheckpointStore(dataSource, schemaName);
-                var checkpoint = await admin.GetSingleCheckpointAsync(id);
-                var previousPosition = checkpoint?.LastPosition;
+                var targets = ShardResolver.ResolveForMutation(shard, allShards, url, schema);
 
-                if (dryRun)
-                {
-                    if (json)
-                        output.Json(new { dryRun = true, action = "reset", processorId = id, previousPosition });
-                    else
-                        output.Text($"[Dry run] Would reset checkpoint for '{id}' (currently at position {previousPosition?.ToString() ?? "none"}).");
-                    return;
-                }
-
-                if (!yes)
+                if (!dryRun && !yes)
                 {
                     if (!AnsiConsole.Profile.Capabilities.Interactive)
                     {
@@ -149,8 +167,11 @@ public static class CheckpointOpsCommand
                         return;
                     }
 
+                    // Asked once for the whole run, and it names the databases: an operator who
+                    // typed --all-shards should see how many replays they are about to start.
+                    var scope = ShardRun.Scope(targets);
                     var confirmed = AnsiConsole.Confirm(
-                        $"[yellow]Reset checkpoint for processor '[bold]{id}[/]'? This will trigger a full replay.[/]",
+                        $"[yellow]Reset checkpoint for processor '[bold]{id}[/]'{scope}? This will trigger a full replay.[/]",
                         defaultValue: false);
 
                     if (!confirmed)
@@ -160,19 +181,39 @@ public static class CheckpointOpsCommand
                     }
                 }
 
-                await checkpointStore.ResetAsync(id);
+                var failed = await ShardRun.ApplyAsync(output, targets, async (dataSource, target) =>
+                {
+                    var admin = new PostgresAdminDataAccess(dataSource, target.Schema);
+                    var checkpointStore = new PostgresCheckpointStore(dataSource, target.Schema);
+                    var checkpoint = await admin.GetSingleCheckpointAsync(id);
+                    var previousPosition = checkpoint?.LastPosition;
 
-                if (json)
-                    output.Json(new { action = "reset", processorId = id, previousPosition });
-                else
-                    output.Text($"Checkpoint for '{id}' has been reset (was at position {previousPosition?.ToString() ?? "none"}).");
+                    if (dryRun)
+                    {
+                        if (json)
+                            output.Json(new { dryRun = true, action = "reset", shard = target.ShardId, processorId = id, previousPosition });
+                        else
+                            output.Text($"[Dry run] Would reset checkpoint for '{id}' (currently at position {previousPosition?.ToString() ?? "none"}).");
+                        return;
+                    }
+
+                    await checkpointStore.ResetAsync(id);
+
+                    if (json)
+                        output.Json(new { action = "reset", shard = target.ShardId, processorId = id, previousPosition });
+                    else
+                        output.Text($"Checkpoint for '{id}' has been reset (was at position {previousPosition?.ToString() ?? "none"}).");
+                });
+
+                if (failed)
+                    Environment.Exit(1);
             }
             catch (Exception ex)
             {
                 output.Error(ex.Message);
                 Environment.Exit(1);
             }
-        }, idArgument, urlOption, schemaOption, dryRunOption, yesOption, jsonOption);
+        }, idArgument, urlOption, schemaOption, dryRunOption, yesOption, jsonOption, shardOption, allShardsOption);
 
         return command;
     }
@@ -187,6 +228,10 @@ public static class CheckpointOpsCommand
               alberto ops checkpoint set my-processor 1000 --dry-run
               alberto ops checkpoint set my-processor 1000 --yes
               alberto ops checkpoint set my-processor 1000 --yes --json
+              alberto ops checkpoint set my-processor 1000 --shard db2 --yes
+
+            A position is a per-database sequence, so on a sharded module the same number means a
+            different point in each database. Set them one shard at a time.
             """);
 
         var idArgument = new Argument<string>("processor-id") { Description = "Processor ID" };
@@ -204,26 +249,31 @@ public static class CheckpointOpsCommand
         command.AddOption(dryRunOption);
         command.AddOption(yesOption);
         command.AddOption(jsonOption);
+        var shardOption = ShardRun.AddReadOption(command);
 
-        command.SetHandler(async (string id, long position, string? url, string? schema, bool dryRun, bool yes, bool json) =>
+        command.SetHandler(async (string id, long position, string? url, string? schema, bool dryRun, bool yes, bool json, string? shard) =>
         {
             IOutput output = json ? new JsonOutput() : new HumanOutput();
 
-            var connStr = ConnectionResolver.ResolveConnectionString(url);
-            var schemaName = ConnectionResolver.ResolveSchema(schema);
-
             try
             {
-                await using var dataSource = new NpgsqlDataSourceBuilder(connStr).Build();
-                var admin = new PostgresAdminDataAccess(dataSource, schemaName);
-                var checkpointStore = new PostgresCheckpointStore(dataSource, schemaName);
+                // No --all-shards here, unlike every other mutation: each database numbers its own
+                // events, so one position applied to several of them would rewind each to an
+                // unrelated point. A sharded module must name the shard it means.
+                var targets = ShardResolver.ResolveForMutation(
+                    shard, allShards: false, url, schema, supportsAllShards: false);
+                var target = targets[0];
+
+                await using var dataSource = new NpgsqlDataSourceBuilder(target.ConnectionString).Build();
+                var admin = new PostgresAdminDataAccess(dataSource, target.Schema);
+                var checkpointStore = new PostgresCheckpointStore(dataSource, target.Schema);
                 var checkpoint = await admin.GetSingleCheckpointAsync(id);
                 var previousPosition = checkpoint?.LastPosition;
 
                 if (dryRun)
                 {
                     if (json)
-                        output.Json(new { dryRun = true, action = "set", processorId = id, previousPosition, newPosition = position });
+                        output.Json(new { dryRun = true, action = "set", shard = target.ShardId, processorId = id, previousPosition, newPosition = position });
                     else
                         output.Text($"[Dry run] Would set checkpoint for '{id}' from {previousPosition?.ToString() ?? "none"} to {position}.");
                     return;
@@ -250,7 +300,7 @@ public static class CheckpointOpsCommand
                     }
 
                     var confirmed = AnsiConsole.Confirm(
-                        $"Set checkpoint for '[bold]{id}[/]' to position [bold]{position}[/]?",
+                        $"Set checkpoint for '[bold]{id}[/]' to position [bold]{position}[/]{ShardRun.Scope(targets)}?",
                         defaultValue: false);
 
                     if (!confirmed)
@@ -263,7 +313,7 @@ public static class CheckpointOpsCommand
                 await checkpointStore.RewindAsync(id, position);
 
                 if (json)
-                    output.Json(new { action = "set", processorId = id, previousPosition, newPosition = position });
+                    output.Json(new { action = "set", shard = target.ShardId, processorId = id, previousPosition, newPosition = position });
                 else
                     output.Text($"Checkpoint for '{id}' set to position {position} (was {previousPosition?.ToString() ?? "none"}).");
             }
@@ -272,7 +322,7 @@ public static class CheckpointOpsCommand
                 output.Error(ex.Message);
                 Environment.Exit(1);
             }
-        }, idArgument, positionArgument, urlOption, schemaOption, dryRunOption, yesOption, jsonOption);
+        }, idArgument, positionArgument, urlOption, schemaOption, dryRunOption, yesOption, jsonOption, shardOption);
 
         return command;
     }
@@ -289,6 +339,7 @@ public static class CheckpointOpsCommand
             Examples:
               alberto ops checkpoint rename --from OldHandlerName --to NewHandlerName
               alberto ops checkpoint rename --module orders --from OldHandlerName --to NewHandlerName
+              alberto ops checkpoint rename --from OldHandlerName --to NewHandlerName --all-shards
             """);
 
         var moduleOption = new Option<string?>("--module") { Description = "Module key (for context; shown in startup warnings)" };
@@ -302,73 +353,79 @@ public static class CheckpointOpsCommand
         command.AddOption(toOption);
         command.AddOption(urlOption);
         command.AddOption(schemaOption);
+        var (shardOption, allShardsOption) = ShardRun.AddMutationOptions(command);
 
-        command.SetHandler(async (string? module, string? from, string? to, string? url, string? schema) =>
+        command.SetHandler(async (string? module, string? from, string? to, string? url, string? schema, string? shard, bool allShards) =>
         {
+            IOutput output = new HumanOutput();
+
             if (string.IsNullOrWhiteSpace(from))
             {
-                Console.Error.WriteLine("--from is required.");
+                output.Error("--from is required.");
                 Environment.Exit(1);
                 return;
             }
 
             if (string.IsNullOrWhiteSpace(to))
             {
-                Console.Error.WriteLine("--to is required.");
+                output.Error("--to is required.");
                 Environment.Exit(1);
                 return;
             }
 
-            var connStr = ConnectionResolver.ResolveConnectionString(url);
-            var schemaName = ConnectionResolver.ResolveSchema(schema);
-
             try
             {
-                await using var dataSource = new NpgsqlDataSourceBuilder(connStr).Build();
-                var data = new PostgresAdminDataAccess(dataSource, schemaName);
+                // A renamed handler is renamed everywhere, so this is the one mutation an operator
+                // usually does want against every database at once.
+                var targets = ShardResolver.ResolveForMutation(shard, allShards, url, schema);
 
-                var result = await data.RenameCheckpointAsync(from, to);
-                switch (result.Status)
+                var failed = await ShardRun.ApplyAsync(output, targets, async (dataSource, target) =>
                 {
-                    case CheckpointRenameStatus.Renamed:
-                        Console.WriteLine($"Renamed checkpoint '{from}' to '{to}' at position {result.Position}.");
-                        return;
+                    var data = new PostgresAdminDataAccess(dataSource, target.Schema);
 
-                    case CheckpointRenameStatus.SourceNotFound:
-                        {
-                            var moduleHint = module is not null ? $" in module '{module}'" : string.Empty;
-                            Console.Error.WriteLine($"No checkpoint named '{from}' exists{moduleHint}.");
-                            Environment.Exit(1);
+                    var result = await data.RenameCheckpointAsync(from, to);
+                    switch (result.Status)
+                    {
+                        case CheckpointRenameStatus.Renamed:
+                            output.Text($"Renamed checkpoint '{from}' to '{to}' at position {result.Position}.");
                             return;
-                        }
 
-                    case CheckpointRenameStatus.DestinationExists:
-                        {
-                            var moduleHint = module is not null ? $" --module {module}" : string.Empty;
-                            Console.Error.WriteLine(
-                                $"'{to}' already has a checkpoint at position {result.Position}. " +
-                                "Reset it first if you really mean to overwrite it: " +
-                                $"alberto ops checkpoint reset {to} --yes{moduleHint}");
-                            Environment.Exit(1);
-                            return;
-                        }
+                        case CheckpointRenameStatus.SourceNotFound:
+                            {
+                                var moduleHint = module is not null ? $" in module '{module}'" : string.Empty;
+                                throw new InvalidOperationException(
+                                    $"No checkpoint named '{from}' exists{moduleHint}.");
+                            }
 
-                    case CheckpointRenameStatus.SameProcessorId:
-                        Console.Error.WriteLine("--from and --to must name different processor ids.");
-                        Environment.Exit(1);
-                        return;
+                        case CheckpointRenameStatus.DestinationExists:
+                            {
+                                var moduleHint = module is not null ? $" --module {module}" : string.Empty;
+                                var shardHint = target.ShardId is not null ? $" --shard {target.ShardId}" : string.Empty;
+                                throw new InvalidOperationException(
+                                    $"'{to}' already has a checkpoint at position {result.Position}. " +
+                                    "Reset it first if you really mean to overwrite it: " +
+                                    $"alberto ops checkpoint reset {to} --yes{moduleHint}{shardHint}");
+                            }
 
-                    default:
-                        throw new InvalidOperationException(
-                            $"Unknown checkpoint rename result '{result.Status}'.");
-                }
+                        case CheckpointRenameStatus.SameProcessorId:
+                            throw new InvalidOperationException(
+                                "--from and --to must name different processor ids.");
+
+                        default:
+                            throw new InvalidOperationException(
+                                $"Unknown checkpoint rename result '{result.Status}'.");
+                    }
+                });
+
+                if (failed)
+                    Environment.Exit(1);
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine(ex.Message);
+                output.Error(ex.Message);
                 Environment.Exit(1);
             }
-        }, moduleOption, fromOption, toOption, urlOption, schemaOption);
+        }, moduleOption, fromOption, toOption, urlOption, schemaOption, shardOption, allShardsOption);
 
         return command;
     }

@@ -19,7 +19,7 @@ public sealed class AlbertoModuleValidator : IValidateOptions<AlbertoModuleDefin
             return ValidateOptionsResult.Success;
 
         return ValidateOptionsResult.Fail(
-            AlbertoValidationReport.Describe(options.ModuleKey, failures));
+            AlbertoValidationReport.Describe(options.DisplayName, failures));
     }
 
     /// <summary>
@@ -36,11 +36,124 @@ public sealed class AlbertoModuleValidator : IValidateOptions<AlbertoModuleDefin
         ValidateControlLoop(definition, failures);
         ValidateProcessors(definition, failures);
         ValidateUnknownKeys(definition, failures);
+        ValidateTenancy(definition, failures);
 
         if (definition.Backend is not null)
             failures.AddRange(definition.Backend.Validate(definition));
 
+        // Each shard's backend is validated in its own right, so a bad pool size or an unsafe
+        // schema is reported against the shard that has it rather than against the module.
+        foreach (var shard in definition.Tenancy.Shards)
+        {
+            var shardDefinition = ShardExpansion.ForShard(definition, shard);
+            foreach (var failure in shard.Backend.Validate(shardDefinition))
+            {
+                failures.Add(failure with
+                {
+                    Problem = $"Shard '{shard.ShardId}': {failure.Problem}",
+                });
+            }
+        }
+
         return failures;
+    }
+
+    /// <remarks>
+    /// Sharding is checked only on the module's own definition. The per-shard copies carry an
+    /// empty tenancy declaration, so none of this runs once per shard.
+    /// </remarks>
+    private static void ValidateTenancy(AlbertoModuleDefinition definition, List<AlbertoValidationFailure> failures)
+    {
+        var tenancy = definition.Tenancy;
+        var path = $"{definition.ConfigurationPath}:Tenancy";
+
+        foreach (var shardId in tenancy.UndeclaredConfiguredShards)
+        {
+            failures.Add(new AlbertoValidationFailure(
+                "ALB0015",
+                $"Configuration declares shard '{shardId}', which the module does not.",
+                $"Shard services are registered while the container is built, before configuration " +
+                $"is read, so a shard that exists only in configuration can never serve a request. " +
+                $"Add .AddShard(\"{shardId}\", ...) in code, or remove '{path}:Shards:{shardId}'."));
+        }
+
+        if (!tenancy.IsSharded)
+            return;
+
+        if (!definition.TenancyEnabled)
+        {
+            failures.Add(new AlbertoValidationFailure(
+                "ALB0010",
+                "The module declares shards but not tenancy. A shard routes tenants, so there is nothing to route.",
+                "Declare the shards inside .WithTenancy(t => ...) rather than alongside it."));
+        }
+
+        if (definition.Backend is { SupportsTenancy: false } backend)
+        {
+            failures.Add(new AlbertoValidationFailure(
+                "ALB0011",
+                $"The module declares shards but the {backend.Name} backend does not support tenancy.",
+                "Switch to a backend that supports it, such as .WithPostgres(...)."));
+        }
+
+        foreach (var shard in tenancy.Shards)
+        {
+            if (!Tenancy.ShardKey.IsValidShardId(shard.ShardId))
+            {
+                failures.Add(new AlbertoValidationFailure(
+                    "ALB0012",
+                    $"Shard id '{shard.ShardId}' is not a safe identifier.",
+                    "A shard id becomes part of a DI key, a metric tag and a lease holder name. " +
+                    "Use a lowercase identifier that starts with a letter and contains only " +
+                    "lowercase letters, digits and underscores (maximum 63 characters)."));
+            }
+        }
+
+        foreach (var duplicate in tenancy.Shards
+                     .GroupBy(s => s.ShardId, StringComparer.Ordinal)
+                     .Where(g => g.Count() > 1))
+        {
+            failures.Add(new AlbertoValidationFailure(
+                "ALB0012",
+                $"{duplicate.Count()} shards share the id '{duplicate.Key}'. A shard id is written into the " +
+                "catalog next to every tenant assigned to it, so it must identify exactly one database.",
+                "Give each .AddShard(...) call a distinct id."));
+        }
+
+        if (tenancy.DefaultShardId is { } defaultShard
+            && !tenancy.ShardIds.Contains(defaultShard, StringComparer.Ordinal))
+        {
+            failures.Add(new AlbertoValidationFailure(
+                "ALB0013",
+                $"The default shard '{defaultShard}' is not one of the declared shards " +
+                $"[{string.Join(", ", tenancy.ShardIds)}].",
+                $"Name a declared shard in .WithDefaultShard(...) or '{path}:DefaultShard'."));
+        }
+
+        // Two shards pointing at the same database would each run their own control loops over
+        // the same events and each write their own checkpoints, so every event would be processed
+        // twice. It is also exactly what a copy-pasted connection string looks like.
+        foreach (var collision in tenancy.Shards
+                     .Where(s => s.Backend.StorageIdentity is not null)
+                     .GroupBy(s => s.Backend.StorageIdentity, StringComparer.OrdinalIgnoreCase)
+                     .Where(g => g.Count() > 1))
+        {
+            failures.Add(new AlbertoValidationFailure(
+                "ALB0016",
+                $"Shards [{string.Join(", ", collision.Select(s => s.ShardId))}] all resolve to {collision.Key}. " +
+                "Separate shards must be separate storage.",
+                $"Give each shard its own database, or its own schema, under '{path}:Shards'."));
+        }
+
+        if (tenancy.Catalog is null)
+        {
+            failures.Add(new AlbertoValidationFailure(
+                "ALB0014",
+                "The module declares shards but no catalog, so there is nowhere to record which shard a tenant is in.",
+                "Declare one with .WithCatalog(o => o with { ConnectionString = ... }). Point it at a " +
+                "control database rather than at one of the shards, so no shard is load-bearing for " +
+                "routing to the others."));
+        }
     }
 
     private static void ValidateBackend(AlbertoModuleDefinition definition, List<AlbertoValidationFailure> failures)

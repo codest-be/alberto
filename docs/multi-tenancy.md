@@ -6,6 +6,12 @@ predicate application code has to remember.
 
 It is opt-in, and it changes the shape of the store — decide before you have data.
 
+Tenants can additionally be spread over several databases — ten in `db1`, three in `db2` — with
+row-level tenancy still separating them inside each one. That is a layer above everything on this
+page and is documented separately in
+[architecture/tenant-sharding.md](architecture/tenant-sharding.md). Everything below describes a
+module with one database, which remains the default.
+
 ## Turning it on
 
 ```csharp
@@ -137,6 +143,30 @@ Choose based on whether tenants share a database:
 | One customer, or a database per customer | Single-tenant, one module per database |
 | Many customers in one database | `.WithTenancy()` |
 | Many customers, one *schema* each | Single-tenant, one module per schema — `PostgresOptions.Schema` is per module |
+| Many customers, spread over a few databases | `.WithTenancy(t => t.AcrossPostgresDatabases(...))` — see [tenant sharding](architecture/tenant-sharding.md) |
+
+## Spreading tenants over several databases
+
+The last row of that table is the sharded case. It is the same row-level tenancy, with a routing
+layer above it that picks the database first:
+
+```csharp
+services.AddAlberto("orders", module => module
+    .WithPostgres(o => o with { Schema = "orders" })
+    .WithTenancy(t => t.AcrossPostgresDatabases(s => s
+        .WithCatalog(o => o with { ConnectionString = catalogCs })
+        .AddShard("db1", o => o with { ConnectionString = db1Cs })
+        .AddShard("db2", o => o with { ConnectionString = db2Cs })
+        .WithDefaultShard("db1"))));
+```
+
+Application code is unchanged: `IEventStore` under the module key routes to whichever database the
+current tenant belongs to, and that database's own tenant filter still applies inside it.
+
+Two things it costs you, before you reach for it: a tenant cannot be moved between databases, and
+there are no cross-shard reads — an aggregate over all tenants is a fan-out you write. Both, and
+the operational surface, are in
+[architecture/tenant-sharding.md](architecture/tenant-sharding.md).
 
 ## Multi-tenancy and rebuilds
 

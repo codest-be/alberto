@@ -30,5 +30,6 @@
     <ItemGroup>
         <EmbeddedResource Include="Migrations\*.sql" />
         <EmbeddedResource Include="Migrations\SingleTenant\*.sql" />
+        <EmbeddedResource Include="Migrations\Catalog\*.sql" />
     </ItemGroup>
 </Project>

@@ -35,6 +35,13 @@ public static class PostgresTemplates
         new("alberto_tmpl_multi_tenant", cs => RunDbUpAsync(cs, singleTenant: false));
 
     /// <summary>
+    /// A database with nothing in it, for schemas that are not the event store's — the tenant
+    /// shard catalog, whose own migrator is what the test is there to exercise.
+    /// </summary>
+    public static readonly PostgresTemplate Empty =
+        new("alberto_tmpl_empty", _ => Task.CompletedTask);
+
+    /// <summary>
     /// The EF test entities alone. EnsureCreated is sufficient because those entities live
     /// in a table that Alberto's migrations do not manage.
     /// </summary>

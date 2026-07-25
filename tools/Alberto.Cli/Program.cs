@@ -11,6 +11,7 @@ rootCommand.AddCommand(DeadLettersCommand.Build());
 rootCommand.AddCommand(EventsCommand.Build());
 rootCommand.AddCommand(ProjectionsCommand.Build());
 rootCommand.AddCommand(TenantsCommand.Build());
+rootCommand.AddCommand(ShardsCommand.Build());
 rootCommand.AddCommand(OpsCommand.Build());
 
 return await rootCommand.InvokeAsync(args);

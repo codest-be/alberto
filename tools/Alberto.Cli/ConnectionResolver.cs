@@ -12,7 +12,14 @@ public static class ConnectionResolver
     /// 4. DATABASE_URL environment variable
     /// 5. Default: "Host=localhost;Database=postgres"
     /// </summary>
-    public static string ResolveConnectionString(string? urlOption)
+    public static string ResolveConnectionString(string? urlOption) =>
+        ResolveConnectionString(ConfigFileFinder.Find(), urlOption);
+
+    /// <summary>
+    /// The same resolution against a config already in hand, for a caller that has read the file
+    /// once and should not read it again for each of a module's shards.
+    /// </summary>
+    public static string ResolveConnectionString(AlbertoConfig? config, string? urlOption)
     {
         if (!string.IsNullOrWhiteSpace(urlOption))
             return urlOption;
@@ -21,7 +28,6 @@ public static class ConnectionResolver
         if (!string.IsNullOrWhiteSpace(albertoUrl))
             return albertoUrl;
 
-        var config = ConfigFileFinder.Find();
         if (!string.IsNullOrWhiteSpace(config?.Connection?.Url))
             return config.Connection.Url;
 
@@ -35,12 +41,15 @@ public static class ConnectionResolver
     /// <summary>
     /// Resolves the schema name. Uses schemaOption if provided, otherwise reads from config, otherwise returns "public".
     /// </summary>
-    public static string ResolveSchema(string? schemaOption)
+    public static string ResolveSchema(string? schemaOption) =>
+        ResolveSchema(ConfigFileFinder.Find(), schemaOption);
+
+    /// <summary>The same resolution against a config already in hand.</summary>
+    public static string ResolveSchema(AlbertoConfig? config, string? schemaOption)
     {
         if (!string.IsNullOrWhiteSpace(schemaOption))
             return schemaOption;
 
-        var config = ConfigFileFinder.Find();
         if (!string.IsNullOrWhiteSpace(config?.Schema))
             return config.Schema;
 

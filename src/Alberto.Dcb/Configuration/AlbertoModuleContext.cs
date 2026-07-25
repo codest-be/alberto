@@ -23,8 +23,19 @@ public sealed class AlbertoModuleContext
     /// <summary>The complete, immutable module declaration.</summary>
     public AlbertoModuleDefinition Definition { get; }
 
-    /// <summary>Shorthand for <c>Definition.ModuleKey</c>. Use it as the DI service key.</summary>
-    public string ModuleKey => Definition.ModuleKey;
+    /// <summary>
+    /// The DI service key to register this module's services under, and the name of its options
+    /// instance. Equal to <c>Definition.ModuleKey</c> for an ordinary module; for one shard of a
+    /// sharded module it is <c>module#shard</c>, so the same registration code produces a
+    /// separate set of services per shard without knowing that sharding exists.
+    /// </summary>
+    public string ModuleKey => Definition.ServiceKey;
+
+    /// <summary>The logical module key, without the shard. Equal to <see cref="ModuleKey"/> when unsharded.</summary>
+    public string LogicalModuleKey => Definition.ModuleKey;
+
+    /// <summary>The shard being registered, or null when this module is not sharded.</summary>
+    public string? ShardId => Definition.ShardId;
 
     /// <summary>Shorthand for <c>Definition.TenancyEnabled</c>.</summary>
     public bool TenancyEnabled => Definition.TenancyEnabled;

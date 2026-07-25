@@ -10,6 +10,7 @@ namespace Alberto.Dcb;
 public sealed class DcbModuleBuilder
 {
     private readonly List<Action<AlbertoModuleContext>> _deferredRegistrations = [];
+    private readonly List<Action<TenancyBuilder>> _tenancyConfigurators = [];
 
     internal DcbModuleBuilder(string moduleKey) =>
         Definition = new AlbertoModuleDefinition { ModuleKey = moduleKey };
@@ -81,4 +82,47 @@ public sealed class DcbModuleBuilder
     /// Declares that this module's data is partitioned per tenant. The backend must support it.
     /// </summary>
     public DcbModuleBuilder WithTenancy() => Configure(d => d with { TenancyEnabled = true });
+
+    /// <summary>
+    /// Declares tenancy and configures how the tenants are laid out — in one database, which is
+    /// the default, or across several.
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// .WithTenancy(t => t.AcrossPostgresDatabases(s => s
+    ///     .WithCatalog(o => o with { ConnectionString = catalogCs })
+    ///     .AddShard("db1", o => o with { ConnectionString = db1Cs })
+    ///     .AddShard("db2", o => o with { ConnectionString = db2Cs })
+    ///     .WithDefaultShard("db1")))
+    /// </code>
+    /// </example>
+    /// <remarks>
+    /// <paramref name="configure"/> does not run here. It runs once the whole module lambda has
+    /// returned, so a shard can inherit settings from a <c>.WithPostgres(...)</c> written after
+    /// this call — the module builder's rule that call order never changes the outcome holds for
+    /// tenancy too.
+    /// </remarks>
+    public DcbModuleBuilder WithTenancy(Action<TenancyBuilder> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+
+        _tenancyConfigurators.Add(configure);
+        return Configure(d => d with { TenancyEnabled = true });
+    }
+
+    /// <summary>
+    /// Runs the deferred tenancy callbacks against the completed declaration. Called by
+    /// <c>AddAlberto</c> once the module lambda has returned and the backend is final.
+    /// </summary>
+    internal void ApplyTenancy()
+    {
+        if (_tenancyConfigurators.Count == 0)
+            return;
+
+        var tenancy = new TenancyBuilder(ModuleKey, Definition.Backend);
+        foreach (var configure in _tenancyConfigurators)
+            configure(tenancy);
+
+        Configure(d => d with { Tenancy = tenancy.Definition });
+    }
 }

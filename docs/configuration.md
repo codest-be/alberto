@@ -137,6 +137,9 @@ A complete example covering all sections:
 
 The values shown above are all defaults (except `ConnectionString` and `Schema`).
 
+A module whose tenants are spread over several databases has one more section, `Tenancy` — see
+[Tenancy and shard options](#tenancy-and-shard-options). It is absent for every other module.
+
 ---
 
 ## Precedence: configuration beats code
@@ -316,6 +319,59 @@ Building a service provider never opens a database connection; all I/O is deferr
 
 ---
 
+## Tenancy and shard options
+
+`.WithTenancy(t => t.AcrossPostgresDatabases(s => ...))` · configuration path: `Tenancy`
+
+Present only for a module whose tenants are spread over several databases. The mechanism is
+described in [architecture/tenant-sharding.md](architecture/tenant-sharding.md); this is the
+configuration surface.
+
+| Property | Type | Default | Configuration key |
+|---|---|---|---|
+| Default shard | `string?` | `null` (unmapped tenants are refused) | `Tenancy:DefaultShard` |
+| Catalog refresh interval | `TimeSpan` | `00:00:30` | `Tenancy:CatalogRefreshInterval` |
+| Catalog database | Postgres options | — (required) | `Tenancy:Catalog:*` |
+| Per-shard database | Postgres options | — | `Tenancy:Shards:{shardId}:*` |
+
+`Tenancy:Catalog` and each `Tenancy:Shards:{shardId}` take the same properties as
+[`Postgres`](#postgres-options).
+
+```json
+{
+  "Alberto": {
+    "Modules": {
+      "orders": {
+        "Postgres": { "Schema": "orders", "MaxPoolSize": 30 },
+        "Tenancy": {
+          "DefaultShard": "db1",
+          "CatalogRefreshInterval": "00:00:30",
+          "Catalog": { "ConnectionString": "Host=control;Database=alberto_catalog", "MaxPoolSize": 5 },
+          "Shards": {
+            "db1": { "ConnectionString": "Host=one;Database=orders" },
+            "db2": { "ConnectionString": "Host=two;Database=orders", "MaxPoolSize": 10 }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+**Shards are declared in code and tuned here.** A shard's options layer as module code
+(`.WithPostgres`) → shard code (`.AddShard`) → module configuration → shard configuration, so a
+setting that is genuinely module-wide — the schema, the pool sizes — is written once at the
+`Postgres` level and reaches every shard.
+
+A shard that appears **only** here is reported as `ALB0015` and is not created. Shard services are
+registered while the container is being built, before any configuration is read, so such a shard
+would have no data source, no migration and no control loops.
+
+**Pool sizes multiply.** `MaxPoolSize` is per shard: the example asks the database servers for
+30 + 10 + 5 connections, not 30.
+
+---
+
 ## Validation catalog
 
 `AlbertoModuleValidator` is an `IValidateOptions<AlbertoModuleDefinition>` registered
@@ -335,6 +391,13 @@ surfacing them in one error message.
 | `ALB0007` | `Retry.MaxRetries < 0` or `Retry.BackoffMultiplier < 1.0` | Use 0 to disable retries; use 1.0 for a constant backoff delay |
 | `ALB0008` | A configuration key under `Alberto:Modules:{key}` does not match any known option — for example a typo in a section or property name | Correct or remove the key; when a close match exists, the remedy shows a "Did you mean '…'?" suggestion |
 | `ALB0009` | With rebuilds enabled, `Rebuilds.PollingInterval` or `Rebuilds.VersionRefreshInterval` is not a positive duration | Set a positive interval via `.WithRebuilds(pollingInterval: ...)` or the matching `ControlLoop:Rebuilds:*` key |
+| `ALB0010` | The module declares shards but not tenancy — a shard routes tenants, so there is nothing to route | Declare the shards inside `.WithTenancy(t => ...)` rather than alongside it |
+| `ALB0011` | The module declares shards but the backend does not support tenancy | Switch to a backend that supports it, such as `.WithPostgres(...)` |
+| `ALB0012` | A shard id is not a safe identifier, or two shards share one | Use a lowercase identifier starting with a letter (maximum 63 characters), and give each `.AddShard(...)` a distinct id |
+| `ALB0013` | `.WithDefaultShard(...)` names a shard that was not declared | Name a declared shard, or set `Tenancy:DefaultShard` to one |
+| `ALB0014` | The module declares shards but no catalog, so there is nowhere to record which shard a tenant is in | Declare one with `.WithCatalog(o => o with { ConnectionString = ... })`, pointing at a control database rather than at one of the shards |
+| `ALB0015` | Configuration declares a shard the module does not | Add `.AddShard("...", ...)` in code, or remove the `Tenancy:Shards:{id}` section — shard services are registered before configuration is read, so a configuration-only shard could never serve a request |
+| `ALB0016` | Two shards resolve to the same database and schema | Give each shard its own database, or at minimum its own schema — separate shards must be separate storage |
 
 ### Postgres codes (ALB1xxx)
 

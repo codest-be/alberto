@@ -40,16 +40,30 @@ internal static class AlbertoConfigurationScanner
         // leaf properties are validated against ProcessorExecutionOverrides.
         legalTopLevel["Processors"] = null;
 
+        // "Tenancy" is scanned separately: its shard ids are dynamic, and its leaves are the
+        // backend's own properties rather than a fixed overrides type.
+        legalTopLevel[TenancyConfiguration.SectionName] = null;
+
         // Backend section (e.g. "Postgres" → PostgresOverrides).
+        Type? backendOverrides = null;
         if (backend != null)
         {
             var (sectionName, overridesType) = backend.GetConfigurationSection();
             if (sectionName is not null)
+            {
                 legalTopLevel[sectionName] = overridesType;
+                backendOverrides = overridesType;
+            }
         }
 
         foreach (var child in moduleSection.GetChildren())
         {
+            if (string.Equals(child.Key, TenancyConfiguration.SectionName, StringComparison.OrdinalIgnoreCase))
+            {
+                ScanTenancy(child, backendOverrides, findings);
+                continue;
+            }
+
             if (!legalTopLevel.TryGetValue(child.Key, out var overridesType))
             {
                 // Unknown top-level section.
@@ -74,6 +88,48 @@ internal static class AlbertoConfigurationScanner
         }
 
         return findings.ToImmutableArray();
+    }
+
+    /// <summary>
+    /// Validates the <c>Tenancy</c> section. Shard ids under <c>Shards</c> are dynamic and are
+    /// never flagged here — a shard named in configuration but not in code is a real problem, but
+    /// it is <c>ALB0015</c>'s to report, with a message that can actually explain it.
+    /// </summary>
+    private static void ScanTenancy(
+        IConfigurationSection tenancy,
+        Type? backendOverridesType,
+        List<UnknownConfigurationKey> findings)
+    {
+        var legal = new[]
+        {
+            TenancyConfiguration.ShardsSectionName,
+            TenancyConfiguration.CatalogSectionName,
+            TenancyConfiguration.DefaultShardKey,
+            TenancyConfiguration.RefreshIntervalKey,
+        };
+
+        foreach (var child in tenancy.GetChildren())
+        {
+            if (!legal.Contains(child.Key, StringComparer.OrdinalIgnoreCase))
+            {
+                findings.Add(new UnknownConfigurationKey(child.Path, FindBestMatch(child.Key, legal)));
+                continue;
+            }
+
+            if (backendOverridesType is null)
+                continue;
+
+            // A shard section and the catalog section both hold the backend's own properties.
+            if (string.Equals(child.Key, TenancyConfiguration.ShardsSectionName, StringComparison.OrdinalIgnoreCase))
+            {
+                foreach (var shard in child.GetChildren())
+                    ScanSection(shard, backendOverridesType, findings);
+            }
+            else if (string.Equals(child.Key, TenancyConfiguration.CatalogSectionName, StringComparison.OrdinalIgnoreCase))
+            {
+                ScanSection(child, backendOverridesType, findings);
+            }
+        }
     }
 
     // Checks every child key of <paramref name="section"/> against the properties of

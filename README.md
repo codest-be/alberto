@@ -134,6 +134,7 @@ The full, runnable version of that program is
 | [Operations](docs/operations.md) | The `alberto` CLI, dead letters, error policy, telemetry |
 | [Configuration reference](docs/configuration.md) | Three-phase pipeline, all options, validation codes, custom backends |
 | [Async processing architecture](docs/architecture/async-processing.md) | How the control loop actually works |
+| [Tenant sharding](docs/architecture/tenant-sharding.md) | Spreading a module's tenants over several databases |
 | [Upgrade notes](UPGRADING.md) | Every breaking change, most recent first |
 
 ## Repository layout
