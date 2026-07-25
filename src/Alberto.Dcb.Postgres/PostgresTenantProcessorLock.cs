@@ -36,30 +36,34 @@ public sealed class PostgresTenantProcessorLock : ITenantProcessorLock
     public async Task<ITenantLease?> TryAcquireForTenantAsync(
         string consumerId, string tenantId, string replicaId, CancellationToken ct = default)
     {
-        var expiresAt = DateTimeOffset.UtcNow.Add(LeaseDuration);
-
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
 
         // Try to insert a new lease, or update an existing one if it has expired.
-        // The UPDATE only succeeds if expires_at < NOW() (expired) OR replica_id matches (own lease).
+        // The UPDATE only succeeds if expires_at < now() (expired) OR replica_id matches (own lease).
+        //
+        // Expiry is computed by the database, not the caller, so that the same clock which
+        // writes expires_at is the clock the WHERE evaluates it against. Computing it from
+        // DateTimeOffset.UtcNow would make the effective duration
+        // LeaseDuration ± (replica clock − database clock). now() is transaction-start time,
+        // so it is consistent between the SET and the WHERE.
         await using var cmd = new NpgsqlCommand($@"
             INSERT INTO {_schema.Table("alberto_tenant_leases")} (consumer_id, tenant_id, replica_id, acquired_at, expires_at)
-            VALUES (@consumer_id, @tenant_id, @replica_id, NOW(), @expires_at)
+            VALUES (@consumer_id, @tenant_id, @replica_id, now(), now() + @lease_duration)
             ON CONFLICT (consumer_id, tenant_id) DO UPDATE
             SET replica_id = @replica_id,
                 acquired_at = CASE
                     WHEN {_schema.Table("alberto_tenant_leases")}.replica_id = @replica_id THEN {_schema.Table("alberto_tenant_leases")}.acquired_at
-                    ELSE NOW()
+                    ELSE now()
                 END,
-                expires_at = @expires_at
-            WHERE {_schema.Table("alberto_tenant_leases")}.expires_at < NOW()
+                expires_at = now() + @lease_duration
+            WHERE {_schema.Table("alberto_tenant_leases")}.expires_at < now()
                OR {_schema.Table("alberto_tenant_leases")}.replica_id = @replica_id
             RETURNING expires_at", connection);
 
         cmd.Parameters.AddWithValue("consumer_id", consumerId);
         cmd.Parameters.AddWithValue("tenant_id", tenantId);
         cmd.Parameters.AddWithValue("replica_id", replicaId);
-        cmd.Parameters.AddWithValue("expires_at", expiresAt);
+        cmd.Parameters.AddWithValue("lease_duration", LeaseDuration);
 
         await using var reader = await cmd.ExecuteReaderAsync(ct);
 
@@ -77,21 +81,19 @@ public sealed class PostgresTenantProcessorLock : ITenantProcessorLock
     public async Task<IReadOnlyList<string>> RenewLeasesAsync(
         string consumerId, string replicaId, CancellationToken ct = default)
     {
-        var expiresAt = DateTimeOffset.UtcNow.Add(LeaseDuration);
-
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
 
         // Update expires_at for all leases owned by this replica
         await using var cmd = new NpgsqlCommand($@"
             UPDATE {_schema.Table("alberto_tenant_leases")}
-            SET expires_at = @expires_at
+            SET expires_at = now() + @lease_duration
             WHERE consumer_id = @consumer_id
               AND replica_id = @replica_id
             RETURNING tenant_id", connection);
 
         cmd.Parameters.AddWithValue("consumer_id", consumerId);
         cmd.Parameters.AddWithValue("replica_id", replicaId);
-        cmd.Parameters.AddWithValue("expires_at", expiresAt);
+        cmd.Parameters.AddWithValue("lease_duration", LeaseDuration);
 
         var renewedTenants = new List<string>();
         await using var reader = await cmd.ExecuteReaderAsync(ct);
