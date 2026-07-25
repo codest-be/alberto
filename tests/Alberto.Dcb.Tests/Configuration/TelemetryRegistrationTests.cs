@@ -223,12 +223,10 @@ public class TelemetryRegistrationTests
 
         var services = new ServiceCollection();
         services.AddAlberto("orders", module => module.WithInMemory().WithTelemetry());
-#pragma warning disable CS0618
         services.AddOpenTelemetry()
             .WithTracing(tracing => tracing
-                .AddAlbertoInstrumentation()    // should become non-obsolete after fix
+                .AddAlbertoInstrumentation()    // retained for manual TracerProvider wiring
                 .AddInMemoryExporter(exported));
-#pragma warning restore CS0618
 
         await using var provider = services.BuildServiceProvider();
         var tracerProvider = provider.GetRequiredService<TracerProvider>();
