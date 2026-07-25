@@ -1,3 +1,5 @@
+using Alberto.Dcb.Configuration;
+
 namespace Alberto.Dcb.Subscriptions;
 
 /// <summary>
@@ -28,10 +30,36 @@ public sealed record ProcessorExecutionOptions(
     ProcessorBatchingMode BatchingMode,
     int MaxConcurrency = 1)
 {
+    /// <summary>Default execution settings used when no explicit settings are declared.</summary>
     public static ProcessorExecutionOptions Default { get; } =
         new(ProcessorBatchingMode.Required);
 }
 
+/// <summary>
+/// Mutable, all-nullable mirror of <see cref="ProcessorExecutionOptions"/> used by the
+/// configuration binder. Non-null properties are applied on top of the code-declared defaults.
+/// Set keys under <c>Alberto:Modules:{moduleKey}:Processors:{processorId}</c>.
+/// </summary>
+public sealed class ProcessorExecutionOverrides : IAlbertoOverrides<ProcessorExecutionOptions>
+{
+    /// <summary>
+    /// Overrides <see cref="ProcessorExecutionOptions.BatchingMode"/>. Null leaves the default unchanged.
+    /// </summary>
+    public ProcessorBatchingMode? BatchingMode { get; set; }
+
+    /// <summary>
+    /// Overrides <see cref="ProcessorExecutionOptions.MaxConcurrency"/>. Null leaves the default unchanged.
+    /// </summary>
+    public int? MaxConcurrency { get; set; }
+
+    /// <inheritdoc />
+    public ProcessorExecutionOptions ApplyTo(ProcessorExecutionOptions options) =>
+        options with
+        {
+            BatchingMode = BatchingMode ?? options.BatchingMode,
+            MaxConcurrency = MaxConcurrency ?? options.MaxConcurrency,
+        };
+}
 
 internal sealed record ProcessorExecutionRegistration(
     string ProcessorId,

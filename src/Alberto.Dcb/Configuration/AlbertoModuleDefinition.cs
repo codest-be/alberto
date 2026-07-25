@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using Alberto.Dcb.Subscriptions;
 using Microsoft.Extensions.Configuration;
 
 namespace Alberto.Dcb.Configuration;
@@ -50,6 +51,20 @@ public sealed record AlbertoModuleDefinition
 
         var section = configuration.GetSection(definition.ConfigurationPath);
 
+        var processorsSection = section.GetSection("Processors");
+        var overlaidProcessors = definition.Processors.Select(processor =>
+        {
+            var procSection = processorsSection.GetSection(processor.ProcessorId);
+            if (!procSection.Exists())
+                return processor;
+
+            return processor with
+            {
+                Execution = AlbertoOptionsOverlay.Overlay<ProcessorExecutionOptions, ProcessorExecutionOverrides>(
+                    processorsSection, processor.ProcessorId, processor.Execution),
+            };
+        }).ToImmutableArray();
+
         return definition with
         {
             ControlLoop = AlbertoOptionsOverlay.Overlay<ControlLoopOptions, ControlLoopOverrides>(
@@ -59,6 +74,7 @@ public sealed record AlbertoModuleDefinition
             Checkpoints = AlbertoOptionsOverlay.Overlay<CheckpointOptions, CheckpointOverrides>(
                 section, "Checkpoints", definition.Checkpoints),
             Backend = definition.Backend?.ApplyConfiguration(section),
+            Processors = overlaidProcessors,
         };
     }
 }
