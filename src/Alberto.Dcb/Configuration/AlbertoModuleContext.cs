@@ -4,8 +4,10 @@ namespace Alberto.Dcb.Configuration;
 
 /// <summary>
 /// What a deferred registration callback receives. Created once per module, after the
-/// declaration is complete and configuration has been overlaid — so
-/// <see cref="Definition"/> is final and reading it is never order-dependent.
+/// declaration lambda has run — so all builder calls are visible regardless of their
+/// order inside the lambda. <see cref="Definition"/> reflects the code-configured state;
+/// configuration overlay is applied later at host startup when the named
+/// <see cref="Microsoft.Extensions.Options.IOptionsMonitor{T}"/> instance resolves.
 /// </summary>
 public sealed class AlbertoModuleContext
 {

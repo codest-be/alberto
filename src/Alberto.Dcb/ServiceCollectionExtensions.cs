@@ -90,7 +90,9 @@ public static class ServiceCollectionExtensions
             })
             .ValidateOnStart();
 
-        // Phase 3 — register. The definition is final, so nothing here is order-dependent.
+        // Phase 3 — register. `declared` is the code-configured definition.
+        // Configuration overlay is applied later inside the Options callback above,
+        // when IOptionsMonitor resolves the named instance at host startup.
         var final = declared;
         var context = new AlbertoModuleContext(services, final);
 
