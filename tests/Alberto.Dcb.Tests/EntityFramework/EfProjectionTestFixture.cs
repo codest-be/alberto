@@ -203,7 +203,10 @@ public sealed class EfProjectionTestFixture : IAsyncLifetime
         // Create the EF schema without Aspire/DbUp migrations — EnsureCreated is sufficient
         // because the EF test entities live in an isolated table not managed by Alberto migrations.
         var optionsBuilder = new DbContextOptionsBuilder<EfTestDbContext>();
-        optionsBuilder.UseNpgsql(ConnectionString);
+        optionsBuilder.UseNpgsql(ConnectionString, o => o.EnableRetryOnFailure(
+            maxRetryCount: 5,
+            maxRetryDelay: TimeSpan.FromSeconds(3),
+            errorCodesToAdd: null));
         await using var context = new EfTestDbContext(optionsBuilder.Options);
         await context.Database.EnsureCreatedAsync();
     }
