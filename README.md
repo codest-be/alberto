@@ -112,9 +112,13 @@ services.AddAlberto("tickets", builder => builder
     .WithInMemory()                                       // or .WithPostgres(...)
     .AddAlbertoStore(Assembly.GetExecutingAssembly())      // discovers [EventType] events
     .AddProjection(OccupancyProjection.Declaration, _ => () => occupancy)
-    .WithControlLoop(loop => loop
-        .WithPollingInterval(TimeSpan.FromMilliseconds(50))));
+    .WithControlLoop(o => o with { PollingInterval = TimeSpan.FromMilliseconds(50) }));
 ```
+
+Nothing is registered until the host starts — declaration, configuration overlay, validation, and
+service registration happen in three distinct phases. See
+[docs/configuration.md](docs/configuration.md) for the full picture. All knobs are also
+overridable from `Alberto:Modules:{moduleKey}:{Section}:{Property}` in `appsettings.json`.
 
 The full, runnable version of that program is
 [docs/getting-started.md](docs/getting-started.md) — it needs no Docker and no connection string.
@@ -129,6 +133,7 @@ The full, runnable version of that program is
 | [Reactors and the outbox](docs/reactors-and-outbox.md) | Side effects and publishing to the outside world |
 | [Multi-tenancy](docs/multi-tenancy.md) | Tenant isolation, leases, and what it costs |
 | [Operations](docs/operations.md) | The `alberto` CLI, dead letters, error policy, telemetry |
+| [Configuration reference](docs/configuration.md) | Three-phase pipeline, all options, validation codes, custom backends |
 | [Async processing architecture](docs/architecture/async-processing.md) | How the control loop actually works |
 | [Upgrade notes](UPGRADING.md) | Every breaking change, most recent first |
 

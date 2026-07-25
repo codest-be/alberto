@@ -7,7 +7,7 @@ namespace Alberto.Dcb.Postgres;
 /// PostgreSQL implementation of <see cref="ICheckpointStore"/>.
 /// Uses the alberto_processor_checkpoints table.
 /// </summary>
-public sealed class PostgresCheckpointStore : IFencedCheckpointStore
+public sealed class PostgresCheckpointStore : IFencedCheckpointStore, ICheckpointInventory
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly SchemaQualifier _schema;
@@ -67,6 +67,27 @@ public sealed class PostgresCheckpointStore : IFencedCheckpointStore
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<string>> ListProcessorIdsAsync(CancellationToken ct = default)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var command = new NpgsqlCommand(
+            $"SELECT processor_id FROM {_schema.Table("alberto_processor_checkpoints")}",
+            connection);
+
+        var ids = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            ids.Add(reader.GetString(0));
+
+        return ids;
+    }
+
+    /// <summary>
+    /// Sets the checkpoint for <paramref name="processorId"/> to exactly <paramref name="position"/>,
+    /// bypassing the <c>GREATEST</c> guard that normally prevents moving a checkpoint backward.
+    /// Use for operator-initiated rewinds (e.g. <c>alberto ops rebuild start</c>).
+    /// </summary>
     public async Task RewindAsync(string processorId, long position, CancellationToken ct = default)
     {
         await using var connection = await _dataSource.OpenConnectionAsync(ct);

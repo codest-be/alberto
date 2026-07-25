@@ -104,8 +104,8 @@ public sealed class CommandPipelineTests
         var services = new ServiceCollection();
         const string moduleKey = "tenant-module";
         services.AddKeyedScoped<IEventStore>(moduleKey, (_, _) => new ScopedEventStore());
-        new DcbModuleBuilder(services, moduleKey)
-            .AddAlbertoStore(typeof(AlbertoStore).Assembly);
+        services.AddAlberto(moduleKey, builder => builder
+            .AddAlbertoStore(typeof(AlbertoStore).Assembly));
 
         await using var provider = services.BuildServiceProvider(
             new ServiceProviderOptions

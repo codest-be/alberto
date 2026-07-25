@@ -1,3 +1,5 @@
+using Alberto.Dcb.Configuration;
+
 namespace Alberto.Dcb.Subscriptions;
 
 /// <summary>
@@ -28,70 +30,35 @@ public sealed record ProcessorExecutionOptions(
     ProcessorBatchingMode BatchingMode,
     int MaxConcurrency = 1)
 {
+    /// <summary>Default execution settings used when no explicit settings are declared.</summary>
     public static ProcessorExecutionOptions Default { get; } =
         new(ProcessorBatchingMode.Required);
 }
 
 /// <summary>
-/// Fluent configurator used by registration helpers such as <c>ReactTo(..., configure: ...)</c>.
+/// Mutable, all-nullable mirror of <see cref="ProcessorExecutionOptions"/> used by the
+/// configuration binder. Non-null properties are applied on top of the code-declared defaults.
+/// Set keys under <c>Alberto:Modules:{moduleKey}:Processors:{processorId}</c>.
 /// </summary>
-public sealed class ProcessorExecutionConfigurator
+public sealed class ProcessorExecutionOverrides : IAlbertoOverrides<ProcessorExecutionOptions>
 {
-    private ProcessorBatchingMode _batchingMode = ProcessorBatchingMode.Required;
-    private int _maxConcurrency = 1;
+    /// <summary>
+    /// Overrides <see cref="ProcessorExecutionOptions.BatchingMode"/>. Null leaves the default unchanged.
+    /// </summary>
+    public ProcessorBatchingMode? BatchingMode { get; set; }
 
     /// <summary>
-    /// Prefer batch dispatch when the processor supports it.
-    /// Falls back to the normal per-event path otherwise, including when
-    /// per-event consume middleware is configured.
+    /// Overrides <see cref="ProcessorExecutionOptions.MaxConcurrency"/>. Null leaves the default unchanged.
     /// </summary>
-    public ProcessorExecutionConfigurator BatchIfSupported()
-    {
-        _batchingMode = ProcessorBatchingMode.IfSupported;
-        return this;
-    }
+    public int? MaxConcurrency { get; set; }
 
-    /// <summary>
-    /// Require batch dispatch and fail fast if the processor is not batch-capable
-    /// or if the runtime cannot preserve configured middleware semantics.
-    /// </summary>
-    public ProcessorExecutionConfigurator RequireBatching()
-    {
-        _batchingMode = ProcessorBatchingMode.Required;
-        return this;
-    }
-
-    /// <summary>
-    /// Force the default per-event execution path.
-    /// </summary>
-    public ProcessorExecutionConfigurator DisableBatching()
-    {
-        _batchingMode = ProcessorBatchingMode.Disabled;
-        return this;
-    }
-
-    /// <summary>
-    /// Sets the maximum number of events processed concurrently within a batch.
-    /// Default is 1 (sequential). Requires batching to be enabled.
-    /// </summary>
-    public ProcessorExecutionConfigurator WithConcurrency(int maxConcurrency)
-    {
-        ArgumentOutOfRangeException.ThrowIfLessThan(maxConcurrency, 1);
-        _maxConcurrency = maxConcurrency;
-        return this;
-    }
-
-    internal ProcessorExecutionOptions Build()
-    {
-        if (_maxConcurrency > 1 && _batchingMode == ProcessorBatchingMode.Disabled)
+    /// <inheritdoc />
+    public ProcessorExecutionOptions ApplyTo(ProcessorExecutionOptions options) =>
+        options with
         {
-            throw new InvalidOperationException(
-                "WithConcurrency requires batching to be enabled. " +
-                "Call RequireBatching() or BatchIfSupported() first.");
-        }
-
-        return new(_batchingMode, _maxConcurrency);
-    }
+            BatchingMode = BatchingMode ?? options.BatchingMode,
+            MaxConcurrency = MaxConcurrency ?? options.MaxConcurrency,
+        };
 }
 
 internal sealed record ProcessorExecutionRegistration(

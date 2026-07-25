@@ -202,6 +202,38 @@ public sealed class PostgresAdminDataAccess
     }
 
     /// <summary>
+    /// Upserts a checkpoint row, setting <paramref name="processorId"/> to
+    /// <paramref name="position"/>. Used by <c>alberto ops checkpoint rename</c>.
+    /// </summary>
+    public async Task SetCheckpointAsync(string processorId, long position, CancellationToken ct = default)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"""
+            INSERT INTO {_schema.Table("alberto_processor_checkpoints")} (processor_id, last_position, updated_at)
+            VALUES (@processorId, @position, NOW())
+            ON CONFLICT (processor_id) DO UPDATE
+              SET last_position = @position, updated_at = NOW()
+            """;
+        cmd.Parameters.AddWithValue("processorId", processorId);
+        cmd.Parameters.AddWithValue("position", position);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>
+    /// Deletes a checkpoint row. Used by <c>alberto ops checkpoint rename</c> to remove
+    /// the old name after copying its position to the new name.
+    /// </summary>
+    public async Task ResetCheckpointAsync(string processorId, CancellationToken ct = default)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"DELETE FROM {_schema.Table("alberto_processor_checkpoints")} WHERE processor_id = @processorId";
+        cmd.Parameters.AddWithValue("processorId", processorId);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>
     /// Lists dead letter entries with optional filtering by processor and event type.
     /// Returns at most <paramref name="limit"/> results ordered by <c>failed_at DESC</c>.
     /// </summary>

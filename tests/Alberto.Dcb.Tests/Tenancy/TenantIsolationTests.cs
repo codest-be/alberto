@@ -51,15 +51,14 @@ public sealed class MultiTenantPostgresFixture : IAsyncLifetime
     private IServiceProvider BuildServiceProvider()
     {
         var services = new ServiceCollection();
-        // DcbModuleBuilder has an internal constructor; Alberto.Dcb exposes it to
-        // Alberto.Dcb.Tests via InternalsVisibleTo so we can wire tenancy in tests.
-        var builder = new DcbModuleBuilder(services, ModuleKey);
-        builder.WithTenancy().WithPostgres(opts =>
-        {
-            opts.ConnectionString = ConnectionString;
-            opts.AutoMigrate = false;         // fixture already migrated
-            opts.EnableNotifyListener = false; // no background postgres listener in tests
-        });
+        services.AddAlberto(ModuleKey, module => module
+            .WithTenancy()
+            .WithPostgres(o => o with
+            {
+                ConnectionString = ConnectionString,
+                AutoMigrate = false,          // fixture already migrated
+                EnableNotifyListener = false, // no background postgres listener in tests
+            }));
         return services.BuildServiceProvider();
     }
 

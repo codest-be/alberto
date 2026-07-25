@@ -41,8 +41,8 @@ internal sealed record RebuildCoordinatorOptions(TimeSpan PollingInterval, bool 
 /// <para>
 /// Only one replica should be running a given rebuild. Processor leases already guarantee that
 /// for the live loops; the shadow loop is started under the same lease-free assumption as the
-/// rest of the module, so enable <c>WithProcessorLeases</c> if more than one replica runs the
-/// same module.
+/// rest of the module, so enable leases via <c>ControlLoop:Leases:Enabled</c> if more than one
+/// replica runs the same module.
 /// </para>
 /// </remarks>
 internal sealed class RebuildCoordinator(

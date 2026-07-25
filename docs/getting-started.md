@@ -146,8 +146,7 @@ services.AddAlberto("tickets", builder => builder
     .WithInMemory()
     .AddAlbertoStore(Assembly.GetExecutingAssembly())
     .AddProjection(OccupancyProjection.Declaration, _ => () => occupancy)
-    .WithControlLoop(loop => loop
-        .WithPollingInterval(TimeSpan.FromMilliseconds(50))));
+    .WithControlLoop(o => o with { PollingInterval = TimeSpan.FromMilliseconds(50) }));
 ```
 
 - `AddAlberto(key, …)` registers one **module**. Everything inside is keyed by that string, so an
@@ -165,11 +164,7 @@ web application, or an explicit `provider.CreateScope()` in a console one.
 Going to production is the same shape with one line swapped:
 
 ```csharp
-    .WithPostgres(options =>
-    {
-        options.ConnectionString = connectionString;
-        options.Schema = "tickets";
-    })
+    .WithPostgres(o => o with { ConnectionString = connectionString, Schema = "tickets" })
 ```
 
 ## The whole program
@@ -254,8 +249,7 @@ public static class Program
             .WithInMemory()
             .AddAlbertoStore(Assembly.GetExecutingAssembly())
             .AddProjection(OccupancyProjection.Declaration, _ => () => occupancy)
-            .WithControlLoop(loop => loop
-                .WithPollingInterval(TimeSpan.FromMilliseconds(50))));
+            .WithControlLoop(o => o with { PollingInterval = TimeSpan.FromMilliseconds(50) }));
 
         var provider = services.BuildServiceProvider(validateScopes: true);
         foreach (var hosted in provider.GetServices<IHostedService>())

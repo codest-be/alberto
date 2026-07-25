@@ -113,10 +113,6 @@ internal sealed class ShadowProcessor(IEventProcessor inner, string processorId)
             await inner.ProcessEventAsync(e, ct);
     }
 
-    public ErrorHandlingDecision HandleError(
-        IEventEnvelope failedEvent, Exception exception, int attemptNumber, ErrorPolicy policy)
-        => inner.HandleError(failedEvent, exception, attemptNumber, policy);
-
     public ValueTask DisposeAsync()
         => inner is IAsyncDisposable d ? d.DisposeAsync() : ValueTask.CompletedTask;
 }

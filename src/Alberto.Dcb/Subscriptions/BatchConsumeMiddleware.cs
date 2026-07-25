@@ -1,3 +1,4 @@
+using Alberto.Dcb.Configuration;
 using Alberto.Dcb.Telemetry;
 
 namespace Alberto.Dcb.Subscriptions;
@@ -27,17 +28,16 @@ public static class BatchConsumeMiddlewares
     /// </list>
     /// </summary>
     public static BatchConsumeMiddleware RetryAndDeadLetter(
-        ErrorPolicy? policy = null,
-        IDeadLetterStore? deadLetterStore = null)
+        RetryOptions retry,
+        IErrorClassifier classifier,
+        IDeadLetterStore? deadLetterStore)
     {
-        var p = policy ?? ErrorPolicy.Default;
-
         return async (context, next) =>
         {
             // retryMetricCount is evaluated at dispatch time (inside the lambda)
             // so it reflects the actual batch size for the current invocation.
             var lastError = await RetryAndDeadLetterCore.ExecuteAsync(
-                context, p, next, retryMetricCount: context.Envelopes.Count);
+                context, retry, classifier, next, retryMetricCount: context.Envelopes.Count);
 
             if (lastError is null)
                 return; // success
@@ -55,7 +55,7 @@ public static class BatchConsumeMiddlewares
                 new KeyValuePair<string, object?>("processor", context.ProcessorId),
                 new KeyValuePair<string, object?>("module", context.ModuleKey));
 
-            if (!p.DeadLetterOnMaxRetries || deadLetterStore is null)
+            if (!retry.DeadLetterOnMaxRetries || deadLetterStore is null)
                 return;
 
             var envelope = context.Envelopes[0];

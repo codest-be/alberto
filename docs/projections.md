@@ -263,7 +263,8 @@ and a coordinator that crashes mid-rebuild resumes on restart.
   show gaps after a few abandoned attempts. That is deliberate: an abort cannot stop the shadow
   loop in the application process synchronously, so handing its number to the next rebuild would
   let its last few writes seed the replay.
-- Run more than one replica of the module and you need `WithProcessorLeases`, or two replicas
+- Run more than one replica of the module and you need leases enabled
+  (`.WithControlLoop(o => o with { Leases = o.Leases with { Enabled = true } })`), or two replicas
   replay into the same version.
 - A reader that resolves the active version and *then* queries can find nothing, if the promotion
   lands between the two steps: promotion deletes the superseded rows in the same transaction that

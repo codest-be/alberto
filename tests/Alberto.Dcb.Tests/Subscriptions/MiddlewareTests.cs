@@ -1,3 +1,4 @@
+using Alberto.Dcb.Configuration;
 using Alberto.Dcb.Subscriptions;
 using Xunit;
 
@@ -145,7 +146,9 @@ public sealed class MiddlewareTests
     public async Task RetryAndDeadLetter_SuccessOnFirstAttempt_DoesNotDeadLetter()
     {
         var middleware = ConsumeMiddlewares.RetryAndDeadLetter(
-            new ErrorPolicy { MaxRetries = 3 });
+            new RetryOptions { MaxRetries = 3 },
+            DefaultErrorClassifier.Instance,
+            deadLetterStore: null);
 
         var context = MakeContext(TestContext.Current.CancellationToken);
 
@@ -164,14 +167,13 @@ public sealed class MiddlewareTests
     public async Task RetryAndDeadLetter_RetriesOnTransientError_SucceedsOnSecondAttempt()
     {
         var callCount = 0;
-        var policy = new ErrorPolicy
+        var retry = new RetryOptions
         {
             MaxRetries = 3,
             RetryDelay = TimeSpan.Zero,
-            ErrorClassifier = new AlwaysTransientClassifier()
         };
 
-        var middleware = ConsumeMiddlewares.RetryAndDeadLetter(policy);
+        var middleware = ConsumeMiddlewares.RetryAndDeadLetter(retry, new AlwaysTransientClassifier(), deadLetterStore: null);
         var context = MakeContext(TestContext.Current.CancellationToken);
 
         await MiddlewareRunner.RunAsync(context, [middleware], () =>
@@ -190,15 +192,14 @@ public sealed class MiddlewareTests
     [Fact]
     public async Task RetryAndDeadLetter_ExhaustsRetries_DeadLetters()
     {
-        var policy = new ErrorPolicy
+        var retry = new RetryOptions
         {
             MaxRetries = 2,
             RetryDelay = TimeSpan.Zero,
-            ErrorClassifier = new AlwaysTransientClassifier()
         };
 
         var deadLetterStore = new InMemoryDeadLetterStore();
-        var middleware = ConsumeMiddlewares.RetryAndDeadLetter(policy, deadLetterStore);
+        var middleware = ConsumeMiddlewares.RetryAndDeadLetter(retry, new AlwaysTransientClassifier(), deadLetterStore);
         var context = MakeContext(TestContext.Current.CancellationToken);
 
         await MiddlewareRunner.RunAsync(context, [middleware], () =>
@@ -219,15 +220,14 @@ public sealed class MiddlewareTests
     public async Task RetryAndDeadLetter_PermanentError_DeadLettersImmediatelyWithoutRetry()
     {
         var callCount = 0;
-        var policy = new ErrorPolicy
+        var retry = new RetryOptions
         {
             MaxRetries = 5,
             DeadLetterOnMaxRetries = true,
-            ErrorClassifier = new AlwaysPermanentClassifier()
         };
 
         var deadLetterStore = new InMemoryDeadLetterStore();
-        var middleware = ConsumeMiddlewares.RetryAndDeadLetter(policy, deadLetterStore);
+        var middleware = ConsumeMiddlewares.RetryAndDeadLetter(retry, new AlwaysPermanentClassifier(), deadLetterStore);
         var context = MakeContext(TestContext.Current.CancellationToken);
 
         await MiddlewareRunner.RunAsync(context, [middleware], () =>
@@ -245,15 +245,14 @@ public sealed class MiddlewareTests
     [Fact]
     public async Task RetryAndDeadLetter_PermanentError_NoDeadLetterStore_StillMarksDeadLettered()
     {
-        var policy = new ErrorPolicy
+        var retry = new RetryOptions
         {
             MaxRetries = 3,
             DeadLetterOnMaxRetries = true,
-            ErrorClassifier = new AlwaysPermanentClassifier()
         };
 
         // No dead letter store provided
-        var middleware = ConsumeMiddlewares.RetryAndDeadLetter(policy, deadLetterStore: null);
+        var middleware = ConsumeMiddlewares.RetryAndDeadLetter(retry, new AlwaysPermanentClassifier(), deadLetterStore: null);
         var context = MakeContext(TestContext.Current.CancellationToken);
 
         await MiddlewareRunner.RunAsync(context, [middleware], () =>
@@ -272,8 +271,8 @@ public sealed class MiddlewareTests
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        var policy = new ErrorPolicy { MaxRetries = 3, RetryDelay = TimeSpan.Zero };
-        var middleware = ConsumeMiddlewares.RetryAndDeadLetter(policy);
+        var retry = new RetryOptions { MaxRetries = 3, RetryDelay = TimeSpan.Zero };
+        var middleware = ConsumeMiddlewares.RetryAndDeadLetter(retry, DefaultErrorClassifier.Instance, deadLetterStore: null);
         var context = MakeContext(cts.Token);
 
         await Assert.ThrowsAsync<OperationCanceledException>(() =>
@@ -288,16 +287,15 @@ public sealed class MiddlewareTests
     [Fact]
     public async Task RetryAndDeadLetter_DeadLetterDisabled_SkipsDeadLetterStore()
     {
-        var policy = new ErrorPolicy
+        var retry = new RetryOptions
         {
             MaxRetries = 1,
             RetryDelay = TimeSpan.Zero,
             DeadLetterOnMaxRetries = false,
-            ErrorClassifier = new AlwaysTransientClassifier()
         };
 
         var deadLetterStore = new InMemoryDeadLetterStore();
-        var middleware = ConsumeMiddlewares.RetryAndDeadLetter(policy, deadLetterStore);
+        var middleware = ConsumeMiddlewares.RetryAndDeadLetter(retry, new AlwaysTransientClassifier(), deadLetterStore);
         var context = MakeContext(TestContext.Current.CancellationToken);
 
         await MiddlewareRunner.RunAsync(context, [middleware], () =>

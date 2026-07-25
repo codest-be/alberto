@@ -1,51 +1,84 @@
-using Microsoft.Extensions.DependencyInjection;
+using Alberto.Dcb.Configuration;
 
 namespace Alberto.Dcb;
 
 /// <summary>
-/// Fluent builder for configuring an Alberto DCB module.
-/// Supports keyed services for modular monolith isolation.
+/// Declares one Alberto module. Every call records intent into an immutable
+/// <see cref="AlbertoModuleDefinition"/>; nothing is registered and no I/O happens until the
+/// whole lambda has run. Call order therefore never changes the result.
 /// </summary>
 public sealed class DcbModuleBuilder
 {
-    private bool _withTenancy;
+    private readonly List<Action<AlbertoModuleContext>> _deferredRegistrations = [];
+
+    internal DcbModuleBuilder(string moduleKey) =>
+        Definition = new AlbertoModuleDefinition { ModuleKey = moduleKey };
+
+    /// <summary>The module key. Doubles as the DI service key for this module's services.</summary>
+    public string ModuleKey => Definition.ModuleKey;
+
+    internal AlbertoModuleDefinition Definition { get; private set; }
+
+    internal IReadOnlyList<Action<AlbertoModuleContext>> DeferredRegistrations => _deferredRegistrations;
+
+    internal bool HasTenancy => Definition.TenancyEnabled;
+
+    internal bool ControlLoopConfigured { get; set; }
 
     /// <summary>
-    /// The service collection to register services with.
+    /// Applies <paramref name="configure"/> to this module's declaration. This is the single
+    /// mutation primitive; every <c>With*</c> extension is built on it.
     /// </summary>
-    public IServiceCollection Services { get; }
-
-    /// <summary>
-    /// The unique key identifying this module. Used for keyed service registration.
-    /// </summary>
-    public string ModuleKey { get; }
-
-    internal DcbModuleBuilder(IServiceCollection services, string moduleKey)
+    public DcbModuleBuilder Configure(Func<AlbertoModuleDefinition, AlbertoModuleDefinition> configure)
     {
-        Services = services ?? throw new ArgumentNullException(nameof(services));
-        ModuleKey = moduleKey ?? throw new ArgumentNullException(nameof(moduleKey));
-    }
+        ArgumentNullException.ThrowIfNull(configure);
 
-    /// <summary>
-    /// Enables multi-tenant mode for this module.
-    /// In multi-tenant mode, tenant scoping is handled transparently by a decorator
-    /// that reads the current tenant from <see cref="Tenancy.ITenantAccessor"/>.
-    /// Tenancy services are registered automatically.
-    /// </summary>
-    /// <returns>The module builder for chaining.</returns>
-    public DcbModuleBuilder WithTenancy()
-    {
-        _withTenancy = true;
+        Definition = configure(Definition)
+            ?? throw new InvalidOperationException("A module configuration callback returned null.");
+
         return this;
     }
 
     /// <summary>
-    /// Gets whether multi-tenant mode has been enabled.
+    /// Declares which storage backend this module uses. A module has exactly one backend.
     /// </summary>
-    internal bool HasTenancy => _withTenancy;
+    /// <exception cref="InvalidOperationException">A backend was already declared.</exception>
+    public DcbModuleBuilder UseBackend(IAlbertoBackendDescriptor descriptor)
+    {
+        ArgumentNullException.ThrowIfNull(descriptor);
+
+        if (Definition.Backend is { } existing)
+        {
+            throw new InvalidOperationException(
+                $"Module '{ModuleKey}' already declares the {existing.Name} backend, so it cannot also " +
+                $"use {descriptor.Name}. Each module has exactly one event store backend.");
+        }
+
+        return Configure(d => d with { Backend = descriptor });
+    }
+
+    /// <summary>Records a processor so startup validation can see it without resolving services.</summary>
+    public DcbModuleBuilder DeclareProcessor(ProcessorDeclaration declaration)
+    {
+        ArgumentNullException.ThrowIfNull(declaration);
+
+        return Configure(d => d with { Processors = d.Processors.Add(declaration) });
+    }
 
     /// <summary>
-    /// Gets or sets whether a control loop has been explicitly configured.
+    /// Defers a service registration until the declaration is complete. The callback receives the
+    /// final definition, so it can branch on tenancy or options that were declared later in the chain.
     /// </summary>
-    internal bool ControlLoopConfigured { get; set; }
+    public DcbModuleBuilder Register(Action<AlbertoModuleContext> register)
+    {
+        ArgumentNullException.ThrowIfNull(register);
+
+        _deferredRegistrations.Add(register);
+        return this;
+    }
+
+    /// <summary>
+    /// Declares that this module's data is partitioned per tenant. The backend must support it.
+    /// </summary>
+    public DcbModuleBuilder WithTenancy() => Configure(d => d with { TenancyEnabled = true });
 }

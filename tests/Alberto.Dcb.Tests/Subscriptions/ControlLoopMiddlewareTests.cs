@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Alberto.Dcb.Configuration;
 using Alberto.Dcb.InMemory;
 using Alberto.Dcb.Subscriptions;
 using Xunit;
@@ -86,7 +87,8 @@ public sealed class ControlLoopMiddlewareTests
             e => e.GlobalPosition == 1);
 
         var middleware = ConsumeMiddlewares.RetryAndDeadLetter(
-            new ErrorPolicy { MaxRetries = 0 }, // InvalidOperationException is Permanent → 1 attempt
+            new RetryOptions { MaxRetries = 0 }, // InvalidOperationException is Permanent → 1 attempt
+            DefaultErrorClassifier.Instance,
             deadLetters);
 
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
@@ -140,7 +142,8 @@ public sealed class ControlLoopMiddlewareTests
         // Even though MaxRetries=5, InvalidOperationException is classified Permanent,
         // so the middleware skips retries and dead-letters after a single attempt.
         var middleware = ConsumeMiddlewares.RetryAndDeadLetter(
-            new ErrorPolicy { MaxRetries = 5, RetryDelay = TimeSpan.FromMilliseconds(1) },
+            new RetryOptions { MaxRetries = 5, RetryDelay = TimeSpan.FromMilliseconds(1) },
+            DefaultErrorClassifier.Instance,
             deadLetters);
 
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
@@ -184,12 +187,13 @@ public sealed class ControlLoopMiddlewareTests
         });
 
         var middleware = ConsumeMiddlewares.RetryAndDeadLetter(
-            new ErrorPolicy
+            new RetryOptions
             {
                 MaxRetries = 2,
                 RetryDelay = TimeSpan.FromMilliseconds(1),
                 BackoffMultiplier = 1.0,
             },
+            DefaultErrorClassifier.Instance,
             deadLetters);
 
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
@@ -304,7 +308,8 @@ public sealed class ControlLoopMiddlewareTests
             e => e.GlobalPosition == 1);
 
         var middleware = BatchConsumeMiddlewares.RetryAndDeadLetter(
-            new ErrorPolicy { MaxRetries = 0 },
+            new RetryOptions { MaxRetries = 0 },
+            DefaultErrorClassifier.Instance,
             deadLetters);
 
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));

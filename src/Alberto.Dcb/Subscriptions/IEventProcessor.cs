@@ -37,40 +37,4 @@ public interface IEventProcessor
     /// <param name="ct">Cancellation token.</param>
     Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default);
 
-    /// <summary>
-    /// Called when event processing fails to determine how to handle the error.
-    /// Default implementation uses error classification:
-    /// - Permanent errors go directly to dead-letter (no retries)
-    /// - Transient/Unknown errors retry up to max attempts, then dead-letter
-    /// </summary>
-    /// <param name="failedEvent">The event that failed.</param>
-    /// <param name="exception">The exception that occurred.</param>
-    /// <param name="attemptNumber">The current attempt number (1-based).</param>
-    /// <param name="policy">The error policy in effect.</param>
-    /// <returns>The decision on how to handle the error.</returns>
-    ErrorHandlingDecision HandleError(
-        IEventEnvelope failedEvent,
-        Exception exception,
-        int attemptNumber,
-        ErrorPolicy policy)
-    {
-        // Classify the error
-        var classification = policy.ErrorClassifier.Classify(exception);
-
-        // Permanent errors skip retries and go directly to dead-letter
-        if (classification == ErrorClassification.Permanent)
-        {
-            return policy.DeadLetterOnMaxRetries
-                ? ErrorHandlingDecision.DeadLetter
-                : ErrorHandlingDecision.Skip;
-        }
-
-        // Transient and Unknown errors use normal retry logic
-        if (attemptNumber <= policy.MaxRetries)
-            return ErrorHandlingDecision.Retry;
-
-        return policy.DeadLetterOnMaxRetries
-            ? ErrorHandlingDecision.DeadLetter
-            : ErrorHandlingDecision.Skip;
-    }
 }

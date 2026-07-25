@@ -1,3 +1,4 @@
+using Alberto.Dcb.Configuration;
 using Alberto.Dcb.Telemetry;
 
 namespace Alberto.Dcb.Subscriptions;
@@ -21,15 +22,14 @@ public static class ConsumeMiddlewares
     /// and writing the <see cref="DeadLetterEntry"/> for the envelope.
     /// </summary>
     public static ConsumeMiddleware RetryAndDeadLetter(
-        ErrorPolicy? policy = null,
-        IDeadLetterStore? deadLetterStore = null)
+        RetryOptions retry,
+        IErrorClassifier classifier,
+        IDeadLetterStore? deadLetterStore)
     {
-        var p = policy ?? ErrorPolicy.Default;
-
         return async (context, next) =>
         {
             var lastError = await RetryAndDeadLetterCore.ExecuteAsync(
-                context, p, next, retryMetricCount: 1);
+                context, retry, classifier, next, retryMetricCount: 1);
 
             if (lastError is null)
                 return; // success
@@ -41,7 +41,7 @@ public static class ConsumeMiddlewares
                 new KeyValuePair<string, object?>("processor", context.ProcessorId),
                 new KeyValuePair<string, object?>("module", context.ModuleKey));
 
-            if (p.DeadLetterOnMaxRetries && deadLetterStore is not null)
+            if (retry.DeadLetterOnMaxRetries && deadLetterStore is not null)
             {
                 await deadLetterStore.StoreAsync(new DeadLetterEntry(
                     Id: Guid.NewGuid(),

@@ -15,6 +15,7 @@ public static class CheckpointOpsCommand
         command.AddCommand(BuildGet());
         command.AddCommand(BuildReset());
         command.AddCommand(BuildSet());
+        command.AddCommand(BuildRename());
 
         return command;
     }
@@ -272,6 +273,92 @@ public static class CheckpointOpsCommand
                 Environment.Exit(1);
             }
         }, idArgument, positionArgument, urlOption, schemaOption, dryRunOption, yesOption, jsonOption);
+
+        return command;
+    }
+
+    private static Command BuildRename()
+    {
+        var command = new Command("rename",
+            """
+            Rename a checkpoint by copying its position to a new processor id and removing the old one.
+
+            Use this after renaming a handler class to carry the stored position to the new derived id,
+            preventing a full replay from the beginning.
+
+            Examples:
+              alberto ops checkpoint rename --from OldHandlerName --to NewHandlerName
+              alberto ops checkpoint rename --module orders --from OldHandlerName --to NewHandlerName
+            """);
+
+        var moduleOption = new Option<string?>("--module") { Description = "Module key (for context; shown in startup warnings)" };
+        var fromOption = new Option<string?>("--from") { Description = "Old processor id (the orphaned checkpoint key)" };
+        var toOption = new Option<string?>("--to") { Description = "New processor id (the current handler's derived id)" };
+        var urlOption = new Option<string?>("--url") { Description = "PostgreSQL connection string" };
+        var schemaOption = new Option<string?>("--schema") { Description = "Database schema name" };
+
+        command.AddOption(moduleOption);
+        command.AddOption(fromOption);
+        command.AddOption(toOption);
+        command.AddOption(urlOption);
+        command.AddOption(schemaOption);
+
+        command.SetHandler(async (string? module, string? from, string? to, string? url, string? schema) =>
+        {
+            if (string.IsNullOrWhiteSpace(from))
+            {
+                Console.Error.WriteLine("--from is required.");
+                Environment.Exit(1);
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(to))
+            {
+                Console.Error.WriteLine("--to is required.");
+                Environment.Exit(1);
+                return;
+            }
+
+            var connStr = ConnectionResolver.ResolveConnectionString(url);
+            var schemaName = ConnectionResolver.ResolveSchema(schema);
+
+            try
+            {
+                await using var dataSource = new NpgsqlDataSourceBuilder(connStr).Build();
+                var data = new PostgresAdminDataAccess(dataSource, schemaName);
+
+                var sourceCheckpoint = await data.GetSingleCheckpointAsync(from);
+                if (sourceCheckpoint is null)
+                {
+                    var moduleHint = module is not null ? $" in module '{module}'" : string.Empty;
+                    Console.Error.WriteLine($"No checkpoint named '{from}' exists{moduleHint}.");
+                    Environment.Exit(1);
+                    return;
+                }
+
+                var destinationCheckpoint = await data.GetSingleCheckpointAsync(to);
+                if (destinationCheckpoint is not null)
+                {
+                    var moduleHint = module is not null ? $" --module {module}" : string.Empty;
+                    Console.Error.WriteLine(
+                        $"'{to}' already has a checkpoint at position {destinationCheckpoint.LastPosition}. " +
+                        "Reset it first if you really mean to overwrite it: " +
+                        $"alberto ops checkpoint reset {to} --yes{moduleHint}");
+                    Environment.Exit(1);
+                    return;
+                }
+
+                await data.SetCheckpointAsync(to, sourceCheckpoint.LastPosition);
+                await data.ResetCheckpointAsync(from);
+
+                Console.WriteLine($"Renamed checkpoint '{from}' to '{to}' at position {sourceCheckpoint.LastPosition}.");
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine(ex.Message);
+                Environment.Exit(1);
+            }
+        }, moduleOption, fromOption, toOption, urlOption, schemaOption);
 
         return command;
     }

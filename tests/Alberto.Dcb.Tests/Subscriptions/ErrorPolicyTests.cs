@@ -1,8 +1,13 @@
+using Alberto.Dcb.Configuration;
 using Alberto.Dcb.Subscriptions;
 using Xunit;
 
 namespace Alberto.Dcb.Tests.Subscriptions;
 
+/// <summary>
+/// Tests for <see cref="Alberto.Dcb.Configuration.RetryOptions"/> (formerly ErrorPolicy,
+/// which was deleted in the 1.0 configuration refactor).
+/// </summary>
 public class ErrorPolicyTests
 {
     #region Default Values
@@ -10,14 +15,13 @@ public class ErrorPolicyTests
     [Fact]
     public void Default_ShouldHaveExpectedValues()
     {
-        var policy = ErrorPolicy.Default;
+        var retry = new RetryOptions();
 
-        Assert.Equal(3, policy.MaxRetries);
-        Assert.Equal(TimeSpan.FromSeconds(1), policy.RetryDelay);
-        Assert.Equal(2.0, policy.BackoffMultiplier);
-        Assert.Equal(TimeSpan.FromSeconds(30), policy.MaxRetryDelay);
-        Assert.True(policy.DeadLetterOnMaxRetries);
-        Assert.NotNull(policy.ErrorClassifier);
+        Assert.Equal(3, retry.MaxRetries);
+        Assert.Equal(TimeSpan.FromSeconds(1), retry.RetryDelay);
+        Assert.Equal(2.0, retry.BackoffMultiplier);
+        Assert.Equal(TimeSpan.FromSeconds(30), retry.MaxRetryDelay);
+        Assert.True(retry.DeadLetterOnMaxRetries);
     }
 
     #endregion
@@ -27,9 +31,9 @@ public class ErrorPolicyTests
     [Fact]
     public void CalculateDelay_FirstAttempt_ShouldReturnBaseDelay()
     {
-        var policy = new ErrorPolicy { RetryDelay = TimeSpan.FromSeconds(1) };
+        var retry = new RetryOptions { RetryDelay = TimeSpan.FromSeconds(1) };
 
-        var delay = policy.CalculateDelay(1);
+        var delay = retry.CalculateDelay(1);
 
         Assert.Equal(TimeSpan.FromSeconds(1), delay);
     }
@@ -37,9 +41,9 @@ public class ErrorPolicyTests
     [Fact]
     public void CalculateDelay_ZeroAttempt_ShouldReturnBaseDelay()
     {
-        var policy = new ErrorPolicy { RetryDelay = TimeSpan.FromSeconds(1) };
+        var retry = new RetryOptions { RetryDelay = TimeSpan.FromSeconds(1) };
 
-        var delay = policy.CalculateDelay(0);
+        var delay = retry.CalculateDelay(0);
 
         Assert.Equal(TimeSpan.FromSeconds(1), delay);
     }
@@ -52,14 +56,14 @@ public class ErrorPolicyTests
     [InlineData(5, 16000)]  // 1 * 2^4 = 16 seconds
     public void CalculateDelay_ExponentialBackoff_ShouldDoubleEachAttempt(int attempt, double expectedMs)
     {
-        var policy = new ErrorPolicy
+        var retry = new RetryOptions
         {
             RetryDelay = TimeSpan.FromSeconds(1),
             BackoffMultiplier = 2.0,
             MaxRetryDelay = TimeSpan.FromMinutes(5) // High max to not cap
         };
 
-        var delay = policy.CalculateDelay(attempt);
+        var delay = retry.CalculateDelay(attempt);
 
         Assert.Equal(TimeSpan.FromMilliseconds(expectedMs), delay);
     }
@@ -67,7 +71,7 @@ public class ErrorPolicyTests
     [Fact]
     public void CalculateDelay_ShouldCapAtMaxRetryDelay()
     {
-        var policy = new ErrorPolicy
+        var retry = new RetryOptions
         {
             RetryDelay = TimeSpan.FromSeconds(1),
             BackoffMultiplier = 2.0,
@@ -75,7 +79,7 @@ public class ErrorPolicyTests
         };
 
         // Attempt 10 would be 1 * 2^9 = 512 seconds, but should cap at 5 seconds
-        var delay = policy.CalculateDelay(10);
+        var delay = retry.CalculateDelay(10);
 
         Assert.Equal(TimeSpan.FromSeconds(5), delay);
     }
@@ -83,37 +87,37 @@ public class ErrorPolicyTests
     [Fact]
     public void CalculateDelay_WithMultiplierOne_ShouldReturnConstantDelay()
     {
-        var policy = new ErrorPolicy
+        var retry = new RetryOptions
         {
             RetryDelay = TimeSpan.FromSeconds(2),
             BackoffMultiplier = 1.0
         };
 
-        Assert.Equal(TimeSpan.FromSeconds(2), policy.CalculateDelay(1));
-        Assert.Equal(TimeSpan.FromSeconds(2), policy.CalculateDelay(2));
-        Assert.Equal(TimeSpan.FromSeconds(2), policy.CalculateDelay(5));
-        Assert.Equal(TimeSpan.FromSeconds(2), policy.CalculateDelay(10));
+        Assert.Equal(TimeSpan.FromSeconds(2), retry.CalculateDelay(1));
+        Assert.Equal(TimeSpan.FromSeconds(2), retry.CalculateDelay(2));
+        Assert.Equal(TimeSpan.FromSeconds(2), retry.CalculateDelay(5));
+        Assert.Equal(TimeSpan.FromSeconds(2), retry.CalculateDelay(10));
     }
 
     [Fact]
     public void CalculateDelay_WithCustomBaseDelay_ShouldUseIt()
     {
-        var policy = new ErrorPolicy
+        var retry = new RetryOptions
         {
             RetryDelay = TimeSpan.FromMilliseconds(500),
             BackoffMultiplier = 2.0,
             MaxRetryDelay = TimeSpan.FromMinutes(5)
         };
 
-        Assert.Equal(TimeSpan.FromMilliseconds(500), policy.CalculateDelay(1));
-        Assert.Equal(TimeSpan.FromMilliseconds(1000), policy.CalculateDelay(2));
-        Assert.Equal(TimeSpan.FromMilliseconds(2000), policy.CalculateDelay(3));
+        Assert.Equal(TimeSpan.FromMilliseconds(500), retry.CalculateDelay(1));
+        Assert.Equal(TimeSpan.FromMilliseconds(1000), retry.CalculateDelay(2));
+        Assert.Equal(TimeSpan.FromMilliseconds(2000), retry.CalculateDelay(3));
     }
 
     [Fact]
     public void CalculateDelay_WithFractionalMultiplier_ShouldCalculateCorrectly()
     {
-        var policy = new ErrorPolicy
+        var retry = new RetryOptions
         {
             RetryDelay = TimeSpan.FromSeconds(1),
             BackoffMultiplier = 1.5,
@@ -121,15 +125,15 @@ public class ErrorPolicyTests
         };
 
         // 1.5^1 = 1.5, 1.5^2 = 2.25, 1.5^3 = 3.375
-        Assert.Equal(TimeSpan.FromSeconds(1), policy.CalculateDelay(1));
-        Assert.Equal(TimeSpan.FromSeconds(1.5), policy.CalculateDelay(2));
-        Assert.Equal(TimeSpan.FromSeconds(2.25), policy.CalculateDelay(3));
+        Assert.Equal(TimeSpan.FromSeconds(1), retry.CalculateDelay(1));
+        Assert.Equal(TimeSpan.FromSeconds(1.5), retry.CalculateDelay(2));
+        Assert.Equal(TimeSpan.FromSeconds(2.25), retry.CalculateDelay(3));
     }
 
     [Fact]
     public void CalculateDelay_AttemptExceedingMax_ShouldCapAtMax()
     {
-        var policy = new ErrorPolicy
+        var retry = new RetryOptions
         {
             RetryDelay = TimeSpan.FromSeconds(1),
             BackoffMultiplier = 2.0,
@@ -137,7 +141,7 @@ public class ErrorPolicyTests
         };
 
         // Attempt 10 = 1 * 2^9 = 512 seconds, should cap at 30 seconds
-        var delay = policy.CalculateDelay(10);
+        var delay = retry.CalculateDelay(10);
 
         Assert.Equal(TimeSpan.FromSeconds(30), delay);
     }
@@ -147,58 +151,36 @@ public class ErrorPolicyTests
     #region Configuration Tests
 
     [Fact]
-    public void Policy_ShouldAllowCustomConfiguration()
+    public void RetryOptions_ShouldAllowCustomConfiguration()
     {
-        var customClassifier = new TestErrorClassifier();
-        var policy = new ErrorPolicy
+        var retry = new RetryOptions
         {
             MaxRetries = 5,
             RetryDelay = TimeSpan.FromMilliseconds(100),
             BackoffMultiplier = 3.0,
             MaxRetryDelay = TimeSpan.FromSeconds(10),
             DeadLetterOnMaxRetries = false,
-            ErrorClassifier = customClassifier
         };
 
-        Assert.Equal(5, policy.MaxRetries);
-        Assert.Equal(TimeSpan.FromMilliseconds(100), policy.RetryDelay);
-        Assert.Equal(3.0, policy.BackoffMultiplier);
-        Assert.Equal(TimeSpan.FromSeconds(10), policy.MaxRetryDelay);
-        Assert.False(policy.DeadLetterOnMaxRetries);
-        Assert.Same(customClassifier, policy.ErrorClassifier);
+        Assert.Equal(5, retry.MaxRetries);
+        Assert.Equal(TimeSpan.FromMilliseconds(100), retry.RetryDelay);
+        Assert.Equal(3.0, retry.BackoffMultiplier);
+        Assert.Equal(TimeSpan.FromSeconds(10), retry.MaxRetryDelay);
+        Assert.False(retry.DeadLetterOnMaxRetries);
     }
 
     [Fact]
     public void MaxRetries_Zero_IsAllowed()
     {
         // Zero means "attempt once, never retry" - the attempt loop still runs.
-        var policy = new ErrorPolicy { MaxRetries = 0 };
+        var retry = new RetryOptions { MaxRetries = 0 };
 
-        Assert.Equal(0, policy.MaxRetries);
+        Assert.Equal(0, retry.MaxRetries);
     }
 
-    [Theory]
-    [InlineData(-1)]
-    [InlineData(int.MinValue)]
-    public void MaxRetries_Negative_Throws(int maxRetries)
-    {
-        // A negative value would skip the attempt loop entirely: the event would be
-        // neither dispatched, retried nor dead-lettered, and a multi-event batch would
-        // be reported as successfully processed. Reject it at construction instead.
-        var ex = Assert.Throws<ArgumentOutOfRangeException>(
-            () => new ErrorPolicy { MaxRetries = maxRetries });
-
-        Assert.Equal(nameof(ErrorPolicy.MaxRetries), ex.ParamName);
-    }
+    // MaxRetries < 0 is now rejected at module startup by AlbertoModuleValidator (ALB0007)
+    // rather than at construction time. See AlbertoModuleValidatorTests.A_negative_retry_count_fails_with_ALB0007.
 
     #endregion
 
-    #region Test Helpers
-
-    private sealed class TestErrorClassifier : IErrorClassifier
-    {
-        public ErrorClassification Classify(Exception exception) => ErrorClassification.Unknown;
-    }
-
-    #endregion
 }

@@ -29,7 +29,7 @@ public interface IFencedCheckpointStore : ICheckpointStore
 
 /// <summary>
 /// Client-facing interface for a checkpoint store that can be configured with
-/// lease-fencing parameters. Decouples <see cref="ControlLoopBuilder"/> from
+/// lease-fencing parameters. Decouples the control loop from
 /// the concrete <see cref="CachingCheckpointStore"/> type so that wrapping the
 /// store cannot silently drop fencing, and the fence-violation callback is always wired.
 /// </summary>

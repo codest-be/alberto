@@ -1,3 +1,4 @@
+using Alberto.Dcb.Configuration;
 using Alberto.Dcb.Telemetry;
 
 namespace Alberto.Dcb.Subscriptions;
@@ -22,7 +23,8 @@ internal static class RetryAndDeadLetterCore
     /// permanent error is encountered).
     /// </summary>
     /// <param name="context">The middleware context for the current dispatch.</param>
-    /// <param name="policy">The error policy governing retries and classification.</param>
+    /// <param name="retry">The retry knobs (max retries, delay, backoff).</param>
+    /// <param name="classifier">Classifies exceptions as transient or permanent.</param>
     /// <param name="next">The inner pipeline continuation to invoke each attempt.</param>
     /// <param name="retryMetricCount">
     /// The value to add to the retry counter metric.
@@ -32,13 +34,14 @@ internal static class RetryAndDeadLetterCore
     /// </param>
     internal static async Task<Exception?> ExecuteAsync(
         IMiddlewareContext context,
-        ErrorPolicy policy,
+        RetryOptions retry,
+        IErrorClassifier classifier,
         Func<Task> next,
         int retryMetricCount)
     {
         Exception? lastError = null;
 
-        for (var attempt = 1; attempt <= policy.MaxRetries + 1; attempt++)
+        for (var attempt = 1; attempt <= retry.MaxRetries + 1; attempt++)
         {
             context.Attempt = attempt;
             try
@@ -56,18 +59,18 @@ internal static class RetryAndDeadLetterCore
                 lastError = ex;
                 context.LastError = ex;
 
-                var classification = policy.ErrorClassifier.Classify(ex);
+                var classification = classifier.Classify(ex);
                 if (classification == ErrorClassification.Permanent)
                     break;
 
-                if (attempt <= policy.MaxRetries)
+                if (attempt <= retry.MaxRetries)
                 {
                     AlbertoMetrics.Retries.Add(
                         retryMetricCount,
                         new KeyValuePair<string, object?>("processor", context.ProcessorId),
                         new KeyValuePair<string, object?>("module", context.ModuleKey));
 
-                    await Task.Delay(policy.CalculateDelay(attempt), context.CancellationToken);
+                    await Task.Delay(retry.CalculateDelay(attempt), context.CancellationToken);
                 }
             }
         }

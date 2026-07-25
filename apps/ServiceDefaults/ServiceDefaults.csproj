@@ -22,8 +22,5 @@
         <PackageReference Include="Npgsql.OpenTelemetry"/>
     </ItemGroup>
 
-    <ItemGroup>
-        <ProjectReference Include="..\..\src\Alberto.Dcb.Telemetry\Alberto.Dcb.Telemetry.csproj"/>
-    </ItemGroup>
 
 </Project>

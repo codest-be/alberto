@@ -1,3 +1,4 @@
+using Alberto.Dcb.Configuration;
 using Alberto.Dcb.InMemory;
 using Alberto.Dcb.Subscriptions;
 using Xunit;
@@ -71,11 +72,8 @@ public sealed class BatchMiddlewareTests
     {
         var deadLetterStore = new InMemoryDeadLetterStore();
         var middleware = BatchConsumeMiddlewares.RetryAndDeadLetter(
-            new ErrorPolicy
-            {
-                MaxRetries = 0,
-                ErrorClassifier = new AlwaysPermanentClassifier(),
-            },
+            new RetryOptions { MaxRetries = 0 },
+            new AlwaysPermanentClassifier(),
             deadLetterStore);
 
         var context = MakeContext(ct: TestContext.Current.CancellationToken);
@@ -96,11 +94,9 @@ public sealed class BatchMiddlewareTests
     public async Task RetryAndDeadLetter_RethrowsFailedMultiEventBatch()
     {
         var middleware = BatchConsumeMiddlewares.RetryAndDeadLetter(
-            new ErrorPolicy
-            {
-                MaxRetries = 0,
-                ErrorClassifier = new AlwaysPermanentClassifier(),
-            });
+            new RetryOptions { MaxRetries = 0 },
+            new AlwaysPermanentClassifier(),
+            deadLetterStore: null);
 
         var context = MakeContext(
             [MakeEnvelope(1), MakeEnvelope(2)],

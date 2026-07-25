@@ -117,12 +117,132 @@ alberto ops rebuild abort <processor>
 ```
 
 The replay runs in the application, not in the CLI. A module must opt in with
-`.WithControlLoop(loop => loop.WithRebuilds())` or a started rebuild sits at `rebuilding` forever.
+`.WithRebuilds()` or a started rebuild sits at `rebuilding` forever.
 
 ### Also removed
 
 `BufferedCheckpointStore` is gone. It was `internal` and never constructed, so no consumer can be
 affected; `CachingCheckpointStore` is and always was the one in the pipeline.
+
+---
+
+## 0.x → 1.0: declarative configuration pipeline
+
+### ⚠ Read this first: processor ids are checkpoint keys
+
+**The `ReactTo<TEvent, THandler>` change below is the only change that can silently
+reprocess your entire event log.** When `processorId` is omitted, Alberto now derives the
+checkpoint key from the handler's type name via `ProcessorId.For<THandler>()` — reading a
+`[ProcessorId]` attribute when present, otherwise building a qualified name from the type
+hierarchy. If that derived name differs from what was stored in your checkpoint table, the
+processor restarts from position zero without warning.
+
+Alberto's safety net is `Checkpoints:OrphanPolicy`. Outside a `Development` environment,
+it now defaults to `Strict`, which causes startup to fail with a named error if the
+checkpoint store contains an id that no declared processor claims — turning a silent replay
+into a loud failure. See the `OrphanPolicy` row below for the asymmetry between code and
+configuration, and [docs/configuration.md](docs/configuration.md#checkpoint-hygiene) for
+the configuration key.
+
+**Before deploying 1.0:**
+
+1. Audit every `ReactTo<TEvent, THandler>` call in your modules.
+2. Compare the derived id (the handler class name, qualified by any declaring types) with
+   the id stored in your checkpoint table.
+3. If they differ, either add `[ProcessorId("old-id")]` to the handler class, or rename
+   the checkpoint with `alberto ops checkpoint rename`.
+
+---
+
+### Breaking changes table
+
+| Change | What breaks | What to do |
+|---|---|---|
+| `DcbModuleBuilder.Services` removed | Third-party `.WithX()` extensions that reached into the service collection at declaration time | Implement `IAlbertoBackendDescriptor` for a backend; use `builder.Register(context => ...)` for anything else |
+| `Action<TOptions>` → `Func<TOptions, TOptions>` on `WithPostgres` | Every call site | `o => { o.X = y; }` becomes `o => o with { X = y }` |
+| `PostgresOptions` is a record | Object initializers still work; assignment after construction does not | Use `with` expressions to derive a new value |
+| `ControlLoopBuilder` deleted | `.WithPollingInterval(...)` and siblings on the old builder | `WithControlLoop(o => o with { PollingInterval = ... })` — see [ControlLoop options](docs/configuration.md#controlloop-options) |
+| `.WithMiddleware(...)` / `.WithBatchMiddleware(...)` removed | Control-loop-scoped middleware registration | Module-level `AddConsumeMiddleware(sp => ...)` / `AddBatchConsumeMiddleware(sp => ...)` |
+| `ErrorPolicy` split | Custom classifiers | Retry knobs move to `ControlLoop.Retry`; the classifier moves to `UseErrorClassifier<T>()` |
+| `ProcessorExecutionConfigurator` deleted | `configure: c => c.BatchIfSupported()` | `configure: o => o with { BatchingMode = ProcessorBatchingMode.IfSupported }` |
+| `ReactTo<TEvent, THandler>` derives its processor id when `processorId` is omitted | Ids change from whatever was stored to the handler's derived type name | Keep the old id with `[ProcessorId("...")]` on the handler class, or carry the checkpoint position with `alberto ops checkpoint rename` |
+| `ICheckpointStore` gains an optional `ICheckpointInventory` sibling | Nothing — it is a separate interface | Implement it on a custom store to opt into orphan detection |
+| Migrations run at startup via `IHostedService`, not inside `AddAlberto` | Code that built an `IServiceProvider` and expected the schema to already exist | Start the host, or call `PostgresMigrator.Migrate(...)` directly in your own startup code |
+| `TenancyOrderingValidator` deleted | Nothing — supersedes DX-6 from the audit cycle below | `.WithTenancy()` may now appear anywhere in the chain, in any order relative to `.WithPostgres()` |
+| `AddAlbertoInstrumentation()` retained for manual `TracerProvider` / `MeterProvider` wiring | Nothing — the method is intentionally **not** marked `[Obsolete]` | Call it from `WithTracing(...)` or `WithMetrics(...)` when you wire OpenTelemetry without the hosting integration; calling it alongside `.WithTelemetry()` is also safe (`AddSource`/`AddMeter` are idempotent) |
+| Unknown keys under `Alberto:Modules:{key}` now fail startup with `ALB0008` | A deployment with a misspelled or stale configuration key that was previously silently ignored **now fails at startup** with a did-you-mean suggestion | Correct or remove the key; the error message quotes the full path and, when close enough, suggests the correct spelling |
+| `.WithTelemetry()` now installs the OpenTelemetry SDK unconditionally | Nothing functionally | Nothing required. With no exporters configured there is no I/O. The registration is observable in the container — called out here rather than hidden. |
+| `Checkpoints:OrphanPolicy` defaults to `Strict` outside `Development` | A deployment whose handler was renamed at any point silently replaying events now **fails at startup** | This is the intended safety net. Either carry the position with `alberto ops checkpoint rename`, pin the old id with `[ProcessorId("...")]`, or set `Alberto:Modules:{key}:Checkpoints:OrphanPolicy` explicitly in configuration. See the note below. |
+| `PostgresStateStore` positional constructor argument order fixed | Code that copied `(dataSource, tenantId, projectionType, schema)` from the old samples | Switch to named arguments: `new PostgresStateStore<T>(dataSource, projectionType, schema)` |
+
+### Opting out of `Strict`
+
+`Checkpoints` is configured through `Alberto:Modules:{key}:Checkpoints:*` only — unlike
+`Postgres`, `ControlLoop` and `Telemetry`, it has no `With...()` builder method. To keep
+`Warn` in a production environment, set the key explicitly:
+
+```json
+{
+  "Alberto": {
+    "Modules": {
+      "orders": {
+        "Checkpoints": { "OrphanPolicy": "Warn" }
+      }
+    }
+  }
+}
+```
+
+An explicitly configured value is honoured in every environment and is never escalated.
+
+---
+
+### Before / after: the Orders module
+
+**Before (0.x — `Action<TOptions>` mutation style)**
+
+```csharp
+services.AddAlberto("orders", module => module
+    .WithTenancy()
+    .WithPostgres(o =>
+    {
+        o.ConnectionString = connectionString;
+        o.AutoMigrate = false;
+        o.Schema = "orders";
+        o.MaxPoolSize = 30;
+    })
+    .WithTelemetry()
+    .AddProjection(/* ... */)
+    .WithControlLoop(o =>
+    {
+        o.PollingInterval = TimeSpan.FromMilliseconds(100);
+        o.BatchSize = 500;
+    }));
+```
+
+**After (1.0 — `Func<TOptions, TOptions>` with-expression style)**
+
+```csharp
+services.AddAlberto("orders", module => module
+    .WithTenancy()
+    .WithPostgres(o => o with
+    {
+        ConnectionString = connectionString,
+        AutoMigrate = false,
+        Schema = "orders",
+        MaxPoolSize = 30,
+    })
+    .WithTelemetry()
+    .AddProjection(/* ... */)
+    .WithControlLoop(o => o with
+    {
+        PollingInterval = TimeSpan.FromMilliseconds(100),
+        BatchSize = 500,
+    }));
+```
+
+The full working 1.0 example is
+`apps/Alberto.Orders/Alberto.Orders.Infrastructure/OrdersModule.cs`.
 
 ---
 

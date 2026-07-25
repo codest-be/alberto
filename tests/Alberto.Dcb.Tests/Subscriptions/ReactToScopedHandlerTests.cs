@@ -63,14 +63,14 @@ public class ReactToScopedHandlerTests
         services.AddSingleton(handled);
         services.AddScoped<ScopedHandler>();
 
-        var builder = new DcbModuleBuilder(services, "test");
-        builder.ReactTo<ItemProcessed, ScopedHandler>(h => h.Handle, "test-reactor");
+        services.AddAlberto("test", builder => builder
+            .ReactTo<ItemProcessed, ScopedHandler>(h => h.Handle, "test-reactor"));
 
         var provider = services.BuildServiceProvider(validateScopes: true);
         var processor = provider.GetKeyedServices<IEventProcessor>("test").Single();
 
-        await processor.ProcessEventAsync(CreateEnvelope(new ItemProcessed("first"), 1), CancellationToken.None);
-        await processor.ProcessEventAsync(CreateEnvelope(new ItemProcessed("second"), 2), CancellationToken.None);
+        await processor.ProcessEventAsync(CreateEnvelope(new ItemProcessed("first"), 1), TestContext.Current.CancellationToken);
+        await processor.ProcessEventAsync(CreateEnvelope(new ItemProcessed("second"), 2), TestContext.Current.CancellationToken);
 
         Assert.Equal(["first", "second"], handled);
 
@@ -91,8 +91,8 @@ public class ReactToScopedHandlerTests
         services.AddSingleton(handled);
         services.AddScoped<ScopedHandler>(); // explicit registration
 
-        var builder = new DcbModuleBuilder(services, "test");
-        builder.ReactTo<ItemProcessed, ScopedHandler>(h => h.Handle, "test-reactor");
+        services.AddAlberto("test", builder => builder
+            .ReactTo<ItemProcessed, ScopedHandler>(h => h.Handle, "test-reactor"));
 
         // Verify there is exactly one registration for ScopedHandler
         Assert.Equal(1, services.Count(d => d.ServiceType == typeof(ScopedHandler)));
@@ -100,7 +100,7 @@ public class ReactToScopedHandlerTests
         var provider = services.BuildServiceProvider(validateScopes: true);
         var processor = provider.GetKeyedServices<IEventProcessor>("test").Single();
 
-        await processor.ProcessEventAsync(CreateEnvelope(new ItemProcessed("ok"), 1), CancellationToken.None);
+        await processor.ProcessEventAsync(CreateEnvelope(new ItemProcessed("ok"), 1), TestContext.Current.CancellationToken);
 
         Assert.Equal(["ok"], handled);
     }
@@ -114,23 +114,23 @@ public class ReactToScopedHandlerTests
         var services = new ServiceCollection();
         services.AddSingleton(capture);
 
-        var builder = new DcbModuleBuilder(services, "test");
-        builder.ReactTo<ItemProcessed>(
-            sp =>
-            {
-                var state = sp.GetRequiredService<ReactorContextCapture>();
-                return (_, context, ct) =>
+        services.AddAlberto("test", builder => builder
+            .ReactTo<ItemProcessed>(
+                sp =>
                 {
-                    state.TimestampUtc = context.Timestamp;
-                    return Task.CompletedTask;
-                };
-            },
-            "test-reactor");
+                    var state = sp.GetRequiredService<ReactorContextCapture>();
+                    return (_, context, ct) =>
+                    {
+                        state.TimestampUtc = context.Timestamp;
+                        return Task.CompletedTask;
+                    };
+                },
+                "test-reactor"));
 
         var provider = services.BuildServiceProvider(validateScopes: true);
         var processor = provider.GetKeyedServices<IEventProcessor>("test").Single();
 
-        await processor.ProcessEventAsync(CreateEnvelope(new ItemProcessed("timestamp"), 1, createdAt), CancellationToken.None);
+        await processor.ProcessEventAsync(CreateEnvelope(new ItemProcessed("timestamp"), 1, createdAt), TestContext.Current.CancellationToken);
 
         Assert.Equal(new DateTimeOffset(createdAt, TimeSpan.Zero), capture.TimestampUtc);
     }
@@ -139,12 +139,12 @@ public class ReactToScopedHandlerTests
     public void ReactTo_RegistersExecutionOptionsForProcessor()
     {
         var services = new ServiceCollection();
-        var builder = new DcbModuleBuilder(services, "test");
 
-        builder.ReactTo<ItemProcessed>(
-            _ => (_, _) => Task.CompletedTask,
-            "batched-reactor",
-            configure: options => options.RequireBatching());
+        services.AddAlberto("test", builder => builder
+            .ReactTo<ItemProcessed>(
+                _ => (_, _) => Task.CompletedTask,
+                "batched-reactor",
+                configure: o => o with { BatchingMode = ProcessorBatchingMode.Required }));
 
         var provider = services.BuildServiceProvider(validateScopes: true);
         var processor = provider.GetKeyedServices<IEventProcessor>("test").Single();
@@ -161,13 +161,13 @@ public class ReactToScopedHandlerTests
     public void ReactTo_SyncModeRejectsBatchingConfiguration()
     {
         var services = new ServiceCollection();
-        var builder = new DcbModuleBuilder(services, "test");
 
-        var exception = Assert.Throws<InvalidOperationException>(() => builder.ReactTo<ItemProcessed>(
-            _ => (_, _) => Task.CompletedTask,
-            "sync-reactor",
-            ReactorMode.Sync,
-            options => options.RequireBatching()));
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            services.AddAlberto("test", builder => builder.ReactTo<ItemProcessed>(
+                _ => (_, _) => Task.CompletedTask,
+                "sync-reactor",
+                ReactorMode.Sync,
+                o => o with { BatchingMode = ProcessorBatchingMode.IfSupported })));
 
         Assert.Contains("cannot enable async batching", exception.Message);
     }

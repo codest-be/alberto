@@ -1,6 +1,10 @@
+using Alberto.Dcb.Configuration;
 using Alberto.Dcb.Subscriptions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Alberto.Dcb;
 
@@ -45,21 +49,30 @@ public static class DcbModuleBuilderExtensions
         ArgumentNullException.ThrowIfNull(declaration);
         ArgumentNullException.ThrowIfNull(stateStoreFactory);
 
-        var moduleKey = builder.ModuleKey;
-
-        builder.Services.AddKeyedSingleton<IEventProcessor>(moduleKey, (sp, key) =>
+        builder.DeclareProcessor(new ProcessorDeclaration
         {
-            var version = ProjectionVersions.LiveVersion(sp, key, declaration.ProcessorId);
-            var factory = stateStoreFactory(new ProjectionStoreContext(sp, version));
-            return new DeclaredAsyncProjection<TState>(declaration, factory);
+            ProcessorId = declaration.ProcessorId,
+            Kind = ProcessorKind.Projection,
         });
 
-        builder.Services.AddKeyedSingleton(moduleKey, (sp, _) =>
-            new RebuildableProjection(
-                declaration.ProcessorId,
-                projectionType ?? declaration.ProcessorId,
-                version => new DeclaredAsyncProjection<TState>(
-                    declaration, stateStoreFactory(new ProjectionStoreContext(sp, version)))));
+        builder.Register(context =>
+        {
+            var moduleKey = context.ModuleKey;
+
+            context.Services.AddKeyedSingleton<IEventProcessor>(moduleKey, (sp, _) =>
+            {
+                var version = ProjectionVersions.LiveVersion(sp, moduleKey, declaration.ProcessorId);
+                var factory = stateStoreFactory(new ProjectionStoreContext(sp, version));
+                return new DeclaredAsyncProjection<TState>(declaration, factory);
+            });
+
+            context.Services.AddKeyedSingleton(moduleKey, (sp, _) =>
+                new RebuildableProjection(
+                    declaration.ProcessorId,
+                    projectionType ?? declaration.ProcessorId,
+                    version => new DeclaredAsyncProjection<TState>(
+                        declaration, stateStoreFactory(new ProjectionStoreContext(sp, version)))));
+        });
 
         return builder;
     }
@@ -89,21 +102,26 @@ public static class DcbModuleBuilderExtensions
         Func<IServiceProvider, Func<TEvent, CancellationToken, Task>> handlerFactory,
         string processorId,
         ReactorMode mode = ReactorMode.Async,
-        Action<ProcessorExecutionConfigurator>? configure = null)
+        Func<ProcessorExecutionOptions, ProcessorExecutionOptions>? configure = null)
         where TEvent : class, IEvent
     {
         ArgumentNullException.ThrowIfNull(handlerFactory);
         ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
 
-        var executionOptions = mode == ReactorMode.Sync && configure is null
-            ? SyncExecutionDefault
-            : BuildProcessorExecutionOptions(configure);
+        var executionOptions = BuildProcessorExecutionOptions(mode, configure);
+
+        builder.DeclareProcessor(new ProcessorDeclaration
+        {
+            ProcessorId = processorId,
+            Kind = ProcessorKind.Reactor,
+            Execution = executionOptions,
+        });
 
         if (mode == ReactorMode.Sync)
         {
             ValidateSyncExecutionOptions(processorId, executionOptions);
-            builder.Services.AddKeyedSingleton<IPostAppendHandler>(builder.ModuleKey, (sp, _) =>
-                new SyncReactor<TEvent>((e, _, ct) => handlerFactory(sp)(e, ct)));
+            builder.Register(context => context.Services.AddKeyedSingleton<IPostAppendHandler>(context.ModuleKey, (sp, _) =>
+                new SyncReactor<TEvent>((e, _, ct) => handlerFactory(sp)(e, ct))));
         }
         else
         {
@@ -145,21 +163,26 @@ public static class DcbModuleBuilderExtensions
         Func<IServiceProvider, Func<TEvent, ReactorContext, CancellationToken, Task>> handlerFactory,
         string processorId,
         ReactorMode mode = ReactorMode.Async,
-        Action<ProcessorExecutionConfigurator>? configure = null)
+        Func<ProcessorExecutionOptions, ProcessorExecutionOptions>? configure = null)
         where TEvent : class, IEvent
     {
         ArgumentNullException.ThrowIfNull(handlerFactory);
         ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
 
-        var executionOptions = mode == ReactorMode.Sync && configure is null
-            ? SyncExecutionDefault
-            : BuildProcessorExecutionOptions(configure);
+        var executionOptions = BuildProcessorExecutionOptions(mode, configure);
+
+        builder.DeclareProcessor(new ProcessorDeclaration
+        {
+            ProcessorId = processorId,
+            Kind = ProcessorKind.Reactor,
+            Execution = executionOptions,
+        });
 
         if (mode == ReactorMode.Sync)
         {
             ValidateSyncExecutionOptions(processorId, executionOptions);
-            builder.Services.AddKeyedSingleton<IPostAppendHandler>(builder.ModuleKey, (sp, _) =>
-                new SyncReactor<TEvent>(handlerFactory(sp)));
+            builder.Register(context => context.Services.AddKeyedSingleton<IPostAppendHandler>(context.ModuleKey, (sp, _) =>
+                new SyncReactor<TEvent>(handlerFactory(sp))));
         }
         else
         {
@@ -186,8 +209,10 @@ public static class DcbModuleBuilderExtensions
     /// <param name="builder">The module builder.</param>
     /// <param name="methodSelector">Selects the handler method from the resolved handler instance.</param>
     /// <param name="processorId">
-    /// A unique processor ID within this module. Used as the checkpoint key — processors
-    /// sharing an ID would share checkpoint state and silently skip events.
+    /// Optional. When omitted, the id is derived from <typeparamref name="THandler"/> via
+    /// <see cref="ProcessorId.For{T}"/> (reading <see cref="ProcessorIdAttribute"/> if present,
+    /// otherwise building a qualified name from the type hierarchy). Must be unique within the
+    /// module — processors sharing an id share checkpoint state and silently skip events.
     /// </param>
     /// <param name="mode">
     /// <see cref="ReactorMode.Async"/> (default): runs via background polling.
@@ -197,24 +222,34 @@ public static class DcbModuleBuilderExtensions
     public static DcbModuleBuilder ReactTo<TEvent, THandler>(
         this DcbModuleBuilder builder,
         Func<THandler, Func<TEvent, CancellationToken, Task>> methodSelector,
-        string processorId,
+        string? processorId = null,
         ReactorMode mode = ReactorMode.Async,
-        Action<ProcessorExecutionConfigurator>? configure = null)
+        Func<ProcessorExecutionOptions, ProcessorExecutionOptions>? configure = null)
         where TEvent : class, IEvent
         where THandler : class
     {
+        ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(methodSelector);
-        ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
-        builder.Services.TryAddScoped<THandler>();
 
-        var executionOptions = mode == ReactorMode.Sync && configure is null
-            ? SyncExecutionDefault
-            : BuildProcessorExecutionOptions(configure);
+        var resolvedProcessorId = processorId ?? ProcessorId.For<THandler>();
+        ArgumentException.ThrowIfNullOrWhiteSpace(resolvedProcessorId);
+
+        builder.Register(context => context.Services.TryAddScoped<THandler>());
+
+        var executionOptions = BuildProcessorExecutionOptions(mode, configure);
+
+        builder.DeclareProcessor(new ProcessorDeclaration
+        {
+            ProcessorId = resolvedProcessorId,
+            Kind = ProcessorKind.Reactor,
+            Execution = executionOptions,
+            HandlerType = typeof(THandler),
+        });
 
         if (mode == ReactorMode.Sync)
         {
-            ValidateSyncExecutionOptions(processorId, executionOptions);
-            builder.Services.AddKeyedSingleton<IPostAppendHandler>(builder.ModuleKey, (sp, _) =>
+            ValidateSyncExecutionOptions(resolvedProcessorId, executionOptions);
+            builder.Register(context => context.Services.AddKeyedSingleton<IPostAppendHandler>(context.ModuleKey, (sp, _) =>
             {
                 var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
                 return new SyncReactor<TEvent>(async (e, _, ct) =>
@@ -223,14 +258,14 @@ public static class DcbModuleBuilderExtensions
                     var handler = scope.ServiceProvider.GetRequiredService<THandler>();
                     await methodSelector(handler)(e, ct);
                 });
-            });
+            }));
         }
         else
         {
-            RegisterAsyncProcessor(builder, processorId, executionOptions, sp =>
+            RegisterAsyncProcessor(builder, resolvedProcessorId, executionOptions, sp =>
             {
                 var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
-                return new FunctionalReactor<TEvent>(processorId, async (e, _, ct) =>
+                return new FunctionalReactor<TEvent>(resolvedProcessorId, async (e, _, ct) =>
                 {
                     await using var scope = scopeFactory.CreateAsyncScope();
                     var handler = scope.ServiceProvider.GetRequiredService<THandler>();
@@ -246,47 +281,72 @@ public static class DcbModuleBuilderExtensions
     /// Registers a functional reactor that reacts to a specific event type,
     /// using a handler class resolved from DI per event and exposing a <see cref="ReactorContext"/>.
     /// </summary>
+    /// <typeparam name="TEvent">The event type to react to.</typeparam>
+    /// <typeparam name="THandler">The handler class holding dependencies. Registered as scoped if not already registered.</typeparam>
+    /// <param name="builder">The module builder.</param>
+    /// <param name="methodSelector">Selects the handler method from the resolved handler instance.</param>
+    /// <param name="processorId">
+    /// Optional. When omitted, the id is derived from <typeparamref name="THandler"/> via
+    /// <see cref="ProcessorId.For{T}"/> (reading <see cref="ProcessorIdAttribute"/> if present,
+    /// otherwise building a qualified name from the type hierarchy). Must be unique within the
+    /// module — processors sharing an id share checkpoint state and silently skip events.
+    /// </param>
+    /// <param name="mode">
+    /// <see cref="ReactorMode.Async"/> (default): runs via background polling.
+    /// <see cref="ReactorMode.Sync"/>: runs immediately during <see cref="IEventStore.AppendAsync"/>.
+    /// </param>
+    /// <param name="configure">Optional per-processor execution settings for the async control loop.</param>
     public static DcbModuleBuilder ReactTo<TEvent, THandler>(
         this DcbModuleBuilder builder,
         Func<THandler, Func<TEvent, ReactorContext, CancellationToken, Task>> methodSelector,
-        string processorId,
+        string? processorId = null,
         ReactorMode mode = ReactorMode.Async,
-        Action<ProcessorExecutionConfigurator>? configure = null)
+        Func<ProcessorExecutionOptions, ProcessorExecutionOptions>? configure = null)
         where TEvent : class, IEvent
         where THandler : class
     {
+        ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(methodSelector);
-        ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
-        builder.Services.TryAddScoped<THandler>();
 
-        var executionOptions = mode == ReactorMode.Sync && configure is null
-            ? SyncExecutionDefault
-            : BuildProcessorExecutionOptions(configure);
+        var resolvedProcessorId = processorId ?? ProcessorId.For<THandler>();
+        ArgumentException.ThrowIfNullOrWhiteSpace(resolvedProcessorId);
+
+        builder.Register(context => context.Services.TryAddScoped<THandler>());
+
+        var executionOptions = BuildProcessorExecutionOptions(mode, configure);
+
+        builder.DeclareProcessor(new ProcessorDeclaration
+        {
+            ProcessorId = resolvedProcessorId,
+            Kind = ProcessorKind.Reactor,
+            Execution = executionOptions,
+            HandlerType = typeof(THandler),
+        });
 
         if (mode == ReactorMode.Sync)
         {
-            ValidateSyncExecutionOptions(processorId, executionOptions);
-            builder.Services.AddKeyedSingleton<IPostAppendHandler>(builder.ModuleKey, (sp, _) =>
+            ValidateSyncExecutionOptions(resolvedProcessorId, executionOptions);
+            builder.Register(context => context.Services.AddKeyedSingleton<IPostAppendHandler>(context.ModuleKey, (sp, _) =>
             {
                 var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
-                return new SyncReactor<TEvent>(async (e, context, ct) =>
+                return new SyncReactor<TEvent>(async (e, reactorContext, ct) =>
                 {
                     await using var scope = scopeFactory.CreateAsyncScope();
                     var handler = scope.ServiceProvider.GetRequiredService<THandler>();
-                    await methodSelector(handler)(e, context, ct);
+                    await methodSelector(handler)(e, reactorContext, ct);
                 });
-            });
+            }));
         }
         else
         {
-            RegisterAsyncProcessor(builder, processorId, executionOptions, sp =>
+            RegisterAsyncProcessor(builder, resolvedProcessorId, executionOptions, sp =>
             {
                 var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
-                return new FunctionalReactor<TEvent>(processorId, async (e, context, ct) =>
+                return new FunctionalReactor<TEvent>(resolvedProcessorId, async (e, reactorContext, ct) =>
                 {
                     await using var scope = scopeFactory.CreateAsyncScope();
                     var handler = scope.ServiceProvider.GetRequiredService<THandler>();
-                    await methodSelector(handler)(e, context, ct);
+                    await methodSelector(handler)(e, reactorContext, ct);
                 }, executionOptions.MaxConcurrency);
             });
         }
@@ -295,36 +355,250 @@ public static class DcbModuleBuilderExtensions
     }
 
     /// <summary>
-    /// Configures independent per-processor control loops.
-    /// Each registered <see cref="Subscriptions.IEventProcessor"/> gets its own polling loop
-    /// that advances its own checkpoint independently up to <see cref="Subscriptions.EventStoreHead.Current"/>.
+    /// Configures the async control loop. Called implicitly with defaults when omitted.
     /// </summary>
     /// <param name="builder">The module builder.</param>
-    /// <param name="configure">Optional action to configure the control loops.</param>
-    /// <returns>The module builder for chaining.</returns>
+    /// <param name="configure">
+    /// Transforms the current options. Use a <c>with</c> expression:
+    /// <c>o => o with { BatchSize = 500 }</c>. Anything set here is still overridable from
+    /// <c>Alberto:Modules:{moduleKey}:ControlLoop</c>.
+    /// </param>
     public static DcbModuleBuilder WithControlLoop(
         this DcbModuleBuilder builder,
-        Action<ControlLoopBuilder>? configure = null)
+        Func<ControlLoopOptions, ControlLoopOptions>? configure = null)
     {
-        builder.ControlLoopConfigured = true;
-        var loopBuilder = new ControlLoopBuilder(builder);
-        configure?.Invoke(loopBuilder);
-        loopBuilder.Build();
+        ArgumentNullException.ThrowIfNull(builder);
+
+        if (configure is not null)
+        {
+            builder.Configure(d => d with
+            {
+                ControlLoop = configure(d.ControlLoop)
+                    ?? throw new InvalidOperationException("WithControlLoop configurator returned null."),
+            });
+        }
+
+        if (!builder.ControlLoopConfigured)
+        {
+            builder.ControlLoopConfigured = true;
+            builder.Register(ControlLoopRegistration.Register);
+        }
+
         return builder;
+    }
+
+    /// <summary>
+    /// Enables zero-downtime projection rebuilds for this module.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A rebuild replays the whole log into a second, invisible copy of a projection's state
+    /// while the live one keeps serving reads, then swaps the two in a single transaction.
+    /// Nothing happens until an operator starts one — <c>alberto ops rebuild start
+    /// &lt;processor&gt;</c> — and this method is what makes the application able to carry one out.
+    /// </para>
+    /// <para>
+    /// Requires a backend that registers an <see cref="IProjectionRebuildStore"/>; Postgres does.
+    /// Projections must resolve their rebuild version through
+    /// <see cref="ProjectionStoreContext.RebuildVersion"/>. A projection that ignores it still
+    /// works — it just cannot be rebuilt without downtime.
+    /// </para>
+    /// </remarks>
+    /// <param name="builder">The module builder.</param>
+    /// <param name="autoPromote">
+    /// Promote a rebuild automatically as soon as it catches up. Default: <see langword="true"/>.
+    /// Set <see langword="false"/> to park finished rebuilds at <c>Ready</c> until an operator
+    /// runs <c>alberto ops rebuild promote</c>.
+    /// </param>
+    /// <param name="pollingInterval">
+    /// How often the coordinator re-reads the rebuild state machine. Default: 5 seconds.
+    /// </param>
+    public static DcbModuleBuilder WithRebuilds(
+        this DcbModuleBuilder builder,
+        bool autoPromote = true,
+        TimeSpan? pollingInterval = null)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        // Update the options record so the validator and coordinator both see the intent.
+        builder.WithControlLoop(o =>
+        {
+            var rebuilds = o.Rebuilds with { Enabled = true, AutoPromote = autoPromote };
+
+            if (pollingInterval.HasValue)
+                rebuilds = rebuilds with
+                {
+                    PollingInterval = pollingInterval.Value,
+                    VersionRefreshInterval = pollingInterval.Value,
+                };
+
+            return o with { Rebuilds = rebuilds };
+        });
+
+        // Register the rebuild pipeline services (deferred — factories read IOptionsMonitor).
+        builder.Register(context =>
+        {
+            var services = context.Services;
+            var moduleKey = context.ModuleKey;
+
+            static ControlLoopOptions Options(IServiceProvider sp, string key) =>
+                sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>().Get(key).ControlLoop;
+
+            static IErrorClassifier Classifier(IServiceProvider sp, string key) =>
+                sp.GetKeyedService<IErrorClassifier>(key) ?? DefaultErrorClassifier.Instance;
+
+            static IEventStoreBackend Backend(IServiceProvider sp, string key) =>
+                sp.GetKeyedService<IEventStoreBackend>($"{key}:consumer")
+                ?? sp.GetKeyedService<IEventStoreBackend>(key)
+                ?? throw new InvalidOperationException(
+                    $"No event store backend registered for Alberto module '{key}'.");
+
+            // ProjectionVersions: tracks which rebuild version is live for each processor.
+            // GetKeyedService<ProjectionVersions> returns null when not registered, so
+            // ProjectionVersions.LiveVersion falls back to NeverRebuilt for modules that
+            // never call WithRebuilds() — safe to omit registration entirely when disabled.
+            services.AddKeyedSingleton<ProjectionVersions>(moduleKey, (sp, _) =>
+            {
+                var opts = Options(sp, moduleKey).Rebuilds;
+                var store = sp.GetKeyedService<IProjectionRebuildStore>(moduleKey)
+                    ?? throw new InvalidOperationException(
+                        $"Alberto module '{moduleKey}' enables projection rebuilds but its backend " +
+                        "does not register an IProjectionRebuildStore. Call .WithPostgres() on the module.");
+                return new ProjectionVersions(store, opts.VersionRefreshInterval);
+            });
+
+            // ShadowControlLoopFactory: builds a control loop for a shadow rebuild processor.
+            services.AddKeyedSingleton<ShadowControlLoopFactory>(moduleKey, (sp, _) =>
+            {
+                var opts = Options(sp, moduleKey);
+
+                return new ShadowControlLoopFactory(processor =>
+                {
+                    var head = sp.GetRequiredKeyedService<EventStoreHead>(moduleKey);
+                    var backend = Backend(sp, moduleKey);
+                    var checkpoints = sp.GetRequiredKeyedService<ICheckpointStore>(moduleKey);
+                    var classifier = Classifier(sp, moduleKey);
+                    var deadLetterStore = sp.GetKeyedService<IDeadLetterStore>(moduleKey);
+
+                    var diMiddlewares = sp.GetKeyedServices<ConsumeMiddleware>(moduleKey).ToList();
+                    var diBatchMiddlewares = sp.GetKeyedServices<BatchConsumeMiddleware>(moduleKey).ToList();
+
+                    var middlewares = new List<ConsumeMiddleware>(diMiddlewares)
+                    {
+                        ConsumeMiddlewares.RetryAndDeadLetter(opts.Retry, classifier, deadLetterStore),
+                    };
+                    var batchMiddlewares = new List<BatchConsumeMiddleware>(diBatchMiddlewares)
+                    {
+                        BatchConsumeMiddlewares.RetryAndDeadLetter(opts.Retry, classifier, deadLetterStore),
+                    };
+                    var hasUnpaired = diMiddlewares.Count > diBatchMiddlewares.Count;
+
+                    return new ControlLoop(
+                        processor, head, backend, checkpoints,
+                        opts.PollingInterval, opts.BatchSize, moduleKey,
+                        middlewares, batchMiddlewares, hasUnpaired,
+                        ProcessorExecutionOptions.Default,
+                        sp.GetService<ILogger<ControlLoop>>());
+                });
+            });
+
+            // RebuildCoordinator: drives rebuild state machine transitions.
+            services.AddSingleton<IHostedService>(sp =>
+            {
+                var opts = Options(sp, moduleKey).Rebuilds;
+                var coordinatorOptions = new RebuildCoordinatorOptions(opts.PollingInterval, opts.AutoPromote);
+
+                return new RebuildCoordinator(
+                    sp.GetKeyedServices<RebuildableProjection>(moduleKey).ToList(),
+                    sp.GetRequiredKeyedService<IProjectionRebuildStore>(moduleKey),
+                    sp.GetRequiredKeyedService<ProjectionVersions>(moduleKey),
+                    sp.GetRequiredKeyedService<ICheckpointStore>(moduleKey),
+                    sp.GetRequiredKeyedService<ShadowControlLoopFactory>(moduleKey),
+                    sp.GetKeyedServices<IProjectionStateClearer>(moduleKey).ToList(),
+                    coordinatorOptions,
+                    sp.GetService<ILogger<RebuildCoordinator>>());
+            });
+        });
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Adds a middleware to the per-event consume pipeline. Middlewares run in registration order
+    /// (first added is outermost). The built-in retry-and-dead-letter middleware is always the
+    /// innermost layer, so custom middleware observes the outcome of the whole retry sequence.
+    /// </summary>
+    public static DcbModuleBuilder AddConsumeMiddleware(
+        this DcbModuleBuilder builder,
+        Func<IServiceProvider, ConsumeMiddleware> factory)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(factory);
+
+        return builder.Register(context =>
+            context.Services.AddKeyedSingleton(context.ModuleKey, (sp, _) => factory(sp)));
+    }
+
+    /// <summary>
+    /// Adds a middleware to the batch consume pipeline. A per-event middleware without a batch
+    /// counterpart forces the control loop back onto per-event dispatch, so register both when a
+    /// processor should keep batching.
+    /// </summary>
+    public static DcbModuleBuilder AddBatchConsumeMiddleware(
+        this DcbModuleBuilder builder,
+        Func<IServiceProvider, BatchConsumeMiddleware> factory)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(factory);
+
+        return builder.Register(context =>
+            context.Services.AddKeyedSingleton(context.ModuleKey, (sp, _) => factory(sp)));
+    }
+
+    /// <summary>
+    /// Replaces the classifier that decides whether a handler failure is transient (retry) or
+    /// permanent (dead-letter immediately). Defaults to <see cref="DefaultErrorClassifier"/>.
+    /// </summary>
+    public static DcbModuleBuilder UseErrorClassifier(
+        this DcbModuleBuilder builder,
+        IErrorClassifier classifier)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(classifier);
+
+        return builder.Register(context =>
+            context.Services.AddKeyedSingleton(context.ModuleKey, classifier));
+    }
+
+    /// <summary>
+    /// Replaces the error classifier with one resolved from the container, so it can take
+    /// dependencies. Defaults to <see cref="DefaultErrorClassifier"/>.
+    /// </summary>
+    public static DcbModuleBuilder UseErrorClassifier<TClassifier>(this DcbModuleBuilder builder)
+        where TClassifier : class, IErrorClassifier
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        return builder.Register(context =>
+            context.Services.AddKeyedSingleton<IErrorClassifier, TClassifier>(context.ModuleKey));
     }
 
     private static readonly ProcessorExecutionOptions SyncExecutionDefault =
         new(ProcessorBatchingMode.Disabled);
 
     private static ProcessorExecutionOptions BuildProcessorExecutionOptions(
-        Action<ProcessorExecutionConfigurator>? configure)
+        ReactorMode mode,
+        Func<ProcessorExecutionOptions, ProcessorExecutionOptions>? configure)
     {
-        if (configure is null)
-            return ProcessorExecutionOptions.Default;
+        var options = mode == ReactorMode.Sync
+            ? SyncExecutionDefault
+            : ProcessorExecutionOptions.Default;
 
-        var configurator = new ProcessorExecutionConfigurator();
-        configure(configurator);
-        return configurator.Build();
+        if (configure is null)
+            return options;
+
+        return configure(options)
+            ?? throw new InvalidOperationException("Processor execution configurator returned null.");
     }
 
     private static void RegisterAsyncProcessor(
@@ -333,12 +607,15 @@ public static class DcbModuleBuilderExtensions
         ProcessorExecutionOptions executionOptions,
         Func<IServiceProvider, IEventProcessor> processorFactory)
     {
-        builder.Services.AddKeyedSingleton<IEventProcessor>(
-            builder.ModuleKey,
-            (sp, _) => processorFactory(sp));
-        builder.Services.AddKeyedSingleton<ProcessorExecutionRegistration>(
-            builder.ModuleKey,
-            (_, _) => new ProcessorExecutionRegistration(processorId, executionOptions));
+        builder.Register(context =>
+        {
+            context.Services.AddKeyedSingleton<IEventProcessor>(
+                context.ModuleKey,
+                (sp, _) => processorFactory(sp));
+            context.Services.AddKeyedSingleton<ProcessorExecutionRegistration>(
+                context.ModuleKey,
+                (_, _) => new ProcessorExecutionRegistration(processorId, executionOptions));
+        });
     }
 
     private static void ValidateSyncExecutionOptions(

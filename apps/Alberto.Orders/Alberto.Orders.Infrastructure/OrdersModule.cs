@@ -32,12 +32,12 @@ public static class OrdersModule
 
         services.AddAlberto(ModuleKey, builder => builder
             .WithTenancy()
-            .WithPostgres(options =>
+            .WithPostgres(o => o with
             {
-                options.ConnectionString = connectionString;
-                options.AutoMigrate = false; // Migrations run in Alberto.Orders.Migrations (Aspire sequencing)
-                options.Schema = "orders";
-                options.MaxPoolSize = 30;
+                ConnectionString = connectionString,
+                AutoMigrate = false, // Migrations run in Alberto.Orders.Migrations (Aspire sequencing)
+                Schema = "orders",
+                MaxPoolSize = 30,
             })
             .WithEntityFramework<OrdersDbContext>(options =>
             {
@@ -55,10 +55,8 @@ public static class OrdersModule
                     rebuildVersion: ctx.RebuildVersion);
             })
             .AddEfProjection<OrderSummaryEntity, OrdersDbContext>(OrderSummaryEfProjection.Declaration)
-            .WithControlLoop(loop => loop
-                .WithPollingInterval(TimeSpan.FromMilliseconds(100))
-                .WithBatchSize(500)
-                .WithRebuilds()));
+            .WithControlLoop(o => o with { PollingInterval = TimeSpan.FromMilliseconds(100), BatchSize = 500 })
+            .WithRebuilds());
 
         // Note on tenancy: the async control loop consumes every tenant's events through this
         // singleton state store, so the JSONB projection above is written without a tenant and

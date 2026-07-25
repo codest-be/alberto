@@ -59,20 +59,20 @@ public sealed class ProjectionRebuildHostFixture : IAsyncLifetime
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddAlberto(ModuleKey, builder => builder
-            .WithPostgres(options =>
+            .WithPostgres(o => o with
             {
-                options.ConnectionString = connectionString;
-                options.AutoMigrate = false;
-                options.EnableNotifyListener = false;
+                ConnectionString = connectionString,
+                AutoMigrate = false,
+                EnableNotifyListener = false,
             })
             .AddProjection(TotalsProjection.Declaration, ctx => () =>
                 new PostgresStateStore<Totals>(
                     ctx.Services.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey),
                     TotalsProjection.ProjectionType,
+                    schema: "public",
                     rebuildVersion: ctx.RebuildVersion))
-            .WithControlLoop(loop => loop
-                .WithPollingInterval(TimeSpan.FromMilliseconds(50))
-                .WithRebuilds(pollingInterval: TimeSpan.FromMilliseconds(100))));
+            .WithControlLoop(o => o with { PollingInterval = TimeSpan.FromMilliseconds(50) })
+            .WithRebuilds(pollingInterval: TimeSpan.FromMilliseconds(100)));
 
         Services = services.BuildServiceProvider();
 
@@ -132,7 +132,7 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
         // Corrupt what the projection serves, the way a bug in an Apply method would have.
         await WriteAsync(versionBefore, player, new Totals { Points = 999 }, ct);
 
-        await StartRebuildAsync(ct);
+        var started = await StartRebuildAsync(ct);
 
         // While the rebuild runs, readers keep seeing the old version — wrong, but whole.
         // Any other value would mean the shadow loop is writing where readers can see it.
@@ -149,7 +149,11 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
             "a reader moves from the complete old version straight to the complete new one");
 
         var promoted = await StateAsync(ct);
-        promoted.ActiveVersion.Should().Be(versionBefore + 1);
+        // Use the allocated RebuildingVersion rather than versionBefore+1: prior tests may have
+        // aborted rebuilds that consumed last_allocated_version without advancing active_version,
+        // so the allocated slot is not necessarily versionBefore+1.
+        promoted.ActiveVersion.Should().Be(started.RebuildingVersion,
+            "the promoted version must be the one the rebuild was writing into");
         promoted.RebuildingVersion.Should().BeNull();
 
         var afterPromotion = await ReadAsync(promoted.ActiveVersion, player, ct);

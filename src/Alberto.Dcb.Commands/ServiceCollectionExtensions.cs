@@ -35,11 +35,14 @@ public static class AlbertoStoreServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(eventsAssembly);
 
-        var moduleKey = builder.ModuleKey;
         var serializer = EventSerializer.FromAssembly(eventsAssembly);
-        builder.Services.AddScoped(sp => new AlbertoStore(
-            sp.GetRequiredKeyedService<IEventStore>(moduleKey),
-            serializer));
+        builder.Register(context =>
+        {
+            var moduleKey = context.ModuleKey;
+            context.Services.AddScoped(sp => new AlbertoStore(
+                sp.GetRequiredKeyedService<IEventStore>(moduleKey),
+                serializer));
+        });
 
         return builder;
     }

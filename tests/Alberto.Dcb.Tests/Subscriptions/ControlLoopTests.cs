@@ -1,4 +1,6 @@
+using System.Collections.Immutable;
 using System.Text.Json;
+using Alberto.Dcb.Configuration;
 using Alberto.Dcb.InMemory;
 using Alberto.Dcb.Subscriptions;
 using Xunit;
@@ -611,30 +613,39 @@ public sealed class ControlLoopTests
     }
 
     [Fact]
-    public void WithConcurrency_ThrowsWhenBatchingIsExplicitlyDisabled()
+    public void WithConcurrency_AndBatchingDisabled_IsReportedByValidator()
     {
-        var configurator = new ProcessorExecutionConfigurator();
-        configurator.DisableBatching().WithConcurrency(5);
+        // ALB0005: the "concurrency requires batching" check moved from the builder to the validator.
+        var options = new ProcessorExecutionOptions(ProcessorBatchingMode.Disabled, MaxConcurrency: 5);
+        var definition = new AlbertoModuleDefinition
+        {
+            ModuleKey = "test",
+            Processors = ImmutableArray.Create(new ProcessorDeclaration
+            {
+                ProcessorId = "p",
+                Kind = ProcessorKind.Reactor,
+                Execution = options,
+            }),
+        };
 
-        var exception = Assert.Throws<InvalidOperationException>(() => configurator.Build());
-        Assert.Contains("WithConcurrency requires batching", exception.Message);
+        var failures = new AlbertoModuleValidator().Collect(definition);
+        Assert.Contains(failures, f => f.Code == "ALB0005");
+        Assert.Contains("MaxConcurrency", failures.First(f => f.Code == "ALB0005").Problem);
     }
 
     [Fact]
     public void WithConcurrency_WorksWithDefaultBatching()
     {
-        var configurator = new ProcessorExecutionConfigurator();
-        var options = configurator.WithConcurrency(10).Build();
+        var options = ProcessorExecutionOptions.Default with { MaxConcurrency = 10 };
 
         Assert.Equal(ProcessorBatchingMode.Required, options.BatchingMode);
         Assert.Equal(10, options.MaxConcurrency);
     }
 
     [Fact]
-    public void DefaultConfigurator_UsesRequired()
+    public void DefaultOptions_UsesRequired()
     {
-        var configurator = new ProcessorExecutionConfigurator();
-        var options = configurator.Build();
+        var options = ProcessorExecutionOptions.Default;
 
         Assert.Equal(ProcessorBatchingMode.Required, options.BatchingMode);
     }
