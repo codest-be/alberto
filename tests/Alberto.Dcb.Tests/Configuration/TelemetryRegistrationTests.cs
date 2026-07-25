@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Reflection;
 using Alberto.Dcb;
 using Alberto.Dcb.Configuration;
 using Alberto.Dcb.InMemory;
@@ -181,6 +182,66 @@ public class TelemetryRegistrationTests
 
         exported.Count(a => a.OperationName == AlbertoMetrics.AppendActivityName)
             .Should().Be(1, "one append on one module must produce exactly one Alberto.Append activity, not one per WithTelemetry() call");
+    }
+
+    // ── Finding I3 ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public void AddAlbertoInstrumentation_TracerProviderBuilder_is_not_obsolete()
+    {
+        // The spec retains AddAlbertoInstrumentation for manual TracerProvider wiring.
+        // It must not carry [Obsolete] — the attribute was added by mistake.
+        typeof(Alberto.Dcb.Telemetry.ServiceCollectionExtensions)
+            .GetMethods()
+            .Where(m => m.Name == "AddAlbertoInstrumentation"
+                     && m.GetParameters().Length == 1
+                     && m.GetParameters()[0].ParameterType == typeof(TracerProviderBuilder))
+            .Should().ContainSingle()
+            .Which.GetCustomAttributes(typeof(ObsoleteAttribute), inherit: false)
+            .Should().BeEmpty("AddAlbertoInstrumentation must not be marked [Obsolete]");
+    }
+
+    [Fact]
+    public void AddAlbertoInstrumentation_MeterProviderBuilder_is_not_obsolete()
+    {
+        typeof(Alberto.Dcb.Telemetry.ServiceCollectionExtensions)
+            .GetMethods()
+            .Where(m => m.Name == "AddAlbertoInstrumentation"
+                     && m.GetParameters().Length == 1
+                     && m.GetParameters()[0].ParameterType == typeof(OpenTelemetry.Metrics.MeterProviderBuilder))
+            .Should().ContainSingle()
+            .Which.GetCustomAttributes(typeof(ObsoleteAttribute), inherit: false)
+            .Should().BeEmpty("AddAlbertoInstrumentation must not be marked [Obsolete]");
+    }
+
+    [Fact]
+    public async Task AddAlbertoInstrumentation_is_idempotent_with_WithTelemetry()
+    {
+        // AddAlbertoInstrumentation() is retained for manual TracerProvider wiring.
+        // When called alongside WithTelemetry(), it must not double-register the source.
+        var exported = new List<Activity>();
+
+        var services = new ServiceCollection();
+        services.AddAlberto("orders", module => module.WithInMemory().WithTelemetry());
+#pragma warning disable CS0618
+        services.AddOpenTelemetry()
+            .WithTracing(tracing => tracing
+                .AddAlbertoInstrumentation()    // should become non-obsolete after fix
+                .AddInMemoryExporter(exported));
+#pragma warning restore CS0618
+
+        await using var provider = services.BuildServiceProvider();
+        var tracerProvider = provider.GetRequiredService<TracerProvider>();
+        provider.GetRequiredService<IEnumerable<IHostedService>>();
+
+        using var activity = AlbertoMetrics.Source.StartActivity("i3-idempotency-span");
+        activity?.Stop();
+
+        tracerProvider.ForceFlush();
+
+        exported.Count(a => a.OperationName == "i3-idempotency-span")
+            .Should().Be(1,
+                "AddAlbertoInstrumentation() plus WithTelemetry() must not double-register the source");
     }
 
     [Fact]
