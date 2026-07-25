@@ -32,7 +32,10 @@ public sealed class StateStoreRebuildVersionFixture : IAsyncLifetime
         // EF's EnsureCreated is a no-op once the database has any tables at all, so it has to
         // run before DbUp puts the alberto_* tables there.
         var optionsBuilder = new DbContextOptionsBuilder<EfTestDbContext>();
-        optionsBuilder.UseNpgsql(ConnectionString);
+        optionsBuilder.UseNpgsql(ConnectionString, o => o.EnableRetryOnFailure(
+            maxRetryCount: 5,
+            maxRetryDelay: TimeSpan.FromSeconds(3),
+            errorCodesToAdd: null));
         await using (var context = new EfTestDbContext(optionsBuilder.Options))
         {
             await context.Database.EnsureCreatedAsync();

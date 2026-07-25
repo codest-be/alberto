@@ -6,8 +6,8 @@ using Xunit;
 namespace Alberto.Dcb.Tests;
 
 /// <summary>
-/// Shared PostgreSQL container fixture for all tests.
-/// Created once per test collection, reused across all tests.
+/// PostgreSQL container fixture backed by Testcontainers.
+/// Consumed via <see cref="IClassFixture{T}"/> — instantiated once per test class, not per collection.
 /// </summary>
 public sealed class PostgresFixture : IAsyncLifetime
 {
