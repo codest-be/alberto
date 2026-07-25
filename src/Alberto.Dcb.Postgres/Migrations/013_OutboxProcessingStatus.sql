@@ -1,7 +1,7 @@
 -- Alberto DCB Event Store - Migration 013 (Multi-Tenant)
 -- Extend the alberto_outbox_entries.status CHECK constraint to permit 'processing'.
 --
--- GetPendingAsync atomically claims pending outbox rows by updating their status to
+-- ClaimPendingAsync atomically claims pending outbox rows by updating their status to
 -- 'processing' (via UPDATE … FROM candidates WHERE … FOR UPDATE SKIP LOCKED).
 -- Migration 001 created the constraint as CHECK (status IN ('pending', 'delivered',
 -- 'failed')), which means the claim UPDATE was rejected by PostgreSQL on any database

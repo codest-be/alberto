@@ -108,11 +108,17 @@ CREATE TABLE IF NOT EXISTS $schema_prefix$alberto_outbox_entries (
     last_error TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     delivered_at TIMESTAMPTZ,
+    claim_id UUID,
+    claimed_by TEXT,
+    claim_expires_at TIMESTAMPTZ,
     UNIQUE (source_event_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_alberto_outbox_pending
     ON $schema_prefix$alberto_outbox_entries (created_at) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_alberto_outbox_expired_claims
+    ON $schema_prefix$alberto_outbox_entries (claim_expires_at, created_at)
+    WHERE status = 'processing';
 
 -- Processor leases (single-tenant only)
 CREATE TABLE IF NOT EXISTS $schema_prefix$alberto_processor_leases (

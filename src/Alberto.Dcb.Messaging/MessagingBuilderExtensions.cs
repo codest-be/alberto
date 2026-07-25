@@ -23,12 +23,17 @@ public static class MessagingBuilderExtensions
     /// <param name="relayBatchSize">
     /// Maximum number of outbox entries the relay processes per poll cycle. Defaults to 1.
     /// </param>
+    /// <param name="relayClaimLease">
+    /// How long the relay owns a claimed entry before another relay may recover it.
+    /// Defaults to <see cref="OutboxRelay.DefaultClaimLease"/>.
+    /// </param>
     public static DcbModuleBuilder WithOutbox(
         this DcbModuleBuilder builder,
         Action<IMessageMappingRegistry> configureMappings,
         IOutboxStore outboxStore,
         IMessageTransport? transport = null,
-        int relayBatchSize = 1)
+        int relayBatchSize = 1,
+        TimeSpan? relayClaimLease = null)
     {
         ArgumentNullException.ThrowIfNull(configureMappings);
         ArgumentNullException.ThrowIfNull(outboxStore);
@@ -47,7 +52,11 @@ public static class MessagingBuilderExtensions
             if (transport is not null)
             {
                 context.Services.AddSingleton<IHostedService>(
-                    _ => new OutboxRelay(outboxStore, transport, batchSize: relayBatchSize));
+                    _ => new OutboxRelay(
+                        outboxStore,
+                        transport,
+                        batchSize: relayBatchSize,
+                        claimLease: relayClaimLease));
             }
         });
 

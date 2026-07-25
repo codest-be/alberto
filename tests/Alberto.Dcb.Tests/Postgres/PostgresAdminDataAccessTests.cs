@@ -126,4 +126,106 @@ public sealed class PostgresAdminDataAccessTests(PostgresAdminDataAccessFixture 
         Assert.Equal(1, deletedCount);
         Assert.Equal(6, await checkpoints.GetAsync(processorId, ct));
     }
+
+    [Fact]
+    public async Task RenameCheckpointAsync_MovesPositionAndRemovesSource()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var from = $"from-{Guid.NewGuid():N}";
+        var to = $"to-{Guid.NewGuid():N}";
+        var checkpoints = CreateCheckpointStore();
+        await checkpoints.SaveAsync(from, 123, ct);
+
+        var result = await CreateAdmin().RenameCheckpointAsync(from, to, ct);
+
+        Assert.Equal(CheckpointRenameStatus.Renamed, result.Status);
+        Assert.Equal(123, result.Position);
+        Assert.Null(await checkpoints.GetAsync(from, ct));
+        Assert.Equal(123, await checkpoints.GetAsync(to, ct));
+    }
+
+    [Fact]
+    public async Task RenameCheckpointAsync_MissingSource_ChangesNothing()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var from = $"missing-{Guid.NewGuid():N}";
+        var to = $"to-{Guid.NewGuid():N}";
+        var checkpoints = CreateCheckpointStore();
+
+        var result = await CreateAdmin().RenameCheckpointAsync(from, to, ct);
+
+        Assert.Equal(CheckpointRenameStatus.SourceNotFound, result.Status);
+        Assert.Null(result.Position);
+        Assert.Null(await checkpoints.GetAsync(from, ct));
+        Assert.Null(await checkpoints.GetAsync(to, ct));
+    }
+
+    [Fact]
+    public async Task RenameCheckpointAsync_ExistingDestination_DoesNotOverwriteOrDeleteSource()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var from = $"from-{Guid.NewGuid():N}";
+        var to = $"to-{Guid.NewGuid():N}";
+        var checkpoints = CreateCheckpointStore();
+        await checkpoints.SaveAsync(from, 123, ct);
+        await checkpoints.SaveAsync(to, 999, ct);
+
+        var result = await CreateAdmin().RenameCheckpointAsync(from, to, ct);
+
+        Assert.Equal(CheckpointRenameStatus.DestinationExists, result.Status);
+        Assert.Equal(999, result.Position);
+        Assert.Equal(123, await checkpoints.GetAsync(from, ct));
+        Assert.Equal(999, await checkpoints.GetAsync(to, ct));
+    }
+
+    [Fact]
+    public async Task RenameCheckpointAsync_SameId_IsRejectedWithoutMutation()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var processorId = $"same-{Guid.NewGuid():N}";
+        var checkpoints = CreateCheckpointStore();
+        await checkpoints.SaveAsync(processorId, 77, ct);
+
+        var result = await CreateAdmin().RenameCheckpointAsync(processorId, processorId, ct);
+
+        Assert.Equal(CheckpointRenameStatus.SameProcessorId, result.Status);
+        Assert.Equal(77, await checkpoints.GetAsync(processorId, ct));
+    }
+
+    [Fact]
+    public async Task RenameCheckpointAsync_ConcurrentDestinationRace_HasOneWinnerAndNoPartialMove()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var sourceA = $"source-a-{Guid.NewGuid():N}";
+        var sourceB = $"source-b-{Guid.NewGuid():N}";
+        var destination = $"destination-{Guid.NewGuid():N}";
+        var checkpoints = CreateCheckpointStore();
+        await checkpoints.SaveAsync(sourceA, 10, ct);
+        await checkpoints.SaveAsync(sourceB, 20, ct);
+
+        var adminA = CreateAdmin();
+        var adminB = CreateAdmin();
+        var attemptA = adminA.RenameCheckpointAsync(sourceA, destination, ct);
+        var attemptB = adminB.RenameCheckpointAsync(sourceB, destination, ct);
+        var results = await Task.WhenAll(attemptA, attemptB);
+
+        Assert.Single(results, result => result.Status == CheckpointRenameStatus.Renamed);
+        Assert.Single(results, result => result.Status == CheckpointRenameStatus.DestinationExists);
+
+        var destinationPosition = await checkpoints.GetAsync(destination, ct);
+        Assert.True(destinationPosition is 10 or 20);
+
+        var sourceAPosition = await checkpoints.GetAsync(sourceA, ct);
+        var sourceBPosition = await checkpoints.GetAsync(sourceB, ct);
+        if (destinationPosition == 10)
+        {
+            Assert.Null(sourceAPosition);
+            Assert.Equal(20, sourceBPosition);
+        }
+        else
+        {
+            Assert.Equal(10, sourceAPosition);
+            Assert.Null(sourceBPosition);
+        }
+    }
 }

@@ -97,13 +97,15 @@ event committed to the log
 row in alberto_outbox_entries, status = pending
     ↓  OutboxRelay (a hosted service, polls every 1s)
 claimed FOR UPDATE SKIP LOCKED, status = processing
+claim token + claim expiry stored on the row
     ↓  IMessageTransport.PublishAsync
-status = delivered   (or failed, with the error recorded)
+status = delivered   (or failed, only if the claim token still matches)
 ```
 
 Because the handler is a processor, an entry only ever exists for an event that is already durable.
 Because the relay claims with `FOR UPDATE SKIP LOCKED`, several relay replicas can run without
-double-delivering.
+holding the same live claim. Delivery remains at-least-once: if a publish succeeds but the relay
+dies before recording success, the entry is published again after its claim expires.
 
 ### Wiring it
 
@@ -128,7 +130,8 @@ Then map events to it:
     },
     outboxStore: new PostgresOutboxStore(dataSource, schema: "orders"),
     transport: new InMemoryTransport(),
-    relayBatchSize: 50)
+    relayBatchSize: 50,
+    relayClaimLease: TimeSpan.FromMinutes(5))
 ```
 
 - `Map<TEvent, TMessage>` takes the message type and version from the `[Message]` attribute. The
@@ -159,22 +162,16 @@ from `PublishAsync` and the entry is marked `failed` with the exception message 
 
 `InMemoryTransport` ships in `Alberto.Dcb.Messaging` for tests.
 
-### Known gap: orphaned `processing` entries
+### Claim leases and relay crashes
 
-A relay that dies **between** claiming an entry and marking it `delivered`/`failed` strands that
-row in `processing` forever:
+Every claim has a unique token and expiry. A relay completes an entry by presenting that token;
+once another relay has recovered an expired claim, the old relay can no longer mark the row
+`delivered` or `failed`.
 
-- `alberto_outbox_entries` has no claim-lease columns, so nothing can tell a live claim from a dead
-  one.
-- `RetryFailedAsync` only matches `failed`, so it will not pick these up.
-
-The fix would be a `ResetProcessingAsync(olderThan)` sweep plus a claim timestamp; it is not
-implemented. The gap is pinned by the skipped test
-`DiscoveredIssuesTests.OutboxStore_ProcessingEntriesOrphaned_CannotBeRecoveredByRetryFailed`.
-
-Until then, a stuck message needs a manual `UPDATE` back to `pending`. If your relay restarts often
-enough for this to bite, run a single relay replica so the window is a process restart rather than
-a rolling deploy.
+`OutboxRelay.DefaultClaimLease` is five minutes. Set `relayClaimLease` longer than the transport's
+worst-case publish time. If it is too short, another relay can recover an entry while the first
+publish is still running, producing the duplicate delivery that at-least-once messaging permits.
+If it is too long, recovery after a crash waits longer.
 
 ## Reactor, outbox, or inline projection?
 

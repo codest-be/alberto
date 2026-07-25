@@ -33,3 +33,13 @@ public record OutboxEntry(
     string? LastError,
     DateTimeOffset CreatedAt,
     DateTimeOffset? DeliveredAt);
+
+/// <summary>
+/// A time-bounded, token-fenced claim on an outbox entry.
+/// The claim token must be presented when completing delivery so a relay whose lease expired
+/// cannot overwrite the result of a newer relay that reclaimed the same entry.
+/// </summary>
+public sealed record OutboxClaim(
+    OutboxEntry Entry,
+    Guid Token,
+    DateTimeOffset ExpiresAt);

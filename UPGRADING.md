@@ -5,6 +5,45 @@ The most recent cycle (projection rebuilds) is at the top. Older changes follow.
 
 ---
 
+## Summary — outbox claim leases and atomic admin mutations
+
+Two operator-facing lifecycles now sit behind one tested interface each.
+
+| Change | Area | Severity | What broke |
+|---|---|---|---|
+| CL-1 | Outbox | **High** | `IOutboxStore.GetPendingAsync` became `ClaimPendingAsync`; completion takes an `OutboxClaim` and returns `bool` |
+| CL-2 | Schema | **High** | Outbox rows gain `claim_id`, `claimed_by`, and `claim_expires_at` through migration 016 |
+| CL-3 | Admin | Low | `PostgresAdminDataAccess.SetCheckpointAsync` / `ResetCheckpointAsync` were replaced by atomic `RenameCheckpointAsync` |
+
+### CL-1 — outbox claims are leased and token-fenced
+
+Custom `IOutboxStore` adapters must implement the claim lifecycle:
+
+```csharp
+Task<IReadOnlyList<OutboxClaim>> ClaimPendingAsync(
+    int limit, TimeSpan claimLease, string claimedBy, CancellationToken ct);
+Task<bool> MarkDeliveredAsync(OutboxClaim claim, CancellationToken ct);
+Task<bool> MarkFailedAsync(OutboxClaim claim, string error, CancellationToken ct);
+```
+
+Expired `processing` entries are eligible for reclaim. Completion returns `false` when the token
+no longer owns the row, preventing a stale relay from overwriting a newer claim. `WithOutbox`
+accepts `relayClaimLease`; its default is five minutes.
+
+### CL-2 — apply migration 016
+
+Migration 016 adds the outbox claim token, diagnostic owner, expiry, and expired-claim index.
+Existing `processing` rows have no expiry and are therefore recoverable immediately after upgrade.
+
+### CL-3 — checkpoint rename is one transaction
+
+Call `PostgresAdminDataAccess.RenameCheckpointAsync(from, to)`. It returns a
+`CheckpointRenameResult` and never overwrites an existing destination. The CLI uses this method;
+the old public set/reset primitives were removed because they allowed callers to split rename
+across several connections.
+
+---
+
 ## Summary — projection rebuild cycle
 
 Zero-downtime projection rebuilds landed. Projection state is now versioned, which is a

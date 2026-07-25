@@ -9,14 +9,27 @@ public interface IOutboxStore
     /// <summary>Inserts a new outbox entry. Duplicate source events are ignored.</summary>
     Task InsertAsync(OutboxEntry entry, CancellationToken ct = default);
 
-    /// <summary>Returns up to <paramref name="limit"/> pending entries ordered by creation time.</summary>
-    Task<IReadOnlyList<OutboxEntry>> GetPendingAsync(int limit = 100, CancellationToken ct = default);
+    /// <summary>
+    /// Atomically claims up to <paramref name="limit"/> deliverable entries, ordered by creation time.
+    /// Pending entries and processing entries whose claim lease expired are eligible.
+    /// </summary>
+    Task<IReadOnlyList<OutboxClaim>> ClaimPendingAsync(
+        int limit,
+        TimeSpan claimLease,
+        string claimedBy,
+        CancellationToken ct = default);
 
-    /// <summary>Marks an entry as successfully delivered.</summary>
-    Task MarkDeliveredAsync(Guid id, CancellationToken ct = default);
+    /// <summary>
+    /// Marks a claimed entry as successfully delivered.
+    /// Returns <see langword="false"/> when the claim expired or was superseded.
+    /// </summary>
+    Task<bool> MarkDeliveredAsync(OutboxClaim claim, CancellationToken ct = default);
 
-    /// <summary>Marks an entry as failed, incrementing the retry counter and recording the error.</summary>
-    Task MarkFailedAsync(Guid id, string error, CancellationToken ct = default);
+    /// <summary>
+    /// Marks a claimed entry as failed, incrementing the retry counter and recording the error.
+    /// Returns <see langword="false"/> when the claim expired or was superseded.
+    /// </summary>
+    Task<bool> MarkFailedAsync(OutboxClaim claim, string error, CancellationToken ct = default);
 
     /// <summary>
     /// Resets failed entries back to pending so the relay will attempt delivery again.
