@@ -69,8 +69,8 @@ public class ReactToScopedHandlerTests
         var provider = services.BuildServiceProvider(validateScopes: true);
         var processor = provider.GetKeyedServices<IEventProcessor>("test").Single();
 
-        await processor.ProcessEventAsync(CreateEnvelope(new ItemProcessed("first"), 1), CancellationToken.None);
-        await processor.ProcessEventAsync(CreateEnvelope(new ItemProcessed("second"), 2), CancellationToken.None);
+        await processor.ProcessEventAsync(CreateEnvelope(new ItemProcessed("first"), 1), TestContext.Current.CancellationToken);
+        await processor.ProcessEventAsync(CreateEnvelope(new ItemProcessed("second"), 2), TestContext.Current.CancellationToken);
 
         Assert.Equal(["first", "second"], handled);
 
@@ -100,7 +100,7 @@ public class ReactToScopedHandlerTests
         var provider = services.BuildServiceProvider(validateScopes: true);
         var processor = provider.GetKeyedServices<IEventProcessor>("test").Single();
 
-        await processor.ProcessEventAsync(CreateEnvelope(new ItemProcessed("ok"), 1), CancellationToken.None);
+        await processor.ProcessEventAsync(CreateEnvelope(new ItemProcessed("ok"), 1), TestContext.Current.CancellationToken);
 
         Assert.Equal(["ok"], handled);
     }
@@ -130,7 +130,7 @@ public class ReactToScopedHandlerTests
         var provider = services.BuildServiceProvider(validateScopes: true);
         var processor = provider.GetKeyedServices<IEventProcessor>("test").Single();
 
-        await processor.ProcessEventAsync(CreateEnvelope(new ItemProcessed("timestamp"), 1, createdAt), CancellationToken.None);
+        await processor.ProcessEventAsync(CreateEnvelope(new ItemProcessed("timestamp"), 1, createdAt), TestContext.Current.CancellationToken);
 
         Assert.Equal(new DateTimeOffset(createdAt, TimeSpan.Zero), capture.TimestampUtc);
     }
