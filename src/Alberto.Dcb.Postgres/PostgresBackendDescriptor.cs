@@ -31,6 +31,10 @@ public sealed record PostgresBackendDescriptor(PostgresOptions Options) : IAlber
         };
 
     /// <inheritdoc />
+    public (string? SectionName, Type? OverridesType) GetConfigurationSection() =>
+        ("Postgres", typeof(PostgresOverrides));
+
+    /// <inheritdoc />
     public IEnumerable<AlbertoValidationFailure> Validate(AlbertoModuleDefinition definition)
     {
         var path = $"{definition.ConfigurationPath}:Postgres";

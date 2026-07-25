@@ -307,6 +307,7 @@ surfacing them in one error message.
 | `ALB0005` | `MaxConcurrency > 1` with `BatchingMode = Disabled` — concurrency only applies within a batch | Set `BatchingMode` to `IfSupported` or `Required`, or reduce `MaxConcurrency` to 1 |
 | `ALB0006` | A processor id is empty or contains whitespace | Use a non-empty identifier without whitespace |
 | `ALB0007` | `Retry.MaxRetries < 0` or `Retry.BackoffMultiplier < 1.0` | Use 0 to disable retries; use 1.0 for a constant backoff delay |
+| `ALB0008` | A configuration key under `Alberto:Modules:{key}` does not match any known option — for example a typo in a section or property name | Correct or remove the key; when a close match exists, the remedy shows a "Did you mean '…'?" suggestion |
 
 ### Postgres codes (ALB1xxx)
 

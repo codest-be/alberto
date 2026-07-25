@@ -35,6 +35,7 @@ public sealed class AlbertoModuleValidator : IValidateOptions<AlbertoModuleDefin
         ValidateBackend(definition, failures);
         ValidateControlLoop(definition, failures);
         ValidateProcessors(definition, failures);
+        ValidateUnknownKeys(definition, failures);
 
         if (definition.Backend is not null)
             failures.AddRange(definition.Backend.Validate(definition));
@@ -113,6 +114,21 @@ public sealed class AlbertoModuleValidator : IValidateOptions<AlbertoModuleDefin
                 "ALB0007",
                 $"ControlLoop.Retry.BackoffMultiplier is {loop.Retry.BackoffMultiplier}, which would shrink the delay on each retry.",
                 $"Use 1.0 for a constant delay, or a larger value to back off, via '{path}:ControlLoop:Retry:BackoffMultiplier'."));
+        }
+    }
+
+    private static void ValidateUnknownKeys(AlbertoModuleDefinition definition, List<AlbertoValidationFailure> failures)
+    {
+        foreach (var key in definition.UnknownConfigurationKeys)
+        {
+            var remedy = key.Suggestion is not null
+                ? $"Did you mean '{key.Suggestion}'? Correct or remove this key."
+                : "This key is not recognised. Correct or remove it.";
+
+            failures.Add(new AlbertoValidationFailure(
+                "ALB0008",
+                $"Unknown configuration key '{key.FullKey}'.",
+                remedy));
         }
     }
 

@@ -37,4 +37,16 @@ public interface IAlbertoBackendDescriptor
     /// Registers the backend's services. Called once, after validation, with the final definition.
     /// </summary>
     void Register(AlbertoModuleContext context);
+
+    /// <summary>
+    /// Returns the name of the configuration sub-section this backend reads from, and the
+    /// <see cref="IAlbertoOverrides{TOptions}"/> type that enumerates its legal property names.
+    /// Used by the unknown-key detector (<c>ALB0008</c>) to know which keys are intentional.
+    /// </summary>
+    /// <returns>
+    /// A tuple whose first element is the section name (for example <c>"Postgres"</c>) and whose
+    /// second element is the overrides type (for example <c>typeof(PostgresOverrides)</c>).
+    /// Return <c>(null, null)</c> when the backend has no backend-specific configuration section.
+    /// </returns>
+    (string? SectionName, Type? OverridesType) GetConfigurationSection() => (null, null);
 }

@@ -124,5 +124,6 @@ public static class ServiceCollectionExtensions
         target.Checkpoints = source.Checkpoints;
         target.TelemetryEnabled = source.TelemetryEnabled;
         target.Processors = source.Processors;
+        target.UnknownConfigurationKeys = source.UnknownConfigurationKeys;
     }
 }

@@ -35,6 +35,14 @@ public sealed record AlbertoModuleDefinition
     /// <summary>Every processor declared on this module.</summary>
     public ImmutableArray<ProcessorDeclaration> Processors { get; internal set; } = [];
 
+    /// <summary>
+    /// Configuration keys found under <see cref="ConfigurationPath"/> that do not correspond to
+    /// any known <see cref="IAlbertoOverrides{TOptions}"/> property. Populated by
+    /// <see cref="ApplyConfiguration"/>; surfaced by <see cref="AlbertoModuleValidator"/> as
+    /// <c>ALB0008</c> failures at startup.
+    /// </summary>
+    public ImmutableArray<UnknownConfigurationKey> UnknownConfigurationKeys { get; internal set; } = [];
+
     /// <summary>The configuration path this module binds from.</summary>
     public string ConfigurationPath => $"Alberto:Modules:{ModuleKey}";
 
@@ -65,6 +73,9 @@ public sealed record AlbertoModuleDefinition
             };
         }).ToImmutableArray();
 
+        // Scan for unknown configuration keys and record them for ALB0008 validation.
+        var unknownKeys = AlbertoConfigurationScanner.Scan(section, definition.Backend);
+
         return definition with
         {
             ControlLoop = AlbertoOptionsOverlay.Overlay<ControlLoopOptions, ControlLoopOverrides>(
@@ -75,6 +86,7 @@ public sealed record AlbertoModuleDefinition
                 section, "Checkpoints", definition.Checkpoints),
             Backend = definition.Backend?.ApplyConfiguration(section),
             Processors = overlaidProcessors,
+            UnknownConfigurationKeys = unknownKeys,
         };
     }
 }
