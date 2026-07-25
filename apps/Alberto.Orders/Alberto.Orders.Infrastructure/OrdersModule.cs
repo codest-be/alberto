@@ -45,24 +45,27 @@ public static class OrdersModule
                     npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "orders"));
             })
             .WithTelemetry()
-            .AddProjection(OrdersOverviewProjection.Declaration, sp =>
+            .AddProjection(OrdersOverviewProjection.Declaration, ctx =>
             {
-                var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
+                var dataSource = ctx.Services.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
                 return () => new PostgresStateStore<OrdersOverview>(
                     dataSource,
                     nameof(OrdersOverviewProjection),
-                    "orders");
+                    "orders",
+                    rebuildVersion: ctx.RebuildVersion);
             })
             .AddEfProjection<OrderSummaryEntity, OrdersDbContext>(OrderSummaryEfProjection.Declaration)
             .WithControlLoop(loop => loop
                 .WithPollingInterval(TimeSpan.FromMilliseconds(100))
-                .WithBatchSize(500)));
+                .WithBatchSize(500)
+                .WithRebuilds()));
 
-        // Note on tenancy: the async control loop consumes every tenant's events through these
-        // singleton state stores, so the JSONB projection above is a cross-tenant aggregate and
-        // its rows carry no tenant_id. Query-side stores must be constructed the same way.
-        // Per-tenant read models go through the EF projection, which persists the tenant as a
-        // column that queries can filter on.
+        // Note on tenancy: the async control loop consumes every tenant's events through this
+        // singleton state store, so the JSONB projection above is written without a tenant and
+        // its rows carry no tenant_id. The query side currently reads it *with* one, which does
+        // not match — see "The JSONB read side asks for a tenant the write side never stored"
+        // in Known Gaps. Per-tenant read models go through the EF projection below, which
+        // persists the tenant as a column that queries can filter on.
 
         return services;
     }

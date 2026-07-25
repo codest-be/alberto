@@ -255,14 +255,14 @@ public sealed class PostgresEventListenerTests : IAsyncLifetime
 
     /// <summary>
     /// Appends <paramref name="count"/> test events in a single batch.
-    /// All events are in one <see cref="PostgresEventStore.AppendAsync"/> call so they
+    /// All events are in one <see cref="EventStore.AppendAsync"/> call so they
     /// are inserted in one SQL statement — verifying that the batch-notify trigger
     /// (SQL-3) fires only once.
     /// </summary>
     private async Task AppendEventsAsync(int count, CancellationToken ct)
     {
         var backend = new PostgresEventStoreBackend(_dataSource);
-        var store = new PostgresEventStore(backend);
+        var store = new EventStore(backend);
 
         // EventToPersist[] is assignable to IEnumerable<IEventToPersist> via covariance.
         var events = Enumerable.Range(0, count)

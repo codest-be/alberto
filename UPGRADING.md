@@ -1,16 +1,140 @@
 # Alberto DCB — Upgrade Notes
 
 This file collects **every breaking change** introduced across all release cycles.
-The most recent cycle (2026-07-24 library audit) is at the top. Older changes follow.
+The most recent cycle (projection rebuilds) is at the top. Older changes follow.
+
+---
+
+## Summary — projection rebuild cycle
+
+Zero-downtime projection rebuilds landed. Projection state is now versioned, which is a
+source-breaking change for anyone registering projections and a schema change for anyone
+using `AddEfProjection`.
+
+| Change | Area | Severity | What broke |
+|---|---|---|---|
+| RB-1 | Projections | **High** | `AddProjection` takes a `ProjectionStoreContext`, not an `IServiceProvider` |
+| RB-2 | EF projections | **High** | Projection entities need a `(DocumentId, RebuildVersion)` key — schema change |
+| RB-3 | Rebuilds | Medium | `IProjectionStateClearer.ClearAsync` → `ClearVersionAsync(int, ct)` |
+| RB-4 | CLI | Low | `alberto ops rebuild` is now a parent command with subcommands |
+
+### RB-1 — `AddProjection` hands you a context, not a provider
+
+```csharp
+// before
+.AddProjection(decl, sp =>
+{
+    var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
+    return () => new PostgresStateStore<OrdersOverview>(dataSource, "OrdersOverview", "orders");
+})
+
+// after
+.AddProjection(decl, ctx =>
+{
+    var dataSource = ctx.Services.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
+    return () => new PostgresStateStore<OrdersOverview>(
+        dataSource, "OrdersOverview", "orders", rebuildVersion: ctx.RebuildVersion);
+})
+```
+
+`ctx.Services` is the old parameter. `ctx.RebuildVersion` is a `Func<int>` the store resolves on
+every operation — pass it through rather than calling it once, because a promotion has to take
+effect underneath a store that is already running.
+
+Passing it is optional. A store that ignores it keeps working exactly as before; it just cannot
+be rebuilt without downtime. `AddProjection` also gained an optional `projectionType` parameter
+for projections whose state rows are keyed by something other than the processor id.
+
+**Why:** the same factory has to build both the live projection and the shadow copy a rebuild
+replays into. The only difference between them is which version they write to, so that is what
+the context carries.
+
+#### Stores built outside the module builder
+
+`ProjectionStoreContext` only exists inside an `AddProjection` factory. Code that constructs a
+state store elsewhere — a query handler, a GraphQL resolver — has no context to draw a version
+from, and a store left on the default pins itself to version 1 and keeps serving the *pre-rebuild*
+copy forever after a promotion.
+
+`ProjectionVersions.LiveVersion` is the reader-side entry point:
+
+```csharp
+new PostgresStateStore<OrdersOverview>(
+    dataSource,
+    projectionType: nameof(OrdersOverviewProjection),
+    schema: "orders",
+    rebuildVersion: ProjectionVersions.LiveVersion(sp, ModuleKey, nameof(OrdersOverviewProjection)));
+```
+
+It resolves to version 1 forever in a module with no rebuild pipeline, so it is safe to use
+unconditionally.
+
+### RB-2 — EF projection entities are keyed by `(DocumentId, RebuildVersion)`
+
+Configure every entity registered with `AddEfProjection` in `OnModelCreating`:
+
+```csharp
+protected override void OnModelCreating(ModelBuilder modelBuilder)
+{
+    modelBuilder.ProjectionEntity<OrderSummaryEntity>(entity =>
+    {
+        entity.ToTable("order_summaries");
+        entity.Property(e => e.CustomerName).HasMaxLength(200);
+    });
+}
+```
+
+This makes the key composite and defaults `RebuildVersion` to `1`, so existing rows read as
+version 1 and nothing moves. **Generate and apply an EF migration for it** — it is a primary-key
+change plus a new index.
+
+Anything that called `FindAsync` on a projection entity with one key value now needs two:
+
+```csharp
+await context.Counters.FindAsync([documentId, ProjectionVersions.Initial], ct);
+```
+
+**Why:** without the version in the key, the shadow rebuild's rows collide with the live rows on
+insert, and the rebuild silently overwrites the projection it was supposed to be shadowing.
+
+### RB-3 — `IProjectionStateClearer` clears one version
+
+`ClearAsync(ct)` is now `ClearVersionAsync(int rebuildVersion, ct)`. A rebuild cannot truncate
+the table: the other version is live and being read. Implementations must filter on the version.
+
+`EfProjectionStateClearer` is registered automatically by `AddEfProjection`; only hand-written
+implementations need changing.
+
+### RB-4 — `alberto ops rebuild` gained subcommands
+
+`alberto ops rebuild <processor>` used to reset the checkpoint and nothing else. It is now:
+
+```bash
+alberto ops rebuild start <processor> [--projection-type <type>] [--dry-run] [--yes]
+alberto ops rebuild status [processor]
+alberto ops rebuild promote <processor> [--force]
+alberto ops rebuild abort <processor>
+```
+
+The replay runs in the application, not in the CLI. A module must opt in with
+`.WithControlLoop(loop => loop.WithRebuilds())` or a started rebuild sits at `rebuilding` forever.
+
+### Also removed
+
+`BufferedCheckpointStore` is gone. It was `internal` and never constructed, so no consumer can be
+affected; `CachingCheckpointStore` is and always was the one in the pipeline.
 
 ---
 
 ## Summary — 2026-07-24 audit cycle
 
-Twelve breaking changes were introduced. They fall into five areas:
+Fifteen breaking changes were introduced. They fall into the areas below:
 
 | Finding | Area | Severity | What broke |
 |---------|------|----------|------------|
+| Architecture review | Event-store module | High | Backend-specific event-store types replaced by `EventStore` |
+| Architecture review | Projection state | High | Unreachable transaction/list members removed from projection interfaces |
+| Architecture review | Dependency lifetimes | High | `AlbertoStore` is scoped; outbox mappings get one scope per event |
 | DX-15 / P3.1 | Event-store interface | High | `IEventStoreBackend` method renames + `IEventStoreHeadBackend` split |
 | DX-10 | Event-store interface | Medium | `Register*` methods removed from `IEventStore` |
 | DX-2 / DX-3 / DX-12 | Command/result API | Medium | `DecisionResult<TEvent>` obsoleted; `DecideAndAppendAsync` moved; `AddAlbertoStore` chained from builder |
@@ -23,6 +147,63 @@ Twelve breaking changes were introduced. They fall into five areas:
 | P1.5 | Tenancy | Low | `TenantContext.SetTenant` now validates tenant ID format |
 | P0.7 | Consumer pipeline | Low | Inline-projection retry exhaustion wraps exception |
 | DX-11 | Event-store interface | Low | `[Tag]` no longer valid on bare primary-constructor parameters |
+
+---
+
+## Architecture deepening
+
+### Backend-specific event-store types replaced by `EventStore`
+
+`PostgresEventStore` and `InMemoryEventStore` contained the same append, synchronous-projection,
+and post-append orchestration. That behavior now lives once in `Alberto.Dcb.EventStore`; storage
+variation remains behind the existing `IEventStoreBackend` seam.
+
+```csharp
+// Before
+var store = new InMemoryEventStore(new InMemoryEventStoreBackend());
+var postgresStore = new PostgresEventStore(postgresBackend);
+
+// After
+var store = new EventStore(new InMemoryEventStoreBackend());
+var postgresStore = new EventStore(postgresBackend);
+```
+
+`EventStore` still implements both `IEventStore` and `IEventStoreConfigurator`.
+
+### Projection state interface narrowed
+
+`IStateStore<TState>.LoadManyAsync` and `ApplyChangesAsync` no longer accept an
+`IDbTransaction`. No reachable event-store path supplied one: synchronous projections run after
+the event append commits, and every built-in caller passed `null`. Each state-store adapter now
+owns the transaction needed to apply its changes atomically.
+
+`IStateStore<TState>.ListRecentAsync` was also removed. Projection persistence never called it;
+inspection belongs on a query/admin surface instead of forcing every persistence adapter and
+test fake to implement it.
+
+`IInlineProjection.ProcessAsync` consequently no longer accepts an `IDbTransaction`.
+
+```csharp
+// Before
+await stateStore.LoadManyAsync(ids, transaction, ct);
+await stateStore.ApplyChangesAsync(upserts, deletes, transaction, ct);
+await projection.ProcessAsync(events, transaction, ct);
+
+// After
+await stateStore.LoadManyAsync(ids, ct);
+await stateStore.ApplyChangesAsync(upserts, deletes, ct);
+await projection.ProcessAsync(events, ct);
+```
+
+### Scoped command and outbox dependencies
+
+`AddAlbertoStore` now registers `AlbertoStore` as scoped. This matches the scoped event-store
+adapter used by multi-tenant Postgres modules and prevents a singleton command store from
+capturing the first tenant context.
+
+Outbox mappings now receive a fresh dependency scope per event. Scoped mapper dependencies are
+disposed after mapping, including when mapping fails; concurrent batch mappings never share a
+scoped dependency.
 
 ---
 
@@ -144,11 +325,6 @@ catch (InlineProjectionExhaustedException ex)
     // All 5 retries exhausted: ex.ProcessorId, ex.Attempts, ex.DocumentCount available.
     // Schedule an async replay for the affected projection.
     logger.LogCritical("Projection {Id} diverged — replay required", ex.ProcessorId);
-}
-catch (DbUpdateConcurrencyException ex)
-{
-    // Single-attempt failure not covered by the retry path
-    // (e.g., external-transaction mode where ownsTransaction == false).
 }
 ```
 
@@ -463,9 +639,9 @@ directly is affected.
 - `RegisterInlineProjection(IInlineProjection)`
 - `RegisterPostAppendHandler(IPostAppendHandler)`
 
-They now live on a new `IEventStoreConfigurator` interface (in `Alberto.Dcb`). The concrete
-store classes (`PostgresEventStore`, `InMemoryEventStore`) implement **both** `IEventStore` and
-`IEventStoreConfigurator`. `RegisterEfInlineProjection` extension methods in
+They now live on a new `IEventStoreConfigurator` interface (in `Alberto.Dcb`).
+`EventStore` implements **both** `IEventStore` and `IEventStoreConfigurator`.
+`RegisterEfInlineProjection` extension methods in
 `Alberto.Dcb.EntityFramework` now extend `IEventStoreConfigurator` rather than `IEventStore`.
 
 **Why:** `IEventStore` is the runtime consumer surface. Exposing setup-only methods on it lets
@@ -473,8 +649,7 @@ runtime code accidentally register projections or handlers after the store has a
 serving requests, leading to unpredictable ordering or missed events.
 
 **Impact:** breaking for code that calls `Register*` through a variable typed as `IEventStore`,
-or that implements `IEventStore` in a custom class with those methods. Code that calls them on
-concrete types directly (e.g. in tests with `new InMemoryEventStore(...)`) is **not affected**.
+or that implements `IEventStore` in a custom class with those methods.
 
 **Migration — calling `Register*` through `IEventStore`:**
 
@@ -492,7 +667,7 @@ if (store is IEventStoreConfigurator configurator)
 }
 
 // After — option B (resolve IEventStoreConfigurator directly)
-IEventStoreConfigurator configurator = new PostgresEventStore(backend);
+IEventStoreConfigurator configurator = new EventStore(backend);
 configurator.RegisterInlineProjection(myProjection);
 ```
 

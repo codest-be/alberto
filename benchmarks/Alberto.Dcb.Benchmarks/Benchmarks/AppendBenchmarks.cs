@@ -14,7 +14,7 @@ namespace Alberto.Dcb.Benchmarks.Benchmarks;
 ///   PERF-7  — JsonDocument lease that leaks an ArrayPool rental per append
 ///   PERF-4  — EventTag construction runs a validation regex; FromStorage skips it
 ///
-/// The "40–50x DB write reduction" claim in the docs refers to BufferedCheckpointStore
+/// The "40–50x DB write reduction" claim in the docs refers to CachingCheckpointStore
 /// coalescing checkpoint writes — see <see cref="CheckpointBenchmarks"/> for that path.
 ///
 /// Setup note

@@ -1,5 +1,6 @@
 using Alberto.Dcb;
 using Alberto.Dcb.Postgres;
+using Alberto.Dcb.Subscriptions;
 using Alberto.Orders.Api.GraphQL.Types;
 using Alberto.Orders.Core.Order;
 using Alberto.Orders.Infrastructure;
@@ -44,18 +45,23 @@ public static class OrderQueries
     /// Gets the orders overview statistics from the async projection.
     /// </summary>
     [Query]
-    [GraphQLDescription("Gets aggregated order statistics from the async projection. Spans all tenants.")]
+    [GraphQLDescription("Gets aggregated order statistics from the async projection.")]
     public static async Task<OrdersOverview?> GetOrdersOverview(
+        IResolverContext context,
         [Service] IServiceProvider sp,
         CancellationToken ct)
     {
-        // Constructed exactly like the writer in OrdersModule: no tenant. The async projection
-        // runs across tenants through one singleton store, so its rows live under the
-        // single-tenant primary key. Passing a tenant here would query (tenant_id, ...) instead
-        // and always come back empty. See OrdersOverviewProjection for why.
+        var tenantId = GetTenantId(context);
         var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(OrdersModule.ModuleKey);
+        // Named arguments, and LiveVersion rather than the default: a read side that pins its
+        // rebuild version keeps serving the old copy after a rebuild is promoted.
         var stateStore = new PostgresStateStore<OrdersOverview>(
-            dataSource, nameof(OrdersOverviewProjection), "orders");
+            dataSource,
+            projectionType: nameof(OrdersOverviewProjection),
+            schema: "orders",
+            rebuildVersion: ProjectionVersions.LiveVersion(
+                sp, OrdersModule.ModuleKey, nameof(OrdersOverviewProjection)),
+            tenantId: tenantId);
 
         var states = await stateStore.LoadManyAsync(
             [OrdersOverviewProjection.DocumentId],

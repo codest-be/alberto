@@ -44,16 +44,14 @@ public static class EfConsumerBuilderExtensions
             return builder;
         }
 
-        builder.Services.AddKeyedSingleton<IEventProcessor>(builder.ModuleKey, (sp, _) =>
+        builder.Services.AddKeyedSingleton<IEventProcessor>(builder.ModuleKey, (sp, key) =>
         {
             var contextFactory = sp.GetRequiredService<IDbContextFactory<TDbContext>>();
+            var version = ProjectionVersions.LiveVersion(sp, key, declaration.ProcessorId);
             return new DeclaredAsyncProjection<TEntity>(declaration,
-                () => new EfStateStore<TEntity, TDbContext>(contextFactory));
+                () => new EfStateStore<TEntity, TDbContext>(contextFactory, version));
         });
-        builder.Services.AddKeyedSingleton<IProjectionStateClearer>(builder.ModuleKey, (sp, _) =>
-            new EfProjectionStateClearer<TEntity, TDbContext>(
-                sp.GetRequiredService<IDbContextFactory<TDbContext>>(),
-                declaration.ProcessorId));
+        RegisterRebuildSupport<TEntity, TDbContext>(builder, declaration);
         return builder;
     }
 
@@ -73,17 +71,46 @@ public static class EfConsumerBuilderExtensions
         ArgumentNullException.ThrowIfNull(declaration);
         ArgumentNullException.ThrowIfNull(afterCommit);
 
-        builder.Services.AddKeyedSingleton<IEventProcessor>(builder.ModuleKey, (sp, _) =>
+        builder.Services.AddKeyedSingleton<IEventProcessor>(builder.ModuleKey, (sp, key) =>
         {
             var contextFactory = sp.GetRequiredService<IDbContextFactory<TDbContext>>();
+            var version = ProjectionVersions.LiveVersion(sp, key, declaration.ProcessorId);
             return new DeclaredAsyncProjection<TEntity>(declaration,
-                () => new EfStateStore<TEntity, TDbContext>(contextFactory),
+                () => new EfStateStore<TEntity, TDbContext>(contextFactory, version),
                 afterCommit: afterCommit(sp));
         });
+        RegisterRebuildSupport<TEntity, TDbContext>(builder, declaration);
+        return builder;
+    }
+
+    /// <summary>
+    /// Registers what a rebuild needs on top of the live processor: a way to stand a second
+    /// copy of the projection up against a different version, and a way to delete a version
+    /// once it is no longer reachable.
+    /// </summary>
+    /// <remarks>
+    /// EF projections live in the consumer's own tables, which the promotion transaction cannot
+    /// reach — hence the clearer. The projection type is the processor id because
+    /// <see cref="EfStateStore{TEntity,TDbContext}"/> stores nothing in
+    /// <c>alberto_projection_states</c> at all.
+    /// </remarks>
+    private static void RegisterRebuildSupport<TEntity, TDbContext>(
+        DcbModuleBuilder builder, ProjectionDeclaration<TEntity> declaration)
+        where TEntity : class, IProjectionEntity, new()
+        where TDbContext : DbContext
+    {
         builder.Services.AddKeyedSingleton<IProjectionStateClearer>(builder.ModuleKey, (sp, _) =>
             new EfProjectionStateClearer<TEntity, TDbContext>(
                 sp.GetRequiredService<IDbContextFactory<TDbContext>>(),
                 declaration.ProcessorId));
-        return builder;
+
+        builder.Services.AddKeyedSingleton(builder.ModuleKey, (sp, _) =>
+            new RebuildableProjection(
+                declaration.ProcessorId,
+                declaration.ProcessorId,
+                version => new DeclaredAsyncProjection<TEntity>(
+                    declaration,
+                    () => new EfStateStore<TEntity, TDbContext>(
+                        sp.GetRequiredService<IDbContextFactory<TDbContext>>(), version))));
     }
 }
