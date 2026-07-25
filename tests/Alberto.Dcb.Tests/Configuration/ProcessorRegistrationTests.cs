@@ -11,7 +11,10 @@ using Xunit;
 // the simple type name without a declaring-class prefix.
 namespace Alberto.Dcb.Tests.Configuration;
 
+[EventType("shipment-dispatched")]
 internal sealed record ShipmentDispatched(string Id) : IEvent;
+
+internal sealed class ShipmentSummary { }
 
 internal sealed class ShipmentNotifier
 {
@@ -124,5 +127,22 @@ public class ProcessorRegistrationTests
 
         Resolve(services).Processors.Should().ContainSingle()
             .Which.HandlerType.Should().BeNull();
+    }
+
+    [Fact]
+    public void AddProjection_declares_a_projection_processor()
+    {
+        var declaration = DeclareProjection.For<ShipmentSummary>("shipment-summary")
+            .On<ShipmentDispatched>(id: e => e.Id, apply: (state, _, _) => state)
+            .Build();
+
+        var services = Module(m => m.AddProjection<ShipmentSummary>(
+            declaration,
+            stateStoreFactory: _ => throw new InvalidOperationException("not needed by this test")));
+
+        var processor = Resolve(services).Processors.Should().ContainSingle()
+            .Which;
+        processor.ProcessorId.Should().Be("shipment-summary");
+        processor.Kind.Should().Be(ProcessorKind.Projection);
     }
 }
