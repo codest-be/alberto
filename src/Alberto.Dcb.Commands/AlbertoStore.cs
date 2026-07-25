@@ -1,8 +1,37 @@
 namespace Alberto.Dcb;
 
-public sealed class AlbertoStore(IEventStore eventStore, EventSerializer serializer)
+/// <summary>
+/// The command-side entry point: starts a pipeline, folds boundary events into state,
+/// and appends the resulting events under that boundary.
+/// </summary>
+/// <param name="eventStore">The backing event store for this module.</param>
+/// <param name="serializer">Serializes events and extracts their tags.</param>
+/// <param name="services">
+/// Optional. When present, <c>Load&lt;TState&gt;(boundary)</c> can resolve the
+/// <see cref="Evolver{TState}"/> from DI instead of taking one as an argument.
+/// </param>
+public sealed class AlbertoStore(
+    IEventStore eventStore,
+    EventSerializer serializer,
+    IServiceProvider? services = null)
 {
     public CommandPipeline<TCommand> Handle<TCommand>(TCommand command) => new(this, command);
+
+    internal Evolver<TState> ResolveEvolver<TState>()
+        where TState : new()
+    {
+        if (services is null)
+            throw new InvalidOperationException(
+                $"Load<{typeof(TState).Name}>(boundary) resolves Evolver<{typeof(TState).Name}> from DI, " +
+                "but this AlbertoStore was constructed without a service provider. " +
+                "Resolve the store from DI, or pass the evolver explicitly: Load(boundary, evolver).");
+
+        return services.GetService(typeof(Evolver<TState>)) as Evolver<TState>
+               ?? throw new InvalidOperationException(
+                   $"No Evolver<{typeof(TState).Name}> is registered. " +
+                   $"Register one — services.AddSingleton<Evolver<{typeof(TState).Name}>, YourEvolver>() — " +
+                   "or pass it explicitly: Load(boundary, evolver).");
+    }
 
     internal async Task<Result> Persist(
         Decision decision,
@@ -38,6 +67,30 @@ public sealed class AlbertoStore(IEventStore eventStore, EventSerializer seriali
     {
         var result = await FoldWithPosition(query, initial, apply, cancellationToken);
         return result.State;
+    }
+
+    /// <summary>
+    /// Reconstitutes state from the boundary using an <see cref="Evolver{TState}"/>,
+    /// returning the position the boundary was read at.
+    /// </summary>
+    public async Task<(TState State, long LastPosition)> ReconstituteWithPosition<TState>(
+        DcbQuery query,
+        Evolver<TState> evolver,
+        CancellationToken cancellationToken)
+        where TState : new()
+    {
+        ArgumentNullException.ThrowIfNull(evolver);
+
+        var envelopes = await eventStore.StreamAsync(query, cancellationToken: cancellationToken);
+
+        var lastPosition = 0L;
+        foreach (var envelope in envelopes)
+        {
+            if (envelope.GlobalPosition > lastPosition)
+                lastPosition = envelope.GlobalPosition;
+        }
+
+        return (evolver.Reconstitute(envelopes), lastPosition);
     }
 
     public async Task<(TState State, long LastPosition)> FoldWithPosition<TState>(

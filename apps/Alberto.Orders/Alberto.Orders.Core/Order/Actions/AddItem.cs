@@ -16,7 +16,7 @@ public sealed partial class OrderDecider
     /// <summary>
     /// Adds an item to the order.
     /// </summary>
-    public static DecisionResult<IEvent> AddItem(
+    public static Decision AddItem(
         IAddItemState state,
         Guid productId,
         string productName,
@@ -24,18 +24,18 @@ public sealed partial class OrderDecider
         decimal unitPrice)
     {
         if (!state.Exists)
-            return DecisionResult<IEvent>.Failure("Order does not exist");
+            return Decision.Fail(OrderProblems.NotFound());
 
         if (!state.CanBeModified)
-            return DecisionResult<IEvent>.Failure($"Order cannot be modified in {state.Status} status");
+            return Decision.Fail(OrderProblems.InvalidStatus("modified", state.Status));
 
         if (quantity <= 0)
-            return DecisionResult<IEvent>.Failure("Quantity must be greater than zero");
+            return Decision.Fail(OrderProblems.InvalidQuantity());
 
         if (unitPrice < 0)
-            return DecisionResult<IEvent>.Failure("Unit price cannot be negative");
+            return Decision.Fail(OrderProblems.InvalidUnitPrice());
 
-        return DecisionResult<IEvent>.Success(new OrderItemAdded(state.OrderId, productId, productName, quantity, unitPrice));
+        return Decision.Succeed(new OrderItemAdded(state.OrderId, productId, productName, quantity, unitPrice));
     }
 
     public OrderState Apply(OrderState state, OrderItemAdded e) => state with

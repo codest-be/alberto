@@ -7,8 +7,8 @@ namespace Alberto.Payments.Core.Events;
 /// </summary>
 [EventType("payment-initiated")]
 public sealed record PaymentInitiated(
-    Guid PaymentId,
-    Guid OrderId,
+    [property: Tag(Tags.Payment)] Guid PaymentId,
+    [property: Tag(Tags.Order)] Guid OrderId,
     decimal Amount,
     string Currency,
     string PaymentMethod) : IEvent;
@@ -18,7 +18,7 @@ public sealed record PaymentInitiated(
 /// </summary>
 [EventType("payment-authorized")]
 public sealed record PaymentAuthorized(
-    Guid PaymentId,
+    [property: Tag(Tags.Payment)] Guid PaymentId,
     string AuthorizationCode,
     DateTimeOffset AuthorizedAt) : IEvent;
 
@@ -27,7 +27,7 @@ public sealed record PaymentAuthorized(
 /// </summary>
 [EventType("payment-captured")]
 public sealed record PaymentCaptured(
-    Guid PaymentId,
+    [property: Tag(Tags.Payment)] Guid PaymentId,
     decimal CapturedAmount,
     DateTimeOffset CapturedAt) : IEvent;
 
@@ -36,7 +36,7 @@ public sealed record PaymentCaptured(
 /// </summary>
 [EventType("payment-failed")]
 public sealed record PaymentFailed(
-    Guid PaymentId,
+    [property: Tag(Tags.Payment)] Guid PaymentId,
     string ErrorCode,
     string ErrorMessage) : IEvent;
 
@@ -45,7 +45,7 @@ public sealed record PaymentFailed(
 /// </summary>
 [EventType("payment-refunded")]
 public sealed record PaymentRefunded(
-    Guid PaymentId,
+    [property: Tag(Tags.Payment)] Guid PaymentId,
     decimal RefundedAmount,
     string Reason,
     DateTimeOffset RefundedAt) : IEvent;

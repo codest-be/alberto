@@ -9,6 +9,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Alberto.Payments.Core\Alberto.Payments.Core.csproj" />
     <ProjectReference Include="..\..\..\src\Alberto.Dcb.Postgres\Alberto.Dcb.Postgres.csproj" />
+    <ProjectReference Include="..\..\..\src\Alberto.Dcb.Commands\Alberto.Dcb.Commands.csproj" />
     <ProjectReference Include="..\..\..\src\Alberto.Dcb.Telemetry\Alberto.Dcb.Telemetry.csproj" />
   </ItemGroup>
 

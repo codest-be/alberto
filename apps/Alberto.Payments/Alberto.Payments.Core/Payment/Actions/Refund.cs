@@ -17,23 +17,23 @@ public sealed partial class PaymentDecider
     /// <summary>
     /// Refunds a payment.
     /// </summary>
-    public static DecisionResult<IEvent> Refund(
+    public static Decision Refund(
         IRefundPaymentState state,
         decimal refundedAmount,
         string reason,
         DateTimeOffset refundedAt)
     {
         if (!state.Exists)
-            return DecisionResult<IEvent>.Failure("Payment does not exist");
+            return Decision.Fail(PaymentProblems.NotFound());
 
         if (!state.CanBeRefunded)
-            return DecisionResult<IEvent>.Failure($"Payment cannot be refunded in {state.Status} status");
+            return Decision.Fail(PaymentProblems.InvalidStatus("refunded", state.Status));
 
         var maxRefundable = state.CapturedAmount ?? 0;
         if (refundedAmount <= 0 || refundedAmount > maxRefundable)
-            return DecisionResult<IEvent>.Failure($"Refund amount must be between 0 and {maxRefundable}");
+            return Decision.Fail(PaymentProblems.AmountOutOfRange("Refund", maxRefundable));
 
-        return DecisionResult<IEvent>.Success(new PaymentRefunded(state.PaymentId, refundedAmount, reason ?? "", refundedAt));
+        return Decision.Succeed(new PaymentRefunded(state.PaymentId, refundedAmount, reason ?? "", refundedAt));
     }
 
     public PaymentState Apply(PaymentState state, PaymentRefunded e) => state with

@@ -1,7 +1,294 @@
 # Alberto DCB — Upgrade Notes
 
 This file collects **every breaking change** introduced across all release cycles.
-The most recent cycle (projection rebuilds) is at the top. Older changes follow.
+The most recent cycle is at the top. Older changes follow.
+
+---
+
+## The command pipeline is reshaped; `Persist` is now `Commit`
+
+The fluent pipeline in `Alberto.Dcb.Commands` was rebuilt around one idea: **the boundary should
+decide which terminal you get.** Previously every pipeline exposed `Persist(query, position, ct)`,
+`PersistUnconditionally(ct)` and a `Persist(ct)` that threw at runtime when no boundary had been
+established. Now the type you are holding tells you which of those is legal.
+
+| Change | Severity | What broke |
+|---|---|---|
+| P-1 | **High** | `Persist` renamed to `Commit`; `PersistUnconditionally` to `CommitUnconditionally` |
+| P-2 | **High** | `NoValidation()` removed — validation was always optional |
+| P-3 | **High** | `WithEventsFrom` registers `AlbertoStore` **keyed** by module key |
+| P-4 | Medium | `Decide` is synchronous; use the new `Enrich` stage for async work before the boundary |
+| P-5 | Medium | The three-lambda `Load(loader, querySelector, positionSelector)` is replaced by `LoadUnder` |
+
+### P-1 / P-2 — the pipeline shape
+
+```csharp
+// before
+await store.Handle(command)
+    .NoValidation()
+    .Load(boundary, initial, apply)
+    .Decide((cmd, state) => …)
+    .Persist(ct);
+
+// after
+await store.Handle(command)
+    .Load(boundary, initial, apply)
+    .Decide((cmd, state) => …)
+    .Commit(ct);
+```
+
+`Validate` is now genuinely optional — drop `NoValidation()` and nothing replaces it. It is also
+chainable, and short-circuits on the first failure without reading the log.
+
+`Load` returns a **bound** pipeline, and only a bound pipeline has `Commit(ct)`. Skipping `Load`,
+or using the new `LoadUnbound` for state that does not come from the log, gives you an **unbound**
+pipeline whose terminals are `Commit(query, expectedPosition, ct)` and `CommitUnconditionally(ct)`.
+The runtime "no boundary was observed" exception is gone because that state is now unrepresentable.
+
+Two terminals are new. `TryCommit` returns a failed `Result` carrying a `dcb.conflict` problem
+instead of throwing `DcbConflictException`. `RetryOnConflict(n)` bounds the total attempts,
+re-running `Load` and `Decide` against the current log on each one — stages before `Load` are
+memoized and run exactly once.
+
+### P-3 — `AlbertoStore` is keyed
+
+```csharp
+// before
+var store = sp.GetRequiredService<AlbertoStore>();
+
+// after
+var store = sp.GetRequiredKeyedService<AlbertoStore>("orders");
+```
+
+`IEventStore` was already keyed by module key. `AlbertoStore` was not, so a host registering two
+modules got one store — whichever registered last — wrapping the wrong log. `WithEventsFrom` now
+registers it with `AddKeyedScoped` under the same key, so each module gets its own.
+
+The store is also handed the service provider, so `Load<TState>(boundary)` can resolve
+`Evolver<TState>` from DI instead of taking one as an argument. Constructing an `AlbertoStore`
+yourself still works; that overload then throws with a message telling you to pass the evolver
+explicitly.
+
+### P-4 — `Decide` is synchronous, `Enrich` is where async goes
+
+`Decide` used to accept an async delegate, which put arbitrary I/O *inside* the window between
+reading the boundary and appending under it — the one place where latency turns directly into
+conflicts. It is now synchronous.
+
+Work that needs to be awaited moves to `Enrich`, which runs before `Load`:
+
+```csharp
+await store.Handle(command)
+    .Enrich(async (cmd, ct) => cmd with { Rate = await rates.GetAsync(cmd.Currency, ct) })
+    .Load(cmd => Boundary(cmd.OrderId), evolver)
+    .Decide((cmd, state) => Actions.Convert(state, cmd.Rate))
+    .RetryOnConflict(3)
+    .Commit(ct);
+```
+
+`Enrich` may change the command's type, and it runs once even when `RetryOnConflict` re-reads.
+
+### P-5 — a custom loader now reports its boundary through `LoadUnder`
+
+The old three-lambda overload let an async loader declare the boundary it had observed:
+
+```csharp
+// before
+.Load(cmd => LoadAsync(store, cmd, ct), loaded => loaded.Query, loaded => loaded.Position)
+.Decide((cmd, loaded) => Decide(loaded.State, …))
+.Persist(ct);
+```
+
+That shape does not survive the bound/unbound split — the unbound terminal's arguments are
+evaluated *before* the deferred chain runs, so a loader cannot supply them. `LoadUnder` restores
+the capability with the type-state guarantee intact: the loader returns its state, its boundary
+and the position it read at, and the pipeline it produces is **bound**, so `Commit(ct)` checks
+against exactly that.
+
+```csharp
+// after
+.LoadUnder(async (cmd, ct) =>
+{
+    var boundary = BuildBoundary(cmd);
+    var (state, position) = await store.FoldWithPosition(boundary, State.Initial, Apply, ct);
+    return (state, boundary, position);
+})
+.Decide((cmd, state) => Decide(state, …))
+.Commit(ct);
+```
+
+Most call sites do not need it. If the boundary is merely *derived from the command*, prefer
+`Load(cmd => boundary, initial, apply)`, and put any async work in `Enrich` so it lands before the
+window opens — that combination is both shorter and strictly safer, since the I/O then sits outside
+the read-to-append gap. `LoadUnder` is for the case those cannot express: a boundary that is only
+discoverable **during** the load, such as folding one query to find an id and then folding a second
+keyed by it.
+
+---
+
+## Deprecated projection and decision APIs removed
+
+**Breaking.** Every type that carried `[Obsolete]` has been deleted, along with the reflection-based
+projection stack that only those types reached. Nothing here had a runtime replacement pending — the
+blessed spelling has shipped for a full cycle in each case, so calls now fail to compile rather than
+warn.
+
+| Removed | Replacement |
+|---|---|
+| `DecisionResult<TEvent>` (and `.Ok` / `.Fail` / `Success()` / `Failure()` / `EnsureSuccess()`) | `Decision` / `Decision<T>` + `Problem` |
+| `Projection<TState>` base class | `DeclareProjection.For<TState>(...)` → `ProjectionDeclaration<TState>` |
+| `IProject<TState, TEvent>` | `.On<TEvent>(id:, apply:)` on the declaration builder |
+| `ProjectionDispatcher<TState>` | (internal) delegate dispatch inside `ProjectionDeclaration<TState>` |
+| `AsyncProjection<TState, TProjection>` | (internal) `DeclaredAsyncProjection<TState>` |
+| `InlineProjection<TState, TProjection>` | (internal) — see *inline projections* below |
+| `EfInlineProjection<TEntity, TProjection, TDbContext>` | (internal) `DeclaredEfInlineProjection<TEntity, TDbContext>` |
+| `RegisterEfInlineProjection<TEntity, TProjection, TDbContext>(...)` | `AddEfProjection<TEntity, TDbContext>(declaration, ProjectionMode.Inline)` |
+| `IEventStoreConfigurator.RegisterInlineProjection<TState, TProjection>(IStateStore<TState>)` | `RegisterInlineProjection(IInlineProjection)` |
+| `EventConsumerExtensions.RegisterProjection<TState, TProjection>(...)` | `AddProjection<TState>(declaration, stateStoreFactory)` on the module builder |
+| `IEventConsumer` and `EventConsumerExtensions` (incl. `RegisterReactor<TReactor>`) | `ReactTo<TEvent>(...)` / `ReactTo<TEvent, THandler>(...)` on the module builder |
+
+### Event consumers
+
+`IEventConsumer` had no implementation anywhere in the library — it described a processor-routing seam
+that `ControlLoop` ended up filling with a different shape. Its only extension methods were the two
+`Register*` calls above, so an application could not reach it without writing the consumer itself.
+
+Reactors are registered on the module builder, which resolves the handler from DI and needs no
+interface on the reactor type:
+
+```csharp
+// Before — required an IEventConsumer implementation that the library never shipped
+consumer.RegisterReactor(new NotificationReactor(...));   // reactor implements IReact<TEvent>
+
+// After
+services.AddAlberto("orders", builder => builder
+    .ReactTo<OrderConfirmed, NotificationReactor>(h => h.OnOrderConfirmed)
+);
+```
+
+`IReact<TEvent>`, `AsyncReactor<TReactor>` and `ReactorDispatcher` — the reflection-dispatched reactor
+path that `RegisterReactor` built — are still present but are no longer reachable from any registration
+API. `ReactTo` uses `FunctionalReactor<TEvent>` / `SyncReactor<TEvent>` and binds the handler method
+explicitly rather than scanning for `IReact<TEvent>` interfaces.
+
+### Decisions
+
+`Problem.Create(code, message)` takes a kebab-case code alongside the message, so failures carry a
+stable identifier instead of only prose:
+
+```csharp
+// Before
+public static DecisionResult<IEvent> Create(...)
+{
+    if (alreadyExists) return DecisionResult<IEvent>.Failure("Order already exists");
+    return DecisionResult<IEvent>.Success(new OrderCreated(...));
+}
+
+// After
+public static Decision Create(...)
+{
+    if (alreadyExists) return Problem.Create("order-already-exists", "Order already exists");
+    return Decision.Succeed(new OrderCreated(...));
+}
+```
+
+`Decision` lives in `Alberto.Dcb.Commands` (namespace `Alberto.Dcb`), so a project that previously
+only referenced `Alberto.Dcb` for `DecisionResult<TEvent>` needs a reference to
+`Alberto.Dcb.Commands` as well. The two example `Core` projects gained exactly that.
+
+`EnsureSuccess()` has no replacement: `Decision` exposes `IsError` / `Problems`, and the caller
+decides how a failure surfaces (an exception, a GraphQL error, an HTTP problem detail) rather than
+having `InvalidOperationException` chosen for it.
+
+### Projections
+
+Projections are declared rather than inherited. The old base class discovered handlers by scanning
+`IProject<,>` interfaces at construction time; the declaration binds the document-ID selector and
+the fold together per event type, with no reflection at runtime:
+
+```csharp
+// Before
+public class OrderSummaryProjection : Projection<OrderSummary>,
+    IProject<OrderSummary, OrderPlaced>
+{
+    public string GetDocumentId(OrderPlaced e) => e.OrderId.ToString();
+    public ProjectionResult<OrderSummary> Apply(OrderSummary state, OrderPlaced e, ProjectionContext ctx)
+        => state with { Total = e.Total };
+}
+
+// After
+public static readonly ProjectionDeclaration<OrderSummary> Declaration =
+    DeclareProjection.For<OrderSummary>("order-summary")
+        .On<OrderPlaced>(
+            id: e => e.OrderId.ToString(),
+            apply: (state, e, ctx) => state with { Total = e.Total })
+        .Build();
+```
+
+`ProjectionResult<TState>`, `ProjectionResults`, `ProjectionContext`, `IStateStore<TState>` and
+`IInlineProjection` are unchanged — only the way handlers are declared changed.
+
+One behavioural difference worth knowing: `Projection<TState>.Apply` returned `Unchanged` for an
+event it did not handle, while `ProjectionDeclaration<TState>.Apply` throws for an unregistered
+event type. Processors filter on `HandledEventTypes` before dispatching, so reaching `Apply` with an
+undeclared event is a wiring bug rather than something to swallow.
+
+### Inline projections
+
+`Projection<TState>` was the only way to run a **non-EF** inline projection: `InlineProjection<,>`
+wrapped it, and `RegisterInlineProjection<TState, TProjection>(IStateStore<TState>)` was the only
+entry point. Neither has a declaration-based equivalent — `AddProjection<TState>` wires the async
+path only — so the non-EF inline path is gone with them.
+
+Two replacements, depending on what the inline write is for:
+
+- **EF entities:** `AddEfProjection<TEntity, TDbContext>(declaration, ProjectionMode.Inline)`, which
+  enlists in the appending `DbContext` transaction.
+- **Anything else:** implement `IInlineProjection` directly and register it with
+  `configurator.RegisterInlineProjection(projection)`. The interface is two members
+  (`HandledEventTypes` and `ProcessAsync`) and remains public for exactly this.
+
+---
+
+## `AddAlbertoStore` removed — use `WithEventsFrom`
+
+**Breaking.** `AddAlbertoStore` is gone in both forms. There is no deprecation window: the name no
+longer exists, so calls fail to compile rather than warn.
+
+| Removed | Replacement |
+|---|---|
+| `builder.AddAlbertoStore(assembly)` | `builder.WithEventsFrom(assembly)` |
+| `services.AddAlbertoStore(moduleKey, assembly)` | `builder.WithEventsFrom(assembly)` inside the `AddAlberto` callback |
+
+`services.AddAlberto(...)` and `builder.AddAlbertoStore(...)` read as two halves of one bootstrap
+step, as if the first call left the module half-configured. They were not. `AddAlberto` builds the
+module; `AddAlbertoStore` came from the separate, optional `Alberto.Dcb.Commands` package and did
+one thing — declare where the module's `[EventType]` records live, and register the `AlbertoStore`
+command pipeline over them. That is module configuration, so it now reads like the other
+one-per-module settings (`WithPostgres`, `WithControlLoop`, `WithTenancy`) rather than like a
+second registration step. `Add*` stays reserved for the N-of-a-kind calls (`AddProjection`,
+`AddReactor`).
+
+```csharp
+// Before
+services.AddAlberto("orders", builder => builder
+    .WithPostgres(...)
+    .AddAlbertoStore(typeof(OrderCreated).Assembly));
+
+// After
+services.AddAlberto("orders", builder => builder
+    .WithPostgres(...)
+    .WithEventsFrom(typeof(OrderCreated).Assembly));
+```
+
+The standalone `services.AddAlbertoStore(moduleKey, assembly)` overload — `[Obsolete]` since the
+2026-07-24 audit cycle — is removed in the same change rather than left behind as the only
+surviving spelling of a name this cycle retires.
+
+The containing class was renamed to match what it now extends:
+`AlbertoStoreServiceCollectionExtensions` → `AlbertoStoreBuilderExtensions`
+(`ServiceCollectionExtensions.cs` → `AlbertoStoreBuilderExtensions.cs`). This only affects code
+that called the method non-extension style; ordinary `.WithEventsFrom(...)` chaining is unaffected.
 
 ---
 
@@ -831,6 +1118,11 @@ directly is affected.
 
 ### DX-10 — `Register*` methods removed from `IEventStore`; use `IEventStoreConfigurator`
 
+> **Partly superseded.** `RegisterInlineProjection<TState, TProjection>` and
+> `RegisterEfInlineProjection` have since been **removed** rather than moved. See
+> *Deprecated projection and decision APIs removed* at the top of this file. The move of
+> `RegisterInlineProjection(IInlineProjection)` and `RegisterPostAppendHandler` still applies.
+
 **What changed:** three setup-time methods have been removed from `IEventStore`:
 - `RegisterInlineProjection<TState, TProjection>(IStateStore<TState>)`
 - `RegisterInlineProjection(IInlineProjection)`
@@ -942,6 +1234,9 @@ and the standalone `AddAlbertoStore` call was disconnected from the `AddAlberto`
 
 #### 1. Single blessed decide-result type: `Decision` / `Decision<T>`
 
+> **Superseded.** `DecisionResult<TEvent>` has since been **removed**. See *Deprecated projection
+> and decision APIs removed* at the top of this file.
+
 `DecisionResult<TEvent>` is now `[Obsolete]` and will be removed in a future version.
 
 | Before | After |
@@ -1007,6 +1302,10 @@ var result = await eventStore.DecideAndAppendAsync<OrderState>(
 ```
 
 #### 3. `AddAlbertoStore` chains from the builder
+
+> **Superseded.** `AddAlbertoStore` has since been removed entirely. If you are migrating from
+> before this cycle, skip straight to `WithEventsFrom` — see the section at the top of this file.
+> The rest of this block is kept as a record of what this cycle changed.
 
 The standalone overload `services.AddAlbertoStore(moduleKey, assembly)` is now `[Obsolete]`.
 
@@ -1167,12 +1466,21 @@ No manual steps required — `PostgresMigrator.Migrate()` handles them.
 
 ---
 
-## Deprecations (still work, emit compiler warnings)
+## ~~Deprecations (still work, emit compiler warnings)~~
 
-### Old projection API → `DeclareProjection`
+**Nothing in this section still compiles.** Every entry below has since been removed; each links to
+the section that records the removal. Kept for the migration paths, not as a statement of what the
+current API accepts.
+
+### ~~Old projection API → `DeclareProjection`~~
+
+Removed — see *Deprecated projection and decision APIs removed* at the top of this file for the
+current shape of `DeclareProjection` (which differs from the sketch below: the document-ID selector
+is per-event on `.On<TEvent>(id:, apply:)`, not a single `.WithId(...)`, and `For<TState>` takes the
+processor ID).
 
 ```csharp
-// Before (still works, CS0618 warning)
+// Before (removed)
 public class OrderSummaryProjection : Projection<OrderSummary>,
     IProject<OrderSummary, OrderPlaced>
 {
@@ -1182,18 +1490,21 @@ public class OrderSummaryProjection : Projection<OrderSummary>,
 consumer.AddProjection<OrderSummary, OrderSummaryProjection>(...);
 
 // After
-var declaration = DeclareProjection.For<OrderSummary>()
-    .WithId(e => e.ParseEvent<OrderPlaced>()?.OrderId.ToString())
-    .On<OrderPlaced>((state, e) => state with { ... })
+var declaration = DeclareProjection.For<OrderSummary>("order-summary")
+    .On<OrderPlaced>(
+        id: e => e.OrderId.ToString(),
+        apply: (state, e, ctx) => state with { ... })
     .Build();
 
-consumer.AddProjection(declaration, ...);
+builder.AddProjection(declaration, ...);
 ```
 
-### Old filter API → middleware
+### ~~Old filter API → middleware~~
+
+Removed. `IConsumeFilter` and `AddFilter<T>` no longer exist.
 
 ```csharp
-// Before (still works, CS0618 warning)
+// Before (removed)
 consumer.AddFilter<MyConsumeFilter>();
 
 // After
@@ -1201,12 +1512,11 @@ consumer.WithMiddleware(ConsumeMiddlewares.RetryAndDeadLetter());
 consumer.WithMiddleware(async (ctx, next) => { /* custom logic */ await next(); });
 ```
 
-### `DecisionResult<TEvent>` → `Decision` / `Decision<T>`
+### ~~`DecisionResult<TEvent>` → `Decision` / `Decision<T>`~~
 
-See the Command/Result API section above for the full migration. The old type still compiles
-with a CS0618 warning and will be removed in a future version.
+Removed. See the Command/Result API section above for the full migration.
 
-### Standalone `AddAlbertoStore(moduleKey, assembly)` → builder chaining
+### ~~Standalone `AddAlbertoStore(moduleKey, assembly)` → builder chaining~~
 
-See the Command/Result API section above. The standalone overload still compiles with a CS0618
-warning and will be removed in a future version.
+No longer a deprecation — both spellings of `AddAlbertoStore` have since been **removed**. See
+`AddAlbertoStore` removed — use `WithEventsFrom` at the top of this file.

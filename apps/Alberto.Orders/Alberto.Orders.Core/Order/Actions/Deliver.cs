@@ -15,15 +15,15 @@ public sealed partial class OrderDecider
     /// <summary>
     /// Marks the order as delivered.
     /// </summary>
-    public static DecisionResult<IEvent> Deliver(IDeliverOrderState state, DateTimeOffset deliveredAt)
+    public static Decision Deliver(IDeliverOrderState state, DateTimeOffset deliveredAt)
     {
         if (!state.Exists)
-            return DecisionResult<IEvent>.Failure("Order does not exist");
+            return Decision.Fail(OrderProblems.NotFound());
 
         if (!state.CanBeDelivered)
-            return DecisionResult<IEvent>.Failure($"Order cannot be delivered in {state.Status} status");
+            return Decision.Fail(OrderProblems.InvalidStatus("delivered", state.Status));
 
-        return DecisionResult<IEvent>.Success(new OrderDelivered(state.OrderId, deliveredAt));
+        return Decision.Succeed(new OrderDelivered(state.OrderId, deliveredAt));
     }
 
     public OrderState Apply(OrderState state, OrderDelivered e) => state with

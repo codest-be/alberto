@@ -15,18 +15,18 @@ public sealed partial class OrderDecider
     /// <summary>
     /// Cancels the order.
     /// </summary>
-    public static DecisionResult<IEvent> Cancel(ICancelOrderState state, string reason, DateTimeOffset cancelledAt)
+    public static Decision Cancel(ICancelOrderState state, string reason, DateTimeOffset cancelledAt)
     {
         if (!state.Exists)
-            return DecisionResult<IEvent>.Failure("Order does not exist");
+            return Decision.Fail(OrderProblems.NotFound());
 
         if (!state.CanBeCancelled)
-            return DecisionResult<IEvent>.Failure($"Order cannot be cancelled in {state.Status} status");
+            return Decision.Fail(OrderProblems.InvalidStatus("cancelled", state.Status));
 
         if (string.IsNullOrWhiteSpace(reason))
-            return DecisionResult<IEvent>.Failure("Cancellation reason is required");
+            return Decision.Fail(OrderProblems.CancellationReasonRequired());
 
-        return DecisionResult<IEvent>.Success(new OrderCancelled(state.OrderId, reason, cancelledAt));
+        return Decision.Succeed(new OrderCancelled(state.OrderId, reason, cancelledAt));
     }
 
     public OrderState Apply(OrderState state, OrderCancelled e) => state with
