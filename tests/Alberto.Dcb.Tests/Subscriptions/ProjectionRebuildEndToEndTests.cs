@@ -19,13 +19,27 @@ public sealed class Totals
     public int Points { get; set; }
 }
 
+/// <summary>
+/// The projection under rebuild, minted once per test that needs one.
+/// </summary>
+/// <remarks>
+/// A rebuild's whole state — the version counter, the status machine, the target position —
+/// lives in one <c>alberto_projection_rebuild_meta</c> row keyed by processor id, and the rows
+/// it promotes and discards live in <c>alberto_projection_states</c> keyed by projection type.
+/// Those two keys are the only ones the rebuild machinery is scoped by, so giving each test its
+/// own pair is what actually keeps one test's aborted versions, promotions and sweeps out of
+/// another's. A per-test tenant would not: <c>alberto_projection_rebuild_meta</c> has no tenant
+/// column at all, and promotion and abort delete by projection type across every tenant on
+/// purpose — a rebuild is a schema-level operation.
+/// </remarks>
 public static class TotalsProjection
 {
-    public const string ProcessorId = "rebuild-e2e-totals";
-    public const string ProjectionType = "rebuild-e2e-totals";
+    public static string ProcessorId(string test) => $"rebuild-e2e-totals-{test}";
 
-    public static readonly ProjectionDeclaration<Totals> Declaration =
-        DeclareProjection.For<Totals>(ProcessorId)
+    public static string ProjectionType(string test) => ProcessorId(test);
+
+    public static ProjectionDeclaration<Totals> Declaration(string test) =>
+        DeclareProjection.For<Totals>(ProcessorId(test))
             .On<Scored>(
                 e => e.Player,
                 (state, e, _) => new Totals { Points = state.Points + e.Points })
@@ -33,14 +47,29 @@ public static class TotalsProjection
 }
 
 /// <summary>
-/// A running application with rebuilds enabled, wired the way a consumer would wire it:
-/// a Postgres-backed module with one projection whose store follows the rebuild version.
+/// A running application with rebuilds enabled, wired the way a consumer would wire it: a
+/// Postgres-backed module with one projection per test, each whose store follows its own
+/// rebuild version.
 /// </summary>
 public sealed class ProjectionRebuildHostFixture : IAsyncLifetime
 {
     private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:16-alpine").Build();
 
     public const string ModuleKey = "rebuild-e2e";
+
+    /// <summary>
+    /// Every test that owns a projection. Registration happens once, at host start, so the set
+    /// has to be named up front; <c>nameof</c> keeps it honest when a test is renamed, and a
+    /// test that is missing from it fails immediately rather than quietly borrowing another
+    /// test's processor.
+    /// </summary>
+    public static readonly string[] IsolatedProjections =
+    [
+        nameof(ProjectionRebuildEndToEndTests.Rebuild_ReplacesCorruptedState_WithoutEverServingAPartialProjection),
+        nameof(ProjectionRebuildEndToEndTests.Rebuild_CatchesUpOnEventsThatArriveWhileItIsRunning),
+        nameof(ProjectionRebuildEndToEndTests.AbortedRebuild_LeavesTheLiveVersionUntouched),
+        nameof(ProjectionRebuildEndToEndTests.RebuildAfterAnAbort_GetsAFreshVersionNumber),
+    ];
 
     public ServiceProvider Services { get; private set; } = null!;
     public NpgsqlDataSource DataSource { get; private set; } = null!;
@@ -58,21 +87,27 @@ public sealed class ProjectionRebuildHostFixture : IAsyncLifetime
 
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddAlberto(ModuleKey, builder => builder
-            .WithPostgres(o => o with
+        services.AddAlberto(ModuleKey, builder =>
+        {
+            builder.WithPostgres(o => o with
             {
                 ConnectionString = connectionString,
                 AutoMigrate = false,
                 EnableNotifyListener = false,
-            })
-            .AddProjection(TotalsProjection.Declaration, ctx => () =>
-                new PostgresStateStore<Totals>(
-                    ctx.Services.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey),
-                    TotalsProjection.ProjectionType,
-                    schema: "public",
-                    rebuildVersion: ctx.RebuildVersion))
-            .WithControlLoop(o => o with { PollingInterval = TimeSpan.FromMilliseconds(50) })
-            .WithRebuilds(pollingInterval: TimeSpan.FromMilliseconds(100)));
+            });
+
+            foreach (var test in IsolatedProjections)
+                builder.AddProjection(TotalsProjection.Declaration(test), ctx => () =>
+                    new PostgresStateStore<Totals>(
+                        ctx.Services.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey),
+                        TotalsProjection.ProjectionType(test),
+                        schema: "public",
+                        rebuildVersion: ctx.RebuildVersion));
+
+            builder
+                .WithControlLoop(o => o with { PollingInterval = TimeSpan.FromMilliseconds(50) })
+                .WithRebuilds(pollingInterval: TimeSpan.FromMilliseconds(100));
+        });
 
         Services = services.BuildServiceProvider();
 
@@ -97,10 +132,11 @@ public sealed class ProjectionRebuildHostFixture : IAsyncLifetime
 /// underneath a live projection nobody took offline.
 /// </summary>
 /// <remarks>
-/// The tests share one host and one processor — a rebuild is per-processor state and two at
-/// once would be testing the fixture rather than the mechanism — so each uses its own player
-/// id and reads the rebuild version out of the state machine rather than assuming a number.
-/// xUnit runs the tests in a class one at a time, which is what makes sharing the processor safe.
+/// The tests share one host and one container but not a projection: each drives a processor of
+/// its own, because a rebuild's version counter and status machine are per-processor state and
+/// a test that inherits another's leftovers is testing the fixture rather than the mechanism.
+/// Each still uses its own player id, and reads the rebuild version out of the state machine
+/// rather than assuming a number.
 /// </remarks>
 public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture fixture)
     : IClassFixture<ProjectionRebuildHostFixture>
@@ -110,6 +146,31 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
 
     private IProjectionRebuildStore RebuildStore =>
         fixture.Services.GetRequiredKeyedService<IProjectionRebuildStore>(ProjectionRebuildHostFixture.ModuleKey);
+
+    /// <summary>
+    /// The name of the running test, which is also the name of the projection it owns.
+    /// </summary>
+    private static string CurrentTest
+    {
+        get
+        {
+            var name = TestContext.Current.TestMethod?.MethodName
+                ?? throw new InvalidOperationException("No ambient test method to take a projection from.");
+
+            if (!ProjectionRebuildHostFixture.IsolatedProjections.Contains(name))
+                throw new InvalidOperationException(
+                    $"{name} has no projection of its own. Add it to " +
+                    $"{nameof(ProjectionRebuildHostFixture)}." +
+                    $"{nameof(ProjectionRebuildHostFixture.IsolatedProjections)} — a test that shares a " +
+                    "processor shares the rebuild versions the other test allocated and abandoned.");
+
+            return name;
+        }
+    }
+
+    private static string ProcessorId => TotalsProjection.ProcessorId(CurrentTest);
+
+    private static string ProjectionType => TotalsProjection.ProjectionType(CurrentTest);
 
     /// <summary>
     /// The whole point of the feature: a projection with wrong data in it is corrected by a
@@ -149,9 +210,9 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
             "a reader moves from the complete old version straight to the complete new one");
 
         var promoted = await StateAsync(ct);
-        // Use the allocated RebuildingVersion rather than versionBefore+1: prior tests may have
-        // aborted rebuilds that consumed last_allocated_version without advancing active_version,
-        // so the allocated slot is not necessarily versionBefore+1.
+        // Against the version the rebuild was actually handed, not versionBefore+1: an abort
+        // consumes last_allocated_version without advancing active_version, so the two are only
+        // the same number until something in this test's own history aborts.
         promoted.ActiveVersion.Should().Be(started.RebuildingVersion,
             "the promoted version must be the one the rebuild was writing into");
         promoted.RebuildingVersion.Should().BeNull();
@@ -322,7 +383,7 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
 
             try
             {
-                return (started, await RebuildStore.AbortAsync(TotalsProjection.ProcessorId, ct));
+                return (started, await RebuildStore.AbortAsync(ProcessorId, ct));
             }
             catch (RebuildStateException) when (attempt < 10)
             {
@@ -339,11 +400,11 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
     {
         var head = await new PostgresAdminDataAccess(fixture.DataSource).GetGlobalPositionAsync(ct) ?? 0;
         return await RebuildStore.StartAsync(
-            TotalsProjection.ProcessorId, TotalsProjection.ProjectionType, head, ct);
+            ProcessorId, ProjectionType, head, ct);
     }
 
     private Task<ProjectionRebuildState> StateAsync(CancellationToken ct) =>
-        RebuildStore.GetAsync(TotalsProjection.ProcessorId, TotalsProjection.ProjectionType, ct);
+        RebuildStore.GetAsync(ProcessorId, ProjectionType, ct);
 
     private async Task<int> ActiveVersionAsync(CancellationToken ct) => (await StateAsync(ct)).ActiveVersion;
 
@@ -352,7 +413,7 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
     /// than at what the application happens to be serving.
     /// </summary>
     private PostgresStateStore<Totals> StoreAtVersion(int version) =>
-        new(fixture.DataSource, TotalsProjection.ProjectionType, rebuildVersion: () => version);
+        new(fixture.DataSource, ProjectionType, rebuildVersion: () => version);
 
     private async Task<Totals?> ReadAsync(int version, string player, CancellationToken ct)
     {
