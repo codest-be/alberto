@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using Npgsql;
 using Alberto.Dcb.Append;
 using Alberto.Dcb.Subscriptions;
+using Alberto.Dcb.Tenancy;
 
 namespace Alberto.Dcb.Postgres;
 
@@ -23,12 +24,46 @@ public sealed record PostgresBackendDescriptor(PostgresOptions Options) : IAlber
     public bool SupportsTenancy => true;
 
     /// <inheritdoc />
+    public string? StorageIdentity
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(Options.ConnectionString))
+                return null;
+
+            NpgsqlConnectionStringBuilder builder;
+            try
+            {
+                builder = new NpgsqlConnectionStringBuilder(Options.ConnectionString);
+            }
+            catch (ArgumentException)
+            {
+                // An unparseable connection string is somebody else's failure to report; this
+                // property only exists to compare two descriptors.
+                return null;
+            }
+
+            var schema = string.IsNullOrWhiteSpace(Options.Schema) ? "public" : Options.Schema;
+            return $"{builder.Host}:{builder.Port}/{builder.Database} (schema {schema})";
+        }
+    }
+
+    /// <inheritdoc />
     public IAlbertoBackendDescriptor ApplyConfiguration(IConfiguration moduleSection) =>
         this with
         {
             Options = AlbertoOptionsOverlay.Overlay<PostgresOptions, PostgresOverrides>(
                 moduleSection, "Postgres", Options),
         };
+
+    /// <inheritdoc />
+    public IAlbertoBackendDescriptor ApplyShardConfiguration(IConfiguration shardSection)
+    {
+        ArgumentNullException.ThrowIfNull(shardSection);
+
+        var overrides = shardSection.Get<PostgresOverrides>();
+        return overrides is null ? this : this with { Options = overrides.ApplyTo(Options) };
+    }
 
     /// <inheritdoc />
     public (string? SectionName, Type? OverridesType) GetConfigurationSection() =>
@@ -39,12 +74,20 @@ public sealed record PostgresBackendDescriptor(PostgresOptions Options) : IAlber
     {
         var path = $"{definition.ConfigurationPath}:Postgres";
 
-        if (string.IsNullOrWhiteSpace(Options.ConnectionString))
+        // A sharded module's own .WithPostgres(...) is a template that every shard starts from,
+        // not a database anything connects to, so it is allowed to carry no connection string.
+        // Each shard is validated separately and does have to have one.
+        var isShardTemplate = definition.Tenancy.IsSharded && definition.ShardId is null;
+
+        if (string.IsNullOrWhiteSpace(Options.ConnectionString) && !isShardTemplate)
         {
             yield return new AlbertoValidationFailure(
                 "ALB1001",
                 "The Postgres backend has no connection string.",
-                $"Set it with .WithPostgres(o => o with {{ ConnectionString = ... }}) or '{path}:ConnectionString'.");
+                definition.ShardId is null
+                    ? $"Set it with .WithPostgres(o => o with {{ ConnectionString = ... }}) or '{path}:ConnectionString'."
+                    : $"Set it with .AddShard(\"{definition.ShardId}\", o => o with {{ ConnectionString = ... }}) " +
+                      $"or '{path.Replace(":Postgres", $":Tenancy:Shards:{definition.ShardId}", StringComparison.Ordinal)}:ConnectionString'.");
         }
 
         if (Options.MaxPoolSize <= 0)
@@ -83,6 +126,52 @@ public sealed record PostgresBackendDescriptor(PostgresOptions Options) : IAlber
     }
 
     /// <inheritdoc />
+    public void RegisterShardCatalog(AlbertoModuleContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        var services = context.Services;
+        var moduleKey = context.ModuleKey;
+        var catalogKey = $"{moduleKey}:catalog";
+
+        // The catalog's own data source. Not a shard's: the whole point of the control database is
+        // that resolving a tenant does not depend on any one shard being reachable.
+        services.AddKeyedSingleton<NpgsqlDataSource>(catalogKey, (sp, _) =>
+        {
+            var options = CatalogOptions(sp, moduleKey);
+            var builder = new NpgsqlDataSourceBuilder(options.ConnectionString);
+            builder.ConnectionStringBuilder.MaxPoolSize = options.MaxPoolSize;
+            builder.ConnectionStringBuilder.MinPoolSize = options.MinPoolSize;
+            return builder.Build();
+        });
+
+        services.AddKeyedSingleton<ITenantShardMap>(moduleKey, (sp, _) =>
+        {
+            var options = CatalogOptions(sp, moduleKey);
+            return new PostgresTenantShardMap(
+                sp.GetRequiredKeyedService<NpgsqlDataSource>(catalogKey), moduleKey, options.Schema);
+        });
+
+        services.AddSingleton<IHostedService>(sp => new PostgresCatalogMigrationHostedService(
+            moduleKey,
+            sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>(),
+            sp.GetService<ILogger<PostgresCatalogMigrationHostedService>>()));
+    }
+
+    /// <summary>
+    /// Reads the catalog's options from the monitor, so a connection string supplied only from
+    /// configuration is honoured. Falls back to this descriptor when the module was resolved
+    /// without one, which happens in tests that never build a configuration.
+    /// </summary>
+    private PostgresOptions CatalogOptions(IServiceProvider provider, string moduleKey)
+    {
+        var definition = provider.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>().Get(moduleKey);
+        return definition.Tenancy.Catalog is PostgresBackendDescriptor descriptor
+            ? descriptor.Options
+            : Options;
+    }
+
+    /// <inheritdoc />
     public void Register(AlbertoModuleContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -91,11 +180,17 @@ public sealed record PostgresBackendDescriptor(PostgresOptions Options) : IAlber
         var moduleKey = context.ModuleKey;
 
         // Migration hosted service — reads options from the monitor at StartAsync so the
-        // configuration overlay is applied before any connection is opened.
+        // configuration overlay is applied before any connection is opened. A shard also gets the
+        // module's ShardHealth, which is what turns a fatal migration failure into a degraded
+        // shard the other databases can carry on without.
+        var shardId = context.ShardId;
+        var logicalModuleKey = context.LogicalModuleKey;
         services.AddSingleton<IHostedService>(sp => new AlbertoMigrationHostedService(
             moduleKey,
             sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>(),
-            sp.GetService<ILogger<AlbertoMigrationHostedService>>()));
+            sp.GetService<ILogger<AlbertoMigrationHostedService>>(),
+            shardId is null ? null : sp.GetKeyedService<ShardHealth>(logicalModuleKey),
+            shardId));
 
         // Register NpgsqlDataSource with connection pool settings. The factory reads the
         // overlay-applied options via IOptionsMonitor so a connection string supplied only

@@ -154,17 +154,12 @@ public static class PostgresMigrator
         if (!scriptName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
             return false;
 
-        // Exclude nested subdirectories (e.g., exclude SingleTenant scripts when filtering for Migrations)
-        if (folderPath == MultiTenantScriptFolder)
-        {
-            // Exclude anything that has a further dot-separated segment indicating a subdirectory
-            var remainder = scriptName.Substring(prefix.Length);
-            // If it contains another folder segment before the file extension, it's in a subdirectory
-            // e.g., "SingleTenant.001_InitialSchema.sql" would be excluded
-            return !remainder.StartsWith("SingleTenant.", StringComparison.OrdinalIgnoreCase);
-        }
-
-        return true;
+        // Exclude subdirectories. A script sitting directly in the folder has exactly one dot left
+        // — the one before "sql" — so anything with more is in a nested folder: SingleTenant when
+        // filtering for Migrations, Catalog likewise. Matching on the subfolder's name instead
+        // would silently admit the next folder someone adds.
+        var remainder = scriptName[prefix.Length..];
+        return remainder.Count(c => c == '.') == 1;
     }
 
     private static void EnsureSchemaExists(string connectionString, string schema)
