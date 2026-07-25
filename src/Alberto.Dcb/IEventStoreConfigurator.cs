@@ -1,4 +1,3 @@
-#pragma warning disable CS0618 // Obsolete projection types referenced intentionally for backward-compatibility
 using Alberto.Dcb.Subscriptions;
 
 namespace Alberto.Dcb;
@@ -17,19 +16,7 @@ public interface IEventStoreConfigurator
 {
     /// <summary>
     /// Registers an inline projection that runs immediately after events are appended.
-    /// Uses the same <see cref="Projection{TState}"/> definition as async projections,
-    /// but updates state synchronously for lower latency.
-    /// </summary>
-    /// <typeparam name="TState">The projection state type.</typeparam>
-    /// <typeparam name="TProjection">The projection implementation type.</typeparam>
-    /// <param name="stateStore">The state store for persisting projection state.</param>
-    void RegisterInlineProjection<TState, TProjection>(IStateStore<TState> stateStore)
-        where TProjection : Projection<TState>, new()
-        where TState : new();
-
-    /// <summary>
-    /// Registers an inline projection that runs immediately after events are appended.
-    /// Lower-level overload that accepts any <see cref="IInlineProjection"/> implementation —
+    /// Accepts any <see cref="IInlineProjection"/> implementation —
     /// used by declaration-based projection wiring.
     /// </summary>
     /// <param name="projection">The inline projection to register.</param>

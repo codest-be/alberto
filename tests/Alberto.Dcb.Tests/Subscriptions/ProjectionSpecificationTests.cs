@@ -5,10 +5,9 @@ using Xunit;
 namespace Alberto.Dcb.Tests.Subscriptions;
 
 /// <summary>
-/// Tests for the Projection&lt;TState&gt; base class.
+/// Tests for <see cref="ProjectionDeclaration{TState}"/> and its builder.
 /// Demonstrates that projections are pure and testable without infrastructure.
 /// </summary>
-#pragma warning disable CS0618 // Testing the deprecated Projection<T> API
 public class ProjectionSpecificationTests
 {
     #region Test Events
@@ -40,44 +39,44 @@ public class ProjectionSpecificationTests
 
     #region Test Projection
 
-    public class OrderSummaryProjection : Projection<OrderSummary>,
-        IProject<OrderSummary, OrderCreated>,
-        IProject<OrderSummary, OrderConfirmed>,
-        IProject<OrderSummary, OrderCancelled>
-    {
-        public string GetDocumentId(OrderCreated @event) => @event.OrderId.ToString();
-        public ProjectionResult<OrderSummary> Apply(OrderSummary state, OrderCreated @event, ProjectionContext context)
-            => new OrderSummary { OrderId = @event.OrderId, Amount = @event.Amount, Status = "Created" };
-
-        public string GetDocumentId(OrderConfirmed @event) => @event.OrderId.ToString();
-        public ProjectionResult<OrderSummary> Apply(OrderSummary state, OrderConfirmed @event, ProjectionContext context)
-            => state with { Status = "Confirmed" };
-
-        public string GetDocumentId(OrderCancelled @event) => @event.OrderId.ToString();
-        public ProjectionResult<OrderSummary> Apply(OrderSummary state, OrderCancelled @event, ProjectionContext context)
-            => ProjectionResults.Delete<OrderSummary>();
-    }
+    private static ProjectionDeclaration<OrderSummary> Declaration() =>
+        DeclareProjection.For<OrderSummary>("order-summary")
+            .On<OrderCreated>(
+                id: e => e.OrderId.ToString(),
+                apply: (state, e, ctx) => new OrderSummary
+                {
+                    OrderId = e.OrderId,
+                    Amount = e.Amount,
+                    Status = "Created"
+                })
+            .On<OrderConfirmed>(
+                id: e => e.OrderId.ToString(),
+                apply: (state, e, ctx) => state with { Status = "Confirmed" })
+            .On<OrderCancelled>(
+                id: e => e.OrderId.ToString(),
+                apply: (state, e, ctx) => ProjectionResults.Delete<OrderSummary>())
+            .Build();
 
     #endregion
 
     #region Handled Event Types
 
     [Fact]
-    public void HandledEventTypes_ShouldContainImplementedTypes()
+    public void HandledEventTypes_ShouldContainDeclaredTypes()
     {
-        var projection = new OrderSummaryProjection();
+        var declaration = Declaration();
 
-        Assert.Contains("order-created", projection.HandledEventTypes);
-        Assert.Contains("order-confirmed", projection.HandledEventTypes);
-        Assert.Contains("order-cancelled", projection.HandledEventTypes);
+        Assert.Contains("order-created", declaration.HandledEventTypes);
+        Assert.Contains("order-confirmed", declaration.HandledEventTypes);
+        Assert.Contains("order-cancelled", declaration.HandledEventTypes);
     }
 
     [Fact]
-    public void HandledEventTypes_ShouldNotContainUnimplementedTypes()
+    public void HandledEventTypes_ShouldNotContainUndeclaredTypes()
     {
-        var projection = new OrderSummaryProjection();
+        var declaration = Declaration();
 
-        Assert.DoesNotContain("order-note-added", projection.HandledEventTypes);
+        Assert.DoesNotContain("order-note-added", declaration.HandledEventTypes);
     }
 
     #endregion
@@ -87,11 +86,11 @@ public class ProjectionSpecificationTests
     [Fact]
     public void Apply_OrderCreated_ShouldReturnSetWithNewState()
     {
-        var projection = new OrderSummaryProjection();
+        var declaration = Declaration();
         var orderId = Guid.NewGuid();
         var envelope = CreateEnvelope(new OrderCreated(orderId, 100m));
 
-        var result = projection.Apply(new OrderSummary(), envelope);
+        var result = declaration.Apply(new OrderSummary(), envelope, ProjectionContext.FromEnvelope(envelope));
 
         Assert.IsType<ProjectionResult<OrderSummary>.Set>(result);
         var set = (ProjectionResult<OrderSummary>.Set)result;
@@ -103,12 +102,12 @@ public class ProjectionSpecificationTests
     [Fact]
     public void Apply_OrderConfirmed_ShouldReturnSetWithUpdatedStatus()
     {
-        var projection = new OrderSummaryProjection();
+        var declaration = Declaration();
         var orderId = Guid.NewGuid();
         var existingState = new OrderSummary { OrderId = orderId, Amount = 100m, Status = "Created" };
         var envelope = CreateEnvelope(new OrderConfirmed(orderId));
 
-        var result = projection.Apply(existingState, envelope);
+        var result = declaration.Apply(existingState, envelope, ProjectionContext.FromEnvelope(envelope));
 
         Assert.IsType<ProjectionResult<OrderSummary>.Set>(result);
         var set = (ProjectionResult<OrderSummary>.Set)result;
@@ -119,26 +118,43 @@ public class ProjectionSpecificationTests
     [Fact]
     public void Apply_OrderCancelled_ShouldReturnDelete()
     {
-        var projection = new OrderSummaryProjection();
+        var declaration = Declaration();
         var orderId = Guid.NewGuid();
         var existingState = new OrderSummary { OrderId = orderId, Amount = 100m, Status = "Created" };
         var envelope = CreateEnvelope(new OrderCancelled(orderId));
 
-        var result = projection.Apply(existingState, envelope);
+        var result = declaration.Apply(existingState, envelope, ProjectionContext.FromEnvelope(envelope));
 
         Assert.IsType<ProjectionResult<OrderSummary>.Delete>(result);
     }
 
     [Fact]
-    public void Apply_UnhandledEvent_ShouldReturnUnchanged()
+    public void Apply_TypedOverload_ShouldNotNeedAnEnvelope()
     {
-        var projection = new OrderSummaryProjection();
+        var declaration = Declaration();
         var orderId = Guid.NewGuid();
-        var envelope = CreateEnvelope(new OrderNoteAdded(orderId, "Test note"));
 
-        var result = projection.Apply(new OrderSummary(), envelope);
+        var result = declaration.Apply(
+            new OrderSummary(),
+            new OrderCreated(orderId, 42m),
+            ProjectionContext.FromEnvelope(CreateEnvelope(new OrderCreated(orderId, 42m))));
 
-        Assert.IsType<ProjectionResult<OrderSummary>.Unchanged>(result);
+        var set = Assert.IsType<ProjectionResult<OrderSummary>.Set>(result);
+        Assert.Equal(42m, set.State.Amount);
+    }
+
+    [Fact]
+    public void Apply_UndeclaredEvent_ShouldThrow()
+    {
+        var declaration = Declaration();
+        var envelope = CreateEnvelope(new OrderNoteAdded(Guid.NewGuid(), "Test note"));
+
+        // The processor filters on HandledEventTypes before dispatching, so reaching
+        // Apply with an undeclared event is a wiring bug rather than a no-op.
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => declaration.Apply(new OrderSummary(), envelope, ProjectionContext.FromEnvelope(envelope)));
+
+        Assert.Contains("order-note-added", ex.Message);
     }
 
     #endregion
@@ -148,74 +164,107 @@ public class ProjectionSpecificationTests
     [Fact]
     public void GetDocumentId_ShouldRouteByOrderId()
     {
-        var projection = new OrderSummaryProjection();
+        var declaration = Declaration();
         var orderId = Guid.NewGuid();
         var envelope = CreateEnvelope(new OrderCreated(orderId, 100m));
 
-        var docId = projection.GetDocumentId(envelope);
+        var docId = declaration.GetDocumentId(envelope);
+
+        Assert.Equal(orderId.ToString(), docId);
+    }
+
+    [Fact]
+    public void GetDocumentId_TypedOverload_ShouldRouteByOrderId()
+    {
+        var declaration = Declaration();
+        var orderId = Guid.NewGuid();
+
+        var docId = declaration.GetDocumentId(new OrderCreated(orderId, 100m));
 
         Assert.Equal(orderId.ToString(), docId);
     }
 
     #endregion
 
-    #region Fold Tests
+    #region Builder Contract
 
     [Fact]
-    public void Fold_ShouldBuildStateFromHistory()
+    public void Build_WithoutHandlers_ShouldThrow()
     {
-        var projection = new OrderSummaryProjection();
-        var orderId = Guid.NewGuid();
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => DeclareProjection.For<OrderSummary>("order-summary").Build());
 
-        var events = new[]
-        {
-            CreateEnvelope(new OrderCreated(orderId, 100m)),
-            CreateEnvelope(new OrderConfirmed(orderId))
-        };
-
-        var result = projection.Fold(new OrderSummary(), events);
-
-        Assert.Equal(orderId, result.OrderId);
-        Assert.Equal(100m, result.Amount);
-        Assert.Equal("Confirmed", result.Status);
+        Assert.Contains(".On<TEvent>", ex.Message);
     }
 
     [Fact]
-    public void Fold_WithDelete_ShouldResetState()
+    public void On_SameEventTypeTwice_ShouldThrow()
     {
-        var projection = new OrderSummaryProjection();
-        var orderId = Guid.NewGuid();
+        var builder = DeclareProjection.For<OrderSummary>("order-summary")
+            .On<OrderCreated>(
+                id: e => e.OrderId.ToString(),
+                apply: (state, e, ctx) => state);
 
-        var events = new[]
-        {
-            CreateEnvelope(new OrderCreated(orderId, 100m)),
-            CreateEnvelope(new OrderCancelled(orderId))
-        };
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => builder.On<OrderCreated>(
+                id: e => e.OrderId.ToString(),
+                apply: (state, e, ctx) => state));
 
-        var result = projection.Fold(new OrderSummary(), events);
-
-        // After delete, state is reset to new()
-        Assert.Equal(Guid.Empty, result.OrderId);
-        Assert.Equal(0m, result.Amount);
-        Assert.Equal("", result.Status);
+        Assert.Contains("already registered", ex.Message);
     }
 
     [Fact]
-    public void Fold_WithUnhandledEvents_ShouldIgnoreThem()
+    public void For_WithBlankProcessorId_ShouldThrow()
     {
-        var projection = new OrderSummaryProjection();
-        var orderId = Guid.NewGuid();
+        Assert.Throws<ArgumentException>(() => DeclareProjection.For<OrderSummary>("  "));
+    }
 
-        var events = new IEventEnvelope[]
-        {
-            CreateEnvelope(new OrderCreated(orderId, 100m)),
-            CreateEnvelope(new OrderNoteAdded(orderId, "Test note")), // Unhandled
-            CreateEnvelope(new OrderConfirmed(orderId))
-        };
+    [Fact]
+    public void CollectionName_ShouldDefaultToProcessorId()
+    {
+        var declaration = Declaration();
 
-        var result = projection.Fold(new OrderSummary(), events);
+        Assert.Equal("order-summary", declaration.ProcessorId);
+        Assert.Equal("order-summary", declaration.CollectionName);
+    }
 
-        Assert.Equal("Confirmed", result.Status);
+    [Fact]
+    public void Collection_ShouldOverrideTheStorageName()
+    {
+        var declaration = DeclareProjection.For<OrderSummary>("order-summary")
+            .Collection("order_summaries")
+            .On<OrderCreated>(
+                id: e => e.OrderId.ToString(),
+                apply: (state, e, ctx) => state)
+            .Build();
+
+        Assert.Equal("order-summary", declaration.ProcessorId);
+        Assert.Equal("order_summaries", declaration.CollectionName);
+    }
+
+    [Fact]
+    public void InitialState_ShouldDefaultToNewInstance()
+    {
+        var declaration = Declaration();
+
+        var initial = declaration.InitialState();
+
+        Assert.Equal(Guid.Empty, initial.OrderId);
+        Assert.Equal(0m, initial.Amount);
+        Assert.Equal("", initial.Status);
+    }
+
+    [Fact]
+    public void InitialState_ShouldHonourTheOverride()
+    {
+        var declaration = DeclareProjection.For<OrderSummary>("order-summary")
+            .InitialState(() => new OrderSummary { Status = "Pending" })
+            .On<OrderCreated>(
+                id: e => e.OrderId.ToString(),
+                apply: (state, e, ctx) => state)
+            .Build();
+
+        Assert.Equal("Pending", declaration.InitialState().Status);
     }
 
     #endregion

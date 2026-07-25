@@ -5,6 +5,130 @@ The most recent cycle (projection rebuilds) is at the top. Older changes follow.
 
 ---
 
+## Deprecated projection and decision APIs removed
+
+**Breaking.** Every type that carried `[Obsolete]` has been deleted, along with the reflection-based
+projection stack that only those types reached. Nothing here had a runtime replacement pending — the
+blessed spelling has shipped for a full cycle in each case, so calls now fail to compile rather than
+warn.
+
+| Removed | Replacement |
+|---|---|
+| `DecisionResult<TEvent>` (and `.Ok` / `.Fail` / `Success()` / `Failure()` / `EnsureSuccess()`) | `Decision` / `Decision<T>` + `Problem` |
+| `Projection<TState>` base class | `DeclareProjection.For<TState>(...)` → `ProjectionDeclaration<TState>` |
+| `IProject<TState, TEvent>` | `.On<TEvent>(id:, apply:)` on the declaration builder |
+| `ProjectionDispatcher<TState>` | (internal) delegate dispatch inside `ProjectionDeclaration<TState>` |
+| `AsyncProjection<TState, TProjection>` | (internal) `DeclaredAsyncProjection<TState>` |
+| `InlineProjection<TState, TProjection>` | (internal) — see *inline projections* below |
+| `EfInlineProjection<TEntity, TProjection, TDbContext>` | (internal) `DeclaredEfInlineProjection<TEntity, TDbContext>` |
+| `RegisterEfInlineProjection<TEntity, TProjection, TDbContext>(...)` | `AddEfProjection<TEntity, TDbContext>(declaration, ProjectionMode.Inline)` |
+| `IEventStoreConfigurator.RegisterInlineProjection<TState, TProjection>(IStateStore<TState>)` | `RegisterInlineProjection(IInlineProjection)` |
+| `EventConsumerExtensions.RegisterProjection<TState, TProjection>(...)` | `AddProjection<TState>(declaration, stateStoreFactory)` on the module builder |
+| `IEventConsumer` and `EventConsumerExtensions` (incl. `RegisterReactor<TReactor>`) | `ReactTo<TEvent>(...)` / `ReactTo<TEvent, THandler>(...)` on the module builder |
+
+### Event consumers
+
+`IEventConsumer` had no implementation anywhere in the library — it described a processor-routing seam
+that `ControlLoop` ended up filling with a different shape. Its only extension methods were the two
+`Register*` calls above, so an application could not reach it without writing the consumer itself.
+
+Reactors are registered on the module builder, which resolves the handler from DI and needs no
+interface on the reactor type:
+
+```csharp
+// Before — required an IEventConsumer implementation that the library never shipped
+consumer.RegisterReactor(new NotificationReactor(...));   // reactor implements IReact<TEvent>
+
+// After
+services.AddAlberto("orders", builder => builder
+    .ReactTo<OrderConfirmed, NotificationReactor>(h => h.OnOrderConfirmed)
+);
+```
+
+`IReact<TEvent>`, `AsyncReactor<TReactor>` and `ReactorDispatcher` — the reflection-dispatched reactor
+path that `RegisterReactor` built — are still present but are no longer reachable from any registration
+API. `ReactTo` uses `FunctionalReactor<TEvent>` / `SyncReactor<TEvent>` and binds the handler method
+explicitly rather than scanning for `IReact<TEvent>` interfaces.
+
+### Decisions
+
+`Problem.Create(code, message)` takes a kebab-case code alongside the message, so failures carry a
+stable identifier instead of only prose:
+
+```csharp
+// Before
+public static DecisionResult<IEvent> Create(...)
+{
+    if (alreadyExists) return DecisionResult<IEvent>.Failure("Order already exists");
+    return DecisionResult<IEvent>.Success(new OrderCreated(...));
+}
+
+// After
+public static Decision Create(...)
+{
+    if (alreadyExists) return Problem.Create("order-already-exists", "Order already exists");
+    return Decision.Succeed(new OrderCreated(...));
+}
+```
+
+`Decision` lives in `Alberto.Dcb.Commands` (namespace `Alberto.Dcb`), so a project that previously
+only referenced `Alberto.Dcb` for `DecisionResult<TEvent>` needs a reference to
+`Alberto.Dcb.Commands` as well. The two example `Core` projects gained exactly that.
+
+`EnsureSuccess()` has no replacement: `Decision` exposes `IsError` / `Problems`, and the caller
+decides how a failure surfaces (an exception, a GraphQL error, an HTTP problem detail) rather than
+having `InvalidOperationException` chosen for it.
+
+### Projections
+
+Projections are declared rather than inherited. The old base class discovered handlers by scanning
+`IProject<,>` interfaces at construction time; the declaration binds the document-ID selector and
+the fold together per event type, with no reflection at runtime:
+
+```csharp
+// Before
+public class OrderSummaryProjection : Projection<OrderSummary>,
+    IProject<OrderSummary, OrderPlaced>
+{
+    public string GetDocumentId(OrderPlaced e) => e.OrderId.ToString();
+    public ProjectionResult<OrderSummary> Apply(OrderSummary state, OrderPlaced e, ProjectionContext ctx)
+        => state with { Total = e.Total };
+}
+
+// After
+public static readonly ProjectionDeclaration<OrderSummary> Declaration =
+    DeclareProjection.For<OrderSummary>("order-summary")
+        .On<OrderPlaced>(
+            id: e => e.OrderId.ToString(),
+            apply: (state, e, ctx) => state with { Total = e.Total })
+        .Build();
+```
+
+`ProjectionResult<TState>`, `ProjectionResults`, `ProjectionContext`, `IStateStore<TState>` and
+`IInlineProjection` are unchanged — only the way handlers are declared changed.
+
+One behavioural difference worth knowing: `Projection<TState>.Apply` returned `Unchanged` for an
+event it did not handle, while `ProjectionDeclaration<TState>.Apply` throws for an unregistered
+event type. Processors filter on `HandledEventTypes` before dispatching, so reaching `Apply` with an
+undeclared event is a wiring bug rather than something to swallow.
+
+### Inline projections
+
+`Projection<TState>` was the only way to run a **non-EF** inline projection: `InlineProjection<,>`
+wrapped it, and `RegisterInlineProjection<TState, TProjection>(IStateStore<TState>)` was the only
+entry point. Neither has a declaration-based equivalent — `AddProjection<TState>` wires the async
+path only — so the non-EF inline path is gone with them.
+
+Two replacements, depending on what the inline write is for:
+
+- **EF entities:** `AddEfProjection<TEntity, TDbContext>(declaration, ProjectionMode.Inline)`, which
+  enlists in the appending `DbContext` transaction.
+- **Anything else:** implement `IInlineProjection` directly and register it with
+  `configurator.RegisterInlineProjection(projection)`. The interface is two members
+  (`HandledEventTypes` and `ProcessAsync`) and remains public for exactly this.
+
+---
+
 ## `AddAlbertoStore` removed — use `WithEventsFrom`
 
 **Breaking.** `AddAlbertoStore` is gone in both forms. There is no deprecation window: the name no
@@ -873,6 +997,11 @@ directly is affected.
 
 ### DX-10 — `Register*` methods removed from `IEventStore`; use `IEventStoreConfigurator`
 
+> **Partly superseded.** `RegisterInlineProjection<TState, TProjection>` and
+> `RegisterEfInlineProjection` have since been **removed** rather than moved. See
+> *Deprecated projection and decision APIs removed* at the top of this file. The move of
+> `RegisterInlineProjection(IInlineProjection)` and `RegisterPostAppendHandler` still applies.
+
 **What changed:** three setup-time methods have been removed from `IEventStore`:
 - `RegisterInlineProjection<TState, TProjection>(IStateStore<TState>)`
 - `RegisterInlineProjection(IInlineProjection)`
@@ -983,6 +1112,9 @@ the "should we append?" question; `Result` / `Result<T>` model the outcome of th
 and the standalone `AddAlbertoStore` call was disconnected from the `AddAlberto` builder.
 
 #### 1. Single blessed decide-result type: `Decision` / `Decision<T>`
+
+> **Superseded.** `DecisionResult<TEvent>` has since been **removed**. See *Deprecated projection
+> and decision APIs removed* at the top of this file.
 
 `DecisionResult<TEvent>` is now `[Obsolete]` and will be removed in a future version.
 
@@ -1213,12 +1345,21 @@ No manual steps required — `PostgresMigrator.Migrate()` handles them.
 
 ---
 
-## Deprecations (still work, emit compiler warnings)
+## ~~Deprecations (still work, emit compiler warnings)~~
 
-### Old projection API → `DeclareProjection`
+**Nothing in this section still compiles.** Every entry below has since been removed; each links to
+the section that records the removal. Kept for the migration paths, not as a statement of what the
+current API accepts.
+
+### ~~Old projection API → `DeclareProjection`~~
+
+Removed — see *Deprecated projection and decision APIs removed* at the top of this file for the
+current shape of `DeclareProjection` (which differs from the sketch below: the document-ID selector
+is per-event on `.On<TEvent>(id:, apply:)`, not a single `.WithId(...)`, and `For<TState>` takes the
+processor ID).
 
 ```csharp
-// Before (still works, CS0618 warning)
+// Before (removed)
 public class OrderSummaryProjection : Projection<OrderSummary>,
     IProject<OrderSummary, OrderPlaced>
 {
@@ -1228,18 +1369,21 @@ public class OrderSummaryProjection : Projection<OrderSummary>,
 consumer.AddProjection<OrderSummary, OrderSummaryProjection>(...);
 
 // After
-var declaration = DeclareProjection.For<OrderSummary>()
-    .WithId(e => e.ParseEvent<OrderPlaced>()?.OrderId.ToString())
-    .On<OrderPlaced>((state, e) => state with { ... })
+var declaration = DeclareProjection.For<OrderSummary>("order-summary")
+    .On<OrderPlaced>(
+        id: e => e.OrderId.ToString(),
+        apply: (state, e, ctx) => state with { ... })
     .Build();
 
-consumer.AddProjection(declaration, ...);
+builder.AddProjection(declaration, ...);
 ```
 
-### Old filter API → middleware
+### ~~Old filter API → middleware~~
+
+Removed. `IConsumeFilter` and `AddFilter<T>` no longer exist.
 
 ```csharp
-// Before (still works, CS0618 warning)
+// Before (removed)
 consumer.AddFilter<MyConsumeFilter>();
 
 // After
@@ -1247,10 +1391,9 @@ consumer.WithMiddleware(ConsumeMiddlewares.RetryAndDeadLetter());
 consumer.WithMiddleware(async (ctx, next) => { /* custom logic */ await next(); });
 ```
 
-### `DecisionResult<TEvent>` → `Decision` / `Decision<T>`
+### ~~`DecisionResult<TEvent>` → `Decision` / `Decision<T>`~~
 
-See the Command/Result API section above for the full migration. The old type still compiles
-with a CS0618 warning and will be removed in a future version.
+Removed. See the Command/Result API section above for the full migration.
 
 ### ~~Standalone `AddAlbertoStore(moduleKey, assembly)` → builder chaining~~
 

@@ -16,21 +16,23 @@ public sealed partial class PaymentDecider
     /// <summary>
     /// Authorizes a payment.
     /// </summary>
-    public static DecisionResult<IEvent> Authorize(
+    public static Decision Authorize(
         IAuthorizePaymentState state,
         string authorizationCode,
         DateTimeOffset authorizedAt)
     {
         if (!state.Exists)
-            return DecisionResult<IEvent>.Failure("Payment does not exist");
+            return Problem.Create("payment-not-found", "Payment does not exist");
 
         if (!state.CanBeAuthorized)
-            return DecisionResult<IEvent>.Failure($"Payment cannot be authorized in {state.Status} status");
+            return Problem.Create(
+                "payment-not-authorizable",
+                $"Payment cannot be authorized in {state.Status} status");
 
         if (string.IsNullOrWhiteSpace(authorizationCode))
-            return DecisionResult<IEvent>.Failure("Authorization code is required");
+            return Problem.Create("authorization-code-required", "Authorization code is required");
 
-        return DecisionResult<IEvent>.Success(new PaymentAuthorized(state.PaymentId, authorizationCode, authorizedAt));
+        return Decision.Succeed(new PaymentAuthorized(state.PaymentId, authorizationCode, authorizedAt));
     }
 
     public PaymentState Apply(PaymentState state, PaymentAuthorized e) => state with

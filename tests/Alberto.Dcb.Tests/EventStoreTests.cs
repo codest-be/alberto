@@ -128,20 +128,44 @@ public sealed class EventStoreTests
         public string Status { get; init; } = "";
     }
 
-#pragma warning disable CS0618 // Testing with deprecated Projection<T> API
-    public class OrderSummaryProjection : Projection<OrderSummary>,
-        IProject<OrderSummary, OrderCreated>,
-        IProject<OrderSummary, OrderConfirmed>
-    {
-        public string GetDocumentId(OrderCreated @event) => @event.OrderId.ToString();
-        public ProjectionResult<OrderSummary> Apply(OrderSummary state, OrderCreated @event, ProjectionContext context)
-            => new OrderSummary { OrderId = @event.OrderId, Amount = @event.Amount, Status = "Created" };
+    private static ProjectionDeclaration<OrderSummary> OrderSummaryDeclaration() =>
+        DeclareProjection.For<OrderSummary>("order-summary")
+            .On<OrderCreated>(
+                id: e => e.OrderId.ToString(),
+                apply: (state, e, ctx) => new OrderSummary
+                {
+                    OrderId = e.OrderId,
+                    Amount = e.Amount,
+                    Status = "Created"
+                })
+            .On<OrderConfirmed>(
+                id: e => e.OrderId.ToString(),
+                apply: (state, e, ctx) => state with { Status = "Confirmed" })
+            .Build();
 
-        public string GetDocumentId(OrderConfirmed @event) => @event.OrderId.ToString();
-        public ProjectionResult<OrderSummary> Apply(OrderSummary state, OrderConfirmed @event, ProjectionContext context)
-            => state with { Status = "Confirmed" };
+    /// <summary>
+    /// Runs a projection declaration inline against an <see cref="IStateStore{TState}"/>.
+    /// The non-EF inline path is not wired by the module builder, so the test supplies its own
+    /// <see cref="IInlineProjection"/> — folding is delegated to the real batch processor.
+    /// </summary>
+    private sealed class InlineStateStoreProjection<TState> : IInlineProjection
+        where TState : new()
+    {
+        private readonly DeclaredAsyncProjection<TState> _inner;
+
+        public InlineStateStoreProjection(
+            ProjectionDeclaration<TState> declaration,
+            IStateStore<TState> stateStore)
+        {
+            HandledEventTypes = declaration.HandledEventTypes;
+            _inner = new DeclaredAsyncProjection<TState>(declaration, () => stateStore);
+        }
+
+        public IReadOnlySet<string> HandledEventTypes { get; }
+
+        public Task ProcessAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct = default)
+            => _inner.ProcessBatchAsync(events, ct);
     }
-#pragma warning restore CS0618
 
     #endregion
 
@@ -191,7 +215,8 @@ public sealed class EventStoreTests
     {
         var eventStore = new EventStore(new InMemoryEventStoreBackend());
         var stateStore = new InMemoryStateStore<OrderSummary>();
-        eventStore.RegisterInlineProjection<OrderSummary, OrderSummaryProjection>(stateStore);
+        eventStore.RegisterInlineProjection(
+            new InlineStateStoreProjection<OrderSummary>(OrderSummaryDeclaration(), stateStore));
 
         var orderId = Guid.NewGuid();
         await eventStore.AppendAsync([CreateEvent(new OrderCreated(orderId, 100m))], cancellationToken: TestContext.Current.CancellationToken);
@@ -208,7 +233,8 @@ public sealed class EventStoreTests
     {
         var eventStore = new EventStore(new InMemoryEventStoreBackend());
         var stateStore = new InMemoryStateStore<OrderSummary>();
-        eventStore.RegisterInlineProjection<OrderSummary, OrderSummaryProjection>(stateStore);
+        eventStore.RegisterInlineProjection(
+            new InlineStateStoreProjection<OrderSummary>(OrderSummaryDeclaration(), stateStore));
 
         var orderId = Guid.NewGuid();
 
@@ -225,7 +251,8 @@ public sealed class EventStoreTests
     {
         var eventStore = new EventStore(new InMemoryEventStoreBackend());
         var stateStore = new InMemoryStateStore<OrderSummary>();
-        eventStore.RegisterInlineProjection<OrderSummary, OrderSummaryProjection>(stateStore);
+        eventStore.RegisterInlineProjection(
+            new InlineStateStoreProjection<OrderSummary>(OrderSummaryDeclaration(), stateStore));
 
         var orderId = Guid.NewGuid();
 
@@ -244,7 +271,8 @@ public sealed class EventStoreTests
     {
         var eventStore = new EventStore(new InMemoryEventStoreBackend());
         var stateStore = new InMemoryStateStore<OrderSummary>();
-        eventStore.RegisterInlineProjection<OrderSummary, OrderSummaryProjection>(stateStore);
+        eventStore.RegisterInlineProjection(
+            new InlineStateStoreProjection<OrderSummary>(OrderSummaryDeclaration(), stateStore));
 
         await eventStore.AppendAsync([new EventToPersist
             {

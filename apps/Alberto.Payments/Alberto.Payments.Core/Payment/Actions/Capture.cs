@@ -17,22 +17,26 @@ public sealed partial class PaymentDecider
     /// <summary>
     /// Captures a payment.
     /// </summary>
-    public static DecisionResult<IEvent> Capture(
+    public static Decision Capture(
         ICapturePaymentState state,
         decimal? capturedAmount,
         DateTimeOffset capturedAt)
     {
         if (!state.Exists)
-            return DecisionResult<IEvent>.Failure("Payment does not exist");
+            return Problem.Create("payment-not-found", "Payment does not exist");
 
         if (!state.CanBeCaptured)
-            return DecisionResult<IEvent>.Failure($"Payment cannot be captured in {state.Status} status");
+            return Problem.Create(
+                "payment-not-capturable",
+                $"Payment cannot be captured in {state.Status} status");
 
         var amountToCapture = capturedAmount ?? state.Amount;
         if (amountToCapture <= 0 || amountToCapture > state.Amount)
-            return DecisionResult<IEvent>.Failure($"Captured amount must be between 0 and {state.Amount}");
+            return Problem.Create(
+                "invalid-capture-amount",
+                $"Captured amount must be between 0 and {state.Amount}");
 
-        return DecisionResult<IEvent>.Success(new PaymentCaptured(state.PaymentId, amountToCapture, capturedAt));
+        return Decision.Succeed(new PaymentCaptured(state.PaymentId, amountToCapture, capturedAt));
     }
 
     public PaymentState Apply(PaymentState state, PaymentCaptured e) => state with

@@ -1,4 +1,3 @@
-#pragma warning disable CS0618 // Legacy registration overload retained until the obsolete projection module is removed
 using Alberto.Dcb.Subscriptions;
 
 namespace Alberto.Dcb;
@@ -24,14 +23,6 @@ public sealed class EventStore : IEventStore, IEventStoreConfigurator
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _inlineProjections = inlineProjections?.ToList() ?? [];
         _postAppendHandlers = postAppendHandlers?.ToList() ?? [];
-    }
-
-    /// <inheritdoc/>
-    public void RegisterInlineProjection<TState, TProjection>(IStateStore<TState> stateStore)
-        where TProjection : Projection<TState>, new()
-        where TState : new()
-    {
-        _inlineProjections.Add(new InlineProjection<TState, TProjection>(stateStore));
     }
 
     /// <inheritdoc/>

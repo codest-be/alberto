@@ -249,9 +249,11 @@ deliberate step rather than a consequence of catching up. Both intervals must be
 `.WithTelemetry()` registers Alberto's activity source and meter with the OpenTelemetry
 hosting integration (`services.AddOpenTelemetry().WithTracing(...).WithMetrics(...)`). If
 the application never calls `AddOpenTelemetry()`, this installs the SDK with no exporters,
-which is effectively inert. `AddAlbertoInstrumentation()` (on `TracerProviderBuilder` /
-`MeterProviderBuilder`) is `[Obsolete]` — delete it; `.WithTelemetry()` does the same
-work automatically.
+which is effectively inert. In a hosted application `.WithTelemetry()` does this work
+automatically, so a separate `AddAlbertoInstrumentation()` call is redundant — though harmless,
+because `AddSource` / `AddMeter` are idempotent. `AddAlbertoInstrumentation()` (on
+`TracerProviderBuilder` / `MeterProviderBuilder`) is retained for applications that build a
+`TracerProvider` or `MeterProvider` themselves, outside the generic host.
 
 ---
 
