@@ -1,6 +1,7 @@
 using Alberto.Dcb;
 using Alberto.Dcb.Configuration;
 using Alberto.Dcb.Postgres;
+using Alberto.Dcb.Subscriptions;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -117,6 +118,41 @@ public class PostgresDescriptorTests
         new AlbertoModuleValidator()
             .Collect(definition)
             .Should().Contain(f => f.Code == "ALB1003");
+    }
+
+    // ── Finding I2 ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Config_supplied_LeaseDuration_reaches_IProcessorLeaseManager()
+    {
+        // PostgresProcessorLeaseManager.LeaseDuration is public, so this test can verify
+        // that the config-overlaid value is used without a real database connection.
+        //
+        // Before the fix factory lambdas captured the pre-configuration Options instance,
+        // so they would see LeaseDuration = 10 s even when config said 3 min.
+        // After the fix they resolve PostgresOptions from IOptionsMonitor at service-resolution
+        // time, so the config-overlaid value wins.
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Alberto:Modules:orders:Postgres:LeaseDuration"] = "00:03:00",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(configuration);
+        services.AddAlberto("orders", module => module
+            .WithPostgres(o => o with
+            {
+                ConnectionString = ConnectionString,
+                LeaseDuration = TimeSpan.FromSeconds(10), // must be superseded by config
+            }));
+
+        using var provider = services.BuildServiceProvider();
+        var leaseManager = provider.GetRequiredKeyedService<IProcessorLeaseManager>("orders");
+
+        leaseManager.LeaseDuration.Should().Be(TimeSpan.FromMinutes(3),
+            "LeaseDuration from configuration (3 min) must supersede the code value (10 s)");
     }
 
     [Fact]

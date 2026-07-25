@@ -109,21 +109,27 @@ public sealed record PostgresBackendDescriptor(PostgresOptions Options) : IAlber
             PostgresBuilderExtensions.RegisterSingleTenantBackend(context, Options);
 
         // Checkpoint store with caching layer.
+        // Resolves PostgresOptions from IOptionsMonitor so that configuration overlays
+        // applied in Phase 2 (e.g. Postgres:Schema from appsettings) are honoured here.
         services.AddKeyedSingleton<ICheckpointStore>(moduleKey, (sp, _) =>
         {
+            var definition = sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>().Get(moduleKey);
+            var opts = definition.Backend is PostgresBackendDescriptor desc ? desc.Options : Options;
             var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
-            var postgresStore = new PostgresCheckpointStore(dataSource, Options.Schema);
+            var postgresStore = new PostgresCheckpointStore(dataSource, opts.Schema);
             return new CachingCheckpointStore(postgresStore);
         });
 
         // Dead letter store.
         services.AddKeyedSingleton<IDeadLetterStore>(moduleKey, (sp, _) =>
         {
+            var definition = sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>().Get(moduleKey);
+            var opts = definition.Backend is PostgresBackendDescriptor desc ? desc.Options : Options;
             var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
-            return new PostgresDeadLetterStore(dataSource, Options.Schema);
+            return new PostgresDeadLetterStore(dataSource, opts.Schema);
         });
 
-        // Processor lock (single-leader mode).
+        // Processor lock (single-leader mode — schema-less, no Options needed).
         services.AddKeyedSingleton<IProcessorLock>(moduleKey, (sp, _) =>
         {
             var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
@@ -133,29 +139,48 @@ public sealed record PostgresBackendDescriptor(PostgresOptions Options) : IAlber
         // Tenant processor lock (used for tenant-distributed mode).
         services.AddKeyedSingleton<ITenantProcessorLock>(moduleKey, (sp, _) =>
         {
+            var definition = sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>().Get(moduleKey);
+            var opts = definition.Backend is PostgresBackendDescriptor desc ? desc.Options : Options;
             var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
-            return new PostgresTenantProcessorLock(dataSource, Options.Schema, Options.LeaseDuration);
+            return new PostgresTenantProcessorLock(dataSource, opts.Schema, opts.LeaseDuration);
         });
 
         // Processor lease manager.
         services.AddKeyedSingleton<IProcessorLeaseManager>(moduleKey, (sp, _) =>
         {
+            var definition = sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>().Get(moduleKey);
+            var opts = definition.Backend is PostgresBackendDescriptor desc ? desc.Options : Options;
             var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
-            return new PostgresProcessorLeaseManager(dataSource, Options.Schema, Options.LeaseDuration);
+            return new PostgresProcessorLeaseManager(dataSource, opts.Schema, opts.LeaseDuration);
         });
 
         // Append signal shared by the LISTEN/NOTIFY listener and EventStoreHead.
         services.AddKeyedSingleton<IEventAppendedSignal>(moduleKey, (_, _) => new EventAppendedSignal());
 
-        if (Options.EnableNotifyListener)
+        // Notify listener — always registered; EnableNotifyListener is checked at resolution
+        // time from the monitor so a config-supplied false is honoured.
+        services.AddSingleton<IHostedService>(sp =>
         {
-            services.AddSingleton<IHostedService>(sp =>
-            {
-                var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
-                var signal = sp.GetRequiredKeyedService<IEventAppendedSignal>(moduleKey);
-                return new PostgresEventListener(
-                    dataSource, Options.Schema, signal, sp.GetService<ILogger<PostgresEventListener>>());
-            });
-        }
+            var definition = sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>().Get(moduleKey);
+            var opts = definition.Backend is PostgresBackendDescriptor desc ? desc.Options : Options;
+            if (!opts.EnableNotifyListener)
+                return PostgresNullHostedService.Instance;
+            var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
+            var signal = sp.GetRequiredKeyedService<IEventAppendedSignal>(moduleKey);
+            return new PostgresEventListener(
+                dataSource, opts.Schema, signal, sp.GetService<ILogger<PostgresEventListener>>());
+        });
     }
+}
+
+/// <summary>
+/// No-op <see cref="IHostedService"/> returned when <see cref="PostgresOptions.EnableNotifyListener"/>
+/// is false. Allows the factory lambda to always register without a composition-time conditional.
+/// </summary>
+file sealed class PostgresNullHostedService : IHostedService
+{
+    public static readonly PostgresNullHostedService Instance = new();
+    private PostgresNullHostedService() { }
+    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }
