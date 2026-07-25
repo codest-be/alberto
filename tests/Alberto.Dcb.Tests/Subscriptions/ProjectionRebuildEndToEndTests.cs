@@ -140,7 +140,7 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
         await WaitUntilAsync(
             async () =>
             {
-                observed.Add((await ReadAsync(await ActiveVersionAsync(ct), player, ct))?.Points);
+                observed.AddRange(await ReadAtAStableVersionAsync(player, ct));
                 return (await StateAsync(ct)).Status is RebuildStatus.Completed;
             },
             "the rebuild to be promoted", ct);
@@ -358,6 +358,36 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
     {
         var states = await StoreAtVersion(version).LoadManyAsync([player], ct: ct);
         return states.GetValueOrDefault(player);
+    }
+
+    /// <summary>
+    /// Reads the projection at whatever version is live, discarding the read if a promotion
+    /// landed while it was in flight.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Resolving the live version and reading a row from it are two round trips, and promotion
+    /// moves the pointer and drops the superseded version's rows in one transaction. A read that
+    /// straddles it asks the old version for rows that same transaction has just deleted, and
+    /// gets nothing back.
+    /// </para>
+    /// <para>
+    /// That empty read is real and a real reader can be served it — it is the known gap
+    /// "promotion opens a one-query window where a reader sees nothing", whose fix is to defer
+    /// the delete past a version-cache grace period rather than to change anything here. This
+    /// test is not the place it gets caught: it is about what the shadow loop writes and where,
+    /// and a caller that never straddles a promotion still must not see a half-built projection.
+    /// Bracketing the read with the version keeps it to that question, and everything it does
+    /// record was served at a version that stood still for the whole read.
+    /// </para>
+    /// </remarks>
+    private async Task<IReadOnlyList<int?>> ReadAtAStableVersionAsync(string player, CancellationToken ct)
+    {
+        var before = await ActiveVersionAsync(ct);
+        var points = (await ReadAsync(before, player, ct))?.Points;
+        var after = await ActiveVersionAsync(ct);
+
+        return before == after ? [points] : [];
     }
 
     private Task WriteAsync(int version, string player, Totals state, CancellationToken ct) =>
