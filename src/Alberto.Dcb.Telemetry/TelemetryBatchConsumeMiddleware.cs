@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Alberto.Dcb.Diagnostics;
 using Alberto.Dcb.Subscriptions;
+using Alberto.Dcb.Tenancy;
 
 namespace Alberto.Dcb.Telemetry;
 
@@ -39,7 +40,9 @@ public static class TelemetryBatchConsumeMiddleware
                     links: links);
 
                 activity?.SetTag("processor.id", context.ProcessorId);
-                activity?.SetTag("module.key", context.ModuleKey);
+                activity?.SetTag("module.key", ShardKey.ModuleOf(context.ModuleKey));
+                if (ShardKey.ShardOf(context.ModuleKey) is { } shardId)
+                    activity?.SetTag("module.shard", shardId);
                 activity?.SetTag("batch.size", context.Envelopes.Count);
                 activity?.SetTag("event.position.first", firstEnvelope.GlobalPosition);
                 activity?.SetTag("event.position.last", context.Envelopes[^1].GlobalPosition);
@@ -72,8 +75,7 @@ public static class TelemetryBatchConsumeMiddleware
                     activity?.SetStatus(ActivityStatusCode.Ok);
                     AlbertoMetrics.EventsProcessed.Add(
                         context.Envelopes.Count,
-                        new KeyValuePair<string, object?>("processor", context.ProcessorId),
-                        new KeyValuePair<string, object?>("module", context.ModuleKey));
+                        TelemetryTags.ForModule(context.ProcessorId, context.ModuleKey));
                 }
             }
             catch (Exception ex)
