@@ -36,6 +36,7 @@ public static class PaymentsModule
                 MaxPoolSize = 30,
             })
             .WithTelemetry()
+            .WithEventsFrom(typeof(Core.Events.PaymentInitiated).Assembly)
             .AddProjection(PaymentsOverviewProjection.Declaration, ctx =>
             {
                 var dataSource = ctx.Services.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);

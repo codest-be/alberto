@@ -7,7 +7,7 @@ namespace Alberto.Orders.Core.Order;
 /// </summary>
 [EventType("order-created")]
 public sealed record OrderCreated(
-    Guid OrderId,
+    [property: Tag(Tags.Order)] Guid OrderId,
     Guid CustomerId,
     IReadOnlyList<OrderLineItem> LineItems,
     string? Notes) : IEvent;
@@ -17,7 +17,7 @@ public sealed record OrderCreated(
 /// </summary>
 [EventType("order-item-added")]
 public sealed record OrderItemAdded(
-    Guid OrderId,
+    [property: Tag(Tags.Order)] Guid OrderId,
     Guid ProductId,
     string ProductName,
     int Quantity,
@@ -28,7 +28,7 @@ public sealed record OrderItemAdded(
 /// </summary>
 [EventType("order-item-removed")]
 public sealed record OrderItemRemoved(
-    Guid OrderId,
+    [property: Tag(Tags.Order)] Guid OrderId,
     Guid ProductId) : IEvent;
 
 /// <summary>
@@ -36,7 +36,7 @@ public sealed record OrderItemRemoved(
 /// </summary>
 [EventType("order-confirmed")]
 public sealed record OrderConfirmed(
-    Guid OrderId,
+    [property: Tag(Tags.Order)] Guid OrderId,
     DateTimeOffset ConfirmedAt) : IEvent;
 
 /// <summary>
@@ -44,7 +44,7 @@ public sealed record OrderConfirmed(
 /// </summary>
 [EventType("order-shipped")]
 public sealed record OrderShipped(
-    Guid OrderId,
+    [property: Tag(Tags.Order)] Guid OrderId,
     string TrackingNumber,
     string Carrier,
     DateTimeOffset ShippedAt) : IEvent;
@@ -54,7 +54,7 @@ public sealed record OrderShipped(
 /// </summary>
 [EventType("order-delivered")]
 public sealed record OrderDelivered(
-    Guid OrderId,
+    [property: Tag(Tags.Order)] Guid OrderId,
     DateTimeOffset DeliveredAt) : IEvent;
 
 /// <summary>
@@ -62,7 +62,7 @@ public sealed record OrderDelivered(
 /// </summary>
 [EventType("order-cancelled")]
 public sealed record OrderCancelled(
-    Guid OrderId,
+    [property: Tag(Tags.Order)] Guid OrderId,
     string Reason,
     DateTimeOffset CancelledAt) : IEvent;
 

@@ -22,16 +22,16 @@ public sealed partial class OrderDecider
         DateTimeOffset shippedAt)
     {
         if (!state.Exists)
-            return Problem.Create("order-not-found", "Order does not exist");
+            return Decision.Fail(OrderProblems.NotFound());
 
         if (!state.CanBeShipped)
-            return Problem.Create("order-not-shippable", $"Order cannot be shipped in {state.Status} status");
+            return Decision.Fail(OrderProblems.InvalidStatus("shipped", state.Status));
 
         if (string.IsNullOrWhiteSpace(trackingNumber))
-            return Problem.Create("tracking-number-required", "Tracking number is required");
+            return Decision.Fail(OrderProblems.TrackingNumberRequired());
 
         if (string.IsNullOrWhiteSpace(carrier))
-            return Problem.Create("carrier-required", "Carrier is required");
+            return Decision.Fail(OrderProblems.CarrierRequired());
 
         return Decision.Succeed(new OrderShipped(state.OrderId, trackingNumber, carrier, shippedAt));
     }

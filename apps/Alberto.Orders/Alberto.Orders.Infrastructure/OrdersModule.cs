@@ -45,6 +45,7 @@ public static class OrdersModule
                     npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "orders"));
             })
             .WithTelemetry()
+            .WithEventsFrom(typeof(Core.Order.OrderCreated).Assembly)
             .AddProjection(OrdersOverviewProjection.Declaration, ctx =>
             {
                 var dataSource = ctx.Services.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);

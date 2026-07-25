@@ -22,15 +22,13 @@ public sealed partial class PaymentDecider
         DateTimeOffset authorizedAt)
     {
         if (!state.Exists)
-            return Problem.Create("payment-not-found", "Payment does not exist");
+            return Decision.Fail(PaymentProblems.NotFound());
 
         if (!state.CanBeAuthorized)
-            return Problem.Create(
-                "payment-not-authorizable",
-                $"Payment cannot be authorized in {state.Status} status");
+            return Decision.Fail(PaymentProblems.InvalidStatus("authorized", state.Status));
 
         if (string.IsNullOrWhiteSpace(authorizationCode))
-            return Problem.Create("authorization-code-required", "Authorization code is required");
+            return Decision.Fail(PaymentProblems.AuthorizationCodeRequired());
 
         return Decision.Succeed(new PaymentAuthorized(state.PaymentId, authorizationCode, authorizedAt));
     }

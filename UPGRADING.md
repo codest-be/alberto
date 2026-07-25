@@ -1,7 +1,93 @@
 # Alberto DCB — Upgrade Notes
 
 This file collects **every breaking change** introduced across all release cycles.
-The most recent cycle (projection rebuilds) is at the top. Older changes follow.
+The most recent cycle is at the top. Older changes follow.
+
+---
+
+## The command pipeline is reshaped; `Persist` is now `Commit`
+
+The fluent pipeline in `Alberto.Dcb.Commands` was rebuilt around one idea: **the boundary should
+decide which terminal you get.** Previously every pipeline exposed `Persist(query, position, ct)`,
+`PersistUnconditionally(ct)` and a `Persist(ct)` that threw at runtime when no boundary had been
+established. Now the type you are holding tells you which of those is legal.
+
+| Change | Severity | What broke |
+|---|---|---|
+| P-1 | **High** | `Persist` renamed to `Commit`; `PersistUnconditionally` to `CommitUnconditionally` |
+| P-2 | **High** | `NoValidation()` removed — validation was always optional |
+| P-3 | **High** | `WithEventsFrom` registers `AlbertoStore` **keyed** by module key |
+| P-4 | Medium | `Decide` is synchronous; use the new `Enrich` stage for async work before the boundary |
+
+### P-1 / P-2 — the pipeline shape
+
+```csharp
+// before
+await store.Handle(command)
+    .NoValidation()
+    .Load(boundary, initial, apply)
+    .Decide((cmd, state) => …)
+    .Persist(ct);
+
+// after
+await store.Handle(command)
+    .Load(boundary, initial, apply)
+    .Decide((cmd, state) => …)
+    .Commit(ct);
+```
+
+`Validate` is now genuinely optional — drop `NoValidation()` and nothing replaces it. It is also
+chainable, and short-circuits on the first failure without reading the log.
+
+`Load` returns a **bound** pipeline, and only a bound pipeline has `Commit(ct)`. Skipping `Load`,
+or using the new `LoadUnbound` for state that does not come from the log, gives you an **unbound**
+pipeline whose terminals are `Commit(query, expectedPosition, ct)` and `CommitUnconditionally(ct)`.
+The runtime "no boundary was observed" exception is gone because that state is now unrepresentable.
+
+Two terminals are new. `TryCommit` returns a failed `Result` carrying a `dcb.conflict` problem
+instead of throwing `DcbConflictException`. `RetryOnConflict(n)` bounds the total attempts,
+re-running `Load` and `Decide` against the current log on each one — stages before `Load` are
+memoized and run exactly once.
+
+### P-3 — `AlbertoStore` is keyed
+
+```csharp
+// before
+var store = sp.GetRequiredService<AlbertoStore>();
+
+// after
+var store = sp.GetRequiredKeyedService<AlbertoStore>("orders");
+```
+
+`IEventStore` was already keyed by module key. `AlbertoStore` was not, so a host registering two
+modules got one store — whichever registered last — wrapping the wrong log. `WithEventsFrom` now
+registers it with `AddKeyedScoped` under the same key, so each module gets its own.
+
+The store is also handed the service provider, so `Load<TState>(boundary)` can resolve
+`Evolver<TState>` from DI instead of taking one as an argument. Constructing an `AlbertoStore`
+yourself still works; that overload then throws with a message telling you to pass the evolver
+explicitly.
+
+### P-4 — `Decide` is synchronous, `Enrich` is where async goes
+
+`Decide` used to accept an async delegate, which put arbitrary I/O *inside* the window between
+reading the boundary and appending under it — the one place where latency turns directly into
+conflicts. It is now synchronous.
+
+Work that needs to be awaited moves to `Enrich`, which runs before `Load`:
+
+```csharp
+await store.Handle(command)
+    .Enrich(async (cmd, ct) => cmd with { Rate = await rates.GetAsync(cmd.Currency, ct) })
+    .Load(cmd => Boundary(cmd.OrderId), evolver)
+    .Decide((cmd, state) => Actions.Convert(state, cmd.Rate))
+    .RetryOnConflict(3)
+    .Commit(ct);
+```
+
+`Enrich` may change the command's type, and it runs once even when `RetryOnConflict` re-reads.
+If you genuinely need to await something against loaded state, use `LoadUnbound` and supply the
+boundary explicitly at `Commit`.
 
 ---
 

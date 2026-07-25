@@ -22,15 +22,13 @@ public sealed partial class PaymentDecider
         string errorMessage)
     {
         if (!state.Exists)
-            return Problem.Create("payment-not-found", "Payment does not exist");
+            return Decision.Fail(PaymentProblems.NotFound());
 
         if (!state.CanBeFailed)
-            return Problem.Create(
-                "payment-not-failable",
-                $"Payment cannot be marked as failed in {state.Status} status");
+            return Decision.Fail(PaymentProblems.InvalidStatus("marked as failed", state.Status));
 
         if (string.IsNullOrWhiteSpace(errorCode))
-            return Problem.Create("error-code-required", "Error code is required");
+            return Decision.Fail(PaymentProblems.ErrorCodeRequired());
 
         return Decision.Succeed(new PaymentFailed(state.PaymentId, errorCode, errorMessage ?? ""));
     }
