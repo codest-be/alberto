@@ -1,8 +1,6 @@
 using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 
-#pragma warning disable CS0618 // Task 12 removes DcbModuleBuilder.Services; delete this pragma then.
-
 namespace Alberto.Dcb;
 
 /// <summary>
@@ -37,10 +35,9 @@ public static class AlbertoStoreServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(eventsAssembly);
 
-        var moduleKey = builder.ModuleKey;
-        builder.Services.AddSingleton(sp => new AlbertoStore(
-            sp.GetRequiredKeyedService<IEventStore>(moduleKey),
-            EventSerializer.FromAssembly(eventsAssembly)));
+        builder.Register(context => context.Services.AddSingleton(sp => new AlbertoStore(
+            sp.GetRequiredKeyedService<IEventStore>(context.ModuleKey),
+            EventSerializer.FromAssembly(eventsAssembly))));
 
         return builder;
     }

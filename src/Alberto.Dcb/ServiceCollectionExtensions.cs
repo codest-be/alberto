@@ -42,7 +42,7 @@ public static class ServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configure);
 
         // Phase 1 — declare. Runs the user's lambda against an accumulator; touches nothing else.
-        var builder = new DcbModuleBuilder(services, moduleKey);
+        var builder = new DcbModuleBuilder(moduleKey);
         configure(builder);
 
         // Auto-add the control loop with defaults if the user never called WithControlLoop.

@@ -1,5 +1,4 @@
 using Alberto.Dcb.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Alberto.Dcb;
 
@@ -11,24 +10,12 @@ namespace Alberto.Dcb;
 public sealed class DcbModuleBuilder
 {
     private readonly List<Action<AlbertoModuleContext>> _deferredRegistrations = [];
-    private readonly IServiceCollection _services;
 
-    internal DcbModuleBuilder(IServiceCollection services, string moduleKey)
-    {
-        _services = services;
+    internal DcbModuleBuilder(string moduleKey) =>
         Definition = new AlbertoModuleDefinition { ModuleKey = moduleKey };
-    }
 
     /// <summary>The module key. Doubles as the DI service key for this module's services.</summary>
     public string ModuleKey => Definition.ModuleKey;
-
-    /// <summary>
-    /// The application's service collection.
-    /// </summary>
-    [Obsolete("Registering services directly makes configuration order-dependent. " +
-              "Use Register(context => ...) for a deferred registration, or implement " +
-              "IAlbertoBackendDescriptor for a storage backend. This property is removed in 1.0.")]
-    public IServiceCollection Services => _services;
 
     internal AlbertoModuleDefinition Definition { get; private set; }
 

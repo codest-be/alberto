@@ -3,8 +3,6 @@ using Alberto.Dcb.Subscriptions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-#pragma warning disable CS0618 // Task 12 removes DcbModuleBuilder.Services; delete this pragma then.
-
 namespace Alberto.Dcb;
 
 /// <summary>
@@ -34,11 +32,11 @@ public static class DcbModuleBuilderExtensions
             Kind = ProcessorKind.Projection,
         });
 
-        builder.Services.AddKeyedSingleton<IEventProcessor>(builder.ModuleKey, (sp, _) =>
+        builder.Register(context => context.Services.AddKeyedSingleton<IEventProcessor>(context.ModuleKey, (sp, _) =>
         {
             var factory = stateStoreFactory(sp);
             return new DeclaredAsyncProjection<TState>(declaration, factory);
-        });
+        }));
         return builder;
     }
 
@@ -85,8 +83,8 @@ public static class DcbModuleBuilderExtensions
         if (mode == ReactorMode.Sync)
         {
             ValidateSyncExecutionOptions(processorId, executionOptions);
-            builder.Services.AddKeyedSingleton<IPostAppendHandler>(builder.ModuleKey, (sp, _) =>
-                new SyncReactor<TEvent>((e, _, ct) => handlerFactory(sp)(e, ct)));
+            builder.Register(context => context.Services.AddKeyedSingleton<IPostAppendHandler>(context.ModuleKey, (sp, _) =>
+                new SyncReactor<TEvent>((e, _, ct) => handlerFactory(sp)(e, ct))));
         }
         else
         {
@@ -146,8 +144,8 @@ public static class DcbModuleBuilderExtensions
         if (mode == ReactorMode.Sync)
         {
             ValidateSyncExecutionOptions(processorId, executionOptions);
-            builder.Services.AddKeyedSingleton<IPostAppendHandler>(builder.ModuleKey, (sp, _) =>
-                new SyncReactor<TEvent>(handlerFactory(sp)));
+            builder.Register(context => context.Services.AddKeyedSingleton<IPostAppendHandler>(context.ModuleKey, (sp, _) =>
+                new SyncReactor<TEvent>(handlerFactory(sp))));
         }
         else
         {
@@ -199,7 +197,7 @@ public static class DcbModuleBuilderExtensions
         var resolvedProcessorId = processorId ?? ProcessorId.For<THandler>();
         ArgumentException.ThrowIfNullOrWhiteSpace(resolvedProcessorId);
 
-        builder.Services.TryAddScoped<THandler>();
+        builder.Register(context => context.Services.TryAddScoped<THandler>());
 
         var executionOptions = BuildProcessorExecutionOptions(mode, configure);
 
@@ -214,7 +212,7 @@ public static class DcbModuleBuilderExtensions
         if (mode == ReactorMode.Sync)
         {
             ValidateSyncExecutionOptions(resolvedProcessorId, executionOptions);
-            builder.Services.AddKeyedSingleton<IPostAppendHandler>(builder.ModuleKey, (sp, _) =>
+            builder.Register(context => context.Services.AddKeyedSingleton<IPostAppendHandler>(context.ModuleKey, (sp, _) =>
             {
                 var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
                 return new SyncReactor<TEvent>(async (e, _, ct) =>
@@ -223,7 +221,7 @@ public static class DcbModuleBuilderExtensions
                     var handler = scope.ServiceProvider.GetRequiredService<THandler>();
                     await methodSelector(handler)(e, ct);
                 });
-            });
+            }));
         }
         else
         {
@@ -276,7 +274,7 @@ public static class DcbModuleBuilderExtensions
         var resolvedProcessorId = processorId ?? ProcessorId.For<THandler>();
         ArgumentException.ThrowIfNullOrWhiteSpace(resolvedProcessorId);
 
-        builder.Services.TryAddScoped<THandler>();
+        builder.Register(context => context.Services.TryAddScoped<THandler>());
 
         var executionOptions = BuildProcessorExecutionOptions(mode, configure);
 
@@ -291,27 +289,27 @@ public static class DcbModuleBuilderExtensions
         if (mode == ReactorMode.Sync)
         {
             ValidateSyncExecutionOptions(resolvedProcessorId, executionOptions);
-            builder.Services.AddKeyedSingleton<IPostAppendHandler>(builder.ModuleKey, (sp, _) =>
+            builder.Register(context => context.Services.AddKeyedSingleton<IPostAppendHandler>(context.ModuleKey, (sp, _) =>
             {
                 var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
-                return new SyncReactor<TEvent>(async (e, context, ct) =>
+                return new SyncReactor<TEvent>(async (e, reactorContext, ct) =>
                 {
                     await using var scope = scopeFactory.CreateAsyncScope();
                     var handler = scope.ServiceProvider.GetRequiredService<THandler>();
-                    await methodSelector(handler)(e, context, ct);
+                    await methodSelector(handler)(e, reactorContext, ct);
                 });
-            });
+            }));
         }
         else
         {
             RegisterAsyncProcessor(builder, resolvedProcessorId, executionOptions, sp =>
             {
                 var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
-                return new FunctionalReactor<TEvent>(resolvedProcessorId, async (e, context, ct) =>
+                return new FunctionalReactor<TEvent>(resolvedProcessorId, async (e, reactorContext, ct) =>
                 {
                     await using var scope = scopeFactory.CreateAsyncScope();
                     var handler = scope.ServiceProvider.GetRequiredService<THandler>();
-                    await methodSelector(handler)(e, context, ct);
+                    await methodSelector(handler)(e, reactorContext, ct);
                 }, executionOptions.MaxConcurrency);
             });
         }
@@ -436,12 +434,15 @@ public static class DcbModuleBuilderExtensions
         ProcessorExecutionOptions executionOptions,
         Func<IServiceProvider, IEventProcessor> processorFactory)
     {
-        builder.Services.AddKeyedSingleton<IEventProcessor>(
-            builder.ModuleKey,
-            (sp, _) => processorFactory(sp));
-        builder.Services.AddKeyedSingleton<ProcessorExecutionRegistration>(
-            builder.ModuleKey,
-            (_, _) => new ProcessorExecutionRegistration(processorId, executionOptions));
+        builder.Register(context =>
+        {
+            context.Services.AddKeyedSingleton<IEventProcessor>(
+                context.ModuleKey,
+                (sp, _) => processorFactory(sp));
+            context.Services.AddKeyedSingleton<ProcessorExecutionRegistration>(
+                context.ModuleKey,
+                (_, _) => new ProcessorExecutionRegistration(processorId, executionOptions));
+        });
     }
 
     private static void ValidateSyncExecutionOptions(

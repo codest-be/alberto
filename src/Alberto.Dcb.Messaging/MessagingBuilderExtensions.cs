@@ -2,8 +2,6 @@ using Alberto.Dcb.Subscriptions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
-#pragma warning disable CS0618 // Task 12 removes DcbModuleBuilder.Services; delete this pragma then.
-
 namespace Alberto.Dcb.Messaging;
 
 /// <summary>
@@ -38,17 +36,20 @@ public static class MessagingBuilderExtensions
         var registry = new MessageMappingRegistry();
         configureMappings(registry);
 
-        // Register the handler as a keyed IEventProcessor so the ControlLoop picks it up.
-        // OutboxHandler implements IBatchableProcessor, satisfying the default Required batching mode.
-        builder.Services.AddKeyedSingleton<IEventProcessor>(builder.ModuleKey, (sp, _) =>
-            new OutboxHandler(registry, outboxStore, sp));
-
-        // Optionally wire up the relay as a hosted service
-        if (transport is not null)
+        builder.Register(context =>
         {
-            builder.Services.AddSingleton<IHostedService>(
-                _ => new OutboxRelay(outboxStore, transport, batchSize: relayBatchSize));
-        }
+            // Register the handler as a keyed IEventProcessor so the ControlLoop picks it up.
+            // OutboxHandler implements IBatchableProcessor, satisfying the default Required batching mode.
+            context.Services.AddKeyedSingleton<IEventProcessor>(context.ModuleKey, (sp, _) =>
+                new OutboxHandler(registry, outboxStore, sp));
+
+            // Optionally wire up the relay as a hosted service
+            if (transport is not null)
+            {
+                context.Services.AddSingleton<IHostedService>(
+                    _ => new OutboxRelay(outboxStore, transport, batchSize: relayBatchSize));
+            }
+        });
 
         return builder;
     }
