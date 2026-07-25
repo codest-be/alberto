@@ -1,7 +1,6 @@
 using System.CommandLine;
 using Alberto.Cli.Output;
 using Alberto.Dcb.Postgres;
-using Npgsql;
 
 namespace Alberto.Cli.Commands;
 
@@ -16,6 +15,7 @@ public static class ProcessorCommand
             Examples:
               alberto processor my-processor
               alberto processor my-processor --json
+              alberto processor my-processor --shard db2
             """);
 
         var idArgument = new Argument<string>("id") { Description = "Processor ID" };
@@ -27,54 +27,77 @@ public static class ProcessorCommand
         command.AddOption(urlOption);
         command.AddOption(schemaOption);
         command.AddOption(jsonOption);
+        var shardOption = ShardRun.AddReadOption(command);
 
-        command.SetHandler(async (string id, string? url, string? schema, bool json) =>
+        command.SetHandler(async (string id, string? url, string? schema, bool json, string? shard) =>
         {
             IOutput output = json ? new JsonOutput() : new HumanOutput();
 
-            var connStr = ConnectionResolver.ResolveConnectionString(url);
-            var schemaName = ConnectionResolver.ResolveSchema(schema);
-
             try
             {
-                await using var dataSource = new NpgsqlDataSourceBuilder(connStr).Build();
-                var admin = new PostgresAdminDataAccess(dataSource, schemaName);
+                // A processor runs once per database, so on a sharded module this is several
+                // checkpoints under one name — rendered as rows rather than a box, because the
+                // positions belong to different sequences and must not be read as one number.
+                var targets = ShardResolver.ResolveForRead(shard, url, schema);
+                var results = await ShardRun.CollectAsync(
+                    targets,
+                    async admin =>
+                    {
+                        var checkpoint = await admin.GetSingleCheckpointAsync(id);
+                        return checkpoint is null
+                            ? (IReadOnlyList<CheckpointInfo>)[]
+                            : [checkpoint];
+                    });
 
-                var checkpoint = await admin.GetSingleCheckpointAsync(id);
-
-                if (checkpoint is null)
-                {
-                    output.Warning($"Processor '{id}' not found.");
-                    Environment.Exit(1);
-                    return;
-                }
+                var found = results.Where(r => r.Succeeded).SelectMany(r => r.Value!).Any();
 
                 if (json)
                 {
-                    output.Json(new
+                    output.Json(ShardRun.Flatten(targets, results, c => new
                     {
-                        checkpoint.ProcessorId,
-                        checkpoint.LastPosition,
-                        updatedAt = checkpoint.UpdatedAt?.ToString("O")
-                    });
+                        c.ProcessorId,
+                        c.LastPosition,
+                        updatedAt = c.UpdatedAt?.ToString("O")
+                    }));
+                }
+                else if (!found)
+                {
+                    output.Warning($"Processor '{id}' not found.");
+                }
+                else if (ShardRun.ShowsShard(targets))
+                {
+                    ShardRun.Table(
+                        output, targets, results,
+                        ["Processor ID", "Last Position", "Updated At"],
+                        c =>
+                        [
+                            c.ProcessorId,
+                            c.LastPosition.ToString(),
+                            c.UpdatedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"
+                        ],
+                        $"Processor '{id}' not found.");
                 }
                 else
                 {
+                    var checkpoint = results[0].Value![0];
                     output.Box($"Processor: {id}", new Dictionary<string, string>
                     {
                         ["Processor ID"] = checkpoint.ProcessorId,
                         ["Last Position"] = checkpoint.LastPosition.ToString(),
                         ["Updated At"] = checkpoint.UpdatedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-",
-                        ["Schema"] = schemaName
+                        ["Schema"] = targets[0].Schema
                     });
                 }
+
+                if (ShardRun.ReportFailures(output, results) || !found)
+                    Environment.Exit(1);
             }
             catch (Exception ex)
             {
                 output.Error(ex.Message);
                 Environment.Exit(1);
             }
-        }, idArgument, urlOption, schemaOption, jsonOption);
+        }, idArgument, urlOption, schemaOption, jsonOption, shardOption);
 
         return command;
     }

@@ -1,7 +1,6 @@
 using System.CommandLine;
 using Alberto.Cli.Output;
 using Alberto.Dcb.Postgres;
-using Npgsql;
 using Spectre.Console;
 
 namespace Alberto.Cli.Commands.Ops;
@@ -30,45 +29,51 @@ public static class TenantOpsCommand
         command.AddOption(schemaOption);
         command.AddOption(processorIdOption);
         command.AddOption(yesOption);
+        var (shardOption, allShardsOption) = ShardRun.AddMutationOptions(command);
 
-        command.SetHandler(async (string? url, string? schema, string? processorId, bool yes) =>
+        command.SetHandler(async (string? url, string? schema, string? processorId, bool yes, string? shard, bool allShards) =>
         {
             IOutput output = new HumanOutput();
-
-            var connStr = ConnectionResolver.ResolveConnectionString(url);
-            var schemaName = ConnectionResolver.ResolveSchema(schema);
 
             var scope = processorId is not null
                 ? $"consumer '{processorId}'"
                 : "all consumers";
 
-            if (!yes)
-            {
-                var confirmed = AnsiConsole.Confirm(
-                    $"Release tenant leases for {scope}? The running application will reacquire them.",
-                    defaultValue: false);
-
-                if (!confirmed)
-                {
-                    output.Text("Aborted.");
-                    return;
-                }
-            }
-
             try
             {
-                await using var dataSource = new NpgsqlDataSourceBuilder(connStr).Build();
-                var admin = new PostgresAdminDataAccess(dataSource, schemaName);
+                // Leases live in the same database as the events they fence, so a sharded module
+                // holds a separate set per shard and each has to be released on its own.
+                var targets = ShardResolver.ResolveForMutation(shard, allShards, url, schema);
 
-                var deleted = await admin.ReleaseTenantLeasesAsync(processorId);
-                output.Text($"Released {deleted} tenant lease(s) for {scope}.");
+                if (!yes)
+                {
+                    var confirmed = AnsiConsole.Confirm(
+                        $"Release tenant leases for {scope}{ShardRun.Scope(targets)}? The running application will reacquire them.",
+                        defaultValue: false);
+
+                    if (!confirmed)
+                    {
+                        output.Text("Aborted.");
+                        return;
+                    }
+                }
+
+                var failed = await ShardRun.ApplyAsync(output, targets, async (dataSource, target) =>
+                {
+                    var admin = new PostgresAdminDataAccess(dataSource, target.Schema);
+                    var deleted = await admin.ReleaseTenantLeasesAsync(processorId);
+                    output.Text($"Released {deleted} tenant lease(s) for {scope}.");
+                });
+
+                if (failed)
+                    Environment.Exit(1);
             }
             catch (Exception ex)
             {
                 output.Error(ex.Message);
                 Environment.Exit(1);
             }
-        }, urlOption, schemaOption, processorIdOption, yesOption);
+        }, urlOption, schemaOption, processorIdOption, yesOption, shardOption, allShardsOption);
 
         return command;
     }

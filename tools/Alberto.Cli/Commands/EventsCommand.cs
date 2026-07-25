@@ -1,7 +1,6 @@
 using System.CommandLine;
 using Alberto.Cli.Output;
 using Alberto.Dcb.Postgres;
-using Npgsql;
 
 namespace Alberto.Cli.Commands;
 
@@ -20,6 +19,7 @@ public static class EventsCommand
               alberto events --tenant tenant_a
               alberto events --after 1000 --limit 50
               alberto events --json
+              alberto events --shard db2
             """);
 
         var urlOption = new Option<string?>("--url") { Description = "PostgreSQL connection string" };
@@ -27,7 +27,7 @@ public static class EventsCommand
         var typeOption = new Option<string?>("--type") { Description = "Filter by event type" };
         var tagOption = new Option<string?>("--tag") { Description = "Filter by tag" };
         var tenantOption = new Option<string?>("--tenant") { Description = "Filter by tenant ID (multi-tenant stores only)" };
-        var afterOption = new Option<long>("--after") { DefaultValueFactory = _ => 0, Description = "Return events after this global position" };
+        var afterOption = new Option<long>("--after") { DefaultValueFactory = _ => 0, Description = "Return events after this global position (per database — positions are not comparable across shards)" };
         var limitOption = new Option<int>("--limit") { DefaultValueFactory = _ => 20, Description = "Maximum number of results" };
         var jsonOption = new Option<bool>("--json") { Description = "Output as JSON" };
 
@@ -39,24 +39,25 @@ public static class EventsCommand
         command.AddOption(afterOption);
         command.AddOption(limitOption);
         command.AddOption(jsonOption);
+        var shardOption = ShardRun.AddReadOption(command);
 
-        command.SetHandler(async (string? url, string? schema, string? type, string? tag, string? tenant, long after, int limit, bool json) =>
+        command.SetHandler(async (string? url, string? schema, string? type, string? tag, string? tenant, long after, int limit, bool json, string? shard) =>
         {
             IOutput output = json ? new JsonOutput() : new HumanOutput();
 
-            var connStr = ConnectionResolver.ResolveConnectionString(url);
-            var schemaName = ConnectionResolver.ResolveSchema(schema);
-
             try
             {
-                await using var dataSource = new NpgsqlDataSourceBuilder(connStr).Build();
-                var admin = new PostgresAdminDataAccess(dataSource, schemaName);
-
-                var events = await admin.GetEventsAsync(type, tag, tenant, after, limit);
+                // Each database has its own position sequence, so --after is applied within each
+                // one and the rows are grouped by shard rather than merged into one ordering.
+                var targets = ShardResolver.ResolveForRead(shard, url, schema);
+                var results = await ShardRun.CollectAsync(
+                    targets,
+                    async admin => (IReadOnlyList<EventInfo>)
+                        await admin.GetEventsAsync(type, tag, tenant, after, limit));
 
                 if (json)
                 {
-                    output.Json(events.Select(e => new
+                    output.Json(ShardRun.Flatten(targets, results, e => new
                     {
                         e.GlobalPosition,
                         e.EventType,
@@ -65,31 +66,31 @@ public static class EventsCommand
                         createdAt = e.CreatedAt?.ToString("O")
                     }));
                 }
-                else if (events.Count == 0)
-                {
-                    output.Text("No events found.");
-                }
                 else
                 {
-                    output.Table(
+                    ShardRun.Table(
+                        output, targets, results,
                         ["Position", "Event Type", "Tags", "Tenant ID", "Created At"],
-                        events.Select(e => new[]
-                        {
+                        e =>
+                        [
                             e.GlobalPosition.ToString(),
                             e.EventType,
                             e.Tags ?? "-",
                             e.TenantId ?? "-",
                             e.CreatedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"
-                        })
-                    );
+                        ],
+                        "No events found.");
                 }
+
+                if (ShardRun.ReportFailures(output, results))
+                    Environment.Exit(1);
             }
             catch (Exception ex)
             {
                 output.Error(ex.Message);
                 Environment.Exit(1);
             }
-        }, urlOption, schemaOption, typeOption, tagOption, tenantOption, afterOption, limitOption, jsonOption);
+        }, urlOption, schemaOption, typeOption, tagOption, tenantOption, afterOption, limitOption, jsonOption, shardOption);
 
         return command;
     }

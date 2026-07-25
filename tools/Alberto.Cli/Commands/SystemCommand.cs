@@ -1,7 +1,6 @@
 using System.CommandLine;
 using Alberto.Cli.Output;
 using Alberto.Dcb.Postgres;
-using Npgsql;
 
 namespace Alberto.Cli.Commands;
 
@@ -18,48 +17,62 @@ public static class SystemCommand
         command.AddOption(urlOption);
         command.AddOption(schemaOption);
         command.AddOption(jsonOption);
+        var shardOption = ShardRun.AddReadOption(command);
 
-        command.SetHandler(async (string? url, string? schema, bool json) =>
+        command.SetHandler(async (string? url, string? schema, bool json, string? shard) =>
         {
             IOutput output = json ? new JsonOutput() : new HumanOutput();
 
-            var connStr = ConnectionResolver.ResolveConnectionString(url);
-            var schemaName = ConnectionResolver.ResolveSchema(schema);
-
             try
             {
-                await using var dataSource = new NpgsqlDataSourceBuilder(connStr).Build();
-                var admin = new PostgresAdminDataAccess(dataSource, schemaName);
-
-                var info = await admin.GetSystemInfoAsync();
+                var targets = ShardResolver.ResolveForRead(shard, url, schema);
+                var results = await ShardRun.CollectAsync(targets, admin => admin.GetSystemInfoAsync());
+                var showShard = ShardRun.ShowsShard(targets);
 
                 if (json)
                 {
-                    output.Json(new
-                    {
-                        globalPosition = info.GlobalPosition,
-                        processorCount = info.ProcessorCount,
-                        deadLetterCount = info.DeadLetterCount,
-                        lastEventAt = info.LastEventAt?.ToString("O")
-                    });
+                    var payloads = results
+                        .Where(r => r.Succeeded)
+                        .Select(r => new
+                        {
+                            shard = showShard ? r.Target.ShardId : null,
+                            globalPosition = r.Value!.GlobalPosition,
+                            processorCount = r.Value.ProcessorCount,
+                            deadLetterCount = r.Value.DeadLetterCount,
+                            lastEventAt = r.Value.LastEventAt?.ToString("O")
+                        })
+                        .ToArray();
+
+                    if (showShard)
+                        output.Json(payloads);
+                    else if (payloads.Length > 0)
+                        output.Json(payloads[0]);
                 }
                 else
                 {
-                    output.Box("System", new Dictionary<string, string>
+                    foreach (var result in results.Where(r => r.Succeeded))
                     {
-                        ["Global Position"] = info.GlobalPosition?.ToString() ?? "(no events)",
-                        ["Processors"] = info.ProcessorCount.ToString(),
-                        ["Dead Letters"] = info.DeadLetterCount.ToString(),
-                        ["Last Event"] = info.LastEventAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"
-                    });
+                        var info = result.Value!;
+                        output.Box(showShard ? $"System — {result.Target.ShardId}" : "System",
+                            new Dictionary<string, string>
+                            {
+                                ["Global Position"] = info.GlobalPosition?.ToString() ?? "(no events)",
+                                ["Processors"] = info.ProcessorCount.ToString(),
+                                ["Dead Letters"] = info.DeadLetterCount.ToString(),
+                                ["Last Event"] = info.LastEventAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"
+                            });
+                    }
                 }
+
+                if (ShardRun.ReportFailures(output, results))
+                    Environment.Exit(1);
             }
             catch (Exception ex)
             {
                 output.Error(ex.Message);
                 Environment.Exit(1);
             }
-        }, urlOption, schemaOption, jsonOption);
+        }, urlOption, schemaOption, jsonOption, shardOption);
 
         return command;
     }

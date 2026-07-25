@@ -1,12 +1,17 @@
 using System.CommandLine;
 using Alberto.Cli.Output;
 using Alberto.Dcb.Postgres;
-using Npgsql;
 
 namespace Alberto.Cli.Commands;
 
 public static class StatusCommand
 {
+    /// <summary>One database's status. Nothing here is meaningful added across shards.</summary>
+    private sealed record Status(
+        long? GlobalPosition,
+        IReadOnlyList<ProcessorInfo> Processors,
+        long DeadLetterCount);
+
     public static Command Build()
     {
         var command = new Command("status",
@@ -17,6 +22,7 @@ public static class StatusCommand
               alberto status
               alberto status --json
               alberto status --schema myschema
+              alberto status --shard db2
             """);
 
         var urlOption = new Option<string?>("--url") { Description = "PostgreSQL connection string" };
@@ -26,72 +32,97 @@ public static class StatusCommand
         command.AddOption(urlOption);
         command.AddOption(schemaOption);
         command.AddOption(jsonOption);
+        var shardOption = ShardRun.AddReadOption(command);
 
-        command.SetHandler(async (string? url, string? schema, bool json) =>
+        command.SetHandler(async (string? url, string? schema, bool json, string? shard) =>
         {
             IOutput output = json ? new JsonOutput() : new HumanOutput();
 
-            var connStr = ConnectionResolver.ResolveConnectionString(url);
-            var schemaName = ConnectionResolver.ResolveSchema(schema);
-
             try
             {
-                await using var dataSource = new NpgsqlDataSourceBuilder(connStr).Build();
-                var admin = new PostgresAdminDataAccess(dataSource, schemaName);
+                // One status per database rather than one summed status: a global position is a
+                // per-database sequence, so adding two of them would produce a number that means
+                // nothing.
+                var targets = ShardResolver.ResolveForRead(shard, url, schema);
+                var results = await ShardRun.CollectAsync(targets, async admin => new Status(
+                    await admin.GetGlobalPositionAsync(),
+                    await admin.GetProcessorsAsync(),
+                    await admin.CountAllDeadLettersAsync()));
 
-                var globalPosition = await admin.GetGlobalPositionAsync();
-                var processors = await admin.GetProcessorsAsync();
-                var deadLetterCount = await admin.CountAllDeadLettersAsync();
+                var showShard = ShardRun.ShowsShard(targets);
 
                 if (json)
                 {
-                    output.Json(new
-                    {
-                        globalPosition,
-                        processorCount = processors.Count,
-                        deadLetterCount,
-                        processors = processors.Select(p => new
+                    var payloads = results
+                        .Where(r => r.Succeeded)
+                        .Select(r => new
                         {
-                            p.ProcessorId,
-                            p.LastPosition,
-                            updatedAt = p.UpdatedAt?.ToString("O")
+                            shard = showShard ? r.Target.ShardId : null,
+                            globalPosition = r.Value!.GlobalPosition,
+                            processorCount = r.Value.Processors.Count,
+                            deadLetterCount = r.Value.DeadLetterCount,
+                            processors = r.Value.Processors.Select(p => new
+                            {
+                                p.ProcessorId,
+                                p.LastPosition,
+                                updatedAt = p.UpdatedAt?.ToString("O")
+                            })
                         })
-                    });
+                        .ToArray();
+
+                    // Unsharded output stays the single object it has always been. When that one
+                    // database could not be reached there is nothing to print — ReportFailures
+                    // below says why and sets the exit code.
+                    if (showShard)
+                        output.Json(payloads);
+                    else if (payloads.Length > 0)
+                        output.Json(payloads[0]);
                 }
                 else
                 {
-                    output.Box("Event Store Status", new Dictionary<string, string>
+                    foreach (var result in results.Where(r => r.Succeeded))
                     {
-                        ["Global Position"] = globalPosition?.ToString() ?? "(no events)",
-                        ["Processor Count"] = processors.Count.ToString(),
-                        ["Dead Letters"] = deadLetterCount.ToString(),
-                        ["Schema"] = schemaName
-                    });
+                        var status = result.Value!;
+                        var title = showShard
+                            ? $"Event Store Status — {result.Target.ShardId}"
+                            : "Event Store Status";
 
-                    if (processors.Count > 0)
-                    {
-                        output.Table(
-                            ["Processor ID", "Last Position", "Updated At"],
-                            processors.Select(p => new[]
-                            {
-                                p.ProcessorId,
-                                p.LastPosition.ToString(),
-                                p.UpdatedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"
-                            })
-                        );
-                    }
-                    else
-                    {
-                        output.Text("No processors found.");
+                        output.Box(title, new Dictionary<string, string>
+                        {
+                            ["Global Position"] = status.GlobalPosition?.ToString() ?? "(no events)",
+                            ["Processor Count"] = status.Processors.Count.ToString(),
+                            ["Dead Letters"] = status.DeadLetterCount.ToString(),
+                            ["Schema"] = result.Target.Schema
+                        });
+
+                        if (status.Processors.Count > 0)
+                        {
+                            output.Table(
+                                ["Processor ID", "Last Position", "Updated At"],
+                                status.Processors.Select(p => new[]
+                                {
+                                    p.ProcessorId,
+                                    p.LastPosition.ToString(),
+                                    p.UpdatedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"
+                                })
+                            );
+                        }
+                        else
+                        {
+                            output.Text("No processors found.");
+                        }
                     }
                 }
+
+                if (ShardRun.ReportFailures(output, results))
+                    Environment.Exit(1);
             }
             catch (Exception ex)
             {
                 output.Error(ex.Message);
                 Environment.Exit(1);
             }
-        }, urlOption, schemaOption, jsonOption);
+        }, urlOption, schemaOption, jsonOption, shardOption);
 
         return command;
     }

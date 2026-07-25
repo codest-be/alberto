@@ -31,6 +31,8 @@ public static class DeadLetterOpsCommand
               alberto ops dead-letters dismiss --processor my-processor --yes --json
               alberto ops dead-letters dismiss --all --dry-run
               alberto ops dead-letters dismiss --all --yes
+              alberto ops dead-letters dismiss --all --shard db2 --yes
+              alberto ops dead-letters dismiss --all --all-shards --yes
             """);
 
         var urlOption = new Option<string?>("--url") { Description = "PostgreSQL connection string" };
@@ -48,8 +50,9 @@ public static class DeadLetterOpsCommand
         command.AddOption(dryRunOption);
         command.AddOption(yesOption);
         command.AddOption(jsonOption);
+        var (shardOption, allShardsOption) = ShardRun.AddMutationOptions(command);
 
-        command.SetHandler(async (string? url, string? schema, string? processor, bool all, bool dryRun, bool yes, bool json) =>
+        command.SetHandler(async (string? url, string? schema, string? processor, bool all, bool dryRun, bool yes, bool json, string? shard, bool allShards) =>
         {
             IOutput output = json ? new JsonOutput() : new HumanOutput();
 
@@ -60,42 +63,39 @@ public static class DeadLetterOpsCommand
                 return;
             }
 
-            var connStr = ConnectionResolver.ResolveConnectionString(url);
-            var schemaName = ConnectionResolver.ResolveSchema(schema);
-
             try
             {
-                await using var dataSource = new NpgsqlDataSourceBuilder(connStr).Build();
+                var targets = ShardResolver.ResolveForMutation(shard, allShards, url, schema);
                 var scope = processor is not null ? $"processor '{processor}'" : "all processors";
 
-                // Count differs by scope: per-processor uses IDeadLetterStore, global uses PostgresAdminDataAccess.
-                int count;
-                if (!string.IsNullOrWhiteSpace(processor))
-                {
-                    var deadLetterStore = new PostgresDeadLetterStore(dataSource, schemaName);
-                    count = await deadLetterStore.CountAsync(processor);
-                }
-                else
-                {
-                    var admin = new PostgresAdminDataAccess(dataSource, schemaName);
-                    count = await admin.CountAllDeadLettersAsync();
-                }
+                // Counted everywhere before anything is dismissed, so the one prompt can state the
+                // whole run's total rather than asking once per database.
+                var counts = await ShardRun.ProbeAsync(targets, (dataSource, target) =>
+                    CountAsync(dataSource, target.Schema, processor));
+                var probeFailed = ShardRun.ReportFailures(output, counts);
+                var total = counts.Where(r => r.Succeeded).Sum(r => r.Value);
 
-                if (count == 0)
+                if (total == 0)
                 {
                     if (json)
                         output.Json(new { action = "dismiss", dismissed = 0, scope, noOp = true });
                     else
-                        output.Text($"No dead letters found for {scope}. No-op.");
+                        output.Text($"No dead letters found for {scope}{ShardRun.Scope(targets)}. No-op.");
+
+                    if (probeFailed)
+                        Environment.Exit(1);
                     return;
                 }
 
                 if (dryRun)
                 {
                     if (json)
-                        output.Json(new { dryRun = true, action = "dismiss", count, scope });
+                        output.Json(new { dryRun = true, action = "dismiss", count = total, scope });
                     else
-                        output.Text($"[Dry run] Would dismiss {count} dead letter(s) for {scope}.");
+                        output.Text($"[Dry run] Would dismiss {total} dead letter(s) for {scope}{ShardRun.Scope(targets)}.");
+
+                    if (probeFailed)
+                        Environment.Exit(1);
                     return;
                 }
 
@@ -109,7 +109,7 @@ public static class DeadLetterOpsCommand
                     }
 
                     var confirmed = AnsiConsole.Confirm(
-                        $"Dismiss [bold]{count}[/] dead letter(s) for {scope}?",
+                        $"Dismiss [bold]{total}[/] dead letter(s) for {scope}{ShardRun.Scope(targets)}?",
                         defaultValue: false);
 
                     if (!confirmed)
@@ -119,33 +119,52 @@ public static class DeadLetterOpsCommand
                     }
                 }
 
-                // Clear differs by scope: per-processor ClearAsync returns void; global ClearAllDeadLettersAsync returns int.
-                int dismissed;
-                if (!string.IsNullOrWhiteSpace(processor))
+                var failed = await ShardRun.ApplyAsync(output, targets, async (dataSource, target) =>
                 {
-                    var deadLetterStore = new PostgresDeadLetterStore(dataSource, schemaName);
-                    await deadLetterStore.ClearAsync(processor);
-                    dismissed = count; // ClearAsync is void; use the pre-count as the reported figure
-                }
-                else
-                {
-                    var admin = new PostgresAdminDataAccess(dataSource, schemaName);
-                    dismissed = await admin.ClearAllDeadLettersAsync();
-                }
+                    // Clear differs by scope: per-processor ClearAsync returns void; global ClearAllDeadLettersAsync returns int.
+                    int dismissed;
+                    if (!string.IsNullOrWhiteSpace(processor))
+                    {
+                        var deadLetterStore = new PostgresDeadLetterStore(dataSource, target.Schema);
+                        // ClearAsync is void; re-count so the reported figure is this database's own.
+                        dismissed = await deadLetterStore.CountAsync(processor);
+                        await deadLetterStore.ClearAsync(processor);
+                    }
+                    else
+                    {
+                        var admin = new PostgresAdminDataAccess(dataSource, target.Schema);
+                        dismissed = await admin.ClearAllDeadLettersAsync();
+                    }
 
-                if (json)
-                    output.Json(new { action = "dismiss", dismissed, scope });
-                else
-                    output.Text($"Dismissed {dismissed} dead letter(s).");
+                    if (json)
+                        output.Json(new { action = "dismiss", shard = target.ShardId, dismissed, scope });
+                    else
+                        output.Text($"Dismissed {dismissed} dead letter(s).");
+                });
+
+                if (failed || probeFailed)
+                    Environment.Exit(1);
             }
             catch (Exception ex)
             {
                 output.Error(ex.Message);
                 Environment.Exit(1);
             }
-        }, urlOption, schemaOption, processorOption, allOption, dryRunOption, yesOption, jsonOption);
+        }, urlOption, schemaOption, processorOption, allOption, dryRunOption, yesOption, jsonOption, shardOption, allShardsOption);
 
         return command;
+    }
+
+    /// <summary>
+    /// How many dead letters one database holds for the given scope. Per-processor goes through
+    /// <c>IDeadLetterStore</c>; the whole-store count is only on the admin surface.
+    /// </summary>
+    private static async Task<int> CountAsync(NpgsqlDataSource dataSource, string schema, string? processor)
+    {
+        if (!string.IsNullOrWhiteSpace(processor))
+            return await new PostgresDeadLetterStore(dataSource, schema).CountAsync(processor);
+
+        return await new PostgresAdminDataAccess(dataSource, schema).CountAllDeadLettersAsync();
     }
 
     private static Command BuildRetry()
@@ -159,6 +178,7 @@ public static class DeadLetterOpsCommand
               alberto ops dead-letters retry my-processor --dry-run
               alberto ops dead-letters retry my-processor --yes
               alberto ops dead-letters retry my-processor --yes --json
+              alberto ops dead-letters retry my-processor --all-shards --yes
             """);
 
         var processorIdArgument = new Argument<string>("processor-id") { Description = "Processor ID to retry dead letters for" };
@@ -174,35 +194,42 @@ public static class DeadLetterOpsCommand
         command.AddOption(dryRunOption);
         command.AddOption(yesOption);
         command.AddOption(jsonOption);
+        var (shardOption, allShardsOption) = ShardRun.AddMutationOptions(command);
 
-        command.SetHandler(async (string processorId, string? url, string? schema, bool dryRun, bool yes, bool json) =>
+        command.SetHandler(async (string processorId, string? url, string? schema, bool dryRun, bool yes, bool json, string? shard, bool allShards) =>
         {
             IOutput output = json ? new JsonOutput() : new HumanOutput();
 
-            var connStr = ConnectionResolver.ResolveConnectionString(url);
-            var schemaName = ConnectionResolver.ResolveSchema(schema);
-
             try
             {
-                await using var dataSource = new NpgsqlDataSourceBuilder(connStr).Build();
-                var deadLetterStore = new PostgresDeadLetterStore(dataSource, schemaName);
+                var targets = ShardResolver.ResolveForMutation(shard, allShards, url, schema);
 
-                var count = await deadLetterStore.CountAsync(processorId);
-                if (count == 0)
+                var counts = await ShardRun.ProbeAsync(targets, (dataSource, target) =>
+                    new PostgresDeadLetterStore(dataSource, target.Schema).CountAsync(processorId));
+                var probeFailed = ShardRun.ReportFailures(output, counts);
+                var total = counts.Where(r => r.Succeeded).Sum(r => r.Value);
+
+                if (total == 0)
                 {
                     if (json)
                         output.Json(new { action = "retry", processorId, deadLetters = 0, noOp = true });
                     else
-                        output.Text($"No dead letters found for processor '{processorId}'. No-op.");
+                        output.Text($"No dead letters found for processor '{processorId}'{ShardRun.Scope(targets)}. No-op.");
+
+                    if (probeFailed)
+                        Environment.Exit(1);
                     return;
                 }
 
                 if (dryRun)
                 {
                     if (json)
-                        output.Json(new { dryRun = true, action = "retry", processorId, count });
+                        output.Json(new { dryRun = true, action = "retry", processorId, count = total });
                     else
-                        output.Text($"[Dry run] Would mark {count} dead letter(s) for retry for processor '{processorId}'.");
+                        output.Text($"[Dry run] Would mark {total} dead letter(s) for retry for processor '{processorId}'{ShardRun.Scope(targets)}.");
+
+                    if (probeFailed)
+                        Environment.Exit(1);
                     return;
                 }
 
@@ -216,7 +243,7 @@ public static class DeadLetterOpsCommand
                     }
 
                     var confirmed = AnsiConsole.Confirm(
-                        $"Mark [bold]{count}[/] dead letter(s) for retry for processor '[bold]{processorId}[/]'? " +
+                        $"Mark [bold]{total}[/] dead letter(s) for retry for processor '[bold]{processorId}[/]'{ShardRun.Scope(targets)}? " +
                         "The processor will reprocess them on its next retry loop cycle.",
                         defaultValue: false);
 
@@ -227,19 +254,27 @@ public static class DeadLetterOpsCommand
                     }
                 }
 
-                await deadLetterStore.MarkForRetryAsync(processorId);
+                var failed = await ShardRun.ApplyAsync(output, targets, async (dataSource, target) =>
+                {
+                    var deadLetterStore = new PostgresDeadLetterStore(dataSource, target.Schema);
+                    var count = await deadLetterStore.CountAsync(processorId);
+                    await deadLetterStore.MarkForRetryAsync(processorId);
 
-                if (json)
-                    output.Json(new { action = "retry", processorId, markedForRetry = count });
-                else
-                    output.Text($"Marked {count} dead letter(s) for retry. The processor will pick them up on its next retry loop cycle.");
+                    if (json)
+                        output.Json(new { action = "retry", shard = target.ShardId, processorId, markedForRetry = count });
+                    else
+                        output.Text($"Marked {count} dead letter(s) for retry. The processor will pick them up on its next retry loop cycle.");
+                });
+
+                if (failed || probeFailed)
+                    Environment.Exit(1);
             }
             catch (Exception ex)
             {
                 output.Error(ex.Message);
                 Environment.Exit(1);
             }
-        }, processorIdArgument, urlOption, schemaOption, dryRunOption, yesOption, jsonOption);
+        }, processorIdArgument, urlOption, schemaOption, dryRunOption, yesOption, jsonOption, shardOption, allShardsOption);
 
         return command;
     }
@@ -254,6 +289,10 @@ public static class DeadLetterOpsCommand
               alberto ops dead-letters retry-rewind my-processor --dry-run
               alberto ops dead-letters retry-rewind my-processor --yes
               alberto ops dead-letters retry-rewind my-processor --yes --json
+              alberto ops dead-letters retry-rewind my-processor --all-shards --yes
+
+            Each database rewinds to its own earliest dead letter, so a sharded run produces one
+            rewind position per shard.
             """);
 
         var processorIdArgument = new Argument<string>("processor-id") { Description = "Processor ID to rewind" };
@@ -269,36 +308,42 @@ public static class DeadLetterOpsCommand
         command.AddOption(dryRunOption);
         command.AddOption(yesOption);
         command.AddOption(jsonOption);
+        var (shardOption, allShardsOption) = ShardRun.AddMutationOptions(command);
 
-        command.SetHandler(async (string processorId, string? url, string? schema, bool dryRun, bool yes, bool json) =>
+        command.SetHandler(async (string processorId, string? url, string? schema, bool dryRun, bool yes, bool json, string? shard, bool allShards) =>
         {
             IOutput output = json ? new JsonOutput() : new HumanOutput();
 
-            var connStr = ConnectionResolver.ResolveConnectionString(url);
-            var schemaName = ConnectionResolver.ResolveSchema(schema);
-
             try
             {
-                await using var dataSource = new NpgsqlDataSourceBuilder(connStr).Build();
-                var deadLetterStore = new PostgresDeadLetterStore(dataSource, schemaName);
-                var admin = new PostgresAdminDataAccess(dataSource, schemaName);
+                var targets = ShardResolver.ResolveForMutation(shard, allShards, url, schema);
 
-                var count = await deadLetterStore.CountAsync(processorId);
-                if (count == 0)
+                var counts = await ShardRun.ProbeAsync(targets, (dataSource, target) =>
+                    new PostgresDeadLetterStore(dataSource, target.Schema).CountAsync(processorId));
+                var probeFailed = ShardRun.ReportFailures(output, counts);
+                var total = counts.Where(r => r.Succeeded).Sum(r => r.Value);
+
+                if (total == 0)
                 {
                     if (json)
                         output.Json(new { action = "retry-rewind", processorId, deadLetters = 0, noOp = true });
                     else
-                        output.Text($"No dead letters found for processor '{processorId}'. No-op.");
+                        output.Text($"No dead letters found for processor '{processorId}'{ShardRun.Scope(targets)}. No-op.");
+
+                    if (probeFailed)
+                        Environment.Exit(1);
                     return;
                 }
 
                 if (dryRun)
                 {
                     if (json)
-                        output.Json(new { dryRun = true, action = "retry-rewind", processorId, deadLetterCount = count });
+                        output.Json(new { dryRun = true, action = "retry-rewind", processorId, deadLetterCount = total });
                     else
-                        output.Text($"[Dry run] Would rewind processor '{processorId}' to its earliest dead letter and clear {count} dead letter(s).");
+                        output.Text($"[Dry run] Would rewind processor '{processorId}'{ShardRun.Scope(targets)} to its earliest dead letter and clear {total} dead letter(s).");
+
+                    if (probeFailed)
+                        Environment.Exit(1);
                     return;
                 }
 
@@ -312,7 +357,7 @@ public static class DeadLetterOpsCommand
                     }
 
                     var confirmed = AnsiConsole.Confirm(
-                        $"Rewind processor '[bold]{processorId}[/]' to replay from its earliest dead letter and clear {count} dead letter(s). Continue?",
+                        $"Rewind processor '[bold]{processorId}[/]'{ShardRun.Scope(targets)} to replay from its earliest dead letter and clear {total} dead letter(s). Continue?",
                         defaultValue: false);
 
                     if (!confirmed)
@@ -322,29 +367,36 @@ public static class DeadLetterOpsCommand
                     }
                 }
 
-                var (rewindPosition, deletedCount) = await admin.RetryByRewindAsync(processorId);
-
-                if (rewindPosition is null)
+                var failed = await ShardRun.ApplyAsync(output, targets, async (dataSource, target) =>
                 {
-                    // Dead letters were cleared by another operator between the count and the rewind.
-                    if (json)
-                        output.Json(new { action = "retry-rewind", processorId, rewindPosition, dismissedDeadLetters = 0 });
-                    else
-                        output.Text($"No dead letters remain for processor '{processorId}'. Checkpoint left unchanged.");
-                    return;
-                }
+                    var admin = new PostgresAdminDataAccess(dataSource, target.Schema);
+                    var (rewindPosition, deletedCount) = await admin.RetryByRewindAsync(processorId);
 
-                if (json)
-                    output.Json(new { action = "retry-rewind", processorId, rewindPosition, dismissedDeadLetters = deletedCount });
-                else
-                    output.Text($"Done. Consumer will replay from position {rewindPosition}. Cleared {deletedCount} dead letter(s).");
+                    if (rewindPosition is null)
+                    {
+                        // Dead letters were cleared by another operator between the count and the rewind.
+                        if (json)
+                            output.Json(new { action = "retry-rewind", shard = target.ShardId, processorId, rewindPosition, dismissedDeadLetters = 0 });
+                        else
+                            output.Text($"No dead letters remain for processor '{processorId}'. Checkpoint left unchanged.");
+                        return;
+                    }
+
+                    if (json)
+                        output.Json(new { action = "retry-rewind", shard = target.ShardId, processorId, rewindPosition, dismissedDeadLetters = deletedCount });
+                    else
+                        output.Text($"Done. Consumer will replay from position {rewindPosition}. Cleared {deletedCount} dead letter(s).");
+                });
+
+                if (failed || probeFailed)
+                    Environment.Exit(1);
             }
             catch (Exception ex)
             {
                 output.Error(ex.Message);
                 Environment.Exit(1);
             }
-        }, processorIdArgument, urlOption, schemaOption, dryRunOption, yesOption, jsonOption);
+        }, processorIdArgument, urlOption, schemaOption, dryRunOption, yesOption, jsonOption, shardOption, allShardsOption);
 
         return command;
     }
