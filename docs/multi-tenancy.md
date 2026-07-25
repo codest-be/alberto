@@ -145,7 +145,7 @@ keyed by `(rebuild version, tenant, document id)`. There is no per-tenant rebuil
 accordingly: a rebuild on a busy multi-tenant module replays everything.
 
 Also note the interaction with leases: run more than one replica with rebuilds enabled and you
-need `WithProcessorLeases`, or two replicas will replay into the same version.
+need leases enabled (`.WithControlLoop(o => o with { Leases = o.Leases with { Enabled = true } })`), or two replicas will replay into the same version.
 
 ## The example
 

@@ -48,7 +48,7 @@ Both contexts implement `IMiddlewareContext` (`ProcessorId`, `ModuleKey`, `Attem
 - **Single event** — dead-letter it and advance.
 - **Batch** — if the batch holds more than one event, rethrow so the caller can split the batch and isolate the poison event; a single-event batch is dead-lettered directly.
 
-`ErrorPolicy.MaxRetries` rejects negative values, which guarantees the attempt loop always runs at least once and therefore always produces an error to act on.
+Negative `MaxRetries` is rejected at startup by validator `ALB0007`, which guarantees the attempt loop always runs at least once and always produces an error to act on.
 
 ### Error handling
 
@@ -124,16 +124,17 @@ LISTENs on the `{schema}_events` channel and raises `IEventAppendedSignal` so th
 
 ## Configuration
 
-Defaults as of `ControlLoopBuilder`:
+For the canonical defaults reference see [configuration.md](../configuration.md#controlloop-options).
+The table below shows how each knob is set in code and in configuration:
 
-| Setting | Builder method | Default |
-|---------|----------------|---------|
-| Polling interval | `WithPollingInterval` | 250ms |
-| Batch size | `WithBatchSize` | 100 |
-| Head refresh interval | `WithHeadRefreshInterval` | 100ms |
-| Max retries | `WithErrorPolicy` | 3 |
-| Retry delay | `WithErrorPolicy` | 1s, doubling, capped at 30s |
-| Dead-letter on exhaustion | `WithErrorPolicy` | true |
+| Setting | Code | Default | Configuration key |
+|---------|------|---------|-------------------|
+| Polling interval | `.WithControlLoop(o => o with { PollingInterval = ... })` | 250 ms | `ControlLoop:PollingInterval` |
+| Batch size | `.WithControlLoop(o => o with { BatchSize = ... })` | 100 | `ControlLoop:BatchSize` |
+| Head refresh interval | `.WithControlLoop(o => o with { HeadRefreshInterval = ... })` | 100 ms | `ControlLoop:HeadRefreshInterval` |
+| Max retries | `.WithControlLoop(o => o with { Retry = o.Retry with { MaxRetries = ... } })` | 3 | `ControlLoop:Retry:MaxRetries` |
+| Retry delay | `.WithControlLoop(o => o with { Retry = o.Retry with { RetryDelay = ... } })` | 1 s, doubling to 30 s | `ControlLoop:Retry:RetryDelay` |
+| Dead-letter on exhaustion | `.WithControlLoop(o => o with { Retry = o.Retry with { DeadLetterOnMaxRetries = ... } })` | `true` | `ControlLoop:Retry:DeadLetterOnMaxRetries` |
 
 ## Module Configuration Example
 
@@ -142,12 +143,12 @@ Taken from `apps/Alberto.Orders/Alberto.Orders.Infrastructure/OrdersModule.cs`:
 ```csharp
 services.AddAlberto(ModuleKey, builder => builder
     .WithTenancy()
-    .WithPostgres(options =>
+    .WithPostgres(o => o with
     {
-        options.ConnectionString = connectionString;
-        options.AutoMigrate = false;
-        options.Schema = "orders";
-        options.MaxPoolSize = 30;
+        ConnectionString = connectionString,
+        AutoMigrate = false,
+        Schema = "orders",
+        MaxPoolSize = 30,
     })
     .WithEntityFramework<OrdersDbContext>(options =>
     {
@@ -165,22 +166,24 @@ services.AddAlberto(ModuleKey, builder => builder
             rebuildVersion: ctx.RebuildVersion);
     })
     .AddEfProjection<OrderSummaryEntity, OrdersDbContext>(OrderSummaryEfProjection.Declaration)
-    .WithControlLoop(loop => loop
-        .WithPollingInterval(TimeSpan.FromMilliseconds(100))
-        .WithBatchSize(500)));
+    .WithControlLoop(o => o with { PollingInterval = TimeSpan.FromMilliseconds(100), BatchSize = 500 }));
 ```
 
-`ErrorPolicy` is a class, not a record, so `WithErrorPolicy` takes a function that returns a new instance:
+`RetryOptions` is an immutable record; use a `with` expression to override individual fields:
 
 ```csharp
-.WithControlLoop(loop => loop
-    .WithErrorPolicy(p => new ErrorPolicy
+.WithControlLoop(o => o with
+{
+    Retry = o.Retry with
     {
         MaxRetries = 5,
         RetryDelay = TimeSpan.FromSeconds(2),
-        ErrorClassifier = p.ErrorClassifier,
-    }))
+    }
+})
 ```
+
+To supply a custom error classifier, call `UseErrorClassifier<T>()` on the module builder rather
+than setting a property on the options record.
 
 ## Projection rebuilds
 
@@ -208,7 +211,7 @@ services.AddAlberto("orders", builder => builder
             dataSource, nameof(OrdersOverviewProjection), "orders",
             rebuildVersion: ctx.RebuildVersion);   // <- the projection follows the version
     })
-    .WithControlLoop(loop => loop.WithRebuilds()));
+    .WithRebuilds());
 ```
 
 Two requirements, and a projection that meets neither will have its live state overwritten by the replay instead of shadowed:
@@ -249,7 +252,7 @@ Because aborts consume numbers without moving the active one, the startup sweep 
 ### Limits
 
 - One rebuild per processor at a time. `StartAsync` is guarded against the state it is leaving, so two operators racing cannot both win.
-- The shadow loop runs under the same lease-free assumption as the rest of the module. Enable `WithProcessorLeases` if more than one replica runs the module, or two replicas will replay into the same version.
+- The shadow loop runs under the same lease-free assumption as the rest of the module. Enable leases (`.WithControlLoop(o => o with { Leases = o.Leases with { Enabled = true } })`) if more than one replica runs the module, or two replicas will replay into the same version.
 - A rebuild reprocesses every event through the projection. Reactors are not rebuilt — replaying side effects is not something the coordinator can make safe.
 
 ## Not implemented
@@ -269,7 +272,8 @@ The following appear in the schema or the type system but have no orchestration 
 | Retry / dead-letter core | `src/Alberto.Dcb/Subscriptions/RetryAndDeadLetterCore.cs` |
 | Single-event middleware | `src/Alberto.Dcb/Subscriptions/ConsumeMiddleware.cs` |
 | Batch middleware | `src/Alberto.Dcb/Subscriptions/BatchConsumeMiddleware.cs` |
-| ErrorPolicy | `src/Alberto.Dcb/Subscriptions/ErrorPolicy.cs` |
+| RetryOptions | `src/Alberto.Dcb/Configuration/RetryOptions.cs` |
+| IErrorClassifier | `src/Alberto.Dcb/Subscriptions/IErrorClassifier.cs` |
 | AsyncProjection | `src/Alberto.Dcb/Subscriptions/AsyncProjection.cs` |
 | AsyncReactor | `src/Alberto.Dcb/Subscriptions/AsyncReactor.cs` |
 | CachingCheckpointStore | `src/Alberto.Dcb/Subscriptions/CachingCheckpointStore.cs` |

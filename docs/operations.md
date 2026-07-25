@@ -120,26 +120,26 @@ does not block the ones behind it.
 ### Tuning the policy
 
 ```csharp
-.WithControlLoop(loop => loop
-    .WithErrorPolicy(p => new ErrorPolicy
+.WithControlLoop(o => o with
+{
+    Retry = o.Retry with
     {
-        MaxRetries = 5,                                  // default 3; 0 = one attempt, no retry
-        RetryDelay = TimeSpan.FromSeconds(1),            // default
-        BackoffMultiplier = 2.0,                         // default; 1.0 = constant delay
-        MaxRetryDelay = TimeSpan.FromSeconds(30),        // default backoff cap
-        DeadLetterOnMaxRetries = true,                   // default; false skips instead
-        ErrorClassifier = p.ErrorClassifier,             // carry through what you are not changing
-    }))
+        MaxRetries = 5,                           // default 3; 0 = one attempt, no retry
+        RetryDelay = TimeSpan.FromSeconds(1),     // default
+        BackoffMultiplier = 2.0,                  // default; 1.0 = constant delay
+        MaxRetryDelay = TimeSpan.FromSeconds(30), // default backoff cap
+        DeadLetterOnMaxRetries = true,            // default; false skips instead
+    }
+})
 ```
 
-`ErrorPolicy` is a class with `init` properties, not a record, so there is no `with` expression —
-the configurator hands you the current policy and you return a **new** instance. Anything you do
-not set reverts to its default rather than to the current policy's value, which is why
-`ErrorClassifier` is carried across explicitly above.
+`RetryOptions` is an immutable record; use a `with` expression to change only the properties you
+need — unset properties keep their current values. See
+[configuration.md](configuration.md#retry-options) for the full defaults table.
 
 `DeadLetterOnMaxRetries = false` means a failing event is **dropped silently**. Only set it for
-processors where losing an event is genuinely acceptable. A negative `MaxRetries` throws at
-construction rather than silently skipping the dispatch loop.
+processors where losing an event is genuinely acceptable. A negative `MaxRetries` is rejected at
+startup with validation code `ALB0007`.
 
 ### Which failures are transient
 
@@ -155,9 +155,9 @@ Everything else is permanent and dead-letters on the first failure — a `JsonEx
 `NullReferenceException` will not get better on attempt three, and retrying it just delays the
 diagnosis.
 
-Supply your own by implementing `IErrorClassifier` and setting `ErrorPolicy.ErrorClassifier`. Do
-this when you talk to a system with its own idea of "try again later" — a provider that signals
-throttling with a 400 and a body, say.
+Supply your own classifier by implementing `IErrorClassifier` and calling
+`UseErrorClassifier<T>()` on the module builder. Do this when you talk to a system with its own
+idea of "try again later" — a provider that signals throttling with a 400 and a body, say.
 
 ### Clearing dead letters
 
@@ -179,13 +179,18 @@ The retry loop runs in **your application**, not in the CLI. A `retry` against a
 running leaves entries marked and waiting.
 
 ```csharp
-.WithControlLoop(loop => loop
-    .WithRetryLoopPollingInterval(TimeSpan.FromMinutes(1))   // default
-    .WithRetryLoopBatchSize(10)                              // default
-    .WithRetryLoopClaimLease(TimeSpan.FromMinutes(15)))      // default
+.WithControlLoop(o => o with
+{
+    DeadLetterRetry = o.DeadLetterRetry with
+    {
+        PollingInterval = TimeSpan.FromMinutes(1),   // default
+        BatchSize = 10,                              // default
+        ClaimLease = TimeSpan.FromMinutes(15),       // default
+    }
+})
 ```
 
-Set `WithRetryLoopClaimLease` longer than your slowest handler. Too short and a healthy worker
+Set `ClaimLease` longer than your slowest handler. Too short and a healthy worker
 loses its claim mid-dispatch and the event runs twice; too long and a crashed worker's entries wait
 that long before another replica can pick them up.
 
@@ -274,14 +279,15 @@ all process every event. For projections that is wasteful but harmless if the pr
 idempotent; for reactors it means duplicate side effects. Turn on leases:
 
 ```csharp
-.WithControlLoop(loop => loop.WithProcessorLeases())   // replicaId defaults to Environment.MachineName
+.WithControlLoop(o => o with { Leases = o.Leases with { Enabled = true } })
+// replicaId defaults to Environment.MachineName; override with Leases = o.Leases with { ReplicaId = "..." }
 ```
 
 Now one replica holds each processor at a time, and the lease **fences** the checkpoint: a replica
 that was partitioned away and comes back cannot overwrite a checkpoint its successor already
 advanced (`IFencedCheckpointStore.SaveIfLeaseHeldAsync`).
 
-`WithProcessorLeases` is required, not optional, if you run more than one replica **and** use
+Enabling leases is required, not optional, if you run more than one replica **and** use
 rebuilds — two replicas would otherwise replay into the same shadow version.
 
 Multi-tenant deployments have a second layer: tenants are distributed across replicas by a
@@ -302,17 +308,18 @@ services.AddAlberto("orders", builder => builder
     …);
 
 services.AddOpenTelemetry()
-    .WithTracing(t => t.AddAlbertoInstrumentation())
-    .WithMetrics(m => m.AddAlbertoInstrumentation());
+    .WithTracing(t => t.AddSource("Alberto.Dcb"))
+    .WithMetrics(m => m.AddMeter("Alberto.Dcb"));
 ```
 
-Both halves are needed: `.WithTelemetry()` on the module inserts the instrumentation middleware;
-`AddAlbertoInstrumentation()` subscribes the OpenTelemetry providers to the meter and activity
-source. Wire only the first and nothing is exported; wire only the second and there is nothing to
-export. The meter is `Alberto.Dcb`.
+`.WithTelemetry()` registers Alberto's activity source and meter with the OpenTelemetry hosting
+integration automatically — no separate `AddAlbertoInstrumentation()` call is needed (that
+extension is `[Obsolete]` and will be removed). Call `AddOpenTelemetry()` to configure your
+exporters and subscribe to the Alberto source and meter. The meter is `Alberto.Dcb`. See
+[configuration.md](configuration.md#telemetry-options) for all telemetry options.
 
-Both extensions live in `Alberto.Dcb.Telemetry`; `AddOpenTelemetry()` itself comes from
-`OpenTelemetry.Extensions.Hosting`, which you reference yourself.
+`AddOpenTelemetry()` itself comes from `OpenTelemetry.Extensions.Hosting`, which you reference
+yourself.
 
 **Activities**
 
@@ -355,11 +362,11 @@ The event-store schema is DbUp scripts embedded in `Alberto.Dcb.Postgres`, appli
 startup:
 
 ```csharp
-.WithPostgres(options =>
+.WithPostgres(o => o with
 {
-    options.ConnectionString = connectionString;
-    options.Schema = "orders";
-    options.AutoMigrate = true;   // the default
+    ConnectionString = connectionString,
+    Schema = "orders",
+    AutoMigrate = true,   // the default
 })
 ```
 
