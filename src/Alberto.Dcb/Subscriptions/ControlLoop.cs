@@ -219,6 +219,9 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
         var maxConcurrency = _executionOptions.MaxConcurrency;
         var initialCheckpoint = await _checkpointStore.GetAsync(ProcessorId, ct) ?? 0L;
         var watermark = new PositionWatermark(initialCheckpoint);
+        using var pipelineCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var pipelineToken = pipelineCts.Token;
+        Exception? pipelineFailure = null;
 
         var channel = Channel.CreateBounded<IEventEnvelope>(
             new BoundedChannelOptions(maxConcurrency)
@@ -230,11 +233,11 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
         // Start worker tasks
         var workers = new Task[maxConcurrency];
         for (var i = 0; i < maxConcurrency; i++)
-            workers[i] = RunWorkerAsync(channel.Reader, watermark, ct);
+            workers[i] = RunWorkerAsync(channel.Reader, watermark, ReportFailure, pipelineToken);
 
         try
         {
-            while (!ct.IsCancellationRequested)
+            while (!pipelineToken.IsCancellationRequested)
             {
                 var head = _head.Current;
                 var readPosition = watermark.ReadPosition;
@@ -242,18 +245,18 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
                 if (readPosition >= head)
                 {
                     // Caught up — flush and wait
-                    await SaveWatermarkCheckpointAsync(watermark, ct);
-                    await Task.Delay(_pollingInterval, ct);
+                    await SaveWatermarkCheckpointAsync(watermark, pipelineToken);
+                    await Task.Delay(_pollingInterval, pipelineToken);
                     continue;
                 }
 
-                var events = await _backend.StreamAllAsync(readPosition, _batchSize, ct);
+                var events = await _backend.StreamAllAsync(readPosition, _batchSize, pipelineToken);
 
                 if (events.Count == 0)
                 {
                     watermark.AdvanceReadPosition(head);
-                    await SaveWatermarkCheckpointAsync(watermark, ct);
-                    await Task.Delay(_pollingInterval, ct);
+                    await SaveWatermarkCheckpointAsync(watermark, pipelineToken);
+                    await Task.Delay(_pollingInterval, pipelineToken);
                     continue;
                 }
 
@@ -269,38 +272,59 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
                     {
                         watermark.MarkDispatched(evt.GlobalPosition);
                         // Blocks when all worker slots are busy (backpressure)
-                        await channel.Writer.WriteAsync(evt, ct);
+                        await channel.Writer.WriteAsync(evt, pipelineToken);
                     }
                 }
 
                 // Save checkpoint after each batch of reads
-                await SaveWatermarkCheckpointAsync(watermark, ct);
+                await SaveWatermarkCheckpointAsync(watermark, pipelineToken);
 
                 if (events.Count < _batchSize)
-                    await Task.Delay(_pollingInterval, ct);
+                    await Task.Delay(_pollingInterval, pipelineToken);
             }
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested) { /* shutting down */ }
+        catch (OperationCanceledException) when (pipelineToken.IsCancellationRequested)
+        {
+            // Host shutdown or a worker fault cancelled the complete pipeline.
+        }
         catch (Exception ex)
         {
-            IsFaulted = true;
-            _logger?.LogCritical(ex,
-                "ControlLoop {ProcessorId} pipelined producer faulted. Draining workers.",
-                ProcessorId);
+            ReportFailure(ex);
         }
         finally
         {
-            channel.Writer.Complete();
+            channel.Writer.TryComplete();
             await Task.WhenAll(workers);
             // Final flush after all workers have drained
             await SaveWatermarkCheckpointAsync(watermark, CancellationToken.None);
+
+            if (pipelineFailure is not null)
+            {
+                IsFaulted = true;
+                _logger?.LogCritical(
+                    pipelineFailure,
+                    "ControlLoop {ProcessorId} pipelined execution faulted and stopped. " +
+                    "The failed position remains in flight and will be retried after restart.",
+                    ProcessorId);
+            }
+
             _logger?.LogInformation("ControlLoop {ProcessorId} stopped", ProcessorId);
+        }
+
+        void ReportFailure(Exception failure)
+        {
+            if (Interlocked.CompareExchange(ref pipelineFailure, failure, null) is not null)
+                return;
+
+            try { pipelineCts.Cancel(); }
+            catch (ObjectDisposedException) { }
         }
     }
 
     private async Task RunWorkerAsync(
         ChannelReader<IEventEnvelope> reader,
         PositionWatermark watermark,
+        Action<Exception> reportFailure,
         CancellationToken ct)
     {
         try
@@ -318,13 +342,16 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
                     // The event will be re-processed after restart (at-least-once).
                     break;
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException)
+                catch (Exception ex)
                 {
-                    // Middleware (retry + dead-letter) should have handled this.
-                    // If it still escapes, log and continue — don't block other events.
+                    // Middleware (retry + dead-letter) owns policy-handled failures. Anything
+                    // escaping that interface is unrecoverable: leave the position in flight
+                    // and stop the whole pipeline so restart redelivers it.
                     _logger?.LogError(ex,
                         "ControlLoop {ProcessorId} worker: unhandled error at position {Position}",
                         ProcessorId, evt.GlobalPosition);
+                    reportFailure(ex);
+                    break;
                 }
                 // Only mark completed when dispatch actually finished (success or handled
                 // failure). Cancelled events must NOT be marked — the position stays
@@ -332,7 +359,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
                 watermark.MarkCompleted(evt.GlobalPosition);
             }
         }
-        catch (OperationCanceledException) { /* shutting down */ }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { /* shutting down */ }
     }
 
     private async Task SaveWatermarkCheckpointAsync(PositionWatermark watermark, CancellationToken ct)

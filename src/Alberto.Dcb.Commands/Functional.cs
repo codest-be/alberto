@@ -1,6 +1,6 @@
 namespace Alberto.Dcb;
 
-internal readonly record struct DcbBoundary(DcbQuery Query, long? ExpectedPosition);
+internal readonly record struct DcbBoundary(DcbQuery Query, long ExpectedPosition);
 
 public readonly struct CommandPipeline<TCommand>
 {
@@ -54,19 +54,6 @@ public readonly struct ValidatedPipeline<TCommand>
     public LoadedPipeline<TCommand, TState> Load<TState>(
         Func<TCommand, Task<TState>> load) =>
         new(_store, _command, async (command, _) => (await load(command), (DcbBoundary?)null), _problems);
-
-    public LoadedPipeline<TCommand, TState> Load<TState>(
-        Func<TCommand, Task<TState>> load,
-        Func<TState, DcbQuery> query) =>
-        new(
-            _store,
-            _command,
-            async (command, _) =>
-            {
-                var state = await load(command);
-                return (state, new DcbBoundary(query(state), null));
-            },
-            _problems);
 
     public LoadedPipeline<TCommand, TState> Load<TState>(
         Func<TCommand, Task<TState>> load,
@@ -219,10 +206,24 @@ public readonly struct DecidedPipeline<TValue>
         });
     }
 
-    public async Task<Result<TValue>> Persist(DcbQuery query, CancellationToken ct)
+    /// <summary>Persists against an explicitly observed DCB query and position.</summary>
+    public async Task<Result<TValue>> Persist(
+        DcbQuery query,
+        long expectedPosition,
+        CancellationToken ct)
     {
         var (decision, _) = await _resolve(ct);
-        return await _store.Persist(decision, query, null, ct);
+        return await _store.Persist(decision, query, expectedPosition, ct);
+    }
+
+    /// <summary>
+    /// Persists without a DCB conflict check.
+    /// The explicit name prevents an unobserved query from masquerading as a consistency boundary.
+    /// </summary>
+    public async Task<Result<TValue>> PersistUnconditionally(CancellationToken ct)
+    {
+        var (decision, _) = await _resolve(ct);
+        return await _store.Persist(decision, DcbQuery.Empty, null, ct);
     }
 
     public async Task<Result<TValue>> Persist(CancellationToken ct)
@@ -231,7 +232,8 @@ public readonly struct DecidedPipeline<TValue>
         if (boundary is null)
             throw new InvalidOperationException(
                 "Persist() requires a DCB boundary established by Load(), but no boundary was set. " +
-                "Call Load() before Decide(), or use the Persist(DcbQuery, CancellationToken) overload to supply the query explicitly.");
+                "Call a boundary-establishing Load() before Decide(), use Persist(query, expectedPosition, ct), " +
+                "or explicitly choose PersistUnconditionally().");
         return await _store.Persist(decision, boundary.Value.Query, boundary.Value.ExpectedPosition, ct);
     }
 }
@@ -255,10 +257,24 @@ public readonly struct DecidedPipeline
         _resolve = resolve;
     }
 
-    public async Task<Result> Persist(DcbQuery query, CancellationToken ct)
+    /// <summary>Persists against an explicitly observed DCB query and position.</summary>
+    public async Task<Result> Persist(
+        DcbQuery query,
+        long expectedPosition,
+        CancellationToken ct)
     {
         var (decision, _) = await _resolve(ct);
-        return await _store.Persist(decision, query, null, ct);
+        return await _store.Persist(decision, query, expectedPosition, ct);
+    }
+
+    /// <summary>
+    /// Persists without a DCB conflict check.
+    /// The explicit name prevents an unobserved query from masquerading as a consistency boundary.
+    /// </summary>
+    public async Task<Result> PersistUnconditionally(CancellationToken ct)
+    {
+        var (decision, _) = await _resolve(ct);
+        return await _store.Persist(decision, DcbQuery.Empty, null, ct);
     }
 
     public async Task<Result> Persist(CancellationToken ct)
@@ -267,7 +283,8 @@ public readonly struct DecidedPipeline
         if (boundary is null)
             throw new InvalidOperationException(
                 "Persist() requires a DCB boundary established by Load(), but no boundary was set. " +
-                "Call Load() before Decide(), or use the Persist(DcbQuery, CancellationToken) overload to supply the query explicitly.");
+                "Call a boundary-establishing Load() before Decide(), use Persist(query, expectedPosition, ct), " +
+                "or explicitly choose PersistUnconditionally().");
         return await _store.Persist(decision, boundary.Value.Query, boundary.Value.ExpectedPosition, ct);
     }
 }

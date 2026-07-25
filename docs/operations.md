@@ -39,6 +39,10 @@ The schema comes from `--schema`, then the config file, then `public`. **A modul
 schema needs `--schema` on every call** — pointing the CLI at `public` on a store that lives in
 `orders` reports an empty, healthy-looking system.
 
+Schema names must be blank (meaning `public`) or contain only lowercase letters, digits and
+underscores, beginning with a letter or underscore. The CLI rejects unsafe identifiers before
+opening a connection.
+
 Put it in the config file once instead:
 
 ```json
@@ -75,12 +79,18 @@ alberto status                       # global position, processor count, dead le
 alberto system                       # the same header plus the last event's timestamp
 alberto processor <id>               # one processor's checkpoint and when it last moved
 alberto checkpoints                  # every checkpoint
-alberto events --type order-placed --tag "order:$ID" --after 1000 --limit 20
-alberto dead-letters --processor OrderSummaryProjection --limit 20
+alberto events --type order-placed --tag "order:$ID" --tenant acme --after 1000 --limit 20
+alberto dead-letters --processor OrderSummaryProjection --tenant acme --limit 20
 alberto projections types            # which projections have state
 alberto projections list OrderSummary --tenant acme --search "ord-" --limit 50
 alberto tenants                      # tenant leases: who holds what, until when
 ```
+
+The inspection commands discover whether the migrated schema is single-tenant or multi-tenant.
+Tenant identity appears in event, dead-letter and projection output for multi-tenant stores.
+Passing `--tenant` to a single-tenant store is an error rather than a silently ignored filter, and
+`alberto tenants` identifies the store as single-tenant instead of presenting an ambiguous empty
+lease table.
 
 ### Reading lag
 

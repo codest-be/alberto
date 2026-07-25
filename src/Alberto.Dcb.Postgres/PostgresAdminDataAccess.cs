@@ -25,7 +25,8 @@ public record DeadLetterInfo(
     string? EventType,
     long? GlobalPosition,
     string? ErrorMessage,
-    DateTime? FailedAt);
+    DateTime? FailedAt,
+    string? TenantId);
 
 /// <summary>
 /// Event summary returned by admin inspection queries.
@@ -34,7 +35,8 @@ public record EventInfo(
     long GlobalPosition,
     string EventType,
     string? Tags,
-    DateTime? CreatedAt);
+    DateTime? CreatedAt,
+    string? TenantId);
 
 /// <summary>
 /// Aggregate system stats.
@@ -50,8 +52,25 @@ public record SystemInfo(
 /// </summary>
 public record ProjectionState(
     string DocumentId,
-    string TenantId,
+    string? TenantId,
     DateTime? UpdatedAt);
+
+/// <summary>The tenancy shape of the migrated PostgreSQL store.</summary>
+public enum AdminTenancyMode
+{
+    /// <summary>The schema contains no tenant columns or tenant lease table.</summary>
+    SingleTenant,
+
+    /// <summary>The schema stores tenant identity and tenant leases.</summary>
+    MultiTenant,
+}
+
+/// <summary>Topology facts that admin inspection absorbs on behalf of callers.</summary>
+public sealed record AdminStoreTopology(AdminTenancyMode TenancyMode)
+{
+    /// <summary>Whether tenant-aware filters and result fields are available.</summary>
+    public bool IsMultiTenant => TenancyMode is AdminTenancyMode.MultiTenant;
+}
 
 /// <summary>
 /// Admin view of a tenant lease row from the multi-tenant lease table.
@@ -63,6 +82,13 @@ public record AdminTenantLease(
     string ConsumerId,
     string? ReplicaId,
     DateTime? ExpiresAt);
+
+/// <summary>
+/// Tenant lease inventory together with the store topology that gives an empty list meaning.
+/// </summary>
+public sealed record TenantLeaseInventory(
+    AdminTenancyMode TenancyMode,
+    IReadOnlyList<AdminTenantLease> Leases);
 
 /// <summary>
 /// An active processor lease found via admin inspection.
@@ -112,6 +138,7 @@ public sealed class PostgresAdminDataAccess
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly SchemaQualifier _schema;
+    private AdminStoreTopology? _topology;
 
     /// <summary>
     /// Creates a new PostgresAdminDataAccess.
@@ -123,9 +150,6 @@ public sealed class PostgresAdminDataAccess
         _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
         _schema = new SchemaQualifier(schema);
     }
-
-    // Extracts the bare schema name for catalog queries (pg_tables, information_schema).
-    private string SchemaName => _schema.HasSchema ? _schema.Prefix.TrimEnd('.') : "public";
 
     // -----------------------------------------------------------------------
     // Inspection queries
@@ -315,9 +339,15 @@ public sealed class PostgresAdminDataAccess
     public async Task<List<DeadLetterInfo>> GetDeadLettersAsync(
         string? processorId,
         string? type,
+        string? tenant,
         int limit,
         CancellationToken ct = default)
     {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
+
+        var topology = await GetTopologyAsync(ct);
+        EnsureTenantFilterSupported(topology, tenant);
+
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = conn.CreateCommand();
 
@@ -332,12 +362,19 @@ public sealed class PostgresAdminDataAccess
             where.Add("event_type = @type");
             cmd.Parameters.AddWithValue("type", type);
         }
+        if (!string.IsNullOrWhiteSpace(tenant))
+        {
+            where.Add("tenant_id = @tenant");
+            cmd.Parameters.AddWithValue("tenant", tenant);
+        }
 
         var whereClause = where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : string.Empty;
         cmd.Parameters.AddWithValue("limit", limit);
+        var tenantSelection = topology.IsMultiTenant ? "tenant_id" : "NULL::text AS tenant_id";
 
         cmd.CommandText = $"""
-            SELECT id, processor_id, event_type, global_position, error_message, failed_at
+            SELECT id, processor_id, event_type, global_position, error_message, failed_at,
+                   {tenantSelection}
             FROM {_schema.Table("alberto_dead_letter_events")}
             {whereClause}
             ORDER BY failed_at DESC
@@ -354,7 +391,8 @@ public sealed class PostgresAdminDataAccess
                 reader.IsDBNull(2) ? null : reader.GetString(2),
                 reader.IsDBNull(3) ? null : reader.GetInt64(3),
                 reader.IsDBNull(4) ? null : reader.GetString(4),
-                reader.IsDBNull(5) ? null : reader.GetDateTime(5)));
+                reader.IsDBNull(5) ? null : reader.GetDateTime(5),
+                reader.IsDBNull(6) ? null : reader.GetString(6)));
         }
 
         return result;
@@ -367,10 +405,17 @@ public sealed class PostgresAdminDataAccess
     public async Task<List<EventInfo>> GetEventsAsync(
         string? type,
         string? tag,
+        string? tenant,
         long afterPosition,
         int limit,
         CancellationToken ct = default)
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(afterPosition);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
+
+        var topology = await GetTopologyAsync(ct);
+        EnsureTenantFilterSupported(topology, tenant);
+
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = conn.CreateCommand();
 
@@ -384,14 +429,21 @@ public sealed class PostgresAdminDataAccess
         }
         if (!string.IsNullOrWhiteSpace(tag))
         {
-            where.Add("event_tags @> ARRAY[@tag]");
+            where.Add("@tag = ANY(event_tags)");
             cmd.Parameters.AddWithValue("tag", tag);
+        }
+        if (!string.IsNullOrWhiteSpace(tenant))
+        {
+            where.Add("tenant_id = @tenant");
+            cmd.Parameters.AddWithValue("tenant", tenant);
         }
 
         cmd.Parameters.AddWithValue("limit", limit);
+        var tenantSelection = topology.IsMultiTenant ? "tenant_id" : "NULL::text AS tenant_id";
 
         cmd.CommandText = $"""
-            SELECT global_position, event_type, array_to_string(event_tags, ','), created_at
+            SELECT global_position, event_type, array_to_string(event_tags, ','), created_at,
+                   {tenantSelection}
             FROM {_schema.Table("alberto_events")}
             WHERE {string.Join(" AND ", where)}
             ORDER BY global_position
@@ -406,7 +458,8 @@ public sealed class PostgresAdminDataAccess
                 reader.GetInt64(0),
                 reader.GetString(1),
                 reader.IsDBNull(2) ? null : reader.GetString(2),
-                reader.IsDBNull(3) ? null : reader.GetDateTime(3)));
+                reader.IsDBNull(3) ? null : reader.GetDateTime(3),
+                reader.IsDBNull(4) ? null : reader.GetString(4)));
         }
 
         return result;
@@ -483,23 +536,49 @@ public sealed class PostgresAdminDataAccess
         int limit,
         CancellationToken ct = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(type);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
+
+        var topology = await GetTopologyAsync(ct);
+        EnsureTenantFilterSupported(topology, tenant);
+
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = conn.CreateCommand();
 
         cmd.Parameters.AddWithValue("type", type);
-        cmd.Parameters.AddWithValue("tenant", (object?)tenant ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("search", (object?)search ?? DBNull.Value);
+        cmd.Parameters.Add(new NpgsqlParameter("search", NpgsqlTypes.NpgsqlDbType.Text)
+        {
+            Value = (object?)search ?? DBNull.Value,
+        });
         cmd.Parameters.AddWithValue("limit", limit);
 
-        cmd.CommandText = $"""
-            SELECT document_id, tenant_id, updated_at
-            FROM {_schema.Table("alberto_projection_states")}
-            WHERE projection_type = @type
-            AND (@tenant IS NULL OR tenant_id = @tenant)
-            AND (@search IS NULL OR document_id ILIKE '%' || @search || '%')
-            ORDER BY updated_at DESC
-            LIMIT @limit
-            """;
+        if (topology.IsMultiTenant)
+        {
+            cmd.Parameters.Add(new NpgsqlParameter("tenant", NpgsqlTypes.NpgsqlDbType.Text)
+            {
+                Value = (object?)tenant ?? DBNull.Value,
+            });
+            cmd.CommandText = $"""
+                SELECT document_id, tenant_id, updated_at
+                FROM {_schema.Table("alberto_projection_states")}
+                WHERE projection_type = @type
+                AND (@tenant IS NULL OR tenant_id = @tenant)
+                AND (@search IS NULL OR document_id ILIKE '%' || @search || '%')
+                ORDER BY updated_at DESC
+                LIMIT @limit
+                """;
+        }
+        else
+        {
+            cmd.CommandText = $"""
+                SELECT document_id, NULL::text AS tenant_id, updated_at
+                FROM {_schema.Table("alberto_projection_states")}
+                WHERE projection_type = @type
+                AND (@search IS NULL OR document_id ILIKE '%' || @search || '%')
+                ORDER BY updated_at DESC
+                LIMIT @limit
+                """;
+        }
 
         var result = new List<ProjectionState>();
         await using var reader = await cmd.ExecuteReaderAsync(ct);
@@ -507,7 +586,7 @@ public sealed class PostgresAdminDataAccess
         {
             result.Add(new ProjectionState(
                 reader.GetString(0),
-                reader.GetString(1),
+                reader.IsDBNull(1) ? null : reader.GetString(1),
                 reader.IsDBNull(2) ? null : reader.GetDateTime(2)));
         }
 
@@ -515,29 +594,46 @@ public sealed class PostgresAdminDataAccess
     }
 
     /// <summary>
-    /// Returns <see langword="true"/> when the multi-tenant lease table
-    /// (<c>alberto_tenant_leases</c>) exists in the current schema.
+    /// Detects and caches whether the migrated store uses the single-tenant or multi-tenant schema.
     /// </summary>
-    public async Task<bool> TenantLeasesTableExistsAsync(CancellationToken ct = default)
+    public async Task<AdminStoreTopology> GetTopologyAsync(CancellationToken ct = default)
     {
+        var cached = Volatile.Read(ref _topology);
+        if (cached is not null)
+            return cached;
+
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             SELECT EXISTS (
-                SELECT 1 FROM pg_tables
-                WHERE schemaname = @schema AND tablename = 'alberto_tenant_leases'
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = @schema
+                  AND table_name = 'alberto_events'
+                  AND column_name = 'tenant_id'
             )
             """;
-        cmd.Parameters.AddWithValue("schema", SchemaName);
-        var result = await cmd.ExecuteScalarAsync(ct);
-        return result is true;
+        cmd.Parameters.AddWithValue("schema", _schema.Name);
+
+        var resolved = new AdminStoreTopology(
+            await cmd.ExecuteScalarAsync(ct) is true
+                ? AdminTenancyMode.MultiTenant
+                : AdminTenancyMode.SingleTenant);
+
+        return Interlocked.CompareExchange(ref _topology, resolved, null) ?? resolved;
     }
 
     /// <summary>
-    /// Lists all current tenant lease rows ordered by tenant ID.
+    /// Lists tenant leases and reports whether an empty list means single-tenant mode or no leases.
+    /// Callers do not need a catalog preflight before crossing this interface.
     /// </summary>
-    public async Task<List<AdminTenantLease>> GetTenantLeasesAsync(CancellationToken ct = default)
+    public async Task<TenantLeaseInventory> GetTenantLeaseInventoryAsync(
+        CancellationToken ct = default)
     {
+        var topology = await GetTopologyAsync(ct);
+        if (!topology.IsMultiTenant)
+            return new TenantLeaseInventory(topology.TenancyMode, []);
+
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = $"""
@@ -546,18 +642,30 @@ public sealed class PostgresAdminDataAccess
             ORDER BY tenant_id
             """;
 
-        var result = new List<AdminTenantLease>();
+        var leases = new List<AdminTenantLease>();
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
         {
-            result.Add(new AdminTenantLease(
+            leases.Add(new AdminTenantLease(
                 reader.GetString(0),
                 reader.GetString(1),
                 reader.IsDBNull(2) ? null : reader.GetString(2),
                 reader.IsDBNull(3) ? null : reader.GetDateTime(3)));
         }
 
-        return result;
+        return new TenantLeaseInventory(topology.TenancyMode, leases);
+    }
+
+    private static void EnsureTenantFilterSupported(
+        AdminStoreTopology topology,
+        string? tenant)
+    {
+        if (!string.IsNullOrWhiteSpace(tenant) && !topology.IsMultiTenant)
+        {
+            throw new ArgumentException(
+                "A tenant filter cannot be applied to a single-tenant Alberto schema.",
+                nameof(tenant));
+        }
     }
 
     /// <summary>

@@ -228,4 +228,61 @@ public sealed class PostgresAdminDataAccessTests(PostgresAdminDataAccessFixture 
             Assert.Null(sourceBPosition);
         }
     }
+
+    [Fact]
+    public async Task ProjectionInspection_UsesTheSingleTenantSchemaWithoutReadingTenantId()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var projectionType = $"single-projection-{Guid.NewGuid():N}";
+        var documentId = $"document-{Guid.NewGuid():N}";
+
+        await using (var conn = await fixture.DataSource.OpenConnectionAsync(ct))
+        await using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = """
+                INSERT INTO alberto_projection_states
+                    (projection_type, document_id, rebuild_version, state)
+                VALUES (@projectionType, @documentId, 1, '{}'::jsonb)
+                """;
+            cmd.Parameters.AddWithValue("projectionType", projectionType);
+            cmd.Parameters.AddWithValue("documentId", documentId);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        var states = await CreateAdmin().GetProjectionStatesAsync(
+            projectionType,
+            tenant: null,
+            search: "document-",
+            limit: 20,
+            ct);
+
+        var state = Assert.Single(states);
+        Assert.Equal(documentId, state.DocumentId);
+        Assert.Null(state.TenantId);
+    }
+
+    [Fact]
+    public async Task SingleTenantTopology_MakesEmptyTenantLeaseInventoryUnambiguous()
+    {
+        var inventory = await CreateAdmin().GetTenantLeaseInventoryAsync(
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(AdminTenancyMode.SingleTenant, inventory.TenancyMode);
+        Assert.Empty(inventory.Leases);
+    }
+
+    [Fact]
+    public async Task TenantFilter_OnSingleTenantStore_IsRejectedInsteadOfSilentlyReturningGlobalRows()
+    {
+        var act = () => CreateAdmin().GetEventsAsync(
+            type: null,
+            tag: null,
+            tenant: "tenant_a",
+            afterPosition: 0,
+            limit: 20,
+            TestContext.Current.CancellationToken);
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(act);
+        Assert.Equal("tenant", exception.ParamName);
+    }
 }
