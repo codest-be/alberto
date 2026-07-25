@@ -275,9 +275,14 @@ call is unchanged and still means one database with row-level isolation.
 
 Each shard entry binds through the existing `PostgresOverrides` /
 `AlbertoOptionsOverlay` machinery, so configuration wins over code per property,
-identically to every other Alberto setting. A shard declared only in configuration and
-never in code works — which is what is wanted when `db2` exists in production and
-nowhere else.
+identically to every other Alberto setting.
+
+> **Corrected during implementation.** This section originally said a shard declared
+> only in configuration and never in code would work. It cannot: shard services are
+> registered while the service collection is still being built, which is before any
+> configuration is read, so such a shard would have no data source, no migration and no
+> control loops. It is reported as `ALB0015` instead. A shard is declared in code and
+> tuned from configuration.
 
 ### Pool sizing
 
@@ -327,9 +332,11 @@ command gains `--shard <id>`.
   `dead-letters retry`, `ops rebuild start|promote|abort`, `ops tenant`. A rewind
   silently applied to every database is the kind of thing that should have to be said
   out loud.
-- `alberto tenants` gains catalog-backed subcommands: `list` (with shard column),
-  `where <tenant>`, `assign <tenant> --shard db2`.
-- `tenants assign` is refused when the tenant already has events in a different shard.
+- A new `alberto shards` group carries the catalog-backed subcommands: `list` (shard,
+  tenant count, whether config declares it), `where <tenant>`, `assign <tenant> --shard db2`.
+  Implemented as its own top-level group rather than under `tenants`, which already means
+  tenant leases.
+- `shards assign` is refused when the tenant already has events in a different shard.
   That is relocation, which is out of scope, and remapping the catalog would strand
   the existing data rather than move it.
 

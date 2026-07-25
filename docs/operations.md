@@ -72,6 +72,77 @@ or `alberto tenants` first.
 `--json` on every command is deliberate: the same binary you use interactively is the one your
 runbook scripts and alerting checks call.
 
+### Sharded modules
+
+A module whose tenants are spread over several databases ([tenant
+sharding](architecture/tenant-sharding.md)) needs the CLI to know about all of them. Declare them
+in the config file, alongside the control database holding the tenant → shard catalog:
+
+```json
+{
+  "schema": "orders",
+  "module": "orders",
+  "catalog": { "url": "Host=control;Database=alberto_catalog" },
+  "shards": {
+    "db1": { "url": "Host=one;Database=orders" },
+    "db2": { "url": "Host=two;Database=orders", "schema": "orders_legacy" }
+  }
+}
+```
+
+`schema` per shard falls back to the top-level one. `module` must match the key the application
+passes to `AddAlberto`, because it is part of the catalog's primary key — a wrong one reads an
+empty table and reports no tenants, which looks like an answer rather than a misconfiguration.
+
+**Connection strings live here and never in the database.** The catalog table stores shard *ids*
+only, so a dump of it leaks no credentials and a shard can move host without a row changing.
+
+With shards configured, two extra options appear and the rules change:
+
+| Option | Applies to | Does |
+|---|---|---|
+| `--shard <id>` | Every command | Run against that one database |
+| `--all-shards` | Mutating commands | Run against every one, in id order |
+
+- **Reads fan out by default.** `status`, `system`, `processor`, `checkpoints`, `dead-letters`,
+  `events`, `projections`, `tenants`, `ops checkpoint get` and `ops rebuild status` — with no
+  `--shard` they cover every database and label each section with its shard id.
+- **Mutations refuse by default.** Without `--shard` or `--all-shards` they stop and name the
+  databases they would have touched. Rewinding a checkpoint across every tenant's database because
+  a flag was forgotten is not undoable.
+- **`ops checkpoint set` takes no `--all-shards`.** A position is a per-database sequence, so one
+  number cannot apply to several. Name the shard.
+- **A failing shard does not stop the run.** The remaining databases are still processed and the
+  exit code is non-zero, so you can see which of them moved rather than only where the run stopped.
+- **`--url` overrides all of it** and targets exactly that database, unlabelled.
+
+Config with no `shards` key behaves exactly as it always has: one database, no shard labels, no
+refusals. Nothing about the single-database case changed.
+
+#### The catalog
+
+```bash
+alberto shards list                          # each shard, its tenant count, and whether config declares it
+alberto shards where acme                    # which database a tenant's events are in
+alberto shards assign acme --shard db2       # place a tenant — permanent
+```
+
+These read and write the control database, so they take `--url`/`--schema` pointing at *it*, plus
+`--module` to override the configured module key.
+
+`list` unions the shards your config declares with the ones the catalog actually references, and
+warns about any id in the catalog that config does not declare — that shard's tenants cannot be
+served by this deployment.
+
+`where` exits non-zero for a tenant with no assignment, so a script can branch on it without
+parsing the message.
+
+**`assign` is permanent.** It is first-writer-wins: assigning a tenant that already has a shard
+fails and tells you which one it is in, rather than moving it. There is no relocation command —
+moving a tenant between databases means migrating its events, checkpoints, projection state and
+leases across two unrelated position sequences, which is a migration you write and verify against
+your own data.
+
 ## Inspecting
 
 ```bash
@@ -108,6 +179,17 @@ the write rate; lag that is pinned at exactly the same number means it has stopp
 
 `alberto processor <id>`'s **Updated At** answers the "stopped entirely" question directly: a
 checkpoint that has not moved in minutes on a live system is a stalled processor.
+
+On a sharded module the subtraction is **per shard**: each database has its own `position`
+sequence, so a head from `db1` against a checkpoint from `db2` is a meaningless number. Fanned-out
+`--json` output is an array of per-shard objects, each tagged with a `shard` field, so the query
+above becomes:
+
+```bash
+alberto status --json | jq '.[] | .globalPosition as $head | {shard, lag: [.processors[] | {id: .processorId, lag: ($head - .lastPosition)}]}'
+```
+
+Unsharded output is unchanged — still the single object, with no `shard` field.
 
 ## Errors, retries and dead letters
 
@@ -397,3 +479,5 @@ Each module owns its schema. Two modules in one database are two schemas, migrat
 | Messages not delivered | `alberto_outbox_entries` status and `claim_expires_at` | Live claim → wait; expired claim → relay recovers it automatically |
 | Conflicts spiking | `alberto.concurrency.conflicts` | A boundary is too wide — narrow the query |
 | One tenant is stalled | `alberto tenants` | Stale lease → `ops tenants release` |
+| One tenant errors, the rest are fine | `alberto shards where <tenant>`, then that shard | Sharded module — the fault is in one database, not the module |
+| Health check reports `Degraded` | Its `data` payload names the unreachable shards | One shard down; the others keep serving — do not pull the instance out |

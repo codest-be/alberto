@@ -392,9 +392,11 @@ the list of (shardId, connectionString, schema) a command should run against.
 - Reads with no `--shard` fan out over all shards and add a `Shard` column.
 - Mutations require `--shard` or `--all-shards`; without either they exit non-zero with a message
   naming the shards they would have touched.
-- `tenants list` gains a shard column; `tenants where <tenant>` prints the assignment;
-  `tenants assign <tenant> --shard db2` writes the catalog and refuses when the tenant already has
-  events in a different shard.
+- A new top-level `shards` group carries the catalog verbs: `shards list` (shard, tenant count,
+  whether config declares it); `shards where <tenant>` prints the assignment; `shards assign
+  <tenant> --shard db2` writes the catalog and refuses when the tenant already has events in a
+  different shard. It is its own group rather than a verb under `tenants`, which already means
+  tenant leases.
 - With no `shards` configured, every command behaves exactly as it does now.
 
 - [ ] Implement `ShardResolver` and its unit tests (fan-out list, mutation guard, no-shards
