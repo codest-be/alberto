@@ -1,7 +1,116 @@
 # Alberto DCB — Upgrade Notes
 
 This file collects **every breaking change** introduced across all release cycles.
-The most recent cycle (2026-07-24 library audit) is at the top. Older changes follow.
+The most recent cycle (1.0 configuration pipeline) is at the top. Older changes follow.
+
+---
+
+## 0.x → 1.0: declarative configuration pipeline
+
+### ⚠ Read this first: processor ids are checkpoint keys
+
+**The `ReactTo<TEvent, THandler>` change below is the only change that can silently
+reprocess your entire event log.** When `processorId` is omitted, Alberto now derives the
+checkpoint key from the handler's type name via `ProcessorId.For<THandler>()` — reading a
+`[ProcessorId]` attribute when present, otherwise building a qualified name from the type
+hierarchy. If that derived name differs from what was stored in your checkpoint table, the
+processor restarts from position zero without warning.
+
+Alberto's safety net is `Checkpoints:OrphanPolicy`. Outside a `Development` environment,
+it now defaults to `Strict`, which causes startup to fail with a named error if the
+checkpoint store contains an id that no declared processor claims — turning a silent replay
+into a loud failure. See the `OrphanPolicy` row below for the asymmetry between code and
+configuration, and [docs/configuration.md](docs/configuration.md#checkpoint-hygiene) for
+the configuration key.
+
+**Before deploying 1.0:**
+
+1. Audit every `ReactTo<TEvent, THandler>` call in your modules.
+2. Compare the derived id (the handler class name, qualified by any declaring types) with
+   the id stored in your checkpoint table.
+3. If they differ, either add `[ProcessorId("old-id")]` to the handler class, or rename
+   the checkpoint with `alberto ops checkpoint rename`.
+
+---
+
+### Breaking changes table
+
+| Change | What breaks | What to do |
+|---|---|---|
+| `DcbModuleBuilder.Services` removed | Third-party `.WithX()` extensions that reached into the service collection at declaration time | Implement `IAlbertoBackendDescriptor` for a backend; use `builder.Register(context => ...)` for anything else |
+| `Action<TOptions>` → `Func<TOptions, TOptions>` on `WithPostgres` | Every call site | `o => { o.X = y; }` becomes `o => o with { X = y }` |
+| `PostgresOptions` is a record | Object initializers still work; assignment after construction does not | Use `with` expressions to derive a new value |
+| `ControlLoopBuilder` deleted | `.WithPollingInterval(...)` and siblings on the old builder | `WithControlLoop(o => o with { PollingInterval = ... })` — see [ControlLoop options](docs/configuration.md#controlloop-options) |
+| `.WithMiddleware(...)` / `.WithBatchMiddleware(...)` removed | Control-loop-scoped middleware registration | Module-level `AddConsumeMiddleware(sp => ...)` / `AddBatchConsumeMiddleware(sp => ...)` |
+| `ErrorPolicy` split | Custom classifiers | Retry knobs move to `ControlLoop.Retry`; the classifier moves to `UseErrorClassifier<T>()` |
+| `ProcessorExecutionConfigurator` deleted | `configure: c => c.BatchIfSupported()` | `configure: o => o with { BatchingMode = ProcessorBatchingMode.IfSupported }` |
+| `ReactTo<TEvent, THandler>` derives its processor id when `processorId` is omitted | Ids change from whatever was stored to the handler's derived type name | Keep the old id with `[ProcessorId("...")]` on the handler class, or carry the checkpoint position with `alberto ops checkpoint rename` |
+| `ICheckpointStore` gains an optional `ICheckpointInventory` sibling | Nothing — it is a separate interface | Implement it on a custom store to opt into orphan detection |
+| Migrations run at startup via `IHostedService`, not inside `AddAlberto` | Code that built an `IServiceProvider` and expected the schema to already exist | Start the host, or call `PostgresMigrator.Migrate(...)` directly in your own startup code |
+| `TenancyOrderingValidator` deleted | Nothing — supersedes DX-6 from the audit cycle below | `.WithTenancy()` may now appear anywhere in the chain, in any order relative to `.WithPostgres()` |
+| `AddAlbertoInstrumentation()` is `[Obsolete]` | A compiler warning | Delete the call; `.WithTelemetry()` registers the activity source and meter automatically |
+| `.WithTelemetry()` now installs the OpenTelemetry SDK unconditionally | Nothing functionally | Nothing required. With no exporters configured there is no I/O. The registration is observable in the container — called out here rather than hidden. |
+| `Checkpoints:OrphanPolicy` defaults to `Strict` outside `Development` | A deployment whose handler was renamed at any point silently replaying events now **fails at startup** | This is the intended safety net. Either carry the position with `alberto ops checkpoint rename`, pin the old id with `[ProcessorId("...")]`, or set `Alberto:Modules:{key}:Checkpoints:OrphanPolicy` explicitly in configuration. See the note below. |
+| `PostgresStateStore` positional constructor argument order fixed | Code that copied `(dataSource, tenantId, projectionType, schema)` from the old samples | Switch to named arguments: `new PostgresStateStore<T>(dataSource, projectionType, schema)` |
+
+### `OrphanPolicy` and code vs. configuration
+
+The escalation from `Warn` to `Strict` outside Development has one asymmetry worth
+knowing: an explicit `OrphanPolicy = Warn` supplied through **configuration**
+(`Alberto:Modules:{key}:Checkpoints:OrphanPolicy = Warn`) is honoured and never escalated.
+An explicit `Warn` supplied in **code** is escalated anyway, because `Warn` is also the
+default value of `OrphanCheckpointPolicy` and Alberto cannot tell the two apart.
+
+The configuration key is the reliable way to opt out of `Strict` in a given environment.
+
+---
+
+### Before / after: the Orders module
+
+**Before (0.x — `Action<TOptions>` mutation style)**
+
+```csharp
+services.AddAlberto("orders", module => module
+    .WithTenancy()
+    .WithPostgres(o =>
+    {
+        o.ConnectionString = connectionString;
+        o.AutoMigrate = false;
+        o.Schema = "orders";
+        o.MaxPoolSize = 30;
+    })
+    .WithTelemetry()
+    .AddProjection(/* ... */)
+    .WithControlLoop(o =>
+    {
+        o.PollingInterval = TimeSpan.FromMilliseconds(100);
+        o.BatchSize = 500;
+    }));
+```
+
+**After (1.0 — `Func<TOptions, TOptions>` with-expression style)**
+
+```csharp
+services.AddAlberto("orders", module => module
+    .WithTenancy()
+    .WithPostgres(o => o with
+    {
+        ConnectionString = connectionString,
+        AutoMigrate = false,
+        Schema = "orders",
+        MaxPoolSize = 30,
+    })
+    .WithTelemetry()
+    .AddProjection(/* ... */)
+    .WithControlLoop(o => o with
+    {
+        PollingInterval = TimeSpan.FromMilliseconds(100),
+        BatchSize = 500,
+    }));
+```
+
+The full working 1.0 example is
+`apps/Alberto.Orders/Alberto.Orders.Infrastructure/OrdersModule.cs`.
 
 ---
 
