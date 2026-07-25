@@ -30,7 +30,20 @@ public sealed class EventStoreHead : IHostedService
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        await RefreshAsync(cancellationToken); // warm up before agents start
+        try
+        {
+            await RefreshAsync(cancellationToken); // warm up before agents start
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The warm-up is an optimisation — the loop below refreshes on its own interval and
+            // already tolerates a failing backend. Rethrowing here would mean one unreachable
+            // shard takes down a host whose other databases are fine, and the module's real
+            // startup check on that database (migration and tenancy-mode validation) has already
+            // run and recorded the failure.
+            _logger?.LogWarning(ex, "EventStoreHead warm-up failed; starting cold and retrying on the poll interval");
+        }
+
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _loop = RunAsync(_cts.Token);
     }
