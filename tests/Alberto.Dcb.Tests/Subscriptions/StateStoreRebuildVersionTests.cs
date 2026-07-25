@@ -2,10 +2,10 @@ using Alberto.Dcb.EntityFramework;
 using Alberto.Dcb.Postgres;
 using Alberto.Dcb.Subscriptions;
 using Alberto.Dcb.Tests.EntityFramework;
+using Alberto.Dcb.Tests.Infrastructure;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
-using Testcontainers.PostgreSql;
 using Xunit;
 
 namespace Alberto.Dcb.Tests.Subscriptions;
@@ -13,53 +13,14 @@ namespace Alberto.Dcb.Tests.Subscriptions;
 /// <summary>
 /// Fixture running both the shipped single-tenant migrations (for
 /// <see cref="PostgresStateStore{TState}"/>) and the EF test schema (for
-/// <see cref="EfStateStore{TEntity,TDbContext}"/>) against one container, so both backends
+/// <see cref="EfStateStore{TEntity,TDbContext}"/>) against one database, so both backends
 /// can be held to the same version-isolation contract side by side.
 /// </summary>
-public sealed class StateStoreRebuildVersionFixture : IAsyncLifetime
+public sealed class StateStoreRebuildVersionFixture(PostgresCluster cluster)
+    : PostgresDatabaseFixture(cluster, PostgresTemplates.EntityFrameworkThenSingleTenant)
 {
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:16-alpine")
-        .Build();
-
-    public NpgsqlDataSource DataSource { get; private set; } = null!;
-    public string ConnectionString { get; private set; } = string.Empty;
-
-    public async ValueTask InitializeAsync()
-    {
-        await _container.StartAsync();
-        ConnectionString = _container.GetConnectionString();
-
-        // EF's EnsureCreated is a no-op once the database has any tables at all, so it has to
-        // run before DbUp puts the alberto_* tables there.
-        var optionsBuilder = new DbContextOptionsBuilder<EfTestDbContext>();
-        optionsBuilder.UseNpgsql(ConnectionString, o => o.EnableRetryOnFailure(
-            maxRetryCount: 5,
-            maxRetryDelay: TimeSpan.FromSeconds(3),
-            errorCodesToAdd: null));
-        await using (var context = new EfTestDbContext(optionsBuilder.Options))
-        {
-            await context.Database.EnsureCreatedAsync();
-        }
-
-        var migrationResult = PostgresMigrator.Migrate(ConnectionString, singleTenant: true);
-        if (!migrationResult.Successful)
-        {
-            throw new InvalidOperationException(
-                $"Database migration failed: {migrationResult.Error?.Message}",
-                migrationResult.Error);
-        }
-
-        DataSource = NpgsqlDataSource.Create(ConnectionString);
-    }
-
     public IDbContextFactory<EfTestDbContext> ContextFactory()
         => new ControlledDbContextFactory(ConnectionString);
-
-    public async ValueTask DisposeAsync()
-    {
-        await DataSource.DisposeAsync();
-        await _container.DisposeAsync();
-    }
 }
 
 /// <summary>

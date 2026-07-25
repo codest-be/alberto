@@ -2,28 +2,23 @@ using System.Text.Json;
 using Alberto.Dcb.Postgres;
 using Alberto.Dcb.Subscriptions;
 using Alberto.Dcb.Tenancy;
+using Alberto.Dcb.Tests.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
-using Testcontainers.PostgreSql;
 using Xunit;
 
 namespace Alberto.Dcb.Tests.Tenancy;
 
 /// <summary>
-/// Shared multi-tenant PostgreSQL fixture. Runs the multi-tenant migration
+/// Multi-tenant fixture on a private database. Runs the multi-tenant migration
 /// (without <c>singleTenant: true</c>) and wires up a DI service provider via
 /// <see cref="DcbModuleBuilder"/> with tenancy enabled so that
 /// <c>TenantEventStoreDecorator</c> is in the request-scoped backend chain.
 /// </summary>
-public sealed class MultiTenantPostgresFixture : IAsyncLifetime
+public sealed class MultiTenantPostgresFixture(PostgresCluster cluster)
+    : PostgresDatabaseFixture(cluster, PostgresTemplates.MultiTenant)
 {
     private const string ModuleKey = "ti-test";
-
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:16-alpine")
-        .Build();
-
-    public NpgsqlDataSource DataSource { get; private set; } = null!;
-    public string ConnectionString { get; private set; } = string.Empty;
 
     /// <summary>
     /// DI service provider that owns the keyed <see cref="IEventStore"/> backed by the
@@ -31,21 +26,10 @@ public sealed class MultiTenantPostgresFixture : IAsyncLifetime
     /// </summary>
     public IServiceProvider Services { get; private set; } = null!;
 
-    public async ValueTask InitializeAsync()
+    protected override ValueTask OnInitializedAsync()
     {
-        await _container.StartAsync();
-        ConnectionString = _container.GetConnectionString();
-
-        var migrationResult = PostgresMigrator.Migrate(ConnectionString);
-        if (!migrationResult.Successful)
-        {
-            throw new InvalidOperationException(
-                $"Multi-tenant database migration failed: {migrationResult.Error?.Message}",
-                migrationResult.Error);
-        }
-
-        DataSource = NpgsqlDataSource.Create(ConnectionString);
         Services = BuildServiceProvider();
+        return ValueTask.CompletedTask;
     }
 
     private IServiceProvider BuildServiceProvider()
@@ -62,15 +46,12 @@ public sealed class MultiTenantPostgresFixture : IAsyncLifetime
         return services.BuildServiceProvider();
     }
 
-    public async ValueTask DisposeAsync()
+    // Dispose the SP first so it can clean up its own NpgsqlDataSource (owned by
+    // WithPostgres); the base class then disposes the fixture's standalone DataSource.
+    protected override async ValueTask OnDisposingAsync()
     {
-        // Dispose the SP first so it can clean up its own NpgsqlDataSource (owned by
-        // WithPostgres), then dispose the fixture's standalone DataSource, then the container.
         if (Services is IAsyncDisposable asyncDisposable)
             await asyncDisposable.DisposeAsync();
-
-        await DataSource.DisposeAsync();
-        await _container.DisposeAsync();
     }
 }
 

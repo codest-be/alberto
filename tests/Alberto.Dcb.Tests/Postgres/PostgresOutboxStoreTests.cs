@@ -1,46 +1,19 @@
 using Alberto.Dcb.Messaging;
 using Alberto.Dcb.Postgres;
 using Alberto.Dcb.Postgres.Messaging;
+using Alberto.Dcb.Tests.Infrastructure;
 using Npgsql;
-using Testcontainers.PostgreSql;
 using Xunit;
 
 namespace Alberto.Dcb.Tests.Postgres;
 
 /// <summary>
-/// Fixture that spins up a real PostgreSQL container and runs the shipped single-tenant
-/// migrations.  No manual schema patching is applied — the tests exercise the schema
-/// exactly as it is delivered to production.
+/// A private database on the shared cluster running the shipped single-tenant migrations.
+/// No manual schema patching is applied — the tests exercise the schema exactly as it is
+/// delivered to production.
 /// </summary>
-public sealed class PostgresOutboxStoreFixture : IAsyncLifetime
-{
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:16-alpine")
-        .Build();
-
-    public NpgsqlDataSource DataSource { get; private set; } = null!;
-
-    public async ValueTask InitializeAsync()
-    {
-        await _container.StartAsync();
-
-        var connectionString = _container.GetConnectionString();
-        var migrationResult = PostgresMigrator.Migrate(connectionString, singleTenant: true);
-        if (!migrationResult.Successful)
-        {
-            throw new InvalidOperationException(
-                $"Database migration failed: {migrationResult.Error?.Message}",
-                migrationResult.Error);
-        }
-
-        DataSource = NpgsqlDataSource.Create(connectionString);
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        await DataSource.DisposeAsync();
-        await _container.DisposeAsync();
-    }
-}
+public sealed class PostgresOutboxStoreFixture(PostgresCluster cluster)
+    : PostgresDatabaseFixture(cluster, PostgresTemplates.SingleTenant);
 
 /// <summary>
 /// Integration tests for <see cref="PostgresOutboxStore"/>, focusing on the

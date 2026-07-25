@@ -96,7 +96,10 @@ public sealed class MigrationUpgradeAndParityTests
     /// </summary>
     /// <remarks>
     /// Each upgrade test spins up its own isolated container so the two variants do not
-    /// interfere with each other.
+    /// interfere with each other. These cannot move onto the shared
+    /// <see cref="Infrastructure.PostgresCluster"/>: they exercise the migrator itself from a
+    /// pre-009 baseline, so they need a database that has never been migrated, which is
+    /// precisely what the cluster's templates are not.
     /// </remarks>
     [Fact]
     public async Task MultiTenant_UpgradesFromPre009Schema_ToCurrentMigrations_Successfully()

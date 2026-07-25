@@ -1,47 +1,20 @@
 using Alberto.Dcb.Postgres;
 using Alberto.Dcb.Subscriptions;
+using Alberto.Dcb.Tests.Infrastructure;
 using FluentAssertions;
 using Npgsql;
-using Testcontainers.PostgreSql;
 using Xunit;
 
 namespace Alberto.Dcb.Tests.Postgres;
 
 /// <summary>
-/// Fixture that spins up a real PostgreSQL container and runs the shipped single-tenant
+/// A private database on the shared cluster running the shipped single-tenant
 /// migrations, including 014 which re-keys the rebuild meta table onto processor_id.
 /// No manual schema patching is applied — these tests are also the proof that 014 lands
 /// on top of 001 the way it claims to.
 /// </summary>
-public sealed class PostgresProjectionRebuildStoreFixture : IAsyncLifetime
-{
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:16-alpine")
-        .Build();
-
-    public NpgsqlDataSource DataSource { get; private set; } = null!;
-
-    public async ValueTask InitializeAsync()
-    {
-        await _container.StartAsync();
-
-        var connectionString = _container.GetConnectionString();
-        var migrationResult = PostgresMigrator.Migrate(connectionString, singleTenant: true);
-        if (!migrationResult.Successful)
-        {
-            throw new InvalidOperationException(
-                $"Database migration failed: {migrationResult.Error?.Message}",
-                migrationResult.Error);
-        }
-
-        DataSource = NpgsqlDataSource.Create(connectionString);
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        await DataSource.DisposeAsync();
-        await _container.DisposeAsync();
-    }
-}
+public sealed class PostgresProjectionRebuildStoreFixture(PostgresCluster cluster)
+    : PostgresDatabaseFixture(cluster, PostgresTemplates.SingleTenant);
 
 /// <summary>
 /// Integration tests for <see cref="PostgresProjectionRebuildStore"/>.

@@ -2,9 +2,9 @@ using System.Data.Common;
 using System.Text.Json;
 using Alberto.Dcb.EntityFramework;
 using Alberto.Dcb.Subscriptions;
+using Alberto.Dcb.Tests.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
-using Testcontainers.PostgreSql;
 using Xunit;
 
 namespace Alberto.Dcb.Tests.EntityFramework;
@@ -179,45 +179,23 @@ public static class EfTestEnvelopes
 }
 
 // ---------------------------------------------------------------------------
-// xUnit fixture — one Postgres container shared across both test classes
+// xUnit fixture — a private database on the shared cluster
 // ---------------------------------------------------------------------------
 
 /// <summary>
-/// Spins up a Testcontainers PostgreSQL instance and creates the EF schema via
-/// <see cref="DbContext.Database.EnsureCreatedAsync()"/>.
-/// Shared across <c>EfInlineProjectionRetryTests</c> and <c>BatchedEfProjectionTests</c>
-/// via <see cref="IClassFixture{T}"/>.
+/// Gives each EF test class its own database carrying the EF test entities.
 /// </summary>
-public sealed class EfProjectionTestFixture : IAsyncLifetime
+/// <remarks>
+/// The schema comes from <see cref="DbContext.Database.EnsureCreatedAsync"/> rather than
+/// Aspire/DbUp, because the EF test entities live in a table Alberto's migrations do not
+/// manage. Both this and the container it used to own are per test class — sharing happens
+/// at the container, not the database.
+/// </remarks>
+public sealed class EfProjectionTestFixture(PostgresCluster cluster)
+    : PostgresDatabaseFixture(cluster, PostgresTemplates.EntityFramework)
 {
-    private readonly PostgreSqlContainer _container =
-        new PostgreSqlBuilder("postgres:16-alpine").Build();
-
-    public string ConnectionString { get; private set; } = string.Empty;
-
-    public async ValueTask InitializeAsync()
-    {
-        await _container.StartAsync();
-        ConnectionString = _container.GetConnectionString();
-
-        // Create the EF schema without Aspire/DbUp migrations — EnsureCreated is sufficient
-        // because the EF test entities live in an isolated table not managed by Alberto migrations.
-        var optionsBuilder = new DbContextOptionsBuilder<EfTestDbContext>();
-        optionsBuilder.UseNpgsql(ConnectionString, o => o.EnableRetryOnFailure(
-            maxRetryCount: 5,
-            maxRetryDelay: TimeSpan.FromSeconds(3),
-            errorCodesToAdd: null));
-        await using var context = new EfTestDbContext(optionsBuilder.Options);
-        await context.Database.EnsureCreatedAsync();
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        await _container.DisposeAsync();
-    }
-
     /// <summary>
-    /// Builds a <see cref="ControlledDbContextFactory"/> pointing at the shared container.
+    /// Builds a <see cref="ControlledDbContextFactory"/> pointing at this class's database.
     /// Each test should create its own factory so that queued interceptors are independent.
     /// </summary>
     public ControlledDbContextFactory CreateFactory() => new(ConnectionString);

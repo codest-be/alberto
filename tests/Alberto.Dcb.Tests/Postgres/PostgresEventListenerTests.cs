@@ -28,7 +28,10 @@ namespace Alberto.Dcb.Tests.Postgres;
 /// </summary>
 public sealed class PostgresEventListenerTests : IAsyncLifetime
 {
-    // One fresh container per test-class instance; tests run sequentially within the class.
+    // Deliberately not on the shared PostgresCluster: these tests drive a LISTEN/NOTIFY
+    // listener against the server, which is connection- and server-scoped rather than
+    // database-scoped, so a private database would not isolate it. One fresh container per
+    // test-class instance; tests run sequentially within the class.
     private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:16-alpine").Build();
 
     private NpgsqlDataSource _dataSource = null!;
