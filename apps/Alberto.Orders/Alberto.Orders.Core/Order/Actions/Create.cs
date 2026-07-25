@@ -20,10 +20,10 @@ public sealed partial class OrderDecider
         string? notes = null)
     {
         if (state.Exists)
-            return Problem.Create("order-already-exists", $"Order {orderId} already exists");
+            return Decision.Fail(OrderProblems.AlreadyExists(orderId));
 
         if (customerId == Guid.Empty)
-            return Problem.Create("customer-id-required", "Customer ID is required");
+            return Decision.Fail(OrderProblems.CustomerRequired());
 
         return Decision.Succeed(new OrderCreated(orderId, customerId, lineItems, notes));
     }

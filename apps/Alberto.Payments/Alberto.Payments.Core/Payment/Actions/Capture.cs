@@ -23,18 +23,14 @@ public sealed partial class PaymentDecider
         DateTimeOffset capturedAt)
     {
         if (!state.Exists)
-            return Problem.Create("payment-not-found", "Payment does not exist");
+            return Decision.Fail(PaymentProblems.NotFound());
 
         if (!state.CanBeCaptured)
-            return Problem.Create(
-                "payment-not-capturable",
-                $"Payment cannot be captured in {state.Status} status");
+            return Decision.Fail(PaymentProblems.InvalidStatus("captured", state.Status));
 
         var amountToCapture = capturedAmount ?? state.Amount;
         if (amountToCapture <= 0 || amountToCapture > state.Amount)
-            return Problem.Create(
-                "invalid-capture-amount",
-                $"Captured amount must be between 0 and {state.Amount}");
+            return Decision.Fail(PaymentProblems.AmountOutOfRange("Captured", state.Amount));
 
         return Decision.Succeed(new PaymentCaptured(state.PaymentId, amountToCapture, capturedAt));
     }

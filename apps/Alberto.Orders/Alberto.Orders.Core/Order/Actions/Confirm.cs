@@ -19,14 +19,12 @@ public sealed partial class OrderDecider
     public static Decision Confirm(IConfirmOrderState state, DateTimeOffset confirmedAt)
     {
         if (!state.Exists)
-            return Problem.Create("order-not-found", "Order does not exist");
+            return Decision.Fail(OrderProblems.NotFound());
 
         if (!state.CanBeConfirmed)
-            return state.LineItems.Count == 0
-                ? Problem.Create("order-empty", "Cannot confirm an empty order")
-                : Problem.Create(
-                    "order-not-confirmable",
-                    $"Order cannot be confirmed in {state.Status} status");
+            return Decision.Fail(state.LineItems.Count == 0
+                ? OrderProblems.Empty()
+                : OrderProblems.InvalidStatus("confirmed", state.Status));
 
         return Decision.Succeed(new OrderConfirmed(state.OrderId, confirmedAt));
     }

@@ -87,24 +87,33 @@ public static SeatState Apply(SeatState state, IEvent e) => e switch
 
 ## 5. The decision
 
-`AlbertoStore.Handle` starts a pipeline: validate, load, decide, persist.
+`AlbertoStore.Handle` starts a pipeline: load, decide, commit.
 
 ```csharp
 Task<Result> Reserve(string seat) =>
     store.Handle(new ReserveSeat(showId, seat, Guid.NewGuid()))
-        .NoValidation()
         .Load(Seat.Boundary(showId, seat), new SeatState(), Seat.Apply)
         .Decide((cmd, state) => state.IsTaken
             ? Problem.Create("seat.taken", $"Seat {cmd.Seat} is already reserved.")
             : Decision.Succeed(new SeatReserved(cmd.ShowId, cmd.Seat, cmd.CustomerId)))
-        .Persist(CancellationToken.None);
+        .Commit(CancellationToken.None);
 ```
 
 `Load` does more than read. It folds the boundary into state *and remembers the last position it
-saw*, then `Persist` appends with that query and that position as an append condition. If anything
+saw*, then `Commit` appends with that query and that position as an append condition. If anything
 matching the boundary was written while you were deciding, the append is rejected with a
 `DcbConflictException` instead of overwriting someone's reservation. That is the whole optimistic
 concurrency story — you never write a version number yourself.
+
+Because the boundary comes from `Load`, `Commit(ct)` needs no arguments — and the compiler will not
+let you call it without a `Load`. Add `.RetryOnConflict(3)` before `Commit` to re-read and re-decide
+instead of surfacing the conflict, or use `.TryCommit(ct)` to get the conflict back as a
+`dcb.conflict` problem rather than an exception.
+
+Two optional stages sit in front of `Load`. `.Validate(cmd => …)` rejects the command before
+anything touches the store, and `.Enrich(async (cmd, ct) => …)` replaces it with something richer —
+an FX rate, a fraud score, a row from another service. Both run once, even when `RetryOnConflict`
+re-runs the read-decide loop.
 
 `Decide` returns a `Decision`: either events to append, or a `Problem`. Both convert implicitly, so
 the ternary above type-checks. The result is a `Result` with `IsSuccess` and `Problems`; nothing
@@ -159,8 +168,10 @@ services.AddAlberto("tickets", builder => builder
 - `WithControlLoop` configures the background loop. Omit it entirely and you still get one on
   defaults.
 
-`AlbertoStore` itself is registered **scoped**, so resolve it from a scope — the request scope in a
-web application, or an explicit `provider.CreateScope()` in a console one.
+`AlbertoStore` itself is registered **keyed and scoped**, under the same module key as the event
+store it wraps. Resolve it with `GetRequiredKeyedService<AlbertoStore>("tickets")`, from a scope —
+the request scope in a web application, or an explicit `provider.CreateScope()` in a console one.
+The key is what lets one host serve several modules: each gets its own store over its own log.
 
 Going to production is the same shape with one line swapped:
 
@@ -258,17 +269,16 @@ public static class Program
 
         // AlbertoStore is scoped — in a web app that is the request scope. Here we open one by hand.
         using var scope = provider.CreateScope();
-        var store = scope.ServiceProvider.GetRequiredService<AlbertoStore>();
+        var store = scope.ServiceProvider.GetRequiredKeyedService<AlbertoStore>("tickets");
         var showId = Guid.NewGuid();
 
         Task<Result> Reserve(string seat) =>
             store.Handle(new ReserveSeat(showId, seat, Guid.NewGuid()))
-                .NoValidation()
                 .Load(Seat.Boundary(showId, seat), new SeatState(), Seat.Apply)
                 .Decide((cmd, state) => state.IsTaken
                     ? Problem.Create("seat.taken", $"Seat {cmd.Seat} is already reserved.")
                     : Decision.Succeed(new SeatReserved(cmd.ShowId, cmd.Seat, cmd.CustomerId)))
-                .Persist(CancellationToken.None);
+                .Commit(CancellationToken.None);
 
         var first = await Reserve("A12");
         Console.WriteLine($"A12 first attempt : {(first.IsSuccess ? "reserved" : first.Problems[0].Message)}");

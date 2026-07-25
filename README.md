@@ -9,12 +9,11 @@ var boundary = DcbQuery.ByAllTags(
     new EventTag("seat", "A12"));
 
 await store.Handle(new ReserveSeat(showId, "A12", customerId))
-    .NoValidation()
     .Load(boundary, new SeatState(), Seat.Apply)
     .Decide((cmd, state) => state.IsTaken
         ? Problem.Create("seat.taken", $"Seat {cmd.Seat} is already reserved.")
         : Decision.Succeed(new SeatReserved(cmd.ShowId, cmd.Seat, cmd.CustomerId)))
-    .Persist(ct);
+    .Commit(ct);
 ```
 
 That block loads exactly the events the decision depends on, folds them into state, decides, and
@@ -93,7 +92,7 @@ dotnet add package Alberto.Dcb --prerelease
 | Package | What it gives you |
 |---|---|
 | `Alberto.Dcb` | Event store abstractions, control loop, middleware, projections, tenancy |
-| `Alberto.Dcb.Commands` | The `AlbertoStore` command pipeline (`Handle → Load → Decide → Persist`) |
+| `Alberto.Dcb.Commands` | The `AlbertoStore` command pipeline (`Handle → Load → Decide → Commit`) |
 | `Alberto.Dcb.InMemory` | In-memory backend, checkpoint, dead-letter and state stores — dev and tests |
 | `Alberto.Dcb.Postgres` | PostgreSQL backend, migrations, leases, admin queries |
 | `Alberto.Dcb.EntityFramework` | EF Core–backed projections |

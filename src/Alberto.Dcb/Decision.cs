@@ -2,6 +2,14 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace Alberto.Dcb;
 
+/// <summary>
+/// The outcome of a domain decision — either the events to append, or the problems
+/// that stopped it. Returned by deciders and consumed by the command pipeline.
+/// </summary>
+/// <remarks>
+/// A decision carries both the success/failure signal and the events. <see cref="Result"/> /
+/// <see cref="Result{T}"/> are what the pipeline returns *after* the events have been written.
+/// </remarks>
 public readonly record struct Decision
 {
     private readonly List<IEvent> _events;
@@ -23,6 +31,13 @@ public readonly record struct Decision
     public static Decision Succeed(IEnumerable<IEvent> events) => new(true, events.ToList(), []);
     public static Decision Fail(Problem problem) => new(false, [], [problem]);
     public static Decision Fail(IEnumerable<Problem> problems) => new(false, [], problems.ToList());
+
+    /// <summary>
+    /// Fails with a code and message. The code is required so failures stay machine-readable —
+    /// callers map it to typed errors rather than matching on message text.
+    /// Convention: <c>{aggregate}.{kebab-reason}</c>, e.g. <c>order.not-found</c>.
+    /// </summary>
+    public static Decision Fail(string code, string message) => Fail(Problem.Create(code, message));
 
     public static implicit operator Decision(Problem problem) => Fail(problem);
 }
@@ -55,6 +70,11 @@ public readonly record struct Decision<T>
     public static Decision<T> Succeed(T value, IEnumerable<IEvent> events) => new(true, value, events.ToList(), []);
     public static Decision<T> Fail(Problem problem) => new(false, default, [], [problem]);
     public static Decision<T> Fail(IEnumerable<Problem> problems) => new(false, default, [], problems.ToList());
+
+    /// <summary>
+    /// Fails with a code and message. Convention: <c>{aggregate}.{kebab-reason}</c>.
+    /// </summary>
+    public static Decision<T> Fail(string code, string message) => Fail(Problem.Create(code, message));
 
     public Decision<TNew> Map<TNew>(Func<T, TNew> transform) =>
         IsSuccess

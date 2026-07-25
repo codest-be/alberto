@@ -24,16 +24,16 @@ public sealed partial class OrderDecider
         decimal unitPrice)
     {
         if (!state.Exists)
-            return Problem.Create("order-not-found", "Order does not exist");
+            return Decision.Fail(OrderProblems.NotFound());
 
         if (!state.CanBeModified)
-            return Problem.Create("order-not-modifiable", $"Order cannot be modified in {state.Status} status");
+            return Decision.Fail(OrderProblems.InvalidStatus("modified", state.Status));
 
         if (quantity <= 0)
-            return Problem.Create("invalid-quantity", "Quantity must be greater than zero");
+            return Decision.Fail(OrderProblems.InvalidQuantity());
 
         if (unitPrice < 0)
-            return Problem.Create("invalid-unit-price", "Unit price cannot be negative");
+            return Decision.Fail(OrderProblems.InvalidUnitPrice());
 
         return Decision.Succeed(new OrderItemAdded(state.OrderId, productId, productName, quantity, unitPrice));
     }

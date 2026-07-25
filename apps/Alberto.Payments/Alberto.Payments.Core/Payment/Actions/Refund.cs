@@ -24,18 +24,14 @@ public sealed partial class PaymentDecider
         DateTimeOffset refundedAt)
     {
         if (!state.Exists)
-            return Problem.Create("payment-not-found", "Payment does not exist");
+            return Decision.Fail(PaymentProblems.NotFound());
 
         if (!state.CanBeRefunded)
-            return Problem.Create(
-                "payment-not-refundable",
-                $"Payment cannot be refunded in {state.Status} status");
+            return Decision.Fail(PaymentProblems.InvalidStatus("refunded", state.Status));
 
         var maxRefundable = state.CapturedAmount ?? 0;
         if (refundedAmount <= 0 || refundedAmount > maxRefundable)
-            return Problem.Create(
-                "invalid-refund-amount",
-                $"Refund amount must be between 0 and {maxRefundable}");
+            return Decision.Fail(PaymentProblems.AmountOutOfRange("Refund", maxRefundable));
 
         return Decision.Succeed(new PaymentRefunded(state.PaymentId, refundedAmount, reason ?? "", refundedAt));
     }

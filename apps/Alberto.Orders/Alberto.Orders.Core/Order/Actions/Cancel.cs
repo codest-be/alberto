@@ -18,13 +18,13 @@ public sealed partial class OrderDecider
     public static Decision Cancel(ICancelOrderState state, string reason, DateTimeOffset cancelledAt)
     {
         if (!state.Exists)
-            return Problem.Create("order-not-found", "Order does not exist");
+            return Decision.Fail(OrderProblems.NotFound());
 
         if (!state.CanBeCancelled)
-            return Problem.Create("order-not-cancellable", $"Order cannot be cancelled in {state.Status} status");
+            return Decision.Fail(OrderProblems.InvalidStatus("cancelled", state.Status));
 
         if (string.IsNullOrWhiteSpace(reason))
-            return Problem.Create("cancellation-reason-required", "Cancellation reason is required");
+            return Decision.Fail(OrderProblems.CancellationReasonRequired());
 
         return Decision.Succeed(new OrderCancelled(state.OrderId, reason, cancelledAt));
     }

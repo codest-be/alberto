@@ -37,134 +37,387 @@ public sealed class CommandPipelineTests
         public int EventCount { get; init; }
     }
 
-    private sealed record LoadedOrder(OrderState State, DcbQuery Query, long LastPosition);
-
-    [Fact]
-    public async Task Persist_WithFoldLoad_ShouldUseExpectedPosition()
+    private sealed class OrderStateEvolver : Evolver<OrderState>,
+        IEvolve<OrderState, OrderCreated>,
+        IEvolve<OrderState, OrderReserved>,
+        IEvolve<OrderState, OrderConfirmed>
     {
-        var backend = new InMemoryEventStoreBackend();
-        var eventStore = new EventStore(backend);
-        var serializer = CreateSerializer();
-        var store = new AlbertoStore(eventStore, serializer);
-        var orderId = Guid.NewGuid();
-        var orderTag = new EventTag("order", orderId.ToString());
+        public OrderState Apply(OrderState state, OrderCreated @event) => Count(state);
+        public OrderState Apply(OrderState state, OrderReserved @event) => Count(state);
+        public OrderState Apply(OrderState state, OrderConfirmed @event) => Count(state);
 
-        await eventStore.AppendAsync([ToPersist(serializer, new OrderCreated { OrderId = orderId })], cancellationToken: TestContext.Current.CancellationToken);
-
-        await Assert.ThrowsAsync<DcbConflictException>(() =>
-            store.Handle(new ConfirmOrder(orderId))
-                .NoValidation()
-                .Load(DcbQuery.ByTags(orderTag), OrderState.Initial, Apply)
-                .Decide(async (_, _, ct) =>
-                {
-                    await eventStore.AppendAsync([ToPersist(serializer, new OrderReserved { OrderId = orderId })], cancellationToken: ct);
-                    return Decision.Succeed(new OrderConfirmed { OrderId = orderId });
-                })
-                .Persist(TestContext.Current.CancellationToken));
+        private static OrderState Count(OrderState state) => state with { EventCount = state.EventCount + 1 };
     }
 
+    // ---------------------------------------------------------------------
+    // Bound commits: the boundary comes from Load, so Commit(ct) needs nothing else.
+    // ---------------------------------------------------------------------
+
     [Fact]
-    public async Task Persist_WithCustomBoundaryLoad_ShouldUseExpectedPosition()
+    public async Task Commit_AfterLoad_ChecksAgainstThePositionLoadObserved()
     {
-        var backend = new InMemoryEventStoreBackend();
-        var eventStore = new EventStore(backend);
-        var serializer = CreateSerializer();
-        var store = new AlbertoStore(eventStore, serializer);
+        var fixture = new Fixture();
         var orderId = Guid.NewGuid();
-        var orderTag = new EventTag("order", orderId.ToString());
+        await fixture.Append(new OrderCreated { OrderId = orderId });
 
-        await eventStore.AppendAsync([ToPersist(serializer, new OrderCreated { OrderId = orderId })], cancellationToken: TestContext.Current.CancellationToken);
-
+        // Appending from inside the fold lands the event *after* Load streamed the
+        // boundary, so the position it captured is already stale by the time we commit.
         await Assert.ThrowsAsync<DcbConflictException>(() =>
-            store.Handle(new ConfirmOrder(orderId))
-                .NoValidation()
+            fixture.Store
+                .Handle(new ConfirmOrder(orderId))
                 .Load(
-                    async _ =>
+                    Boundary(orderId),
+                    OrderState.Initial,
+                    (state, _) =>
                     {
-                        var (state, lastPosition) = await store.FoldWithPosition(
-                            DcbQuery.ByTags(orderTag),
-                            OrderState.Initial,
-                            Apply,
-                            TestContext.Current.CancellationToken);
-                        return new LoadedOrder(state, DcbQuery.ByTags(orderTag), lastPosition);
-                    },
-                    loaded => loaded.Query,
-                    loaded => loaded.LastPosition)
-                .Decide(async (_, _, ct) =>
-                {
-                    await eventStore.AppendAsync([ToPersist(serializer, new OrderReserved { OrderId = orderId })], cancellationToken: ct);
-                    return Decision.Succeed(new OrderConfirmed { OrderId = orderId });
-                })
-                .Persist(TestContext.Current.CancellationToken));
+                        fixture.Append(new OrderReserved { OrderId = orderId }).GetAwaiter().GetResult();
+                        return state with { EventCount = state.EventCount + 1 };
+                    })
+                .Decide((command, _) => Decision.Succeed(new OrderConfirmed { OrderId = command.OrderId }))
+                .Commit(TestContext.Current.CancellationToken));
     }
 
     [Fact]
-    public async Task Persist_WithExplicitBoundary_ShouldRejectAnEventAppendedAfterObservation()
+    public async Task Commit_WithAnEvolver_ReconstitutesStateAndCapturesThePosition()
     {
-        var backend = new InMemoryEventStoreBackend();
-        var eventStore = new EventStore(backend);
-        var serializer = CreateSerializer();
-        var store = new AlbertoStore(eventStore, serializer);
+        var fixture = new Fixture();
         var orderId = Guid.NewGuid();
-        var query = DcbQuery.ByTags(new EventTag("order", orderId.ToString()));
+        await fixture.Append(new OrderCreated { OrderId = orderId });
+        await fixture.Append(new OrderReserved { OrderId = orderId });
 
-        var decision = store.Handle(new ConfirmOrder(orderId))
-            .NoValidation()
+        var observed = 0;
+
+        var result = await fixture.Store
+            .Handle(new ConfirmOrder(orderId))
+            .Load(Boundary(orderId), new OrderStateEvolver())
+            .Decide((command, state) =>
+            {
+                observed = state.EventCount;
+                return Decision.Succeed(new OrderConfirmed { OrderId = command.OrderId });
+            })
+            .Commit(TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, observed);
+        Assert.Equal(3, await fixture.EventStore.GetLastPositionAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task TryCommit_ReturnsTheConflictAsAProblemInsteadOfThrowing()
+    {
+        var fixture = new Fixture();
+        var orderId = Guid.NewGuid();
+        await fixture.Append(new OrderCreated { OrderId = orderId });
+
+        var result = await fixture.Store
+            .Handle(new ConfirmOrder(orderId))
+            .Load(
+                Boundary(orderId),
+                OrderState.Initial,
+                (state, _) =>
+                {
+                    fixture.Append(new OrderReserved { OrderId = orderId }).GetAwaiter().GetResult();
+                    return state;
+                })
+            .Decide((command, _) => Decision.Succeed(new OrderConfirmed { OrderId = command.OrderId }))
+            .TryCommit(TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("dcb.conflict", Assert.Single(result.Problems).Code);
+    }
+
+    [Fact]
+    public async Task RetryOnConflict_RereadsTheBoundaryAndDecidesAgain()
+    {
+        var fixture = new Fixture();
+        var orderId = Guid.NewGuid();
+        await fixture.Append(new OrderCreated { OrderId = orderId });
+
+        var folds = 0;
+        var decisions = 0;
+
+        var result = await fixture.Store
+            .Handle(new ConfirmOrder(orderId))
+            .Load(
+                Boundary(orderId),
+                OrderState.Initial,
+                (state, _) =>
+                {
+                    // Only the first attempt races an append in; the retry finds a quiet boundary.
+                    if (Interlocked.Increment(ref folds) == 1)
+                        fixture.Append(new OrderReserved { OrderId = orderId }).GetAwaiter().GetResult();
+
+                    return state with { EventCount = state.EventCount + 1 };
+                })
+            .Decide((command, _) =>
+            {
+                decisions++;
+                return Decision.Succeed(new OrderConfirmed { OrderId = command.OrderId });
+            })
+            .RetryOnConflict(3)
+            .Commit(TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, decisions);
+    }
+
+    [Fact]
+    public async Task RetryOnConflict_DoesNotRepeatEnrichment()
+    {
+        var fixture = new Fixture();
+        var orderId = Guid.NewGuid();
+        await fixture.Append(new OrderCreated { OrderId = orderId });
+
+        var enrichments = 0;
+        var decisions = 0;
+        var folds = 0;
+
+        var result = await fixture.Store
+            .Handle(orderId)
+            .Enrich((id, _) =>
+            {
+                enrichments++;
+                return Task.FromResult(new ConfirmOrder(id));
+            })
+            .Load(
+                command => Boundary(command.OrderId),
+                OrderState.Initial,
+                (state, _) =>
+                {
+                    if (Interlocked.Increment(ref folds) == 1)
+                        fixture.Append(new OrderReserved { OrderId = orderId }).GetAwaiter().GetResult();
+
+                    return state;
+                })
+            .Decide((command, _) =>
+            {
+                decisions++;
+                return Decision.Succeed(new OrderConfirmed { OrderId = command.OrderId });
+            })
+            .RetryOnConflict(3)
+            .Commit(TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, decisions);
+        Assert.Equal(1, enrichments);
+    }
+
+    [Fact]
+    public async Task RetryOnConflict_GivesUpAfterTheConfiguredNumberOfAttempts()
+    {
+        var fixture = new Fixture();
+        var orderId = Guid.NewGuid();
+        await fixture.Append(new OrderCreated { OrderId = orderId });
+
+        var folds = 0;
+
+        await Assert.ThrowsAsync<DcbConflictException>(() =>
+            fixture.Store
+                .Handle(new ConfirmOrder(orderId))
+                .Load(
+                    Boundary(orderId),
+                    OrderState.Initial,
+                    (state, _) =>
+                    {
+                        Interlocked.Increment(ref folds);
+                        fixture.Append(new OrderReserved { OrderId = orderId }).GetAwaiter().GetResult();
+                        return state;
+                    })
+                .Decide((command, _) => Decision.Succeed(new OrderConfirmed { OrderId = command.OrderId }))
+                .RetryOnConflict(2)
+                .Commit(TestContext.Current.CancellationToken));
+
+        // Two attempts, and the boundary grew by one event before each, so the second
+        // fold runs over two events: 1 + 2 applications.
+        Assert.Equal(3, folds);
+    }
+
+    [Fact]
+    public void RetryOnConflict_RejectsANonPositiveAttemptCount()
+    {
+        var fixture = new Fixture();
+        var pipeline = fixture.Store
+            .Handle(new ConfirmOrder(Guid.NewGuid()))
+            .Load(Boundary(Guid.NewGuid()), OrderState.Initial, (state, _) => state)
+            .Decide((_, _) => Decision.Succeed());
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => pipeline.RetryOnConflict(0));
+    }
+
+    // ---------------------------------------------------------------------
+    // Validation and enrichment
+    // ---------------------------------------------------------------------
+
+    [Fact]
+    public async Task Validate_ShortCircuitsWithoutTouchingTheStore()
+    {
+        var fixture = new Fixture();
+        var orderId = Guid.NewGuid();
+        var loaded = false;
+
+        var result = await fixture.Store
+            .Handle(new ConfirmOrder(orderId))
+            .Validate(_ => Problem.Create("order.rejected", "Nope"))
+            .Load(
+                Boundary(orderId),
+                OrderState.Initial,
+                (state, _) =>
+                {
+                    loaded = true;
+                    return state;
+                })
+            .Decide((_, _) => Decision.Succeed(new OrderConfirmed { OrderId = orderId }))
+            .Commit(TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("order.rejected", Assert.Single(result.Problems).Code);
+        Assert.False(loaded);
+        Assert.Equal(0, await fixture.EventStore.GetLastPositionAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task Validate_IsChainableAndKeepsTheFirstFailure()
+    {
+        var fixture = new Fixture();
+        var secondRan = false;
+
+        var result = await fixture.Store
+            .Handle(new ConfirmOrder(Guid.NewGuid()))
+            .Validate(_ => Problem.Create("order.first", "First"))
+            .Validate(_ =>
+            {
+                secondRan = true;
+                return Problem.Create("order.second", "Second");
+            })
+            .Decide(_ => Decision.Succeed())
+            .CommitUnconditionally(TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("order.first", Assert.Single(result.Problems).Code);
+        Assert.False(secondRan);
+    }
+
+    [Fact]
+    public async Task Enrich_FeedsTheDeciderWithoutWideningTheConflictWindow()
+    {
+        var fixture = new Fixture();
+        var orderId = Guid.NewGuid();
+
+        var result = await fixture.Store
+            .Handle(orderId)
+            .Enrich(id => Task.FromResult(new ConfirmOrder(id)))
+            .Load(command => Boundary(command.OrderId), new OrderStateEvolver())
+            .Decide((command, _) => Decision.Succeed(new OrderConfirmed { OrderId = command.OrderId }))
+            .Commit(TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1, await fixture.EventStore.GetLastPositionAsync(TestContext.Current.CancellationToken));
+    }
+
+    // ---------------------------------------------------------------------
+    // Unbound commits: no boundary, so the caller must say what to check against.
+    // ---------------------------------------------------------------------
+
+    [Fact]
+    public async Task UnboundCommit_WithAnExplicitBoundary_RejectsAnEventAppendedAfterObservation()
+    {
+        var fixture = new Fixture();
+        var orderId = Guid.NewGuid();
+
+        var decision = fixture.Store
+            .Handle(new ConfirmOrder(orderId))
             .Decide(command => Decision.Succeed(new OrderConfirmed { OrderId = command.OrderId }));
 
-        await eventStore.AppendAsync(
-            [ToPersist(serializer, new OrderReserved { OrderId = orderId })],
-            cancellationToken: TestContext.Current.CancellationToken);
+        await fixture.Append(new OrderReserved { OrderId = orderId });
 
-        await Assert.ThrowsAsync<DcbConflictException>(
-            () => decision.Persist(query, expectedPosition: 0, TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<DcbConflictException>(() =>
+            decision.Commit(Boundary(orderId), expectedPosition: 0, TestContext.Current.CancellationToken));
     }
 
     [Fact]
-    public async Task GenericPersist_WithExplicitBoundary_ShouldRejectAnEventAppendedAfterObservation()
+    public async Task UnboundCommit_WithAValue_RejectsAnEventAppendedAfterObservation()
     {
-        var backend = new InMemoryEventStoreBackend();
-        var eventStore = new EventStore(backend);
-        var serializer = CreateSerializer();
-        var store = new AlbertoStore(eventStore, serializer);
+        var fixture = new Fixture();
         var orderId = Guid.NewGuid();
-        var query = DcbQuery.ByTags(new EventTag("order", orderId.ToString()));
 
-        var decision = store.Handle(new ConfirmOrder(orderId))
-            .NoValidation()
+        var decision = fixture.Store
+            .Handle(new ConfirmOrder(orderId))
             .Decide(command => Decision<Guid>.Succeed(
                 command.OrderId,
                 new OrderConfirmed { OrderId = command.OrderId }));
 
-        await eventStore.AppendAsync(
-            [ToPersist(serializer, new OrderReserved { OrderId = orderId })],
-            cancellationToken: TestContext.Current.CancellationToken);
+        await fixture.Append(new OrderReserved { OrderId = orderId });
 
-        await Assert.ThrowsAsync<DcbConflictException>(
-            () => decision.Persist(query, expectedPosition: 0, TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<DcbConflictException>(() =>
+            decision.Commit(Boundary(orderId), expectedPosition: 0, TestContext.Current.CancellationToken));
     }
 
     [Fact]
-    public async Task PersistUnconditionally_MakesTheAbsenceOfAConflictCheckExplicit()
+    public async Task LoadUnbound_ProducesAPipelineThatStillNeedsAnExplicitBoundary()
     {
-        var backend = new InMemoryEventStoreBackend();
-        var eventStore = new EventStore(backend);
-        var serializer = CreateSerializer();
-        var store = new AlbertoStore(eventStore, serializer);
+        var fixture = new Fixture();
         var orderId = Guid.NewGuid();
 
-        await eventStore.AppendAsync(
-            [ToPersist(serializer, new OrderReserved { OrderId = orderId })],
-            cancellationToken: TestContext.Current.CancellationToken);
-
-        var result = await store.Handle(new ConfirmOrder(orderId))
-            .NoValidation()
-            .Decide(command => Decision.Succeed(new OrderConfirmed { OrderId = command.OrderId }))
-            .PersistUnconditionally(TestContext.Current.CancellationToken);
+        var result = await fixture.Store
+            .Handle(new ConfirmOrder(orderId))
+            .LoadUnbound(_ => Task.FromResult(OrderState.Initial))
+            .Decide((command, state) => Decision<int>.Succeed(
+                state.EventCount,
+                new OrderConfirmed { OrderId = command.OrderId }))
+            .CommitUnconditionally(TestContext.Current.CancellationToken);
 
         Assert.True(result.IsSuccess);
-        Assert.Equal(2, await eventStore.GetLastPositionAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, result.Value);
     }
+
+    [Fact]
+    public async Task CommitUnconditionally_MakesTheAbsenceOfAConflictCheckExplicit()
+    {
+        var fixture = new Fixture();
+        var orderId = Guid.NewGuid();
+        await fixture.Append(new OrderReserved { OrderId = orderId });
+
+        var result = await fixture.Store
+            .Handle(new ConfirmOrder(orderId))
+            .Decide(command => Decision.Succeed(new OrderConfirmed { OrderId = command.OrderId }))
+            .CommitUnconditionally(TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, await fixture.EventStore.GetLastPositionAsync(TestContext.Current.CancellationToken));
+    }
+
+    // ---------------------------------------------------------------------
+    // Misuse
+    // ---------------------------------------------------------------------
+
+    [Fact]
+    public async Task DefaultPipeline_FailsWithAMessageThatNamesTheCause()
+    {
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            default(UnboundDecision).CommitUnconditionally(TestContext.Current.CancellationToken));
+
+        Assert.Contains("store.Handle", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task LoadFromDi_WithoutAServiceProvider_ExplainsHowToFixIt()
+    {
+        var fixture = new Fixture();
+        var orderId = Guid.NewGuid();
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            fixture.Store
+                .Handle(new ConfirmOrder(orderId))
+                .Load<OrderState>(Boundary(orderId))
+                .Decide((command, _) => Decision.Succeed(new OrderConfirmed { OrderId = command.OrderId }))
+                .Commit(TestContext.Current.CancellationToken));
+
+        Assert.Contains("Load(boundary, evolver)", exception.Message, StringComparison.Ordinal);
+    }
+
+    // ---------------------------------------------------------------------
+    // DI
+    // ---------------------------------------------------------------------
 
     [Fact]
     public async Task WithEventsFrom_UsesTheEventStoreFromEachDependencyScope()
@@ -183,26 +436,24 @@ public sealed class CommandPipelineTests
             });
 
         await using var firstScope = provider.CreateAsyncScope();
-        var firstStore = firstScope.ServiceProvider.GetRequiredService<AlbertoStore>();
+        var firstStore = firstScope.ServiceProvider.GetRequiredKeyedService<AlbertoStore>(moduleKey);
         var firstAdapter = (ScopedEventStore)firstScope.ServiceProvider
             .GetRequiredKeyedService<IEventStore>(moduleKey);
 
         var firstResult = await firstStore
             .Handle("first")
-            .NoValidation()
             .Decide(_ => Decision.Succeed(new ScopeProbe()))
-            .PersistUnconditionally(TestContext.Current.CancellationToken);
+            .CommitUnconditionally(TestContext.Current.CancellationToken);
 
         await using var secondScope = provider.CreateAsyncScope();
-        var secondStore = secondScope.ServiceProvider.GetRequiredService<AlbertoStore>();
+        var secondStore = secondScope.ServiceProvider.GetRequiredKeyedService<AlbertoStore>(moduleKey);
         var secondAdapter = (ScopedEventStore)secondScope.ServiceProvider
             .GetRequiredKeyedService<IEventStore>(moduleKey);
 
         var secondResult = await secondStore
             .Handle("second")
-            .NoValidation()
             .Decide(_ => Decision.Succeed(new ScopeProbe()))
-            .PersistUnconditionally(TestContext.Current.CancellationToken);
+            .CommitUnconditionally(TestContext.Current.CancellationToken);
 
         Assert.True(firstResult.IsSuccess);
         Assert.True(secondResult.IsSuccess);
@@ -212,8 +463,60 @@ public sealed class CommandPipelineTests
         Assert.Equal(1, secondAdapter.AppendCount);
     }
 
-    private static OrderState Apply(OrderState state, IEvent _)
-        => state with { EventCount = state.EventCount + 1 };
+    [Fact]
+    public async Task LoadFromDi_ResolvesTheRegisteredEvolver()
+    {
+        var services = new ServiceCollection();
+        const string moduleKey = "evolver-module";
+        var backend = new InMemoryEventStoreBackend();
+        services.AddKeyedScoped<IEventStore>(moduleKey, (_, _) => new EventStore(backend));
+        services.AddSingleton<Evolver<OrderState>, OrderStateEvolver>();
+        services.AddAlberto(moduleKey, builder => builder
+            .WithEventsFrom(typeof(AlbertoStore).Assembly));
+
+        await using var provider = services.BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredKeyedService<AlbertoStore>(moduleKey);
+        var orderId = Guid.NewGuid();
+
+        await store
+            .Handle(orderId)
+            .Decide(id => Decision.Succeed(new OrderCreated { OrderId = id }))
+            .CommitUnconditionally(TestContext.Current.CancellationToken);
+
+        var result = await store
+            .Handle(new ConfirmOrder(orderId))
+            .Load<OrderState>(Boundary(orderId))
+            .Decide((command, state) => Decision<int>.Succeed(
+                state.EventCount,
+                new OrderConfirmed { OrderId = command.OrderId }))
+            .Commit(TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1, result.Value);
+    }
+
+    // ---------------------------------------------------------------------
+
+    private static DcbQuery Boundary(Guid orderId) =>
+        DcbQuery.ByTags(new EventTag("order", orderId.ToString()));
+
+    private sealed class Fixture
+    {
+        public Fixture()
+        {
+            EventStore = new EventStore(new InMemoryEventStoreBackend());
+            Serializer = CreateSerializer();
+            Store = new AlbertoStore(EventStore, Serializer);
+        }
+
+        public EventStore EventStore { get; }
+        public EventSerializer Serializer { get; }
+        public AlbertoStore Store { get; }
+
+        public Task Append<TEvent>(TEvent @event) where TEvent : IEvent =>
+            EventStore.AppendAsync([ToPersist(Serializer, @event)], cancellationToken: CancellationToken.None);
+    }
 
     private static EventToPersist ToPersist<TEvent>(EventSerializer serializer, TEvent @event)
         where TEvent : IEvent

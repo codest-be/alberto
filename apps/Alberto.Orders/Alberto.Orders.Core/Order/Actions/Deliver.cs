@@ -18,10 +18,10 @@ public sealed partial class OrderDecider
     public static Decision Deliver(IDeliverOrderState state, DateTimeOffset deliveredAt)
     {
         if (!state.Exists)
-            return Problem.Create("order-not-found", "Order does not exist");
+            return Decision.Fail(OrderProblems.NotFound());
 
         if (!state.CanBeDelivered)
-            return Problem.Create("order-not-deliverable", $"Order cannot be delivered in {state.Status} status");
+            return Decision.Fail(OrderProblems.InvalidStatus("delivered", state.Status));
 
         return Decision.Succeed(new OrderDelivered(state.OrderId, deliveredAt));
     }

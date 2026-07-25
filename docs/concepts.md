@@ -125,14 +125,28 @@ The command pipeline in `Alberto.Dcb.Commands` does all of this for you:
 
 ```csharp
 await store.Handle(command)
-    .NoValidation()                                  // or .Validate(cmd => Result …)
+    .Validate(cmd => …)                              // optional; returns Result
     .Load(boundary, initialState, applyFn)           // folds AND captures the position
     .Decide((cmd, state) => …)                       // → events, or a Problem
-    .Persist(ct);                                    // appends under the boundary
+    .RetryOnConflict(3)                              // optional; re-reads and re-decides
+    .Commit(ct);                                     // appends under the boundary
 ```
 
-`Load` has overloads for loading state from somewhere other than the log (a cache, a read model)
-with an explicit `query`/`expectedPosition` pair, for when folding is too expensive.
+`Commit(ct)` takes no boundary because `Load` already established one. That is enforced by the
+type system rather than at runtime: `Load` returns a *bound* pipeline and only a bound pipeline has
+`Commit(ct)`.
+
+When state comes from somewhere other than the log — a cache, a read model — use `LoadUnbound`, or
+skip loading entirely and `Decide` straight off `Handle`. Neither establishes a boundary, so the
+pipeline that comes back offers only `Commit(query, expectedPosition, ct)` and
+`CommitUnconditionally(ct)`: you have to say what the append is checked against, or say out loud
+that it is checked against nothing.
+
+`RetryOnConflict(n)` bounds the total number of attempts, re-running `Load` and `Decide` against
+whatever is in the log now. Anything before `Load` — `Validate`, `Enrich` — runs once and is
+reused, so an expensive lookup or an external call is not repeated per attempt. `TryCommit` is the
+non-throwing terminal: it returns a failed `Result` carrying a `dcb.conflict` problem instead of
+raising `DcbConflictException`.
 
 **This is the whole optimistic-concurrency story.** You never store a version number, and there is
 no aggregate whose identity has to be decided up front. The unit of contention is exactly the

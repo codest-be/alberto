@@ -22,19 +22,19 @@ public sealed partial class PaymentDecider
         string paymentMethod)
     {
         if (state.Exists)
-            return Problem.Create("payment-already-exists", $"Payment {paymentId} already exists");
+            return Decision.Fail(PaymentProblems.AlreadyExists(paymentId));
 
         if (orderId == Guid.Empty)
-            return Problem.Create("order-id-required", "Order ID is required");
+            return Decision.Fail(PaymentProblems.OrderRequired());
 
         if (amount <= 0)
-            return Problem.Create("invalid-amount", "Amount must be greater than zero");
+            return Decision.Fail(PaymentProblems.InvalidAmount());
 
         if (string.IsNullOrWhiteSpace(currency))
-            return Problem.Create("currency-required", "Currency is required");
+            return Decision.Fail(PaymentProblems.CurrencyRequired());
 
         if (string.IsNullOrWhiteSpace(paymentMethod))
-            return Problem.Create("payment-method-required", "Payment method is required");
+            return Decision.Fail(PaymentProblems.PaymentMethodRequired());
 
         return Decision.Succeed(new PaymentInitiated(paymentId, orderId, amount, currency, paymentMethod));
     }
