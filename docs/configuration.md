@@ -104,6 +104,12 @@ A complete example covering all sections:
           "Leases": {
             "Enabled": false,
             "ReplicaId": null
+          },
+          "Rebuilds": {
+            "Enabled": false,
+            "AutoPromote": true,
+            "PollingInterval": "00:00:05",
+            "VersionRefreshInterval": "00:00:05"
           }
         },
         "Telemetry": {
@@ -211,6 +217,24 @@ Nested in `ControlLoop.Leases` · configuration path: `ControlLoop:Leases`
 Set `Enabled = true` when more than one replica runs the same module; each replica
 acquires a fenced lease before consuming.
 
+### Rebuild options
+
+Nested in `ControlLoop.Rebuilds` · configuration path: `ControlLoop:Rebuilds`
+
+| Property | Type | Default | Configuration key |
+|---|---|---|---|
+| `Enabled` | `bool` | `false` | `ControlLoop:Rebuilds:Enabled` |
+| `AutoPromote` | `bool` | `true` | `ControlLoop:Rebuilds:AutoPromote` |
+| `PollingInterval` | `TimeSpan` | `00:00:05` (5 s) | `ControlLoop:Rebuilds:PollingInterval` |
+| `VersionRefreshInterval` | `TimeSpan` | `00:00:05` (5 s) | `ControlLoop:Rebuilds:VersionRefreshInterval` |
+
+`Enabled = true` makes the application *able* to carry out a zero-downtime projection
+rebuild; nothing happens until an operator starts one with `alberto ops rebuild start`.
+Set `AutoPromote = false` to park a finished rebuild at `Ready` until an operator runs
+`alberto ops rebuild promote` — which is the setting you want when promotion should be a
+deliberate step rather than a consequence of catching up. Both intervals must be positive
+(ALB0009).
+
 ---
 
 ## Telemetry options
@@ -308,6 +332,7 @@ surfacing them in one error message.
 | `ALB0006` | A processor id is empty or contains whitespace | Use a non-empty identifier without whitespace |
 | `ALB0007` | `Retry.MaxRetries < 0` or `Retry.BackoffMultiplier < 1.0` | Use 0 to disable retries; use 1.0 for a constant backoff delay |
 | `ALB0008` | A configuration key under `Alberto:Modules:{key}` does not match any known option — for example a typo in a section or property name | Correct or remove the key; when a close match exists, the remedy shows a "Did you mean '…'?" suggestion |
+| `ALB0009` | With rebuilds enabled, `Rebuilds.PollingInterval` or `Rebuilds.VersionRefreshInterval` is not a positive duration | Set a positive interval via `.WithRebuilds(pollingInterval: ...)` or the matching `ControlLoop:Rebuilds:*` key |
 
 ### Postgres codes (ALB1xxx)
 
