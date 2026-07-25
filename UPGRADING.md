@@ -18,6 +18,7 @@ established. Now the type you are holding tells you which of those is legal.
 | P-2 | **High** | `NoValidation()` removed — validation was always optional |
 | P-3 | **High** | `WithEventsFrom` registers `AlbertoStore` **keyed** by module key |
 | P-4 | Medium | `Decide` is synchronous; use the new `Enrich` stage for async work before the boundary |
+| P-5 | Medium | The three-lambda `Load(loader, querySelector, positionSelector)` is replaced by `LoadUnder` |
 
 ### P-1 / P-2 — the pipeline shape
 
@@ -86,8 +87,42 @@ await store.Handle(command)
 ```
 
 `Enrich` may change the command's type, and it runs once even when `RetryOnConflict` re-reads.
-If you genuinely need to await something against loaded state, use `LoadUnbound` and supply the
-boundary explicitly at `Commit`.
+
+### P-5 — a custom loader now reports its boundary through `LoadUnder`
+
+The old three-lambda overload let an async loader declare the boundary it had observed:
+
+```csharp
+// before
+.Load(cmd => LoadAsync(store, cmd, ct), loaded => loaded.Query, loaded => loaded.Position)
+.Decide((cmd, loaded) => Decide(loaded.State, …))
+.Persist(ct);
+```
+
+That shape does not survive the bound/unbound split — the unbound terminal's arguments are
+evaluated *before* the deferred chain runs, so a loader cannot supply them. `LoadUnder` restores
+the capability with the type-state guarantee intact: the loader returns its state, its boundary
+and the position it read at, and the pipeline it produces is **bound**, so `Commit(ct)` checks
+against exactly that.
+
+```csharp
+// after
+.LoadUnder(async (cmd, ct) =>
+{
+    var boundary = BuildBoundary(cmd);
+    var (state, position) = await store.FoldWithPosition(boundary, State.Initial, Apply, ct);
+    return (state, boundary, position);
+})
+.Decide((cmd, state) => Decide(state, …))
+.Commit(ct);
+```
+
+Most call sites do not need it. If the boundary is merely *derived from the command*, prefer
+`Load(cmd => boundary, initial, apply)`, and put any async work in `Enrich` so it lands before the
+window opens — that combination is both shorter and strictly safer, since the I/O then sits outside
+the read-to-append gap. `LoadUnder` is for the case those cannot express: a boundary that is only
+discoverable **during** the load, such as folding one query to find an id and then folding a second
+keyed by it.
 
 ---
 

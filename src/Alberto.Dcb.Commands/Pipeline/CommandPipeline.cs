@@ -177,6 +177,47 @@ public readonly struct CommandPipeline<TCommand>
     }
 
     /// <summary>
+    /// Reads state with your own loader, which reports the boundary it observed and the
+    /// position it observed it at. The resulting pipeline can <c>Commit(ct)</c> under that
+    /// boundary, exactly as if the loader had been one of the <c>Load</c> overloads.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Reach for this only when the boundary cannot be named up front — when it is
+    /// discovered <em>during</em> the load, such as folding one query to find an id and
+    /// then folding a second query keyed by it. If the boundary is merely derived from the
+    /// command, use <c>Load(cmd =&gt; boundary, …)</c>; if the async part is a lookup rather
+    /// than a read of the log, put it in <c>Enrich</c>, which runs before the window opens.
+    /// </para>
+    /// <para>
+    /// The position you report is the promise being checked: the append is rejected if
+    /// anything matching <c>Boundary</c> landed after <c>Position</c>. Reporting a position
+    /// later than what you actually read silently widens the race you are trying to close —
+    /// prefer <see cref="AlbertoStore.FoldWithPosition{TState}"/>, which returns both.
+    /// </para>
+    /// </remarks>
+    public BoundPipeline<TCommand, TState> LoadUnder<TState>(
+        Func<TCommand, CancellationToken, Task<(TState State, DcbQuery Boundary, long Position)>> load)
+    {
+        ArgumentNullException.ThrowIfNull(load);
+
+        var (store, prepare) = Unwrap();
+        return new BoundPipeline<TCommand, TState>(store, prepare, async (command, ct) =>
+        {
+            var (state, boundary, position) = await load(command, ct);
+            return (state, new DcbBoundary(boundary, position));
+        });
+    }
+
+    /// <inheritdoc cref="LoadUnder{TState}(Func{TCommand, CancellationToken, Task{ValueTuple{TState, DcbQuery, long}}})"/>
+    public BoundPipeline<TCommand, TState> LoadUnder<TState>(
+        Func<TCommand, Task<(TState State, DcbQuery Boundary, long Position)>> load)
+    {
+        ArgumentNullException.ThrowIfNull(load);
+        return LoadUnder((command, _) => load(command));
+    }
+
+    /// <summary>
     /// Loads state from somewhere that is not a DCB boundary — a read model, another service.
     /// No consistency boundary is established, so the caller must supply the query and position
     /// at commit time, or commit unconditionally.

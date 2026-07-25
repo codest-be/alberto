@@ -371,6 +371,59 @@ public sealed class CommandPipelineTests
     }
 
     [Fact]
+    public async Task LoadUnder_CommitsUnderTheBoundaryTheLoaderReported()
+    {
+        var fixture = new Fixture();
+        var orderId = Guid.NewGuid();
+        await fixture.Append(new OrderCreated { OrderId = orderId });
+
+        var result = await fixture.Store
+            .Handle(new ConfirmOrder(orderId))
+            .LoadUnder(async (command, ct) =>
+            {
+                // A boundary only discoverable during the load: the loader picks it,
+                // reads under it, and reports the position it read at.
+                var boundary = Boundary(command.OrderId);
+                var (state, position) = await fixture.Store.FoldWithPosition(
+                    boundary, OrderState.Initial, Fold, ct);
+                return (state, boundary, position);
+            })
+            .Decide((command, state) => Decision<int>.Succeed(
+                state.EventCount,
+                new OrderConfirmed { OrderId = command.OrderId }))
+            .Commit(TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1, result.Value);
+    }
+
+    [Fact]
+    public async Task LoadUnder_RejectsAnEventAppendedAfterTheLoaderObservedItsPosition()
+    {
+        var fixture = new Fixture();
+        var orderId = Guid.NewGuid();
+
+        var decision = fixture.Store
+            .Handle(new ConfirmOrder(orderId))
+            .LoadUnder(async (command, ct) =>
+            {
+                var boundary = Boundary(command.OrderId);
+                var (state, position) = await fixture.Store.FoldWithPosition(
+                    boundary, OrderState.Initial, Fold, ct);
+
+                // Raced: something lands under the same boundary between the loader's
+                // read and the append. The reported position must still be the promise.
+                await fixture.Append(new OrderReserved { OrderId = command.OrderId });
+
+                return (state, boundary, position);
+            })
+            .Decide((command, _) => Decision.Succeed(new OrderConfirmed { OrderId = command.OrderId }));
+
+        await Assert.ThrowsAsync<DcbConflictException>(() =>
+            decision.Commit(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
     public async Task CommitUnconditionally_MakesTheAbsenceOfAConflictCheckExplicit()
     {
         var fixture = new Fixture();
@@ -500,6 +553,9 @@ public sealed class CommandPipelineTests
 
     private static DcbQuery Boundary(Guid orderId) =>
         DcbQuery.ByTags(new EventTag("order", orderId.ToString()));
+
+    private static OrderState Fold(OrderState state, IEvent @event) =>
+        state with { EventCount = state.EventCount + 1 };
 
     private sealed class Fixture
     {
