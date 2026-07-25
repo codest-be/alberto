@@ -70,10 +70,9 @@ public static class ServiceCollectionExtensions
 
                 var environment = provider.GetService<IHostEnvironment>();
                 if (environment is not null && !environment.IsDevelopment()
-                    && bound.Checkpoints.OrphanPolicy == OrphanCheckpointPolicy.Warn
-                    && declared.Checkpoints.OrphanPolicy == OrphanCheckpointPolicy.Warn)
+                    && bound.Checkpoints.OrphanPolicy == OrphanCheckpointPolicy.Warn)
                 {
-                    // Only escalate when neither code nor configuration explicitly chose Warn.
+                    // Only escalate when configuration did not explicitly choose Warn.
                     // An operator who writes OrphanPolicy = Warn in appsettings.Production.json
                     // is making a deliberate choice and must not be overridden.
                     var orphanPolicySection = configuration?.GetSection(
