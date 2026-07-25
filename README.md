@@ -110,7 +110,7 @@ only. The CLI is a net10.0 tool.
 ```csharp
 services.AddAlberto("tickets", builder => builder
     .WithInMemory()                                       // or .WithPostgres(...)
-    .AddAlbertoStore(Assembly.GetExecutingAssembly())      // discovers [EventType] events
+    .WithEventsFrom(Assembly.GetExecutingAssembly())       // discovers [EventType] events
     .AddProjection(OccupancyProjection.Declaration, _ => () => occupancy)
     .WithControlLoop(o => o with { PollingInterval = TimeSpan.FromMilliseconds(50) }));
 ```
