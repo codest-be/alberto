@@ -144,14 +144,15 @@ var services  = new ServiceCollection();
 
 services.AddAlberto("tickets", builder => builder
     .WithInMemory()
-    .AddAlbertoStore(Assembly.GetExecutingAssembly())
+    .WithEventsFrom(Assembly.GetExecutingAssembly())
     .AddProjection(OccupancyProjection.Declaration, _ => () => occupancy)
     .WithControlLoop(o => o with { PollingInterval = TimeSpan.FromMilliseconds(50) }));
 ```
 
 - `AddAlberto(key, …)` registers one **module**. Everything inside is keyed by that string, so an
   application can host several modules with separate stores and control loops.
-- `AddAlbertoStore(assembly)` scans for `[EventType]` records and builds the serializer.
+- `WithEventsFrom(assembly)` scans for `[EventType]` records, builds the serializer, and registers
+  the `AlbertoStore` command pipeline. It comes from the separate `Alberto.Dcb.Commands` package.
 - `AddProjection` takes the declaration and a factory for where state goes. The factory's argument
   is a `ProjectionStoreContext` — ignored here, but it is what carries the rebuild version once you
   want live rebuilds ([projections.md](projections.md#rebuilding-a-projection)).
@@ -247,7 +248,7 @@ public static class Program
 
         services.AddAlberto("tickets", builder => builder
             .WithInMemory()
-            .AddAlbertoStore(Assembly.GetExecutingAssembly())
+            .WithEventsFrom(Assembly.GetExecutingAssembly())
             .AddProjection(OccupancyProjection.Declaration, _ => () => occupancy)
             .WithControlLoop(o => o with { PollingInterval = TimeSpan.FromMilliseconds(50) }));
 

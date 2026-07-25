@@ -5,6 +5,48 @@ The most recent cycle (projection rebuilds) is at the top. Older changes follow.
 
 ---
 
+## `AddAlbertoStore` removed — use `WithEventsFrom`
+
+**Breaking.** `AddAlbertoStore` is gone in both forms. There is no deprecation window: the name no
+longer exists, so calls fail to compile rather than warn.
+
+| Removed | Replacement |
+|---|---|
+| `builder.AddAlbertoStore(assembly)` | `builder.WithEventsFrom(assembly)` |
+| `services.AddAlbertoStore(moduleKey, assembly)` | `builder.WithEventsFrom(assembly)` inside the `AddAlberto` callback |
+
+`services.AddAlberto(...)` and `builder.AddAlbertoStore(...)` read as two halves of one bootstrap
+step, as if the first call left the module half-configured. They were not. `AddAlberto` builds the
+module; `AddAlbertoStore` came from the separate, optional `Alberto.Dcb.Commands` package and did
+one thing — declare where the module's `[EventType]` records live, and register the `AlbertoStore`
+command pipeline over them. That is module configuration, so it now reads like the other
+one-per-module settings (`WithPostgres`, `WithControlLoop`, `WithTenancy`) rather than like a
+second registration step. `Add*` stays reserved for the N-of-a-kind calls (`AddProjection`,
+`AddReactor`).
+
+```csharp
+// Before
+services.AddAlberto("orders", builder => builder
+    .WithPostgres(...)
+    .AddAlbertoStore(typeof(OrderCreated).Assembly));
+
+// After
+services.AddAlberto("orders", builder => builder
+    .WithPostgres(...)
+    .WithEventsFrom(typeof(OrderCreated).Assembly));
+```
+
+The standalone `services.AddAlbertoStore(moduleKey, assembly)` overload — `[Obsolete]` since the
+2026-07-24 audit cycle — is removed in the same change rather than left behind as the only
+surviving spelling of a name this cycle retires.
+
+The containing class was renamed to match what it now extends:
+`AlbertoStoreServiceCollectionExtensions` → `AlbertoStoreBuilderExtensions`
+(`ServiceCollectionExtensions.cs` → `AlbertoStoreBuilderExtensions.cs`). This only affects code
+that called the method non-extension style; ordinary `.WithEventsFrom(...)` chaining is unaffected.
+
+---
+
 ## Core and operator correctness hardening
 
 This cycle makes five previously implicit invariants explicit:
@@ -1008,6 +1050,10 @@ var result = await eventStore.DecideAndAppendAsync<OrderState>(
 
 #### 3. `AddAlbertoStore` chains from the builder
 
+> **Superseded.** `AddAlbertoStore` has since been removed entirely. If you are migrating from
+> before this cycle, skip straight to `WithEventsFrom` — see the section at the top of this file.
+> The rest of this block is kept as a record of what this cycle changed.
+
 The standalone overload `services.AddAlbertoStore(moduleKey, assembly)` is now `[Obsolete]`.
 
 **Migration:**
@@ -1206,7 +1252,7 @@ consumer.WithMiddleware(async (ctx, next) => { /* custom logic */ await next(); 
 See the Command/Result API section above for the full migration. The old type still compiles
 with a CS0618 warning and will be removed in a future version.
 
-### Standalone `AddAlbertoStore(moduleKey, assembly)` → builder chaining
+### ~~Standalone `AddAlbertoStore(moduleKey, assembly)` → builder chaining~~
 
-See the Command/Result API section above. The standalone overload still compiles with a CS0618
-warning and will be removed in a future version.
+No longer a deprecation — both spellings of `AddAlbertoStore` have since been **removed**. See
+`AddAlbertoStore` removed — use `WithEventsFrom` at the top of this file.

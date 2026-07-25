@@ -47,9 +47,9 @@ Not every property is a tag. `Amount` above is data; `OrderId` and `CustomerId` 
 decisions will reach for. The rule of thumb: **tag anything a future consistency boundary might be
 drawn around.** Adding a tag later means backfilling, so err on the side of one more.
 
-`AddAlbertoStore(assembly)` scans an assembly for `[EventType]` records and builds the serializer
+`WithEventsFrom(assembly)` scans an assembly for `[EventType]` records and builds the serializer
 that maps between them and the log. Reading an event whose type is not in that assembly throws
-`InvalidOperationException` naming the missing slug. `AddAlbertoStore` takes exactly one assembly,
+`InvalidOperationException` naming the missing slug. `WithEventsFrom` takes exactly one assembly,
 so keep a module's events together; if you genuinely need several, build the serializer yourself
 with `EventSerializer.FromAssemblies(…)` and register the `AlbertoStore` by hand.
 

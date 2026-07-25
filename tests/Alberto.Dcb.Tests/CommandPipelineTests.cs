@@ -167,13 +167,13 @@ public sealed class CommandPipelineTests
     }
 
     [Fact]
-    public async Task AddAlbertoStore_UsesTheEventStoreFromEachDependencyScope()
+    public async Task WithEventsFrom_UsesTheEventStoreFromEachDependencyScope()
     {
         var services = new ServiceCollection();
         const string moduleKey = "tenant-module";
         services.AddKeyedScoped<IEventStore>(moduleKey, (_, _) => new ScopedEventStore());
         services.AddAlberto(moduleKey, builder => builder
-            .AddAlbertoStore(typeof(AlbertoStore).Assembly));
+            .WithEventsFrom(typeof(AlbertoStore).Assembly));
 
         await using var provider = services.BuildServiceProvider(
             new ServiceProviderOptions
