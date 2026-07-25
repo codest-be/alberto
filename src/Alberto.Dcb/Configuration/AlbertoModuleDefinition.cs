@@ -17,6 +17,31 @@ public sealed record AlbertoModuleDefinition
     /// <summary>Whether <c>.WithTenancy()</c> was called.</summary>
     public bool TenancyEnabled { get; internal set; }
 
+    /// <summary>
+    /// How this module's tenants are laid out. Default — and what <c>.WithTenancy()</c> with no
+    /// argument produces — is one database for every tenant.
+    /// </summary>
+    public TenancyDefinition Tenancy { get; internal set; } = new();
+
+    /// <summary>
+    /// The shard this definition describes, or null for the module as a whole. A sharded module
+    /// produces one definition per shard alongside the logical one, and only the shard copies
+    /// register services.
+    /// </summary>
+    public string? ShardId { get; internal set; }
+
+    /// <summary>
+    /// The DI service key this definition's services are registered under: the module key, or
+    /// <c>module#shard</c> for a shard. This — not <see cref="ModuleKey"/> — is the key to look
+    /// services up by and the name of this definition's options instance.
+    /// </summary>
+    // Fully qualified: the Tenancy property above shadows the namespace of the same name.
+    public string ServiceKey =>
+        ShardId is null ? ModuleKey : global::Alberto.Dcb.Tenancy.ShardKey.Compose(ModuleKey, ShardId);
+
+    /// <summary>The module key, with the shard appended when there is one. For messages.</summary>
+    public string DisplayName => ShardId is null ? ModuleKey : $"{ModuleKey} (shard '{ShardId}')";
+
     /// <summary>The declared storage backend, or null when none was declared.</summary>
     public IAlbertoBackendDescriptor? Backend { get; internal set; }
 
@@ -76,15 +101,18 @@ public sealed record AlbertoModuleDefinition
         // Scan for unknown configuration keys and record them for ALB0008 validation.
         var unknownKeys = AlbertoConfigurationScanner.Scan(section, definition.Backend);
 
+        var boundBackend = definition.Backend?.ApplyConfiguration(section);
+
         return definition with
         {
+            Tenancy = TenancyConfiguration.Apply(definition.Tenancy, boundBackend, section),
             ControlLoop = AlbertoOptionsOverlay.Overlay<ControlLoopOptions, ControlLoopOverrides>(
                 section, "ControlLoop", definition.ControlLoop),
             Telemetry = AlbertoOptionsOverlay.Overlay<TelemetryOptions, TelemetryOverrides>(
                 section, "Telemetry", definition.Telemetry),
             Checkpoints = AlbertoOptionsOverlay.Overlay<CheckpointOptions, CheckpointOverrides>(
                 section, "Checkpoints", definition.Checkpoints),
-            Backend = definition.Backend?.ApplyConfiguration(section),
+            Backend = boundBackend,
             Processors = overlaidProcessors,
             UnknownConfigurationKeys = unknownKeys,
         };

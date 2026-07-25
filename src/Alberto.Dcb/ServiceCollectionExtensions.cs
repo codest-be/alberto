@@ -1,5 +1,6 @@
 using Alberto.Dcb.Configuration;
 using Alberto.Dcb.Subscriptions;
+using Alberto.Dcb.Tenancy;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -45,6 +46,10 @@ public static class ServiceCollectionExtensions
         var builder = new DcbModuleBuilder(moduleKey);
         configure(builder);
 
+        // Tenancy is declared last, against the completed declaration, so a shard can inherit
+        // from a .WithPostgres(...) written after .WithTenancy(...) in the chain.
+        builder.ApplyTenancy();
+
         // Auto-add the control loop with defaults if the user never called WithControlLoop.
         // Done as a deferred registration so nothing resolves a service during composition.
         if (!builder.ControlLoopConfigured)
@@ -60,7 +65,53 @@ public static class ServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IValidateOptions<AlbertoModuleDefinition>, AlbertoModuleValidator>());
 
-        services.AddOptions<AlbertoModuleDefinition>(moduleKey)
+        BindDefinition(services, moduleKey, declared, shardId: null);
+
+        // Phase 3 — register. `declared` is the code-configured definition.
+        // Configuration overlay is applied later inside the Options callback above,
+        // when IOptionsMonitor resolves the named instance at host startup.
+        if (!declared.Tenancy.IsSharded)
+        {
+            RegisterModule(services, declared, builder.DeferredRegistrations);
+            return services;
+        }
+
+        // A sharded module registers everything once per shard, under the shard's own key. The
+        // logical key gets no backend of its own — only the router, which forwards to whichever
+        // shard the current tenant belongs to.
+        foreach (var shard in declared.Tenancy.Shards)
+        {
+            var shardDefinition = ShardExpansion.ForShard(declared, shard);
+            BindDefinition(services, shardDefinition.ServiceKey, declared, shard.ShardId);
+            RegisterModule(services, shardDefinition, builder.DeferredRegistrations);
+        }
+
+        ShardingRegistration.Register(services, declared);
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the named <see cref="AlbertoModuleDefinition"/> options instance that every one
+    /// of this module's services reads its settings from at resolution time.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="name">
+    /// The options name, which is also the DI service key: the module key, or <c>module#shard</c>.
+    /// </param>
+    /// <param name="declared">The logical, code-configured declaration.</param>
+    /// <param name="shardId">
+    /// The shard this instance describes, or null for the module as a whole. Shard instances bind
+    /// from the module's own configuration path and then narrow to their shard, so a shard added
+    /// or retuned purely in configuration is picked up here.
+    /// </param>
+    private static void BindDefinition(
+        IServiceCollection services,
+        string name,
+        AlbertoModuleDefinition declared,
+        string? shardId)
+    {
+        services.AddOptions<AlbertoModuleDefinition>(name)
             .Configure<IServiceProvider>((definition, provider) =>
             {
                 var configuration = provider.GetService<IConfiguration>();
@@ -86,28 +137,42 @@ public static class ServiceCollectionExtensions
                     }
                 }
 
+                if (shardId is not null)
+                {
+                    // Null when configuration removed the shard. Its services are still
+                    // registered — the collection was built before configuration was read — so
+                    // leave the instance at its declared defaults rather than throwing here;
+                    // ALB0015 reports the mismatch with a message that names the shard.
+                    bound = ShardExpansion.ForShard(bound, shardId) ?? bound;
+                }
+
                 CopyInto(bound, definition);
             })
             .ValidateOnStart();
+    }
 
-        // Phase 3 — register. `declared` is the code-configured definition.
-        // Configuration overlay is applied later inside the Options callback above,
-        // when IOptionsMonitor resolves the named instance at host startup.
-        var final = declared;
-        var context = new AlbertoModuleContext(services, final);
+    /// <summary>
+    /// Replays one module's declarations against a single context. Called once for an ordinary
+    /// module, and once per shard for a sharded one.
+    /// </summary>
+    private static void RegisterModule(
+        IServiceCollection services,
+        AlbertoModuleDefinition definition,
+        IReadOnlyList<Action<AlbertoModuleContext>> deferredRegistrations)
+    {
+        var serviceKey = definition.ServiceKey;
+        var context = new AlbertoModuleContext(services, definition);
 
-        final.Backend?.Register(context);
+        definition.Backend?.Register(context);
 
         services.AddSingleton<IHostedService>(sp => new OrphanCheckpointHostedService(
-            sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>().Get(moduleKey),
-            sp.GetKeyedService<ICheckpointStore>(moduleKey) as ICheckpointInventory,
+            sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>().Get(serviceKey),
+            sp.GetKeyedService<ICheckpointStore>(serviceKey) as ICheckpointInventory,
             sp.GetService<ILogger<OrphanCheckpointHostedService>>()
                 ?? NullLogger<OrphanCheckpointHostedService>.Instance));
 
-        foreach (var register in builder.DeferredRegistrations)
+        foreach (var register in deferredRegistrations)
             register(context);
-
-        return services;
     }
 
     /// <summary>
@@ -119,6 +184,8 @@ public static class ServiceCollectionExtensions
     {
         target.ModuleKey = source.ModuleKey;
         target.TenancyEnabled = source.TenancyEnabled;
+        target.Tenancy = source.Tenancy;
+        target.ShardId = source.ShardId;
         target.Backend = source.Backend;
         target.ControlLoop = source.ControlLoop;
         target.Telemetry = source.Telemetry;

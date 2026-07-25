@@ -21,11 +21,31 @@ public interface IAlbertoBackendDescriptor
     bool SupportsTenancy { get; }
 
     /// <summary>
+    /// Identifies the storage this descriptor points at, for comparing two descriptors — for
+    /// example <c>host:port/database (schema)</c>. Never contains credentials, because it appears
+    /// in validation messages. Null when the backend cannot say, which skips the comparison.
+    /// </summary>
+    string? StorageIdentity => null;
+
+    /// <summary>
     /// Overlays this backend's own options from the module's configuration section
     /// (already scoped to <c>Alberto:Modules:{moduleKey}</c>). Return <c>this</c> when there is
     /// nothing to bind.
     /// </summary>
     IAlbertoBackendDescriptor ApplyConfiguration(IConfiguration moduleSection);
+
+    /// <summary>
+    /// Overlays this backend's options from a shard's own configuration section — one entry under
+    /// <c>Tenancy:Shards</c>, or <c>Tenancy:Catalog</c>. Unlike <see cref="ApplyConfiguration"/>
+    /// the section holds the backend's properties directly, with no intervening backend-named
+    /// child, because a shard section can only ever describe one backend.
+    /// </summary>
+    /// <remarks>
+    /// The default treats the shard section as a module section, which is correct for a backend
+    /// with no configuration of its own. Backends that expose options should override it.
+    /// </remarks>
+    IAlbertoBackendDescriptor ApplyShardConfiguration(IConfiguration shardSection) =>
+        ApplyConfiguration(shardSection);
 
     /// <summary>
     /// Reports backend-specific configuration problems. Called during startup validation,
@@ -37,6 +57,20 @@ public interface IAlbertoBackendDescriptor
     /// Registers the backend's services. Called once, after validation, with the final definition.
     /// </summary>
     void Register(AlbertoModuleContext context);
+
+    /// <summary>
+    /// Registers an <see cref="Tenancy.ITenantShardMap"/> keyed by <c>context.ModuleKey</c>, backed
+    /// by this descriptor's database. Called only when the module declares shards and names this
+    /// descriptor as its catalog.
+    /// </summary>
+    /// <remarks>
+    /// The catalog is deliberately a database of its own rather than one of the shards, so no
+    /// shard is load-bearing for routing to the others.
+    /// </remarks>
+    void RegisterShardCatalog(AlbertoModuleContext context) =>
+        throw new NotSupportedException(
+            $"The {Name} backend cannot host a tenant shard catalog. Declare the catalog on a " +
+            "backend that supports it, such as .WithCatalog(...) on the Postgres shard builder.");
 
     /// <summary>
     /// Returns the name of the configuration sub-section this backend reads from, and the
