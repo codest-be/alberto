@@ -124,13 +124,22 @@ public class ModuleDefinitionTests
     public void Deferred_registrations_run_against_the_final_definition()
     {
         string? seenModuleKey = null;
+        bool seenTenancyEnabled = false;
         var services = new ServiceCollection();
 
+        // .Register() is called before .WithTenancy() to prove the callback sees the
+        // post-lambda definition, not a snapshot captured at the point of registration.
         services.AddAlberto("orders", module => module
-            .Register(context => seenModuleKey = context.ModuleKey)
+            .Register(context =>
+            {
+                seenModuleKey = context.ModuleKey;
+                seenTenancyEnabled = context.TenancyEnabled;
+            })
+            .WithTenancy()
             .UseBackend(new FakeBackend()));
 
         seenModuleKey.Should().Be("orders");
+        seenTenancyEnabled.Should().BeTrue("the callback sees the definition after all builder calls complete");
     }
 
     [Fact]
