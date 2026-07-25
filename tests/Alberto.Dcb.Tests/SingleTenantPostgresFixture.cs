@@ -1,43 +1,10 @@
-using Alberto.Dcb.Postgres;
-using Npgsql;
-using Testcontainers.PostgreSql;
-using Xunit;
+using Alberto.Dcb.Tests.Infrastructure;
 
 namespace Alberto.Dcb.Tests;
 
 /// <summary>
-/// Shared PostgreSQL container fixture for single-tenant backend tests.
-/// Runs single-tenant migrations (no tenant_id columns in events tables).
-/// Created once per test collection, reused across all tests.
+/// A private database on the shared cluster, migrated single-tenant
+/// (no tenant_id columns in the events tables).
 /// </summary>
-public sealed class SingleTenantPostgresFixture : IAsyncLifetime
-{
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:16-alpine")
-        .Build();
-
-    public NpgsqlDataSource DataSource { get; private set; } = null!;
-
-    public async ValueTask InitializeAsync()
-    {
-        await _container.StartAsync();
-
-        var migrationResult = PostgresMigrator.Migrate(
-            _container.GetConnectionString(),
-            singleTenant: true);
-
-        if (!migrationResult.Successful)
-        {
-            throw new InvalidOperationException(
-                $"Database migration failed: {migrationResult.Error?.Message}",
-                migrationResult.Error);
-        }
-
-        DataSource = NpgsqlDataSource.Create(_container.GetConnectionString());
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        await DataSource.DisposeAsync();
-        await _container.DisposeAsync();
-    }
-}
+public sealed class SingleTenantPostgresFixture(PostgresCluster cluster)
+    : PostgresDatabaseFixture(cluster, PostgresTemplates.SingleTenant);

@@ -1,11 +1,11 @@
 using System.Text.Json;
 using Alberto.Dcb.Postgres;
 using Alberto.Dcb.Subscriptions;
+using Alberto.Dcb.Tests.Infrastructure;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Npgsql;
-using Testcontainers.PostgreSql;
 using Xunit;
 
 namespace Alberto.Dcb.Tests.Subscriptions;
@@ -51,10 +51,13 @@ public static class TotalsProjection
 /// Postgres-backed module with one projection per test, each whose store follows its own
 /// rebuild version.
 /// </summary>
-public sealed class ProjectionRebuildHostFixture : IAsyncLifetime
+/// <remarks>
+/// The host runs a real control loop polling the whole event log, so it needs a database
+/// nobody else writes to. It gets one — the cluster shares a container, never a database.
+/// </remarks>
+public sealed class ProjectionRebuildHostFixture(PostgresCluster cluster)
+    : PostgresDatabaseFixture(cluster, PostgresTemplates.SingleTenant)
 {
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:16-alpine").Build();
-
     public const string ModuleKey = "rebuild-e2e";
 
     /// <summary>
@@ -72,26 +75,16 @@ public sealed class ProjectionRebuildHostFixture : IAsyncLifetime
     ];
 
     public ServiceProvider Services { get; private set; } = null!;
-    public NpgsqlDataSource DataSource { get; private set; } = null!;
 
-    public async ValueTask InitializeAsync()
+    protected override async ValueTask OnInitializedAsync()
     {
-        await _container.StartAsync();
-        var connectionString = _container.GetConnectionString();
-
-        var migration = PostgresMigrator.Migrate(connectionString, singleTenant: true);
-        if (!migration.Successful)
-            throw new InvalidOperationException($"Migration failed: {migration.Error?.Message}", migration.Error);
-
-        DataSource = NpgsqlDataSource.Create(connectionString);
-
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddAlberto(ModuleKey, builder =>
         {
             builder.WithPostgres(o => o with
             {
-                ConnectionString = connectionString,
+                ConnectionString = ConnectionString,
                 AutoMigrate = false,
                 EnableNotifyListener = false,
             });
@@ -115,14 +108,17 @@ public sealed class ProjectionRebuildHostFixture : IAsyncLifetime
             await hosted.StartAsync(CancellationToken.None);
     }
 
-    public async ValueTask DisposeAsync()
+    // Stop the host and let it dispose its own NpgsqlDataSource (owned by WithPostgres)
+    // before the base class disposes the fixture's standalone one.
+    protected override async ValueTask OnDisposingAsync()
     {
+        if (Services is null)
+            return;
+
         foreach (var hosted in Services.GetServices<IHostedService>())
             await hosted.StopAsync(CancellationToken.None);
 
         await Services.DisposeAsync();
-        await DataSource.DisposeAsync();
-        await _container.DisposeAsync();
     }
 }
 
