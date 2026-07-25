@@ -250,9 +250,12 @@ Values for `OrphanCheckpointPolicy`:
 **Escalation rule.** When the host environment is not `Development`, Alberto escalates
 `Warn` to `Strict` — but only when the policy was not explicitly supplied through
 configuration. A `Checkpoints:OrphanPolicy = Warn` entry in `appsettings.json` is always
-honoured. This asymmetry matters: setting `OrphanCheckpointPolicy.Warn` in code is
-indistinguishable from the default and still escalates. The configuration key is the
-reliable opt-out.
+honoured, in every environment.
+
+`Checkpoints` is the one section with no `With...()` builder method: it is configured
+through `Alberto:Modules:{key}:Checkpoints:*` only. That is deliberate — the policy is an
+operational choice that differs per environment, and the environment is exactly what
+configuration is for.
 
 **Why this matters.** A processor id is a persisted checkpoint key. Renaming a handler
 class (when `processorId` is omitted from `ReactTo<TEvent, THandler>`) changes the derived

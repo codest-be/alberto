@@ -53,15 +53,25 @@ the configuration key.
 | `Checkpoints:OrphanPolicy` defaults to `Strict` outside `Development` | A deployment whose handler was renamed at any point silently replaying events now **fails at startup** | This is the intended safety net. Either carry the position with `alberto ops checkpoint rename`, pin the old id with `[ProcessorId("...")]`, or set `Alberto:Modules:{key}:Checkpoints:OrphanPolicy` explicitly in configuration. See the note below. |
 | `PostgresStateStore` positional constructor argument order fixed | Code that copied `(dataSource, tenantId, projectionType, schema)` from the old samples | Switch to named arguments: `new PostgresStateStore<T>(dataSource, projectionType, schema)` |
 
-### `OrphanPolicy` and code vs. configuration
+### Opting out of `Strict`
 
-The escalation from `Warn` to `Strict` outside Development has one asymmetry worth
-knowing: an explicit `OrphanPolicy = Warn` supplied through **configuration**
-(`Alberto:Modules:{key}:Checkpoints:OrphanPolicy = Warn`) is honoured and never escalated.
-An explicit `Warn` supplied in **code** is escalated anyway, because `Warn` is also the
-default value of `OrphanCheckpointPolicy` and Alberto cannot tell the two apart.
+`Checkpoints` is configured through `Alberto:Modules:{key}:Checkpoints:*` only — unlike
+`Postgres`, `ControlLoop` and `Telemetry`, it has no `With...()` builder method. To keep
+`Warn` in a production environment, set the key explicitly:
 
-The configuration key is the reliable way to opt out of `Strict` in a given environment.
+```json
+{
+  "Alberto": {
+    "Modules": {
+      "orders": {
+        "Checkpoints": { "OrphanPolicy": "Warn" }
+      }
+    }
+  }
+}
+```
+
+An explicitly configured value is honoured in every environment and is never escalated.
 
 ---
 
