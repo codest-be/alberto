@@ -34,7 +34,7 @@ public static class PaymentMutations
         var state = new PaymentState();
         var result = PaymentActions.Initiate(state, paymentId, input.OrderId, input.Amount, input.Currency, input.PaymentMethod);
 
-        await AppendEvents(eventStore, paymentId, input.OrderId, result.EnsureSuccess(), ct);
+        await AppendEvents(eventStore, paymentId, input.OrderId, result, ct);
 
         return new InitiatePaymentResult(paymentId);
     }
@@ -58,7 +58,7 @@ public static class PaymentMutations
         var state = await LoadPaymentState(backend, paymentId, ct);
         var result = PaymentActions.Authorize(state, authorizationCode, timeProvider.GetUtcNow());
 
-        await AppendEvents(eventStore, paymentId, state.OrderId, result.EnsureSuccess(), ct);
+        await AppendEvents(eventStore, paymentId, state.OrderId, result, ct);
 
         return new MutationResult();
     }
@@ -81,7 +81,7 @@ public static class PaymentMutations
         var state = await LoadPaymentState(backend, input.PaymentId, ct);
         var result = PaymentActions.Capture(state, input.Amount, timeProvider.GetUtcNow());
 
-        await AppendEvents(eventStore, input.PaymentId, state.OrderId, result.EnsureSuccess(), ct);
+        await AppendEvents(eventStore, input.PaymentId, state.OrderId, result, ct);
 
         return new MutationResult();
     }
@@ -103,7 +103,7 @@ public static class PaymentMutations
         var state = await LoadPaymentState(backend, input.PaymentId, ct);
         var result = PaymentActions.Fail(state, input.ErrorCode, input.ErrorMessage);
 
-        await AppendEvents(eventStore, input.PaymentId, state.OrderId, result.EnsureSuccess(), ct);
+        await AppendEvents(eventStore, input.PaymentId, state.OrderId, result, ct);
 
         return new MutationResult();
     }
@@ -126,7 +126,7 @@ public static class PaymentMutations
         var state = await LoadPaymentState(backend, input.PaymentId, ct);
         var result = PaymentActions.Refund(state, input.Amount, input.Reason, timeProvider.GetUtcNow());
 
-        await AppendEvents(eventStore, input.PaymentId, state.OrderId, result.EnsureSuccess(), ct);
+        await AppendEvents(eventStore, input.PaymentId, state.OrderId, result, ct);
 
         return new MutationResult();
     }
@@ -146,10 +146,14 @@ public static class PaymentMutations
         IEventStore eventStore,
         Guid paymentId,
         Guid orderId,
-        IReadOnlyList<IEvent> events,
+        Decision decision,
         CancellationToken ct)
     {
-        var toPersist = events.Select(@event => new EventToPersist
+        if (decision.IsError)
+            throw new InvalidOperationException(
+                string.Join("; ", decision.Problems.Select(p => p.Message)));
+
+        var toPersist = decision.Events.Select(@event => new EventToPersist
         {
             EventType = EventType.FromType(@event.GetType()),
             Tags = [

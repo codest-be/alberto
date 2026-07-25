@@ -38,7 +38,7 @@ public static class OrderMutations
         var state = new OrderState();
         var result = OrderActions.Create(state, orderId, input.CustomerId, lineItems, input.Notes);
 
-        await AppendEvents(eventStore, orderId, result.EnsureSuccess(), ct);
+        await AppendEvents(eventStore, orderId, result, ct);
 
         return new CreateOrderResult(orderId);
     }
@@ -60,7 +60,7 @@ public static class OrderMutations
         var state = await LoadOrderState(backend, input.OrderId, ct);
         var result = OrderActions.AddItem(state, input.ProductId, input.ProductName, input.Quantity, input.UnitPrice);
 
-        await AppendEvents(eventStore, input.OrderId, result.EnsureSuccess(), ct);
+        await AppendEvents(eventStore, input.OrderId, result, ct);
 
         return new MutationResult();
     }
@@ -83,7 +83,7 @@ public static class OrderMutations
         var state = await LoadOrderState(backend, orderId, ct);
         var result = OrderActions.RemoveItem(state, productId);
 
-        await AppendEvents(eventStore, orderId, result.EnsureSuccess(), ct);
+        await AppendEvents(eventStore, orderId, result, ct);
 
         return new MutationResult();
     }
@@ -106,7 +106,7 @@ public static class OrderMutations
         var state = await LoadOrderState(backend, orderId, ct);
         var result = OrderActions.Confirm(state, timeProvider.GetUtcNow());
 
-        await AppendEvents(eventStore, orderId, result.EnsureSuccess(), ct);
+        await AppendEvents(eventStore, orderId, result, ct);
 
         return new MutationResult();
     }
@@ -129,7 +129,7 @@ public static class OrderMutations
         var state = await LoadOrderState(backend, input.OrderId, ct);
         var result = OrderActions.Ship(state, input.TrackingNumber, input.Carrier, timeProvider.GetUtcNow());
 
-        await AppendEvents(eventStore, input.OrderId, result.EnsureSuccess(), ct);
+        await AppendEvents(eventStore, input.OrderId, result, ct);
 
         return new MutationResult();
     }
@@ -152,7 +152,7 @@ public static class OrderMutations
         var state = await LoadOrderState(backend, orderId, ct);
         var result = OrderActions.Deliver(state, timeProvider.GetUtcNow());
 
-        await AppendEvents(eventStore, orderId, result.EnsureSuccess(), ct);
+        await AppendEvents(eventStore, orderId, result, ct);
 
         return new MutationResult();
     }
@@ -175,7 +175,7 @@ public static class OrderMutations
         var state = await LoadOrderState(backend, input.OrderId, ct);
         var result = OrderActions.Cancel(state, input.Reason, timeProvider.GetUtcNow());
 
-        await AppendEvents(eventStore, input.OrderId, result.EnsureSuccess(), ct);
+        await AppendEvents(eventStore, input.OrderId, result, ct);
 
         return new MutationResult();
     }
@@ -194,10 +194,14 @@ public static class OrderMutations
     private static async Task AppendEvents(
         IEventStore eventStore,
         Guid orderId,
-        IReadOnlyList<IEvent> events,
+        Decision decision,
         CancellationToken ct)
     {
-        var toPersist = events.Select(@event => new EventToPersist
+        if (decision.IsError)
+            throw new InvalidOperationException(
+                string.Join("; ", decision.Problems.Select(p => p.Message)));
+
+        var toPersist = decision.Events.Select(@event => new EventToPersist
         {
             EventType = EventType.FromType(@event.GetType()),
             Tags = [new EventTag(Tags.Order, orderId.ToString())],

@@ -13,7 +13,7 @@ public sealed partial class PaymentDecider
     /// <summary>
     /// Initiates a new payment.
     /// </summary>
-    public static DecisionResult<IEvent> Initiate(
+    public static Decision Initiate(
         IInitiatePaymentState state,
         Guid paymentId,
         Guid orderId,
@@ -22,21 +22,21 @@ public sealed partial class PaymentDecider
         string paymentMethod)
     {
         if (state.Exists)
-            return DecisionResult<IEvent>.Failure($"Payment {paymentId} already exists");
+            return Problem.Create("payment-already-exists", $"Payment {paymentId} already exists");
 
         if (orderId == Guid.Empty)
-            return DecisionResult<IEvent>.Failure("Order ID is required");
+            return Problem.Create("order-id-required", "Order ID is required");
 
         if (amount <= 0)
-            return DecisionResult<IEvent>.Failure("Amount must be greater than zero");
+            return Problem.Create("invalid-amount", "Amount must be greater than zero");
 
         if (string.IsNullOrWhiteSpace(currency))
-            return DecisionResult<IEvent>.Failure("Currency is required");
+            return Problem.Create("currency-required", "Currency is required");
 
         if (string.IsNullOrWhiteSpace(paymentMethod))
-            return DecisionResult<IEvent>.Failure("Payment method is required");
+            return Problem.Create("payment-method-required", "Payment method is required");
 
-        return DecisionResult<IEvent>.Success(new PaymentInitiated(paymentId, orderId, amount, currency, paymentMethod));
+        return Decision.Succeed(new PaymentInitiated(paymentId, orderId, amount, currency, paymentMethod));
     }
 
     public PaymentState Apply(PaymentState state, PaymentInitiated e) => state with

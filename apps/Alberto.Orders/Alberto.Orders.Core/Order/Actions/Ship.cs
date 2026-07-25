@@ -15,25 +15,25 @@ public sealed partial class OrderDecider
     /// <summary>
     /// Ships the order.
     /// </summary>
-    public static DecisionResult<IEvent> Ship(
+    public static Decision Ship(
         IShipOrderState state,
         string trackingNumber,
         string carrier,
         DateTimeOffset shippedAt)
     {
         if (!state.Exists)
-            return DecisionResult<IEvent>.Failure("Order does not exist");
+            return Problem.Create("order-not-found", "Order does not exist");
 
         if (!state.CanBeShipped)
-            return DecisionResult<IEvent>.Failure($"Order cannot be shipped in {state.Status} status");
+            return Problem.Create("order-not-shippable", $"Order cannot be shipped in {state.Status} status");
 
         if (string.IsNullOrWhiteSpace(trackingNumber))
-            return DecisionResult<IEvent>.Failure("Tracking number is required");
+            return Problem.Create("tracking-number-required", "Tracking number is required");
 
         if (string.IsNullOrWhiteSpace(carrier))
-            return DecisionResult<IEvent>.Failure("Carrier is required");
+            return Problem.Create("carrier-required", "Carrier is required");
 
-        return DecisionResult<IEvent>.Success(new OrderShipped(state.OrderId, trackingNumber, carrier, shippedAt));
+        return Decision.Succeed(new OrderShipped(state.OrderId, trackingNumber, carrier, shippedAt));
     }
 
     public OrderState Apply(OrderState state, OrderShipped e) => state with

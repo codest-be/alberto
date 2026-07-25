@@ -324,7 +324,9 @@ services.AddOpenTelemetry()
 
 `.WithTelemetry()` registers Alberto's activity source and meter with the OpenTelemetry hosting
 integration automatically — no separate `AddAlbertoInstrumentation()` call is needed (that
-extension is `[Obsolete]` and will be removed). Call `AddOpenTelemetry()` to configure your
+extension is retained for standalone `TracerProvider` / `MeterProvider` wiring outside the generic
+host, and is a harmless no-op duplicate when called alongside `.WithTelemetry()`).
+Call `AddOpenTelemetry()` to configure your
 exporters and subscribe to the Alberto source and meter. The meter is `Alberto.Dcb`. See
 [configuration.md](configuration.md#telemetry-options) for all telemetry options.
 

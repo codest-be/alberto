@@ -16,17 +16,19 @@ public sealed partial class OrderDecider
     /// <summary>
     /// Confirms the order for processing.
     /// </summary>
-    public static DecisionResult<IEvent> Confirm(IConfirmOrderState state, DateTimeOffset confirmedAt)
+    public static Decision Confirm(IConfirmOrderState state, DateTimeOffset confirmedAt)
     {
         if (!state.Exists)
-            return DecisionResult<IEvent>.Failure("Order does not exist");
+            return Problem.Create("order-not-found", "Order does not exist");
 
         if (!state.CanBeConfirmed)
-            return DecisionResult<IEvent>.Failure(state.LineItems.Count == 0
-                ? "Cannot confirm an empty order"
-                : $"Order cannot be confirmed in {state.Status} status");
+            return state.LineItems.Count == 0
+                ? Problem.Create("order-empty", "Cannot confirm an empty order")
+                : Problem.Create(
+                    "order-not-confirmable",
+                    $"Order cannot be confirmed in {state.Status} status");
 
-        return DecisionResult<IEvent>.Success(new OrderConfirmed(state.OrderId, confirmedAt));
+        return Decision.Succeed(new OrderConfirmed(state.OrderId, confirmedAt));
     }
 
     public OrderState Apply(OrderState state, OrderConfirmed e) => state with

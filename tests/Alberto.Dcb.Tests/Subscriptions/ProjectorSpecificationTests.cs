@@ -35,25 +35,23 @@ public class ProjectorSpecificationTests
 
     #region Test Projection
 
-#pragma warning disable CS0618 // Testing with deprecated Projection<T> / AsyncProjection<T,TProjection> API
-    public class OrderSummaryProjection : Projection<OrderSummary>,
-        IProject<OrderSummary, OrderCreated>,
-        IProject<OrderSummary, OrderConfirmed>,
-        IProject<OrderSummary, OrderCancelled>
-    {
-        public string GetDocumentId(OrderCreated @event) => @event.OrderId.ToString();
-        public ProjectionResult<OrderSummary> Apply(OrderSummary state, OrderCreated @event, ProjectionContext context)
-            => new OrderSummary { OrderId = @event.OrderId, Amount = @event.Amount, Status = "Created" };
-
-        public string GetDocumentId(OrderConfirmed @event) => @event.OrderId.ToString();
-        public ProjectionResult<OrderSummary> Apply(OrderSummary state, OrderConfirmed @event, ProjectionContext context)
-            => state with { Status = "Confirmed" };
-
-        public string GetDocumentId(OrderCancelled @event) => @event.OrderId.ToString();
-        public ProjectionResult<OrderSummary> Apply(OrderSummary state, OrderCancelled @event, ProjectionContext context)
-            => ProjectionResults.Delete<OrderSummary>();
-    }
-#pragma warning restore CS0618
+    private static ProjectionDeclaration<OrderSummary> Declaration() =>
+        DeclareProjection.For<OrderSummary>("order-summary-v1")
+            .On<OrderCreated>(
+                id: e => e.OrderId.ToString(),
+                apply: (state, e, ctx) => new OrderSummary
+                {
+                    OrderId = e.OrderId,
+                    Amount = e.Amount,
+                    Status = "Created"
+                })
+            .On<OrderConfirmed>(
+                id: e => e.OrderId.ToString(),
+                apply: (state, e, ctx) => state with { Status = "Confirmed" })
+            .On<OrderCancelled>(
+                id: e => e.OrderId.ToString(),
+                apply: (state, e, ctx) => ProjectionResults.Delete<OrderSummary>())
+            .Build();
 
     #endregion
 
@@ -104,15 +102,12 @@ public class ProjectorSpecificationTests
 
     #region ProcessEvent Tests
 
-#pragma warning disable CS0618 // AsyncProjection is deprecated, suppressed for legacy tests
-    private static (AsyncProjection<OrderSummary, OrderSummaryProjection> processor, InMemoryStateStore stateStore) CreateProcessor()
+    private static (DeclaredAsyncProjection<OrderSummary> processor, InMemoryStateStore stateStore) CreateProcessor()
     {
         var stateStore = new InMemoryStateStore();
-        var processor = new AsyncProjection<OrderSummary, OrderSummaryProjection>(
-            () => stateStore, "order-summary-v1");
+        var processor = new DeclaredAsyncProjection<OrderSummary>(Declaration(), () => stateStore);
         return (processor, stateStore);
     }
-#pragma warning restore CS0618
 
     [Fact]
     public async Task ProcessEvent_ShouldUpsertState()
@@ -237,11 +232,62 @@ public class ProjectorSpecificationTests
     }
 
     [Fact]
-    public void ProcessorId_ShouldMatchConstructorArgument()
+    public void ProcessorId_ShouldComeFromDeclaration()
     {
         var (processor, _) = CreateProcessor();
 
         Assert.Equal("order-summary-v1", processor.ProcessorId);
+    }
+
+    [Fact]
+    public void ProcessorId_ShouldHonourOverride()
+    {
+        var processor = new DeclaredAsyncProjection<OrderSummary>(
+            Declaration(),
+            () => new InMemoryStateStore(),
+            processorIdOverride: "order-summary-shadow");
+
+        Assert.Equal("order-summary-shadow", processor.ProcessorId);
+    }
+
+    [Fact]
+    public async Task ProcessEvent_ShouldIgnoreUnhandledEventTypes()
+    {
+        var (processor, stateStore) = CreateProcessor();
+
+        var envelope = new EventEnvelope
+        {
+            Id = Guid.NewGuid(),
+            TenantId = "test-tenant",
+            GlobalPosition = 1,
+            EventType = new EventType("some-unrelated-event"),
+            Tags = [],
+            EventData = "{}",
+            Metadata = new Dictionary<string, string>(),
+            CreatedAt = DateTime.UtcNow
+        };
+
+        await processor.ProcessEventAsync(envelope, TestContext.Current.CancellationToken);
+
+        Assert.Empty(stateStore.Store);
+    }
+
+    [Fact]
+    public async Task ProcessEvent_ShouldSkipWhenDocumentIdIsNull()
+    {
+        var stateStore = new InMemoryStateStore();
+        var declaration = DeclareProjection.For<OrderSummary>("order-summary-v1")
+            .On<OrderCreated>(
+                id: e => null, // opt out of the event entirely
+                apply: (state, e, ctx) => new OrderSummary { OrderId = e.OrderId })
+            .Build();
+        var processor = new DeclaredAsyncProjection<OrderSummary>(declaration, () => stateStore);
+
+        await processor.ProcessEventAsync(
+            CreateEnvelope(new OrderCreated(Guid.NewGuid(), 100m), 1),
+            TestContext.Current.CancellationToken);
+
+        Assert.Empty(stateStore.Store);
     }
 
     #endregion
@@ -294,6 +340,38 @@ public class ProjectorSpecificationTests
     }
 
     [Fact]
+    public async Task Batch_EmptyBatch_ShouldNotThrow()
+    {
+        var (processor, stateStore) = CreateProcessor();
+
+        await processor.ProcessBatchAsync([], TestContext.Current.CancellationToken);
+
+        Assert.Empty(stateStore.Store);
+    }
+
+    [Fact]
+    public async Task Batch_UnhandledEventTypes_ShouldBeIgnored()
+    {
+        var (processor, stateStore) = CreateProcessor();
+
+        var envelope = new EventEnvelope
+        {
+            Id = Guid.NewGuid(),
+            TenantId = "test-tenant",
+            GlobalPosition = 1,
+            EventType = new EventType("unknown-event"),
+            Tags = [],
+            EventData = "{}",
+            Metadata = new Dictionary<string, string>(),
+            CreatedAt = DateTime.UtcNow
+        };
+
+        await processor.ProcessBatchAsync([envelope], TestContext.Current.CancellationToken);
+
+        Assert.Empty(stateStore.Store);
+    }
+
+    [Fact]
     public async Task Batch_DeleteInBatch_DocumentRemoved()
     {
         var (processor, stateStore) = CreateProcessor();
@@ -315,47 +393,51 @@ public class ProjectorSpecificationTests
     }
 
     [Fact]
-    public async Task Batch_FallsBackToPerEvent_OnBatchFailure()
+    public async Task Batch_DeleteThenRecreateInSameBatch_EndsUpUpserted()
     {
-        // Use a state store that always throws on ApplyChangesAsync to simulate batch failure
-        var throwingStore = new ThrowOnApplyStateStore();
-        var fallbackStore = new InMemoryStateStore();
-
-        // The factory is called with tenantId — we want the normal store
-        // for per-event (which goes through FlushAsync → ApplyChanges on the same store,
-        // so we use a processor whose store throws only on the first call).
-        var callCount = 0;
-#pragma warning disable CS0618
-        var processor = new AsyncProjection<OrderSummary, OrderSummaryProjection>(
-            () =>
-            {
-                callCount++;
-                // First call is from ProcessBatchAsync (will throw), second from per-event flush
-                return callCount == 1 ? (IStateStore<OrderSummary>)throwingStore : fallbackStore;
-            },
-            "order-summary-v1");
-#pragma warning restore CS0618
+        var (processor, stateStore) = CreateProcessor();
 
         var orderId = Guid.NewGuid();
 
-        // ProcessBatchAsync will throw; the consumer's fallback should call ProcessEventAsync + FlushAsync
-        // Here we test the processor level: ProcessBatchAsync throws, then per-event works.
+        await processor.ProcessBatchAsync(
+            [
+                CreateEnvelope(new OrderCreated(orderId, 100m), 1),
+                CreateEnvelope(new OrderCancelled(orderId), 2),
+                CreateEnvelope(new OrderCreated(orderId, 250m), 3),
+            ],
+            TestContext.Current.CancellationToken);
+
+        // The trailing Set wins over the earlier Delete
+        Assert.Single(stateStore.Store);
+        Assert.Equal(250m, stateStore.Store[orderId.ToString()].Amount);
+        Assert.Empty(stateStore.DeletedIds);
+    }
+
+    [Fact]
+    public async Task Batch_FallsBackToPerEvent_OnBatchFailure()
+    {
+        // A state store that always throws on ApplyChangesAsync simulates a batch failure.
+        var throwingProcessor = new DeclaredAsyncProjection<OrderSummary>(
+            Declaration(),
+            () => new ThrowOnApplyStateStore());
+
+        var orderId = Guid.NewGuid();
         var batch = new List<IEventEnvelope>
         {
             CreateEnvelope(new OrderCreated(orderId, 200m), 1),
         };
 
-        // Batch processing throws
+        // Batch processing throws — the consumer's fallback is to retry per-event.
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => processor.ProcessBatchAsync(batch, TestContext.Current.CancellationToken));
+            () => throwingProcessor.ProcessBatchAsync(batch, TestContext.Current.CancellationToken));
 
-        // Per-event path still works (uses a fresh processor via CreateProcessor for simplicity)
-        var (processor2, stateStore2) = CreateProcessor();
-        await processor2.ProcessEventAsync(batch[0], TestContext.Current.CancellationToken);
-        await processor2.FlushAsync(TestContext.Current.CancellationToken);
+        // The per-event path on a healthy store still works.
+        var (processor, stateStore) = CreateProcessor();
+        await processor.ProcessEventAsync(batch[0], TestContext.Current.CancellationToken);
+        await processor.FlushAsync(TestContext.Current.CancellationToken);
 
-        Assert.Single(stateStore2.Store);
-        Assert.Equal("Created", stateStore2.Store[orderId.ToString()].Status);
+        Assert.Single(stateStore.Store);
+        Assert.Equal("Created", stateStore.Store[orderId.ToString()].Status);
     }
 
     private class ThrowOnApplyStateStore : IStateStore<OrderSummary>

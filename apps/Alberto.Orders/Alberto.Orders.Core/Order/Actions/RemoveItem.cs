@@ -16,18 +16,18 @@ public sealed partial class OrderDecider
     /// <summary>
     /// Removes an item from the order.
     /// </summary>
-    public static DecisionResult<IEvent> RemoveItem(IRemoveItemState state, Guid productId)
+    public static Decision RemoveItem(IRemoveItemState state, Guid productId)
     {
         if (!state.Exists)
-            return DecisionResult<IEvent>.Failure("Order does not exist");
+            return Problem.Create("order-not-found", "Order does not exist");
 
         if (!state.CanBeModified)
-            return DecisionResult<IEvent>.Failure($"Order cannot be modified in {state.Status} status");
+            return Problem.Create("order-not-modifiable", $"Order cannot be modified in {state.Status} status");
 
         if (state.LineItems.All(x => x.ProductId != productId))
-            return DecisionResult<IEvent>.Failure($"Product {productId} not found in order");
+            return Problem.Create("product-not-in-order", $"Product {productId} not found in order");
 
-        return DecisionResult<IEvent>.Success(new OrderItemRemoved(state.OrderId, productId));
+        return Decision.Succeed(new OrderItemRemoved(state.OrderId, productId));
     }
 
     public OrderState Apply(OrderState state, OrderItemRemoved e) => state with

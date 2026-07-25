@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\Alberto.Dcb\Alberto.Dcb.csproj" />
+    <ProjectReference Include="..\..\..\src\Alberto.Dcb.Commands\Alberto.Dcb.Commands.csproj" />
   </ItemGroup>
 
 </Project>

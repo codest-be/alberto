@@ -16,21 +16,23 @@ public sealed partial class PaymentDecider
     /// <summary>
     /// Marks a payment as failed.
     /// </summary>
-    public static DecisionResult<IEvent> Fail(
+    public static Decision Fail(
         IFailPaymentState state,
         string errorCode,
         string errorMessage)
     {
         if (!state.Exists)
-            return DecisionResult<IEvent>.Failure("Payment does not exist");
+            return Problem.Create("payment-not-found", "Payment does not exist");
 
         if (!state.CanBeFailed)
-            return DecisionResult<IEvent>.Failure($"Payment cannot be marked as failed in {state.Status} status");
+            return Problem.Create(
+                "payment-not-failable",
+                $"Payment cannot be marked as failed in {state.Status} status");
 
         if (string.IsNullOrWhiteSpace(errorCode))
-            return DecisionResult<IEvent>.Failure("Error code is required");
+            return Problem.Create("error-code-required", "Error code is required");
 
-        return DecisionResult<IEvent>.Success(new PaymentFailed(state.PaymentId, errorCode, errorMessage ?? ""));
+        return Decision.Succeed(new PaymentFailed(state.PaymentId, errorCode, errorMessage ?? ""));
     }
 
     public PaymentState Apply(PaymentState state, PaymentFailed e) => state with

@@ -12,7 +12,7 @@ public sealed partial class OrderDecider
     /// <summary>
     /// Creates a new order.
     /// </summary>
-    public static DecisionResult<IEvent> Create(
+    public static Decision Create(
         ICreateOrderState state,
         Guid orderId,
         Guid customerId,
@@ -20,12 +20,12 @@ public sealed partial class OrderDecider
         string? notes = null)
     {
         if (state.Exists)
-            return DecisionResult<IEvent>.Failure($"Order {orderId} already exists");
+            return Problem.Create("order-already-exists", $"Order {orderId} already exists");
 
         if (customerId == Guid.Empty)
-            return DecisionResult<IEvent>.Failure("Customer ID is required");
+            return Problem.Create("customer-id-required", "Customer ID is required");
 
-        return DecisionResult<IEvent>.Success(new OrderCreated(orderId, customerId, lineItems, notes));
+        return Decision.Succeed(new OrderCreated(orderId, customerId, lineItems, notes));
     }
 
     public OrderState Apply(OrderState state, OrderCreated e) => state with
