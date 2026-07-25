@@ -186,12 +186,11 @@ public sealed class PostgresOutboxStore(NpgsqlDataSource dataSource, string? sch
         var status = statusString switch
         {
             "pending" => OutboxEntryStatus.Pending,
+            // 'processing' means the row has been claimed by GetPendingAsync via FOR UPDATE SKIP LOCKED.
+            "processing" => OutboxEntryStatus.Processing,
             "delivered" => OutboxEntryStatus.Delivered,
             "failed" => OutboxEntryStatus.Failed,
-            // 'processing' means the row has been claimed by GetPendingAsync.
-            // Mapped to Pending until OutboxEntryStatus gains a Processing member.
-            "processing" => OutboxEntryStatus.Pending,
-            _ => OutboxEntryStatus.Pending
+            _ => throw new InvalidOperationException($"Unknown outbox entry status: '{statusString}'")
         };
 
         var metadataJson = reader.GetString(5);

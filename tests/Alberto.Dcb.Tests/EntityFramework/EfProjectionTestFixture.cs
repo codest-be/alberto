@@ -1,5 +1,6 @@
 using System.Data.Common;
 using System.Text.Json;
+using Alberto.Dcb.EntityFramework;
 using Alberto.Dcb.Subscriptions;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -62,15 +63,16 @@ public sealed class EfTestDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<CounterEntity>(entity =>
+        // ProjectionEntity applies the (DocumentId, RebuildVersion) key that EfStateStore's
+        // version filtering assumes, so these tests exercise the same model configuration
+        // consumers are told to use.
+        modelBuilder.ProjectionEntity<CounterEntity>(entity =>
         {
             entity.ToTable("ef_test_counters");
-            entity.HasKey(e => e.DocumentId);
             entity.Property(e => e.DocumentId).HasMaxLength(256);
             entity.Property(e => e.Counter);
             entity.Property(e => e.LastProcessedPosition);
             entity.Property(e => e.UpdatedAt);
-            entity.Property(e => e.RebuildVersion).HasDefaultValue(1);
             // Omit xmin-based Version for simplicity; tests inject concurrency exceptions.
         });
     }

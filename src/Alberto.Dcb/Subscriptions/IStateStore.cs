@@ -1,10 +1,8 @@
-using System.Data;
-
 namespace Alberto.Dcb.Subscriptions;
 
 /// <summary>
-/// Transaction-aware state storage for projections.
-/// Supports both inline projections (with transaction) and async projections (without).
+/// State storage used by projection processors.
+/// Each adapter owns the transaction required to apply a set of changes atomically.
 /// </summary>
 /// <typeparam name="TState">The type of state being stored.</typeparam>
 public interface IStateStore<TState>
@@ -13,12 +11,10 @@ public interface IStateStore<TState>
     /// Loads multiple states by their document IDs.
     /// </summary>
     /// <param name="documentIds">The document IDs to load.</param>
-    /// <param name="transaction">Optional transaction for inline projections.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>Dictionary of document ID to state for found documents.</returns>
     Task<Dictionary<string, TState>> LoadManyAsync(
         IEnumerable<string> documentIds,
-        IDbTransaction? transaction = null,
         CancellationToken ct = default);
 
     /// <summary>
@@ -26,21 +22,9 @@ public interface IStateStore<TState>
     /// </summary>
     /// <param name="upserts">States to insert or update, keyed by document ID.</param>
     /// <param name="deletes">Document IDs to delete.</param>
-    /// <param name="transaction">Optional transaction for inline projections.</param>
     /// <param name="ct">Cancellation token.</param>
     Task ApplyChangesAsync(
         IReadOnlyDictionary<string, TState> upserts,
         IReadOnlyCollection<string> deletes,
-        IDbTransaction? transaction = null,
-        CancellationToken ct = default);
-
-    /// <summary>
-    /// Lists recent documents ordered by update time (most recent first).
-    /// </summary>
-    /// <param name="limit">Maximum number of documents to return.</param>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>List of states ordered by most recently updated.</returns>
-    Task<IReadOnlyList<TState>> ListRecentAsync(
-        int limit = 20,
         CancellationToken ct = default);
 }

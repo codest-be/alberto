@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Text.Json;
 using Alberto.Dcb.InMemory;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace Alberto.Dcb.Tests;
@@ -27,6 +28,9 @@ public sealed class CommandPipelineTests
 
     private sealed record ConfirmOrder(Guid OrderId);
 
+    [EventType("pipeline-scope-probe")]
+    private sealed record ScopeProbe : IEvent;
+
     private sealed record OrderState
     {
         public static readonly OrderState Initial = new();
@@ -39,7 +43,7 @@ public sealed class CommandPipelineTests
     public async Task Persist_WithFoldLoad_ShouldUseExpectedPosition()
     {
         var backend = new InMemoryEventStoreBackend();
-        var eventStore = new InMemoryEventStore(backend);
+        var eventStore = new EventStore(backend);
         var serializer = CreateSerializer();
         var store = new AlbertoStore(eventStore, serializer);
         var orderId = Guid.NewGuid();
@@ -63,7 +67,7 @@ public sealed class CommandPipelineTests
     public async Task Persist_WithCustomBoundaryLoad_ShouldUseExpectedPosition()
     {
         var backend = new InMemoryEventStoreBackend();
-        var eventStore = new InMemoryEventStore(backend);
+        var eventStore = new EventStore(backend);
         var serializer = CreateSerializer();
         var store = new AlbertoStore(eventStore, serializer);
         var orderId = Guid.NewGuid();
@@ -92,6 +96,52 @@ public sealed class CommandPipelineTests
                     return Decision.Succeed(new OrderConfirmed { OrderId = orderId });
                 })
                 .Persist(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task AddAlbertoStore_UsesTheEventStoreFromEachDependencyScope()
+    {
+        var services = new ServiceCollection();
+        const string moduleKey = "tenant-module";
+        services.AddKeyedScoped<IEventStore>(moduleKey, (_, _) => new ScopedEventStore());
+        services.AddAlberto(moduleKey, builder => builder
+            .AddAlbertoStore(typeof(AlbertoStore).Assembly));
+
+        await using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions
+            {
+                ValidateScopes = true,
+                ValidateOnBuild = true
+            });
+
+        await using var firstScope = provider.CreateAsyncScope();
+        var firstStore = firstScope.ServiceProvider.GetRequiredService<AlbertoStore>();
+        var firstAdapter = (ScopedEventStore)firstScope.ServiceProvider
+            .GetRequiredKeyedService<IEventStore>(moduleKey);
+
+        var firstResult = await firstStore
+            .Handle("first")
+            .NoValidation()
+            .Decide(_ => Decision.Succeed(new ScopeProbe()))
+            .Persist(DcbQuery.Empty, TestContext.Current.CancellationToken);
+
+        await using var secondScope = provider.CreateAsyncScope();
+        var secondStore = secondScope.ServiceProvider.GetRequiredService<AlbertoStore>();
+        var secondAdapter = (ScopedEventStore)secondScope.ServiceProvider
+            .GetRequiredKeyedService<IEventStore>(moduleKey);
+
+        var secondResult = await secondStore
+            .Handle("second")
+            .NoValidation()
+            .Decide(_ => Decision.Succeed(new ScopeProbe()))
+            .Persist(DcbQuery.Empty, TestContext.Current.CancellationToken);
+
+        Assert.True(firstResult.IsSuccess);
+        Assert.True(secondResult.IsSuccess);
+        Assert.NotSame(firstStore, secondStore);
+        Assert.NotSame(firstAdapter, secondAdapter);
+        Assert.Equal(1, firstAdapter.AppendCount);
+        Assert.Equal(1, secondAdapter.AppendCount);
     }
 
     private static OrderState Apply(OrderState state, IEvent _)
@@ -124,5 +174,36 @@ public sealed class CommandPipelineTests
             ?? throw new InvalidOperationException("EventSerializer private constructor not found.");
 
         return (EventSerializer)ctor.Invoke([registry, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }]);
+    }
+
+    private sealed class ScopedEventStore : IEventStore
+    {
+        public int AppendCount { get; private set; }
+
+        public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
+            IEnumerable<IEventToPersist> events,
+            DcbQuery? dcbQuery = null,
+            long? expectedPosition = null,
+            CancellationToken cancellationToken = default)
+        {
+            AppendCount++;
+            return Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
+        }
+
+        public Task<IReadOnlyCollection<IEventEnvelope>> StreamAsync(
+            DcbQuery query,
+            long afterPosition = 0,
+            int? limit = null,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
+
+        public Task<IReadOnlyCollection<IEventEnvelope>> StreamAllAsync(
+            long afterPosition = 0,
+            int? limit = null,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
+
+        public Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(0L);
     }
 }

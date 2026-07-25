@@ -1,6 +1,6 @@
 using System.CommandLine;
-using Alberto.Cli.Data;
 using Alberto.Cli.Output;
+using Alberto.Dcb.Postgres;
 using Npgsql;
 
 namespace Alberto.Cli.Commands;
@@ -44,9 +44,9 @@ public static class DeadLettersCommand
             try
             {
                 await using var dataSource = new NpgsqlDataSourceBuilder(connStr).Build();
-                var data = new CliDataAccess(dataSource, schemaName);
+                var admin = new PostgresAdminDataAccess(dataSource, schemaName);
 
-                var deadLetters = await data.GetDeadLettersAsync(processor, type, limit);
+                var deadLetters = await admin.GetDeadLettersAsync(processor, type, limit);
 
                 if (json)
                 {

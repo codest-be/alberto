@@ -40,6 +40,15 @@ public sealed class InMemoryCheckpointStore : ICheckpointStore, ICheckpointInven
         }
     }
 
+    public Task RewindAsync(string processorId, long position, CancellationToken ct = default)
+    {
+        lock (_lock)
+        {
+            _checkpoints[processorId] = position;
+            return Task.CompletedTask;
+        }
+    }
+
     /// <summary>
     /// Clears all checkpoints. Useful for testing.
     /// </summary>

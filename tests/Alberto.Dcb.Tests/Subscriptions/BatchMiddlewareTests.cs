@@ -55,7 +55,7 @@ public sealed class BatchMiddlewareTests
             order.Add(3);
         };
 
-        await BatchMiddlewareRunner.RunAsync(
+        await MiddlewareRunner.RunAsync(
             MakeContext(ct: TestContext.Current.CancellationToken),
             [first, second],
             () =>
@@ -78,7 +78,7 @@ public sealed class BatchMiddlewareTests
 
         var context = MakeContext(ct: TestContext.Current.CancellationToken);
 
-        await BatchMiddlewareRunner.RunAsync(
+        await MiddlewareRunner.RunAsync(
             context,
             [middleware],
             () => throw new InvalidOperationException("always fails"));
@@ -103,7 +103,7 @@ public sealed class BatchMiddlewareTests
             TestContext.Current.CancellationToken);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            BatchMiddlewareRunner.RunAsync(
+            MiddlewareRunner.RunAsync(
                 context,
                 [middleware],
                 () => throw new InvalidOperationException("always fails")));

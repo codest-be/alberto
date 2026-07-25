@@ -4,6 +4,9 @@ using Alberto.Payments.Infrastructure.ReadModels;
 
 namespace Alberto.Payments.Infrastructure.Projections;
 
+/// <summary>
+/// One row per payment, tracking where it got to in the authorize/capture/refund lifecycle.
+/// </summary>
 public static class PaymentSummaryProjection
 {
     public static readonly ProjectionDeclaration<PaymentSummary> Declaration =

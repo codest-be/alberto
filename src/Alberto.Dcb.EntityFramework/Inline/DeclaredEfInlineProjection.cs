@@ -1,4 +1,3 @@
-using System.Data;
 using System.Data.Common;
 using Alberto.Dcb.Subscriptions;
 using Microsoft.EntityFrameworkCore;
@@ -66,7 +65,6 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : IInlineP
     /// <inheritdoc/>
     public async Task ProcessAsync(
         IReadOnlyList<IEventEnvelope> events,
-        IDbTransaction? transaction = null,
         CancellationToken ct = default)
     {
         // Build doc-id map up front so we can load all affected rows in one query.
@@ -86,20 +84,15 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : IInlineP
 
         var documentKeys = docIdMap.Values.Distinct().ToList();
 
-        // Retry only makes sense when we own the transaction. With an external transaction,
-        // a concurrency exception aborts the whole transaction and reissuing SaveChanges
-        // would fail; the caller has to retry the entire append.
-        var ownsTransaction = transaction is null;
-
         var attempt = 0;
         while (true)
         {
             try
             {
-                await ProcessOnceAsync(events, docIdMap, documentKeys, transaction, ct);
+                await ProcessOnceAsync(events, docIdMap, documentKeys, ct);
                 return;
             }
-            catch (Exception ex) when (ownsTransaction && IsRetryableConflict(ex))
+            catch (Exception ex) when (IsRetryableConflict(ex))
             {
                 attempt++;
                 if (attempt >= MaxConcurrencyRetries)
@@ -135,17 +128,9 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : IInlineP
         IReadOnlyList<IEventEnvelope> events,
         Dictionary<IEventEnvelope, string> docIdMap,
         List<string> documentKeys,
-        IDbTransaction? transaction,
         CancellationToken ct)
     {
         await using var context = await _contextFactory.CreateDbContextAsync(ct);
-
-        // Join the append transaction if one was provided. Today the event store always
-        // passes null — inline runs in its own transaction directly after the append commits.
-        if (transaction is System.Data.Common.DbTransaction dbTransaction)
-        {
-            await context.Database.UseTransactionAsync(dbTransaction, ct);
-        }
 
         // Load existing rows untracked: the projection rebuilds the entity by `with`-ing the
         // loaded state, producing a new instance that we then Update/Add. If the original

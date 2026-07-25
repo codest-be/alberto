@@ -1,4 +1,3 @@
-using System.Data;
 using System.Text.Json;
 using Alberto.Dcb.InMemory;
 using Alberto.Dcb.Subscriptions;
@@ -7,9 +6,9 @@ using Xunit;
 namespace Alberto.Dcb.Tests;
 
 /// <summary>
-/// Tests for InMemoryEventStore, focusing on inline projection support.
+/// Behavioral tests for the backend-agnostic <see cref="EventStore"/>.
 /// </summary>
-public sealed class InMemoryEventStoreTests
+public sealed class EventStoreTests
 {
     #region Test Events
 
@@ -18,6 +17,105 @@ public sealed class InMemoryEventStoreTests
 
     [EventType("order-confirmed")]
     public record OrderConfirmed(Guid OrderId) : IEvent;
+
+    #endregion
+
+    #region Orchestration Tests
+
+    [Fact]
+    public async Task AppendAsync_RunsProjectionBeforePostAppendHandler()
+    {
+        var calls = new List<string>();
+        var projection = new RecordingProjection(calls);
+        var handler = new RecordingPostAppendHandler(calls);
+        var eventStore = new EventStore(
+            new InMemoryEventStoreBackend(),
+            [projection],
+            [handler]);
+
+        await eventStore.AppendAsync(
+            [
+                CreateEvent(new OrderCreated(Guid.NewGuid(), 100m)),
+                new EventToPersist
+                {
+                    EventType = new EventType("unrelated-event"),
+                    Tags = [],
+                    EventData = "{}"
+                }
+            ],
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(["projection", "handler"], calls);
+        Assert.Single(projection.Received);
+        Assert.Single(handler.Received);
+        Assert.Equal("order-created", projection.Received[0].EventType.Id);
+        Assert.Equal("order-created", handler.Received[0].EventType.Id);
+    }
+
+    [Fact]
+    public async Task AppendAsync_ProjectionFailure_SkipsPostAppendHandlersButKeepsPersistedEvent()
+    {
+        var handler = new RecordingPostAppendHandler([]);
+        var eventStore = new EventStore(
+            new InMemoryEventStoreBackend(),
+            [new ThrowingProjection()],
+            [handler]);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            eventStore.AppendAsync(
+                [CreateEvent(new OrderCreated(Guid.NewGuid(), 100m))],
+                cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Empty(handler.Received);
+        var persisted = await eventStore.StreamAllAsync(
+            cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Single(persisted);
+    }
+
+    private sealed class RecordingProjection(List<string> calls) : IInlineProjection
+    {
+        public IReadOnlySet<string> HandledEventTypes { get; } =
+            new HashSet<string>(StringComparer.Ordinal) { "order-created" };
+
+        public List<IEventEnvelope> Received { get; } = [];
+
+        public Task ProcessAsync(
+            IReadOnlyList<IEventEnvelope> events,
+            CancellationToken ct = default)
+        {
+            calls.Add("projection");
+            Received.AddRange(events);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class RecordingPostAppendHandler(List<string> calls) : IPostAppendHandler
+    {
+        public IReadOnlySet<string> HandledEventTypes { get; } =
+            new HashSet<string>(StringComparer.Ordinal) { "order-created" };
+
+        public List<IEventEnvelope> Received { get; } = [];
+
+        public Task ProcessAsync(
+            IReadOnlyList<IEventEnvelope> events,
+            CancellationToken ct)
+        {
+            calls.Add("handler");
+            Received.AddRange(events);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class ThrowingProjection : IInlineProjection
+    {
+        public IReadOnlySet<string> HandledEventTypes { get; } =
+            new HashSet<string>(StringComparer.Ordinal) { "order-created" };
+
+        public Task ProcessAsync(
+            IReadOnlyList<IEventEnvelope> events,
+            CancellationToken ct = default) =>
+            throw new InvalidOperationException("projection failed");
+    }
 
     #endregion
 
@@ -57,7 +155,6 @@ public sealed class InMemoryEventStoreTests
 
         public Task<Dictionary<string, TState>> LoadManyAsync(
             IEnumerable<string> documentIds,
-            IDbTransaction? transaction = null,
             CancellationToken ct = default)
         {
             var result = new Dictionary<string, TState>();
@@ -72,7 +169,6 @@ public sealed class InMemoryEventStoreTests
         public Task ApplyChangesAsync(
             IReadOnlyDictionary<string, TState> upserts,
             IReadOnlyCollection<string> deletes,
-            IDbTransaction? transaction = null,
             CancellationToken ct = default)
         {
             foreach (var (id, state) in upserts)
@@ -84,13 +180,6 @@ public sealed class InMemoryEventStoreTests
             return Task.CompletedTask;
         }
 
-        public Task<IReadOnlyList<TState>> ListRecentAsync(
-            int limit = 20,
-            CancellationToken ct = default)
-        {
-            IReadOnlyList<TState> result = _store.Values.Take(limit).ToList();
-            return Task.FromResult(result);
-        }
     }
 
     #endregion
@@ -100,7 +189,7 @@ public sealed class InMemoryEventStoreTests
     [Fact]
     public async Task AppendAsync_ShouldRunInlineProjections()
     {
-        var eventStore = new InMemoryEventStore(new InMemoryEventStoreBackend());
+        var eventStore = new EventStore(new InMemoryEventStoreBackend());
         var stateStore = new InMemoryStateStore<OrderSummary>();
         eventStore.RegisterInlineProjection<OrderSummary, OrderSummaryProjection>(stateStore);
 
@@ -117,7 +206,7 @@ public sealed class InMemoryEventStoreTests
     [Fact]
     public async Task AppendAsync_ShouldUpdateProjectionWithSubsequentEvents()
     {
-        var eventStore = new InMemoryEventStore(new InMemoryEventStoreBackend());
+        var eventStore = new EventStore(new InMemoryEventStoreBackend());
         var stateStore = new InMemoryStateStore<OrderSummary>();
         eventStore.RegisterInlineProjection<OrderSummary, OrderSummaryProjection>(stateStore);
 
@@ -134,7 +223,7 @@ public sealed class InMemoryEventStoreTests
     [Fact]
     public async Task AppendAsync_ShouldHandleMultipleEventsInSingleAppend()
     {
-        var eventStore = new InMemoryEventStore(new InMemoryEventStoreBackend());
+        var eventStore = new EventStore(new InMemoryEventStoreBackend());
         var stateStore = new InMemoryStateStore<OrderSummary>();
         eventStore.RegisterInlineProjection<OrderSummary, OrderSummaryProjection>(stateStore);
 
@@ -153,7 +242,7 @@ public sealed class InMemoryEventStoreTests
     [Fact]
     public async Task AppendAsync_ShouldNotRunProjectionsWhenNoRelevantEvents()
     {
-        var eventStore = new InMemoryEventStore(new InMemoryEventStoreBackend());
+        var eventStore = new EventStore(new InMemoryEventStoreBackend());
         var stateStore = new InMemoryStateStore<OrderSummary>();
         eventStore.RegisterInlineProjection<OrderSummary, OrderSummaryProjection>(stateStore);
 
@@ -170,7 +259,7 @@ public sealed class InMemoryEventStoreTests
     [Fact]
     public async Task AppendAsync_WithoutProjections_ShouldStillWork()
     {
-        var eventStore = new InMemoryEventStore(new InMemoryEventStoreBackend());
+        var eventStore = new EventStore(new InMemoryEventStoreBackend());
 
         var orderId = Guid.NewGuid();
         var result = await eventStore.AppendAsync([CreateEvent(new OrderCreated(orderId, 100m))], cancellationToken: TestContext.Current.CancellationToken);
@@ -185,7 +274,7 @@ public sealed class InMemoryEventStoreTests
     [Fact]
     public async Task StreamAsync_ShouldDelegateToBackend()
     {
-        var eventStore = new InMemoryEventStore(new InMemoryEventStoreBackend());
+        var eventStore = new EventStore(new InMemoryEventStoreBackend());
         var orderId = Guid.NewGuid();
 
         await eventStore.AppendAsync([CreateEvent(new OrderCreated(orderId, 100m))], cancellationToken: TestContext.Current.CancellationToken);
@@ -199,7 +288,7 @@ public sealed class InMemoryEventStoreTests
     [Fact]
     public async Task StreamAllAsync_ShouldDelegateToBackend()
     {
-        var eventStore = new InMemoryEventStore(new InMemoryEventStoreBackend());
+        var eventStore = new EventStore(new InMemoryEventStoreBackend());
 
         await eventStore.AppendAsync([CreateEvent(new OrderCreated(Guid.NewGuid(), 100m))], cancellationToken: TestContext.Current.CancellationToken);
         await eventStore.AppendAsync([CreateEvent(new OrderCreated(Guid.NewGuid(), 200m))], cancellationToken: TestContext.Current.CancellationToken);
@@ -212,7 +301,7 @@ public sealed class InMemoryEventStoreTests
     [Fact]
     public async Task GetLastPositionAsync_ShouldDelegateToBackend()
     {
-        var eventStore = new InMemoryEventStore(new InMemoryEventStoreBackend());
+        var eventStore = new EventStore(new InMemoryEventStoreBackend());
 
         await eventStore.AppendAsync([CreateEvent(new OrderCreated(Guid.NewGuid(), 100m))], cancellationToken: TestContext.Current.CancellationToken);
         await eventStore.AppendAsync([CreateEvent(new OrderCreated(Guid.NewGuid(), 200m))], cancellationToken: TestContext.Current.CancellationToken);

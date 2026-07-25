@@ -133,6 +133,17 @@ public sealed record PostgresBackendDescriptor(PostgresOptions Options) : IAlber
             return new PostgresDeadLetterStore(dataSource, opts.Schema);
         });
 
+        // Projection rebuild store — always registered; nothing happens until an operator
+        // starts a rebuild, and a module that never calls WithRebuilds() simply has no
+        // coordinator to act on it.
+        services.AddKeyedSingleton<IProjectionRebuildStore>(moduleKey, (sp, _) =>
+        {
+            var definition = sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>().Get(moduleKey);
+            var opts = definition.Backend is PostgresBackendDescriptor desc ? desc.Options : Options;
+            var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
+            return new PostgresProjectionRebuildStore(dataSource, opts.Schema);
+        });
+
         // Processor lock (single-leader mode — schema-less, no Options needed).
         services.AddKeyedSingleton<IProcessorLock>(moduleKey, (sp, _) =>
         {

@@ -18,6 +18,14 @@ public static class BatchConsumeMiddlewares
     /// Retries a batch as a unit. If the batch still fails after retries,
     /// a single-event batch is dead-lettered; larger batches bubble the
     /// failure so the control loop can isolate the poison event by splitting.
+    /// The retry loop is shared with <see cref="ConsumeMiddlewares.RetryAndDeadLetter"/>
+    /// via <see cref="RetryAndDeadLetterCore"/>; this method owns only the
+    /// batch-specific tail:
+    /// <list type="bullet">
+    ///   <item>Multi-event batches: rethrow via <see cref="BatchSplittingRethrow"/>
+    ///   so the caller can bisect the batch to isolate the poison event.</item>
+    ///   <item>Single-event batches: dead-letter in place.</item>
+    /// </list>
     /// </summary>
     public static BatchConsumeMiddleware RetryAndDeadLetter(
         RetryOptions retry,
@@ -26,45 +34,20 @@ public static class BatchConsumeMiddlewares
     {
         return async (context, next) =>
         {
-            Exception? lastError = null;
+            // retryMetricCount is evaluated at dispatch time (inside the lambda)
+            // so it reflects the actual batch size for the current invocation.
+            var lastError = await RetryAndDeadLetterCore.ExecuteAsync(
+                context, retry, classifier, next, retryMetricCount: context.Envelopes.Count);
 
-            for (var attempt = 1; attempt <= retry.MaxRetries + 1; attempt++)
-            {
-                context.Attempt = attempt;
-                try
-                {
-                    await next();
-                    context.LastError = null;
-                    return;
-                }
-                catch (OperationCanceledException) when (context.CancellationToken.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    lastError = ex;
-                    context.LastError = ex;
+            if (lastError is null)
+                return; // success
 
-                    var classification = classifier.Classify(ex);
-                    if (classification == ErrorClassification.Permanent)
-                        break;
+            // Batch-splitting rethrow: bubble the failure for multi-event batches
+            // so the control loop can bisect the batch to isolate the poison event.
+            // For single-event batches this is a no-op and we continue to dead-letter.
+            BatchSplittingRethrow(context, lastError);
 
-                    if (attempt <= retry.MaxRetries)
-                    {
-                        AlbertoMetrics.Retries.Add(
-                            context.Envelopes.Count,
-                            new KeyValuePair<string, object?>("processor", context.ProcessorId),
-                            new KeyValuePair<string, object?>("module", context.ModuleKey));
-
-                        await Task.Delay(retry.CalculateDelay(attempt), context.CancellationToken);
-                    }
-                }
-            }
-
-            if (context.Envelopes.Count > 1)
-                throw lastError ?? new InvalidOperationException("Batch processing failed without an exception.");
-
+            // Single-event batch — dead-letter in place.
             context.DeadLetteredCount = 1;
 
             AlbertoMetrics.DeadLetters.Add(
@@ -72,7 +55,7 @@ public static class BatchConsumeMiddlewares
                 new KeyValuePair<string, object?>("processor", context.ProcessorId),
                 new KeyValuePair<string, object?>("module", context.ModuleKey));
 
-            if (!retry.DeadLetterOnMaxRetries || deadLetterStore is null || lastError is null)
+            if (!retry.DeadLetterOnMaxRetries || deadLetterStore is null)
                 return;
 
             var envelope = context.Envelopes[0];
@@ -90,5 +73,16 @@ public static class BatchConsumeMiddlewares
                     GlobalPosition: envelope.GlobalPosition),
                 context.CancellationToken);
         };
+    }
+
+    /// <summary>
+    /// Rethrows the batch failure when the batch contains more than one event,
+    /// so the caller can bisect the batch to isolate the poison event.
+    /// Does nothing for single-event batches (they are dead-lettered in-place).
+    /// </summary>
+    private static void BatchSplittingRethrow(BatchConsumeContext context, Exception? lastError)
+    {
+        if (context.Envelopes.Count > 1)
+            throw lastError ?? new InvalidOperationException("Batch processing failed without an exception.");
     }
 }

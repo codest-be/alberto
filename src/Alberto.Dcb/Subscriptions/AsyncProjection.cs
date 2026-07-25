@@ -39,7 +39,7 @@ internal sealed class AsyncProjection<TState, TProjection> : IEventProcessor, IF
             state = pendingState;
         else
         {
-            var states = await stateStore.LoadManyAsync([docId], transaction: null, ct);
+            var states = await stateStore.LoadManyAsync([docId], ct);
             state = states.GetValueOrDefault(docId) ?? new TState();
         }
 
@@ -68,7 +68,7 @@ internal sealed class AsyncProjection<TState, TProjection> : IEventProcessor, IF
     {
         var stateStore = GetStore();
         var docIds = events.Select(e => _projection.GetDocumentId(e)).Distinct().ToList();
-        var states = await stateStore.LoadManyAsync(docIds, transaction: null, ct);
+        var states = await stateStore.LoadManyAsync(docIds, ct);
 
         var upserts = new Dictionary<string, TState>();
         var deletes = new HashSet<string>();
@@ -107,7 +107,7 @@ internal sealed class AsyncProjection<TState, TProjection> : IEventProcessor, IF
         }
 
         if (upserts.Count > 0 || deletes.Count > 0)
-            await stateStore.ApplyChangesAsync(upserts, deletes.ToList(), transaction: null, ct);
+            await stateStore.ApplyChangesAsync(upserts, deletes.ToList(), ct);
     }
 
     public async Task FlushAsync(CancellationToken ct = default)
@@ -121,7 +121,7 @@ internal sealed class AsyncProjection<TState, TProjection> : IEventProcessor, IF
         _pendingUpserts.Clear();
         _pendingDeletes.Clear();
 
-        await stateStore.ApplyChangesAsync(upserts, deletes, transaction: null, ct);
+        await stateStore.ApplyChangesAsync(upserts, deletes, ct);
     }
 
     public async ValueTask DisposeAsync()

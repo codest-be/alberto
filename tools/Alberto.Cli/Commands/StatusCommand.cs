@@ -1,6 +1,6 @@
 using System.CommandLine;
-using Alberto.Cli.Data;
 using Alberto.Cli.Output;
+using Alberto.Dcb.Postgres;
 using Npgsql;
 
 namespace Alberto.Cli.Commands;
@@ -37,11 +37,11 @@ public static class StatusCommand
             try
             {
                 await using var dataSource = new NpgsqlDataSourceBuilder(connStr).Build();
-                var data = new CliDataAccess(dataSource, schemaName);
+                var admin = new PostgresAdminDataAccess(dataSource, schemaName);
 
-                var globalPosition = await data.GetGlobalPositionAsync();
-                var processors = await data.GetProcessorsAsync();
-                var deadLetterCount = await data.CountDeadLettersAsync(null);
+                var globalPosition = await admin.GetGlobalPositionAsync();
+                var processors = await admin.GetProcessorsAsync();
+                var deadLetterCount = await admin.CountAllDeadLettersAsync();
 
                 if (json)
                 {

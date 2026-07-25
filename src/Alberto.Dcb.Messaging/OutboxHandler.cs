@@ -1,4 +1,5 @@
 using Alberto.Dcb.Subscriptions;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Alberto.Dcb.Messaging;
 
@@ -9,7 +10,7 @@ namespace Alberto.Dcb.Messaging;
 internal sealed class OutboxHandler(
     IMessageMappingRegistry registry,
     IOutboxStore store,
-    IServiceProvider serviceProvider) : IEventProcessor, IBatchableProcessor
+    IServiceScopeFactory scopeFactory) : IEventProcessor, IBatchableProcessor
 {
     internal const string ProcessorIdValue = "outbox";
 
@@ -28,7 +29,7 @@ internal sealed class OutboxHandler(
     /// <inheritdoc/>
     public async Task ProcessEventAsync(IEventEnvelope envelope, CancellationToken ct)
     {
-        var message = await registry.TryMapAsync(envelope, serviceProvider, ct);
+        var message = await MapAsync(envelope, ct);
         if (message is null) return;
         await store.InsertAsync(BuildEntry(message, envelope.Id), ct);
     }
@@ -43,13 +44,19 @@ internal sealed class OutboxHandler(
     public async Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct)
     {
         var messages = await Task.WhenAll(
-            events.Select(e => registry.TryMapAsync(e, serviceProvider, ct).AsTask()));
+            events.Select(e => MapAsync(e, ct)));
 
         await Task.WhenAll(
             messages
                 .Select((m, i) => (Message: m, EventId: events[i].Id))
                 .Where(x => x.Message is not null)
                 .Select(x => store.InsertAsync(BuildEntry(x.Message!, x.EventId), ct)));
+    }
+
+    private async Task<ExternalMessage?> MapAsync(IEventEnvelope envelope, CancellationToken ct)
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        return await registry.TryMapAsync(envelope, scope.ServiceProvider, ct);
     }
 
     private static OutboxEntry BuildEntry(ExternalMessage message, Guid sourceEventId) =>

@@ -115,6 +115,25 @@ public sealed class AlbertoModuleValidator : IValidateOptions<AlbertoModuleDefin
                 $"ControlLoop.Retry.BackoffMultiplier is {loop.Retry.BackoffMultiplier}, which would shrink the delay on each retry.",
                 $"Use 1.0 for a constant delay, or a larger value to back off, via '{path}:ControlLoop:Retry:BackoffMultiplier'."));
         }
+
+        if (loop.Rebuilds.Enabled)
+        {
+            if (loop.Rebuilds.PollingInterval <= TimeSpan.Zero)
+            {
+                failures.Add(new AlbertoValidationFailure(
+                    "ALB0009",
+                    $"ControlLoop.Rebuilds.PollingInterval is {loop.Rebuilds.PollingInterval}, which is not a positive duration.",
+                    $"Set a positive interval via .WithRebuilds(pollingInterval: ...) or '{path}:ControlLoop:Rebuilds:PollingInterval'."));
+            }
+
+            if (loop.Rebuilds.VersionRefreshInterval <= TimeSpan.Zero)
+            {
+                failures.Add(new AlbertoValidationFailure(
+                    "ALB0009",
+                    $"ControlLoop.Rebuilds.VersionRefreshInterval is {loop.Rebuilds.VersionRefreshInterval}, which is not a positive duration.",
+                    $"Set a positive interval via .WithRebuilds(pollingInterval: ...) or '{path}:ControlLoop:Rebuilds:VersionRefreshInterval'."));
+            }
+        }
     }
 
     private static void ValidateUnknownKeys(AlbertoModuleDefinition definition, List<AlbertoValidationFailure> failures)

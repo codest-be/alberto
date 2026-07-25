@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Alberto.Dcb;
 using Alberto.Dcb.Postgres;
+using Alberto.Dcb.Subscriptions;
 using Alberto.Orders.Api.GraphQL.Types;
 using Alberto.Payments.Core.Events;
 using Alberto.Payments.Core.Payment;
@@ -89,9 +90,14 @@ public static class PaymentQueries
         string projectionType)
     {
         var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(PaymentsModule.ModuleKey);
-        return new PostgresStateStore<TState>(dataSource,
+
+        // Named arguments, and LiveVersion rather than the default: a read side that pins its
+        // rebuild version keeps serving the old copy after a rebuild is promoted.
+        return new PostgresStateStore<TState>(
+            dataSource,
             projectionType: projectionType,
             schema: "payments",
+            rebuildVersion: ProjectionVersions.LiveVersion(sp, PaymentsModule.ModuleKey, projectionType),
             tenantId: tenantId);
     }
 

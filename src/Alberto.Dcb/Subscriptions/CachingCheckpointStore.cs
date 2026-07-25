@@ -70,21 +70,40 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
             return cached;
         }
 
-        // Load from store and cache
+        // Load from store and cache. A SaveAsync can land while this read is in flight, and
+        // seeding the cache with the row as it stood before that write would hand the next
+        // caller a position the processor has already passed — the control loop re-streams from
+        // its checkpoint every pass, so it would deliver that whole batch a second time. Neither
+        // map moves backwards here; the two paths that *do* lower a checkpoint (an operator
+        // rewind, and external-reset detection) are deliberate and say so.
         var position = await _inner.GetAsync(processorId, ct);
-        _cache[processorId] = position;
-        _persisted[processorId] = position;
-        return position;
+
+        _persisted.AddOrUpdate(processorId, position, (_, concurrent) => Ahead(concurrent, position));
+        return _cache.AddOrUpdate(processorId, position, (_, concurrent) => Ahead(concurrent, position));
     }
+
+    /// <summary>
+    /// The further-advanced of two positions, treating "no checkpoint yet" as behind any.
+    /// </summary>
+    private static long? Ahead(long? left, long? right) =>
+        left is null ? right
+        : right is null ? left
+        : Math.Max(left.Value, right.Value);
 
     public Task SaveAsync(string processorId, long position, CancellationToken ct = default)
     {
-        // Update cache immediately
-        _cache[processorId] = position;
+        // Update cache immediately, monotonically. PostgresCheckpointStore's write is a
+        // GREATEST, so a cache that let a position go backwards would disagree with the store
+        // it fronts — and a processor whose checkpoint slips back re-delivers everything in
+        // between. RewindAsync is how a checkpoint moves backwards, and it bypasses this buffer.
+        _cache.AddOrUpdate(processorId, position, (_, existing) => Ahead(existing, position));
 
         // Stamp the current generation so FlushAsync can discard entries written during
         // a fence-violation race window (generation will have been bumped past this value).
-        _dirty[processorId] = (position, _cacheGeneration);
+        _dirty.AddOrUpdate(
+            processorId,
+            (position, _cacheGeneration),
+            (_, existing) => (Math.Max(existing.Position, position), _cacheGeneration));
 
         // Don't write to DB immediately - the timer will flush periodically
         return Task.CompletedTask;
@@ -99,6 +118,18 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
 
         // Reset in underlying store immediately
         await _inner.ResetAsync(processorId, ct);
+    }
+
+    public async Task RewindAsync(string processorId, long position, CancellationToken ct = default)
+    {
+        // Operator rewinds bypass the write buffer and go directly to the underlying store
+        // so the write is unconditional and immediately durable.
+        // Update all cache layers so subsequent in-process reads reflect the new position.
+        _cache[processorId] = position;
+        _persisted[processorId] = position;
+        _dirty.TryRemove(processorId, out _);
+
+        await _inner.RewindAsync(processorId, position, ct);
     }
 
     /// <summary>
@@ -152,10 +183,14 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
 
             var storePosition = await _inner.GetAsync(processorId, ct);
 
-            // Detect external reset: DB value is lower than (or deleted vs) our cached value
-            if (cachedPosition is not null && (storePosition is null || storePosition < cachedPosition))
+            // Detect external reset: DB value is lower than (or deleted vs) our cached value.
+            // Swapped against the value this pass read rather than assigned: a SaveAsync that
+            // landed while the store read was in flight is a processor advancing past the point
+            // we are about to lower it to, not an external reset, and lowering it anyway would
+            // make the control loop redeliver everything in between.
+            if (cachedPosition is not null && (storePosition is null || storePosition < cachedPosition)
+                && _cache.TryUpdate(processorId, storePosition, cachedPosition))
             {
-                _cache[processorId] = storePosition;
                 _persisted[processorId] = storePosition;
                 _logger?.LogWarning(
                     "Checkpoint for processor {ProcessorId} was externally reset from {CachedPosition} to {StorePosition}",
@@ -248,11 +283,19 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
         if (!_persisted.TryGetValue(processorId, out var persistedPosition) || persistedPosition is null)
             return false;
 
+        _cache.TryGetValue(processorId, out var cachedBefore);
+
         var storePosition = await _inner.GetAsync(processorId, ct);
         if (storePosition is not null && storePosition >= persistedPosition)
             return false;
 
-        _cache[processorId] = storePosition;
+        // Same compare-and-swap as the resync path: only lower the cache if nothing advanced it
+        // while the read was in flight. Losing the race means the pending write goes ahead this
+        // round and the next flush re-detects the reset against a settled cache — convergent,
+        // and it never rolls a running processor backwards.
+        if (!_cache.TryUpdate(processorId, storePosition, cachedBefore))
+            return false;
+
         _persisted[processorId] = storePosition;
         _dirty.TryRemove(processorId, out _);
 

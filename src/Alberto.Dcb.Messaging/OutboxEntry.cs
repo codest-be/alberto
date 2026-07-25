@@ -8,6 +8,9 @@ public enum OutboxEntryStatus
     /// <summary>Entry is waiting to be delivered.</summary>
     Pending,
 
+    /// <summary>Entry has been claimed by a relay instance and is currently being delivered.</summary>
+    Processing,
+
     /// <summary>Entry was successfully delivered to the transport.</summary>
     Delivered,
 

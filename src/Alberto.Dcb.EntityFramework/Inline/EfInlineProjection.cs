@@ -1,4 +1,3 @@
-using System.Data;
 using System.Data.Common;
 using Alberto.Dcb.Subscriptions;
 using Microsoft.EntityFrameworkCore;
@@ -9,7 +8,7 @@ namespace Alberto.Dcb.EntityFramework.Inline;
 
 /// <summary>
 /// Inline projection that uses Entity Framework for storage.
-/// Runs within the event append transaction for strong consistency.
+/// Runs synchronously after event persistence for read-your-writes consistency.
 /// </summary>
 /// <typeparam name="TEntity">The EF entity type implementing <see cref="IProjectionEntity"/>.</typeparam>
 /// <typeparam name="TProjection">The projection type.</typeparam>
@@ -49,7 +48,6 @@ internal sealed class EfInlineProjection<TEntity, TProjection, TDbContext> : IIn
     /// <inheritdoc/>
     public async Task ProcessAsync(
         IReadOnlyList<IEventEnvelope> events,
-        IDbTransaction? transaction = null,
         CancellationToken ct = default)
     {
         // Filter to events we handle and group by document ID using an explicit loop to avoid
@@ -76,17 +74,15 @@ internal sealed class EfInlineProjection<TEntity, TProjection, TDbContext> : IIn
         // Hoist the key list once — it doesn't change between retries.
         var documentKeys = byDocument.Keys.ToList();
 
-        var ownsTransaction = transaction is null;
-
         var attempt = 0;
         while (true)
         {
             try
             {
-                await ProcessOnceAsync(byDocument, documentKeys, transaction, ct);
+                await ProcessOnceAsync(byDocument, documentKeys, ct);
                 return;
             }
-            catch (Exception ex) when (ownsTransaction && IsRetryableConflict(ex))
+            catch (Exception ex) when (IsRetryableConflict(ex))
             {
                 attempt++;
                 if (attempt >= MaxConcurrencyRetries)
@@ -120,16 +116,9 @@ internal sealed class EfInlineProjection<TEntity, TProjection, TDbContext> : IIn
     private async Task ProcessOnceAsync(
         Dictionary<string, List<IEventEnvelope>> byDocument,
         List<string> documentKeys,
-        IDbTransaction? transaction,
         CancellationToken ct)
     {
         await using var context = await _contextFactory.CreateDbContextAsync(ct);
-
-        // Join the transaction if provided
-        if (transaction is System.Data.Common.DbTransaction dbTransaction)
-        {
-            await context.Database.UseTransactionAsync(dbTransaction, ct);
-        }
 
         // Load current state for all affected documents.
         // Untracked: Apply may produce a fresh entity instance that we then Update; if the

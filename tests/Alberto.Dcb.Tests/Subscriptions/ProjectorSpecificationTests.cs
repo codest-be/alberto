@@ -1,4 +1,3 @@
-using System.Data;
 using System.Text.Json;
 using Alberto.Dcb.Subscriptions;
 using Xunit;
@@ -69,7 +68,6 @@ public class ProjectorSpecificationTests
 
         public Task<Dictionary<string, OrderSummary>> LoadManyAsync(
             IEnumerable<string> documentIds,
-            IDbTransaction? transaction = null,
             CancellationToken ct = default)
         {
             var result = new Dictionary<string, OrderSummary>();
@@ -84,7 +82,6 @@ public class ProjectorSpecificationTests
         public Task ApplyChangesAsync(
             IReadOnlyDictionary<string, OrderSummary> upserts,
             IReadOnlyCollection<string> deletes,
-            IDbTransaction? transaction = null,
             CancellationToken ct = default)
         {
             foreach (var (id, state) in upserts)
@@ -101,13 +98,6 @@ public class ProjectorSpecificationTests
             return Task.CompletedTask;
         }
 
-        public Task<IReadOnlyList<OrderSummary>> ListRecentAsync(
-            int limit = 20,
-            CancellationToken ct = default)
-        {
-            IReadOnlyList<OrderSummary> result = _store.Values.Take(limit).ToList();
-            return Task.FromResult(result);
-        }
     }
 
     #endregion
@@ -372,24 +362,14 @@ public class ProjectorSpecificationTests
     {
         public Task<Dictionary<string, OrderSummary>> LoadManyAsync(
             IEnumerable<string> documentIds,
-            IDbTransaction? transaction = null,
             CancellationToken ct = default)
             => Task.FromResult(new Dictionary<string, OrderSummary>());
 
         public Task ApplyChangesAsync(
             IReadOnlyDictionary<string, OrderSummary> upserts,
             IReadOnlyCollection<string> deletes,
-            IDbTransaction? transaction = null,
             CancellationToken ct = default)
             => throw new InvalidOperationException("Simulated batch failure");
-
-        public Task<IReadOnlyList<OrderSummary>> ListRecentAsync(
-            int limit = 20,
-            CancellationToken ct = default)
-        {
-            IReadOnlyList<OrderSummary> result = [];
-            return Task.FromResult(result);
-        }
     }
 
     #endregion

@@ -169,6 +169,18 @@ public class ErrorPolicyTests
         Assert.False(retry.DeadLetterOnMaxRetries);
     }
 
+    [Fact]
+    public void MaxRetries_Zero_IsAllowed()
+    {
+        // Zero means "attempt once, never retry" - the attempt loop still runs.
+        var retry = new RetryOptions { MaxRetries = 0 };
+
+        Assert.Equal(0, retry.MaxRetries);
+    }
+
+    // MaxRetries < 0 is now rejected at module startup by AlbertoModuleValidator (ALB0007)
+    // rather than at construction time. See AlbertoModuleValidatorTests.A_negative_retry_count_fails_with_ALB0007.
+
     #endregion
 
 }

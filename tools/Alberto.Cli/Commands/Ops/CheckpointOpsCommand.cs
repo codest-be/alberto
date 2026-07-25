@@ -1,6 +1,6 @@
 using System.CommandLine;
-using Alberto.Cli.Data;
 using Alberto.Cli.Output;
+using Alberto.Dcb.Postgres;
 using Npgsql;
 using Spectre.Console;
 
@@ -51,8 +51,8 @@ public static class CheckpointOpsCommand
             try
             {
                 await using var dataSource = new NpgsqlDataSourceBuilder(connStr).Build();
-                var data = new CliDataAccess(dataSource, schemaName);
-                var checkpoint = await data.GetSingleCheckpointAsync(id);
+                var admin = new PostgresAdminDataAccess(dataSource, schemaName);
+                var checkpoint = await admin.GetSingleCheckpointAsync(id);
 
                 if (checkpoint is null)
                 {
@@ -126,8 +126,9 @@ public static class CheckpointOpsCommand
             try
             {
                 await using var dataSource = new NpgsqlDataSourceBuilder(connStr).Build();
-                var data = new CliDataAccess(dataSource, schemaName);
-                var checkpoint = await data.GetSingleCheckpointAsync(id);
+                var admin = new PostgresAdminDataAccess(dataSource, schemaName);
+                var checkpointStore = new PostgresCheckpointStore(dataSource, schemaName);
+                var checkpoint = await admin.GetSingleCheckpointAsync(id);
                 var previousPosition = checkpoint?.LastPosition;
 
                 if (dryRun)
@@ -159,7 +160,7 @@ public static class CheckpointOpsCommand
                     }
                 }
 
-                await data.ResetCheckpointAsync(id);
+                await checkpointStore.ResetAsync(id);
 
                 if (json)
                     output.Json(new { action = "reset", processorId = id, previousPosition });
@@ -214,8 +215,9 @@ public static class CheckpointOpsCommand
             try
             {
                 await using var dataSource = new NpgsqlDataSourceBuilder(connStr).Build();
-                var data = new CliDataAccess(dataSource, schemaName);
-                var checkpoint = await data.GetSingleCheckpointAsync(id);
+                var admin = new PostgresAdminDataAccess(dataSource, schemaName);
+                var checkpointStore = new PostgresCheckpointStore(dataSource, schemaName);
+                var checkpoint = await admin.GetSingleCheckpointAsync(id);
                 var previousPosition = checkpoint?.LastPosition;
 
                 if (dryRun)
@@ -225,6 +227,17 @@ public static class CheckpointOpsCommand
                     else
                         output.Text($"[Dry run] Would set checkpoint for '{id}' from {previousPosition?.ToString() ?? "none"} to {position}.");
                     return;
+                }
+
+                // Lease pre-flight: warn if the processor has active leases.
+                // Rewinding a running processor risks data inconsistency.
+                var activeLeases = await admin.GetActiveProcessorLeasesAsync(id);
+                if (activeLeases.Count > 0)
+                {
+                    var leaseList = string.Join(", ", activeLeases.Select(l =>
+                        l.ReplicaId is not null ? $"{l.ConsumerId}/{l.ReplicaId}" : l.ConsumerId));
+                    output.Warning($"WARNING: processor '{id}' has {activeLeases.Count} active lease(s) held by: {leaseList}. " +
+                        "Rewinding a running processor risks data inconsistency. Stop the processor before rewinding.");
                 }
 
                 if (!yes)
@@ -247,7 +260,7 @@ public static class CheckpointOpsCommand
                     }
                 }
 
-                await data.SetCheckpointAsync(id, position);
+                await checkpointStore.RewindAsync(id, position);
 
                 if (json)
                     output.Json(new { action = "set", processorId = id, previousPosition, newPosition = position });
@@ -312,7 +325,7 @@ public static class CheckpointOpsCommand
             try
             {
                 await using var dataSource = new NpgsqlDataSourceBuilder(connStr).Build();
-                var data = new CliDataAccess(dataSource, schemaName);
+                var data = new PostgresAdminDataAccess(dataSource, schemaName);
 
                 var sourceCheckpoint = await data.GetSingleCheckpointAsync(from);
                 if (sourceCheckpoint is null)

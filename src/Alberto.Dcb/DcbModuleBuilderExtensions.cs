@@ -2,6 +2,9 @@ using Alberto.Dcb.Configuration;
 using Alberto.Dcb.Subscriptions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Alberto.Dcb;
 
@@ -16,11 +19,31 @@ public static class DcbModuleBuilderExtensions
     /// <typeparam name="TState">The projection state type.</typeparam>
     /// <param name="builder">The module builder.</param>
     /// <param name="declaration">The projection declaration.</param>
-    /// <param name="stateStoreFactory">A delegate that, given the service provider, returns a state store factory.</param>
+    /// <param name="stateStoreFactory">
+    /// Builds the projection's state store. The <see cref="ProjectionStoreContext"/> carries the
+    /// service provider and the rebuild-version selector the store must resolve on every
+    /// operation:
+    /// <code>
+    /// .AddProjection(OrdersOverviewProjection.Declaration, ctx =>
+    /// {
+    ///     var dataSource = ctx.Services.GetRequiredKeyedService&lt;NpgsqlDataSource&gt;(ModuleKey);
+    ///     return () => new PostgresStateStore&lt;OrdersOverview&gt;(
+    ///         dataSource, nameof(OrdersOverviewProjection), "orders", ctx.RebuildVersion);
+    /// })
+    /// </code>
+    /// A store that ignores <see cref="ProjectionStoreContext.RebuildVersion"/> still works — it
+    /// simply cannot be rebuilt without downtime.
+    /// </param>
+    /// <param name="projectionType">
+    /// The key this projection's state rows are stored under, when it differs from the
+    /// processor id. Only the rebuild pipeline needs this: promotion deletes the superseded
+    /// version's rows from the state table, which is keyed by projection type.
+    /// </param>
     public static DcbModuleBuilder AddProjection<TState>(
         this DcbModuleBuilder builder,
         ProjectionDeclaration<TState> declaration,
-        Func<IServiceProvider, Func<IStateStore<TState>>> stateStoreFactory)
+        Func<ProjectionStoreContext, Func<IStateStore<TState>>> stateStoreFactory,
+        string? projectionType = null)
         where TState : new()
     {
         ArgumentNullException.ThrowIfNull(declaration);
@@ -32,11 +55,25 @@ public static class DcbModuleBuilderExtensions
             Kind = ProcessorKind.Projection,
         });
 
-        builder.Register(context => context.Services.AddKeyedSingleton<IEventProcessor>(context.ModuleKey, (sp, _) =>
+        builder.Register(context =>
         {
-            var factory = stateStoreFactory(sp);
-            return new DeclaredAsyncProjection<TState>(declaration, factory);
-        }));
+            var moduleKey = context.ModuleKey;
+
+            context.Services.AddKeyedSingleton<IEventProcessor>(moduleKey, (sp, _) =>
+            {
+                var version = ProjectionVersions.LiveVersion(sp, moduleKey, declaration.ProcessorId);
+                var factory = stateStoreFactory(new ProjectionStoreContext(sp, version));
+                return new DeclaredAsyncProjection<TState>(declaration, factory);
+            });
+
+            context.Services.AddKeyedSingleton(moduleKey, (sp, _) =>
+                new RebuildableProjection(
+                    declaration.ProcessorId,
+                    projectionType ?? declaration.ProcessorId,
+                    version => new DeclaredAsyncProjection<TState>(
+                        declaration, stateStoreFactory(new ProjectionStoreContext(sp, version)))));
+        });
+
         return builder;
     }
 
@@ -346,6 +383,142 @@ public static class DcbModuleBuilderExtensions
             builder.ControlLoopConfigured = true;
             builder.Register(ControlLoopRegistration.Register);
         }
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Enables zero-downtime projection rebuilds for this module.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A rebuild replays the whole log into a second, invisible copy of a projection's state
+    /// while the live one keeps serving reads, then swaps the two in a single transaction.
+    /// Nothing happens until an operator starts one — <c>alberto ops rebuild start
+    /// &lt;processor&gt;</c> — and this method is what makes the application able to carry one out.
+    /// </para>
+    /// <para>
+    /// Requires a backend that registers an <see cref="IProjectionRebuildStore"/>; Postgres does.
+    /// Projections must resolve their rebuild version through
+    /// <see cref="ProjectionStoreContext.RebuildVersion"/>. A projection that ignores it still
+    /// works — it just cannot be rebuilt without downtime.
+    /// </para>
+    /// </remarks>
+    /// <param name="builder">The module builder.</param>
+    /// <param name="autoPromote">
+    /// Promote a rebuild automatically as soon as it catches up. Default: <see langword="true"/>.
+    /// Set <see langword="false"/> to park finished rebuilds at <c>Ready</c> until an operator
+    /// runs <c>alberto ops rebuild promote</c>.
+    /// </param>
+    /// <param name="pollingInterval">
+    /// How often the coordinator re-reads the rebuild state machine. Default: 5 seconds.
+    /// </param>
+    public static DcbModuleBuilder WithRebuilds(
+        this DcbModuleBuilder builder,
+        bool autoPromote = true,
+        TimeSpan? pollingInterval = null)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        // Update the options record so the validator and coordinator both see the intent.
+        builder.WithControlLoop(o =>
+        {
+            var rebuilds = o.Rebuilds with { Enabled = true, AutoPromote = autoPromote };
+
+            if (pollingInterval.HasValue)
+                rebuilds = rebuilds with
+                {
+                    PollingInterval = pollingInterval.Value,
+                    VersionRefreshInterval = pollingInterval.Value,
+                };
+
+            return o with { Rebuilds = rebuilds };
+        });
+
+        // Register the rebuild pipeline services (deferred — factories read IOptionsMonitor).
+        builder.Register(context =>
+        {
+            var services = context.Services;
+            var moduleKey = context.ModuleKey;
+
+            static ControlLoopOptions Options(IServiceProvider sp, string key) =>
+                sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>().Get(key).ControlLoop;
+
+            static IErrorClassifier Classifier(IServiceProvider sp, string key) =>
+                sp.GetKeyedService<IErrorClassifier>(key) ?? DefaultErrorClassifier.Instance;
+
+            static IEventStoreBackend Backend(IServiceProvider sp, string key) =>
+                sp.GetKeyedService<IEventStoreBackend>($"{key}:consumer")
+                ?? sp.GetKeyedService<IEventStoreBackend>(key)
+                ?? throw new InvalidOperationException(
+                    $"No event store backend registered for Alberto module '{key}'.");
+
+            // ProjectionVersions: tracks which rebuild version is live for each processor.
+            // GetKeyedService<ProjectionVersions> returns null when not registered, so
+            // ProjectionVersions.LiveVersion falls back to NeverRebuilt for modules that
+            // never call WithRebuilds() — safe to omit registration entirely when disabled.
+            services.AddKeyedSingleton<ProjectionVersions>(moduleKey, (sp, _) =>
+            {
+                var opts = Options(sp, moduleKey).Rebuilds;
+                var store = sp.GetKeyedService<IProjectionRebuildStore>(moduleKey)
+                    ?? throw new InvalidOperationException(
+                        $"Alberto module '{moduleKey}' enables projection rebuilds but its backend " +
+                        "does not register an IProjectionRebuildStore. Call .WithPostgres() on the module.");
+                return new ProjectionVersions(store, opts.VersionRefreshInterval);
+            });
+
+            // ShadowControlLoopFactory: builds a control loop for a shadow rebuild processor.
+            services.AddKeyedSingleton<ShadowControlLoopFactory>(moduleKey, (sp, _) =>
+            {
+                var opts = Options(sp, moduleKey);
+
+                return new ShadowControlLoopFactory(processor =>
+                {
+                    var head = sp.GetRequiredKeyedService<EventStoreHead>(moduleKey);
+                    var backend = Backend(sp, moduleKey);
+                    var checkpoints = sp.GetRequiredKeyedService<ICheckpointStore>(moduleKey);
+                    var classifier = Classifier(sp, moduleKey);
+                    var deadLetterStore = sp.GetKeyedService<IDeadLetterStore>(moduleKey);
+
+                    var diMiddlewares = sp.GetKeyedServices<ConsumeMiddleware>(moduleKey).ToList();
+                    var diBatchMiddlewares = sp.GetKeyedServices<BatchConsumeMiddleware>(moduleKey).ToList();
+
+                    var middlewares = new List<ConsumeMiddleware>(diMiddlewares)
+                    {
+                        ConsumeMiddlewares.RetryAndDeadLetter(opts.Retry, classifier, deadLetterStore),
+                    };
+                    var batchMiddlewares = new List<BatchConsumeMiddleware>(diBatchMiddlewares)
+                    {
+                        BatchConsumeMiddlewares.RetryAndDeadLetter(opts.Retry, classifier, deadLetterStore),
+                    };
+                    var hasUnpaired = diMiddlewares.Count > diBatchMiddlewares.Count;
+
+                    return new ControlLoop(
+                        processor, head, backend, checkpoints,
+                        opts.PollingInterval, opts.BatchSize, moduleKey,
+                        middlewares, batchMiddlewares, hasUnpaired,
+                        ProcessorExecutionOptions.Default,
+                        sp.GetService<ILogger<ControlLoop>>());
+                });
+            });
+
+            // RebuildCoordinator: drives rebuild state machine transitions.
+            services.AddSingleton<IHostedService>(sp =>
+            {
+                var opts = Options(sp, moduleKey).Rebuilds;
+                var coordinatorOptions = new RebuildCoordinatorOptions(opts.PollingInterval, opts.AutoPromote);
+
+                return new RebuildCoordinator(
+                    sp.GetKeyedServices<RebuildableProjection>(moduleKey).ToList(),
+                    sp.GetRequiredKeyedService<IProjectionRebuildStore>(moduleKey),
+                    sp.GetRequiredKeyedService<ProjectionVersions>(moduleKey),
+                    sp.GetRequiredKeyedService<ICheckpointStore>(moduleKey),
+                    sp.GetRequiredKeyedService<ShadowControlLoopFactory>(moduleKey),
+                    sp.GetKeyedServices<IProjectionStateClearer>(moduleKey).ToList(),
+                    coordinatorOptions,
+                    sp.GetService<ILogger<RebuildCoordinator>>());
+            });
+        });
 
         return builder;
     }

@@ -1,6 +1,6 @@
 using System.CommandLine;
-using Alberto.Cli.Data;
 using Alberto.Cli.Output;
+using Alberto.Dcb.Postgres;
 using Npgsql;
 
 namespace Alberto.Cli.Commands;
@@ -47,9 +47,9 @@ public static class EventsCommand
             try
             {
                 await using var dataSource = new NpgsqlDataSourceBuilder(connStr).Build();
-                var data = new CliDataAccess(dataSource, schemaName);
+                var admin = new PostgresAdminDataAccess(dataSource, schemaName);
 
-                var events = await data.GetEventsAsync(type, tag, after, limit);
+                var events = await admin.GetEventsAsync(type, tag, after, limit);
 
                 if (json)
                 {

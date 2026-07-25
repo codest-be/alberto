@@ -83,6 +83,30 @@ public sealed class PostgresCheckpointStore : IFencedCheckpointStore, ICheckpoin
         return ids;
     }
 
+    /// <summary>
+    /// Sets the checkpoint for <paramref name="processorId"/> to exactly <paramref name="position"/>,
+    /// bypassing the <c>GREATEST</c> guard that normally prevents moving a checkpoint backward.
+    /// Use for operator-initiated rewinds (e.g. <c>alberto ops rebuild start</c>).
+    /// </summary>
+    public async Task RewindAsync(string processorId, long position, CancellationToken ct = default)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand(
+            $"""
+            INSERT INTO {_schema.Table("alberto_processor_checkpoints")} (processor_id, last_position, updated_at)
+            VALUES (@processor_id, @last_position, now())
+            ON CONFLICT (processor_id) DO UPDATE
+            SET last_position = @last_position,
+                updated_at = now()
+            """,
+            connection);
+
+        cmd.Parameters.AddWithValue("processor_id", processorId);
+        cmd.Parameters.AddWithValue("last_position", position);
+
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
     public async Task<bool> SaveIfLeaseHeldAsync(
         string processorId, long position, string consumerId, string replicaId,
         bool useProcessorLeaseFencing = false, CancellationToken ct = default)

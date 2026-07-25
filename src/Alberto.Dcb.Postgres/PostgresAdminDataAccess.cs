@@ -1,0 +1,641 @@
+using Npgsql;
+
+namespace Alberto.Dcb.Postgres;
+
+// ---------------------------------------------------------------------------
+// Admin-scope result records (read-only projections of DB rows)
+// ---------------------------------------------------------------------------
+
+/// <summary>
+/// Summary of a processor's checkpoint position as seen from the admin surface.
+/// </summary>
+public record ProcessorInfo(string ProcessorId, long LastPosition, DateTime? UpdatedAt);
+
+/// <summary>
+/// Checkpoint row for a single processor.
+/// </summary>
+public record CheckpointInfo(string ProcessorId, long LastPosition, DateTime? UpdatedAt);
+
+/// <summary>
+/// Dead letter entry summary returned by admin inspection queries.
+/// </summary>
+public record DeadLetterInfo(
+    Guid Id,
+    string ProcessorId,
+    string? EventType,
+    long? GlobalPosition,
+    string? ErrorMessage,
+    DateTime? FailedAt);
+
+/// <summary>
+/// Event summary returned by admin inspection queries.
+/// </summary>
+public record EventInfo(
+    long GlobalPosition,
+    string EventType,
+    string? Tags,
+    DateTime? CreatedAt);
+
+/// <summary>
+/// Aggregate system stats.
+/// </summary>
+public record SystemInfo(
+    long? GlobalPosition,
+    long ProcessorCount,
+    long DeadLetterCount,
+    DateTime? LastEventAt);
+
+/// <summary>
+/// Projection state row.
+/// </summary>
+public record ProjectionState(
+    string DocumentId,
+    string TenantId,
+    DateTime? UpdatedAt);
+
+/// <summary>
+/// Admin view of a tenant lease row from the multi-tenant lease table.
+/// Distinct from <c>Alberto.Dcb.Subscriptions.TenantLease</c> (the domain record) —
+/// this carries the full admin surface including consumer and replica IDs.
+/// </summary>
+public record AdminTenantLease(
+    string TenantId,
+    string ConsumerId,
+    string? ReplicaId,
+    DateTime? ExpiresAt);
+
+/// <summary>
+/// An active processor lease found via admin inspection.
+/// </summary>
+public record ActiveProcessorLease(string ConsumerId, string? ReplicaId, DateTime ExpiresAt);
+
+// ---------------------------------------------------------------------------
+// PostgresAdminDataAccess
+// ---------------------------------------------------------------------------
+
+/// <summary>
+/// PostgreSQL-specific admin data access: inspection queries and composite operator mutations
+/// that have no natural home on a per-processor interface.
+///
+/// <para>
+/// Inspection queries (read-only) cover the full event-store schema and cannot be expressed
+/// through the <c>ICheckpointStore</c> / <c>IDeadLetterStore</c> per-processor interfaces.
+/// </para>
+/// <para>
+/// Composite mutations (<see cref="RetryByRewindAsync"/> and <see cref="ReleaseTenantLeasesAsync"/>)
+/// are transactional operations that span multiple tables and cannot be composed from individual
+/// interface methods without sacrificing atomicity — each interface method opens its own connection.
+/// </para>
+/// </summary>
+public sealed class PostgresAdminDataAccess
+{
+    private readonly NpgsqlDataSource _dataSource;
+    private readonly SchemaQualifier _schema;
+
+    /// <summary>
+    /// Creates a new PostgresAdminDataAccess.
+    /// </summary>
+    /// <param name="dataSource">The PostgreSQL data source.</param>
+    /// <param name="schema">The database schema name. Can be null for default schema.</param>
+    public PostgresAdminDataAccess(NpgsqlDataSource dataSource, string? schema = null)
+    {
+        _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
+        _schema = new SchemaQualifier(schema);
+    }
+
+    // Extracts the bare schema name for catalog queries (pg_tables, information_schema).
+    private string SchemaName => _schema.HasSchema ? _schema.Prefix.TrimEnd('.') : "public";
+
+    // -----------------------------------------------------------------------
+    // Inspection queries
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// Gets the current maximum global position from the event log.
+    /// Returns <see langword="null"/> when no events have been appended.
+    /// </summary>
+    public async Task<long?> GetGlobalPositionAsync(CancellationToken ct = default)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"SELECT MAX(global_position) FROM {_schema.Table("alberto_events")}";
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is DBNull or null ? null : Convert.ToInt64(result);
+    }
+
+    /// <summary>
+    /// Lists all processor checkpoints ordered by processor ID.
+    /// </summary>
+    public async Task<List<ProcessorInfo>> GetProcessorsAsync(CancellationToken ct = default)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"""
+            SELECT processor_id, last_position, updated_at
+            FROM {_schema.Table("alberto_processor_checkpoints")}
+            ORDER BY processor_id
+            """;
+
+        var result = new List<ProcessorInfo>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            result.Add(new ProcessorInfo(
+                reader.GetString(0),
+                reader.GetInt64(1),
+                reader.IsDBNull(2) ? null : reader.GetDateTime(2)));
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Lists all processor checkpoints ordered by processor ID.
+    /// </summary>
+    public async Task<List<CheckpointInfo>> GetCheckpointsAsync(CancellationToken ct = default)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"""
+            SELECT processor_id, last_position, updated_at
+            FROM {_schema.Table("alberto_processor_checkpoints")}
+            ORDER BY processor_id
+            """;
+
+        var result = new List<CheckpointInfo>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            result.Add(new CheckpointInfo(
+                reader.GetString(0),
+                reader.GetInt64(1),
+                reader.IsDBNull(2) ? null : reader.GetDateTime(2)));
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Gets the checkpoint for a single processor, or <see langword="null"/> if not found.
+    /// </summary>
+    public async Task<CheckpointInfo?> GetSingleCheckpointAsync(string processorId, CancellationToken ct = default)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"""
+            SELECT processor_id, last_position, updated_at
+            FROM {_schema.Table("alberto_processor_checkpoints")}
+            WHERE processor_id = @processorId
+            """;
+        cmd.Parameters.AddWithValue("processorId", processorId);
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        if (await reader.ReadAsync(ct))
+        {
+            return new CheckpointInfo(
+                reader.GetString(0),
+                reader.GetInt64(1),
+                reader.IsDBNull(2) ? null : reader.GetDateTime(2));
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Upserts a checkpoint row, setting <paramref name="processorId"/> to
+    /// <paramref name="position"/>. Used by <c>alberto ops checkpoint rename</c>.
+    /// </summary>
+    public async Task SetCheckpointAsync(string processorId, long position, CancellationToken ct = default)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"""
+            INSERT INTO {_schema.Table("alberto_processor_checkpoints")} (processor_id, last_position, updated_at)
+            VALUES (@processorId, @position, NOW())
+            ON CONFLICT (processor_id) DO UPDATE
+              SET last_position = @position, updated_at = NOW()
+            """;
+        cmd.Parameters.AddWithValue("processorId", processorId);
+        cmd.Parameters.AddWithValue("position", position);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>
+    /// Deletes a checkpoint row. Used by <c>alberto ops checkpoint rename</c> to remove
+    /// the old name after copying its position to the new name.
+    /// </summary>
+    public async Task ResetCheckpointAsync(string processorId, CancellationToken ct = default)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"DELETE FROM {_schema.Table("alberto_processor_checkpoints")} WHERE processor_id = @processorId";
+        cmd.Parameters.AddWithValue("processorId", processorId);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>
+    /// Lists dead letter entries with optional filtering by processor and event type.
+    /// Returns at most <paramref name="limit"/> results ordered by <c>failed_at DESC</c>.
+    /// </summary>
+    public async Task<List<DeadLetterInfo>> GetDeadLettersAsync(
+        string? processorId,
+        string? type,
+        int limit,
+        CancellationToken ct = default)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = conn.CreateCommand();
+
+        var where = new List<string>();
+        if (!string.IsNullOrWhiteSpace(processorId))
+        {
+            where.Add("processor_id = @processorId");
+            cmd.Parameters.AddWithValue("processorId", processorId);
+        }
+        if (!string.IsNullOrWhiteSpace(type))
+        {
+            where.Add("event_type = @type");
+            cmd.Parameters.AddWithValue("type", type);
+        }
+
+        var whereClause = where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : string.Empty;
+        cmd.Parameters.AddWithValue("limit", limit);
+
+        cmd.CommandText = $"""
+            SELECT id, processor_id, event_type, global_position, error_message, failed_at
+            FROM {_schema.Table("alberto_dead_letter_events")}
+            {whereClause}
+            ORDER BY failed_at DESC
+            LIMIT @limit
+            """;
+
+        var result = new List<DeadLetterInfo>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            result.Add(new DeadLetterInfo(
+                reader.GetGuid(0),
+                reader.GetString(1),
+                reader.IsDBNull(2) ? null : reader.GetString(2),
+                reader.IsDBNull(3) ? null : reader.GetInt64(3),
+                reader.IsDBNull(4) ? null : reader.GetString(4),
+                reader.IsDBNull(5) ? null : reader.GetDateTime(5)));
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Lists events from the event log with optional filtering by type and tag.
+    /// Returns at most <paramref name="limit"/> results after <paramref name="afterPosition"/>.
+    /// </summary>
+    public async Task<List<EventInfo>> GetEventsAsync(
+        string? type,
+        string? tag,
+        long afterPosition,
+        int limit,
+        CancellationToken ct = default)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = conn.CreateCommand();
+
+        var where = new List<string> { "global_position > @afterPosition" };
+        cmd.Parameters.AddWithValue("afterPosition", afterPosition);
+
+        if (!string.IsNullOrWhiteSpace(type))
+        {
+            where.Add("event_type = @type");
+            cmd.Parameters.AddWithValue("type", type);
+        }
+        if (!string.IsNullOrWhiteSpace(tag))
+        {
+            where.Add("event_tags @> ARRAY[@tag]");
+            cmd.Parameters.AddWithValue("tag", tag);
+        }
+
+        cmd.Parameters.AddWithValue("limit", limit);
+
+        cmd.CommandText = $"""
+            SELECT global_position, event_type, array_to_string(event_tags, ','), created_at
+            FROM {_schema.Table("alberto_events")}
+            WHERE {string.Join(" AND ", where)}
+            ORDER BY global_position
+            LIMIT @limit
+            """;
+
+        var result = new List<EventInfo>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            result.Add(new EventInfo(
+                reader.GetInt64(0),
+                reader.GetString(1),
+                reader.IsDBNull(2) ? null : reader.GetString(2),
+                reader.IsDBNull(3) ? null : reader.GetDateTime(3)));
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Returns aggregate system stats: current global position, processor count,
+    /// total dead letter count, and timestamp of the most recent event.
+    /// </summary>
+    public async Task<SystemInfo> GetSystemInfoAsync(CancellationToken ct = default)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+
+        long? globalPosition = null;
+        await using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = $"SELECT MAX(global_position) FROM {_schema.Table("alberto_events")}";
+            var result = await cmd.ExecuteScalarAsync(ct);
+            globalPosition = result is DBNull or null ? null : Convert.ToInt64(result);
+        }
+
+        long processorCount = 0;
+        await using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = $"SELECT COUNT(*) FROM {_schema.Table("alberto_processor_checkpoints")}";
+            var result = await cmd.ExecuteScalarAsync(ct);
+            processorCount = Convert.ToInt64(result);
+        }
+
+        long deadLetterCount = 0;
+        await using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = $"SELECT COUNT(*) FROM {_schema.Table("alberto_dead_letter_events")}";
+            var result = await cmd.ExecuteScalarAsync(ct);
+            deadLetterCount = Convert.ToInt64(result);
+        }
+
+        DateTime? lastEventAt = null;
+        await using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = $"SELECT created_at FROM {_schema.Table("alberto_events")} ORDER BY global_position DESC LIMIT 1";
+            var result = await cmd.ExecuteScalarAsync(ct);
+            lastEventAt = result is DBNull or null ? null : Convert.ToDateTime(result);
+        }
+
+        return new SystemInfo(globalPosition, processorCount, deadLetterCount, lastEventAt);
+    }
+
+    /// <summary>
+    /// Lists all distinct projection types present in the projection-state table.
+    /// </summary>
+    public async Task<List<string>> GetProjectionTypesAsync(CancellationToken ct = default)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"SELECT DISTINCT projection_type FROM {_schema.Table("alberto_projection_states")} ORDER BY 1";
+
+        var result = new List<string>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            result.Add(reader.GetString(0));
+
+        return result;
+    }
+
+    /// <summary>
+    /// Lists projection state rows for the given type with optional tenant and substring filters.
+    /// Returns at most <paramref name="limit"/> rows ordered by <c>updated_at DESC</c>.
+    /// </summary>
+    public async Task<List<ProjectionState>> GetProjectionStatesAsync(
+        string type,
+        string? tenant,
+        string? search,
+        int limit,
+        CancellationToken ct = default)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = conn.CreateCommand();
+
+        cmd.Parameters.AddWithValue("type", type);
+        cmd.Parameters.AddWithValue("tenant", (object?)tenant ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("search", (object?)search ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("limit", limit);
+
+        cmd.CommandText = $"""
+            SELECT document_id, tenant_id, updated_at
+            FROM {_schema.Table("alberto_projection_states")}
+            WHERE projection_type = @type
+            AND (@tenant IS NULL OR tenant_id = @tenant)
+            AND (@search IS NULL OR document_id ILIKE '%' || @search || '%')
+            ORDER BY updated_at DESC
+            LIMIT @limit
+            """;
+
+        var result = new List<ProjectionState>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            result.Add(new ProjectionState(
+                reader.GetString(0),
+                reader.GetString(1),
+                reader.IsDBNull(2) ? null : reader.GetDateTime(2)));
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when the multi-tenant lease table
+    /// (<c>alberto_tenant_leases</c>) exists in the current schema.
+    /// </summary>
+    public async Task<bool> TenantLeasesTableExistsAsync(CancellationToken ct = default)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT EXISTS (
+                SELECT 1 FROM pg_tables
+                WHERE schemaname = @schema AND tablename = 'alberto_tenant_leases'
+            )
+            """;
+        cmd.Parameters.AddWithValue("schema", SchemaName);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is true;
+    }
+
+    /// <summary>
+    /// Lists all current tenant lease rows ordered by tenant ID.
+    /// </summary>
+    public async Task<List<AdminTenantLease>> GetTenantLeasesAsync(CancellationToken ct = default)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"""
+            SELECT tenant_id, consumer_id, replica_id, expires_at
+            FROM {_schema.Table("alberto_tenant_leases")}
+            ORDER BY tenant_id
+            """;
+
+        var result = new List<AdminTenantLease>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            result.Add(new AdminTenantLease(
+                reader.GetString(0),
+                reader.GetString(1),
+                reader.IsDBNull(2) ? null : reader.GetString(2),
+                reader.IsDBNull(3) ? null : reader.GetDateTime(3)));
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Returns the active (non-expired) processor leases held for the given processor ID.
+    /// Used as a pre-flight check before operator rewinds to warn when the processor is running.
+    /// </summary>
+    public async Task<List<ActiveProcessorLease>> GetActiveProcessorLeasesAsync(
+        string processorId,
+        CancellationToken ct = default)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"""
+            SELECT consumer_id, replica_id, expires_at
+            FROM {_schema.Table("alberto_processor_leases")}
+            WHERE processor_id = @processorId
+            AND expires_at > now()
+            ORDER BY consumer_id, replica_id
+            """;
+        cmd.Parameters.AddWithValue("processorId", processorId);
+
+        var result = new List<ActiveProcessorLease>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            result.Add(new ActiveProcessorLease(
+                reader.GetString(0),
+                reader.IsDBNull(1) ? null : reader.GetString(1),
+                reader.GetDateTime(2)));
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Returns the total count of dead letter entries across all processors.
+    /// </summary>
+    public async Task<int> CountAllDeadLettersAsync(CancellationToken ct = default)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"SELECT COUNT(*) FROM {_schema.Table("alberto_dead_letter_events")}";
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return Convert.ToInt32(result);
+    }
+
+    // -----------------------------------------------------------------------
+    // Admin mutations
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// Removes all dead letter entries across every processor.
+    /// Returns the number of rows deleted.
+    /// </summary>
+    public async Task<int> ClearAllDeadLettersAsync(CancellationToken ct = default)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"DELETE FROM {_schema.Table("alberto_dead_letter_events")}";
+        return await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>
+    /// Releases tenant leases, forcing the application to reacquire them.
+    /// When <paramref name="consumerId"/> is non-null, only leases for that consumer group
+    /// are released; otherwise all tenant leases are released.
+    /// Returns the number of rows deleted.
+    /// </summary>
+    public async Task<int> ReleaseTenantLeasesAsync(string? consumerId, CancellationToken ct = default)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.Parameters.AddWithValue("consumerId", (object?)consumerId ?? DBNull.Value);
+        cmd.CommandText = $"""
+            DELETE FROM {_schema.Table("alberto_tenant_leases")}
+            WHERE (@consumerId IS NULL OR consumer_id = @consumerId)
+            """;
+        return await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>
+    /// Atomically rewinds a processor checkpoint to one position before its earliest dead letter,
+    /// then clears all dead letters for that processor.
+    ///
+    /// <para>
+    /// The three operations (MIN global_position, UPDATE checkpoint, DELETE dead letters) run inside
+    /// a single transaction so that a crash mid-way cannot leave the checkpoint rewound without the
+    /// dead letters cleared, or vice versa.
+    /// </para>
+    /// <para>
+    /// This method opens its own connection and transaction. It cannot delegate to
+    /// <c>ICheckpointStore.RewindAsync</c> or <c>IDeadLetterStore.ClearAsync</c>
+    /// because those interfaces open their own connections and cannot participate in a shared
+    /// transaction.
+    /// </para>
+    /// </summary>
+    /// <returns>
+    /// A tuple of <c>(RewindPosition, DeletedCount)</c> where <c>RewindPosition</c> is the
+    /// new checkpoint value and <c>DeletedCount</c> is the number of dead letters removed.
+    /// <c>RewindPosition</c> is <see langword="null"/> when the processor has no dead letters:
+    /// there is nothing to replay, so the checkpoint is left untouched.
+    /// </returns>
+    public async Task<(long? RewindPosition, int DeletedCount)> RetryByRewindAsync(
+        string processorId,
+        CancellationToken ct = default)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+
+        long? earliestPosition;
+        await using (var cmd = conn.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = $"SELECT MIN(global_position) FROM {_schema.Table("alberto_dead_letter_events")} WHERE processor_id = @processorId";
+            cmd.Parameters.AddWithValue("processorId", processorId);
+            var result = await cmd.ExecuteScalarAsync(ct);
+            earliestPosition = result is DBNull or null ? null : Convert.ToInt64(result);
+        }
+
+        // No dead letters means there is nothing to replay. Rewinding anyway would compute
+        // position -1 and replay the processor's entire history — a destructive no-op.
+        // The guard lives here rather than in the caller so the method cannot be misused.
+        if (earliestPosition is null)
+            return (null, 0);
+
+        var rewindPosition = earliestPosition.Value - 1;
+
+        await using (var cmd = conn.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = $"""
+                INSERT INTO {_schema.Table("alberto_processor_checkpoints")} (processor_id, last_position, updated_at)
+                VALUES (@processorId, @position, now())
+                ON CONFLICT (processor_id) DO UPDATE
+                SET last_position = @position,
+                    updated_at = now()
+                """;
+            cmd.Parameters.AddWithValue("processorId", processorId);
+            cmd.Parameters.AddWithValue("position", rewindPosition);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        int deletedCount;
+        await using (var cmd = conn.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = $"DELETE FROM {_schema.Table("alberto_dead_letter_events")} WHERE processor_id = @processorId";
+            cmd.Parameters.AddWithValue("processorId", processorId);
+            deletedCount = await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        await tx.CommitAsync(ct);
+
+        return (rewindPosition, deletedCount);
+    }
+}

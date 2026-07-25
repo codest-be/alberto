@@ -1,6 +1,6 @@
 using System.CommandLine;
-using Alberto.Cli.Data;
 using Alberto.Cli.Output;
+using Alberto.Dcb.Postgres;
 using Npgsql;
 using Spectre.Console;
 
@@ -66,10 +66,20 @@ public static class DeadLetterOpsCommand
             try
             {
                 await using var dataSource = new NpgsqlDataSourceBuilder(connStr).Build();
-                var data = new CliDataAccess(dataSource, schemaName);
-
-                var count = await data.CountDeadLettersAsync(processor);
                 var scope = processor is not null ? $"processor '{processor}'" : "all processors";
+
+                // Count differs by scope: per-processor uses IDeadLetterStore, global uses PostgresAdminDataAccess.
+                int count;
+                if (!string.IsNullOrWhiteSpace(processor))
+                {
+                    var deadLetterStore = new PostgresDeadLetterStore(dataSource, schemaName);
+                    count = await deadLetterStore.CountAsync(processor);
+                }
+                else
+                {
+                    var admin = new PostgresAdminDataAccess(dataSource, schemaName);
+                    count = await admin.CountAllDeadLettersAsync();
+                }
 
                 if (count == 0)
                 {
@@ -109,12 +119,24 @@ public static class DeadLetterOpsCommand
                     }
                 }
 
-                var deleted = await data.DismissDeadLettersAsync(processor);
+                // Clear differs by scope: per-processor ClearAsync returns void; global ClearAllDeadLettersAsync returns int.
+                int dismissed;
+                if (!string.IsNullOrWhiteSpace(processor))
+                {
+                    var deadLetterStore = new PostgresDeadLetterStore(dataSource, schemaName);
+                    await deadLetterStore.ClearAsync(processor);
+                    dismissed = count; // ClearAsync is void; use the pre-count as the reported figure
+                }
+                else
+                {
+                    var admin = new PostgresAdminDataAccess(dataSource, schemaName);
+                    dismissed = await admin.ClearAllDeadLettersAsync();
+                }
 
                 if (json)
-                    output.Json(new { action = "dismiss", dismissed = deleted, scope });
+                    output.Json(new { action = "dismiss", dismissed, scope });
                 else
-                    output.Text($"Dismissed {deleted} dead letter(s).");
+                    output.Text($"Dismissed {dismissed} dead letter(s).");
             }
             catch (Exception ex)
             {
@@ -163,9 +185,9 @@ public static class DeadLetterOpsCommand
             try
             {
                 await using var dataSource = new NpgsqlDataSourceBuilder(connStr).Build();
-                var data = new CliDataAccess(dataSource, schemaName);
+                var deadLetterStore = new PostgresDeadLetterStore(dataSource, schemaName);
 
-                var count = await data.CountDeadLettersAsync(processorId);
+                var count = await deadLetterStore.CountAsync(processorId);
                 if (count == 0)
                 {
                     if (json)
@@ -205,7 +227,7 @@ public static class DeadLetterOpsCommand
                     }
                 }
 
-                await data.MarkDeadLettersForRetryAsync(processorId);
+                await deadLetterStore.MarkForRetryAsync(processorId);
 
                 if (json)
                     output.Json(new { action = "retry", processorId, markedForRetry = count });
@@ -258,9 +280,10 @@ public static class DeadLetterOpsCommand
             try
             {
                 await using var dataSource = new NpgsqlDataSourceBuilder(connStr).Build();
-                var data = new CliDataAccess(dataSource, schemaName);
+                var deadLetterStore = new PostgresDeadLetterStore(dataSource, schemaName);
+                var admin = new PostgresAdminDataAccess(dataSource, schemaName);
 
-                var count = await data.CountDeadLettersAsync(processorId);
+                var count = await deadLetterStore.CountAsync(processorId);
                 if (count == 0)
                 {
                     if (json)
@@ -299,7 +322,17 @@ public static class DeadLetterOpsCommand
                     }
                 }
 
-                var (rewindPosition, deletedCount) = await data.RetryByRewindAsync(processorId);
+                var (rewindPosition, deletedCount) = await admin.RetryByRewindAsync(processorId);
+
+                if (rewindPosition is null)
+                {
+                    // Dead letters were cleared by another operator between the count and the rewind.
+                    if (json)
+                        output.Json(new { action = "retry-rewind", processorId, rewindPosition, dismissedDeadLetters = 0 });
+                    else
+                        output.Text($"No dead letters remain for processor '{processorId}'. Checkpoint left unchanged.");
+                    return;
+                }
 
                 if (json)
                     output.Json(new { action = "retry-rewind", processorId, rewindPosition, dismissedDeadLetters = deletedCount });

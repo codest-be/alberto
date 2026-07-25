@@ -36,21 +36,23 @@ public static class PaymentsModule
                 MaxPoolSize = 30,
             })
             .WithTelemetry()
-            .AddProjection(PaymentsOverviewProjection.Declaration, sp =>
+            .AddProjection(PaymentsOverviewProjection.Declaration, ctx =>
             {
-                var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
+                var dataSource = ctx.Services.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
                 return () => new PostgresStateStore<PaymentsOverview>(
                     dataSource,
                     nameof(PaymentsOverviewProjection),
-                    "payments");
+                    "payments",
+                    rebuildVersion: ctx.RebuildVersion);
             })
-            .AddProjection(PaymentSummaryProjection.Declaration, sp =>
+            .AddProjection(PaymentSummaryProjection.Declaration, ctx =>
             {
-                var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
+                var dataSource = ctx.Services.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
                 return () => new PostgresStateStore<PaymentSummary>(
                     dataSource,
                     nameof(PaymentSummaryProjection),
-                    "payments");
+                    "payments",
+                    rebuildVersion: ctx.RebuildVersion);
             })
             .WithControlLoop(o => o with { PollingInterval = TimeSpan.FromMilliseconds(100), BatchSize = 500 }));
 

@@ -1,3 +1,4 @@
+using Alberto.Dcb;
 using Alberto.Dcb.Append;
 using Alberto.Dcb.Configuration;
 using Alberto.Dcb.Subscriptions;
@@ -62,7 +63,7 @@ public static class PostgresBuilderExtensions
         services.AddKeyedSingleton<IEventStore>(moduleKey, (sp, key) =>
         {
             var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(key);
-            var eventStore = new PostgresEventStore(backend);
+            var eventStore = new EventStore(backend);
             RegisterInlineProjections(sp, key, eventStore);
             RegisterPostAppendHandlers(sp, key, eventStore);
             return eventStore;
@@ -117,20 +118,20 @@ public static class PostgresBuilderExtensions
         services.AddKeyedScoped<IEventStore>(moduleKey, (sp, key) =>
         {
             var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(key);
-            var eventStore = new PostgresEventStore(backend);
+            var eventStore = new EventStore(backend);
             RegisterInlineProjections(sp, key, eventStore);
             RegisterPostAppendHandlers(sp, key, eventStore);
             return eventStore;
         });
     }
 
-    private static void RegisterPostAppendHandlers(IServiceProvider sp, object? key, PostgresEventStore eventStore)
+    private static void RegisterPostAppendHandlers(IServiceProvider sp, object? key, IEventStoreConfigurator eventStore)
     {
         foreach (var handler in sp.GetKeyedServices<IPostAppendHandler>(key))
             eventStore.RegisterPostAppendHandler(handler);
     }
 
-    private static void RegisterInlineProjections(IServiceProvider sp, object? key, PostgresEventStore eventStore)
+    private static void RegisterInlineProjections(IServiceProvider sp, object? key, IEventStoreConfigurator eventStore)
     {
         foreach (var projection in sp.GetKeyedServices<IInlineProjection>(key))
             eventStore.RegisterInlineProjection(projection);

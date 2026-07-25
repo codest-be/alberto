@@ -1,5 +1,6 @@
 using Alberto.Dcb;
 using Alberto.Dcb.Postgres;
+using Alberto.Dcb.Subscriptions;
 using Alberto.Orders.Api.GraphQL.Types;
 using Alberto.Orders.Core.Order;
 using Alberto.Orders.Infrastructure;
@@ -52,10 +53,14 @@ public static class OrderQueries
     {
         var tenantId = GetTenantId(context);
         var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(OrdersModule.ModuleKey);
+        // Named arguments, and LiveVersion rather than the default: a read side that pins its
+        // rebuild version keeps serving the old copy after a rebuild is promoted.
         var stateStore = new PostgresStateStore<OrdersOverview>(
             dataSource,
             projectionType: nameof(OrdersOverviewProjection),
             schema: "orders",
+            rebuildVersion: ProjectionVersions.LiveVersion(
+                sp, OrdersModule.ModuleKey, nameof(OrdersOverviewProjection)),
             tenantId: tenantId);
 
         var states = await stateStore.LoadManyAsync(
