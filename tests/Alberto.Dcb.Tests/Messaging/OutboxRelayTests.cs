@@ -13,6 +13,7 @@ public class OutboxRelayTests
     private sealed class InMemoryOutboxStore : IOutboxStore
     {
         private readonly List<OutboxEntry> _entries = new();
+        private readonly Dictionary<Guid, OutboxClaim> _claims = new();
 
         public IReadOnlyList<OutboxEntry> Entries => _entries;
 
@@ -24,26 +25,52 @@ public class OutboxRelayTests
             return Task.CompletedTask;
         }
 
-        public Task<IReadOnlyList<OutboxEntry>> GetPendingAsync(int limit = 100, CancellationToken ct = default)
+        public Task<IReadOnlyList<OutboxClaim>> ClaimPendingAsync(
+            int limit,
+            TimeSpan claimLease,
+            string claimedBy,
+            CancellationToken ct = default)
         {
-            IReadOnlyList<OutboxEntry> result = _entries
+            var expiresAt = DateTimeOffset.UtcNow.Add(claimLease);
+            var pending = _entries
                 .Where(e => e.Status == OutboxEntryStatus.Pending)
                 .Take(limit)
                 .ToList();
-            return Task.FromResult(result);
+            var claims = new List<OutboxClaim>(pending.Count);
+            foreach (var entry in pending)
+            {
+                var index = _entries.FindIndex(e => e.Id == entry.Id);
+                var processing = entry with { Status = OutboxEntryStatus.Processing };
+                _entries[index] = processing;
+                var claim = new OutboxClaim(processing, Guid.NewGuid(), expiresAt);
+                _claims[entry.Id] = claim;
+                claims.Add(claim);
+            }
+            return Task.FromResult<IReadOnlyList<OutboxClaim>>(claims);
         }
 
-        public Task MarkDeliveredAsync(Guid id, CancellationToken ct = default)
+        public Task<bool> MarkDeliveredAsync(OutboxClaim claim, CancellationToken ct = default)
         {
-            var idx = _entries.FindIndex(e => e.Id == id);
+            if (!_claims.TryGetValue(claim.Entry.Id, out var current)
+                || current.Token != claim.Token
+                || current.ExpiresAt <= DateTimeOffset.UtcNow)
+                return Task.FromResult(false);
+
+            var idx = _entries.FindIndex(e => e.Id == claim.Entry.Id);
             if (idx >= 0)
                 _entries[idx] = _entries[idx] with { Status = OutboxEntryStatus.Delivered, DeliveredAt = DateTimeOffset.UtcNow };
-            return Task.CompletedTask;
+            _claims.Remove(claim.Entry.Id);
+            return Task.FromResult(true);
         }
 
-        public Task MarkFailedAsync(Guid id, string error, CancellationToken ct = default)
+        public Task<bool> MarkFailedAsync(OutboxClaim claim, string error, CancellationToken ct = default)
         {
-            var idx = _entries.FindIndex(e => e.Id == id);
+            if (!_claims.TryGetValue(claim.Entry.Id, out var current)
+                || current.Token != claim.Token
+                || current.ExpiresAt <= DateTimeOffset.UtcNow)
+                return Task.FromResult(false);
+
+            var idx = _entries.FindIndex(e => e.Id == claim.Entry.Id);
             if (idx >= 0)
                 _entries[idx] = _entries[idx] with
                 {
@@ -51,7 +78,8 @@ public class OutboxRelayTests
                     RetryCount = _entries[idx].RetryCount + 1,
                     LastError = error
                 };
-            return Task.CompletedTask;
+            _claims.Remove(claim.Entry.Id);
+            return Task.FromResult(true);
         }
 
         public Task RetryFailedAsync(string? messageType = null, CancellationToken ct = default)
@@ -62,6 +90,7 @@ public class OutboxRelayTests
                     (messageType is null || _entries[i].MessageType == messageType))
                 {
                     _entries[i] = _entries[i] with { Status = OutboxEntryStatus.Pending, RetryCount = 0, LastError = null };
+                    _claims.Remove(_entries[i].Id);
                 }
             }
             return Task.CompletedTask;

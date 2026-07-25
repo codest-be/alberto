@@ -158,10 +158,9 @@ Alberto is **pre-1.0** and published as `0.1.0-beta.*`. The whole solution build
 suite is green; the API still moves between betas, and every break is recorded in
 [UPGRADING.md](UPGRADING.md).
 
-One known gap is documented rather than hidden: an outbox relay that dies between claiming an
-entry and marking it delivered strands that row, because `alberto_outbox_entries` has no claim-lease
-columns and `RetryFailedAsync` only matches `failed`. See
-[docs/reactors-and-outbox.md](docs/reactors-and-outbox.md#known-gap-orphaned-processing-entries).
+Outbox claims are time-bounded and token-fenced: a relay crash leaves a recoverable `processing`
+row, and a stale relay cannot overwrite a newer claim. Delivery remains at-least-once; see
+[docs/reactors-and-outbox.md](docs/reactors-and-outbox.md#claim-leases-and-relay-crashes).
 
 ## Licence
 

@@ -327,31 +327,41 @@ public static class CheckpointOpsCommand
                 await using var dataSource = new NpgsqlDataSourceBuilder(connStr).Build();
                 var data = new PostgresAdminDataAccess(dataSource, schemaName);
 
-                var sourceCheckpoint = await data.GetSingleCheckpointAsync(from);
-                if (sourceCheckpoint is null)
+                var result = await data.RenameCheckpointAsync(from, to);
+                switch (result.Status)
                 {
-                    var moduleHint = module is not null ? $" in module '{module}'" : string.Empty;
-                    Console.Error.WriteLine($"No checkpoint named '{from}' exists{moduleHint}.");
-                    Environment.Exit(1);
-                    return;
+                    case CheckpointRenameStatus.Renamed:
+                        Console.WriteLine($"Renamed checkpoint '{from}' to '{to}' at position {result.Position}.");
+                        return;
+
+                    case CheckpointRenameStatus.SourceNotFound:
+                        {
+                            var moduleHint = module is not null ? $" in module '{module}'" : string.Empty;
+                            Console.Error.WriteLine($"No checkpoint named '{from}' exists{moduleHint}.");
+                            Environment.Exit(1);
+                            return;
+                        }
+
+                    case CheckpointRenameStatus.DestinationExists:
+                        {
+                            var moduleHint = module is not null ? $" --module {module}" : string.Empty;
+                            Console.Error.WriteLine(
+                                $"'{to}' already has a checkpoint at position {result.Position}. " +
+                                "Reset it first if you really mean to overwrite it: " +
+                                $"alberto ops checkpoint reset {to} --yes{moduleHint}");
+                            Environment.Exit(1);
+                            return;
+                        }
+
+                    case CheckpointRenameStatus.SameProcessorId:
+                        Console.Error.WriteLine("--from and --to must name different processor ids.");
+                        Environment.Exit(1);
+                        return;
+
+                    default:
+                        throw new InvalidOperationException(
+                            $"Unknown checkpoint rename result '{result.Status}'.");
                 }
-
-                var destinationCheckpoint = await data.GetSingleCheckpointAsync(to);
-                if (destinationCheckpoint is not null)
-                {
-                    var moduleHint = module is not null ? $" --module {module}" : string.Empty;
-                    Console.Error.WriteLine(
-                        $"'{to}' already has a checkpoint at position {destinationCheckpoint.LastPosition}. " +
-                        "Reset it first if you really mean to overwrite it: " +
-                        $"alberto ops checkpoint reset {to} --yes{moduleHint}");
-                    Environment.Exit(1);
-                    return;
-                }
-
-                await data.SetCheckpointAsync(to, sourceCheckpoint.LastPosition);
-                await data.ResetCheckpointAsync(from);
-
-                Console.WriteLine($"Renamed checkpoint '{from}' to '{to}' at position {sourceCheckpoint.LastPosition}.");
             }
             catch (Exception ex)
             {

@@ -139,6 +139,9 @@ public sealed class MigrationUpgradeAndParityTests
         (await TableExistsAsync(conn, "alberto_tenants"))
             .Should().BeTrue(because: "migration 012 creates the alberto_tenants catalog table");
 
+        // 016: existing outbox tables must gain the complete leased-claim fence.
+        await AssertOutboxClaimLeaseColumnsExistAsync(conn);
+
         // Core invariant: alberto_events must still have the tenant_id column.
         (await ColumnExistsAsync(conn, "alberto_events", "tenant_id"))
             .Should().BeTrue(because: "multi-tenant schema must retain the tenant_id column on alberto_events");
@@ -179,6 +182,9 @@ public sealed class MigrationUpgradeAndParityTests
         // 011: checkpoint table must have fillfactor=70.
         (await TableHasFillfactorAsync(conn, "alberto_processor_checkpoints", fillfactor: 70))
             .Should().BeTrue(because: "migration 011 sets fillfactor=70 on the checkpoint table");
+
+        // 016: existing outbox tables must gain the complete leased-claim fence.
+        await AssertOutboxClaimLeaseColumnsExistAsync(conn);
 
         // Core invariant: single-tenant schema must NOT have a tenant_id column on events.
         (await ColumnExistsAsync(conn, "alberto_events", "tenant_id"))
@@ -489,6 +495,16 @@ public sealed class MigrationUpgradeAndParityTests
             """;
         cmd.Parameters.AddWithValue("@name", tableName);
         return Convert.ToInt64(await cmd.ExecuteScalarAsync()) > 0;
+    }
+
+    private static async Task AssertOutboxClaimLeaseColumnsExistAsync(NpgsqlConnection conn)
+    {
+        foreach (var column in new[] { "claim_id", "claimed_by", "claim_expires_at" })
+        {
+            (await ColumnExistsAsync(conn, "alberto_outbox_entries", column))
+                .Should().BeTrue(
+                    because: $"migration 016 adds the outbox claim fence column {column}");
+        }
     }
 
     private static async Task<bool> ColumnExistsAsync(

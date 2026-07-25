@@ -49,17 +49,19 @@ public sealed class PostgresOutboxStore(NpgsqlDataSource dataSource, string? sch
     }
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// Atomically claims returned entries by setting their <c>status</c> to
-    /// <c>'processing'</c> via <c>FOR UPDATE SKIP LOCKED</c>.  Concurrent relay
-    /// instances will skip any row already locked by another worker, preventing
-    /// double-delivery.  The SQL migration cluster must include <c>'processing'</c>
-    /// in the <c>alberto_outbox_entries.status</c> CHECK constraint for this to
-    /// succeed.  On failure the relay's <see cref="IOutboxStore.MarkFailedAsync"/>
-    /// call resets the entry (from <c>'processing'</c> to <c>'failed'</c>).
-    /// </remarks>
-    public async Task<IReadOnlyList<OutboxEntry>> GetPendingAsync(int limit = 100, CancellationToken ct = default)
+    public async Task<IReadOnlyList<OutboxClaim>> ClaimPendingAsync(
+        int limit,
+        TimeSpan claimLease,
+        string claimedBy,
+        CancellationToken ct = default)
     {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
+        if (claimLease <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(claimLease), "The outbox claim lease must be positive.");
+        ArgumentException.ThrowIfNullOrWhiteSpace(claimedBy);
+
+        var claimToken = Guid.NewGuid();
+
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand(
             $"""
@@ -67,70 +69,110 @@ public sealed class PostgresOutboxStore(NpgsqlDataSource dataSource, string? sch
                 SELECT id
                 FROM {_schema.Table("alberto_outbox_entries")}
                 WHERE status = 'pending'
+                   OR (
+                       status = 'processing'
+                       AND (claim_expires_at IS NULL OR claim_expires_at <= now())
+                   )
                 ORDER BY created_at
                 LIMIT @limit
                 FOR UPDATE SKIP LOCKED
             ),
             claimed AS (
                 UPDATE {_schema.Table("alberto_outbox_entries")} e
-                SET status = 'processing'
+                SET status = 'processing',
+                    claim_id = @claim_id,
+                    claimed_by = @claimed_by,
+                    claim_expires_at = now() + @claim_lease
                 FROM candidates
                 WHERE e.id = candidates.id
                 RETURNING e.id, e.source_event_id, e.message_type, e.version, e.payload,
                           e.metadata, e.status, e.retry_count, e.last_error,
-                          e.created_at, e.delivered_at
+                          e.created_at, e.delivered_at, e.claim_id, e.claim_expires_at
             )
             SELECT id, source_event_id, message_type, version, payload, metadata,
-                   status, retry_count, last_error, created_at, delivered_at
+                   status, retry_count, last_error, created_at, delivered_at,
+                   claim_id, claim_expires_at
             FROM claimed
             ORDER BY created_at
             """,
             connection);
 
         cmd.Parameters.AddWithValue("limit", limit);
+        cmd.Parameters.AddWithValue("claim_id", claimToken);
+        cmd.Parameters.AddWithValue("claimed_by", claimedBy);
+        cmd.Parameters.AddWithValue("claim_lease", claimLease);
 
         await using var reader = await cmd.ExecuteReaderAsync(ct);
-        var results = new List<OutboxEntry>();
+        var results = new List<OutboxClaim>();
 
         while (await reader.ReadAsync(ct))
         {
-            results.Add(ReadEntry(reader));
+            var entry = ReadEntry(reader);
+            results.Add(new OutboxClaim(
+                entry,
+                reader.GetGuid(11),
+                reader.GetFieldValue<DateTimeOffset>(12)));
         }
 
         return results;
     }
 
     /// <inheritdoc/>
-    public async Task MarkDeliveredAsync(Guid id, CancellationToken ct = default)
+    public async Task<bool> MarkDeliveredAsync(OutboxClaim claim, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(claim);
+
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand(
             $"""
             UPDATE {_schema.Table("alberto_outbox_entries")}
-            SET status = 'delivered', delivered_at = now()
+            SET status = 'delivered',
+                delivered_at = now(),
+                claim_id = NULL,
+                claimed_by = NULL,
+                claim_expires_at = NULL
             WHERE id = @id
+              AND status = 'processing'
+              AND claim_id = @claim_id
+              AND claim_expires_at > now()
             """,
             connection);
 
-        cmd.Parameters.AddWithValue("id", id);
-        await cmd.ExecuteNonQueryAsync(ct);
+        cmd.Parameters.AddWithValue("id", claim.Entry.Id);
+        cmd.Parameters.AddWithValue("claim_id", claim.Token);
+        return await cmd.ExecuteNonQueryAsync(ct) == 1;
     }
 
     /// <inheritdoc/>
-    public async Task MarkFailedAsync(Guid id, string error, CancellationToken ct = default)
+    public async Task<bool> MarkFailedAsync(
+        OutboxClaim claim,
+        string error,
+        CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(claim);
+        ArgumentNullException.ThrowIfNull(error);
+
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand(
             $"""
             UPDATE {_schema.Table("alberto_outbox_entries")}
-            SET status = 'failed', retry_count = retry_count + 1, last_error = @error
+            SET status = 'failed',
+                retry_count = retry_count + 1,
+                last_error = @error,
+                claim_id = NULL,
+                claimed_by = NULL,
+                claim_expires_at = NULL
             WHERE id = @id
+              AND status = 'processing'
+              AND claim_id = @claim_id
+              AND claim_expires_at > now()
             """,
             connection);
 
-        cmd.Parameters.AddWithValue("id", id);
+        cmd.Parameters.AddWithValue("id", claim.Entry.Id);
+        cmd.Parameters.AddWithValue("claim_id", claim.Token);
         cmd.Parameters.AddWithValue("error", error);
-        await cmd.ExecuteNonQueryAsync(ct);
+        return await cmd.ExecuteNonQueryAsync(ct) == 1;
     }
 
     /// <inheritdoc/>
@@ -145,7 +187,12 @@ public sealed class PostgresOutboxStore(NpgsqlDataSource dataSource, string? sch
         {
             sql = $"""
                 UPDATE {_schema.Table("alberto_outbox_entries")}
-                SET status = 'pending', retry_count = 0, last_error = NULL
+                SET status = 'pending',
+                    retry_count = 0,
+                    last_error = NULL,
+                    claim_id = NULL,
+                    claimed_by = NULL,
+                    claim_expires_at = NULL
                 WHERE status = 'failed' AND message_type = @message_type
                 """;
             cmd = new NpgsqlCommand(sql, connection);
@@ -155,7 +202,12 @@ public sealed class PostgresOutboxStore(NpgsqlDataSource dataSource, string? sch
         {
             sql = $"""
                 UPDATE {_schema.Table("alberto_outbox_entries")}
-                SET status = 'pending', retry_count = 0, last_error = NULL
+                SET status = 'pending',
+                    retry_count = 0,
+                    last_error = NULL,
+                    claim_id = NULL,
+                    claimed_by = NULL,
+                    claim_expires_at = NULL
                 WHERE status = 'failed'
                 """;
             cmd = new NpgsqlCommand(sql, connection);
@@ -186,7 +238,7 @@ public sealed class PostgresOutboxStore(NpgsqlDataSource dataSource, string? sch
         var status = statusString switch
         {
             "pending" => OutboxEntryStatus.Pending,
-            // 'processing' means the row has been claimed by GetPendingAsync via FOR UPDATE SKIP LOCKED.
+            // 'processing' means the row has a time-bounded claim lease.
             "processing" => OutboxEntryStatus.Processing,
             "delivered" => OutboxEntryStatus.Delivered,
             "failed" => OutboxEntryStatus.Failed,

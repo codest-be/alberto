@@ -334,54 +334,23 @@ public sealed class DiscoveredIssuesTests
 
     #endregion
 
-    // ── Outbox 'processing' orphan — design gap in IOutboxStore ───────────────────
-    //
-    // PostgresOutboxStore.GetPendingAsync claims rows by setting status='processing'
-    // (via FOR UPDATE SKIP LOCKED). If the relay crashes between GetPendingAsync and
-    // MarkDeliveredAsync/MarkFailedAsync, the row stays in 'processing' permanently.
-    //
-    // RetryFailedAsync only resets rows WHERE status='failed'. It does NOT reset
-    // 'processing' rows. IOutboxStore has no method to recover orphaned 'processing'
-    // entries. The only recovery today is a manual SQL UPDATE or a service restart
-    // followed by a custom migration step.
-    //
-    // Fix needed (src/ change, not owned by this agent):
-    //   Add IOutboxStore.ResetProcessingAsync(TimeSpan olderThan, CancellationToken)
-    //   and implement it in PostgresOutboxStore with:
-    //     UPDATE alberto_outbox_entries
-    //     SET status = 'pending', retry_count = 0
-    //     WHERE status = 'processing' AND updated_at < now() - @olderThan
-    //
-    // See: src/Alberto.Dcb.Postgres/PostgresOutboxStore.cs → RetryFailedAsync
-    //      src/Alberto.Dcb.Messaging/IOutboxStore.cs
+    // ── Outbox claim lifecycle ────────────────────────────────────────────────────
 
-    #region Outbox orphaned 'processing' entries (design gap)
+    #region Outbox claim lifecycle
 
-    [Fact(Skip =
-        "Design gap: IOutboxStore has no method to recover orphaned 'processing' entries. " +
-        "RetryFailedAsync only resets rows WHERE status='failed'. " +
-        "Add IOutboxStore.ResetProcessingAsync(TimeSpan olderThan, CancellationToken) " +
-        "and implement it in PostgresOutboxStore to fix this.")]
-    public void OutboxStore_ProcessingEntriesOrphaned_CannotBeRecoveredByRetryFailed()
+    [Fact]
+    public void OutboxStore_ExposesTimeBoundedTokenFencedClaims()
     {
-        // This test documents the missing recovery path.
-        //
-        // Expected behaviour (once fixed):
-        //   1. GetPendingAsync claims entries → status = 'processing'
-        //   2. Relay crashes before MarkDeliveredAsync / MarkFailedAsync
-        //   3. Entries remain in 'processing' indefinitely
-        //   4. RetryFailedAsync() has no effect (predicate: status = 'failed')
-        //   5. ResetProcessingAsync(olderThan: TimeSpan.FromMinutes(5)) resets them
-        //      → status = 'pending', retry_count = 0, ready to be claimed again
-        //
-        // Verification requires a running PostgreSQL instance (Testcontainers).
-        // This test is skipped until the fix is implemented in src/.
+        var claim = typeof(IOutboxStore).GetMethod(nameof(IOutboxStore.ClaimPendingAsync));
+        var delivered = typeof(IOutboxStore).GetMethod(nameof(IOutboxStore.MarkDeliveredAsync));
+        var failed = typeof(IOutboxStore).GetMethod(nameof(IOutboxStore.MarkFailedAsync));
 
-        // Contract assertion: IOutboxStore does NOT declare ResetProcessingAsync.
-        // If this assertion starts failing, the fix has been merged and this test
-        // can be converted to a live integration test.
-        var method = typeof(IOutboxStore).GetMethod("ResetProcessingAsync");
-        Assert.Null(method);
+        Assert.NotNull(claim);
+        Assert.Contains(claim.GetParameters(), p => p.ParameterType == typeof(TimeSpan));
+        Assert.NotNull(delivered);
+        Assert.Equal(typeof(OutboxClaim), delivered.GetParameters()[0].ParameterType);
+        Assert.NotNull(failed);
+        Assert.Equal(typeof(OutboxClaim), failed.GetParameters()[0].ParameterType);
     }
 
     #endregion

@@ -69,6 +69,27 @@ public record AdminTenantLease(
 /// </summary>
 public record ActiveProcessorLease(string ConsumerId, string? ReplicaId, DateTime ExpiresAt);
 
+/// <summary>The outcome of an atomic checkpoint rename.</summary>
+public enum CheckpointRenameStatus
+{
+    /// <summary>The source checkpoint was moved to the destination ID.</summary>
+    Renamed,
+
+    /// <summary>No checkpoint exists under the source ID.</summary>
+    SourceNotFound,
+
+    /// <summary>The destination ID already owns a checkpoint and was not overwritten.</summary>
+    DestinationExists,
+
+    /// <summary>The source and destination IDs are identical.</summary>
+    SameProcessorId,
+}
+
+/// <summary>Result of an atomic checkpoint rename.</summary>
+public sealed record CheckpointRenameResult(
+    CheckpointRenameStatus Status,
+    long? Position = null);
+
 // ---------------------------------------------------------------------------
 // PostgresAdminDataAccess
 // ---------------------------------------------------------------------------
@@ -202,35 +223,89 @@ public sealed class PostgresAdminDataAccess
     }
 
     /// <summary>
-    /// Upserts a checkpoint row, setting <paramref name="processorId"/> to
-    /// <paramref name="position"/>. Used by <c>alberto ops checkpoint rename</c>.
+    /// Atomically moves a checkpoint from <paramref name="fromProcessorId"/> to
+    /// <paramref name="toProcessorId"/>.
+    /// The destination is never overwritten, and any non-success result leaves both rows unchanged.
     /// </summary>
-    public async Task SetCheckpointAsync(string processorId, long position, CancellationToken ct = default)
+    public async Task<CheckpointRenameResult> RenameCheckpointAsync(
+        string fromProcessorId,
+        string toProcessorId,
+        CancellationToken ct = default)
     {
-        await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = $"""
-            INSERT INTO {_schema.Table("alberto_processor_checkpoints")} (processor_id, last_position, updated_at)
-            VALUES (@processorId, @position, NOW())
-            ON CONFLICT (processor_id) DO UPDATE
-              SET last_position = @position, updated_at = NOW()
-            """;
-        cmd.Parameters.AddWithValue("processorId", processorId);
-        cmd.Parameters.AddWithValue("position", position);
-        await cmd.ExecuteNonQueryAsync(ct);
-    }
+        ArgumentException.ThrowIfNullOrWhiteSpace(fromProcessorId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(toProcessorId);
 
-    /// <summary>
-    /// Deletes a checkpoint row. Used by <c>alberto ops checkpoint rename</c> to remove
-    /// the old name after copying its position to the new name.
-    /// </summary>
-    public async Task ResetCheckpointAsync(string processorId, CancellationToken ct = default)
-    {
+        if (string.Equals(fromProcessorId, toProcessorId, StringComparison.Ordinal))
+            return new CheckpointRenameResult(CheckpointRenameStatus.SameProcessorId);
+
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = $"DELETE FROM {_schema.Table("alberto_processor_checkpoints")} WHERE processor_id = @processorId";
-        cmd.Parameters.AddWithValue("processorId", processorId);
-        await cmd.ExecuteNonQueryAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+
+        long? sourcePosition;
+        await using (var source = conn.CreateCommand())
+        {
+            source.Transaction = tx;
+            source.CommandText = $"""
+                SELECT last_position
+                FROM {_schema.Table("alberto_processor_checkpoints")}
+                WHERE processor_id = @fromProcessorId
+                FOR UPDATE
+                """;
+            source.Parameters.AddWithValue("fromProcessorId", fromProcessorId);
+            var result = await source.ExecuteScalarAsync(ct);
+            sourcePosition = result is DBNull or null ? null : Convert.ToInt64(result);
+        }
+
+        if (sourcePosition is null)
+            return new CheckpointRenameResult(CheckpointRenameStatus.SourceNotFound);
+
+        int inserted;
+        await using (var destination = conn.CreateCommand())
+        {
+            destination.Transaction = tx;
+            destination.CommandText = $"""
+                INSERT INTO {_schema.Table("alberto_processor_checkpoints")}
+                    (processor_id, last_position, updated_at)
+                VALUES (@toProcessorId, @position, now())
+                ON CONFLICT (processor_id) DO NOTHING
+                """;
+            destination.Parameters.AddWithValue("toProcessorId", toProcessorId);
+            destination.Parameters.AddWithValue("position", sourcePosition.Value);
+            inserted = await destination.ExecuteNonQueryAsync(ct);
+        }
+
+        if (inserted == 0)
+        {
+            long? destinationPosition;
+            await using var existing = conn.CreateCommand();
+            existing.Transaction = tx;
+            existing.CommandText = $"""
+                SELECT last_position
+                FROM {_schema.Table("alberto_processor_checkpoints")}
+                WHERE processor_id = @toProcessorId
+                """;
+            existing.Parameters.AddWithValue("toProcessorId", toProcessorId);
+            var result = await existing.ExecuteScalarAsync(ct);
+            destinationPosition = result is DBNull or null ? null : Convert.ToInt64(result);
+
+            return new CheckpointRenameResult(
+                CheckpointRenameStatus.DestinationExists,
+                destinationPosition);
+        }
+
+        await using (var delete = conn.CreateCommand())
+        {
+            delete.Transaction = tx;
+            delete.CommandText = $"""
+                DELETE FROM {_schema.Table("alberto_processor_checkpoints")}
+                WHERE processor_id = @fromProcessorId
+                """;
+            delete.Parameters.AddWithValue("fromProcessorId", fromProcessorId);
+            await delete.ExecuteNonQueryAsync(ct);
+        }
+
+        await tx.CommitAsync(ct);
+        return new CheckpointRenameResult(CheckpointRenameStatus.Renamed, sourcePosition);
     }
 
     /// <summary>

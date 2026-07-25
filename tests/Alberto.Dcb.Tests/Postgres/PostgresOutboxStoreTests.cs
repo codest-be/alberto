@@ -56,6 +56,16 @@ public sealed class PostgresOutboxStoreTests(PostgresOutboxStoreFixture fixture)
 
     private PostgresOutboxStore CreateStore() => new(fixture.DataSource);
 
+    private static Task<IReadOnlyList<OutboxClaim>> ClaimAsync(
+        PostgresOutboxStore store,
+        int limit,
+        CancellationToken ct) =>
+        store.ClaimPendingAsync(
+            limit,
+            TimeSpan.FromMinutes(5),
+            $"test-relay-{Guid.NewGuid():N}",
+            ct);
+
     private static OutboxEntry MakeEntry(string? messageType = null) => new(
         Id: Guid.NewGuid(),
         SourceEventId: Guid.NewGuid(),
@@ -92,8 +102,8 @@ public sealed class PostgresOutboxStoreTests(PostgresOutboxStoreFixture fixture)
         await store.InsertAsync(entry, TestContext.Current.CancellationToken);
 
         // Round-trip via claim and verify all payload fields survived.
-        var pending = await store.GetPendingAsync(limit: 10, TestContext.Current.CancellationToken);
-        var retrieved = pending.FirstOrDefault(e => e.Id == entry.Id);
+        var pending = await ClaimAsync(store, 10, TestContext.Current.CancellationToken);
+        var retrieved = pending.FirstOrDefault(e => e.Entry.Id == entry.Id)?.Entry;
         Assert.NotNull(retrieved);
         Assert.Equal(entry.SourceEventId, retrieved.SourceEventId);
         Assert.Equal(entry.MessageType, retrieved.MessageType);
@@ -118,13 +128,13 @@ public sealed class PostgresOutboxStoreTests(PostgresOutboxStoreFixture fixture)
         var duplicate = entry with { Id = Guid.NewGuid() };
         await store.InsertAsync(duplicate, TestContext.Current.CancellationToken);
 
-        var pending = await store.GetPendingAsync(limit: 100, TestContext.Current.CancellationToken);
-        var rowsForSource = pending.Where(e => e.SourceEventId == entry.SourceEventId).ToList();
+        var pending = await ClaimAsync(store, 100, TestContext.Current.CancellationToken);
+        var rowsForSource = pending.Where(e => e.Entry.SourceEventId == entry.SourceEventId).ToList();
         Assert.Single(rowsForSource);
     }
 
     [Fact]
-    public async Task GetPendingAsync_ShouldRespectLimit()
+    public async Task ClaimPendingAsync_ShouldRespectLimit()
     {
         var store = CreateStore();
         var entries = Enumerable.Range(0, 5).Select(_ => MakeEntry()).ToList();
@@ -132,7 +142,7 @@ public sealed class PostgresOutboxStoreTests(PostgresOutboxStoreFixture fixture)
         foreach (var e in entries)
             await store.InsertAsync(e, TestContext.Current.CancellationToken);
 
-        var batch = await store.GetPendingAsync(limit: 2, TestContext.Current.CancellationToken);
+        var batch = await ClaimAsync(store, 2, TestContext.Current.CancellationToken);
 
         // At least 2 entries exist; the limit must be honoured.  (The store may
         // contain rows from other tests so we assert <= 2, not == 2.)
@@ -140,7 +150,7 @@ public sealed class PostgresOutboxStoreTests(PostgresOutboxStoreFixture fixture)
     }
 
     [Fact]
-    public async Task GetPendingAsync_ShouldReturnEntriesOrderedByCreatedAt()
+    public async Task ClaimPendingAsync_ShouldReturnEntriesOrderedByCreatedAt()
     {
         var store = CreateStore();
 
@@ -155,17 +165,17 @@ public sealed class PostgresOutboxStoreTests(PostgresOutboxStoreFixture fixture)
         await store.InsertAsync(first, TestContext.Current.CancellationToken);
         await store.InsertAsync(second, TestContext.Current.CancellationToken);
 
-        var pending = await store.GetPendingAsync(limit: 100, TestContext.Current.CancellationToken);
+        var pending = await ClaimAsync(store, 100, TestContext.Current.CancellationToken);
 
         // Filter to just the three we inserted (other tests may have left rows).
         var ours = pending
-            .Where(e => e.Id == first.Id || e.Id == second.Id || e.Id == third.Id)
+            .Where(e => e.Entry.Id == first.Id || e.Entry.Id == second.Id || e.Entry.Id == third.Id)
             .ToList();
 
         Assert.Equal(3, ours.Count);
-        Assert.Equal(first.Id, ours[0].Id);
-        Assert.Equal(second.Id, ours[1].Id);
-        Assert.Equal(third.Id, ours[2].Id);
+        Assert.Equal(first.Id, ours[0].Entry.Id);
+        Assert.Equal(second.Id, ours[1].Entry.Id);
+        Assert.Equal(third.Id, ours[2].Entry.Id);
     }
 
     [Fact]
@@ -175,12 +185,12 @@ public sealed class PostgresOutboxStoreTests(PostgresOutboxStoreFixture fixture)
         var entry = MakeEntry();
         await store.InsertAsync(entry, TestContext.Current.CancellationToken);
 
-        var claimed = await store.GetPendingAsync(limit: 10, TestContext.Current.CancellationToken);
-        var claimedEntry = claimed.First(e => e.Id == entry.Id);
+        var claimed = await ClaimAsync(store, 10, TestContext.Current.CancellationToken);
+        var claim = claimed.First(e => e.Entry.Id == entry.Id);
 
-        await store.MarkDeliveredAsync(claimedEntry.Id, TestContext.Current.CancellationToken);
+        Assert.True(await store.MarkDeliveredAsync(claim, TestContext.Current.CancellationToken));
 
-        Assert.Equal("delivered", await ReadStatusAsync(claimedEntry.Id, TestContext.Current.CancellationToken));
+        Assert.Equal("delivered", await ReadStatusAsync(claim.Entry.Id, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -190,19 +200,22 @@ public sealed class PostgresOutboxStoreTests(PostgresOutboxStoreFixture fixture)
         var entry = MakeEntry();
         await store.InsertAsync(entry, TestContext.Current.CancellationToken);
 
-        var claimed = await store.GetPendingAsync(limit: 10, TestContext.Current.CancellationToken);
-        var claimedEntry = claimed.First(e => e.Id == entry.Id);
+        var claimed = await ClaimAsync(store, 10, TestContext.Current.CancellationToken);
+        var claim = claimed.First(e => e.Entry.Id == entry.Id);
 
-        await store.MarkFailedAsync(claimedEntry.Id, "connection timeout", TestContext.Current.CancellationToken);
+        Assert.True(await store.MarkFailedAsync(
+            claim,
+            "connection timeout",
+            TestContext.Current.CancellationToken));
 
-        Assert.Equal("failed", await ReadStatusAsync(claimedEntry.Id, TestContext.Current.CancellationToken));
+        Assert.Equal("failed", await ReadStatusAsync(claim.Entry.Id, TestContext.Current.CancellationToken));
 
         // Verify retry_count incremented by reading a fresh pending-only query won't help
         // since the row is failed; use raw SQL instead.
         await using var conn = await fixture.DataSource.OpenConnectionAsync(TestContext.Current.CancellationToken);
         await using var cmd = new NpgsqlCommand(
             "SELECT retry_count, last_error FROM alberto_outbox_entries WHERE id = @id", conn);
-        cmd.Parameters.AddWithValue("id", claimedEntry.Id);
+        cmd.Parameters.AddWithValue("id", claim.Entry.Id);
         await using var reader = await cmd.ExecuteReaderAsync(TestContext.Current.CancellationToken);
         Assert.True(await reader.ReadAsync(TestContext.Current.CancellationToken));
         Assert.Equal(1, reader.GetInt32(0));
@@ -216,13 +229,13 @@ public sealed class PostgresOutboxStoreTests(PostgresOutboxStoreFixture fixture)
         var entry = MakeEntry();
         await store.InsertAsync(entry, TestContext.Current.CancellationToken);
 
-        var claimed = await store.GetPendingAsync(limit: 10, TestContext.Current.CancellationToken);
-        var claimedEntry = claimed.First(e => e.Id == entry.Id);
-        await store.MarkFailedAsync(claimedEntry.Id, "boom", TestContext.Current.CancellationToken);
+        var claimed = await ClaimAsync(store, 10, TestContext.Current.CancellationToken);
+        var claim = claimed.First(e => e.Entry.Id == entry.Id);
+        Assert.True(await store.MarkFailedAsync(claim, "boom", TestContext.Current.CancellationToken));
 
         await store.RetryFailedAsync(ct: TestContext.Current.CancellationToken);
 
-        Assert.Equal("pending", await ReadStatusAsync(claimedEntry.Id, TestContext.Current.CancellationToken));
+        Assert.Equal("pending", await ReadStatusAsync(claim.Entry.Id, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -236,12 +249,12 @@ public sealed class PostgresOutboxStoreTests(PostgresOutboxStoreFixture fixture)
         await store.InsertAsync(otherEntry, TestContext.Current.CancellationToken);
 
         // Claim both, then mark both as failed.
-        var claimed = await store.GetPendingAsync(limit: 100, TestContext.Current.CancellationToken);
-        var claimedMatch = claimed.First(e => e.Id == matchEntry.Id);
-        var claimedOther = claimed.First(e => e.Id == otherEntry.Id);
+        var claimed = await ClaimAsync(store, 100, TestContext.Current.CancellationToken);
+        var claimedMatch = claimed.First(e => e.Entry.Id == matchEntry.Id);
+        var claimedOther = claimed.First(e => e.Entry.Id == otherEntry.Id);
 
-        await store.MarkFailedAsync(claimedMatch.Id, "err", TestContext.Current.CancellationToken);
-        await store.MarkFailedAsync(claimedOther.Id, "err", TestContext.Current.CancellationToken);
+        Assert.True(await store.MarkFailedAsync(claimedMatch, "err", TestContext.Current.CancellationToken));
+        Assert.True(await store.MarkFailedAsync(claimedOther, "err", TestContext.Current.CancellationToken));
 
         await store.RetryFailedAsync(messageType: "order-cancelled", ct: TestContext.Current.CancellationToken);
 
@@ -261,10 +274,10 @@ public sealed class PostgresOutboxStoreTests(PostgresOutboxStoreFixture fixture)
 
         // Claim both; mark only one as delivered.  The other remains 'processing'
         // (i.e. not delivered) so it must survive the purge.
-        var claimed = await store.GetPendingAsync(limit: 100, TestContext.Current.CancellationToken);
-        await store.MarkDeliveredAsync(
-            claimed.First(e => e.Id == toDeliver.Id).Id,
-            TestContext.Current.CancellationToken);
+        var claimed = await ClaimAsync(store, 100, TestContext.Current.CancellationToken);
+        Assert.True(await store.MarkDeliveredAsync(
+            claimed.First(e => e.Entry.Id == toDeliver.Id),
+            TestContext.Current.CancellationToken));
 
         // Purge with a threshold one hour in the future so all currently-delivered
         // rows qualify (their delivered_at ≈ now() < now()+1h).
@@ -291,224 +304,143 @@ public sealed class PostgresOutboxStoreTests(PostgresOutboxStoreFixture fixture)
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // P0.4 — Claim / SKIP LOCKED / relay-crash scenarios
+    // Claim leases and fencing
     // ──────────────────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// After <see cref="PostgresOutboxStore.GetPendingAsync"/> claims an entry
-    /// (transitions it to 'processing'), a second call from the same or a different
-    /// relay instance must not return that entry again.  This guards against the
-    /// double-delivery risk described in finding P0.4.
-    /// </summary>
     [Fact]
-    public async Task GetPendingAsync_ClaimedEntry_IsNotReturnedBySubsequentCall()
+    public async Task ClaimPendingAsync_LiveClaim_IsInvisibleToAnotherRelay()
     {
+        var ct = TestContext.Current.CancellationToken;
         var store = CreateStore();
         var entry = MakeEntry();
-        await store.InsertAsync(entry, TestContext.Current.CancellationToken);
+        await store.InsertAsync(entry, ct);
 
-        // First relay instance claims the entry.
-        var firstBatch = await store.GetPendingAsync(limit: 10, TestContext.Current.CancellationToken);
-        var claimedEntry = firstBatch.FirstOrDefault(e => e.Id == entry.Id);
-        Assert.NotNull(claimedEntry);
+        var firstClaim = (await ClaimAsync(store, 100, ct))
+            .Single(c => c.Entry.Id == entry.Id);
 
-        // The entry is now 'processing'.
-        Assert.Equal("processing", await ReadStatusAsync(claimedEntry.Id, TestContext.Current.CancellationToken));
+        var secondRelayClaims = await ClaimAsync(CreateStore(), 100, ct);
 
-        // A second relay instance (separate store instance) must not return the same row.
-        var secondBatch = await CreateStore().GetPendingAsync(limit: 10, TestContext.Current.CancellationToken);
-        Assert.DoesNotContain(secondBatch, e => e.Id == claimedEntry.Id);
+        Assert.Equal(OutboxEntryStatus.Processing, firstClaim.Entry.Status);
+        Assert.True(firstClaim.ExpiresAt > DateTimeOffset.UtcNow);
+        Assert.DoesNotContain(secondRelayClaims, c => c.Entry.Id == entry.Id);
     }
 
-    /// <summary>
-    /// Simulates a relay crash between the moment it published the message and the
-    /// moment it called <see cref="PostgresOutboxStore.MarkDeliveredAsync"/>.
-    ///
-    /// Expected guarantees:
-    /// <list type="bullet">
-    ///   <item>The entry must not be silently lost — it still exists in the store.</item>
-    ///   <item>The entry must not be double-delivered by a concurrent relay — it stays
-    ///         in 'processing' state and is invisible to <see cref="PostgresOutboxStore.GetPendingAsync"/>.</item>
-    /// </list>
-    ///
-    /// Operators are expected to reset stuck 'processing' entries via
-    /// <see cref="PostgresOutboxStore.RetryFailedAsync"/> after marking them failed,
-    /// or via a future timeout-based mechanism.
-    /// </summary>
     [Fact]
-    public async Task CrashBetweenPublishAndMark_EntryNotLostAndNotDoubleDelivered()
+    public async Task ClaimPendingAsync_ExpiredClaim_IsRecoveredWithNewToken()
     {
+        var ct = TestContext.Current.CancellationToken;
         var store = CreateStore();
         var entry = MakeEntry();
-        await store.InsertAsync(entry, TestContext.Current.CancellationToken);
+        await store.InsertAsync(entry, ct);
 
-        // The relay claims the entry (simulating "about to publish").
-        var claimed = await store.GetPendingAsync(limit: 10, TestContext.Current.CancellationToken);
-        var claimedEntry = claimed.FirstOrDefault(e => e.Id == entry.Id);
-        Assert.NotNull(claimedEntry);
+        var original = (await ClaimAsync(store, 100, ct))
+            .Single(c => c.Entry.Id == entry.Id);
 
-        // Crash: the relay dies without calling MarkDeliveredAsync or MarkFailedAsync.
-        // (We simply do nothing here, leaving the row in 'processing'.)
+        await ExpireClaimAsync(entry.Id, ct);
 
-        // No lost entry: the row still exists in the store.
-        await using var conn = await fixture.DataSource.OpenConnectionAsync(TestContext.Current.CancellationToken);
-        await using var existsCmd = new NpgsqlCommand(
-            "SELECT EXISTS(SELECT 1 FROM alberto_outbox_entries WHERE id = @id)", conn);
-        existsCmd.Parameters.AddWithValue("id", claimedEntry.Id);
-        var exists = (bool)(await existsCmd.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
-        Assert.True(exists, "Entry was lost from the store after a simulated relay crash.");
+        var recovered = (await ClaimAsync(CreateStore(), 100, ct))
+            .Single(c => c.Entry.Id == entry.Id);
 
-        // No double delivery: a fresh relay picking up pending entries does NOT receive
-        // the stuck 'processing' entry.
-        var concurrentBatch = await CreateStore().GetPendingAsync(limit: 100, TestContext.Current.CancellationToken);
-        Assert.DoesNotContain(concurrentBatch, e => e.Id == claimedEntry.Id);
-
-        // The entry is still in 'processing' state, waiting for operator recovery.
-        Assert.Equal("processing", await ReadStatusAsync(claimedEntry.Id, TestContext.Current.CancellationToken));
+        Assert.NotEqual(original.Token, recovered.Token);
+        Assert.True(recovered.ExpiresAt > DateTimeOffset.UtcNow);
     }
 
-    /// <summary>
-    /// Verifies that two concurrently-running relay instances cannot both claim the
-    /// same pending entry.  One relay holds a row-level lock (simulated via a raw
-    /// <c>SELECT FOR UPDATE SKIP LOCKED</c> in an open transaction), and the second
-    /// relay's <see cref="PostgresOutboxStore.GetPendingAsync"/> call skips that
-    /// locked row, picking up only the unlocked entries.
-    /// </summary>
     [Fact]
-    public async Task TwoOverlappingRelays_DoNotDoubleClaimSameEntry()
+    public async Task Completion_WithExpiredOrSupersededToken_CannotOverwriteClaim()
     {
-        // Seed two entries so we can distinguish which relay gets which.
-        var store = CreateStore();
-        var entryA = MakeEntry() with { CreatedAt = DateTimeOffset.UtcNow.AddSeconds(-1) };
-        var entryB = MakeEntry() with { CreatedAt = DateTimeOffset.UtcNow };
-
-        await store.InsertAsync(entryA, TestContext.Current.CancellationToken);
-        await store.InsertAsync(entryB, TestContext.Current.CancellationToken);
-
-        // Relay 1: open a transaction and lock entryA with FOR UPDATE SKIP LOCKED,
-        // but do not commit yet.  This simulates relay 1 mid-batch.
-        await using var conn1 = await fixture.DataSource.OpenConnectionAsync(TestContext.Current.CancellationToken);
-        await using var tx1 = await conn1.BeginTransactionAsync(TestContext.Current.CancellationToken);
-
-        await using var lockCmd = new NpgsqlCommand(
-            "SELECT id FROM alberto_outbox_entries WHERE id = @id FOR UPDATE SKIP LOCKED",
-            conn1,
-            tx1);
-        lockCmd.Parameters.AddWithValue("id", entryA.Id);
-        await using var lockReader = await lockCmd.ExecuteReaderAsync(TestContext.Current.CancellationToken);
-        // Drain the reader so the query executes and the lock is held.
-        var lockedAny = await lockReader.ReadAsync(TestContext.Current.CancellationToken);
-        await lockReader.CloseAsync();
-
-        // entryA is now locked (relay 1 holds the lock).
-        Assert.True(lockedAny, "Test setup: relay 1 failed to lock entryA.");
-
-        // Relay 2: call GetPendingAsync — must skip entryA (locked) and claim entryB.
-        var relay2Batch = await CreateStore().GetPendingAsync(limit: 100, TestContext.Current.CancellationToken);
-
-        // entryA must NOT appear in relay 2's batch (it was skipped due to the lock).
-        Assert.DoesNotContain(relay2Batch, e => e.Id == entryA.Id);
-
-        // entryB must appear in relay 2's batch (it was not locked).
-        Assert.Contains(relay2Batch, e => e.Id == entryB.Id);
-
-        // Release relay 1's transaction.
-        await tx1.RollbackAsync(TestContext.Current.CancellationToken);
-
-        // entryA must still be in 'pending' state (relay 1 never transitioned it).
-        Assert.Equal("pending", await ReadStatusAsync(entryA.Id, TestContext.Current.CancellationToken));
-
-        // entryB must now be 'processing' (relay 2 claimed it).
-        Assert.Equal("processing", await ReadStatusAsync(entryB.Id, TestContext.Current.CancellationToken));
-    }
-
-    /// <summary>
-    /// Verifies that <see cref="PostgresOutboxStore.GetPendingAsync"/> returns claimed
-    /// entries with status <see cref="OutboxEntryStatus.Processing"/>.
-    /// </summary>
-    /// <remarks>
-    /// This test would fail against the pre-fix code in two distinct ways:
-    /// <list type="bullet">
-    ///   <item>The claim UPDATE (SET status = 'processing') would be rejected by the
-    ///         original CHECK constraint <c>(status IN ('pending', 'delivered', 'failed'))</c>,
-    ///         so <see cref="PostgresOutboxStore.GetPendingAsync"/> would throw a
-    ///         PostgreSQL exception instead of returning a result.</item>
-    ///   <item>If the constraint was somehow already extended, the read-time alias
-    ///         <c>"processing" =&gt; OutboxEntryStatus.Pending</c> would cause this
-    ///         assertion to fail because <see cref="OutboxEntryStatus.Pending"/> ≠
-    ///         <see cref="OutboxEntryStatus.Processing"/>.</item>
-    /// </list>
-    /// Migration 013 adds 'processing' to the CHECK constraint and
-    /// <see cref="OutboxEntryStatus.Processing"/> to the enum, fixing both issues.
-    /// </remarks>
-    [Fact]
-    public async Task GetPendingAsync_ClaimedEntry_HasProcessingStatus()
-    {
+        var ct = TestContext.Current.CancellationToken;
         var store = CreateStore();
         var entry = MakeEntry();
-        await store.InsertAsync(entry, TestContext.Current.CancellationToken);
+        await store.InsertAsync(entry, ct);
 
-        var claimed = await store.GetPendingAsync(limit: 10, TestContext.Current.CancellationToken);
-        var claimedEntry = claimed.FirstOrDefault(e => e.Id == entry.Id);
+        var stale = (await ClaimAsync(store, 100, ct))
+            .Single(c => c.Entry.Id == entry.Id);
+        await ExpireClaimAsync(entry.Id, ct);
 
-        Assert.NotNull(claimedEntry);
-        // Pre-fix: this returned Pending (the 'processing' DB value was aliased to Pending).
-        // Post-fix: must return Processing.
-        Assert.Equal(OutboxEntryStatus.Processing, claimedEntry.Status);
+        Assert.False(await store.MarkDeliveredAsync(stale, ct));
+        Assert.False(await store.MarkFailedAsync(stale, "expired relay", ct));
+
+        var current = (await ClaimAsync(CreateStore(), 100, ct))
+            .Single(c => c.Entry.Id == entry.Id);
+
+        Assert.False(await store.MarkDeliveredAsync(stale, ct));
+        Assert.False(await store.MarkFailedAsync(stale, "stale relay", ct));
+        Assert.Equal("processing", await ReadStatusAsync(entry.Id, ct));
+
+        Assert.True(await store.MarkDeliveredAsync(current, ct));
+        Assert.Equal("delivered", await ReadStatusAsync(entry.Id, ct));
     }
 
-    /// <summary>
-    /// After a relay crash leaves an entry in 'processing', an operator can call
-    /// <see cref="PostgresOutboxStore.MarkFailedAsync"/> to record the error and
-    /// then <see cref="PostgresOutboxStore.RetryFailedAsync"/> to make the entry
-    /// eligible for relay again.  This is the expected operator recovery path.
-    /// </summary>
     [Fact]
-    public async Task OperatorRecovery_MarkFailedThenRetry_MakesEntryEligibleAgain()
+    public async Task ClaimPendingAsync_LegacyProcessingRowWithoutLease_IsRecovered()
     {
+        var ct = TestContext.Current.CancellationToken;
         var store = CreateStore();
         var entry = MakeEntry();
-        await store.InsertAsync(entry, TestContext.Current.CancellationToken);
+        await store.InsertAsync(entry, ct);
 
-        // Relay claims the entry then crashes.
-        var claimed = await store.GetPendingAsync(limit: 10, TestContext.Current.CancellationToken);
-        var claimedEntry = claimed.First(e => e.Id == entry.Id);
+        await using (var conn = await fixture.DataSource.OpenConnectionAsync(ct))
+        await using (var cmd = new NpgsqlCommand(
+            """
+            UPDATE alberto_outbox_entries
+            SET status = 'processing',
+                claim_id = NULL,
+                claimed_by = NULL,
+                claim_expires_at = NULL
+            WHERE id = @id
+            """,
+            conn))
+        {
+            cmd.Parameters.AddWithValue("id", entry.Id);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
 
-        // Operator notices the stuck 'processing' row and marks it failed.
-        await store.MarkFailedAsync(claimedEntry.Id, "relay crash", TestContext.Current.CancellationToken);
-        Assert.Equal("failed", await ReadStatusAsync(claimedEntry.Id, TestContext.Current.CancellationToken));
+        var recovered = await ClaimAsync(CreateStore(), 100, ct);
 
-        // Operator resets it to pending.
-        await store.RetryFailedAsync(ct: TestContext.Current.CancellationToken);
-        Assert.Equal("pending", await ReadStatusAsync(claimedEntry.Id, TestContext.Current.CancellationToken));
-
-        // The entry is now picked up again by the relay.
-        var retryClaimed = await store.GetPendingAsync(limit: 10, TestContext.Current.CancellationToken);
-        Assert.Contains(retryClaimed, e => e.Id == entry.Id);
+        Assert.Contains(recovered, c => c.Entry.Id == entry.Id);
     }
 
-    /// <summary>
-    /// Documents the current behavior of <see cref="PostgresOutboxStore.MarkFailedAsync"/>:
-    /// it has no guard on the current status, so it can overwrite a 'delivered' row.
-    /// This is harmless via the normal relay path (delivered rows are never in
-    /// 'processing' state for SKIP LOCKED to apply), but it is a footgun for direct
-    /// callers and operator scripts.
-    /// </summary>
     [Fact]
-    public async Task MarkFailedAsync_OnDeliveredEntry_OverwritesStatus_DocumentingCurrentBehavior()
+    public async Task Completion_ClearsClaimMetadata_AndDeliveredEntryCannotBeFailed()
     {
+        var ct = TestContext.Current.CancellationToken;
         var store = CreateStore();
         var entry = MakeEntry();
-        await store.InsertAsync(entry, TestContext.Current.CancellationToken);
+        await store.InsertAsync(entry, ct);
+        var claim = (await ClaimAsync(store, 100, ct))
+            .Single(c => c.Entry.Id == entry.Id);
 
-        var claimed = await store.GetPendingAsync(limit: 10, TestContext.Current.CancellationToken);
-        var claimedEntry = claimed.First(e => e.Id == entry.Id);
-        await store.MarkDeliveredAsync(claimedEntry.Id, TestContext.Current.CancellationToken);
-        Assert.Equal("delivered", await ReadStatusAsync(claimedEntry.Id, TestContext.Current.CancellationToken));
+        Assert.True(await store.MarkDeliveredAsync(claim, ct));
+        Assert.False(await store.MarkFailedAsync(claim, "late failure", ct));
 
-        // Calling MarkFailedAsync on a delivered entry transitions it back to 'failed'.
-        // This test documents the current behavior so a future guard is noticed if added.
-        await store.MarkFailedAsync(claimedEntry.Id, "should not happen in normal flow", TestContext.Current.CancellationToken);
-        Assert.Equal("failed", await ReadStatusAsync(claimedEntry.Id, TestContext.Current.CancellationToken));
+        await using var conn = await fixture.DataSource.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand(
+            """
+            SELECT status, claim_id, claimed_by, claim_expires_at
+            FROM alberto_outbox_entries
+            WHERE id = @id
+            """,
+            conn);
+        cmd.Parameters.AddWithValue("id", entry.Id);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        Assert.True(await reader.ReadAsync(ct));
+        Assert.Equal("delivered", reader.GetString(0));
+        Assert.True(reader.IsDBNull(1));
+        Assert.True(reader.IsDBNull(2));
+        Assert.True(reader.IsDBNull(3));
+    }
+
+    private async Task ExpireClaimAsync(Guid entryId, CancellationToken ct)
+    {
+        await using var conn = await fixture.DataSource.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand(
+            """
+            UPDATE alberto_outbox_entries
+            SET claim_expires_at = now() - interval '1 second'
+            WHERE id = @id
+            """,
+            conn);
+        cmd.Parameters.AddWithValue("id", entryId);
+        await cmd.ExecuteNonQueryAsync(ct);
     }
 }

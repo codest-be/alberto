@@ -384,6 +384,6 @@ Each module owns its schema. Two modules in one database are two schemas, migrat
 | A specific document is wrong | `alberto projections list <type> --search <id>` | Bug in `apply` → fix, deploy, `ops rebuild start` |
 | Dead letters appeared | `alberto dead-letters --processor <id>` | Fix the handler, deploy, `ops dead-letters retry <id>` |
 | Events processed twice | `alberto processor <id>` and your deploy log | A rewind or a renamed processor id — make the handler idempotent |
-| Messages not delivered | `alberto_outbox_entries` status column | Stuck in `processing` → the [known gap](reactors-and-outbox.md#known-gap-orphaned-processing-entries) |
+| Messages not delivered | `alberto_outbox_entries` status and `claim_expires_at` | Live claim → wait; expired claim → relay recovers it automatically |
 | Conflicts spiking | `alberto.concurrency.conflicts` | A boundary is too wide — narrow the query |
 | One tenant is stalled | `alberto tenants` | Stale lease → `ops tenants release` |
