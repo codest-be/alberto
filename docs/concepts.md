@@ -142,6 +142,12 @@ pipeline that comes back offers only `Commit(query, expectedPosition, ct)` and
 `CommitUnconditionally(ct)`: you have to say what the append is checked against, or say out loud
 that it is checked against nothing.
 
+For the rarer case where the boundary is only discoverable *during* the read — you fold one query
+to find an id, then fold a second keyed by it — `LoadUnder` takes a loader that returns its state,
+its boundary and the position it read at, and gives you back a bound pipeline. It is the escape
+hatch, not the default: when the boundary follows from the command, `Load(cmd => boundary, …)` with
+the async part in `Enrich` says the same thing and keeps the I/O out of the window.
+
 `RetryOnConflict(n)` bounds the total number of attempts, re-running `Load` and `Decide` against
 whatever is in the log now. Anything before `Load` — `Validate`, `Enrich` — runs once and is
 reused, so an expensive lookup or an external call is not repeated per attempt. `TryCommit` is the
