@@ -34,6 +34,7 @@ public static class EfConsumerBuilderExtensions
         where TEntity : class, IProjectionEntity, new()
         where TDbContext : DbContext
     {
+        ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(declaration);
 
         if (mode == ProjectionMode.Inline)
@@ -88,6 +89,7 @@ public static class EfConsumerBuilderExtensions
         where TEntity : class, IProjectionEntity, new()
         where TDbContext : DbContext
     {
+        ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(declaration);
         ArgumentNullException.ThrowIfNull(afterCommit);
 
