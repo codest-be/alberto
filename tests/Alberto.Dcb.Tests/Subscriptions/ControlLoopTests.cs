@@ -333,6 +333,85 @@ public sealed class ControlLoopTests
     }
 
     [Fact]
+    public async Task Pipelined_OnEscapedFault_StopsPreservesCheckpoint_AndRedeliversAfterRestart()
+    {
+        var backend = new InMemoryEventStoreBackend();
+        var checkpoints = new InMemoryCheckpointStore();
+        await checkpoints.SaveAsync("pipelined-faulting", 0, TestContext.Current.CancellationToken);
+        await backend.AppendAsync(
+            [CreateEvent(new TestEventA("trigger"))],
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        var firstHead = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
+        var faulting = new FaultingProcessor(
+            "pipelined-faulting",
+            new HashSet<string> { "test-event-a" });
+        var firstLoop = new ControlLoop(
+            faulting,
+            firstHead,
+            backend,
+            checkpoints,
+            TimeSpan.FromMilliseconds(10),
+            100,
+            executionOptions: new ProcessorExecutionOptions(
+                ProcessorBatchingMode.Required,
+                MaxConcurrency: 2));
+
+        using (var firstRun = new CancellationTokenSource())
+        {
+            await firstHead.StartAsync(firstRun.Token);
+            await firstLoop.StartAsync(firstRun.Token);
+            await WaitForAsync(
+                () => firstLoop.IsFaulted,
+                TimeSpan.FromSeconds(10),
+                TestContext.Current.CancellationToken);
+
+            await firstRun.CancelAsync();
+            await firstLoop.StopAsync(CancellationToken.None);
+            await firstHead.StopAsync(CancellationToken.None);
+        }
+
+        Assert.Equal(
+            0,
+            await checkpoints.GetAsync("pipelined-faulting", TestContext.Current.CancellationToken));
+
+        var secondHead = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
+        var healthy = new TestProcessor(
+            "pipelined-faulting",
+            new HashSet<string> { "test-event-a" });
+        var secondLoop = new ControlLoop(
+            healthy,
+            secondHead,
+            backend,
+            checkpoints,
+            TimeSpan.FromMilliseconds(10),
+            100,
+            executionOptions: new ProcessorExecutionOptions(
+                ProcessorBatchingMode.Required,
+                MaxConcurrency: 2));
+
+        using var secondRun = new CancellationTokenSource();
+        await secondHead.StartAsync(secondRun.Token);
+        await secondLoop.StartAsync(secondRun.Token);
+        await WaitForAsync(
+            () => healthy.ProcessedCount == 1,
+            TimeSpan.FromSeconds(10),
+            TestContext.Current.CancellationToken);
+        await WaitForAsync(
+            () => checkpoints.GetAsync("pipelined-faulting", CancellationToken.None)
+                .GetAwaiter().GetResult() == 1,
+            TimeSpan.FromSeconds(10),
+            TestContext.Current.CancellationToken);
+
+        await secondRun.CancelAsync();
+        await secondLoop.StopAsync(CancellationToken.None);
+        await secondHead.StopAsync(CancellationToken.None);
+
+        Assert.False(secondLoop.IsFaulted);
+        Assert.Equal(1, healthy.ProcessedEvents.Single().GlobalPosition);
+    }
+
+    [Fact]
     public async Task ControlLoop_CancellationIsClean()
     {
         var backend = new InMemoryEventStoreBackend();

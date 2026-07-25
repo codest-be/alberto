@@ -31,8 +31,8 @@ public static class TenantsCommand
                 await using var dataSource = new NpgsqlDataSourceBuilder(connStr).Build();
                 var admin = new PostgresAdminDataAccess(dataSource, schemaName);
 
-                var tableExists = await admin.TenantLeasesTableExistsAsync();
-                if (!tableExists)
+                var inventory = await admin.GetTenantLeaseInventoryAsync();
+                if (inventory.TenancyMode is AdminTenancyMode.SingleTenant)
                 {
                     if (json)
                     {
@@ -45,7 +45,7 @@ public static class TenantsCommand
                     return;
                 }
 
-                var leases = await admin.GetTenantLeasesAsync();
+                var leases = inventory.Leases;
 
                 if (json)
                 {

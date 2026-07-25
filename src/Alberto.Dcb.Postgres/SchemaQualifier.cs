@@ -20,11 +20,26 @@ internal sealed class SchemaQualifier
     /// <param name="schema">The schema name, or null/empty for default (public) schema.</param>
     public SchemaQualifier(string? schema)
     {
-        _prefix = string.IsNullOrWhiteSpace(schema) ? "" : $"{schema}.";
+        if (string.IsNullOrWhiteSpace(schema))
+        {
+            Name = "public";
+            _prefix = "";
+            return;
+        }
+
+        ValidateName(schema);
+        Name = schema;
+        _prefix = $"{Quote(schema)}.";
     }
 
     /// <summary>
-    /// Gets the schema prefix (e.g., "orders." or "").
+    /// Gets the bare schema name for catalog queries.
+    /// The default, unqualified schema is represented as <c>public</c>.
+    /// </summary>
+    public string Name { get; }
+
+    /// <summary>
+    /// Gets the validated and quoted schema prefix (e.g., <c>"orders".</c> or an empty string).
     /// </summary>
     public string Prefix => _prefix;
 
@@ -55,16 +70,8 @@ internal sealed class SchemaQualifier
     /// </exception>
     public static string ValidateAndQuote(string schema)
     {
-        if (!SchemaNamePattern.IsMatch(schema))
-            throw new ArgumentException(
-                $"Schema name '{schema}' is invalid. " +
-                "Schema names must start with a lowercase letter and contain only lowercase letters, " +
-                "digits, and underscores, with a maximum length of 63 characters.",
-                nameof(schema));
-
-        // Double-quote to produce a valid PostgreSQL quoted identifier for DDL.
-        // The allowlist guarantees no embedded double-quotes, so escaping is unnecessary.
-        return $"\"{schema}\"";
+        ValidateName(schema);
+        return Quote(schema);
     }
 
     /// <summary>
@@ -78,11 +85,20 @@ internal sealed class SchemaQualifier
     /// </exception>
     public static void ValidateName(string schema)
     {
-        if (!SchemaNamePattern.IsMatch(schema))
+        ArgumentNullException.ThrowIfNull(schema);
+
+        if (!IsValidName(schema))
             throw new ArgumentException(
                 $"Schema name '{schema}' is invalid. " +
                 "Schema names must start with a lowercase letter and contain only lowercase letters, " +
                 "digits, and underscores, with a maximum length of 63 characters.",
                 nameof(schema));
     }
+
+    /// <summary>
+    /// Returns whether <paramref name="schema"/> matches the PostgreSQL schema allowlist.
+    /// </summary>
+    internal static bool IsValidName(string schema) => SchemaNamePattern.IsMatch(schema);
+
+    private static string Quote(string schema) => $"\"{schema}\"";
 }

@@ -225,11 +225,9 @@ public sealed class DiscoveredIssuesTests
     //   catch (OperationCanceledException) when (ct.IsCancellationRequested) → break
     //   catch (Exception ex) when (ex is not OperationCanceledException)     → log+continue
     //
-    // An OperationCanceledException that is NOT sourced from the worker CT falls
-    // through BOTH catches (first requires ct.IsCancellationRequested == true; second
-    // excludes OperationCanceledException). It propagates to the outer catch:
-    //   catch (OperationCanceledException) { /* shutting down */ }
-    // which silently swallows it and terminates the worker.
+    // An OperationCanceledException that is NOT sourced from the worker token is an
+    // escaped processor failure, not host shutdown. Pipelined execution must fault the
+    // complete pipeline and keep the position in flight.
     //
     // Consequence: the event whose handler threw the non-shutdown OCE is never
     // MarkCompleted'd. Its position stays in-flight. SafeCheckpoint cannot advance
@@ -240,10 +238,10 @@ public sealed class DiscoveredIssuesTests
     //
     // See: src/Alberto.Dcb/Subscriptions/ControlLoop.cs → RunWorkerAsync (lines ~301–336)
 
-    #region RunWorkerAsync non-shutdown OCE leaves position in-flight
+    #region RunWorkerAsync non-shutdown OCE faults without completing position
 
     [Fact]
-    public async Task Pipelined_NonShutdownOce_DoesNotCallMarkCompleted_CheckpointStaysBehindFaultingEvent()
+    public async Task Pipelined_NonShutdownOce_FaultsPipeline_AndCheckpointStaysBehindFaultingEvent()
     {
         // ── Arrange ───────────────────────────────────────────────────────────────
         var backend = new InMemoryEventStoreBackend();
@@ -279,7 +277,7 @@ public sealed class DiscoveredIssuesTests
                 {
                     // Throw an OperationCanceledException that is NOT sourced from ct.
                     // ct.IsCancellationRequested is false at this point.
-                    // This falls through BOTH inner catch clauses and hits the outer one.
+                    // This must be treated as an escaped failure, not graceful shutdown.
                     throw new OperationCanceledException("simulated non-shutdown OCE");
                 }
 
@@ -325,11 +323,8 @@ public sealed class DiscoveredIssuesTests
         // The non-shutdown OCE is silently swallowed; the event at position 2 will
         // be re-processed after restart (at-least-once guarantee is preserved).
         //
-        // The risk is that callers may throw OperationCanceledException for reasons
-        // unrelated to shutdown (e.g., an inner HTTP call timed out), expecting the
-        // loop to fault or log. Instead, the loop silently continues with one fewer
-        // worker (degraded throughput) and re-queues the event for retry.
         Assert.Equal(1L, checkpoint);
+        Assert.True(loop.IsFaulted);
     }
 
     #endregion
@@ -355,47 +350,4 @@ public sealed class DiscoveredIssuesTests
 
     #endregion
 
-    // ── EfStateStore.IsDuplicateKeyViolation exception depth ──────────────────────
-    //
-    // The current implementation uses a one-level check:
-    //   ex.InnerException is DbException { SqlState: "23505" }
-    //
-    // Npgsql wraps the PostgresException (which IS a DbException with SqlState)
-    // directly as InnerException of DbUpdateException, so in practice one level
-    // is correct for Npgsql. However, other EF providers or future Npgsql versions
-    // may wrap the exception more deeply (two or more levels). The original code
-    // walked the full InnerException chain, which was more resilient.
-    //
-    // This cannot be unit-tested here because Alberto.Dcb.Tests does not reference
-    // Alberto.Dcb.EntityFramework and should not add that dependency. The check is
-    // recorded here for documentation and reported in crossFileNeeds.
-    //
-    // See: src/Alberto.Dcb.EntityFramework/EfStateStore.cs → IsDuplicateKeyViolation
-
-    #region EfStateStore exception chain depth (infrastructure test only)
-
-    [Fact(Skip =
-        "Infrastructure gap: IsDuplicateKeyViolation only checks ex.InnerException " +
-        "(one level). A DbException nested two or more levels deep would be missed, " +
-        "turning a retryable unique-constraint conflict into an unhandled exception. " +
-        "Test requires Alberto.Dcb.EntityFramework project reference and a live " +
-        "database provider — add a Testcontainers integration test in a dedicated " +
-        "EfStateStore test class within the same project.")]
-    public void EfStateStore_IsDuplicateKeyViolation_DoesNotWalkFullInnerExceptionChain()
-    {
-        // To validate this fix, create a DbUpdateException where the DbException
-        // with SqlState "23505" is nested two levels deep:
-        //   var pg = new PostgresException(...) { SqlState = "23505" };
-        //   var wrapped = new Exception("level-2 wrapper", pg);
-        //   var dbu = new DbUpdateException("level-1 wrapper", wrapped);
-        //
-        // The current one-liner returns false (dbu.InnerException is `wrapped`,
-        // not a DbException). The fix should walk the chain:
-        //   static bool Walk(Exception? ex) =>
-        //     ex is DbException { SqlState: UniqueViolationSqlState } ||
-        //     (ex is not null && Walk(ex.InnerException));
-        Assert.True(true, "placeholder — see skip reason above");
-    }
-
-    #endregion
 }

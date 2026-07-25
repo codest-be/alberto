@@ -32,8 +32,6 @@ public sealed class PostgresDeadLetterStore(
     // and cached for all subsequent calls.
     private bool? _hasTenantIdCache = multiTenant ? true : null;
 
-    private string SchemaName => _schema.HasSchema ? _schema.Prefix.TrimEnd('.') : "public";
-
     /// <inheritdoc />
     public async Task StoreAsync(DeadLetterEntry entry, CancellationToken ct = default)
     {
@@ -349,7 +347,7 @@ public sealed class PostgresDeadLetterStore(
 
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = sql;
-        cmd.Parameters.AddWithValue("schemaName", SchemaName);
+        cmd.Parameters.AddWithValue("schemaName", _schema.Name);
 
         var result = await cmd.ExecuteScalarAsync(ct);
         return result is true;

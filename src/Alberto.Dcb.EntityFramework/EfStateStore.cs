@@ -25,6 +25,7 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
 {
     // ANSI SQLSTATE "23505" is Postgres' unique_violation. Same constant as the inline projections.
     private const string UniqueViolationSqlState = "23505";
+    private const int MaxWriteAttempts = 5;
 
     private readonly IDbContextFactory<TDbContext> _contextFactory;
     private readonly Func<int> _rebuildVersion;
@@ -73,12 +74,42 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
         if (upserts.Count == 0 && deletes.Count == 0)
             return;
 
-        await using var context = await _contextFactory.CreateDbContextAsync(ct);
-
         // Resolved once for the whole batch, so a promotion landing mid-batch cannot split
-        // the upserts and deletes across two versions.
+        // attempts, upserts, and deletes across two versions.
         var version = _rebuildVersion();
+        var delay = TimeSpan.FromMilliseconds(50);
 
+        for (var attempt = 1; attempt <= MaxWriteAttempts; attempt++)
+        {
+            try
+            {
+                await WriteBatchOnceAsync(upserts, deletes, version, ct);
+                return;
+            }
+            catch (Exception ex) when (IsRetryableConflict(ex))
+            {
+                AlbertoMetrics.ConcurrencyConflicts.Add(1);
+
+                if (attempt == MaxWriteAttempts)
+                    throw ToConcurrencyConflict(ex, upserts.Keys, deletes);
+
+                await Task.Delay(delay, ct);
+                delay *= 2;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Applies the complete change set in one fresh context. Each retry calls this method again,
+    /// so no tracked state or partial fallback path can leak between attempts.
+    /// </summary>
+    private async Task WriteBatchOnceAsync(
+        IReadOnlyDictionary<string, TEntity> upserts,
+        IReadOnlyCollection<string> deletes,
+        int version,
+        CancellationToken ct)
+    {
+        await using var context = await _contextFactory.CreateDbContextAsync(ct);
         var allDocIds = upserts.Keys.Concat(deletes).Distinct().ToList();
         var existingEntities = await context.Set<TEntity>()
             .Where(e => allDocIds.Contains(e.DocumentId) && e.RebuildVersion == version)
@@ -107,149 +138,12 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
             }
         }
 
-        try
-        {
-            await context.SaveChangesAsync(ct);
-        }
-        catch (DbUpdateConcurrencyException ex)
-        {
-            AlbertoMetrics.ConcurrencyConflicts.Add(1);
-            var conflictedEntry = ex.Entries.FirstOrDefault();
-            var conflictedDocId = (conflictedEntry?.Entity as IProjectionEntity)?.DocumentId ?? "unknown";
-            throw new ConcurrencyConflictException(conflictedDocId, ex);
-        }
-        catch (DbUpdateException ex) when (IsDuplicateKeyViolation(ex))
-        {
-            AlbertoMetrics.ConcurrencyConflicts.Add(1);
-            await RetryWithBackoffAsync(upserts, deletes, ct);
-        }
-    }
-
-    private async Task RetryWithBackoffAsync(
-        IReadOnlyDictionary<string, TEntity> upserts,
-        IReadOnlyCollection<string> deletes,
-        CancellationToken ct)
-    {
-        const int maxRetries = 5;
-        var delay = TimeSpan.FromMilliseconds(50);
-
-        var version = _rebuildVersion();
-
-        for (var attempt = 1; attempt <= maxRetries; attempt++)
-        {
-            await using var context = await _contextFactory.CreateDbContextAsync(ct);
-
-            foreach (var docId in deletes)
-            {
-                var existing = await context.Set<TEntity>()
-                    .FirstOrDefaultAsync(e => e.DocumentId == docId && e.RebuildVersion == version, ct);
-                if (existing != null)
-                    context.Set<TEntity>().Remove(existing);
-            }
-
-            foreach (var (docId, newEntity) in upserts)
-            {
-                newEntity.DocumentId = docId;
-                newEntity.RebuildVersion = version;
-                newEntity.UpdatedAt = DateTimeOffset.UtcNow;
-
-                var existing = await context.Set<TEntity>()
-                    .FirstOrDefaultAsync(e => e.DocumentId == docId && e.RebuildVersion == version, ct);
-
-                if (existing != null)
-                {
-                    context.Entry(existing).CurrentValues.SetValues(newEntity);
-                    CopyOwnedNavigations(context.Entry(existing), newEntity);
-                }
-                else
-                {
-                    context.Set<TEntity>().Add(newEntity);
-                }
-            }
-
-            try
-            {
-                await context.SaveChangesAsync(ct);
-                return;
-            }
-            catch (DbUpdateException ex) when (IsDuplicateKeyViolation(ex))
-            {
-                if (attempt >= maxRetries)
-                {
-                    await SaveEntitiesOneByOneAsync(upserts, deletes, ct);
-                    return;
-                }
-
-                AlbertoMetrics.ConcurrencyConflicts.Add(1);
-                await Task.Delay(delay, ct);
-                delay *= 2;
-            }
-        }
-    }
-
-    private async Task SaveEntitiesOneByOneAsync(
-        IReadOnlyDictionary<string, TEntity> upserts,
-        IReadOnlyCollection<string> deletes,
-        CancellationToken ct)
-    {
-        var version = _rebuildVersion();
-
-        foreach (var (docId, newEntity) in upserts)
-        {
-            try
-            {
-                await using var context = await _contextFactory.CreateDbContextAsync(ct);
-
-                newEntity.DocumentId = docId;
-                newEntity.RebuildVersion = version;
-                newEntity.UpdatedAt = DateTimeOffset.UtcNow;
-
-                var existing = await context.Set<TEntity>()
-                    .FirstOrDefaultAsync(e => e.DocumentId == docId && e.RebuildVersion == version, ct);
-
-                if (existing != null)
-                {
-                    context.Entry(existing).CurrentValues.SetValues(newEntity);
-                    CopyOwnedNavigations(context.Entry(existing), newEntity);
-                }
-                else
-                {
-                    context.Set<TEntity>().Add(newEntity);
-                }
-
-                await context.SaveChangesAsync(ct);
-            }
-            catch (DbUpdateException ex) when (IsDuplicateKeyViolation(ex))
-            {
-                AlbertoMetrics.ConcurrencyConflicts.Add(1);
-
-                try
-                {
-                    await using var retryContext = await _contextFactory.CreateDbContextAsync(ct);
-
-                    var nowExisting = await retryContext.Set<TEntity>()
-                        .FirstOrDefaultAsync(e => e.DocumentId == docId && e.RebuildVersion == version, ct);
-
-                    if (nowExisting != null)
-                    {
-                        retryContext.Entry(nowExisting).CurrentValues.SetValues(newEntity);
-                        CopyOwnedNavigations(retryContext.Entry(nowExisting), newEntity);
-                        await retryContext.SaveChangesAsync(ct);
-                    }
-                }
-                catch (DbUpdateException)
-                {
-                    // Give up on this entity.
-                }
-            }
-        }
+        await context.SaveChangesAsync(ct);
     }
 
     /// <summary>
     /// Copies owned-navigation values from <paramref name="source"/> onto a tracked entry in
-    /// one reflection pass. Extracted to eliminate the identical three-line loop that previously
-    /// appeared four times across ApplyChangesAsync, RetryWithBackoffAsync, and
-    /// SaveEntitiesOneByOneAsync (twice).
+    /// one reflection pass.
     /// </summary>
     private static void CopyOwnedNavigations(EntityEntry<TEntity> trackedEntry, TEntity source)
     {
@@ -263,12 +157,42 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
     }
 
     /// <summary>
-    /// Returns <see langword="true"/> when the exception is a duplicate-key (unique-constraint)
-    /// violation, using the same <c>DbException.SqlState</c> pattern as the inline projections
-    /// instead of reflection-based or message-string matching.
+    /// Returns <see langword="true"/> when the escaped write failure is retryable.
+    /// Both optimistic concurrency and duplicate-key races take the same atomic retry path.
     /// </summary>
-    private static bool IsDuplicateKeyViolation(DbUpdateException ex) =>
-        ex.InnerException is DbException { SqlState: UniqueViolationSqlState };
+    private static bool IsRetryableConflict(Exception ex) =>
+        ex is DbUpdateConcurrencyException ||
+        ex is DbUpdateException && HasSqlState(ex, UniqueViolationSqlState);
+
+    private static bool HasSqlState(Exception ex, string sqlState)
+    {
+        for (Exception? current = ex; current is not null; current = current.InnerException)
+        {
+            if (current is DbException { SqlState: var state } &&
+                string.Equals(state, sqlState, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static ConcurrencyConflictException ToConcurrencyConflict(
+        Exception ex,
+        IEnumerable<string> upsertIds,
+        IEnumerable<string> deleteIds)
+    {
+        var entryId = (ex as DbUpdateConcurrencyException)?.Entries
+            .Select(entry => (entry.Entity as IProjectionEntity)?.DocumentId)
+            .FirstOrDefault(id => !string.IsNullOrWhiteSpace(id));
+        var documentId = entryId
+            ?? upsertIds.FirstOrDefault()
+            ?? deleteIds.FirstOrDefault()
+            ?? "unknown";
+
+        return new ConcurrencyConflictException(documentId, ex);
+    }
 
     /// <inheritdoc/>
     public ValueTask DisposeAsync()

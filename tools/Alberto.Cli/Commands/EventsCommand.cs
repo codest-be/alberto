@@ -17,6 +17,7 @@ public static class EventsCommand
               alberto events
               alberto events --type OrderPlaced
               alberto events --tag order:123
+              alberto events --tenant tenant_a
               alberto events --after 1000 --limit 50
               alberto events --json
             """);
@@ -25,6 +26,7 @@ public static class EventsCommand
         var schemaOption = new Option<string?>("--schema") { Description = "Database schema name" };
         var typeOption = new Option<string?>("--type") { Description = "Filter by event type" };
         var tagOption = new Option<string?>("--tag") { Description = "Filter by tag" };
+        var tenantOption = new Option<string?>("--tenant") { Description = "Filter by tenant ID (multi-tenant stores only)" };
         var afterOption = new Option<long>("--after") { DefaultValueFactory = _ => 0, Description = "Return events after this global position" };
         var limitOption = new Option<int>("--limit") { DefaultValueFactory = _ => 20, Description = "Maximum number of results" };
         var jsonOption = new Option<bool>("--json") { Description = "Output as JSON" };
@@ -33,11 +35,12 @@ public static class EventsCommand
         command.AddOption(schemaOption);
         command.AddOption(typeOption);
         command.AddOption(tagOption);
+        command.AddOption(tenantOption);
         command.AddOption(afterOption);
         command.AddOption(limitOption);
         command.AddOption(jsonOption);
 
-        command.SetHandler(async (string? url, string? schema, string? type, string? tag, long after, int limit, bool json) =>
+        command.SetHandler(async (string? url, string? schema, string? type, string? tag, string? tenant, long after, int limit, bool json) =>
         {
             IOutput output = json ? new JsonOutput() : new HumanOutput();
 
@@ -49,7 +52,7 @@ public static class EventsCommand
                 await using var dataSource = new NpgsqlDataSourceBuilder(connStr).Build();
                 var admin = new PostgresAdminDataAccess(dataSource, schemaName);
 
-                var events = await admin.GetEventsAsync(type, tag, after, limit);
+                var events = await admin.GetEventsAsync(type, tag, tenant, after, limit);
 
                 if (json)
                 {
@@ -58,6 +61,7 @@ public static class EventsCommand
                         e.GlobalPosition,
                         e.EventType,
                         e.Tags,
+                        e.TenantId,
                         createdAt = e.CreatedAt?.ToString("O")
                     }));
                 }
@@ -68,12 +72,13 @@ public static class EventsCommand
                 else
                 {
                     output.Table(
-                        ["Position", "Event Type", "Tags", "Created At"],
+                        ["Position", "Event Type", "Tags", "Tenant ID", "Created At"],
                         events.Select(e => new[]
                         {
                             e.GlobalPosition.ToString(),
                             e.EventType,
                             e.Tags ?? "-",
+                            e.TenantId ?? "-",
                             e.CreatedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"
                         })
                     );
@@ -84,7 +89,7 @@ public static class EventsCommand
                 output.Error(ex.Message);
                 Environment.Exit(1);
             }
-        }, urlOption, schemaOption, typeOption, tagOption, afterOption, limitOption, jsonOption);
+        }, urlOption, schemaOption, typeOption, tagOption, tenantOption, afterOption, limitOption, jsonOption);
 
         return command;
     }

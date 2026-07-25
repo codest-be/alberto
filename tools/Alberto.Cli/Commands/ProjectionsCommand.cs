@@ -128,7 +128,7 @@ public static class ProjectionsCommand
                         states.Select(s => new[]
                         {
                             s.DocumentId,
-                            s.TenantId,
+                            s.TenantId ?? "-",
                             s.UpdatedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"
                         })
                     );

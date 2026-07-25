@@ -88,6 +88,27 @@ internal static class CommandLineCompat
             GetValue<T6>(parseResult, symbol6),
             GetValue<T7>(parseResult, symbol7)));
 
+    public static void SetHandler<T1, T2, T3, T4, T5, T6, T7, T8>(
+        this Command command,
+        Func<T1, T2, T3, T4, T5, T6, T7, T8, Task> handler,
+        object symbol1,
+        object symbol2,
+        object symbol3,
+        object symbol4,
+        object symbol5,
+        object symbol6,
+        object symbol7,
+        object symbol8) =>
+        command.SetAction(parseResult => handler(
+            GetValue<T1>(parseResult, symbol1),
+            GetValue<T2>(parseResult, symbol2),
+            GetValue<T3>(parseResult, symbol3),
+            GetValue<T4>(parseResult, symbol4),
+            GetValue<T5>(parseResult, symbol5),
+            GetValue<T6>(parseResult, symbol6),
+            GetValue<T7>(parseResult, symbol7),
+            GetValue<T8>(parseResult, symbol8)));
+
     private static T GetValue<T>(ParseResult parseResult, object symbol) =>
         symbol switch
         {

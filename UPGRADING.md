@@ -5,6 +5,42 @@ The most recent cycle (projection rebuilds) is at the top. Older changes follow.
 
 ---
 
+## Core and operator correctness hardening
+
+This cycle makes five previously implicit invariants explicit:
+
+- PostgreSQL schema identifiers must be blank (meaning `public`) or match
+  `^[a-z_][a-z0-9_]*$`. Invalid runtime and CLI schemas now fail with `ALB1005` instead of
+  reaching interpolated SQL.
+- `PostgresAdminDataAccess.GetEventsAsync` and `GetDeadLettersAsync` gained a nullable `tenant`
+  argument, and their result records expose `TenantId`. `ProjectionState.TenantId` is now nullable
+  because a single-tenant store has no tenant column.
+- `TenantLeasesTableExistsAsync` and `GetTenantLeasesAsync` were replaced by
+  `GetTenantLeaseInventoryAsync`. The returned `TenancyMode` distinguishes a single-tenant store
+  from an empty multi-tenant lease inventory.
+- A pipelined processor fault now faults the control loop without advancing its checkpoint past
+  the failed event. Hosts should continue treating `ControlLoop.IsFaulted` as a restart signal.
+- `EfStateStore.ApplyChangesAsync` now commits the complete upsert/delete batch atomically and
+  throws `ConcurrencyConflictException` after bounded conflict retries. It no longer falls back to
+  partial per-entity saves or reports success after swallowing write failures.
+
+The admin CLI detects the migrated tenancy topology automatically. `events` and `dead-letters`
+accept `--tenant`; using a tenant filter against a single-tenant store fails explicitly.
+
+---
+
+## Command decisions now require an observed DCB position
+
+`DecidedPipeline.Persist(DcbQuery, CancellationToken)` has been replaced by
+`Persist(DcbQuery, long expectedPosition, CancellationToken)`. Supplying a query without the
+position at which it was observed silently disabled the DCB conflict check.
+
+For commands that intentionally append without a conflict check, call
+`PersistUnconditionally(CancellationToken)`. The `Load(load, query)` overload that could create
+an unobserved boundary has been removed; use `Load(load, query, expectedPosition)` instead.
+
+---
+
 ## Summary — outbox claim leases and atomic admin mutations
 
 Two operator-facing lifecycles now sit behind one tested interface each.
@@ -523,14 +559,16 @@ builder.Services.AddAlberto("orders", module =>
 
 ### P1.1 — Schema name restricted to lowercase identifier; DDL now uses quoted identifier (SQL injection fix)
 
-**What changed:** `PostgresMigrator.Migrate()` and `PostgresMigrator.GetPendingMigrations()`
-now validate the `schema` parameter against the allowlist `^[a-z][a-z0-9_]{0,62}$`. Names
-that do not match throw `ArgumentException`. The internal `EnsureSchemaExists()` method now
-uses a double-quoted PostgreSQL identifier in the `CREATE SCHEMA IF NOT EXISTS` DDL.
+**What changed:** every PostgreSQL adapter, the admin/CLI surface,
+`PostgresMigrator.Migrate()`, and `PostgresMigrator.GetPendingMigrations()` now validate the
+`schema` parameter against the allowlist `^[a-z][a-z0-9_]{0,62}$`. Names that do not match
+throw `ArgumentException` (or fail startup validation with `ALB1005`). Runtime SQL and the
+internal `EnsureSchemaExists()` DDL use a double-quoted schema identifier.
 
-**Why:** the schema name was previously interpolated unquoted into raw DDL
-(`CREATE SCHEMA IF NOT EXISTS {schema}`). A crafted schema name could execute arbitrary SQL
-at startup with the service's database credentials. Severity: **critical**.
+**Why:** the schema name was previously validated only on the migration path. With
+`AutoMigrate = false`, or when supplied through the CLI's `--schema` option, it was still
+interpolated into runtime/admin SQL. A crafted schema name could execute arbitrary SQL with
+the operator's database credentials. Severity: **critical**.
 
 **Impact — breaking for schema names outside the allowlist:**
 

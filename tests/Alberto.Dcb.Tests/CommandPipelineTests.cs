@@ -99,6 +99,74 @@ public sealed class CommandPipelineTests
     }
 
     [Fact]
+    public async Task Persist_WithExplicitBoundary_ShouldRejectAnEventAppendedAfterObservation()
+    {
+        var backend = new InMemoryEventStoreBackend();
+        var eventStore = new EventStore(backend);
+        var serializer = CreateSerializer();
+        var store = new AlbertoStore(eventStore, serializer);
+        var orderId = Guid.NewGuid();
+        var query = DcbQuery.ByTags(new EventTag("order", orderId.ToString()));
+
+        var decision = store.Handle(new ConfirmOrder(orderId))
+            .NoValidation()
+            .Decide(command => Decision.Succeed(new OrderConfirmed { OrderId = command.OrderId }));
+
+        await eventStore.AppendAsync(
+            [ToPersist(serializer, new OrderReserved { OrderId = orderId })],
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        await Assert.ThrowsAsync<DcbConflictException>(
+            () => decision.Persist(query, expectedPosition: 0, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task GenericPersist_WithExplicitBoundary_ShouldRejectAnEventAppendedAfterObservation()
+    {
+        var backend = new InMemoryEventStoreBackend();
+        var eventStore = new EventStore(backend);
+        var serializer = CreateSerializer();
+        var store = new AlbertoStore(eventStore, serializer);
+        var orderId = Guid.NewGuid();
+        var query = DcbQuery.ByTags(new EventTag("order", orderId.ToString()));
+
+        var decision = store.Handle(new ConfirmOrder(orderId))
+            .NoValidation()
+            .Decide(command => Decision<Guid>.Succeed(
+                command.OrderId,
+                new OrderConfirmed { OrderId = command.OrderId }));
+
+        await eventStore.AppendAsync(
+            [ToPersist(serializer, new OrderReserved { OrderId = orderId })],
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        await Assert.ThrowsAsync<DcbConflictException>(
+            () => decision.Persist(query, expectedPosition: 0, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task PersistUnconditionally_MakesTheAbsenceOfAConflictCheckExplicit()
+    {
+        var backend = new InMemoryEventStoreBackend();
+        var eventStore = new EventStore(backend);
+        var serializer = CreateSerializer();
+        var store = new AlbertoStore(eventStore, serializer);
+        var orderId = Guid.NewGuid();
+
+        await eventStore.AppendAsync(
+            [ToPersist(serializer, new OrderReserved { OrderId = orderId })],
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        var result = await store.Handle(new ConfirmOrder(orderId))
+            .NoValidation()
+            .Decide(command => Decision.Succeed(new OrderConfirmed { OrderId = command.OrderId }))
+            .PersistUnconditionally(TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, await eventStore.GetLastPositionAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
     public async Task AddAlbertoStore_UsesTheEventStoreFromEachDependencyScope()
     {
         var services = new ServiceCollection();
@@ -123,7 +191,7 @@ public sealed class CommandPipelineTests
             .Handle("first")
             .NoValidation()
             .Decide(_ => Decision.Succeed(new ScopeProbe()))
-            .Persist(DcbQuery.Empty, TestContext.Current.CancellationToken);
+            .PersistUnconditionally(TestContext.Current.CancellationToken);
 
         await using var secondScope = provider.CreateAsyncScope();
         var secondStore = secondScope.ServiceProvider.GetRequiredService<AlbertoStore>();
@@ -134,7 +202,7 @@ public sealed class CommandPipelineTests
             .Handle("second")
             .NoValidation()
             .Decide(_ => Decision.Succeed(new ScopeProbe()))
-            .Persist(DcbQuery.Empty, TestContext.Current.CancellationToken);
+            .PersistUnconditionally(TestContext.Current.CancellationToken);
 
         Assert.True(firstResult.IsSuccess);
         Assert.True(secondResult.IsSuccess);

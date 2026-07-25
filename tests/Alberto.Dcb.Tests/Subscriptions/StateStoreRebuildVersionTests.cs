@@ -314,4 +314,95 @@ public sealed class StateStoreRebuildVersionTests(StateStoreRebuildVersionFixtur
 
         (await EfStore(() => 1).LoadManyAsync([docId], ct: ct))[docId].Counter.Should().Be(7);
     }
+
+    [Fact]
+    public async Task EfStateStore_RetriesTheCompleteAtomicBatch_AndResolvesVersionOnce()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var updatedId = NewDocId();
+        var deletedId = NewDocId();
+        await EfStore(() => 1).ApplyChangesAsync(
+            new Dictionary<string, CounterEntity>
+            {
+                [updatedId] = Entity(updatedId, 10),
+                [deletedId] = Entity(deletedId, 20),
+            },
+            [],
+            ct);
+
+        var nestedUniqueViolation = new DbUpdateException(
+            "save failed",
+            new InvalidOperationException(
+                "provider wrapper",
+                new FakeSqlStateDbException("23505", "duplicate key")));
+        var factory = new ControlledDbContextFactory(fixture.ConnectionString);
+        factory.EnqueueException(nestedUniqueViolation);
+        factory.EnqueueSuccess();
+        var versionResolutionCount = 0;
+        var store = new EfStateStore<CounterEntity, EfTestDbContext>(
+            factory,
+            () =>
+            {
+                versionResolutionCount++;
+                return 1;
+            });
+
+        await store.ApplyChangesAsync(
+            new Dictionary<string, CounterEntity>
+            {
+                [updatedId] = Entity(updatedId, 99),
+            },
+            [deletedId],
+            ct);
+
+        var state = await EfStore(() => 1).LoadManyAsync([updatedId, deletedId], ct);
+        state[updatedId].Counter.Should().Be(99);
+        state.Should().NotContainKey(deletedId, "deletes are part of every atomic retry attempt");
+        versionResolutionCount.Should().Be(
+            1,
+            "one ApplyChanges operation cannot cross rebuild versions between attempts");
+    }
+
+    [Fact]
+    public async Task EfStateStore_RetriesOptimisticConcurrencyThroughTheSameMutationPath()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var docId = NewDocId();
+        var factory = new ControlledDbContextFactory(fixture.ConnectionString);
+        factory.EnqueueException(new DbUpdateConcurrencyException("stale row", []));
+        factory.EnqueueSuccess();
+        var store = new EfStateStore<CounterEntity, EfTestDbContext>(factory);
+
+        await store.ApplyChangesAsync(
+            new Dictionary<string, CounterEntity> { [docId] = Entity(docId, 42) },
+            [],
+            ct);
+
+        (await store.LoadManyAsync([docId], ct))[docId].Counter.Should().Be(42);
+    }
+
+    [Fact]
+    public async Task EfStateStore_ExhaustedConflict_ThrowsAndNeverReportsPartialSuccess()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var docId = NewDocId();
+        var permanentConflict = new DbUpdateException(
+            "save failed",
+            new FakeSqlStateDbException("23505", "duplicate key"));
+        var factory = new ControlledDbContextFactory(fixture.ConnectionString)
+        {
+            PermanentInterceptor = (_, _) => throw permanentConflict,
+        };
+        var store = new EfStateStore<CounterEntity, EfTestDbContext>(factory);
+
+        var act = () => store.ApplyChangesAsync(
+            new Dictionary<string, CounterEntity> { [docId] = Entity(docId, 42) },
+            [],
+            ct);
+
+        var thrown = await act.Should().ThrowAsync<ConcurrencyConflictException>();
+        thrown.Which.DocumentId.Should().Be(docId);
+        thrown.Which.InnerException.Should().BeSameAs(permanentConflict);
+        (await EfStore(() => 1).LoadManyAsync([docId], ct)).Should().BeEmpty();
+    }
 }

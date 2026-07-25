@@ -70,6 +70,16 @@ public sealed record PostgresBackendDescriptor(PostgresOptions Options) : IAlber
                 $"Postgres LeaseDuration is {Options.LeaseDuration}, which is not a positive duration.",
                 $"Set a positive duration via '{path}:LeaseDuration'.");
         }
+
+        if (!string.IsNullOrWhiteSpace(Options.Schema) &&
+            !SchemaQualifier.IsValidName(Options.Schema))
+        {
+            yield return new AlbertoValidationFailure(
+                "ALB1005",
+                $"Postgres schema '{Options.Schema}' is not a safe PostgreSQL identifier.",
+                $"Set '{path}:Schema' to a lowercase identifier that starts with a letter and " +
+                "contains only lowercase letters, digits, and underscores (maximum 63 characters).");
+        }
     }
 
     /// <inheritdoc />

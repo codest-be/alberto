@@ -344,6 +344,7 @@ Reported by `PostgresBackendDescriptor.Validate`, called from the same pass.
 | `ALB1002` | `MaxPoolSize ≤ 0` | Set a positive pool size |
 | `ALB1003` | `MinPoolSize > MaxPoolSize` | Lower `MinPoolSize` or raise `MaxPoolSize` |
 | `ALB1004` | `LeaseDuration ≤ 0` | Set a positive duration |
+| `ALB1005` | `Schema` is not a safe lowercase PostgreSQL identifier | Use a lowercase letter followed by lowercase letters, digits, or underscores (maximum 63 characters) |
 
 ---
 
