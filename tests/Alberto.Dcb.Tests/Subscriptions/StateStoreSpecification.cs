@@ -473,6 +473,196 @@ public abstract class StateStoreSpecification<TState>
             .Should().Be(22, "storeB's row must survive storeA's delete");
     }
 
+    // ── Spec facts — ListRecentAsync ──────────────────────────────────────────
+
+    /// <summary>
+    /// Values in the 1000-band belong to the <c>ListRecent_*</c> facts alone. An adapter that
+    /// does not isolate by projectionType (EF) shares one table across every fact in the class,
+    /// and <see cref="IStateStore{TState}.ListRecentAsync"/> takes no document IDs to filter by —
+    /// so a fact asserting that a value is <em>absent</em> has to know no other fact writes it.
+    /// </summary>
+    private const int ListRecentValueBase = 1000;
+
+    /// <summary>
+    /// The documents come back most-recently-written first. Writes are in separate calls so
+    /// each lands in its own transaction and gets its own timestamp; documents written in one
+    /// batch share one and their relative order is not part of the contract.
+    /// </summary>
+    [Fact]
+    public async Task ListRecent_ReturnsMostRecentlyWrittenFirst()
+    {
+        var store = await CreateStore(NewProjectionType());
+
+        await store.ApplyChangesAsync(
+            MakeDict($"doc-{TestId}-lr-1", ListRecentValueBase + 1), [], Ct);
+        await store.ApplyChangesAsync(
+            MakeDict($"doc-{TestId}-lr-2", ListRecentValueBase + 2), [], Ct);
+        await store.ApplyChangesAsync(
+            MakeDict($"doc-{TestId}-lr-3", ListRecentValueBase + 3), [], Ct);
+
+        var recent = await store.ListRecentAsync(3, Ct);
+
+        recent.Select(ReadValue).Should().Equal(
+            ListRecentValueBase + 3, ListRecentValueBase + 2, ListRecentValueBase + 1);
+    }
+
+    /// <summary>
+    /// A re-upsert of an existing document moves it back to the front — "recent" means last
+    /// written, not first created.
+    /// </summary>
+    [Fact]
+    public async Task ListRecent_ReUpsert_MovesDocumentToFront()
+    {
+        var store = await CreateStore(NewProjectionType());
+        var firstId = $"doc-{TestId}-lr-touch-1";
+
+        await store.ApplyChangesAsync(MakeDict(firstId, ListRecentValueBase + 11), [], Ct);
+        await store.ApplyChangesAsync(
+            MakeDict($"doc-{TestId}-lr-touch-2", ListRecentValueBase + 12), [], Ct);
+        await store.ApplyChangesAsync(MakeDict(firstId, ListRecentValueBase + 13), [], Ct);
+
+        var recent = await store.ListRecentAsync(2, Ct);
+
+        ReadValue(recent[0]).Should().Be(ListRecentValueBase + 13);
+    }
+
+    [Fact]
+    public async Task ListRecent_ReturnsAtMostLimitDocuments()
+    {
+        var store = await CreateStore(NewProjectionType());
+
+        for (var i = 0; i < 3; i++)
+            await store.ApplyChangesAsync(
+                MakeDict($"doc-{TestId}-lr-limit-{i}", ListRecentValueBase + 20 + i), [], Ct);
+
+        (await store.ListRecentAsync(2, Ct)).Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task ListRecent_ExcludesDeletedDocuments()
+    {
+        var store = await CreateStore(NewProjectionType());
+        var dropId = $"doc-{TestId}-lr-drop";
+
+        await store.ApplyChangesAsync(MakeDict(dropId, ListRecentValueBase + 31), [], Ct);
+        await store.ApplyChangesAsync(
+            MakeDict($"doc-{TestId}-lr-keep", ListRecentValueBase + 32), [], Ct);
+        await store.ApplyChangesAsync(new Dictionary<string, TState>(), [dropId], Ct);
+
+        var recent = await store.ListRecentAsync(20, Ct);
+
+        recent.Select(ReadValue).Should()
+            .Contain(ListRecentValueBase + 32).And
+            .NotContain(ListRecentValueBase + 31);
+    }
+
+    /// <summary>
+    /// <see cref="IStateStore{TState}.ListRecentAsync"/> is scoped exactly as
+    /// <see cref="IStateStore{TState}.LoadManyAsync"/>: a shadow rebuild's documents stay
+    /// invisible to a live reader, and vice versa. A list that leaked across versions would
+    /// serve a half-built projection for the whole length of a rebuild.
+    /// </summary>
+    [Fact]
+    public async Task ListRecent_ScopedToRebuildVersion()
+    {
+        var version = 1;
+        var store = await CreateStore(NewProjectionType(), () => version);
+
+        await store.ApplyChangesAsync(
+            MakeDict($"doc-{TestId}-lr-v1", ListRecentValueBase + 41), [], Ct);
+
+        version = 2;
+        (await store.ListRecentAsync(20, Ct)).Select(ReadValue)
+            .Should().NotContain(ListRecentValueBase + 41, "v1's documents are not v2's");
+
+        await store.ApplyChangesAsync(
+            MakeDict($"doc-{TestId}-lr-v2", ListRecentValueBase + 42), [], Ct);
+
+        version = 1;
+        var live = (await store.ListRecentAsync(20, Ct)).Select(ReadValue).ToList();
+        live.Should().Contain(ListRecentValueBase + 41);
+        live.Should().NotContain(ListRecentValueBase + 42, "the shadow's documents stay hidden");
+    }
+
+    /// <summary>
+    /// A store lists only its own projectionType's documents. Without a document ID to filter
+    /// on, this scoping is the only thing keeping one projection's list free of another's.
+    ///
+    /// Skipped for EF: <see cref="SupportsProjectionTypeIsolation"/> is false, so every store
+    /// of the same TEntity lists one shared table.
+    /// </summary>
+    [Fact]
+    public async Task ListRecent_ScopedToProjectionType()
+    {
+        if (!SupportsProjectionTypeIsolation)
+            Assert.Skip(
+                "EfStateStore<TEntity> isolates projections structurally via entity type " +
+                "(table), so every store of the same TEntity lists the same rows; " +
+                "see ProjectionType_Isolates_SameDocId for the full reason.");
+
+        var storeA = await CreateStore(NewProjectionType());
+        var storeB = await CreateStore(NewProjectionType());
+
+        await storeA.ApplyChangesAsync(
+            MakeDict($"doc-{TestId}-lr-pt-a", ListRecentValueBase + 51), [], Ct);
+        await storeB.ApplyChangesAsync(
+            MakeDict($"doc-{TestId}-lr-pt-b", ListRecentValueBase + 52), [], Ct);
+
+        (await storeA.ListRecentAsync(20, Ct)).Select(ReadValue)
+            .Should().Equal(ListRecentValueBase + 51);
+        (await storeB.ListRecentAsync(20, Ct)).Select(ReadValue)
+            .Should().Equal(ListRecentValueBase + 52);
+    }
+
+    /// <summary>
+    /// A tenant-scoped store lists only that tenant's documents. This is the fact a resolver
+    /// listing a per-tenant projection relies on: it passes a tenant and asks for "recent",
+    /// with no per-document filter of its own to fall back on.
+    ///
+    /// Skipped for adapters that do not support per-tenant scoping.
+    /// </summary>
+    [Fact]
+    public async Task ListRecent_ScopedToTenant()
+    {
+        if (!SupportsTenantIsolation)
+            Assert.Skip(
+                "This adapter does not support tenant-scoped stores; " +
+                "see TenantId_Isolates_SameDocId for the full reason.");
+
+        var pt = NewProjectionType();
+        var storeA = await CreateStoreForTenant(pt, $"tenant-A-{TestId}");
+        var storeB = await CreateStoreForTenant(pt, $"tenant-B-{TestId}");
+
+        await storeA.ApplyChangesAsync(
+            MakeDict($"doc-{TestId}-lr-tenant-a", ListRecentValueBase + 61), [], Ct);
+        await storeB.ApplyChangesAsync(
+            MakeDict($"doc-{TestId}-lr-tenant-b", ListRecentValueBase + 62), [], Ct);
+
+        (await storeA.ListRecentAsync(20, Ct)).Select(ReadValue)
+            .Should().Equal([ListRecentValueBase + 61], "storeA must not list storeB's documents");
+        (await storeB.ListRecentAsync(20, Ct)).Select(ReadValue)
+            .Should().Equal([ListRecentValueBase + 62], "storeB must not list storeA's documents");
+    }
+
+    /// <summary>
+    /// An empty scope lists nothing rather than throwing.
+    ///
+    /// Skipped for EF, where no store has a scope of its own to be empty
+    /// (<see cref="SupportsProjectionTypeIsolation"/> is false).
+    /// </summary>
+    [Fact]
+    public async Task ListRecent_EmptyScope_ReturnsEmpty()
+    {
+        if (!SupportsProjectionTypeIsolation)
+            Assert.Skip(
+                "EfStateStore<TEntity> lists one table shared with every other store of the " +
+                "same TEntity, so a fresh store's scope is not empty.");
+
+        var store = await CreateStore(NewProjectionType());
+
+        (await store.ListRecentAsync(20, Ct)).Should().BeEmpty();
+    }
+
     // ── Spec fact — concurrent access ─────────────────────────────────────────
 
     [Fact]
@@ -618,11 +808,12 @@ public sealed class EfStateStoreSpecificationTests(EfProjectionTestFixture fixtu
 /// <c>alberto_projection_states</c>.
 ///
 /// <para>
-/// Stores are constructed <em>without</em> a <c>tenantId</c> argument in
-/// <see cref="StateStoreSpecification{TState}.CreateStore"/>, exercising the
-/// single-tenant (cross-tenant aggregate) path on a multi-tenant schema. This is
-/// the path used by <c>OrdersModule</c> and <c>PaymentsModule</c> for their
-/// cross-tenant aggregate projections.
+/// Every store here is constructed <em>with</em> a <c>tenantId</c>, because on this schema
+/// there is no other option: <c>tenant_id</c> is <c>NOT NULL</c> and part of the primary key,
+/// so a store built without one names an <c>ON CONFLICT</c> constraint that does not exist and
+/// fails every write with <c>42P10</c>. That is why a cross-tenant projection on a tenant-enabled
+/// module stores its single document under <c>TenantScope.CrossTenant</c> rather than under no
+/// tenant at all — see <see cref="CrossTenantProjectionContractTests"/>.
 /// </para>
 /// <para>
 /// <see cref="StateStoreSpecification{TState}.SupportsTenantIsolation"/> is

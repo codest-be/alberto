@@ -17,6 +17,18 @@ namespace Alberto.Dcb.Postgres;
 /// the single-tenant primary key constraint is used.
 /// </para>
 /// <para>
+/// <strong>The mode is decided by the schema, not by the caller's intent.</strong> A module that
+/// declared <c>.WithTenancy()</c> is migrated with <c>tenant_id NOT NULL</c> and a primary key
+/// that includes it, so a store built without a <paramref name="tenantId"/> against that schema
+/// names <c>ON CONFLICT (projection_type, document_id, rebuild_version)</c> — a constraint that
+/// does not exist — and every write fails with <c>42P10</c>. The reverse mismatch fails with
+/// <c>42703</c> on the missing column. Neither degrades quietly, but neither is caught at
+/// startup either: a projection wired the wrong way round dead-letters every event it is given
+/// while the rest of the module looks healthy. A projection that wants one document across all
+/// tenants still passes a tenant id — see
+/// <see cref="Alberto.Dcb.Tenancy.TenantScope.CrossTenantFor"/>.
+/// </para>
+/// <para>
 /// <paramref name="rebuildVersion"/> is resolved on every operation rather than captured at
 /// construction, because the version a projection reads and writes changes underneath a
 /// long-lived store when a rebuild is promoted. Omit it for the overwhelmingly common case
@@ -38,11 +50,7 @@ public sealed class PostgresStateStore<TState>(
     private readonly string? _tenantId = tenantId;
     private readonly Func<int> _rebuildVersion = rebuildVersion ?? ProjectionVersions.NeverRebuilt;
 
-    /// <summary>
-    /// Lists recent projection documents for the current projection and tenant.
-    /// This concrete query remains available for operator/inspection code without
-    /// widening the projection persistence interface.
-    /// </summary>
+    /// <inheritdoc/>
     public async Task<Dictionary<string, TState>> LoadManyAsync(
         IEnumerable<string> documentIds,
         CancellationToken ct = default)

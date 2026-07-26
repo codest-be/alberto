@@ -21,19 +21,38 @@ public static class DcbModuleBuilderExtensions
     /// <param name="builder">The module builder.</param>
     /// <param name="declaration">The projection declaration.</param>
     /// <param name="stateStoreFactory">
-    /// Builds the projection's state store. The <see cref="ProjectionStoreContext"/> carries the
+    /// Builds the projection's state stores. The <see cref="ProjectionStoreContext"/> carries the
     /// service provider and the rebuild-version selector the store must resolve on every
-    /// operation:
+    /// operation; the delegate it returns is called once per tenant, with that tenant's id
+    /// (<see langword="null"/> in a module that declared no tenancy).
     /// <code>
+    /// // one document set per tenant:
+    /// .AddProjection(PaymentSummaryProjection.Declaration, ctx =>
+    /// {
+    ///     var dataSource = ctx.Services.GetRequiredKeyedService&lt;NpgsqlDataSource&gt;(ModuleKey);
+    ///     return tenantId => new PostgresStateStore&lt;PaymentSummary&gt;(
+    ///         dataSource, nameof(PaymentSummaryProjection), "payments",
+    ///         ctx.RebuildVersion, tenantId);
+    /// })
+    ///
+    /// // one document for all tenants:
     /// .AddProjection(OrdersOverviewProjection.Declaration, ctx =>
     /// {
     ///     var dataSource = ctx.Services.GetRequiredKeyedService&lt;NpgsqlDataSource&gt;(ModuleKey);
-    ///     return () => new PostgresStateStore&lt;OrdersOverview&gt;(
-    ///         dataSource, nameof(OrdersOverviewProjection), "orders", ctx.RebuildVersion);
+    ///     return tenantId => new PostgresStateStore&lt;OrdersOverview&gt;(
+    ///         dataSource, nameof(OrdersOverviewProjection), "orders",
+    ///         ctx.RebuildVersion, TenantScope.CrossTenantFor(tenantId));
     /// })
     /// </code>
+    /// The tenant is an argument of the inner delegate rather than a field of the context so
+    /// that everything resolved in the outer one is shared across tenants — a cross-tenant
+    /// projection backed by a single in-memory dictionary depends on that.
+    /// <para>
     /// A store that ignores <see cref="ProjectionStoreContext.RebuildVersion"/> still works — it
-    /// simply cannot be rebuilt without downtime.
+    /// simply cannot be rebuilt without downtime. A store that ignores the tenant does not:
+    /// against a tenant-enabled schema it writes nothing and dead-letters every event — see the
+    /// remarks on <c>PostgresStateStore</c>.
+    /// </para>
     /// </param>
     /// <param name="projectionType">
     /// The key this projection's state rows are stored under, when it differs from the
@@ -43,28 +62,34 @@ public static class DcbModuleBuilderExtensions
     /// <remarks>
     /// <para>
     /// In addition to the two <see cref="IEventProcessor"/> registrations (live and
-    /// rebuild), this method registers a <c>Func&lt;IStateStore&lt;TState&gt;&gt;</c>
-    /// keyed by <c>"{moduleKey}:{declaration.ProcessorId}"</c>. Read-side code — GraphQL
+    /// rebuild), this method registers the same
+    /// <c>Func&lt;string?, IStateStore&lt;TState&gt;&gt;</c> the writer uses, keyed by
+    /// <c>"{moduleKey}:{declaration.ProcessorId}"</c>. Read-side code — GraphQL
     /// resolvers, REST controllers, background jobs — should resolve this factory from DI
     /// rather than constructing a <see cref="Alberto.Dcb.Subscriptions.IStateStore{TState}"/>
-    /// directly. Using the registered factory guarantees that the reader inherits the same
-    /// tenancy mode and schema as the writer, so writer/reader disagreement (the source of
-    /// silent empty results) becomes a loud resolution failure on the first read instead of a
-    /// query that quietly returns nothing forever. Note this is first-read, not startup:
-    /// a resolver that asks for an unregistered key throws when it first runs, not when the
-    /// host is built.
+    /// directly. It is literally the writer's factory, so the reader cannot disagree with the
+    /// writer about tenancy, schema, or projection type; the reader chooses only which tenant
+    /// to read, by passing one. Constructing a store independently is what produced the
+    /// silent-empty-result class of bug this registration exists to prevent.
+    /// </para>
+    /// <para>
+    /// Resolution is checked on first read, not at startup: a resolver that asks for an
+    /// unregistered key throws when it first runs, not when the host is built.
     /// </para>
     /// <code>
-    /// // resolver (e.g. OrderQueries.GetOrdersOverview):
-    /// var factory = sp.GetRequiredKeyedService&lt;Func&lt;IStateStore&lt;OrdersOverview&gt;&gt;&gt;(
-    ///     $"{OrdersModule.ModuleKey}:{nameof(OrdersOverviewProjection)}");
-    /// var store = factory();
+    /// // per-tenant read (e.g. PaymentQueries.GetRecentPayments):
+    /// var factory = sp.GetRequiredKeyedService&lt;Func&lt;string?, IStateStore&lt;PaymentSummary&gt;&gt;&gt;(
+    ///     $"{PaymentsModule.ModuleKey}:{nameof(PaymentSummaryProjection)}");
+    /// var store = factory(tenantId);
+    ///
+    /// // cross-tenant read (e.g. OrderQueries.GetOrdersOverview):
+    /// var store = factory(TenantScope.CrossTenant);
     /// </code>
     /// </remarks>
     public static DcbModuleBuilder AddProjection<TState>(
         this DcbModuleBuilder builder,
         ProjectionDeclaration<TState> declaration,
-        Func<ProjectionStoreContext, Func<IStateStore<TState>>> stateStoreFactory,
+        Func<ProjectionStoreContext, Func<string?, IStateStore<TState>>> stateStoreFactory,
         string? projectionType = null)
         where TState : new()
     {
@@ -98,7 +123,7 @@ public static class DcbModuleBuilderExtensions
             // Reader store factory — keyed by "{moduleKey}:{processorId}".
             // Read-side code resolves this instead of constructing a store directly, so
             // the tenancy mode and schema are always inherited from the writer's factory.
-            context.Services.AddKeyedSingleton<Func<IStateStore<TState>>>(
+            context.Services.AddKeyedSingleton<Func<string?, IStateStore<TState>>>(
                 $"{moduleKey}:{declaration.ProcessorId}",
                 (sp, _) =>
                 {

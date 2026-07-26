@@ -2,6 +2,7 @@ using Alberto.Dcb;
 using Alberto.Dcb.EntityFramework;
 using Alberto.Dcb.Postgres;
 using Alberto.Dcb.Telemetry;
+using Alberto.Dcb.Tenancy;
 using Alberto.Orders.Infrastructure.Data;
 using Alberto.Orders.Infrastructure.Entities;
 using Alberto.Orders.Infrastructure.Projections;
@@ -46,25 +47,27 @@ public static class OrdersModule
             })
             .WithTelemetry()
             .WithEventsFrom(typeof(Core.Order.OrderCreated).Assembly)
+            // A single overview blended across every tenant, so it is stored under
+            // TenantScope.CrossTenant rather than under any one of them.
             .AddProjection(OrdersOverviewProjection.Declaration, ctx =>
             {
                 var dataSource = ctx.Services.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
-                return () => new PostgresStateStore<OrdersOverview>(
+                return tenantId => new PostgresStateStore<OrdersOverview>(
                     dataSource,
                     nameof(OrdersOverviewProjection),
                     "orders",
-                    rebuildVersion: ctx.RebuildVersion);
+                    rebuildVersion: ctx.RebuildVersion,
+                    tenantId: TenantScope.CrossTenantFor(tenantId));
             })
             .AddEfProjection<OrderSummaryEntity, OrdersDbContext>(OrderSummaryEfProjection.Declaration)
             .WithControlLoop(o => o with { PollingInterval = TimeSpan.FromMilliseconds(100), BatchSize = 500 })
             .WithRebuilds());
 
-        // Note on tenancy: the async control loop consumes every tenant's events through this
-        // singleton state store, so the JSONB projection above is written without a tenant and
-        // its rows carry no tenant_id. The query side currently reads it *with* one, which does
-        // not match — see "The JSONB read side asks for a tenant the write side never stored"
-        // in Known Gaps. Per-tenant read models go through the EF projection below, which
-        // persists the tenant as a column that queries can filter on.
+        // Note on tenancy: the async control loop consumes every tenant's events, but a state
+        // store's tenancy is fixed when it is built, so the consumer builds one store per tenant
+        // and hands each the tenant it belongs to. OrdersOverview blends every tenant into one
+        // document and therefore stores it under TenantScope.CrossTenant; the EF projection
+        // below is per-tenant and persists the tenant as a column that queries filter on.
 
         return services;
     }

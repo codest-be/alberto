@@ -58,7 +58,7 @@ public static class ShardsCommand
             return await session.RunAsync(async () =>
             {
                 var output = session.Output;
-                var catalog = Open(url, schema, module);
+                var catalog = Open(session, url, schema, module);
                 await using var dataSource = catalog.DataSource;
 
                 var assignments = await catalog.Map.GetAllAsync();
@@ -66,7 +66,7 @@ public static class ShardsCommand
                     .GroupBy(id => id, StringComparer.Ordinal)
                     .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
 
-                var declared = ShardResolver.DeclaredShardIds();
+                var declared = session.DeclaredShardIds();
                 var ids = declared
                     .Concat(counts.Keys)
                     .Distinct(StringComparer.Ordinal)
@@ -134,7 +134,7 @@ public static class ShardsCommand
             return await session.RunAsync(async () =>
             {
                 var output = session.Output;
-                var catalog = Open(url, schema, module);
+                var catalog = Open(session, url, schema, module);
                 await using var dataSource = catalog.DataSource;
 
                 var shard = await catalog.Map.ResolveAsync(tenant);
@@ -192,7 +192,7 @@ public static class ShardsCommand
                     return 1;
                 }
 
-                var declared = ShardResolver.DeclaredShardIds();
+                var declared = session.DeclaredShardIds();
                 if (declared.Count > 0 && !declared.Contains(shardId, StringComparer.Ordinal))
                 {
                     output.Error(
@@ -210,7 +210,7 @@ public static class ShardsCommand
                     return confirmCode;
                 }
 
-                var catalog = Open(url, schema, module);
+                var catalog = Open(session, url, schema, module);
                 await using var dataSource = catalog.DataSource;
 
                 var assigned = await catalog.Map.AssignAsync(tenant, shardId);
@@ -254,11 +254,18 @@ public static class ShardsCommand
     /// <remarks>
     /// Every verb here talks to exactly one database — the control one. None of them fan out:
     /// the catalog is the thing that decides what the shards are, so it cannot be per-shard.
+    /// <para>
+    /// Both facts come off <paramref name="session"/>, which read the config once for the whole
+    /// invocation. Resolving them through the parameterless overloads instead walked the
+    /// directory tree and re-parsed the file once per fact — three times over for
+    /// <c>shards list</c>, which also wants the declared ids — and let one command see two
+    /// different configs.
+    /// </para>
     /// </remarks>
-    private static Catalog Open(string? url, string? schema, string? module)
+    private static Catalog Open(CliSession session, string? url, string? schema, string? module)
     {
-        var target = ShardResolver.ResolveCatalog(url, schema);
-        var moduleKey = ShardResolver.ResolveModuleKey(module);
+        var target = session.CatalogTarget(url, schema);
+        var moduleKey = session.ModuleKey(module);
 
         var dataSource = new NpgsqlDataSourceBuilder(target.ConnectionString).Build();
         return new Catalog(dataSource, new PostgresTenantShardMap(dataSource, moduleKey, target.Schema), moduleKey);

@@ -59,6 +59,32 @@ public sealed class CliSession
         ShardResolver.ResolveForMutation(_config, shard, allShards, url, schema, supportsAllShards);
 
     /// <summary>
+    /// The control database holding the tenant → shard catalog. Uses the pre-loaded config.
+    /// </summary>
+    /// <exception cref="ShardSelectionException">When the config declares no catalog.</exception>
+    public ShardTarget CatalogTarget(string? url, string? schema) =>
+        ShardResolver.ResolveCatalog(_config, url, schema);
+
+    /// <summary>
+    /// The module key the catalog's rows are filed under. Uses the pre-loaded config.
+    /// </summary>
+    /// <exception cref="ShardSelectionException">When no module key is configured or given.</exception>
+    public string ModuleKey(string? module) =>
+        ShardResolver.ResolveModuleKey(_config, module);
+
+    /// <summary>
+    /// The shard ids declared in configuration, in id order. Uses the pre-loaded config.
+    /// </summary>
+    /// <remarks>
+    /// This and <see cref="CatalogTarget"/> answer questions about the same file, so they have to
+    /// answer them from the same read: a command that reports a catalog row as pointing at an
+    /// undeclared shard is comparing the two, and comparing them across two reads of a file that
+    /// an operator may be editing turns an edit into a bogus warning.
+    /// </remarks>
+    public IReadOnlyList<string> DeclaredShardIds() =>
+        ShardResolver.DeclaredShardIds(_config);
+
+    /// <summary>
     /// Gates a destructive operation on an explicit <c>--yes</c> flag or an interactive prompt.
     /// </summary>
     /// <param name="yes">Value of the <c>--yes</c> option.</param>
