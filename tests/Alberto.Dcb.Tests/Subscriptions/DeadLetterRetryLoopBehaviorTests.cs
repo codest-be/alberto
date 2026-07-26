@@ -2,6 +2,7 @@ using Alberto.Dcb.InMemory;
 using Alberto.Dcb.Subscriptions;
 using Alberto.Dcb.Tenancy;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
 namespace Alberto.Dcb.Tests.Subscriptions;
@@ -493,15 +494,20 @@ public sealed class DeadLetterRetryLoopBehaviorTests
         await store.StoreAsync(entry, TestContext.Current.CancellationToken);
 
         // Short polling interval so the loop has multiple poll opportunities within the test window.
+        var pollingInterval = TimeSpan.FromMilliseconds(50);
+        FakeTimeProvider time = new();
         var loop = new DeadLetterRetryLoop(
             processor,
             store,
-            pollingInterval: TimeSpan.FromMilliseconds(50));
+            pollingInterval: pollingInterval,
+            timeProvider: time);
 
         // Act — run briefly then stop
         await loop.StartAsync(TestContext.Current.CancellationToken);
-        // Allow several poll cycles (50 ms each) without triggering a positive result
-        await Task.Delay(TimeSpan.FromMilliseconds(250), TestContext.Current.CancellationToken);
+        // Advance the fake clock past the polling interval — no entry is retry-requested,
+        // so the loop hits the delay each cycle. Advancing triggers the delay to complete
+        // without any real wall-clock wait.
+        time.Advance(pollingInterval);
         await loop.DisposeAsync();
 
         // Assert — processor received nothing

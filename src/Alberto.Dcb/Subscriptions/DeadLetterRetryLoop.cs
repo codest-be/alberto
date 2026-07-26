@@ -12,6 +12,16 @@ namespace Alberto.Dcb.Subscriptions;
 /// the lease expires and another worker re-claims the entry, instead of the row being deleted up-front
 /// and the event lost.
 /// </summary>
+/// <param name="processor">The event processor to dispatch retried events to.</param>
+/// <param name="deadLetterStore">The store holding dead-lettered events.</param>
+/// <param name="pollingInterval">How often to poll for retry-requested entries. Defaults to 1 minute.</param>
+/// <param name="batchSize">Maximum number of entries to claim and dispatch per poll. Defaults to 10.</param>
+/// <param name="middlewares">Optional middleware chain to run around each dispatched event.</param>
+/// <param name="logger">Optional logger.</param>
+/// <param name="claimLeaseDuration">How long a claimed entry is locked to this worker. Defaults to <see cref="DefaultClaimLeaseDuration"/>.</param>
+/// <param name="claimedBy">Identity string stamped on each claim. Defaults to <c>MachineName:ProcessId</c>.</param>
+/// <param name="scopeFactory">Optional DI scope factory used to create a per-event tenant scope.</param>
+/// <param name="timeProvider">Clock used to drive poll delays. Defaults to <see cref="TimeProvider.System"/>.</param>
 public sealed class DeadLetterRetryLoop(
     IEventProcessor processor,
     IDeadLetterStore deadLetterStore,
@@ -21,7 +31,8 @@ public sealed class DeadLetterRetryLoop(
     ILogger<DeadLetterRetryLoop>? logger = null,
     TimeSpan? claimLeaseDuration = null,
     string? claimedBy = null,
-    IServiceScopeFactory? scopeFactory = null) : IHostedService, IAsyncDisposable
+    IServiceScopeFactory? scopeFactory = null,
+    TimeProvider? timeProvider = null) : IHostedService, IAsyncDisposable
 {
     private readonly IEventProcessor _processor = processor ?? throw new ArgumentNullException(nameof(processor));
     private readonly IDeadLetterStore _deadLetterStore = deadLetterStore ?? throw new ArgumentNullException(nameof(deadLetterStore));
@@ -35,6 +46,7 @@ public sealed class DeadLetterRetryLoop(
     private readonly string _claimedBy = string.IsNullOrWhiteSpace(claimedBy)
         ? $"{Environment.MachineName}:{Environment.ProcessId}"
         : claimedBy!;
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private CancellationTokenSource? _cts;
     private Task? _loop;
 
@@ -198,7 +210,7 @@ public sealed class DeadLetterRetryLoop(
 
                 // Delay before next poll if no entries were processed
                 if (retries.Count == 0)
-                    await Task.Delay(_pollingInterval, ct);
+                    await Task.Delay(_pollingInterval, _timeProvider, ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
             catch (Exception ex)
@@ -207,7 +219,7 @@ public sealed class DeadLetterRetryLoop(
                     "DeadLetterRetryLoop for processor '{ProcessorId}' encountered an unexpected error. " +
                     "Will retry after delay.",
                     _processor.ProcessorId);
-                await Task.Delay(_pollingInterval, ct);
+                await Task.Delay(_pollingInterval, _timeProvider, ct);
             }
         }
     }
