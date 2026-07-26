@@ -108,22 +108,19 @@ public abstract class OutboxStoreSpecification
 
     /// <summary>
     /// <c>ClaimPendingAsync</c> must return an empty list when there are no pending entries
-    /// available to claim.
-    /// <para>
-    /// Any entries already present in the store (e.g. processing entries left by earlier facts
-    /// in a shared backing store) are drained first so that a subsequent call exercises the
-    /// empty-result path.
-    /// </para>
+    /// available to claim. The store may hold entries in other states (e.g. processing entries
+    /// left by earlier facts in a shared backing store); only the absence of pending entries
+    /// is required.
     /// </summary>
     [Fact]
-    public async Task ClaimPendingAsync_EmptyStore_ReturnsEmpty()
+    public async Task ClaimPendingAsync_NoPendingEntries_ReturnsEmpty()
     {
         var store = await CreateStore();
 
-        // Drain any pending entries left by earlier facts in a shared backing store.
-        // ClaimPendingAsync marks claimed entries as 'processing', so this call makes
-        // all currently-pending entries ineligible for the assertion below.
-        await store.ClaimPendingAsync(int.MaxValue, TimeSpan.FromMinutes(5), "drain", Ct);
+        // Exhaust all currently-pending entries so the assertion below targets only
+        // the case where no pending entries remain. ClaimPendingAsync moves claimed
+        // entries to 'processing', making them ineligible for a subsequent claim.
+        await store.ClaimPendingAsync(10_000, TimeSpan.FromMinutes(5), "drain", Ct);
 
         var claims = await store.ClaimPendingAsync(10, TimeSpan.FromMinutes(5), "worker", Ct);
 
@@ -157,7 +154,10 @@ public abstract class OutboxStoreSpecification
 
         // First worker claims with a generous lease.
         var first = await store.ClaimPendingAsync(10, TimeSpan.FromHours(1), "worker-1", Ct);
-        Assert.Contains(first, c => c.Entry.Id == entry.Id);
+        // Filter to our specific entry so entries from other facts do not inflate the count.
+        // Assert.Single (rather than Assert.Contains) additionally catches any backend that
+        // claims the same entry twice.
+        Assert.Single(first.Where(c => c.Entry.Id == entry.Id));
 
         // Second worker must not be able to reclaim our entry while the lease is still valid.
         var second = await store.ClaimPendingAsync(10, TimeSpan.FromHours(1), "worker-2", Ct);
