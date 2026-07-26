@@ -5,7 +5,6 @@ using Alberto.Dcb.Subscriptions;
 using Alberto.Dcb.Tenancy;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Npgsql;
 
 namespace Alberto.Dcb.Postgres;
@@ -42,15 +41,14 @@ public static class PostgresBuilderExtensions
     }
 
     internal static void RegisterSingleTenantBackend(
-        AlbertoModuleContext context, PostgresOptions fallback)
+        AlbertoModuleContext context, PostgresRuntimeOptions runtime)
     {
         var services = context.Services;
         var moduleKey = context.ModuleKey;
 
         services.AddKeyedSingleton<IEventStoreBackend>(moduleKey, (sp, _) =>
         {
-            var definition = sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>().Get(moduleKey);
-            var opts = definition.Backend is PostgresBackendDescriptor desc ? desc.Options : fallback;
+            var opts = runtime.Resolve(sp);
             var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
             var timeProvider = sp.GetService<TimeProvider>() ?? TimeProvider.System;
             var rawBackend = new PostgresEventStoreBackend(
@@ -71,7 +69,7 @@ public static class PostgresBuilderExtensions
     }
 
     internal static void RegisterTenantBackend(
-        AlbertoModuleContext context, PostgresOptions fallback)
+        AlbertoModuleContext context, PostgresRuntimeOptions runtime)
     {
         var services = context.Services;
         var moduleKey = context.ModuleKey;
@@ -83,8 +81,7 @@ public static class PostgresBuilderExtensions
         // Register the tenant-aware backend (not as IEventStoreBackend — only used by decorator).
         services.AddKeyedSingleton<PostgresTenantEventStoreBackend>(moduleKey + ":tenant-raw", (sp, _) =>
         {
-            var definition = sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>().Get(moduleKey);
-            var opts = definition.Backend is PostgresBackendDescriptor desc ? desc.Options : fallback;
+            var opts = runtime.Resolve(sp);
             var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
             var timeProvider = sp.GetService<TimeProvider>() ?? TimeProvider.System;
             return new PostgresTenantEventStoreBackend(
