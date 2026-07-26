@@ -547,7 +547,8 @@ public static class DcbModuleBuilderExtensions
                     sp.GetKeyedServices<BatchConsumeMiddleware>(moduleKey).ToList(),
                     opts.Retry,
                     Classifier(sp, moduleKey),
-                    sp.GetKeyedService<IDeadLetterStore>(moduleKey));
+                    sp.GetKeyedService<IDeadLetterStore>(moduleKey),
+                    sp.GetService<TimeProvider>());
 
                 return new ShadowControlLoopFactory(processor =>
                 {
