@@ -135,16 +135,25 @@ public sealed class PostgresDeadLetterStore(
     }
 
     /// <inheritdoc />
-    public async Task RemoveAsync(Guid id, CancellationToken ct = default)
+    public async Task<bool> CompleteRetryAsync(
+        DeadLetterClaim claim,
+        CancellationToken ct = default)
     {
-        var sql = $"DELETE FROM {_schema.Table("alberto_dead_letter_events")} WHERE id = @id";
+        ArgumentNullException.ThrowIfNull(claim);
+
+        var sql = $"""
+            DELETE FROM {_schema.Table("alberto_dead_letter_events")}
+            WHERE id = @id
+              AND claim_id = @claim_id
+            """;
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = sql;
-        cmd.Parameters.AddWithValue("id", id);
+        cmd.Parameters.AddWithValue("id", claim.Entry.Id);
+        cmd.Parameters.AddWithValue("claim_id", claim.Token);
 
-        await cmd.ExecuteNonQueryAsync(ct);
+        return await cmd.ExecuteNonQueryAsync(ct) == 1;
     }
 
     /// <inheritdoc />
@@ -178,7 +187,7 @@ public sealed class PostgresDeadLetterStore(
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<DeadLetterEntry>> ClaimRetryRequestedAsync(
+    public async Task<IReadOnlyList<DeadLetterClaim>> ClaimRetryRequestedAsync(
         string processorId,
         int batchSize,
         TimeSpan leaseDuration,
@@ -196,25 +205,26 @@ public sealed class PostgresDeadLetterStore(
         cmd.Parameters.AddWithValue("batchSize", batchSize);
         cmd.Parameters.AddWithValue("leaseSeconds", leaseDuration.TotalSeconds);
         cmd.Parameters.AddWithValue("claimedBy", claimedBy);
+        cmd.Parameters.AddWithValue("claimId", Guid.NewGuid());
 
-        var entries = new List<DeadLetterEntry>();
+        var claims = new List<DeadLetterClaim>();
         await using var reader = await cmd.ExecuteReaderAsync(ct);
 
         while (await reader.ReadAsync(ct))
         {
             // Parse tags from array
             IReadOnlyCollection<string>? tags = null;
-            if (!reader.IsDBNull(15))
+            if (!reader.IsDBNull(16))
             {
-                var tagsArray = reader.GetFieldValue<string[]>(15);
+                var tagsArray = reader.GetFieldValue<string[]>(16);
                 tags = tagsArray ?? [];
             }
 
             // Parse metadata from JSONB
             IReadOnlyDictionary<string, string>? metadata = null;
-            if (!reader.IsDBNull(16))
+            if (!reader.IsDBNull(17))
             {
-                var metadataJson = reader.GetString(16);
+                var metadataJson = reader.GetString(17);
                 try
                 {
                     var parsed = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(metadataJson);
@@ -226,7 +236,9 @@ public sealed class PostgresDeadLetterStore(
                 }
             }
 
-            entries.Add(new DeadLetterEntry(
+            var expiresAt = reader.GetFieldValue<DateTimeOffset>(12);
+            var claimId = reader.GetGuid(14);
+            var entry = new DeadLetterEntry(
                 Id: reader.GetGuid(0),
                 ProcessorId: reader.GetString(1),
                 EventId: reader.GetGuid(2),
@@ -238,36 +250,46 @@ public sealed class PostgresDeadLetterStore(
                 FailedAt: reader.GetDateTime(8),
                 GlobalPosition: reader.GetInt64(9),
                 RetryRequested: reader.GetBoolean(10),
-                TenantId: reader.IsDBNull(14) ? null : reader.GetString(14),
+                TenantId: reader.IsDBNull(15) ? null : reader.GetString(15),
                 Tags: tags ?? Array.Empty<string>(),
                 Metadata: metadata ?? new Dictionary<string, string>(),
-                CreatedAt: reader.IsDBNull(17) ? null : reader.GetDateTime(17),
+                CreatedAt: reader.IsDBNull(18) ? null : reader.GetDateTime(18),
                 ClaimedAt: reader.IsDBNull(11) ? null : reader.GetFieldValue<DateTimeOffset>(11),
-                ClaimExpiresAt: reader.IsDBNull(12) ? null : reader.GetFieldValue<DateTimeOffset>(12),
-                ClaimedBy: reader.IsDBNull(13) ? null : reader.GetString(13)));
+                ClaimExpiresAt: expiresAt,
+                ClaimedBy: reader.IsDBNull(13) ? null : reader.GetString(13),
+                ClaimId: claimId);
+
+            claims.Add(new DeadLetterClaim(entry, claimId, expiresAt));
         }
 
-        return entries;
+        return claims;
     }
 
     /// <inheritdoc />
-    public async Task AbandonRetryAsync(Guid id, CancellationToken ct = default)
+    public async Task<bool> AbandonRetryAsync(
+        DeadLetterClaim claim,
+        CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(claim);
+
         var sql = $"""
             UPDATE {_schema.Table("alberto_dead_letter_events")}
             SET retry_requested = FALSE,
                 claimed_at = NULL,
                 claim_expires_at = NULL,
-                claimed_by = NULL
+                claimed_by = NULL,
+                claim_id = NULL
             WHERE id = @id
+              AND claim_id = @claim_id
             """;
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = sql;
-        cmd.Parameters.AddWithValue("id", id);
+        cmd.Parameters.AddWithValue("id", claim.Entry.Id);
+        cmd.Parameters.AddWithValue("claim_id", claim.Token);
 
-        await cmd.ExecuteNonQueryAsync(ct);
+        return await cmd.ExecuteNonQueryAsync(ct) == 1;
     }
 
     // Atomically:
@@ -300,20 +322,21 @@ public sealed class PostgresDeadLetterStore(
                 UPDATE {_schema.Table("alberto_dead_letter_events")} dl
                 SET claimed_at       = now(),
                     claim_expires_at = now() + (@leaseSeconds || ' seconds')::interval,
-                    claimed_by       = @claimedBy
+                    claimed_by       = @claimedBy,
+                    claim_id         = @claimId
                 FROM candidates c
                 WHERE dl.id = c.id
                 RETURNING dl.id, dl.processor_id, dl.event_id, dl.event_type, dl.event_data,
                           dl.error_message, dl.stack_trace, dl.attempt_count, dl.failed_at,
                           dl.global_position, dl.retry_requested,
-                          dl.claimed_at, dl.claim_expires_at, dl.claimed_by
+                          dl.claimed_at, dl.claim_expires_at, dl.claimed_by, dl.claim_id
             )
             SELECT
                 cl.id, cl.processor_id, cl.event_id, cl.event_type, cl.event_data,
                 cl.error_message, cl.stack_trace, cl.attempt_count, cl.failed_at,
                 cl.global_position, cl.retry_requested,
                 cl.claimed_at, cl.claim_expires_at, cl.claimed_by,
-                {tenantSelect}, e.event_tags, e.event_metadata, e.created_at
+                cl.claim_id, {tenantSelect}, e.event_tags, e.event_metadata, e.created_at
             FROM claimed cl
             LEFT JOIN {_schema.Table("alberto_events")} e ON cl.event_id = e.event_id
             ORDER BY cl.failed_at ASC

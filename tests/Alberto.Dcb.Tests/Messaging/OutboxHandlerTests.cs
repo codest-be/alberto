@@ -1,8 +1,12 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
+using Alberto.Dcb.Configuration;
+using Alberto.Dcb.InMemory;
 using Alberto.Dcb.Messaging;
 using Alberto.Dcb.Subscriptions;
+using Alberto.Dcb.Tenancy;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace Alberto.Dcb.Tests.Messaging;
@@ -195,6 +199,28 @@ public class OutboxHandlerTests
         Assert.DoesNotContain("order-cancelled", handler.HandledEventTypes);
     }
 
+    [Fact]
+    public void WithOutbox_DeclaresProcessorForStartupValidation()
+    {
+        var services = new ServiceCollection();
+        services.AddAlberto("test", builder => builder
+            .WithInMemory()
+            .WithOutbox(
+                mappings => mappings.Map<OrderPlaced>((_, _, _) =>
+                    ValueTask.FromResult<ExternalMessage?>(null)),
+                new InMemoryOutboxStore()));
+
+        using var provider = services.BuildServiceProvider();
+        var definition = provider
+            .GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>()
+            .Get("test");
+
+        var declaration = Assert.Single(definition.Processors);
+        Assert.Equal(OutboxHandler.ProcessorIdValue, declaration.ProcessorId);
+        Assert.Equal(ProcessorKind.Reactor, declaration.Kind);
+        Assert.Equal(ProcessorBatchingMode.Required, declaration.Execution.BatchingMode);
+    }
+
     #endregion
 
     #region ProcessEventAsync (raw delegate)
@@ -218,6 +244,7 @@ public class OutboxHandlerTests
         Assert.Equal(envelope.Id, entry.SourceEventId);
         Assert.Equal("order.placed", entry.MessageType);
         Assert.Equal("1", entry.Version);
+        Assert.Equal(envelope.TenantId, entry.TenantId);
         Assert.Equal(OutboxEntryStatus.Pending, entry.Status);
         Assert.Equal(0, entry.RetryCount);
         Assert.Null(entry.LastError);
@@ -265,6 +292,35 @@ public class OutboxHandlerTests
 
         Assert.Single(store.Entries);
         Assert.Equal("abc123", store.Entries[0].Metadata["correlation-id"]);
+    }
+
+    [Fact]
+    public async Task ProcessEventAsync_MapperScopeReceivesEnvelopeTenant()
+    {
+        string? mappedTenant = null;
+        var services = new ServiceCollection();
+        services.AddTenancy();
+        await using var provider = services.BuildServiceProvider(validateScopes: true);
+
+        var (handler, store) = CreateHandler(
+            r => r.Map<OrderPlaced>((env, sp, _) =>
+            {
+                mappedTenant = sp.GetRequiredService<ITenantAccessor>().TenantId;
+                return ValueTask.FromResult<ExternalMessage?>(
+                    new ExternalMessage(
+                        "order.placed",
+                        "1",
+                        env.EventData,
+                        new Dictionary<string, string>()));
+            }),
+            provider);
+
+        await handler.ProcessEventAsync(
+            CreateEnvelope(new OrderPlaced(Guid.NewGuid(), 1m)),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("test", mappedTenant);
+        Assert.Equal("test", Assert.Single(store.Entries).TenantId);
     }
 
     [Fact]

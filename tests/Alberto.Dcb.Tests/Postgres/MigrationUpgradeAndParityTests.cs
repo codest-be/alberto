@@ -154,6 +154,12 @@ public sealed class MigrationUpgradeAndParityTests
         // 016: existing outbox tables must gain the complete leased-claim fence.
         await AssertOutboxClaimLeaseColumnsExistAsync(conn);
 
+        // 017: existing dead-letter tables must gain the claim fencing token.
+        await AssertDeadLetterClaimFenceColumnExistsAsync(conn);
+
+        // 018: operators record completion intent for the coordinator.
+        await AssertRebuildOperatorIntentColumnExistsAsync(conn);
+
         // Core invariant: alberto_events must still have the tenant_id column.
         (await ColumnExistsAsync(conn, "alberto_events", "tenant_id"))
             .Should().BeTrue(because: "multi-tenant schema must retain the tenant_id column on alberto_events");
@@ -197,6 +203,12 @@ public sealed class MigrationUpgradeAndParityTests
 
         // 016: existing outbox tables must gain the complete leased-claim fence.
         await AssertOutboxClaimLeaseColumnsExistAsync(conn);
+
+        // 017: existing dead-letter tables must gain the claim fencing token.
+        await AssertDeadLetterClaimFenceColumnExistsAsync(conn);
+
+        // 018: operators record completion intent for the coordinator.
+        await AssertRebuildOperatorIntentColumnExistsAsync(conn);
 
         // Core invariant: single-tenant schema must NOT have a tenant_id column on events.
         (await ColumnExistsAsync(conn, "alberto_events", "tenant_id"))
@@ -517,6 +529,18 @@ public sealed class MigrationUpgradeAndParityTests
                 .Should().BeTrue(
                     because: $"migration 016 adds the outbox claim fence column {column}");
         }
+    }
+
+    private static async Task AssertDeadLetterClaimFenceColumnExistsAsync(NpgsqlConnection conn)
+    {
+        (await ColumnExistsAsync(conn, "alberto_dead_letter_events", "claim_id"))
+            .Should().BeTrue(because: "migration 017 adds the dead-letter claim fencing token");
+    }
+
+    private static async Task AssertRebuildOperatorIntentColumnExistsAsync(NpgsqlConnection conn)
+    {
+        (await ColumnExistsAsync(conn, "alberto_projection_rebuild_meta", "requested_action"))
+            .Should().BeTrue(because: "migration 018 adds coordinator-owned operator intent");
     }
 
     private static async Task<bool> ColumnExistsAsync(

@@ -21,6 +21,7 @@ namespace Alberto.Dcb.Subscriptions;
 /// <param name="ClaimedAt">When a retry loop most recently claimed this entry for dispatch, or null if never claimed / already released.</param>
 /// <param name="ClaimExpiresAt">When the active claim lease expires; if in the past the entry is eligible for re-claim by another worker.</param>
 /// <param name="ClaimedBy">Identifier of the worker that holds the active claim (e.g. replica id), for diagnostics. Null when not claimed.</param>
+/// <param name="ClaimId">Opaque fencing token for the active retry claim. Null when not claimed.</param>
 public sealed record DeadLetterEntry(
     Guid Id,
     string ProcessorId,
@@ -39,4 +40,15 @@ public sealed record DeadLetterEntry(
     DateTime? CreatedAt = null,
     DateTimeOffset? ClaimedAt = null,
     DateTimeOffset? ClaimExpiresAt = null,
-    string? ClaimedBy = null);
+    string? ClaimedBy = null,
+    Guid? ClaimId = null);
+
+/// <summary>
+/// A time-bounded, token-fenced claim on a dead-letter entry.
+/// The claim must be presented unchanged when completing or abandoning the retry so a worker
+/// whose lease expired cannot mutate a newer worker's claim.
+/// </summary>
+public sealed record DeadLetterClaim(
+    DeadLetterEntry Entry,
+    Guid Token,
+    DateTimeOffset ExpiresAt);

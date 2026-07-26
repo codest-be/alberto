@@ -361,10 +361,10 @@ public sealed class MiddlewareTests
         public Task<int> CountAsync(string processorId, CancellationToken ct = default)
             => Task.FromResult(Entries.Count(e => e.ProcessorId == processorId));
 
-        public Task RemoveAsync(Guid id, CancellationToken ct = default)
+        public Task<bool> CompleteRetryAsync(DeadLetterClaim claim, CancellationToken ct = default)
         {
-            Entries.RemoveAll(e => e.Id == id);
-            return Task.CompletedTask;
+            var removed = Entries.RemoveAll(e => e.Id == claim.Entry.Id && e.ClaimId == claim.Token);
+            return Task.FromResult(removed == 1);
         }
 
         public Task ClearAsync(string processorId, CancellationToken ct = default)
@@ -384,7 +384,7 @@ public sealed class MiddlewareTests
             return Task.CompletedTask;
         }
 
-        public Task<IReadOnlyList<DeadLetterEntry>> ClaimRetryRequestedAsync(
+        public Task<IReadOnlyList<DeadLetterClaim>> ClaimRetryRequestedAsync(
             string processorId,
             int batchSize,
             TimeSpan leaseDuration,
@@ -393,7 +393,7 @@ public sealed class MiddlewareTests
         {
             var now = DateTimeOffset.UtcNow;
             var lease = now + leaseDuration;
-            var claimed = new List<DeadLetterEntry>();
+            var claimed = new List<DeadLetterClaim>();
             for (var index = 0; index < Entries.Count && claimed.Count < batchSize; index++)
             {
                 var existing = Entries[index];
@@ -402,23 +402,25 @@ public sealed class MiddlewareTests
                 if (existing.ClaimExpiresAt is { } exp && exp >= now)
                     continue;
 
+                var token = Guid.NewGuid();
                 var updated = existing with
                 {
                     ClaimedAt = now,
                     ClaimExpiresAt = lease,
                     ClaimedBy = claimedBy,
+                    ClaimId = token,
                 };
                 Entries[index] = updated;
-                claimed.Add(updated);
+                claimed.Add(new DeadLetterClaim(updated, token, lease));
             }
-            return Task.FromResult<IReadOnlyList<DeadLetterEntry>>(claimed);
+            return Task.FromResult<IReadOnlyList<DeadLetterClaim>>(claimed);
         }
 
-        public Task AbandonRetryAsync(Guid id, CancellationToken ct = default)
+        public Task<bool> AbandonRetryAsync(DeadLetterClaim claim, CancellationToken ct = default)
         {
             for (var index = 0; index < Entries.Count; index++)
             {
-                if (Entries[index].Id == id)
+                if (Entries[index].Id == claim.Entry.Id && Entries[index].ClaimId == claim.Token)
                 {
                     Entries[index] = Entries[index] with
                     {
@@ -426,11 +428,12 @@ public sealed class MiddlewareTests
                         ClaimedAt = null,
                         ClaimExpiresAt = null,
                         ClaimedBy = null,
+                        ClaimId = null,
                     };
-                    break;
+                    return Task.FromResult(true);
                 }
             }
-            return Task.CompletedTask;
+            return Task.FromResult(false);
         }
     }
 

@@ -8,7 +8,7 @@ namespace Alberto.Dcb.Tests.EntityFramework;
 
 /// <summary>
 /// TEST-10: Behavioural tests for <see cref="BatchedEfProjection{TDbContext,THandler}"/>.
-/// Verifies accumulation-without-save, flush semantics, concurrency-exception handling,
+/// Verifies atomic batch persistence, concurrency-exception handling,
 /// multi-batch round-trips, and handler delegation.
 /// </summary>
 public sealed class BatchedEfProjectionTests(EfProjectionTestFixture fixture)
@@ -100,78 +100,71 @@ public sealed class BatchedEfProjectionTests(EfProjectionTestFixture fixture)
     }
 
     // -----------------------------------------------------------------------
-    // Accumulation — no save until Flush
+    // Single-event fallback persists before returning
     // -----------------------------------------------------------------------
 
     [Fact]
-    public async Task ProcessEventAsync_AccumulatesWithoutSaving()
+    public async Task ProcessEventAsync_PersistsBeforeReturning()
     {
         var factory = fixture.CreateFactory();
         var entityId = Guid.NewGuid().ToString();
         var projection = new BatchedEfProjection<EfTestDbContext, CounterBatchHandler>(factory);
 
-        // Process two events but do NOT flush.
         await projection.ProcessEventAsync(
             EfTestEnvelopes.ForCounterIncremented(entityId, amount: 3, position: 1),
             TestContext.Current.CancellationToken);
 
-        await projection.ProcessEventAsync(
-            EfTestEnvelopes.ForCounterIncremented(entityId, amount: 4, position: 2),
-            TestContext.Current.CancellationToken);
-
-        // The entity should not yet be visible in the DB.
         var entity = await fixture.ReadEntityAsync(entityId);
-        entity.Should().BeNull("no flush has been called yet");
+        entity.Should().NotBeNull();
+        entity!.Counter.Should().Be(3);
     }
 
     // -----------------------------------------------------------------------
-    // FlushAsync commits accumulated changes
+    // Batch processing commits all changes once
     // -----------------------------------------------------------------------
 
     [Fact]
-    public async Task FlushAsync_CommitsAccumulatedChanges()
+    public async Task ProcessBatchAsync_CommitsAccumulatedChanges()
     {
         var factory = fixture.CreateFactory();
         var entityId = Guid.NewGuid().ToString();
         var projection = new BatchedEfProjection<EfTestDbContext, CounterBatchHandler>(factory);
 
-        await projection.ProcessEventAsync(
-            EfTestEnvelopes.ForCounterIncremented(entityId, amount: 5, position: 1),
+        await projection.ProcessBatchAsync(
+            [
+                EfTestEnvelopes.ForCounterIncremented(entityId, amount: 5, position: 1),
+                EfTestEnvelopes.ForCounterIncremented(entityId, amount: 3, position: 2),
+            ],
             TestContext.Current.CancellationToken);
-
-        await projection.ProcessEventAsync(
-            EfTestEnvelopes.ForCounterIncremented(entityId, amount: 3, position: 2),
-            TestContext.Current.CancellationToken);
-
-        await projection.FlushAsync(TestContext.Current.CancellationToken);
 
         var entity = await fixture.ReadEntityAsync(entityId);
         entity.Should().NotBeNull();
-        entity!.Counter.Should().Be(8, "5 + 3 = 8 after flush");
+        entity!.Counter.Should().Be(8, "5 + 3 = 8 after one committed batch");
     }
 
     // -----------------------------------------------------------------------
-    // FlushAsync with no pending changes is a no-op
+    // Empty batch is a no-op
     // -----------------------------------------------------------------------
 
     [Fact]
-    public async Task FlushAsync_WhenNoPendingChanges_IsNoOp()
+    public async Task ProcessBatchAsync_WhenEmpty_IsNoOp()
     {
         var factory = fixture.CreateFactory();
         var projection = new BatchedEfProjection<EfTestDbContext, CounterBatchHandler>(factory);
 
-        // FlushAsync on a fresh projection (no ProcessEventAsync calls) must not throw.
-        var act = async () => await projection.FlushAsync(TestContext.Current.CancellationToken);
+        var act = async () => await projection.ProcessBatchAsync(
+            [],
+            TestContext.Current.CancellationToken);
 
         await act.Should().NotThrowAsync();
     }
 
     // -----------------------------------------------------------------------
-    // Concurrency exception during flush
+    // Concurrency exception during batch save
     // -----------------------------------------------------------------------
 
     [Fact]
-    public async Task FlushAsync_DbUpdateConcurrencyException_ThrowsConcurrencyConflictException()
+    public async Task ProcessBatchAsync_DbUpdateConcurrencyException_ThrowsConcurrencyConflictException()
     {
         var factory = fixture.CreateFactory();
         var entityId = Guid.NewGuid().ToString();
@@ -182,17 +175,15 @@ public sealed class BatchedEfProjectionTests(EfProjectionTestFixture fixture)
 
         var projection = new BatchedEfProjection<EfTestDbContext, CounterBatchHandler>(factory);
 
-        await projection.ProcessEventAsync(
-            EfTestEnvelopes.ForCounterIncremented(entityId, amount: 1, position: 1),
+        var act = async () => await projection.ProcessBatchAsync(
+            [EfTestEnvelopes.ForCounterIncremented(entityId, amount: 1, position: 1)],
             TestContext.Current.CancellationToken);
-
-        var act = async () => await projection.FlushAsync(TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<ConcurrencyConflictException>();
     }
 
     [Fact]
-    public async Task FlushAsync_AfterConcurrencyException_ResetsContextAndPendingCount()
+    public async Task ProcessBatchAsync_AfterConcurrencyException_UsesFreshContext()
     {
         var factory = fixture.CreateFactory();
         var entityId = Guid.NewGuid().ToString();
@@ -203,28 +194,22 @@ public sealed class BatchedEfProjectionTests(EfProjectionTestFixture fixture)
 
         var projection = new BatchedEfProjection<EfTestDbContext, CounterBatchHandler>(factory);
 
-        await projection.ProcessEventAsync(
-            EfTestEnvelopes.ForCounterIncremented(entityId, amount: 2, position: 1),
-            TestContext.Current.CancellationToken);
-
-        // First flush: throws ConcurrencyConflictException.
         try
         {
-            await projection.FlushAsync(TestContext.Current.CancellationToken);
+            await projection.ProcessBatchAsync(
+                [EfTestEnvelopes.ForCounterIncremented(entityId, amount: 2, position: 1)],
+                TestContext.Current.CancellationToken);
         }
         catch (ConcurrencyConflictException)
         {
             // Expected.
         }
 
-        // Second process + flush: should succeed now that the context was reset.
-        await projection.ProcessEventAsync(
-            EfTestEnvelopes.ForCounterIncremented(entityId, amount: 2, position: 2),
+        var act = async () => await projection.ProcessBatchAsync(
+            [EfTestEnvelopes.ForCounterIncremented(entityId, amount: 2, position: 2)],
             TestContext.Current.CancellationToken);
 
-        var act = async () => await projection.FlushAsync(TestContext.Current.CancellationToken);
-
-        await act.Should().NotThrowAsync("the context should have been cleanly reset after the first failure");
+        await act.Should().NotThrowAsync("each batch owns a fresh context");
     }
 
     // -----------------------------------------------------------------------
@@ -238,17 +223,13 @@ public sealed class BatchedEfProjectionTests(EfProjectionTestFixture fixture)
         var entityId = Guid.NewGuid().ToString();
         var projection = new BatchedEfProjection<EfTestDbContext, CounterBatchHandler>(factory);
 
-        // Batch 1: counter += 10
-        await projection.ProcessEventAsync(
-            EfTestEnvelopes.ForCounterIncremented(entityId, amount: 10, position: 1),
+        await projection.ProcessBatchAsync(
+            [EfTestEnvelopes.ForCounterIncremented(entityId, amount: 10, position: 1)],
             TestContext.Current.CancellationToken);
-        await projection.FlushAsync(TestContext.Current.CancellationToken);
 
-        // Batch 2: counter += 5
-        await projection.ProcessEventAsync(
-            EfTestEnvelopes.ForCounterIncremented(entityId, amount: 5, position: 2),
+        await projection.ProcessBatchAsync(
+            [EfTestEnvelopes.ForCounterIncremented(entityId, amount: 5, position: 2)],
             TestContext.Current.CancellationToken);
-        await projection.FlushAsync(TestContext.Current.CancellationToken);
 
         var entity = await fixture.ReadEntityAsync(entityId);
         entity.Should().NotBeNull();
@@ -281,7 +262,10 @@ public sealed class BatchedEfProjectionTests(EfProjectionTestFixture fixture)
     public void IsActive_CanBeSetToFalse()
     {
         var projection = new BatchedEfProjection<EfTestDbContext, CounterBatchHandler>(
-            fixture.CreateFactory()) { IsActive = false };
+            fixture.CreateFactory())
+        {
+            IsActive = false
+        };
 
         projection.IsActive.Should().BeFalse();
     }

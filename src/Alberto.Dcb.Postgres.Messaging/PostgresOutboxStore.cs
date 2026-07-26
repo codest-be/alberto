@@ -8,21 +8,29 @@ namespace Alberto.Dcb.Postgres.Messaging;
 /// <summary>
 /// PostgreSQL implementation of <see cref="IOutboxStore"/>.
 /// </summary>
-public sealed class PostgresOutboxStore(NpgsqlDataSource dataSource, string? schema = null) : IOutboxStore
+public sealed class PostgresOutboxStore(
+    NpgsqlDataSource dataSource,
+    string? schema = null,
+    bool? multiTenant = null) : IOutboxStore
 {
     private readonly NpgsqlDataSource _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
     private readonly SchemaQualifier _schema = new(schema);
+    private bool? _hasTenantIdCache = multiTenant;
 
     /// <inheritdoc/>
     public async Task InsertAsync(OutboxEntry entry, CancellationToken ct = default)
     {
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        var hasTenantId = await ResolveHasTenantIdAsync(connection, ct);
+        var tenantColumn = hasTenantId ? ", tenant_id" : "";
+        var tenantValue = hasTenantId ? ", @tenant_id" : "";
+
         await using var cmd = new NpgsqlCommand(
             $"""
             INSERT INTO {_schema.Table("alberto_outbox_entries")}
-                (id, source_event_id, message_type, version, payload, metadata, status, retry_count, last_error, created_at, delivered_at)
+                (id, source_event_id, message_type, version, payload, metadata, status, retry_count, last_error, created_at, delivered_at{tenantColumn})
             VALUES
-                (@id, @source_event_id, @message_type, @version, @payload::jsonb, @metadata::jsonb, @status, @retry_count, @last_error, @created_at, @delivered_at)
+                (@id, @source_event_id, @message_type, @version, @payload::jsonb, @metadata::jsonb, @status, @retry_count, @last_error, @created_at, @delivered_at{tenantValue})
             ON CONFLICT (source_event_id) DO NOTHING
             """,
             connection);
@@ -44,6 +52,13 @@ public sealed class PostgresOutboxStore(NpgsqlDataSource dataSource, string? sch
         {
             Value = (object?)entry.DeliveredAt ?? DBNull.Value
         });
+        if (hasTenantId)
+        {
+            cmd.Parameters.Add(new NpgsqlParameter("tenant_id", NpgsqlTypes.NpgsqlDbType.Text)
+            {
+                Value = (object?)entry.TenantId ?? DBNull.Value
+            });
+        }
 
         await cmd.ExecuteNonQueryAsync(ct);
     }
@@ -63,6 +78,10 @@ public sealed class PostgresOutboxStore(NpgsqlDataSource dataSource, string? sch
         var claimToken = Guid.NewGuid();
 
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        var hasTenantId = await ResolveHasTenantIdAsync(connection, ct);
+        var tenantColumn = hasTenantId ? ", e.tenant_id" : "";
+        var tenantSelect = hasTenantId ? ", tenant_id" : "";
+
         await using var cmd = new NpgsqlCommand(
             $"""
             WITH candidates AS (
@@ -87,11 +106,12 @@ public sealed class PostgresOutboxStore(NpgsqlDataSource dataSource, string? sch
                 WHERE e.id = candidates.id
                 RETURNING e.id, e.source_event_id, e.message_type, e.version, e.payload,
                           e.metadata, e.status, e.retry_count, e.last_error,
-                          e.created_at, e.delivered_at, e.claim_id, e.claim_expires_at
+                          e.created_at, e.delivered_at, e.claim_id,
+                          e.claim_expires_at{tenantColumn}
             )
             SELECT id, source_event_id, message_type, version, payload, metadata,
                    status, retry_count, last_error, created_at, delivered_at,
-                   claim_id, claim_expires_at
+                   claim_id, claim_expires_at{tenantSelect}
             FROM claimed
             ORDER BY created_at
             """,
@@ -107,7 +127,7 @@ public sealed class PostgresOutboxStore(NpgsqlDataSource dataSource, string? sch
 
         while (await reader.ReadAsync(ct))
         {
-            var entry = ReadEntry(reader);
+            var entry = ReadEntry(reader, hasTenantId);
             results.Add(new OutboxClaim(
                 entry,
                 reader.GetGuid(11),
@@ -232,7 +252,7 @@ public sealed class PostgresOutboxStore(NpgsqlDataSource dataSource, string? sch
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    private static OutboxEntry ReadEntry(NpgsqlDataReader reader)
+    private static OutboxEntry ReadEntry(NpgsqlDataReader reader, bool hasTenantId)
     {
         var statusString = reader.GetString(6);
         var status = statusString switch
@@ -259,6 +279,29 @@ public sealed class PostgresOutboxStore(NpgsqlDataSource dataSource, string? sch
             RetryCount: reader.GetInt32(7),
             LastError: reader.IsDBNull(8) ? null : reader.GetString(8),
             CreatedAt: reader.GetFieldValue<DateTimeOffset>(9),
-            DeliveredAt: reader.IsDBNull(10) ? null : reader.GetFieldValue<DateTimeOffset>(10));
+            DeliveredAt: reader.IsDBNull(10) ? null : reader.GetFieldValue<DateTimeOffset>(10),
+            TenantId: hasTenantId && !reader.IsDBNull(13) ? reader.GetString(13) : null);
+    }
+
+    private async ValueTask<bool> ResolveHasTenantIdAsync(
+        NpgsqlConnection connection,
+        CancellationToken ct)
+    {
+        if (_hasTenantIdCache.HasValue)
+            return _hasTenantIdCache.Value;
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = @schema_name
+                  AND table_name = 'alberto_outbox_entries'
+                  AND column_name = 'tenant_id')
+            """;
+        cmd.Parameters.AddWithValue("schema_name", _schema.Name);
+
+        _hasTenantIdCache = await cmd.ExecuteScalarAsync(ct) is true;
+        return _hasTenantIdCache.Value;
     }
 }

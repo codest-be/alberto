@@ -118,7 +118,6 @@ public class ProjectorSpecificationTests
         var envelope = CreateEnvelope(new OrderCreated(orderId, 100m), 1);
 
         await processor.ProcessEventAsync(envelope, TestContext.Current.CancellationToken);
-        await processor.FlushAsync(TestContext.Current.CancellationToken);
 
         Assert.Single(stateStore.Store);
         var state = stateStore.Store[orderId.ToString()];
@@ -144,7 +143,6 @@ public class ProjectorSpecificationTests
             CreateEnvelope(new OrderConfirmed(orderId), 2),
             TestContext.Current.CancellationToken);
 
-        await processor.FlushAsync(TestContext.Current.CancellationToken);
 
         var state = stateStore.Store[orderId.ToString()];
         Assert.Equal("Confirmed", state.Status);
@@ -168,7 +166,6 @@ public class ProjectorSpecificationTests
             CreateEnvelope(new OrderCancelled(orderId), 2),
             TestContext.Current.CancellationToken);
 
-        await processor.FlushAsync(TestContext.Current.CancellationToken);
 
         Assert.Empty(stateStore.Store);
         Assert.Contains(orderId.ToString(), stateStore.DeletedIds);
@@ -192,7 +189,6 @@ public class ProjectorSpecificationTests
             CreateEnvelope(new OrderConfirmed(order1), 3),
             TestContext.Current.CancellationToken);
 
-        await processor.FlushAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(2, stateStore.Store.Count);
         Assert.Equal("Confirmed", stateStore.Store[order1.ToString()].Status);
@@ -214,7 +210,6 @@ public class ProjectorSpecificationTests
             CreateEnvelope(new OrderConfirmed(orderId), 2),
             TestContext.Current.CancellationToken);
 
-        await processor.FlushAsync(TestContext.Current.CancellationToken);
 
         // Should have folded to final state
         var state = stateStore.Store[orderId.ToString()];
@@ -434,7 +429,6 @@ public class ProjectorSpecificationTests
         // The per-event path on a healthy store still works.
         var (processor, stateStore) = CreateProcessor();
         await processor.ProcessEventAsync(batch[0], TestContext.Current.CancellationToken);
-        await processor.FlushAsync(TestContext.Current.CancellationToken);
 
         Assert.Single(stateStore.Store);
         Assert.Equal("Created", stateStore.Store[orderId.ToString()].Status);

@@ -11,9 +11,8 @@ namespace Alberto.Cli.Commands.Ops;
 /// Drives the projection rebuild state machine from the operator side.
 /// </summary>
 /// <remarks>
-/// This command only moves the state machine. The replay itself is carried out by the
-/// running application, which needs <c>WithRebuilds()</c> on its control loop to have a
-/// coordinator watching for the transitions this command makes.
+/// This command records operator intent. The replay and every completion transition are
+/// carried out by the running application's rebuild coordinator.
 /// <para>
 /// A sharded module runs the same projection in every database, each with its own version
 /// number and its own rebuild in flight. Every verb here therefore acts on one database at a
@@ -117,14 +116,14 @@ public static class RebuildCommand
                             processorId = id,
                             projectionType = type,
                             activeVersion = current.ActiveVersion,
-                            wouldRebuildIntoVersion = current.ActiveVersion + 1,
+                            wouldRebuildIntoVersion = current.LastAllocatedVersion + 1,
                             targetPosition = head,
                         });
                     }
                     else
                     {
                         output.Text(
-                            $"[Dry run] Would rebuild '{id}' into version {current.ActiveVersion + 1} " +
+                            $"[Dry run] Would rebuild '{id}' into version {current.LastAllocatedVersion + 1} " +
                             $"(currently serving version {current.ActiveVersion}), replaying to position {head}.");
                     }
 
@@ -251,6 +250,8 @@ public static class RebuildCommand
                         status = row.State.Status.ToString().ToLowerInvariant(),
                         activeVersion = row.State.ActiveVersion,
                         rebuildingVersion = row.State.RebuildingVersion,
+                        lastAllocatedVersion = row.State.LastAllocatedVersion,
+                        requestedAction = row.State.RequestedAction?.ToString().ToLowerInvariant(),
                         targetPosition = row.State.TargetPosition,
                         replayedPosition = row.Replayed,
                         startedAt = row.State.StartedAt,
@@ -262,11 +263,12 @@ public static class RebuildCommand
             {
                 ShardRun.Table(
                     output, targets, results,
-                    ["Processor", "Status", "Active", "Rebuilding", "Progress", "Started"],
+                    ["Processor", "Status", "Requested", "Active", "Rebuilding", "Progress", "Started"],
                     row =>
                     [
                         row.State.ProcessorId,
                         Describe(row.State.Status),
+                        Describe(row.State.RequestedAction),
                         row.State.ActiveVersion.ToString(),
                         row.State.RebuildingVersion?.ToString() ?? "-",
                         DescribeProgress(row.State, row.Replayed),
@@ -286,10 +288,10 @@ public static class RebuildCommand
     {
         var command = new Command("promote",
             """
-            Make a finished rebuild the version readers see, and discard the one it replaces.
+            Ask the running application to make a finished rebuild the version readers see.
 
-            The swap is a single transaction: readers move from a complete old version to a
-            complete new one with nothing in between.
+            The coordinator stops the shadow loop, verifies its checkpoint is current, performs
+            the version swap, hands off the checkpoint, and clears superseded external state.
             """);
 
         var idArgument = new Argument<string>("processor-id") { Description = "Processor ID to promote" };
@@ -297,7 +299,7 @@ public static class RebuildCommand
         var schemaOption = new Option<string?>("--schema") { Description = "Database schema name" };
         var forceOption = new Option<bool>("--force")
         {
-            Description = "Promote a rebuild that has not finished replaying. Publishes incomplete state."
+            Description = "Request promotion before the original target; never publishes behind the live processor."
         };
         var yesOption = new Option<bool>("--yes") { Description = "Skip confirmation prompt" };
         var jsonOption = new Option<bool>("--json") { Description = "Output as JSON" };
@@ -319,16 +321,16 @@ public static class RebuildCommand
 
             var scope = ShardRun.Scope(targets);
             var prompt = force
-                ? $"[yellow]Force-promote '[bold]{id}[/]'{scope} before it has finished replaying? " +
-                  "Readers will see an incomplete projection.[/]"
-                : $"[yellow]Promote the rebuilt version of '[bold]{id}[/]'{scope} and discard the current one?[/]";
+                ? $"[yellow]Request early promotion of '[bold]{id}[/]'{scope}? " +
+                  "The coordinator will still wait until the shadow is current.[/]"
+                : $"[yellow]Request promotion of the rebuilt version of '[bold]{id}[/]'{scope}?[/]";
 
             if (!Confirm(yes, output, prompt, $"alberto ops rebuild promote {id} --yes"))
                 return;
 
             await RunAsync(output, targets, async (_, store, _) =>
             {
-                var outcome = await store.PromoteAsync(id, force);
+                var state = await store.RequestPromotionAsync(id, force);
 
                 if (json)
                 {
@@ -336,16 +338,17 @@ public static class RebuildCommand
                     {
                         action = "rebuild-promote",
                         processorId = id,
-                        activeVersion = outcome.State.ActiveVersion,
-                        discardedVersion = outcome.DiscardedVersion,
+                        status = "requested",
+                        activeVersion = state.ActiveVersion,
+                        rebuildingVersion = state.RebuildingVersion,
                         forced = force,
                     });
                 }
                 else
                 {
                     output.Text(
-                        $"'{id}' now serves version {outcome.State.ActiveVersion}; " +
-                        $"version {outcome.DiscardedVersion} discarded.");
+                        $"Promotion of '{id}' requested. The running application will complete " +
+                        "the safe handoff on its next coordinator poll.");
                 }
 
                 return 0;
@@ -359,9 +362,10 @@ public static class RebuildCommand
     {
         var command = new Command("abort",
             """
-            Abandon a rebuild in flight and throw away the partial state it wrote.
+            Ask the running application to abandon a rebuild in flight.
 
-            The version readers see is untouched, so aborting is never visible to them.
+            The coordinator stops the shadow loop before discarding its partial state. The
+            version readers see is untouched.
             """);
 
         var idArgument = new Argument<string>("processor-id") { Description = "Processor ID to abort" };
@@ -394,7 +398,7 @@ public static class RebuildCommand
 
             await RunAsync(output, targets, async (_, store, _) =>
             {
-                var outcome = await store.AbortAsync(id);
+                var state = await store.RequestAbortAsync(id);
 
                 if (json)
                 {
@@ -402,15 +406,16 @@ public static class RebuildCommand
                     {
                         action = "rebuild-abort",
                         processorId = id,
-                        activeVersion = outcome.State.ActiveVersion,
-                        discardedVersion = outcome.DiscardedVersion,
+                        status = "requested",
+                        activeVersion = state.ActiveVersion,
+                        rebuildingVersion = state.RebuildingVersion,
                     });
                 }
                 else
                 {
                     output.Text(
-                        $"Rebuild of '{id}' abandoned; version {outcome.DiscardedVersion} discarded. " +
-                        $"Still serving version {outcome.State.ActiveVersion}.");
+                        $"Abort of '{id}' requested. The running application will stop the " +
+                        "shadow loop and discard its state on the next coordinator poll.");
                 }
 
                 return 0;
@@ -518,6 +523,14 @@ public static class RebuildCommand
         RebuildStatus.Completed => "completed",
         RebuildStatus.Aborted => "aborted",
         _ => status.ToString().ToLowerInvariant(),
+    };
+
+    private static string Describe(RebuildOperatorAction? action) => action switch
+    {
+        RebuildOperatorAction.Promote => "promote",
+        RebuildOperatorAction.ForcePromote => "force promote",
+        RebuildOperatorAction.Abort => "abort",
+        _ => "-",
     };
 
     private static string DescribeProgress(ProjectionRebuildState state, long? replayed)

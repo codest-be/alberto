@@ -27,9 +27,12 @@ public interface IDeadLetterStore
     Task<int> CountAsync(string processorId, CancellationToken ct = default);
 
     /// <summary>
-    /// Removes a dead letter entry (e.g., after successful replay).
+    /// Completes a successful retry by removing the entry only if
+    /// <paramref name="claim"/> still owns the row. An expired token remains valid until
+    /// another worker fences it by reclaiming the row.
     /// </summary>
-    Task RemoveAsync(Guid id, CancellationToken ct = default);
+    /// <returns><see langword="true"/> when the claimed row was removed.</returns>
+    Task<bool> CompleteRetryAsync(DeadLetterClaim claim, CancellationToken ct = default);
 
     /// <summary>
     /// Removes all dead letter entries for a processor.
@@ -53,7 +56,7 @@ public interface IDeadLetterStore
     /// <param name="leaseDuration">How long the claim is valid; should exceed the longest expected handler runtime.</param>
     /// <param name="claimedBy">Identifier of the claiming worker (e.g. replica id), recorded for diagnostics.</param>
     /// <param name="ct">Cancellation token.</param>
-    Task<IReadOnlyList<DeadLetterEntry>> ClaimRetryRequestedAsync(
+    Task<IReadOnlyList<DeadLetterClaim>> ClaimRetryRequestedAsync(
         string processorId,
         int batchSize,
         TimeSpan leaseDuration,
@@ -61,11 +64,13 @@ public interface IDeadLetterStore
         CancellationToken ct = default);
 
     /// <summary>
-    /// Abandons a retry attempt: clears <c>retry_requested</c> and the claim columns so the entry
+    /// Abandons a retry attempt, if <paramref name="claim"/> still owns it: clears
+    /// <c>retry_requested</c> and the claim columns so the entry
     /// stays in the dead letter table but is no longer scheduled for automatic retry. Used when a
     /// dispatch throws — the handler is still failing, so re-running it on the next poll would just
     /// busy-loop. The entry must be explicitly re-marked via <see cref="MarkForRetryAsync"/> to
     /// retry again. Worker crashes are handled by lease expiry, not this method.
     /// </summary>
-    Task AbandonRetryAsync(Guid id, CancellationToken ct = default);
+    /// <returns><see langword="true"/> when the active claim was abandoned.</returns>
+    Task<bool> AbandonRetryAsync(DeadLetterClaim claim, CancellationToken ct = default);
 }

@@ -16,6 +16,29 @@ namespace Alberto.Dcb.Tests.Postgres;
 public sealed class PostgresProjectionRebuildStoreFixture(PostgresCluster cluster)
     : PostgresDatabaseFixture(cluster, PostgresTemplates.SingleTenant);
 
+internal static class ProjectionRebuildCoordinatorTestExtensions
+{
+    public static Task<ProjectionRebuildState> MarkReadyAsync(
+        this PostgresProjectionRebuildStore store,
+        string processorId,
+        CancellationToken ct) =>
+        ((IProjectionRebuildCoordinatorStore)store).MarkReadyAsync(processorId, ct);
+
+    public static Task<RebuildOutcome> PromoteAsync(
+        this PostgresProjectionRebuildStore store,
+        string processorId,
+        bool force,
+        CancellationToken ct) =>
+        ((IProjectionRebuildCoordinatorStore)store)
+            .CompletePromotionAsync(processorId, force, ct);
+
+    public static Task<RebuildOutcome> AbortAsync(
+        this PostgresProjectionRebuildStore store,
+        string processorId,
+        CancellationToken ct) =>
+        ((IProjectionRebuildCoordinatorStore)store).CompleteAbortAsync(processorId, ct);
+}
+
 /// <summary>
 /// Integration tests for <see cref="PostgresProjectionRebuildStore"/>.
 ///
@@ -93,6 +116,7 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
         started.Status.Should().Be(RebuildStatus.Rebuilding);
         started.ActiveVersion.Should().Be(1, "readers must keep seeing the version they were on");
         started.RebuildingVersion.Should().Be(2);
+        started.LastAllocatedVersion.Should().Be(2);
         started.TargetPosition.Should().Be(4711);
         started.StartedAt.Should().NotBeNull();
         started.IsRebuildInFlight.Should().BeTrue();
@@ -159,6 +183,43 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
 
         var act = () => store.MarkReadyAsync(processorId, ct);
         await act.Should().ThrowAsync<RebuildStateException>();
+    }
+
+    [Theory]
+    [InlineData(false, RebuildOperatorAction.Promote)]
+    [InlineData(true, RebuildOperatorAction.ForcePromote)]
+    public async Task RequestPromotionAsync_RecordsIntentWithoutFlippingVersions(
+        bool force,
+        RebuildOperatorAction expected)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (processorId, projectionType) = NewIdentity();
+        var store = CreateStore();
+
+        await store.StartAsync(processorId, projectionType, targetPosition: 10, ct);
+        var requested = await store.RequestPromotionAsync(processorId, force, ct);
+
+        requested.RequestedAction.Should().Be(expected);
+        requested.Status.Should().Be(RebuildStatus.Rebuilding);
+        requested.ActiveVersion.Should().Be(1);
+        requested.RebuildingVersion.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task RequestAbortAsync_RecordsIntentWithoutDeletingShadowState()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (processorId, projectionType) = NewIdentity();
+        var store = CreateStore();
+
+        await store.StartAsync(processorId, projectionType, targetPosition: 10, ct);
+        await InsertStateAsync(projectionType, "doc", rebuildVersion: 2, ct);
+
+        var requested = await store.RequestAbortAsync(processorId, ct);
+
+        requested.RequestedAction.Should().Be(RebuildOperatorAction.Abort);
+        requested.Status.Should().Be(RebuildStatus.Rebuilding);
+        (await CountStateAsync(projectionType, 2, ct)).Should().Be(1);
     }
 
     [Fact]

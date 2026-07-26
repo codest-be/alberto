@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Alberto.Dcb.Subscriptions;
+using Alberto.Dcb.Tenancy;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -50,6 +51,22 @@ public class ReactToScopedHandlerTests
         private int _count;
         public List<int> InstanceLog { get; } = [];
         public int Next() => Interlocked.Increment(ref _count);
+    }
+
+    public sealed class TenantCapture
+    {
+        public string? TenantId { get; set; }
+    }
+
+    public sealed class TenantAwareHandler(
+        ITenantAccessor tenantAccessor,
+        TenantCapture capture)
+    {
+        public Task Handle(ItemProcessed e, CancellationToken ct)
+        {
+            capture.TenantId = tenantAccessor.TenantId;
+            return Task.CompletedTask;
+        }
     }
 
     [Fact]
@@ -103,6 +120,29 @@ public class ReactToScopedHandlerTests
         await processor.ProcessEventAsync(CreateEnvelope(new ItemProcessed("ok"), 1), TestContext.Current.CancellationToken);
 
         Assert.Equal(["ok"], handled);
+    }
+
+    [Fact]
+    public async Task ScopedHandler_ReceivesTenantFromEventEnvelope()
+    {
+        var capture = new TenantCapture();
+        var services = new ServiceCollection();
+        services.AddTenancy();
+        services.AddSingleton(capture);
+
+        services.AddAlberto("test", builder => builder
+            .ReactTo<ItemProcessed, TenantAwareHandler>(
+                h => h.Handle,
+                "tenant-aware-reactor"));
+
+        await using var provider = services.BuildServiceProvider(validateScopes: true);
+        var processor = provider.GetKeyedServices<IEventProcessor>("test").Single();
+
+        await processor.ProcessEventAsync(
+            CreateEnvelope(new ItemProcessed("tenant"), 1, tenantId: "tenant_a"),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("tenant_a", capture.TenantId);
     }
 
     [Fact]
@@ -172,13 +212,18 @@ public class ReactToScopedHandlerTests
         Assert.Contains("cannot enable async batching", exception.Message);
     }
 
-    private static IEventEnvelope CreateEnvelope<TEvent>(TEvent @event, long position, DateTime? createdAt = null) where TEvent : IEvent
+    private static IEventEnvelope CreateEnvelope<TEvent>(
+        TEvent @event,
+        long position,
+        DateTime? createdAt = null,
+        string tenantId = "test_tenant")
+        where TEvent : IEvent
     {
         var eventTypeId = EventTypeAttribute.GetEventTypeId(typeof(TEvent));
         return new EventEnvelope
         {
             Id = Guid.NewGuid(),
-            TenantId = "test-tenant",
+            TenantId = tenantId,
             GlobalPosition = position,
             EventType = new EventType(eventTypeId),
             Tags = [],

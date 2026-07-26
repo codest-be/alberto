@@ -1,5 +1,6 @@
 using System.Reflection;
 using DbUp;
+using DbUp.Engine;
 using Npgsql;
 
 namespace Alberto.Dcb.Postgres;
@@ -33,29 +34,7 @@ public static class PostgresMigrator
             EnsureSchemaExists(connectionString, schema);
         }
 
-        // Determine schema values for substitution
-        var schemaName = string.IsNullOrWhiteSpace(schema) ? "public" : schema;
-        var schemaPrefix = string.IsNullOrWhiteSpace(schema) ? "" : $"{schema}.";
-
-        // Use schema-specific journal table so each module tracks migrations independently
-        var journalSchema = string.IsNullOrWhiteSpace(schema) ? "public" : schema;
-
-        var scriptFolder = singleTenant ? SingleTenantScriptFolder : MultiTenantScriptFolder;
-
-        // schemaName is already validated above — safe to pass as a DbUp variable.
-        // DbUp performs text substitution into migration scripts; the allowlist validation
-        // above ensures no SQL-injectable characters can reach the scripts.
-        var upgrader = DeployChanges.To
-            .PostgresqlDatabase(connectionString)
-            .WithScriptsEmbeddedInAssembly(
-                Assembly.GetExecutingAssembly(),
-                scriptName => IsInFolder(scriptName, scriptFolder))
-            .WithTransactionPerScript()
-            .LogToConsole()
-            .WithVariable("schema", schemaName)
-            .WithVariable("schema_prefix", schemaPrefix)
-            .JournalToPostgresqlTable(journalSchema, "schemaversions")
-            .Build();
+        var upgrader = BuildUpgradeEngine(connectionString, schema, singleTenant);
 
         var result = upgrader.PerformUpgrade();
 
@@ -78,19 +57,7 @@ public static class PostgresMigrator
         if (!string.IsNullOrWhiteSpace(schema))
             SchemaQualifier.ValidateName(schema);
 
-        var schemaName = string.IsNullOrWhiteSpace(schema) ? "public" : schema;
-        var schemaPrefix = string.IsNullOrWhiteSpace(schema) ? "" : $"{schema}.";
-
-        var scriptFolder = singleTenant ? SingleTenantScriptFolder : MultiTenantScriptFolder;
-
-        var upgrader = DeployChanges.To
-            .PostgresqlDatabase(connectionString)
-            .WithScriptsEmbeddedInAssembly(
-                Assembly.GetExecutingAssembly(),
-                scriptName => IsInFolder(scriptName, scriptFolder))
-            .WithVariable("schema", schemaName)
-            .WithVariable("schema_prefix", schemaPrefix)
-            .Build();
+        var upgrader = BuildUpgradeEngine(connectionString, schema, singleTenant);
 
         return upgrader.GetScriptsToExecute()
             .Select(s => s.Name)
@@ -160,6 +127,31 @@ public static class PostgresMigrator
         // would silently admit the next folder someone adds.
         var remainder = scriptName[prefix.Length..];
         return remainder.Count(c => c == '.') == 1;
+    }
+
+    private static UpgradeEngine BuildUpgradeEngine(
+        string connectionString,
+        string? schema,
+        bool singleTenant)
+    {
+        var schemaName = string.IsNullOrWhiteSpace(schema) ? "public" : schema;
+        var schemaPrefix = string.IsNullOrWhiteSpace(schema) ? "" : $"{schema}.";
+        var scriptFolder = singleTenant ? SingleTenantScriptFolder : MultiTenantScriptFolder;
+
+        // Both execution and inspection must share the same script selection, variables,
+        // transaction policy, and schema-local journal. Otherwise "pending" can disagree
+        // with the migration that will actually run.
+        return DeployChanges.To
+            .PostgresqlDatabase(connectionString)
+            .WithScriptsEmbeddedInAssembly(
+                Assembly.GetExecutingAssembly(),
+                scriptName => IsInFolder(scriptName, scriptFolder))
+            .WithTransactionPerScript()
+            .LogToConsole()
+            .WithVariable("schema", schemaName)
+            .WithVariable("schema_prefix", schemaPrefix)
+            .JournalToPostgresqlTable(schemaName, "schemaversions")
+            .Build();
     }
 
     private static void EnsureSchemaExists(string connectionString, string schema)

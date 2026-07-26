@@ -25,6 +25,25 @@ public enum RebuildStatus
 }
 
 /// <summary>
+/// An operator intent that the running rebuild coordinator must carry out.
+/// Operators record intent; only the coordinator may execute the multi-step handoff.
+/// </summary>
+public enum RebuildOperatorAction
+{
+    /// <summary>Promote after the rebuild reaches <see cref="RebuildStatus.Ready"/>.</summary>
+    Promote,
+
+    /// <summary>
+    /// Promote before the original target is reached, but only after the shadow copy is at
+    /// least as current as the live processor.
+    /// </summary>
+    ForcePromote,
+
+    /// <summary>Stop the shadow loop and discard its version.</summary>
+    Abort,
+}
+
+/// <summary>
 /// A processor's rebuild state.
 /// </summary>
 /// <param name="ProcessorId">The processor being rebuilt.</param>
@@ -46,6 +65,12 @@ public enum RebuildStatus
 /// events arrive.
 /// </param>
 /// <param name="CompletedAt">When the most recent rebuild was promoted or aborted.</param>
+/// <param name="LastAllocatedVersion">
+/// High-water mark of every rebuild version ever allocated. Versions are never reused.
+/// </param>
+/// <param name="RequestedAction">
+/// Operator intent waiting for the running coordinator, or null when no action is pending.
+/// </param>
 public sealed record ProjectionRebuildState(
     string ProcessorId,
     string ProjectionType,
@@ -54,7 +79,9 @@ public sealed record ProjectionRebuildState(
     RebuildStatus Status,
     DateTimeOffset? StartedAt,
     long? TargetPosition,
-    DateTimeOffset? CompletedAt)
+    DateTimeOffset? CompletedAt,
+    int LastAllocatedVersion = 1,
+    RebuildOperatorAction? RequestedAction = null)
 {
     /// <summary>
     /// True while a shadow loop should be running for this processor. Survives a restart:
@@ -95,11 +122,12 @@ public sealed class RebuildStateException : InvalidOperationException
 }
 
 /// <summary>
-/// Reads and drives the projection rebuild state machine.
+/// Reads the projection rebuild state machine and records operator intent.
 /// </summary>
 /// <remarks>
-/// Every transition is atomic and guarded against the state it is leaving, so two operators
-/// racing on the same processor cannot both win. Callers do not need to read-then-write.
+/// Ending a rebuild is a protocol, not a database row update: the shadow loop must stop,
+/// checkpoints must be handed off, version selectors refreshed, and external state cleared.
+/// This interface deliberately cannot perform those coordinator-only transitions.
 /// </remarks>
 public interface IProjectionRebuildStore
 {
@@ -125,35 +153,52 @@ public interface IProjectionRebuildStore
         string processorId, string projectionType, long targetPosition, CancellationToken ct = default);
 
     /// <summary>
-    /// Marks a rebuild as having reached its target position and ready to promote.
-    /// Called by the coordinator, not by operators.
-    /// </summary>
-    /// <exception cref="RebuildStateException">No rebuild is in flight for this processor.</exception>
-    Task<ProjectionRebuildState> MarkReadyAsync(string processorId, CancellationToken ct = default);
-
-    /// <summary>
-    /// Promotes the rebuilt version to active and discards the superseded one.
-    /// The version flip and the cleanup of the old state rows happen in one transaction, so
-    /// readers move from a complete old version to a complete new one with nothing in between.
+    /// Records an operator request to promote. The running coordinator performs the safe
+    /// handoff and clears the request when it completes.
     /// </summary>
     /// <param name="processorId">The processor to promote.</param>
     /// <param name="force">
-    /// Promote from <see cref="RebuildStatus.Rebuilding"/> as well as
-    /// <see cref="RebuildStatus.Ready"/>. This publishes a projection that has not finished
-    /// replaying, so it is an operator override rather than a normal path.
+    /// Permit promotion before the original target is reached. The coordinator still refuses
+    /// to publish a shadow copy behind the live processor.
     /// </param>
     /// <param name="ct">Cancellation token.</param>
-    /// <exception cref="RebuildStateException">
-    /// The rebuild has not reached <see cref="RebuildStatus.Ready"/> and <paramref name="force"/>
-    /// was not set, or no rebuild is in flight at all.
-    /// </exception>
-    Task<RebuildOutcome> PromoteAsync(
+    /// <exception cref="RebuildStateException">No rebuild is in flight.</exception>
+    Task<ProjectionRebuildState> RequestPromotionAsync(
         string processorId, bool force = false, CancellationToken ct = default);
 
     /// <summary>
-    /// Abandons an in-flight rebuild and deletes the partial state it wrote. The active
-    /// version is untouched, so readers never notice.
+    /// Records an operator request to abort. The running coordinator stops the shadow loop
+    /// before discarding its state.
     /// </summary>
     /// <exception cref="RebuildStateException">No rebuild is in flight for this processor.</exception>
-    Task<RebuildOutcome> AbortAsync(string processorId, CancellationToken ct = default);
+    Task<ProjectionRebuildState> RequestAbortAsync(
+        string processorId, CancellationToken ct = default);
+}
+
+/// <summary>
+/// Coordinator-only transitions for the rebuild protocol.
+/// </summary>
+/// <remarks>
+/// Adapters implement this interface alongside <see cref="IProjectionRebuildStore"/>, but
+/// operator modules receive only the latter. This keeps the completion seam structural.
+/// </remarks>
+public interface IProjectionRebuildCoordinatorStore
+{
+    /// <summary>Marks a historical replay ready after its checkpoint reaches the target.</summary>
+    Task<ProjectionRebuildState> MarkReadyAsync(
+        string processorId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Atomically flips the rebuilt version to active and deletes the superseded state rows.
+    /// The caller must already have stopped the shadow loop and verified checkpoint locality.
+    /// </summary>
+    Task<RebuildOutcome> CompletePromotionAsync(
+        string processorId, bool force = false, CancellationToken ct = default);
+
+    /// <summary>
+    /// Atomically marks an abort complete and deletes the abandoned version's state rows.
+    /// The caller must already have stopped the shadow loop.
+    /// </summary>
+    Task<RebuildOutcome> CompleteAbortAsync(
+        string processorId, CancellationToken ct = default);
 }
