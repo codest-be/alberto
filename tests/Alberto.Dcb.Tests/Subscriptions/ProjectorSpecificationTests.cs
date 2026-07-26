@@ -112,7 +112,7 @@ public class ProjectorSpecificationTests
     private static (DeclaredAsyncProjection<OrderSummary> processor, InMemoryStateStore stateStore) CreateProcessor()
     {
         var stateStore = new InMemoryStateStore();
-        var processor = new DeclaredAsyncProjection<OrderSummary>(Declaration(), () => stateStore);
+        var processor = new DeclaredAsyncProjection<OrderSummary>(Declaration(), _ => stateStore);
         return (processor, stateStore);
     }
 
@@ -246,7 +246,7 @@ public class ProjectorSpecificationTests
     {
         var processor = new DeclaredAsyncProjection<OrderSummary>(
             Declaration(),
-            () => new InMemoryStateStore(),
+            _ => new InMemoryStateStore(),
             processorIdOverride: "order-summary-shadow");
 
         Assert.Equal("order-summary-shadow", processor.ProcessorId);
@@ -283,7 +283,7 @@ public class ProjectorSpecificationTests
                 id: e => null, // opt out of the event entirely
                 apply: (state, e, ctx) => new OrderSummary { OrderId = e.OrderId })
             .Build();
-        var processor = new DeclaredAsyncProjection<OrderSummary>(declaration, () => stateStore);
+        var processor = new DeclaredAsyncProjection<OrderSummary>(declaration, _ => stateStore);
 
         await processor.ProcessEventAsync(
             CreateEnvelope(new OrderCreated(Guid.NewGuid(), 100m), 1),
@@ -421,7 +421,7 @@ public class ProjectorSpecificationTests
         // A state store that always throws on ApplyChangesAsync simulates a batch failure.
         var throwingProcessor = new DeclaredAsyncProjection<OrderSummary>(
             Declaration(),
-            () => new ThrowOnApplyStateStore());
+            _ => new ThrowOnApplyStateStore());
 
         var orderId = Guid.NewGuid();
         var batch = new List<IEventEnvelope>

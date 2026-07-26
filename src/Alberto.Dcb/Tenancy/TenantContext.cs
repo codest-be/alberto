@@ -19,9 +19,30 @@ public sealed class TenantContext
     private string? _tenantId;
 
     /// <summary>
+    /// The tenant-ID rule in words, for callers that reject a bad tenant before it reaches
+    /// <see cref="SetTenant"/> and have to say why.
+    /// </summary>
+    public const string TenantIdRule =
+        "Tenant IDs must start with a lowercase letter and contain only lowercase letters, " +
+        "digits, and underscores, with a maximum length of 63 characters.";
+
+    /// <summary>
     /// Gets the current tenant ID, or null if not set.
     /// </summary>
     public string? TenantId => _tenantId;
+
+    /// <summary>
+    /// Whether <paramref name="tenantId"/> is one <see cref="SetTenant"/> will accept.
+    /// </summary>
+    /// <remarks>
+    /// The rule is asked for rather than restated because a caller that guesses it wrong in the
+    /// permissive direction turns a clean rejection into an unhandled
+    /// <see cref="ArgumentException"/> from <see cref="SetTenant"/> further down the request.
+    /// The Orders API's tenant interceptor did exactly that: it allowed hyphens, so
+    /// <c>X-Tenant-Id: a-b-c</c> passed its check and then threw an opaque server error.
+    /// </remarks>
+    public static bool IsValidTenantId(string? tenantId) =>
+        !string.IsNullOrWhiteSpace(tenantId) && TenantIdPattern.IsMatch(tenantId);
 
     /// <summary>
     /// Sets the tenant ID for the current scope.
@@ -38,11 +59,9 @@ public sealed class TenantContext
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(tenantId);
 
-        if (!TenantIdPattern.IsMatch(tenantId))
+        if (!IsValidTenantId(tenantId))
             throw new ArgumentException(
-                $"Tenant ID '{tenantId}' is invalid. " +
-                "Tenant IDs must start with a lowercase letter and contain only lowercase letters, " +
-                "digits, and underscores, with a maximum length of 63 characters. " +
+                $"Tenant ID '{tenantId}' is invalid. {TenantIdRule} " +
                 "See upgrade-notes/P1.5.md if your application uses a different tenant ID format.",
                 nameof(tenantId));
 

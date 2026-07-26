@@ -63,7 +63,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
             IStateStore<TState> stateStore)
         {
             HandledEventTypes = declaration.HandledEventTypes;
-            _inner = new DeclaredAsyncProjection<TState>(declaration, () => stateStore);
+            _inner = new DeclaredAsyncProjection<TState>(declaration, _ => stateStore);
         }
 
         public IReadOnlySet<string> HandledEventTypes { get; }
