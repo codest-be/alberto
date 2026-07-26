@@ -86,7 +86,23 @@ owner's decision** — it should almost certainly be abandoned, but that is not 
 
 - SP1a Task 8: complete (commit 23da001, spec ✅ / quality Approved, no findings). Both packages ship. Reviewer independently ran `dotnet pack` and read the extracted nuspecs rather than trusting the implementer's grep: both target frameworks carry dependency groups in both packages, all metadata (MIT, authors, repo url, `VersionPrefix`, `IncludeSymbols`/snupkg) flows from `Directory.Build.props` identically to the pre-existing packable projects, `Alberto.Dcb.Testing`'s dependency groups contain no test framework, and the release workflow's `artifacts/Alberto.Dcb*.nupkg` glob already matches both new ids. No unintended public types leak. **SP1a is feature-complete: 1162 passed / 0 failed / 17 skipped.**
 
-## Standing user instruction (received during Task 7)
+## SP1a shipped
+
+- PR #36 merged 2026-07-26T12:54:43Z. PR #37 merged straight after, fixing a flake #36 introduced (`OutboxStoreSpecification` facts asserted on whole-collection claim results against a shared Postgres fixture). Main is now green four consecutive full-suite runs at 1089 passed / 0 failed / 17 skipped.
+
+## Skipped-test audit (the user's standing instruction) — DONE
+
+17 skips: 15 legitimate, 1 avoidable, 1 masking a real production bug.
+
+- **Masking a defect — `PostgresEventListenerTests.RoundTrip_FiveEventBatch_FiresExactlyOneNotify`.** Migration 010 replaced the `alberto_events` notify trigger with `FOR EACH STATEMENT` so one `pg_notify` fires per append call. But every version of `alberto_append_events` — through the newest, migration 023 — inserts events one at a time inside a PL/pgSQL `FOR v_event IN SELECT * FROM jsonb_array_elements(p_events) LOOP`. Each iteration is its own INSERT statement, so a statement-level trigger still fires N times for N events. **Verified by reading 010_BatchNotifyTrigger.sql and 023_TagConceptBoundaryMatching.sql:105-137 directly.** Migration 010's stated purpose is not achieved; subscribers get N redundant wakeups per append. The test was skipped rather than the bug fixed. Fix: move `pg_notify` into the function body after the loop, or restructure as a bulk `INSERT … SELECT`; needs a new migration and updates to all active function versions. ~2-4h.
+- **Avoidable — `PostgresOutboxStoreSpecificationTests.PurgeDeliveredAsync_RemovesOldDeliveredOnly`.** Skips legitimately (Postgres sets `delivered_at = now()` in SQL, so an app-level FakeTimeProvider cannot drive it), but the comment claims the InMemory derivation covers it and that is only half true: `PostgresOutboxStoreTests.PurgeDeliveredAsync_ShouldRemoveDeliveredEntriesOlderThanThreshold` uses a future cutoff, so every delivered row qualifies and the `delivered_at < @before` predicate is never exercised. Removing the date condition from the SQL would not fail any test. Fix: ~25 lines setting `delivered_at` via direct SQL. ~1h.
+- Full audit at `.superpowers/sdd/skipped-test-audit.md` (in the deleted SP1a worktree; re-derivable).
+
+## Also observed
+
+- `main` has a pre-existing intermittent failure independent of this work — one run failed, the immediate re-run passed, name not captured. Likely the `Rebuild_CatchesUpOnEventsThatArriveWhileItIsRunning` flake already noted below.
+
+## Standing user instruction (received during Task 7) — SATISFIED, see above
 
 > "when done, verify all skipped tests and see if the reason is valid or if we should fix the test/code"
 
