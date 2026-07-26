@@ -61,7 +61,8 @@ ALTER TABLE $schema_prefix$alberto_projection_rebuild_meta
 
 ALTER TABLE $schema_prefix$alberto_projection_rebuild_meta
     ADD CONSTRAINT alberto_projection_rebuild_meta_status_check
-    CHECK (rebuild_status IN ('idle', 'rebuilding', 'ready', 'completed', 'aborted'));
+    CHECK (rebuild_status IN ('idle', 'rebuilding', 'ready', 'completed', 'aborted'))
+    NOT VALID;
 
 -- A rebuild in flight must name the version it is writing into; a resting row
 -- must not.  This is the invariant the coordinator depends on when it resumes
@@ -75,7 +76,8 @@ ALTER TABLE $schema_prefix$alberto_projection_rebuild_meta
         (rebuild_status IN ('rebuilding', 'ready') AND rebuilding_version IS NOT NULL)
         OR
         (rebuild_status IN ('idle', 'completed', 'aborted') AND rebuilding_version IS NULL)
-    );
+    )
+    NOT VALID;
 
 ALTER TABLE $schema_prefix$alberto_projection_rebuild_meta
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
