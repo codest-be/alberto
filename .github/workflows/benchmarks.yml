@@ -36,7 +36,10 @@ jobs:
 
       - name: Run benchmarks
         run: |
-          FILTER=""
+          # BenchmarkSwitcher prompts interactively when given no filter at all, so a
+          # scheduled run with no category input would sit at a menu instead of
+          # benchmarking. '--filter *' is how you say "everything" non-interactively.
+          FILTER="--filter *"
           if [ -n "${{ github.event.inputs.categories }}" ]; then
             FILTER="--anyCategories=${{ github.event.inputs.categories }}"
           fi

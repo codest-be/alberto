@@ -5,9 +5,10 @@ Postgres-backed BenchmarkDotNet suite. Design:
 
 ## Running
 
-Everything (needs Docker; takes 30–60 minutes cold):
+Everything (needs Docker; takes 30–60 minutes cold). The `--filter '*'` is required —
+without a filter BenchmarkDotNet prompts for a selection instead of running:
 
-    dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks
+    dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks -- --filter '*'
 
 One family:
 
@@ -16,7 +17,7 @@ One family:
 Against an existing Postgres rather than Testcontainers:
 
     ALBERTO_BENCH_POSTGRES="Host=localhost;Database=bench;Username=postgres;Password=postgres" \
-      dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks
+      dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks -- --filter '*'
 
 ## Comparing
 
