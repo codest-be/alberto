@@ -95,7 +95,7 @@ public static class BdnImporter
             return result;
         }
 
-        foreach (var pair in parameters.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        foreach (var pair in parameters.Split('&', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             var separator = pair.IndexOf('=');
             if (separator <= 0)

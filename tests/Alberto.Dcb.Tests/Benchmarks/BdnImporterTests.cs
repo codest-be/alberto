@@ -14,7 +14,7 @@ public class BdnImporterTests
           "Namespace": "Alberto.Dcb.Benchmarks.Workloads",
           "Type": "AppendBenchmarks",
           "Method": "BatchAppend",
-          "Parameters": "BatchSize=100, StoreSize=10000",
+          "Parameters": "BatchSize=100&StoreSize=10000",
           "Statistics": { "Mean": 125000.5, "StandardDeviation": 4200.25 },
           "Memory": { "BytesAllocatedPerOperation": 8192 }
         },
