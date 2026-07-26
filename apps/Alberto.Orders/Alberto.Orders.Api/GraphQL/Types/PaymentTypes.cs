@@ -28,7 +28,7 @@ public sealed record Payment(
         s.Amount,
         s.Currency,
         s.PaymentMethod,
-        (CorePaymentStatus)(int)s.Status,
+        ToCoreStatus(s.Status),
         s.AuthorizationCode,
         s.ErrorCode,
         s.ErrorMessage,
@@ -37,6 +37,33 @@ public sealed record Payment(
         s.AuthorizedAt,
         s.CapturedAt,
         s.RefundedAt);
+
+    /// <summary>
+    /// Maps the read model's status onto the one this GraphQL type exposes.
+    /// </summary>
+    /// <remarks>
+    /// These are two independent enums that happen to share member names, and their ordinals do
+    /// not line up: the core one starts at <c>None = 0</c>, the read model's at
+    /// <c>Initiated = 0</c>. The numeric cast this replaces therefore shifted every payment one
+    /// rung down the ladder — an initiated payment reported <c>NONE</c>, a captured one
+    /// <c>AUTHORIZED</c>, a refunded one <c>FAILED</c>. It went unseen because
+    /// <c>recentPayments</c> returned nothing at all until the projection's store was scoped to
+    /// the right tenant; this is the first status the field has ever actually served.
+    /// <para>
+    /// Naming both sides makes a future member added to either enum a compile error here rather
+    /// than another silent shift.
+    /// </para>
+    /// </remarks>
+    private static CorePaymentStatus ToCoreStatus(PaymentStatus status) => status switch
+    {
+        PaymentStatus.Initiated => CorePaymentStatus.Initiated,
+        PaymentStatus.Authorized => CorePaymentStatus.Authorized,
+        PaymentStatus.Captured => CorePaymentStatus.Captured,
+        PaymentStatus.Failed => CorePaymentStatus.Failed,
+        PaymentStatus.Refunded => CorePaymentStatus.Refunded,
+        _ => throw new ArgumentOutOfRangeException(
+            nameof(status), status, "Unmapped payment status from the read model."),
+    };
 }
 
 /// <summary>

@@ -30,11 +30,16 @@ public sealed class TenantHttpRequestInterceptor : DefaultHttpRequestInterceptor
                     .Build());
         }
 
-        if (!IsValidTenantId(tenantId))
+        // Ask TenantContext rather than restate its rule. This check used to allow dashes,
+        // uppercase, and 64 characters — all things SetTenant rejects two lines below — so
+        // `X-Tenant-Id: a-b-c` passed here and then threw an ArgumentException the GraphQL
+        // pipeline reported as "Unexpected Execution Error", with the real reason only in the
+        // server log.
+        if (!TenantContext.IsValidTenantId(tenantId))
         {
             throw new GraphQLException(
                 ErrorBuilder.New()
-                    .SetMessage("Invalid tenant ID format. Must be alphanumeric with dashes/underscores, max 64 characters.")
+                    .SetMessage($"Invalid tenant ID format. {TenantContext.TenantIdRule}")
                     .SetCode("INVALID_TENANT")
                     .Build());
         }
@@ -47,13 +52,5 @@ public sealed class TenantHttpRequestInterceptor : DefaultHttpRequestInterceptor
         requestBuilder.SetGlobalState(TenantIdKey, tenantId);
 
         return base.OnCreateAsync(context, requestExecutor, requestBuilder, cancellationToken);
-    }
-
-    private static bool IsValidTenantId(string tenantId)
-    {
-        if (tenantId.Length > 64)
-            return false;
-
-        return tenantId.All(c => char.IsLetterOrDigit(c) || c == '-' || c == '_');
     }
 }

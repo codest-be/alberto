@@ -48,6 +48,51 @@ public class TenancyTests
         Assert.ThrowsAny<ArgumentException>(() => context.SetTenant(invalidTenantId!));
     }
 
+    /// <summary>
+    /// The predicate and the setter answer the same question, so they must never disagree.
+    /// A caller that gates on the predicate and then calls the setter — which is the whole
+    /// reason the predicate exists — turns any disagreement in the permissive direction into an
+    /// unhandled exception well past the point where it could be reported usefully. That is
+    /// exactly what the Orders API's tenant interceptor did while it carried its own copy of
+    /// the rule: <c>X-Tenant-Id: a-b-c</c> passed the copy, threw inside SetTenant, and reached
+    /// the caller as "Unexpected Execution Error".
+    /// </summary>
+    [Theory]
+    // Accepted.
+    [InlineData("acme")]
+    [InlineData("tenant_123")]
+    [InlineData("a")]
+    // Rejected — the shapes the interceptor's copy used to wave through.
+    [InlineData("a-b-c")]
+    [InlineData("Acme")]
+    [InlineData("1acme")]
+    [InlineData("acme.corp")]
+    [InlineData("acme corp")]
+    [InlineData("_acme")]
+    // Rejected — absent or blank.
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void IsValidTenantId_Agrees_With_SetTenant(string? tenantId)
+    {
+        var context = new TenantContext();
+
+        var accepted = true;
+        try { context.SetTenant(tenantId!); }
+        catch (ArgumentException) { accepted = false; }
+
+        Assert.Equal(accepted, TenantContext.IsValidTenantId(tenantId));
+    }
+
+    [Fact]
+    public void IsValidTenantId_Agrees_With_SetTenant_AtTheLengthLimit()
+    {
+        // 63 characters is the PostgreSQL identifier limit the rule is pinned to; the
+        // interceptor's copy allowed 64.
+        Assert.True(TenantContext.IsValidTenantId("t" + new string('x', 62)));
+        Assert.False(TenantContext.IsValidTenantId("t" + new string('x', 63)));
+    }
+
     #endregion
 
     #region TenantAccessor Tests
