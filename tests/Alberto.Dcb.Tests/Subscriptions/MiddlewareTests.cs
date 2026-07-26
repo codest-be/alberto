@@ -355,7 +355,7 @@ public sealed class MiddlewareTests
             return Task.CompletedTask;
         }
 
-        public Task<IReadOnlyList<DeadLetterEntry>> GetAsync(string processorId, int limit = 100, CancellationToken ct = default)
+        public Task<IReadOnlyList<DeadLetterEntry>> GetAsync(string processorId, string? tenantId = null, int limit = 100, CancellationToken ct = default)
             => Task.FromResult<IReadOnlyList<DeadLetterEntry>>(Entries.Where(e => e.ProcessorId == processorId).ToList());
 
         public Task<int> CountAsync(string processorId, CancellationToken ct = default)

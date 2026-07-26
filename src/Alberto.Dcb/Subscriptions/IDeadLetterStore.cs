@@ -14,10 +14,17 @@ public interface IDeadLetterStore
     /// Gets dead letter entries for a processor.
     /// </summary>
     /// <param name="processorId">The processor identifier.</param>
+    /// <param name="tenantId">
+    /// When supplied, restricts the result to entries belonging to that tenant. Dead letter
+    /// entries carry the full event payload, so a multi-tenant caller must pass the active
+    /// tenant to avoid disclosing another tenant's data. Pass <see langword="null"/> for the
+    /// cross-tenant operator view (the CLI) and in single-tenant deployments.
+    /// </param>
     /// <param name="limit">Maximum entries to return.</param>
     /// <param name="ct">Cancellation token.</param>
     Task<IReadOnlyList<DeadLetterEntry>> GetAsync(
         string processorId,
+        string? tenantId = null,
         int limit = 100,
         CancellationToken ct = default);
 

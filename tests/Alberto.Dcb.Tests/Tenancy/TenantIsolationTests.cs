@@ -592,13 +592,12 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
     }
 
     /// <summary>
-    /// P1.2 (not yet fixed): <see cref="PostgresDeadLetterStore.GetAsync"/> does not filter
-    /// by <c>tenant_id</c> — entries from all tenants are returned for a given processor,
-    /// allowing tenant A to observe tenant B's dead-letter entries. This test documents the
-    /// desired isolation behaviour and must be un-skipped once <c>GetAsync</c> accepts a
-    /// <c>tenantId</c> parameter and applies the corresponding WHERE clause.
+    /// P1.2: <see cref="PostgresDeadLetterStore.GetAsync"/> scopes to <c>tenant_id</c> when a
+    /// tenant is supplied, so tenant A cannot observe tenant B's dead-letter entries (which
+    /// carry full event payloads). Passing <see langword="null"/> keeps the cross-tenant
+    /// operator view used by the CLI.
     /// </summary>
-    [Fact(Skip = "P1.2 not yet fixed: GetAsync does not filter by tenant_id")]
+    [Fact]
     public async Task DeadLetterStore_GetAsync_is_scoped_to_active_tenant()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -634,11 +633,17 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
 
         await deadLetterStore.StoreAsync(entry, ct);
 
-        // Desired: tenant B's view of this processor must be empty because the entry
-        // belongs to tenant A. Currently GetAsync has no tenant_id filter so the entry
-        // is returned for any caller.
-        // TODO: add tenantId parameter to GetAsync and update this assertion.
-        var entriesForB = await deadLetterStore.GetAsync(processorId, ct: ct);
+        // Tenant B's view of this processor must be empty because the entry belongs to tenant A.
+        var entriesForB = await deadLetterStore.GetAsync(processorId, tenantId: TenantB, ct: ct);
         Assert.Empty(entriesForB);
+
+        // Tenant A must still see its own entry — otherwise a filter that always matches
+        // nothing would satisfy the assertion above.
+        var entriesForA = await deadLetterStore.GetAsync(processorId, tenantId: TenantA, ct: ct);
+        Assert.Equal(entry.Id, Assert.Single(entriesForA).Id);
+
+        // No tenant supplied keeps the cross-tenant operator view the CLI depends on.
+        var entriesForOperator = await deadLetterStore.GetAsync(processorId, ct: ct);
+        Assert.Equal(entry.Id, Assert.Single(entriesForOperator).Id);
     }
 }

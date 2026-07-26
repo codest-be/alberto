@@ -128,8 +128,8 @@ public sealed class DeadLetterRetryLoopBehaviorTests
             => _inner.StoreAsync(entry, ct);
 
         public Task<IReadOnlyList<DeadLetterEntry>> GetAsync(
-            string processorId, int limit = 100, CancellationToken ct = default)
-            => _inner.GetAsync(processorId, limit, ct);
+            string processorId, string? tenantId = null, int limit = 100, CancellationToken ct = default)
+            => _inner.GetAsync(processorId, tenantId, limit, ct);
 
         public Task<int> CountAsync(string processorId, CancellationToken ct = default)
             => _inner.CountAsync(processorId, ct);
