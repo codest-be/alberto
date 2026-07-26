@@ -9,6 +9,15 @@ namespace Alberto.Dcb.EntityFramework;
 /// <summary>
 /// Extension methods for registering EF-based projections with a DCB module.
 /// </summary>
+/// <remarks>
+/// Every <see cref="EfStateStore{TEntity,TDbContext}"/> here is built for all tenants at once —
+/// the <c>_ =&gt;</c> in each registration below discards the tenant deliberately. An EF projection
+/// keeps tenancy as an ordinary column that the projection body writes from
+/// <c>ProjectionContext.TenantId</c>, so the store has no tenancy of its own to fix and one
+/// instance serves every tenant. The JSONB stores in <c>Alberto.Dcb.Postgres</c> are the opposite:
+/// their tenancy is baked into the table's primary key when the module is migrated, so they need
+/// one store per tenant and <c>AddProjection</c> takes a tenant-keyed factory.
+/// </remarks>
 public static class EfConsumerBuilderExtensions
 {
     /// <summary>
@@ -61,7 +70,7 @@ public static class EfConsumerBuilderExtensions
                 var contextFactory = sp.GetRequiredService<IDbContextFactory<TDbContext>>();
                 var version = ProjectionVersions.LiveVersion(sp, moduleKey, declaration.ProcessorId);
                 return new DeclaredAsyncProjection<TEntity>(declaration,
-                    () => new EfStateStore<TEntity, TDbContext>(contextFactory, version));
+                    _ => new EfStateStore<TEntity, TDbContext>(contextFactory, version));
             });
             context.Services.AddKeyedSingleton<IProjectionStateClearer>(moduleKey, (sp, _) =>
                 new EfProjectionStateClearer<TEntity, TDbContext>(
@@ -73,7 +82,7 @@ public static class EfConsumerBuilderExtensions
                     declaration.ProcessorId,
                     version => new DeclaredAsyncProjection<TEntity>(
                         declaration,
-                        () => new EfStateStore<TEntity, TDbContext>(
+                        _ => new EfStateStore<TEntity, TDbContext>(
                             sp.GetRequiredService<IDbContextFactory<TDbContext>>(), version))));
         });
     }
@@ -117,7 +126,7 @@ public static class EfConsumerBuilderExtensions
                 var contextFactory = sp.GetRequiredService<IDbContextFactory<TDbContext>>();
                 var version = ProjectionVersions.LiveVersion(sp, moduleKey, declaration.ProcessorId);
                 return new DeclaredAsyncProjection<TEntity>(declaration,
-                    () => new EfStateStore<TEntity, TDbContext>(contextFactory, version),
+                    _ => new EfStateStore<TEntity, TDbContext>(contextFactory, version),
                     afterCommit: afterCommit(sp));
             });
             context.Services.AddKeyedSingleton<IProjectionStateClearer>(moduleKey, (sp, _) =>
@@ -130,7 +139,7 @@ public static class EfConsumerBuilderExtensions
                     declaration.ProcessorId,
                     version => new DeclaredAsyncProjection<TEntity>(
                         declaration,
-                        () => new EfStateStore<TEntity, TDbContext>(
+                        _ => new EfStateStore<TEntity, TDbContext>(
                             sp.GetRequiredService<IDbContextFactory<TDbContext>>(), version))));
         });
     }
