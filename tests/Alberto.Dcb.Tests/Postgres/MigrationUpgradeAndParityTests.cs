@@ -138,10 +138,8 @@ public sealed class MigrationUpgradeAndParityTests
         (await FunctionExistsAsync(conn, "alberto_read_by_types_and_tags"))
             .Should().BeTrue(because: "function added by migration 009 must exist after upgrade");
 
-        // 010: the notify trigger must be a STATEMENT-level trigger (not row-level).
-        var triggerOrientation = await GetTriggerActionOrientationAsync(conn, "alberto_trg_notify_events");
-        triggerOrientation.Should().Be("STATEMENT",
-            because: "migration 010 replaces the FOR EACH ROW trigger with a FOR EACH STATEMENT trigger");
+        // 025: the notify moved off alberto_events and into the append functions.
+        await AssertAppendNotifiesOnceAsync(conn);
 
         // 011: checkpoint table must have fillfactor=70.
         (await TableHasFillfactorAsync(conn, "alberto_processor_checkpoints", fillfactor: 70))
@@ -201,10 +199,8 @@ public sealed class MigrationUpgradeAndParityTests
         (await FunctionExistsAsync(conn, "alberto_read_by_types_and_tags"))
             .Should().BeTrue(because: "function added by migration 009 must exist after upgrade");
 
-        // 010: the notify trigger must be a STATEMENT-level trigger.
-        var triggerOrientation = await GetTriggerActionOrientationAsync(conn, "alberto_trg_notify_events");
-        triggerOrientation.Should().Be("STATEMENT",
-            because: "migration 010 replaces the FOR EACH ROW trigger with a FOR EACH STATEMENT trigger");
+        // 025: the notify moved off alberto_events and into the append functions.
+        await AssertAppendNotifiesOnceAsync(conn);
 
         // 011: checkpoint table must have fillfactor=70.
         (await TableHasFillfactorAsync(conn, "alberto_processor_checkpoints", fillfactor: 70))
@@ -683,6 +679,72 @@ public sealed class MigrationUpgradeAndParityTests
             .Should().BeFalse(because:
                 "migration 024 drops the concept index added by 022 — with no wildcard boundary to " +
                 "resolve, it is pure insert cost on every tag row written");
+    }
+
+    /// <summary>
+    /// An append emits exactly one <c>pg_notify</c>, and it emits it from the append function
+    /// rather than from a trigger on <c>alberto_events</c>.
+    /// </summary>
+    /// <remarks>
+    /// Migration 010 tried to collapse an N-event append into one notification by making the
+    /// trigger statement-level, on the premise that an append inserts its batch in one statement.
+    /// It does not: <c>alberto_append_events</c> loops, one INSERT per event, so a statement-level
+    /// trigger fired N times all the same. Migration 025 drops the trigger and both of its
+    /// functions, and puts a single <c>pg_notify</c> at the end of each live append function —
+    /// which is why this asserts the absence of the trigger and the presence of the notify in the
+    /// function bodies. The count itself is proved end-to-end by
+    /// <c>PostgresEventListenerTests.RoundTrip_FiveEventBatch_FiresExactlyOneNotify</c>.
+    /// </remarks>
+    private static async Task AssertAppendNotifiesOnceAsync(NpgsqlConnection conn)
+    {
+        (await GetTriggerActionOrientationAsync(conn, "alberto_trg_notify_events"))
+            .Should().BeNull(because:
+                "migration 025 drops the notify trigger on alberto_events — no trigger placement " +
+                "can fire once per append while the append function inserts one event per statement");
+
+        foreach (var function in new[] { "alberto_notify_events", "alberto_notify_events_batch" })
+        {
+            (await FunctionExistsAsync(conn, function))
+                .Should().BeFalse(because:
+                    $"migration 025 drops {function} along with the trigger it backed");
+        }
+
+        // _v2 and _v5 are absent by 024; the four below are the live append set.
+        string[] appendFunctions =
+        [
+            "alberto_append_events",
+            "alberto_append_events_v3",
+            "alberto_append_events_v4",
+            "alberto_append_events_v6",
+        ];
+
+        foreach (var function in appendFunctions)
+        {
+            (await FunctionSourceContainsAsync(conn, function, "pg_notify"))
+                .Should().BeTrue(because:
+                    $"migration 025 moves the events notification into {function}, so an append " +
+                    "signals subscribers once when it finishes rather than once per event inserted");
+        }
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when the named function's body contains
+    /// <paramref name="fragment"/>. Matches every overload, so a stale overload left behind
+    /// without the fragment fails the check.
+    /// </summary>
+    private static async Task<bool> FunctionSourceContainsAsync(
+        NpgsqlConnection conn, string functionName, string fragment)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT COUNT(*) > 0
+               AND COUNT(*) = COUNT(*) FILTER (WHERE prosrc LIKE '%' || @fragment || '%')
+            FROM pg_proc
+            WHERE proname = @name
+            """;
+        cmd.Parameters.AddWithValue("@name", functionName);
+        cmd.Parameters.AddWithValue("@fragment", fragment);
+        return Convert.ToBoolean(await cmd.ExecuteScalarAsync());
     }
 
     /// <summary>
