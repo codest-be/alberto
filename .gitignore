@@ -12,3 +12,4 @@ riderModule.iml
 .serena/
 
 TestResults/
+BenchmarkDotNet.Artifacts/
