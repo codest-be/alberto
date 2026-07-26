@@ -256,13 +256,6 @@ public sealed record PostgresBackendDescriptor(PostgresOptions Options) : IAlber
         services.AddKeyedSingleton<IProjectionRebuildCoordinatorStore>(moduleKey, (sp, _) =>
             sp.GetRequiredKeyedService<PostgresProjectionRebuildStore>(moduleKey));
 
-        // Processor lock (single-leader mode — schema-less, no Options needed).
-        services.AddKeyedSingleton<IProcessorLock>(moduleKey, (sp, _) =>
-        {
-            var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
-            return new PostgresProcessorLock(dataSource);
-        });
-
         // Tenant processor lock (used for tenant-distributed mode).
         services.AddKeyedSingleton<ITenantProcessorLock>(moduleKey, (sp, _) =>
         {
