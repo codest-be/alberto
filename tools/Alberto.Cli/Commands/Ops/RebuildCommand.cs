@@ -95,117 +95,123 @@ public static class RebuildCommand
                 var output = session.Output;
                 var targets = session.MutationTargets(shard, allShards, url, schema);
                 var type = projectionType ?? id;
+                var showShard = ShardRun.ShowsShard(targets);
 
                 // A destructive fan-out is planned in full before the first write. An unreachable
                 // shard or a rebuild already in flight therefore cannot leave the fleet half-started.
-                var plans = await ShardRun.ProbeAsync(targets, async (dataSource, target) =>
-                {
-                    var admin = new PostgresAdminDataAccess(dataSource, target.Schema);
-                    var store = new PostgresProjectionRebuildStore(dataSource, target.Schema);
-                    var current = await store.GetAsync(id, type);
-                    var head = await admin.GetGlobalPositionAsync() ?? 0;
-                    return new RebuildStartPlan(current, head);
-                });
-
-                if (ShardRun.ReportFailures(output, plans))
-                    return 1;
-
-                var conflicts = plans
-                    .Where(plan => plan.Value!.State.IsRebuildInFlight)
-                    .ToArray();
-                foreach (var conflict in conflicts)
-                {
-                    var current = conflict.Value!.State;
-                    var prefix = conflict.Target.ShardId is null
-                        ? string.Empty
-                        : $"shard '{conflict.Target.ShardId}': ";
-                    output.Error(
-                        $"{prefix}Processor '{id}' already has a rebuild in flight " +
-                        $"(version {current.RebuildingVersion}, status {Describe(current.Status)}). " +
-                        "Promote or abort it first.");
-                }
-
-                if (conflicts.Length > 0)
-                    return 1;
-
-                if (dryRun)
-                {
-                    foreach (var plan in plans)
+                return await PlannedMutation.RunAsync(
+                    targets,
+                    async target =>
                     {
-                        var current = plan.Value!.State;
+                        await using var dataSource =
+                            new NpgsqlDataSourceBuilder(target.ConnectionString).Build();
+                        var admin = new PostgresAdminDataAccess(dataSource, target.Schema);
+                        var store = new PostgresProjectionRebuildStore(dataSource, target.Schema);
+                        var current = await store.GetAsync(id, type);
+                        var head = await admin.GetGlobalPositionAsync() ?? 0;
+                        return new RebuildStartPlan(current, head);
+                    },
+                    (target, failure) => output.Error(
+                        showShard ? $"shard '{target.ShardId}': {failure.Message}" : failure.Message),
+                    plans =>
+                    {
+                        var conflicts = plans
+                            .Where(plan => plan.Plan.State.IsRebuildInFlight)
+                            .ToArray();
+                        foreach (var conflict in conflicts)
+                        {
+                            var current = conflict.Plan.State;
+                            var prefix = conflict.Target.ShardId is null
+                                ? string.Empty
+                                : $"shard '{conflict.Target.ShardId}': ";
+                            output.Error(
+                                $"{prefix}Processor '{id}' already has a rebuild in flight " +
+                                $"(version {current.RebuildingVersion}, status {Describe(current.Status)}). " +
+                                "Promote or abort it first.");
+                        }
+
+                        if (conflicts.Length > 0)
+                            return 1;
+
+                        if (dryRun)
+                        {
+                            foreach (var plan in plans)
+                            {
+                                var current = plan.Plan.State;
+                                if (json)
+                                {
+                                    output.Json(new
+                                    {
+                                        dryRun = true,
+                                        action = "rebuild-start",
+                                        shard = showShard ? plan.Target.ShardId : null,
+                                        processorId = id,
+                                        projectionType = type,
+                                        activeVersion = current.ActiveVersion,
+                                        wouldRebuildIntoVersion = current.LastAllocatedVersion + 1,
+                                        targetPosition = plan.Plan.Head,
+                                    });
+                                }
+                                else
+                                {
+                                    if (showShard)
+                                        output.Text($"[{plan.Target.ShardId}]");
+                                    output.Text(
+                                        $"[Dry run] Would rebuild '{id}' into version {current.LastAllocatedVersion + 1} " +
+                                        $"(currently serving version {current.ActiveVersion}), replaying to position {plan.Plan.Head}.");
+                                }
+                            }
+
+                            return 0;
+                        }
+
+                        var capturedHeads = targets.Count == 1
+                            ? $"It will replay {plans[0].Plan.Head} events into a shadow copy."
+                            : "It will replay every shard to its captured head (" +
+                              string.Join(", ", plans.Select(plan =>
+                                  $"{plan.Target.ShardId}: {plan.Plan.Head}")) + ").";
+                        return session.Confirm(
+                            yes,
+                            $"[yellow]Start a rebuild of '[bold]{id}[/]'{ShardRun.Scope(targets)}? " +
+                            $"{capturedHeads}[/]",
+                            "This operation requires confirmation. Add --yes to confirm.\n" +
+                            $"  alberto ops rebuild start {id} --yes");
+                    },
+                    async (target, plan) =>
+                    {
+                        if (showShard && !json)
+                            output.Text($"[{target.ShardId}]");
+
+                        await using var dataSource =
+                            new NpgsqlDataSourceBuilder(target.ConnectionString).Build();
+                        var store = new PostgresProjectionRebuildStore(dataSource, target.Schema);
+                        var state = await store.StartAsync(id, type, plan.Head);
                         if (json)
                         {
                             output.Json(new
                             {
-                                dryRun = true,
                                 action = "rebuild-start",
-                                shard = ShardRun.ShowsShard(targets) ? plan.Target.ShardId : null,
+                                shard = showShard ? target.ShardId : null,
                                 processorId = id,
                                 projectionType = type,
-                                activeVersion = current.ActiveVersion,
-                                wouldRebuildIntoVersion = current.LastAllocatedVersion + 1,
-                                targetPosition = plan.Value.Head,
+                                activeVersion = state.ActiveVersion,
+                                rebuildingVersion = state.RebuildingVersion,
+                                targetPosition = state.TargetPosition,
                             });
                         }
                         else
                         {
-                            if (ShardRun.ShowsShard(targets))
-                                output.Text($"[{plan.Target.ShardId}]");
                             output.Text(
-                                $"[Dry run] Would rebuild '{id}' into version {current.LastAllocatedVersion + 1} " +
-                                $"(currently serving version {current.ActiveVersion}), replaying to position {plan.Value.Head}.");
+                                $"Rebuild of '{id}' started into version {state.RebuildingVersion}, " +
+                                $"replaying to position {state.TargetPosition}.");
+                            output.Warning(
+                                "The replay runs in the application, not here. It needs a module configured with " +
+                                ".WithControlLoop(loop => loop.WithRebuilds()) — without one the rebuild will sit at " +
+                                "'rebuilding' forever. Watch it with: alberto ops rebuild status " + id);
                         }
-                    }
-
-                    return 0;
-                }
-
-                var capturedHeads = targets.Count == 1
-                    ? $"It will replay {plans[0].Value!.Head} events into a shadow copy."
-                    : "It will replay every shard to its captured head (" +
-                      string.Join(", ", plans.Select(plan =>
-                          $"{plan.Target.ShardId}: {plan.Value!.Head}")) + ").";
-                if (session.Confirm(
-                        yes,
-                        $"[yellow]Start a rebuild of '[bold]{id}[/]'{ShardRun.Scope(targets)}? " +
-                        $"{capturedHeads}[/]",
-                        "This operation requires confirmation. Add --yes to confirm.\n" +
-                        $"  alberto ops rebuild start {id} --yes") is { } code)
-                {
-                    return code;
-                }
-
-                var planByTarget = plans.ToDictionary(plan => plan.Target, plan => plan.Value!);
-                var failed = await ShardRun.ApplyAsync(output, targets, async (dataSource, target) =>
-                {
-                    var store = new PostgresProjectionRebuildStore(dataSource, target.Schema);
-                    var state = await store.StartAsync(id, type, planByTarget[target].Head);
-                    if (json)
-                    {
-                        output.Json(new
-                        {
-                            action = "rebuild-start",
-                            shard = ShardRun.ShowsShard(targets) ? target.ShardId : null,
-                            processorId = id,
-                            projectionType = type,
-                            activeVersion = state.ActiveVersion,
-                            rebuildingVersion = state.RebuildingVersion,
-                            targetPosition = state.TargetPosition,
-                        });
-                    }
-                    else
-                    {
-                        output.Text(
-                            $"Rebuild of '{id}' started into version {state.RebuildingVersion}, " +
-                            $"replaying to position {state.TargetPosition}.");
-                        output.Warning(
-                            "The replay runs in the application, not here. It needs a module configured with " +
-                            ".WithControlLoop(loop => loop.WithRebuilds()) — without one the rebuild will sit at " +
-                            "'rebuilding' forever. Watch it with: alberto ops rebuild status " + id);
-                    }
-                });
-
-                return failed ? 1 : 0;
+                    },
+                    (target, failure) => output.Error(
+                        showShard ? $"shard '{target.ShardId}': {failure.Message}" : failure.Message));
             });
         }, idArgument, projectionTypeOption, urlOption, schemaOption, dryRunOption, yesOption, jsonOption,
            shardOption, allShardsOption);

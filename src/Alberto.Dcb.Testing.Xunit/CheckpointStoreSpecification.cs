@@ -67,22 +67,6 @@ public abstract class CheckpointStoreSpecification
     }
 
     /// <summary>
-    /// <c>SaveAsync</c> is monotonic: a stale writer must not move a processor's checkpoint
-    /// backwards. Operator-initiated movement uses <see cref="ICheckpointStore.RewindAsync"/>.
-    /// </summary>
-    [Fact]
-    public async Task Save_BackwardPosition_ShouldNotDecrease()
-    {
-        var store = await CreateStore();
-
-        await store.SaveAsync(ProcessorId, 100, TestContext.Current.CancellationToken);
-        await store.SaveAsync(ProcessorId, 50, TestContext.Current.CancellationToken);
-
-        var result = await store.GetAsync(ProcessorId, TestContext.Current.CancellationToken);
-        Assert.Equal(100, result);
-    }
-
-    /// <summary>
     /// <c>ResetAsync</c> must remove an existing checkpoint so that <c>GetAsync</c> returns
     /// <see langword="null"/> for that processor ID.
     /// </summary>

@@ -404,7 +404,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
     /// which tenant the failed event belongs to.
     /// </summary>
     [Fact]
-    public async Task DeadLetterStore_ClaimRetryRequested_returns_correct_tenantId_via_events_join()
+    public async Task DeadLetterStore_LegacyFalseHint_StillUsesMultiTenantSchemaForClaims()
     {
         var ct = TestContext.Current.CancellationToken;
         var orderId = Guid.NewGuid();
@@ -423,7 +423,9 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
         }
 
         var processorId = $"ti-proc-{Guid.NewGuid():N}";
-        var deadLetterStore = new PostgresDeadLetterStore(fixture.DataSource);
+        // Already-compiled callers of the former optional-parameter constructor embed false at
+        // the call site. That legacy value must not override the migrated schema after upgrade.
+        var deadLetterStore = new PostgresDeadLetterStore(fixture.DataSource, multiTenant: false);
         var entry = new DeadLetterEntry
         {
             Id = Guid.NewGuid(),

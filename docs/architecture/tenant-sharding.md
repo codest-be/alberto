@@ -237,9 +237,12 @@ The CLI's rules follow from positions being per-database:
   not something you can undo. Pass `--shard <id>` or `--all-shards`.
 - **`ops checkpoint set` takes no `--all-shards` at all.** A position is a per-database sequence,
   so one number cannot apply to several.
-- **A failing shard does not stop the run.** Each database's state is its own, and an operator
-  promoting across a fleet needs to know which of them moved, not only where the run stopped. The
-  exit code is still non-zero.
+- **A failing shard does not stop a run once writes begin.** Each database's state is its own, and
+  an operator promoting across a fleet needs to know which of them moved, not only where the run
+  stopped. The exit code is still non-zero. `ops rebuild start` is the deliberate exception: it
+  probes every selected shard and aborts before allocating any shadow version when that complete
+  plan cannot be built. The operator can retry a consistent start after the unavailable shard
+  recovers, or explicitly select one shard.
 - **`--url` beats the configured shards.** Naming a database explicitly and then fanning out over
   the config's shards anyway would be a surprise, and a destructive one for a mutation.
 
