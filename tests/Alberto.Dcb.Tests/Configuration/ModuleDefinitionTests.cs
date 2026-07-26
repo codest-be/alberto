@@ -1,5 +1,6 @@
 using Alberto.Dcb;
 using Alberto.Dcb.Configuration;
+using Alberto.Dcb.Tests.Testing;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -10,23 +11,6 @@ namespace Alberto.Dcb.Tests.Configuration;
 
 public class ModuleDefinitionTests
 {
-    private sealed class FakeBackend : IAlbertoBackendDescriptor
-    {
-        public string Name => "Fake";
-        public bool SupportsTenancy => true;
-        public bool Registered { get; private set; }
-        public bool TenancyAtRegistration { get; private set; }
-
-        public IAlbertoBackendDescriptor ApplyConfiguration(IConfiguration moduleSection) => this;
-        public IEnumerable<AlbertoValidationFailure> Validate(AlbertoModuleDefinition definition) => [];
-
-        public void Register(AlbertoModuleContext context)
-        {
-            Registered = true;
-            TenancyAtRegistration = context.TenancyEnabled;
-        }
-    }
-
     private static AlbertoModuleDefinition Resolve(IServiceCollection services, string moduleKey) =>
         services.BuildServiceProvider()
             .GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>()

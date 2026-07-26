@@ -1,4 +1,5 @@
 using Alberto.Dcb.Postgres;
+using Alberto.Dcb.Testing.Xunit;
 using Xunit;
 
 namespace Alberto.Dcb.Tests;
