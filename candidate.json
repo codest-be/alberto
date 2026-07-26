@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "run": {
+    "timestamp": "2026-07-26T21:55:44.2393520\u002B00:00",
+    "gitSha": "smoke-verification",
+    "profileId": "local-3575380c",
+    "albertoVersion": "0.0.0"
+  },
+  "measurements": [
+    {
+      "id": "QueryBenchmarks.StreamAllFromZero",
+      "params": {
+        "StoreSize": "10000"
+      },
+      "meanNs": 2031570.6,
+      "stdDevNs": 251923.541887966,
+      "opsPerSec": 492.2300017533232,
+      "allocatedBytes": 346248
+    },
+    {
+      "id": "QueryBenchmarks.StreamAllFromZero",
+      "params": {
+        "StoreSize": "100000"
+      },
+      "meanNs": 1180658.6,
+      "stdDevNs": 561955.2463883382,
+      "opsPerSec": 846.9848947019908,
+      "allocatedBytes": 321512
+    },
+    {
+      "id": "QueryBenchmarks.StreamAllFromZero",
+      "params": {
+        "StoreSize": "1000000"
+      },
+      "meanNs": 1943266.6,
+      "stdDevNs": 382599.55890582694,
+      "opsPerSec": 514.5974309443696,
+      "allocatedBytes": 322432
+    },
+    {
+      "id": "AppendBenchmarks.SingleAppend",
+      "params": {},
+      "meanNs": 1296016.8,
+      "stdDevNs": 281255.00551626727,
+      "opsPerSec": 771.5949361150257,
+      "allocatedBytes": 11736
+    }
+  ]
+}

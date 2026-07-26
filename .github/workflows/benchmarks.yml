@@ -67,9 +67,16 @@ jobs:
             --candidate candidate.json \
             --markdown delta.md
 
+      # On the very first run for a profile there is no baseline to diff against, so the
+      # compare tool seeds one and writes no delta. That is a success, not a missing file.
       - name: Publish delta to the job summary
         if: always()
-        run: cat delta.md >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          if [ -f delta.md ]; then
+            cat delta.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No delta: this profile had no baseline, so this run seeded one." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload raw reports
         if: always()
