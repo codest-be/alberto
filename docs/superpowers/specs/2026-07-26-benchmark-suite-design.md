@@ -145,9 +145,13 @@ Approximately 80 cases. Seeding the 1M template dominates cold start; steady-sta
 nightly runtime is estimated at 30–60 minutes.
 
 **Required change outside `benchmarks/`:** an `InternalsVisibleTo` for the
-benchmark assembly in `src/Alberto.Dcb/AssemblyInfo.cs`, so
-`CachingCheckpointStore` can be measured directly. This closes the gap recorded
-in `CheckpointBenchmarks.cs`.
+benchmark assembly, so `CachingCheckpointStore` can be measured directly. This
+closes the gap recorded in `CheckpointBenchmarks.cs`.
+
+It goes in `src/Alberto.Dcb/Alberto.Dcb.csproj` as an MSBuild item
+(`<InternalsVisibleTo Include="Alberto.Dcb.Benchmarks" />`) alongside the six
+existing entries — **not** in `AssemblyInfo.cs`, which holds only a comment
+pointing at the csproj.
 
 ## Results storage and comparison
 
