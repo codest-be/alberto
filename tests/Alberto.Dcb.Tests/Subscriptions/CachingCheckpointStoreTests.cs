@@ -1,4 +1,5 @@
 using Alberto.Dcb.Subscriptions;
+using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
 namespace Alberto.Dcb.Tests.Subscriptions;
@@ -254,14 +255,50 @@ public class CachingCheckpointStoreTests
     public async Task TimerFlush_ShouldFlushPeriodically()
     {
         var inner = new InMemoryCheckpointStore();
-        await using var cache = new CachingCheckpointStore(inner, TimeSpan.FromMilliseconds(50));
+        var time = new FakeTimeProvider();
+        await using var cache = new CachingCheckpointStore(inner, TimeSpan.FromMilliseconds(50), timeProvider: time);
 
         await cache.SaveAsync("processor-1", 100, TestContext.Current.CancellationToken);
 
-        // Wait for timer to trigger flush
-        await Task.Delay(200, TestContext.Current.CancellationToken);
+        time.Advance(TimeSpan.FromMilliseconds(50));
+
+        await WaitForInnerAsync(inner, "processor-1", 100);
 
         Assert.Equal(100, await inner.GetAsync("processor-1", TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task Flush_WhenIntervalElapses_WritesThroughToInner_WithoutSleeping()
+    {
+        var inner = new InMemoryCheckpointStore();
+        var time = new FakeTimeProvider();
+        await using var store = new CachingCheckpointStore(
+            inner,
+            flushInterval: TimeSpan.FromSeconds(30),
+            resyncInterval: TimeSpan.FromMinutes(5),
+            timeProvider: time);
+
+        await store.SaveAsync("proc-1", 42, TestContext.Current.CancellationToken);
+
+        // Nothing has reached the inner store yet: the write is only cached.
+        Assert.Null(await inner.GetAsync("proc-1", TestContext.Current.CancellationToken));
+
+        time.Advance(TimeSpan.FromSeconds(30));
+
+        // The timer callback is async void, so yield until it has run rather than
+        // asserting immediately. This is a scheduling yield, not a wall-clock wait.
+        await WaitForInnerAsync(inner, "proc-1", 42);
+
+        Assert.Equal(42, await inner.GetAsync("proc-1", TestContext.Current.CancellationToken));
+    }
+
+    private static async Task WaitForInnerAsync(ICheckpointStore inner, string processorId, long expected)
+    {
+        for (var i = 0; i < 100; i++)
+        {
+            if (await inner.GetAsync(processorId, TestContext.Current.CancellationToken) == expected) return;
+            await Task.Yield();
+        }
     }
 
     #endregion
@@ -387,7 +424,8 @@ public class CachingCheckpointStoreTests
     {
         var inner = new InMemoryCheckpointStore();
         await inner.SaveAsync("processor-1", 500, TestContext.Current.CancellationToken);
-        await using var cache = new CachingCheckpointStore(inner, TimeSpan.FromHours(1), TimeSpan.FromMilliseconds(50));
+        var time = new FakeTimeProvider();
+        await using var cache = new CachingCheckpointStore(inner, TimeSpan.FromHours(1), TimeSpan.FromMilliseconds(50), timeProvider: time);
 
         // Load into cache
         await cache.GetAsync("processor-1", TestContext.Current.CancellationToken);
@@ -395,8 +433,10 @@ public class CachingCheckpointStoreTests
         // Simulate external reset
         await inner.SaveAsync("processor-1", 0, TestContext.Current.CancellationToken);
 
-        // Wait for resync timer to fire
-        await Task.Delay(200, TestContext.Current.CancellationToken);
+        // Advance to trigger the resync timer
+        time.Advance(TimeSpan.FromMilliseconds(50));
+
+        await WaitForInnerAsync(cache, "processor-1", 0);
 
         Assert.Equal(0, await cache.GetAsync("processor-1", TestContext.Current.CancellationToken));
     }

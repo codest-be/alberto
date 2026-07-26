@@ -41,8 +41,8 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
     // carry the old generation and are discarded by the next flush (COR-2).
     private readonly ConcurrentDictionary<string, (long Position, int Generation)> _dirty = new();
     private volatile int _cacheGeneration;
-    private readonly Timer _flushTimer;
-    private readonly Timer _resyncTimer;
+    private readonly ITimer _flushTimer;
+    private readonly ITimer _resyncTimer;
     private readonly SemaphoreSlim _flushLock = new(1, 1);
     private bool _disposed;
     private FencingContext? _fencingContext;
@@ -78,18 +78,21 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
     /// <param name="flushInterval">How often to flush dirty checkpoints to the database. Default is 30 seconds.</param>
     /// <param name="resyncInterval">How often to re-read checkpoints from the database to detect external resets. Default is 30 seconds.</param>
     /// <param name="logger">Optional logger for error reporting.</param>
+    /// <param name="timeProvider">Clock used to schedule flush and resync. Defaults to <see cref="TimeProvider.System"/>.</param>
     public CachingCheckpointStore(
         ICheckpointStore inner,
         TimeSpan? flushInterval = null,
         TimeSpan? resyncInterval = null,
-        ILogger<CachingCheckpointStore>? logger = null)
+        ILogger<CachingCheckpointStore>? logger = null,
+        TimeProvider? timeProvider = null)
     {
         _inner = inner ?? throw new ArgumentNullException(nameof(inner));
         _flushInterval = flushInterval ?? TimeSpan.FromSeconds(30);
         _resyncInterval = resyncInterval ?? TimeSpan.FromSeconds(30);
         _logger = logger;
-        _flushTimer = new Timer(OnFlushTimer, null, _flushInterval, _flushInterval);
-        _resyncTimer = new Timer(OnResyncTimer, null, _resyncInterval, _resyncInterval);
+        var time = timeProvider ?? TimeProvider.System;
+        _flushTimer = time.CreateTimer(OnFlushTimer, null, _flushInterval, _flushInterval);
+        _resyncTimer = time.CreateTimer(OnResyncTimer, null, _resyncInterval, _resyncInterval);
     }
 
     public async Task<long?> GetAsync(string processorId, CancellationToken ct = default)
