@@ -85,7 +85,10 @@ public static class BdnImporter
         return new Measurement($"{type}.{method}", parameters, meanNs, stdDevNs, opsPerSec, allocated);
     }
 
-    /// <summary>BDN renders parameters as a flat "Name=Value, Name=Value" string.</summary>
+    /// <summary>
+    /// BDN renders parameters as a flat "Name=Value&amp;Name=Value" string. The separator is
+    /// an ampersand, not a comma — confirmed against real 0.14.0 report output, not the docs.
+    /// </summary>
     private static Dictionary<string, string> ParseParameters(string? parameters)
     {
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
