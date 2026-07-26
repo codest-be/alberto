@@ -105,6 +105,57 @@ public class OutboxRelayTests
 
     #endregion
 
+    #region Poll-Signaling Outbox Store
+
+    /// <summary>
+    /// Decorator over <see cref="IOutboxStore"/> that signals <see cref="WhenPolled"/>
+    /// at the start of the second <see cref="ClaimPendingAsync"/> call. By that point
+    /// the first full poll cycle — claiming, publishing, and marking delivered/failed —
+    /// is complete. Tests await this instead of a wall-clock sleep.
+    /// Uses composition so <see cref="InMemoryOutboxStore"/> callers keep direct access
+    /// to <c>Seed</c> and <c>Entries</c> through their own reference.
+    /// </summary>
+    private sealed class PollSignalingOutboxStore : IOutboxStore
+    {
+        private readonly IOutboxStore _inner;
+        private readonly TaskCompletionSource _tcs =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _pollCount;
+
+        public PollSignalingOutboxStore(IOutboxStore inner) => _inner = inner;
+
+        /// <summary>
+        /// Completes when the relay begins its second <see cref="ClaimPendingAsync"/> call,
+        /// confirming the first batch was fully processed.
+        /// </summary>
+        public Task WhenPolled => _tcs.Task;
+
+        public Task InsertAsync(OutboxEntry entry, CancellationToken ct = default)
+            => _inner.InsertAsync(entry, ct);
+
+        public Task<IReadOnlyList<OutboxClaim>> ClaimPendingAsync(
+            int limit, TimeSpan claimLease, string claimedBy, CancellationToken ct = default)
+        {
+            if (Interlocked.Increment(ref _pollCount) >= 2)
+                _tcs.TrySetResult();
+            return _inner.ClaimPendingAsync(limit, claimLease, claimedBy, ct);
+        }
+
+        public Task<bool> MarkDeliveredAsync(OutboxClaim claim, CancellationToken ct = default)
+            => _inner.MarkDeliveredAsync(claim, ct);
+
+        public Task<bool> MarkFailedAsync(OutboxClaim claim, string error, CancellationToken ct = default)
+            => _inner.MarkFailedAsync(claim, error, ct);
+
+        public Task RetryFailedAsync(string? messageType = null, CancellationToken ct = default)
+            => _inner.RetryFailedAsync(messageType, ct);
+
+        public Task PurgeDeliveredAsync(DateTimeOffset before, CancellationToken ct = default)
+            => _inner.PurgeDeliveredAsync(before, ct);
+    }
+
+    #endregion
+
     #region Failing Transport
 
     private sealed class FailingTransport : IMessageTransport
@@ -144,15 +195,15 @@ public class OutboxRelayTests
         int batchSize = 100)
     {
         using var cts = new CancellationTokenSource();
-        var relay = new OutboxRelay(store, transport, pollingInterval: TimeSpan.FromMilliseconds(10), batchSize: batchSize);
+        var signal = new PollSignalingOutboxStore(store);
+        var relay = new OutboxRelay(signal, transport, pollingInterval: TimeSpan.FromMilliseconds(10), batchSize: batchSize);
 
-        // Start relay and let it run one cycle (entries < batch triggers delay then we cancel)
+        // Start relay and wait until it begins its second poll. By that time the first
+        // batch — ClaimPendingAsync → PublishAsync → MarkDeliveredAsync/MarkFailedAsync
+        // — is fully committed to the in-memory store and the test can assert safely.
+        // WaitAsync(5s) makes a hang fail loudly rather than time out silently.
         var relayTask = relay.StartAsync(cts.Token);
-        // Wall-clock, deliberately: the relay performs real I/O against PostgreSQL and there
-        // is no synchronization point the test can await. A client-side TimeProvider cannot
-        // advance the database clock or drain the network. Advancing a fake clock here would
-        // read as determinism that is not there.
-        await Task.Delay(50);
+        await signal.WhenPolled.WaitAsync(TimeSpan.FromSeconds(5));
         await cts.CancelAsync();
 
         try { await relayTask; } catch (OperationCanceledException) { }
