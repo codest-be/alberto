@@ -76,7 +76,7 @@ Run:
 dotnet test tests/Alberto.Dcb.Tests/Alberto.Dcb.Tests.csproj --collect:"XPlat Code Coverage"
 ```
 
-Expected: the run passes with `Passed: 909, Skipped: 2`, and the output ends with a line naming an `.xml` file, e.g.
+Expected: the run passes with `Passed: 1040, Skipped: 15`, and the output ends with a line naming an `.xml` file, e.g.
 `Attachments: /Users/.../tests/Alberto.Dcb.Tests/TestResults/<guid>/coverage.cobertura.xml`
 
 If no attachment line appears, the collector reference did not take — recheck Step 3 before continuing.
@@ -132,7 +132,7 @@ Run:
 dotnet test
 ```
 
-Expected: `Passed: 909, Skipped: 2`, exit code 0.
+Expected: `Passed: 1040, Skipped: 15`, exit code 0.
 
 Then commit, substituting the figure from Step 5:
 

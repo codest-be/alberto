@@ -311,7 +311,7 @@ Expected: PASS, 4 tests.
 dotnet test
 ```
 
-Expected: `Passed: 913, Skipped: 2`.
+Expected: `Passed: 1044, Skipped: 15`.
 
 ```bash
 git add src/Alberto.Dcb.Testing AlbertoV3.slnx tests/Alberto.Dcb.Tests/Alberto.Dcb.Tests.csproj tests/Alberto.Dcb.Tests/Testing/PollTests.cs
@@ -1092,11 +1092,12 @@ SP5 builds the example-app tests on this surface."
 - Create: `src/Alberto.Dcb.Testing.Xunit/Alberto.Dcb.Testing.Xunit.csproj`
 - Create: `src/Alberto.Dcb.Testing.Xunit/CheckpointStoreSpecification.cs`
 - Create: `src/Alberto.Dcb.Testing.Xunit/EventStoreBackendSpecification.cs`
-- Create: `src/Alberto.Dcb.Testing.Xunit/StateStoreSpecification.cs`
+- Create: `src/Alberto.Dcb.Testing.Xunit/StateStoreSpecification.cs` (by splitting the existing file, see Step 4)
 - Create: `src/Alberto.Dcb.Testing.Xunit/DeadLetterStoreSpecification.cs`
 - Create: `src/Alberto.Dcb.Testing.Xunit/OutboxStoreSpecification.cs`
 - Delete: `tests/Alberto.Dcb.Tests/Subscriptions/CheckpointStoreSpecification.cs`
 - Delete: `tests/Alberto.Dcb.Tests/EventStoreBackendSpecification.cs`
+- Modify: `tests/Alberto.Dcb.Tests/Subscriptions/StateStoreSpecification.cs` — keeps only `SimpleState` and the four derivation classes
 - Modify: `AlbertoV3.slnx`, `tests/Alberto.Dcb.Tests/Alberto.Dcb.Tests.csproj`
 - Test: derivations under `tests/Alberto.Dcb.Tests/` (create, listed in Step 6)
 
@@ -1105,7 +1106,7 @@ SP5 builds the example-app tests on this surface."
 - Produces, in namespace `Alberto.Dcb.Testing.Xunit`, five public abstract classes. Each declares the factory its derived class must supply:
   - `CheckpointStoreSpecification` — `protected abstract Task<ICheckpointStore> CreateStore();`
   - `EventStoreBackendSpecification` — same abstract members it has today, unchanged.
-  - `StateStoreSpecification<TState>` — `protected abstract Task<IStateStore<TState>> CreateStore();` plus `protected abstract TState NewState(string documentId, int marker);` and `protected abstract int MarkerOf(TState state);`
+  - `StateStoreSpecification<TState>` — **already exists** in `tests/Alberto.Dcb.Tests/Subscriptions/StateStoreSpecification.cs` and is moved, not written. Its surface is `protected abstract Task<IStateStore<TState>> CreateStore(string projectionType, Func<int>? rebuildVersion = null);`, `protected virtual Task<IStateStore<TState>> CreateStoreForTenant(string projectionType, string tenantId, Func<int>? rebuildVersion = null);`, `protected abstract TState MakeState(int value);`, `protected abstract int ReadValue(TState state);`, the capability hooks `SupportsProjectionTypeIsolation` / `SupportsSharedBackingStore` / `SupportsTenantIsolation`, and the helpers `TestId` / `NewProjectionType()`. Do not change any of it.
   - `DeadLetterStoreSpecification` — `protected abstract Task<IDeadLetterStore> CreateStore();`
   - `OutboxStoreSpecification` — `protected abstract Task<IOutboxStore> CreateStore();` plus `protected abstract TimeProvider TimeProvider { get; }`
 
@@ -1171,7 +1172,7 @@ Run:
 dotnet test
 ```
 
-Expected: `Passed: 918, Skipped: 2` — the same tests as before Task 6, running from their new home. A drop in the count means a derivation lost its base class; find it before continuing.
+Expected: `Passed: 1044, Skipped: 15` — the same tests as before Task 6, running from their new home. A drop in the count means a derivation lost its base class; find it before continuing.
 
 Commit this move on its own, so the review of the new specifications is not tangled up with a file rename:
 
@@ -1182,125 +1183,41 @@ Pure move plus namespace change. A third party writing a backend can now
 run Alberto's own conformance suite against it."
 ```
 
-- [ ] **Step 4: Write StateStoreSpecification**
+- [ ] **Step 4: Split StateStoreSpecification and move the abstract half**
 
-`IStateStore<TState>` has three implementations — `InMemoryStateStore<TState>`, `PostgresStateStore<TState>` and `EfStateStore<TEntity, TDbContext>` — and no shared specification. Create `src/Alberto.Dcb.Testing.Xunit/StateStoreSpecification.cs`, following the shape of the `CheckpointStoreSpecification` you just moved (`public abstract class`, a per-run unique id, `protected abstract` factory, `[Fact]` methods using `TestContext.Current.CancellationToken`):
+`StateStoreSpecification<TState>` already exists and is already derived four times. It
+lives in one file together with its derivations:
 
-```csharp
-using Alberto.Dcb.Subscriptions;
-using Xunit;
-
-namespace Alberto.Dcb.Testing.Xunit;
-
-/// <summary>
-/// The contract every <see cref="IStateStore{TState}"/> implementation must satisfy.
-/// Derive from it once per implementation.
-/// </summary>
-/// <typeparam name="TState">The state type under test.</typeparam>
-public abstract class StateStoreSpecification<TState>
-{
-    /// <summary>A document id unique to this test run, so implementations may share a database.</summary>
-    protected string DocumentId { get; } = $"doc-{Guid.NewGuid():N}";
-
-    /// <summary>Creates the store under test.</summary>
-    protected abstract Task<IStateStore<TState>> CreateStore();
-
-    /// <summary>Builds a state carrying a distinguishable <paramref name="marker"/>.</summary>
-    protected abstract TState NewState(string documentId, int marker);
-
-    /// <summary>Reads back the marker <see cref="NewState"/> put in.</summary>
-    protected abstract int MarkerOf(TState state);
-
-    [Fact]
-    public async Task LoadManyAsync_ReturnsNothingForAnUnknownDocument()
-    {
-        var store = await CreateStore();
-
-        var loaded = await store.LoadManyAsync([DocumentId], TestContext.Current.CancellationToken);
-
-        Assert.Empty(loaded);
-    }
-
-    [Fact]
-    public async Task ApplyChangesAsync_ThenLoadManyAsync_RoundTripsTheState()
-    {
-        var store = await CreateStore();
-        var ct = TestContext.Current.CancellationToken;
-
-        await store.ApplyChangesAsync(
-            new Dictionary<string, TState> { [DocumentId] = NewState(DocumentId, 1) }, [], ct);
-
-        var loaded = await store.LoadManyAsync([DocumentId], ct);
-
-        Assert.Equal(1, MarkerOf(loaded[DocumentId]));
-    }
-
-    [Fact]
-    public async Task ApplyChangesAsync_UpsertsRatherThanDuplicating()
-    {
-        var store = await CreateStore();
-        var ct = TestContext.Current.CancellationToken;
-
-        await store.ApplyChangesAsync(
-            new Dictionary<string, TState> { [DocumentId] = NewState(DocumentId, 1) }, [], ct);
-        await store.ApplyChangesAsync(
-            new Dictionary<string, TState> { [DocumentId] = NewState(DocumentId, 2) }, [], ct);
-
-        var loaded = await store.LoadManyAsync([DocumentId], ct);
-
-        Assert.Single(loaded);
-        Assert.Equal(2, MarkerOf(loaded[DocumentId]));
-    }
-
-    [Fact]
-    public async Task ApplyChangesAsync_Deletes()
-    {
-        var store = await CreateStore();
-        var ct = TestContext.Current.CancellationToken;
-
-        await store.ApplyChangesAsync(
-            new Dictionary<string, TState> { [DocumentId] = NewState(DocumentId, 1) }, [], ct);
-        await store.ApplyChangesAsync(new Dictionary<string, TState>(), [DocumentId], ct);
-
-        Assert.Empty(await store.LoadManyAsync([DocumentId], ct));
-    }
-
-    [Fact]
-    public async Task ApplyChangesAsync_AppliesAnUpsertAndADeleteInOneCall()
-    {
-        var store = await CreateStore();
-        var ct = TestContext.Current.CancellationToken;
-        var other = $"{DocumentId}-other";
-
-        await store.ApplyChangesAsync(
-            new Dictionary<string, TState> { [DocumentId] = NewState(DocumentId, 1) }, [], ct);
-        await store.ApplyChangesAsync(
-            new Dictionary<string, TState> { [other] = NewState(other, 2) }, [DocumentId], ct);
-
-        var loaded = await store.LoadManyAsync([DocumentId, other], ct);
-
-        Assert.Single(loaded);
-        Assert.Equal(2, MarkerOf(loaded[other]));
-    }
-
-    [Fact]
-    public async Task LoadManyAsync_ReturnsOnlyTheDocumentsThatExist()
-    {
-        var store = await CreateStore();
-        var ct = TestContext.Current.CancellationToken;
-
-        await store.ApplyChangesAsync(
-            new Dictionary<string, TState> { [DocumentId] = NewState(DocumentId, 1) }, [], ct);
-
-        var loaded = await store.LoadManyAsync([DocumentId, $"{DocumentId}-absent"], ct);
-
-        // The interface says "found documents", so a missing one is an absent key, not a default
-        // value -- a distinction the projection pipeline relies on to tell create from update.
-        Assert.Single(loaded);
-        Assert.True(loaded.ContainsKey(DocumentId));
-    }
-}
+```bash
+grep -n "^public\|: StateStoreSpecification" tests/Alberto.Dcb.Tests/Subscriptions/StateStoreSpecification.cs
 ```
+
+Expected: `SimpleState` (record), `StateStoreSpecification<TState>` (abstract), and the
+derivations `InMemoryStateStoreSpecificationTests`, `PostgresStateStoreSpecificationTests`,
+`EfStateStoreSpecificationTests`, `MultiTenantPostgresStateStoreSpecificationTests`.
+
+Only the abstract class is contract. The derivations reference `Alberto.Dcb.Postgres`,
+`Alberto.Dcb.EntityFramework` and test fixtures, none of which the package may depend on.
+Split the file:
+
+1. Move the abstract `StateStoreSpecification<TState>` class — and nothing else — into
+   `src/Alberto.Dcb.Testing.Xunit/StateStoreSpecification.cs`, namespace
+   `Alberto.Dcb.Testing.Xunit`. Its body needs no `Alberto.Dcb.Postgres` or
+   `Alberto.Dcb.EntityFramework` using; only `Alberto.Dcb.Subscriptions` and `Xunit`.
+2. Leave `SimpleState` and all four derivation classes in
+   `tests/Alberto.Dcb.Tests/Subscriptions/StateStoreSpecification.cs`, adding
+   `using Alberto.Dcb.Testing.Xunit;`.
+3. The abstract class's XML docs carry `<see cref="EfStateStore{TEntity,TDbContext}"/>` and
+   `<see cref="PostgresStateStore{TState}"/>`. Those types are not visible from the package,
+   so the crefs will not resolve and `TreatWarningsAsErrors` turns that into a build failure.
+   Demote each to plain text — `<c>EfStateStore&lt;TEntity, TDbContext&gt;</c>` — keeping the
+   sentence intact. Do not add a project reference to make a doc comment compile.
+
+Do not change the specification's behaviour, its facts, its capability hooks, or its
+abstract member signatures. This step is a move plus a doc-comment fix.
+
+Run `dotnet test`. Expected: `Passed: 1044, Skipped: 15` — unchanged, because nothing but
+the class's home changed.
 
 - [ ] **Step 5: Write DeadLetterStoreSpecification and OutboxStoreSpecification**
 
@@ -1317,19 +1234,22 @@ cat src/Alberto.Dcb.Messaging/IOutboxStore.cs
 
 - [ ] **Step 6: Derive them**
 
-Create one derivation per implementation, under `tests/Alberto.Dcb.Tests/`:
+Create one derivation per implementation, under `tests/Alberto.Dcb.Tests/`. The four
+`StateStoreSpecification` derivations already exist and were left in place by Step 4 — do
+not recreate them. What is missing is a derivation per implementation of the two new
+specifications:
 
-- `Subscriptions/InMemoryStateStoreSpecificationTests.cs` — `StateStoreSpecification<OrderTotal>` over `InMemoryStateStore<OrderTotal>`
-- `Postgres/PostgresStateStoreSpecificationTests.cs` — over `PostgresStateStore<OrderTotal>`, with the Postgres fixture the neighbouring Postgres tests use
-- `EntityFramework/EfStateStoreSpecificationTests.cs` — over `EfStateStore<...>`. **If `EfStateStore` cannot satisfy the contract** — it is entity-backed and may not honour arbitrary document ids — do not weaken the specification. Skip the derivation, and say so in the PR description with the reason. A specification bent to fit its hardest implementation certifies nothing.
 - `Subscriptions/InMemoryDeadLetterStoreSpecificationTests.cs` — over `InMemoryDeadLetterStore`
 - `Postgres/PostgresDeadLetterStoreSpecificationTests.cs` — over the PostgreSQL dead-letter store
 - `Testing/InMemoryOutboxStoreSpecificationTests.cs` — over Task 4's `InMemoryOutboxStore`, supplying a `FakeTimeProvider`
 - `Postgres/PostgresOutboxStoreSpecificationTests.cs` — over `PostgresOutboxStore`, supplying `TimeProvider.System`
 
-Each is a few lines: derive, implement the factory, done.
+Each is a few lines: derive, implement the factory, done. Find the Postgres fixtures the
+neighbouring Postgres tests already use rather than inventing new ones:
 
-`OrderTotal` comes from Task 7's `tests/Alberto.Dcb.Tests/Testing/Events.cs`. If Task 7 has not run yet, declare it inline and fold it into `Events.cs` there.
+```bash
+grep -rn "IClassFixture" tests/Alberto.Dcb.Tests/Postgres | head
+```
 
 - [ ] **Step 7: Run the tests**
 
@@ -1539,7 +1459,7 @@ Open a PR titled `SP1a: the testing packages`. The description must list, becaus
 
 ## Self-Review
 
-**Spec coverage.** The spec's SP1a section names, for the customer-facing package: a module test harness (Task 5), one polling helper that throws rather than asserting (Task 1), `InMemoryOutboxStore` (Task 4), event construction helpers (Task 2), `EventCollector` with an injected `TimeProvider` (Task 3), and no test-framework dependency (Task 1 Step 2, verified in Task 8 Step 4). For the backend-implementer package: `StateStoreSpecification`, `DeadLetterStoreSpecification`, `OutboxStoreSpecification` (Tasks 6 Steps 4-5), plus `EventStoreBackendSpecification` and `CheckpointStoreSpecification` promoted out of `tests/` (Task 6 Step 2). For the internal category: the canonical `FakeBackend` superset with settable `SupportsTenancy`, injectable failures and `Registered`/`TenancyAtRegistration` tracking (Task 7), and the collapsed event vocabulary (Task 7 Step 5). Both packages enter `publish-packages.yml` (Task 8).
+**Spec coverage.** The spec's SP1a section names, for the customer-facing package: a module test harness (Task 5), one polling helper that throws rather than asserting (Task 1), `InMemoryOutboxStore` (Task 4), event construction helpers (Task 2), `EventCollector` with an injected `TimeProvider` (Task 3), and no test-framework dependency (Task 1 Step 2, verified in Task 8 Step 4). For the backend-implementer package: `DeadLetterStoreSpecification` and `OutboxStoreSpecification` written fresh (Task 6 Step 5), plus `EventStoreBackendSpecification`, `CheckpointStoreSpecification` and the already-existing `StateStoreSpecification` promoted out of `tests/` (Task 6 Steps 2 and 4). For the internal category: the canonical `FakeBackend` superset with settable `SupportsTenancy`, injectable failures and `Registered`/`TenancyAtRegistration` tracking (Task 7), and the collapsed event vocabulary (Task 7 Step 5). Both packages enter `publish-packages.yml` (Task 8).
 
 The spec's "validator scaffolding, the config-test `ProcessorDeclaration` builders" are named as staying internal but are not consolidated by any task. That is deliberate and it is a gap against a literal reading: consolidating them is a migration across the config tests, which is SP1b's shape, and the spec does not say SP1a must move them — only that they do not ship. Flagged here rather than silently dropped.
 
@@ -1547,6 +1467,6 @@ The spec's "validator scaffolding, the config-test `ProcessorDeclaration` builde
 
 Task 6 Step 5 describes `DeadLetterStoreSpecification` and `OutboxStoreSpecification` by enumerating required facts rather than giving their bodies. Given at the same fidelity as `StateStoreSpecification` they would run to several hundred lines against interfaces whose exact parameter lists were not read; the enumeration names every behaviour that must be covered, which is the part a reviewer can check.
 
-**Type consistency.** `Poll.UntilAsync` has one signature, defined in Task 1 and called in Task 5. `TestEvents.NewEvent` is defined in Task 2 and called in Task 5's `AppendAsync`. `InMemoryOutboxStore(TimeProvider?)` is defined in Task 4 and derived against in Task 6 Step 6. `OrderTotal` is used in Task 6 Step 6 and defined in Task 7 Step 5, with Task 6 Step 6 and Task 7 Step 6 both naming the ordering dependency. `StateStoreSpecification<TState>`'s three abstract members are identical in its Interfaces block, its definition and its described derivations. The namespace is `Alberto.Dcb.Testing` for the first package and `Alberto.Dcb.Testing.Xunit` for the second throughout.
+**Type consistency.** `Poll.UntilAsync` has one signature, defined in Task 1 and called in Task 5. `TestEvents.NewEvent` is defined in Task 2 and called in Task 5's `AppendAsync`. `InMemoryOutboxStore(TimeProvider?)` is defined in Task 4 and derived against in Task 6 Step 6. `StateStoreSpecification<TState>` is not defined by this plan at all — it exists on `main`, and Task 6 Step 4 moves it unchanged, so its Interfaces block records the surface rather than proposing one. The namespace is `Alberto.Dcb.Testing` for the first package and `Alberto.Dcb.Testing.Xunit` for the second throughout.
 
 **Task ordering.** Task 6 depends on Task 4 (`InMemoryOutboxStore`) and softly on Task 7 (`OrderTotal`); Task 7 Step 6 closes that loop either way. Task 8 depends on Tasks 1 and 6 for the projects to exist. Everything else is independent, so Tasks 2, 3 and 4 can run in any order.

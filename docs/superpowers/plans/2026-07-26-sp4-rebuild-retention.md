@@ -120,7 +120,7 @@ If the parity test fails, the two filenames differ — they must match exactly i
 dotnet test
 ```
 
-Expected: `Passed: 909, Skipped: 2`.
+Expected: `Passed: 1040, Skipped: 15`.
 
 ```bash
 git add src/Alberto.Dcb.Postgres/Migrations/019_RebuildVersionRetention.sql src/Alberto.Dcb.Postgres/Migrations/SingleTenant/019_RebuildVersionRetention.sql
@@ -428,7 +428,7 @@ Expected: PASS, 2 tests.
 dotnet test
 ```
 
-Expected: `Passed: 911, Skipped: 2`.
+Expected: `Passed: 1042, Skipped: 15`.
 
 **If `ProjectionRebuildEndToEndTests` or `StateStoreRebuildVersionTests` now fail**, that is the expected consequence of this task: state rows that used to vanish at promotion now survive, and any test asserting immediate emptiness is asserting the old promise. Do **not** weaken those assertions here — Task 4 rewrites them deliberately. If the failures are confined to those two classes, commit anyway with the note below; if anything else fails, stop and diagnose.
 
@@ -716,7 +716,7 @@ public async Task Coordinator_RefusesToStart_WhenGraceIsShorterThanTheRefreshInt
 dotnet test
 ```
 
-Expected: `Passed: 913, Skipped: 2`, with `ProjectionRebuildEndToEndTests` possibly still failing per Task 2 Step 8. Task 4 resolves those.
+Expected: `Passed: 1044, Skipped: 15`, with `ProjectionRebuildEndToEndTests` possibly still failing per Task 2 Step 8. Task 4 resolves those.
 
 ```bash
 git add src/Alberto.Dcb/Subscriptions/ProjectionVersions.cs src/Alberto.Dcb/Subscriptions/RebuildCoordinator.cs src/Alberto.Dcb/DcbModuleBuilderExtensions.cs tests/Alberto.Dcb.Tests/Subscriptions/RebuildRetentionTests.cs
@@ -836,7 +836,7 @@ In their place, under Key Patterns, extend the zero-downtime rebuild bullet:
 dotnet test
 ```
 
-Expected: `Passed: 914, Skipped: 2`, exit code 0.
+Expected: `Passed: 1045, Skipped: 15`, exit code 0.
 
 ```bash
 git add tests/Alberto.Dcb.Tests/Subscriptions/ProjectionRebuildEndToEndTests.cs CLAUDE.md

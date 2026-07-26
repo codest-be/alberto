@@ -191,7 +191,7 @@ Run:
 dotnet test
 ```
 
-Expected: `Passed: 910, Skipped: 2` — the original 909 plus the new test.
+Expected: `Passed: 1041, Skipped: 15` — the original 1040 plus the new test.
 
 ```bash
 git add src/Alberto.Dcb/Subscriptions/CachingCheckpointStore.cs tests/Alberto.Dcb.Tests/Subscriptions/CachingCheckpointStoreTests.cs
@@ -295,7 +295,7 @@ Run:
 dotnet test
 ```
 
-Expected: `Passed: 910, Skipped: 2`.
+Expected: `Passed: 1041, Skipped: 15`.
 
 ```bash
 git add src/Alberto.Dcb/Subscriptions/DeadLetterRetryLoop.cs tests/Alberto.Dcb.Tests/Subscriptions/DeadLetterRetryLoopBehaviorTests.cs
@@ -393,7 +393,7 @@ Expected: PASS, 1 test.
 dotnet test
 ```
 
-Expected: `Passed: 911, Skipped: 2`.
+Expected: `Passed: 1042, Skipped: 15`.
 
 ```bash
 git add src/Alberto.Dcb.InMemory/InMemoryDeadLetterStore.cs tests/Alberto.Dcb.Tests/Subscriptions/DeadLetterRetryLoopBehaviorTests.cs
@@ -437,7 +437,7 @@ using the field added in Task 2.
 dotnet test
 ```
 
-Expected: `Passed: 911, Skipped: 2`.
+Expected: `Passed: 1042, Skipped: 15`.
 
 ```bash
 git add src/Alberto.Dcb/Subscriptions/ConsumeMiddleware.cs src/Alberto.Dcb/Subscriptions/BatchConsumeMiddleware.cs src/Alberto.Dcb/Subscriptions/DeadLetterRetryLoop.cs
@@ -523,7 +523,7 @@ For each remaining sleep that is **not** inside a polling helper, add a one-line
 dotnet test
 ```
 
-Expected: `Passed: 911, Skipped: 2` if Step 2 took the server-side branch; the same count with a faster `ProcessorLeaseManagerTests` if it took the client-side branch.
+Expected: `Passed: 1042, Skipped: 15` if Step 2 took the server-side branch; the same count with a faster `ProcessorLeaseManagerTests` if it took the client-side branch.
 
 ```bash
 git add -A
