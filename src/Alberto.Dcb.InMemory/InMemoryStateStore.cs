@@ -26,8 +26,17 @@ namespace Alberto.Dcb.InMemory;
 /// </param>
 public sealed class InMemoryStateStore<TState>(Func<int>? rebuildVersion = null) : IStateStore<TState>
 {
-    private readonly ConcurrentDictionary<(int Version, string DocumentId), TState> _documents = new();
+    /// <summary>
+    /// A stored document and the write that last touched it. The sequence stands in for the
+    /// durable stores' <c>updated_at</c>: a wall clock would tie between two writes in the same
+    /// batch, and <see cref="ListRecentAsync"/> would then order them arbitrarily where Postgres
+    /// orders them by when the row was actually written.
+    /// </summary>
+    private readonly record struct Entry(TState State, long Sequence);
+
+    private readonly ConcurrentDictionary<(int Version, string DocumentId), Entry> _documents = new();
     private readonly Func<int> _rebuildVersion = rebuildVersion ?? ProjectionVersions.NeverRebuilt;
+    private long _sequence;
 
     /// <inheritdoc/>
     public Task<Dictionary<string, TState>> LoadManyAsync(
@@ -41,8 +50,8 @@ public sealed class InMemoryStateStore<TState>(Func<int>? rebuildVersion = null)
 
         foreach (var id in documentIds)
         {
-            if (_documents.TryGetValue((version, id), out var state))
-                result[id] = state;
+            if (_documents.TryGetValue((version, id), out var entry))
+                result[id] = entry.State;
         }
 
         return Task.FromResult(result);
@@ -60,11 +69,28 @@ public sealed class InMemoryStateStore<TState>(Func<int>? rebuildVersion = null)
         var version = _rebuildVersion();
 
         foreach (var (id, state) in upserts)
-            _documents[(version, id)] = state;
+            _documents[(version, id)] = new Entry(state, Interlocked.Increment(ref _sequence));
 
         foreach (var id in deletes)
             _documents.TryRemove((version, id), out _);
 
         return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<TState>> ListRecentAsync(
+        int limit = 20,
+        CancellationToken ct = default)
+    {
+        var version = _rebuildVersion();
+
+        IReadOnlyList<TState> result = _documents
+            .Where(kvp => kvp.Key.Version == version)
+            .OrderByDescending(kvp => kvp.Value.Sequence)
+            .Take(limit)
+            .Select(kvp => kvp.Value.State)
+            .ToList();
+
+        return Task.FromResult(result);
     }
 }

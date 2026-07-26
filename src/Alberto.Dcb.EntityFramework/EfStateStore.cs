@@ -66,6 +66,27 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Ordered by <see cref="IProjectionEntity.UpdatedAt"/>, which
+    /// <see cref="WriteBatchOnceAsync"/> stamps on every upsert. That is the same column the
+    /// JSONB store orders by, so the two adapters agree on what "recent" means.
+    /// </remarks>
+    public async Task<IReadOnlyList<TEntity>> ListRecentAsync(
+        int limit = 20,
+        CancellationToken ct = default)
+    {
+        await using var context = await _contextFactory.CreateDbContextAsync(ct);
+
+        var version = _rebuildVersion();
+        return await context.Set<TEntity>()
+            .AsNoTracking()
+            .Where(e => e.RebuildVersion == version)
+            .OrderByDescending(e => e.UpdatedAt)
+            .Take(limit)
+            .ToListAsync(ct);
+    }
+
+    /// <inheritdoc/>
     public async Task ApplyChangesAsync(
         IReadOnlyDictionary<string, TEntity> upserts,
         IReadOnlyCollection<string> deletes,

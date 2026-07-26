@@ -1,6 +1,7 @@
 using Alberto.Dcb;
 using Alberto.Dcb.Postgres;
 using Alberto.Dcb.Telemetry;
+using Alberto.Dcb.Tenancy;
 using Alberto.Payments.Infrastructure.Projections;
 using Alberto.Payments.Infrastructure.ReadModels;
 using Microsoft.Extensions.Configuration;
@@ -37,23 +38,30 @@ public static class PaymentsModule
             })
             .WithTelemetry()
             .WithEventsFrom(typeof(Core.Events.PaymentInitiated).Assembly)
+            // A single running total blended across every tenant, so it is stored under
+            // TenantScope.CrossTenant rather than under any one of them.
             .AddProjection(PaymentsOverviewProjection.Declaration, ctx =>
             {
                 var dataSource = ctx.Services.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
-                return () => new PostgresStateStore<PaymentsOverview>(
+                return tenantId => new PostgresStateStore<PaymentsOverview>(
                     dataSource,
                     nameof(PaymentsOverviewProjection),
                     "payments",
-                    rebuildVersion: ctx.RebuildVersion);
+                    rebuildVersion: ctx.RebuildVersion,
+                    tenantId: TenantScope.CrossTenantFor(tenantId));
             })
+            // One document per payment, so one document set per tenant: the store takes the
+            // tenant of the events it is given, and a reader gets back only its own tenant's
+            // payments.
             .AddProjection(PaymentSummaryProjection.Declaration, ctx =>
             {
                 var dataSource = ctx.Services.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
-                return () => new PostgresStateStore<PaymentSummary>(
+                return tenantId => new PostgresStateStore<PaymentSummary>(
                     dataSource,
                     nameof(PaymentSummaryProjection),
                     "payments",
-                    rebuildVersion: ctx.RebuildVersion);
+                    rebuildVersion: ctx.RebuildVersion,
+                    tenantId: tenantId);
             })
             .WithControlLoop(o => o with { PollingInterval = TimeSpan.FromMilliseconds(100), BatchSize = 500 }));
 

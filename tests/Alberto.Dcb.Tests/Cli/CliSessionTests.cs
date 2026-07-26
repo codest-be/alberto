@@ -179,4 +179,52 @@ public class CliSessionTests
 
         first[0].ConnectionString.Should().Be(second[0].ConnectionString);
     }
+
+    // ── Catalog resolution, also from the pre-loaded config ─────────────────────
+
+    /// <summary>
+    /// The three facts <c>alberto shards</c> needs — the control database, the module key, and
+    /// the declared shard ids — all come off the session's one config. They used to be resolved
+    /// through <c>ShardResolver</c>'s parameterless overloads, each of which walks the directory
+    /// tree and re-parses <c>.alberto/config.json</c>; passing an explicit config here proves
+    /// they no longer go to disk, since a session given a config never reads one.
+    /// </summary>
+    [Fact]
+    public void Catalog_Facts_All_Come_From_The_Sessions_Config()
+    {
+        var config = new AlbertoConfig
+        {
+            Module = "orders",
+            Schema = "events",
+            Catalog = new CatalogConfig { Url = "Host=control" },
+            Shards = new Dictionary<string, ShardConfig>
+            {
+                ["db1"] = new() { Url = "Host=one" },
+                ["db2"] = new() { Url = "Host=two" },
+            },
+        };
+        var session = new CliSession(json: false, config: config);
+
+        var catalog = session.CatalogTarget(url: null, schema: null);
+
+        catalog.ConnectionString.Should().Be("Host=control");
+        catalog.Schema.Should().Be("events", "the catalog falls back to the module's schema");
+        session.ModuleKey(module: null).Should().Be("orders");
+        session.DeclaredShardIds().Should().Equal("db1", "db2");
+    }
+
+    [Fact]
+    public void Catalog_Options_Override_The_Config()
+    {
+        var config = new AlbertoConfig
+        {
+            Module = "orders",
+            Catalog = new CatalogConfig { Url = "Host=from-config" },
+        };
+        var session = new CliSession(json: false, config: config);
+
+        session.CatalogTarget(url: "Host=from-option", schema: null)
+            .ConnectionString.Should().Be("Host=from-option");
+        session.ModuleKey(module: "payments").Should().Be("payments");
+    }
 }

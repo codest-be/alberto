@@ -89,8 +89,11 @@ public sealed class ProjectionRebuildHostFixture(PostgresCluster cluster)
                 EnableNotifyListener = false,
             });
 
+            // The module declares no tenancy, so its projection tables have no tenant_id and the
+            // store is built without one — the tenant of the events is discarded rather than
+            // passed on, which is what a non-tenant module's schema expects.
             foreach (var test in IsolatedProjections)
-                builder.AddProjection(TotalsProjection.Declaration(test), ctx => () =>
+                builder.AddProjection(TotalsProjection.Declaration(test), ctx => _ =>
                     new PostgresStateStore<Totals>(
                         ctx.Services.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey),
                         TotalsProjection.ProjectionType(test),

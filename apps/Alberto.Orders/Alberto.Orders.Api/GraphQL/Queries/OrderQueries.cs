@@ -1,6 +1,7 @@
 using Alberto.Dcb;
 using Alberto.Dcb.Postgres;
 using Alberto.Dcb.Subscriptions;
+using Alberto.Dcb.Tenancy;
 using Alberto.Orders.Api.GraphQL.Types;
 using Alberto.Orders.Core.Order;
 using Alberto.Orders.Infrastructure;
@@ -51,14 +52,15 @@ public static class OrderQueries
         [Service] IServiceProvider sp,
         CancellationToken ct)
     {
-        // OrdersOverviewProjection is a cross-tenant aggregate: the control loop
-        // accumulates events from every tenant into a single state document without
-        // per-tenant scoping. Resolving the store factory from DI guarantees the reader
-        // inherits the same tenancy mode (none) as the writer in OrdersModule, preventing
-        // the writer/reader PK disagreement that caused this query to always return nothing.
-        var factory = sp.GetRequiredKeyedService<Func<IStateStore<OrdersOverview>>>(
+        // OrdersOverviewProjection is a cross-tenant aggregate: the control loop accumulates
+        // events from every tenant into a single document, stored under TenantScope.CrossTenant
+        // because a tenant-enabled module's projection rows are keyed by tenant and this one
+        // belongs to no single tenant. The factory resolved here is the writer's own, so the
+        // only thing this resolver decides is which tenant to read — and passing the request's
+        // tenant here would be wrong, not merely empty.
+        var factory = sp.GetRequiredKeyedService<Func<string?, IStateStore<OrdersOverview>>>(
             $"{OrdersModule.ModuleKey}:{nameof(OrdersOverviewProjection)}");
-        var stateStore = factory();
+        var stateStore = factory(TenantScope.CrossTenant);
 
         var states = await stateStore.LoadManyAsync(
             [OrdersOverviewProjection.DocumentId],

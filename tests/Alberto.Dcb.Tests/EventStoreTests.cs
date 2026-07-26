@@ -204,6 +204,13 @@ public sealed class EventStoreTests
             return Task.CompletedTask;
         }
 
+        public Task<IReadOnlyList<TState>> ListRecentAsync(
+            int limit = 20,
+            CancellationToken ct = default)
+        {
+            IReadOnlyList<TState> result = _store.Values.Reverse().Take(limit).ToList();
+            return Task.FromResult(result);
+        }
     }
 
     #endregion

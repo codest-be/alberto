@@ -96,6 +96,13 @@ public class ProjectorSpecificationTests
             return Task.CompletedTask;
         }
 
+        public Task<IReadOnlyList<OrderSummary>> ListRecentAsync(
+            int limit = 20,
+            CancellationToken ct = default)
+        {
+            IReadOnlyList<OrderSummary> result = _store.Values.Reverse().Take(limit).ToList();
+            return Task.FromResult(result);
+        }
     }
 
     #endregion
@@ -446,6 +453,11 @@ public class ProjectorSpecificationTests
             IReadOnlyCollection<string> deletes,
             CancellationToken ct = default)
             => throw new InvalidOperationException("Simulated batch failure");
+
+        public Task<IReadOnlyList<OrderSummary>> ListRecentAsync(
+            int limit = 20,
+            CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<OrderSummary>>([]);
     }
 
     #endregion
