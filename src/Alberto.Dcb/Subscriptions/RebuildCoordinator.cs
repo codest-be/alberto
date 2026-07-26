@@ -25,7 +25,13 @@ internal sealed class ShadowControlLoopFactory(Func<IEventProcessor, ControlLoop
 /// Promote a rebuild as soon as it reaches the target position. When false, a finished rebuild
 /// waits at <see cref="RebuildStatus.Ready"/> until an operator promotes it.
 /// </param>
-internal sealed record RebuildCoordinatorOptions(TimeSpan PollingInterval, bool AutoPromote);
+/// <param name="ReclaimGracePeriod">
+/// How long a discarded version's state rows are left intact after the transition that
+/// discarded them. Must exceed <see cref="ProjectionVersions.RefreshInterval"/>, or the sweep
+/// reclaims a version while readers on other replicas still believe it is the active one.
+/// </param>
+internal sealed record RebuildCoordinatorOptions(
+    TimeSpan PollingInterval, bool AutoPromote, TimeSpan ReclaimGracePeriod);
 
 /// <summary>
 /// Drives projection rebuilds: starts a shadow loop for every rebuild in flight, notices when
@@ -57,6 +63,13 @@ internal sealed class RebuildCoordinator(
 {
     private readonly Dictionary<string, ShadowLoop> _shadowLoops = new(StringComparer.Ordinal);
     private readonly Dictionary<string, RebuildStatus> _lastSeen = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Processors whose most recent transition discarded a version that is still inside its
+    /// reclaim grace period. They are swept on every tick — rather than only on a status
+    /// change, which has already happened by then — until a sweep actually runs.
+    /// </summary>
+    private readonly HashSet<string> _pendingReclaim = new(StringComparer.Ordinal);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -287,7 +300,10 @@ internal sealed class RebuildCoordinator(
         // those events into the version that now serves reads.
         await checkpoints.SaveAsync(projection.ProcessorId, shadowPosition, ct);
 
-        await ClearAsync(projection.ProcessorId, outcome.DiscardedVersion, ct);
+        // Deliberately no clear here. The superseded version is unreachable now, but readers
+        // that resolved it a moment ago are still holding its number; a later sweep reclaims it
+        // once they cannot be.
+        _pendingReclaim.Add(projection.ProcessorId);
 
         _lastSeen[projection.ProcessorId] = outcome.State.Status;
 
@@ -307,7 +323,12 @@ internal sealed class RebuildCoordinator(
 
         var outcome = await rebuildStore.CompleteAbortAsync(projection.ProcessorId, ct);
         await versions.RefreshAsync(ct);
-        await ClearAsync(projection.ProcessorId, outcome.DiscardedVersion, ct);
+
+        // As with a promotion, the abandoned version waits for the sweep. Here the wait buys
+        // something extra: a shadow loop on another replica has not necessarily noticed the
+        // abort yet, and its last few writes land after this point. Reclaiming now would miss
+        // them and leave the version half-populated until the next sweep anyway.
+        _pendingReclaim.Add(projection.ProcessorId);
 
         _lastSeen[projection.ProcessorId] = outcome.State.Status;
 
@@ -328,9 +349,13 @@ internal sealed class RebuildCoordinator(
         if (state is null)
             return;
 
-        // Only on the transition, not on every poll: sweeping is cheap but not free.
+        // Normally only on the transition, not on every poll: sweeping is cheap but not free.
+        // The exception is a processor whose discarded version is still inside its grace period
+        // — its transition is already behind us, so waiting for another one would leave the
+        // version to the next rebuild or the next restart.
         if (_lastSeen.TryGetValue(projection.ProcessorId, out var previous) &&
-            previous == state.Status)
+            previous == state.Status &&
+            !_pendingReclaim.Contains(projection.ProcessorId))
         {
             return;
         }
@@ -362,19 +387,45 @@ internal sealed class RebuildCoordinator(
 
     /// <summary>
     /// Deletes every version of a projection's state except the active one and, if a rebuild is
-    /// in flight, the one being rebuilt.
+    /// in flight, the one being rebuilt — provided the transition that discarded them is far
+    /// enough in the past that no reader can still be holding one.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Versions are allocated one at a time and never reused, so the whole reachable range runs
     /// from 1 to one past the highest version this processor knows about — which is the version
     /// being rebuilt when one is in flight, and the active one otherwise. Aborts leave the active
     /// version alone while still consuming numbers, so bounding on it would strand them.
     /// Clearing a version that holds nothing is a no-op, which is what lets this
     /// run without knowing what a previous coordinator got as far as doing.
+    /// </para>
+    /// <para>
+    /// The grace check covers the whole processor rather than just the version the last
+    /// transition discarded, because the state machine does not record which version that was.
+    /// Every other version in the range has been dead since some earlier rebuild, so holding
+    /// them back for one more grace period costs nothing and keeps the rule to one comparison.
+    /// </para>
+    /// <para>
+    /// <c>CompletedAt</c> comes from the database clock and the comparison is made against this
+    /// host's, so a replica whose clock runs fast shortens its own grace period by the skew.
+    /// The grace is a safety margin over the version-cache refresh interval, not a correctness
+    /// boundary, so ordinary NTP-level skew is absorbed by the margin.
+    /// </para>
     /// </remarks>
-    private async Task SweepAsync(
+    /// <returns>
+    /// True when the sweep ran; false when it was held back by the grace period and should be
+    /// retried on a later tick.
+    /// </returns>
+    private async Task<bool> SweepAsync(
         RebuildableProjection projection, ProjectionRebuildState state, CancellationToken ct)
     {
+        if (state.CompletedAt is { } completedAt &&
+            DateTimeOffset.UtcNow - completedAt < options.ReclaimGracePeriod)
+        {
+            _pendingReclaim.Add(projection.ProcessorId);
+            return false;
+        }
+
         // Version numbers are monotonic, so every dead version sits below the highest one this
         // processor knows about. Bounding on the active version alone would leave the versions
         // that a run of aborted rebuilds burned through unswept, since abort does not advance it.
@@ -385,13 +436,23 @@ internal sealed class RebuildCoordinator(
             if (version == state.ActiveVersion || version == state.RebuildingVersion)
                 continue;
 
-            await ClearAsync(projection.ProcessorId, version, ct);
+            await ClearAsync(projection, version, ct);
         }
+
+        _pendingReclaim.Remove(projection.ProcessorId);
+        return true;
     }
 
-    private async Task ClearAsync(string processorId, int version, CancellationToken ct)
+    /// <summary>
+    /// Reclaims one version of one projection everywhere it is stored: the module's own state
+    /// table, plus any backend that keeps projection state outside it.
+    /// </summary>
+    private async Task ClearAsync(
+        RebuildableProjection projection, int version, CancellationToken ct)
     {
-        foreach (var clearer in clearers.Where(c => c.ProcessorId == processorId))
+        await rebuildStore.DiscardStateVersionAsync(projection.ProjectionType, version, ct);
+
+        foreach (var clearer in clearers.Where(c => c.ProcessorId == projection.ProcessorId))
             await clearer.ClearVersionAsync(version, ct);
     }
 

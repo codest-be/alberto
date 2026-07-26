@@ -52,8 +52,20 @@ public sealed class ProjectionVersions : IAsyncDisposable
     public ProjectionVersions(IProjectionRebuildStore store, TimeSpan? refreshInterval = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
-        _refreshLoop = RefreshLoopAsync(refreshInterval ?? TimeSpan.FromSeconds(5));
+        RefreshInterval = refreshInterval ?? TimeSpan.FromSeconds(5);
+        _refreshLoop = RefreshLoopAsync(RefreshInterval);
     }
+
+    /// <summary>
+    /// The longest a reader can go on believing a superseded version is still active.
+    /// </summary>
+    /// <remarks>
+    /// Exposed because it is the unit the rebuild coordinator's reclaim grace period is
+    /// measured in: a discarded version has to outlive every reader's stale cache, and this is
+    /// how long that is. Reading it from here rather than configuring the grace independently
+    /// is what stops the two from being tuned apart.
+    /// </remarks>
+    public TimeSpan RefreshInterval { get; }
 
     /// <summary>
     /// The version readers and the live processor see. Version 1 for anything this source has

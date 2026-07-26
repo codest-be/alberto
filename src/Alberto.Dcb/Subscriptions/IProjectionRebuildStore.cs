@@ -103,10 +103,13 @@ public sealed record ProjectionRebuildState(
 /// <param name="State">The processor's state after the transition.</param>
 /// <param name="DiscardedVersion">
 /// The version that is no longer reachable: the superseded one after a promotion, the
-/// abandoned one after an abort. State rows in <c>alberto_projection_states</c> are already
-/// gone — the transition deleted them in its own transaction. Backends that keep state
-/// elsewhere, EF projections in particular, still have to be told, which is what
-/// <see cref="IProjectionStateClearer.ClearVersionAsync"/> is for.
+/// abandoned one after an abort. Unreachable is not the same as gone — the rows survive the
+/// transition and are reclaimed a grace period later, by
+/// <see cref="IProjectionRebuildCoordinatorStore.DiscardStateVersionAsync"/> for state held in
+/// <c>alberto_projection_states</c> and by <see cref="IProjectionStateClearer.ClearVersionAsync"/>
+/// for backends that keep it elsewhere, EF projections in particular. Deleting either of them
+/// any earlier is what strands a reader holding a version number it resolved a moment before
+/// the flip.
 /// </param>
 public sealed record RebuildOutcome(ProjectionRebuildState State, int DiscardedVersion);
 
@@ -189,16 +192,52 @@ public interface IProjectionRebuildCoordinatorStore
         string processorId, CancellationToken ct = default);
 
     /// <summary>
-    /// Atomically flips the rebuilt version to active and deletes the superseded state rows.
-    /// The caller must already have stopped the shadow loop and verified checkpoint locality.
+    /// Atomically flips the rebuilt version to active. The caller must already have stopped the
+    /// shadow loop and verified checkpoint locality.
     /// </summary>
+    /// <remarks>
+    /// The superseded version's rows are deliberately left behind; see
+    /// <see cref="DiscardStateVersionAsync"/> for why, and for who reclaims them.
+    /// </remarks>
     Task<RebuildOutcome> CompletePromotionAsync(
         string processorId, bool force = false, CancellationToken ct = default);
 
     /// <summary>
-    /// Atomically marks an abort complete and deletes the abandoned version's state rows.
-    /// The caller must already have stopped the shadow loop.
+    /// Atomically marks an abort complete. The caller must already have stopped the shadow loop.
     /// </summary>
+    /// <remarks>
+    /// As with <see cref="CompletePromotionAsync"/>, the abandoned version's rows outlive the
+    /// transition and are reclaimed later by <see cref="DiscardStateVersionAsync"/>.
+    /// </remarks>
     Task<RebuildOutcome> CompleteAbortAsync(
         string processorId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Deletes every state row a projection holds at one version, across all tenants.
+    /// Reclaiming a version that holds nothing is a no-op, so this is safe to call repeatedly
+    /// and safe to call for a version some other replica has already reclaimed.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is separate from the two completion transitions on purpose, and calling it too
+    /// soon after one reintroduces the bug it exists to avoid. A reader resolves the active
+    /// version and then queries it — two steps, and a promotion can land between them. Deleting
+    /// the superseded rows inside the flip therefore makes the swap invisible only to readers
+    /// that resolve *after* it: one that resolved a moment earlier is left holding a version
+    /// number whose rows have just been deleted, and sees an empty projection rather than
+    /// either the old copy or the new one.
+    /// </para>
+    /// <para>
+    /// Nothing about the flip can close that window, because the reader's stale version number
+    /// is already in its hand. What closes it is time: every reader refreshes its version cache
+    /// within one <see cref="ProjectionVersions"/> refresh interval, so a superseded version
+    /// left intact for longer than that has no readers left to disappoint. The coordinator's
+    /// sweep does the reclaiming once that grace period has elapsed.
+    /// </para>
+    /// </remarks>
+    /// <param name="projectionType">The key the projection's state rows are stored under.</param>
+    /// <param name="version">The rebuild version to reclaim.</param>
+    /// <param name="ct">Cancellation token.</param>
+    Task DiscardStateVersionAsync(
+        string projectionType, int version, CancellationToken ct = default);
 }

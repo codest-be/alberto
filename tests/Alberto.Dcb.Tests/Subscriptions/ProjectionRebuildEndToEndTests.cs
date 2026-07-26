@@ -70,6 +70,7 @@ public sealed class ProjectionRebuildHostFixture(PostgresCluster cluster)
     [
         nameof(ProjectionRebuildEndToEndTests.Rebuild_ReplacesCorruptedState_WithoutEverServingAPartialProjection),
         nameof(ProjectionRebuildEndToEndTests.Rebuild_CatchesUpOnEventsThatArriveWhileItIsRunning),
+        nameof(ProjectionRebuildEndToEndTests.PromotionLeavesTheSupersededVersionReadable_ForAReaderThatResolvedItFirst),
         nameof(ProjectionRebuildEndToEndTests.AbortedRebuild_LeavesTheLiveVersionUntouched),
         nameof(ProjectionRebuildEndToEndTests.RebuildAfterAnAbort_GetsAFreshVersionNumber),
     ];
@@ -219,8 +220,58 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
         var afterPromotion = await ReadAsync(promoted.ActiveVersion, player, ct);
         afterPromotion!.Points.Should().Be(7, "the rebuild replayed the log rather than copying the bad state");
 
-        var superseded = await ReadAsync(versionBefore, player, ct);
-        superseded.Should().BeNull("promotion drops the version it replaced in the same transaction");
+        await WaitUntilAsync(
+            async () => await ReadAsync(versionBefore, player, ct) is null,
+            "the sweep to reclaim the superseded version once its grace period has elapsed", ct);
+    }
+
+    /// <summary>
+    /// A reader that resolved the active version just before a promotion still finds a complete
+    /// projection behind it.
+    /// </summary>
+    /// <remarks>
+    /// Resolving the version and querying it are two steps, and a promotion can land between
+    /// them. Nothing the flip does can help a reader already holding the old number, so the
+    /// superseded version's rows have to outlive the flip by long enough for every reader to
+    /// have refreshed. This is the same window
+    /// <see cref="Rebuild_ReplacesCorruptedState_WithoutEverServingAPartialProjection"/> used to
+    /// fall into about one run in twenty under load, reproduced deliberately rather than by
+    /// timing: holding a version number across a promotion is exactly what a slow reader does.
+    /// </remarks>
+    [Fact]
+    public async Task PromotionLeavesTheSupersededVersionReadable_ForAReaderThatResolvedItFirst()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var player = NewPlayer();
+
+        await AppendAsync(player, 5, ct);
+
+        // The reader's half-completed query: it has the version, it has not yet run the read.
+        var resolvedVersion = await ActiveVersionAsync(ct);
+        await WaitUntilAsync(
+            async () => await ReadAsync(resolvedVersion, player, ct) is { Points: 5 },
+            "the live projection to catch up", ct);
+
+        var started = await StartRebuildAsync(ct);
+        await WaitUntilAsync(
+            async () =>
+            {
+                var state = await StateAsync(ct);
+                return state.Status is RebuildStatus.Completed &&
+                       state.ActiveVersion == started.RebuildingVersion;
+            },
+            "the rebuild to be promoted", ct);
+
+        // The promotion has happened and the reader is still holding the old number.
+        (await ReadAsync(resolvedVersion, player, ct))
+            .Should().NotBeNull("a version cannot be deleted while readers may still be holding it")
+            .And.BeEquivalentTo(new Totals { Points = 5 },
+                "and what it holds is the complete old projection, not a half-deleted one");
+
+        // Only once the grace period is up does the version go.
+        await WaitUntilAsync(
+            async () => await ReadAsync(resolvedVersion, player, ct) is null,
+            "the sweep to reclaim the superseded version", ct);
     }
 
     /// <summary>
@@ -260,9 +311,17 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
     }
 
     /// <summary>
-    /// An aborted rebuild leaves nothing behind: the version it was writing into is gone and
-    /// the version readers see never moved.
+    /// An aborted rebuild leaves nothing behind: the version readers see never moved, and the
+    /// version being written into is reclaimed.
     /// </summary>
+    /// <remarks>
+    /// Reclaimed, but not instantly, and the difference is the whole point. The abort marks the
+    /// abandoned version unreachable; the coordinator's sweep deletes its rows a grace period
+    /// later. Asserting emptiness the moment the abort returns is asserting something the design
+    /// does not promise, and it used to fail about one run in twenty for exactly that reason —
+    /// the shadow loop only learns of the abort on its next poll, so its last writes landed
+    /// after the delete. Waiting for the sweep tests the promise instead of racing it.
+    /// </remarks>
     [Fact]
     public async Task AbortedRebuild_LeavesTheLiveVersionUntouched()
     {
@@ -291,7 +350,13 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
         outcome.State.RebuildingVersion.Should().BeNull();
 
         (await ReadAsync(started.ActiveVersion, player, ct))!.Points.Should().Be(8);
-        (await ReadAsync(abandonedVersion, player, ct)).Should().BeNull();
+
+        await WaitUntilAsync(
+            async () => await ReadAsync(abandonedVersion, player, ct) is null,
+            "the sweep to reclaim the abandoned version once its grace period has elapsed", ct);
+
+        (await ReadAsync(started.ActiveVersion, player, ct))!.Points.Should().Be(
+            8, "reclaiming the abandoned version must not disturb the live one");
     }
 
     /// <summary>
