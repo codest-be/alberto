@@ -155,6 +155,20 @@ public sealed class PostgresDeadLetterStoreTests(SingleTenantPostgresFixture fix
         Assert.Equal(0, await deadLetterStore.CountAsync(entry.ProcessorId, ct));
     }
 
+    [Fact]
+    public async Task ExplicitMultiTenantExpectation_RejectsSingleTenantSchema()
+    {
+        var store = new PostgresDeadLetterStore(fixture.DataSource, multiTenant: true);
+
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.CountAsync(
+                $"processor-{Guid.NewGuid():N}",
+                TestContext.Current.CancellationToken));
+
+        Assert.Contains("tenancy mismatch", failure.Message);
+        Assert.Contains("single-tenant", failure.Message);
+    }
+
     private async Task<(PostgresDeadLetterStore Store, DeadLetterEntry Entry, EventTag Tag)> SeedRetryRequestedEntryAsync()
     {
         var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));

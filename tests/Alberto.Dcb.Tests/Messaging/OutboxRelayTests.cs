@@ -167,6 +167,27 @@ public class OutboxRelayTests
         public Task StopAsync(CancellationToken ct) => Task.CompletedTask;
     }
 
+    private sealed class LifecycleTransport(IMessageTransport inner) : IMessageTransport
+    {
+        public int Starts { get; private set; }
+        public int Stops { get; private set; }
+
+        public Task PublishAsync(ExternalMessage message, CancellationToken ct) =>
+            inner.PublishAsync(message, ct);
+
+        public async Task StartAsync(CancellationToken ct)
+        {
+            Starts++;
+            await inner.StartAsync(ct);
+        }
+
+        public async Task StopAsync(CancellationToken ct)
+        {
+            Stops++;
+            await inner.StopAsync(ct);
+        }
+    }
+
     #endregion
 
     #region Helpers
@@ -186,7 +207,7 @@ public class OutboxRelayTests
             DeliveredAt: null);
 
     /// <summary>
-    /// Runs the relay for one cycle, cancelling after the first poll completes.
+    /// Runs the relay for one cycle, then asks the hosted service to stop.
     /// Uses a very short polling interval so we don't hang in tests.
     /// </summary>
     private static async Task RunRelayCycleAsync(
@@ -194,7 +215,7 @@ public class OutboxRelayTests
         IMessageTransport transport,
         int batchSize = 100)
     {
-        using var cts = new CancellationTokenSource();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         var signal = new PollSignalingOutboxStore(store);
         var relay = new OutboxRelay(signal, transport, pollingInterval: TimeSpan.FromMilliseconds(10), batchSize: batchSize);
 
@@ -202,11 +223,10 @@ public class OutboxRelayTests
         // batch — ClaimPendingAsync → PublishAsync → MarkDeliveredAsync/MarkFailedAsync
         // — is fully committed to the in-memory store and the test can assert safely.
         // WaitAsync(5s) makes a hang fail loudly rather than time out silently.
-        var relayTask = relay.StartAsync(cts.Token);
+        await relay.StartAsync(timeout.Token);
         await signal.WhenPolled.WaitAsync(TimeSpan.FromSeconds(5));
-        await cts.CancelAsync();
-
-        try { await relayTask; } catch (OperationCanceledException) { }
+        await relay.StopAsync(timeout.Token);
+        relay.Dispose();
     }
 
     #endregion
@@ -292,6 +312,18 @@ public class OutboxRelayTests
         Assert.Equal("2", msg.Version);
         Assert.Equal("""{"orderId":"test"}""", msg.Payload);
         Assert.Equal("test", msg.Metadata["source"]);
+    }
+
+    [Fact]
+    public async Task Relay_Starts_And_Stops_Transport_Exactly_Once()
+    {
+        var store = new InMemoryOutboxStore();
+        var transport = new LifecycleTransport(new InMemoryTransport());
+
+        await RunRelayCycleAsync(store, transport);
+
+        Assert.Equal(1, transport.Starts);
+        Assert.Equal(1, transport.Stops);
     }
 
     #endregion

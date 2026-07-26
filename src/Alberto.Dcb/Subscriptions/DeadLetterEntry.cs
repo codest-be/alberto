@@ -39,26 +39,23 @@ public sealed record DeadLetterEntry
     public bool RetryRequested { get; init; } = false;
 
     /// <summary>
-    /// The tenant ID from the original event (fetched from events table during retry).
-    /// Null in single-tenant or if not retrieved.
+    /// The tenant ID captured from the original event. Null in single-tenant mode.
     /// </summary>
     public string? TenantId { get; init; } = null;
 
     /// <summary>
-    /// Event tags from the original event (fetched from events table during retry).
-    /// Empty if not retrieved.
+    /// Event tags captured from the original event, or hydrated from the event log for legacy rows.
     /// </summary>
     public IReadOnlyCollection<string>? Tags { get; init; } = null;
 
     /// <summary>
-    /// Event metadata from the original event (fetched from events table during retry).
-    /// Empty if not retrieved.
+    /// Metadata captured from the original event, or hydrated from the event log for legacy rows.
     /// </summary>
     public IReadOnlyDictionary<string, string>? Metadata { get; init; } = null;
 
     /// <summary>
-    /// Original event creation timestamp (fetched from events table during retry).
-    /// Defaults to FailedAt if not retrieved.
+    /// Original event creation timestamp. Defaults to FailedAt for legacy rows that did not
+    /// capture it.
     /// </summary>
     public DateTime? CreatedAt { get; init; } = null;
 

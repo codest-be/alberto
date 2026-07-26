@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+
 namespace Alberto.Dcb;
 
 public enum TagMatchMode
@@ -154,8 +156,8 @@ public sealed class DcbQuery
         TagMatchMode tagMatchMode,
         CompositionMode compositionMode)
     {
-        Types = types;
-        Tags = tags;
+        Types = types.ToImmutableArray();
+        Tags = tags.ToImmutableArray();
         TagMatchMode = tagMatchMode;
         CompositionMode = compositionMode;
     }

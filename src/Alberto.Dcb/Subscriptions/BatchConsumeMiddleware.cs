@@ -63,19 +63,12 @@ public static class BatchConsumeMiddlewares
 
             var envelope = context.Envelopes[0];
             await deadLetterStore.StoreAsync(
-                new DeadLetterEntry
-                {
-                    Id = Guid.NewGuid(),
-                    ProcessorId = context.ProcessorId,
-                    EventId = envelope.Id,
-                    EventType = envelope.EventType.Id,
-                    EventData = envelope.EventData,
-                    ErrorMessage = lastError.Message,
-                    StackTrace = lastError.StackTrace,
-                    AttemptCount = context.Attempt,
-                    FailedAt = clock.GetUtcNow(),
-                    GlobalPosition = envelope.GlobalPosition,
-                },
+                DeadLetterEntryFactory.Create(
+                    context.ProcessorId,
+                    envelope,
+                    lastError,
+                    context.Attempt,
+                    clock.GetUtcNow()),
                 context.CancellationToken);
         };
     }

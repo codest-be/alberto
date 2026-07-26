@@ -423,7 +423,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
         }
 
         var processorId = $"ti-proc-{Guid.NewGuid():N}";
-        var deadLetterStore = new PostgresDeadLetterStore(fixture.DataSource, multiTenant: true);
+        var deadLetterStore = new PostgresDeadLetterStore(fixture.DataSource);
         var entry = new DeadLetterEntry
         {
             Id = Guid.NewGuid(),
@@ -524,7 +524,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
     {
         var ct = TestContext.Current.CancellationToken;
         var processorId = $"ti-admin-dl-{Guid.NewGuid():N}";
-        var deadLetters = new PostgresDeadLetterStore(fixture.DataSource, multiTenant: true);
+        var deadLetters = new PostgresDeadLetterStore(fixture.DataSource);
 
         await deadLetters.StoreAsync(new DeadLetterEntry
         {
@@ -625,7 +625,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
         }
 
         var processorId = $"ti-proc-{Guid.NewGuid():N}";
-        var deadLetterStore = new PostgresDeadLetterStore(fixture.DataSource, multiTenant: true);
+        var deadLetterStore = new PostgresDeadLetterStore(fixture.DataSource);
         var entry = new DeadLetterEntry
         {
             Id = Guid.NewGuid(),

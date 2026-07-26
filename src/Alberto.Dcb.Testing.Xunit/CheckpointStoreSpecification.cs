@@ -51,7 +51,7 @@ public abstract class CheckpointStoreSpecification
     }
 
     /// <summary>
-    /// Each subsequent save must replace the previous value for the same processor ID.
+    /// Each subsequent forward save must advance the previous value for the same processor ID.
     /// </summary>
     [Fact]
     public async Task Save_MultipleTimes_ShouldUpdatePosition()
@@ -64,6 +64,22 @@ public abstract class CheckpointStoreSpecification
 
         var result = await store.GetAsync(ProcessorId, TestContext.Current.CancellationToken);
         Assert.Equal(30, result);
+    }
+
+    /// <summary>
+    /// <c>SaveAsync</c> is monotonic: a stale writer must not move a processor's checkpoint
+    /// backwards. Operator-initiated movement uses <see cref="ICheckpointStore.RewindAsync"/>.
+    /// </summary>
+    [Fact]
+    public async Task Save_BackwardPosition_ShouldNotDecrease()
+    {
+        var store = await CreateStore();
+
+        await store.SaveAsync(ProcessorId, 100, TestContext.Current.CancellationToken);
+        await store.SaveAsync(ProcessorId, 50, TestContext.Current.CancellationToken);
+
+        var result = await store.GetAsync(ProcessorId, TestContext.Current.CancellationToken);
+        Assert.Equal(100, result);
     }
 
     /// <summary>

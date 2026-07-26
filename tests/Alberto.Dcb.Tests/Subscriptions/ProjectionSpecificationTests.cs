@@ -214,6 +214,25 @@ public class ProjectionSpecificationTests
     }
 
     [Fact]
+    public void Build_ShouldFreezeHandledTypesAndHandlersTogether()
+    {
+        var builder = DeclareProjection.For<OrderSummary>("order-summary")
+            .On<OrderCreated>(
+                id: e => e.OrderId.ToString(),
+                apply: (state, e, ctx) => state);
+        var first = builder.Build();
+
+        builder.On<OrderConfirmed>(
+            id: e => e.OrderId.ToString(),
+            apply: (state, e, ctx) => state);
+        var second = builder.Build();
+
+        Assert.DoesNotContain("order-confirmed", first.HandledEventTypes);
+        Assert.Contains("order-confirmed", second.HandledEventTypes);
+        Assert.False(first.HandledEventTypes is HashSet<string>);
+    }
+
+    [Fact]
     public void For_WithBlankProcessorId_ShouldThrow()
     {
         Assert.Throws<ArgumentException>(() => DeclareProjection.For<OrderSummary>("  "));

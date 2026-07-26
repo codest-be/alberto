@@ -10,6 +10,9 @@ namespace Alberto.Dcb.Tests.Subscriptions;
 /// </summary>
 public sealed class BatchMiddlewareTests
 {
+    private static readonly DateTime EventCreatedAt =
+        new(2026, 7, 26, 12, 34, 56, DateTimeKind.Utc);
+
     private static BatchConsumeContext MakeContext(
         IReadOnlyList<IEventEnvelope>? envelopes = null,
         CancellationToken ct = default)
@@ -29,12 +32,13 @@ public sealed class BatchMiddlewareTests
         new EventEnvelope
         {
             Id = Guid.NewGuid(),
+            TenantId = "tenant-a",
             GlobalPosition = position,
             EventType = new EventType("test-event"),
-            Tags = [],
+            Tags = [new EventTag("order", "123")],
             EventData = "{}",
-            Metadata = new Dictionary<string, string>(),
-            CreatedAt = DateTime.UtcNow,
+            Metadata = new Dictionary<string, string> { ["correlation-id"] = "corr-1" },
+            CreatedAt = EventCreatedAt,
         };
 
     [Fact]
@@ -87,7 +91,11 @@ public sealed class BatchMiddlewareTests
         Assert.Equal(1, context.Attempt);
         Assert.NotNull(context.LastError);
         var entries = await deadLetterStore.GetAsync("test-processor", ct: TestContext.Current.CancellationToken);
-        Assert.Single(entries);
+        var entry = Assert.Single(entries);
+        Assert.Equal("tenant-a", entry.TenantId);
+        Assert.Equal(["order:123"], entry.Tags);
+        Assert.Equal("corr-1", entry.Metadata!["correlation-id"]);
+        Assert.Equal(EventCreatedAt, entry.CreatedAt);
     }
 
     [Fact]

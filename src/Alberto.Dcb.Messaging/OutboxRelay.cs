@@ -62,46 +62,74 @@ public sealed class OutboxRelay : BackgroundService
     /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
-        await _transport.StartAsync(ct);
-
-        while (!ct.IsCancellationRequested)
+        var started = false;
+        Exception? executionFailure = null;
+        try
         {
-            try
+            await _transport.StartAsync(ct);
+            started = true;
+
+            while (!ct.IsCancellationRequested)
             {
-                var pending = await _store.ClaimPendingAsync(
-                    _batchSize,
-                    _claimLease,
-                    _claimedBy,
-                    ct);
-
-                foreach (var claim in pending)
+                try
                 {
-                    var entry = claim.Entry;
-                    try
-                    {
-                        await _transport.PublishAsync(
-                            new ExternalMessage(
-                                entry.MessageType,
-                                entry.Version,
-                                entry.Payload,
-                                entry.Metadata,
-                                Destination: entry.Destination,
-                                RoutingHint: entry.RoutingHint),
-                            ct);
-                        await _store.MarkDeliveredAsync(claim, ct);
-                    }
-                    catch (Exception ex) when (!ct.IsCancellationRequested)
-                    {
-                        await _store.MarkFailedAsync(claim, ex.Message, ct);
-                    }
-                }
+                    var pending = await _store.ClaimPendingAsync(
+                        _batchSize,
+                        _claimLease,
+                        _claimedBy,
+                        ct);
 
-                // Back off when there are no more pending entries
-                if (pending.Count < _batchSize)
-                    await Task.Delay(_pollingInterval, ct);
+                    foreach (var claim in pending)
+                    {
+                        var entry = claim.Entry;
+                        try
+                        {
+                            await _transport.PublishAsync(
+                                new ExternalMessage(
+                                    entry.MessageType,
+                                    entry.Version,
+                                    entry.Payload,
+                                    entry.Metadata,
+                                    Destination: entry.Destination,
+                                    RoutingHint: entry.RoutingHint),
+                                ct);
+                            await _store.MarkDeliveredAsync(claim, ct);
+                        }
+                        catch (Exception ex) when (!ct.IsCancellationRequested)
+                        {
+                            await _store.MarkFailedAsync(claim, ex.Message, ct);
+                        }
+                    }
+
+                    // Back off when there are no more pending entries
+                    if (pending.Count < _batchSize)
+                        await Task.Delay(_pollingInterval, ct);
+                }
+                catch (OperationCanceledException) { throw; }
+                catch { await Task.Delay(_pollingInterval, ct); }
             }
-            catch (OperationCanceledException) { throw; }
-            catch { await Task.Delay(_pollingInterval, ct); }
+        }
+        catch (Exception ex)
+        {
+            executionFailure = ex;
+            throw;
+        }
+        finally
+        {
+            if (started)
+            {
+                try
+                {
+                    // The host's stopping token is already cancelled. Cleanup gets an independent
+                    // token so a transport can flush and close its own resources.
+                    await _transport.StopAsync(CancellationToken.None);
+                }
+                catch when (executionFailure is not null)
+                {
+                    // Preserve the exception that stopped the relay. A cleanup failure must not
+                    // replace the causal failure observed by the host.
+                }
+            }
         }
     }
 }

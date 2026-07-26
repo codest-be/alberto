@@ -132,14 +132,18 @@ public class ShardResolverTests
     }
 
     [Fact]
-    public void A_shard_with_no_url_is_not_a_shard()
+    public void A_shard_with_no_url_invalidates_the_whole_shard_map()
     {
         var config = Sharded();
         config.Shards!["db3"] = new ShardConfig();
 
-        ShardResolver.DeclaredShardIds(config).Should().Equal("db1", "db2");
-        ShardResolver.ResolveForRead(config, null, null, null)
-            .Select(t => t.ShardId).Should().Equal("db1", "db2");
+        var declare = () => ShardResolver.DeclaredShardIds(config);
+        var resolve = () => ShardResolver.ResolveForRead(config, null, null, null);
+
+        declare.Should().Throw<ShardSelectionException>()
+            .Which.Message.Should().Contain("db3").And.Contain("No shard was selected");
+        resolve.Should().Throw<ShardSelectionException>()
+            .Which.Message.Should().Contain("db3").And.Contain("No shard was selected");
     }
 
     [Fact]

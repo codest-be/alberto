@@ -138,7 +138,7 @@ public sealed class PostgresAdminDataAccess
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly SchemaQualifier _schema;
-    private AdminStoreTopology? _topology;
+    private readonly PostgresStoreTopology _storeTopology;
 
     /// <summary>
     /// Creates a new PostgresAdminDataAccess.
@@ -149,6 +149,7 @@ public sealed class PostgresAdminDataAccess
     {
         _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
         _schema = new SchemaQualifier(schema);
+        _storeTopology = new PostgresStoreTopology(dataSource, schema);
     }
 
     // -----------------------------------------------------------------------
@@ -598,29 +599,11 @@ public sealed class PostgresAdminDataAccess
     /// </summary>
     public async Task<AdminStoreTopology> GetTopologyAsync(CancellationToken ct = default)
     {
-        var cached = Volatile.Read(ref _topology);
-        if (cached is not null)
-            return cached;
-
-        await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = """
-            SELECT EXISTS (
-                SELECT 1
-                FROM information_schema.columns
-                WHERE table_schema = @schema
-                  AND table_name = 'alberto_events'
-                  AND column_name = 'tenant_id'
-            )
-            """;
-        cmd.Parameters.AddWithValue("schema", _schema.Name);
-
-        var resolved = new AdminStoreTopology(
-            await cmd.ExecuteScalarAsync(ct) is true
+        var multiTenant = await _storeTopology.IsMultiTenantAsync(ct);
+        return new AdminStoreTopology(
+            multiTenant
                 ? AdminTenancyMode.MultiTenant
                 : AdminTenancyMode.SingleTenant);
-
-        return Interlocked.CompareExchange(ref _topology, resolved, null) ?? resolved;
     }
 
     /// <summary>

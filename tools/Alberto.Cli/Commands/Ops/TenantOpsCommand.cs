@@ -1,6 +1,5 @@
 using System.CommandLine;
 using Alberto.Dcb.Postgres;
-using Spectre.Console;
 
 namespace Alberto.Cli.Commands.Ops;
 
@@ -46,19 +45,14 @@ public static class TenantOpsCommand
                 // holds a separate set per shard and each has to be released on its own.
                 var targets = session.MutationTargets(shard, allShards, url, schema);
 
-                if (!yes)
+                if (session.Confirm(
+                        yes,
+                        $"Release tenant leases for {scope}{ShardRun.Scope(targets)}? " +
+                        "The running application will reacquire them.",
+                        "Destructive operation requires confirmation. Add --yes to confirm.\n" +
+                        "  alberto ops tenants release --yes") is { } confirmCode)
                 {
-                    // NOTE: intentionally no non-interactive guard here — this is a pre-existing
-                    // inconsistency with other destructive commands that is preserved as-is.
-                    var confirmed = AnsiConsole.Confirm(
-                        $"Release tenant leases for {scope}{ShardRun.Scope(targets)}? The running application will reacquire them.",
-                        defaultValue: false);
-
-                    if (!confirmed)
-                    {
-                        output.Text("Aborted.");
-                        return 0;
-                    }
+                    return confirmCode;
                 }
 
                 var failed = await ShardRun.ApplyAsync(output, targets, async (dataSource, target) =>

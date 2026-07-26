@@ -1,3 +1,5 @@
+using System.Collections.Frozen;
+
 namespace Alberto.Dcb.Subscriptions;
 
 /// <summary>
@@ -282,8 +284,8 @@ public sealed class ProjectionDeclarationBuilder<TState> where TState : new()
         return new ProjectionDeclaration<TState>(
             processorId: _processorId,
             collectionName: _collectionName,
-            handledEventTypes: _eventTypes,
+            handledEventTypes: _eventTypes.ToFrozenSet(StringComparer.Ordinal),
             initialState: _initialState,
-            handlers: new Dictionary<string, IProjectionEventHandler<TState>>(_handlers));
+            handlers: _handlers.ToFrozenDictionary(StringComparer.Ordinal));
     }
 }
