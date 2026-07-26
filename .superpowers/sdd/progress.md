@@ -44,6 +44,15 @@ PRs:
 
 - SP0 — https://github.com/codest-be/albertoo/pull/31 — **merged**, CI green, `coverage` artifact confirmed (122 KB)
 
+## SP4 IS SUPERSEDED — ABANDONED 2026-07-26 (owner's decision)
+
+Worktree `/Users/bjorn/dev/AlbertoV3-worktrees/sp4-rebuild-retention` removed. The local
+branch ref `sp4-rebuild-retention` (5 commits, tip `b758105`) is deliberately kept — it was
+never pushed, so that ref is the only thing holding those commits. Delete with
+`git branch -D sp4-rebuild-retention` if the history is not wanted.
+
+Original rationale below.
+
 ## SP4 IS SUPERSEDED — STOP WORK ON IT
 
 `origin/main` moved again to `1fd57c2` — PR #33, "Reclaim a discarded rebuild version
@@ -97,6 +106,19 @@ owner's decision** — it should almost certainly be abandoned, but that is not 
 - **Masking a defect — `PostgresEventListenerTests.RoundTrip_FiveEventBatch_FiresExactlyOneNotify`.** Migration 010 replaced the `alberto_events` notify trigger with `FOR EACH STATEMENT` so one `pg_notify` fires per append call. But every version of `alberto_append_events` — through the newest, migration 023 — inserts events one at a time inside a PL/pgSQL `FOR v_event IN SELECT * FROM jsonb_array_elements(p_events) LOOP`. Each iteration is its own INSERT statement, so a statement-level trigger still fires N times for N events. **Verified by reading 010_BatchNotifyTrigger.sql and 023_TagConceptBoundaryMatching.sql:105-137 directly.** Migration 010's stated purpose is not achieved; subscribers get N redundant wakeups per append. The test was skipped rather than the bug fixed. Fix: move `pg_notify` into the function body after the loop, or restructure as a bulk `INSERT … SELECT`; needs a new migration and updates to all active function versions. ~2-4h.
 - **Avoidable — `PostgresOutboxStoreSpecificationTests.PurgeDeliveredAsync_RemovesOldDeliveredOnly`.** Skips legitimately (Postgres sets `delivered_at = now()` in SQL, so an app-level FakeTimeProvider cannot drive it), but the comment claims the InMemory derivation covers it and that is only half true: `PostgresOutboxStoreTests.PurgeDeliveredAsync_ShouldRemoveDeliveredEntriesOlderThanThreshold` uses a future cutoff, so every delivered row qualifies and the `delivered_at < @before` predicate is never exercised. Removing the date condition from the SQL would not fail any test. Fix: ~25 lines setting `delivered_at` via direct SQL. ~1h.
 - Full audit at `.superpowers/sdd/skipped-test-audit.md` (in the deleted SP1a worktree; re-derivable).
+
+### Audit follow-through
+
+- **Avoidable skip — FIXED.** PR #38, squash-merged as `81cd19c`.
+  `PurgeDeliveredAsync_ShouldRemoveDeliveredEntriesOlderThanThreshold` now delivers two
+  entries, backdates one via direct SQL, and purges with a cutoff between them. Verified by
+  mutation: dropping `AND delivered_at < @before` from `PostgresOutboxStore` fails the test
+  with "Delivered entry newer than the threshold was incorrectly purged." Suite 1089 / 0 / 17.
+  `OutboxStoreSpecification`'s FakeTimeProvider skip message now names that test, instead of
+  implying the InMemory derivation covers the cut-off.
+- **pg_notify bug — handed off**, not fixed here. Running as background task `task_b2d9d342`
+  in a separate session: move `pg_notify` out of the statement trigger (or bulk the INSERT)
+  and un-skip `PostgresEventListenerTests.RoundTrip_FiveEventBatch_FiresExactlyOneNotify`.
 
 ## Also observed
 
