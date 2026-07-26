@@ -104,6 +104,13 @@ use the factory form `ReactTo<TEvent>(Func<IServiceProvider, Func<TEvent, ct, Ta
 
 **`[Tag]` no longer valid on bare primary-constructor parameters** — use `[property: Tag(...)]`.
 
+**Outbox transport lifecycle ownership** — once Alberto calls `IMessageTransport.StartAsync`, it
+now calls `StopAsync` even if startup throws after partial initialization. Cleanup is bounded to
+30 seconds, and one transport instance reused across `WithOutbox` registrations has one shared
+lifecycle. Transport implementations must tolerate partial-start cleanup, finish promptly when
+cancelled, and support concurrent publishing when an instance is shared. Polling-store failures
+now fault the relay instead of being retried indefinitely.
+
 ### Added
 
 - Event schema versioning: `[EventType("slug", Version = N)]`, the framework-managed `_v:N` tag,
@@ -153,7 +160,6 @@ use the factory form `ReactTo<TEvent>(Func<IServiceProvider, Func<TEvent, ct, Ta
   instead of trusting an optional caller flag.
 - `DcbQuery` and built projection declarations now snapshot their input collections, preventing
   caller or builder mutations from changing a live query/processor declaration.
-- `OutboxRelay` now closes the message transport exactly once when the hosted service stops.
 - The CLI now rejects malformed, unknown, or partial shard configuration and applies one
   non-interactive-safe confirmation gate before destructive fan-out operations.
 - Control loop faults and holds its checkpoint on a pipelined handler failure that coincides

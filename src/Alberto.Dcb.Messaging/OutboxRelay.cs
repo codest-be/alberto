@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.Hosting;
 
 namespace Alberto.Dcb.Messaging;
@@ -9,7 +10,7 @@ namespace Alberto.Dcb.Messaging;
 public sealed class OutboxRelay : BackgroundService
 {
     private readonly IOutboxStore _store;
-    private readonly IMessageTransport _transport;
+    private readonly OutboxTransportLease _transport;
     private readonly TimeSpan _pollingInterval;
     private readonly int _batchSize;
     private readonly TimeSpan _claimLease;
@@ -25,7 +26,10 @@ public sealed class OutboxRelay : BackgroundService
     /// Creates a new <see cref="OutboxRelay"/>.
     /// </summary>
     /// <param name="store">The outbox store to poll.</param>
-    /// <param name="transport">The transport to deliver messages through.</param>
+    /// <param name="transport">
+    /// The transport to deliver messages through. This relay exclusively owns its start/stop
+    /// lifecycle but does not dispose the caller-owned instance.
+    /// </param>
     /// <param name="pollingInterval">How often to poll when the outbox is empty. Defaults to 1 second.</param>
     /// <param name="batchSize">Maximum number of entries to process per poll cycle. Defaults to 100.</param>
     /// <param name="claimLease">
@@ -36,6 +40,23 @@ public sealed class OutboxRelay : BackgroundService
     public OutboxRelay(
         IOutboxStore store,
         IMessageTransport transport,
+        TimeSpan? pollingInterval = null,
+        int batchSize = 100,
+        TimeSpan? claimLease = null,
+        string? claimedBy = null)
+        : this(
+            store,
+            CreateExclusiveTransportLease(store, transport),
+            pollingInterval,
+            batchSize,
+            claimLease,
+            claimedBy)
+    {
+    }
+
+    internal OutboxRelay(
+        IOutboxStore store,
+        OutboxTransportLease transport,
         TimeSpan? pollingInterval = null,
         int batchSize = 100,
         TimeSpan? claimLease = null,
@@ -62,52 +83,52 @@ public sealed class OutboxRelay : BackgroundService
     /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
-        var started = false;
         Exception? executionFailure = null;
+        ExceptionDispatchInfo? hostCancellation = null;
         try
         {
             await _transport.StartAsync(ct);
-            started = true;
 
             while (!ct.IsCancellationRequested)
             {
-                try
+                var pending = await _store.ClaimPendingAsync(
+                    _batchSize,
+                    _claimLease,
+                    _claimedBy,
+                    ct);
+
+                foreach (var claim in pending)
                 {
-                    var pending = await _store.ClaimPendingAsync(
-                        _batchSize,
-                        _claimLease,
-                        _claimedBy,
-                        ct);
-
-                    foreach (var claim in pending)
+                    var entry = claim.Entry;
+                    try
                     {
-                        var entry = claim.Entry;
-                        try
-                        {
-                            await _transport.PublishAsync(
-                                new ExternalMessage(
-                                    entry.MessageType,
-                                    entry.Version,
-                                    entry.Payload,
-                                    entry.Metadata,
-                                    Destination: entry.Destination,
-                                    RoutingHint: entry.RoutingHint),
-                                ct);
-                            await _store.MarkDeliveredAsync(claim, ct);
-                        }
-                        catch (Exception ex) when (!ct.IsCancellationRequested)
-                        {
-                            await _store.MarkFailedAsync(claim, ex.Message, ct);
-                        }
+                        await _transport.PublishAsync(
+                            new ExternalMessage(
+                                entry.MessageType,
+                                entry.Version,
+                                entry.Payload,
+                                entry.Metadata,
+                                Destination: entry.Destination,
+                                RoutingHint: entry.RoutingHint),
+                            ct);
+                        await _store.MarkDeliveredAsync(claim, ct);
                     }
-
-                    // Back off when there are no more pending entries
-                    if (pending.Count < _batchSize)
-                        await Task.Delay(_pollingInterval, ct);
+                    catch (Exception ex) when (!ct.IsCancellationRequested)
+                    {
+                        await _store.MarkFailedAsync(claim, ex.Message, ct);
+                    }
                 }
-                catch (OperationCanceledException) { throw; }
-                catch { await Task.Delay(_pollingInterval, ct); }
+
+                // Back off when there are no more pending entries
+                if (pending.Count < _batchSize)
+                    await Task.Delay(_pollingInterval, ct);
             }
+        }
+        catch (OperationCanceledException exception) when (ct.IsCancellationRequested)
+        {
+            // Host cancellation is normal completion. If transport cleanup then fails, that
+            // cleanup failure remains observable on ExecuteTask.
+            hostCancellation = ExceptionDispatchInfo.Capture(exception);
         }
         catch (Exception ex)
         {
@@ -116,20 +137,22 @@ public sealed class OutboxRelay : BackgroundService
         }
         finally
         {
-            if (started)
-            {
-                try
-                {
-                    // The host's stopping token is already cancelled. Cleanup gets an independent
-                    // token so a transport can flush and close its own resources.
-                    await _transport.StopAsync(CancellationToken.None);
-                }
-                catch when (executionFailure is not null)
-                {
-                    // Preserve the exception that stopped the relay. A cleanup failure must not
-                    // replace the causal failure observed by the host.
-                }
-            }
+            await _transport.StopAsync(executionFailure);
         }
+
+        // Preserve BackgroundService's established cancelled ExecuteTask on an ordinary host
+        // stop. A cleanup failure thrown from finally above still takes precedence.
+        hostCancellation?.Throw();
+    }
+
+    private static OutboxTransportLease CreateExclusiveTransportLease(
+        IOutboxStore store,
+        IMessageTransport transport)
+    {
+        // Preserve the public constructor's argument-validation order while delegating the rest
+        // of initialization to the lease-based constructor.
+        ArgumentNullException.ThrowIfNull(store);
+        ArgumentNullException.ThrowIfNull(transport);
+        return new OutboxTransportLifecycle(transport).CreateLease();
     }
 }
