@@ -70,9 +70,17 @@ public static class ConfigFileFinder
     /// Walks up the directory tree from the current working directory looking for .alberto/config.json.
     /// Returns null if not found.
     /// </summary>
-    public static AlbertoConfig? Find()
+    public static AlbertoConfig? Find() =>
+        Find(new DirectoryInfo(Directory.GetCurrentDirectory()));
+
+    /// <summary>
+    /// Walks up the directory tree from <paramref name="startDir"/> looking for .alberto/config.json.
+    /// Returns null if not found or if the file is malformed. Pass a specific directory in tests to
+    /// avoid touching the real working directory.
+    /// </summary>
+    public static AlbertoConfig? Find(DirectoryInfo startDir)
     {
-        var dir = new DirectoryInfo(Directory.GetCurrentDirectory());
+        var dir = startDir;
 
         while (dir != null)
         {

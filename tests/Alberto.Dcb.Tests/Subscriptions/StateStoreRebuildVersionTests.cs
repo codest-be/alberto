@@ -24,13 +24,16 @@ public sealed class StateStoreRebuildVersionFixture(PostgresCluster cluster)
 }
 
 /// <summary>
-/// Both state stores must keep rebuild versions apart: a shadow loop replaying history into
-/// version N+1 has to be invisible to the live projection reading version N, in the same
-/// table, at the same time. Everything else about a hot rebuild rests on that.
+/// Adapter-specific facts that go beyond the <see cref="StateStoreSpecification{TState}"/>
+/// contract — either because they test behaviour that is not part of the
+/// <see cref="IStateStore{TState}"/> interface (<c>ListRecentAsync</c>, entity stamping)
+/// or because they exercise the EF retry/conflict machinery that is an implementation
+/// detail of <see cref="EfStateStore{TEntity,TDbContext}"/>.
 ///
-/// The version is resolved per operation rather than captured at construction, so each test
-/// drives it through a mutable selector — that models a promotion landing underneath a
-/// long-lived store, which is exactly when getting this wrong would corrupt a projection.
+/// The version-isolation contract facts (writes invisible at another version, deletes
+/// scoped to their version, promotion following, default-is-1) have been absorbed into
+/// <see cref="StateStoreSpecification{TState}"/> and are exercised against all three
+/// adapters there.
 /// </summary>
 public sealed class StateStoreRebuildVersionTests(StateStoreRebuildVersionFixture fixture)
     : IClassFixture<StateStoreRebuildVersionFixture>
@@ -44,74 +47,10 @@ public sealed class StateStoreRebuildVersionTests(StateStoreRebuildVersionFixtur
     private PostgresStateStore<Counter> PostgresStore(string projectionType, Func<int> version)
         => new(fixture.DataSource, projectionType, schema: null, rebuildVersion: version);
 
-    [Fact]
-    public async Task PostgresStateStore_WritesAtOneVersionAreInvisibleAtAnother()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var projectionType = NewProjectionType();
-
-        var live = PostgresStore(projectionType, () => 1);
-        var shadow = PostgresStore(projectionType, () => 2);
-
-        await live.ApplyChangesAsync(
-            new Dictionary<string, Counter> { ["doc-1"] = new("doc-1", 10) }, [], ct: ct);
-        await shadow.ApplyChangesAsync(
-            new Dictionary<string, Counter> { ["doc-1"] = new("doc-1", 99) }, [], ct: ct);
-
-        var liveState = await live.LoadManyAsync(["doc-1"], ct: ct);
-        var shadowState = await shadow.LoadManyAsync(["doc-1"], ct: ct);
-
-        liveState["doc-1"].Value.Should().Be(
-            10, "the shadow rebuild must not overwrite what readers are looking at");
-        shadowState["doc-1"].Value.Should().Be(99);
-    }
-
-    [Fact]
-    public async Task PostgresStateStore_DeletesOnlyAffectTheVersionBeingWritten()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var projectionType = NewProjectionType();
-
-        var live = PostgresStore(projectionType, () => 1);
-        var shadow = PostgresStore(projectionType, () => 2);
-
-        await live.ApplyChangesAsync(
-            new Dictionary<string, Counter> { ["doc-1"] = new("doc-1", 10) }, [], ct: ct);
-        await shadow.ApplyChangesAsync(
-            new Dictionary<string, Counter> { ["doc-1"] = new("doc-1", 99) }, [], ct: ct);
-
-        // A rebuild that replays a delete must not delete the live row.
-        await shadow.ApplyChangesAsync(new Dictionary<string, Counter>(), ["doc-1"], ct: ct);
-
-        (await live.LoadManyAsync(["doc-1"], ct: ct)).Should().ContainKey("doc-1");
-        (await shadow.LoadManyAsync(["doc-1"], ct: ct)).Should().BeEmpty();
-    }
-
-    [Fact]
-    public async Task PostgresStateStore_FollowsThePromotionOfItsVersionMidLife()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var projectionType = NewProjectionType();
-
-        var activeVersion = 1;
-        // One long-lived store, as the live projection has. This is the store a promotion
-        // moves underneath.
-        var reader = PostgresStore(projectionType, () => activeVersion);
-
-        await PostgresStore(projectionType, () => 1).ApplyChangesAsync(
-            new Dictionary<string, Counter> { ["doc-1"] = new("doc-1", 10) }, [], ct: ct);
-        await PostgresStore(projectionType, () => 2).ApplyChangesAsync(
-            new Dictionary<string, Counter> { ["doc-1"] = new("doc-1", 99) }, [], ct: ct);
-
-        (await reader.LoadManyAsync(["doc-1"], ct: ct))["doc-1"].Value.Should().Be(10);
-
-        activeVersion = 2;   // promotion
-
-        (await reader.LoadManyAsync(["doc-1"], ct: ct))["doc-1"].Value.Should().Be(
-            99, "resolving the version per operation is what makes a promotion take effect " +
-                "without rebuilding every state store");
-    }
-
+    /// <summary>
+    /// <see cref="PostgresStateStore{TState}.ListRecentAsync"/> is not part of
+    /// <see cref="IStateStore{TState}"/>; this fact belongs here rather than in the spec.
+    /// </summary>
     [Fact]
     public async Task PostgresStateStore_ListRecentIsScopedToTheVersion()
     {
@@ -135,21 +74,6 @@ public sealed class StateStoreRebuildVersionTests(StateStoreRebuildVersionFixtur
         (await shadow.ListRecentAsync(50, ct)).Should().HaveCount(2);
     }
 
-    [Fact]
-    public async Task PostgresStateStore_DefaultsToVersionOne()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var projectionType = NewProjectionType();
-
-        // No selector at all — the shape almost every projection uses.
-        var plain = new PostgresStateStore<Counter>(fixture.DataSource, projectionType);
-        await plain.ApplyChangesAsync(
-            new Dictionary<string, Counter> { ["doc-1"] = new("doc-1", 7) }, [], ct: ct);
-
-        var atVersionOne = PostgresStore(projectionType, () => 1);
-        (await atVersionOne.LoadManyAsync(["doc-1"], ct: ct))["doc-1"].Value.Should().Be(7);
-    }
-
     // ---------------------------------------------------------------------- EF
 
     private EfStateStore<CounterEntity, EfTestDbContext> EfStore(Func<int> version)
@@ -161,28 +85,12 @@ public sealed class StateStoreRebuildVersionTests(StateStoreRebuildVersionFixtur
     /// <summary>Document ids are per-test because the EF entities share one table.</summary>
     private static string NewDocId() => $"doc-{Guid.NewGuid():N}";
 
-    [Fact]
-    public async Task EfStateStore_WritesAtOneVersionAreInvisibleAtAnother()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var docId = NewDocId();
-
-        var live = EfStore(() => 1);
-        var shadow = EfStore(() => 2);
-
-        await live.ApplyChangesAsync(
-            new Dictionary<string, CounterEntity> { [docId] = Entity(docId, 10) }, [], ct: ct);
-        await shadow.ApplyChangesAsync(
-            new Dictionary<string, CounterEntity> { [docId] = Entity(docId, 99) }, [], ct: ct);
-
-        var liveState = await live.LoadManyAsync([docId], ct: ct);
-        var shadowState = await shadow.LoadManyAsync([docId], ct: ct);
-
-        liveState[docId].Counter.Should().Be(
-            10, "without the version in the key the rebuild would have overwritten this row");
-        shadowState[docId].Counter.Should().Be(99);
-    }
-
+    /// <summary>
+    /// The store must stamp the entity's <see cref="IProjectionEntity.RebuildVersion"/>
+    /// from its own selector rather than trusting whatever value the caller set on the
+    /// entity. This is an EF-specific invariant; the JSONB adapters store the document
+    /// as an opaque blob and carry the version in a separate column.
+    /// </summary>
     [Fact]
     public async Task EfStateStore_StampsTheVersionItWroteAt()
     {
@@ -197,47 +105,6 @@ public sealed class StateStoreRebuildVersionTests(StateStoreRebuildVersionFixtur
         (await EfStore(() => 3).LoadManyAsync([docId], ct: ct))[docId]
             .RebuildVersion.Should().Be(3);
         (await EfStore(() => 1).LoadManyAsync([docId], ct: ct)).Should().BeEmpty();
-    }
-
-    [Fact]
-    public async Task EfStateStore_DeletesOnlyAffectTheVersionBeingWritten()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var docId = NewDocId();
-
-        var live = EfStore(() => 1);
-        var shadow = EfStore(() => 2);
-
-        await live.ApplyChangesAsync(
-            new Dictionary<string, CounterEntity> { [docId] = Entity(docId, 10) }, [], ct: ct);
-        await shadow.ApplyChangesAsync(
-            new Dictionary<string, CounterEntity> { [docId] = Entity(docId, 99) }, [], ct: ct);
-
-        await shadow.ApplyChangesAsync(new Dictionary<string, CounterEntity>(), [docId], ct: ct);
-
-        (await live.LoadManyAsync([docId], ct: ct)).Should().ContainKey(docId);
-        (await shadow.LoadManyAsync([docId], ct: ct)).Should().BeEmpty();
-    }
-
-    [Fact]
-    public async Task EfStateStore_FollowsThePromotionOfItsVersionMidLife()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var docId = NewDocId();
-
-        var activeVersion = 1;
-        var reader = EfStore(() => activeVersion);
-
-        await EfStore(() => 1).ApplyChangesAsync(
-            new Dictionary<string, CounterEntity> { [docId] = Entity(docId, 10) }, [], ct: ct);
-        await EfStore(() => 2).ApplyChangesAsync(
-            new Dictionary<string, CounterEntity> { [docId] = Entity(docId, 99) }, [], ct: ct);
-
-        (await reader.LoadManyAsync([docId], ct: ct))[docId].Counter.Should().Be(10);
-
-        activeVersion = 2;   // promotion
-
-        (await reader.LoadManyAsync([docId], ct: ct))[docId].Counter.Should().Be(99);
     }
 
     [Fact]
@@ -264,19 +131,6 @@ public sealed class StateStoreRebuildVersionTests(StateStoreRebuildVersionFixtur
         // Re-running is a no-op, which is what makes it safe after a coordinator crash.
         await clearer.ClearVersionAsync(2, ct);
         (await EfStore(() => 1).LoadManyAsync([docId], ct: ct)).Should().ContainKey(docId);
-    }
-
-    [Fact]
-    public async Task EfStateStore_DefaultsToVersionOne()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var docId = NewDocId();
-
-        var plain = new EfStateStore<CounterEntity, EfTestDbContext>(fixture.ContextFactory());
-        await plain.ApplyChangesAsync(
-            new Dictionary<string, CounterEntity> { [docId] = Entity(docId, 7) }, [], ct: ct);
-
-        (await EfStore(() => 1).LoadManyAsync([docId], ct: ct))[docId].Counter.Should().Be(7);
     }
 
     [Fact]

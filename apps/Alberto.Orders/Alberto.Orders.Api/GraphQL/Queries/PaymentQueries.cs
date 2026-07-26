@@ -50,8 +50,9 @@ public static class PaymentQueries
         [Service] IServiceProvider sp,
         CancellationToken ct)
     {
-        var tenantId = GetTenantId(context);
-        var stateStore = CreateStateStore<PaymentsOverview>(sp, tenantId, nameof(PaymentsOverviewProjection));
+        // PaymentsOverviewProjection is a cross-tenant aggregate; resolve from DI so
+        // the reader inherits the writer's no-tenant configuration (see CreateStateStore).
+        var stateStore = CreateStateStore<PaymentsOverview>(sp, nameof(PaymentsOverviewProjection));
 
         var states = await stateStore.LoadManyAsync(
             ["overview"],
@@ -64,15 +65,25 @@ public static class PaymentQueries
     /// Gets recent payments from the async projection.
     /// </summary>
     [Query]
-    [GraphQLDescription("Gets recent payments from the projection, ordered by last update.")]
+    [GraphQLDescription(
+        "Gets recent payments from the projection, ordered by last update. "
+        + "Not tenant-scoped: the Payments example stores no tenant, so this returns "
+        + "payments from every tenant regardless of X-Tenant-Id.")]
     public static async Task<IReadOnlyList<Payment>> GetRecentPayments(
         IResolverContext context,
         [Service] IServiceProvider sp,
         int limit = 20,
         CancellationToken ct = default)
     {
-        var tenantId = GetTenantId(context);
-        var stateStore = CreateStateStore<PaymentSummary>(sp, tenantId, nameof(PaymentSummaryProjection));
+        // Unlike the two *Overview projections, PaymentSummaryProjection is NOT an
+        // aggregate — it keys one document per PaymentId. Reading it without a tenantId
+        // therefore returns individual payment records belonging to every tenant, not a
+        // blended total. That is what the Payments write side actually stores: PaymentsModule
+        // declares no tenancy and PaymentSummary carries no tenant column, so there is
+        // nothing to filter on. The per-request tenant this resolver used to pass was
+        // decoration that only ever made the query return nothing. Tenant-scoping this
+        // field needs a tenant on the payments projection first — see CLAUDE.md § Known Gaps.
+        var stateStore = CreateStateStore<PaymentSummary>(sp, nameof(PaymentSummaryProjection));
 
         var summaries = await stateStore.ListRecentAsync(limit, ct);
         return summaries.Select(Payment.FromSummary).ToList();
@@ -80,25 +91,42 @@ public static class PaymentQueries
 
     #region Helper Methods
 
-    private static string GetTenantId(IResolverContext context) =>
-        context.GetGlobalState<string>(TenantHttpRequestInterceptor.TenantIdKey)
-        ?? throw new InvalidOperationException("Tenant ID not found in resolver context");
-
+    /// <summary>
+    /// Creates a read-side store for a cross-tenant aggregate projection.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// No <c>tenantId</c> is passed. <c>PaymentsOverviewProjection</c> and
+    /// <c>PaymentSummaryProjection</c> are cross-tenant aggregates whose writers
+    /// (in <c>PaymentsModule</c>) do not set a <c>tenantId</c> either. Passing a
+    /// per-request <c>tenantId</c> here caused these readers to query under a
+    /// <c>(tenant_id, projection_type, …)</c> primary key while the writer stored
+    /// rows under <c>(projection_type, …)</c>, so they always returned nothing.
+    /// </para>
+    /// <para>
+    /// <see cref="Alberto.Dcb.DcbModuleBuilderExtensions.AddProjection{TState}"/>
+    /// also registers a <c>Func&lt;IStateStore&lt;TState&gt;&gt;</c> keyed by
+    /// <c>"{moduleKey}:{processorId}"</c> that readers can resolve from DI to
+    /// obtain the same store configuration automatically. This helper constructs
+    /// the store directly because it needs <see cref="PostgresStateStore{TState}"/>
+    /// (for <see cref="PostgresStateStore{TState}.ListRecentAsync"/>) rather than
+    /// the narrower <see cref="Alberto.Dcb.Subscriptions.IStateStore{TState}"/>.
+    /// </para>
+    /// </remarks>
     private static PostgresStateStore<TState> CreateStateStore<TState>(
         IServiceProvider sp,
-        string tenantId,
         string projectionType)
     {
         var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(PaymentsModule.ModuleKey);
 
-        // Named arguments, and LiveVersion rather than the default: a read side that pins its
-        // rebuild version keeps serving the old copy after a rebuild is promoted.
+        // rebuildVersion uses LiveVersion so the reader follows a promotion without being
+        // rebuilt, exactly as the comment in the original code stated.
         return new PostgresStateStore<TState>(
             dataSource,
             projectionType: projectionType,
             schema: "payments",
-            rebuildVersion: ProjectionVersions.LiveVersion(sp, PaymentsModule.ModuleKey, projectionType),
-            tenantId: tenantId);
+            rebuildVersion: ProjectionVersions.LiveVersion(sp, PaymentsModule.ModuleKey, projectionType));
+        // Note: tenantId is intentionally omitted — these are cross-tenant aggregates.
     }
 
     private static async Task<PaymentState> LoadPaymentState(

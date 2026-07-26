@@ -35,11 +35,29 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
     private bool _disposed;
     private FencingContext? _fencingContext;
 
+    // Primary single-callback property (backward compatibility for direct use in tests
+    // and other callers that hold a concrete reference to CachingCheckpointStore).
+    // For production wiring, prefer SubscribeFenceViolation so that multiple handlers
+    // coexist without overwriting each other.
     /// <summary>
     /// Called with the processor ID when a fenced checkpoint write is rejected because
     /// the lease has expired. The caller should stop processing for that processor.
+    /// For multi-subscriber wiring use <see cref="SubscribeFenceViolation"/>.
     /// </summary>
     public Action<string>? OnFenceViolation { get; set; }
+
+    // Additional subscribers added through IFencableCheckpointStore.SubscribeFenceViolation.
+    // These coexist with OnFenceViolation so that a per-loop cancellation handler (wired
+    // by ControlLoopAssembler) and a group-stop handler (wired by ControlLoopRegistration)
+    // both fire without trampling each other (COR-3).
+    //
+    // Copy-on-write, not a mutable List: shadow rebuild loops are assembled at runtime
+    // (ShadowControlLoopFactory calls ControlLoopAssembler.Create on every rebuild start),
+    // so a subscription can land while the flush loop is enumerating this array to report
+    // a fence violation. Mutating a List during that foreach throws. Writers swap a new
+    // array under _fenceHandlerLock; the flush loop reads one snapshot and iterates it.
+    private Action<string>[] _subscribedFenceHandlers = [];
+    private readonly object _fenceHandlerLock = new();
 
     /// <summary>
     /// Creates a new caching checkpoint store.
@@ -137,6 +155,19 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
     /// underlying store implements <see cref="IFencedCheckpointStore"/>.
     /// </summary>
     public void SetFencingContext(FencingContext ctx) => _fencingContext = ctx;
+
+    /// <summary>
+    /// Appends <paramref name="handler"/> to the set of callbacks invoked when a fenced
+    /// checkpoint write is rejected. All registered handlers and <see cref="OnFenceViolation"/>
+    /// are called together; registrations are additive and process-lifetime.
+    /// Safe to call while a flush is in progress.
+    /// </summary>
+    public void SubscribeFenceViolation(Action<string> handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        lock (_fenceHandlerLock)
+            _subscribedFenceHandlers = [.. _subscribedFenceHandlers, handler];
+    }
 
     private async void OnFlushTimer(object? state)
     {
@@ -257,7 +288,12 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
                         _cache.TryRemove(processorId, out _);
                         _persisted.TryRemove(processorId, out _);
                         Interlocked.Increment(ref _cacheGeneration);
+                        // Invoke the primary handler first, then every additive subscriber.
+                        // Read one snapshot: a concurrent SubscribeFenceViolation swaps the
+                        // array rather than mutating it, so this enumeration stays valid.
                         OnFenceViolation?.Invoke(processorId);
+                        foreach (var h in Volatile.Read(ref _subscribedFenceHandlers))
+                            h(processorId);
                         continue;
                     }
                 }

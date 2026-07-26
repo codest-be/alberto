@@ -1,5 +1,4 @@
 using Npgsql;
-using NpgsqlTypes;
 
 namespace Alberto.Dcb.Postgres;
 
@@ -8,6 +7,12 @@ namespace Alberto.Dcb.Postgres;
 /// Exposes tenant-scoped methods used by <see cref="TenantEventStoreDecorator"/>.
 /// Not registered directly as IEventStoreBackend; use .WithTenancy() to enable.
 /// </summary>
+/// <remarks>
+/// All non-trivial logic (stream query tree, append path, positions, stable-head
+/// barrier) lives in <see cref="PostgresBackendHelpers"/> as static methods
+/// parameterised on tenancy. This class is a thin adapter that supplies the
+/// constructor context and delegates, adding the tenant-id seam where needed.
+/// </remarks>
 internal sealed class PostgresTenantEventStoreBackend(
     NpgsqlDataSource dataSource,
     TimeProvider? timeProvider = null,
@@ -15,9 +20,11 @@ internal sealed class PostgresTenantEventStoreBackend(
     bool enableStableHeadBarrier = true)
 {
     private readonly NpgsqlDataSource _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
+    // _timeProvider is retained for future use and to preserve the constructor surface.
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly SchemaQualifier _schema = new(schema);
     private readonly bool _enableStableHeadBarrier = enableStableHeadBarrier;
+    // Raw schema string used to build the per-tenant advisory-lock key.
     private readonly string? _schemaName = schema;
 
     public async Task<IReadOnlyCollection<IEventEnvelope>> StreamForTenant(
@@ -29,36 +36,9 @@ internal sealed class PostgresTenantEventStoreBackend(
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
 
-        var sql = BuildStreamQuery(query);
+        var sql = PostgresBackendHelpers.BuildStreamQuery(_schema, query, tenanted: true);
         await using var cmd = new NpgsqlCommand(sql, connection);
-
-        cmd.Parameters.AddWithValue("p_tenant_id", tenantId);
-        cmd.Parameters.AddWithValue("p_after_position", afterPosition);
-        cmd.Parameters.AddWithValue("p_limit", limit.HasValue ? limit.Value : DBNull.Value);
-
-        if (query.Types.Count > 0)
-        {
-            cmd.Parameters.AddWithValue("p_types", query.Types.Select(t => t.Id).ToArray());
-        }
-
-        // Handle tag patterns (both exact and wildcards)
-        if (query.TagPatterns.Count > 0)
-        {
-            if (query.HasWildcardPatterns)
-            {
-                // New function with separate exact tags and prefixes
-                var exactTags = query.TagPatterns.Where(p => p.IsExact).Select(p => p.Value).ToArray();
-                var prefixes = query.TagPatterns.Where(p => p.IsWildcard).Select(p => p.ConceptPrefix).ToArray();
-
-                cmd.Parameters.AddWithValue("p_exact_tags", exactTags.Length > 0 ? exactTags : DBNull.Value);
-                cmd.Parameters.AddWithValue("p_tag_prefixes", prefixes.Length > 0 ? prefixes : DBNull.Value);
-            }
-            else
-            {
-                // Legacy function with just exact tags
-                cmd.Parameters.AddWithValue("p_tags", query.Tags.Select(t => t.Value).ToArray());
-            }
-        }
+        PostgresBackendHelpers.AddStreamParameters(cmd, query, tenantId, afterPosition, limit);
 
         // The multi-tenant stream result set includes a tenant_id column.
         return await PostgresBackendHelpers.ReadEventsAsync(cmd, includeTenantId: true, tenantId: null, cancellationToken);
@@ -91,8 +71,14 @@ internal sealed class PostgresTenantEventStoreBackend(
         if (eventsList.Count == 0)
             return [];
 
+        // #1 Write-skew fix: per-tenant granularity is sufficient because DCB queries
+        // are tenant-scoped — appends to different tenants can never conflict — so
+        // cross-tenant append concurrency is preserved. Released on commit/rollback.
+        var lockKey = $"alberto-append:{_schemaName ?? ""}:{tenantId}";
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
-        return await AppendCore(connection, null, tenantId, eventsList, dcbQuery, expectedPosition, cancellationToken);
+        return await PostgresBackendHelpers.AppendCoreAsync(
+            connection, transaction: null, _schema, lockKey,
+            tenantId, eventsList, dcbQuery, expectedPosition, cancellationToken);
     }
 
     public async Task<long> GetLastPositionForTenant(
@@ -121,254 +107,11 @@ internal sealed class PostgresTenantEventStoreBackend(
         return result is long position ? position : 0;
     }
 
-    public async Task<IReadOnlyList<long>> GetPositionsGlobalAsync(
+    public Task<IReadOnlyList<long>> GetPositionsGlobalAsync(
         long afterPosition, int windowSize, CancellationToken cancellationToken = default)
-    {
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
-        await using var cmd = new NpgsqlCommand(
-            $"SELECT global_position FROM {_schema.Table("alberto_events")} " +
-            "WHERE global_position > @after AND global_position <= @ceiling ORDER BY global_position",
-            connection);
-        cmd.Parameters.AddWithValue("after", afterPosition);
-        cmd.Parameters.AddWithValue("ceiling", afterPosition + windowSize);
-        var positions = new List<long>();
-        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
-            positions.Add(reader.GetInt64(0));
-        return positions;
-    }
+        => PostgresBackendHelpers.GetPositionsAsync(_schema, _dataSource, afterPosition, windowSize, cancellationToken);
 
-    public async Task<long> GetStableHeadGlobalAsync(
+    public Task<long> GetStableHeadGlobalAsync(
         long afterPosition, CancellationToken cancellationToken = default)
-    {
-        if (!_enableStableHeadBarrier)
-            return long.MaxValue;
-
-        // Global (all-tenant) stable head — the subscription axis is global. Clamp
-        // the head just below the FIRST position after `afterPosition` that is not
-        // yet stable (committed but younger than the oldest running transaction per
-        // pg_snapshot_xmin), so it never advances past an in-flight append. Rows with
-        // NULL pg_xact_id predate migration 008 and are always stable. Ascending
-        // index scan from the head — stops at the first non-stable row.
-        //
-        // The ::TEXT::BIGINT double-cast is REQUIRED and must not be "simplified" to
-        // ::BIGINT: pg_snapshot_xmin returns xid8, and PostgreSQL has no direct
-        // xid8→bigint cast (fails at runtime with "cannot cast type xid8 to bigint").
-        // It is a single per-query STABLE scalar used as an index scan bound, so the
-        // text round-trip is evaluated once per call, not per row — negligible cost.
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
-        await using var cmd = new NpgsqlCommand(
-            $"SELECT global_position FROM {_schema.Table("alberto_events")} " +
-            "WHERE global_position > @after " +
-            "AND pg_xact_id IS NOT NULL " +
-            "AND pg_xact_id >= pg_snapshot_xmin(pg_current_snapshot())::TEXT::BIGINT " +
-            "ORDER BY global_position ASC LIMIT 1",
-            connection);
-        cmd.Parameters.AddWithValue("after", afterPosition);
-        var result = await cmd.ExecuteScalarAsync(cancellationToken);
-        return result is long firstNonStable ? firstNonStable - 1 : long.MaxValue;
-    }
-
-    private async Task<IReadOnlyCollection<IEventEnvelope>> AppendCore(
-        NpgsqlConnection connection,
-        NpgsqlTransaction? transaction,
-        string tenantId,
-        List<IEventToPersist> eventsList,
-        DcbQuery? dcbQuery,
-        long? expectedPosition,
-        CancellationToken cancellationToken)
-    {
-        var useWildcardFunction = dcbQuery?.HasWildcardPatterns == true;
-        var useAllTagsFunction = dcbQuery?.RequiresAllTags == true;
-        var useIntersect = dcbQuery?.IntersectsTypesAndTags == true;
-
-        // Resolve the append function name from the 3-flag matrix via the shared
-        // helper — same function-name set as single-tenant; multi-tenant variants
-        // accept an additional leading p_tenant_id parameter.
-        var functionName = PostgresBackendHelpers.ResolveAppendFunctionName(
-            useWildcard: useWildcardFunction,
-            useAllTags: useAllTagsFunction,
-            useIntersect: useIntersect);
-
-        var sql = useAllTagsFunction
-            ? $"SELECT * FROM {_schema.Function(functionName)}(@p_tenant_id, @p_events, @p_dcb_types, @p_dcb_all_tags, @p_expected_position)"
-            : useWildcardFunction
-                ? $"SELECT * FROM {_schema.Function(functionName)}(@p_tenant_id, @p_events, @p_dcb_types, @p_dcb_exact_tags, @p_dcb_tag_prefixes, @p_expected_position)"
-                : $"SELECT * FROM {_schema.Function(functionName)}(@p_tenant_id, @p_events, @p_dcb_types, @p_dcb_tags, @p_expected_position)";
-
-        // #1 Write-skew fix: serialize appends per (schema, tenant) with a
-        // transaction-scoped advisory lock so the DCB conflict-check inside the
-        // append function and the subsequent insert happen atomically. Per-tenant
-        // granularity is sufficient because DCB queries are tenant-scoped — appends
-        // to different tenants can never conflict — and preserves cross-tenant
-        // append concurrency. Released on commit/rollback.
-        NpgsqlTransaction? ownedTransaction =
-            transaction is null ? await connection.BeginTransactionAsync(cancellationToken) : null;
-        var effectiveTransaction = transaction ?? ownedTransaction!;
-
-        try
-        {
-            await PostgresEventStoreBackend.AcquireAppendLockAsync(
-                connection, effectiveTransaction, $"alberto-append:{_schemaName ?? ""}:{tenantId}", cancellationToken);
-
-            var results = await ExecuteAppendAsync(
-                sql, connection, effectiveTransaction, tenantId, eventsList, dcbQuery, expectedPosition,
-                useAllTagsFunction, useWildcardFunction, cancellationToken);
-
-            if (ownedTransaction is not null)
-                await ownedTransaction.CommitAsync(cancellationToken);
-
-            return results;
-        }
-        finally
-        {
-            if (ownedTransaction is not null)
-                await ownedTransaction.DisposeAsync();
-        }
-    }
-
-    private async Task<IReadOnlyCollection<IEventEnvelope>> ExecuteAppendAsync(
-        string sql,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        string tenantId,
-        List<IEventToPersist> eventsList,
-        DcbQuery? dcbQuery,
-        long? expectedPosition,
-        bool useAllTagsFunction,
-        bool useWildcardFunction,
-        CancellationToken cancellationToken)
-    {
-        await using var cmd = new NpgsqlCommand(sql, connection, transaction);
-
-        // BuildEventsJson uses Utf8JsonWriter.WriteRawValue so the caller-supplied
-        // event_data JSON is written verbatim — no JsonDocument.Parse / ArrayPool leak.
-        var eventsJson = PostgresBackendHelpers.BuildEventsJson(eventsList);
-
-        cmd.Parameters.AddWithValue("p_tenant_id", tenantId);
-        cmd.Parameters.Add(new NpgsqlParameter("p_events", NpgsqlDbType.Jsonb) { Value = eventsJson });
-
-        if (dcbQuery != null && expectedPosition.HasValue)
-        {
-            cmd.Parameters.AddWithValue("p_dcb_types",
-                dcbQuery.Types.Count > 0 ? dcbQuery.Types.Select(t => t.Id).ToArray() : DBNull.Value);
-
-            if (useAllTagsFunction)
-            {
-                cmd.Parameters.AddWithValue("p_dcb_all_tags",
-                    dcbQuery.Tags.Count > 0 ? dcbQuery.Tags.Select(t => t.Value).ToArray() : DBNull.Value);
-            }
-            else if (useWildcardFunction)
-            {
-                // v2 function: separate exact tags and prefixes
-                var exactTags = dcbQuery.TagPatterns.Where(p => p.IsExact).Select(p => p.Value).ToArray();
-                var prefixes = dcbQuery.TagPatterns.Where(p => p.IsWildcard).Select(p => p.ConceptPrefix).ToArray();
-
-                cmd.Parameters.AddWithValue("p_dcb_exact_tags", exactTags.Length > 0 ? exactTags : DBNull.Value);
-                cmd.Parameters.AddWithValue("p_dcb_tag_prefixes", prefixes.Length > 0 ? prefixes : DBNull.Value);
-            }
-            else
-            {
-                // Legacy function: just exact tags
-                cmd.Parameters.AddWithValue("p_dcb_tags",
-                    dcbQuery.Tags.Count > 0 ? dcbQuery.Tags.Select(t => t.Value).ToArray() : DBNull.Value);
-            }
-
-            cmd.Parameters.AddWithValue("p_expected_position", expectedPosition.Value);
-        }
-        else
-        {
-            cmd.Parameters.AddWithValue("p_dcb_types", DBNull.Value);
-
-            if (useAllTagsFunction)
-            {
-                cmd.Parameters.AddWithValue("p_dcb_all_tags", DBNull.Value);
-            }
-            else if (useWildcardFunction)
-            {
-                cmd.Parameters.AddWithValue("p_dcb_exact_tags", DBNull.Value);
-                cmd.Parameters.AddWithValue("p_dcb_tag_prefixes", DBNull.Value);
-            }
-            else
-            {
-                cmd.Parameters.AddWithValue("p_dcb_tags", DBNull.Value);
-            }
-
-            cmd.Parameters.AddWithValue("p_expected_position", DBNull.Value);
-        }
-
-        try
-        {
-            var results = new List<IEventEnvelope>();
-            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
-
-            // Resolve ordinals once per reader — not per row.
-            // The multi-tenant append result set does not include tenant_id; the
-            // tenant id is passed as tenantId and forwarded to ReadEvent as override.
-            var ord = new PostgresBackendHelpers.EventColumnOrdinals(reader, includeTenantId: false);
-            while (await reader.ReadAsync(cancellationToken))
-                results.Add(PostgresBackendHelpers.ReadEvent(reader, in ord, tenantId));
-
-            return results;
-        }
-        catch (PostgresException ex) when (ex.SqlState == "P0001" && ex.Message.Contains("DCB conflict"))
-        {
-            throw new DcbConflictException("DCB conflict detected: events matching the query exist after the expected position", ex);
-        }
-    }
-
-    private string BuildStreamQuery(DcbQuery query)
-    {
-        if (query.IsEmpty)
-        {
-            return $"SELECT * FROM {_schema.Function("alberto_read_all")}(@p_tenant_id, @p_after_position, @p_limit)";
-        }
-
-        if (query.HasTypesOnly)
-        {
-            return $"SELECT * FROM {_schema.Function("alberto_read_by_types")}(@p_tenant_id, @p_types, @p_after_position, @p_limit)";
-        }
-
-        if (query.RequiresAllTags)
-        {
-            if (query.HasTagsOnly)
-            {
-                return $"SELECT * FROM {_schema.Function("alberto_read_by_all_tags")}(@p_tenant_id, @p_tags, @p_after_position, @p_limit)";
-            }
-
-            if (query.IntersectsTypesAndTags)
-            {
-                return $"SELECT * FROM {_schema.Function("alberto_read_by_types_and_all_tags")}(@p_tenant_id, @p_types, @p_tags, @p_after_position, @p_limit)";
-            }
-
-            return $"SELECT * FROM {_schema.Function("alberto_read_by_types_or_all_tags")}(@p_tenant_id, @p_types, @p_tags, @p_after_position, @p_limit)";
-        }
-
-        if (query.HasWildcardPatterns)
-        {
-            if (query.HasTagsOnly)
-            {
-                return $"SELECT * FROM {_schema.Function("alberto_read_by_tag_patterns")}(@p_tenant_id, @p_exact_tags, @p_tag_prefixes, @p_after_position, @p_limit)";
-            }
-
-            if (query.IntersectsTypesAndTags)
-            {
-                return $"SELECT * FROM {_schema.Function("alberto_read_by_types_and_tag_patterns")}(@p_tenant_id, @p_types, @p_exact_tags, @p_tag_prefixes, @p_after_position, @p_limit)";
-            }
-
-            return $"SELECT * FROM {_schema.Function("alberto_read_by_types_or_tag_patterns")}(@p_tenant_id, @p_types, @p_exact_tags, @p_tag_prefixes, @p_after_position, @p_limit)";
-        }
-
-        if (query.HasTagsOnly)
-        {
-            return $"SELECT * FROM {_schema.Function("alberto_read_by_tags")}(@p_tenant_id, @p_tags, @p_after_position, @p_limit)";
-        }
-
-        if (query.IntersectsTypesAndTags)
-        {
-            return $"SELECT * FROM {_schema.Function("alberto_read_by_types_and_tags")}(@p_tenant_id, @p_types, @p_tags, @p_after_position, @p_limit)";
-        }
-
-        return $"SELECT * FROM {_schema.Function("alberto_read_by_types_or_tags")}(@p_tenant_id, @p_types, @p_tags, @p_after_position, @p_limit)";
-    }
+        => PostgresBackendHelpers.GetStableHeadAsync(_schema, _dataSource, _enableStableHeadBarrier, afterPosition, cancellationToken);
 }

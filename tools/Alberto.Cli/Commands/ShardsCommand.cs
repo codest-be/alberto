@@ -1,8 +1,6 @@
 using System.CommandLine;
-using Alberto.Cli.Output;
 using Alberto.Dcb.Postgres;
 using Npgsql;
-using Spectre.Console;
 
 namespace Alberto.Cli.Commands;
 
@@ -56,10 +54,10 @@ public static class ShardsCommand
 
         command.SetHandler(async (string? url, string? schema, string? module, bool json) =>
         {
-            IOutput output = json ? new JsonOutput() : new HumanOutput();
-
-            try
+            var session = new CliSession(json);
+            return await session.RunAsync(async () =>
             {
+                var output = session.Output;
                 var catalog = Open(url, schema, module);
                 await using var dataSource = catalog.DataSource;
 
@@ -87,7 +85,7 @@ public static class ShardsCommand
                             configured = declared.Contains(id, StringComparer.Ordinal),
                         }),
                     });
-                    return;
+                    return 0;
                 }
 
                 if (ids.Length == 0)
@@ -95,7 +93,7 @@ public static class ShardsCommand
                     output.Text(
                         "No shards. Nothing is declared in .alberto/config.json and no tenant is " +
                         "assigned to one.");
-                    return;
+                    return 0;
                 }
 
                 output.Table(
@@ -114,12 +112,9 @@ public static class ShardsCommand
                         $"Not declared in .alberto/config.json: {string.Join(", ", orphaned)}. " +
                         "Tenants assigned to them cannot be routed until the shards are configured.");
                 }
-            }
-            catch (Exception ex)
-            {
-                output.Error(ex.Message);
-                Environment.Exit(1);
-            }
+
+                return 0;
+            });
         }, urlOption, schemaOption, moduleOption, jsonOption);
 
         return command;
@@ -135,10 +130,10 @@ public static class ShardsCommand
 
         command.SetHandler(async (string tenant, string? url, string? schema, string? module, bool json) =>
         {
-            IOutput output = json ? new JsonOutput() : new HumanOutput();
-
-            try
+            var session = new CliSession(json);
+            return await session.RunAsync(async () =>
             {
+                var output = session.Output;
                 var catalog = Open(url, schema, module);
                 await using var dataSource = catalog.DataSource;
 
@@ -153,14 +148,8 @@ public static class ShardsCommand
 
                 // Non-zero for an unassigned tenant, so a script can branch on it without
                 // parsing the message.
-                if (shard is null)
-                    Environment.Exit(1);
-            }
-            catch (Exception ex)
-            {
-                output.Error(ex.Message);
-                Environment.Exit(1);
-            }
+                return shard is null ? 1 : 0;
+            });
         }, tenantArgument, urlOption, schemaOption, moduleOption, jsonOption);
 
         return command;
@@ -192,15 +181,15 @@ public static class ShardsCommand
         command.SetHandler(async (string tenant, string? shardId, bool yes, string? url, string? schema,
             string? module, bool json) =>
         {
-            IOutput output = json ? new JsonOutput() : new HumanOutput();
-
-            try
+            var session = new CliSession(json);
+            return await session.RunAsync(async () =>
             {
+                var output = session.Output;
+
                 if (string.IsNullOrWhiteSpace(shardId))
                 {
                     output.Error("--shard is required. Run 'alberto shards list' to see the shards.");
-                    Environment.Exit(1);
-                    return;
+                    return 1;
                 }
 
                 var declared = ShardResolver.DeclaredShardIds();
@@ -209,31 +198,16 @@ public static class ShardsCommand
                     output.Error(
                         $"No shard '{shardId}' is declared in .alberto/config.json. " +
                         $"Declared shards: {string.Join(", ", declared)}.");
-                    Environment.Exit(1);
-                    return;
+                    return 1;
                 }
 
-                if (!yes)
+                if (session.Confirm(yes,
+                    $"Put tenant '[bold]{tenant}[/]' in shard '[bold]{shardId}[/]'? " +
+                    "Its events stay in that database and cannot be moved from here.",
+                    "This assignment cannot be undone. Add --yes to confirm.\n" +
+                    $"  alberto shards assign {tenant} --shard {shardId} --yes") is { } confirmCode)
                 {
-                    if (!AnsiConsole.Profile.Capabilities.Interactive)
-                    {
-                        output.Error(
-                            "This assignment cannot be undone. Add --yes to confirm.\n" +
-                            $"  alberto shards assign {tenant} --shard {shardId} --yes");
-                        Environment.Exit(1);
-                        return;
-                    }
-
-                    var confirmed = AnsiConsole.Confirm(
-                        $"Put tenant '[bold]{tenant}[/]' in shard '[bold]{shardId}[/]'? " +
-                        "Its events stay in that database and cannot be moved from here.",
-                        defaultValue: false);
-
-                    if (!confirmed)
-                    {
-                        output.Text("Aborted.");
-                        return;
-                    }
+                    return confirmCode;
                 }
 
                 var catalog = Open(url, schema, module);
@@ -251,20 +225,16 @@ public static class ShardsCommand
                     output.Error(
                         $"Tenant '{tenant}' is already in shard '{assigned}'. Its events were written " +
                         "there and this command does not move them.");
-                    Environment.Exit(1);
-                    return;
+                    return 1;
                 }
 
                 if (json)
                     output.Json(new { module = catalog.ModuleKey, tenant, shard = assigned, requested = shardId, changed = true });
                 else
                     output.Text($"Tenant '{tenant}' is in shard '{assigned}'.");
-            }
-            catch (Exception ex)
-            {
-                output.Error(ex.Message);
-                Environment.Exit(1);
-            }
+
+                return 0;
+            });
         }, tenantArgument, shardOption, yesOption, urlOption, schemaOption, moduleOption, jsonOption);
 
         return command;

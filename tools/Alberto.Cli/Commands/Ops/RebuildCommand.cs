@@ -3,7 +3,6 @@ using Alberto.Cli.Output;
 using Alberto.Dcb.Postgres;
 using Alberto.Dcb.Subscriptions;
 using Npgsql;
-using Spectre.Console;
 
 namespace Alberto.Cli.Commands.Ops;
 
@@ -87,86 +86,89 @@ public static class RebuildCommand
         command.SetHandler(async (string id, string? projectionType, string? url, string? schema,
             bool dryRun, bool yes, bool json, string? shard, bool allShards) =>
         {
-            IOutput output = json ? new JsonOutput() : new HumanOutput();
-            if (Targets(output, () => ShardResolver.ResolveForMutation(shard, allShards, url, schema)) is not { } targets)
-                return;
-
-            await RunAsync(output, targets, async (admin, store, _) =>
+            var session = new CliSession(json);
+            return await session.RunAsync(async () =>
             {
-                var type = projectionType ?? id;
-                var current = await store.GetAsync(id, type);
-                var head = await admin.GetGlobalPositionAsync() ?? 0;
+                var output = session.Output;
+                var targets = session.MutationTargets(shard, allShards, url, schema);
 
-                if (current.IsRebuildInFlight)
+                return await RunAsync(output, targets, async (admin, store, _) =>
                 {
-                    output.Error(
-                        $"Processor '{id}' already has a rebuild in flight " +
-                        $"(version {current.RebuildingVersion}, status {Describe(current.Status)}). " +
-                        $"Promote or abort it first.");
-                    return 1;
-                }
+                    var type = projectionType ?? id;
+                    var current = await store.GetAsync(id, type);
+                    var head = await admin.GetGlobalPositionAsync() ?? 0;
 
-                if (dryRun)
-                {
+                    if (current.IsRebuildInFlight)
+                    {
+                        output.Error(
+                            $"Processor '{id}' already has a rebuild in flight " +
+                            $"(version {current.RebuildingVersion}, status {Describe(current.Status)}). " +
+                            $"Promote or abort it first.");
+                        return 1;
+                    }
+
+                    if (dryRun)
+                    {
+                        if (json)
+                        {
+                            output.Json(new
+                            {
+                                dryRun = true,
+                                action = "rebuild-start",
+                                processorId = id,
+                                projectionType = type,
+                                activeVersion = current.ActiveVersion,
+                                wouldRebuildIntoVersion = current.ActiveVersion + 1,
+                                targetPosition = head,
+                            });
+                        }
+                        else
+                        {
+                            output.Text(
+                                $"[Dry run] Would rebuild '{id}' into version {current.ActiveVersion + 1} " +
+                                $"(currently serving version {current.ActiveVersion}), replaying to position {head}.");
+                        }
+
+                        return 0;
+                    }
+
+                    // Asked once per database rather than once per run: the prompt states how many
+                    // events this shard will replay, and that number is different in each of them.
+                    if (session.Confirm(yes,
+                            $"[yellow]Start a rebuild of '[bold]{id}[/]'? " +
+                            $"It will replay {head} events into a shadow copy.[/]",
+                            $"This operation requires confirmation. Add --yes to confirm.\n  alberto ops rebuild start {id} --yes") is { } code)
+                    {
+                        return code;
+                    }
+
+                    var state = await store.StartAsync(id, type, head);
+
                     if (json)
                     {
                         output.Json(new
                         {
-                            dryRun = true,
                             action = "rebuild-start",
                             processorId = id,
                             projectionType = type,
-                            activeVersion = current.ActiveVersion,
-                            wouldRebuildIntoVersion = current.ActiveVersion + 1,
-                            targetPosition = head,
+                            activeVersion = state.ActiveVersion,
+                            rebuildingVersion = state.RebuildingVersion,
+                            targetPosition = state.TargetPosition,
                         });
                     }
                     else
                     {
                         output.Text(
-                            $"[Dry run] Would rebuild '{id}' into version {current.ActiveVersion + 1} " +
-                            $"(currently serving version {current.ActiveVersion}), replaying to position {head}.");
+                            $"Rebuild of '{id}' started into version {state.RebuildingVersion}, " +
+                            $"replaying to position {state.TargetPosition}.");
+                        output.Warning(
+                            "The replay runs in the application, not here. It needs a module configured with " +
+                            ".WithControlLoop(loop => loop.WithRebuilds()) — without one the rebuild will sit at " +
+                            "'rebuilding' forever. Watch it with: alberto ops rebuild status " + id);
                     }
 
                     return 0;
-                }
-
-                // Asked once per database rather than once per run: the prompt states how many
-                // events this shard will replay, and that number is different in each of them.
-                if (!Confirm(yes, output,
-                        $"[yellow]Start a rebuild of '[bold]{id}[/]'? " +
-                        $"It will replay {head} events into a shadow copy.[/]",
-                        $"alberto ops rebuild start {id} --yes"))
-                {
-                    return 0;
-                }
-
-                var state = await store.StartAsync(id, type, head);
-
-                if (json)
-                {
-                    output.Json(new
-                    {
-                        action = "rebuild-start",
-                        processorId = id,
-                        projectionType = type,
-                        activeVersion = state.ActiveVersion,
-                        rebuildingVersion = state.RebuildingVersion,
-                        targetPosition = state.TargetPosition,
-                    });
-                }
-                else
-                {
-                    output.Text(
-                        $"Rebuild of '{id}' started into version {state.RebuildingVersion}, " +
-                        $"replaying to position {state.TargetPosition}.");
-                    output.Warning(
-                        "The replay runs in the application, not here. It needs a module configured with " +
-                        ".WithControlLoop(loop => loop.WithRebuilds()) — without one the rebuild will sit at " +
-                        "'rebuilding' forever. Watch it with: alberto ops rebuild status " + id);
-                }
-
-                return 0;
+                });
             });
         }, idArgument, projectionTypeOption, urlOption, schemaOption, dryRunOption, yesOption, jsonOption,
            shardOption, allShardsOption);
@@ -201,82 +203,84 @@ public static class RebuildCommand
 
         command.SetHandler(async (string? id, string? url, string? schema, bool json, string? shard) =>
         {
-            IOutput output = json ? new JsonOutput() : new HumanOutput();
-            if (Targets(output, () => ShardResolver.ResolveForRead(shard, url, schema)) is not { } targets)
-                return;
-
-            var results = await ShardRun.ProbeAsync(targets, async (dataSource, target) =>
+            var session = new CliSession(json);
+            return await session.RunAsync(async () =>
             {
-                var admin = new PostgresAdminDataAccess(dataSource, target.Schema);
-                var store = new PostgresProjectionRebuildStore(dataSource, target.Schema);
+                var output = session.Output;
+                var targets = session.ReadTargets(shard, url, schema);
 
-                IReadOnlyList<ProjectionRebuildState> states = id is null
-                    ? await store.ListAsync()
-                    : [await store.GetAsync(id, id)];
-
-                // How far each shadow loop has got. A rebuild in flight without a checkpoint
-                // has not been picked up by any application yet, which is the single most
-                // common thing an operator needs to see here.
-                var rows = new List<RebuildRow>(states.Count);
-                foreach (var state in states)
+                var results = await ShardRun.ProbeAsync(targets, async (dataSource, target) =>
                 {
-                    long? replayed = null;
-                    if (state.IsRebuildInFlight)
+                    var admin = new PostgresAdminDataAccess(dataSource, target.Schema);
+                    var store = new PostgresProjectionRebuildStore(dataSource, target.Schema);
+
+                    IReadOnlyList<ProjectionRebuildState> states = id is null
+                        ? await store.ListAsync()
+                        : [await store.GetAsync(id, id)];
+
+                    // How far each shadow loop has got. A rebuild in flight without a checkpoint
+                    // has not been picked up by any application yet, which is the single most
+                    // common thing an operator needs to see here.
+                    var rows = new List<RebuildRow>(states.Count);
+                    foreach (var state in states)
                     {
-                        // The shadow checkpoint is keyed by the version being rebuilt, so this reads
-                        // the progress of *this* rebuild and never of one that came before it.
-                        var checkpoint = await admin.GetSingleCheckpointAsync(
-                            RebuildableProjection.ShadowProcessorId(
-                                state.ProcessorId, state.RebuildingVersion!.Value));
-                        replayed = checkpoint?.LastPosition;
+                        long? replayed = null;
+                        if (state.IsRebuildInFlight)
+                        {
+                            // The shadow checkpoint is keyed by the version being rebuilt, so this reads
+                            // the progress of *this* rebuild and never of one that came before it.
+                            var checkpoint = await admin.GetSingleCheckpointAsync(
+                                RebuildableProjection.ShadowProcessorId(
+                                    state.ProcessorId, state.RebuildingVersion!.Value));
+                            replayed = checkpoint?.LastPosition;
+                        }
+
+                        rows.Add(new RebuildRow(state, replayed));
                     }
 
-                    rows.Add(new RebuildRow(state, replayed));
+                    return (IReadOnlyList<RebuildRow>)rows;
+                });
+
+                var showShard = ShardRun.ShowsShard(targets);
+
+                if (json)
+                {
+                    output.Json(results
+                        .Where(r => r.Succeeded)
+                        .SelectMany(r => r.Value!.Select(row => new
+                        {
+                            shard = showShard ? r.Target.ShardId : null,
+                            processorId = row.State.ProcessorId,
+                            projectionType = row.State.ProjectionType,
+                            status = row.State.Status.ToString().ToLowerInvariant(),
+                            activeVersion = row.State.ActiveVersion,
+                            rebuildingVersion = row.State.RebuildingVersion,
+                            targetPosition = row.State.TargetPosition,
+                            replayedPosition = row.Replayed,
+                            startedAt = row.State.StartedAt,
+                            completedAt = row.State.CompletedAt,
+                        }))
+                        .ToList());
+                }
+                else
+                {
+                    ShardRun.Table(
+                        output, targets, results,
+                        ["Processor", "Status", "Active", "Rebuilding", "Progress", "Started"],
+                        row =>
+                        [
+                            row.State.ProcessorId,
+                            Describe(row.State.Status),
+                            row.State.ActiveVersion.ToString(),
+                            row.State.RebuildingVersion?.ToString() ?? "-",
+                            DescribeProgress(row.State, row.Replayed),
+                            row.State.StartedAt?.ToString("u") ?? "-",
+                        ],
+                        "No projection has been rebuilt.");
                 }
 
-                return (IReadOnlyList<RebuildRow>)rows;
+                return ShardRun.ReportFailures(output, results) ? 1 : 0;
             });
-
-            var showShard = ShardRun.ShowsShard(targets);
-
-            if (json)
-            {
-                output.Json(results
-                    .Where(r => r.Succeeded)
-                    .SelectMany(r => r.Value!.Select(row => new
-                    {
-                        shard = showShard ? r.Target.ShardId : null,
-                        processorId = row.State.ProcessorId,
-                        projectionType = row.State.ProjectionType,
-                        status = row.State.Status.ToString().ToLowerInvariant(),
-                        activeVersion = row.State.ActiveVersion,
-                        rebuildingVersion = row.State.RebuildingVersion,
-                        targetPosition = row.State.TargetPosition,
-                        replayedPosition = row.Replayed,
-                        startedAt = row.State.StartedAt,
-                        completedAt = row.State.CompletedAt,
-                    }))
-                    .ToList());
-            }
-            else
-            {
-                ShardRun.Table(
-                    output, targets, results,
-                    ["Processor", "Status", "Active", "Rebuilding", "Progress", "Started"],
-                    row =>
-                    [
-                        row.State.ProcessorId,
-                        Describe(row.State.Status),
-                        row.State.ActiveVersion.ToString(),
-                        row.State.RebuildingVersion?.ToString() ?? "-",
-                        DescribeProgress(row.State, row.Replayed),
-                        row.State.StartedAt?.ToString("u") ?? "-",
-                    ],
-                    "No projection has been rebuilt.");
-            }
-
-            if (ShardRun.ReportFailures(output, results))
-                Environment.Exit(1);
         }, idArgument, urlOption, schemaOption, jsonOption, shardOption);
 
         return command;
@@ -313,42 +317,45 @@ public static class RebuildCommand
         command.SetHandler(async (string id, string? url, string? schema, bool force, bool yes, bool json,
             string? shard, bool allShards) =>
         {
-            IOutput output = json ? new JsonOutput() : new HumanOutput();
-            if (Targets(output, () => ShardResolver.ResolveForMutation(shard, allShards, url, schema)) is not { } targets)
-                return;
-
-            var scope = ShardRun.Scope(targets);
-            var prompt = force
-                ? $"[yellow]Force-promote '[bold]{id}[/]'{scope} before it has finished replaying? " +
-                  "Readers will see an incomplete projection.[/]"
-                : $"[yellow]Promote the rebuilt version of '[bold]{id}[/]'{scope} and discard the current one?[/]";
-
-            if (!Confirm(yes, output, prompt, $"alberto ops rebuild promote {id} --yes"))
-                return;
-
-            await RunAsync(output, targets, async (_, store, _) =>
+            var session = new CliSession(json);
+            return await session.RunAsync(async () =>
             {
-                var outcome = await store.PromoteAsync(id, force);
+                var output = session.Output;
+                var targets = session.MutationTargets(shard, allShards, url, schema);
 
-                if (json)
+                var scope = ShardRun.Scope(targets);
+                var prompt = force
+                    ? $"[yellow]Force-promote '[bold]{id}[/]'{scope} before it has finished replaying? " +
+                      "Readers will see an incomplete projection.[/]"
+                    : $"[yellow]Promote the rebuilt version of '[bold]{id}[/]'{scope} and discard the current one?[/]";
+
+                if (session.Confirm(yes, prompt, $"This operation requires confirmation. Add --yes to confirm.\n  alberto ops rebuild promote {id} --yes") is { } code)
+                    return code;
+
+                return await RunAsync(output, targets, async (_, store, _) =>
                 {
-                    output.Json(new
+                    var outcome = await store.PromoteAsync(id, force);
+
+                    if (json)
                     {
-                        action = "rebuild-promote",
-                        processorId = id,
-                        activeVersion = outcome.State.ActiveVersion,
-                        discardedVersion = outcome.DiscardedVersion,
-                        forced = force,
-                    });
-                }
-                else
-                {
-                    output.Text(
-                        $"'{id}' now serves version {outcome.State.ActiveVersion}; " +
-                        $"version {outcome.DiscardedVersion} discarded.");
-                }
+                        output.Json(new
+                        {
+                            action = "rebuild-promote",
+                            processorId = id,
+                            activeVersion = outcome.State.ActiveVersion,
+                            discardedVersion = outcome.DiscardedVersion,
+                            forced = force,
+                        });
+                    }
+                    else
+                    {
+                        output.Text(
+                            $"'{id}' now serves version {outcome.State.ActiveVersion}; " +
+                            $"version {outcome.DiscardedVersion} discarded.");
+                    }
 
-                return 0;
+                    return 0;
+                });
             });
         }, idArgument, urlOption, schemaOption, forceOption, yesOption, jsonOption, shardOption, allShardsOption);
 
@@ -380,62 +387,47 @@ public static class RebuildCommand
         command.SetHandler(async (string id, string? url, string? schema, bool yes, bool json,
             string? shard, bool allShards) =>
         {
-            IOutput output = json ? new JsonOutput() : new HumanOutput();
-            if (Targets(output, () => ShardResolver.ResolveForMutation(shard, allShards, url, schema)) is not { } targets)
-                return;
-
-            if (!Confirm(yes, output,
-                    $"[yellow]Abandon the rebuild of '[bold]{id}[/]'{ShardRun.Scope(targets)} " +
-                    "and discard what it has replayed so far?[/]",
-                    $"alberto ops rebuild abort {id} --yes"))
+            var session = new CliSession(json);
+            return await session.RunAsync(async () =>
             {
-                return;
-            }
+                var output = session.Output;
+                var targets = session.MutationTargets(shard, allShards, url, schema);
 
-            await RunAsync(output, targets, async (_, store, _) =>
-            {
-                var outcome = await store.AbortAsync(id);
-
-                if (json)
+                if (session.Confirm(yes,
+                        $"[yellow]Abandon the rebuild of '[bold]{id}[/]'{ShardRun.Scope(targets)} " +
+                        "and discard what it has replayed so far?[/]",
+                        $"This operation requires confirmation. Add --yes to confirm.\n  alberto ops rebuild abort {id} --yes") is { } code)
                 {
-                    output.Json(new
+                    return code;
+                }
+
+                return await RunAsync(output, targets, async (_, store, _) =>
+                {
+                    var outcome = await store.AbortAsync(id);
+
+                    if (json)
                     {
-                        action = "rebuild-abort",
-                        processorId = id,
-                        activeVersion = outcome.State.ActiveVersion,
-                        discardedVersion = outcome.DiscardedVersion,
-                    });
-                }
-                else
-                {
-                    output.Text(
-                        $"Rebuild of '{id}' abandoned; version {outcome.DiscardedVersion} discarded. " +
-                        $"Still serving version {outcome.State.ActiveVersion}.");
-                }
+                        output.Json(new
+                        {
+                            action = "rebuild-abort",
+                            processorId = id,
+                            activeVersion = outcome.State.ActiveVersion,
+                            discardedVersion = outcome.DiscardedVersion,
+                        });
+                    }
+                    else
+                    {
+                        output.Text(
+                            $"Rebuild of '{id}' abandoned; version {outcome.DiscardedVersion} discarded. " +
+                            $"Still serving version {outcome.State.ActiveVersion}.");
+                    }
 
-                return 0;
+                    return 0;
+                });
             });
         }, idArgument, urlOption, schemaOption, yesOption, jsonOption, shardOption, allShardsOption);
 
         return command;
-    }
-
-    /// <summary>
-    /// The databases the verb runs against, or null when it could not tell and has already
-    /// reported why and set the exit code.
-    /// </summary>
-    private static IReadOnlyList<ShardTarget>? Targets(IOutput output, Func<IReadOnlyList<ShardTarget>> resolve)
-    {
-        try
-        {
-            return resolve();
-        }
-        catch (ShardSelectionException ex)
-        {
-            output.Error(ex.Message);
-            Environment.Exit(1);
-            return null;
-        }
     }
 
     /// <summary>
@@ -447,7 +439,7 @@ public static class RebuildCommand
     /// its own state machine, and an operator promoting across a fleet needs to know which of
     /// them moved rather than only where the run stopped.
     /// </remarks>
-    private static async Task RunAsync(
+    private static async Task<int> RunAsync(
         IOutput output,
         IReadOnlyList<ShardTarget> targets,
         Func<PostgresAdminDataAccess, IProjectionRebuildStore, ShardTarget, Task<int>> run)
@@ -483,31 +475,7 @@ public static class RebuildCommand
             }
         }
 
-        if (exitCode != 0)
-            Environment.Exit(exitCode);
-    }
-
-    /// <summary>
-    /// Asks before doing something destructive, and refuses to guess when there is nobody
-    /// to ask — a rebuild verb in a deploy script must be explicit about what it wants.
-    /// </summary>
-    private static bool Confirm(bool yes, IOutput output, string prompt, string howToSkip)
-    {
-        if (yes)
-            return true;
-
-        if (!AnsiConsole.Profile.Capabilities.Interactive)
-        {
-            output.Error($"This operation requires confirmation. Add --yes to confirm.\n  {howToSkip}");
-            Environment.Exit(1);
-            return false;
-        }
-
-        if (AnsiConsole.Confirm(prompt, defaultValue: false))
-            return true;
-
-        output.Text("Aborted.");
-        return false;
+        return exitCode;
     }
 
     private static string Describe(RebuildStatus status) => status switch

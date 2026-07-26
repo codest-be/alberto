@@ -29,10 +29,20 @@ public interface IFencedCheckpointStore : ICheckpointStore
 
 /// <summary>
 /// Client-facing interface for a checkpoint store that can be configured with
-/// lease-fencing parameters. Decouples the control loop from
-/// the concrete <see cref="CachingCheckpointStore"/> type so that wrapping the
-/// store cannot silently drop fencing, and the fence-violation callback is always wired.
+/// lease-fencing parameters and that supports multiple fence-violation subscribers.
+/// Decouples callers from the concrete <see cref="CachingCheckpointStore"/> type so
+/// that wrapping the store cannot silently drop fencing.
 /// </summary>
+/// <remarks>
+/// <para>
+/// Fence-violation handlers are registered additively via
+/// <see cref="SubscribeFenceViolation"/> rather than through a single settable property.
+/// This allows multiple callers (e.g. a per-loop cancellation registered by
+/// <see cref="ControlLoopAssembler"/> and a group-stop registered by the lease-aware group)
+/// to coexist without trampling each other. Subscriptions are process-lifetime; there is no
+/// unsubscribe — the store and its callers share the same lifetime.
+/// </para>
+/// </remarks>
 internal interface IFencableCheckpointStore
 {
     /// <summary>
@@ -42,8 +52,10 @@ internal interface IFencableCheckpointStore
     void SetFencingContext(FencingContext ctx);
 
     /// <summary>
-    /// Called with the processor ID when a fenced checkpoint write is rejected because
-    /// the lease has expired. The caller should stop processing for that processor.
+    /// Adds <paramref name="handler"/> to the set of callbacks invoked when a fenced
+    /// checkpoint write is rejected because the lease has expired.
+    /// The handler receives the processor ID of the fenced processor.
+    /// Multiple handlers may be registered; all are called on each violation.
     /// </summary>
-    Action<string>? OnFenceViolation { get; set; }
+    void SubscribeFenceViolation(Action<string> handler);
 }

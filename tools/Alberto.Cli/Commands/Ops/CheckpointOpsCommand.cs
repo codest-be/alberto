@@ -1,8 +1,6 @@
 using System.CommandLine;
-using Alberto.Cli.Output;
 using Alberto.Dcb.Postgres;
 using Npgsql;
-using Spectre.Console;
 
 namespace Alberto.Cli.Commands.Ops;
 
@@ -32,23 +30,18 @@ public static class CheckpointOpsCommand
             """);
 
         var idArgument = new Argument<string>("processor-id") { Description = "Processor ID" };
-        var urlOption = new Option<string?>("--url") { Description = "PostgreSQL connection string" };
-        var schemaOption = new Option<string?>("--schema") { Description = "Database schema name" };
-        var jsonOption = new Option<bool>("--json") { Description = "Output as JSON" };
-
         command.AddArgument(idArgument);
-        command.AddOption(urlOption);
-        command.AddOption(schemaOption);
-        command.AddOption(jsonOption);
+
+        var (urlOption, schemaOption, jsonOption) = CliOptions.AddConnectionOptions(command);
         var shardOption = ShardRun.AddReadOption(command);
 
         command.SetHandler(async (string id, string? url, string? schema, bool json, string? shard) =>
         {
-            IOutput output = json ? new JsonOutput() : new HumanOutput();
-
-            try
+            var session = new CliSession(json);
+            return await session.RunAsync(async () =>
             {
-                var targets = ShardResolver.ResolveForRead(shard, url, schema);
+                var output = session.Output;
+                var targets = session.ReadTargets(shard, url, schema);
                 var results = await ShardRun.CollectAsync(
                     targets,
                     async admin =>
@@ -108,14 +101,8 @@ public static class CheckpointOpsCommand
                     });
                 }
 
-                if (ShardRun.ReportFailures(output, results) || !found)
-                    Environment.Exit(1);
-            }
-            catch (Exception ex)
-            {
-                output.Error(ex.Message);
-                Environment.Exit(1);
-            }
+                return (ShardRun.ReportFailures(output, results) || !found) ? 1 : 0;
+            });
         }, idArgument, urlOption, schemaOption, jsonOption, shardOption);
 
         return command;
@@ -136,49 +123,31 @@ public static class CheckpointOpsCommand
             """);
 
         var idArgument = new Argument<string>("processor-id") { Description = "Processor ID" };
-        var urlOption = new Option<string?>("--url") { Description = "PostgreSQL connection string" };
-        var schemaOption = new Option<string?>("--schema") { Description = "Database schema name" };
+        command.AddArgument(idArgument);
+
+        var (urlOption, schemaOption, jsonOption) = CliOptions.AddConnectionOptions(command);
         var dryRunOption = new Option<bool>("--dry-run") { Description = "Show what would be reset without executing" };
         var yesOption = new Option<bool>("--yes") { Description = "Skip confirmation prompt" };
-        var jsonOption = new Option<bool>("--json") { Description = "Output as JSON" };
 
-        command.AddArgument(idArgument);
-        command.AddOption(urlOption);
-        command.AddOption(schemaOption);
         command.AddOption(dryRunOption);
         command.AddOption(yesOption);
-        command.AddOption(jsonOption);
         var (shardOption, allShardsOption) = ShardRun.AddMutationOptions(command);
 
         command.SetHandler(async (string id, string? url, string? schema, bool dryRun, bool yes, bool json, string? shard, bool allShards) =>
         {
-            IOutput output = json ? new JsonOutput() : new HumanOutput();
-
-            try
+            var session = new CliSession(json);
+            return await session.RunAsync(async () =>
             {
-                var targets = ShardResolver.ResolveForMutation(shard, allShards, url, schema);
+                var output = session.Output;
+                var targets = session.MutationTargets(shard, allShards, url, schema);
 
-                if (!dryRun && !yes)
+                // Asked once for the whole run, and it names the databases: an operator who
+                // typed --all-shards should see how many replays they are about to start.
+                if (!dryRun && session.Confirm(yes,
+                    $"[yellow]Reset checkpoint for processor '[bold]{id}[/]'{ShardRun.Scope(targets)}? This will trigger a full replay.[/]",
+                    $"Destructive operation requires confirmation. Add --yes to confirm.\n  alberto ops checkpoint reset {id} --yes") is { } confirmCode)
                 {
-                    if (!AnsiConsole.Profile.Capabilities.Interactive)
-                    {
-                        output.Error($"Destructive operation requires confirmation. Add --yes to confirm.\n  alberto ops checkpoint reset {id} --yes");
-                        Environment.Exit(1);
-                        return;
-                    }
-
-                    // Asked once for the whole run, and it names the databases: an operator who
-                    // typed --all-shards should see how many replays they are about to start.
-                    var scope = ShardRun.Scope(targets);
-                    var confirmed = AnsiConsole.Confirm(
-                        $"[yellow]Reset checkpoint for processor '[bold]{id}[/]'{scope}? This will trigger a full replay.[/]",
-                        defaultValue: false);
-
-                    if (!confirmed)
-                    {
-                        output.Text("Aborted.");
-                        return;
-                    }
+                    return confirmCode;
                 }
 
                 var failed = await ShardRun.ApplyAsync(output, targets, async (dataSource, target) =>
@@ -205,14 +174,8 @@ public static class CheckpointOpsCommand
                         output.Text($"Checkpoint for '{id}' has been reset (was at position {previousPosition?.ToString() ?? "none"}).");
                 });
 
-                if (failed)
-                    Environment.Exit(1);
-            }
-            catch (Exception ex)
-            {
-                output.Error(ex.Message);
-                Environment.Exit(1);
-            }
+                return failed ? 1 : 0;
+            });
         }, idArgument, urlOption, schemaOption, dryRunOption, yesOption, jsonOption, shardOption, allShardsOption);
 
         return command;
@@ -236,31 +199,29 @@ public static class CheckpointOpsCommand
 
         var idArgument = new Argument<string>("processor-id") { Description = "Processor ID" };
         var positionArgument = new Argument<long>("position") { Description = "Global position to set" };
-        var urlOption = new Option<string?>("--url") { Description = "PostgreSQL connection string" };
-        var schemaOption = new Option<string?>("--schema") { Description = "Database schema name" };
-        var dryRunOption = new Option<bool>("--dry-run") { Description = "Show what would change without executing" };
-        var yesOption = new Option<bool>("--yes") { Description = "Skip confirmation prompt" };
-        var jsonOption = new Option<bool>("--json") { Description = "Output as JSON" };
 
         command.AddArgument(idArgument);
         command.AddArgument(positionArgument);
-        command.AddOption(urlOption);
-        command.AddOption(schemaOption);
+
+        var (urlOption, schemaOption, jsonOption) = CliOptions.AddConnectionOptions(command);
+        var dryRunOption = new Option<bool>("--dry-run") { Description = "Show what would change without executing" };
+        var yesOption = new Option<bool>("--yes") { Description = "Skip confirmation prompt" };
+
         command.AddOption(dryRunOption);
         command.AddOption(yesOption);
-        command.AddOption(jsonOption);
         var shardOption = ShardRun.AddReadOption(command);
 
         command.SetHandler(async (string id, long position, string? url, string? schema, bool dryRun, bool yes, bool json, string? shard) =>
         {
-            IOutput output = json ? new JsonOutput() : new HumanOutput();
-
-            try
+            var session = new CliSession(json);
+            return await session.RunAsync(async () =>
             {
+                var output = session.Output;
+
                 // No --all-shards here, unlike every other mutation: each database numbers its own
                 // events, so one position applied to several of them would rewind each to an
                 // unrelated point. A sharded module must name the shard it means.
-                var targets = ShardResolver.ResolveForMutation(
+                var targets = session.MutationTargets(
                     shard, allShards: false, url, schema, supportsAllShards: false);
                 var target = targets[0];
 
@@ -276,7 +237,7 @@ public static class CheckpointOpsCommand
                         output.Json(new { dryRun = true, action = "set", shard = target.ShardId, processorId = id, previousPosition, newPosition = position });
                     else
                         output.Text($"[Dry run] Would set checkpoint for '{id}' from {previousPosition?.ToString() ?? "none"} to {position}.");
-                    return;
+                    return 0;
                 }
 
                 // Lease pre-flight: warn if the processor has active leases.
@@ -290,24 +251,11 @@ public static class CheckpointOpsCommand
                         "Rewinding a running processor risks data inconsistency. Stop the processor before rewinding.");
                 }
 
-                if (!yes)
+                if (session.Confirm(yes,
+                    $"Set checkpoint for '[bold]{id}[/]' to position [bold]{position}[/]{ShardRun.Scope(targets)}?",
+                    $"Destructive operation requires confirmation. Add --yes to confirm.\n  alberto ops checkpoint set {id} {position} --yes") is { } confirmCode)
                 {
-                    if (!AnsiConsole.Profile.Capabilities.Interactive)
-                    {
-                        output.Error($"Destructive operation requires confirmation. Add --yes to confirm.\n  alberto ops checkpoint set {id} {position} --yes");
-                        Environment.Exit(1);
-                        return;
-                    }
-
-                    var confirmed = AnsiConsole.Confirm(
-                        $"Set checkpoint for '[bold]{id}[/]' to position [bold]{position}[/]{ShardRun.Scope(targets)}?",
-                        defaultValue: false);
-
-                    if (!confirmed)
-                    {
-                        output.Text("Aborted.");
-                        return;
-                    }
+                    return confirmCode;
                 }
 
                 await checkpointStore.RewindAsync(id, position);
@@ -316,12 +264,9 @@ public static class CheckpointOpsCommand
                     output.Json(new { action = "set", shard = target.ShardId, processorId = id, previousPosition, newPosition = position });
                 else
                     output.Text($"Checkpoint for '{id}' set to position {position} (was {previousPosition?.ToString() ?? "none"}).");
-            }
-            catch (Exception ex)
-            {
-                output.Error(ex.Message);
-                Environment.Exit(1);
-            }
+
+                return 0;
+            });
         }, idArgument, positionArgument, urlOption, schemaOption, dryRunOption, yesOption, jsonOption, shardOption);
 
         return command;
@@ -357,27 +302,27 @@ public static class CheckpointOpsCommand
 
         command.SetHandler(async (string? module, string? from, string? to, string? url, string? schema, string? shard, bool allShards) =>
         {
-            IOutput output = new HumanOutput();
-
-            if (string.IsNullOrWhiteSpace(from))
+            // rename has no --json: it produces human-readable diagnostic output only.
+            var session = new CliSession(json: false);
+            return await session.RunAsync(async () =>
             {
-                output.Error("--from is required.");
-                Environment.Exit(1);
-                return;
-            }
+                var output = session.Output;
 
-            if (string.IsNullOrWhiteSpace(to))
-            {
-                output.Error("--to is required.");
-                Environment.Exit(1);
-                return;
-            }
+                if (string.IsNullOrWhiteSpace(from))
+                {
+                    output.Error("--from is required.");
+                    return 1;
+                }
 
-            try
-            {
+                if (string.IsNullOrWhiteSpace(to))
+                {
+                    output.Error("--to is required.");
+                    return 1;
+                }
+
                 // A renamed handler is renamed everywhere, so this is the one mutation an operator
                 // usually does want against every database at once.
-                var targets = ShardResolver.ResolveForMutation(shard, allShards, url, schema);
+                var targets = session.MutationTargets(shard, allShards, url, schema);
 
                 var failed = await ShardRun.ApplyAsync(output, targets, async (dataSource, target) =>
                 {
@@ -417,14 +362,8 @@ public static class CheckpointOpsCommand
                     }
                 });
 
-                if (failed)
-                    Environment.Exit(1);
-            }
-            catch (Exception ex)
-            {
-                output.Error(ex.Message);
-                Environment.Exit(1);
-            }
+                return failed ? 1 : 0;
+            });
         }, moduleOption, fromOption, toOption, urlOption, schemaOption, shardOption, allShardsOption);
 
         return command;
