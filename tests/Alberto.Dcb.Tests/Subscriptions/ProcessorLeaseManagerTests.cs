@@ -102,6 +102,9 @@ public sealed class ProcessorLeaseManagerTests(SingleTenantPostgresFixture fixtu
             consumerId, processorId, replica2, TestContext.Current.CancellationToken);
         Assert.Null(tooEarly);
 
+        // Wall-clock, deliberately: the lease expiry is evaluated by PostgreSQL's now(),
+        // which no client-side TimeProvider can move. Advancing a fake clock here would
+        // read as determinism that is not there.
         await Task.Delay(250, TestContext.Current.CancellationToken);
 
         var stolen = await leases.TryAcquireAsync(
@@ -130,6 +133,9 @@ public sealed class ProcessorLeaseManagerTests(SingleTenantPostgresFixture fixtu
 
         var expiryBefore = await ReadExpiryAsync(consumerId, mine);
 
+        // Wall-clock, deliberately: the renewal is stamped by PostgreSQL's now(), so the
+        // client must actually wait for real time to pass before renewing — otherwise the
+        // new expires_at would equal the old one and the assertion would be vacuous.
         await Task.Delay(50, TestContext.Current.CancellationToken);
 
         var renewed = await leases.RenewLeasesAsync(

@@ -7,14 +7,16 @@ namespace Alberto.Dcb.InMemory;
 /// In-memory implementation of dead letter storage.
 /// Useful for testing and development.
 /// </summary>
-public sealed class InMemoryDeadLetterStore : IDeadLetterStore
+/// <param name="timeProvider">Clock used to stamp <see cref="DeadLetterEntry.CreatedAt"/> when not supplied by the caller, and to drive claim-lease expiry. Defaults to <see cref="TimeProvider.System"/>.</param>
+public sealed class InMemoryDeadLetterStore(TimeProvider? timeProvider = null) : IDeadLetterStore
 {
     private readonly ConcurrentDictionary<Guid, DeadLetterEntry> _entries = new();
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
     /// <inheritdoc />
     public Task StoreAsync(DeadLetterEntry entry, CancellationToken ct = default)
     {
-        _entries[entry.Id] = entry;
+        _entries[entry.Id] = entry with { CreatedAt = entry.CreatedAt ?? _timeProvider.GetUtcNow().UtcDateTime };
         return Task.CompletedTask;
     }
 
@@ -90,7 +92,7 @@ public sealed class InMemoryDeadLetterStore : IDeadLetterStore
         if (leaseDuration <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(leaseDuration), "Lease duration must be positive.");
 
-        var now = DateTimeOffset.UtcNow;
+        var now = _timeProvider.GetUtcNow();
         var lease = now + leaseDuration;
 
         // Select-and-stamp under the dictionary's atomic per-key swap. Two

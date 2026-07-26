@@ -79,6 +79,12 @@ public sealed class ProjectionCatchUpTests
 
         var waiting = catchUp.WaitForProjectionAsync(Processor, TimeSpan.FromSeconds(10), ct);
 
+        // Timing guard: WaitForProjectionAsync must have called GetLastPositionAsync
+        // (HeadReads → 1) and entered its poll loop before the checkpoint is saved.
+        // Without this, a buggy implementation that re-reads the head on every poll tick
+        // instead of capturing it once upfront would see FirstHead already set on its
+        // first look, return with HeadReads == 1, and pass the assertion vacuously
+        // rather than verifying the snapshot-on-entry behaviour this test covers.
         await Task.Delay(50, ct);
         await checkpoints.SaveAsync(Processor, GrowingHeadBackend.FirstHead, ct);
 

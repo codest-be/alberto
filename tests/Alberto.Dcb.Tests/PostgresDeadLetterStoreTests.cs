@@ -69,6 +69,9 @@ public sealed class PostgresDeadLetterStoreTests(SingleTenantPostgresFixture fix
             ct: TestContext.Current.CancellationToken);
         Assert.Single(first);
 
+        // Wall-clock, deliberately: the claim expiry is evaluated by PostgreSQL's now(),
+        // which no client-side TimeProvider can move. Advancing a fake clock here would
+        // read as determinism that is not there.
         await Task.Delay(50, TestContext.Current.CancellationToken);
 
         // Lease has expired — a different worker should be able to re-claim.
@@ -131,6 +134,9 @@ public sealed class PostgresDeadLetterStoreTests(SingleTenantPostgresFixture fix
             claimedBy: "stale-worker",
             ct: ct));
 
+        // Wall-clock, deliberately: the claim expiry is evaluated by PostgreSQL's now(),
+        // which no client-side TimeProvider can move. Advancing a fake clock here would
+        // read as determinism that is not there.
         await Task.Delay(50, ct);
 
         var current = Assert.Single(await deadLetterStore.ClaimRetryRequestedAsync(

@@ -2,6 +2,7 @@ using Alberto.Dcb.InMemory;
 using Alberto.Dcb.Subscriptions;
 using Alberto.Dcb.Tenancy;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
 namespace Alberto.Dcb.Tests.Subscriptions;
@@ -104,6 +105,53 @@ public sealed class DeadLetterRetryLoopBehaviorTests
 
         public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
             => throw new InvalidOperationException("Simulated dispatch failure");
+    }
+
+    /// <summary>
+    /// Decorator over <see cref="InMemoryDeadLetterStore"/> that signals <see cref="WhenPolled"/>
+    /// the first time <see cref="ClaimRetryRequestedAsync"/> is called. Tests can await this to
+    /// confirm the background loop has completed at least one full poll cycle before asserting.
+    /// Uses composition (not inheritance) for the same reason as <see cref="TrackingDeadLetterStore"/>.
+    /// </summary>
+    private sealed class PollSignalingDeadLetterStore : IDeadLetterStore
+    {
+        private readonly InMemoryDeadLetterStore _inner = new();
+        private readonly TaskCompletionSource _pollTcs =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        /// <summary>Completes when the first <see cref="ClaimRetryRequestedAsync"/> call returns.</summary>
+        public Task WhenPolled => _pollTcs.Task;
+
+        public Task StoreAsync(DeadLetterEntry entry, CancellationToken ct = default)
+            => _inner.StoreAsync(entry, ct);
+
+        public Task<IReadOnlyList<DeadLetterEntry>> GetAsync(
+            string processorId, string? tenantId = null, int limit = 100, CancellationToken ct = default)
+            => _inner.GetAsync(processorId, tenantId, limit, ct);
+
+        public Task<int> CountAsync(string processorId, CancellationToken ct = default)
+            => _inner.CountAsync(processorId, ct);
+
+        public Task<bool> CompleteRetryAsync(DeadLetterClaim claim, CancellationToken ct = default)
+            => _inner.CompleteRetryAsync(claim, ct);
+
+        public Task ClearAsync(string processorId, CancellationToken ct = default)
+            => _inner.ClearAsync(processorId, ct);
+
+        public Task MarkForRetryAsync(string processorId, CancellationToken ct = default)
+            => _inner.MarkForRetryAsync(processorId, ct);
+
+        public Task<IReadOnlyList<DeadLetterClaim>> ClaimRetryRequestedAsync(
+            string processorId, int batchSize, TimeSpan leaseDuration,
+            string claimedBy, CancellationToken ct = default)
+        {
+            var result = _inner.ClaimRetryRequestedAsync(processorId, batchSize, leaseDuration, claimedBy, ct);
+            _pollTcs.TrySetResult();
+            return result;
+        }
+
+        public Task<bool> AbandonRetryAsync(DeadLetterClaim claim, CancellationToken ct = default)
+            => _inner.AbandonRetryAsync(claim, ct);
     }
 
     /// <summary>
@@ -483,28 +531,66 @@ public sealed class DeadLetterRetryLoopBehaviorTests
 
     // ── no-op when retry not requested ───────────────────────────────────────
 
+    // ── clock seam: CreatedAt stamped from injected TimeProvider ─────────────
+
+    [Fact]
+    public async Task DeadLetterEntry_StampsCreatedAt_FromTheInjectedClock()
+    {
+        var time = new FakeTimeProvider();
+        time.SetUtcNow(new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero));
+        var store = new InMemoryDeadLetterStore(time);
+
+        await store.StoreAsync(
+            new DeadLetterEntry(
+                Id: Guid.NewGuid(),
+                ProcessorId: "proc-1",
+                EventId: Guid.NewGuid(),
+                EventType: "order-created",
+                EventData: "{}",
+                ErrorMessage: "boom",
+                StackTrace: null,
+                AttemptCount: 1,
+                FailedAt: DateTimeOffset.UtcNow,
+                GlobalPosition: 1),
+            TestContext.Current.CancellationToken);
+
+        var entries = await store.GetAsync("proc-1", ct: TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc),
+            Assert.Single(entries).CreatedAt!.Value);
+    }
+
     [Fact]
     public async Task EntryWithoutRetryRequested_IsNeverClaimed_OrDispatched()
     {
-        // Arrange — entry is NOT marked for retry; the loop should ignore it
-        var store = new InMemoryDeadLetterStore();
+        // Arrange — entry is NOT marked for retry; the loop should skip it
+        var store = new PollSignalingDeadLetterStore();
         var processor = new CapturingProcessor("proc-norequested");
         var entry = MakeEntry("proc-norequested", retryRequested: false);
         await store.StoreAsync(entry, TestContext.Current.CancellationToken);
 
-        // Short polling interval so the loop has multiple poll opportunities within the test window.
+        // FakeTimeProvider holds the post-poll Task.Delay indefinitely (until cancelled),
+        // so no real wall-clock sleep occurs and no second poll fires before we dispose.
+        FakeTimeProvider time = new();
         var loop = new DeadLetterRetryLoop(
             processor,
             store,
-            pollingInterval: TimeSpan.FromMilliseconds(50));
+            pollingInterval: TimeSpan.FromMinutes(1),
+            timeProvider: time);
 
-        // Act — run briefly then stop
+        // Act — start, then wait until the background loop has completed at least one real
+        // poll cycle. WhenPolled completes only after ClaimRetryRequestedAsync returns, which
+        // means the loop has asked the store for claimable entries and the store returned none
+        // (the entry's RetryRequested flag is false, so the store's filter excludes it).
+        // Only then can the Assert.Empty below distinguish "loop ran and found nothing" from
+        // "loop never ran". After WhenPolled fires the loop is sitting in Task.Delay with the
+        // fake clock frozen; DisposeAsync cancels it without any real wait.
         await loop.StartAsync(TestContext.Current.CancellationToken);
-        // Allow several poll cycles (50 ms each) without triggering a positive result
-        await Task.Delay(TimeSpan.FromMilliseconds(250), TestContext.Current.CancellationToken);
+        await store.WhenPolled.WaitAsync(TimeSpan.FromSeconds(5));
         await loop.DisposeAsync();
 
-        // Assert — processor received nothing
+        // Assert — processor received nothing (store returned no claimable entries)
         Assert.Empty(processor.Processed);
 
         // Assert — entry still present and unchanged

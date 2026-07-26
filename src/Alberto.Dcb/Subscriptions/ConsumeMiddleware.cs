@@ -21,11 +21,17 @@ public static class ConsumeMiddlewares
     /// single-event tail: marking <see cref="ConsumeEventContext.DeadLettered"/>
     /// and writing the <see cref="DeadLetterEntry"/> for the envelope.
     /// </summary>
+    /// <param name="retry">Retry policy (max attempts, backoff, dead-letter flag).</param>
+    /// <param name="classifier">Determines whether a given exception is transient or permanent.</param>
+    /// <param name="deadLetterStore">Store for exhausted events. Null disables dead-lettering.</param>
+    /// <param name="timeProvider">Clock used to stamp <see cref="DeadLetterEntry.FailedAt"/>. Defaults to <see cref="TimeProvider.System"/>.</param>
     public static ConsumeMiddleware RetryAndDeadLetter(
         RetryOptions retry,
         IErrorClassifier classifier,
-        IDeadLetterStore? deadLetterStore)
+        IDeadLetterStore? deadLetterStore,
+        TimeProvider? timeProvider = null)
     {
+        var clock = timeProvider ?? TimeProvider.System;
         return async (context, next) =>
         {
             var lastError = await RetryAndDeadLetterCore.ExecuteAsync(
@@ -52,7 +58,7 @@ public static class ConsumeMiddlewares
                     ErrorMessage: lastError.Message,
                     StackTrace: lastError.StackTrace,
                     AttemptCount: context.Attempt,
-                    FailedAt: DateTimeOffset.UtcNow,
+                    FailedAt: clock.GetUtcNow(),
                     GlobalPosition: context.Envelope.GlobalPosition),
                     context.CancellationToken);
             }

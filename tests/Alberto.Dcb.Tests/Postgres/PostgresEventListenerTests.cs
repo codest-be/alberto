@@ -133,8 +133,10 @@ public sealed class PostgresEventListenerTests : IAsyncLifetime
             // Wait for the expected NOTIFY.
             await signal.WaitOneAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
 
-            // Allow a small window for any extra NOTIFYs to arrive — if the old FOR EACH ROW
-            // trigger were still in place, batchSize additional calls would appear here.
+            // Wall-clock, deliberately: this waits for any stray NOTIFY messages to arrive
+            // over the PostgreSQL wire — a client-side TimeProvider cannot move the database
+            // clock or drain the socket. Advancing a fake clock here would read as determinism
+            // that is not there.
             await Task.Delay(TimeSpan.FromMilliseconds(300), TestContext.Current.CancellationToken);
 
             Assert.Equal(1, signal.Count);

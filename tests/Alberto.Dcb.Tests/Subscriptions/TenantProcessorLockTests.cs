@@ -39,7 +39,8 @@ public class TenantProcessorLockTests(PostgresFixture fixture) : IClassFixture<P
         var lease1 = await lockManager.TryAcquireForTenantAsync(consumerId, tenantId, replicaId, TestContext.Current.CancellationToken);
         Assert.NotNull(lease1);
 
-        // Wait a bit
+        // Wall-clock, deliberately: the renewal timestamp is written by PostgreSQL's now(),
+        // so the client must wait for real time to pass to verify acquired_at advances.
         await Task.Delay(10, TestContext.Current.CancellationToken);
 
         // Second acquire same tenant by same replica should renew
@@ -155,7 +156,9 @@ public class TenantProcessorLockTests(PostgresFixture fixture) : IClassFixture<P
         var lease2 = await lockManager.TryAcquireForTenantAsync(consumerId, tenantId, replica2, TestContext.Current.CancellationToken);
         Assert.Null(lease2);
 
-        // Wait for lease to expire
+        // Wall-clock, deliberately: the lease expiry is evaluated by PostgreSQL's now(),
+        // which no client-side TimeProvider can move. Advancing a fake clock here would
+        // read as determinism that is not there.
         await Task.Delay(150, TestContext.Current.CancellationToken);
 
         // Now second replica should succeed
@@ -180,7 +183,9 @@ public class TenantProcessorLockTests(PostgresFixture fixture) : IClassFixture<P
         Assert.NotNull(lease);
         var originalExpiry = lease.ExpiresAt;
 
-        // Wait a bit
+        // Wall-clock, deliberately: the renewed expires_at is written by PostgreSQL's now(),
+        // so the client must wait for real time to pass before renewing — otherwise the
+        // new expires_at would equal the old one and the assertion would be vacuous.
         await Task.Delay(50, TestContext.Current.CancellationToken);
 
         // Renew
