@@ -65,8 +65,8 @@ public readonly partial struct EventTag : IEquatable<EventTag>
 
     /// <summary>
     /// Private non-validating constructor. Callers MUST guarantee that concept and id
-    /// are already valid (e.g., data read from the database or decomposed from a TagPattern
-    /// that was already validated).
+    /// are already valid (e.g., data read from the database, or split from a value that was
+    /// already validated).
     /// </summary>
     private EventTag(string concept, string id, string precomputedValue)
     {

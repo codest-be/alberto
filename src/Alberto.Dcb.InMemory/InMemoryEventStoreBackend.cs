@@ -45,7 +45,7 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
                     ? CollectTypeMatches(query, afterPosition)
                     : null;
 
-                var tagMatches = query.TagPatterns.Count > 0
+                var tagMatches = query.Tags.Count > 0
                     ? CollectTagMatches(query, afterPosition)
                     : null;
 
@@ -92,9 +92,9 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
         if (query.RequiresAllTags)
         {
             IEnumerable<long>? intersected = null;
-            foreach (var pattern in query.TagPatterns)
+            foreach (var tag in query.Tags)
             {
-                if (!_tagIndex.TryGetValue(pattern.Value, out var positions))
+                if (!_tagIndex.TryGetValue(tag.Value, out var positions))
                 {
                     intersected = [];
                     break;
@@ -115,24 +115,12 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
             return matches;
         }
 
-        foreach (var pattern in query.TagPatterns)
+        foreach (var tag in query.Tags)
         {
-            if (pattern.IsExact)
+            if (_tagIndex.TryGetValue(tag.Value, out var positions))
             {
-                if (_tagIndex.TryGetValue(pattern.Value, out var positions))
-                {
-                    foreach (var pos in positions.Where(p => p > afterPosition))
-                        matches.Add(pos);
-                }
-            }
-            else
-            {
-                var prefix = pattern.ConceptPrefix;
-                foreach (var kvp in _tagIndex.Where(k => k.Key.StartsWith(prefix, StringComparison.Ordinal)))
-                {
-                    foreach (var pos in kvp.Value.Where(p => p > afterPosition))
-                        matches.Add(pos);
-                }
+                foreach (var pos in positions.Where(p => p > afterPosition))
+                    matches.Add(pos);
             }
         }
 
@@ -271,7 +259,7 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
             ? CollectTypeMatches(query, expectedPosition)
             : null;
 
-        var tagMatches = query.TagPatterns.Count > 0
+        var tagMatches = query.Tags.Count > 0
             ? CollectTagMatches(query, expectedPosition)
             : null;
 

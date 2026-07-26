@@ -16,7 +16,7 @@ namespace Alberto.Dcb.Benchmarks.Benchmarks;
 ///   SQL-6   — types-or-tags query driving from events table with double LEFT JOIN
 ///   PERF-3  — GetOrdinal by name per column per row on the Postgres reader
 ///   PERF-4  — EventTag.Parse on every row for already-valid DB data
-///   PERF-8/9 — DcbQuery.Tags / WildcardPatterns recomputing LINQ per access
+///   PERF-8/9 — DcbQuery.Tags recomputing LINQ per access
 ///
 /// The InMemory backend mirrors the algorithmic structure of the Postgres backend
 /// (inverted index per type, inverted index per tag, then position-set intersection/union),
@@ -88,7 +88,7 @@ public class ReadBenchmarks
             ]);
         }
 
-        // Build queries once: avoids per-invocation LINQ + TagPattern construction.
+        // Build queries once: avoids per-invocation LINQ + EventTag construction.
         _byTypeQuery = DcbQuery.ByTypes("order-placed");
 
         _byTagQuery = DcbQuery.ByTags(EventTag.FromStorage("order", "42"));

@@ -76,7 +76,6 @@ A `DcbQuery` selects events along two axes — type and tag — and says how the
 DcbQuery.ByTypes("order-placed", "order-cancelled");   // either type, any tag
 DcbQuery.ByTags(new EventTag("order", id));            // ANY of these tags
 DcbQuery.ByAllTags(tagA, tagB);                        // ALL of these tags
-DcbQuery.ByTagPatterns("order:*");                     // every event tagged with any order
 DcbQuery.For("order", orderId);                        // shorthand for one exact tag
 ```
 
@@ -95,9 +94,12 @@ DcbQuery.For("order", orderId).WithType<OrderPlaced>();
 DcbQuery.For("order", orderId).WithType<OrderPlaced>().AsUnion();
 ```
 
-Wildcards are prefix-only (`order:*`) and are **rejected** when all tags must match — an AND of
-wildcards is not a boundary anyone can reason about, so `ByAllTags` with a wildcard throws
-`ArgumentException` rather than quietly doing something surprising.
+Tags match exactly, on the whole `concept:id` pair. There is deliberately **no** way to query a
+concept as a whole — "every event tagged with any order" is not a query this store supports. A
+boundary that wide serialises every order against every other, and the only way to answer it
+quickly was an index on every tag row ever written, paid for on every append by everyone. A query
+is always scoped to the entities it names. `order:*` is not a wildcard; it is a tag with an id of
+`*`, which is not a legal id, so the DSL rejects it.
 
 ### `ByTags` vs `ByAllTags` is a contention decision
 
