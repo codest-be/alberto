@@ -57,6 +57,24 @@ internal static class ControlLoopRegistration
         services.AddSingleton<IHostedService>(sp =>
             sp.GetRequiredKeyedService<EventStoreHead>(moduleKey));
 
+        // Read-your-writes: wait for a processor instead of sleeping for a guess.
+        services.AddKeyedSingleton<ProjectionCatchUp>(moduleKey, (sp, _) =>
+        {
+            var options = Options(sp, moduleKey);
+
+            // A wait that expires before the loop has had a chance to poll would report a
+            // healthy processor as stuck, so the default floor is a few polls rather than a
+            // flat five seconds a slow-polling module would trip over.
+            var defaultTimeout = Max(TimeSpan.FromSeconds(5), options.PollingInterval * 3);
+
+            return new ProjectionCatchUp(
+                Backend(sp, moduleKey),
+                sp.GetRequiredKeyedService<ICheckpointStore>(moduleKey),
+                defaultTimeout);
+        });
+
+        static TimeSpan Max(TimeSpan left, TimeSpan right) => left > right ? left : right;
+
         // One ControlLoop per registered IEventProcessor.
         services.AddSingleton<IHostedService>(sp =>
         {
