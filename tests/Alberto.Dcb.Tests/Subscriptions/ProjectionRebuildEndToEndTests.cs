@@ -77,10 +77,38 @@ public sealed class ProjectionRebuildHostFixture(PostgresCluster cluster)
 
     public ServiceProvider Services { get; private set; } = null!;
 
+    /// <summary>
+    /// The coordinator's clock, frozen by default so the sweep's grace-period gate never
+    /// fires until a test explicitly advances time. Initialised ten minutes behind wall
+    /// clock: <c>CompletedAt</c> comes from the database (≈ real time), and anything ten
+    /// minutes earlier is safely inside a 200 ms grace period.
+    /// </summary>
+    public ManualTimeProvider TimeProvider { get; } = new(DateTimeOffset.UtcNow - TimeSpan.FromMinutes(10));
+
+    /// <summary>
+    /// A <see cref="System.TimeProvider"/> whose clock can be set to any value, forward or
+    /// backward. <see cref="Microsoft.Extensions.Time.Testing.FakeTimeProvider"/> enforces
+    /// monotonicity, which makes it impossible to restore the "grace period held" state
+    /// after an advance — exactly the lifecycle these tests need.
+    /// </summary>
+    public sealed class ManualTimeProvider(DateTimeOffset initial) : TimeProvider
+    {
+        private long _utcNowTicks = initial.UtcTicks;
+
+        /// <inheritdoc/>
+        public override DateTimeOffset GetUtcNow()
+            => new(Volatile.Read(ref _utcNowTicks), TimeSpan.Zero);
+
+        /// <summary>Sets the clock to an arbitrary value, including backwards.</summary>
+        public void SetUtcNow(DateTimeOffset value)
+            => Volatile.Write(ref _utcNowTicks, value.UtcTicks);
+    }
+
     protected override async ValueTask OnInitializedAsync()
     {
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddSingleton<TimeProvider>(TimeProvider);
         services.AddAlberto(ModuleKey, builder =>
         {
             builder.WithPostgres(o => o with
@@ -220,7 +248,9 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
         var afterPromotion = await ReadAsync(promoted.ActiveVersion, player, ct);
         afterPromotion!.Points.Should().Be(7, "the rebuild replayed the log rather than copying the bad state");
 
-        await WaitUntilAsync(
+        // Advance the coordinator's clock well past the grace period so the sweep can reclaim,
+        // wrapped in try/finally so a failure cannot leak an advanced clock into later tests.
+        await WithClockAdvancedPastGracePeriodAsync(
             async () => await ReadAsync(versionBefore, player, ct) is null,
             "the sweep to reclaim the superseded version once its grace period has elapsed", ct);
     }
@@ -262,14 +292,17 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
             },
             "the rebuild to be promoted", ct);
 
-        // The promotion has happened and the reader is still holding the old number.
+        // The coordinator's clock is frozen behind wall time, so the sweep's grace-period
+        // gate holds: the superseded version's rows are guaranteed intact regardless of how
+        // long the test took to detect the promotion.
         (await ReadAsync(resolvedVersion, player, ct))
             .Should().NotBeNull("a version cannot be deleted while readers may still be holding it")
             .And.BeEquivalentTo(new Totals { Points = 5 },
                 "and what it holds is the complete old projection, not a half-deleted one");
 
-        // Only once the grace period is up does the version go.
-        await WaitUntilAsync(
+        // Advance the coordinator's clock well past the grace period so the sweep can reclaim,
+        // wrapped in try/finally so a failure cannot leak an advanced clock into later tests.
+        await WithClockAdvancedPastGracePeriodAsync(
             async () => await ReadAsync(resolvedVersion, player, ct) is null,
             "the sweep to reclaim the superseded version", ct);
     }
@@ -351,12 +384,23 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
 
         (await ReadAsync(started.ActiveVersion, player, ct))!.Points.Should().Be(8);
 
-        await WaitUntilAsync(
-            async () => await ReadAsync(abandonedVersion, player, ct) is null,
-            "the sweep to reclaim the abandoned version once its grace period has elapsed", ct);
+        // Advance the coordinator's clock well past the grace period so the sweep can reclaim.
+        // The "live version undisturbed" assertion runs while advanced because it depends on the
+        // sweep having completed; try/finally ensures the clock is restored even on failure.
+        fixture.TimeProvider.SetUtcNow(DateTimeOffset.UtcNow + TimeSpan.FromMinutes(10));
+        try
+        {
+            await WaitUntilAsync(
+                async () => await ReadAsync(abandonedVersion, player, ct) is null,
+                "the sweep to reclaim the abandoned version once its grace period has elapsed", ct);
 
-        (await ReadAsync(started.ActiveVersion, player, ct))!.Points.Should().Be(
-            8, "reclaiming the abandoned version must not disturb the live one");
+            (await ReadAsync(started.ActiveVersion, player, ct))!.Points.Should().Be(
+                8, "reclaiming the abandoned version must not disturb the live one");
+        }
+        finally
+        {
+            fixture.TimeProvider.SetUtcNow(DateTimeOffset.UtcNow - TimeSpan.FromMinutes(10));
+        }
     }
 
     /// <summary>
@@ -405,6 +449,25 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// Advances the coordinator's clock past the grace period, waits for <paramref name="condition"/>,
+    /// and restores the clock — in a <c>try/finally</c> so a mid-assertion failure cannot leak
+    /// an advanced clock into the next test.
+    /// </summary>
+    private async Task WithClockAdvancedPastGracePeriodAsync(
+        Func<Task<bool>> condition, string what, CancellationToken ct)
+    {
+        fixture.TimeProvider.SetUtcNow(DateTimeOffset.UtcNow + TimeSpan.FromMinutes(10));
+        try
+        {
+            await WaitUntilAsync(condition, what, ct);
+        }
+        finally
+        {
+            fixture.TimeProvider.SetUtcNow(DateTimeOffset.UtcNow - TimeSpan.FromMinutes(10));
+        }
+    }
 
     private static string NewPlayer() => $"p-{Guid.NewGuid():N}";
 
