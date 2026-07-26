@@ -128,7 +128,7 @@ public sealed class DeadLetterRetryLoop(
                     try
                     {
                         // Reconstruct the event envelope from dead letter data
-                        var envelope = entry.ToEnvelope();
+                        var envelope = entry.ToEnvelope(_timeProvider);
 
                         // Dispatch through full middleware chain (retry policy applies). The
                         // built-in RetryAndDeadLetter middleware swallows non-cancellation failures
@@ -291,8 +291,11 @@ internal static class DeadLetterEntryExtensions
     /// <summary>
     /// Reconstructs an <see cref="EventEnvelope"/> from a dead letter entry for reprocessing.
     /// </summary>
-    internal static EventEnvelope ToEnvelope(this DeadLetterEntry entry)
+    /// <param name="entry">The dead letter entry to reconstruct.</param>
+    /// <param name="timeProvider">Clock used to fill <see cref="EventEnvelope.CreatedAt"/> when the entry's <see cref="DeadLetterEntry.CreatedAt"/> is null. Defaults to <see cref="TimeProvider.System"/>.</param>
+    internal static EventEnvelope ToEnvelope(this DeadLetterEntry entry, TimeProvider? timeProvider = null)
     {
+        var clock = timeProvider ?? TimeProvider.System;
         // Parse tags from "concept:id" format
         var tags = new List<EventTag>();
         if (entry.Tags != null)
@@ -319,7 +322,7 @@ internal static class DeadLetterEntryExtensions
             Tags = tags,
             EventData = entry.EventData,
             Metadata = entry.Metadata ?? new Dictionary<string, string>(),
-            CreatedAt = entry.CreatedAt ?? DateTime.UtcNow,
+            CreatedAt = entry.CreatedAt ?? clock.GetUtcNow().UtcDateTime,
         };
     }
 }
