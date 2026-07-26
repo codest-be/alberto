@@ -1,4 +1,4 @@
--- Alberto DCB Event Store - Migration 025 (Multi-Tenant)
+-- Alberto DCB Event Store - Migration 027 (Multi-Tenant)
 --
 -- Add optional routing metadata to the outbox.
 --

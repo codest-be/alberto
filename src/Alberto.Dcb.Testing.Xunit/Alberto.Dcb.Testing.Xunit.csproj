@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+        <!-- Package Metadata -->
+        <PackageId>Alberto.Dcb.Testing.Xunit</PackageId>
+        <Title>Alberto DCB Event Store - Backend Conformance Suite</Title>
+        <Description>xUnit contract specifications for Alberto DCB backend implementations. Derive from these to run Alberto's own conformance suite against your event store, checkpoint store, state store, dead-letter store or outbox.</Description>
+        <IsPackable>true</IsPackable>
+        <RootNamespace>Alberto.Dcb.Testing.Xunit</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Alberto.Dcb\Alberto.Dcb.csproj" />
+        <ProjectReference Include="..\Alberto.Dcb.Messaging\Alberto.Dcb.Messaging.csproj" />
+        <ProjectReference Include="..\Alberto.Dcb.Testing\Alberto.Dcb.Testing.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="xunit.v3.extensibility.core" />
+        <PackageReference Include="xunit.v3.assert" />
+        <PackageReference Include="FluentAssertions" />
+        <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+    </ItemGroup>
+</Project>

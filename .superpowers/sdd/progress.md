@@ -80,6 +80,34 @@ owner's decision** — it should almost certainly be abandoned, but that is not 
 
 - SP1a Task 5: complete (commits d2022b0..021daa1, spec ✅ / quality Approved). `AlbertoTestHarness` boots a Generic Host, appends, and waits for control-loop quiescence. Two implementer deviations judged sound by the reviewer: quiescence reads `IOptionsMonitor<AlbertoModuleDefinition>` (declared processors) instead of `ICheckpointInventory` (which is vacuously empty before the first checkpoint), and `TestEvents` drops `JsonSerializerDefaults.Web` because camelCase does not round-trip through `ParseEvent<T>`. Stalled-path test verified non-vacuous. Suite 1101 passed / 0 failed / 14 skipped.
 
+- SP1a Task 6: complete (commits 021daa1..2ed987c, spec ✅ / quality Approved after one fix). Adds `Alberto.Dcb.Testing.Xunit` with five conformance specifications (state store, dead letter, outbox + the two promoted ones) and four derivations. Reviewer caught an Important defect — `ClaimPendingAsync_HeldLease_IsNotReclaimable` was gated on `FakeTimeProvider` despite never touching a clock, so the Postgres derivation skipped the one fact proving `FOR UPDATE SKIP LOCKED`-style exclusion; a backend with no concurrency exclusion would have passed the whole suite. Fixed in `2ed987c`; Postgres now runs it. Suite 1161 passed / 0 failed / 17 skipped.
+
+- SP1a Task 7: complete (commit d7ec7e6, spec ✅ / quality Approved, no fixes needed). One canonical `FakeBackend` replaces three divergent nested copies; `Testing/Events.cs` gives the shared event vocabulary. Reviewer verified both reported semantic changes are inert (`bool?` + FluentAssertions `BeTrue` is if anything stricter; `UnknownConfigurationKeyTests` asserts only on ALB0008 codes and never branches on `SupportsTenancy`) and confirmed the eight remaining duplicate-event files are explicitly SP1b scope, not under-delivery. Suite 1162 passed / 0 failed / 17 skipped.
+
+- SP1a Task 8: complete (commit 23da001, spec ✅ / quality Approved, no findings). Both packages ship. Reviewer independently ran `dotnet pack` and read the extracted nuspecs rather than trusting the implementer's grep: both target frameworks carry dependency groups in both packages, all metadata (MIT, authors, repo url, `VersionPrefix`, `IncludeSymbols`/snupkg) flows from `Directory.Build.props` identically to the pre-existing packable projects, `Alberto.Dcb.Testing`'s dependency groups contain no test framework, and the release workflow's `artifacts/Alberto.Dcb*.nupkg` glob already matches both new ids. No unintended public types leak. **SP1a is feature-complete: 1162 passed / 0 failed / 17 skipped.**
+
+## SP1a shipped
+
+- PR #36 merged 2026-07-26T12:54:43Z. PR #37 merged straight after, fixing a flake #36 introduced (`OutboxStoreSpecification` facts asserted on whole-collection claim results against a shared Postgres fixture). Main is now green four consecutive full-suite runs at 1089 passed / 0 failed / 17 skipped.
+
+## Skipped-test audit (the user's standing instruction) — DONE
+
+17 skips: 15 legitimate, 1 avoidable, 1 masking a real production bug.
+
+- **Masking a defect — `PostgresEventListenerTests.RoundTrip_FiveEventBatch_FiresExactlyOneNotify`.** Migration 010 replaced the `alberto_events` notify trigger with `FOR EACH STATEMENT` so one `pg_notify` fires per append call. But every version of `alberto_append_events` — through the newest, migration 023 — inserts events one at a time inside a PL/pgSQL `FOR v_event IN SELECT * FROM jsonb_array_elements(p_events) LOOP`. Each iteration is its own INSERT statement, so a statement-level trigger still fires N times for N events. **Verified by reading 010_BatchNotifyTrigger.sql and 023_TagConceptBoundaryMatching.sql:105-137 directly.** Migration 010's stated purpose is not achieved; subscribers get N redundant wakeups per append. The test was skipped rather than the bug fixed. Fix: move `pg_notify` into the function body after the loop, or restructure as a bulk `INSERT … SELECT`; needs a new migration and updates to all active function versions. ~2-4h.
+- **Avoidable — `PostgresOutboxStoreSpecificationTests.PurgeDeliveredAsync_RemovesOldDeliveredOnly`.** Skips legitimately (Postgres sets `delivered_at = now()` in SQL, so an app-level FakeTimeProvider cannot drive it), but the comment claims the InMemory derivation covers it and that is only half true: `PostgresOutboxStoreTests.PurgeDeliveredAsync_ShouldRemoveDeliveredEntriesOlderThanThreshold` uses a future cutoff, so every delivered row qualifies and the `delivered_at < @before` predicate is never exercised. Removing the date condition from the SQL would not fail any test. Fix: ~25 lines setting `delivered_at` via direct SQL. ~1h.
+- Full audit at `.superpowers/sdd/skipped-test-audit.md` (in the deleted SP1a worktree; re-derivable).
+
+## Also observed
+
+- `main` has a pre-existing intermittent failure independent of this work — one run failed, the immediate re-run passed, name not captured. Likely the `Rebuild_CatchesUpOnEventsThatArriveWhileItIsRunning` flake already noted below.
+
+## Standing user instruction (received during Task 7) — SATISFIED, see above
+
+> "when done, verify all skipped tests and see if the reason is valid or if we should fix the test/code"
+
+Before opening the SP1a PR: enumerate every skipped test in the suite (17 at Task 7), establish why each one skips, and judge per test whether the skip is legitimate (e.g. a capability the backend genuinely lacks) or is masking a defect in the test or the production code. Report the verdicts to the user.
+
 ## Minor findings carried to the final review
 
 - SP2 Task 1 — `CachingCheckpointStoreTests.cs:148` `WaitForInnerAsync` is called with `cache`, not `inner`, in the resync test; the name misleads. Rename to something like `WaitForValueAsync`.
@@ -97,6 +125,9 @@ owner's decision** — it should almost certainly be abandoned, but that is not 
 
 - SP1a Task 5 — reviewer flagged `public string ModuleKey` as extra API surface beyond the brief (YAGNI on a shipped package). **The premise is wrong**: the brief specifies `public string ModuleKey => _moduleKey;` verbatim at line 156. Plan-mandated, so no fix dispatched. The underlying concern — an unused public property is a permanent compatibility commitment — still stands for the final review to triage.
 - SP1a Task 5 — `AlbertoTestHarness.AppendAsync`'s `tenantId` flows into `TenantContext.SetTenant`, which rejects UUIDs and hyphenated ids; the XML docs do not say so. It also silently ignores a non-null `tenantId` when tenancy is not registered.
+
+- SP1a Task 6 — `RetryFailedAsync_ResetsFailed_ToPending` uses `Assert.Contains` rather than `Assert.Single` because `RetryFailedAsync()` is global (unscoped by processor) and the shared Postgres fixture leaks `Failed` entries between facts. Correct behaviour is still asserted, but the weaker assertion would not catch an entry-duplicating bug. A per-fact fixture scope would let it be `Assert.Single`.
+- SP1a Task 6 — the csproj takes `xunit.v3.extensibility.core` + `xunit.v3.assert` rather than the `xunit.v3` meta-package the brief's template used, because the meta-package requires `<OutputType>Exe</OutputType>` and cannot build as a library. Correct, but worth confirming the package's declared dependencies at Task 8 packaging time.
 
 ## Open fixes (dispatched or pending)
 

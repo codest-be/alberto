@@ -62,6 +62,30 @@ public sealed class PostgresOutboxStoreTests(PostgresOutboxStoreFixture fixture)
         return result as string ?? throw new InvalidOperationException($"Entry {entryId} not found.");
     }
 
+    private async Task<bool> ExistsAsync(Guid entryId, CancellationToken ct)
+    {
+        await using var conn = await fixture.DataSource.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand(
+            "SELECT EXISTS(SELECT 1 FROM alberto_outbox_entries WHERE id = @id)", conn);
+        cmd.Parameters.AddWithValue("id", entryId);
+        return (bool)(await cmd.ExecuteScalarAsync(ct))!;
+    }
+
+    /// <summary>
+    /// Rewrites an entry's <c>delivered_at</c>. The store stamps that column from the
+    /// database clock, so ageing a row is the only way a test can put it on the far
+    /// side of a purge threshold.
+    /// </summary>
+    private async Task BackdateDeliveredAtAsync(Guid entryId, DateTimeOffset deliveredAt, CancellationToken ct)
+    {
+        await using var conn = await fixture.DataSource.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand(
+            "UPDATE alberto_outbox_entries SET delivered_at = @deliveredAt WHERE id = @id", conn);
+        cmd.Parameters.AddWithValue("deliveredAt", deliveredAt);
+        cmd.Parameters.AddWithValue("id", entryId);
+        Assert.Equal(1, await cmd.ExecuteNonQueryAsync(ct));
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // Basic CRUD
     // ──────────────────────────────────────────────────────────────────────────
@@ -239,40 +263,47 @@ public sealed class PostgresOutboxStoreTests(PostgresOutboxStoreFixture fixture)
     public async Task PurgeDeliveredAsync_ShouldRemoveDeliveredEntriesOlderThanThreshold()
     {
         var store = CreateStore();
-        var toDeliver = MakeEntry();
+        var oldDelivered = MakeEntry();
+        var recentDelivered = MakeEntry();
         var toLeaveAsProcessing = MakeEntry();
 
-        await store.InsertAsync(toDeliver, TestContext.Current.CancellationToken);
+        await store.InsertAsync(oldDelivered, TestContext.Current.CancellationToken);
+        await store.InsertAsync(recentDelivered, TestContext.Current.CancellationToken);
         await store.InsertAsync(toLeaveAsProcessing, TestContext.Current.CancellationToken);
 
-        // Claim both; mark only one as delivered.  The other remains 'processing'
-        // (i.e. not delivered) so it must survive the purge.
+        // Claim all three; mark two as delivered.  The third remains 'processing'
+        // (i.e. not delivered) so it must survive the purge whatever the threshold.
         var claimed = await ClaimAsync(store, 100, TestContext.Current.CancellationToken);
-        Assert.True(await store.MarkDeliveredAsync(
-            claimed.First(e => e.Entry.Id == toDeliver.Id),
-            TestContext.Current.CancellationToken));
+        foreach (var id in new[] { oldDelivered.Id, recentDelivered.Id })
+        {
+            Assert.True(await store.MarkDeliveredAsync(
+                claimed.First(e => e.Entry.Id == id),
+                TestContext.Current.CancellationToken));
+        }
 
-        // Purge with a threshold one hour in the future so all currently-delivered
-        // rows qualify (their delivered_at ≈ now() < now()+1h).
-        await store.PurgeDeliveredAsync(
-            DateTimeOffset.UtcNow.AddHours(1),
+        // MarkDeliveredAsync stamps delivered_at with the database clock, so the only
+        // way to age an entry is to rewrite the column.  Backdating exactly one of the
+        // two delivered rows is what makes the threshold load-bearing: with a cutoff
+        // between them, a purge that ignored delivered_at would take both.
+        await BackdateDeliveredAtAsync(
+            oldDelivered.Id,
+            DateTimeOffset.UtcNow.AddHours(-2),
             TestContext.Current.CancellationToken);
 
-        // The delivered entry must be gone.
-        await using var conn = await fixture.DataSource.OpenConnectionAsync(TestContext.Current.CancellationToken);
-        await using var deliveredCmd = new NpgsqlCommand(
-            "SELECT EXISTS(SELECT 1 FROM alberto_outbox_entries WHERE id = @id)", conn);
-        deliveredCmd.Parameters.AddWithValue("id", toDeliver.Id);
-        Assert.False(
-            (bool)(await deliveredCmd.ExecuteScalarAsync(TestContext.Current.CancellationToken))!,
-            "Delivered entry was not purged.");
+        await store.PurgeDeliveredAsync(
+            DateTimeOffset.UtcNow.AddHours(-1),
+            TestContext.Current.CancellationToken);
 
-        // The non-delivered entry must still be present.
-        await using var processingCmd = new NpgsqlCommand(
-            "SELECT EXISTS(SELECT 1 FROM alberto_outbox_entries WHERE id = @id)", conn);
-        processingCmd.Parameters.AddWithValue("id", toLeaveAsProcessing.Id);
+        Assert.False(
+            await ExistsAsync(oldDelivered.Id, TestContext.Current.CancellationToken),
+            "Delivered entry older than the threshold was not purged.");
+
         Assert.True(
-            (bool)(await processingCmd.ExecuteScalarAsync(TestContext.Current.CancellationToken))!,
+            await ExistsAsync(recentDelivered.Id, TestContext.Current.CancellationToken),
+            "Delivered entry newer than the threshold was incorrectly purged.");
+
+        Assert.True(
+            await ExistsAsync(toLeaveAsProcessing.Id, TestContext.Current.CancellationToken),
             "Non-delivered entry was incorrectly purged.");
     }
 

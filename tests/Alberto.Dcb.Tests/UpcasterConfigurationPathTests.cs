@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Alberto.Dcb.Configuration;
 using Alberto.Dcb.InMemory;
-using Alberto.Dcb.TestEvents;
+using Alberto.Dcb.Tests.SampleEvents;
 using Alberto.Dcb.Upcasting;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -24,7 +24,7 @@ namespace Alberto.Dcb.Tests;
 // path ever stops threading the upcaster chain into DI, no matter how correct
 // the consumer plumbing is.
 //
-// They use the separate Alberto.Dcb.TestEvents assembly because
+// They use the separate Alberto.Dcb.Tests.SampleEvents assembly because
 // EventSerializer.FromAssembly throws on duplicate slugs and this test assembly
 // collides with itself.
 // ---------------------------------------------------------------------------

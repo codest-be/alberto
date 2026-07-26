@@ -1,11 +1,15 @@
+using Alberto.Dcb;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
-namespace Alberto.Dcb.Tests;
+namespace Alberto.Dcb.Testing.Xunit;
 
 /// <summary>
-/// Specification tests for IEventStoreBackend implementations.
+/// Specification tests for <see cref="IEventStoreBackend"/> implementations.
 /// These tests define the contract that all implementations must follow.
+///
+/// Derive from this class and implement <see cref="CreateBackend"/> to run Alberto's own
+/// event-store conformance suite against your backend.
 /// </summary>
 public abstract class EventStoreBackendSpecification
 {
@@ -14,15 +18,20 @@ public abstract class EventStoreBackendSpecification
     /// </summary>
     protected string TestId { get; } = Guid.NewGuid().ToString("N")[..8];
 
+    /// <summary>
+    /// Controllable clock fixed to 2025-01-15T10:30:00Z. The backend under test is passed
+    /// this provider where it accepts a <c>TimeProvider</c> parameter.
+    /// </summary>
     protected FakeTimeProvider TimeProvider { get; } = new(new DateTimeOffset(2025, 1, 15, 10, 30, 0, TimeSpan.Zero));
 
     /// <summary>
-    /// Factory method to create the backend under test.
+    /// Factory method called once per fact to create the backend under test.
     /// </summary>
     protected abstract Task<IEventStoreBackend> CreateBackend();
 
     #region Append Tests
 
+    /// <summary>A single event must be persisted and returned by <c>AppendAsync</c>.</summary>
     [Fact]
     public async Task Append_SingleEvent_ShouldSucceed()
     {
@@ -35,6 +44,7 @@ public abstract class EventStoreBackendSpecification
         Assert.Equal(eventToPersist.Id, result.First().Id);
         Assert.Equal(eventToPersist.EventType.Id, result.First().EventType.Id);    }
 
+    /// <summary>Multiple events in one batch must receive strictly increasing global positions.</summary>
     [Fact]
     public async Task Append_MultipleEvents_ShouldAssignIncreasingPositions()
     {
@@ -52,6 +62,7 @@ public abstract class EventStoreBackendSpecification
         Assert.Equal(3, positions.Count);
         Assert.True(positions[0] < positions[1] && positions[1] < positions[2]);    }
 
+    /// <summary>The event payload and tags stored must match those supplied to <c>AppendAsync</c>.</summary>
     [Fact]
     public async Task Append_ShouldPreserveEventData()
     {
@@ -64,6 +75,7 @@ public abstract class EventStoreBackendSpecification
         Assert.Equal(eventToPersist.EventData, appended.EventData);
         Assert.Equal(eventToPersist.Tags.Count, appended.Tags.Count);    }
 
+    /// <summary>All metadata key–value pairs supplied to <c>AppendAsync</c> must survive round-trip.</summary>
     [Fact]
     public async Task Append_ShouldPreserveMetadata()
     {
@@ -85,6 +97,7 @@ public abstract class EventStoreBackendSpecification
 
     #region Stream Tests
 
+    /// <summary>Streaming a tag that has never been written to must return an empty collection.</summary>
     [Fact]
     public async Task Stream_EmptyStore_ShouldReturnEmpty()
     {
@@ -95,6 +108,7 @@ public abstract class EventStoreBackendSpecification
 
         Assert.Empty(result);    }
 
+    /// <summary>A tag query must return only events whose tag set contains that tag value.</summary>
     [Fact]
     public async Task Stream_ByTags_ShouldReturnMatchingEvents()
     {
@@ -110,6 +124,7 @@ public abstract class EventStoreBackendSpecification
         Assert.Equal(2, result.Count);
         Assert.All(result, e => Assert.Contains(e.Tags, t => t.Value == $"order:{TestId}"));    }
 
+    /// <summary>An event-type query must return only events whose type matches the specified value.</summary>
     [Fact]
     public async Task Stream_ByTypes_ShouldReturnMatchingEvents()
     {
@@ -125,6 +140,7 @@ public abstract class EventStoreBackendSpecification
         Assert.Equal(2, result.Count);
         Assert.All(result, e => Assert.Equal($"order-placed-{TestId}", e.EventType.Id));    }
 
+    /// <summary>A union query must return events matching either the type axis or the tag axis.</summary>
     [Fact]
     public async Task Stream_ByTypesOrTags_AsUnion_ShouldReturnUnion()
     {
@@ -144,6 +160,7 @@ public abstract class EventStoreBackendSpecification
 
         Assert.Equal(2, result.Count);    }
 
+    /// <summary>An intersect (default) query must return only events matching both the type and tag axes.</summary>
     [Fact]
     public async Task Stream_ByTypesAndTags_DefaultsToIntersect()
     {
@@ -166,6 +183,7 @@ public abstract class EventStoreBackendSpecification
         Assert.Contains(matched.Tags, t => t.Value == $"order:2{TestId}");
     }
 
+    /// <summary>A <c>ByAllTags</c> query must return only events whose tag set contains every listed tag.</summary>
     [Fact]
     public async Task Stream_ByAllTags_ShouldRequireAllTagsToMatch()
     {
@@ -186,6 +204,7 @@ public abstract class EventStoreBackendSpecification
         Assert.Contains(matched.Tags, tag => tag.Value == $"source:{TestId}");
     }
 
+    /// <summary>An empty query (no type or tag filter) must return all events after the given position.</summary>
     [Fact]
     public async Task Stream_EmptyQuery_ShouldReturnAllEvents()
     {
@@ -204,6 +223,7 @@ public abstract class EventStoreBackendSpecification
 
         Assert.Equal(3, result.Count);    }
 
+    /// <summary>When an <c>afterPosition</c> is supplied only events with a greater position must be returned.</summary>
     [Fact]
     public async Task Stream_WithAfterPosition_ShouldFilterByPosition()
     {
@@ -222,6 +242,7 @@ public abstract class EventStoreBackendSpecification
         Assert.Single(result);
         Assert.Equal("event-c", result.First().EventType.Id);    }
 
+    /// <summary>When a <c>limit</c> is supplied the result must contain at most that many events.</summary>
     [Fact]
     public async Task Stream_WithLimit_ShouldLimitResults()
     {
@@ -238,6 +259,7 @@ public abstract class EventStoreBackendSpecification
 
         Assert.Equal(3, result.Count);    }
 
+    /// <summary>Events must be returned in ascending global-position order regardless of insertion order.</summary>
     [Fact]
     public async Task Stream_ShouldOrderByPosition()
     {
@@ -255,104 +277,12 @@ public abstract class EventStoreBackendSpecification
 
     #endregion
 
-    #region Wildcard Tag Query Tests
+    #region Boundary Composition Tests
 
-    [Fact]
-    public async Task Stream_ByTagPrefix_ShouldReturnAllMatchingTags()
-    {
-        var backend = await CreateBackend();
-        await backend.AppendAsync([
-            CreateEvent("order-placed", $"ord{TestId}:123"),
-            CreateEvent("order-confirmed", $"ord{TestId}:456"),
-            CreateEvent("order-shipped", $"ord{TestId}:789"),
-            CreateEvent("customer-updated", $"cust{TestId}:111")
-        ], cancellationToken: TestContext.Current.CancellationToken);
-
-        var result = await backend.StreamAsync(DcbQuery.ByTagPatterns($"ord{TestId}:*"), cancellationToken: TestContext.Current.CancellationToken);
-
-        Assert.Equal(3, result.Count);
-        Assert.All(result, e => Assert.Contains(e.Tags, t => t.Concept == $"ord{TestId}"));
-    }
-
-    [Fact]
-    public async Task Stream_ByMultipleTagPrefixes_ShouldReturnUnion()
-    {
-        var backend = await CreateBackend();
-        await backend.AppendAsync([
-            CreateEvent("order-placed", $"ord{TestId}:123"),
-            CreateEvent("customer-created", $"cust{TestId}:456"),
-            CreateEvent("product-updated", $"prod{TestId}:789")
-        ], cancellationToken: TestContext.Current.CancellationToken);
-
-        var query = DcbQuery.ByTagPatterns($"ord{TestId}:*", $"cust{TestId}:*");
-        var result = await backend.StreamAsync(query, cancellationToken: TestContext.Current.CancellationToken);
-
-        Assert.Equal(2, result.Count);
-    }
-
-    [Fact]
-    public async Task Stream_ByMixedExactAndWildcardTags_ShouldReturnUnion()
-    {
-        var backend = await CreateBackend();
-        await backend.AppendAsync([
-            CreateEvent("order-placed", $"ord{TestId}:123"),
-            CreateEvent("order-confirmed", $"ord{TestId}:456"),
-            CreateEvent("customer-created", $"cust{TestId}:789"),
-            CreateEvent("product-updated", $"prod{TestId}:111")
-        ], cancellationToken: TestContext.Current.CancellationToken);
-
-        var query = DcbQuery.Empty
-            .WithTags($"prod{TestId}:111")
-            .WithTagPatterns($"ord{TestId}:*");
-
-        var result = await backend.StreamAsync(query, cancellationToken: TestContext.Current.CancellationToken);
-
-        Assert.Equal(3, result.Count);
-    }
-
-    [Fact]
-    public async Task Stream_ByTypesAndWildcardTags_AsUnion_ShouldReturnUnion()
-    {
-        var backend = await CreateBackend();
-        await backend.AppendAsync([
-            CreateEvent($"order-placed-{TestId}", $"ord{TestId}:123"),         // matches type
-            CreateEvent($"order-confirmed-{TestId}", $"ord{TestId}:456"),      // matches tag wildcard
-            CreateEvent($"customer-created-{TestId}", $"cust{TestId}:789"),  // matches nothing
-            CreateEvent($"order-placed-{TestId}", $"prod{TestId}:111")        // matches type
-        ], cancellationToken: TestContext.Current.CancellationToken);
-
-        var query = DcbQuery.Empty
-            .WithTypes($"customer-created-{TestId}")
-            .WithTagPatterns($"ord{TestId}:*")
-            .AsUnion();
-
-        var result = await backend.StreamAsync(query, cancellationToken: TestContext.Current.CancellationToken);
-
-        Assert.Equal(3, result.Count);
-    }
-
-    [Fact]
-    public async Task Stream_ByTypesAndWildcardTags_DefaultsToIntersect()
-    {
-        var backend = await CreateBackend();
-        await backend.AppendAsync([
-            CreateEvent($"order-placed-{TestId}", $"ord{TestId}:123"),         // matches type AND tag prefix
-            CreateEvent($"order-confirmed-{TestId}", $"ord{TestId}:456"),      // matches tag prefix only
-            CreateEvent($"order-placed-{TestId}", $"prod{TestId}:111"),        // matches type only
-            CreateEvent($"customer-created-{TestId}", $"cust{TestId}:789")     // matches neither
-        ], cancellationToken: TestContext.Current.CancellationToken);
-
-        var query = DcbQuery.Empty
-            .WithTypes($"order-placed-{TestId}")
-            .WithTagPatterns($"ord{TestId}:*");
-
-        var result = await backend.StreamAsync(query, cancellationToken: TestContext.Current.CancellationToken);
-
-        var matched = Assert.Single(result);
-        Assert.Equal($"order-placed-{TestId}", matched.EventType.Id);
-        Assert.Contains(matched.Tags, t => t.Value == $"ord{TestId}:123");
-    }
-
+    /// <summary>
+    /// A DCB check using type+tag intersect must not see an event that matches only the tag axis
+    /// as a conflict — the event does not satisfy the boundary.
+    /// </summary>
     [Fact]
     public async Task Append_WithDcbCheck_TypesAndTags_DefaultsToIntersect_NoConflict()
     {
@@ -377,6 +307,10 @@ public abstract class EventStoreBackendSpecification
         Assert.Single(result);
     }
 
+    /// <summary>
+    /// A DCB check using type+tag intersect must detect a conflict when an event satisfies
+    /// both axes simultaneously.
+    /// </summary>
     [Fact]
     public async Task Append_WithDcbCheck_TypesAndTags_DefaultsToIntersect_WithConflict()
     {
@@ -401,6 +335,10 @@ public abstract class EventStoreBackendSpecification
                 TestContext.Current.CancellationToken));
     }
 
+    /// <summary>
+    /// A union query used as a DCB boundary treats a tag-only match as a conflict, because
+    /// the boundary includes all events matching either axis.
+    /// </summary>
     [Fact]
     public async Task Append_WithDcbCheck_TypesAndTags_AsUnion_StillTreatsTagOnlyMatchAsConflict()
     {
@@ -425,73 +363,11 @@ public abstract class EventStoreBackendSpecification
                 TestContext.Current.CancellationToken));
     }
 
-    [Fact]
-    public async Task Stream_ByTagPrefix_WithAfterPosition_ShouldFilter()
-    {
-        var backend = await CreateBackend();
-        var firstBatch = await backend.AppendAsync([
-            CreateEvent("order-placed", $"ord{TestId}:123"),
-            CreateEvent("order-confirmed", $"ord{TestId}:456")
-        ], cancellationToken: TestContext.Current.CancellationToken);
-
-        await backend.AppendAsync([
-            CreateEvent("order-shipped", $"ord{TestId}:789")
-        ], cancellationToken: TestContext.Current.CancellationToken);
-
-        var afterPosition = firstBatch.Last().GlobalPosition;
-        var result = await backend.StreamAsync(DcbQuery.ByTagPatterns($"ord{TestId}:*"), afterPosition, cancellationToken: TestContext.Current.CancellationToken);
-
-        Assert.Single(result);
-        Assert.Equal("order-shipped", result.First().EventType.Id);
-    }
-
-    [Fact]
-    public async Task Append_WithDcbCheck_WildcardPattern_NoConflict_ShouldSucceed()
-    {
-        var backend = await CreateBackend();
-        var initial = await backend.AppendAsync([CreateEvent("order-placed", $"ord{TestId}:123")], cancellationToken: TestContext.Current.CancellationToken);
-        var lastPosition = initial.Last().GlobalPosition;
-
-        var dcbQuery = DcbQuery.ByTagPatterns($"ord{TestId}:*");
-        var result = await backend.AppendAsync([CreateEvent("order-confirmed", $"ord{TestId}:456")], dcbQuery, lastPosition, TestContext.Current.CancellationToken);
-
-        Assert.Single(result);
-    }
-
-    [Fact]
-    public async Task Append_WithDcbCheck_WildcardPattern_WithConflict_ShouldThrow()
-    {
-        var backend = await CreateBackend();
-        var initial = await backend.AppendAsync([CreateEvent("order-placed", $"ord{TestId}:123")], cancellationToken: TestContext.Current.CancellationToken);
-        var firstPosition = initial.First().GlobalPosition;
-
-        await backend.AppendAsync([CreateEvent("order-confirmed", $"ord{TestId}:456")], cancellationToken: TestContext.Current.CancellationToken);
-
-        var dcbQuery = DcbQuery.ByTagPatterns($"ord{TestId}:*");
-
-        await Assert.ThrowsAsync<DcbConflictException>(() =>
-            backend.AppendAsync([CreateEvent("order-shipped", $"ord{TestId}:789")], dcbQuery, firstPosition, TestContext.Current.CancellationToken));
-    }
-
-    [Fact]
-    public async Task Append_WithDcbCheck_WildcardPattern_DifferentConcept_ShouldNotConflict()
-    {
-        var backend = await CreateBackend();
-        await backend.AppendAsync([CreateEvent("order-placed", $"ord{TestId}:123")], cancellationToken: TestContext.Current.CancellationToken);
-        await backend.AppendAsync([CreateEvent("customer-updated", $"cust{TestId}:456")], cancellationToken: TestContext.Current.CancellationToken);
-
-        var dcbQuery = DcbQuery.ByTagPatterns($"cust{TestId}:*");
-        var lastCustomerPosition = (await backend.StreamAsync(dcbQuery, cancellationToken: TestContext.Current.CancellationToken)).Last().GlobalPosition;
-
-        var result = await backend.AppendAsync([CreateEvent("customer-verified", $"cust{TestId}:789")], dcbQuery, lastCustomerPosition, TestContext.Current.CancellationToken);
-
-        Assert.Single(result);
-    }
-
     #endregion
 
     #region StreamAll Tests
 
+    /// <summary><c>StreamAllAsync</c> must return every event appended after the given position.</summary>
     [Fact]
     public async Task StreamAll_ShouldReturnAllEvents()
     {
@@ -512,6 +388,10 @@ public abstract class EventStoreBackendSpecification
 
     #region DCB Consistency Tests
 
+    /// <summary>
+    /// An append with a DCB boundary check must succeed when no events matching the boundary
+    /// have been written after the caller's known position.
+    /// </summary>
     [Fact]
     public async Task Append_WithDcbCheck_NoConflict_ShouldSucceed()
     {
@@ -524,6 +404,10 @@ public abstract class EventStoreBackendSpecification
 
         Assert.Single(result);    }
 
+    /// <summary>
+    /// An append with a DCB boundary check must throw <see cref="DcbConflictException"/> when a
+    /// newer event satisfies the boundary after the caller's known position.
+    /// </summary>
     [Fact]
     public async Task Append_WithDcbCheck_WithConflict_ShouldThrow()
     {
@@ -538,6 +422,10 @@ public abstract class EventStoreBackendSpecification
         await Assert.ThrowsAsync<DcbConflictException>(() =>
             backend.AppendAsync([CreateEvent("order-shipped", $"order:{TestId}")], dcbQuery, firstPosition, TestContext.Current.CancellationToken));    }
 
+    /// <summary>
+    /// When multiple writers race to be first to append to an empty boundary (position 0),
+    /// exactly one must succeed and the rest must receive <see cref="DcbConflictException"/>.
+    /// </summary>
     [Fact]
     public async Task Append_ConcurrentDcbChecks_SameBoundary_OnlyOneSucceeds()
     {
@@ -575,6 +463,10 @@ public abstract class EventStoreBackendSpecification
         Assert.Single(stored);
     }
 
+    /// <summary>
+    /// A DCB check expecting an empty boundary (position 0) must throw <see cref="DcbConflictException"/>
+    /// when matching events already exist.
+    /// </summary>
     [Fact]
     public async Task Append_WithDcbCheck_ExpectingNoEvents_WithExisting_ShouldThrow()
     {
@@ -586,6 +478,9 @@ public abstract class EventStoreBackendSpecification
         await Assert.ThrowsAsync<DcbConflictException>(() =>
             backend.AppendAsync([CreateEvent("order-created", $"order:{TestId}")], dcbQuery, 0, TestContext.Current.CancellationToken));    }
 
+    /// <summary>
+    /// A DCB check expecting an empty boundary (position 0) must succeed when no matching events exist.
+    /// </summary>
     [Fact]
     public async Task Append_WithDcbCheck_ExpectingNoEvents_WithNone_ShouldSucceed()
     {
@@ -597,6 +492,9 @@ public abstract class EventStoreBackendSpecification
 
         Assert.Single(result);    }
 
+    /// <summary>
+    /// A boundary scoped to one tag must not be affected by events tagged with a different tag.
+    /// </summary>
     [Fact]
     public async Task Append_WithDcbCheck_DifferentBoundary_ShouldNotConflict()
     {
@@ -611,6 +509,9 @@ public abstract class EventStoreBackendSpecification
 
         Assert.Single(result);    }
 
+    /// <summary>
+    /// An all-tags boundary must ignore events that match only a subset of the required tags.
+    /// </summary>
     [Fact]
     public async Task Append_WithDcbCheck_AllTags_ShouldIgnoreEventsMatchingOnlyOneTag()
     {
@@ -634,6 +535,9 @@ public abstract class EventStoreBackendSpecification
         Assert.Single(result);
     }
 
+    /// <summary>
+    /// An all-tags boundary must detect a conflict when a new event carries the full required tag set.
+    /// </summary>
     [Fact]
     public async Task Append_WithDcbCheck_AllTags_ShouldDetectConflictsForMatchingTagSet()
     {
@@ -660,6 +564,9 @@ public abstract class EventStoreBackendSpecification
 
     #region Position Tests
 
+    /// <summary>
+    /// <c>GetLastPositionAsync</c> must return a non-negative value even when the store is empty.
+    /// </summary>
     [Fact]
     public async Task GetLastPosition_EmptyStore_ShouldReturnZero()
     {
@@ -670,6 +577,10 @@ public abstract class EventStoreBackendSpecification
 
         Assert.True(position >= 0);    }
 
+    /// <summary>
+    /// After an append <c>GetLastPositionAsync</c> must return a value at least as large as
+    /// the position of the last appended event.
+    /// </summary>
     [Fact]
     public async Task GetLastPosition_AfterAppend_ShouldReturnLastPosition()
     {
@@ -687,6 +598,10 @@ public abstract class EventStoreBackendSpecification
 
     #region GetPositionsAsync Tests
 
+    /// <summary>
+    /// <c>GetPositionsAsync</c> must return the positions of events committed after the given
+    /// start position, up to the specified window size.
+    /// </summary>
     [Fact]
     public async Task GetPositionsAsync_ReturnsPositionsInWindow()
     {
@@ -704,6 +619,10 @@ public abstract class EventStoreBackendSpecification
         Assert.Equal(startPosition + 2, positions[1]);
     }
 
+    /// <summary>
+    /// <c>GetPositionsAsync</c> must exclude positions beyond the window boundary even when
+    /// more events exist.
+    /// </summary>
     [Fact]
     public async Task GetPositionsAsync_ExcludesPositionsBeyondWindow()
     {
@@ -722,6 +641,10 @@ public abstract class EventStoreBackendSpecification
         Assert.Equal(startPosition + 1, positions[0]);
     }
 
+    /// <summary>
+    /// <c>GetPositionsAsync</c> must return an empty list when no events have been appended
+    /// after the given position.
+    /// </summary>
     [Fact]
     public async Task GetPositionsAsync_EmptyStoreReturnsEmpty()
     {
@@ -738,6 +661,15 @@ public abstract class EventStoreBackendSpecification
 
     #region GetStableHeadAsync Tests
 
+    /// <summary>
+    /// <c>GetStableHeadAsync</c> must execute without error after a committed append and
+    /// must not clamp the result below the pre-append head.
+    ///
+    /// This is a regression guard for the PostgreSQL stable-head barrier SQL: the
+    /// <c>::TEXT</c> round-trip cast is required because PostgreSQL has no direct
+    /// <c>xid8→bigint</c> cast. The pure-fake head tests cannot catch a missing cast
+    /// because they never touch the real SQL path.
+    /// </summary>
     [Fact]
     public async Task GetStableHeadAsync_AfterCommittedAppend_ExecutesBarrier()
     {
@@ -838,9 +770,20 @@ public abstract class EventStoreBackendSpecification
 
     #region Helper Methods
 
+    /// <summary>
+    /// Creates an <see cref="IEventToPersist"/> with the given type and tags and an empty metadata dictionary.
+    /// </summary>
+    /// <param name="eventType">The event type identifier.</param>
+    /// <param name="tags">One or more tag values in <c>concept:value</c> format.</param>
     protected IEventToPersist CreateEvent(string eventType, params string[] tags)
         => CreateEvent(eventType, new Dictionary<string, string>(), tags);
 
+    /// <summary>
+    /// Creates an <see cref="IEventToPersist"/> with the given type, metadata, and tags.
+    /// </summary>
+    /// <param name="eventType">The event type identifier.</param>
+    /// <param name="metadata">Metadata key–value pairs to attach to the event.</param>
+    /// <param name="tags">One or more tag values in <c>concept:value</c> format.</param>
     protected IEventToPersist CreateEvent(string eventType, Dictionary<string, string> metadata, params string[] tags)
     {
         return new EventToPersist

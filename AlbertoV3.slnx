@@ -12,6 +12,8 @@
     <Project Path="src/Alberto.Dcb.EntityFramework/Alberto.Dcb.EntityFramework.csproj" />
     <Project Path="src/Alberto.Dcb.Messaging/Alberto.Dcb.Messaging.csproj" />
     <Project Path="src/Alberto.Dcb.Postgres.Messaging/Alberto.Dcb.Postgres.Messaging.csproj" />
+    <Project Path="src/Alberto.Dcb.Testing/Alberto.Dcb.Testing.csproj" />
+    <Project Path="src/Alberto.Dcb.Testing.Xunit/Alberto.Dcb.Testing.Xunit.csproj" />
   </Folder>
   <Folder Name="/apps/">
     <Project Path="apps/Alberto.AppHost/Alberto.AppHost.csproj" />
@@ -23,7 +25,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Alberto.Dcb.Tests/Alberto.Dcb.Tests.csproj" />
-    <Project Path="tests/Alberto.Dcb.TestEvents/Alberto.Dcb.TestEvents.csproj" />
+    <Project Path="tests/Alberto.Dcb.Tests.SampleEvents/Alberto.Dcb.Tests.SampleEvents.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/Alberto.Cli/Alberto.Cli.csproj" />

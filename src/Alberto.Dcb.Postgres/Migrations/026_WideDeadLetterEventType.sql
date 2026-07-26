@@ -1,4 +1,4 @@
--- Alberto DCB Event Store - Migration 024 (Multi-Tenant)
+-- Alberto DCB Event Store - Migration 026 (Multi-Tenant)
 --
 -- Widen alberto_dead_letter_events.event_type from VARCHAR(200) to VARCHAR(500) so that it
 -- matches alberto_events.event_type.

@@ -15,8 +15,8 @@ public readonly partial struct EventTag : IEquatable<EventTag>
 {
     /// <summary>
     /// The prefix reserved for framework-internal tag concepts. Application code MUST NOT create
-    /// a tag, a <see cref="TagAttribute"/>, or a <see cref="TagPattern"/> whose concept starts with
-    /// this prefix — doing so throws <see cref="ArgumentException"/>.
+    /// a tag or a <see cref="TagAttribute"/> whose concept starts with this prefix — doing so
+    /// throws <see cref="ArgumentException"/>.
     /// </summary>
     /// <remarks>
     /// The reservation covers the whole prefix rather than the individual concept names Alberto
@@ -118,8 +118,8 @@ public readonly partial struct EventTag : IEquatable<EventTag>
 
     /// <summary>
     /// Private non-validating constructor. Callers MUST guarantee that concept and id
-    /// are already valid (e.g., data read from the database or decomposed from a TagPattern
-    /// that was already validated).
+    /// are already valid (e.g., data read from the database, or split from a value that was
+    /// already validated).
     /// </summary>
     private EventTag(string concept, string id, string precomputedValue)
     {
@@ -218,7 +218,7 @@ public readonly partial struct EventTag : IEquatable<EventTag>
         if (!ValidComponentPattern.IsMatch(concept) || !ValidComponentPattern.IsMatch(id))
             return false;
 
-        // Mirror TagPattern.TryParse: reserved concepts must not be surfaced to user code.
+        // Reserved concepts must not be surfaced to user code, even on the non-throwing path.
         if (IsReservedConcept(concept))
             return false;
 

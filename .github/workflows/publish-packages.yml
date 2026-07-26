@@ -56,6 +56,8 @@ jobs:
           dotnet build src/Alberto.Dcb.Postgres/Alberto.Dcb.Postgres.csproj -c Release
           dotnet build src/Alberto.Dcb.Postgres.Messaging/Alberto.Dcb.Postgres.Messaging.csproj -c Release
           dotnet build src/Alberto.Dcb.Telemetry/Alberto.Dcb.Telemetry.csproj -c Release
+          dotnet build src/Alberto.Dcb.Testing/Alberto.Dcb.Testing.csproj -c Release
+          dotnet build src/Alberto.Dcb.Testing.Xunit/Alberto.Dcb.Testing.Xunit.csproj -c Release
           dotnet build tools/Alberto.Cli/Alberto.Cli.csproj -c Release
 
       - name: Test
@@ -64,7 +66,7 @@ jobs:
       - name: Pack
         run: |
           VERSION_SUFFIX="${{ steps.version.outputs.suffix }}"
-          for proj in Alberto.Dcb Alberto.Dcb.Commands Alberto.Dcb.EntityFramework Alberto.Dcb.InMemory Alberto.Dcb.Messaging Alberto.Dcb.Postgres Alberto.Dcb.Postgres.Messaging Alberto.Dcb.Telemetry; do
+          for proj in Alberto.Dcb Alberto.Dcb.Commands Alberto.Dcb.EntityFramework Alberto.Dcb.InMemory Alberto.Dcb.Messaging Alberto.Dcb.Postgres Alberto.Dcb.Postgres.Messaging Alberto.Dcb.Telemetry Alberto.Dcb.Testing Alberto.Dcb.Testing.Xunit; do
             dotnet pack "src/$proj/$proj.csproj" -c Release --no-build --version-suffix "$VERSION_SUFFIX" -o artifacts
           done
           dotnet pack tools/Alberto.Cli/Alberto.Cli.csproj -c Release --no-build --version-suffix "$VERSION_SUFFIX" -o artifacts

@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+        <!-- Package Metadata -->
+        <PackageId>Alberto.Dcb.Testing</PackageId>
+        <Title>Alberto DCB Event Store - Testing Helpers</Title>
+        <Description>Test helpers for applications built on the Alberto DCB event store: an in-memory module harness, deterministic polling, an in-memory outbox store, and event construction helpers. Framework-neutral - takes no dependency on a test framework.</Description>
+        <IsPackable>true</IsPackable>
+        <RootNamespace>Alberto.Dcb.Testing</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Alberto.Dcb\Alberto.Dcb.csproj" />
+        <ProjectReference Include="..\Alberto.Dcb.InMemory\Alberto.Dcb.InMemory.csproj" />
+        <ProjectReference Include="..\Alberto.Dcb.Messaging\Alberto.Dcb.Messaging.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+        <PackageReference Include="Microsoft.Extensions.Hosting" />
+    </ItemGroup>
+</Project>

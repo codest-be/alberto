@@ -34,7 +34,7 @@ named-property form: `new DeadLetterEntry { ... }`.
 
 **`ExternalMessage` and `OutboxEntry` gain routing fields** — `Destination` (required,
 `string`) and `RoutingHint` (optional, `string?`) are new properties. Existing construction
-sites that create these records without named properties will fail. **Run migration 025
+sites that create these records without named properties will fail. **Run migration 027
 before deploying the new binary** — it adds the two columns to `alberto_outbox_entries`.
 
 **`IEventEnvelope.CreatedAt` and admin record timestamps changed to `DateTimeOffset`** —
@@ -43,8 +43,10 @@ before deploying the new binary** — it adds the two columns to `alberto_outbox
 `ActiveProcessorLease.ExpiresAt` were `DateTime`/`DateTime?` and are now `DateTimeOffset`/
 `DateTimeOffset?`.
 
-**`_v` tag concept reserved** — `EventTag`, `[Tag]`, and `TagPattern` now throw
-`ArgumentException` when the concept name is `_v`. Application tags using that name must be
+**Leading-underscore tag concepts reserved** — `EventTag` and `[Tag]` now throw
+`ArgumentException` for any concept starting with `_`. Alberto writes `_version:N` on every
+event to record its schema version, and the whole prefix is reserved so later framework tags
+cannot collide with application ones. Application tags using a leading underscore must be
 renamed.
 
 **Metric tag shapes for sharded modules** — the `module` dimension of `alberto.dead_letters`,

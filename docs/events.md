@@ -105,8 +105,8 @@ The one reserved concept in use is `_version`, written on every event by
 - The `EventTag` public constructor throws `ArgumentException` when the concept starts with `_`.
 - `[Tag("_anything")]` on an event property throws `ArgumentException` when the first event of
   that type is appended — the tag attributes are scanned lazily on first use, not at startup.
-- `TagPattern.Prefix`, `TagPattern.Exact`, and `TagPattern.Parse` throw `ArgumentException` for
-  a leading-underscore concept. `TagPattern.TryParse` returns `false`.
+- Boundaries need no separate guard: `DcbQuery` takes `EventTag` values, so a query over a
+  reserved concept cannot be constructed at all.
 
 The constant is `EventTag.ReservedConceptPrefix`, and `EventTag.SchemaVersionConcept` is the
 concept name itself if you need to compare against it when iterating tags.

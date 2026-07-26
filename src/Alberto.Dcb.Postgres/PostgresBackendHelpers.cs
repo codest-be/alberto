@@ -35,22 +35,21 @@ internal static class PostgresBackendHelpers
     /// parameter but carry the same suffix):
     /// </para>
     /// <list type="bullet">
-    /// <item><c>alberto_append_events</c>   — exact-tag union boundary</item>
-    /// <item><c>…_v2</c>                   — wildcard-tag union boundary</item>
+    /// <item><c>alberto_append_events</c>   — any-tag union boundary</item>
     /// <item><c>…_v3</c>                   — all-tags union boundary</item>
-    /// <item><c>…_v4</c>                   — exact-tag intersect boundary</item>
-    /// <item><c>…_v5</c>                   — wildcard-tag intersect boundary</item>
+    /// <item><c>…_v4</c>                   — any-tag intersect boundary</item>
     /// <item><c>…_v6</c>                   — all-tags intersect boundary</item>
     /// </list>
+    /// <para>
+    /// <c>_v2</c> and <c>_v5</c> were the wildcard-boundary variants and are gone; migration 024
+    /// drops them. The numbering keeps its gaps rather than renumbering, so a version in a log
+    /// line or an old plan still means what it meant.
+    /// </para>
     /// </summary>
-    internal static string ResolveAppendFunctionName(bool useWildcard, bool useAllTags, bool useIntersect)
+    internal static string ResolveAppendFunctionName(bool useAllTags, bool useIntersect)
         => useIntersect
-            ? (useAllTags ? "alberto_append_events_v6"
-                : useWildcard ? "alberto_append_events_v5"
-                : "alberto_append_events_v4")
-            : (useAllTags ? "alberto_append_events_v3"
-                : useWildcard ? "alberto_append_events_v2"
-                : "alberto_append_events");
+            ? (useAllTags ? "alberto_append_events_v6" : "alberto_append_events_v4")
+            : (useAllTags ? "alberto_append_events_v3" : "alberto_append_events");
 
     // ---------------------------------------------------------------------------
     // Stream query builder — the single decision tree for both tenancy paths
@@ -89,17 +88,6 @@ internal static class PostgresBackendHelpers
             return $"SELECT * FROM {schema.Function("alberto_read_by_types_or_all_tags")}({t}@p_types, @p_tags, @p_after_position, @p_limit)";
         }
 
-        if (query.HasWildcardPatterns)
-        {
-            if (query.HasTagsOnly)
-                return $"SELECT * FROM {schema.Function("alberto_read_by_tag_patterns")}({t}@p_exact_tags, @p_tag_prefixes, @p_after_position, @p_limit)";
-
-            if (query.IntersectsTypesAndTags)
-                return $"SELECT * FROM {schema.Function("alberto_read_by_types_and_tag_patterns")}({t}@p_types, @p_exact_tags, @p_tag_prefixes, @p_after_position, @p_limit)";
-
-            return $"SELECT * FROM {schema.Function("alberto_read_by_types_or_tag_patterns")}({t}@p_types, @p_exact_tags, @p_tag_prefixes, @p_after_position, @p_limit)";
-        }
-
         if (query.HasTagsOnly)
             return $"SELECT * FROM {schema.Function("alberto_read_by_tags")}({t}@p_tags, @p_after_position, @p_limit)";
 
@@ -130,21 +118,8 @@ internal static class PostgresBackendHelpers
         if (query.Types.Count > 0)
             cmd.Parameters.AddWithValue("p_types", query.Types.Select(t => t.Id).ToArray());
 
-        // Handle tag patterns (both exact and wildcards).
-        if (query.TagPatterns.Count > 0)
-        {
-            if (query.HasWildcardPatterns)
-            {
-                var exactTags = query.TagPatterns.Where(p => p.IsExact).Select(p => p.Value).ToArray();
-                var prefixes = query.TagPatterns.Where(p => p.IsWildcard).Select(p => p.ConceptPrefix).ToArray();
-                cmd.Parameters.AddWithValue("p_exact_tags", exactTags.Length > 0 ? exactTags : DBNull.Value);
-                cmd.Parameters.AddWithValue("p_tag_prefixes", prefixes.Length > 0 ? prefixes : DBNull.Value);
-            }
-            else
-            {
-                cmd.Parameters.AddWithValue("p_tags", query.Tags.Select(t => t.Value).ToArray());
-            }
-        }
+        if (query.Tags.Count > 0)
+            cmd.Parameters.AddWithValue("p_tags", query.Tags.Select(t => t.Value).ToArray());
     }
 
     // ---------------------------------------------------------------------------
@@ -156,14 +131,12 @@ internal static class PostgresBackendHelpers
     /// is <see langword="true"/>, <c>@p_tenant_id</c> is prepended as the first argument.
     /// </summary>
     internal static string BuildAppendSql(
-        SchemaQualifier schema, string functionName, bool tenanted, bool useAllTags, bool useWildcard)
+        SchemaQualifier schema, string functionName, bool tenanted, bool useAllTags)
     {
         var t = tenanted ? "@p_tenant_id, " : "";
         return useAllTags
             ? $"SELECT * FROM {schema.Function(functionName)}({t}@p_events, @p_dcb_types, @p_dcb_all_tags, @p_expected_position)"
-            : useWildcard
-                ? $"SELECT * FROM {schema.Function(functionName)}({t}@p_events, @p_dcb_types, @p_dcb_exact_tags, @p_dcb_tag_prefixes, @p_expected_position)"
-                : $"SELECT * FROM {schema.Function(functionName)}({t}@p_events, @p_dcb_types, @p_dcb_tags, @p_expected_position)";
+            : $"SELECT * FROM {schema.Function(functionName)}({t}@p_events, @p_dcb_types, @p_dcb_tags, @p_expected_position)";
     }
 
     // ---------------------------------------------------------------------------
@@ -224,18 +197,16 @@ internal static class PostgresBackendHelpers
         long? expectedPosition,
         CancellationToken cancellationToken)
     {
-        var useWildcardFunction = dcbQuery?.HasWildcardPatterns == true;
         var useAllTagsFunction = dcbQuery?.RequiresAllTags == true;
         var useIntersect = dcbQuery?.IntersectsTypesAndTags == true;
 
-        // Resolve the append function name from the 3-flag matrix via the shared
+        // Resolve the append function name from the 2-flag matrix via the shared
         // helper — single-tenant and multi-tenant use the same name set so they
         // cannot drift independently.
         var functionName = ResolveAppendFunctionName(
-            useWildcard: useWildcardFunction, useAllTags: useAllTagsFunction, useIntersect: useIntersect);
+            useAllTags: useAllTagsFunction, useIntersect: useIntersect);
 
-        var sql = BuildAppendSql(schema, functionName, tenanted: tenantId is not null,
-            useAllTagsFunction, useWildcardFunction);
+        var sql = BuildAppendSql(schema, functionName, tenanted: tenantId is not null, useAllTagsFunction);
 
         // #1 Write-skew fix: serialize appends for this (schema[, tenant]) with a
         // transaction-scoped advisory lock so the DCB conflict-check inside the
@@ -254,7 +225,7 @@ internal static class PostgresBackendHelpers
             var results = await ExecuteAppendAsync(
                 sql, connection, effectiveTransaction, tenantId,
                 eventsList, dcbQuery, expectedPosition,
-                useAllTagsFunction, useWildcardFunction, cancellationToken);
+                useAllTagsFunction, cancellationToken);
 
             if (ownedTransaction is not null)
                 await ownedTransaction.CommitAsync(cancellationToken);
@@ -288,7 +259,6 @@ internal static class PostgresBackendHelpers
         DcbQuery? dcbQuery,
         long? expectedPosition,
         bool useAllTagsFunction,
-        bool useWildcardFunction,
         CancellationToken cancellationToken)
     {
         await using var cmd = new NpgsqlCommand(sql, connection, transaction);
@@ -312,13 +282,6 @@ internal static class PostgresBackendHelpers
                 cmd.Parameters.AddWithValue("p_dcb_all_tags",
                     dcbQuery.Tags.Count > 0 ? dcbQuery.Tags.Select(t => t.Value).ToArray() : DBNull.Value);
             }
-            else if (useWildcardFunction)
-            {
-                var exactTags = dcbQuery.TagPatterns.Where(p => p.IsExact).Select(p => p.Value).ToArray();
-                var prefixes = dcbQuery.TagPatterns.Where(p => p.IsWildcard).Select(p => p.ConceptPrefix).ToArray();
-                cmd.Parameters.AddWithValue("p_dcb_exact_tags", exactTags.Length > 0 ? exactTags : DBNull.Value);
-                cmd.Parameters.AddWithValue("p_dcb_tag_prefixes", prefixes.Length > 0 ? prefixes : DBNull.Value);
-            }
             else
             {
                 cmd.Parameters.AddWithValue("p_dcb_tags",
@@ -333,11 +296,6 @@ internal static class PostgresBackendHelpers
 
             if (useAllTagsFunction)
                 cmd.Parameters.AddWithValue("p_dcb_all_tags", DBNull.Value);
-            else if (useWildcardFunction)
-            {
-                cmd.Parameters.AddWithValue("p_dcb_exact_tags", DBNull.Value);
-                cmd.Parameters.AddWithValue("p_dcb_tag_prefixes", DBNull.Value);
-            }
             else
                 cmd.Parameters.AddWithValue("p_dcb_tags", DBNull.Value);
 

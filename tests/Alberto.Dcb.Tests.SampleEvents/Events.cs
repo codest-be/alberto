@@ -1,4 +1,4 @@
-namespace Alberto.Dcb.TestEvents;
+namespace Alberto.Dcb.Tests.SampleEvents;
 
 // This assembly exists for one reason: to be a realistic argument to
 // .WithEventsFrom(...).

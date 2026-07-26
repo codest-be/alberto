@@ -22,6 +22,10 @@
         <InternalsVisibleTo Include="Alberto.Dcb.Telemetry"/>
         <InternalsVisibleTo Include="Alberto.Dcb.Commands"/>
         <InternalsVisibleTo Include="Alberto.Dcb.Benchmarks"/>
+        <!-- The backend conformance suite asserts that a reserved _version tag round-trips and
+             that tag boundaries match by containment. Constructing that tag is exactly what the
+             public API forbids, so the spec needs the internal EventTag.ForVersion/FromStorage. -->
+        <InternalsVisibleTo Include="Alberto.Dcb.Testing.Xunit"/>
     </ItemGroup>
 
     <ItemGroup>

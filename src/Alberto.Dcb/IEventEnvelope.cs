@@ -34,9 +34,9 @@ public interface IEventEnvelope
     /// <para>
     /// The <c>_version:N</c> tag is stamped automatically on every event by the framework and will always
     /// appear in this collection. It cannot be authored by application code: the
-    /// <see cref="EventTag"/> public constructor, <c>[Tag(...)]</c>, and all
-    /// <see cref="TagPattern"/> factory methods throw <see cref="ArgumentException"/> for any
-    /// concept starting with <see cref="EventTag.ReservedConceptPrefix"/>.
+    /// <see cref="EventTag"/> public constructor and <c>[Tag(...)]</c> throw
+    /// <see cref="ArgumentException"/> for any concept starting with
+    /// <see cref="EventTag.ReservedConceptPrefix"/>, so no boundary can be built over it either.
     /// </para>
     /// <para>
     /// To read the schema version, use <c>envelope.EventType.Version</c> — do not string-parse

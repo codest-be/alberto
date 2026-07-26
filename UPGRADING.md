@@ -21,9 +21,9 @@ they touch a persisted table.
 | AS-1 | API shape | Medium | `IStateStore<TState>.LoadManyAsync` return type changed |
 | AS-2 | API shape | Low | `IEventProcessor.IsActive` / `IsRebuilding` are now getter-only |
 | AS-3..5 | API shape | Medium | Three records lost their positional constructors |
-| AS-6 | API shape + migration | **High** | `ExternalMessage` / `OutboxEntry` gain routing fields; migration 025 required |
+| AS-6 | API shape + migration | **High** | `ExternalMessage` / `OutboxEntry` gain routing fields; migration 027 required |
 | DT-1..3 | Timestamps | Medium | Eight timestamp properties changed from `DateTime` to `DateTimeOffset` |
-| TV-1..3 | Tag reservation | Low | `EventTag`, `[Tag]`, and `TagPattern` reject any concept starting with `_` |
+| TV-1..3 | Tag reservation | Low | `EventTag` and `[Tag]` reject any concept starting with `_` |
 | MT-1..2 | Metric dimensions | Medium | Sharded-module metric tags split from one combined string into two dimensions |
 | MT-3 | Metric dimensions | Medium | Tenant-ownership gauges rename tag `module.key` → `module`; sharded composite key values are now split into `module` + `shard` |
 | MT-4..5 | Metric removal | Medium | `alberto.events_filtered_by_tenant` and `alberto.tenant_leases_lost` counters removed |
@@ -176,7 +176,7 @@ or `error CS1729: '...' does not contain a constructor that takes N arguments`.
 
 ---
 
-### AS-6 — `ExternalMessage` and `OutboxEntry` gain routing fields; migration 025 required
+### AS-6 — `ExternalMessage` and `OutboxEntry` gain routing fields; migration 027 required
 
 Two properties are added to `ExternalMessage` (and its database projection `OutboxEntry`):
 
@@ -185,7 +185,7 @@ Two properties are added to `ExternalMessage` (and its database projection `Outb
 | `Destination` | `string` (required) | The logical routing target — a topic, queue or exchange name |
 | `RoutingHint` | `string?` (optional) | An optional hint such as a partition key or routing key |
 
-**Deployment order matters.** Migration 025 adds the two columns to `alberto_outbox_entries`.
+**Deployment order matters.** Migration 027 adds the two columns to `alberto_outbox_entries`.
 Run it **before** deploying the new binary. A binary deployed without the migration will fail at
 runtime when it tries to insert outbox rows.
 
@@ -244,17 +244,19 @@ future framework tag a breaking change for whoever had already chosen that name;
 before the API freezes, costs nothing, because domain concepts are things like `order` and
 `customer`.
 
-Three construction points enforce the reservation:
+Two construction points enforce the reservation:
 
 ```csharp
-// all three throw ArgumentException:
+// both throw ArgumentException:
 new EventTag("_version", "1")        // EventTag public constructor — throws at call site
 // [Tag("_internal")] on a property  // throws on first append of that event type
-TagPattern.Exact("_version", "1")    // TagPattern factory methods — throws at call site
 ```
 
+Boundaries need no separate guard: `DcbQuery` takes `EventTag` values, so a query over a
+reserved concept cannot be constructed in the first place.
+
 **Symptom.** `ArgumentException: Concept '_x' starts with '_', which is reserved for
-framework-internal tags…` at the construction call site (for `EventTag` and `TagPattern`), or on
+framework-internal tags…` at the construction call site (for `EventTag`), or on
 the first append of an event type that carries a leading-underscore `[Tag(...)]` property
 (attributes are scanned lazily on first use).
 

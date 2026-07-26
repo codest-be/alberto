@@ -191,111 +191,6 @@ public sealed class TagAttributeReservedConceptGuardTests
     }
 }
 
-/// <summary>
-/// Guards the <see cref="EventTag.SchemaVersionConcept"/> reservation across
-/// every construction path into <see cref="TagPattern"/>.
-/// </summary>
-public sealed class TagPatternReservedConceptGuardTests
-{
-    // ------------------------------------------------------------------
-    // Parse
-    // ------------------------------------------------------------------
-
-    [Fact]
-    public void Parse_ExactForm_RejectsReservedConcept()
-    {
-        var act = () => TagPattern.Parse($"{EventTag.SchemaVersionConcept}:1");
-        act.Should().Throw<ArgumentException>()
-           .WithMessage($"*{EventTag.SchemaVersionConcept}*reserved*");
-    }
-
-    [Fact]
-    public void Parse_WildcardForm_RejectsReservedConcept()
-    {
-        var act = () => TagPattern.Parse($"{EventTag.SchemaVersionConcept}:*");
-        act.Should().Throw<ArgumentException>()
-           .WithMessage($"*{EventTag.SchemaVersionConcept}*reserved*");
-    }
-
-    // ------------------------------------------------------------------
-    // TryParse
-    // ------------------------------------------------------------------
-
-    [Fact]
-    public void TryParse_ReturnsFalse_ForReservedConcept_ExactForm()
-    {
-        TagPattern.TryParse($"{EventTag.SchemaVersionConcept}:1", out _).Should().BeFalse();
-    }
-
-    [Fact]
-    public void TryParse_ReturnsFalse_ForReservedConcept_WildcardForm()
-    {
-        TagPattern.TryParse($"{EventTag.SchemaVersionConcept}:*", out _).Should().BeFalse();
-    }
-
-    [Fact]
-    public void TryParse_Succeeds_ForNormalExactPattern()
-    {
-        var succeeded = TagPattern.TryParse("order:42", out var result);
-        succeeded.Should().BeTrue();
-        result.Concept.Should().Be("order");
-        result.Id.Should().Be("42");
-    }
-
-    [Fact]
-    public void TryParse_Succeeds_ForNormalWildcardPattern()
-    {
-        var succeeded = TagPattern.TryParse("order:*", out var result);
-        succeeded.Should().BeTrue();
-        result.IsWildcard.Should().BeTrue();
-    }
-
-    // ------------------------------------------------------------------
-    // Prefix / Exact factory methods
-    // ------------------------------------------------------------------
-
-    [Fact]
-    public void Prefix_RejectsReservedConcept()
-    {
-        var act = () => TagPattern.Prefix(EventTag.SchemaVersionConcept);
-        act.Should().Throw<ArgumentException>()
-           .WithMessage($"*{EventTag.SchemaVersionConcept}*reserved*");
-    }
-
-    [Fact]
-    public void Exact_StringOverload_RejectsReservedConcept()
-    {
-        var act = () => TagPattern.Exact(EventTag.SchemaVersionConcept, "1");
-        act.Should().Throw<ArgumentException>()
-           .WithMessage($"*{EventTag.SchemaVersionConcept}*reserved*");
-    }
-
-    [Fact]
-    public void Exact_EventTagOverload_AcceptsNormalTag()
-    {
-        // A normal EventTag can always be promoted to an exact TagPattern.
-        // This is a regression pin — the implicit conversion should keep working.
-        var tag = new EventTag("order", "99");
-        var pattern = TagPattern.Exact(tag);
-        pattern.Concept.Should().Be("order");
-        pattern.Id.Should().Be("99");
-        pattern.IsExact.Should().BeTrue();
-    }
-
-    // ------------------------------------------------------------------
-    // Implicit conversion from EventTag
-    // ------------------------------------------------------------------
-
-    [Fact]
-    public void ImplicitConversion_FromNormalEventTag_CreatesExactPattern()
-    {
-        var tag = new EventTag("customer", "7");
-        TagPattern pattern = tag;
-        pattern.IsExact.Should().BeTrue();
-        pattern.Concept.Should().Be("customer");
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Prefix-wide reservation
 //
@@ -347,23 +242,6 @@ public sealed class ReservedConceptPrefixTests
         act.Should().Throw<ArgumentException>().WithParameterName("concept");
     }
 
-    [Theory]
-    [InlineData(Hypothetical)]
-    [InlineData(BareUnderscore)]
-    public void TagPattern_factories_reject_any_leading_underscore_concept(string concept)
-    {
-        var exact = () => TagPattern.Exact(concept, "1");
-        exact.Should().Throw<ArgumentException>().WithParameterName("concept");
-
-        var prefix = () => TagPattern.Prefix(concept);
-        prefix.Should().Throw<ArgumentException>().WithParameterName("concept");
-
-        var parse = () => TagPattern.Parse($"{concept}:*");
-        parse.Should().Throw<ArgumentException>();
-
-        TagPattern.TryParse($"{concept}:*", out _).Should().BeFalse();
-    }
-
     [Fact]
     public void An_underscore_elsewhere_in_the_concept_is_still_allowed()
     {
@@ -371,8 +249,6 @@ public sealed class ReservedConceptPrefixTests
         // "order_line" must keep working — narrowing this would break real tags.
         var tag = new EventTag("order_line", "42");
         tag.Value.Should().Be("order_line:42");
-
-        TagPattern.Exact("order_line", "42").Concept.Should().Be("order_line");
     }
 
     [Fact]

@@ -1,5 +1,6 @@
 using Alberto.Dcb.InMemory;
 using Alberto.Dcb.Tenancy;
+using Alberto.Dcb.Testing.Xunit;
 using FluentAssertions;
 using Xunit;
 
