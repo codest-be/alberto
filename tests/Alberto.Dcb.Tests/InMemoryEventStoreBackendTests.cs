@@ -1,4 +1,5 @@
 using Alberto.Dcb.InMemory;
+using Alberto.Dcb.Testing.Xunit;
 
 namespace Alberto.Dcb.Tests;
 
