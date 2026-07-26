@@ -37,6 +37,14 @@ internal static class ProjectionRebuildCoordinatorTestExtensions
         string processorId,
         CancellationToken ct) =>
         ((IProjectionRebuildCoordinatorStore)store).CompleteAbortAsync(processorId, ct);
+
+    public static Task DiscardStateVersionAsync(
+        this PostgresProjectionRebuildStore store,
+        string projectionType,
+        int version,
+        CancellationToken ct) =>
+        ((IProjectionRebuildCoordinatorStore)store)
+            .DiscardStateVersionAsync(projectionType, version, ct);
 }
 
 /// <summary>
@@ -45,8 +53,10 @@ internal static class ProjectionRebuildCoordinatorTestExtensions
 /// The state machine is the contract the rebuild coordinator and the operator CLI both
 /// depend on, so every transition is exercised from both a permitted and a forbidden
 /// starting state. The promotion and abort tests additionally assert on the contents of
-/// <c>alberto_projection_states</c>, because the version flip is only half the operation —
-/// the other half is dropping exactly one version's rows and no others.
+/// <c>alberto_projection_states</c>, because what a transition does to the rows matters as
+/// much as what it does to the version numbers — and what it does is deliberately nothing.
+/// Reclaiming a discarded version is a separate step, so that a reader holding a version
+/// number it resolved a moment before the flip still finds rows behind it.
 /// </summary>
 public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuildStoreFixture fixture)
     : IClassFixture<PostgresProjectionRebuildStoreFixture>
@@ -223,7 +233,7 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
     }
 
     [Fact]
-    public async Task PromoteAsync_FromReady_FlipsVersionAndDropsTheSupersededState()
+    public async Task PromoteAsync_FromReady_FlipsTheVersion_AndLeavesTheSupersededStateForTheSweep()
     {
         var ct = TestContext.Current.CancellationToken;
         var (processorId, projectionType) = NewIdentity();
@@ -246,13 +256,21 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
         promoted.CompletedAt.Should().NotBeNull();
         promoted.IsRebuildInFlight.Should().BeFalse();
         outcome.DiscardedVersion.Should().Be(
-            1, "the coordinator needs the superseded version to clear EF-backed projections, " +
-               "which live outside this transaction");
+            1, "the coordinator needs the superseded version to reclaim it later");
 
         (await CountStateAsync(projectionType, 1, ct)).Should().Be(
-            0, "the superseded version's rows are dropped in the same transaction as the flip");
+            2, "a reader that resolved version 1 just before the flip is still holding that " +
+               "number, and deleting the rows here is what used to leave it seeing nothing");
         (await CountStateAsync(projectionType, 2, ct)).Should().Be(
             1, "the promoted version's rows are exactly what the rebuild wrote");
+
+        // The reclaim is a separate step the coordinator takes a grace period later, once no
+        // reader can still be holding the superseded version.
+        await store.DiscardStateVersionAsync(projectionType, outcome.DiscardedVersion, ct);
+
+        (await CountStateAsync(projectionType, 1, ct)).Should().Be(0);
+        (await CountStateAsync(projectionType, 2, ct)).Should().Be(
+            1, "reclaiming the superseded version must not touch the promoted one");
     }
 
     [Fact]
@@ -316,7 +334,33 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
 
         (await CountStateAsync(projectionType, 1, ct)).Should().Be(1);
         (await CountStateAsync(projectionType, 2, ct)).Should().Be(
-            0, "the partial rebuild's rows are discarded");
+            2, "the abandoned version is unreachable, but its rows wait for the sweep — the " +
+               "shadow loop that wrote them has not necessarily noticed the abort yet, so a " +
+               "delete here would race its last writes rather than remove them");
+
+        await store.DiscardStateVersionAsync(projectionType, outcome.DiscardedVersion, ct);
+
+        (await CountStateAsync(projectionType, 1, ct)).Should().Be(
+            1, "reclaiming the abandoned version must not touch the live one");
+        (await CountStateAsync(projectionType, 2, ct)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task DiscardStateVersionAsync_ForAVersionHoldingNothing_IsANoOp()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (_, projectionType) = NewIdentity();
+        var store = CreateStore();
+
+        await InsertStateAsync(projectionType, "doc-1", rebuildVersion: 1, ct);
+
+        // The sweep runs on every replica and covers the whole version range each time, so
+        // reclaiming a version that another replica already reclaimed — or that never held
+        // anything — has to be ordinary rather than an error.
+        await store.DiscardStateVersionAsync(projectionType, 7, ct);
+        await store.DiscardStateVersionAsync(projectionType, 7, ct);
+
+        (await CountStateAsync(projectionType, 1, ct)).Should().Be(1);
     }
 
     [Fact]

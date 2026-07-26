@@ -9,9 +9,12 @@ namespace Alberto.Dcb.Postgres;
 /// </summary>
 /// <remarks>
 /// Operator calls persist intent without performing completion work. Coordinator transitions
-/// lock the current row before changing versions. Promotion additionally spans
-/// <c>alberto_projection_states</c>, so it runs in a transaction: readers move from a complete
-/// old version to a complete new one.
+/// lock the current row before changing versions, so a promote and an abort racing each other
+/// cannot interleave. Neither transition touches <c>alberto_projection_states</c>: what makes
+/// readers move from a complete old version to a complete new one is leaving the old one
+/// intact until they have all stopped asking for it, which is
+/// <see cref="IProjectionRebuildCoordinatorStore.DiscardStateVersionAsync"/>'s job and the
+/// coordinator's timing.
 /// </remarks>
 public sealed class PostgresProjectionRebuildStore :
     IProjectionRebuildStore,
@@ -245,10 +248,10 @@ public sealed class PostgresProjectionRebuildStore :
             await flipCmd.ExecuteNonQueryAsync(ct);
         }
 
-        // Drop the version being superseded in the same transaction as the flip. That is what
-        // makes the swap invisible: readers see the old version complete, then the new version
-        // complete, and never a half-deleted one.
-        await DeleteStateVersionAsync(conn, tx, current.ProjectionType, current.ActiveVersion, ct);
+        // The superseded version's rows stay. Dropping them here would make the swap invisible
+        // only to a reader that resolves its version after this commit; one that resolved a
+        // moment earlier would query a version whose rows this transaction had just deleted and
+        // find nothing. The coordinator reclaims them once every reader has had time to refresh.
         await tx.CommitAsync(ct);
 
         return new RebuildOutcome(
@@ -290,9 +293,10 @@ public sealed class PostgresProjectionRebuildStore :
             await cmd.ExecuteNonQueryAsync(ct);
         }
 
-        // The active version is untouched, so discarding the partial rebuild is invisible
-        // to readers.
-        await DeleteStateVersionAsync(conn, tx, current.ProjectionType, abandonedVersion, ct);
+        // The abandoned version's rows stay, and for a second reason on top of the one in
+        // CompletePromotionAsync: the shadow loop that fills them only learns of the abort on
+        // its next poll, so deleting here races its final writes and leaves them behind anyway.
+        // Reclaiming after a grace period sweeps those up instead of stranding them.
         await tx.CommitAsync(ct);
 
         return new RebuildOutcome(
@@ -316,19 +320,22 @@ public sealed class PostgresProjectionRebuildStore :
         return await reader.ReadAsync(ct) ? Map(reader) : null;
     }
 
-    /// <summary>
-    /// Deletes every projection state row for one version of one projection type.
-    /// Spans all tenants: a rebuild is a schema-level operation, not a per-tenant one.
-    /// </summary>
-    private async Task DeleteStateVersionAsync(
-        NpgsqlConnection conn, NpgsqlTransaction tx,
+    /// <inheritdoc/>
+    async Task IProjectionRebuildCoordinatorStore.DiscardStateVersionAsync(
         string projectionType, int version, CancellationToken ct)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(projectionType);
+
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+
+        // Its own transaction, and deliberately not the one that flipped the version: a delete
+        // is all this is, and nothing reads the rows it removes. Spans all tenants — a rebuild
+        // is a schema-level operation, not a per-tenant one.
         await using var cmd = new NpgsqlCommand(
             $"""
             DELETE FROM {StatesTable}
             WHERE projection_type = @projection_type AND rebuild_version = @version
-            """, conn, tx);
+            """, conn);
 
         cmd.Parameters.AddWithValue("projection_type", projectionType);
         cmd.Parameters.AddWithValue("version", version);

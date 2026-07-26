@@ -278,11 +278,12 @@ and a coordinator that crashes mid-rebuild resumes on restart.
 - Run more than one replica of the module and you need leases enabled
   (`.WithControlLoop(o => o with { Leases = o.Leases with { Enabled = true } })`), or two replicas
   replay into the same version.
-- A reader that resolves the active version and *then* queries can find nothing, if the promotion
-  lands between the two steps: promotion deletes the superseded rows in the same transaction that
-  flips the version, so the number the reader is holding stops existing. The window is a single
-  query and only opens at the moment of a promotion, but it is real. Retry a read that comes back
-  empty when the document should exist.
+- A discarded version's rows are not deleted by the transition that discards them. A reader
+  resolves the active version and *then* queries it, so deleting inside the flip would leave a
+  reader holding a number that had just stopped existing. The superseded (or abandoned) version
+  survives until the coordinator's sweep reclaims it, a grace period of twice the version-cache
+  refresh interval after the transition. Expect `alberto ops rebuild status` to show a dead
+  version's rows still on disk for a few seconds after a promote or abort.
 - A rebuild reprocesses every event. **Reactors are not rebuilt** — replaying side effects is not
   something the coordinator can make safe.
 - Inline projections cannot be rebuilt this way.

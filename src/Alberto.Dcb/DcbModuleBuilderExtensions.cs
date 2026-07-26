@@ -567,12 +567,21 @@ public static class DcbModuleBuilderExtensions
             services.AddSingleton<IHostedService>(sp =>
             {
                 var opts = Options(sp, moduleKey).Rebuilds;
-                var coordinatorOptions = new RebuildCoordinatorOptions(opts.PollingInterval, opts.AutoPromote);
+                var projectionVersions = sp.GetRequiredKeyedService<ProjectionVersions>(moduleKey);
+
+                // Twice the version-cache refresh interval. One interval is the guarantee — a
+                // reader that resolved the superseded version has refreshed by then — and the
+                // second is margin for a refresh that had to retry, and for clock skew between
+                // the database that stamps the transition and the host that times the grace.
+                var coordinatorOptions = new RebuildCoordinatorOptions(
+                    opts.PollingInterval,
+                    opts.AutoPromote,
+                    projectionVersions.RefreshInterval * 2);
 
                 return new RebuildCoordinator(
                     sp.GetKeyedServices<RebuildableProjection>(moduleKey).ToList(),
                     sp.GetRequiredKeyedService<IProjectionRebuildCoordinatorStore>(moduleKey),
-                    sp.GetRequiredKeyedService<ProjectionVersions>(moduleKey),
+                    projectionVersions,
                     sp.GetRequiredKeyedService<ICheckpointStore>(moduleKey),
                     sp.GetRequiredKeyedService<ShadowControlLoopFactory>(moduleKey),
                     sp.GetKeyedServices<IProjectionStateClearer>(moduleKey).ToList(),
