@@ -7,12 +7,15 @@ namespace Alberto.Dcb.Testing;
 /// </summary>
 public static class TestEvents
 {
-    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
-
     /// <summary>
     /// Builds an <c>EventToPersist</c> ready to append, resolving its type id from
     /// <c>EventTypeAttribute</c> and serializing the payload to JSON.
     /// </summary>
+    /// <remarks>
+    /// Payload is serialized with <see cref="JsonSerializer"/>'s default options so that
+    /// <see cref="Alberto.Dcb.EventEnvelopeExtensions.ParseEvent{T}"/> — which also uses the
+    /// default options — can round-trip the payload correctly in projection handlers.
+    /// </remarks>
     /// <param name="payload">The event payload.</param>
     /// <param name="tags">Tags to attach. Defaults to none.</param>
     /// <param name="metadata">Metadata to attach. Defaults to none.</param>
@@ -28,7 +31,7 @@ public static class TestEvents
         {
             Id = Guid.CreateVersion7(),
             EventType = new EventType(EventTypeAttribute.GetEventTypeId(typeof(TEvent))),
-            EventData = JsonSerializer.Serialize(payload, SerializerOptions),
+            EventData = JsonSerializer.Serialize(payload),
             Tags = tags?.ToArray() ?? [],
             Metadata = metadata ?? new Dictionary<string, string>()
         };
