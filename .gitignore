@@ -10,3 +10,5 @@ riderModule.iml
 .idea/
 # serena tool cache
 .serena/
+
+TestResults/
