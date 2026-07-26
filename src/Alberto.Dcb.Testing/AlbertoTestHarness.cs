@@ -64,7 +64,16 @@ public sealed class AlbertoTestHarness : IAsyncDisposable
     /// <summary>Appends one event to the module's store.</summary>
     /// <param name="payload">The event payload.</param>
     /// <param name="tags">Tags to attach. Defaults to none.</param>
-    /// <param name="tenantId">Tenant to append under. Defaults to none (non-tenant mode).</param>
+    /// <param name="tenantId">
+    /// Tenant to append under. Must start with a lowercase letter and contain only lowercase
+    /// letters, digits, and underscores, with a maximum length of 63 characters (the same
+    /// rule enforced by <c>TenantContext.SetTenant</c>). UUIDs, hyphens, and uppercase
+    /// letters are rejected with <see cref="ArgumentException"/>.
+    /// <para>
+    /// When the module did not declare tenancy, <c>TenantContext</c> is not registered in
+    /// the DI container and a non-<see langword="null"/> value is silently ignored.
+    /// </para>
+    /// </param>
     /// <param name="ct">Cancellation token.</param>
     public async Task AppendAsync<TEvent>(
         TEvent payload,

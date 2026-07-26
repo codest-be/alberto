@@ -12,7 +12,7 @@ public class EventCollectorTests
     [Fact]
     public async Task WaitForProjectedAsync_ReturnsAnEventProjectedAfterTheWaitBegan()
     {
-        var collector = new EventCollector();
+        using var collector = new EventCollector();
         var envelope = Envelope();
 
         var waiting = collector.WaitForProjectedAsync(
@@ -26,7 +26,7 @@ public class EventCollectorTests
     [Fact]
     public async Task WaitForProjectedAsync_ReturnsAnEventProjectedBeforeTheWaitBegan()
     {
-        var collector = new EventCollector();
+        using var collector = new EventCollector();
         var envelope = Envelope();
         collector.OnProjected("p1", envelope);
 
@@ -38,7 +38,7 @@ public class EventCollectorTests
     public async Task WaitForProjectedAsync_TimesOutOnTheInjectedClock()
     {
         var time = new FakeTimeProvider();
-        var collector = new EventCollector(time);
+        using var collector = new EventCollector(time);
 
         var waiting = collector.WaitForProjectedAsync(
             "p1", "never-projected",
@@ -48,6 +48,26 @@ public class EventCollectorTests
         time.Advance(TimeSpan.FromSeconds(6));
 
         await Assert.ThrowsAsync<TimeoutException>(() => waiting);
+    }
+
+    [Fact]
+    public async Task WaitForProjectedAsync_ThrowsOperationCanceledWhenTokenFires()
+    {
+        using var collector = new EventCollector();
+        using var cts = new CancellationTokenSource();
+
+        // Start waiting for an event that will never arrive.
+        var waiting = collector.WaitForProjectedAsync(
+            "p1", "never-projected",
+            timeout: TimeSpan.FromSeconds(30),
+            ct: cts.Token);
+
+        // Cancel while the wait is in progress.
+        await cts.CancelAsync();
+
+        // Must surface as OperationCanceledException (or its subtype TaskCanceledException),
+        // not as TimeoutException.
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiting);
     }
 
     private static IEventEnvelope Envelope() => new EventEnvelope

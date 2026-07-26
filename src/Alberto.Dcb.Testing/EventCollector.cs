@@ -2,7 +2,8 @@ namespace Alberto.Dcb.Testing;
 
 /// <summary>
 /// Test helper that collects projected events and supports waiting for specific projections.
-/// Wire to <c>PollingConsumer.OnProjected</c> to use.
+/// Wire it by registering a <c>ConsumeMiddleware</c> via <c>AddConsumeMiddleware</c> that calls
+/// <see cref="OnProjected"/> after the downstream handler runs.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -10,8 +11,11 @@ namespace Alberto.Dcb.Testing;
 /// <see cref="WaitForProjectedAsync(Func{string,IEventEnvelope,bool},TimeSpan?,CancellationToken)"/>
 /// may be called concurrently with it.
 /// </para>
+/// <para>
+/// Dispose the collector when the test finishes to release the underlying semaphore.
+/// </para>
 /// </remarks>
-public sealed class EventCollector
+public sealed class EventCollector : IDisposable
 {
     private readonly List<(string ProcessorId, IEventEnvelope Envelope)> _projected = new();
     private readonly SemaphoreSlim _signal = new(0);
@@ -67,7 +71,7 @@ public sealed class EventCollector
             // Bounded by the poll interval rather than by `remaining`, so a fake clock that
             // jumps past the deadline is noticed instead of being slept through.
             try { await _signal.WaitAsync(TimeSpan.FromMilliseconds(25), ct); }
-            catch (OperationCanceledException) { break; }
+            catch (OperationCanceledException) { ct.ThrowIfCancellationRequested(); break; }
         }
 
         throw new TimeoutException("Timed out waiting for projected event.");
@@ -95,4 +99,7 @@ public sealed class EventCollector
     {
         get { lock (_projected) { return _projected.ToList(); } }
     }
+
+    /// <summary>Releases the underlying semaphore.</summary>
+    public void Dispose() => _signal.Dispose();
 }
