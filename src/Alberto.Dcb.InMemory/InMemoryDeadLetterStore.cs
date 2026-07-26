@@ -21,11 +21,13 @@ public sealed class InMemoryDeadLetterStore : IDeadLetterStore
     /// <inheritdoc />
     public Task<IReadOnlyList<DeadLetterEntry>> GetAsync(
         string processorId,
+        string? tenantId = null,
         int limit = 100,
         CancellationToken ct = default)
     {
         var entries = _entries.Values
             .Where(e => e.ProcessorId == processorId)
+            .Where(e => tenantId is null || e.TenantId == tenantId)
             .OrderByDescending(e => e.FailedAt)
             .Take(limit)
             .ToList();

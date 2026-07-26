@@ -34,14 +34,125 @@ public static class PostgresMigrator
             EnsureSchemaExists(connectionString, schema);
         }
 
-        var upgrader = BuildUpgradeEngine(connectionString, schema, singleTenant);
+        // A handful of statements — CREATE INDEX CONCURRENTLY above all — are rejected by
+        // PostgreSQL inside a transaction block, and those are exactly the statements that make
+        // a migration safe to run against a live database. DbUp's transaction mode is a property
+        // of the upgrader, not of the script, so a script that needs one of them is run by its
+        // own upgrader built WithoutTransaction. Scripts are grouped into consecutive runs of
+        // the same mode so that ordering is preserved and the common case is still a single
+        // upgrader over every script.
+        var scriptFolder = singleTenant ? SingleTenantScriptFolder : MultiTenantScriptFolder;
+        var runs = PartitionIntoTransactionRuns(GetOrderedScriptNames(scriptFolder));
 
-        var result = upgrader.PerformUpgrade();
+        var executed = new List<string>();
 
-        return new MigrationResult(
-            result.Successful,
-            result.Scripts.Select(s => s.Name).ToArray(),
-            result.Error);
+        foreach (var run in runs)
+        {
+            var upgrader = BuildUpgradeEngine(
+                connectionString,
+                schema,
+                singleTenant,
+                scriptFilter: run.Contains,
+                runsOutsideTransaction: run.RunsOutsideTransaction);
+
+            var result = upgrader.PerformUpgrade();
+            executed.AddRange(result.Scripts.Select(s => s.Name));
+
+            // Stop at the first failing run rather than pressing on: a later script may well
+            // depend on the schema the failed one was supposed to produce.
+            if (!result.Successful)
+                return new MigrationResult(false, executed, result.Error);
+        }
+
+        return new MigrationResult(true, executed, null);
+    }
+
+    /// <summary>
+    /// Marker a migration script places in a leading comment to declare that it must not run
+    /// inside a transaction block.
+    /// </summary>
+    /// <remarks>
+    /// Kept as a comment rather than a file-name convention so the reason travels with the
+    /// statement that needs it, and so renaming a script cannot silently change how it runs.
+    /// </remarks>
+    internal const string NoTransactionMarker = "alberto:no-transaction";
+
+    /// <summary>
+    /// A consecutive group of migration scripts that share a transaction mode.
+    /// </summary>
+    private sealed record ScriptRun(bool RunsOutsideTransaction, HashSet<string> Names)
+    {
+        public bool Contains(string scriptName) => Names.Contains(scriptName);
+    }
+
+    /// <summary>
+    /// Returns the embedded script names for a migration folder in the order DbUp would run
+    /// them. DbUp orders by script name, and the scripts are named with a zero-padded numeric
+    /// prefix, so an ordinal sort is that order.
+    /// </summary>
+    private static List<string> GetOrderedScriptNames(string scriptFolder)
+        => Assembly.GetExecutingAssembly()
+            .GetManifestResourceNames()
+            .Where(n => IsInFolder(n, scriptFolder))
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToList();
+
+    /// <summary>
+    /// Splits the ordered scripts into maximal consecutive runs that share a transaction mode.
+    /// With no non-transactional scripts this yields exactly one run, which is the pre-existing
+    /// behaviour.
+    /// </summary>
+    private static List<ScriptRun> PartitionIntoTransactionRuns(List<string> orderedScripts)
+    {
+        var runs = new List<ScriptRun>();
+
+        foreach (var scriptName in orderedScripts)
+        {
+            var outsideTransaction = DeclaresNoTransaction(scriptName);
+
+            if (runs.Count == 0 || runs[^1].RunsOutsideTransaction != outsideTransaction)
+                runs.Add(new ScriptRun(outsideTransaction, new HashSet<string>(StringComparer.Ordinal)));
+
+            runs[^1].Names.Add(scriptName);
+        }
+
+        return runs;
+    }
+
+    /// <summary>
+    /// Reads an embedded script and reports whether it carries <see cref="NoTransactionMarker"/>.
+    /// </summary>
+    /// <remarks>
+    /// The marker must be the entire content of a comment line. Matching it anywhere in the file
+    /// would let a script that merely explains the marker in its header — as several of them do —
+    /// silently opt itself out of transactional execution.
+    /// </remarks>
+    private static bool DeclaresNoTransaction(string scriptName)
+    {
+        using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(scriptName);
+        if (stream is null) return false;
+
+        using var reader = new StreamReader(stream);
+        return ScriptDeclaresNoTransaction(reader.ReadToEnd());
+    }
+
+    /// <summary>
+    /// Reports whether the given migration script text declares that it must run outside a
+    /// transaction block, by carrying <see cref="NoTransactionMarker"/> as the whole content
+    /// of a comment line.
+    /// </summary>
+    internal static bool ScriptDeclaresNoTransaction(string scriptText)
+    {
+        foreach (var line in scriptText.Split('\n'))
+        {
+            var trimmed = line.Trim();
+            if (!trimmed.StartsWith("--", StringComparison.Ordinal)) continue;
+
+            if (trimmed[2..].Trim().Equals(NoTransactionMarker, StringComparison.Ordinal))
+                return true;
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -129,29 +240,43 @@ public static class PostgresMigrator
         return remainder.Count(c => c == '.') == 1;
     }
 
+    /// <summary>
+    /// Builds the engine that runs — or, for inspection, merely lists — migration scripts.
+    /// <paramref name="scriptFilter"/> defaults to every script in the tenancy's folder, which is
+    /// what inspection wants; <see cref="Migrate"/> narrows it to a single transaction run and
+    /// sets <paramref name="runsOutsideTransaction"/> from what that run declared.
+    /// </summary>
     private static UpgradeEngine BuildUpgradeEngine(
         string connectionString,
         string? schema,
-        bool singleTenant)
+        bool singleTenant,
+        Func<string, bool>? scriptFilter = null,
+        bool runsOutsideTransaction = false)
     {
         var schemaName = string.IsNullOrWhiteSpace(schema) ? "public" : schema;
         var schemaPrefix = string.IsNullOrWhiteSpace(schema) ? "" : $"{schema}.";
         var scriptFolder = singleTenant ? SingleTenantScriptFolder : MultiTenantScriptFolder;
+        scriptFilter ??= scriptName => IsInFolder(scriptName, scriptFolder);
 
         // Both execution and inspection must share the same script selection, variables,
         // transaction policy, and schema-local journal. Otherwise "pending" can disagree
-        // with the migration that will actually run.
-        return DeployChanges.To
+        // with the migration that will actually run. The transaction mode is the one thing
+        // that legitimately varies, and only per run: inspection never executes anything.
+        var builder = DeployChanges.To
             .PostgresqlDatabase(connectionString)
             .WithScriptsEmbeddedInAssembly(
                 Assembly.GetExecutingAssembly(),
-                scriptName => IsInFolder(scriptName, scriptFolder))
-            .WithTransactionPerScript()
+                scriptFilter)
             .LogToConsole()
             .WithVariable("schema", schemaName)
             .WithVariable("schema_prefix", schemaPrefix)
-            .JournalToPostgresqlTable(schemaName, "schemaversions")
-            .Build();
+            .JournalToPostgresqlTable(schemaName, "schemaversions");
+
+        builder = runsOutsideTransaction
+            ? builder.WithoutTransaction()
+            : builder.WithTransactionPerScript();
+
+        return builder.Build();
     }
 
     private static void EnsureSchemaExists(string connectionString, string schema)

@@ -81,13 +81,22 @@ public sealed class PostgresDeadLetterStore(
     /// <inheritdoc />
     public async Task<IReadOnlyList<DeadLetterEntry>> GetAsync(
         string processorId,
+        string? tenantId = null,
         int limit = 100,
         CancellationToken ct = default)
     {
+        // The tenant_id column only exists under the multi-tenant migration. In single-tenant
+        // mode there is nothing to select or filter on, and a supplied tenantId is meaningless.
+        var tenantSelect = _multiTenant ? "tenant_id" : "NULL::text AS tenant_id";
+        var tenantFilter = _multiTenant && tenantId is not null
+            ? "AND tenant_id = @tenantId"
+            : string.Empty;
+
         var sql = $"""
-            SELECT id, processor_id, event_id, event_type, event_data, error_message, stack_trace, attempt_count, failed_at, global_position, retry_requested
+            SELECT id, processor_id, event_id, event_type, event_data, error_message, stack_trace, attempt_count, failed_at, global_position, retry_requested, {tenantSelect}
             FROM {_schema.Table("alberto_dead_letter_events")}
             WHERE processor_id = @processorId
+            {tenantFilter}
             ORDER BY failed_at DESC
             LIMIT @limit
             """;
@@ -97,6 +106,8 @@ public sealed class PostgresDeadLetterStore(
         cmd.CommandText = sql;
         cmd.Parameters.AddWithValue("processorId", processorId);
         cmd.Parameters.AddWithValue("limit", limit);
+        if (tenantFilter.Length > 0)
+            cmd.Parameters.AddWithValue("tenantId", tenantId!);
 
         var entries = new List<DeadLetterEntry>();
         await using var reader = await cmd.ExecuteReaderAsync(ct);
@@ -114,7 +125,8 @@ public sealed class PostgresDeadLetterStore(
                 AttemptCount: reader.GetInt32(7),
                 FailedAt: reader.GetDateTime(8),
                 GlobalPosition: reader.GetInt64(9),
-                RetryRequested: reader.GetBoolean(10)));
+                RetryRequested: reader.GetBoolean(10),
+                TenantId: reader.IsDBNull(11) ? null : reader.GetString(11)));
         }
 
         return entries;

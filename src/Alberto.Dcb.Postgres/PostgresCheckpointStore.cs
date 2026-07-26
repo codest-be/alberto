@@ -109,18 +109,27 @@ public sealed class PostgresCheckpointStore : IFencedCheckpointStore, ICheckpoin
 
     public async Task<bool> SaveIfLeaseHeldAsync(
         string processorId, long position, string consumerId, string replicaId,
-        bool useProcessorLeaseFencing = false, CancellationToken ct = default)
+        long fenceToken, bool useProcessorLeaseFencing = false, CancellationToken ct = default)
     {
-        var functionName = useProcessorLeaseFencing
-            ? "alberto_save_checkpoint_if_processor_lease_held"
-            : "alberto_save_checkpoint_if_lease_held";
-
         await using var cmd = _dataSource.CreateCommand();
-        cmd.CommandText = $"SELECT {_schema.Function(functionName)}(@processorId, @consumerId, @replicaId, @position)";
+
+        // Tenant leases carry no generation — a replica holds one per tenant and none of them
+        // names an owner of this processor — so that variant keeps the four-argument signature
+        // and the token is not sent. See migration 021.
+        cmd.CommandText = useProcessorLeaseFencing
+            ? $"SELECT {_schema.Function("alberto_save_checkpoint_if_processor_lease_held")}" +
+              "(@processorId, @consumerId, @replicaId, @position, @fenceToken)"
+            : $"SELECT {_schema.Function("alberto_save_checkpoint_if_lease_held")}" +
+              "(@processorId, @consumerId, @replicaId, @position)";
+
         cmd.Parameters.AddWithValue("processorId", processorId);
         cmd.Parameters.AddWithValue("consumerId", consumerId);
         cmd.Parameters.AddWithValue("replicaId", replicaId);
         cmd.Parameters.AddWithValue("position", position);
+
+        if (useProcessorLeaseFencing)
+            cmd.Parameters.AddWithValue("fenceToken", fenceToken);
+
         var result = await cmd.ExecuteScalarAsync(ct);
         return result is true;
     }

@@ -289,7 +289,9 @@ public static class Program
         var other = await Reserve("B07");
         Console.WriteLine($"B07              : {(other.IsSuccess ? "reserved" : other.Problems[0].Message)}");
 
-        await Task.Delay(300);   // let the control loop catch up
+        // Wait for the control loop instead of sleeping for a guess.
+        var projections = provider.GetRequiredKeyedService<ProjectionCatchUp>("tickets");
+        await projections.WaitForProjectionAsync("show-occupancy");
 
         var states = await occupancy.LoadManyAsync([showId.ToString()]);
         Console.WriteLine($"seats taken      : {states[showId.ToString()].SeatsTaken}");
@@ -306,11 +308,20 @@ B07              : reserved
 seats taken      : 2
 ```
 
-Note the `Task.Delay`. Projections are **eventually** consistent — the control loop polls, so a
-read immediately after a write may not see it yet. That lag is the price of the decision path not
-waiting on every read model. If a particular projection must be readable the instant the mutation
-returns, EF projections can run
-[inline](projections.md#inline-vs-async) instead.
+Note the wait. Projections are **eventually** consistent — the control loop polls, so a read
+immediately after a write may not see it yet. That lag is the price of the decision path not
+waiting on every read model.
+
+`WaitForProjectionAsync` is how you read your own writes anyway: it reads the store's head once
+and returns as soon as that projection's checkpoint has passed it, throwing `TimeoutException`
+rather than quietly serving a stale read. Pass a position to wait for something specific, and a
+`TimeSpan` to override the default (five seconds, or three control-loop polls, whichever is
+longer). It watches a checkpoint, so it only reports progress made *in this process* — on a
+replica that does not run the processor it will wait out its timeout however far along the
+projection actually is.
+
+If a particular projection must be readable the instant the mutation returns, without waiting at
+all, EF projections can run [inline](projections.md#inline-vs-async) instead.
 
 ## Where to go next
 

@@ -50,6 +50,7 @@ public sealed class DeadLetterRetryLoopTests
 
         public Task<IReadOnlyList<DeadLetterEntry>> GetAsync(
             string processorId,
+            string? tenantId = null,
             int limit = 100,
             CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<DeadLetterEntry>>([]);

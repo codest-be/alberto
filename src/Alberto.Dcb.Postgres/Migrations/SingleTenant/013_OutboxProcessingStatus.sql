@@ -10,4 +10,5 @@ ALTER TABLE $schema_prefix$alberto_outbox_entries
 
 ALTER TABLE $schema_prefix$alberto_outbox_entries
     ADD CONSTRAINT alberto_outbox_entries_status_check
-    CHECK (status IN ('pending', 'processing', 'delivered', 'failed'));
+    CHECK (status IN ('pending', 'processing', 'delivered', 'failed'))
+    NOT VALID;

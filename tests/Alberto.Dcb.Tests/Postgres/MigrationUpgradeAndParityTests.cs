@@ -160,6 +160,12 @@ public sealed class MigrationUpgradeAndParityTests
         // 018: operators record completion intent for the coordinator.
         await AssertRebuildOperatorIntentColumnExistsAsync(conn);
 
+        // 013-015 add their CHECK constraints NOT VALID; a later script must validate them.
+        await AssertCheckConstraintsAreValidatedAsync(conn);
+
+        // 018: the partial index that keeps the stable-head query off a sequential scan.
+        await AssertInFlightVisibilityIndexAsync(conn);
+
         // Core invariant: alberto_events must still have the tenant_id column.
         (await ColumnExistsAsync(conn, "alberto_events", "tenant_id"))
             .Should().BeTrue(because: "multi-tenant schema must retain the tenant_id column on alberto_events");
@@ -209,6 +215,12 @@ public sealed class MigrationUpgradeAndParityTests
 
         // 018: operators record completion intent for the coordinator.
         await AssertRebuildOperatorIntentColumnExistsAsync(conn);
+
+        // 013-015 add their CHECK constraints NOT VALID; a later script must validate them.
+        await AssertCheckConstraintsAreValidatedAsync(conn);
+
+        // 018: the partial index that keeps the stable-head query off a sequential scan.
+        await AssertInFlightVisibilityIndexAsync(conn);
 
         // Core invariant: single-tenant schema must NOT have a tenant_id column on events.
         (await ColumnExistsAsync(conn, "alberto_events", "tenant_id"))
@@ -361,6 +373,152 @@ public sealed class MigrationUpgradeAndParityTests
         violations.Should().BeEmpty(
             because: "multi-tenant event-read functions in scripts 001-009 must include a p_tenant_id " +
                      "parameter — a read function missing this parameter would silently return cross-tenant data");
+    }
+
+    /// <summary>
+    /// An <c>ALTER TABLE … ADD CONSTRAINT … CHECK</c> without <c>NOT VALID</c> makes PostgreSQL
+    /// scan every existing row while it holds an <c>ACCESS EXCLUSIVE</c> lock, so on a live
+    /// database the whole table stops accepting reads and writes for the duration of the scan.
+    /// Adding the constraint <c>NOT VALID</c> takes the same lock but skips the scan, and a
+    /// separate <c>VALIDATE CONSTRAINT</c> statement performs the scan under
+    /// <c>SHARE UPDATE EXCLUSIVE</c>, which readers and writers pass straight through.
+    /// </summary>
+    /// <remarks>
+    /// The rule is applied to every script rather than only to the scripts that touch a table
+    /// large enough to matter today. Which table is "large enough" is a property of the
+    /// deployment, not of the migration, and an exemption list would have to be re-judged on
+    /// every new script. <c>NOT VALID</c> costs nothing on an empty table.
+    /// <para>
+    /// The validating scan must live in a <em>later script</em>, not merely a later statement:
+    /// DbUp runs each script in one transaction (<c>WithTransactionPerScript</c>), so a
+    /// <c>VALIDATE</c> in the same script would still sit behind the <c>ACCESS EXCLUSIVE</c>
+    /// lock taken by the <c>ADD</c> and hold it until commit — the very thing being avoided.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void MigrationScripts_AddCheckConstraints_AsNotValid()
+    {
+        var violations = new List<string>();
+
+        foreach (var singleTenant in new[] { false, true })
+        {
+            var prefix = singleTenant ? SingleTenantPrefix : MultiTenantPrefix;
+
+            foreach (var resourceName in GetMigrationResourceNames(singleTenant))
+            {
+                using var stream = MigratorAssembly.GetManifestResourceStream(resourceName)!;
+                using var reader = new StreamReader(stream);
+                var sqlContent = StripCommentLines(reader.ReadToEnd());
+
+                foreach (var statement in sqlContent.Split(';'))
+                {
+                    // Only ALTER TABLE … ADD CONSTRAINT … CHECK is affected. An inline CHECK in
+                    // CREATE TABLE has no rows to scan, and ADD CONSTRAINT … PRIMARY KEY is a
+                    // different (index-building) code path that NOT VALID does not apply to.
+                    if (!Contains(statement, "ALTER TABLE")) continue;
+                    if (!Contains(statement, "ADD CONSTRAINT")) continue;
+                    if (!Contains(statement, "CHECK")) continue;
+
+                    if (!Contains(statement, "NOT VALID"))
+                    {
+                        var variant = singleTenant ? "single-tenant" : "multi-tenant";
+                        violations.Add($"{variant}/{GetBaseName(resourceName, prefix)}: {Squash(statement)}");
+                    }
+                }
+            }
+        }
+
+        violations.Should().BeEmpty(
+            because: "ADD CONSTRAINT … CHECK must be declared NOT VALID so it does not scan the " +
+                     "table under an ACCESS EXCLUSIVE lock — move the scan into a later script's " +
+                     "ALTER TABLE … VALIDATE CONSTRAINT");
+    }
+
+    /// <summary>
+    /// The counterpart to <see cref="MigrationScripts_AddCheckConstraints_AsNotValid"/>: every
+    /// constraint added <c>NOT VALID</c> must be validated by a later script. Without this the
+    /// first test could be satisfied by simply never enforcing the constraint on existing rows.
+    /// </summary>
+    [Fact]
+    public void EveryNotValidCheckConstraint_IsValidatedByALaterScript()
+    {
+        foreach (var singleTenant in new[] { false, true })
+        {
+            var prefix = singleTenant ? SingleTenantPrefix : MultiTenantPrefix;
+            var addedNotValid = new Dictionary<string, int>(StringComparer.Ordinal);
+            var validated = new Dictionary<string, int>(StringComparer.Ordinal);
+
+            foreach (var resourceName in GetMigrationResourceNames(singleTenant))
+            {
+                var number = ParseScriptNumber(resourceName, prefix) ?? 0;
+                using var stream = MigratorAssembly.GetManifestResourceStream(resourceName)!;
+                using var reader = new StreamReader(stream);
+                var sqlContent = StripCommentLines(reader.ReadToEnd());
+
+                foreach (var statement in sqlContent.Split(';'))
+                {
+                    if (!Contains(statement, "ALTER TABLE")) continue;
+
+                    if (Contains(statement, "ADD CONSTRAINT") && Contains(statement, "NOT VALID"))
+                        addedNotValid[ConstraintNameAfter(statement, "ADD CONSTRAINT")] = number;
+                    else if (Contains(statement, "VALIDATE CONSTRAINT"))
+                        validated[ConstraintNameAfter(statement, "VALIDATE CONSTRAINT")] = number;
+                }
+            }
+
+            var variant = singleTenant ? "single-tenant" : "multi-tenant";
+
+            var unvalidated = addedNotValid.Keys.Except(validated.Keys).ToList();
+            unvalidated.Should().BeEmpty(
+                because: $"[{variant}] a constraint added NOT VALID never verifies the rows that " +
+                         "already existed until a later script runs VALIDATE CONSTRAINT on it");
+
+            var validatedTooEarly = addedNotValid
+                .Where(kv => validated.TryGetValue(kv.Key, out var at) && at <= kv.Value)
+                .Select(kv => $"{kv.Key}: added in {kv.Value:D3}, validated in {validated[kv.Key]:D3}")
+                .ToList();
+            validatedTooEarly.Should().BeEmpty(
+                because: $"[{variant}] VALIDATE must run in a strictly later script than the ADD — " +
+                         "DbUp wraps each script in one transaction, so validating in the same " +
+                         "script holds the ADD's ACCESS EXCLUSIVE lock across the scan");
+        }
+    }
+
+    // =========================================================================
+    // Private helpers for parity tests
+    // =========================================================================
+
+    private static bool Contains(string haystack, string needle)
+        => haystack.Contains(needle, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Removes whole-line SQL comments so they cannot satisfy or trip a content check.</summary>
+    private static string StripCommentLines(string sql)
+        => string.Join('\n', sql
+            .Split('\n')
+            .Select(l => l.TrimEnd('\r'))
+            .Where(l => !l.TrimStart().StartsWith("--", StringComparison.Ordinal)));
+
+    /// <summary>
+    /// Returns the constraint name following <paramref name="keyword"/> in an ALTER TABLE
+    /// statement, lower-cased. Migration scripts write constraint names as bare identifiers,
+    /// which PostgreSQL folds to lower case.
+    /// </summary>
+    private static string ConstraintNameAfter(string statement, string keyword)
+    {
+        var index = statement.IndexOf(keyword, StringComparison.OrdinalIgnoreCase);
+        var rest = statement[(index + keyword.Length)..];
+        return rest
+            .Split([' ', '\t', '\n', '\r', '('], StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault(string.Empty)
+            .ToLowerInvariant();
+    }
+
+    /// <summary>Collapses a SQL statement onto one line so it reads well in an assertion message.</summary>
+    private static string Squash(string statement)
+    {
+        var squashed = string.Join(' ', statement.Split(
+            [' ', '\t', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries));
+        return squashed.Length <= 120 ? squashed : squashed[..117] + "...";
     }
 
     // =========================================================================
@@ -519,6 +677,96 @@ public sealed class MigrationUpgradeAndParityTests
             """;
         cmd.Parameters.AddWithValue("@name", tableName);
         return Convert.ToInt64(await cmd.ExecuteScalarAsync()) > 0;
+    }
+
+    /// <summary>
+    /// Asserts the partial index that keeps <c>GetStableHeadAsync</c> off a sequential scan is
+    /// present, valid, and shaped the way that query needs it.
+    /// </summary>
+    /// <remarks>
+    /// The stable-head query looks for the first position above the head whose inserting
+    /// transaction is not yet older than every in-flight transaction. Migration 008 added
+    /// <c>pg_xact_id</c> without backfilling it, so on any upgraded database almost every row
+    /// has it NULL and the <c>pg_xact_id IS NOT NULL</c> predicate matches only the recent tail.
+    /// Without a partial index the planner sees a near-zero selectivity filter over the whole
+    /// table and picks a parallel sequential scan. Indexing only the rows that can match turns
+    /// that into a scan of the tail.
+    /// <para>
+    /// <c>indisvalid</c> is checked explicitly rather than assumed: the index is built with
+    /// <c>CREATE INDEX CONCURRENTLY</c>, and an interrupted concurrent build leaves behind an
+    /// index that exists in the catalog but that the planner will never use.
+    /// </para>
+    /// </remarks>
+    private static async Task AssertInFlightVisibilityIndexAsync(NpgsqlConnection conn)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT pg_get_indexdef(i.indexrelid), i.indisvalid
+            FROM pg_index i
+            INNER JOIN pg_class c ON c.oid = i.indexrelid
+            INNER JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE c.relname = 'ix_alberto_events_inflight'
+              AND n.nspname = 'public'
+            """;
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue(
+            because: "migration 020 must create ix_alberto_events_inflight so that " +
+                     "GetStableHeadAsync does not fall back to a sequential scan of alberto_events");
+
+        var definition = reader.GetString(0);
+        var isValid = reader.GetBoolean(1);
+
+        isValid.Should().BeTrue(
+            because: "an interrupted CREATE INDEX CONCURRENTLY leaves an invalid index behind — " +
+                     "it satisfies an existence check but the planner never uses it");
+
+        definition.Should().Contain("alberto_events",
+            because: "the index must be on the event log itself");
+        definition.Should().Contain("global_position",
+            because: "the stable-head query scans ascending by global_position and takes LIMIT 1, " +
+                     "so the index has to supply that ordering");
+        definition.Should().Contain("pg_xact_id IS NOT NULL",
+            because: "the index must be partial — indexing every row would not shrink the scan, " +
+                     "since it is precisely the NULL rows (everything predating migration 008) " +
+                     "that make the predicate so unselective");
+    }
+
+    /// <summary>
+    /// Asserts that every CHECK constraint the migrations add is present <em>and</em> validated.
+    /// Splitting an ADD into <c>NOT VALID</c> plus a later <c>VALIDATE CONSTRAINT</c> is only a
+    /// safe rewrite if the validation actually lands; a missing VALIDATE would silently leave
+    /// pre-existing rows unchecked forever.
+    /// </summary>
+    private static async Task AssertCheckConstraintsAreValidatedAsync(NpgsqlConnection conn)
+    {
+        string[] constraints =
+        [
+            "alberto_outbox_entries_status_check",
+            "alberto_projection_rebuild_meta_status_check",
+            "alberto_projection_rebuild_meta_version_check",
+            "alberto_projection_rebuild_meta_high_water_check",
+        ];
+
+        foreach (var name in constraints)
+        {
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = """
+                SELECT convalidated
+                FROM pg_constraint c
+                INNER JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = @name
+                  AND n.nspname = 'public'
+                  AND c.contype = 'c'
+                """;
+            cmd.Parameters.AddWithValue("@name", name);
+            var convalidated = await cmd.ExecuteScalarAsync();
+
+            convalidated.Should().NotBeNull(because: $"CHECK constraint {name} must exist after migration");
+            convalidated.Should().Be(true,
+                because: $"{name} is added NOT VALID, so a later migration must VALIDATE it — " +
+                         "otherwise rows that predate the constraint are never checked");
+        }
     }
 
     private static async Task AssertOutboxClaimLeaseColumnsExistAsync(NpgsqlConnection conn)

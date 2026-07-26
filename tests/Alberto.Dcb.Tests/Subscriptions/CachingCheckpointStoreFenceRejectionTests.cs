@@ -228,6 +228,7 @@ public class CachingCheckpointStoreFenceRejectionTests
             long position,
             string consumerId,
             string replicaId,
+            long fenceToken,
             bool useProcessorLeaseFencing = false,
             CancellationToken ct = default)
         {

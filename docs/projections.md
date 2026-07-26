@@ -208,6 +208,18 @@ Use `Inline` only for narrow per-user projections the caller will immediately re
 else should be `Async`; "the UI flickers" is better solved by returning the decision's own result
 than by putting a projection on the write path.
 
+An async projection can still be read straight after a write without sleeping for it:
+
+```csharp
+var projections = sp.GetRequiredKeyedService<ProjectionCatchUp>("orders");
+await projections.WaitForProjectionAsync("order-summary");
+```
+
+It reads the store's head once and returns as soon as that processor's checkpoint has passed it,
+throwing `TimeoutException` rather than serving a stale read. It watches a checkpoint the local
+control loop advances, so it reports progress made *in this process* — on a replica that does not
+run the processor it waits out its timeout however far along the projection actually is.
+
 ## Rebuilding a projection
 
 Change how a projection interprets history and its stored state is now wrong. A rebuild replays the

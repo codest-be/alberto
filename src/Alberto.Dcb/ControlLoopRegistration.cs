@@ -57,6 +57,24 @@ internal static class ControlLoopRegistration
         services.AddSingleton<IHostedService>(sp =>
             sp.GetRequiredKeyedService<EventStoreHead>(moduleKey));
 
+        // Read-your-writes: wait for a processor instead of sleeping for a guess.
+        services.AddKeyedSingleton<ProjectionCatchUp>(moduleKey, (sp, _) =>
+        {
+            var options = Options(sp, moduleKey);
+
+            // A wait that expires before the loop has had a chance to poll would report a
+            // healthy processor as stuck, so the default floor is a few polls rather than a
+            // flat five seconds a slow-polling module would trip over.
+            var defaultTimeout = Max(TimeSpan.FromSeconds(5), options.PollingInterval * 3);
+
+            return new ProjectionCatchUp(
+                Backend(sp, moduleKey),
+                sp.GetRequiredKeyedService<ICheckpointStore>(moduleKey),
+                defaultTimeout);
+        });
+
+        static TimeSpan Max(TimeSpan left, TimeSpan right) => left > right ? left : right;
+
         // One ControlLoop per registered IEventProcessor.
         services.AddSingleton<IHostedService>(sp =>
         {
@@ -106,8 +124,15 @@ internal static class ControlLoopRegistration
             LeaseAwareControlLoopGroup? leaseGroup = null;
             if (checkpoints is IFencableCheckpointStore fencable)
             {
+                // The token provider is resolved per flush rather than captured once: a replica
+                // that loses a lease and takes it back is issued a new generation, and the old
+                // one must stop being presented the moment the lease is gone. leaseGroup is
+                // assigned just below and is captured by reference, as with OnFenceViolation.
                 fencable.SetFencingContext(
-                    new FencingContext(moduleKey, replicaId, UseProcessorLeaseFencing: true));
+                    new FencingContext(
+                        moduleKey, replicaId,
+                        UseProcessorLeaseFencing: true,
+                        FenceTokenProvider: processorId => leaseGroup?.GetFenceToken(processorId) ?? 0));
 
                 // Subscribed BEFORE the group is constructed so the variable is captured by
                 // reference and is assigned by the time the lambda first runs.

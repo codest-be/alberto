@@ -44,7 +44,8 @@ ALTER TABLE $schema_prefix$alberto_projection_rebuild_meta
     CHECK (
         last_allocated_version >= active_version
         AND last_allocated_version >= COALESCE(rebuilding_version, 1)
-    );
+    )
+    NOT VALID;
 
 COMMENT ON COLUMN $schema_prefix$alberto_projection_rebuild_meta.last_allocated_version IS
     'High-water mark of every version ever allocated to this processor. The next rebuild takes this + 1, so an aborted rebuild never donates its number to the rebuild that follows it.';
