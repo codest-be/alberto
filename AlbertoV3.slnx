@@ -32,5 +32,6 @@
   <Folder Name="/benchmarks/">
     <Project Path="benchmarks/Alberto.Dcb.Benchmarks/Alberto.Dcb.Benchmarks.csproj" />
     <Project Path="benchmarks/Alberto.Dcb.Benchmarks.Core/Alberto.Dcb.Benchmarks.Core.csproj" />
+    <Project Path="benchmarks/Alberto.Dcb.Benchmarks.Compare/Alberto.Dcb.Benchmarks.Compare.csproj" />
   </Folder>
 </Solution>
