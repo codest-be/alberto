@@ -4,6 +4,7 @@ using Alberto.Dcb.Configuration;
 using Alberto.Dcb.InMemory;
 using Alberto.Dcb.Subscriptions;
 using FluentAssertions;
+using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
 namespace Alberto.Dcb.Tests.Subscriptions;
@@ -210,6 +211,79 @@ public sealed class ControlLoopAssemblerTests
             "per-event dispatch must be used when there are unpaired per-event middlewares");
         batchCallCount.Should().Be(0,
             "batch dispatch must not be used when per-event middlewares have no batch counterpart");
+    }
+
+    /// <summary>
+    /// A FakeTimeProvider passed to ControlLoopAssembler must flow all the way into the
+    /// RetryAndDeadLetter middleware so that FailedAt is stamped from the injected clock,
+    /// not from TimeProvider.System. This test drives that path through the real assembly
+    /// seam — not by constructing the middleware directly — so it proves the seam is
+    /// genuinely reachable in production.
+    /// </summary>
+    [Fact]
+    public async Task Assembler_WithFakeTimeProvider_StampsFailedAtFromClock()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var fakeTime = new FakeTimeProvider();
+        var fixedInstant = new DateTimeOffset(2025, 6, 15, 8, 0, 0, TimeSpan.Zero);
+        fakeTime.SetUtcNow(fixedInstant);
+
+        var deadLetterStore = new InMemoryDeadLetterStore();
+        var backend = new InMemoryEventStoreBackend();
+        var checkpoints = new InMemoryCheckpointStore();
+        var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
+
+        var assembler = new ControlLoopAssembler(
+            diMiddlewares: [],
+            diBatchMiddlewares: [],
+            retryOptions: new RetryOptions { MaxRetries = 0, DeadLetterOnMaxRetries = true },
+            classifier: DefaultErrorClassifier.Instance,
+            deadLetterStore: deadLetterStore,
+            timeProvider: fakeTime);
+
+        var processor = new AlwaysFailingProcessor("fail-proc");
+        var loop = assembler.Create(
+            processor, head, backend, checkpoints,
+            pollingInterval: TimeSpan.FromMilliseconds(10),
+            batchSize: 100, moduleKey: "test",
+            executionOptions: new ProcessorExecutionOptions(ProcessorBatchingMode.Disabled));
+
+        await backend.AppendAsync([new EventToPersist
+        {
+            EventType = new EventType("assembler-test-event"),
+            Tags = [],
+            EventData = JsonSerializer.Serialize(new TestEvent("fail-me")),
+        }], cancellationToken: ct);
+
+        await head.StartAsync(ct);
+        await loop.StartAsync(ct);
+
+        IReadOnlyList<DeadLetterEntry> entries = [];
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (entries.Count == 0 && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(20, ct);
+            entries = await deadLetterStore.GetAsync("fail-proc", ct: ct);
+        }
+
+        await loop.StopAsync(ct);
+        await head.StopAsync(ct);
+
+        entries.Should().ContainSingle()
+            .Which.FailedAt.Should().Be(fixedInstant,
+                "FailedAt must come from the FakeTimeProvider flowing through the assembler");
+    }
+
+    private sealed class AlwaysFailingProcessor(string processorId) : IEventProcessor
+    {
+        public string ProcessorId { get; } = processorId;
+        public bool IsActive { get; set; } = true;
+        public bool IsRebuilding { get; set; }
+        public IReadOnlySet<string> HandledEventTypes { get; } =
+            new HashSet<string> { "assembler-test-event" };
+
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default) =>
+            throw new InvalidOperationException("deliberate failure for dead-letter test");
     }
 
     private sealed class CountingBatchableProcessor(

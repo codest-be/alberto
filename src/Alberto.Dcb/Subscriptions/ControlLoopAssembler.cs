@@ -39,6 +39,7 @@ internal sealed class ControlLoopAssembler
     private readonly IReadOnlyList<ConsumeMiddleware> _middlewares;
     private readonly IReadOnlyList<BatchConsumeMiddleware> _batchMiddlewares;
     private readonly bool _hasUnpairedPerEventMiddlewares;
+    private readonly TimeProvider _timeProvider;
 
     /// <summary>
     /// Builds the shared middleware chain that every loop created by this assembler will use.
@@ -48,24 +49,28 @@ internal sealed class ControlLoopAssembler
     /// <param name="retryOptions">Retry policy for the innermost RetryAndDeadLetter middleware.</param>
     /// <param name="classifier">Error classifier used by RetryAndDeadLetter.</param>
     /// <param name="deadLetterStore">Dead-letter store, or null if none is registered.</param>
+    /// <param name="timeProvider">Clock used to stamp <see cref="DeadLetterEntry.FailedAt"/>. Defaults to <see cref="TimeProvider.System"/>.</param>
     public ControlLoopAssembler(
         IReadOnlyList<ConsumeMiddleware> diMiddlewares,
         IReadOnlyList<BatchConsumeMiddleware> diBatchMiddlewares,
         RetryOptions retryOptions,
         IErrorClassifier classifier,
-        IDeadLetterStore? deadLetterStore)
+        IDeadLetterStore? deadLetterStore,
+        TimeProvider? timeProvider = null)
     {
+        _timeProvider = timeProvider ?? TimeProvider.System;
+
         // Middleware order (outermost first):
         //   [keyed ConsumeMiddleware...]   ← WithTelemetry(), AddConsumeMiddleware(...)
         //   RetryAndDeadLetter             ← always innermost
         //   processor.ProcessEventAsync    ← terminal
         var middlewares = new List<ConsumeMiddleware>(diMiddlewares)
         {
-            ConsumeMiddlewares.RetryAndDeadLetter(retryOptions, classifier, deadLetterStore),
+            ConsumeMiddlewares.RetryAndDeadLetter(retryOptions, classifier, deadLetterStore, _timeProvider),
         };
         var batchMiddlewares = new List<BatchConsumeMiddleware>(diBatchMiddlewares)
         {
-            BatchConsumeMiddlewares.RetryAndDeadLetter(retryOptions, classifier, deadLetterStore),
+            BatchConsumeMiddlewares.RetryAndDeadLetter(retryOptions, classifier, deadLetterStore, _timeProvider),
         };
 
         // A per-event middleware with no batch counterpart cannot be honoured on the batch

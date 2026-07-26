@@ -98,7 +98,8 @@ internal static class ControlLoopRegistration
                 sp.GetKeyedServices<BatchConsumeMiddleware>(moduleKey).ToList(),
                 options.Retry,
                 Classifier(sp, moduleKey),
-                sp.GetKeyedService<IDeadLetterStore>(moduleKey));
+                sp.GetKeyedService<IDeadLetterStore>(moduleKey),
+                sp.GetService<TimeProvider>());
 
             var loops = processors
                 .Select(p => assembler.Create(p, head, backend, checkpoints,
