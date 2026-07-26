@@ -19,11 +19,14 @@ namespace Alberto.Dcb.Subscriptions;
 /// a cross-tenant projection holding a single in-memory dictionary depends on.
 /// </para>
 /// </remarks>
-/// <param name="Services">The application's service provider.</param>
-/// <param name="RebuildVersion">
-/// The version this store writes to and reads from. Pass it straight through to the state
-/// store; do not call it at construction time and cache the result.
-/// </param>
-public readonly record struct ProjectionStoreContext(
-    IServiceProvider Services,
-    Func<int> RebuildVersion);
+public readonly record struct ProjectionStoreContext
+{
+    /// <summary>The application's service provider.</summary>
+    public required IServiceProvider Services { get; init; }
+
+    /// <summary>
+    /// The version this store writes to and reads from. Pass it straight through to the state
+    /// store; do not call it at construction time and cache the result.
+    /// </summary>
+    public required Func<int> RebuildVersion { get; init; }
+}

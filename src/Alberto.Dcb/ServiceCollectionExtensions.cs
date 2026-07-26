@@ -40,6 +40,24 @@ public static class ServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentException.ThrowIfNullOrWhiteSpace(moduleKey);
+
+        // A module key participates in two composed DI service keys: "{moduleKey}:{processorId}"
+        // (reader store factory keyed by processor) and "{moduleKey}#{shardId}" (per-shard backend
+        // registration). A '#' in the module key would make ShardKey.TryParse split at the wrong
+        // position and cause the shard router to resolve the wrong backend; a ':' would make the
+        // reader store factory key ambiguous with Alberto's own internal suffixes (":consumer",
+        // ":catalog", ":tenant-raw"). Uppercase letters, digits at the start, hyphens and other
+        // punctuation make the key unsafe for use as a PostgreSQL schema name and as a metric tag.
+        // Rejecting bad keys at registration time surfaces the problem at startup in development,
+        // before any database connection is attempted.
+        if (!IdentifierRules.IsValidIdentifier(moduleKey))
+            throw new ArgumentException(
+                $"Module key '{moduleKey}' is not a valid Alberto identifier. {IdentifierRules.Rule} " +
+                "The key is composed into DI service keys ('{moduleKey}:{processorId}' and " +
+                "'{moduleKey}#{shardId}'), so a '#' or ':' makes those keys unparseable, and " +
+                "uppercase or non-alphanumeric characters make it unsafe as a PostgreSQL schema name.",
+                nameof(moduleKey));
+
         ArgumentNullException.ThrowIfNull(configure);
 
         // Phase 1 — declare. Runs the user's lambda against an accumulator; touches nothing else.
@@ -167,7 +185,7 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<IHostedService>(sp => new OrphanCheckpointHostedService(
             sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>().Get(serviceKey),
-            sp.GetKeyedService<ICheckpointStore>(serviceKey) as ICheckpointInventory,
+            sp.GetKeyedService<ICheckpointStore>(serviceKey) is CachingCheckpointStore caching ? caching.AsInventory : sp.GetKeyedService<ICheckpointStore>(serviceKey) as ICheckpointInventory,
             sp.GetService<ILogger<OrphanCheckpointHostedService>>()
                 ?? NullLogger<OrphanCheckpointHostedService>.Instance));
 
@@ -193,5 +211,7 @@ public static class ServiceCollectionExtensions
         target.TelemetryEnabled = source.TelemetryEnabled;
         target.Processors = source.Processors;
         target.UnknownConfigurationKeys = source.UnknownConfigurationKeys;
+        target.UpcasterDeclarations = source.UpcasterDeclarations;
+        target.RegisteredEventTypes = source.RegisteredEventTypes;
     }
 }

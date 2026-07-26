@@ -1,4 +1,5 @@
 using System.Threading.Channels;
+using Alberto.Dcb.Telemetry;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -153,6 +154,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
 
                 if (checkpoint >= head)
                 {
+                    AlbertoMetrics.RecordProcessorLag(ProcessorId, _moduleKey, 0L);
                     await Task.Delay(_pollingInterval, ct);
                     continue;
                 }
@@ -163,6 +165,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
                 {
                     // No events between checkpoint and head — skip forward safely
                     await _checkpointStore.SaveAsync(ProcessorId, head, ct);
+                    AlbertoMetrics.RecordProcessorLag(ProcessorId, _moduleKey, 0L);
                     await Task.Delay(_pollingInterval, ct);
                     continue;
                 }
@@ -191,6 +194,8 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
 
                 if (newCheckpoint > checkpoint)
                     await _checkpointStore.SaveAsync(ProcessorId, newCheckpoint, ct);
+
+                AlbertoMetrics.RecordProcessorLag(ProcessorId, _moduleKey, head - newCheckpoint);
 
                 // No delay after a full batch — immediately fetch more
                 if (events.Count < _batchSize)
@@ -246,8 +251,12 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
 
                 if (readPosition >= head)
                 {
-                    // Caught up — flush and wait
+                    // Caught up — flush and wait.
+                    // Use SafeCheckpoint, not 0L: the producer may have finished reading, but
+                    // workers can still be processing in-flight events; SafeCheckpoint is the
+                    // last position all workers have confirmed handled, which is the true lag.
                     await SaveWatermarkCheckpointAsync(watermark, pipelineToken);
+                    AlbertoMetrics.RecordProcessorLag(ProcessorId, _moduleKey, head - watermark.SafeCheckpoint);
                     await Task.Delay(_pollingInterval, pipelineToken);
                     continue;
                 }
@@ -258,6 +267,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
                 {
                     watermark.AdvanceReadPosition(head);
                     await SaveWatermarkCheckpointAsync(watermark, pipelineToken);
+                    AlbertoMetrics.RecordProcessorLag(ProcessorId, _moduleKey, head - watermark.SafeCheckpoint);
                     await Task.Delay(_pollingInterval, pipelineToken);
                     continue;
                 }
@@ -280,6 +290,8 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
 
                 // Save checkpoint after each batch of reads
                 await SaveWatermarkCheckpointAsync(watermark, pipelineToken);
+
+                AlbertoMetrics.RecordProcessorLag(ProcessorId, _moduleKey, head - watermark.SafeCheckpoint);
 
                 if (events.Count < _batchSize)
                     await Task.Delay(_pollingInterval, pipelineToken);

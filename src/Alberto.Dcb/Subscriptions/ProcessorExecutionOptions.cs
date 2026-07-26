@@ -26,13 +26,21 @@ public enum ProcessorBatchingMode
 /// <summary>
 /// Immutable execution settings attached to a processor registration.
 /// </summary>
-public sealed record ProcessorExecutionOptions(
-    ProcessorBatchingMode BatchingMode,
-    int MaxConcurrency = 1)
+public sealed record ProcessorExecutionOptions
 {
+    /// <summary>
+    /// Controls how batch dispatch is applied for this processor.
+    /// </summary>
+    public required ProcessorBatchingMode BatchingMode { get; init; }
+
+    /// <summary>
+    /// Maximum number of events processed concurrently. Defaults to 1 (serial).
+    /// </summary>
+    public int MaxConcurrency { get; init; } = 1;
+
     /// <summary>Default execution settings used when no explicit settings are declared.</summary>
     public static ProcessorExecutionOptions Default { get; } =
-        new(ProcessorBatchingMode.Required);
+        new() { BatchingMode = ProcessorBatchingMode.Required };
 }
 
 /// <summary>

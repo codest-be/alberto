@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using Alberto.Dcb.Tenancy;
 
 namespace Alberto.Dcb.Telemetry;
 
@@ -7,25 +6,14 @@ namespace Alberto.Dcb.Telemetry;
 /// Builds the tag set every consume metric carries.
 /// </summary>
 /// <remarks>
-/// A sharded module's processors run under the physical key <c>module#shard</c>, which is an
-/// implementation detail nobody wants to see in a dashboard — and worse, one that would split a
-/// module's throughput into series that no query can add back up. The module key and the shard id
-/// are therefore reported as separate tags: sum over <c>shard</c> for the module's total, group by
-/// it to see one database lagging.
+/// Delegates to <see cref="ProcessorTags.ForModule"/>, which lives in the core assembly and is
+/// the single authoritative definition of the tag shape. Having one definition guarantees that
+/// the instruments emitted by this package (events processed, processing errors, processing
+/// duration) carry identical tag sets to those emitted by core middleware (dead-letters, retries,
+/// processor lag), so dashboards can join them without a label transform.
 /// </remarks>
 internal static class TelemetryTags
 {
-    internal static TagList ForModule(string processorId, string moduleKey)
-    {
-        var tags = new TagList
-        {
-            { "processor", processorId },
-            { "module", ShardKey.ModuleOf(moduleKey) },
-        };
-
-        if (ShardKey.ShardOf(moduleKey) is { } shardId)
-            tags.Add("shard", shardId);
-
-        return tags;
-    }
+    internal static TagList ForModule(string processorId, string moduleKey) =>
+        ProcessorTags.ForModule(processorId, moduleKey);
 }

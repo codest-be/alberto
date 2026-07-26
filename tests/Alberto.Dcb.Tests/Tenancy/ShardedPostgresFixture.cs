@@ -17,7 +17,7 @@ namespace Alberto.Dcb.Tests.Tenancy;
 /// </remarks>
 public sealed class ShardedPostgresFixture(PostgresCluster cluster) : IAsyncLifetime
 {
-    internal const string ModuleKey = "sharded-test";
+    internal const string ModuleKey = "sharded_test";
 
     /// <summary>Tenants of db1 and db2. Assigned in <see cref="InitializeAsync"/>.</summary>
     internal const string TenantOnDb1 = "acme";

@@ -46,7 +46,7 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
     }
 
     /// <inheritdoc/>
-    public async Task<Dictionary<string, TEntity>> LoadManyAsync(
+    public async Task<IReadOnlyDictionary<string, TEntity>> LoadManyAsync(
         IEnumerable<string> documentIds,
         CancellationToken ct = default)
     {

@@ -24,7 +24,13 @@ internal interface IProjectionEventHandler<TState>
     /// <see cref="Apply(TState,object,ProjectionContext)"/> should call this first
     /// and pass the result to the object-overloads to avoid double deserialization.
     /// </summary>
-    object ParseEvent(IEventEnvelope envelope);
+    /// <param name="envelope">The event envelope to deserialize.</param>
+    /// <param name="serializer">
+    /// When non-null, routes through <see cref="EventSerializer.Deserialize"/> so the upcaster
+    /// chain fires before the handler sees the event. When null, falls back to raw JSON
+    /// deserialization (standalone / test usage without DI).
+    /// </param>
+    object ParseEvent(IEventEnvelope envelope, EventSerializer? serializer);
 }
 
 /// <summary>
@@ -37,13 +43,19 @@ internal sealed class ProjectionEventHandler<TState, TEvent>(
     : IProjectionEventHandler<TState>
     where TEvent : IEvent
 {
-    public object ParseEvent(IEventEnvelope envelope) => envelope.ParseEvent<TEvent>();
+    public object ParseEvent(IEventEnvelope envelope, EventSerializer? serializer)
+        => EventEnvelopeExtensions.DeserializeEvent<TEvent>(envelope, serializer);
 
+    // These envelope-taking overloads implement the internal interface and are called
+    // by the public ProjectionDeclaration API when no serializer is supplied. They pass
+    // null to DeserializeEvent, which fires the EV-1 guard for stale-version envelopes.
+    // The runtime path always goes through DeclaredAsyncProjection which calls
+    // ParseEvent(envelope, serializer) above — these overloads are not reached at runtime.
     public string? GetDocumentId(IEventEnvelope envelope)
-        => getId(envelope.ParseEvent<TEvent>());
+        => getId(EventEnvelopeExtensions.DeserializeEvent<TEvent>(envelope, null));
 
     public ProjectionResult<TState> Apply(TState state, IEventEnvelope envelope, ProjectionContext ctx)
-        => apply(state, envelope.ParseEvent<TEvent>(), ctx);
+        => apply(state, EventEnvelopeExtensions.DeserializeEvent<TEvent>(envelope, null), ctx);
 
     public string? GetDocumentId(object parsedEvent) => getId((TEvent)parsedEvent);
 
@@ -89,17 +101,42 @@ public sealed class ProjectionDeclaration<TState> where TState : new()
 
     /// <summary>
     /// Returns the document ID for the given event envelope, or <see langword="null"/> to skip.
-    /// Used by <see cref="DeclaredAsyncProjection{TState}"/> at runtime.
+    /// For standalone / test use. Pass a <paramref name="serializer"/> to enable upcasting;
+    /// without one a stale-version envelope (stored version &lt; handler's declared version)
+    /// throws <see cref="InvalidOperationException"/> instead of silently returning wrong state.
     /// </summary>
-    public string? GetDocumentId(IEventEnvelope envelope)
-        => GetHandler(envelope.EventType.Id).GetDocumentId(envelope);
+    /// <remarks>
+    /// The runtime processing path goes through
+    /// <see cref="DeclaredAsyncProjection{TState}"/>, which calls
+    /// <c>ParseEvent(envelope, serializer)</c> and the object-based overloads directly —
+    /// this envelope overload is not reached during normal background processing.
+    /// </remarks>
+    public string? GetDocumentId(IEventEnvelope envelope, EventSerializer? serializer = null)
+    {
+        var handler = GetHandler(envelope.EventType.Id);
+        var parsed = handler.ParseEvent(envelope, serializer);
+        return handler.GetDocumentId(parsed);
+    }
 
     /// <summary>
     /// Applies an event envelope to the given state and returns the result.
-    /// Used by <see cref="DeclaredAsyncProjection{TState}"/> at runtime.
+    /// For standalone / test use. Pass a <paramref name="serializer"/> to enable upcasting;
+    /// without one a stale-version envelope (stored version &lt; handler's declared version)
+    /// throws <see cref="InvalidOperationException"/> instead of silently returning wrong state.
     /// </summary>
-    public ProjectionResult<TState> Apply(TState state, IEventEnvelope envelope, ProjectionContext context)
-        => GetHandler(envelope.EventType.Id).Apply(state, envelope, context);
+    /// <remarks>
+    /// The runtime processing path goes through
+    /// <see cref="DeclaredAsyncProjection{TState}"/>, which calls
+    /// <c>ParseEvent(envelope, serializer)</c> and the object-based overloads directly —
+    /// this envelope overload is not reached during normal background processing.
+    /// </remarks>
+    public ProjectionResult<TState> Apply(TState state, IEventEnvelope envelope, ProjectionContext context,
+        EventSerializer? serializer = null)
+    {
+        var handler = GetHandler(envelope.EventType.Id);
+        var parsed = handler.ParseEvent(envelope, serializer);
+        return handler.Apply(state, parsed, context);
+    }
 
     /// <summary>
     /// Returns the document ID for a typed event. No envelope construction needed — for testing.

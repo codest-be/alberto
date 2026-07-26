@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using Alberto.Dcb.Tenancy;
 
 namespace Alberto.Dcb.Telemetry;
 
@@ -79,18 +80,6 @@ public static class AlbertoMetrics
     public static readonly Counter<long> TenantLockFailures =
         Meter.CreateCounter<long>("alberto.tenant_lock_failures", "failures", "Number of failed tenant lock acquisition attempts");
 
-    /// <summary>
-    /// Counter for events filtered out due to tenant ownership.
-    /// </summary>
-    public static readonly Counter<long> EventsFilteredByTenant =
-        Meter.CreateCounter<long>("alberto.events_filtered_by_tenant", "events", "Number of events filtered out due to tenant ownership");
-
-    /// <summary>
-    /// Counter for tenant leases lost (not renewed in time, taken by another replica).
-    /// </summary>
-    public static readonly Counter<long> TenantLeasesLost =
-        Meter.CreateCounter<long>("alberto.tenant_leases_lost", "leases", "Number of tenant leases lost due to failed renewal");
-
     #endregion
 
     #region Gauges
@@ -101,8 +90,11 @@ public static class AlbertoMetrics
     public static readonly ObservableGauge<long> ProcessorLag =
         Meter.CreateObservableGauge("alberto.processor.lag", GetProcessorLagMeasurements, "events", "Number of events a processor is behind the global position");
 
-    // Keyed by processorId for O(1) upsert — avoids the per-call Tags.ToArray()+LINQ scan
+    // Keyed by "module:processorId" for O(1) upsert — avoids the per-call Tags.ToArray()+LINQ scan
     // that the old List-based implementation required on every poll cycle.
+    // The composite key is required because different modules can independently define a processor
+    // named e.g. "projection"; keying on processorId alone would let them overwrite each other's
+    // measurement, collapsing N processors into one series in Prometheus.
     private static readonly Dictionary<string, Measurement<long>> _processorLagMeasurements = new();
     private static readonly object _measurementsLock = new();
 
@@ -118,9 +110,13 @@ public static class AlbertoMetrics
     {
         lock (_measurementsLock)
         {
-            _processorLagMeasurements[processorId] = new Measurement<long>(lag,
-                new KeyValuePair<string, object?>("processor", processorId),
-                new KeyValuePair<string, object?>("module", module));
+            // The dictionary key uses the raw physical key (which may be "module#shard") so that
+            // two shards of the same module — "orders#shard1" and "orders#shard2" — each keep
+            // their own entry rather than clobbering each other. The emitted tags, however, use
+            // ProcessorTags.ForModule so the "module" dimension is the stripped logical name and
+            // "shard" is a separate tag, matching every other metric on the consume path.
+            _processorLagMeasurements[$"{module}:{processorId}"] =
+                new Measurement<long>(lag, ProcessorTags.ForModule(processorId, module));
         }
     }
 
@@ -149,10 +145,9 @@ public static class AlbertoMetrics
     {
         lock (_tenantOwnershipLock)
         {
-            return _tenantOwnershipSnapshots.Select(s => new Measurement<int>(
-                s.OwnedCount,
-                new KeyValuePair<string, object?>("consumer.id", s.ConsumerId),
-                new KeyValuePair<string, object?>("module.key", s.ModuleKey))).ToArray();
+            return _tenantOwnershipSnapshots
+                .Select(s => new Measurement<int>(s.OwnedCount, TenantOwnershipTags(s)))
+                .ToArray();
         }
     }
 
@@ -160,11 +155,32 @@ public static class AlbertoMetrics
     {
         lock (_tenantOwnershipLock)
         {
-            return _tenantOwnershipSnapshots.Select(s => new Measurement<int>(
-                s.CooldownCount,
-                new KeyValuePair<string, object?>("consumer.id", s.ConsumerId),
-                new KeyValuePair<string, object?>("module.key", s.ModuleKey))).ToArray();
+            return _tenantOwnershipSnapshots
+                .Select(s => new Measurement<int>(s.CooldownCount, TenantOwnershipTags(s)))
+                .ToArray();
         }
+    }
+
+    /// <summary>
+    /// Builds the tag set for both tenant-ownership gauges.
+    /// Uses <c>consumer.id</c> (the instance that owns the leases) and <c>module</c>
+    /// (matching every other consume-path instrument so they can be joined in queries).
+    /// For sharded modules the physical key is split: <c>module</c> carries the logical
+    /// name and <c>shard</c> carries the database suffix, matching
+    /// <see cref="ProcessorTags.ForModule"/>'s split.
+    /// </summary>
+    private static TagList TenantOwnershipTags(TenantOwnershipSnapshot s)
+    {
+        var tags = new TagList
+        {
+            { "consumer.id", s.ConsumerId },
+            { "module", ShardKey.ModuleOf(s.ModuleKey) },
+        };
+
+        if (ShardKey.ShardOf(s.ModuleKey) is { } shardId)
+            tags.Add("shard", shardId);
+
+        return tags;
     }
 
     /// <summary>
@@ -186,14 +202,24 @@ public static class AlbertoMetrics
     /// <summary>
     /// Histogram for event append duration.
     /// </summary>
+    /// <remarks>
+    /// OpenTelemetry semantic conventions require durations in seconds (UCUM unit "s").
+    /// Callers must record <c>sw.Elapsed.TotalSeconds</c>, not <c>sw.ElapsedMilliseconds</c>.
+    /// The instrument name does not encode the unit; use the declared unit metadata instead.
+    /// </remarks>
     public static readonly Histogram<double> AppendDuration =
-        Meter.CreateHistogram<double>("alberto.append.duration", "ms", "Duration of event append operations");
+        Meter.CreateHistogram<double>("alberto.append.duration", "s", "Duration of event append operations");
 
     /// <summary>
     /// Histogram for event processing duration.
     /// </summary>
+    /// <remarks>
+    /// OpenTelemetry semantic conventions require durations in seconds (UCUM unit "s").
+    /// Callers must record <c>sw.Elapsed.TotalSeconds</c>, not <c>sw.ElapsedMilliseconds</c>.
+    /// The instrument name does not encode the unit; use the declared unit metadata instead.
+    /// </remarks>
     public static readonly Histogram<double> ProcessingDuration =
-        Meter.CreateHistogram<double>("alberto.processing.duration", "ms", "Duration of event processing operations");
+        Meter.CreateHistogram<double>("alberto.processing.duration", "s", "Duration of event processing operations");
 
     #endregion
 

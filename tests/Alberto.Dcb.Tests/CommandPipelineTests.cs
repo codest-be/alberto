@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Text.Json;
 using Alberto.Dcb.InMemory;
 using Microsoft.Extensions.DependencyInjection;
@@ -476,7 +475,7 @@ public sealed class CommandPipelineTests
     public async Task WithEventsFrom_UsesTheEventStoreFromEachDependencyScope()
     {
         var services = new ServiceCollection();
-        const string moduleKey = "tenant-module";
+        const string moduleKey = "tenant_module";
         services.AddKeyedScoped<IEventStore>(moduleKey, (_, _) => new ScopedEventStore());
         services.AddAlberto(moduleKey, builder => builder
             .WithEventsFrom(typeof(AlbertoStore).Assembly));
@@ -520,12 +519,21 @@ public sealed class CommandPipelineTests
     public async Task LoadFromDi_ResolvesTheRegisteredEvolver()
     {
         var services = new ServiceCollection();
-        const string moduleKey = "evolver-module";
+        const string moduleKey = "evolver_module";
         var backend = new InMemoryEventStoreBackend();
         services.AddKeyedScoped<IEventStore>(moduleKey, (_, _) => new EventStore(backend));
         services.AddSingleton<Evolver<OrderState>, OrderStateEvolver>();
-        services.AddAlberto(moduleKey, builder => builder
-            .WithEventsFrom(typeof(AlbertoStore).Assembly));
+        // Register AlbertoStore directly with the explicit serializer rather than via
+        // WithEventsFrom, because scanning the test assembly with FromAssembly throws on
+        // duplicate [EventType] slugs that exist across different test classes.  The
+        // behaviour under test — Load<TState> resolving Evolver<OrderState> from the
+        // service provider — requires only that AlbertoStore is keyed and receives the
+        // IServiceProvider; it does not depend on how the serializer was built.
+        var serializer = CreateSerializer();
+        services.AddKeyedScoped(moduleKey, (sp, _) => new AlbertoStore(
+            sp.GetRequiredKeyedService<IEventStore>(moduleKey),
+            serializer,
+            sp));
 
         await using var provider = services.BuildServiceProvider();
         await using var scope = provider.CreateAsyncScope();
@@ -593,14 +601,7 @@ public sealed class CommandPipelineTests
             [EventTypeAttribute.GetEventTypeId(typeof(OrderConfirmed))] = typeof(OrderConfirmed),
         };
 
-        var ctor = typeof(EventSerializer).GetConstructor(
-            BindingFlags.Instance | BindingFlags.NonPublic,
-            binder: null,
-            [typeof(IReadOnlyDictionary<string, Type>), typeof(JsonSerializerOptions)],
-            modifiers: null)
-            ?? throw new InvalidOperationException("EventSerializer private constructor not found.");
-
-        return (EventSerializer)ctor.Invoke([registry, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }]);
+        return EventSerializer.FromRegistry(registry, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
     }
 
     private sealed class ScopedEventStore : IEventStore

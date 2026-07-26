@@ -192,9 +192,7 @@ public sealed class ControlLoopPipelinedCancellationTests
             processor, head, backend, checkpoints,
             pollingInterval: TimeSpan.FromMilliseconds(10),
             batchSize: 100,
-            executionOptions: new ProcessorExecutionOptions(
-                BatchingMode: ProcessorBatchingMode.Required,
-                MaxConcurrency: 3));
+            executionOptions: new ProcessorExecutionOptions { BatchingMode = ProcessorBatchingMode.Required, MaxConcurrency = 3 });
 
         // ── Act ───────────────────────────────────────────────────────────────────
         using var cts = new CancellationTokenSource();

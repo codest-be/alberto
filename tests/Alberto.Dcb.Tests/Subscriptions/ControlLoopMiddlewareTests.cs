@@ -28,14 +28,26 @@ public sealed class ControlLoopMiddlewareTests
     }
 
     /// <summary>
-    /// Processor that throws on the first N events whose payload matches a predicate,
-    /// then succeeds on everything else. Tracks invocation count per envelope.
+    /// Processor that throws on events matching a predicate, then succeeds on everything
+    /// else. Tracks invocation count per envelope.
     /// </summary>
+    /// <param name="processorId">Processor identifier.</param>
+    /// <param name="shouldFault">Predicate that returns true for events that should fault.</param>
+    /// <param name="faultFactory">
+    /// Factory for the exception to throw on a faulting event.
+    /// Defaults to <see cref="InvalidOperationException"/>. Pass a different factory
+    /// to test classifiers that treat a specific exception type as Permanent — e.g.
+    /// <c>() => new NotSupportedException("...")</c> for a test that must fire once and
+    /// dead-letter without retries even under a high MaxRetries setting.
+    /// </param>
     private sealed class SelectivelyFaultingProcessor(
         string processorId,
-        Func<IEventEnvelope, bool> shouldFault)
+        Func<IEventEnvelope, bool> shouldFault,
+        Func<Exception>? faultFactory = null)
         : IEventProcessor
     {
+        private readonly Func<Exception> _faultFactory =
+            faultFactory ?? (() => new InvalidOperationException("Simulated permanent fault"));
         private int _processedCount;
         private int _attemptCount;
 
@@ -61,7 +73,7 @@ public sealed class ControlLoopMiddlewareTests
             Interlocked.Increment(ref _attemptCount);
 
             if (shouldFault(@event))
-                throw new InvalidOperationException("Simulated permanent fault");
+                throw _faultFactory();
 
             ProcessedEvents.Add(@event);
             Interlocked.Increment(ref _processedCount);
@@ -87,7 +99,7 @@ public sealed class ControlLoopMiddlewareTests
             e => e.GlobalPosition == 1);
 
         var middleware = ConsumeMiddlewares.RetryAndDeadLetter(
-            new RetryOptions { MaxRetries = 0 }, // InvalidOperationException is Permanent → 1 attempt
+            new RetryOptions { MaxRetries = 0 }, // MaxRetries=0 → dead-letters after 1 attempt regardless of classification
             DefaultErrorClassifier.Instance,
             deadLetters);
 
@@ -96,7 +108,7 @@ public sealed class ControlLoopMiddlewareTests
             TimeSpan.FromMilliseconds(10), 100,
             moduleKey: "test",
             middlewares: [middleware],
-            executionOptions: new ProcessorExecutionOptions(ProcessorBatchingMode.Disabled));
+            executionOptions: new ProcessorExecutionOptions { BatchingMode = ProcessorBatchingMode.Disabled });
 
         using var cts = new CancellationTokenSource();
         await head.StartAsync(cts.Token);
@@ -137,9 +149,15 @@ public sealed class ControlLoopMiddlewareTests
 
         await backend.AppendAsync([CreateEvent(new TestEvent("poison"))], cancellationToken: ct);
 
-        var processor = new SelectivelyFaultingProcessor("perm", _ => true);
+        // NotSupportedException is classified Permanent (indicates a programmer error /
+        // unsupported code path that retrying will never fix). InvalidOperationException was
+        // reclassified from Permanent to Unknown in fix:error-classifier because EF Core and
+        // Npgsql raise it for transient infrastructure states (connection-pool exhaustion, etc.)
+        // that should be retried.
+        var processor = new SelectivelyFaultingProcessor("perm", _ => true,
+            () => new NotSupportedException("Simulated permanent fault"));
 
-        // Even though MaxRetries=5, InvalidOperationException is classified Permanent,
+        // Even though MaxRetries=5, NotSupportedException is classified Permanent,
         // so the middleware skips retries and dead-letters after a single attempt.
         var middleware = ConsumeMiddlewares.RetryAndDeadLetter(
             new RetryOptions { MaxRetries = 5, RetryDelay = TimeSpan.FromMilliseconds(1) },
@@ -151,7 +169,7 @@ public sealed class ControlLoopMiddlewareTests
             TimeSpan.FromMilliseconds(10), 100,
             moduleKey: "test",
             middlewares: [middleware],
-            executionOptions: new ProcessorExecutionOptions(ProcessorBatchingMode.Disabled));
+            executionOptions: new ProcessorExecutionOptions { BatchingMode = ProcessorBatchingMode.Disabled });
 
         using var cts = new CancellationTokenSource();
         await head.StartAsync(cts.Token);
@@ -201,7 +219,7 @@ public sealed class ControlLoopMiddlewareTests
             TimeSpan.FromMilliseconds(10), 100,
             moduleKey: "test",
             middlewares: [middleware],
-            executionOptions: new ProcessorExecutionOptions(ProcessorBatchingMode.Disabled));
+            executionOptions: new ProcessorExecutionOptions { BatchingMode = ProcessorBatchingMode.Disabled });
 
         using var cts = new CancellationTokenSource();
         await head.StartAsync(cts.Token);
@@ -322,7 +340,7 @@ public sealed class ControlLoopMiddlewareTests
             100,
             moduleKey: "test",
             batchMiddlewares: [middleware],
-            executionOptions: new ProcessorExecutionOptions(ProcessorBatchingMode.Required));
+            executionOptions: new ProcessorExecutionOptions { BatchingMode = ProcessorBatchingMode.Required });
 
         using var cts = new CancellationTokenSource();
         await head.StartAsync(cts.Token);

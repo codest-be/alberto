@@ -14,15 +14,18 @@ public interface IEventProcessor
 
     /// <summary>
     /// Whether this processor is currently active and should receive events.
-    /// Can be set to false to stop the processor.
+    /// Observable by external code; mutated only by the framework via
+    /// <see cref="IProcessorLifecycle"/>.
     /// </summary>
-    bool IsActive { get; set; }
+    bool IsActive { get; }
 
     /// <summary>
     /// Whether this processor is currently rebuilding (catching up from behind).
     /// Rebuilding processors run independently and don't block other processors.
+    /// Observable by external code; mutated only by the framework via
+    /// <see cref="IProcessorLifecycle"/>.
     /// </summary>
-    bool IsRebuilding { get; set; }
+    bool IsRebuilding { get; }
 
     /// <summary>
     /// The event types this processor handles.

@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Alberto.Dcb.Tenancy;
 
 /// <summary>
@@ -9,6 +11,7 @@ namespace Alberto.Dcb.Tenancy;
 /// read from again. Assign the tenant with <c>alberto shards assign</c>, or declare a default
 /// shard with <c>.WithDefaultShard(...)</c> to have new tenants placed automatically.
 /// </remarks>
+[Experimental("ALB9001")]
 public sealed class UnknownTenantException(string moduleKey, string tenantId)
     : InvalidOperationException(
         $"Tenant '{tenantId}' has no shard assignment in module '{moduleKey}', and the module " +
@@ -31,6 +34,7 @@ public sealed class UnknownTenantException(string moduleKey, string tenantId)
 /// which is the whole point of splitting them — so this exception is scoped to one request and
 /// is not a reason to take the process down.
 /// </remarks>
+[Experimental("ALB9001")]
 public sealed class ShardUnavailableException(string moduleKey, string shardId, string reason, Exception? innerException = null)
     : InvalidOperationException(
         $"Shard '{shardId}' of module '{moduleKey}' is unavailable: {reason}", innerException)

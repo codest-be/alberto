@@ -9,12 +9,12 @@ namespace Alberto.Dcb.Postgres;
 /// <summary>
 /// Summary of a processor's checkpoint position as seen from the admin surface.
 /// </summary>
-public record ProcessorInfo(string ProcessorId, long LastPosition, DateTime? UpdatedAt);
+public record ProcessorInfo(string ProcessorId, long LastPosition, DateTimeOffset? UpdatedAt);
 
 /// <summary>
 /// Checkpoint row for a single processor.
 /// </summary>
-public record CheckpointInfo(string ProcessorId, long LastPosition, DateTime? UpdatedAt);
+public record CheckpointInfo(string ProcessorId, long LastPosition, DateTimeOffset? UpdatedAt);
 
 /// <summary>
 /// Dead letter entry summary returned by admin inspection queries.
@@ -25,7 +25,7 @@ public record DeadLetterInfo(
     string? EventType,
     long? GlobalPosition,
     string? ErrorMessage,
-    DateTime? FailedAt,
+    DateTimeOffset? FailedAt,
     string? TenantId);
 
 /// <summary>
@@ -35,7 +35,7 @@ public record EventInfo(
     long GlobalPosition,
     string EventType,
     string? Tags,
-    DateTime? CreatedAt,
+    DateTimeOffset? CreatedAt,
     string? TenantId);
 
 /// <summary>
@@ -45,7 +45,7 @@ public record SystemInfo(
     long? GlobalPosition,
     long ProcessorCount,
     long DeadLetterCount,
-    DateTime? LastEventAt);
+    DateTimeOffset? LastEventAt);
 
 /// <summary>
 /// Projection state row.
@@ -53,7 +53,7 @@ public record SystemInfo(
 public record ProjectionState(
     string DocumentId,
     string? TenantId,
-    DateTime? UpdatedAt);
+    DateTimeOffset? UpdatedAt);
 
 /// <summary>The tenancy shape of the migrated PostgreSQL store.</summary>
 public enum AdminTenancyMode
@@ -81,7 +81,7 @@ public record AdminTenantLease(
     string TenantId,
     string ConsumerId,
     string? ReplicaId,
-    DateTime? ExpiresAt);
+    DateTimeOffset? ExpiresAt);
 
 /// <summary>
 /// Tenant lease inventory together with the store topology that gives an empty list meaning.
@@ -93,7 +93,7 @@ public sealed record TenantLeaseInventory(
 /// <summary>
 /// An active processor lease found via admin inspection.
 /// </summary>
-public record ActiveProcessorLease(string ConsumerId, string? ReplicaId, DateTime ExpiresAt);
+public record ActiveProcessorLease(string ConsumerId, string? ReplicaId, DateTimeOffset ExpiresAt);
 
 /// <summary>The outcome of an atomic checkpoint rename.</summary>
 public enum CheckpointRenameStatus
@@ -188,7 +188,7 @@ public sealed class PostgresAdminDataAccess
             result.Add(new ProcessorInfo(
                 reader.GetString(0),
                 reader.GetInt64(1),
-                reader.IsDBNull(2) ? null : reader.GetDateTime(2)));
+                reader.IsDBNull(2) ? null : reader.GetFieldValue<DateTimeOffset>(2)));
         }
 
         return result;
@@ -214,7 +214,7 @@ public sealed class PostgresAdminDataAccess
             result.Add(new CheckpointInfo(
                 reader.GetString(0),
                 reader.GetInt64(1),
-                reader.IsDBNull(2) ? null : reader.GetDateTime(2)));
+                reader.IsDBNull(2) ? null : reader.GetFieldValue<DateTimeOffset>(2)));
         }
 
         return result;
@@ -240,7 +240,7 @@ public sealed class PostgresAdminDataAccess
             return new CheckpointInfo(
                 reader.GetString(0),
                 reader.GetInt64(1),
-                reader.IsDBNull(2) ? null : reader.GetDateTime(2));
+                reader.IsDBNull(2) ? null : reader.GetFieldValue<DateTimeOffset>(2));
         }
 
         return null;
@@ -391,7 +391,7 @@ public sealed class PostgresAdminDataAccess
                 reader.IsDBNull(2) ? null : reader.GetString(2),
                 reader.IsDBNull(3) ? null : reader.GetInt64(3),
                 reader.IsDBNull(4) ? null : reader.GetString(4),
-                reader.IsDBNull(5) ? null : reader.GetDateTime(5),
+                reader.IsDBNull(5) ? null : reader.GetFieldValue<DateTimeOffset>(5),
                 reader.IsDBNull(6) ? null : reader.GetString(6)));
         }
 
@@ -458,7 +458,7 @@ public sealed class PostgresAdminDataAccess
                 reader.GetInt64(0),
                 reader.GetString(1),
                 reader.IsDBNull(2) ? null : reader.GetString(2),
-                reader.IsDBNull(3) ? null : reader.GetDateTime(3),
+                reader.IsDBNull(3) ? null : reader.GetFieldValue<DateTimeOffset>(3),
                 reader.IsDBNull(4) ? null : reader.GetString(4)));
         }
 
@@ -497,12 +497,12 @@ public sealed class PostgresAdminDataAccess
             deadLetterCount = Convert.ToInt64(result);
         }
 
-        DateTime? lastEventAt = null;
+        DateTimeOffset? lastEventAt = null;
         await using (var cmd = conn.CreateCommand())
         {
             cmd.CommandText = $"SELECT created_at FROM {_schema.Table("alberto_events")} ORDER BY global_position DESC LIMIT 1";
             var result = await cmd.ExecuteScalarAsync(ct);
-            lastEventAt = result is DBNull or null ? null : Convert.ToDateTime(result);
+            lastEventAt = result is DBNull or null ? null : (DateTimeOffset)result;
         }
 
         return new SystemInfo(globalPosition, processorCount, deadLetterCount, lastEventAt);
@@ -587,7 +587,7 @@ public sealed class PostgresAdminDataAccess
             result.Add(new ProjectionState(
                 reader.GetString(0),
                 reader.IsDBNull(1) ? null : reader.GetString(1),
-                reader.IsDBNull(2) ? null : reader.GetDateTime(2)));
+                reader.IsDBNull(2) ? null : reader.GetFieldValue<DateTimeOffset>(2)));
         }
 
         return result;
@@ -650,7 +650,7 @@ public sealed class PostgresAdminDataAccess
                 reader.GetString(0),
                 reader.GetString(1),
                 reader.IsDBNull(2) ? null : reader.GetString(2),
-                reader.IsDBNull(3) ? null : reader.GetDateTime(3)));
+                reader.IsDBNull(3) ? null : reader.GetFieldValue<DateTimeOffset>(3)));
         }
 
         return new TenantLeaseInventory(topology.TenancyMode, leases);
@@ -694,7 +694,7 @@ public sealed class PostgresAdminDataAccess
             result.Add(new ActiveProcessorLease(
                 reader.GetString(0),
                 reader.IsDBNull(1) ? null : reader.GetString(1),
-                reader.GetDateTime(2)));
+                reader.GetFieldValue<DateTimeOffset>(2)));
         }
 
         return result;

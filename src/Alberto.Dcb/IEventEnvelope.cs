@@ -27,8 +27,23 @@ public interface IEventEnvelope
     EventType EventType { get; }
 
     /// <summary>
-    /// Tags for querying and DCB consistency boundaries.
+    /// The tags on this event, including the framework-reserved <c>_version:N</c> schema-version tag
+    /// appended last, alongside any application tags extracted from <c>[Tag]</c>-annotated properties.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The <c>_version:N</c> tag is stamped automatically on every event by the framework and will always
+    /// appear in this collection. It cannot be authored by application code: the
+    /// <see cref="EventTag"/> public constructor and <c>[Tag(...)]</c> throw
+    /// <see cref="ArgumentException"/> for any concept starting with
+    /// <see cref="EventTag.ReservedConceptPrefix"/>, so no boundary can be built over it either.
+    /// </para>
+    /// <para>
+    /// To read the schema version, use <c>envelope.EventType.Version</c> — do not string-parse
+    /// the tag. To skip the version tag when iterating, filter by
+    /// <c>tag.Concept != EventTag.SchemaVersionConcept</c>.
+    /// </para>
+    /// </remarks>
     IReadOnlyCollection<EventTag> Tags { get; }
 
     /// <summary>
@@ -42,9 +57,9 @@ public interface IEventEnvelope
     IReadOnlyDictionary<string, string> Metadata { get; }
 
     /// <summary>
-    /// Timestamp when the event was created/persisted (always UTC).
+    /// Timestamp when the event was created/persisted. The offset is always UTC (+00:00).
     /// </summary>
-    DateTime CreatedAt { get; }
+    DateTimeOffset CreatedAt { get; }
 }
 
 /// <summary>
@@ -84,9 +99,7 @@ public sealed record EventEnvelope : IEventEnvelope
     /// </summary>
     public required EventType EventType { get; init; }
 
-    /// <summary>
-    /// Tags for querying and DCB consistency boundaries.
-    /// </summary>
+    /// <inheritdoc cref="IEventEnvelope.Tags"/>
     public required IReadOnlyCollection<EventTag> Tags { get; init; }
 
     /// <summary>
@@ -100,7 +113,7 @@ public sealed record EventEnvelope : IEventEnvelope
     public required IReadOnlyDictionary<string, string> Metadata { get; init; }
 
     /// <summary>
-    /// Timestamp when the event was created/persisted (always UTC).
+    /// Timestamp when the event was created/persisted. The offset is always UTC (+00:00).
     /// </summary>
-    public required DateTime CreatedAt { get; init; }
+    public required DateTimeOffset CreatedAt { get; init; }
 }

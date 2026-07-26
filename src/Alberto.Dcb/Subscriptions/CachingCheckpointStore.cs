@@ -16,7 +16,7 @@ namespace Alberto.Dcb.Subscriptions;
 /// it holds none. Resolved per flush rather than captured once, because a replica that loses and
 /// re-acquires a lease is issued a new token and must present the current one.
 /// </param>
-public record FencingContext(
+internal record FencingContext(
     string ConsumerId,
     string ReplicaId,
     bool UseProcessorLeaseFencing = false,
@@ -27,7 +27,7 @@ public record FencingContext(
 /// Updates are cached in-memory and periodically flushed to the underlying store.
 /// This significantly reduces database load during high-throughput scenarios.
 /// </summary>
-internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckpointStore, IAsyncDisposable
+internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckpointStore, ICheckpointInventory, IAsyncDisposable
 {
     private readonly ICheckpointStore _inner;
     private readonly TimeSpan _flushInterval;
@@ -182,6 +182,61 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
         ArgumentNullException.ThrowIfNull(handler);
         lock (_fenceHandlerLock)
             _subscribedFenceHandlers = [.. _subscribedFenceHandlers, handler];
+    }
+
+    /// <summary>
+    /// Returns <c>this</c> as an <see cref="ICheckpointInventory"/> when the inner store
+    /// supports enumeration, <c>null</c> when it does not. Use this at the DI resolution site
+    /// instead of a plain <c>as ICheckpointInventory</c> cast: because this decorator always
+    /// implements the interface (so the cast would never be null), a direct cast would hand a
+    /// non-null inventory to a caller even when the inner store opted out — silently turning
+    /// "not supported" into a false all-clear under the orphan check.
+    /// </summary>
+    internal ICheckpointInventory? AsInventory => _inner is ICheckpointInventory ? this : null;
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Flushes all pending writes to the inner store before listing, so a processor whose
+    /// checkpoint was written via <see cref="SaveAsync"/> but not yet timer-flushed is still
+    /// visible. After the flush, any writes that raced in during the flush window remain in
+    /// <c>_dirty</c> and are unioned into the result so the caller sees a complete picture.
+    /// <para>
+    /// Throws <see cref="NotSupportedException"/> when the inner store does not implement
+    /// <see cref="ICheckpointInventory"/>. That path is unreachable through the intended
+    /// <see cref="AsInventory"/> gateway, which returns <c>null</c> in that case; the exception
+    /// is a defensive backstop for code that directly casts this decorator to the interface.
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyList<string>> ListProcessorIdsAsync(CancellationToken ct = default)
+    {
+        // Guard first: returning an empty list when the inner store cannot enumerate would
+        // be a false all-clear under a Strict orphan policy — indistinguishable from "all
+        // processors accounted for" rather than "we simply don't know". Callers should reach
+        // this method only through AsInventory, which returns null for non-inventory stores.
+        if (_inner is not ICheckpointInventory innerInventory)
+            throw new NotSupportedException(
+                $"{nameof(CachingCheckpointStore)}: the wrapped {_inner.GetType().Name} does not " +
+                $"implement {nameof(ICheckpointInventory)}. Resolve via {nameof(AsInventory)} to " +
+                "avoid this path.");
+
+        // Drive pending writes into the inner store before listing. Without this, a processor
+        // whose checkpoint was SaveAsync'd but not yet timer-flushed would be absent from the
+        // inner store's snapshot — making a live, actively-writing processor look like it has
+        // no row, and causing the orphan check to miss a rename that only affected that processor.
+        await FlushAsync(ct);
+
+        var fromStore = await innerInventory.ListProcessorIdsAsync(ct);
+
+        // Narrow race window: a SaveAsync that arrived after FlushAsync's internal snapshot
+        // was taken is still in _dirty and has not yet reached the inner store. Union those
+        // keys in so the caller sees every processor this store has touched in its lifetime.
+        var remainingDirty = _dirty.Keys.ToList();
+        if (remainingDirty.Count == 0)
+            return fromStore;
+
+        var union = new HashSet<string>(fromStore, StringComparer.Ordinal);
+        union.UnionWith(remainingDirty);
+        return [.. union];
     }
 
     private async void OnFlushTimer(object? state)

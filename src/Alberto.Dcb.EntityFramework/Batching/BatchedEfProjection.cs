@@ -10,7 +10,7 @@ namespace Alberto.Dcb.EntityFramework.Batching;
 /// </summary>
 /// <typeparam name="TDbContext">The DbContext type to use.</typeparam>
 /// <typeparam name="THandler">The batch handler implementation type.</typeparam>
-public sealed class BatchedEfProjection<TDbContext, THandler> : IBatchableProcessor
+public sealed class BatchedEfProjection<TDbContext, THandler> : IBatchableProcessor, IProcessorLifecycle
     where TDbContext : DbContext
     where THandler : IEfBatchHandler<TDbContext>, new()
 {

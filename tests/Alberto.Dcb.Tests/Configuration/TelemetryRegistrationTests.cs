@@ -158,8 +158,8 @@ public class TelemetryRegistrationTests
         var exported = new List<Activity>();
 
         var services = new ServiceCollection();
-        services.AddAlberto("mod-a", module => module.WithInMemory().WithTelemetry());
-        services.AddAlberto("mod-b", module => module.WithInMemory().WithTelemetry());
+        services.AddAlberto("mod_a", module => module.WithInMemory().WithTelemetry());
+        services.AddAlberto("mod_b", module => module.WithInMemory().WithTelemetry());
         services.AddOpenTelemetry().WithTracing(tracing => tracing
             .AddSource(AlbertoMetrics.Name)
             .AddInMemoryExporter(exported));
@@ -168,7 +168,7 @@ public class TelemetryRegistrationTests
         var tracerProvider = provider.GetRequiredService<TracerProvider>();
         provider.GetRequiredService<IEnumerable<IHostedService>>();
 
-        var eventStore = provider.GetRequiredKeyedService<IEventStore>("mod-a");
+        var eventStore = provider.GetRequiredKeyedService<IEventStore>("mod_a");
         await eventStore.AppendAsync(
             [new EventToPersist
             {

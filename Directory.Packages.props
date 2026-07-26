@@ -10,7 +10,7 @@
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.2" />
     <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.7" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.7" />
-    <PackageVersion Include="Microsoft.Extensions.Options" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.7" />
     <PackageVersion Include="System.Text.Json" Version="10.0.7" />
     <!-- OpenTelemetry -->
     <PackageVersion Include="OpenTelemetry.Api" Version="1.15.3" />
@@ -62,5 +62,8 @@
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
     <!-- Benchmarking -->
     <PackageVersion Include="BenchmarkDotNet" Version="0.14.0" />
+    <!-- Packaging / Source quality (applied only to packable src/ projects via Directory.Build.props) -->
+    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="3.3.4" />
   </ItemGroup>
 </Project>

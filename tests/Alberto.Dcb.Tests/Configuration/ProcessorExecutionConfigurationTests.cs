@@ -22,7 +22,7 @@ public class ProcessorExecutionConfigurationTests
         {
             ProcessorId = id,
             Kind = ProcessorKind.Reactor,
-            Execution = new ProcessorExecutionOptions(batching, maxConcurrency),
+            Execution = new ProcessorExecutionOptions { BatchingMode = batching, MaxConcurrency = maxConcurrency },
         };
 
     private static AlbertoModuleDefinition Definition(params ProcessorDeclaration[] processors) => new()

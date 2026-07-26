@@ -445,7 +445,8 @@ internal sealed class RebuildCoordinator(
 
     /// <summary>
     /// Reclaims one version of one projection everywhere it is stored: the module's own state
-    /// table, plus any backend that keeps projection state outside it.
+    /// table, any backend that keeps projection state outside it, and the shadow checkpoint row
+    /// that the rebuild loop for that version left behind.
     /// </summary>
     private async Task ClearAsync(
         RebuildableProjection projection, int version, CancellationToken ct)
@@ -454,6 +455,13 @@ internal sealed class RebuildCoordinator(
 
         foreach (var clearer in clearers.Where(c => c.ProcessorId == projection.ProcessorId))
             await clearer.ClearVersionAsync(version, ct);
+
+        // The shadow loop advanced the checkpoint under this key while it was replaying.
+        // Without this reset the row lives forever in alberto_processor_checkpoints: the live
+        // processor never claims it, the orphan check's declared-processor set never contains
+        // it, and a Strict policy (the non-Development default) throws on the next restart.
+        await checkpoints.ResetAsync(
+            RebuildableProjection.ShadowProcessorId(projection.ProcessorId, version), ct);
     }
 
     /// <summary>

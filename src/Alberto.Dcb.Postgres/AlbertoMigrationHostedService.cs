@@ -1,3 +1,4 @@
+#pragma warning disable ALB9001 // ShardHealth is used only when a shard fails to migrate — sharding implementation.
 using Alberto.Dcb.Configuration;
 using Alberto.Dcb.Tenancy;
 using Microsoft.Extensions.Hosting;

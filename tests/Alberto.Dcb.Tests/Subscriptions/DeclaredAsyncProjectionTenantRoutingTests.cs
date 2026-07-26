@@ -72,7 +72,7 @@ public class DeclaredAsyncProjectionTenantRoutingTests
         public List<string> WriteOrder { get; } = [];
         public bool Disposed { get; private set; }
 
-        public Task<Dictionary<string, OrderSummary>> LoadManyAsync(
+        public Task<IReadOnlyDictionary<string, OrderSummary>> LoadManyAsync(
             IEnumerable<string> documentIds,
             CancellationToken ct = default)
         {
@@ -82,7 +82,7 @@ public class DeclaredAsyncProjectionTenantRoutingTests
                 if (_store.TryGetValue(id, out var state))
                     result[id] = state;
             }
-            return Task.FromResult(result);
+            return Task.FromResult<IReadOnlyDictionary<string, OrderSummary>>(result);
         }
 
         public Task ApplyChangesAsync(

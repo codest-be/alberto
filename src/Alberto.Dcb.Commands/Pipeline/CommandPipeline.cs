@@ -191,9 +191,10 @@ public readonly struct CommandPipeline<TCommand>
     /// </para>
     /// <para>
     /// The position you report is the promise being checked: the append is rejected if
-    /// anything matching <c>Boundary</c> landed after <c>Position</c>. Reporting a position
-    /// later than what you actually read silently widens the race you are trying to close —
-    /// prefer <see cref="AlbertoStore.FoldWithPosition{TState}"/>, which returns both.
+    /// anything matching <c>Boundary</c> landed after <c>Position</c>. To capture both state
+    /// and position, call <c>IEventStore.StreamAsync</c> directly and track
+    /// <c>envelope.GlobalPosition</c> as you fold — the maximum position across the stream
+    /// is the one to report.
     /// </para>
     /// </remarks>
     public BoundPipeline<TCommand, TState> LoadUnder<TState>(

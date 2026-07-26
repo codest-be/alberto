@@ -114,19 +114,21 @@ public sealed class PostgresDeadLetterStore(
 
         while (await reader.ReadAsync(ct))
         {
-            entries.Add(new DeadLetterEntry(
-                Id: reader.GetGuid(0),
-                ProcessorId: reader.GetString(1),
-                EventId: reader.GetGuid(2),
-                EventType: reader.GetString(3),
-                EventData: reader.GetString(4),
-                ErrorMessage: reader.GetString(5),
-                StackTrace: reader.IsDBNull(6) ? null : reader.GetString(6),
-                AttemptCount: reader.GetInt32(7),
-                FailedAt: reader.GetDateTime(8),
-                GlobalPosition: reader.GetInt64(9),
-                RetryRequested: reader.GetBoolean(10),
-                TenantId: reader.IsDBNull(11) ? null : reader.GetString(11)));
+            entries.Add(new DeadLetterEntry
+            {
+                Id = reader.GetGuid(0),
+                ProcessorId = reader.GetString(1),
+                EventId = reader.GetGuid(2),
+                EventType = reader.GetString(3),
+                EventData = reader.GetString(4),
+                ErrorMessage = reader.GetString(5),
+                StackTrace = reader.IsDBNull(6) ? null : reader.GetString(6),
+                AttemptCount = reader.GetInt32(7),
+                FailedAt = reader.GetFieldValue<DateTimeOffset>(8),
+                GlobalPosition = reader.GetInt64(9),
+                RetryRequested = reader.GetBoolean(10),
+                TenantId = reader.IsDBNull(11) ? null : reader.GetString(11),
+            });
         }
 
         return entries;
@@ -250,26 +252,28 @@ public sealed class PostgresDeadLetterStore(
 
             var expiresAt = reader.GetFieldValue<DateTimeOffset>(12);
             var claimId = reader.GetGuid(14);
-            var entry = new DeadLetterEntry(
-                Id: reader.GetGuid(0),
-                ProcessorId: reader.GetString(1),
-                EventId: reader.GetGuid(2),
-                EventType: reader.GetString(3),
-                EventData: reader.GetString(4),
-                ErrorMessage: reader.GetString(5),
-                StackTrace: reader.IsDBNull(6) ? null : reader.GetString(6),
-                AttemptCount: reader.GetInt32(7),
-                FailedAt: reader.GetDateTime(8),
-                GlobalPosition: reader.GetInt64(9),
-                RetryRequested: reader.GetBoolean(10),
-                TenantId: reader.IsDBNull(15) ? null : reader.GetString(15),
-                Tags: tags ?? Array.Empty<string>(),
-                Metadata: metadata ?? new Dictionary<string, string>(),
-                CreatedAt: reader.IsDBNull(18) ? null : reader.GetDateTime(18),
-                ClaimedAt: reader.IsDBNull(11) ? null : reader.GetFieldValue<DateTimeOffset>(11),
-                ClaimExpiresAt: expiresAt,
-                ClaimedBy: reader.IsDBNull(13) ? null : reader.GetString(13),
-                ClaimId: claimId);
+            var entry = new DeadLetterEntry
+            {
+                Id = reader.GetGuid(0),
+                ProcessorId = reader.GetString(1),
+                EventId = reader.GetGuid(2),
+                EventType = reader.GetString(3),
+                EventData = reader.GetString(4),
+                ErrorMessage = reader.GetString(5),
+                StackTrace = reader.IsDBNull(6) ? null : reader.GetString(6),
+                AttemptCount = reader.GetInt32(7),
+                FailedAt = reader.GetFieldValue<DateTimeOffset>(8),
+                GlobalPosition = reader.GetInt64(9),
+                RetryRequested = reader.GetBoolean(10),
+                TenantId = reader.IsDBNull(15) ? null : reader.GetString(15),
+                Tags = tags ?? Array.Empty<string>(),
+                Metadata = metadata ?? new Dictionary<string, string>(),
+                CreatedAt = reader.IsDBNull(18) ? null : reader.GetDateTime(18),
+                ClaimedAt = reader.IsDBNull(11) ? null : reader.GetFieldValue<DateTimeOffset>(11),
+                ClaimExpiresAt = expiresAt,
+                ClaimedBy = reader.IsDBNull(13) ? null : reader.GetString(13),
+                ClaimId = claimId,
+            };
 
             claims.Add(new DeadLetterClaim(entry, claimId, expiresAt));
         }

@@ -25,6 +25,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Alberto.Dcb.Tests/Alberto.Dcb.Tests.csproj" />
+    <Project Path="tests/Alberto.Dcb.Tests.SampleEvents/Alberto.Dcb.Tests.SampleEvents.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/Alberto.Cli/Alberto.Cli.csproj" />
