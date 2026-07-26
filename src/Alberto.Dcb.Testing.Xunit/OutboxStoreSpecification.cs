@@ -75,8 +75,9 @@ public abstract class OutboxStoreSpecification
         await store.InsertAsync(entry, Ct);
 
         var claims = await store.ClaimPendingAsync(10, TimeSpan.FromHours(1), "worker", Ct);
-        Assert.Single(claims);
-        Assert.Equal(entry.Id, claims[0].Entry.Id);
+        // Filter to our specific entry so leftover entries in a shared backing store
+        // do not cause spurious failures.
+        Assert.Single(claims.Where(c => c.Entry.Id == entry.Id));
     }
 
     /// <summary>
@@ -95,19 +96,34 @@ public abstract class OutboxStoreSpecification
         await store.InsertAsync(second, Ct);
 
         var claims = await store.ClaimPendingAsync(10, TimeSpan.FromHours(1), "worker", Ct);
-        Assert.Single(claims);
-        Assert.Equal(first.Id, claims[0].Entry.Id);
+        // Among our two inserted entries (sharing a SourceEventId) only the first
+        // should be claimable. Filter to our specific IDs to stay resilient against
+        // leftover entries in a shared backing store.
+        var ours = claims.Where(c => c.Entry.Id == first.Id || c.Entry.Id == second.Id).ToList();
+        Assert.Single(ours);
+        Assert.Equal(first.Id, ours[0].Entry.Id);
     }
 
     // ── ClaimPendingAsync ─────────────────────────────────────────────────────
 
     /// <summary>
-    /// <c>ClaimPendingAsync</c> on an empty store must return an empty list.
+    /// <c>ClaimPendingAsync</c> must return an empty list when there are no pending entries
+    /// available to claim.
+    /// <para>
+    /// Any entries already present in the store (e.g. processing entries left by earlier facts
+    /// in a shared backing store) are drained first so that a subsequent call exercises the
+    /// empty-result path.
+    /// </para>
     /// </summary>
     [Fact]
     public async Task ClaimPendingAsync_EmptyStore_ReturnsEmpty()
     {
         var store = await CreateStore();
+
+        // Drain any pending entries left by earlier facts in a shared backing store.
+        // ClaimPendingAsync marks claimed entries as 'processing', so this call makes
+        // all currently-pending entries ineligible for the assertion below.
+        await store.ClaimPendingAsync(int.MaxValue, TimeSpan.FromMinutes(5), "drain", Ct);
 
         var claims = await store.ClaimPendingAsync(10, TimeSpan.FromMinutes(5), "worker", Ct);
 
@@ -136,15 +152,16 @@ public abstract class OutboxStoreSpecification
     public async Task ClaimPendingAsync_HeldLease_IsNotReclaimable()
     {
         var store = await CreateStore();
-        await store.InsertAsync(NewEntry(), Ct);
+        var entry = NewEntry();
+        await store.InsertAsync(entry, Ct);
 
         // First worker claims with a generous lease.
         var first = await store.ClaimPendingAsync(10, TimeSpan.FromHours(1), "worker-1", Ct);
-        Assert.Single(first);
+        Assert.Contains(first, c => c.Entry.Id == entry.Id);
 
-        // Second worker must get nothing while the lease is still valid.
+        // Second worker must not be able to reclaim our entry while the lease is still valid.
         var second = await store.ClaimPendingAsync(10, TimeSpan.FromHours(1), "worker-2", Ct);
-        Assert.Empty(second);
+        Assert.DoesNotContain(second, c => c.Entry.Id == entry.Id);
     }
 
     /// <summary>
@@ -159,7 +176,8 @@ public abstract class OutboxStoreSpecification
         var ftp = (FakeTimeProvider)TimeProvider;
 
         var store = await CreateStore();
-        await store.InsertAsync(NewEntry(), Ct);
+        var entry = NewEntry();
+        await store.InsertAsync(entry, Ct);
 
         // First worker claims with a very short lease.
         await store.ClaimPendingAsync(10, TimeSpan.FromSeconds(10), "worker-1", Ct);
@@ -169,7 +187,7 @@ public abstract class OutboxStoreSpecification
 
         // Second worker should now reclaim it.
         var second = await store.ClaimPendingAsync(10, TimeSpan.FromMinutes(5), "worker-2", Ct);
-        Assert.Single(second);
+        Assert.Single(second.Where(c => c.Entry.Id == entry.Id));
     }
 
     // ── MarkDeliveredAsync ────────────────────────────────────────────────────
@@ -181,9 +199,10 @@ public abstract class OutboxStoreSpecification
     public async Task MarkDeliveredAsync_WithValidClaim_ReturnsTrue()
     {
         var store = await CreateStore();
-        await store.InsertAsync(NewEntry(), Ct);
+        var entry = NewEntry();
+        await store.InsertAsync(entry, Ct);
         var claims = await store.ClaimPendingAsync(10, TimeSpan.FromMinutes(5), "worker", Ct);
-        var claim = Assert.Single(claims);
+        var claim = Assert.Single(claims.Where(c => c.Entry.Id == entry.Id));
 
         var result = await store.MarkDeliveredAsync(claim, Ct);
 
@@ -198,12 +217,14 @@ public abstract class OutboxStoreSpecification
     public async Task MarkDeliveredAsync_WithValidClaim_EntryNotReclaimable()
     {
         var store = await CreateStore();
-        await store.InsertAsync(NewEntry(), Ct);
+        var entry = NewEntry();
+        await store.InsertAsync(entry, Ct);
         var claims = await store.ClaimPendingAsync(10, TimeSpan.FromMinutes(5), "worker", Ct);
-        await store.MarkDeliveredAsync(Assert.Single(claims), Ct);
+        var ourClaim = Assert.Single(claims.Where(c => c.Entry.Id == entry.Id));
+        await store.MarkDeliveredAsync(ourClaim, Ct);
 
         var second = await store.ClaimPendingAsync(10, TimeSpan.FromMinutes(5), "worker", Ct);
-        Assert.Empty(second);
+        Assert.DoesNotContain(second, c => c.Entry.Id == entry.Id);
     }
 
     /// <summary>
@@ -213,9 +234,10 @@ public abstract class OutboxStoreSpecification
     public async Task MarkDeliveredAsync_WithInvalidToken_ReturnsFalse()
     {
         var store = await CreateStore();
-        await store.InsertAsync(NewEntry(), Ct);
+        var entry = NewEntry();
+        await store.InsertAsync(entry, Ct);
         var claims = await store.ClaimPendingAsync(10, TimeSpan.FromMinutes(5), "worker", Ct);
-        var realClaim = Assert.Single(claims);
+        var realClaim = Assert.Single(claims.Where(c => c.Entry.Id == entry.Id));
 
         var fabricated = new OutboxClaim(realClaim.Entry, Guid.NewGuid(), realClaim.ExpiresAt);
         var result = await store.MarkDeliveredAsync(fabricated, Ct);
@@ -236,9 +258,10 @@ public abstract class OutboxStoreSpecification
         var ftp = (FakeTimeProvider)TimeProvider;
 
         var store = await CreateStore();
-        await store.InsertAsync(NewEntry(), Ct);
+        var entry = NewEntry();
+        await store.InsertAsync(entry, Ct);
         var claims = await store.ClaimPendingAsync(10, TimeSpan.FromSeconds(10), "worker", Ct);
-        var claim = Assert.Single(claims);
+        var claim = Assert.Single(claims.Where(c => c.Entry.Id == entry.Id));
 
         // Advance past the lease.
         ftp.Advance(TimeSpan.FromSeconds(11));
@@ -256,9 +279,10 @@ public abstract class OutboxStoreSpecification
     public async Task MarkFailedAsync_WithValidClaim_ReturnsTrue()
     {
         var store = await CreateStore();
-        await store.InsertAsync(NewEntry(), Ct);
+        var entry = NewEntry();
+        await store.InsertAsync(entry, Ct);
         var claims = await store.ClaimPendingAsync(10, TimeSpan.FromMinutes(5), "worker", Ct);
-        var claim = Assert.Single(claims);
+        var claim = Assert.Single(claims.Where(c => c.Entry.Id == entry.Id));
 
         var result = await store.MarkFailedAsync(claim, "delivery error", Ct);
 
@@ -272,9 +296,10 @@ public abstract class OutboxStoreSpecification
     public async Task MarkFailedAsync_WithInvalidToken_ReturnsFalse()
     {
         var store = await CreateStore();
-        await store.InsertAsync(NewEntry(), Ct);
+        var entry = NewEntry();
+        await store.InsertAsync(entry, Ct);
         var claims = await store.ClaimPendingAsync(10, TimeSpan.FromMinutes(5), "worker", Ct);
-        var realClaim = Assert.Single(claims);
+        var realClaim = Assert.Single(claims.Where(c => c.Entry.Id == entry.Id));
 
         var fabricated = new OutboxClaim(realClaim.Entry, Guid.NewGuid(), realClaim.ExpiresAt);
         var result = await store.MarkFailedAsync(fabricated, "delivery error", Ct);
@@ -287,15 +312,6 @@ public abstract class OutboxStoreSpecification
     /// <summary>
     /// <c>RetryFailedAsync</c> must reset failed entries back to pending so they can
     /// be claimed again.
-    ///
-    /// <para>
-    /// The assertion uses <c>Assert.Contains</c> rather than
-    /// <c>Assert.Single</c> because a shared backing store (e.g. a Postgres
-    /// fixture reused across facts) may contain failed entries left by earlier facts.
-    /// <c>RetryFailedAsync</c> resets all failed entries globally, so the post-retry
-    /// claim may legitimately return more than one item. The spec asserts only that
-    /// <em>our</em> entry is reclaimable.
-    /// </para>
     /// </summary>
     [Fact]
     public async Task RetryFailedAsync_ResetsFailed_ToPending()
@@ -313,7 +329,10 @@ public abstract class OutboxStoreSpecification
         await store.RetryFailedAsync(ct: Ct);
 
         var second = await store.ClaimPendingAsync(100, TimeSpan.FromMinutes(5), "worker", Ct);
-        Assert.Contains(second, c => c.Entry.Id == entry.Id);
+        // Filter to our specific entry so entries from other facts do not inflate the
+        // count. Assert.Single (rather than Assert.Contains) additionally catches any
+        // backend that duplicates an entry during the failed→pending transition.
+        Assert.Single(second.Where(c => c.Entry.Id == entry.Id));
     }
 
     /// <summary>
@@ -378,8 +397,9 @@ public abstract class OutboxStoreSpecification
         // Insert and deliver the first entry.
         var oldEntry = NewEntry();
         await store.InsertAsync(oldEntry, Ct);
-        var first = await store.ClaimPendingAsync(1, TimeSpan.FromMinutes(5), "worker", Ct);
-        await store.MarkDeliveredAsync(Assert.Single(first), Ct);
+        var first = await store.ClaimPendingAsync(100, TimeSpan.FromMinutes(5), "worker", Ct);
+        var oldClaim = Assert.Single(first.Where(c => c.Entry.Id == oldEntry.Id));
+        await store.MarkDeliveredAsync(oldClaim, Ct);
 
         // Advance time so the second entry gets a later DeliveredAt.
         ftp.Advance(TimeSpan.FromMinutes(10));
@@ -387,8 +407,9 @@ public abstract class OutboxStoreSpecification
 
         var recentEntry = NewEntry();
         await store.InsertAsync(recentEntry, Ct);
-        var second = await store.ClaimPendingAsync(1, TimeSpan.FromMinutes(5), "worker", Ct);
-        await store.MarkDeliveredAsync(Assert.Single(second), Ct);
+        var second = await store.ClaimPendingAsync(100, TimeSpan.FromMinutes(5), "worker", Ct);
+        var recentClaim = Assert.Single(second.Where(c => c.Entry.Id == recentEntry.Id));
+        await store.MarkDeliveredAsync(recentClaim, Ct);
 
         // Purge everything delivered before the cut-off — only the old entry.
         await store.PurgeDeliveredAsync(cutOff, Ct);
@@ -397,9 +418,10 @@ public abstract class OutboxStoreSpecification
         // SourceEventId should succeed (meaning the old entry is gone).
         var reinserted = oldEntry with { Id = Guid.NewGuid() };
         await store.InsertAsync(reinserted, Ct);
-        var remaining = await store.ClaimPendingAsync(10, TimeSpan.FromMinutes(5), "worker", Ct);
-        // remaining contains reinserted + recentEntry was already delivered (no new claim)
-        Assert.Single(remaining);
-        Assert.Equal(reinserted.Id, remaining[0].Entry.Id);
+        var remaining = await store.ClaimPendingAsync(100, TimeSpan.FromMinutes(5), "worker", Ct);
+        // reinserted must be claimable — oldEntry was purged so its SourceEventId dedup is gone.
+        Assert.Single(remaining.Where(c => c.Entry.Id == reinserted.Id));
+        // recentEntry was delivered but not purged; it must not be claimable.
+        Assert.DoesNotContain(remaining, c => c.Entry.Id == recentEntry.Id);
     }
 }
