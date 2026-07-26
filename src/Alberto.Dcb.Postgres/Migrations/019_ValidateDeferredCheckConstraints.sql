@@ -33,3 +33,6 @@ ALTER TABLE $schema_prefix$alberto_projection_rebuild_meta
 
 ALTER TABLE $schema_prefix$alberto_projection_rebuild_meta
     VALIDATE CONSTRAINT alberto_projection_rebuild_meta_high_water_check;
+
+ALTER TABLE $schema_prefix$alberto_projection_rebuild_meta
+    VALIDATE CONSTRAINT alberto_projection_rebuild_meta_requested_action_check;
