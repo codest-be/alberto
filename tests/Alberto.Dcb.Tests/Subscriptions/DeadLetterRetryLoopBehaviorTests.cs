@@ -108,6 +108,53 @@ public sealed class DeadLetterRetryLoopBehaviorTests
     }
 
     /// <summary>
+    /// Decorator over <see cref="InMemoryDeadLetterStore"/> that signals <see cref="WhenPolled"/>
+    /// the first time <see cref="ClaimRetryRequestedAsync"/> is called. Tests can await this to
+    /// confirm the background loop has completed at least one full poll cycle before asserting.
+    /// Uses composition (not inheritance) for the same reason as <see cref="TrackingDeadLetterStore"/>.
+    /// </summary>
+    private sealed class PollSignalingDeadLetterStore : IDeadLetterStore
+    {
+        private readonly InMemoryDeadLetterStore _inner = new();
+        private readonly TaskCompletionSource _pollTcs =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        /// <summary>Completes when the first <see cref="ClaimRetryRequestedAsync"/> call returns.</summary>
+        public Task WhenPolled => _pollTcs.Task;
+
+        public Task StoreAsync(DeadLetterEntry entry, CancellationToken ct = default)
+            => _inner.StoreAsync(entry, ct);
+
+        public Task<IReadOnlyList<DeadLetterEntry>> GetAsync(
+            string processorId, string? tenantId = null, int limit = 100, CancellationToken ct = default)
+            => _inner.GetAsync(processorId, tenantId, limit, ct);
+
+        public Task<int> CountAsync(string processorId, CancellationToken ct = default)
+            => _inner.CountAsync(processorId, ct);
+
+        public Task<bool> CompleteRetryAsync(DeadLetterClaim claim, CancellationToken ct = default)
+            => _inner.CompleteRetryAsync(claim, ct);
+
+        public Task ClearAsync(string processorId, CancellationToken ct = default)
+            => _inner.ClearAsync(processorId, ct);
+
+        public Task MarkForRetryAsync(string processorId, CancellationToken ct = default)
+            => _inner.MarkForRetryAsync(processorId, ct);
+
+        public Task<IReadOnlyList<DeadLetterClaim>> ClaimRetryRequestedAsync(
+            string processorId, int batchSize, TimeSpan leaseDuration,
+            string claimedBy, CancellationToken ct = default)
+        {
+            var result = _inner.ClaimRetryRequestedAsync(processorId, batchSize, leaseDuration, claimedBy, ct);
+            _pollTcs.TrySetResult();
+            return result;
+        }
+
+        public Task<bool> AbandonRetryAsync(DeadLetterClaim claim, CancellationToken ct = default)
+            => _inner.AbandonRetryAsync(claim, ct);
+    }
+
+    /// <summary>
     /// Decorator over <see cref="InMemoryDeadLetterStore"/> that records every
     /// <see cref="IDeadLetterStore.AbandonRetryAsync"/> call and signals
     /// <see cref="WhenAbandoned"/> so tests can await the abandon without wall-clock delays.
@@ -487,30 +534,33 @@ public sealed class DeadLetterRetryLoopBehaviorTests
     [Fact]
     public async Task EntryWithoutRetryRequested_IsNeverClaimed_OrDispatched()
     {
-        // Arrange — entry is NOT marked for retry; the loop should ignore it
-        var store = new InMemoryDeadLetterStore();
+        // Arrange — entry is NOT marked for retry; the loop should skip it
+        var store = new PollSignalingDeadLetterStore();
         var processor = new CapturingProcessor("proc-norequested");
         var entry = MakeEntry("proc-norequested", retryRequested: false);
         await store.StoreAsync(entry, TestContext.Current.CancellationToken);
 
-        // Short polling interval so the loop has multiple poll opportunities within the test window.
-        var pollingInterval = TimeSpan.FromMilliseconds(50);
+        // FakeTimeProvider holds the post-poll Task.Delay indefinitely (until cancelled),
+        // so no real wall-clock sleep occurs and no second poll fires before we dispose.
         FakeTimeProvider time = new();
         var loop = new DeadLetterRetryLoop(
             processor,
             store,
-            pollingInterval: pollingInterval,
+            pollingInterval: TimeSpan.FromMinutes(1),
             timeProvider: time);
 
-        // Act — run briefly then stop
+        // Act — start, then wait until the background loop has completed at least one real
+        // poll cycle. WhenPolled completes only after ClaimRetryRequestedAsync returns, which
+        // means the loop has asked the store for claimable entries and the store returned none
+        // (the entry's RetryRequested flag is false, so the store's filter excludes it).
+        // Only then can the Assert.Empty below distinguish "loop ran and found nothing" from
+        // "loop never ran". After WhenPolled fires the loop is sitting in Task.Delay with the
+        // fake clock frozen; DisposeAsync cancels it without any real wait.
         await loop.StartAsync(TestContext.Current.CancellationToken);
-        // Advance the fake clock past the polling interval — no entry is retry-requested,
-        // so the loop hits the delay each cycle. Advancing triggers the delay to complete
-        // without any real wall-clock wait.
-        time.Advance(pollingInterval);
+        await store.WhenPolled.WaitAsync(TimeSpan.FromSeconds(5));
         await loop.DisposeAsync();
 
-        // Assert — processor received nothing
+        // Assert — processor received nothing (store returned no claimable entries)
         Assert.Empty(processor.Processed);
 
         // Assert — entry still present and unchanged
