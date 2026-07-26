@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using Alberto.Dcb.Configuration;
 using Alberto.Dcb.Subscriptions;
+using Alberto.Dcb.Tests.Testing;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Xunit;
@@ -9,16 +10,6 @@ namespace Alberto.Dcb.Tests.Configuration;
 
 public class AlbertoModuleValidatorTests
 {
-    private sealed class FakeBackend(bool supportsTenancy = true, params AlbertoValidationFailure[] failures)
-        : IAlbertoBackendDescriptor
-    {
-        public string Name => "Fake";
-        public bool SupportsTenancy => supportsTenancy;
-        public IAlbertoBackendDescriptor ApplyConfiguration(IConfiguration moduleSection) => this;
-        public IEnumerable<AlbertoValidationFailure> Validate(AlbertoModuleDefinition definition) => failures;
-        public void Register(AlbertoModuleContext context) { }
-    }
-
     private static AlbertoModuleDefinition Valid(params ProcessorDeclaration[] processors) => new()
     {
         ModuleKey = "orders",

@@ -10,12 +10,6 @@ public class AlbertoTestHarnessTests
     [EventType("harness-order-created")]
     private record HarnessOrderCreated(Guid OrderId, decimal Amount) : IEvent;
 
-    private record OrderTotal
-    {
-        public Guid OrderId { get; init; }
-        public decimal Amount { get; init; }
-    }
-
     [Fact]
     public async Task AppendThenWaitForQuiescence_LetsAProjectionBeAssertedWithoutPolling()
     {

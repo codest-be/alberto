@@ -1,6 +1,7 @@
 using Alberto.Dcb.Configuration;
 using Alberto.Dcb.InMemory;
 using Alberto.Dcb.Subscriptions;
+using Alberto.Dcb.Tests.Testing;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Xunit;
@@ -19,15 +20,6 @@ public class UnknownConfigurationKeyTests
         new ConfigurationBuilder()
             .AddInMemoryCollection(entries.Select(e => new KeyValuePair<string, string?>(e.Key, e.Value)))
             .Build();
-
-    private sealed class FakeBackend : IAlbertoBackendDescriptor
-    {
-        public string Name => "Fake";
-        public bool SupportsTenancy => false;
-        public IAlbertoBackendDescriptor ApplyConfiguration(IConfiguration moduleSection) => this;
-        public IEnumerable<AlbertoValidationFailure> Validate(AlbertoModuleDefinition definition) => [];
-        public void Register(AlbertoModuleContext context) { }
-    }
 
     private static AlbertoModuleDefinition BaseDefinition(params ProcessorDeclaration[] processors) => new()
     {
