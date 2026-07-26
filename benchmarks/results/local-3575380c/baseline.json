@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "run": {
+    "timestamp": "2026-07-26T21:51:47.8146350\u002B00:00",
+    "gitSha": "local-baseline",
+    "profileId": "local-3575380c",
+    "albertoVersion": "0.0.0"
+  },
+  "measurements": [
+    {
+      "id": "BatchAppendBenchmarks.BatchAppend",
+      "params": {
+        "BatchSize": "10"
+      },
+      "meanNs": 2530375.1,
+      "stdDevNs": 566581.1166495736,
+      "opsPerSec": 395.1983245487991,
+      "allocatedBytes": 25944
+    },
+    {
+      "id": "BatchAppendBenchmarks.BatchAppend",
+      "params": {
+        "BatchSize": "100"
+      },
+      "meanNs": 9470954,
+      "stdDevNs": 1794765.4918125407,
+      "opsPerSec": 105.58598426304256,
+      "allocatedBytes": 199456
+    },
+    {
+      "id": "BatchAppendBenchmarks.BatchAppend",
+      "params": {
+        "BatchSize": "1000"
+      },
+      "meanNs": 79981383.1,
+      "stdDevNs": 20682769.085905768,
+      "opsPerSec": 12.502909567714141,
+      "allocatedBytes": 1943568
+    },
+    {
+      "id": "TagFanOutBenchmarks.AppendWithTagFanOut",
+      "params": {
+        "TagsPerEvent": "1"
+      },
+      "meanNs": 1298450.1,
+      "stdDevNs": 173187.6269499194,
+      "opsPerSec": 770.1489645231649,
+      "allocatedBytes": 11744
+    },
+    {
+      "id": "TagFanOutBenchmarks.AppendWithTagFanOut",
+      "params": {
+        "TagsPerEvent": "5"
+      },
+      "meanNs": 1583750,
+      "stdDevNs": 471142.4265175966,
+      "opsPerSec": 631.4127861089187,
+      "allocatedBytes": 17144
+    },
+    {
+      "id": "TagFanOutBenchmarks.AppendWithTagFanOut",
+      "params": {
+        "TagsPerEvent": "20"
+      },
+      "meanNs": 1619666.4,
+      "stdDevNs": 214932.4041890587,
+      "opsPerSec": 617.4110915679921,
+      "allocatedBytes": 20504
+    },
+    {
+      "id": "AppendBenchmarks.AppendWithDcbCheck",
+      "params": {},
+      "meanNs": 1526120.9,
+      "stdDevNs": 364198.7938769613,
+      "opsPerSec": 655.2560809566268,
+      "allocatedBytes": 12256
+    },
+    {
+      "id": "AppendBenchmarks.AppendWithConflictDetected",
+      "params": {},
+      "meanNs": 1234654,
+      "stdDevNs": 211224.70461309416,
+      "opsPerSec": 809.9435145392961,
+      "allocatedBytes": 23872
+    },
+    {
+      "id": "AppendBenchmarks.SingleAppend",
+      "params": {},
+      "meanNs": 1528629.3,
+      "stdDevNs": 101406.65561112513,
+      "opsPerSec": 654.1808403122981,
+      "allocatedBytes": 11736
+    }
+  ]
+}

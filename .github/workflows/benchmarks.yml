@@ -1,0 +1,101 @@
+name: Benchmarks
+
+on:
+  schedule:
+    # 02:00 UTC daily. PR CI stays fast; this is where the real suite runs.
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      categories:
+        description: 'Category filter (append, query, or leave blank for all)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  # Names the profile directory. The hash still distinguishes the actual hardware.
+  ALBERTO_BENCH_PROFILE_LABEL: ci
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    # Seeding 1M events plus ~80 cases; the default 6h cap is far too generous to rely on.
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Run benchmarks
+        run: |
+          FILTER=""
+          if [ -n "${{ github.event.inputs.categories }}" ]; then
+            FILTER="--anyCategories=${{ github.event.inputs.categories }}"
+          fi
+          dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks -- $FILTER
+
+      # Passes the whole results directory: the run spans several benchmark classes and
+      # BenchmarkDotNet writes one report per class.
+      - name: Normalize results
+        run: |
+          dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks.Compare -- \
+            --import BenchmarkDotNet.Artifacts/results \
+            --out candidate.json \
+            --git-sha "${{ github.sha }}" \
+            --postgres-image "postgres:16-alpine"
+
+      - name: Resolve profile id
+        id: profile
+        run: |
+          PROFILE=$(python3 -c "import json;print(json.load(open('candidate.json'))['run']['profileId'])")
+          echo "id=$PROFILE" >> "$GITHUB_OUTPUT"
+
+      - name: Compare against baseline
+        id: compare
+        continue-on-error: true
+        run: |
+          dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks.Compare -- \
+            --baseline "benchmarks/results/${{ steps.profile.outputs.id }}/baseline.json" \
+            --candidate candidate.json \
+            --markdown delta.md
+
+      - name: Publish delta to the job summary
+        if: always()
+        run: cat delta.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload raw reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-reports
+          path: |
+            BenchmarkDotNet.Artifacts/results/
+            candidate.json
+
+      # History accumulates automatically; baseline.json is only ever moved by a human
+      # running `--accept`. An auto-promoting baseline ratchets silently and stops being a gate.
+      - name: Append to history
+        if: github.event_name == 'schedule'
+        run: |
+          DIR="benchmarks/results/${{ steps.profile.outputs.id }}/history"
+          mkdir -p "$DIR"
+          cp candidate.json "$DIR/$(date -u +%Y-%m-%dT%H-%MZ)-${GITHUB_SHA::7}.json"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "$DIR"
+          git diff --staged --quiet || git commit -m "chore(benchmarks): nightly result [skip ci]"
+          git push
+
+      - name: Fail if a regression was detected
+        if: steps.compare.outcome == 'failure'
+        run: |
+          echo "Benchmark regression detected. See the job summary." >&2
+          exit 1
