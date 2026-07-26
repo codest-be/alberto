@@ -86,7 +86,7 @@ internal sealed class TelemetryAppendInterceptor : IAppendInterceptor
         }
         finally
         {
-            AlbertoMetrics.AppendDuration.Record(sw.ElapsedMilliseconds);
+            AlbertoMetrics.AppendDuration.Record(sw.Elapsed.TotalSeconds);
         }
     }
 

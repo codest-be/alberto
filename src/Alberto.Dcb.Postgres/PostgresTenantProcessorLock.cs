@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using Alberto.Dcb.Subscriptions;
+using Alberto.Dcb.Telemetry;
 using Npgsql;
 
 namespace Alberto.Dcb.Postgres;
@@ -69,11 +71,13 @@ public sealed class PostgresTenantProcessorLock : ITenantProcessorLock
 
         if (await reader.ReadAsync(ct))
         {
+            AlbertoMetrics.TenantLocksAcquired.Add(1, new TagList { { "consumer.id", consumerId }, { "tenant.id", tenantId } });
             var actualExpiresAt = reader.GetDateTime(0);
             return new TenantLease(tenantId, new DateTimeOffset(actualExpiresAt, TimeSpan.Zero));
         }
 
         // No rows returned means the lease is held by another replica and not expired
+        AlbertoMetrics.TenantLockFailures.Add(1, new TagList { { "consumer.id", consumerId }, { "tenant.id", tenantId } });
         return null;
     }
 

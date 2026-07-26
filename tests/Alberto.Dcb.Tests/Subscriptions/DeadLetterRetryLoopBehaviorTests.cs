@@ -30,22 +30,24 @@ public sealed class DeadLetterRetryLoopBehaviorTests
         string processorId,
         string? tenantId = null,
         bool retryRequested = true) =>
-        new(
-            Id: Guid.NewGuid(),
-            ProcessorId: processorId,
-            EventId: Guid.NewGuid(),
-            EventType: "test-event",
-            EventData: "{}",
-            ErrorMessage: "previous failure",
-            StackTrace: null,
-            AttemptCount: 1,
-            FailedAt: DateTimeOffset.UtcNow,
-            GlobalPosition: 1,
-            RetryRequested: retryRequested,
-            TenantId: tenantId,
-            Tags: null,
-            Metadata: null,
-            CreatedAt: DateTime.UtcNow);
+        new()
+        {
+            Id = Guid.NewGuid(),
+            ProcessorId = processorId,
+            EventId = Guid.NewGuid(),
+            EventType = "test-event",
+            EventData = "{}",
+            ErrorMessage = "previous failure",
+            StackTrace = null,
+            AttemptCount = 1,
+            FailedAt = DateTimeOffset.UtcNow,
+            GlobalPosition = 1,
+            RetryRequested = retryRequested,
+            TenantId = tenantId,
+            Tags = null,
+            Metadata = null,
+            CreatedAt = DateTime.UtcNow,
+        };
 
     // ── test doubles ─────────────────────────────────────────────────────────
 
@@ -541,17 +543,19 @@ public sealed class DeadLetterRetryLoopBehaviorTests
         var store = new InMemoryDeadLetterStore(time);
 
         await store.StoreAsync(
-            new DeadLetterEntry(
-                Id: Guid.NewGuid(),
-                ProcessorId: "proc-1",
-                EventId: Guid.NewGuid(),
-                EventType: "order-created",
-                EventData: "{}",
-                ErrorMessage: "boom",
-                StackTrace: null,
-                AttemptCount: 1,
-                FailedAt: DateTimeOffset.UtcNow,
-                GlobalPosition: 1),
+            new DeadLetterEntry
+            {
+                Id = Guid.NewGuid(),
+                ProcessorId = "proc-1",
+                EventId = Guid.NewGuid(),
+                EventType = "order-created",
+                EventData = "{}",
+                ErrorMessage = "boom",
+                StackTrace = null,
+                AttemptCount = 1,
+                FailedAt = DateTimeOffset.UtcNow,
+                GlobalPosition = 1,
+            },
             TestContext.Current.CancellationToken);
 
         var entries = await store.GetAsync("proc-1", ct: TestContext.Current.CancellationToken);

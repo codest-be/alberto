@@ -52,6 +52,10 @@ public static class MessagingBuilderExtensions
 
         builder.Register(context =>
         {
+            // Stamp the module key onto the registry so the convenience Map extension methods can
+            // resolve the module-keyed EventSerializer at runtime (for upcaster support).
+            registry.ModuleKey = context.ModuleKey;
+
             // Register the handler as a keyed IEventProcessor so the ControlLoop picks it up.
             // OutboxHandler implements IBatchableProcessor, satisfying the default Required batching mode.
             context.Services.AddKeyedSingleton<IEventProcessor>(context.ModuleKey, (sp, _) =>

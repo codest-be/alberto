@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Alberto.Dcb.Subscriptions;
+using Alberto.Dcb.Upcasting;
 using Microsoft.Extensions.Configuration;
 
 namespace Alberto.Dcb.Configuration;
@@ -68,6 +69,22 @@ public sealed record AlbertoModuleDefinition
     /// </summary>
     public ImmutableArray<UnknownConfigurationKey> UnknownConfigurationKeys { get; internal set; } = [];
 
+    /// <summary>
+    /// Upcaster declarations accumulated via <c>.AddUpcaster()</c> calls. Consumed at Phase 3
+    /// registration to wire the upcaster chain into the module's <see cref="EventSerializer"/>.
+    /// Because all <c>Configure</c> callbacks run before any <c>Register</c> callback, adding
+    /// upcasters before or after <c>WithEventsFrom</c> produces the same result.
+    /// </summary>
+    public ImmutableArray<UpcasterDeclaration> UpcasterDeclarations { get; internal set; } = [];
+
+    /// <summary>
+    /// Event type id / schema-version pairs extracted from the assembly that was passed to
+    /// <c>WithEventsFrom()</c>. Populated eagerly during Phase 1 so
+    /// <see cref="AlbertoModuleValidator"/> can verify upcaster coverage at startup without
+    /// retaining a reference to an <see cref="System.Reflection.Assembly"/>.
+    /// </summary>
+    public ImmutableArray<RegisteredEventType> RegisteredEventTypes { get; internal set; } = [];
+
     /// <summary>The configuration path this module binds from.</summary>
     public string ConfigurationPath => $"Alberto:Modules:{ModuleKey}";
 
@@ -118,3 +135,10 @@ public sealed record AlbertoModuleDefinition
         };
     }
 }
+
+/// <summary>
+/// An event-type ID / schema-version pair recorded during the assembly scan performed by
+/// <c>WithEventsFrom()</c>. Used by <see cref="AlbertoModuleValidator"/> to cross-check
+/// upcaster coverage at startup.
+/// </summary>
+public readonly record struct RegisteredEventType(string Id, int Version);

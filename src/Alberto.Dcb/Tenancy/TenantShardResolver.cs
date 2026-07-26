@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -20,6 +21,7 @@ namespace Alberto.Dcb.Tenancy;
 /// wrong answer.
 /// </para>
 /// </remarks>
+[Experimental("ALB9001")]
 public sealed class TenantShardResolver
 {
     private readonly ITenantShardMap _map;

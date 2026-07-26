@@ -7,6 +7,12 @@ namespace Alberto.Dcb.InMemory;
 /// Thread-safe for concurrent access.
 /// Useful for testing.
 /// </summary>
+/// <remarks>
+/// <see cref="SaveAsync"/> is monotonic, matching the <c>GREATEST</c> semantics of the
+/// PostgreSQL implementation: a backward position is silently discarded.
+/// <see cref="RewindAsync"/> is the deliberate escape hatch that can move a checkpoint
+/// backwards, mirroring the operator-only rewind path in production.
+/// </remarks>
 public sealed class InMemoryCheckpointStore : ICheckpointStore, ICheckpointInventory
 {
     private readonly object _lock = new();
@@ -26,7 +32,11 @@ public sealed class InMemoryCheckpointStore : ICheckpointStore, ICheckpointInven
     {
         lock (_lock)
         {
-            _checkpoints[processorId] = position;
+            // Mirror Postgres GREATEST semantics: SaveAsync is monotonic — a stale flush from a
+            // lagging processor cannot roll back a checkpoint that has already moved forward.
+            // RewindAsync is the deliberate and only escape hatch for moving backwards.
+            if (!_checkpoints.TryGetValue(processorId, out var current) || position > current)
+                _checkpoints[processorId] = position;
             return Task.CompletedTask;
         }
     }

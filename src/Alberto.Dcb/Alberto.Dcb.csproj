@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
-        <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
+        <TargetFramework>net10.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
@@ -20,6 +20,8 @@
         <InternalsVisibleTo Include="Alberto.Dcb.Messaging"/>
         <InternalsVisibleTo Include="Alberto.Dcb.EntityFramework"/>
         <InternalsVisibleTo Include="Alberto.Dcb.Telemetry"/>
+        <InternalsVisibleTo Include="Alberto.Dcb.Commands"/>
+        <InternalsVisibleTo Include="Alberto.Dcb.Benchmarks"/>
     </ItemGroup>
 
     <ItemGroup>
@@ -30,6 +32,5 @@
         <PackageReference Include="Microsoft.Extensions.Logging.Abstractions"/>
         <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions"/>
         <PackageReference Include="OpenTelemetry.Api"/>
-        <PackageReference Include="System.Text.Json"/>
     </ItemGroup>
 </Project>

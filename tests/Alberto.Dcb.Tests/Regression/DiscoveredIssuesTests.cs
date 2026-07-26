@@ -314,9 +314,7 @@ public sealed class DiscoveredIssuesTests
             processor, head, backend, checkpoints,
             pollingInterval: TimeSpan.FromMilliseconds(10),
             batchSize: 100,
-            executionOptions: new ProcessorExecutionOptions(
-                BatchingMode: ProcessorBatchingMode.Required,
-                MaxConcurrency: 3),
+            executionOptions: new ProcessorExecutionOptions { BatchingMode = ProcessorBatchingMode.Required, MaxConcurrency = 3 },
             logger: faultRecorded);
 
         // ── Act ───────────────────────────────────────────────────────────────────
@@ -395,9 +393,7 @@ public sealed class DiscoveredIssuesTests
             processor, head, backend, checkpoints,
             pollingInterval: TimeSpan.FromMilliseconds(10),
             batchSize: 100,
-            executionOptions: new ProcessorExecutionOptions(
-                BatchingMode: ProcessorBatchingMode.Required,
-                MaxConcurrency: 3));
+            executionOptions: new ProcessorExecutionOptions { BatchingMode = ProcessorBatchingMode.Required, MaxConcurrency = 3 });
 
         using var cts = new CancellationTokenSource();
         await head.StartAsync(cts.Token);
@@ -459,9 +455,7 @@ public sealed class DiscoveredIssuesTests
             processor, head, backend, checkpoints,
             pollingInterval: TimeSpan.FromMilliseconds(10),
             batchSize: 100,
-            executionOptions: new ProcessorExecutionOptions(
-                BatchingMode: ProcessorBatchingMode.Disabled,
-                MaxConcurrency: 1));
+            executionOptions: new ProcessorExecutionOptions { BatchingMode = ProcessorBatchingMode.Disabled, MaxConcurrency = 1 });
 
         using var cts = new CancellationTokenSource();
         await head.StartAsync(cts.Token);

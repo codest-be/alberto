@@ -21,6 +21,12 @@ namespace Alberto.Dcb;
 /// reads from. Writing <c>[Tag(...)]</c> without a target on a parameter was previously accepted
 /// but silently produced no tags; that misuse now fails at compile time.
 /// </remarks>
+/// <exception cref="ArgumentException">
+/// Thrown when <paramref name="concept"/> starts with <see cref="EventTag.ReservedConceptPrefix"/>
+/// (<c>"_"</c>). That space is reserved for framework-internal tags, of which
+/// <see cref="EventTag.SchemaVersionConcept"/> is the one in use today. Declare a version with
+/// <c>[EventType("...", Version = N)]</c> instead.
+/// </exception>
 [AttributeUsage(AttributeTargets.Property)]
 public sealed class TagAttribute(string concept) : Attribute
 {
@@ -28,5 +34,13 @@ public sealed class TagAttribute(string concept) : Attribute
     /// The tag concept (e.g., "order", "customer").
     /// The property value will be used as the tag value.
     /// </summary>
-    public string Concept { get; } = concept;
+    public string Concept { get; } = ValidateConcept(concept);
+
+    private static string ValidateConcept(string concept)
+    {
+        if (EventTag.IsReservedConcept(concept))
+            throw new ArgumentException(EventTag.ReservedConceptMessage(concept), nameof(concept));
+
+        return concept;
+    }
 }

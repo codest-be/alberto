@@ -1,4 +1,7 @@
+using System.Collections.Immutable;
 using System.Reflection;
+using Alberto.Dcb.Configuration;
+using Alberto.Dcb.Upcasting;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Alberto.Dcb;
@@ -54,10 +57,47 @@ public static class AlbertoStoreBuilderExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(eventsAssembly);
 
-        var serializer = EventSerializer.FromAssembly(eventsAssembly);
+        // Scan the assembly eagerly (Phase 1) so AlbertoModuleValidator can cross-check
+        // upcaster coverage at startup without holding a reference to an Assembly.
+        var registeredEventTypes = eventsAssembly
+            .GetTypes()
+            .Where(t => typeof(IEvent).IsAssignableFrom(t) && !t.IsAbstract && !t.IsInterface)
+            .Select(t => (t, attr: EventTypeAttribute.GetEventType(t)))
+            .Where(x => x.attr is not null)
+            .Select(x => new RegisteredEventType(x.attr!.Id, x.attr.Version))
+            .ToImmutableArray();
+
+        builder.Configure(d => d with { RegisteredEventTypes = registeredEventTypes });
+
+        // Defer serializer construction to the Register callback so that AddUpcaster calls
+        // that come *before or after* WithEventsFrom are both visible here: all Configure
+        // callbacks (including the one AddUpcaster uses) run before any Register callback,
+        // so context.Definition.UpcasterDeclarations is final when this lambda executes.
         builder.Register(context =>
         {
             var moduleKey = context.ModuleKey;
+
+            // Build the upcaster registry from whatever was declared via AddUpcaster.
+            EventSerializer serializer;
+            if (context.Definition.UpcasterDeclarations.Length > 0)
+            {
+                var registryBuilder = UpcasterRegistry.Create();
+                foreach (var decl in context.Definition.UpcasterDeclarations)
+                    registryBuilder.Add(decl);
+                serializer = EventSerializer.FromAssembly(eventsAssembly)
+                    .WithUpcasters(registryBuilder.Build());
+            }
+            else
+            {
+                serializer = EventSerializer.FromAssembly(eventsAssembly);
+            }
+
+            // Register only under the module key.
+            // The previous TryAddSingleton(serializer) registered the first module's serializer
+            // as the unkeyed singleton, causing outbox mappers in all other modules to silently
+            // resolve the wrong module's serializer.  The outbox mapper fix
+            // (MessageMappingRegistryExtensions.cs) is tracked as a deferred edit.
+            context.Services.AddKeyedSingleton<EventSerializer>(moduleKey, serializer);
             context.Services.AddKeyedScoped(moduleKey, (sp, _) => new AlbertoStore(
                 sp.GetRequiredKeyedService<IEventStore>(moduleKey),
                 serializer,

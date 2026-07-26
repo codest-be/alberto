@@ -1,19 +1,16 @@
-using System.Text.Json;
-
 namespace Alberto.Dcb.Subscriptions;
 
 /// <summary>
 /// A reactor that delegates event handling to a function.
 /// Used by the <c>ReactTo(...)</c> helpers for declarative side-effect registration.
 /// </summary>
-public sealed class FunctionalReactor<TEvent>(
+internal sealed class FunctionalReactor<TEvent>(
     string processorId,
     Func<TEvent, ReactorContext, CancellationToken, Task> handler,
-    int maxConcurrency = 1) : IBatchableProcessor
+    int maxConcurrency = 1,
+    EventSerializer? serializer = null) : IBatchableProcessor, IProcessorLifecycle
     where TEvent : class, IEvent
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-
     public string ProcessorId { get; } = processorId;
 
     public bool IsActive { get; set; } = true;
@@ -53,10 +50,7 @@ public sealed class FunctionalReactor<TEvent>(
 
     private Task ProcessAsync(IEventEnvelope @event, CancellationToken ct)
     {
-        var payload = JsonSerializer.Deserialize<TEvent>(@event.EventData, JsonOptions)
-                      ?? throw new InvalidOperationException(
-                          $"Failed to deserialize event '{@event.EventType.Id}' to '{typeof(TEvent).Name}'.");
-
+        var payload = EventEnvelopeExtensions.DeserializeEvent<TEvent>(@event, serializer);
         return handler(payload, ReactorContext.FromEnvelope(@event), ct);
     }
 }

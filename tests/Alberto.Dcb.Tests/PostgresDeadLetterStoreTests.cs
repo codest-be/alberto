@@ -167,17 +167,19 @@ public sealed class PostgresDeadLetterStoreTests(SingleTenantPostgresFixture fix
             cancellationToken: TestContext.Current.CancellationToken);
 
         var persisted = appended.Single();
-        var entry = new DeadLetterEntry(
-            Id: Guid.NewGuid(),
-            ProcessorId: $"processor-{Guid.NewGuid():N}",
-            EventId: persisted.Id,
-            EventType: persisted.EventType.Id,
-            EventData: persisted.EventData,
-            ErrorMessage: "boom",
-            StackTrace: null,
-            AttemptCount: 1,
-            FailedAt: DateTimeOffset.UtcNow,
-            GlobalPosition: persisted.GlobalPosition);
+        var entry = new DeadLetterEntry
+        {
+            Id = Guid.NewGuid(),
+            ProcessorId = $"processor-{Guid.NewGuid():N}",
+            EventId = persisted.Id,
+            EventType = persisted.EventType.Id,
+            EventData = persisted.EventData,
+            ErrorMessage = "boom",
+            StackTrace = null,
+            AttemptCount = 1,
+            FailedAt = DateTimeOffset.UtcNow,
+            GlobalPosition = persisted.GlobalPosition,
+        };
 
         await deadLetterStore.StoreAsync(entry, TestContext.Current.CancellationToken);
         await deadLetterStore.MarkForRetryAsync(entry.ProcessorId, TestContext.Current.CancellationToken);

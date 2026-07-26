@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Alberto.Dcb.Tenancy;
 
 /// <summary>
@@ -10,6 +12,7 @@ namespace Alberto.Dcb.Tenancy;
 /// <c>.WithShardMap&lt;TMap&gt;()</c> when the mapping already lives somewhere else — a tenant
 /// registry service, say — rather than in Alberto's own catalog table.
 /// </remarks>
+[Experimental("ALB9001")]
 public interface ITenantShardMap
 {
     /// <summary>

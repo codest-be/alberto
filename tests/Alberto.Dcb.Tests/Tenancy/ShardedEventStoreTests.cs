@@ -140,17 +140,19 @@ public sealed class ShardedEventStoreTests(ShardedPostgresFixture fixture)
         var db2 = fixture.Services.GetRequiredKeyedService<IDeadLetterStore>($"{ModuleKey}#db2");
 
         await db1.StoreAsync(
-            new DeadLetterEntry(
-                Id: Guid.NewGuid(),
-                ProcessorId: processorId,
-                EventId: Guid.NewGuid(),
-                EventType: "shard-test-event",
-                EventData: "{}",
-                ErrorMessage: "boom",
-                StackTrace: null,
-                AttemptCount: 1,
-                FailedAt: DateTimeOffset.UtcNow,
-                GlobalPosition: 1),
+            new DeadLetterEntry
+            {
+                Id = Guid.NewGuid(),
+                ProcessorId = processorId,
+                EventId = Guid.NewGuid(),
+                EventType = "shard-test-event",
+                EventData = "{}",
+                ErrorMessage = "boom",
+                StackTrace = null,
+                AttemptCount = 1,
+                FailedAt = DateTimeOffset.UtcNow,
+                GlobalPosition = 1,
+            },
             ct);
 
         (await db1.CountAsync(processorId, ct)).Should().Be(1);

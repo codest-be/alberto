@@ -43,23 +43,23 @@ public static class ConsumeMiddlewares
             // Exhausted retries or permanent error — dead-letter this event.
             context.DeadLettered = true;
 
-            AlbertoMetrics.DeadLetters.Add(1,
-                new KeyValuePair<string, object?>("processor", context.ProcessorId),
-                new KeyValuePair<string, object?>("module", context.ModuleKey));
+            AlbertoMetrics.DeadLetters.Add(1, ProcessorTags.ForModule(context.ProcessorId, context.ModuleKey));
 
             if (retry.DeadLetterOnMaxRetries && deadLetterStore is not null)
             {
-                await deadLetterStore.StoreAsync(new DeadLetterEntry(
-                    Id: Guid.NewGuid(),
-                    ProcessorId: context.ProcessorId,
-                    EventId: context.Envelope.Id,
-                    EventType: context.Envelope.EventType.Id,
-                    EventData: context.Envelope.EventData,
-                    ErrorMessage: lastError.Message,
-                    StackTrace: lastError.StackTrace,
-                    AttemptCount: context.Attempt,
-                    FailedAt: clock.GetUtcNow(),
-                    GlobalPosition: context.Envelope.GlobalPosition),
+                await deadLetterStore.StoreAsync(new DeadLetterEntry
+                {
+                    Id = Guid.NewGuid(),
+                    ProcessorId = context.ProcessorId,
+                    EventId = context.Envelope.Id,
+                    EventType = context.Envelope.EventType.Id,
+                    EventData = context.Envelope.EventData,
+                    ErrorMessage = lastError.Message,
+                    StackTrace = lastError.StackTrace,
+                    AttemptCount = context.Attempt,
+                    FailedAt = clock.GetUtcNow(),
+                    GlobalPosition = context.Envelope.GlobalPosition,
+                },
                     context.CancellationToken);
             }
         };

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Alberto.Dcb.Tenancy;
 
@@ -7,6 +8,7 @@ namespace Alberto.Dcb.Tenancy;
 /// <param name="Healthy">Whether the last attempt to reach it succeeded.</param>
 /// <param name="LastError">The message from the last failure, or null while healthy.</param>
 /// <param name="LastChangedAt">When the state last flipped.</param>
+[Experimental("ALB9001")]
 public sealed record ShardState(string ShardId, bool Healthy, string? LastError, DateTimeOffset LastChangedAt);
 
 /// <summary>
@@ -20,6 +22,7 @@ public sealed record ShardState(string ShardId, bool Healthy, string? LastError,
 /// could not run is recorded here instead of taking the host down, and the health check and CLI
 /// read it to say which databases are missing.
 /// </remarks>
+[Experimental("ALB9001")]
 public sealed class ShardHealth(TimeProvider? timeProvider = null)
 {
     private readonly ConcurrentDictionary<string, ShardState> _states = new(StringComparer.Ordinal);

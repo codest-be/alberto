@@ -39,7 +39,7 @@ public sealed class InMemoryStateStore<TState>(Func<int>? rebuildVersion = null)
     private long _sequence;
 
     /// <inheritdoc/>
-    public Task<Dictionary<string, TState>> LoadManyAsync(
+    public Task<IReadOnlyDictionary<string, TState>> LoadManyAsync(
         IEnumerable<string> documentIds,
         CancellationToken ct = default)
     {
@@ -54,7 +54,9 @@ public sealed class InMemoryStateStore<TState>(Func<int>? rebuildVersion = null)
                 result[id] = entry.State;
         }
 
-        return Task.FromResult(result);
+        // Explicit type arg required: Task<T> is not covariant, so Task.FromResult(result)
+        // would infer Task<Dictionary<...>> and fail to satisfy the IReadOnlyDictionary contract.
+        return Task.FromResult<IReadOnlyDictionary<string, TState>>(result);
     }
 
     /// <inheritdoc/>

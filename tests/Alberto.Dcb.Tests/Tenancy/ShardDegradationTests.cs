@@ -15,7 +15,7 @@ namespace Alberto.Dcb.Tests.Tenancy;
 /// </summary>
 public sealed class ShardDegradationTests(PostgresCluster cluster)
 {
-    private const string ModuleKey = "degraded-test";
+    private const string ModuleKey = "degraded_test";
 
     /// <summary>Refuses connections immediately rather than hanging until a timeout.</summary>
     private const string Unreachable =

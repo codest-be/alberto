@@ -353,9 +353,7 @@ public sealed class ControlLoopTests
             checkpoints,
             TimeSpan.FromMilliseconds(10),
             100,
-            executionOptions: new ProcessorExecutionOptions(
-                ProcessorBatchingMode.Required,
-                MaxConcurrency: 2));
+            executionOptions: new ProcessorExecutionOptions { BatchingMode = ProcessorBatchingMode.Required, MaxConcurrency = 2 });
 
         using (var firstRun = new CancellationTokenSource())
         {
@@ -386,9 +384,7 @@ public sealed class ControlLoopTests
             checkpoints,
             TimeSpan.FromMilliseconds(10),
             100,
-            executionOptions: new ProcessorExecutionOptions(
-                ProcessorBatchingMode.Required,
-                MaxConcurrency: 2));
+            executionOptions: new ProcessorExecutionOptions { BatchingMode = ProcessorBatchingMode.Required, MaxConcurrency = 2 });
 
         using var secondRun = new CancellationTokenSource();
         await secondHead.StartAsync(secondRun.Token);
@@ -490,7 +486,7 @@ public sealed class ControlLoopTests
             checkpoints,
             TimeSpan.FromMilliseconds(10),
             100,
-            executionOptions: new ProcessorExecutionOptions(ProcessorBatchingMode.Required));
+            executionOptions: new ProcessorExecutionOptions { BatchingMode = ProcessorBatchingMode.Required });
 
         using var cts = new CancellationTokenSource();
         await head.StartAsync(cts.Token);
@@ -524,7 +520,7 @@ public sealed class ControlLoopTests
             checkpoints,
             TimeSpan.FromMilliseconds(10),
             100,
-            executionOptions: new ProcessorExecutionOptions(ProcessorBatchingMode.Required)));
+            executionOptions: new ProcessorExecutionOptions { BatchingMode = ProcessorBatchingMode.Required }));
 
         Assert.Contains("requires batching", exception.Message);
     }
@@ -547,7 +543,7 @@ public sealed class ControlLoopTests
             100,
             middlewares: [middleware.ToMiddleware()],
             hasUnpairedPerEventMiddlewares: true,
-            executionOptions: new ProcessorExecutionOptions(ProcessorBatchingMode.Required)));
+            executionOptions: new ProcessorExecutionOptions { BatchingMode = ProcessorBatchingMode.Required }));
 
         Assert.Contains("not all configured per-event middleware has a batch equivalent", exception.Message);
     }
@@ -573,7 +569,7 @@ public sealed class ControlLoopTests
             100,
             middlewares: [middleware.ToMiddleware()],
             hasUnpairedPerEventMiddlewares: true,
-            executionOptions: new ProcessorExecutionOptions(ProcessorBatchingMode.IfSupported));
+            executionOptions: new ProcessorExecutionOptions { BatchingMode = ProcessorBatchingMode.IfSupported });
 
         using var cts = new CancellationTokenSource();
         await head.StartAsync(cts.Token);
@@ -609,7 +605,7 @@ public sealed class ControlLoopTests
             TimeSpan.FromMilliseconds(10),
             100,
             batchMiddlewares: [batchMiddleware.ToMiddleware()],
-            executionOptions: new ProcessorExecutionOptions(ProcessorBatchingMode.Required));
+            executionOptions: new ProcessorExecutionOptions { BatchingMode = ProcessorBatchingMode.Required });
 
         using var cts = new CancellationTokenSource();
         await head.StartAsync(cts.Token);
@@ -701,7 +697,7 @@ public sealed class ControlLoopTests
     public void WithConcurrency_AndBatchingDisabled_IsReportedByValidator()
     {
         // ALB0005: the "concurrency requires batching" check moved from the builder to the validator.
-        var options = new ProcessorExecutionOptions(ProcessorBatchingMode.Disabled, MaxConcurrency: 5);
+        var options = new ProcessorExecutionOptions { BatchingMode = ProcessorBatchingMode.Disabled, MaxConcurrency = 5 };
         var definition = new AlbertoModuleDefinition
         {
             ModuleKey = "test",
@@ -753,7 +749,7 @@ public sealed class ControlLoopTests
         var processor = new TestProcessor("pipelined", new HashSet<string> { "test-event-a" });
         var loop = new ControlLoop(processor, head, backend, checkpoints,
             TimeSpan.FromMilliseconds(10), 100,
-            executionOptions: new ProcessorExecutionOptions(ProcessorBatchingMode.Required, MaxConcurrency: 3));
+            executionOptions: new ProcessorExecutionOptions { BatchingMode = ProcessorBatchingMode.Required, MaxConcurrency = 3 });
 
         using var cts = new CancellationTokenSource();
         await head.StartAsync(cts.Token);
@@ -803,7 +799,7 @@ public sealed class ControlLoopTests
 
         var loop = new ControlLoop(processor, head, backend, checkpoints,
             TimeSpan.FromMilliseconds(10), 100,
-            executionOptions: new ProcessorExecutionOptions(ProcessorBatchingMode.Required, MaxConcurrency: 5));
+            executionOptions: new ProcessorExecutionOptions { BatchingMode = ProcessorBatchingMode.Required, MaxConcurrency = 5 });
 
         using var cts = new CancellationTokenSource();
         await head.StartAsync(cts.Token);
@@ -852,7 +848,7 @@ public sealed class ControlLoopTests
 
         var loop = new ControlLoop(processor, head, backend, checkpoints,
             TimeSpan.FromMilliseconds(10), 100,
-            executionOptions: new ProcessorExecutionOptions(ProcessorBatchingMode.Required, MaxConcurrency: 3));
+            executionOptions: new ProcessorExecutionOptions { BatchingMode = ProcessorBatchingMode.Required, MaxConcurrency = 3 });
 
         using var cts = new CancellationTokenSource();
         await head.StartAsync(cts.Token);
@@ -900,7 +896,7 @@ public sealed class ControlLoopTests
         var processor = new TestProcessor("pipelined-filter", new HashSet<string> { "test-event-a" });
         var loop = new ControlLoop(processor, head, backend, checkpoints,
             TimeSpan.FromMilliseconds(10), 100,
-            executionOptions: new ProcessorExecutionOptions(ProcessorBatchingMode.Required, MaxConcurrency: 2));
+            executionOptions: new ProcessorExecutionOptions { BatchingMode = ProcessorBatchingMode.Required, MaxConcurrency = 2 });
 
         using var cts = new CancellationTokenSource();
         await head.StartAsync(cts.Token);

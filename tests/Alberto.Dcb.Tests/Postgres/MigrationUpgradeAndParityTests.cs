@@ -1,5 +1,6 @@
 using System.Reflection;
 using Alberto.Dcb.Postgres;
+using Alberto.Dcb.Subscriptions;
 using FluentAssertions;
 using Npgsql;
 using Testcontainers.PostgreSql;
@@ -166,6 +167,9 @@ public sealed class MigrationUpgradeAndParityTests
         // 018: the partial index that keeps the stable-head query off a sequential scan.
         await AssertInFlightVisibilityIndexAsync(conn);
 
+        // 024: dead_letter event_type column must be widened to VARCHAR(500) to match alberto_events.
+        await AssertDeadLetterEventTypeColumnWidthAsync(conn);
+
         // Core invariant: alberto_events must still have the tenant_id column.
         (await ColumnExistsAsync(conn, "alberto_events", "tenant_id"))
             .Should().BeTrue(because: "multi-tenant schema must retain the tenant_id column on alberto_events");
@@ -221,6 +225,9 @@ public sealed class MigrationUpgradeAndParityTests
 
         // 018: the partial index that keeps the stable-head query off a sequential scan.
         await AssertInFlightVisibilityIndexAsync(conn);
+
+        // 024: dead_letter event_type column must be widened to VARCHAR(500) to match alberto_events.
+        await AssertDeadLetterEventTypeColumnWidthAsync(conn);
 
         // Core invariant: single-tenant schema must NOT have a tenant_id column on events.
         (await ColumnExistsAsync(conn, "alberto_events", "tenant_id"))
@@ -805,5 +812,139 @@ public sealed class MigrationUpgradeAndParityTests
         cmd.Parameters.AddWithValue("@table", tableName);
         cmd.Parameters.AddWithValue("@col", columnName);
         return Convert.ToInt64(await cmd.ExecuteScalarAsync()) > 0;
+    }
+
+    /// <summary>
+    /// Returns the declared character maximum length of a VARCHAR column, or null when the
+    /// column does not exist or is not a bounded character type.
+    /// </summary>
+    private static async Task<int?> GetColumnMaxLengthAsync(
+        NpgsqlConnection conn, string tableName, string columnName)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT character_maximum_length
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name   = @table
+              AND column_name  = @col
+            """;
+        cmd.Parameters.AddWithValue("@table", tableName);
+        cmd.Parameters.AddWithValue("@col", columnName);
+        var result = await cmd.ExecuteScalarAsync();
+        return result is DBNull || result is null ? null : Convert.ToInt32(result);
+    }
+
+    private static async Task AssertDeadLetterEventTypeColumnWidthAsync(NpgsqlConnection conn)
+    {
+        var maxLength = await GetColumnMaxLengthAsync(conn, "alberto_dead_letter_events", "event_type");
+        maxLength.Should().Be(500,
+            because: "migration 024 must widen dead_letter_events.event_type to VARCHAR(500) to match " +
+                     "alberto_events.event_type — the previous VARCHAR(200) silently rejected dead-lettering " +
+                     "any event whose type name exceeded 200 characters");
+    }
+
+    // =========================================================================
+    // Migration 024 — dead-letter event_type width — end-to-end
+    // (Testcontainers required)
+    // =========================================================================
+
+    /// <summary>
+    /// Migrates a fresh multi-tenant database to the current schema and verifies that
+    /// <see cref="PostgresDeadLetterStore.StoreAsync"/> accepts an event whose type name is
+    /// longer than 200 characters, which is the old dead-letter column width.
+    /// </summary>
+    /// <remarks>
+    /// Before migration 024 the INSERT would throw:
+    ///   ERROR: value too long for type character varying(200)
+    /// leaving the processor stuck in a retry loop with no escape into quarantine — the worst
+    /// possible outcome for a poison event.  This test uses a dedicated container rather than
+    /// the shared cluster templates so it sees the full migration path, not a pre-baked template
+    /// that already has the widened column.
+    /// </remarks>
+    [Fact]
+    public async Task MultiTenant_DeadLetterStore_AcceptsEventTypeOver200Characters()
+    {
+        await using var container = new PostgreSqlBuilder("postgres:16-alpine").Build();
+        await container.StartAsync();
+        var connectionString = container.GetConnectionString();
+
+        var result = PostgresMigrator.Migrate(connectionString, singleTenant: false);
+        result.Successful.Should().BeTrue(because: result.Error?.Message ?? "migration failed");
+
+        // A fully-qualified .NET type name commonly exceeds 200 characters.
+        // 35 (prefix) + 170 ('A's) = 205 characters — comfortably above the old limit.
+        var longEventType = "Acme.Commerce.Orders.Domain.Events." + new string('A', 170);
+        longEventType.Length.Should().BeGreaterThan(200,
+            because: "the test is only meaningful when the type name exceeds the old VARCHAR(200) cap");
+
+        await using var dataSource = NpgsqlDataSource.Create(connectionString);
+        var store = new PostgresDeadLetterStore(dataSource, multiTenant: true);
+
+        var entry = new DeadLetterEntry
+        {
+            Id = Guid.NewGuid(),
+            ProcessorId = "proc-long-type-test",
+            EventId = Guid.NewGuid(),
+            EventType = longEventType,
+            EventData = "{}",
+            ErrorMessage = "handler threw",
+            StackTrace = null,
+            AttemptCount = 1,
+            FailedAt = DateTimeOffset.UtcNow,
+            GlobalPosition = 1,
+        };
+
+        // Before migration 024 this threw:
+        //   PostgresException: value too long for type character varying(200)
+        await store.Invoking(s => s.StoreAsync(entry))
+            .Should().NotThrowAsync(
+                because: "migration 024 widens event_type to VARCHAR(500) so a 205-character type name must be accepted");
+
+        var stored = await store.GetAsync("proc-long-type-test");
+        stored.Should().ContainSingle(e => e.EventType == longEventType,
+            because: "the dead-lettered entry must be retrievable with the full type name intact");
+    }
+
+    /// <summary>
+    /// Same assertion as <see cref="MultiTenant_DeadLetterStore_AcceptsEventTypeOver200Characters"/>
+    /// but for the single-tenant migration set, which has no tenant_id column.
+    /// </summary>
+    [Fact]
+    public async Task SingleTenant_DeadLetterStore_AcceptsEventTypeOver200Characters()
+    {
+        await using var container = new PostgreSqlBuilder("postgres:16-alpine").Build();
+        await container.StartAsync();
+        var connectionString = container.GetConnectionString();
+
+        var result = PostgresMigrator.Migrate(connectionString, singleTenant: true);
+        result.Successful.Should().BeTrue(because: result.Error?.Message ?? "migration failed");
+
+        var longEventType = "Acme.Commerce.Orders.Domain.Events." + new string('A', 170);
+
+        await using var dataSource = NpgsqlDataSource.Create(connectionString);
+        var store = new PostgresDeadLetterStore(dataSource, multiTenant: false);
+
+        var entry = new DeadLetterEntry
+        {
+            Id = Guid.NewGuid(),
+            ProcessorId = "proc-long-type-test",
+            EventId = Guid.NewGuid(),
+            EventType = longEventType,
+            EventData = "{}",
+            ErrorMessage = "handler threw",
+            StackTrace = null,
+            AttemptCount = 1,
+            FailedAt = DateTimeOffset.UtcNow,
+            GlobalPosition = 1,
+        };
+
+        await store.Invoking(s => s.StoreAsync(entry))
+            .Should().NotThrowAsync(
+                because: "migration 024 widens event_type to VARCHAR(500) so a 205-character type name must be accepted");
+
+        var stored = await store.GetAsync("proc-long-type-test");
+        stored.Should().ContainSingle(e => e.EventType == longEventType,
+            because: "the dead-lettered entry must be retrievable with the full type name intact");
     }
 }

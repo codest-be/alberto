@@ -154,4 +154,45 @@ public class ModuleDefinitionTests
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*already declares*Fake*");
     }
+
+    // ── Call-order invariant ─────────────────────────────────────────────────
+    // AddAlberto runs the entire configure lambda before registering anything.
+    // WithTenancy() and UseBackend() (or WithPostgres) can appear in any order;
+    // no startup validator rejects or flags a particular sequence. These two tests
+    // document that invariant so a reader who has seen the old (incorrect) "order
+    // matters" doc can verify the claim is false.
+
+    [Fact]
+    public void WithTenancy_before_backend_and_after_produce_identical_definitions()
+    {
+        var before = new ServiceCollection();
+        before.AddAlberto("orders", m => m.WithTenancy().UseBackend(new FakeBackend()));
+
+        var after = new ServiceCollection();
+        after.AddAlberto("orders", m => m.UseBackend(new FakeBackend()).WithTenancy());
+
+        var resolvedBefore = Resolve(before, "orders");
+        var resolvedAfter = Resolve(after, "orders");
+
+        resolvedBefore.TenancyEnabled.Should().BeTrue();
+        resolvedAfter.TenancyEnabled.Should().BeTrue("call order must not affect whether tenancy is applied");
+        resolvedBefore.TenancyEnabled.Should().Be(resolvedAfter.TenancyEnabled);
+    }
+
+    [Fact]
+    public void No_validation_error_is_raised_when_WithTenancy_follows_UseBackend()
+    {
+        // Previously, incorrect documentation claimed a startup validator would reject
+        // a module that called .WithTenancy() after the backend declaration. No such
+        // validator exists: the call order is irrelevant by design.
+        var services = new ServiceCollection();
+        var backend = new FakeBackend();
+        services.AddAlberto("orders", m => m.UseBackend(backend).WithTenancy());
+
+        // Building and resolving the definition must not throw.
+        var act = () => Resolve(services, "orders");
+
+        act.Should().NotThrow();
+        Resolve(services, "orders").TenancyEnabled.Should().BeTrue();
+    }
 }

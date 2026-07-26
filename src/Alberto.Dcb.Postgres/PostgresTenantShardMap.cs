@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Alberto.Dcb.Tenancy;
 using Npgsql;
 
@@ -18,6 +19,7 @@ namespace Alberto.Dcb.Postgres;
 /// database without their tenants colliding.
 /// </param>
 /// <param name="schema">The schema the catalog table lives in, or null for the default.</param>
+[Experimental("ALB9001")]
 public sealed class PostgresTenantShardMap(
     NpgsqlDataSource dataSource,
     string moduleKey,

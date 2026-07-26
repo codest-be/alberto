@@ -1,3 +1,4 @@
+#pragma warning disable ALB9001 // Whole file is the DI registration layer for the experimental sharding feature.
 using Alberto.Dcb.Tenancy;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;

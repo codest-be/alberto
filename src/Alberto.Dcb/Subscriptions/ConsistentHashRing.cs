@@ -1,6 +1,6 @@
 namespace Alberto.Dcb.Subscriptions;
 
-public static class ConsistentHashRing
+internal static class ConsistentHashRing
 {
     private const int VirtualNodesPerNode = 150;
 

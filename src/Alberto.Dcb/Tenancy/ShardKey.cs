@@ -1,5 +1,4 @@
 using System.Diagnostics.CodeAnalysis;
-using System.Text.RegularExpressions;
 
 namespace Alberto.Dcb.Tenancy;
 
@@ -12,7 +11,7 @@ namespace Alberto.Dcb.Tenancy;
 /// in the codebase has to know that sharding exists. Only this class assembles or takes apart
 /// that string; anywhere else it is opaque.
 /// </remarks>
-public static partial class ShardKey
+public static class ShardKey
 {
     /// <summary>Separates the logical module key from the shard id.</summary>
     public const char Separator = '#';
@@ -71,12 +70,10 @@ public static partial class ShardKey
 
     /// <summary>
     /// Whether <paramref name="shardId"/> is safe to use in a DI key, a metric tag and a
-    /// lease-holder name. Deliberately the same allowlist Alberto applies to schema and tenant
-    /// identifiers, so a shard id can never need quoting.
+    /// lease-holder name. Delegates to <see cref="IdentifierRules.IsValidIdentifier"/>, which
+    /// is the single shared implementation of the allowlist that Alberto applies to module keys,
+    /// shard ids, and tenant ids.
     /// </summary>
     public static bool IsValidShardId([NotNullWhen(true)] string? shardId) =>
-        shardId is not null && ShardIdPattern().IsMatch(shardId);
-
-    [GeneratedRegex(@"^[a-z][a-z0-9_]{0,62}$", RegexOptions.None, matchTimeoutMilliseconds: 100)]
-    private static partial Regex ShardIdPattern();
+        IdentifierRules.IsValidIdentifier(shardId);
 }

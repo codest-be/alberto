@@ -145,6 +145,9 @@ public readonly partial struct TagPattern : IEquatable<TagPattern>
         if (!ValidConceptPattern.IsMatch(concept))
             return false;
 
+        if (EventTag.IsReservedConcept(concept))
+            return false;
+
         if (id == "*")
         {
             result = new TagPattern(concept, null);
@@ -190,6 +193,9 @@ public readonly partial struct TagPattern : IEquatable<TagPattern>
             throw new ArgumentException(
                 $"Concept '{concept}' contains invalid characters. Only letters, numbers, hyphens, and underscores are allowed.",
                 nameof(concept));
+
+        if (EventTag.IsReservedConcept(concept))
+            throw new ArgumentException(EventTag.ReservedConceptMessage(concept), nameof(concept));
     }
 
     private static void ValidateId(string id)

@@ -91,7 +91,7 @@ public class AlbertoModuleValidatorTests
     [Fact]
     public void Concurrency_without_batching_fails_with_ALB0005()
     {
-        var execution = new ProcessorExecutionOptions(ProcessorBatchingMode.Disabled, MaxConcurrency: 4);
+        var execution = new ProcessorExecutionOptions { BatchingMode = ProcessorBatchingMode.Disabled, MaxConcurrency = 4 };
 
         var failures = Run(Valid(Processor("busy", execution)));
 

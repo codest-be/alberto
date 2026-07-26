@@ -19,7 +19,7 @@ Every event carries:
 |---|---|
 | `global_position` | Its place in the total order. Assigned on append. |
 | `event_type` | The `[EventType("...")]` slug. |
-| `tags` | The concepts it touches, extracted from `[Tag]` properties. |
+| `tags` | The concepts it touches, extracted from `[Tag]` properties, plus the framework-reserved `_version:N` schema-version tag. See [events.md](events.md#reserved-_-tag-concepts). |
 | `event_data` | The JSON payload. |
 | `metadata` | Free-form headers — trace context lives here. |
 
