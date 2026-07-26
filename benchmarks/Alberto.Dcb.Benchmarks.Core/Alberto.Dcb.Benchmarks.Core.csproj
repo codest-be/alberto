@@ -7,4 +7,9 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/Alberto.Dcb/Alberto.Dcb.csproj" />
+  </ItemGroup>
+
 </Project>
