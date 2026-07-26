@@ -148,6 +148,14 @@ use the factory form `ReactTo<TEvent>(Func<IServiceProvider, Func<TEvent, ct, Ta
 
 ### Fixed
 
+- Dead-letter middleware now preserves tenant identity, tags, metadata, and the original event
+  timestamp; PostgreSQL dead-letter and outbox adapters derive tenancy from the migrated schema
+  instead of trusting an optional caller flag.
+- `DcbQuery` and built projection declarations now snapshot their input collections, preventing
+  caller or builder mutations from changing a live query/processor declaration.
+- `OutboxRelay` now closes the message transport exactly once when the hosted service stops.
+- The CLI now rejects malformed, unknown, or partial shard configuration and applies one
+  non-interactive-safe confirmation gate before destructive fan-out operations.
 - Control loop faults and holds its checkpoint on a pipelined handler failure that coincides
   with shutdown (previously the checkpoint could advance past the failed event).
 - Schema SQL injection vector via unquoted schema identifier interpolation (now validated against

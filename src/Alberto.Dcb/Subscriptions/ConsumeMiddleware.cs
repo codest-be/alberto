@@ -47,19 +47,13 @@ public static class ConsumeMiddlewares
 
             if (retry.DeadLetterOnMaxRetries && deadLetterStore is not null)
             {
-                await deadLetterStore.StoreAsync(new DeadLetterEntry
-                {
-                    Id = Guid.NewGuid(),
-                    ProcessorId = context.ProcessorId,
-                    EventId = context.Envelope.Id,
-                    EventType = context.Envelope.EventType.Id,
-                    EventData = context.Envelope.EventData,
-                    ErrorMessage = lastError.Message,
-                    StackTrace = lastError.StackTrace,
-                    AttemptCount = context.Attempt,
-                    FailedAt = clock.GetUtcNow(),
-                    GlobalPosition = context.Envelope.GlobalPosition,
-                },
+                await deadLetterStore.StoreAsync(
+                    DeadLetterEntryFactory.Create(
+                        context.ProcessorId,
+                        context.Envelope,
+                        lastError,
+                        context.Attempt,
+                        clock.GetUtcNow()),
                     context.CancellationToken);
             }
         };

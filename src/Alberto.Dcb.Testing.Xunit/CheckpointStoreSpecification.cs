@@ -51,7 +51,7 @@ public abstract class CheckpointStoreSpecification
     }
 
     /// <summary>
-    /// Each subsequent save must replace the previous value for the same processor ID.
+    /// Each subsequent forward save must advance the previous value for the same processor ID.
     /// </summary>
     [Fact]
     public async Task Save_MultipleTimes_ShouldUpdatePosition()

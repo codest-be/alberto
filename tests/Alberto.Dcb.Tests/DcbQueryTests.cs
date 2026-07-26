@@ -387,5 +387,29 @@ public class DcbQueryTests
         Assert.Equal(2, modified.Tags.Count);
     }
 
+    [Fact]
+    public void ByTypes_ShouldSnapshotCallerOwnedArray()
+    {
+        var supplied = new[] { new EventType("order-placed") };
+        var query = DcbQuery.ByTypes(supplied);
+
+        supplied[0] = new EventType("order-cancelled");
+
+        Assert.Equal("order-placed", Assert.Single(query.Types).Id);
+        Assert.False(query.Types is EventType[]);
+    }
+
+    [Fact]
+    public void ByTags_ShouldSnapshotCallerOwnedArray()
+    {
+        var supplied = new[] { new EventTag("order", "123") };
+        var query = DcbQuery.ByTags(supplied);
+
+        supplied[0] = new EventTag("customer", "456");
+
+        Assert.Equal("order:123", Assert.Single(query.Tags).Value);
+        Assert.False(query.Tags is EventTag[]);
+    }
+
     #endregion
 }

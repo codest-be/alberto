@@ -59,11 +59,20 @@ public class CatalogConfig
     public string? Schema { get; set; }
 }
 
+/// <summary>
+/// Raised when a configuration file exists but cannot be trusted. An operator-visible config
+/// error must stop the command rather than silently falling back to environment variables or a
+/// smaller set of databases.
+/// </summary>
+public sealed class CliConfigurationException(string message, Exception innerException)
+    : Exception(message, innerException);
+
 public static class ConfigFileFinder
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
-        PropertyNameCaseInsensitive = true
+        PropertyNameCaseInsensitive = true,
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
     };
 
     /// <summary>
@@ -75,8 +84,9 @@ public static class ConfigFileFinder
 
     /// <summary>
     /// Walks up the directory tree from <paramref name="startDir"/> looking for .alberto/config.json.
-    /// Returns null if not found or if the file is malformed. Pass a specific directory in tests to
-    /// avoid touching the real working directory.
+    /// Returns null if not found. Throws when a file is present but unreadable or invalid, because
+    /// treating a broken operator configuration as absent could redirect a command to the wrong
+    /// database. Pass a specific directory in tests to avoid touching the real working directory.
     /// </summary>
     public static AlbertoConfig? Find(DirectoryInfo startDir)
     {
@@ -90,12 +100,15 @@ public static class ConfigFileFinder
                 try
                 {
                     var json = File.ReadAllText(configPath);
-                    return JsonSerializer.Deserialize<AlbertoConfig>(json, JsonOptions);
+                    return JsonSerializer.Deserialize<AlbertoConfig>(json, JsonOptions)
+                        ?? throw new JsonException("The configuration root must be a JSON object.");
                 }
-                catch
+                catch (Exception ex) when (
+                    ex is JsonException or IOException or UnauthorizedAccessException)
                 {
-                    // Malformed config — treat as not found
-                    return null;
+                    throw new CliConfigurationException(
+                        $"Could not load Alberto configuration '{configPath}': {ex.Message}",
+                        ex);
                 }
             }
 

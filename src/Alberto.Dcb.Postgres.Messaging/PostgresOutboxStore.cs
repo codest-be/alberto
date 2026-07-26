@@ -15,7 +15,8 @@ public sealed class PostgresOutboxStore(
 {
     private readonly NpgsqlDataSource _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
     private readonly SchemaQualifier _schema = new(schema);
-    private bool? _hasTenantIdCache = multiTenant;
+    private readonly PostgresStoreTopology _topology =
+        new(dataSource, schema, expectedMultiTenant: multiTenant);
 
     /// <inheritdoc/>
     public async Task InsertAsync(OutboxEntry entry, CancellationToken ct = default)
@@ -304,23 +305,6 @@ public sealed class PostgresOutboxStore(
 
     private async ValueTask<bool> ResolveHasTenantIdAsync(
         NpgsqlConnection connection,
-        CancellationToken ct)
-    {
-        if (_hasTenantIdCache.HasValue)
-            return _hasTenantIdCache.Value;
-
-        await using var cmd = connection.CreateCommand();
-        cmd.CommandText = """
-            SELECT EXISTS (
-                SELECT 1
-                FROM information_schema.columns
-                WHERE table_schema = @schema_name
-                  AND table_name = 'alberto_outbox_entries'
-                  AND column_name = 'tenant_id')
-            """;
-        cmd.Parameters.AddWithValue("schema_name", _schema.Name);
-
-        _hasTenantIdCache = await cmd.ExecuteScalarAsync(ct) is true;
-        return _hasTenantIdCache.Value;
-    }
+        CancellationToken ct) =>
+        await _topology.IsMultiTenantAsync(connection, ct);
 }
