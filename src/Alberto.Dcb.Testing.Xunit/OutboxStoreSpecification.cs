@@ -389,7 +389,10 @@ public abstract class OutboxStoreSpecification
     public async Task PurgeDeliveredAsync_RemovesOldDeliveredOnly()
     {
         if (TimeProvider is not FakeTimeProvider)
-            Assert.Skip("Requires FakeTimeProvider to produce controllable DeliveredAt timestamps.");
+            Assert.Skip(
+                "Requires FakeTimeProvider to produce controllable DeliveredAt timestamps. "
+                + "A backend that stamps DeliveredAt from its own clock must cover the cut-off "
+                + "itself — see PostgresOutboxStoreTests.PurgeDeliveredAsync_ShouldRemoveDeliveredEntriesOlderThanThreshold.");
         var ftp = (FakeTimeProvider)TimeProvider;
 
         var store = await CreateStore();
