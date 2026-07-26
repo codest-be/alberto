@@ -13,10 +13,7 @@ public class DcbQueryTests
 
         Assert.True(query.IsEmpty);
         Assert.Empty(query.Types);
-        Assert.Empty(query.TagPatterns);
         Assert.Empty(query.Tags);
-        Assert.Empty(query.WildcardPatterns);
-        Assert.False(query.HasWildcardPatterns);
     }
 
     [Fact]
@@ -48,13 +45,11 @@ public class DcbQueryTests
     {
         var query = DcbQuery.ByTags(new EventTag("order", "123"), new EventTag("customer", "456"));
 
-        Assert.Equal(2, query.TagPatterns.Count);
         Assert.Equal(2, query.Tags.Count);
         Assert.Contains(query.Tags, t => t.Value == "order:123");
         Assert.Contains(query.Tags, t => t.Value == "customer:456");
         Assert.True(query.HasTagsOnly);
         Assert.False(query.HasTypesOnly);
-        Assert.False(query.HasWildcardPatterns);
     }
 
     [Fact]
@@ -74,36 +69,19 @@ public class DcbQueryTests
         Assert.Equal(2, query.Tags.Count);
         Assert.True(query.RequiresAllTags);
         Assert.True(query.HasTagsOnly);
-        Assert.False(query.HasWildcardPatterns);
     }
 
-    [Fact]
-    public void ByAllTags_WithWildcardPattern_ShouldThrow()
+    // A tag is always a full concept:id pair. "source:*" was once a concept-wide wildcard;
+    // now it is just an id of "*", which is not a legal id — so the DSL rejects it rather
+    // than quietly matching a single tag literally named "source:*".
+    [Theory]
+    [InlineData("source:*")]
+    [InlineData("order:*")]
+    public void ByTags_WithAConceptWildcard_ShouldThrow(string wildcard)
     {
-        Assert.Throws<ArgumentException>(() => DcbQuery.ByAllTags("reader:123", "source:*"));
-    }
-
-    [Fact]
-    public void ByTagPatterns_WithWildcards_ShouldCreateWildcardQuery()
-    {
-        var query = DcbQuery.ByTagPatterns(TagPattern.Prefix("order"), TagPattern.Prefix("customer"));
-
-        Assert.Equal(2, query.TagPatterns.Count);
-        Assert.Equal(2, query.WildcardPatterns.Count);
-        Assert.Empty(query.Tags); // No exact tags
-        Assert.True(query.HasWildcardPatterns);
-        Assert.True(query.HasTagsOnly);
-    }
-
-    [Fact]
-    public void ByTagPatterns_WithStrings_ShouldParsePatterns()
-    {
-        var query = DcbQuery.ByTagPatterns("order:*", "customer:123");
-
-        Assert.Equal(2, query.TagPatterns.Count);
-        Assert.Single(query.WildcardPatterns);
-        Assert.Single(query.Tags);
-        Assert.True(query.HasWildcardPatterns);
+        Assert.Throws<ArgumentException>(() => DcbQuery.ByTags("reader:123", wildcard));
+        Assert.Throws<ArgumentException>(() => DcbQuery.ByAllTags("reader:123", wildcard));
+        Assert.Throws<ArgumentException>(() => DcbQuery.Empty.WithTags(wildcard));
     }
 
     [Fact]
@@ -196,7 +174,6 @@ public class DcbQueryTests
             .WithTags(new EventTag("customer", "456"));
 
         Assert.Equal(2, query.Tags.Count);
-        Assert.False(query.HasWildcardPatterns);
     }
 
     [Fact]
@@ -219,39 +196,6 @@ public class DcbQueryTests
     }
 
     [Fact]
-    public void WithTagPatterns_ShouldAddPatterns()
-    {
-        var query = DcbQuery.Empty
-            .WithTagPatterns(TagPattern.Prefix("order"))
-            .WithTagPatterns(TagPattern.Exact("customer", "123"));
-
-        Assert.Equal(2, query.TagPatterns.Count);
-        Assert.Single(query.WildcardPatterns);
-        Assert.Single(query.Tags);
-    }
-
-    [Fact]
-    public void WithTagPatterns_Strings_ShouldParseAndAddPatterns()
-    {
-        var query = DcbQuery.Empty
-            .WithTagPatterns("order:*", "customer:*");
-
-        Assert.Equal(2, query.WildcardPatterns.Count);
-        Assert.True(query.HasWildcardPatterns);
-    }
-
-    [Fact]
-    public void WithTagPrefix_ShouldAddWildcardPattern()
-    {
-        var query = DcbQuery.Empty
-            .WithTagPrefix("order");
-
-        Assert.Single(query.WildcardPatterns);
-        Assert.Equal("order", query.WildcardPatterns.First().Concept);
-        Assert.True(query.HasWildcardPatterns);
-    }
-
-    [Fact]
     public void CombiningTypesAndTags_ShouldSetHasTypesAndTags()
     {
         var query = DcbQuery.Empty
@@ -264,49 +208,22 @@ public class DcbQueryTests
         Assert.False(query.IsEmpty);
     }
 
-    [Fact]
-    public void CombiningExactAndWildcardTags_ShouldIncludeBoth()
-    {
-        var query = DcbQuery.Empty
-            .WithTags("order:123")
-            .WithTagPatterns("customer:*");
-
-        Assert.Equal(2, query.TagPatterns.Count);
-        Assert.Single(query.Tags);
-        Assert.Single(query.WildcardPatterns);
-        Assert.True(query.HasWildcardPatterns);
-    }
-
     #endregion
 
     #region Property Tests
 
     [Fact]
-    public void Tags_ShouldReturnOnlyExactMatches()
+    public void Tags_ShouldPreserveEveryTagAdded()
     {
         var query = DcbQuery.Empty
-            .WithTagPatterns("order:123", "customer:*", "product:456");
+            .WithTags("order:123", "customer:789", "product:456");
 
         var tags = query.Tags;
 
-        Assert.Equal(2, tags.Count);
+        Assert.Equal(3, tags.Count);
         Assert.Contains(tags, t => t.Value == "order:123");
+        Assert.Contains(tags, t => t.Value == "customer:789");
         Assert.Contains(tags, t => t.Value == "product:456");
-        Assert.DoesNotContain(tags, t => t.Concept == "customer");
-    }
-
-    [Fact]
-    public void WildcardPatterns_ShouldReturnOnlyWildcards()
-    {
-        var query = DcbQuery.Empty
-            .WithTagPatterns("order:123", "customer:*", "product:*");
-
-        var wildcards = query.WildcardPatterns;
-
-        Assert.Equal(2, wildcards.Count);
-        Assert.Contains(wildcards, p => p.Concept == "customer");
-        Assert.Contains(wildcards, p => p.Concept == "product");
-        Assert.DoesNotContain(wildcards, p => p.Concept == "order");
     }
 
     #endregion
@@ -354,17 +271,6 @@ public class DcbQueryTests
         Assert.Contains("tags(all)=", result);
         Assert.Contains("reader:123", result);
         Assert.Contains("source:456", result);
-    }
-
-    [Fact]
-    public void ToString_WildcardTags_ShouldShowWildcard()
-    {
-        var query = DcbQuery.ByTagPatterns("order:*");
-
-        var result = query.ToString();
-
-        Assert.Contains("tags=", result);
-        Assert.Contains("order:*", result);
     }
 
     [Fact]
@@ -451,7 +357,7 @@ public class DcbQueryTests
             .WithTypes("source-followed")
             .AsUnion();
 
-        Assert.Equal(2, query.TagPatterns.Count);
+        Assert.Equal(2, query.Tags.Count);
         Assert.Single(query.Types);
         Assert.Equal(TagMatchMode.All, query.TagMatchMode);
         Assert.Equal(CompositionMode.Union, query.CompositionMode);
@@ -479,16 +385,6 @@ public class DcbQueryTests
 
         Assert.Single(original.Tags);
         Assert.Equal(2, modified.Tags.Count);
-    }
-
-    [Fact]
-    public void WithTagPatterns_ShouldNotModifyOriginal()
-    {
-        var original = DcbQuery.ByTagPatterns("order:*");
-        var modified = original.WithTagPatterns("customer:*");
-
-        Assert.Single(original.TagPatterns);
-        Assert.Equal(2, modified.TagPatterns.Count);
     }
 
     #endregion

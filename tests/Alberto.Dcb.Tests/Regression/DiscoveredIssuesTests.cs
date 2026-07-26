@@ -130,68 +130,6 @@ public sealed class DiscoveredIssuesTests
 
     #endregion
 
-    // ── TagPattern default(T) null backing fields ──────────────────────────────────
-    //
-    // TagPattern has two cached fields: _value (full string) and _conceptPrefix
-    // (used by Matches(string) for wildcard prefix checks). Both are null on
-    // default(TagPattern). Additionally, IsWildcard returns true for the default
-    // because it is defined as `Id is null` — which is true for an uninitialised
-    // struct. This is semantically wrong: a default TagPattern is not a wildcard,
-    // but the struct cannot distinguish "wildcard" from "uninitialised".
-    //
-    // See: src/Alberto.Dcb/TagPattern.cs → ToString() / Matches(string) / IsWildcard.
-
-    #region TagPattern default-struct null fields
-
-    [Fact]
-    public void TagPattern_Default_ToString_ReturnsNull()
-    {
-        var pattern = default(TagPattern);
-
-        // _value is never set; ToString() returns null rather than e.g. ":*".
-        Assert.Null(pattern.ToString());
-    }
-
-    [Fact]
-    public void TagPattern_Default_IsWildcard_IsTrueButSemanticallyWrong()
-    {
-        var pattern = default(TagPattern);
-
-        // IsWildcard is `Id is null`. For an uninitialised struct, Id is null,
-        // so IsWildcard is unexpectedly true. A brand-new default(TagPattern) is
-        // NOT a wildcard — it is just uninitialised — but the struct has no way
-        // to encode this distinction without a separate boolean sentinel field.
-        Assert.True(pattern.IsWildcard);
-    }
-
-    [Fact]
-    public void TagPattern_Default_MatchesString_ThrowsArgumentNullException()
-    {
-        var pattern = default(TagPattern);
-
-        // Matches(string) branches on IsWildcard (true for default) and calls
-        // tagValue.StartsWith(_conceptPrefix, StringComparison.Ordinal).
-        // _conceptPrefix is null, so StartsWith(null, ...) throws ArgumentNullException.
-        // Any code path that stores default(TagPattern) in a collection and then
-        // calls Matches will fail at runtime rather than at creation time.
-        Assert.Throws<ArgumentNullException>(() => pattern.Matches("order:123"));
-    }
-
-    [Fact]
-    public void TagPattern_Default_MatchesEventTag_ReturnsFalse()
-    {
-        var pattern = default(TagPattern);
-        var tag = new EventTag("order", "123");
-
-        // Matches(EventTag) first checks string.Equals(Concept, tag.Concept, ...).
-        // Concept is null for default, so string.Equals(null, "order", ...) is false.
-        // The early-return fires before IsWildcard is consulted, so no exception here.
-        // This is a safe but surprising edge case: the guard protects by accident,
-        // not by design.
-        Assert.False(pattern.Matches(tag));
-    }
-
-    #endregion
 
     // ── P1.5: TenantContext hyphen-rejection (breaking change) ─────────────────────
     //
