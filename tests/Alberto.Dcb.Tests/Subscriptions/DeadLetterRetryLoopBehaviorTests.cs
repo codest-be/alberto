@@ -531,6 +531,36 @@ public sealed class DeadLetterRetryLoopBehaviorTests
 
     // ── no-op when retry not requested ───────────────────────────────────────
 
+    // ── clock seam: CreatedAt stamped from injected TimeProvider ─────────────
+
+    [Fact]
+    public async Task DeadLetterEntry_StampsCreatedAt_FromTheInjectedClock()
+    {
+        var time = new FakeTimeProvider();
+        time.SetUtcNow(new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero));
+        var store = new InMemoryDeadLetterStore(time);
+
+        await store.StoreAsync(
+            new DeadLetterEntry(
+                Id: Guid.NewGuid(),
+                ProcessorId: "proc-1",
+                EventId: Guid.NewGuid(),
+                EventType: "order-created",
+                EventData: "{}",
+                ErrorMessage: "boom",
+                StackTrace: null,
+                AttemptCount: 1,
+                FailedAt: DateTimeOffset.UtcNow,
+                GlobalPosition: 1),
+            TestContext.Current.CancellationToken);
+
+        var entries = await store.GetAsync("proc-1", ct: TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc),
+            Assert.Single(entries).CreatedAt!.Value);
+    }
+
     [Fact]
     public async Task EntryWithoutRetryRequested_IsNeverClaimed_OrDispatched()
     {
