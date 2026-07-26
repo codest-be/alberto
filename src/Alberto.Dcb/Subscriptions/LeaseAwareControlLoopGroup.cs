@@ -17,6 +17,13 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
     private readonly string _replicaId;
     private readonly ILogger? _logger;
     private readonly ConcurrentDictionary<string, ControlLoop> _runningLoops = new();
+
+    /// <summary>
+    /// The fence token of the lease this replica currently holds per processor. Fenced
+    /// checkpoint writes present it, so it has to track acquisitions exactly: set when a lease
+    /// is acquired, cleared when one is lost or handed back.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, long> _fenceTokens = new();
     private readonly ConcurrentDictionary<string, ControlLoop> _loopsByProcessorId;
     private Timer? _renewalTimer;
     private Timer? _scanTimer;
@@ -39,6 +46,14 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
             allLoops.ToDictionary(l => l.ProcessorId, l => l));
     }
 
+    /// <summary>
+    /// The fence token of the lease held for <paramref name="processorId"/>, or 0 when this
+    /// replica holds none. 0 is below every token the database issues, so a write presenting it
+    /// is refused — which is the right answer for a replica that does not own the processor.
+    /// </summary>
+    public long GetFenceToken(string processorId) =>
+        _fenceTokens.TryGetValue(processorId, out var token) ? token : 0;
+
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -56,6 +71,7 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
                     _logger?.LogInformation(
                         "Acquired lease for processor {ProcessorId} (expires {ExpiresAt})",
                         loop.ProcessorId, lease.ExpiresAt);
+                    _fenceTokens[loop.ProcessorId] = lease.FenceToken;
                     await loop.StartAsync(cancellationToken);
                     _runningLoops[loop.ProcessorId] = loop;
                 }
@@ -101,6 +117,7 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
             .ToArray();
         await Task.WhenAll(stopTasks);
         _runningLoops.Clear();
+        _fenceTokens.Clear();
 
         // Release all leases immediately for fast handoff
         try
@@ -171,6 +188,10 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
                 }
 
                 _runningLoops.TryRemove(processorId, out _);
+
+                // Drop the token before the loop can flush again: the lease is gone, and a
+                // write presenting its generation must be refused rather than merely stale.
+                _fenceTokens.TryRemove(processorId, out _);
             }
         }
         catch (OperationCanceledException) { /* shutting down */ }
@@ -203,6 +224,7 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
                         "Acquired lease for processor {ProcessorId} via scan (expires {ExpiresAt})",
                         loop.ProcessorId, lease.ExpiresAt);
 
+                    _fenceTokens[loop.ProcessorId] = lease.FenceToken;
                     await loop.StartAsync(_cts.Token);
                     _runningLoops[loop.ProcessorId] = loop;
                 }

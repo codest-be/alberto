@@ -64,12 +64,26 @@ public interface IProcessorLease
 {
     string ProcessorId { get; }
     DateTimeOffset ExpiresAt { get; }
+
+    /// <summary>
+    /// Identifies this acquisition of the lease. Strictly increasing across acquisitions and
+    /// unchanged by renewal, so it names one continuous stretch of ownership.
+    /// </summary>
+    /// <remarks>
+    /// Present it on every fenced write (see <c>IFencedCheckpointStore.SaveIfLeaseHeldAsync</c>).
+    /// Checking the replica identity alone is not enough: a replica that loses the lease and
+    /// later takes it back matches on identity again, so a write it prepared under its earlier
+    /// ownership would be accepted and — because the checkpoint upsert is monotonic — could
+    /// carry the checkpoint past everything the intervening owner processed.
+    /// </remarks>
+    long FenceToken { get; }
 }
 
 /// <summary>
 /// Default implementation of <see cref="IProcessorLease"/>.
 /// </summary>
-public sealed record ProcessorLease(string ProcessorId, DateTimeOffset ExpiresAt) : IProcessorLease;
+public sealed record ProcessorLease(string ProcessorId, DateTimeOffset ExpiresAt, long FenceToken)
+    : IProcessorLease;
 
 /// <summary>
 /// Information about an active processor lease, used for monitoring.

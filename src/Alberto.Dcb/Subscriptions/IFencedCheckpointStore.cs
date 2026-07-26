@@ -14,6 +14,12 @@ public interface IFencedCheckpointStore : ICheckpointStore
     /// <param name="position">The position to save.</param>
     /// <param name="consumerId">The consumer (module) identity.</param>
     /// <param name="replicaId">The replica identity to verify against the lease.</param>
+    /// <param name="fenceToken">
+    /// The <see cref="IProcessorLease.FenceToken"/> of the lease the caller believes it holds.
+    /// The write is rejected unless this is the generation that currently owns the processor and
+    /// no later generation has already written. Ignored when fencing against tenant leases, which
+    /// have no single owner per processor and therefore no generation to present.
+    /// </param>
     /// <param name="useProcessorLeaseFencing">
     /// When true, checks the processor_leases table instead of tenant_leases.
     /// </param>
@@ -23,6 +29,7 @@ public interface IFencedCheckpointStore : ICheckpointStore
         long position,
         string consumerId,
         string replicaId,
+        long fenceToken,
         bool useProcessorLeaseFencing = false,
         CancellationToken ct = default);
 }

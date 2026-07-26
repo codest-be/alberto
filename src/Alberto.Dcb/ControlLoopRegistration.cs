@@ -106,8 +106,15 @@ internal static class ControlLoopRegistration
             LeaseAwareControlLoopGroup? leaseGroup = null;
             if (checkpoints is IFencableCheckpointStore fencable)
             {
+                // The token provider is resolved per flush rather than captured once: a replica
+                // that loses a lease and takes it back is issued a new generation, and the old
+                // one must stop being presented the moment the lease is gone. leaseGroup is
+                // assigned just below and is captured by reference, as with OnFenceViolation.
                 fencable.SetFencingContext(
-                    new FencingContext(moduleKey, replicaId, UseProcessorLeaseFencing: true));
+                    new FencingContext(
+                        moduleKey, replicaId,
+                        UseProcessorLeaseFencing: true,
+                        FenceTokenProvider: processorId => leaseGroup?.GetFenceToken(processorId) ?? 0));
 
                 // Subscribed BEFORE the group is constructed so the variable is captured by
                 // reference and is assigned by the time the lambda first runs.

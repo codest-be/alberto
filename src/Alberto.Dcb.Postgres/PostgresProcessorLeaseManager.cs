@@ -39,19 +39,25 @@ public sealed class PostgresProcessorLeaseManager : IProcessorLeaseManager
         // an expiry another replica can immediately claim while the first still believes it
         // holds the lease, which is exactly the double-holder that fencing exists to prevent.
         // now() is transaction-start time, so it is consistent between the SET and the WHERE.
+        // Every acquisition draws a fresh fence token, which the holder then presents on each
+        // fenced checkpoint write. EXCLUDED.fence_token on the conflict arm reuses the one the
+        // INSERT already generated, so the sequence is advanced once per statement. Renewal goes
+        // through RenewLeasesAsync and deliberately leaves the token alone: it is the same
+        // ownership continuing, and changing it would fence the holder out of its own checkpoint.
         await using var cmd = new NpgsqlCommand($@"
-            INSERT INTO {_schema.Table("alberto_processor_leases")} (consumer_id, processor_id, replica_id, acquired_at, expires_at)
-            VALUES (@consumer_id, @processor_id, @replica_id, now(), now() + @lease_duration)
+            INSERT INTO {_schema.Table("alberto_processor_leases")} (consumer_id, processor_id, replica_id, acquired_at, expires_at, fence_token)
+            VALUES (@consumer_id, @processor_id, @replica_id, now(), now() + @lease_duration, nextval('{_schema.Table("alberto_fence_tokens")}'))
             ON CONFLICT (consumer_id, processor_id) DO UPDATE
             SET replica_id = @replica_id,
                 acquired_at = CASE
                     WHEN {_schema.Table("alberto_processor_leases")}.replica_id = @replica_id THEN {_schema.Table("alberto_processor_leases")}.acquired_at
                     ELSE now()
                 END,
-                expires_at = now() + @lease_duration
+                expires_at = now() + @lease_duration,
+                fence_token = EXCLUDED.fence_token
             WHERE {_schema.Table("alberto_processor_leases")}.expires_at < now()
                OR {_schema.Table("alberto_processor_leases")}.replica_id = @replica_id
-            RETURNING expires_at", connection);
+            RETURNING expires_at, fence_token", connection);
 
         cmd.Parameters.AddWithValue("consumer_id", consumerId);
         cmd.Parameters.AddWithValue("processor_id", processorId);
@@ -63,7 +69,10 @@ public sealed class PostgresProcessorLeaseManager : IProcessorLeaseManager
         if (await reader.ReadAsync(ct))
         {
             var actualExpiresAt = reader.GetDateTime(0);
-            return new ProcessorLease(processorId, new DateTimeOffset(actualExpiresAt, TimeSpan.Zero));
+            return new ProcessorLease(
+                processorId,
+                new DateTimeOffset(actualExpiresAt, TimeSpan.Zero),
+                reader.GetInt64(1));
         }
 
         return null;

@@ -34,6 +34,7 @@ public class FencedCheckpointTests
             position: 42,
             consumerId: "consumer-1",
             replicaId: "replica-abc",
+            fenceToken: 1,
             ct: TestContext.Current.CancellationToken);
 
         Assert.True(saved);
@@ -55,6 +56,7 @@ public class FencedCheckpointTests
             position: 99,
             consumerId: "consumer-1",
             replicaId: "replica-stale",
+            fenceToken: 1,
             ct: TestContext.Current.CancellationToken);
 
         Assert.False(saved);
@@ -78,6 +80,7 @@ public class FencedCheckpointTests
             position: 77,
             consumerId: "consumer-x",
             replicaId: "replica-x",
+            fenceToken: 1,
             ct: TestContext.Current.CancellationToken);
 
         Assert.True(saved);
@@ -123,7 +126,7 @@ public class FencedCheckpointTests
 
         public Task<bool> SaveIfLeaseHeldAsync(
             string processorId, long position, string consumerId, string replicaId,
-            bool useProcessorLeaseFencing = false, CancellationToken ct = default)
+            long fenceToken, bool useProcessorLeaseFencing = false, CancellationToken ct = default)
         {
             if (leaseHeld)
                 _checkpoints[processorId] = position;
@@ -171,7 +174,7 @@ public class FencedCheckpointTests
 
         public async Task<bool> SaveIfLeaseHeldAsync(
             string processorId, long position, string consumerId, string replicaId,
-            bool useProcessorLeaseFencing = false, CancellationToken ct = default)
+            long fenceToken, bool useProcessorLeaseFencing = false, CancellationToken ct = default)
         {
             // Delegate to regular save — lease is always considered held in this implementation
             await SaveAsync(processorId, position, ct);
