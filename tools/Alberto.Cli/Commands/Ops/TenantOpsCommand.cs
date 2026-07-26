@@ -1,5 +1,4 @@
 using System.CommandLine;
-using Alberto.Cli.Output;
 using Alberto.Dcb.Postgres;
 using Spectre.Console;
 
@@ -33,20 +32,24 @@ public static class TenantOpsCommand
 
         command.SetHandler(async (string? url, string? schema, string? processorId, bool yes, string? shard, bool allShards) =>
         {
-            IOutput output = new HumanOutput();
-
-            var scope = processorId is not null
-                ? $"consumer '{processorId}'"
-                : "all consumers";
-
-            try
+            // release produces human-readable output only — no --json flag.
+            var session = new CliSession(json: false);
+            return await session.RunAsync(async () =>
             {
+                var output = session.Output;
+
+                var scope = processorId is not null
+                    ? $"consumer '{processorId}'"
+                    : "all consumers";
+
                 // Leases live in the same database as the events they fence, so a sharded module
                 // holds a separate set per shard and each has to be released on its own.
-                var targets = ShardResolver.ResolveForMutation(shard, allShards, url, schema);
+                var targets = session.MutationTargets(shard, allShards, url, schema);
 
                 if (!yes)
                 {
+                    // NOTE: intentionally no non-interactive guard here — this is a pre-existing
+                    // inconsistency with other destructive commands that is preserved as-is.
                     var confirmed = AnsiConsole.Confirm(
                         $"Release tenant leases for {scope}{ShardRun.Scope(targets)}? The running application will reacquire them.",
                         defaultValue: false);
@@ -54,7 +57,7 @@ public static class TenantOpsCommand
                     if (!confirmed)
                     {
                         output.Text("Aborted.");
-                        return;
+                        return 0;
                     }
                 }
 
@@ -65,14 +68,8 @@ public static class TenantOpsCommand
                     output.Text($"Released {deleted} tenant lease(s) for {scope}.");
                 });
 
-                if (failed)
-                    Environment.Exit(1);
-            }
-            catch (Exception ex)
-            {
-                output.Error(ex.Message);
-                Environment.Exit(1);
-            }
+                return failed ? 1 : 0;
+            });
         }, urlOption, schemaOption, processorIdOption, yesOption, shardOption, allShardsOption);
 
         return command;

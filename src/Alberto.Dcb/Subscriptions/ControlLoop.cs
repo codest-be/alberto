@@ -88,18 +88,20 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
             }
         }
 
-        // Wire the fence-violation callback so a fenced-out replica self-terminates
-        // immediately instead of continuing to dispatch under a stale checkpoint (P0.8).
-        // The lambda reads _cts at invocation time (after StartAsync has set it).
-        if (_checkpointStore is CachingCheckpointStore cachingStore)
-        {
-            cachingStore.OnFenceViolation = fencedProcessorId =>
-            {
-                if (fencedProcessorId != _processor.ProcessorId) return;
-                try { Volatile.Read(ref _cts)?.Cancel(); }
-                catch (ObjectDisposedException) { }
-            };
-        }
+    }
+
+    /// <summary>
+    /// Cancels this loop's internal <see cref="CancellationTokenSource"/>.
+    /// Called by <see cref="ControlLoopAssembler"/> via a fence-violation subscription
+    /// so that a fenced-out replica self-terminates immediately instead of continuing
+    /// to dispatch under a stale checkpoint (P0.8).
+    /// The <see cref="CancellationTokenSource"/> is read at invocation time so that
+    /// subscriptions registered before <see cref="StartAsync"/> are harmless.
+    /// </summary>
+    internal void Cancel()
+    {
+        try { Volatile.Read(ref _cts)?.Cancel(); }
+        catch (ObjectDisposedException) { }
     }
 
     public Task StartAsync(CancellationToken cancellationToken)

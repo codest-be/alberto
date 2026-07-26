@@ -1,5 +1,4 @@
 using System.CommandLine;
-using Alberto.Cli.Output;
 using Alberto.Dcb.Postgres;
 
 namespace Alberto.Cli.Commands;
@@ -19,26 +18,22 @@ public static class ProcessorCommand
             """);
 
         var idArgument = new Argument<string>("id") { Description = "Processor ID" };
-        var urlOption = new Option<string?>("--url") { Description = "PostgreSQL connection string" };
-        var schemaOption = new Option<string?>("--schema") { Description = "Database schema name" };
-        var jsonOption = new Option<bool>("--json") { Description = "Output as JSON" };
-
         command.AddArgument(idArgument);
-        command.AddOption(urlOption);
-        command.AddOption(schemaOption);
-        command.AddOption(jsonOption);
+
+        var (urlOption, schemaOption, jsonOption) = CliOptions.AddConnectionOptions(command);
         var shardOption = ShardRun.AddReadOption(command);
 
         command.SetHandler(async (string id, string? url, string? schema, bool json, string? shard) =>
         {
-            IOutput output = json ? new JsonOutput() : new HumanOutput();
-
-            try
+            var session = new CliSession(json);
+            return await session.RunAsync(async () =>
             {
+                var output = session.Output;
+
                 // A processor runs once per database, so on a sharded module this is several
                 // checkpoints under one name — rendered as rows rather than a box, because the
                 // positions belong to different sequences and must not be read as one number.
-                var targets = ShardResolver.ResolveForRead(shard, url, schema);
+                var targets = session.ReadTargets(shard, url, schema);
                 var results = await ShardRun.CollectAsync(
                     targets,
                     async admin =>
@@ -89,14 +84,8 @@ public static class ProcessorCommand
                     });
                 }
 
-                if (ShardRun.ReportFailures(output, results) || !found)
-                    Environment.Exit(1);
-            }
-            catch (Exception ex)
-            {
-                output.Error(ex.Message);
-                Environment.Exit(1);
-            }
+                return (ShardRun.ReportFailures(output, results) || !found) ? 1 : 0;
+            });
         }, idArgument, urlOption, schemaOption, jsonOption, shardOption);
 
         return command;

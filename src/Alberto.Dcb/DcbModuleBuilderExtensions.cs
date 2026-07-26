@@ -40,6 +40,27 @@ public static class DcbModuleBuilderExtensions
     /// processor id. Only the rebuild pipeline needs this: promotion deletes the superseded
     /// version's rows from the state table, which is keyed by projection type.
     /// </param>
+    /// <remarks>
+    /// <para>
+    /// In addition to the two <see cref="IEventProcessor"/> registrations (live and
+    /// rebuild), this method registers a <c>Func&lt;IStateStore&lt;TState&gt;&gt;</c>
+    /// keyed by <c>"{moduleKey}:{declaration.ProcessorId}"</c>. Read-side code — GraphQL
+    /// resolvers, REST controllers, background jobs — should resolve this factory from DI
+    /// rather than constructing a <see cref="Alberto.Dcb.Subscriptions.IStateStore{TState}"/>
+    /// directly. Using the registered factory guarantees that the reader inherits the same
+    /// tenancy mode and schema as the writer, so writer/reader disagreement (the source of
+    /// silent empty results) becomes a loud resolution failure on the first read instead of a
+    /// query that quietly returns nothing forever. Note this is first-read, not startup:
+    /// a resolver that asks for an unregistered key throws when it first runs, not when the
+    /// host is built.
+    /// </para>
+    /// <code>
+    /// // resolver (e.g. OrderQueries.GetOrdersOverview):
+    /// var factory = sp.GetRequiredKeyedService&lt;Func&lt;IStateStore&lt;OrdersOverview&gt;&gt;&gt;(
+    ///     $"{OrdersModule.ModuleKey}:{nameof(OrdersOverviewProjection)}");
+    /// var store = factory();
+    /// </code>
+    /// </remarks>
     public static DcbModuleBuilder AddProjection<TState>(
         this DcbModuleBuilder builder,
         ProjectionDeclaration<TState> declaration,
@@ -73,6 +94,17 @@ public static class DcbModuleBuilderExtensions
                     projectionType ?? declaration.ProcessorId,
                     version => new DeclaredAsyncProjection<TState>(
                         declaration, stateStoreFactory(new ProjectionStoreContext(sp, version)))));
+
+            // Reader store factory — keyed by "{moduleKey}:{processorId}".
+            // Read-side code resolves this instead of constructing a store directly, so
+            // the tenancy mode and schema are always inherited from the writer's factory.
+            context.Services.AddKeyedSingleton<Func<IStateStore<TState>>>(
+                $"{moduleKey}:{declaration.ProcessorId}",
+                (sp, _) =>
+                {
+                    var version = ProjectionVersions.LiveVersion(sp, moduleKey, declaration.ProcessorId);
+                    return stateStoreFactory(new ProjectionStoreContext(sp, version));
+                });
         });
 
         return builder;
@@ -477,35 +509,30 @@ public static class DcbModuleBuilderExtensions
             });
 
             // ShadowControlLoopFactory: builds a control loop for a shadow rebuild processor.
+            // ControlLoopAssembler is constructed once (module-level middleware list is stable)
+            // and captured by the factory delegate so each shadow loop gets the same middleware
+            // chain as the live loops — the assembler is the single composition seam shared by
+            // both call sites, preventing live/shadow middleware drift.
             services.AddKeyedSingleton<ShadowControlLoopFactory>(moduleKey, (sp, _) =>
             {
                 var opts = Options(sp, moduleKey);
+
+                var assembler = new ControlLoopAssembler(
+                    sp.GetKeyedServices<ConsumeMiddleware>(moduleKey).ToList(),
+                    sp.GetKeyedServices<BatchConsumeMiddleware>(moduleKey).ToList(),
+                    opts.Retry,
+                    Classifier(sp, moduleKey),
+                    sp.GetKeyedService<IDeadLetterStore>(moduleKey));
 
                 return new ShadowControlLoopFactory(processor =>
                 {
                     var head = sp.GetRequiredKeyedService<EventStoreHead>(moduleKey);
                     var backend = Backend(sp, moduleKey);
                     var checkpoints = sp.GetRequiredKeyedService<ICheckpointStore>(moduleKey);
-                    var classifier = Classifier(sp, moduleKey);
-                    var deadLetterStore = sp.GetKeyedService<IDeadLetterStore>(moduleKey);
 
-                    var diMiddlewares = sp.GetKeyedServices<ConsumeMiddleware>(moduleKey).ToList();
-                    var diBatchMiddlewares = sp.GetKeyedServices<BatchConsumeMiddleware>(moduleKey).ToList();
-
-                    var middlewares = new List<ConsumeMiddleware>(diMiddlewares)
-                    {
-                        ConsumeMiddlewares.RetryAndDeadLetter(opts.Retry, classifier, deadLetterStore),
-                    };
-                    var batchMiddlewares = new List<BatchConsumeMiddleware>(diBatchMiddlewares)
-                    {
-                        BatchConsumeMiddlewares.RetryAndDeadLetter(opts.Retry, classifier, deadLetterStore),
-                    };
-                    var hasUnpaired = diMiddlewares.Count > diBatchMiddlewares.Count;
-
-                    return new ControlLoop(
+                    return assembler.Create(
                         processor, head, backend, checkpoints,
                         opts.PollingInterval, opts.BatchSize, moduleKey,
-                        middlewares, batchMiddlewares, hasUnpaired,
                         ProcessorExecutionOptions.Default,
                         sp.GetService<ILogger<ControlLoop>>());
                 });

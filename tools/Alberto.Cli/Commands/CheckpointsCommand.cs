@@ -1,7 +1,5 @@
 using System.CommandLine;
-using Alberto.Cli.Output;
 using Alberto.Dcb.Postgres;
-using Npgsql;
 
 namespace Alberto.Cli.Commands;
 
@@ -19,24 +17,19 @@ public static class CheckpointsCommand
               alberto checkpoints --shard db2
             """);
 
-        var urlOption = new Option<string?>("--url") { Description = "PostgreSQL connection string" };
-        var schemaOption = new Option<string?>("--schema") { Description = "Database schema name" };
-        var jsonOption = new Option<bool>("--json") { Description = "Output as JSON" };
-
-        command.AddOption(urlOption);
-        command.AddOption(schemaOption);
-        command.AddOption(jsonOption);
+        var (urlOption, schemaOption, jsonOption) = CliOptions.AddConnectionOptions(command);
         var shardOption = ShardRun.AddReadOption(command);
 
         command.SetHandler(async (string? url, string? schema, bool json, string? shard) =>
         {
-            IOutput output = json ? new JsonOutput() : new HumanOutput();
-
-            try
+            var session = new CliSession(json);
+            return await session.RunAsync(async () =>
             {
+                var output = session.Output;
+
                 // A position is a per-database sequence, so the Shard column is not decoration:
                 // two rows for the same processor are two unrelated numbers.
-                var targets = ShardResolver.ResolveForRead(shard, url, schema);
+                var targets = session.ReadTargets(shard, url, schema);
                 var results = await ShardRun.CollectAsync(
                     targets, async admin => (IReadOnlyList<CheckpointInfo>)await admin.GetCheckpointsAsync());
 
@@ -63,14 +56,8 @@ public static class CheckpointsCommand
                         "No checkpoints found.");
                 }
 
-                if (ShardRun.ReportFailures(output, results))
-                    Environment.Exit(1);
-            }
-            catch (Exception ex)
-            {
-                output.Error(ex.Message);
-                Environment.Exit(1);
-            }
+                return ShardRun.ReportFailures(output, results) ? 1 : 0;
+            });
         }, urlOption, schemaOption, jsonOption, shardOption);
 
         return command;

@@ -1,8 +1,6 @@
 using System.CommandLine;
-using Alberto.Cli.Output;
 using Alberto.Dcb.Postgres;
 using Npgsql;
-using Spectre.Console;
 
 namespace Alberto.Cli.Commands.Ops;
 
@@ -35,37 +33,32 @@ public static class DeadLetterOpsCommand
               alberto ops dead-letters dismiss --all --all-shards --yes
             """);
 
-        var urlOption = new Option<string?>("--url") { Description = "PostgreSQL connection string" };
-        var schemaOption = new Option<string?>("--schema") { Description = "Database schema name" };
+        var (urlOption, schemaOption, jsonOption) = CliOptions.AddConnectionOptions(command);
         var processorOption = new Option<string?>("--processor") { Description = "Filter by processor ID" };
         var allOption = new Option<bool>("--all") { Description = "Dismiss all dead letters (required if --processor not specified)" };
         var dryRunOption = new Option<bool>("--dry-run") { Description = "Show what would be dismissed without executing" };
         var yesOption = new Option<bool>("--yes") { Description = "Skip confirmation prompt" };
-        var jsonOption = new Option<bool>("--json") { Description = "Output as JSON" };
 
-        command.AddOption(urlOption);
-        command.AddOption(schemaOption);
         command.AddOption(processorOption);
         command.AddOption(allOption);
         command.AddOption(dryRunOption);
         command.AddOption(yesOption);
-        command.AddOption(jsonOption);
         var (shardOption, allShardsOption) = ShardRun.AddMutationOptions(command);
 
         command.SetHandler(async (string? url, string? schema, string? processor, bool all, bool dryRun, bool yes, bool json, string? shard, bool allShards) =>
         {
-            IOutput output = json ? new JsonOutput() : new HumanOutput();
-
-            if (string.IsNullOrWhiteSpace(processor) && !all)
+            var session = new CliSession(json);
+            return await session.RunAsync(async () =>
             {
-                output.Error("Specify --processor <id> or --all to dismiss dead letters.\n  alberto ops dead-letters dismiss --processor <id> --yes\n  alberto ops dead-letters dismiss --all --yes");
-                Environment.Exit(1);
-                return;
-            }
+                var output = session.Output;
 
-            try
-            {
-                var targets = ShardResolver.ResolveForMutation(shard, allShards, url, schema);
+                if (string.IsNullOrWhiteSpace(processor) && !all)
+                {
+                    output.Error("Specify --processor <id> or --all to dismiss dead letters.\n  alberto ops dead-letters dismiss --processor <id> --yes\n  alberto ops dead-letters dismiss --all --yes");
+                    return 1;
+                }
+
+                var targets = session.MutationTargets(shard, allShards, url, schema);
                 var scope = processor is not null ? $"processor '{processor}'" : "all processors";
 
                 // Counted everywhere before anything is dismissed, so the one prompt can state the
@@ -82,9 +75,7 @@ public static class DeadLetterOpsCommand
                     else
                         output.Text($"No dead letters found for {scope}{ShardRun.Scope(targets)}. No-op.");
 
-                    if (probeFailed)
-                        Environment.Exit(1);
-                    return;
+                    return probeFailed ? 1 : 0;
                 }
 
                 if (dryRun)
@@ -94,29 +85,14 @@ public static class DeadLetterOpsCommand
                     else
                         output.Text($"[Dry run] Would dismiss {total} dead letter(s) for {scope}{ShardRun.Scope(targets)}.");
 
-                    if (probeFailed)
-                        Environment.Exit(1);
-                    return;
+                    return probeFailed ? 1 : 0;
                 }
 
-                if (!yes)
+                if (session.Confirm(yes,
+                    $"Dismiss [bold]{total}[/] dead letter(s) for {scope}{ShardRun.Scope(targets)}?",
+                    $"Destructive operation requires confirmation. Add --yes to confirm.\n  alberto ops dead-letters dismiss {(processor is not null ? $"--processor {processor}" : "--all")} --yes") is { } confirmCode)
                 {
-                    if (!AnsiConsole.Profile.Capabilities.Interactive)
-                    {
-                        output.Error($"Destructive operation requires confirmation. Add --yes to confirm.\n  alberto ops dead-letters dismiss {(processor is not null ? $"--processor {processor}" : "--all")} --yes");
-                        Environment.Exit(1);
-                        return;
-                    }
-
-                    var confirmed = AnsiConsole.Confirm(
-                        $"Dismiss [bold]{total}[/] dead letter(s) for {scope}{ShardRun.Scope(targets)}?",
-                        defaultValue: false);
-
-                    if (!confirmed)
-                    {
-                        output.Text("Aborted.");
-                        return;
-                    }
+                    return confirmCode;
                 }
 
                 var failed = await ShardRun.ApplyAsync(output, targets, async (dataSource, target) =>
@@ -142,14 +118,8 @@ public static class DeadLetterOpsCommand
                         output.Text($"Dismissed {dismissed} dead letter(s).");
                 });
 
-                if (failed || probeFailed)
-                    Environment.Exit(1);
-            }
-            catch (Exception ex)
-            {
-                output.Error(ex.Message);
-                Environment.Exit(1);
-            }
+                return (failed || probeFailed) ? 1 : 0;
+            });
         }, urlOption, schemaOption, processorOption, allOption, dryRunOption, yesOption, jsonOption, shardOption, allShardsOption);
 
         return command;
@@ -182,27 +152,23 @@ public static class DeadLetterOpsCommand
             """);
 
         var processorIdArgument = new Argument<string>("processor-id") { Description = "Processor ID to retry dead letters for" };
-        var urlOption = new Option<string?>("--url") { Description = "PostgreSQL connection string" };
-        var schemaOption = new Option<string?>("--schema") { Description = "Database schema name" };
+        command.AddArgument(processorIdArgument);
+
+        var (urlOption, schemaOption, jsonOption) = CliOptions.AddConnectionOptions(command);
         var dryRunOption = new Option<bool>("--dry-run") { Description = "Show what would happen without executing" };
         var yesOption = new Option<bool>("--yes") { Description = "Skip confirmation prompt" };
-        var jsonOption = new Option<bool>("--json") { Description = "Output as JSON" };
 
-        command.AddArgument(processorIdArgument);
-        command.AddOption(urlOption);
-        command.AddOption(schemaOption);
         command.AddOption(dryRunOption);
         command.AddOption(yesOption);
-        command.AddOption(jsonOption);
         var (shardOption, allShardsOption) = ShardRun.AddMutationOptions(command);
 
         command.SetHandler(async (string processorId, string? url, string? schema, bool dryRun, bool yes, bool json, string? shard, bool allShards) =>
         {
-            IOutput output = json ? new JsonOutput() : new HumanOutput();
-
-            try
+            var session = new CliSession(json);
+            return await session.RunAsync(async () =>
             {
-                var targets = ShardResolver.ResolveForMutation(shard, allShards, url, schema);
+                var output = session.Output;
+                var targets = session.MutationTargets(shard, allShards, url, schema);
 
                 var counts = await ShardRun.ProbeAsync(targets, (dataSource, target) =>
                     new PostgresDeadLetterStore(dataSource, target.Schema).CountAsync(processorId));
@@ -216,9 +182,7 @@ public static class DeadLetterOpsCommand
                     else
                         output.Text($"No dead letters found for processor '{processorId}'{ShardRun.Scope(targets)}. No-op.");
 
-                    if (probeFailed)
-                        Environment.Exit(1);
-                    return;
+                    return probeFailed ? 1 : 0;
                 }
 
                 if (dryRun)
@@ -228,30 +192,15 @@ public static class DeadLetterOpsCommand
                     else
                         output.Text($"[Dry run] Would mark {total} dead letter(s) for retry for processor '{processorId}'{ShardRun.Scope(targets)}.");
 
-                    if (probeFailed)
-                        Environment.Exit(1);
-                    return;
+                    return probeFailed ? 1 : 0;
                 }
 
-                if (!yes)
+                if (session.Confirm(yes,
+                    $"Mark [bold]{total}[/] dead letter(s) for retry for processor '[bold]{processorId}[/]'{ShardRun.Scope(targets)}? " +
+                    "The processor will reprocess them on its next retry loop cycle.",
+                    $"Destructive operation requires confirmation. Add --yes to confirm.\n  alberto ops dead-letters retry {processorId} --yes") is { } confirmCode)
                 {
-                    if (!AnsiConsole.Profile.Capabilities.Interactive)
-                    {
-                        output.Error($"Destructive operation requires confirmation. Add --yes to confirm.\n  alberto ops dead-letters retry {processorId} --yes");
-                        Environment.Exit(1);
-                        return;
-                    }
-
-                    var confirmed = AnsiConsole.Confirm(
-                        $"Mark [bold]{total}[/] dead letter(s) for retry for processor '[bold]{processorId}[/]'{ShardRun.Scope(targets)}? " +
-                        "The processor will reprocess them on its next retry loop cycle.",
-                        defaultValue: false);
-
-                    if (!confirmed)
-                    {
-                        output.Text("Aborted.");
-                        return;
-                    }
+                    return confirmCode;
                 }
 
                 var failed = await ShardRun.ApplyAsync(output, targets, async (dataSource, target) =>
@@ -266,14 +215,8 @@ public static class DeadLetterOpsCommand
                         output.Text($"Marked {count} dead letter(s) for retry. The processor will pick them up on its next retry loop cycle.");
                 });
 
-                if (failed || probeFailed)
-                    Environment.Exit(1);
-            }
-            catch (Exception ex)
-            {
-                output.Error(ex.Message);
-                Environment.Exit(1);
-            }
+                return (failed || probeFailed) ? 1 : 0;
+            });
         }, processorIdArgument, urlOption, schemaOption, dryRunOption, yesOption, jsonOption, shardOption, allShardsOption);
 
         return command;
@@ -296,27 +239,23 @@ public static class DeadLetterOpsCommand
             """);
 
         var processorIdArgument = new Argument<string>("processor-id") { Description = "Processor ID to rewind" };
-        var urlOption = new Option<string?>("--url") { Description = "PostgreSQL connection string" };
-        var schemaOption = new Option<string?>("--schema") { Description = "Database schema name" };
+        command.AddArgument(processorIdArgument);
+
+        var (urlOption, schemaOption, jsonOption) = CliOptions.AddConnectionOptions(command);
         var dryRunOption = new Option<bool>("--dry-run") { Description = "Show what would happen without executing" };
         var yesOption = new Option<bool>("--yes") { Description = "Skip confirmation prompt" };
-        var jsonOption = new Option<bool>("--json") { Description = "Output as JSON" };
 
-        command.AddArgument(processorIdArgument);
-        command.AddOption(urlOption);
-        command.AddOption(schemaOption);
         command.AddOption(dryRunOption);
         command.AddOption(yesOption);
-        command.AddOption(jsonOption);
         var (shardOption, allShardsOption) = ShardRun.AddMutationOptions(command);
 
         command.SetHandler(async (string processorId, string? url, string? schema, bool dryRun, bool yes, bool json, string? shard, bool allShards) =>
         {
-            IOutput output = json ? new JsonOutput() : new HumanOutput();
-
-            try
+            var session = new CliSession(json);
+            return await session.RunAsync(async () =>
             {
-                var targets = ShardResolver.ResolveForMutation(shard, allShards, url, schema);
+                var output = session.Output;
+                var targets = session.MutationTargets(shard, allShards, url, schema);
 
                 var counts = await ShardRun.ProbeAsync(targets, (dataSource, target) =>
                     new PostgresDeadLetterStore(dataSource, target.Schema).CountAsync(processorId));
@@ -330,9 +269,7 @@ public static class DeadLetterOpsCommand
                     else
                         output.Text($"No dead letters found for processor '{processorId}'{ShardRun.Scope(targets)}. No-op.");
 
-                    if (probeFailed)
-                        Environment.Exit(1);
-                    return;
+                    return probeFailed ? 1 : 0;
                 }
 
                 if (dryRun)
@@ -342,29 +279,14 @@ public static class DeadLetterOpsCommand
                     else
                         output.Text($"[Dry run] Would rewind processor '{processorId}'{ShardRun.Scope(targets)} to its earliest dead letter and clear {total} dead letter(s).");
 
-                    if (probeFailed)
-                        Environment.Exit(1);
-                    return;
+                    return probeFailed ? 1 : 0;
                 }
 
-                if (!yes)
+                if (session.Confirm(yes,
+                    $"Rewind processor '[bold]{processorId}[/]'{ShardRun.Scope(targets)} to replay from its earliest dead letter and clear {total} dead letter(s). Continue?",
+                    $"Destructive operation requires confirmation. Add --yes to confirm.\n  alberto ops dead-letters retry-rewind {processorId} --yes") is { } confirmCode)
                 {
-                    if (!AnsiConsole.Profile.Capabilities.Interactive)
-                    {
-                        output.Error($"Destructive operation requires confirmation. Add --yes to confirm.\n  alberto ops dead-letters retry-rewind {processorId} --yes");
-                        Environment.Exit(1);
-                        return;
-                    }
-
-                    var confirmed = AnsiConsole.Confirm(
-                        $"Rewind processor '[bold]{processorId}[/]'{ShardRun.Scope(targets)} to replay from its earliest dead letter and clear {total} dead letter(s). Continue?",
-                        defaultValue: false);
-
-                    if (!confirmed)
-                    {
-                        output.Text("Aborted.");
-                        return;
-                    }
+                    return confirmCode;
                 }
 
                 var failed = await ShardRun.ApplyAsync(output, targets, async (dataSource, target) =>
@@ -388,14 +310,8 @@ public static class DeadLetterOpsCommand
                         output.Text($"Done. Consumer will replay from position {rewindPosition}. Cleared {deletedCount} dead letter(s).");
                 });
 
-                if (failed || probeFailed)
-                    Environment.Exit(1);
-            }
-            catch (Exception ex)
-            {
-                output.Error(ex.Message);
-                Environment.Exit(1);
-            }
+                return (failed || probeFailed) ? 1 : 0;
+            });
         }, processorIdArgument, urlOption, schemaOption, dryRunOption, yesOption, jsonOption, shardOption, allShardsOption);
 
         return command;

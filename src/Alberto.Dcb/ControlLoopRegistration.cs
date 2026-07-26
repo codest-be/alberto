@@ -72,33 +72,19 @@ internal static class ControlLoopRegistration
             var checkpoints = sp.GetRequiredKeyedService<ICheckpointStore>(moduleKey);
             var logger = sp.GetService<ILogger<ControlLoop>>();
 
-            // Compose the middleware chain (outermost first):
-            //   [keyed ConsumeMiddleware...]   ← WithTelemetry(), AddConsumeMiddleware(...)
-            //   RetryAndDeadLetter             ← always innermost
-            //   processor.ProcessEventAsync    ← terminal
-            var diMiddlewares = sp.GetKeyedServices<ConsumeMiddleware>(moduleKey).ToList();
-            var diBatchMiddlewares = sp.GetKeyedServices<BatchConsumeMiddleware>(moduleKey).ToList();
-            var deadLetterStore = sp.GetKeyedService<IDeadLetterStore>(moduleKey);
-            var classifier = Classifier(sp, moduleKey);
-
-            var middlewares = new List<ConsumeMiddleware>(diMiddlewares)
-            {
-                ConsumeMiddlewares.RetryAndDeadLetter(options.Retry, classifier, deadLetterStore),
-            };
-
-            var batchMiddlewares = new List<BatchConsumeMiddleware>(diBatchMiddlewares)
-            {
-                BatchConsumeMiddlewares.RetryAndDeadLetter(options.Retry, classifier, deadLetterStore),
-            };
-
-            // A per-event middleware with no batch counterpart cannot be honoured on the batch
-            // path, so batching falls back to per-event dispatch rather than silently skipping it.
-            var hasUnpairedPerEventMiddlewares = diMiddlewares.Count > diBatchMiddlewares.Count;
+            // ControlLoopAssembler composes the middleware chain once and derives
+            // hasUnpairedPerEventMiddlewares internally, so both this path and the
+            // shadow-rebuild path (DcbModuleBuilderExtensions) share a single assembly seam.
+            var assembler = new ControlLoopAssembler(
+                sp.GetKeyedServices<ConsumeMiddleware>(moduleKey).ToList(),
+                sp.GetKeyedServices<BatchConsumeMiddleware>(moduleKey).ToList(),
+                options.Retry,
+                Classifier(sp, moduleKey),
+                sp.GetKeyedService<IDeadLetterStore>(moduleKey));
 
             var loops = processors
-                .Select(p => new ControlLoop(p, head, backend, checkpoints,
-                    options.PollingInterval, options.BatchSize, moduleKey, middlewares, batchMiddlewares,
-                    hasUnpairedPerEventMiddlewares,
+                .Select(p => assembler.Create(p, head, backend, checkpoints,
+                    options.PollingInterval, options.BatchSize, moduleKey,
                     executionOptionsByProcessorId.GetValueOrDefault(
                         p.ProcessorId,
                         ProcessorExecutionOptions.Default),
@@ -111,27 +97,25 @@ internal static class ControlLoopRegistration
             var replicaId = options.Leases.ReplicaId ?? Environment.MachineName;
             var leaseManager = sp.GetRequiredKeyedService<IProcessorLeaseManager>(moduleKey);
 
-            // Enable fenced checkpoint writes and wire the fence-violation callback through
-            // IFencableCheckpointStore so we don't downcast to the concrete type. Any wrapper
-            // around CachingCheckpointStore that also implements IFencableCheckpointStore is
-            // reached correctly; wrapping without implementing it still compiles — the fencing
-            // block is simply skipped — which is visible to the integrator rather than silently
-            // dropping the callback.
+            // Enable fenced checkpoint writes and wire the group-stop handler through
+            // IFencableCheckpointStore.SubscribeFenceViolation so that it coexists with
+            // the per-loop cancellation handlers already subscribed by ControlLoopAssembler.
+            // Any wrapper that also implements IFencableCheckpointStore is reached correctly;
+            // wrapping without implementing it skips the fencing block — visible to the
+            // integrator rather than a silent no-op.
             LeaseAwareControlLoopGroup? leaseGroup = null;
             if (checkpoints is IFencableCheckpointStore fencable)
             {
                 fencable.SetFencingContext(
                     new FencingContext(moduleKey, replicaId, UseProcessorLeaseFencing: true));
 
-                // Wired BEFORE the group is constructed so the variable is captured by reference
-                // and is set by the time the lambda first runs (from a periodic timer).
-                fencable.OnFenceViolation = violatingProcessorId =>
-                {
-                    // Fire-and-forget: cancel the group so the fenced-out replica stops
-                    // dispatching duplicate side effects. The callback is synchronous;
-                    // discarding the Task is intentional.
-                    _ = leaseGroup?.StopAsync(CancellationToken.None);
-                };
+                // Subscribed BEFORE the group is constructed so the variable is captured by
+                // reference and is assigned by the time the lambda first runs.
+                // Fire-and-forget: cancel the group so the fenced-out replica stops
+                // dispatching duplicate side effects. The callback is synchronous;
+                // discarding the Task is intentional.
+                fencable.SubscribeFenceViolation(violatingProcessorId =>
+                    _ = leaseGroup?.StopAsync(CancellationToken.None));
             }
 
             leaseGroup = new LeaseAwareControlLoopGroup(

@@ -51,17 +51,14 @@ public static class OrderQueries
         [Service] IServiceProvider sp,
         CancellationToken ct)
     {
-        var tenantId = GetTenantId(context);
-        var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(OrdersModule.ModuleKey);
-        // Named arguments, and LiveVersion rather than the default: a read side that pins its
-        // rebuild version keeps serving the old copy after a rebuild is promoted.
-        var stateStore = new PostgresStateStore<OrdersOverview>(
-            dataSource,
-            projectionType: nameof(OrdersOverviewProjection),
-            schema: "orders",
-            rebuildVersion: ProjectionVersions.LiveVersion(
-                sp, OrdersModule.ModuleKey, nameof(OrdersOverviewProjection)),
-            tenantId: tenantId);
+        // OrdersOverviewProjection is a cross-tenant aggregate: the control loop
+        // accumulates events from every tenant into a single state document without
+        // per-tenant scoping. Resolving the store factory from DI guarantees the reader
+        // inherits the same tenancy mode (none) as the writer in OrdersModule, preventing
+        // the writer/reader PK disagreement that caused this query to always return nothing.
+        var factory = sp.GetRequiredKeyedService<Func<IStateStore<OrdersOverview>>>(
+            $"{OrdersModule.ModuleKey}:{nameof(OrdersOverviewProjection)}");
+        var stateStore = factory();
 
         var states = await stateStore.LoadManyAsync(
             [OrdersOverviewProjection.DocumentId],
