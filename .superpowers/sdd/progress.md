@@ -158,3 +158,14 @@ Before opening the SP1a PR: enumerate every skipped test in the suite (17 at Tas
 - SP1a Task 3 — `EventCollector` owns a `SemaphoreSlim` but does not implement `IDisposable`. Non-breaking to add later, but it is a shipped public type.
 - SP1a Task 3 — `EventCollector`'s class doc says "Wire to `PollingConsumer.OnProjected` to use"; `PollingConsumer` does not exist until Task 5.
 - SP2 Task 2 fix — `PollSignalingDeadLetterStore.WhenPolled` doc says "when the call returns"; the signal actually fires before the return statement. Harmless now, misleading if the inner store ever becomes genuinely async.
+
+## Benchmark suite (Phases 1-2) — plan docs/superpowers/plans/2026-07-26-benchmark-suite-phases-1-2.md
+
+Base: 68a488b
+
+Task 1: complete (commits 68a488b..e0a2b75, review clean). Minor carried: pre-existing xUnit1051 warnings in EventAppendedSignalTests/ShardRoutingTests; ProfileId recomputes SHA256 per access.
+Task 2: complete (commits e0a2b75..f589006, review clean).
+Task 3: complete (commits f589006..aac11b8, review clean). Minor carried: BdnImporter silently skips a JSON document lacking a Benchmarks array (partial-baseline risk, the failure ImportMany exists to prevent); GetProperty throws KeyNotFoundException without naming the offending report/benchmark.
+Task 4: complete (commits aac11b8..ee0c7f1, review clean). Minor carried: Improved deltas sort below near-threshold Unchanged ones; two allocation tests assert Verdict but not HasRegression.
+Task 5: complete (commits ee0c7f1..7efc72f, review clean). Minor carried: per-event Guid.CreateVersion7 Id is non-deterministic (not compared, constant overhead); EventData content not pinned by a test.
+Task 6: complete (commits 7efc72f..0642666, review clean). Minor carried: ParseArgs sits outside the try (future throw = unhandled trace); --markdown parent dir not pre-created unlike --out; single-file --import not existence-checked; no tests for CLI arg parsing/exit codes (brief-scoped). NOTE: --import globs *-report-full.json recursively, which also neutralises the Task 3 stray-JSON minor.

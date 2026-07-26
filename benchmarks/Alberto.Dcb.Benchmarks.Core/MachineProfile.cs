@@ -15,6 +15,18 @@ namespace Alberto.Dcb.Benchmarks.Core;
 /// Environment label, from ALBERTO_BENCH_PROFILE_LABEL. "ci" on the runner, "local" otherwise.
 /// It only makes directory names legible; the hash is what actually distinguishes machines.
 /// </param>
+/// <param name="Os">Operating system description, as the runtime reports it.</param>
+/// <param name="Architecture">Process architecture — x64, Arm64.</param>
+/// <param name="CpuModel">Processor model, normalized to collapse whitespace.</param>
+/// <param name="LogicalCores">Logical processor count.</param>
+/// <param name="TotalMemoryBytes">Total managed heap budget, standing in for installed memory.</param>
+/// <param name="DotnetVersion">The .NET runtime version the benchmarks ran on.</param>
+/// <param name="PostgresImage">Container image tag the event store was benchmarked against.</param>
+/// <param name="ExternalPostgres">
+/// True when the run used a Postgres pointed at by ALBERTO_BENCH_POSTGRES rather than a
+/// container the harness started. An external server is not comparable to a containerized
+/// one, so it takes part in the hash.
+/// </param>
 public sealed record MachineProfile(
     string Label,
     string Os,
