@@ -166,6 +166,9 @@ public sealed class MigrationUpgradeAndParityTests
         // 018: the partial index that keeps the stable-head query off a sequential scan.
         await AssertInFlightVisibilityIndexAsync(conn);
 
+        // 024: the wildcard tag boundary and everything 022/023 built to serve it are gone.
+        await AssertWildcardBoundaryObjectsAreGoneAsync(conn);
+
         // Core invariant: alberto_events must still have the tenant_id column.
         (await ColumnExistsAsync(conn, "alberto_events", "tenant_id"))
             .Should().BeTrue(because: "multi-tenant schema must retain the tenant_id column on alberto_events");
@@ -221,6 +224,9 @@ public sealed class MigrationUpgradeAndParityTests
 
         // 018: the partial index that keeps the stable-head query off a sequential scan.
         await AssertInFlightVisibilityIndexAsync(conn);
+
+        // 024: the wildcard tag boundary and everything 022/023 built to serve it are gone.
+        await AssertWildcardBoundaryObjectsAreGoneAsync(conn);
 
         // Core invariant: single-tenant schema must NOT have a tenant_id column on events.
         (await ColumnExistsAsync(conn, "alberto_events", "tenant_id"))
@@ -620,6 +626,63 @@ public sealed class MigrationUpgradeAndParityTests
         cmd.CommandText = "SELECT COUNT(*) FROM pg_proc WHERE proname = @name";
         cmd.Parameters.AddWithValue("@name", functionName);
         return Convert.ToInt64(await cmd.ExecuteScalarAsync()) > 0;
+    }
+
+    private static async Task<bool> IndexExistsAsync(NpgsqlConnection conn, string indexName)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT COUNT(*)
+            FROM pg_class c
+            INNER JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE c.relname = @name
+              AND c.relkind = 'i'
+              AND n.nspname = 'public'
+            """;
+        cmd.Parameters.AddWithValue("@name", indexName);
+        return Convert.ToInt64(await cmd.ExecuteScalarAsync()) > 0;
+    }
+
+    /// <summary>
+    /// The wildcard tag boundary (<c>order:*</c>) is gone from the query DSL, and migration 024
+    /// takes its database side with it: three read functions, two append functions, and the
+    /// concept index migration 022 added to make them fast.
+    /// </summary>
+    /// <remarks>
+    /// The index is the reason the assertion matters rather than being housekeeping. It is an
+    /// expression index on <c>alberto_event_tag_positions</c>, so every tag row ever written pays
+    /// to maintain it — measured at +28% on bulk tag-row insert — whether or not anyone asks a
+    /// wildcard question. Leaving it behind would keep charging appends for a query shape the
+    /// store no longer answers.
+    /// <para>
+    /// The functions are asserted by bare name because no caller survives them: nothing in the
+    /// C# backend builds a <c>_tag_patterns</c> call or reaches <c>_v2</c>/<c>_v5</c> any more,
+    /// so any overload left in <c>pg_proc</c> is dead weight regardless of its signature.
+    /// </para>
+    /// </remarks>
+    private static async Task AssertWildcardBoundaryObjectsAreGoneAsync(NpgsqlConnection conn)
+    {
+        string[] droppedFunctions =
+        [
+            "alberto_read_by_tag_patterns",
+            "alberto_read_by_types_or_tag_patterns",
+            "alberto_read_by_types_and_tag_patterns",
+            "alberto_append_events_v2",
+            "alberto_append_events_v5",
+        ];
+
+        foreach (var function in droppedFunctions)
+        {
+            (await FunctionExistsAsync(conn, function))
+                .Should().BeFalse(because:
+                    $"migration 024 drops {function} — the wildcard tag boundary it served is no " +
+                    "longer a query the DSL can express");
+        }
+
+        (await IndexExistsAsync(conn, "ix_alberto_event_tag_positions_concept"))
+            .Should().BeFalse(because:
+                "migration 024 drops the concept index added by 022 — with no wildcard boundary to " +
+                "resolve, it is pure insert cost on every tag row written");
     }
 
     /// <summary>
