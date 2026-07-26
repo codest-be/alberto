@@ -33,6 +33,7 @@ they touch a persisted table.
 | EV-1 | Evolver — runtime guard | Medium | `Evolver.Reconstitute(envelopes)` and `Evolver.Evolve(state, envelope)` now throw `InvalidOperationException` when the envelope's stored version is older than the handler's declared version |
 | PE-1 | ParseEvent&lt;T&gt; obsoleted | Medium | `EventEnvelopeExtensions.ParseEvent<T>` is marked `[Obsolete]`; projects with `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>` get a hard build failure on upgrade |
 | MM-1 | Surface — interface member | Medium | `IMessageMappingRegistry` gains a `ModuleKey` property; direct implementations no longer compile |
+| OT-1 | Outbox transport lifecycle | Medium | Failed startup triggers bounded cleanup; store faults stop the relay; shared registrations use one lifecycle |
 | VA-1 | Startup validation | Medium | New codes `ALB0018`/`ALB0019`/`ALB0020` reject upcaster misconfigurations that previously started and failed at runtime |
 
 ---
@@ -205,6 +206,55 @@ new ExternalMessage
 
 **Symptom.** `error CS9035: Required member '...' must be set in the object initializer` when
 constructing `ExternalMessage` without `Destination`.
+
+---
+
+### OT-1 — the outbox owns the complete message-transport lifecycle
+
+Supplying an `IMessageTransport` now transfers responsibility for its start/stop lifecycle to the
+outbox. Alberto starts it before claiming or publishing, stops it once after the last relay exits,
+and attempts cleanup even when `StartAsync` partially initializes the transport and then throws.
+Cleanup receives a cancellation token and Alberto stops waiting after 30 seconds. Alberto still
+does not dispose the caller-owned transport instance.
+
+A transport that rejected cleanup unless startup completed will now mask neither failure, but its
+`StopAsync` exception is attached to the startup exception's `Data` dictionary:
+
+```csharp
+// before — no longer valid: partial startup could allocate _client and then throw
+public Task StopAsync(CancellationToken ct) =>
+    _started
+        ? _client!.CloseAsync(ct)
+        : throw new InvalidOperationException("Transport was not started");
+
+// after — cleanup is safe after successful or partial startup
+public async Task StopAsync(CancellationToken ct)
+{
+    if (_client is null)
+        return;
+
+    await _client.CloseAsync(ct);
+    _client = null;
+}
+```
+
+Reusing one transport instance in several `WithOutbox` registrations now shares one lifecycle
+within that service provider. Those relays may call `PublishAsync` concurrently.
+
+An outbox-store exception outside per-message publishing now faults the relay and closes the
+transport instead of being swallowed and retried forever. The host's background-service failure
+and restart policy determines recovery.
+
+**Migration steps.**
+
+1. Make `StopAsync` safe when `StartAsync` allocated some resources and then threw.
+2. Honor the cleanup cancellation token and keep flushing/closing work within 30 seconds.
+3. If one instance is reused across registrations, make `PublishAsync` concurrency-safe or supply
+   a separate transport instance to each registration.
+4. Confirm the host restarts or terminates as intended when the outbox store becomes unavailable;
+   use the store/client's own transient-failure resilience where retry is appropriate.
+5. Keep disposing the transport in the application code that constructed it; Alberto only owns
+   `StartAsync` and `StopAsync`.
 
 ---
 

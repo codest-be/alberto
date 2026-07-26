@@ -140,6 +140,15 @@ Then map events to it:
   directly — or `null` to publish nothing for that event, which is the supported way to filter.
 - **`transport` is optional.** Omit it and entries accumulate in the table with no relay; drain
   them from your own process. Provide one and an `OutboxRelay` is registered as a hosted service.
+- The outbox owns a provided transport's **start/stop lifecycle**, but not its disposal. Reusing
+  the same transport instance across `WithOutbox` registrations in one service provider shares
+  that lifecycle: the transport starts once before either relay claims a message and stops once
+  after the last relay. The application that constructed the transport remains responsible for
+  `IDisposable` or `IAsyncDisposable`. A shared transport must support concurrent `PublishAsync`
+  calls; use a separate instance per registration if its broker client is single-threaded.
+- A polling-store failure faults the relay and closes the transport. Configure the host's
+  background-service failure/restart policy for recovery, and put transient database retry in the
+  store or database client rather than around the relay lifecycle.
 
 Keep the message record separate from the event even when they look identical today. The event is
 your internal history and you will want to change it; the message is a published contract, which is
@@ -159,6 +168,17 @@ public interface IMessageTransport
 `ExternalMessage` is `(MessageType, Version, Payload, Metadata)` — a JSON string and headers. Throw
 from `PublishAsync` and the entry is marked `failed` with the exception message recorded;
 `RetryFailedAsync` (optionally filtered by message type) puts them back to `pending`.
+
+`StartAsync` completes before the relay makes its first claim or publish call. Once Alberto invokes
+it, Alberto makes exactly one `StopAsync` call after the last relay exits — including when startup
+partially initializes the transport and then throws. A transport must therefore make `StopAsync`
+safe after a failed `StartAsync`.
+
+Transport cleanup gets an independent cancellation token and is bounded to 30 seconds, so a
+transport that ignores cancellation cannot hold host shutdown open forever. A cleanup failure is
+observable when the relay otherwise stopped normally. When startup or relay execution has already
+failed, that causal exception keeps precedence; the cleanup exception is attached to its `Data`
+dictionary under `Alberto.Dcb.Messaging.TransportStopException`.
 
 `InMemoryTransport` ships in `Alberto.Dcb.Messaging` for tests.
 

@@ -1,6 +1,7 @@
 using Alberto.Dcb.Configuration;
 using Alberto.Dcb.Subscriptions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
 namespace Alberto.Dcb.Messaging;
@@ -20,6 +21,8 @@ public static class MessagingBuilderExtensions
     /// <param name="transport">
     /// Optional transport used by an <see cref="OutboxRelay"/> hosted service.
     /// When provided, an <see cref="OutboxRelay"/> is registered as a hosted service automatically.
+    /// Reusing the same instance in more than one registration shares one start/stop lifecycle
+    /// within the resulting service provider. Alberto does not dispose the caller-owned instance.
     /// </param>
     /// <param name="relayBatchSize">
     /// Maximum number of outbox entries the relay processes per poll cycle. Defaults to 1.
@@ -64,10 +67,12 @@ public static class MessagingBuilderExtensions
             // Optionally wire up the relay as a hosted service
             if (transport is not null)
             {
+                context.Services.TryAddSingleton<OutboxTransportLifecycleRegistry>();
                 context.Services.AddSingleton<IHostedService>(
-                    _ => new OutboxRelay(
+                    sp => new OutboxRelay(
                         outboxStore,
-                        transport,
+                        sp.GetRequiredService<OutboxTransportLifecycleRegistry>()
+                            .CreateLease(transport),
                         batchSize: relayBatchSize,
                         claimLease: relayClaimLease));
             }
