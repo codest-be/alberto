@@ -22,10 +22,10 @@ Against an existing Postgres rather than Testcontainers:
 
 Normalize a BenchmarkDotNet report, then diff it against the committed baseline:
 
-    dotnet run --project benchmarks/Alberto.Dcb.Benchmarks.Compare -- \
+    dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks.Compare -- \
       --import BenchmarkDotNet.Artifacts/results/<report>-report-full.json --out candidate.json
 
-    dotnet run --project benchmarks/Alberto.Dcb.Benchmarks.Compare -- \
+    dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks.Compare -- \
       --baseline benchmarks/results/<profileId>/baseline.json --candidate candidate.json
 
 Exit code 1 means a regression. Thresholds: mean +20% (and outside the combined standard
@@ -38,7 +38,7 @@ so your laptop's numbers never silently diff against CI's.
 
 Promotion is manual and deliberate:
 
-    dotnet run --project benchmarks/Alberto.Dcb.Benchmarks.Compare -- \
+    dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks.Compare -- \
       --baseline benchmarks/results/<profileId>/baseline.json --candidate candidate.json --accept
 
 CI appends to `history/` on every nightly run but never touches `baseline.json`.

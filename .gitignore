@@ -13,3 +13,8 @@ riderModule.iml
 
 TestResults/
 BenchmarkDotNet.Artifacts/
+
+# Scratch output of the benchmark compare tool. Baselines and history live under
+# benchmarks/results/ and are committed deliberately; these two are per-run.
+candidate.json
+delta.md

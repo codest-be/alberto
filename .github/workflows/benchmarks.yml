@@ -74,8 +74,10 @@ jobs:
         run: |
           if [ -f delta.md ]; then
             cat delta.md >> "$GITHUB_STEP_SUMMARY"
-          else
+          elif [ "${{ steps.compare.outcome }}" = "success" ]; then
             echo "No delta: this profile had no baseline, so this run seeded one." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No delta: the compare tool failed before writing one. See the step log." >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload raw reports
