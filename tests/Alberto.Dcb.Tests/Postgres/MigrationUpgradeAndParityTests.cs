@@ -163,6 +163,9 @@ public sealed class MigrationUpgradeAndParityTests
         // 013-015 add their CHECK constraints NOT VALID; a later script must validate them.
         await AssertCheckConstraintsAreValidatedAsync(conn);
 
+        // 018: the partial index that keeps the stable-head query off a sequential scan.
+        await AssertInFlightVisibilityIndexAsync(conn);
+
         // Core invariant: alberto_events must still have the tenant_id column.
         (await ColumnExistsAsync(conn, "alberto_events", "tenant_id"))
             .Should().BeTrue(because: "multi-tenant schema must retain the tenant_id column on alberto_events");
@@ -215,6 +218,9 @@ public sealed class MigrationUpgradeAndParityTests
 
         // 013-015 add their CHECK constraints NOT VALID; a later script must validate them.
         await AssertCheckConstraintsAreValidatedAsync(conn);
+
+        // 018: the partial index that keeps the stable-head query off a sequential scan.
+        await AssertInFlightVisibilityIndexAsync(conn);
 
         // Core invariant: single-tenant schema must NOT have a tenant_id column on events.
         (await ColumnExistsAsync(conn, "alberto_events", "tenant_id"))
@@ -671,6 +677,59 @@ public sealed class MigrationUpgradeAndParityTests
             """;
         cmd.Parameters.AddWithValue("@name", tableName);
         return Convert.ToInt64(await cmd.ExecuteScalarAsync()) > 0;
+    }
+
+    /// <summary>
+    /// Asserts the partial index that keeps <c>GetStableHeadAsync</c> off a sequential scan is
+    /// present, valid, and shaped the way that query needs it.
+    /// </summary>
+    /// <remarks>
+    /// The stable-head query looks for the first position above the head whose inserting
+    /// transaction is not yet older than every in-flight transaction. Migration 008 added
+    /// <c>pg_xact_id</c> without backfilling it, so on any upgraded database almost every row
+    /// has it NULL and the <c>pg_xact_id IS NOT NULL</c> predicate matches only the recent tail.
+    /// Without a partial index the planner sees a near-zero selectivity filter over the whole
+    /// table and picks a parallel sequential scan. Indexing only the rows that can match turns
+    /// that into a scan of the tail.
+    /// <para>
+    /// <c>indisvalid</c> is checked explicitly rather than assumed: the index is built with
+    /// <c>CREATE INDEX CONCURRENTLY</c>, and an interrupted concurrent build leaves behind an
+    /// index that exists in the catalog but that the planner will never use.
+    /// </para>
+    /// </remarks>
+    private static async Task AssertInFlightVisibilityIndexAsync(NpgsqlConnection conn)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT pg_get_indexdef(i.indexrelid), i.indisvalid
+            FROM pg_index i
+            INNER JOIN pg_class c ON c.oid = i.indexrelid
+            INNER JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE c.relname = 'ix_alberto_events_inflight'
+              AND n.nspname = 'public'
+            """;
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue(
+            because: "migration 018 must create ix_alberto_events_inflight so that " +
+                     "GetStableHeadAsync does not fall back to a sequential scan of alberto_events");
+
+        var definition = reader.GetString(0);
+        var isValid = reader.GetBoolean(1);
+
+        isValid.Should().BeTrue(
+            because: "an interrupted CREATE INDEX CONCURRENTLY leaves an invalid index behind — " +
+                     "it satisfies an existence check but the planner never uses it");
+
+        definition.Should().Contain("alberto_events",
+            because: "the index must be on the event log itself");
+        definition.Should().Contain("global_position",
+            because: "the stable-head query scans ascending by global_position and takes LIMIT 1, " +
+                     "so the index has to supply that ordering");
+        definition.Should().Contain("pg_xact_id IS NOT NULL",
+            because: "the index must be partial — indexing every row would not shrink the scan, " +
+                     "since it is precisely the NULL rows (everything predating migration 008) " +
+                     "that make the predicate so unselective");
     }
 
     /// <summary>
