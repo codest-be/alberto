@@ -154,13 +154,31 @@ public class ErrorClassifierTests
     }
 
     [Fact]
-    public void Classify_InvalidOperationException_ShouldReturnPermanent()
+    public void Classify_InvalidOperationException_ShouldReturnUnknown()
     {
+        // InvalidOperationException is NOT Permanent: EF Core raises it on connection-pool
+        // exhaustion and Npgsql raises it for several transient protocol states. Treating it as
+        // Permanent would silently dead-letter every event processed during a load spike.
+        // Unknown lets the standard retry-then-dead-letter policy run instead.
         var ex = new InvalidOperationException("Invalid operation");
 
         var result = _classifier.Classify(ex);
 
-        Assert.Equal(ErrorClassification.Permanent, result);
+        Assert.Equal(ErrorClassification.Unknown, result);
+    }
+
+    [Fact]
+    public void Classify_ConnectionPoolExhaustionMessage_ShouldReturnUnknown()
+    {
+        // EF Core surfaces connection-pool exhaustion as an InvalidOperationException with the
+        // message "Timeout expired. The timeout period elapsed prior to obtaining a connection
+        // from the pool". This must NOT be dead-lettered immediately — it should be retried.
+        var ex = new InvalidOperationException(
+            "Timeout expired. The timeout period elapsed prior to obtaining a connection from the pool.");
+
+        var result = _classifier.Classify(ex);
+
+        Assert.Equal(ErrorClassification.Unknown, result);
     }
 
     [Fact]

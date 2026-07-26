@@ -142,4 +142,22 @@ public abstract class CheckpointStoreSpecification
         var result = await store.GetAsync(ProcessorId, TestContext.Current.CancellationToken);
         Assert.Equal(25, result);
     }
+
+    /// <summary>
+    /// <c>SaveAsync</c> is monotonic in every implementation — Postgres via <c>GREATEST</c>,
+    /// InMemory via an explicit comparison. A stale flush from a lagging processor must not
+    /// roll back a checkpoint that has already moved on; <c>RewindAsync</c> is the deliberate
+    /// operator escape hatch and the only way backwards.
+    /// </summary>
+    [Fact]
+    public async Task Save_BackwardPosition_ShouldNotDecrease()
+    {
+        var store = await CreateStore();
+
+        await store.SaveAsync(ProcessorId, 100, TestContext.Current.CancellationToken);
+        await store.SaveAsync(ProcessorId, 50, TestContext.Current.CancellationToken); // backward attempt
+
+        var result = await store.GetAsync(ProcessorId, TestContext.Current.CancellationToken);
+        Assert.Equal(100, result);
+    }
 }

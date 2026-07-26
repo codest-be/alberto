@@ -46,6 +46,12 @@ public static class EfConsumerBuilderExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(declaration);
 
+        // Reject ids that contain ':' or '#' (DI-key separators) or a reserved word before any
+        // service-collection writes, including the inline path that skips DeclareProcessor.
+        // The rule and error format match the core AddProjection / ReactTo path exactly because
+        // they call the same helper.
+        DcbModuleBuilderExtensions.ValidateProcessorIdArg(declaration.ProcessorId, builder.ModuleKey);
+
         if (mode == ProjectionMode.Inline)
         {
             return builder.Register(context =>
@@ -69,21 +75,27 @@ public static class EfConsumerBuilderExtensions
             {
                 var contextFactory = sp.GetRequiredService<IDbContextFactory<TDbContext>>();
                 var version = ProjectionVersions.LiveVersion(sp, moduleKey, declaration.ProcessorId);
+                var serializer = sp.GetKeyedService<EventSerializer>(moduleKey);
                 return new DeclaredAsyncProjection<TEntity>(declaration,
-                    _ => new EfStateStore<TEntity, TDbContext>(contextFactory, version));
+                    _ => new EfStateStore<TEntity, TDbContext>(contextFactory, version),
+                    serializer: serializer);
             });
             context.Services.AddKeyedSingleton<IProjectionStateClearer>(moduleKey, (sp, _) =>
                 new EfProjectionStateClearer<TEntity, TDbContext>(
                     sp.GetRequiredService<IDbContextFactory<TDbContext>>(),
                     declaration.ProcessorId));
             context.Services.AddKeyedSingleton(moduleKey, (sp, _) =>
-                new RebuildableProjection(
+            {
+                var serializer = sp.GetKeyedService<EventSerializer>(moduleKey);
+                return new RebuildableProjection(
                     declaration.ProcessorId,
                     declaration.ProcessorId,
                     version => new DeclaredAsyncProjection<TEntity>(
                         declaration,
                         _ => new EfStateStore<TEntity, TDbContext>(
-                            sp.GetRequiredService<IDbContextFactory<TDbContext>>(), version))));
+                            sp.GetRequiredService<IDbContextFactory<TDbContext>>(), version),
+                        serializer: serializer));
+            });
         });
     }
 
@@ -112,6 +124,9 @@ public static class EfConsumerBuilderExtensions
         ArgumentNullException.ThrowIfNull(declaration);
         ArgumentNullException.ThrowIfNull(afterCommit);
 
+        // Same separator / reserved-word guard as the first overload and the core AddProjection path.
+        DcbModuleBuilderExtensions.ValidateProcessorIdArg(declaration.ProcessorId, builder.ModuleKey);
+
         builder.DeclareProcessor(new ProcessorDeclaration
         {
             ProcessorId = declaration.ProcessorId,
@@ -125,22 +140,28 @@ public static class EfConsumerBuilderExtensions
             {
                 var contextFactory = sp.GetRequiredService<IDbContextFactory<TDbContext>>();
                 var version = ProjectionVersions.LiveVersion(sp, moduleKey, declaration.ProcessorId);
+                var serializer = sp.GetKeyedService<EventSerializer>(moduleKey);
                 return new DeclaredAsyncProjection<TEntity>(declaration,
                     _ => new EfStateStore<TEntity, TDbContext>(contextFactory, version),
-                    afterCommit: afterCommit(sp));
+                    afterCommit: afterCommit(sp),
+                    serializer: serializer);
             });
             context.Services.AddKeyedSingleton<IProjectionStateClearer>(moduleKey, (sp, _) =>
                 new EfProjectionStateClearer<TEntity, TDbContext>(
                     sp.GetRequiredService<IDbContextFactory<TDbContext>>(),
                     declaration.ProcessorId));
             context.Services.AddKeyedSingleton(moduleKey, (sp, _) =>
-                new RebuildableProjection(
+            {
+                var serializer = sp.GetKeyedService<EventSerializer>(moduleKey);
+                return new RebuildableProjection(
                     declaration.ProcessorId,
                     declaration.ProcessorId,
                     version => new DeclaredAsyncProjection<TEntity>(
                         declaration,
                         _ => new EfStateStore<TEntity, TDbContext>(
-                            sp.GetRequiredService<IDbContextFactory<TDbContext>>(), version))));
+                            sp.GetRequiredService<IDbContextFactory<TDbContext>>(), version),
+                        serializer: serializer));
+            });
         });
     }
 }

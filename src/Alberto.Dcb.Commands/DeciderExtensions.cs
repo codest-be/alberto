@@ -9,6 +9,14 @@ public static class DeciderExtensions
     /// Loads state from the event store, applies a decision function, and appends resulting events.
     /// Handles the full DCB cycle: stream → reconstitute → decide → append with conflict check.
     /// </summary>
+    /// <remarks>
+    /// This overload reconstitutes state using raw JSON deserialization (no upcaster chain).
+    /// <b>If any event in the boundary stream was stored at an older schema version than the handler
+    /// type expects, this overload throws <see cref="InvalidOperationException"/> at reconstitution time</b>
+    /// rather than silently producing stale state.
+    /// When your application uses schema versioning, use the overload that takes an
+    /// <see cref="EventSerializer"/> argument — it applies the upcaster chain automatically.
+    /// </remarks>
     /// <typeparam name="TState">The state type produced by the evolver. Must have a parameterless constructor.</typeparam>
     /// <param name="eventStore">The event store to read from and append to.</param>
     /// <param name="boundary">
@@ -45,6 +53,47 @@ public static class DeciderExtensions
     {
         var envelopes = await eventStore.StreamAsync(boundary, cancellationToken: ct);
         var state = evolver.Reconstitute(envelopes);
+        var lastPosition = envelopes.Count > 0 ? envelopes.Max(e => e.GlobalPosition) : 0L;
+
+        var decision = decide(state);
+        if (decision.IsError)
+            return Result.Fail(decision.Problems);
+
+        if (decision.Events.Count > 0)
+            await eventStore.AppendAsync(decision.Events.Select(toEventToPersist), boundary, lastPosition, ct);
+
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Overload that threads an <see cref="EventSerializer"/> through reconstitution so that
+    /// registered upcasters are applied before the evolver sees each event.
+    /// Prefer this overload over the five-argument form when your application uses schema
+    /// versioning — without a serializer the evolver falls back to raw JSON deserialization,
+    /// which silently bypasses the upcaster chain.
+    /// </summary>
+    /// <typeparam name="TState">The state type produced by the evolver. Must have a parameterless constructor.</typeparam>
+    /// <param name="eventStore">The event store to read from and append to.</param>
+    /// <param name="boundary">The DCB boundary query for both reading and conflict checking.</param>
+    /// <param name="evolver">Folds boundary events into state.</param>
+    /// <param name="decide">Pure function that returns a <see cref="Decision"/>.</param>
+    /// <param name="toEventToPersist">Maps each <see cref="IEvent"/> to an <see cref="IEventToPersist"/>.</param>
+    /// <param name="serializer">
+    /// Used to deserialize envelopes (including upcasting) during reconstitution.
+    /// </param>
+    /// <param name="ct">Cancellation token.</param>
+    public static async Task<Result> DecideAndAppendAsync<TState>(
+        this IEventStore eventStore,
+        DcbQuery boundary,
+        Evolver<TState> evolver,
+        Func<TState, Decision> decide,
+        Func<IEvent, IEventToPersist> toEventToPersist,
+        EventSerializer serializer,
+        CancellationToken ct = default)
+        where TState : new()
+    {
+        var envelopes = await eventStore.StreamAsync(boundary, cancellationToken: ct);
+        var state = evolver.Reconstitute(envelopes, default, serializer.Deserialize);
         var lastPosition = envelopes.Count > 0 ? envelopes.Max(e => e.GlobalPosition) : 0L;
 
         var decision = decide(state);

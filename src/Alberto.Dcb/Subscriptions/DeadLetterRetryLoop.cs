@@ -22,7 +22,7 @@ namespace Alberto.Dcb.Subscriptions;
 /// <param name="claimedBy">Identity string stamped on each claim. Defaults to <c>MachineName:ProcessId</c>.</param>
 /// <param name="scopeFactory">Optional DI scope factory used to create a per-event tenant scope.</param>
 /// <param name="timeProvider">Clock used to drive poll delays. Defaults to <see cref="TimeProvider.System"/>.</param>
-public sealed class DeadLetterRetryLoop(
+internal sealed class DeadLetterRetryLoop(
     IEventProcessor processor,
     IDeadLetterStore deadLetterStore,
     TimeSpan? pollingInterval = null,

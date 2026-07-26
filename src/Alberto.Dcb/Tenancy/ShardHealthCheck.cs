@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace Alberto.Dcb.Tenancy;
@@ -14,6 +15,7 @@ namespace Alberto.Dcb.Tenancy;
 /// <param name="moduleKey">The logical module key, used in the reported description.</param>
 /// <param name="health">The module's shard health.</param>
 /// <param name="shardIds">Every shard declared for the module, healthy or not.</param>
+[Experimental("ALB9001")]
 public sealed class ShardHealthCheck(
     string moduleKey,
     ShardHealth health,

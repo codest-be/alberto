@@ -398,6 +398,7 @@ surfacing them in one error message.
 | `ALB0014` | The module declares shards but no catalog, so there is nowhere to record which shard a tenant is in | Declare one with `.WithCatalog(o => o with { ConnectionString = ... })`, pointing at a control database rather than at one of the shards |
 | `ALB0015` | Configuration declares a shard the module does not | Add `.AddShard("...", ...)` in code, or remove the `Tenancy:Shards:{id}` section — shard services are registered before configuration is read, so a configuration-only shard could never serve a request |
 | `ALB0016` | Two shards resolve to the same database and schema | Give each shard its own database, or at minimum its own schema — separate shards must be separate storage |
+| `ALB0017` | Module declares `.WithInMemory("sharedKey")` (sharing a backend registered by another module) together with `.WithTenancy()` | The shared in-memory backend is a singleton; it cannot carry per-tenant state for a module that declared tenancy. Either remove `.WithTenancy()` from the sharing module, or give it its own backend with `.WithInMemory()` (no shared key) |
 
 ### Postgres codes (ALB1xxx)
 

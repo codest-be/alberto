@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Alberto.Dcb.Tenancy;
 
 /// <summary>
@@ -10,6 +12,7 @@ namespace Alberto.Dcb.Tenancy;
 /// shard's own backend under its shard key, which is what lets each shard keep its own
 /// checkpoints against its own <c>position</c> sequence.
 /// </remarks>
+[Experimental("ALB9001")]
 public sealed class ShardRoutingEventStoreBackend(
     string moduleKey,
     ITenantAccessor tenantAccessor,
@@ -17,6 +20,11 @@ public sealed class ShardRoutingEventStoreBackend(
     Func<string, IEventStoreBackend> shardBackends) : IEventStoreBackend
 {
     /// <inheritdoc />
+    /// <remarks>
+    /// <paramref name="afterPosition"/> must be a position issued by this tenant's shard.
+    /// Positions are per-database sequences; passing a value obtained from a different shard
+    /// produces silently wrong results — events may be skipped or repeated.
+    /// </remarks>
     public async Task<IReadOnlyCollection<IEventEnvelope>> StreamAsync(
         DcbQuery query,
         long afterPosition = 0,
@@ -52,6 +60,12 @@ public sealed class ShardRoutingEventStoreBackend(
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// The returned position belongs to the current tenant's shard. Each shard maintains its own
+    /// independent <c>position</c> sequence starting at 1, so a value from shard A is meaningless
+    /// in shard B. Never compare, order, or use a position from one shard as a cursor into
+    /// another — the result would silently be nonsense with no runtime error to catch it.
+    /// </remarks>
     public async Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default)
     {
         var backend = await ForCurrentTenantAsync(cancellationToken).ConfigureAwait(false);

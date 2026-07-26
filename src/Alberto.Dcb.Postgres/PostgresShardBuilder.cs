@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Diagnostics.CodeAnalysis;
 using Alberto.Dcb.Configuration;
 
 namespace Alberto.Dcb.Postgres;
@@ -11,6 +12,7 @@ namespace Alberto.Dcb.Postgres;
 /// Nothing here opens a connection or reads configuration. Like every other Alberto builder it
 /// accumulates a declaration that <c>AddAlberto</c> expands afterwards — once per shard.
 /// </remarks>
+[Experimental("ALB9001")]
 public sealed class PostgresShardBuilder
 {
     private readonly PostgresOptions _template;

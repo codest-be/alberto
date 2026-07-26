@@ -18,7 +18,7 @@ module with one database, which remains the default.
 services.AddTenancy();                       // once, on the application's IServiceCollection
 
 services.AddAlberto("orders", builder => builder
-    .WithTenancy()                           // ← BEFORE .WithPostgres
+    .WithTenancy()
     .WithPostgres(options =>
     {
         options.ConnectionString = connectionString;
@@ -27,11 +27,11 @@ services.AddAlberto("orders", builder => builder
     …);
 ```
 
-**Order matters.** `.WithPostgres` decides which backend to register, and it reads the builder's
-tenancy flag while doing so. Calling `.WithTenancy()` afterwards would leave a single-tenant backend
-wired with tenancy nominally enabled — silent cross-tenant reads. Rather than let that happen,
-Alberto registers a startup validator that detects the late call and **fails fast** with a message
-telling you to reorder the chain.
+**Call order does not matter.** `AddAlberto` runs the whole configuration lambda first,
+accumulating every declaration into an immutable definition, and only then registers services and
+reads tenancy. A `.WithTenancy()` written after `.WithPostgres(...)` — or anywhere else in the
+chain — produces exactly the same result as one written before it. The backend sees the completed
+definition, not a snapshot captured at the moment `.WithPostgres(...)` was called.
 
 ## Setting the tenant
 

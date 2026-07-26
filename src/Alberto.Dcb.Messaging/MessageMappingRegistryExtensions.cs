@@ -23,9 +23,10 @@ public static class MessageMappingRegistryExtensions
         var attr = typeof(TMessage).GetCustomAttribute<MessageAttribute>()
             ?? throw new InvalidOperationException(
                 $"Type '{typeof(TMessage).FullName}' does not have a [Message] attribute.");
-        registry.Map<TEvent>((envelope, _, _) =>
+        registry.Map<TEvent>((envelope, sp, _) =>
         {
-            var evt = JsonSerializer.Deserialize<TEvent>(envelope.EventData)!;
+            var serializer = sp.GetKeyedService<EventSerializer>(registry.ModuleKey);
+            var evt = EventEnvelopeExtensions.DeserializeEvent<TEvent>(envelope, serializer);
             var message = mapper(evt);
             return ValueTask.FromResult<ExternalMessage?>(
                 new ExternalMessage(attr.MessageType, attr.Version.ToString(), JsonSerializer.Serialize(message), []));
@@ -50,7 +51,8 @@ public static class MessageMappingRegistryExtensions
         registry.Map<TEvent>((envelope, sp, _) =>
         {
             var dep = sp.GetRequiredService<TDep>();
-            var evt = JsonSerializer.Deserialize<TEvent>(envelope.EventData)!;
+            var serializer = sp.GetKeyedService<EventSerializer>(registry.ModuleKey);
+            var evt = EventEnvelopeExtensions.DeserializeEvent<TEvent>(envelope, serializer);
             var message = mapper(dep, evt);
             return ValueTask.FromResult<ExternalMessage?>(
                 new ExternalMessage(attr.MessageType, attr.Version.ToString(), JsonSerializer.Serialize(message), []));

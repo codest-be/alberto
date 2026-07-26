@@ -8,6 +8,9 @@ public sealed class MessageMappingRegistry : IMessageMappingRegistry
     private readonly Dictionary<string, EventToMessageMapper> _mappers = new();
 
     /// <inheritdoc/>
+    public string? ModuleKey { get; set; }
+
+    /// <inheritdoc/>
     public void Map(string eventType, EventToMessageMapper mapper)
         => _mappers[eventType] = mapper;
 

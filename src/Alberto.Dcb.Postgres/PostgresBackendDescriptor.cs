@@ -145,12 +145,14 @@ public sealed record PostgresBackendDescriptor(PostgresOptions Options) : IAlber
             return builder.Build();
         });
 
+#pragma warning disable ALB9001 // Registering the catalog shard map — sharding implementation.
         services.AddKeyedSingleton<ITenantShardMap>(moduleKey, (sp, _) =>
         {
             var options = CatalogOptions(sp, moduleKey);
             return new PostgresTenantShardMap(
                 sp.GetRequiredKeyedService<NpgsqlDataSource>(catalogKey), moduleKey, options.Schema);
         });
+#pragma warning restore ALB9001
 
         services.AddSingleton<IHostedService>(sp => new PostgresCatalogMigrationHostedService(
             moduleKey,
@@ -189,7 +191,9 @@ public sealed record PostgresBackendDescriptor(PostgresOptions Options) : IAlber
             moduleKey,
             sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>(),
             sp.GetService<ILogger<AlbertoMigrationHostedService>>(),
+#pragma warning disable ALB9001 // Passing ShardHealth to a shard's migration service — sharding implementation.
             shardId is null ? null : sp.GetKeyedService<ShardHealth>(logicalModuleKey),
+#pragma warning restore ALB9001
             shardId));
 
         // Register NpgsqlDataSource with connection pool settings. The factory reads the

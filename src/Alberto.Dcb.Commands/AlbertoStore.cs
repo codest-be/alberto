@@ -73,7 +73,7 @@ public sealed class AlbertoStore(
     /// Reconstitutes state from the boundary using an <see cref="Evolver{TState}"/>,
     /// returning the position the boundary was read at.
     /// </summary>
-    public async Task<(TState State, long LastPosition)> ReconstituteWithPosition<TState>(
+    internal async Task<(TState State, long LastPosition)> ReconstituteWithPosition<TState>(
         DcbQuery query,
         Evolver<TState> evolver,
         CancellationToken cancellationToken)
@@ -90,10 +90,13 @@ public sealed class AlbertoStore(
                 lastPosition = envelope.GlobalPosition;
         }
 
-        return (evolver.Reconstitute(envelopes), lastPosition);
+        // Route through EventSerializer (which applies the upcaster chain) rather than
+        // letting Evolver fall back to raw JsonSerializer — that path silently bypasses
+        // upcasting and causes decisions to see stale v1 event shapes.
+        return (evolver.Reconstitute(envelopes, default, serializer.Deserialize), lastPosition);
     }
 
-    public async Task<(TState State, long LastPosition)> FoldWithPosition<TState>(
+    internal async Task<(TState State, long LastPosition)> FoldWithPosition<TState>(
         DcbQuery query,
         TState initial,
         Func<TState, IEvent, TState> apply,

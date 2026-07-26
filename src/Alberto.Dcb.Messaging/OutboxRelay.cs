@@ -80,7 +80,13 @@ public sealed class OutboxRelay : BackgroundService
                     try
                     {
                         await _transport.PublishAsync(
-                            new ExternalMessage(entry.MessageType, entry.Version, entry.Payload, entry.Metadata),
+                            new ExternalMessage(
+                                entry.MessageType,
+                                entry.Version,
+                                entry.Payload,
+                                entry.Metadata,
+                                Destination: entry.Destination,
+                                RoutingHint: entry.RoutingHint),
                             ct);
                         await _store.MarkDeliveredAsync(claim, ct);
                     }

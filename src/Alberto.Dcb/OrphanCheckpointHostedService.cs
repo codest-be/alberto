@@ -39,8 +39,34 @@ internal sealed class OrphanCheckpointHostedService(
             .Select(p => p.ProcessorId)
             .ToHashSet(StringComparer.Ordinal);
 
-        var stored = await inventory.ListProcessorIdsAsync(cancellationToken);
-        var orphans = stored.Where(id => !declared.Contains(id)).OrderBy(id => id, StringComparer.Ordinal).ToList();
+        IReadOnlyList<string> stored;
+        try
+        {
+            stored = await inventory.ListProcessorIdsAsync(cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The database may be temporarily unreachable (e.g., a degraded shard at startup).
+            // The orphan check is a safety feature, not a critical startup requirement; log a
+            // warning and skip rather than propagating an exception that would stop the host.
+            logger.LogWarning(ex,
+                "Skipping orphaned-checkpoint check for module {ModuleKey}: could not read the " +
+                "checkpoint store ({ExceptionType}).",
+                definition.ModuleKey, ex.GetType().Name);
+            return;
+        }
+
+        // Shadow rebuild keys ("processorId::rebuild::N") are artefacts of the rebuild
+        // protocol, not independently declared processors. The coordinator's sweep removes them
+        // once a version's grace period elapses, but a crash between the flip and the sweep,
+        // an older host that did not perform the reset, or a remote replica's shadow loop can
+        // leave one behind. Treating them as orphans and failing startup under Strict policy
+        // would brick the host until someone deleted the row by hand; ignoring them here is
+        // the safe fallback while the coordinator's ClearAsync is the authoritative cleaner.
+        var orphans = stored
+            .Where(id => !declared.Contains(id) && !RebuildableProjection.IsShadowProcessorId(id))
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToList();
 
         if (orphans.Count == 0)
             return;

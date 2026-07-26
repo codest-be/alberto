@@ -24,7 +24,7 @@ public sealed record CatchUpOccupancy
 /// </summary>
 public sealed class ProjectionCatchUpEndToEndTests
 {
-    private const string ModuleKey = "catchup-e2e";
+    private const string ModuleKey = "catchup_e2e";
     private const string ProcessorId = "catchup-e2e-occupancy";
 
     private static readonly ProjectionDeclaration<CatchUpOccupancy> Declaration =

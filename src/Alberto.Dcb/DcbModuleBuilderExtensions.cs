@@ -1,6 +1,7 @@
 using Alberto.Dcb.Configuration;
 using Alberto.Dcb.Subscriptions;
 using Alberto.Dcb.Tenancy;
+using Alberto.Dcb.Upcasting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -96,6 +97,12 @@ public static class DcbModuleBuilderExtensions
         ArgumentNullException.ThrowIfNull(declaration);
         ArgumentNullException.ThrowIfNull(stateStoreFactory);
 
+        // Validate now, at registration time, before anything is written to the service
+        // collection. A ':' or '#' in the processor id would make the composed reader store
+        // factory key '{moduleKey}:{processorId}' ambiguous or unparseable; a reserved word
+        // would shadow an internal Alberto registration under that same key.
+        ValidateProcessorIdArg(declaration.ProcessorId, builder.ModuleKey);
+
         builder.DeclareProcessor(new ProcessorDeclaration
         {
             ProcessorId = declaration.ProcessorId,
@@ -109,16 +116,22 @@ public static class DcbModuleBuilderExtensions
             context.Services.AddKeyedSingleton<IEventProcessor>(moduleKey, (sp, _) =>
             {
                 var version = ProjectionVersions.LiveVersion(sp, moduleKey, declaration.ProcessorId);
-                var factory = stateStoreFactory(new ProjectionStoreContext(sp, version));
-                return new DeclaredAsyncProjection<TState>(declaration, factory);
+                var factory = stateStoreFactory(new ProjectionStoreContext { Services = sp, RebuildVersion = version });
+                var serializer = sp.GetKeyedService<EventSerializer>(moduleKey);
+                return new DeclaredAsyncProjection<TState>(declaration, factory, serializer: serializer);
             });
 
             context.Services.AddKeyedSingleton(moduleKey, (sp, _) =>
-                new RebuildableProjection(
+            {
+                var serializer = sp.GetKeyedService<EventSerializer>(moduleKey);
+                return new RebuildableProjection(
                     declaration.ProcessorId,
                     projectionType ?? declaration.ProcessorId,
                     version => new DeclaredAsyncProjection<TState>(
-                        declaration, stateStoreFactory(new ProjectionStoreContext(sp, version)))));
+                        declaration,
+                        stateStoreFactory(new ProjectionStoreContext { Services = sp, RebuildVersion = version }),
+                        serializer: serializer));
+            });
 
             // Reader store factory — keyed by "{moduleKey}:{processorId}".
             // Read-side code resolves this instead of constructing a store directly, so
@@ -128,7 +141,7 @@ public static class DcbModuleBuilderExtensions
                 (sp, _) =>
                 {
                     var version = ProjectionVersions.LiveVersion(sp, moduleKey, declaration.ProcessorId);
-                    return stateStoreFactory(new ProjectionStoreContext(sp, version));
+                    return stateStoreFactory(new ProjectionStoreContext { Services = sp, RebuildVersion = version });
                 });
         });
 
@@ -166,6 +179,10 @@ public static class DcbModuleBuilderExtensions
         ArgumentNullException.ThrowIfNull(handlerFactory);
         ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
 
+        // Fail fast: a ':' or '#' in the processor id makes the composed DI key ambiguous.
+        // A reserved word shadows an Alberto internal service registration.
+        ValidateProcessorIdArg(processorId, builder.ModuleKey);
+
         var executionOptions = BuildProcessorExecutionOptions(mode, configure);
 
         builder.DeclareProcessor(new ProcessorDeclaration
@@ -178,8 +195,14 @@ public static class DcbModuleBuilderExtensions
         if (mode == ReactorMode.Sync)
         {
             ValidateSyncExecutionOptions(processorId, executionOptions);
-            builder.Register(context => context.Services.AddKeyedSingleton<IPostAppendHandler>(context.ModuleKey, (sp, _) =>
-                new SyncReactor<TEvent>((e, _, ct) => handlerFactory(sp)(e, ct))));
+            builder.Register(context =>
+            {
+                var mKey = context.ModuleKey;
+                context.Services.AddKeyedSingleton<IPostAppendHandler>(mKey, (sp, _) =>
+                    new SyncReactor<TEvent>(
+                        (e, _, ct) => handlerFactory(sp)(e, ct),
+                        sp.GetKeyedService<EventSerializer>(mKey)));
+            });
         }
         else
         {
@@ -187,10 +210,11 @@ public static class DcbModuleBuilderExtensions
                 builder,
                 processorId,
                 executionOptions,
-                sp => new FunctionalReactor<TEvent>(
+                (sp, mKey) => new FunctionalReactor<TEvent>(
                     processorId,
                     (e, _, ct) => handlerFactory(sp)(e, ct),
-                    executionOptions.MaxConcurrency));
+                    executionOptions.MaxConcurrency,
+                    sp.GetKeyedService<EventSerializer>(mKey)));
         }
 
         return builder;
@@ -227,6 +251,10 @@ public static class DcbModuleBuilderExtensions
         ArgumentNullException.ThrowIfNull(handlerFactory);
         ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
 
+        // Fail fast: a ':' or '#' in the processor id makes the composed DI key ambiguous.
+        // A reserved word shadows an Alberto internal service registration.
+        ValidateProcessorIdArg(processorId, builder.ModuleKey);
+
         var executionOptions = BuildProcessorExecutionOptions(mode, configure);
 
         builder.DeclareProcessor(new ProcessorDeclaration
@@ -239,8 +267,14 @@ public static class DcbModuleBuilderExtensions
         if (mode == ReactorMode.Sync)
         {
             ValidateSyncExecutionOptions(processorId, executionOptions);
-            builder.Register(context => context.Services.AddKeyedSingleton<IPostAppendHandler>(context.ModuleKey, (sp, _) =>
-                new SyncReactor<TEvent>(handlerFactory(sp))));
+            builder.Register(context =>
+            {
+                var mKey = context.ModuleKey;
+                context.Services.AddKeyedSingleton<IPostAppendHandler>(mKey, (sp, _) =>
+                    new SyncReactor<TEvent>(
+                        handlerFactory(sp),
+                        sp.GetKeyedService<EventSerializer>(mKey)));
+            });
         }
         else
         {
@@ -248,10 +282,11 @@ public static class DcbModuleBuilderExtensions
                 builder,
                 processorId,
                 executionOptions,
-                sp => new FunctionalReactor<TEvent>(
+                (sp, mKey) => new FunctionalReactor<TEvent>(
                     processorId,
                     handlerFactory(sp),
-                    executionOptions.MaxConcurrency));
+                    executionOptions.MaxConcurrency,
+                    sp.GetKeyedService<EventSerializer>(mKey)));
         }
 
         return builder;
@@ -292,6 +327,13 @@ public static class DcbModuleBuilderExtensions
         var resolvedProcessorId = processorId ?? ProcessorId.For<THandler>();
         ArgumentException.ThrowIfNullOrWhiteSpace(resolvedProcessorId);
 
+        // Fail fast: a ':' or '#' in the processor id makes the composed DI key ambiguous.
+        // A reserved word shadows an Alberto internal service registration.
+        // When the id was derived from the handler type, the error message names the type and
+        // tells the user to add [ProcessorId("valid_id")] to it.
+        ValidateProcessorIdArg(resolvedProcessorId, builder.ModuleKey,
+            processorId is null ? typeof(THandler) : null);
+
         builder.Register(context => context.Services.TryAddScoped<THandler>());
 
         var executionOptions = BuildProcessorExecutionOptions(mode, configure);
@@ -307,22 +349,26 @@ public static class DcbModuleBuilderExtensions
         if (mode == ReactorMode.Sync)
         {
             ValidateSyncExecutionOptions(resolvedProcessorId, executionOptions);
-            builder.Register(context => context.Services.AddKeyedSingleton<IPostAppendHandler>(context.ModuleKey, (sp, _) =>
+            builder.Register(context =>
             {
-                var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
-                return new SyncReactor<TEvent>(async (e, reactorContext, ct) =>
+                var mKey = context.ModuleKey;
+                context.Services.AddKeyedSingleton<IPostAppendHandler>(mKey, (sp, _) =>
                 {
-                    await using var scope = EventProcessingScope.Create(
-                        scopeFactory,
-                        reactorContext.TenantId);
-                    var handler = scope.ServiceProvider.GetRequiredService<THandler>();
-                    await methodSelector(handler)(e, ct);
+                    var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
+                    return new SyncReactor<TEvent>(async (e, reactorContext, ct) =>
+                    {
+                        await using var scope = EventProcessingScope.Create(
+                            scopeFactory,
+                            reactorContext.TenantId);
+                        var handler = scope.ServiceProvider.GetRequiredService<THandler>();
+                        await methodSelector(handler)(e, ct);
+                    }, sp.GetKeyedService<EventSerializer>(mKey));
                 });
-            }));
+            });
         }
         else
         {
-            RegisterAsyncProcessor(builder, resolvedProcessorId, executionOptions, sp =>
+            RegisterAsyncProcessor(builder, resolvedProcessorId, executionOptions, (sp, mKey) =>
             {
                 var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
                 return new FunctionalReactor<TEvent>(resolvedProcessorId, async (e, reactorContext, ct) =>
@@ -332,7 +378,7 @@ public static class DcbModuleBuilderExtensions
                         reactorContext.TenantId);
                     var handler = scope.ServiceProvider.GetRequiredService<THandler>();
                     await methodSelector(handler)(e, ct);
-                }, executionOptions.MaxConcurrency);
+                }, executionOptions.MaxConcurrency, sp.GetKeyedService<EventSerializer>(mKey));
             });
         }
 
@@ -373,6 +419,13 @@ public static class DcbModuleBuilderExtensions
         var resolvedProcessorId = processorId ?? ProcessorId.For<THandler>();
         ArgumentException.ThrowIfNullOrWhiteSpace(resolvedProcessorId);
 
+        // Fail fast: a ':' or '#' in the processor id makes the composed DI key ambiguous.
+        // A reserved word shadows an Alberto internal service registration.
+        // When the id was derived from the handler type, the error message names the type and
+        // tells the user to add [ProcessorId("valid_id")] to it.
+        ValidateProcessorIdArg(resolvedProcessorId, builder.ModuleKey,
+            processorId is null ? typeof(THandler) : null);
+
         builder.Register(context => context.Services.TryAddScoped<THandler>());
 
         var executionOptions = BuildProcessorExecutionOptions(mode, configure);
@@ -388,22 +441,26 @@ public static class DcbModuleBuilderExtensions
         if (mode == ReactorMode.Sync)
         {
             ValidateSyncExecutionOptions(resolvedProcessorId, executionOptions);
-            builder.Register(context => context.Services.AddKeyedSingleton<IPostAppendHandler>(context.ModuleKey, (sp, _) =>
+            builder.Register(context =>
             {
-                var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
-                return new SyncReactor<TEvent>(async (e, reactorContext, ct) =>
+                var mKey = context.ModuleKey;
+                context.Services.AddKeyedSingleton<IPostAppendHandler>(mKey, (sp, _) =>
                 {
-                    await using var scope = EventProcessingScope.Create(
-                        scopeFactory,
-                        reactorContext.TenantId);
-                    var handler = scope.ServiceProvider.GetRequiredService<THandler>();
-                    await methodSelector(handler)(e, reactorContext, ct);
+                    var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
+                    return new SyncReactor<TEvent>(async (e, reactorContext, ct) =>
+                    {
+                        await using var scope = EventProcessingScope.Create(
+                            scopeFactory,
+                            reactorContext.TenantId);
+                        var handler = scope.ServiceProvider.GetRequiredService<THandler>();
+                        await methodSelector(handler)(e, reactorContext, ct);
+                    }, sp.GetKeyedService<EventSerializer>(mKey));
                 });
-            }));
+            });
         }
         else
         {
-            RegisterAsyncProcessor(builder, resolvedProcessorId, executionOptions, sp =>
+            RegisterAsyncProcessor(builder, resolvedProcessorId, executionOptions, (sp, mKey) =>
             {
                 var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
                 return new FunctionalReactor<TEvent>(resolvedProcessorId, async (e, reactorContext, ct) =>
@@ -413,7 +470,7 @@ public static class DcbModuleBuilderExtensions
                         reactorContext.TenantId);
                     var handler = scope.ServiceProvider.GetRequiredService<THandler>();
                     await methodSelector(handler)(e, reactorContext, ct);
-                }, executionOptions.MaxConcurrency);
+                }, executionOptions.MaxConcurrency, sp.GetKeyedService<EventSerializer>(mKey));
             });
         }
 
@@ -655,7 +712,7 @@ public static class DcbModuleBuilderExtensions
     }
 
     private static readonly ProcessorExecutionOptions SyncExecutionDefault =
-        new(ProcessorBatchingMode.Disabled);
+        new() { BatchingMode = ProcessorBatchingMode.Disabled };
 
     private static ProcessorExecutionOptions BuildProcessorExecutionOptions(
         ReactorMode mode,
@@ -676,15 +733,16 @@ public static class DcbModuleBuilderExtensions
         DcbModuleBuilder builder,
         string processorId,
         ProcessorExecutionOptions executionOptions,
-        Func<IServiceProvider, IEventProcessor> processorFactory)
+        Func<IServiceProvider, string, IEventProcessor> processorFactory)
     {
         builder.Register(context =>
         {
+            var mKey = context.ModuleKey;
             context.Services.AddKeyedSingleton<IEventProcessor>(
-                context.ModuleKey,
-                (sp, _) => processorFactory(sp));
+                mKey,
+                (sp, _) => processorFactory(sp, mKey));
             context.Services.AddKeyedSingleton<ProcessorExecutionRegistration>(
-                context.ModuleKey,
+                mKey,
                 (_, _) => new ProcessorExecutionRegistration(processorId, executionOptions));
         });
     }
@@ -698,5 +756,118 @@ public static class DcbModuleBuilderExtensions
 
         throw new InvalidOperationException(
             $"Processor '{processorId}' is registered as {ReactorMode.Sync} and cannot enable async batching.");
+    }
+
+    /// <summary>
+    /// Registers an upcaster declaration that migrates stored events at an older schema version
+    /// to the current type before they reach any handler, projector, or reactor.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Upcasters are declared the same way projections are: via an explicit
+    /// <see cref="UpcasterDeclaration"/> built with <see cref="DeclareUpcaster"/>. Assembly
+    /// scanning is deliberately not used — the same reason projections are not discovered by
+    /// scanning.
+    /// </para>
+    /// <para>
+    /// <b>Order-independence</b>: all <c>Configure</c> callbacks (including this one and the one
+    /// inside <c>WithEventsFrom</c> that records the assembly's event types) run before any
+    /// <c>Register</c> callback (where <c>WithEventsFrom</c> builds the serializer). Therefore
+    /// calling <c>.AddUpcaster(...)</c> before or after <c>.WithEventsFrom(...)</c> always
+    /// produces the same serializer.
+    /// </para>
+    /// </remarks>
+    /// <param name="builder">The module builder.</param>
+    /// <param name="declaration">
+    /// The upcast chain for one event type, produced by
+    /// <c>DeclareUpcaster.For&lt;TEvent&gt;(...).From&lt;TOld&gt;(...).Build()</c>.
+    /// </param>
+    /// <returns>The builder for continued chaining.</returns>
+    /// <example>
+    /// <code>
+    /// services.AddAlberto("orders", builder => builder
+    ///     .WithPostgres(options => options.ConnectionString = "...")
+    ///     .WithEventsFrom(typeof(OrderPlaced).Assembly)
+    ///     .AddUpcaster(DeclareUpcaster
+    ///         .For&lt;OrderPlaced&gt;("order-placed")
+    ///         .From&lt;OrderPlacedV1&gt;(1, v1 => new OrderPlaced(v1.OrderId, v1.Amount, "default"))
+    ///         .Build())
+    /// );
+    /// </code>
+    /// </example>
+    public static DcbModuleBuilder AddUpcaster(
+        this DcbModuleBuilder builder,
+        UpcasterDeclaration declaration)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(declaration);
+
+        return builder.Configure(d => d with
+        {
+            UpcasterDeclarations = d.UpcasterDeclarations.Add(declaration),
+        });
+    }
+
+    /// <summary>
+    /// Throws <see cref="ArgumentException"/> when <paramref name="processorId"/> is not safe to
+    /// use in a composed DI service key <c>{moduleKey}:{processorId}</c>.
+    /// </summary>
+    /// <param name="processorId">The id to validate.</param>
+    /// <param name="moduleKey">The module the processor belongs to, for the error message.</param>
+    /// <param name="handlerType">
+    /// When the id was derived from a handler type rather than supplied explicitly, the type is
+    /// included in the error message and the remedy text tells the user to add
+    /// <c>[ProcessorId("valid_id")]</c> to it. Pass <see langword="null"/> for an explicitly
+    /// supplied id.
+    /// </param>
+    /// <remarks>
+    /// Processor ids do not have to be lowercase: they are often PascalCase type-derived names
+    /// (e.g., <c>OrderSummaryProjection</c>) or dotted attribute values (e.g.,
+    /// <c>orders.summary</c>). The restriction is narrower: a <c>:</c> or <c>#</c> makes the
+    /// composed key structurally ambiguous, and the reserved words "consumer", "catalog", and
+    /// "tenant-raw" collide with Alberto's own internal DI key suffixes.
+    /// </remarks>
+    internal static void ValidateProcessorIdArg(
+        string processorId,
+        string moduleKey,
+        Type? handlerType = null)
+    {
+        if (IdentifierRules.IsValidProcessorId(processorId))
+            return;
+
+        // Build a source description: either the handler type name or nothing (explicit arg).
+        var source = handlerType is not null
+            ? $" (derived from handler type '{handlerType.Name}')"
+            : string.Empty;
+
+        // Append a targeted remedy for type-derived ids so the user knows exactly how to fix it.
+        var remedy = handlerType is not null
+            ? $" Add [ProcessorId(\"your_lowercase_id\")] to {handlerType.Name} to pin it to a safe name."
+            : string.Empty;
+
+        // Distinguish the two failure modes with a more specific error sentence so the user does
+        // not have to read the rules to understand why their id was rejected.
+        string reason;
+        if (processorId.Contains(':', StringComparison.Ordinal)
+            || processorId.Contains('#', StringComparison.Ordinal))
+        {
+            reason = "It contains ':' or '#', which Alberto uses as separators inside composed DI " +
+                     "service keys. A processor id containing either character makes the composed key " +
+                     $"'{moduleKey}:{{processorId}}' structurally ambiguous.";
+        }
+        else if (IdentifierRules.ReservedProcessorIds.Contains(processorId))
+        {
+            reason = $"It is a reserved word. Alberto registers the internal service " +
+                     $"'{moduleKey}:{processorId}' using this suffix; a processor with the same id " +
+                     "would shadow that registration and cause the wrong service to be resolved at runtime.";
+        }
+        else
+        {
+            reason = IdentifierRules.ProcessorIdRule;
+        }
+
+        throw new ArgumentException(
+            $"Processor id '{processorId}'{source} in module '{moduleKey}' is not valid. {reason}{remedy}",
+            nameof(processorId));
     }
 }

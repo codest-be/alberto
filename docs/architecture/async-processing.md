@@ -196,7 +196,7 @@ Every projection state row carries a `rebuild_version`. One version is *active* 
                                                               │
   start ──▶  shadow loop (own checkpoint, from position 0) ─▶ version 2
                                                               │
-  promote ──▶ version 2 becomes active, version 1 deleted ────┘  (one transaction)
+  promote ──▶ version 2 becomes active, version 1 unreachable ──┘  (one transaction; rows swept later)
 ```
 
 ### Enabling it
@@ -244,7 +244,7 @@ Three properties do most of the safety work here, and all three are load-bearing
 
 - **Promotion waits for the rebuilt version to catch up with the live one, and hands over its position.** Reaching the target only means the *historical* replay is done: the target was the head of the log when the rebuild started, and everything appended since has been applied by the live loop to the very version promotion is about to delete. Flip while the shadow is behind and the promoted copy is missing exactly those events, permanently — the live loop's checkpoint is already past them, so nothing goes back. The mirror image matters too: the shadow is usually *ahead* of the live loop, and a live loop left at its own checkpoint would apply everything in between a second time, into the version now serving reads. Fast-forwarding it to the shadow's position at promotion is what makes the hand-off exact.
 
-- **Version numbers are never reused.** `alberto_projection_rebuild_meta.last_allocated_version` is a high-water mark, and a rebuild takes `last_allocated_version + 1`. Allocating `active_version + 1` instead would be correct after a promotion — which advances the active version — but not after an abort, which deliberately leaves it alone. Abort deletes the abandoned version's rows and flips the status in one transaction, but the shadow loop writing into that version lives in the application process and only learns of the abort on its next tick, so its late writes outlive the delete. Reallocating that number seeds the next replay with those leftovers and applies every event twice.
+- **Version numbers are never reused.** `alberto_projection_rebuild_meta.last_allocated_version` is a high-water mark, and a rebuild takes `last_allocated_version + 1`. Allocating `active_version + 1` instead would be correct after a promotion — which advances the active version — but not after an abort, which deliberately leaves it alone. Abort flips the status in one transaction but leaves the abandoned version's rows in place: the shadow loop writing into that version lives in the application process and only learns of the abort on its next tick, so its late writes arrive after the transition. Reallocating that number seeds the next replay with those leftovers and applies every event twice. The rows are reclaimed by a later sweep, not by the abort transaction itself.
 - **The shadow checkpoint belongs to the version, not to the processor.** A key per processor has to be reset between rebuilds, and every moment the coordinator could do that is a moment an operator can start the next rebuild ahead of. A rebuild begun in that window would resume from a checkpoint already at the head of the log, replay nothing, and promote an empty projection. A version-scoped key has no such window: a version nobody has replayed has no checkpoint, and one being resumed after a restart has exactly the position it left off at.
 
 Because aborts consume numbers without moving the active one, the startup sweep runs from `1` to one past the highest version the processor knows about — the version being rebuilt if one is in flight, the active one otherwise — cleaning up after a promotion or abort that happened while the coordinator was down.
@@ -261,6 +261,19 @@ The following appear in the schema or the type system but have no orchestration 
 
 - **Rebuild-mode processor tuning.** `IEventProcessor.IsRebuilding` is set for shadow loops, but there is no lag threshold and no separate rebuild batch size — a shadow loop runs on the module's configured batch size.
 - **Real-time admin push.** There is no admin HTTP API, no GraphQL admin subscriptions, and no admin dashboard in this repository. The `{schema}_events` NOTIFY channel exists to refresh `EventStoreHead`, not to feed a UI. The operator surface is the CLI in `tools/Alberto.Cli`.
+
+## Event deserialization invariant
+
+Every path from an `IEventEnvelope` to a typed event object — inside a projection, reactor,
+outbox mapper, fold, or evolver — **must go through `EventSerializer.Deserialize`**.
+That method is the only place where the registered upcaster chain fires.
+Calling `JsonSerializer.Deserialize`, `JsonDocument.Parse`, or `JsonNode.Parse` directly on
+`envelope.EventData` silently bypasses upcasting, so old envelopes arrive at handlers with
+missing or default fields instead of the current event shape.
+
+This invariant is enforced by a source-scanning guard in
+`tests/Alberto.Dcb.Tests/UpcasterBypassGuardTests.cs`.  See CONTRIBUTING.md §"Event deserialization
+rule" for how to add a file to the allow-list when non-event JSON deserialization is legitimate.
 
 ## Key Files
 

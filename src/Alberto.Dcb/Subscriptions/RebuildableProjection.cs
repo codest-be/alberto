@@ -71,6 +71,35 @@ public sealed class RebuildableProjection
     /// </remarks>
     public static string ShadowProcessorId(string processorId, int rebuildVersion) =>
         $"{processorId}::rebuild::{rebuildVersion}";
+
+    /// <summary>
+    /// Returns true when <paramref name="processorId"/> was produced by
+    /// <see cref="ShadowProcessorId"/> — that is, it names a shadow rebuild loop rather than
+    /// a live processor.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The coordinator's sweep is the authoritative cleaner for shadow checkpoint rows: after
+    /// a version is discarded (by promotion or abort), <c>ClearAsync</c> calls
+    /// <see cref="ICheckpointStore.ResetAsync"/> on the shadow key so that no row survives
+    /// past its grace period.
+    /// </para>
+    /// <para>
+    /// This predicate is the second line of defence. A row left behind by a crash between the
+    /// flip and the sweep, by a host running an older version of Alberto that did not perform
+    /// the reset, or by a shadow loop on a different replica that had not yet noticed the abort
+    /// cannot brick the next startup because <see cref="OrphanCheckpointHostedService"/>
+    /// filters these ids out before comparing against declared processors.
+    /// </para>
+    /// <para>
+    /// Both halves exist because neither alone is sufficient on its own: the reset is
+    /// authoritative but can be skipped by a crash; the filter is always reachable but does
+    /// not reclaim the row, so a store that accumulates shadow rows indefinitely would grow
+    /// unbounded without the reset.
+    /// </para>
+    /// </remarks>
+    public static bool IsShadowProcessorId(string processorId) =>
+        processorId.Contains("::rebuild::", StringComparison.Ordinal);
 }
 
 /// <summary>
@@ -78,16 +107,27 @@ public sealed class RebuildableProjection
 /// in one host without the two runs sharing a position.
 /// </summary>
 internal sealed class ShadowProcessor(IEventProcessor inner, string processorId)
-    : IBatchableProcessor, IAsyncDisposable
+    : IBatchableProcessor, IProcessorLifecycle, IAsyncDisposable
 {
     public string ProcessorId { get; } = processorId;
 
-    public bool IsActive { get => inner.IsActive; set => inner.IsActive = value; }
+    public bool IsActive
+    {
+        get => inner.IsActive;
+        // Route the write through the inner processor's lifecycle interface so that nothing
+        // needs to hold a concrete type. A processor that does not implement IProcessorLifecycle
+        // simply cannot be deactivated from the outside — the set is silently ignored.
+        set { if (inner is IProcessorLifecycle lc) lc.IsActive = value; }
+    }
 
     /// <summary>
     /// Always true. A shadow loop is by definition catching up from behind, and processors use
     /// this to opt out of behaviour that only makes sense at the head of the log.
     /// </summary>
+    /// <remarks>
+    /// The setter is intentionally a no-op: a shadow processor's rebuild status is structural,
+    /// not a flag that can be cleared from outside.
+    /// </remarks>
     public bool IsRebuilding { get => true; set { } }
 
     public IReadOnlySet<string> HandledEventTypes => inner.HandledEventTypes;

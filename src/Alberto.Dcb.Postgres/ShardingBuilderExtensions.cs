@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Alberto.Dcb.Configuration;
 
 namespace Alberto.Dcb.Postgres;
@@ -22,6 +23,14 @@ public static class ShardingBuilderExtensions
     /// <para>
     /// Positions are per-database. Never compare a position from one shard with one from another.
     /// </para>
+    /// <para>
+    /// <strong>Experimental — diagnostic ALB9001.</strong> Tenant sharding ships as a preview
+    /// feature in v1. The API described here and in <see cref="PostgresShardBuilder"/> may change
+    /// in a minor release; the rest of Alberto will not. Calling this method opts the module into
+    /// the experimental surface. To suppress the compiler warning once for the whole project:
+    /// <c>&lt;NoWarn&gt;ALB9001&lt;/NoWarn&gt;</c>, or at the call site with
+    /// <c>#pragma warning disable ALB9001</c>.
+    /// </para>
     /// </remarks>
     /// <example>
     /// <code>
@@ -34,6 +43,7 @@ public static class ShardingBuilderExtensions
     ///         .WithDefaultShard("db1"))));
     /// </code>
     /// </example>
+    [Experimental("ALB9001")]
     public static TenancyBuilder AcrossPostgresDatabases(
         this TenancyBuilder tenancy,
         Action<PostgresShardBuilder> configure)

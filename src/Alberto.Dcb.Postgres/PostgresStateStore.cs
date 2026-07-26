@@ -51,7 +51,7 @@ public sealed class PostgresStateStore<TState>(
     private readonly Func<int> _rebuildVersion = rebuildVersion ?? ProjectionVersions.NeverRebuilt;
 
     /// <inheritdoc/>
-    public async Task<Dictionary<string, TState>> LoadManyAsync(
+    public async Task<IReadOnlyDictionary<string, TState>> LoadManyAsync(
         IEnumerable<string> documentIds,
         CancellationToken ct = default)
     {

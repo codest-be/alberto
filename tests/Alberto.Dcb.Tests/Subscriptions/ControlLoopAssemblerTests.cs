@@ -103,7 +103,7 @@ public sealed class ControlLoopAssemblerTests
         var checkpoints = new InMemoryCheckpointStore();
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
 
-        var execOptions = new ProcessorExecutionOptions(ProcessorBatchingMode.Disabled);
+        var execOptions = new ProcessorExecutionOptions { BatchingMode = ProcessorBatchingMode.Disabled };
 
         var liveLoop = liveAssembler.Create(
             liveProcessor, head, backend, checkpoints,
@@ -188,7 +188,7 @@ public sealed class ControlLoopAssemblerTests
         var loop = assembler.Create(processor, head, backend, checkpoints,
             pollingInterval: TimeSpan.FromMilliseconds(10),
             batchSize: 100, moduleKey: "test",
-            executionOptions: new ProcessorExecutionOptions(ProcessorBatchingMode.IfSupported));
+            executionOptions: new ProcessorExecutionOptions { BatchingMode = ProcessorBatchingMode.IfSupported });
 
         await backend.AppendAsync([new EventToPersist
         {
@@ -246,7 +246,7 @@ public sealed class ControlLoopAssemblerTests
             processor, head, backend, checkpoints,
             pollingInterval: TimeSpan.FromMilliseconds(10),
             batchSize: 100, moduleKey: "test",
-            executionOptions: new ProcessorExecutionOptions(ProcessorBatchingMode.Disabled));
+            executionOptions: new ProcessorExecutionOptions { BatchingMode = ProcessorBatchingMode.Disabled });
 
         await backend.AppendAsync([new EventToPersist
         {

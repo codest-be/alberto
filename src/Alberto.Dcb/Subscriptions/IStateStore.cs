@@ -13,7 +13,7 @@ public interface IStateStore<TState>
     /// <param name="documentIds">The document IDs to load.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>Dictionary of document ID to state for found documents.</returns>
-    Task<Dictionary<string, TState>> LoadManyAsync(
+    Task<IReadOnlyDictionary<string, TState>> LoadManyAsync(
         IEnumerable<string> documentIds,
         CancellationToken ct = default);
 
