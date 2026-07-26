@@ -1,4 +1,4 @@
--- Alberto DCB Event Store - Migration 018 (Multi-Tenant)
+-- Alberto DCB Event Store - Migration 020 (Multi-Tenant)
 -- alberto:no-transaction
 --
 -- Index the rows the stable-head query can actually match.

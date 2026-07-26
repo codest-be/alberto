@@ -1,7 +1,7 @@
--- Alberto DCB Event Store - Migration 017 (Single-Tenant)
+-- Alberto DCB Event Store - Migration 019 (Single-Tenant)
 -- Validate the CHECK constraints that migrations 013-015 added NOT VALID.
 --
--- See multi-tenant 017_ValidateDeferredCheckConstraints.sql for full rationale.
+-- See multi-tenant 019_ValidateDeferredCheckConstraints.sql for full rationale.
 -- The constrained tables are identical in both variants (none of them carry a tenant
 -- column), so this script is identical to its multi-tenant counterpart.
 

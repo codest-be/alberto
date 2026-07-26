@@ -83,8 +83,13 @@ With tenancy on:
   request-scoped context — where a tenant *is* set — throws `InvalidOperationException` rather than
   quietly returning everyone's events. This guard exists because it is the exact shape of a
   real leak.
-- **Checkpoints and projections are per tenant.** Each tenant's projections advance independently;
-  one tenant's poison event does not stall another's read models.
+- **Projection state is per tenant; progress is not.** Each tenant's documents are keyed by tenant
+  and read back under it, but a processor keeps a single checkpoint —
+  `alberto_processor_checkpoints` is keyed by `processor_id` alone. One tenant's poison event
+  therefore does stall the others' read models on that processor, because there is one position
+  for all of them. Progress splits per tenant only under
+  [tenant sharding](architecture/tenant-sharding.md), where each shard is its own database with
+  its own checkpoint table.
 
 ## Tenant leases
 

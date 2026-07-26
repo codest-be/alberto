@@ -240,14 +240,12 @@ public static class PostgresMigrator
         return remainder.Count(c => c == '.') == 1;
     }
 
-    /// <param name="scriptFilter">
-    /// Which scripts this engine may run. Defaults to every script in the tenancy's folder, which
-    /// is what inspection wants; <see cref="Migrate"/> narrows it to one transaction run.
-    /// </param>
-    /// <param name="runsOutsideTransaction">
-    /// Whether this engine's scripts run without a transaction block. Only ever true for a run
-    /// that <see cref="PartitionIntoTransactionRuns"/> found to declare it.
-    /// </param>
+    /// <summary>
+    /// Builds the engine that runs — or, for inspection, merely lists — migration scripts.
+    /// <paramref name="scriptFilter"/> defaults to every script in the tenancy's folder, which is
+    /// what inspection wants; <see cref="Migrate"/> narrows it to a single transaction run and
+    /// sets <paramref name="runsOutsideTransaction"/> from what that run declared.
+    /// </summary>
     private static UpgradeEngine BuildUpgradeEngine(
         string connectionString,
         string? schema,

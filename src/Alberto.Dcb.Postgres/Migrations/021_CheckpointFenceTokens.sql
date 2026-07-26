@@ -1,4 +1,4 @@
--- Alberto DCB Event Store - Migration 019 (Multi-Tenant)
+-- Alberto DCB Event Store - Migration 021 (Multi-Tenant)
 --
 -- Make the fenced checkpoint write atomic, and fence it on lease generation rather than on
 -- replica identity.

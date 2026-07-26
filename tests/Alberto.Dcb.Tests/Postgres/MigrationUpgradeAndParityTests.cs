@@ -711,7 +711,7 @@ public sealed class MigrationUpgradeAndParityTests
 
         await using var reader = await cmd.ExecuteReaderAsync();
         (await reader.ReadAsync()).Should().BeTrue(
-            because: "migration 018 must create ix_alberto_events_inflight so that " +
+            because: "migration 020 must create ix_alberto_events_inflight so that " +
                      "GetStableHeadAsync does not fall back to a sequential scan of alberto_events");
 
         var definition = reader.GetString(0);

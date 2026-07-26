@@ -1,7 +1,7 @@
--- Alberto DCB Event Store - Migration 019 (Single-Tenant)
+-- Alberto DCB Event Store - Migration 021 (Single-Tenant)
 --
 -- Make the fenced checkpoint write atomic, and fence it on lease generation rather than on
--- replica identity. See multi-tenant 019_CheckpointFenceTokens.sql for the full rationale.
+-- replica identity. See multi-tenant 021_CheckpointFenceTokens.sql for the full rationale.
 --
 -- The single-tenant set already creates alberto_processor_leases, so this variant only adds the
 -- generation and rewrites the function. There is no tenant-lease variant here: the two lease

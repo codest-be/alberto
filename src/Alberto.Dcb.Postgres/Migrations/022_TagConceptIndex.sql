@@ -1,4 +1,4 @@
--- Alberto DCB Event Store - Migration 020 (Multi-Tenant)
+-- Alberto DCB Event Store - Migration 022 (Multi-Tenant)
 -- alberto:no-transaction
 --
 -- Index tags by their concept, so a wildcard tag boundary can be resolved by lookup instead
@@ -30,7 +30,7 @@
 -- concept boundary, which is all Alberto produces -- TagPattern.ConceptPrefix is always
 -- concept || ':', and concepts and ids are restricted to [A-Za-z0-9_-] and so contain no ':'.
 -- Calling these functions directly with a partial prefix ('ord') used to match 'order:1' and
--- will not after migration 021.
+-- will not after migration 023.
 --
 -- CONCURRENTLY, and therefore outside a transaction: a plain CREATE INDEX holds a lock that
 -- blocks inserts for its duration, which on this table is the append path itself.
@@ -40,4 +40,4 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_alberto_event_tag_positions_concept
     (tenant_id, (left(tag::TEXT, position(':' IN tag::TEXT))), global_position);
 
 COMMENT ON INDEX $schema_prefix$ix_alberto_event_tag_positions_concept IS
-    'Resolves wildcard tag boundaries (concept:*) by concept lookup. See migration 020.';
+    'Resolves wildcard tag boundaries (concept:*) by concept lookup. See migration 022.';

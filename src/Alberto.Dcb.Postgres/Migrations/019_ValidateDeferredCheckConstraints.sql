@@ -1,4 +1,4 @@
--- Alberto DCB Event Store - Migration 017 (Multi-Tenant)
+-- Alberto DCB Event Store - Migration 019 (Multi-Tenant)
 -- Validate the CHECK constraints that migrations 013-015 added NOT VALID.
 --
 -- Those three scripts add their constraints without verifying the rows that already

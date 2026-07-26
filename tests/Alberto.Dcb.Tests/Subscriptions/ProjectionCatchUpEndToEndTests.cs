@@ -43,7 +43,9 @@ public sealed class ProjectionCatchUpEndToEndTests
         var services = new ServiceCollection();
         services.AddAlberto(ModuleKey, builder => builder
             .WithInMemory()
-            .AddProjection(Declaration, _ => () => occupancy)
+            // No tenancy declared, so every event arrives with a null tenant and one store serves
+            // the lot — the wait is about the loop's progress, not about which store it wrote to.
+            .AddProjection(Declaration, _ => _ => occupancy)
             .WithControlLoop(o => o with { PollingInterval = TimeSpan.FromMilliseconds(20) }));
 
         await using var provider = services.BuildServiceProvider();

@@ -115,7 +115,7 @@ public sealed class PostgresCheckpointStore : IFencedCheckpointStore, ICheckpoin
 
         // Tenant leases carry no generation — a replica holds one per tenant and none of them
         // names an owner of this processor — so that variant keeps the four-argument signature
-        // and the token is not sent. See migration 019.
+        // and the token is not sent. See migration 021.
         cmd.CommandText = useProcessorLeaseFencing
             ? $"SELECT {_schema.Function("alberto_save_checkpoint_if_processor_lease_held")}" +
               "(@processorId, @consumerId, @replicaId, @position, @fenceToken)"

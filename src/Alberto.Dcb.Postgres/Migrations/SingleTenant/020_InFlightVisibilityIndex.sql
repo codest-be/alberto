@@ -1,9 +1,9 @@
--- Alberto DCB Event Store - Migration 018 (Single-Tenant)
+-- Alberto DCB Event Store - Migration 020 (Single-Tenant)
 -- alberto:no-transaction
 --
 -- Index the rows the stable-head query can actually match.
 --
--- See multi-tenant 018_InFlightVisibilityIndex.sql for full rationale.  The stable-head
+-- See multi-tenant 020_InFlightVisibilityIndex.sql for full rationale.  The stable-head
 -- query is the same in both variants -- it reads global_position and pg_xact_id and nothing
 -- else -- so the index is identical.
 
