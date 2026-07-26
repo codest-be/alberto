@@ -103,8 +103,15 @@ jobs:
           git diff --staged --quiet || git commit -m "chore(benchmarks): nightly result [skip ci]"
           git push
 
+      # The compare step fails on a regression (exit 1) and on its own errors (exit 2).
+      # Both must fail the job, but saying "regression" for a crashed tool sends whoever
+      # reads this at 2am hunting a slowdown that never happened.
       - name: Fail if a regression was detected
         if: steps.compare.outcome == 'failure'
         run: |
-          echo "Benchmark regression detected. See the job summary." >&2
+          if [ -f delta.md ]; then
+            echo "Benchmark regression detected. See the job summary." >&2
+          else
+            echo "The comparison tool failed. See the 'Compare against baseline' step log." >&2
+          fi
           exit 1
