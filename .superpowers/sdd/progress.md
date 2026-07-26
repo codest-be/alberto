@@ -78,6 +78,8 @@ owner's decision** — it should almost certainly be abandoned, but that is not 
 - SP2 Task 4: complete (commits cb9d19e + fix 256faf4, re-review Approved — remaining wall-clock waits documented or removed; `PollSignalingOutboxStore` replaces the OutboxRelay sleep with a structural sync point). **SP2 is feature-complete: full suite 1087 passed / 0 failed / 14 skipped.**
 - SP2 Task 2 fix: re-review Approved — `PollSignalingDeadLetterStore.WhenPolled` gives a structural (not timing) synchronization point; `Assert.Empty` intact
 
+- SP1a Task 5: complete (commits d2022b0..021daa1, spec ✅ / quality Approved). `AlbertoTestHarness` boots a Generic Host, appends, and waits for control-loop quiescence. Two implementer deviations judged sound by the reviewer: quiescence reads `IOptionsMonitor<AlbertoModuleDefinition>` (declared processors) instead of `ICheckpointInventory` (which is vacuously empty before the first checkpoint), and `TestEvents` drops `JsonSerializerDefaults.Web` because camelCase does not round-trip through `ParseEvent<T>`. Stalled-path test verified non-vacuous. Suite 1101 passed / 0 failed / 14 skipped.
+
 ## Minor findings carried to the final review
 
 - SP2 Task 1 — `CachingCheckpointStoreTests.cs:148` `WaitForInnerAsync` is called with `cache`, not `inner`, in the resync test; the name misleads. Rename to something like `WaitForValueAsync`.
@@ -92,6 +94,9 @@ owner's decision** — it should almost certainly be abandoned, but that is not 
 - SP2 Task 4 — `ProjectionCatchUpTests.cs` sleep comment explains what the sleep guards but not why no structural sync point is possible; `GrowingHeadBackend` already tracks `HeadReads` via `Interlocked`, so a TCS firing at the first read would remove the sleep.
 - SP2 Task 4 — `ControlLoopAssemblerTests.cs:135,204` and `AppendPrefixBoundaryTests.cs:235` are inline polling loops left uncommented; classed as SP1b scope.
 - SP2 Task 3 — the new test builds `FailedAt: DateTimeOffset.UtcNow` (real wall clock) for a field it does not assert; `time.GetUtcNow()` would be cleaner.
+
+- SP1a Task 5 — reviewer flagged `public string ModuleKey` as extra API surface beyond the brief (YAGNI on a shipped package). **The premise is wrong**: the brief specifies `public string ModuleKey => _moduleKey;` verbatim at line 156. Plan-mandated, so no fix dispatched. The underlying concern — an unused public property is a permanent compatibility commitment — still stands for the final review to triage.
+- SP1a Task 5 — `AlbertoTestHarness.AppendAsync`'s `tenantId` flows into `TenantContext.SetTenant`, which rejects UUIDs and hyphenated ids; the XML docs do not say so. It also silently ignores a non-null `tenantId` when tenancy is not registered.
 
 ## Open fixes (dispatched or pending)
 
