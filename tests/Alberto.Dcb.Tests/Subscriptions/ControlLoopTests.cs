@@ -646,6 +646,9 @@ public sealed class ControlLoopTests
                     if (current > maxConcurrent) maxConcurrent = current;
                 }
 
+                // Wall-clock, deliberately: this delay simulates real processing work that holds
+                // the concurrency slot open. Replacing it with a fake-clock advance would not
+                // create genuine concurrent execution, defeating the maxConcurrent assertion.
                 await Task.Delay(50, ct);
                 lock (syncLock) { concurrentCount--; }
             },
@@ -677,6 +680,9 @@ public sealed class ControlLoopTests
                     if (concurrentCount > maxConcurrent) maxConcurrent = concurrentCount;
                 }
 
+                // Wall-clock, deliberately: this delay simulates real processing work that holds
+                // the concurrency slot open. Replacing it with a fake-clock advance would not
+                // create genuine sequential execution, defeating the maxConcurrent assertion.
                 await Task.Delay(10, ct);
                 lock (syncLock) { concurrentCount--; }
             },
@@ -787,6 +793,9 @@ public sealed class ControlLoopTests
                     concurrentCount++;
                     if (concurrentCount > maxConcurrent) maxConcurrent = concurrentCount;
                 }
+                // Wall-clock, deliberately: this delay simulates real processing work that holds
+                // the concurrency slot open. Replacing it with a fake-clock advance would not
+                // create genuine concurrent execution, defeating the maxConcurrent assertion.
                 await Task.Delay(50, ct);
                 lock (syncLock) { concurrentCount--; }
                 Interlocked.Increment(ref processedCount);

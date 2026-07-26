@@ -148,7 +148,11 @@ public class OutboxRelayTests
 
         // Start relay and let it run one cycle (entries < batch triggers delay then we cancel)
         var relayTask = relay.StartAsync(cts.Token);
-        await Task.Delay(50); // Give it time to process
+        // Wall-clock, deliberately: the relay performs real I/O against PostgreSQL and there
+        // is no synchronization point the test can await. A client-side TimeProvider cannot
+        // advance the database clock or drain the network. Advancing a fake clock here would
+        // read as determinism that is not there.
+        await Task.Delay(50);
         await cts.CancelAsync();
 
         try { await relayTask; } catch (OperationCanceledException) { }
