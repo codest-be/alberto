@@ -16,6 +16,7 @@
         <ProjectReference Include="../../src/Alberto.Dcb.Postgres.Messaging/Alberto.Dcb.Postgres.Messaging.csproj" />
         <ProjectReference Include="../../src/Alberto.Dcb.EntityFramework/Alberto.Dcb.EntityFramework.csproj" />
         <ProjectReference Include="../../src/Alberto.Dcb.Telemetry/Alberto.Dcb.Telemetry.csproj" />
+        <ProjectReference Include="../../src/Alberto.Dcb.Testing/Alberto.Dcb.Testing.csproj" />
         <!-- The operator CLI decides, from config alone, which databases a destructive command
              lands in. That decision is worth testing, so its assembly is referenced here. -->
         <ProjectReference Include="../../tools/Alberto.Cli/Alberto.Cli.csproj" />
