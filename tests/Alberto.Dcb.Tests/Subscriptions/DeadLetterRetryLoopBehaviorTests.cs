@@ -134,8 +134,8 @@ public sealed class DeadLetterRetryLoopBehaviorTests
         public Task<int> CountAsync(string processorId, CancellationToken ct = default)
             => _inner.CountAsync(processorId, ct);
 
-        public Task RemoveAsync(Guid id, CancellationToken ct = default)
-            => _inner.RemoveAsync(id, ct);
+        public Task<bool> CompleteRetryAsync(DeadLetterClaim claim, CancellationToken ct = default)
+            => _inner.CompleteRetryAsync(claim, ct);
 
         public Task ClearAsync(string processorId, CancellationToken ct = default)
             => _inner.ClearAsync(processorId, ct);
@@ -143,16 +143,16 @@ public sealed class DeadLetterRetryLoopBehaviorTests
         public Task MarkForRetryAsync(string processorId, CancellationToken ct = default)
             => _inner.MarkForRetryAsync(processorId, ct);
 
-        public Task<IReadOnlyList<DeadLetterEntry>> ClaimRetryRequestedAsync(
+        public Task<IReadOnlyList<DeadLetterClaim>> ClaimRetryRequestedAsync(
             string processorId, int batchSize, TimeSpan leaseDuration,
             string claimedBy, CancellationToken ct = default)
             => _inner.ClaimRetryRequestedAsync(processorId, batchSize, leaseDuration, claimedBy, ct);
 
-        public Task AbandonRetryAsync(Guid id, CancellationToken ct = default)
+        public Task<bool> AbandonRetryAsync(DeadLetterClaim claim, CancellationToken ct = default)
         {
-            AbandonedIds.Add(id);
+            AbandonedIds.Add(claim.Entry.Id);
             _abandonTcs.TrySetResult();
-            return _inner.AbandonRetryAsync(id, ct);
+            return _inner.AbandonRetryAsync(claim, ct);
         }
     }
 

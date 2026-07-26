@@ -56,20 +56,22 @@ public sealed class DeadLetterRetryLoopTests
 
         public Task<int> CountAsync(string processorId, CancellationToken ct = default) => Task.FromResult(0);
 
-        public Task RemoveAsync(Guid id, CancellationToken ct = default) => Task.CompletedTask;
+        public Task<bool> CompleteRetryAsync(DeadLetterClaim claim, CancellationToken ct = default) =>
+            Task.FromResult(true);
 
         public Task ClearAsync(string processorId, CancellationToken ct = default) => Task.CompletedTask;
 
         public Task MarkForRetryAsync(string processorId, CancellationToken ct = default) => Task.CompletedTask;
 
-        public Task<IReadOnlyList<DeadLetterEntry>> ClaimRetryRequestedAsync(
+        public Task<IReadOnlyList<DeadLetterClaim>> ClaimRetryRequestedAsync(
             string processorId,
             int batchSize,
             TimeSpan leaseDuration,
             string claimedBy,
             CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<DeadLetterEntry>>([]);
+            Task.FromResult<IReadOnlyList<DeadLetterClaim>>([]);
 
-        public Task AbandonRetryAsync(Guid id, CancellationToken ct = default) => Task.CompletedTask;
+        public Task<bool> AbandonRetryAsync(DeadLetterClaim claim, CancellationToken ct = default) =>
+            Task.FromResult(true);
     }
 }

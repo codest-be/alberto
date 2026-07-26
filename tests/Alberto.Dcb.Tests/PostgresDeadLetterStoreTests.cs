@@ -24,12 +24,12 @@ public sealed class PostgresDeadLetterStoreTests(SingleTenantPostgresFixture fix
             ct: TestContext.Current.CancellationToken);
 
         var retry = Assert.Single(retries);
-        Assert.Null(retry.TenantId);
-        Assert.Contains(tag.Value, retry.Tags ?? []);
-        Assert.NotNull(retry.CreatedAt);
-        Assert.NotNull(retry.ClaimedAt);
-        Assert.NotNull(retry.ClaimExpiresAt);
-        Assert.Equal("test-worker", retry.ClaimedBy);
+        Assert.Null(retry.Entry.TenantId);
+        Assert.Contains(tag.Value, retry.Entry.Tags ?? []);
+        Assert.NotNull(retry.Entry.CreatedAt);
+        Assert.NotNull(retry.Entry.ClaimedAt);
+        Assert.NotNull(retry.Entry.ClaimExpiresAt);
+        Assert.Equal("test-worker", retry.Entry.ClaimedBy);
     }
 
     [Fact]
@@ -79,7 +79,7 @@ public sealed class PostgresDeadLetterStoreTests(SingleTenantPostgresFixture fix
             claimedBy: "worker-2",
             ct: TestContext.Current.CancellationToken);
         var reclaimed = Assert.Single(second);
-        Assert.Equal("worker-2", reclaimed.ClaimedBy);
+        Assert.Equal("worker-2", reclaimed.Entry.ClaimedBy);
     }
 
     [Fact]
@@ -95,7 +95,7 @@ public sealed class PostgresDeadLetterStoreTests(SingleTenantPostgresFixture fix
             ct: TestContext.Current.CancellationToken);
         var claimed = Assert.Single(first);
 
-        await deadLetterStore.AbandonRetryAsync(claimed.Id, TestContext.Current.CancellationToken);
+        Assert.True(await deadLetterStore.AbandonRetryAsync(claimed, TestContext.Current.CancellationToken));
 
         // Abandoning clears retry_requested, so the row is no longer eligible.
         var second = await deadLetterStore.ClaimRetryRequestedAsync(
@@ -115,7 +115,38 @@ public sealed class PostgresDeadLetterStoreTests(SingleTenantPostgresFixture fix
             claimedBy: "worker-2",
             ct: TestContext.Current.CancellationToken);
         var reclaimed = Assert.Single(third);
-        Assert.Equal("worker-2", reclaimed.ClaimedBy);
+        Assert.Equal("worker-2", reclaimed.Entry.ClaimedBy);
+    }
+
+    [Fact]
+    public async Task StaleClaim_CannotCompleteOrAbandonANewerClaim()
+    {
+        var (deadLetterStore, entry, _) = await SeedRetryRequestedEntryAsync();
+        var ct = TestContext.Current.CancellationToken;
+
+        var first = Assert.Single(await deadLetterStore.ClaimRetryRequestedAsync(
+            entry.ProcessorId,
+            batchSize: 1,
+            leaseDuration: TimeSpan.FromMilliseconds(1),
+            claimedBy: "stale-worker",
+            ct: ct));
+
+        await Task.Delay(50, ct);
+
+        var current = Assert.Single(await deadLetterStore.ClaimRetryRequestedAsync(
+            entry.ProcessorId,
+            batchSize: 1,
+            leaseDuration: TimeSpan.FromMinutes(5),
+            claimedBy: "current-worker",
+            ct: ct));
+
+        Assert.NotEqual(first.Token, current.Token);
+        Assert.False(await deadLetterStore.CompleteRetryAsync(first, ct));
+        Assert.False(await deadLetterStore.AbandonRetryAsync(first, ct));
+        Assert.Equal(1, await deadLetterStore.CountAsync(entry.ProcessorId, ct));
+
+        Assert.True(await deadLetterStore.CompleteRetryAsync(current, ct));
+        Assert.Equal(0, await deadLetterStore.CountAsync(entry.ProcessorId, ct));
     }
 
     private async Task<(PostgresDeadLetterStore Store, DeadLetterEntry Entry, EventTag Tag)> SeedRetryRequestedEntryAsync()

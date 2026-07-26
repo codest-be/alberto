@@ -196,7 +196,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
                 if (events.Count < _batchSize)
                     await Task.Delay(_pollingInterval, ct);
             }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
+            catch (OperationCanceledException ex) when (IsShutdownCancellation(ex, ct)) { break; }
             catch (Exception ex)
             {
                 IsFaulted = true;
@@ -285,7 +285,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
                     await Task.Delay(_pollingInterval, pipelineToken);
             }
         }
-        catch (OperationCanceledException) when (pipelineToken.IsCancellationRequested)
+        catch (OperationCanceledException ex) when (IsShutdownCancellation(ex, pipelineToken))
         {
             // Host shutdown or a worker fault cancelled the complete pipeline.
         }
@@ -337,7 +337,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
                 {
                     await DispatchAsync(evt, ct);
                 }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                catch (OperationCanceledException ex) when (IsShutdownCancellation(ex, ct))
                 {
                     // Shutdown cancellation: leave this position in-flight so the
                     // watermark checkpoint does not advance past an unprocessed event.
@@ -361,8 +361,27 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
                 watermark.MarkCompleted(evt.GlobalPosition);
             }
         }
+        // Deliberately not IsShutdownCancellation: this arm only ever sees cancellation from
+        // ReadAllAsync, never processor code. Narrowing it would let an OCE escape into the
+        // Task.WhenAll(workers) inside RunPipelinedAsync's finally, throwing from the block
+        // that records the fault instead of being recorded by it.
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { /* shutting down */ }
     }
+
+    /// <summary>
+    /// Tells a genuine shutdown apart from an <see cref="OperationCanceledException"/> that
+    /// merely coincided with one.
+    /// </summary>
+    /// <remarks>
+    /// Cooperative cancellation always carries the token that caused it. An OCE that carries
+    /// no cancelled token — a processor throwing <c>new OperationCanceledException()</c>, a
+    /// <c>TaskCompletionSource</c> cancelled without a token — is an escaped failure, not a
+    /// clean stop. Testing only <c>ct.IsCancellationRequested</c> conflates the two, so any
+    /// handler that failed at the same moment the host shut down was reported as a graceful
+    /// stop and <see cref="IsFaulted"/> silently stayed <c>false</c>.
+    /// </remarks>
+    private static bool IsShutdownCancellation(OperationCanceledException exception, CancellationToken ct)
+        => ct.IsCancellationRequested && exception.CancellationToken.IsCancellationRequested;
 
     private async Task SaveWatermarkCheckpointAsync(PositionWatermark watermark, CancellationToken ct)
     {

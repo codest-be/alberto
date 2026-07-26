@@ -4,7 +4,7 @@ namespace Alberto.Dcb.Subscriptions;
 /// Internal processor that executes a <see cref="ProjectionDeclaration{TState}"/> asynchronously.
 /// No reflection — all dispatch is delegate-based.
 /// </summary>
-internal sealed class DeclaredAsyncProjection<TState> : IBatchableProcessor, IFlushable, IAsyncDisposable
+internal sealed class DeclaredAsyncProjection<TState> : IBatchableProcessor, IAsyncDisposable
     where TState : new()
 {
     private readonly ProjectionDeclaration<TState> _declaration;
@@ -175,9 +175,6 @@ internal sealed class DeclaredAsyncProjection<TState> : IBatchableProcessor, IFl
                 await _afterCommit(relevant, ct);
         }
     }
-
-    /// <inheritdoc/>
-    public Task FlushAsync(CancellationToken ct = default) => Task.CompletedTask;
 
     /// <inheritdoc/>
     public async ValueTask DisposeAsync()

@@ -379,7 +379,23 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
 
             try
             {
-                return (started, await RebuildStore.AbortAsync(ProcessorId, ct));
+                await RebuildStore.RequestAbortAsync(ProcessorId, ct);
+                await WaitUntilAsync(
+                    async () => !(await StateAsync(ct)).IsRebuildInFlight,
+                    "the coordinator to complete the requested abort",
+                    ct);
+
+                var settled = await StateAsync(ct);
+                if (settled.Status is RebuildStatus.Aborted)
+                {
+                    return (
+                        started,
+                        new RebuildOutcome(settled, started.RebuildingVersion!.Value));
+                }
+
+                if (attempt >= 10)
+                    throw new RebuildStateException(
+                        "The coordinator promoted ten rebuilds before their abort requests completed.");
             }
             catch (RebuildStateException) when (attempt < 10)
             {

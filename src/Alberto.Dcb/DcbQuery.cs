@@ -135,6 +135,14 @@ public sealed class DcbQuery
     /// <summary>
     /// Returns true if this query filters by both types and tags.
     /// </summary>
+    /// <remarks>
+    /// Completes the shape partition with <see cref="HasTypesOnly"/> and <see cref="HasTagsOnly"/>.
+    /// Backends do not route on this predicate directly — once both axes are present the routing
+    /// decision depends on <see cref="CompositionMode"/>, so they branch on
+    /// <see cref="IntersectsTypesAndTags"/> or <see cref="UnionsTypesAndTags"/> instead. This is
+    /// the shared precondition those two are built from, and it is public so consumers can ask
+    /// the shape question on its own.
+    /// </remarks>
     public bool HasTypesAndTags => Types.Count > 0 && TagPatterns.Count > 0;
 
     /// <summary>
@@ -147,6 +155,15 @@ public sealed class DcbQuery
     /// <summary>
     /// Returns true when both axes are present and are combined with OR semantics.
     /// </summary>
+    /// <remarks>
+    /// The complement of <see cref="IntersectsTypesAndTags"/>, provided for authors implementing
+    /// <see cref="IEventStoreBackend"/> against a store of their own. The in-tree Postgres and
+    /// in-memory backends branch only on the intersect side and let union fall through to their
+    /// default OR path, so this predicate has no call site in this repository — that is by
+    /// design, not an oversight. Deliberately kept so the pair is symmetric and a backend can
+    /// recognise <see cref="CompositionMode.Union"/> without reaching for
+    /// <see cref="CompositionMode"/> itself.
+    /// </remarks>
     public bool UnionsTypesAndTags =>
         HasTypesAndTags && CompositionMode == CompositionMode.Union;
 
