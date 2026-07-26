@@ -1,3 +1,4 @@
+using Alberto.Dcb.Configuration;
 using Alberto.Dcb.Subscriptions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -40,6 +41,14 @@ public static class MessagingBuilderExtensions
 
         var registry = new MessageMappingRegistry();
         configureMappings(registry);
+
+        builder.DeclareProcessor(new ProcessorDeclaration
+        {
+            ProcessorId = OutboxHandler.ProcessorIdValue,
+            Kind = ProcessorKind.Reactor,
+            Execution = ProcessorExecutionOptions.Default,
+            HandlerType = typeof(OutboxHandler),
+        });
 
         builder.Register(context =>
         {

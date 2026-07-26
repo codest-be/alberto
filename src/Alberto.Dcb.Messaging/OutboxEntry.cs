@@ -32,7 +32,8 @@ public record OutboxEntry(
     int RetryCount,
     string? LastError,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? DeliveredAt);
+    DateTimeOffset? DeliveredAt,
+    string? TenantId = null);
 
 /// <summary>
 /// A time-bounded, token-fenced claim on an outbox entry.

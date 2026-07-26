@@ -8,17 +8,19 @@ namespace Alberto.Dcb.Postgres;
 /// <c>alberto_projection_rebuild_meta</c>.
 /// </summary>
 /// <remarks>
-/// Every transition is a single statement guarded on the status it is leaving, so two
-/// operators racing on the same processor cannot both succeed — the loser matches no rows
-/// and gets a <see cref="RebuildStateException"/> rather than a corrupted state machine.
-/// Promotion additionally spans <c>alberto_projection_states</c>, so it runs in a
-/// transaction: readers move from a complete old version to a complete new one.
+/// Operator calls persist intent without performing completion work. Coordinator transitions
+/// lock the current row before changing versions. Promotion additionally spans
+/// <c>alberto_projection_states</c>, so it runs in a transaction: readers move from a complete
+/// old version to a complete new one.
 /// </remarks>
-public sealed class PostgresProjectionRebuildStore : IProjectionRebuildStore
+public sealed class PostgresProjectionRebuildStore :
+    IProjectionRebuildStore,
+    IProjectionRebuildCoordinatorStore
 {
     private const string Columns =
         "processor_id, projection_type, active_version, rebuilding_version, rebuild_status, " +
-        "rebuild_started_at, rebuild_target_position, rebuild_completed_at";
+        "rebuild_started_at, rebuild_target_position, rebuild_completed_at, " +
+        "last_allocated_version, requested_action";
 
     private readonly NpgsqlDataSource _dataSource;
     private readonly SchemaQualifier _schema;
@@ -99,11 +101,11 @@ public sealed class PostgresProjectionRebuildStore : IProjectionRebuildStore
             INSERT INTO {MetaTable} (
                 processor_id, projection_type, active_version, rebuilding_version,
                 last_allocated_version, rebuild_status, rebuild_started_at,
-                rebuild_target_position, rebuild_completed_at, updated_at)
+                rebuild_target_position, rebuild_completed_at, requested_action, updated_at)
             VALUES (
                 @processor_id, @projection_type, 1, 2,
                 2, 'rebuilding', now(),
-                @target_position, NULL, now())
+                @target_position, NULL, NULL, now())
             ON CONFLICT (processor_id) DO UPDATE SET
                 projection_type         = @projection_type,
                 rebuilding_version      = {MetaTable}.last_allocated_version + 1,
@@ -112,6 +114,7 @@ public sealed class PostgresProjectionRebuildStore : IProjectionRebuildStore
                 rebuild_started_at      = now(),
                 rebuild_target_position = @target_position,
                 rebuild_completed_at    = NULL,
+                requested_action        = NULL,
                 updated_at              = now()
             WHERE {MetaTable}.rebuild_status NOT IN ('rebuilding', 'ready')
             RETURNING {Columns}
@@ -131,8 +134,52 @@ public sealed class PostgresProjectionRebuildStore : IProjectionRebuildStore
     }
 
     /// <inheritdoc/>
-    public async Task<ProjectionRebuildState> MarkReadyAsync(
-        string processorId, CancellationToken ct = default)
+    public Task<ProjectionRebuildState> RequestPromotionAsync(
+        string processorId,
+        bool force = false,
+        CancellationToken ct = default) =>
+        RequestActionAsync(
+            processorId,
+            force ? RebuildOperatorAction.ForcePromote : RebuildOperatorAction.Promote,
+            ct);
+
+    /// <inheritdoc/>
+    public Task<ProjectionRebuildState> RequestAbortAsync(
+        string processorId,
+        CancellationToken ct = default) =>
+        RequestActionAsync(processorId, RebuildOperatorAction.Abort, ct);
+
+    private async Task<ProjectionRebuildState> RequestActionAsync(
+        string processorId,
+        RebuildOperatorAction action,
+        CancellationToken ct)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
+
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand(
+            $"""
+            UPDATE {MetaTable}
+            SET requested_action = @requested_action, updated_at = now()
+            WHERE processor_id = @processor_id
+              AND rebuild_status IN ('rebuilding', 'ready')
+            RETURNING {Columns}
+            """, conn);
+        cmd.Parameters.AddWithValue("processor_id", processorId);
+        cmd.Parameters.AddWithValue("requested_action", FormatAction(action));
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        if (await reader.ReadAsync(ct))
+            return Map(reader);
+
+        throw new RebuildStateException(
+            $"Cannot request {FormatAction(action)} for processor '{processorId}': " +
+            "no rebuild is in flight.");
+    }
+
+    /// <inheritdoc/>
+    async Task<ProjectionRebuildState> IProjectionRebuildCoordinatorStore.MarkReadyAsync(
+        string processorId, CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
 
@@ -155,8 +202,8 @@ public sealed class PostgresProjectionRebuildStore : IProjectionRebuildStore
     }
 
     /// <inheritdoc/>
-    public async Task<RebuildOutcome> PromoteAsync(
-        string processorId, bool force = false, CancellationToken ct = default)
+    async Task<RebuildOutcome> IProjectionRebuildCoordinatorStore.CompletePromotionAsync(
+        string processorId, bool force, CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
 
@@ -180,7 +227,7 @@ public sealed class PostgresProjectionRebuildStore : IProjectionRebuildStore
             throw new RebuildStateException(
                 $"Cannot promote processor '{processorId}': the rebuild has not finished " +
                 $"replaying (target position {current.TargetPosition}). Wait for it to reach " +
-                $"Ready, or pass force to publish an incomplete projection.");
+                $"Ready, or use an early-promotion request.");
 
         await using (var flipCmd = new NpgsqlCommand(
             $"""
@@ -189,6 +236,7 @@ public sealed class PostgresProjectionRebuildStore : IProjectionRebuildStore
                 rebuilding_version   = NULL,
                 rebuild_status       = 'completed',
                 rebuild_completed_at = now(),
+                requested_action     = NULL,
                 updated_at           = now()
             WHERE processor_id = @processor_id
             """, conn, tx))
@@ -208,8 +256,8 @@ public sealed class PostgresProjectionRebuildStore : IProjectionRebuildStore
     }
 
     /// <inheritdoc/>
-    public async Task<RebuildOutcome> AbortAsync(
-        string processorId, CancellationToken ct = default)
+    async Task<RebuildOutcome> IProjectionRebuildCoordinatorStore.CompleteAbortAsync(
+        string processorId, CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
 
@@ -233,6 +281,7 @@ public sealed class PostgresProjectionRebuildStore : IProjectionRebuildStore
             SET rebuilding_version   = NULL,
                 rebuild_status       = 'aborted',
                 rebuild_completed_at = now(),
+                requested_action     = NULL,
                 updated_at           = now()
             WHERE processor_id = @processor_id
             """, conn, tx))
@@ -295,7 +344,9 @@ public sealed class PostgresProjectionRebuildStore : IProjectionRebuildStore
         Status: ParseStatus(reader.GetString(reader.GetOrdinal("rebuild_status"))),
         StartedAt: GetNullableTimestamp(reader, "rebuild_started_at"),
         TargetPosition: GetNullableLong(reader, "rebuild_target_position"),
-        CompletedAt: GetNullableTimestamp(reader, "rebuild_completed_at"));
+        CompletedAt: GetNullableTimestamp(reader, "rebuild_completed_at"),
+        LastAllocatedVersion: reader.GetInt32(reader.GetOrdinal("last_allocated_version")),
+        RequestedAction: GetNullableAction(reader, "requested_action"));
 
     private static int? GetNullableInt(NpgsqlDataReader reader, string column)
     {
@@ -315,6 +366,12 @@ public sealed class PostgresProjectionRebuildStore : IProjectionRebuildStore
         return reader.IsDBNull(ordinal) ? null : reader.GetFieldValue<DateTimeOffset>(ordinal);
     }
 
+    private static RebuildOperatorAction? GetNullableAction(NpgsqlDataReader reader, string column)
+    {
+        var ordinal = reader.GetOrdinal(column);
+        return reader.IsDBNull(ordinal) ? null : ParseAction(reader.GetString(ordinal));
+    }
+
     private static RebuildStatus ParseStatus(string status) => status switch
     {
         "idle" => RebuildStatus.Idle,
@@ -326,5 +383,22 @@ public sealed class PostgresProjectionRebuildStore : IProjectionRebuildStore
         // built by the shipped migrations.
         _ => throw new InvalidOperationException(
             $"Unrecognised rebuild status '{status}' in alberto_projection_rebuild_meta."),
+    };
+
+    private static string FormatAction(RebuildOperatorAction action) => action switch
+    {
+        RebuildOperatorAction.Promote => "promote",
+        RebuildOperatorAction.ForcePromote => "force-promote",
+        RebuildOperatorAction.Abort => "abort",
+        _ => throw new ArgumentOutOfRangeException(nameof(action), action, null),
+    };
+
+    private static RebuildOperatorAction ParseAction(string action) => action switch
+    {
+        "promote" => RebuildOperatorAction.Promote,
+        "force-promote" => RebuildOperatorAction.ForcePromote,
+        "abort" => RebuildOperatorAction.Abort,
+        _ => throw new InvalidOperationException(
+            $"Unrecognised requested action '{action}' in alberto_projection_rebuild_meta."),
     };
 }

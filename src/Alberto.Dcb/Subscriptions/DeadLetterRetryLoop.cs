@@ -109,8 +109,9 @@ public sealed class DeadLetterRetryLoop(
                     _claimedBy,
                     ct);
 
-                foreach (var entry in retries)
+                foreach (var claim in retries)
                 {
+                    var entry = claim.Entry;
                     var dispatchSucceeded = false;
                     try
                     {
@@ -150,7 +151,14 @@ public sealed class DeadLetterRetryLoop(
                             _processor.ProcessorId);
                         try
                         {
-                            await _deadLetterStore.AbandonRetryAsync(entry.Id, ct);
+                            if (!await _deadLetterStore.AbandonRetryAsync(claim, ct))
+                            {
+                                _logger?.LogWarning(
+                                    "DeadLetterRetryLoop no longer owns claim {ClaimId} for entry {EntryId}; " +
+                                    "a newer worker has reclaimed it.",
+                                    claim.Token,
+                                    entry.Id);
+                            }
                         }
                         catch (Exception abandonEx)
                         {
@@ -165,7 +173,14 @@ public sealed class DeadLetterRetryLoop(
                     {
                         try
                         {
-                            await _deadLetterStore.RemoveAsync(entry.Id, ct);
+                            if (!await _deadLetterStore.CompleteRetryAsync(claim, ct))
+                            {
+                                _logger?.LogWarning(
+                                    "DeadLetterRetryLoop no longer owns claim {ClaimId} for completed entry " +
+                                    "{EntryId}; the current owner was left unchanged.",
+                                    claim.Token,
+                                    entry.Id);
+                            }
                         }
                         catch (Exception removeEx) when (!ct.IsCancellationRequested)
                         {
@@ -211,9 +226,7 @@ public sealed class DeadLetterRetryLoop(
     {
         if (scopeFactory is not null && !string.IsNullOrEmpty(entry.TenantId))
         {
-            await using var scope = scopeFactory.CreateAsyncScope();
-            var tenantCtx = scope.ServiceProvider.GetService<TenantContext>();
-            tenantCtx?.SetTenant(entry.TenantId);
+            await using var scope = EventProcessingScope.Create(scopeFactory, entry.TenantId);
             await DispatchAsync(envelope, ct);
         }
         else

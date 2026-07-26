@@ -1,4 +1,5 @@
 using Alberto.Dcb.Subscriptions;
+using Alberto.Dcb.Tenancy;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Alberto.Dcb.Messaging;
@@ -31,7 +32,7 @@ internal sealed class OutboxHandler(
     {
         var message = await MapAsync(envelope, ct);
         if (message is null) return;
-        await store.InsertAsync(BuildEntry(message, envelope.Id), ct);
+        await store.InsertAsync(BuildEntry(message, envelope.Id, envelope.TenantId), ct);
     }
 
     /// <inheritdoc/>
@@ -48,18 +49,26 @@ internal sealed class OutboxHandler(
 
         await Task.WhenAll(
             messages
-                .Select((m, i) => (Message: m, EventId: events[i].Id))
+                .Select((m, i) => (
+                    Message: m,
+                    EventId: events[i].Id,
+                    TenantId: events[i].TenantId))
                 .Where(x => x.Message is not null)
-                .Select(x => store.InsertAsync(BuildEntry(x.Message!, x.EventId), ct)));
+                .Select(x => store.InsertAsync(
+                    BuildEntry(x.Message!, x.EventId, x.TenantId),
+                    ct)));
     }
 
     private async Task<ExternalMessage?> MapAsync(IEventEnvelope envelope, CancellationToken ct)
     {
-        await using var scope = scopeFactory.CreateAsyncScope();
+        await using var scope = EventProcessingScope.Create(scopeFactory, envelope.TenantId);
         return await registry.TryMapAsync(envelope, scope.ServiceProvider, ct);
     }
 
-    private static OutboxEntry BuildEntry(ExternalMessage message, Guid sourceEventId) =>
+    private static OutboxEntry BuildEntry(
+        ExternalMessage message,
+        Guid sourceEventId,
+        string? tenantId) =>
         new(
             Id: Guid.NewGuid(),
             SourceEventId: sourceEventId,
@@ -71,5 +80,6 @@ internal sealed class OutboxHandler(
             RetryCount: 0,
             LastError: null,
             CreatedAt: DateTimeOffset.UtcNow,
-            DeliveredAt: null);
+            DeliveredAt: null,
+            TenantId: tenantId);
 }

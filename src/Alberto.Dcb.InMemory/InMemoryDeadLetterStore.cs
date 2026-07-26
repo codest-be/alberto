@@ -41,10 +41,20 @@ public sealed class InMemoryDeadLetterStore : IDeadLetterStore
     }
 
     /// <inheritdoc />
-    public Task RemoveAsync(Guid id, CancellationToken ct = default)
+    public Task<bool> CompleteRetryAsync(DeadLetterClaim claim, CancellationToken ct = default)
     {
-        _entries.TryRemove(id, out _);
-        return Task.CompletedTask;
+        ArgumentNullException.ThrowIfNull(claim);
+
+        while (_entries.TryGetValue(claim.Entry.Id, out var existing))
+        {
+            if (!OwnsClaim(existing, claim))
+                return Task.FromResult(false);
+
+            if (_entries.TryRemove(new KeyValuePair<Guid, DeadLetterEntry>(existing.Id, existing)))
+                return Task.FromResult(true);
+        }
+
+        return Task.FromResult(false);
     }
 
     /// <inheritdoc />
@@ -68,7 +78,7 @@ public sealed class InMemoryDeadLetterStore : IDeadLetterStore
     }
 
     /// <inheritdoc />
-    public Task<IReadOnlyList<DeadLetterEntry>> ClaimRetryRequestedAsync(
+    public Task<IReadOnlyList<DeadLetterClaim>> ClaimRetryRequestedAsync(
         string processorId,
         int batchSize,
         TimeSpan leaseDuration,
@@ -93,36 +103,50 @@ public sealed class InMemoryDeadLetterStore : IDeadLetterStore
             .Take(batchSize)
             .ToList();
 
-        var claimed = new List<DeadLetterEntry>();
+        var claimed = new List<DeadLetterClaim>();
         foreach (var original in candidates)
         {
+            var claimId = Guid.NewGuid();
             var updated = original with
             {
                 ClaimedAt = now,
                 ClaimExpiresAt = lease,
                 ClaimedBy = claimedBy,
+                ClaimId = claimId,
             };
             if (_entries.TryUpdate(original.Id, updated, original))
-                claimed.Add(updated);
+                claimed.Add(new DeadLetterClaim(updated, claimId, lease));
         }
 
-        return Task.FromResult<IReadOnlyList<DeadLetterEntry>>(claimed);
+        return Task.FromResult<IReadOnlyList<DeadLetterClaim>>(claimed);
     }
 
     /// <inheritdoc />
-    public Task AbandonRetryAsync(Guid id, CancellationToken ct = default)
+    public Task<bool> AbandonRetryAsync(DeadLetterClaim claim, CancellationToken ct = default)
     {
-        if (_entries.TryGetValue(id, out var existing))
+        ArgumentNullException.ThrowIfNull(claim);
+
+        while (_entries.TryGetValue(claim.Entry.Id, out var existing))
         {
+            if (!OwnsClaim(existing, claim))
+                return Task.FromResult(false);
+
             var abandoned = existing with
             {
                 RetryRequested = false,
                 ClaimedAt = null,
                 ClaimExpiresAt = null,
                 ClaimedBy = null,
+                ClaimId = null,
             };
-            _entries.TryUpdate(id, abandoned, existing);
+
+            if (_entries.TryUpdate(existing.Id, abandoned, existing))
+                return Task.FromResult(true);
         }
-        return Task.CompletedTask;
+
+        return Task.FromResult(false);
     }
+
+    private static bool OwnsClaim(DeadLetterEntry existing, DeadLetterClaim claim) =>
+        existing.ClaimId == claim.Token;
 }

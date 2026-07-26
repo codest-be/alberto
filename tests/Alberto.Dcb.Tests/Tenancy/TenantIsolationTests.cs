@@ -1,5 +1,7 @@
 using System.Text.Json;
+using Alberto.Dcb.Messaging;
 using Alberto.Dcb.Postgres;
+using Alberto.Dcb.Postgres.Messaging;
 using Alberto.Dcb.Subscriptions;
 using Alberto.Dcb.Tenancy;
 using Alberto.Dcb.Tests.Infrastructure;
@@ -367,7 +369,8 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
             persisted = appended.Single();
         }
 
-        var deadLetterStore = new PostgresDeadLetterStore(fixture.DataSource, multiTenant: true);
+        // Resolve the registered adapter: this guards the composition seam as well as the SQL.
+        var deadLetterStore = fixture.Services.GetRequiredKeyedService<IDeadLetterStore>(ModuleKey);
         var entry = new DeadLetterEntry(
             Id: Guid.NewGuid(),
             ProcessorId: $"ti-proc-{Guid.NewGuid():N}",
@@ -443,8 +446,38 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
             ct: ct);
 
         var retry = Assert.Single(retries);
-        Assert.Equal(TenantA, retry.TenantId);
-        Assert.Contains(tag.Value, retry.Tags ?? []);
+        Assert.Equal(TenantA, retry.Entry.TenantId);
+        Assert.Contains(tag.Value, retry.Entry.Tags ?? []);
+    }
+
+    [Fact]
+    public async Task OutboxStore_CarriesTenantIdentityThroughPersistenceAndClaim()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var store = new PostgresOutboxStore(fixture.DataSource);
+        var entry = new OutboxEntry(
+            Id: Guid.NewGuid(),
+            SourceEventId: Guid.NewGuid(),
+            MessageType: "tenant-message",
+            Version: "1",
+            Payload: "{}",
+            Metadata: [],
+            Status: OutboxEntryStatus.Pending,
+            RetryCount: 0,
+            LastError: null,
+            CreatedAt: DateTimeOffset.UtcNow,
+            DeliveredAt: null,
+            TenantId: TenantA);
+
+        await store.InsertAsync(entry, ct);
+        var claim = (await store.ClaimPendingAsync(
+                100,
+                TimeSpan.FromMinutes(5),
+                "tenant-test",
+                ct))
+            .Single(c => c.Entry.Id == entry.Id);
+
+        Assert.Equal(TenantA, claim.Entry.TenantId);
     }
 
     [Fact]

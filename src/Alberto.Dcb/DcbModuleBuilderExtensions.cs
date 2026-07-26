@@ -1,5 +1,6 @@
 using Alberto.Dcb.Configuration;
 using Alberto.Dcb.Subscriptions;
+using Alberto.Dcb.Tenancy;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -252,9 +253,11 @@ public static class DcbModuleBuilderExtensions
             builder.Register(context => context.Services.AddKeyedSingleton<IPostAppendHandler>(context.ModuleKey, (sp, _) =>
             {
                 var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
-                return new SyncReactor<TEvent>(async (e, _, ct) =>
+                return new SyncReactor<TEvent>(async (e, reactorContext, ct) =>
                 {
-                    await using var scope = scopeFactory.CreateAsyncScope();
+                    await using var scope = EventProcessingScope.Create(
+                        scopeFactory,
+                        reactorContext.TenantId);
                     var handler = scope.ServiceProvider.GetRequiredService<THandler>();
                     await methodSelector(handler)(e, ct);
                 });
@@ -265,9 +268,11 @@ public static class DcbModuleBuilderExtensions
             RegisterAsyncProcessor(builder, resolvedProcessorId, executionOptions, sp =>
             {
                 var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
-                return new FunctionalReactor<TEvent>(resolvedProcessorId, async (e, _, ct) =>
+                return new FunctionalReactor<TEvent>(resolvedProcessorId, async (e, reactorContext, ct) =>
                 {
-                    await using var scope = scopeFactory.CreateAsyncScope();
+                    await using var scope = EventProcessingScope.Create(
+                        scopeFactory,
+                        reactorContext.TenantId);
                     var handler = scope.ServiceProvider.GetRequiredService<THandler>();
                     await methodSelector(handler)(e, ct);
                 }, executionOptions.MaxConcurrency);
@@ -331,7 +336,9 @@ public static class DcbModuleBuilderExtensions
                 var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
                 return new SyncReactor<TEvent>(async (e, reactorContext, ct) =>
                 {
-                    await using var scope = scopeFactory.CreateAsyncScope();
+                    await using var scope = EventProcessingScope.Create(
+                        scopeFactory,
+                        reactorContext.TenantId);
                     var handler = scope.ServiceProvider.GetRequiredService<THandler>();
                     await methodSelector(handler)(e, reactorContext, ct);
                 });
@@ -344,7 +351,9 @@ public static class DcbModuleBuilderExtensions
                 var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
                 return new FunctionalReactor<TEvent>(resolvedProcessorId, async (e, reactorContext, ct) =>
                 {
-                    await using var scope = scopeFactory.CreateAsyncScope();
+                    await using var scope = EventProcessingScope.Create(
+                        scopeFactory,
+                        reactorContext.TenantId);
                     var handler = scope.ServiceProvider.GetRequiredService<THandler>();
                     await methodSelector(handler)(e, reactorContext, ct);
                 }, executionOptions.MaxConcurrency);
@@ -510,7 +519,7 @@ public static class DcbModuleBuilderExtensions
 
                 return new RebuildCoordinator(
                     sp.GetKeyedServices<RebuildableProjection>(moduleKey).ToList(),
-                    sp.GetRequiredKeyedService<IProjectionRebuildStore>(moduleKey),
+                    sp.GetRequiredKeyedService<IProjectionRebuildCoordinatorStore>(moduleKey),
                     sp.GetRequiredKeyedService<ProjectionVersions>(moduleKey),
                     sp.GetRequiredKeyedService<ICheckpointStore>(moduleKey),
                     sp.GetRequiredKeyedService<ShadowControlLoopFactory>(moduleKey),
