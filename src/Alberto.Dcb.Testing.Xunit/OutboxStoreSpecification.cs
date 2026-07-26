@@ -131,14 +131,10 @@ public abstract class OutboxStoreSpecification
     /// <summary>
     /// An entry that is currently claimed with a live lease must not be returned by a
     /// second <c>ClaimPendingAsync</c> call.
-    /// This fact is skipped for implementations that do not support controllable time.
     /// </summary>
     [Fact]
     public async Task ClaimPendingAsync_HeldLease_IsNotReclaimable()
     {
-        if (TimeProvider is not FakeTimeProvider)
-            Assert.Skip("Requires FakeTimeProvider to control claim expiry.");
-
         var store = await CreateStore();
         await store.InsertAsync(NewEntry(), Ct);
 
