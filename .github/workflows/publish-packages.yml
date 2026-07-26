@@ -69,13 +69,41 @@ jobs:
           done
           dotnet pack tools/Alberto.Cli/Alberto.Cli.csproj -c Release --no-build --version-suffix "$VERSION_SUFFIX" -o artifacts
 
-      - name: Push to GitHub Packages
+      - name: Add GitHub Packages source
         run: |
           dotnet nuget add source "https://nuget.pkg.github.com/codest-be/index.json" \
             --name github \
             --username ${{ github.actor }} \
             --password ${{ secrets.GITHUB_TOKEN }} \
             --store-password-in-clear-text
-          dotnet nuget push "artifacts/Alberto.Dcb*.nupkg" --source github --skip-duplicate --timeout 600
-          dotnet nuget push "artifacts/Alberto.Cli*.nupkg" --source github --skip-duplicate --timeout 600
-          dotnet nuget push "artifacts/*.snupkg" --source github --skip-duplicate --timeout 600 || true
+
+      - name: Push libraries to GitHub Packages
+        run: dotnet nuget push "artifacts/Alberto.Dcb*.nupkg" --source github --skip-duplicate --timeout 600
+
+      # The CLI push hangs against nuget.pkg.github.com often enough to have failed
+      # 14 of runs 64-88. The hang is not slowness: a healthy push of this package
+      # finishes in 6-8s, while every failure sat at the timeout (603-604s) and died.
+      # Raising the timeout therefore buys nothing — only a fresh connection does.
+      # Fail fast at 60s (~8x the observed healthy time) and retry, backing off
+      # further each attempt because the failures arrive in clusters.
+      - name: Push CLI to GitHub Packages
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if dotnet nuget push "artifacts/Alberto.Cli*.nupkg" \
+                 --source github --skip-duplicate --timeout 60; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 5 ]; then
+              backoff=$((attempt * 15))
+              echo "::warning::CLI push attempt $attempt failed; retrying in ${backoff}s"
+              sleep "$backoff"
+            fi
+          done
+          echo "::error::CLI push failed after 5 attempts"
+          exit 1
+
+      # Symbols are best-effort, but they used to be skipped entirely whenever the
+      # CLI push failed: these were one step, and GitHub runs `run:` under `bash -e`.
+      - name: Push symbols to GitHub Packages
+        if: always()
+        run: dotnet nuget push "artifacts/*.snupkg" --source github --skip-duplicate --timeout 600 || true
