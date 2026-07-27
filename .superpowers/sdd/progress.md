@@ -158,3 +158,22 @@ Before opening the SP1a PR: enumerate every skipped test in the suite (17 at Tas
 - SP1a Task 3 — `EventCollector` owns a `SemaphoreSlim` but does not implement `IDisposable`. Non-breaking to add later, but it is a shipped public type.
 - SP1a Task 3 — `EventCollector`'s class doc says "Wire to `PollingConsumer.OnProjected` to use"; `PollingConsumer` does not exist until Task 5.
 - SP2 Task 2 fix — `PollSignalingDeadLetterStore.WhenPolled` doc says "when the call returns"; the signal actually fires before the return statement. Harmless now, misleading if the inner store ever becomes genuinely async.
+
+## Benchmark suite (Phases 1-2) — plan docs/superpowers/plans/2026-07-26-benchmark-suite-phases-1-2.md
+
+Base: 68a488b
+
+Task 1: complete (commits 68a488b..e0a2b75, review clean). Minor carried: pre-existing xUnit1051 warnings in EventAppendedSignalTests/ShardRoutingTests; ProfileId recomputes SHA256 per access.
+Task 2: complete (commits e0a2b75..f589006, review clean).
+Task 3: complete (commits f589006..aac11b8, review clean). Minor carried: BdnImporter silently skips a JSON document lacking a Benchmarks array (partial-baseline risk, the failure ImportMany exists to prevent); GetProperty throws KeyNotFoundException without naming the offending report/benchmark.
+Task 4: complete (commits aac11b8..ee0c7f1, review clean). Minor carried: Improved deltas sort below near-threshold Unchanged ones; two allocation tests assert Verdict but not HasRegression.
+Task 5: complete (commits ee0c7f1..7efc72f, review clean). Minor carried: per-event Guid.CreateVersion7 Id is non-deterministic (not compared, constant overhead); EventData content not pinned by a test.
+Task 6: complete (commits 7efc72f..0642666, review clean). Minor carried: ParseArgs sits outside the try (future throw = unhandled trace); --markdown parent dir not pre-created unlike --out; single-file --import not existence-checked; no tests for CLI arg parsing/exit codes (brief-scoped). NOTE: --import globs *-report-full.json recursively, which also neutralises the Task 3 stray-JSON minor.
+Task 7: complete (commits 0642666..2e078a0, review clean). Includes controller commit 2e078a0 clearing 8 CS1573 warnings introduced by tasks 1-5 (repo suppresses CS1591, not CS1573). Reviewer warning on TotalMemoryBytes doc resolved: source is GC.GetGCMemoryInfo().TotalAvailableMemoryBytes, stable.
+Task 8: complete (commits 2e078a0..055ee93, review clean). MEASURED seed times through the append path (1000-event batches, postgres:16-alpine, Docker Desktop): Small 10k = 3.37s, Medium 100k = 13.89s, Large 1M = 84.82s. Plan open risk CLOSED - no COPY fast-path needed. Minor carried: container not disposed if StartAsync throws.
+Task 9: complete (commits 055ee93..1d6caea, review clean). No findings.
+Task 10: complete (commits 1d6caea..b4b1007, review clean). Dry run measured SingleAppend at 4.12 ms/op against real Postgres; IterationCleanup verified restoring seeded head. Minor carried: AppendBenchmarks.cs:76 comment relies on undocumented EventPlan tag coupling.
+Task 11: complete (commits b4b1007..f400f16 + doc fix, review clean after fix). Fixture regeneration caught a REAL BUG: BDN 0.14.0 joins parameters with '&', not ', ' - ParseParameters and fixture corrected. Row counts verified non-empty for every query. REMARK FOR USER: reviewer notes StreamAllFromZero/TailRead/StreamByType/BoundaryRead are limit-capped at every StoreSize, so StoreSize varies ambient table size (cache pressure, index depth) rather than rows read - real but indirect signal. Plan specifies this shape; worth revisiting in a later phase.
+Task 12: complete (commits ef6d6f5..ee4619f, review clean). Smoke step added to build-test job; verified locally, exits 0 in ~3m21s selecting exactly the two smoke benchmarks.
+Task 13: complete (commits ee4619f..1c021e0, review clean after fixes). Fixed myself: (1) workflow failed on first run for a profile because it cat'd a delta the compare tool correctly never wrote; (2) candidate.json/delta.md were accidentally tracked - now gitignored; (3) README compare commands now use -c Release; (4) summary step distinguishes no-baseline from tool-failure. Promotion rule verified end to end: history step git-adds only the history subdir, baseline.json can never reach the repo. First baseline committed for profile local-3575380c (M4 Pro, .NET 10.0.8, postgres:16-alpine), append family only, 9 measurements.
+ALL 13 TASKS COMPLETE. Next: final whole-branch review.

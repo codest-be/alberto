@@ -1,14 +1,20 @@
 using BenchmarkDotNet.Running;
 
-// Run all benchmarks:
+// Run everything:
 //   dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks
 //
-// Run a specific benchmark class:
-//   dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks -- --filter '*Append*'
-//   dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks -- --filter '*Read*'
-//   dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks -- --filter '*Checkpoint*'
+// Run one family:
+//   dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks -- --anyCategories=append
+//   dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks -- --anyCategories=query
 //
-// Quick smoke-run (no warmup, 1 iteration — confirms the code compiles and runs):
-//   dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks -- --job dry
+// Smoke run (proves it compiles and executes; measures nothing):
+//   dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks -- --job dry --anyCategories=smoke
+//
+// Against an existing Postgres instead of Testcontainers:
+//   ALBERTO_BENCH_POSTGRES="Host=...;Database=...;Username=...;Password=..." dotnet run ...
 
 BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args);
+
+// Program is referenced by FromAssembly above; the partial declaration keeps top-level
+// statements and the type reference compatible.
+public partial class Program;
