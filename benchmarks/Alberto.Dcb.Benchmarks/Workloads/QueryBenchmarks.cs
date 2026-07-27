@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Alberto.Dcb;
 using Alberto.Dcb.Benchmarks.Harness;
 using Alberto.Dcb.Postgres;
@@ -26,8 +27,14 @@ public abstract class QueryBenchmarkBase
     [Params(StoreSizes.Small, StoreSizes.Medium, StoreSizes.Large)]
     public int StoreSize { get; set; }
 
-    [GlobalSetup]
-    public async Task Setup()
+    /// <summary>
+    /// Builds the store and warms <paramref name="measured"/> — and only it.
+    ///
+    /// Every concrete class calls this from one <c>[GlobalSetup(Target = ...)]</c> per benchmark
+    /// method, passing the method that setup targets. See <see cref="Warmup"/> for why warming
+    /// this class's *other* methods is actively harmful rather than merely wasteful.
+    /// </summary>
+    protected async Task InitAsync(Func<Task> measured)
     {
         var database = await BenchmarkDatabase.Instance;
         var connectionString = await database.CloneAsync(StoreSize, GetType().Name);
@@ -37,6 +44,12 @@ public abstract class QueryBenchmarkBase
         Head = await Backend.GetLastPositionAsync();
 
         await OnSetupAsync();
+
+        var elapsed = Stopwatch.StartNew();
+        for (var i = 0; i < Warmup.Invocations && elapsed.Elapsed < Warmup.Budget; i++)
+        {
+            await measured();
+        }
     }
 
     protected virtual Task OnSetupAsync() => Task.CompletedTask;
@@ -65,6 +78,30 @@ public class QueryBenchmarks : QueryBenchmarkBase
 
         return Task.CompletedTask;
     }
+
+    [GlobalSetup(Target = nameof(StreamAllFromZero))]
+    public Task SetupStreamAllFromZero() => InitAsync(StreamAllFromZero);
+
+    [GlobalSetup(Target = nameof(TailRead))]
+    public Task SetupTailRead() => InitAsync(TailRead);
+
+    [GlobalSetup(Target = nameof(StreamByType))]
+    public Task SetupStreamByType() => InitAsync(StreamByType);
+
+    [GlobalSetup(Target = nameof(StreamByTag))]
+    public Task SetupStreamByTag() => InitAsync(StreamByTag);
+
+    [GlobalSetup(Target = nameof(StreamByTypeAndTag))]
+    public Task SetupStreamByTypeAndTag() => InitAsync(StreamByTypeAndTag);
+
+    [GlobalSetup(Target = nameof(BoundaryRead))]
+    public Task SetupBoundaryRead() => InitAsync(BoundaryRead);
+
+    [GlobalSetup(Target = nameof(GetLastPosition))]
+    public Task SetupGetLastPosition() => InitAsync(GetLastPosition);
+
+    [GlobalSetup(Target = nameof(GetStableHead))]
+    public Task SetupGetStableHead() => InitAsync(GetStableHead);
 
     /// <summary>Full catch-up from the beginning of the log.</summary>
     [Benchmark(Baseline = true), BenchmarkCategory(Categories.Query, Categories.Smoke)]
@@ -130,6 +167,9 @@ public class MultiTagQueryBenchmarks : QueryBenchmarkBase
 
         return Task.CompletedTask;
     }
+
+    [GlobalSetup(Target = nameof(StreamByMultiTag))]
+    public Task SetupStreamByMultiTag() => InitAsync(StreamByMultiTag);
 
     [Benchmark, BenchmarkCategory(Categories.Query)]
     public Task<IReadOnlyCollection<IEventEnvelope>> StreamByMultiTag()

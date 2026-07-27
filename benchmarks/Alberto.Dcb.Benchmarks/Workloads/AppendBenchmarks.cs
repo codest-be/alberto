@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Alberto.Dcb;
 using Alberto.Dcb.Benchmarks.Core;
 using Alberto.Dcb.Benchmarks.Harness;
@@ -20,8 +21,14 @@ public abstract class AppendBenchmarkBase
     protected PostgresEventStoreBackend Backend = null!;
     protected long SeededHead;
 
-    [GlobalSetup]
-    public async Task Setup()
+    /// <summary>
+    /// Builds the store and warms <paramref name="measured"/> — and only it.
+    ///
+    /// Every concrete class calls this from one <c>[GlobalSetup(Target = ...)]</c> per benchmark
+    /// method, passing the method that setup targets. See <see cref="Warmup"/> for why warming
+    /// this class's *other* methods is actively harmful rather than merely wasteful.
+    /// </summary>
+    protected async Task InitAsync(Func<Task> measured)
     {
         var database = await BenchmarkDatabase.Instance;
         var connectionString = await database.CloneAsync(StoreSizes.Medium, GetType().Name);
@@ -31,6 +38,43 @@ public abstract class AppendBenchmarkBase
         SeededHead = await Backend.GetLastPositionAsync();
 
         await OnSetupAsync();
+
+        var elapsed = Stopwatch.StartNew();
+        for (var i = 0; i < Warmup.Invocations && elapsed.Elapsed < Warmup.Budget; i++)
+        {
+            await measured();
+
+            // Not optional. Every append case reuses pre-built events, which carry fixed ids,
+            // so warming twice without resetting in between violates the event_id unique
+            // constraint and fails the whole case.
+            ResetToSeededHead();
+        }
+
+        ReclaimWarmUpChurn();
+    }
+
+    /// <summary>
+    /// Undoes the physical damage the warm-up did, which is not the same thing as undoing its
+    /// rows.
+    ///
+    /// Every warm-up cycle inserts and then deletes, so a 300-cycle warm-up leaves that many
+    /// dead tuples behind in alberto_events and both position tables, with the index entries
+    /// to match and planner statistics describing a table that no longer exists. Measurement
+    /// then runs over the bloat, and eventually races an autovacuum that fires inside the
+    /// timed region. It is not a small effect: without this the whole append family read
+    /// ~30% slower than its own baseline, and AppendWithConflictDetected — whose check scans
+    /// the order:1 tag index that the warm-up churns hardest — read 883us against 2300us.
+    ///
+    /// VACUUM cannot run inside a transaction, hence the bare command on its own connection.
+    /// </summary>
+    private void ReclaimWarmUpChurn()
+    {
+        using var connection = DataSource.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            "VACUUM (ANALYZE) alberto_events, alberto_event_tag_positions, alberto_event_type_positions";
+        command.CommandTimeout = 300;
+        command.ExecuteNonQuery();
     }
 
     protected virtual Task OnSetupAsync() => Task.CompletedTask;
@@ -78,6 +122,15 @@ public class AppendBenchmarks : AppendBenchmarkBase
         return Task.CompletedTask;
     }
 
+    [GlobalSetup(Target = nameof(SingleAppend))]
+    public Task SetupSingleAppend() => InitAsync(SingleAppend);
+
+    [GlobalSetup(Target = nameof(AppendWithDcbCheck))]
+    public Task SetupAppendWithDcbCheck() => InitAsync(AppendWithDcbCheck);
+
+    [GlobalSetup(Target = nameof(AppendWithConflictDetected))]
+    public Task SetupAppendWithConflictDetected() => InitAsync(AppendWithConflictDetected);
+
     [Benchmark(Baseline = true), BenchmarkCategory(Categories.Append, Categories.Smoke)]
     public Task<IReadOnlyCollection<IEventEnvelope>> SingleAppend()
         => Backend.AppendAsync(_single);
@@ -120,6 +173,9 @@ public class BatchAppendBenchmarks : AppendBenchmarkBase
         return Task.CompletedTask;
     }
 
+    [GlobalSetup(Target = nameof(BatchAppend))]
+    public Task SetupBatchAppend() => InitAsync(BatchAppend);
+
     [Benchmark, BenchmarkCategory(Categories.Append)]
     public Task<IReadOnlyCollection<IEventEnvelope>> BatchAppend()
         => Backend.AppendAsync(_batch);
@@ -152,6 +208,9 @@ public class TagFanOutBenchmarks : AppendBenchmarkBase
 
         return Task.CompletedTask;
     }
+
+    [GlobalSetup(Target = nameof(AppendWithTagFanOut))]
+    public Task SetupAppendWithTagFanOut() => InitAsync(AppendWithTagFanOut);
 
     [Benchmark, BenchmarkCategory(Categories.Append)]
     public Task<IReadOnlyCollection<IEventEnvelope>> AppendWithTagFanOut()

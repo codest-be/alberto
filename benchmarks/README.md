@@ -11,6 +11,11 @@ without a filter BenchmarkDotNet prompts for a selection instead of running:
 
     dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks -- --filter '*'
 
+Part of that time is warm-up: every case drives its own measured method up to 2000 times, or
+15 seconds, before BenchmarkDotNet starts timing. It is load-bearing rather than padding —
+see [Harness/Warmup.cs](Alberto.Dcb.Benchmarks/Harness/Warmup.cs) for what it fixes and the
+measurements behind the two constants.
+
 One family:
 
     dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks -- --anyCategories=append
