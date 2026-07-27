@@ -183,6 +183,57 @@ public abstract class EventStoreBackendSpecification
         Assert.Contains(matched.Tags, t => t.Value == $"order:2{TestId}");
     }
 
+    /// <summary>
+    /// An intersect query whose tag axis lists several tags carried by the same event must
+    /// return that event once.  The Postgres backend serves this with a tag-driven semi-join
+    /// (migration 025) that emits one row per matching tag before deduplication, so this is
+    /// the shape that fails if the deduplication is dropped.
+    /// </summary>
+    [Fact]
+    public async Task Stream_ByTypesAndTags_EventCarryingSeveralRequestedTags_ShouldReturnItOnce()
+    {
+        var backend = await CreateBackend();
+        await backend.AppendAsync([
+            CreateEvent($"order-placed-{TestId}", $"order:1{TestId}", $"customer:1{TestId}"),    // both requested tags
+            CreateEvent($"order-placed-{TestId}", $"order:9{TestId}"),                            // requested type, unrequested tag
+            CreateEvent($"order-confirmed-{TestId}", $"order:1{TestId}", $"customer:1{TestId}")   // both tags, unrequested type
+        ], cancellationToken: TestContext.Current.CancellationToken);
+
+        var query = DcbQuery.Empty
+            .WithTypes($"order-placed-{TestId}")
+            .WithTags($"order:1{TestId}", $"customer:1{TestId}");
+
+        var result = await backend.StreamAsync(query, cancellationToken: TestContext.Current.CancellationToken);
+
+        var matched = Assert.Single(result);
+        Assert.Equal($"order-placed-{TestId}", matched.EventType.Id);
+    }
+
+    /// <summary>
+    /// A duplicate must not consume a slot of the limit.  With the deduplication dropped, an
+    /// event carrying two of the requested tags fills the limit by itself and hides the events
+    /// behind it — a wrong result rather than merely a repeated one.
+    /// </summary>
+    [Fact]
+    public async Task Stream_ByTypesAndTags_WithLimit_ShouldNotSpendSlotsOnDuplicates()
+    {
+        var backend = await CreateBackend();
+        await backend.AppendAsync([
+            CreateEvent($"order-placed-{TestId}", $"order:1{TestId}", $"customer:1{TestId}"),    // matches two of the requested tags
+            CreateEvent($"order-placed-{TestId}", $"order:2{TestId}")                             // matches one
+        ], cancellationToken: TestContext.Current.CancellationToken);
+
+        var query = DcbQuery.Empty
+            .WithTypes($"order-placed-{TestId}")
+            .WithTags($"order:1{TestId}", $"customer:1{TestId}", $"order:2{TestId}");
+
+        var result = await backend.StreamAsync(query, limit: 2, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal(2, result.Select(e => e.GlobalPosition).Distinct().Count());
+        Assert.Contains(result, e => e.Tags.Any(t => t.Value == $"order:2{TestId}"));
+    }
+
     /// <summary>A <c>ByAllTags</c> query must return only events whose tag set contains every listed tag.</summary>
     [Fact]
     public async Task Stream_ByAllTags_ShouldRequireAllTagsToMatch()

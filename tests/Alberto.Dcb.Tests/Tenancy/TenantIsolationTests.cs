@@ -76,6 +76,9 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
     [EventType("ti-order-created")]
     private sealed record OrderCreated(Guid OrderId) : IEvent;
 
+    [EventType("ti-order-shipped")]
+    private sealed record OrderShipped(Guid OrderId) : IEvent;
+
     private sealed record OrderState(string Label, decimal Amount);
 
     // ─── helpers ────────────────────────────────────────────────────────────
@@ -195,6 +198,74 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => storeA.StreamAllAsync(cancellationToken: ct));
+    }
+
+    // ─── Regression: multi-tenant types-and-tags read SQL ───────────────────
+
+    /// <summary>
+    /// Exercises the multi-tenant <c>alberto_read_by_types_and_tags</c> function, which the
+    /// shared <c>EventStoreBackendSpecification</c> never reaches — it runs against the
+    /// single-tenant schema only. plpgsql resolves table and column references at first
+    /// execution rather than at CREATE FUNCTION, so a mistyped tenant predicate in the
+    /// multi-tenant script survives migration and fails in production instead.
+    /// <para>
+    /// Also covers the two behaviours that distinguish the semi-join form from the
+    /// INTERSECT it replaced: an event carrying several of the requested tags must be
+    /// returned once, and the other tenant's identically-shaped event must not appear.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Stream_ByTypesAndTags_IsTenantScoped_AndReturnsEachEventOnce()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var orderId = Guid.NewGuid();
+        var orderTag = new EventTag("ti-tt-order", orderId.ToString());
+        var customerTag = new EventTag("ti-tt-customer", orderId.ToString());
+
+        static EventToPersist Tagged<TEvent>(TEvent @event, params EventTag[] tags)
+            where TEvent : IEvent => new()
+            {
+                EventType = new EventType(EventTypeAttribute.GetEventTypeId(typeof(TEvent))),
+                Tags = tags,
+                EventData = JsonSerializer.Serialize(@event),
+            };
+
+        await using (var scopeA = CreateScopeForTenant(TenantA))
+        {
+            var storeA = scopeA.ServiceProvider.GetRequiredKeyedService<IEventStore>(ModuleKey);
+            await storeA.AppendAsync(
+                [
+                    Tagged(new OrderCreated(orderId), orderTag, customerTag), // the only match
+                    Tagged(new OrderShipped(orderId), orderTag, customerTag), // right tags, wrong type
+                ],
+                dcbQuery: null,
+                expectedPosition: null,
+                cancellationToken: ct);
+        }
+
+        await using (var scopeB = CreateScopeForTenant(TenantB))
+        {
+            var storeB = scopeB.ServiceProvider.GetRequiredKeyedService<IEventStore>(ModuleKey);
+            await storeB.AppendAsync(
+                [Tagged(new OrderCreated(orderId), orderTag, customerTag)], // right shape, wrong tenant
+                dcbQuery: null,
+                expectedPosition: null,
+                cancellationToken: ct);
+        }
+
+        await using (var scopeA2 = CreateScopeForTenant(TenantA))
+        {
+            var storeA2 = scopeA2.ServiceProvider.GetRequiredKeyedService<IEventStore>(ModuleKey);
+            var query = DcbQuery.Empty
+                .WithTypes("ti-order-created")
+                .WithTags(orderTag.Value, customerTag.Value);
+
+            var events = await storeA2.StreamAsync(query, cancellationToken: ct);
+
+            var ev = Assert.Single(events);
+            Assert.Equal(TenantA, ev.TenantId);
+            Assert.Equal("ti-order-created", ev.EventType.Id);
+        }
     }
 
     // ─── Regression: multi-tenant stable-head barrier SQL ───────────────────
