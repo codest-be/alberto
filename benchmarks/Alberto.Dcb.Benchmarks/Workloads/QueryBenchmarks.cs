@@ -59,7 +59,7 @@ public class QueryBenchmarks : QueryBenchmarkBase
     {
         // Built once: DcbQuery construction is not what these cases measure.
         _byType = DcbQuery.ByTypes("order-placed");
-        _byTag = DcbQuery.ByTags(EventTag.FromStorage("order", "42"));
+        _byTag = DcbQuery.ByTags(new EventTag("order", "42"));
         _byTypeAndTag = DcbQuery.For("order", "42").WithTypes("order-placed");
         _boundary = DcbQuery.For("order", "7");
 
@@ -125,7 +125,7 @@ public class MultiTagQueryBenchmarks : QueryBenchmarkBase
     {
         _byMultiTag = DcbQuery
             .ByTags([.. Enumerable.Range(1, UnionTags)
-                .Select(i => EventTag.FromStorage("order", i.ToString()))])
+                .Select(i => new EventTag("order", i.ToString()))])
             .AsUnion();
 
         return Task.CompletedTask;

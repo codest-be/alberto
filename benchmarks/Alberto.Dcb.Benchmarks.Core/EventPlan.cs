@@ -34,9 +34,10 @@ public static class EventPlan
             events[i] = new EventToPersist
             {
                 EventType = type,
-                // FromStorage skips the validation regex. These ids are generated, not
-                // user-supplied, and seeding cost is not what the suite is measuring.
-                Tags = [EventTag.FromStorage("order", orderId)],
+                // The validating constructor, not the internal FromStorage: seeding runs
+                // outside every measured region, so the regex costs the suite nothing, and
+                // a benchmark harness has no business reaching for framework internals.
+                Tags = [new EventTag("order", orderId)],
                 EventData = $$"""{"orderId":"{{orderId}}","seq":{{i}},"amount":9.99}""",
             };
         }

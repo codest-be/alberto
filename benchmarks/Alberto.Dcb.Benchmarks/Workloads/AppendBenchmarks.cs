@@ -70,10 +70,10 @@ public class AppendBenchmarks : AppendBenchmarkBase
 
         // Targets a tag never written, so the check always takes the no-conflict path
         // without throwing — the happy path worth measuring.
-        _neverConflictingQuery = DcbQuery.ByTags(EventTag.FromStorage("never", "used"));
+        _neverConflictingQuery = DcbQuery.ByTags(new EventTag("never", "used"));
 
         // Targets a tag the seed definitely wrote, so the check always finds a conflict.
-        _alwaysConflictingQuery = DcbQuery.ByTags(EventTag.FromStorage("order", "1"));
+        _alwaysConflictingQuery = DcbQuery.ByTags(new EventTag("order", "1"));
 
         return Task.CompletedTask;
     }
@@ -145,7 +145,7 @@ public class TagFanOutBenchmarks : AppendBenchmarkBase
             {
                 EventType = new EventType("order-placed"),
                 Tags = [.. Enumerable.Range(1, TagsPerEvent)
-                    .Select(i => EventTag.FromStorage("order", $"fanout{i}"))],
+                    .Select(i => new EventTag("order", $"fanout{i}"))],
                 EventData = """{"orderId":"fanout","amount":9.99}""",
             },
         ];
