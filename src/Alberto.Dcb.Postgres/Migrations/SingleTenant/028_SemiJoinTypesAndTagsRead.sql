@@ -1,9 +1,9 @@
 -- Alberto DCB Event Store - Migration 028 (Single-Tenant)
 --
--- Rewrite alberto_read_by_types_and_tags from INTERSECT to a correlated semi-join.
--- See multi-tenant 028_SemiJoinTypesAndTagsRead.sql for the full rationale and the
--- measured plan evidence; the only difference here is that the function carries no
--- tenant argument and the position lookups have no tenant predicate.
+-- Rewrite alberto_read_by_types_and_tags from INTERSECT to a semi-join over a
+-- pre-deduplicated tag stream.  See multi-tenant 028_SemiJoinTypesAndTagsRead.sql for
+-- the full rationale and the measured evidence; the only difference here is that the
+-- function carries no tenant argument and the position lookups have no tenant predicate.
 
 CREATE OR REPLACE FUNCTION $schema_prefix$alberto_read_by_types_and_tags(
     p_types VARCHAR(500)[],
@@ -26,32 +26,37 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Correlated semi-join rather than INTERSECT.  A LIMIT cannot push through a
-    -- set operation, so the INTERSECT form hashed both branches in full before
-    -- discarding a single row — and the type branch matches a constant fraction of
-    -- the store, making the query a function of total size rather than of its own
-    -- selectivity.  EXISTS lets the LIMIT stop the scan early.
+    -- Semi-join rather than INTERSECT.  A LIMIT cannot push through a set operation, so
+    -- the INTERSECT form hashed both branches in full before discarding a single row —
+    -- and the type branch matches a constant fraction of the store, making the query a
+    -- function of total size rather than of its own selectivity.
     --
-    -- Written tag-side-outer, but that does not pin the drive side: PostgreSQL
-    -- flattens the EXISTS into a semi-join and reorders, so a query whose type axis
-    -- is narrower than its tag axis is driven from the type side instead.
+    -- The tag axis is deduplicated in its own subquery so the LIMIT below sits on an
+    -- already-unique stream and can stop the scan early.  An outer DISTINCT over a
+    -- correlated EXISTS cannot: it has to dedup the whole matching set before the limit
+    -- applies, and its GENERIC plan — the one plpgsql settles on after ~5 calls, which
+    -- under pooling is what almost every call gets — measured 2.1x worse than its own
+    -- custom plan, making it ~37% slower than the INTERSECT at 100k events even though
+    -- it won at 1M.  Do not fold this back into that shape.
     --
-    -- DISTINCT is load-bearing.  INTERSECT deduplicates; a tag-driven scan emits one
-    -- row per matching tag, so an event carrying two of p_tags would otherwise appear
-    -- twice and consume two slots of p_limit.
+    -- The inner DISTINCT is load-bearing.  INTERSECT deduplicates; a tag-driven scan
+    -- emits one row per matching tag, so an event carrying two of p_tags would otherwise
+    -- appear twice and consume two slots of p_limit.
     RETURN QUERY
     SELECT e.global_position, e.event_id, e.event_type, e.event_tags, e.event_data, e.event_metadata, e.created_at
     FROM (
-        SELECT DISTINCT etagp.global_position
-        FROM $schema_prefix$alberto_event_tag_positions etagp
-        WHERE etagp.tag = ANY(p_tags)
-          AND etagp.global_position > p_after_position
-          AND EXISTS (
-              SELECT 1
-              FROM $schema_prefix$alberto_event_type_positions etp
-              WHERE etp.global_position = etagp.global_position
-                AND etp.event_type = ANY(p_types)
-          )
+        SELECT tagged.global_position
+        FROM (
+            SELECT DISTINCT etagp.global_position
+            FROM $schema_prefix$alberto_event_tag_positions etagp
+            WHERE etagp.tag = ANY(p_tags)
+              AND etagp.global_position > p_after_position
+        ) tagged
+        WHERE tagged.global_position IN (
+            SELECT etp.global_position
+            FROM $schema_prefix$alberto_event_type_positions etp
+            WHERE etp.event_type = ANY(p_types)
+        )
         ORDER BY 1
         LIMIT p_limit
     ) mp
