@@ -133,42 +133,32 @@ public sealed record PostgresBackendDescriptor(PostgresOptions Options) : IAlber
         var services = context.Services;
         var moduleKey = context.ModuleKey;
         var catalogKey = $"{moduleKey}:catalog";
+        var runtime = new PostgresRuntimeOptions(moduleKey, Options);
 
         // The catalog's own data source. Not a shard's: the whole point of the control database is
         // that resolving a tenant does not depend on any one shard being reachable.
         services.AddKeyedSingleton<NpgsqlDataSource>(catalogKey, (sp, _) =>
         {
-            var options = CatalogOptions(sp, moduleKey);
+            var options = runtime.ResolveCatalog(sp);
             var builder = new NpgsqlDataSourceBuilder(options.ConnectionString);
             builder.ConnectionStringBuilder.MaxPoolSize = options.MaxPoolSize;
             builder.ConnectionStringBuilder.MinPoolSize = options.MinPoolSize;
             return builder.Build();
         });
 
+#pragma warning disable ALB9001 // Registering the catalog shard map — sharding implementation.
         services.AddKeyedSingleton<ITenantShardMap>(moduleKey, (sp, _) =>
         {
-            var options = CatalogOptions(sp, moduleKey);
+            var options = runtime.ResolveCatalog(sp);
             return new PostgresTenantShardMap(
                 sp.GetRequiredKeyedService<NpgsqlDataSource>(catalogKey), moduleKey, options.Schema);
         });
+#pragma warning restore ALB9001
 
         services.AddSingleton<IHostedService>(sp => new PostgresCatalogMigrationHostedService(
             moduleKey,
             sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>(),
             sp.GetService<ILogger<PostgresCatalogMigrationHostedService>>()));
-    }
-
-    /// <summary>
-    /// Reads the catalog's options from the monitor, so a connection string supplied only from
-    /// configuration is honoured. Falls back to this descriptor when the module was resolved
-    /// without one, which happens in tests that never build a configuration.
-    /// </summary>
-    private PostgresOptions CatalogOptions(IServiceProvider provider, string moduleKey)
-    {
-        var definition = provider.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>().Get(moduleKey);
-        return definition.Tenancy.Catalog is PostgresBackendDescriptor descriptor
-            ? descriptor.Options
-            : Options;
     }
 
     /// <inheritdoc />
@@ -178,6 +168,10 @@ public sealed record PostgresBackendDescriptor(PostgresOptions Options) : IAlber
 
         var services = context.Services;
         var moduleKey = context.ModuleKey;
+
+        // Every factory below resolves its options through this rather than closing over Options,
+        // so a value supplied only from configuration is honoured. See PostgresRuntimeOptions.
+        var runtime = new PostgresRuntimeOptions(moduleKey, Options);
 
         // Migration hosted service — reads options from the monitor at StartAsync so the
         // configuration overlay is applied before any connection is opened. A shard also gets the
@@ -189,16 +183,15 @@ public sealed record PostgresBackendDescriptor(PostgresOptions Options) : IAlber
             moduleKey,
             sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>(),
             sp.GetService<ILogger<AlbertoMigrationHostedService>>(),
+#pragma warning disable ALB9001 // Passing ShardHealth to a shard's migration service — sharding implementation.
             shardId is null ? null : sp.GetKeyedService<ShardHealth>(logicalModuleKey),
+#pragma warning restore ALB9001
             shardId));
 
-        // Register NpgsqlDataSource with connection pool settings. The factory reads the
-        // overlay-applied options via IOptionsMonitor so a connection string supplied only
-        // from configuration (not from the WithPostgres callback) is honoured.
+        // Register NpgsqlDataSource with connection pool settings.
         services.AddKeyedSingleton<NpgsqlDataSource>(moduleKey, (sp, _) =>
         {
-            var definition = sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>().Get(moduleKey);
-            var opts = definition.Backend is PostgresBackendDescriptor desc ? desc.Options : Options;
+            var opts = runtime.Resolve(sp);
             var builder = new NpgsqlDataSourceBuilder(opts.ConnectionString);
             builder.ConnectionStringBuilder.MaxPoolSize = opts.MaxPoolSize;
             builder.ConnectionStringBuilder.MinPoolSize = opts.MinPoolSize;
@@ -213,17 +206,14 @@ public sealed record PostgresBackendDescriptor(PostgresOptions Options) : IAlber
         });
 
         if (context.TenancyEnabled)
-            PostgresBuilderExtensions.RegisterTenantBackend(context, Options);
+            PostgresBuilderExtensions.RegisterTenantBackend(context, runtime);
         else
-            PostgresBuilderExtensions.RegisterSingleTenantBackend(context, Options);
+            PostgresBuilderExtensions.RegisterSingleTenantBackend(context, runtime);
 
         // Checkpoint store with caching layer.
-        // Resolves PostgresOptions from IOptionsMonitor so that configuration overlays
-        // applied in Phase 2 (e.g. Postgres:Schema from appsettings) are honoured here.
         services.AddKeyedSingleton<ICheckpointStore>(moduleKey, (sp, _) =>
         {
-            var definition = sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>().Get(moduleKey);
-            var opts = definition.Backend is PostgresBackendDescriptor desc ? desc.Options : Options;
+            var opts = runtime.Resolve(sp);
             var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
             var postgresStore = new PostgresCheckpointStore(dataSource, opts.Schema);
             return new CachingCheckpointStore(postgresStore);
@@ -232,8 +222,7 @@ public sealed record PostgresBackendDescriptor(PostgresOptions Options) : IAlber
         // Dead letter store.
         services.AddKeyedSingleton<IDeadLetterStore>(moduleKey, (sp, _) =>
         {
-            var definition = sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>().Get(moduleKey);
-            var opts = definition.Backend is PostgresBackendDescriptor desc ? desc.Options : Options;
+            var (opts, definition) = runtime.ResolveWithDefinition(sp);
             var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
             return new PostgresDeadLetterStore(
                 dataSource,
@@ -246,8 +235,7 @@ public sealed record PostgresBackendDescriptor(PostgresOptions Options) : IAlber
         // coordinator to act on it.
         services.AddKeyedSingleton<PostgresProjectionRebuildStore>(moduleKey, (sp, _) =>
         {
-            var definition = sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>().Get(moduleKey);
-            var opts = definition.Backend is PostgresBackendDescriptor desc ? desc.Options : Options;
+            var opts = runtime.Resolve(sp);
             var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
             return new PostgresProjectionRebuildStore(dataSource, opts.Schema);
         });
@@ -256,18 +244,10 @@ public sealed record PostgresBackendDescriptor(PostgresOptions Options) : IAlber
         services.AddKeyedSingleton<IProjectionRebuildCoordinatorStore>(moduleKey, (sp, _) =>
             sp.GetRequiredKeyedService<PostgresProjectionRebuildStore>(moduleKey));
 
-        // Processor lock (single-leader mode — schema-less, no Options needed).
-        services.AddKeyedSingleton<IProcessorLock>(moduleKey, (sp, _) =>
-        {
-            var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
-            return new PostgresProcessorLock(dataSource);
-        });
-
         // Tenant processor lock (used for tenant-distributed mode).
         services.AddKeyedSingleton<ITenantProcessorLock>(moduleKey, (sp, _) =>
         {
-            var definition = sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>().Get(moduleKey);
-            var opts = definition.Backend is PostgresBackendDescriptor desc ? desc.Options : Options;
+            var opts = runtime.Resolve(sp);
             var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
             return new PostgresTenantProcessorLock(dataSource, opts.Schema, opts.LeaseDuration);
         });
@@ -275,8 +255,7 @@ public sealed record PostgresBackendDescriptor(PostgresOptions Options) : IAlber
         // Processor lease manager.
         services.AddKeyedSingleton<IProcessorLeaseManager>(moduleKey, (sp, _) =>
         {
-            var definition = sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>().Get(moduleKey);
-            var opts = definition.Backend is PostgresBackendDescriptor desc ? desc.Options : Options;
+            var opts = runtime.Resolve(sp);
             var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
             return new PostgresProcessorLeaseManager(dataSource, opts.Schema, opts.LeaseDuration);
         });
@@ -288,8 +267,7 @@ public sealed record PostgresBackendDescriptor(PostgresOptions Options) : IAlber
         // time from the monitor so a config-supplied false is honoured.
         services.AddSingleton<IHostedService>(sp =>
         {
-            var definition = sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>().Get(moduleKey);
-            var opts = definition.Backend is PostgresBackendDescriptor desc ? desc.Options : Options;
+            var opts = runtime.Resolve(sp);
             if (!opts.EnableNotifyListener)
                 return PostgresNullHostedService.Instance;
             var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);

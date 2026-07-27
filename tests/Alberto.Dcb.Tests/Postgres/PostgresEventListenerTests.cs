@@ -17,8 +17,8 @@ namespace Alberto.Dcb.Tests.Postgres;
 /// Covers:
 /// <list type="bullet">
 ///   <item>LISTEN/NOTIFY round-trip: a single-event append wakes the signal.</item>
-///   <item>SQL-3: an N-event batch fires exactly ONE <c>pg_notify</c>, not N (FOR EACH STATEMENT
-///     trigger in migration 010 replaced the old FOR EACH ROW trigger).</item>
+///   <item>SQL-3: an N-event batch fires exactly ONE <c>pg_notify</c>, not N (migration 025
+///     moved the notification into the append functions).</item>
 ///   <item>Reconnect: after <c>pg_terminate_backend</c> kills the LISTEN connection the
 ///     listener reconnects and fires a catch-up pulse.</item>
 ///   <item>Poll-fallback: events appended during a connection outage are still caught via the
@@ -104,15 +104,14 @@ public sealed class PostgresEventListenerTests : IAsyncLifetime
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Migration 010 replaces the FOR EACH ROW trigger on <c>alberto_events</c> with a
-    /// FOR EACH STATEMENT trigger that emits a single <c>pg_notify</c> per insert batch.
+    /// Migration 025 emits a single <c>pg_notify</c> per append call from the end of
+    /// <c>alberto_append_events</c>, replacing the trigger on <c>alberto_events</c> that
+    /// fired once per event inserted — statement-level since 010, but the append function
+    /// runs one INSERT statement per event, so statement-level still meant once per event.
     /// This test verifies the fix: appending five events in one call results in exactly
     /// one NOTIFY received by the listener, not five.
     /// </summary>
-    [Fact(Skip = "SQL-3 partial fix: migration 010 replaces the FOR EACH ROW trigger with FOR EACH STATEMENT, " +
-                 "but alberto_append_events issues one INSERT per event in a PL/pgSQL loop, so the statement-level " +
-                 "trigger still fires N times per AppendAsync call. Completing the fix requires moving the " +
-                 "pg_notify call into the alberto_append_events function body (one call at the end).")]
+    [Fact]
     public async Task RoundTrip_FiveEventBatch_FiresExactlyOneNotify()
     {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);

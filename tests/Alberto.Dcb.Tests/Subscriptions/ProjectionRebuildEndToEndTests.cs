@@ -58,7 +58,7 @@ public static class TotalsProjection
 public sealed class ProjectionRebuildHostFixture(PostgresCluster cluster)
     : PostgresDatabaseFixture(cluster, PostgresTemplates.SingleTenant)
 {
-    public const string ModuleKey = "rebuild-e2e";
+    public const string ModuleKey = "rebuild_e2e";
 
     /// <summary>
     /// Every test that owns a projection. Registration happens once, at host start, so the set

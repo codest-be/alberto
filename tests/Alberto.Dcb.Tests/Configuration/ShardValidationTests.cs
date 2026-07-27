@@ -3,6 +3,7 @@ using Alberto.Dcb.Configuration;
 using Alberto.Dcb.InMemory;
 using Alberto.Dcb.Postgres;
 using FluentAssertions;
+using Microsoft.Extensions.Configuration;
 using Xunit;
 
 namespace Alberto.Dcb.Tests.Configuration;
@@ -13,6 +14,20 @@ namespace Alberto.Dcb.Tests.Configuration;
 /// </summary>
 public class ShardValidationTests
 {
+    /// <summary>
+    /// Minimal backend descriptor that explicitly does NOT support tenancy.
+    /// Used to test ALB0011 (sharding requires a tenancy-capable backend).
+    /// <see cref="InMemoryBackendDescriptor"/> now declares SupportsTenancy=true following
+    /// the fix:inmemory-fidelity batch change, so this fake fills the role it previously played.
+    /// </summary>
+    private sealed class NoTenancyBackend : IAlbertoBackendDescriptor
+    {
+        public string Name => "NoTenancy";
+        public bool SupportsTenancy => false;
+        public IAlbertoBackendDescriptor ApplyConfiguration(IConfiguration section) => this;
+        public IEnumerable<AlbertoValidationFailure> Validate(AlbertoModuleDefinition definition) => [];
+        public void Register(AlbertoModuleContext context) { }
+    }
     private const string Db1 = "Host=db1;Database=alberto;Username=x;Password=y";
     private const string Db2 = "Host=db2;Database=alberto;Username=x;Password=y";
     private const string Catalog = "Host=control;Database=alberto_catalog;Username=x;Password=y";
@@ -66,7 +81,10 @@ public class ShardValidationTests
     [Fact]
     public void Shards_on_a_backend_that_cannot_do_tenancy_fail_with_ALB0011()
     {
-        Codes(Sharded(backend: new InMemoryBackendDescriptor())).Should().Contain("ALB0011");
+        // InMemoryBackendDescriptor now declares SupportsTenancy=true (fix:inmemory-fidelity),
+        // so it no longer triggers this validation path. NoTenancyBackend explicitly returns
+        // false to keep the validator path exercised.
+        Codes(Sharded(backend: new NoTenancyBackend())).Should().Contain("ALB0011");
     }
 
     [Fact]

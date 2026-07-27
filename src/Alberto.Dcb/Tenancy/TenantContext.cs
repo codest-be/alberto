@@ -1,5 +1,3 @@
-using System.Text.RegularExpressions;
-
 namespace Alberto.Dcb.Tenancy;
 
 /// <summary>
@@ -8,13 +6,9 @@ namespace Alberto.Dcb.Tenancy;
 /// </summary>
 public sealed class TenantContext
 {
-    // Mirrors the schema-name allowlist in SchemaQualifier: lowercase letter start,
-    // lowercase alphanumeric + underscore, max 63 characters.
-    // This rejects UUIDs, hyphens, uppercase, and other characters that could indicate
-    // a mis-configured or injected tenant identifier.
+    // The check delegates to IdentifierRules.IsValidIdentifier so the regex is defined and
+    // maintained in a single place, shared with module-key and shard-id validation.
     // See upgrade-notes/P1.5.md if your tenant IDs use a different format.
-    private static readonly Regex TenantIdPattern =
-        new(@"^[a-z][a-z0-9_]{0,62}$", RegexOptions.Compiled, matchTimeout: TimeSpan.FromMilliseconds(100));
 
     private string? _tenantId;
 
@@ -22,9 +16,11 @@ public sealed class TenantContext
     /// The tenant-ID rule in words, for callers that reject a bad tenant before it reaches
     /// <see cref="SetTenant"/> and have to say why.
     /// </summary>
-    public const string TenantIdRule =
-        "Tenant IDs must start with a lowercase letter and contain only lowercase letters, " +
-        "digits, and underscores, with a maximum length of 63 characters.";
+    /// <remarks>
+    /// Points at <see cref="IdentifierRules.Rule"/> so the wording stays consistent across all
+    /// Alberto identifier error messages without duplicating the text.
+    /// </remarks>
+    public const string TenantIdRule = IdentifierRules.Rule;
 
     /// <summary>
     /// Gets the current tenant ID, or null if not set.
@@ -42,7 +38,7 @@ public sealed class TenantContext
     /// <c>X-Tenant-Id: a-b-c</c> passed its check and then threw an opaque server error.
     /// </remarks>
     public static bool IsValidTenantId(string? tenantId) =>
-        !string.IsNullOrWhiteSpace(tenantId) && TenantIdPattern.IsMatch(tenantId);
+        IdentifierRules.IsValidIdentifier(tenantId);
 
     /// <summary>
     /// Sets the tenant ID for the current scope.

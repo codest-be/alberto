@@ -37,6 +37,7 @@ public sealed class AlbertoModuleValidator : IValidateOptions<AlbertoModuleDefin
         ValidateProcessors(definition, failures);
         ValidateUnknownKeys(definition, failures);
         ValidateTenancy(definition, failures);
+        ValidateUpcasters(definition, failures);
 
         if (definition.Backend is not null)
             failures.AddRange(definition.Backend.Validate(definition));
@@ -261,6 +262,81 @@ public sealed class AlbertoModuleValidator : IValidateOptions<AlbertoModuleDefin
                 "ALB0008",
                 $"Unknown configuration key '{key.FullKey}'.",
                 remedy));
+        }
+    }
+
+    private static void ValidateUpcasters(AlbertoModuleDefinition definition, List<AlbertoValidationFailure> failures)
+    {
+        // ALB0018: every event type whose [EventType(Version = N)] declares N > 1 must have an
+        // upcaster covering the gap 1..N-1.  An event stored at any of those versions would
+        // otherwise fail deserialization at runtime.  Only checked when WithEventsFrom was called
+        // (RegisteredEventTypes is non-empty); a module with no events assembly skips this.
+        if (definition.RegisteredEventTypes.Length > 0)
+        {
+            var byEventTypeId = definition.UpcasterDeclarations
+                .GroupBy(d => d.EventTypeId, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+
+            foreach (var et in definition.RegisteredEventTypes)
+            {
+                if (!byEventTypeId.TryGetValue(et.Id, out var decl))
+                {
+                    // A version-1 event type needs no upcaster; that is the whole point of v1.
+                    if (et.Version <= 1)
+                        continue;
+
+                    failures.Add(new AlbertoValidationFailure(
+                        "ALB0018",
+                        $"Event type '{et.Id}' declares [EventType(Version = {et.Version})] but no upcaster is registered for it.",
+                        $"Add .AddUpcaster(DeclareUpcaster.For<T>(\"{et.Id}\").From<TOld>(1, ...).Build()) " +
+                        $"to cover versions 1..{et.Version - 1}. Without an upcaster, reading any event " +
+                        $"stored before version {et.Version} will throw at runtime."));
+                    continue;
+                }
+
+                // ALB0020: an upcaster exists, but its chain must terminate at the version the
+                // event type actually declares.  A chain that stops short still satisfies ALB0018,
+                // so without this check the mismatch surfaces only when a stale event is read —
+                // the dispatcher throws "produced vN but expects vM" at runtime, on a code path the
+                // deploy may not exercise for days.  Catch it at startup instead.
+                //
+                // The check deliberately runs for version-1 types too, which is why the ALB0018
+                // guard above is inside the "no declaration" branch.  Extending a chain without
+                // bumping [EventType(Version = ...)] leaves every event being written at v1 and
+                // every read running the full chain forever — it never throws, so nothing else
+                // would ever surface it.
+                if (decl.CurrentVersion != et.Version)
+                {
+                    failures.Add(new AlbertoValidationFailure(
+                        "ALB0020",
+                        $"Event type '{et.Id}' declares [EventType(Version = {et.Version})] but its upcaster " +
+                        $"chain produces version {decl.CurrentVersion}.",
+                        decl.CurrentVersion < et.Version
+                            ? $"Add the missing step(s) so the chain reaches version {et.Version}: " +
+                              $".From<TOld>({decl.CurrentVersion}, ...) continues where the current chain stops."
+                            : $"The chain overshoots the declared version. Either raise " +
+                              $"[EventType(\"{et.Id}\", Version = {decl.CurrentVersion})] to match the chain, " +
+                              $"or drop the step(s) past version {et.Version}."));
+                }
+            }
+
+            // ALB0019: every declared upcaster must reference an event type that the module
+            // actually knows about.  A typo in the slug is caught here rather than at runtime.
+            var registeredIds = definition.RegisteredEventTypes
+                .Select(et => et.Id)
+                .ToHashSet(StringComparer.Ordinal);
+
+            foreach (var decl in definition.UpcasterDeclarations)
+            {
+                if (!registeredIds.Contains(decl.EventTypeId))
+                {
+                    failures.Add(new AlbertoValidationFailure(
+                        "ALB0019",
+                        $"Upcaster references event type '{decl.EventTypeId}', which is not registered in the module's events assembly.",
+                        $"Ensure the type annotated with [EventType(\"{decl.EventTypeId}\")] is in the assembly " +
+                        "passed to .WithEventsFrom(...), or remove the upcaster if the event type is no longer in use."));
+                }
+            }
         }
     }
 

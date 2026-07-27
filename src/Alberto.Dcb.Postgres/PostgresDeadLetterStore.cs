@@ -7,39 +7,64 @@ namespace Alberto.Dcb.Postgres;
 /// PostgreSQL implementation of dead letter storage.
 /// </summary>
 /// <remarks>
-/// Pass <paramref name="multiTenant"/> as <see langword="true"/> when the deployment
-/// uses the multi-tenant schema (i.e. <c>alberto_events</c> carries a
-/// <c>tenant_id</c> column).  This resolves the tenancy mode once at construction
-/// instead of probing <c>information_schema.columns</c> on every
-/// <see cref="ClaimRetryRequestedAsync"/> call (SQL-4).  When
-/// <paramref name="multiTenant"/> is <see langword="true"/>, <see cref="StoreAsync"/>
-/// also persists <see cref="DeadLetterEntry.TenantId"/> into the
-/// <c>tenant_id</c> column added by the multi-tenant migration (TEN-3).
+/// The migrated schema is authoritative. Default construction detects and caches whether
+/// <c>alberto_events</c> carries <c>tenant_id</c>, so every method uses the same topology.
+/// The compatibility constructor's <c>multiTenant</c> flag can assert multi-tenant storage,
+/// but never overrides the topology reported by the schema.
 /// </remarks>
-public sealed class PostgresDeadLetterStore(
-    NpgsqlDataSource dataSource,
-    string? schema = null,
-    bool multiTenant = false) : IDeadLetterStore
+public sealed class PostgresDeadLetterStore : IDeadLetterStore
 {
-    private readonly NpgsqlDataSource _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
-    private readonly SchemaQualifier _schema = new(schema);
-    private readonly bool _multiTenant = multiTenant;
+    private readonly NpgsqlDataSource _dataSource;
+    private readonly SchemaQualifier _schema;
+    private readonly PostgresStoreTopology _topology;
 
-    // Resolved once: true  → alberto_events has tenant_id (multi-tenant schema)
-    //                false → single-tenant schema (no tenant_id column)
-    // Initialized to true when the caller declares multi-tenant mode at construction
-    // to skip the catalog probe entirely.  Otherwise resolved lazily on first claim
-    // and cached for all subsequent calls.
-    private bool? _hasTenantIdCache = multiTenant ? true : null;
+    /// <summary>Creates an adapter that derives tenancy from the migrated public schema.</summary>
+    public PostgresDeadLetterStore(NpgsqlDataSource dataSource)
+        : this(dataSource, schema: null, expectedMultiTenant: null)
+    {
+    }
+
+    /// <summary>Creates an adapter that derives tenancy from the migrated named schema.</summary>
+    public PostgresDeadLetterStore(NpgsqlDataSource dataSource, string? schema)
+        : this(dataSource, schema, expectedMultiTenant: null)
+    {
+    }
+
+    /// <summary>
+    /// Binary-compatible constructor retained for existing consumers. <paramref name="multiTenant"/>
+    /// set to <see langword="true"/> asserts multi-tenant storage. <see langword="false"/> is
+    /// treated as the legacy default (auto-detect) because optional arguments are embedded as
+    /// <see langword="false"/> in already-compiled callers.
+    /// </summary>
+    public PostgresDeadLetterStore(
+        NpgsqlDataSource dataSource,
+        string? schema = null,
+        bool multiTenant = false)
+        : this(dataSource, schema, expectedMultiTenant: multiTenant ? true : null)
+    {
+    }
+
+    private PostgresDeadLetterStore(
+        NpgsqlDataSource dataSource,
+        string? schema,
+        bool? expectedMultiTenant)
+    {
+        _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
+        _schema = new SchemaQualifier(schema);
+        _topology = new PostgresStoreTopology(dataSource, schema, expectedMultiTenant);
+    }
 
     /// <inheritdoc />
     public async Task StoreAsync(DeadLetterEntry entry, CancellationToken ct = default)
     {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var multiTenant = await _topology.IsMultiTenantAsync(conn, ct);
+
         // In multi-tenant mode include tenant_id so the column (added by the multi-tenant
         // migration) is populated.  In single-tenant mode the column does not exist, so
         // keep the original column list unchanged.
         string sql;
-        if (_multiTenant)
+        if (multiTenant)
         {
             sql = $"""
                 INSERT INTO {_schema.Table("alberto_dead_letter_events")}
@@ -56,7 +81,6 @@ public sealed class PostgresDeadLetterStore(
                 """;
         }
 
-        await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = sql;
         cmd.Parameters.AddWithValue("id", entry.Id);
@@ -69,7 +93,7 @@ public sealed class PostgresDeadLetterStore(
         cmd.Parameters.AddWithValue("attemptCount", entry.AttemptCount);
         cmd.Parameters.AddWithValue("failedAt", entry.FailedAt);
         cmd.Parameters.AddWithValue("globalPosition", entry.GlobalPosition);
-        if (_multiTenant)
+        if (multiTenant)
             cmd.Parameters.Add(new NpgsqlParameter("tenantId", NpgsqlTypes.NpgsqlDbType.Text)
             {
                 Value = (object?)entry.TenantId ?? DBNull.Value
@@ -85,10 +109,13 @@ public sealed class PostgresDeadLetterStore(
         int limit = 100,
         CancellationToken ct = default)
     {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var multiTenant = await _topology.IsMultiTenantAsync(conn, ct);
+
         // The tenant_id column only exists under the multi-tenant migration. In single-tenant
         // mode there is nothing to select or filter on, and a supplied tenantId is meaningless.
-        var tenantSelect = _multiTenant ? "tenant_id" : "NULL::text AS tenant_id";
-        var tenantFilter = _multiTenant && tenantId is not null
+        var tenantSelect = multiTenant ? "tenant_id" : "NULL::text AS tenant_id";
+        var tenantFilter = multiTenant && tenantId is not null
             ? "AND tenant_id = @tenantId"
             : string.Empty;
 
@@ -101,7 +128,6 @@ public sealed class PostgresDeadLetterStore(
             LIMIT @limit
             """;
 
-        await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = sql;
         cmd.Parameters.AddWithValue("processorId", processorId);
@@ -114,19 +140,21 @@ public sealed class PostgresDeadLetterStore(
 
         while (await reader.ReadAsync(ct))
         {
-            entries.Add(new DeadLetterEntry(
-                Id: reader.GetGuid(0),
-                ProcessorId: reader.GetString(1),
-                EventId: reader.GetGuid(2),
-                EventType: reader.GetString(3),
-                EventData: reader.GetString(4),
-                ErrorMessage: reader.GetString(5),
-                StackTrace: reader.IsDBNull(6) ? null : reader.GetString(6),
-                AttemptCount: reader.GetInt32(7),
-                FailedAt: reader.GetDateTime(8),
-                GlobalPosition: reader.GetInt64(9),
-                RetryRequested: reader.GetBoolean(10),
-                TenantId: reader.IsDBNull(11) ? null : reader.GetString(11)));
+            entries.Add(new DeadLetterEntry
+            {
+                Id = reader.GetGuid(0),
+                ProcessorId = reader.GetString(1),
+                EventId = reader.GetGuid(2),
+                EventType = reader.GetString(3),
+                EventData = reader.GetString(4),
+                ErrorMessage = reader.GetString(5),
+                StackTrace = reader.IsDBNull(6) ? null : reader.GetString(6),
+                AttemptCount = reader.GetInt32(7),
+                FailedAt = reader.GetFieldValue<DateTimeOffset>(8),
+                GlobalPosition = reader.GetInt64(9),
+                RetryRequested = reader.GetBoolean(10),
+                TenantId = reader.IsDBNull(11) ? null : reader.GetString(11),
+            });
         }
 
         return entries;
@@ -138,6 +166,7 @@ public sealed class PostgresDeadLetterStore(
         var sql = $"SELECT COUNT(*) FROM {_schema.Table("alberto_dead_letter_events")} WHERE processor_id = @processorId";
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await _topology.IsMultiTenantAsync(conn, ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = sql;
         cmd.Parameters.AddWithValue("processorId", processorId);
@@ -160,6 +189,7 @@ public sealed class PostgresDeadLetterStore(
             """;
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await _topology.IsMultiTenantAsync(conn, ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = sql;
         cmd.Parameters.AddWithValue("id", claim.Entry.Id);
@@ -174,6 +204,7 @@ public sealed class PostgresDeadLetterStore(
         var sql = $"DELETE FROM {_schema.Table("alberto_dead_letter_events")} WHERE processor_id = @processorId";
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await _topology.IsMultiTenantAsync(conn, ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = sql;
         cmd.Parameters.AddWithValue("processorId", processorId);
@@ -191,6 +222,7 @@ public sealed class PostgresDeadLetterStore(
             """;
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await _topology.IsMultiTenantAsync(conn, ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = sql;
         cmd.Parameters.AddWithValue("processorId", processorId);
@@ -250,26 +282,28 @@ public sealed class PostgresDeadLetterStore(
 
             var expiresAt = reader.GetFieldValue<DateTimeOffset>(12);
             var claimId = reader.GetGuid(14);
-            var entry = new DeadLetterEntry(
-                Id: reader.GetGuid(0),
-                ProcessorId: reader.GetString(1),
-                EventId: reader.GetGuid(2),
-                EventType: reader.GetString(3),
-                EventData: reader.GetString(4),
-                ErrorMessage: reader.GetString(5),
-                StackTrace: reader.IsDBNull(6) ? null : reader.GetString(6),
-                AttemptCount: reader.GetInt32(7),
-                FailedAt: reader.GetDateTime(8),
-                GlobalPosition: reader.GetInt64(9),
-                RetryRequested: reader.GetBoolean(10),
-                TenantId: reader.IsDBNull(15) ? null : reader.GetString(15),
-                Tags: tags ?? Array.Empty<string>(),
-                Metadata: metadata ?? new Dictionary<string, string>(),
-                CreatedAt: reader.IsDBNull(18) ? null : reader.GetDateTime(18),
-                ClaimedAt: reader.IsDBNull(11) ? null : reader.GetFieldValue<DateTimeOffset>(11),
-                ClaimExpiresAt: expiresAt,
-                ClaimedBy: reader.IsDBNull(13) ? null : reader.GetString(13),
-                ClaimId: claimId);
+            var entry = new DeadLetterEntry
+            {
+                Id = reader.GetGuid(0),
+                ProcessorId = reader.GetString(1),
+                EventId = reader.GetGuid(2),
+                EventType = reader.GetString(3),
+                EventData = reader.GetString(4),
+                ErrorMessage = reader.GetString(5),
+                StackTrace = reader.IsDBNull(6) ? null : reader.GetString(6),
+                AttemptCount = reader.GetInt32(7),
+                FailedAt = reader.GetFieldValue<DateTimeOffset>(8),
+                GlobalPosition = reader.GetInt64(9),
+                RetryRequested = reader.GetBoolean(10),
+                TenantId = reader.IsDBNull(15) ? null : reader.GetString(15),
+                Tags = tags ?? Array.Empty<string>(),
+                Metadata = metadata ?? new Dictionary<string, string>(),
+                CreatedAt = reader.IsDBNull(18) ? null : reader.GetDateTime(18),
+                ClaimedAt = reader.IsDBNull(11) ? null : reader.GetFieldValue<DateTimeOffset>(11),
+                ClaimExpiresAt = expiresAt,
+                ClaimedBy = reader.IsDBNull(13) ? null : reader.GetString(13),
+                ClaimId = claimId,
+            };
 
             claims.Add(new DeadLetterClaim(entry, claimId, expiresAt));
         }
@@ -296,6 +330,7 @@ public sealed class PostgresDeadLetterStore(
             """;
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await _topology.IsMultiTenantAsync(conn, ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = sql;
         cmd.Parameters.AddWithValue("id", claim.Entry.Id);
@@ -316,7 +351,7 @@ public sealed class PostgresDeadLetterStore(
     // catalog is not queried on every call (SQL-4).
     private async Task<string> BuildClaimSqlAsync(NpgsqlConnection conn, CancellationToken ct)
     {
-        var hasTenantId = await ResolveHasTenantIdAsync(conn, ct);
+        var hasTenantId = await _topology.IsMultiTenantAsync(conn, ct);
         var tenantSelect = hasTenantId ? "e.tenant_id" : "NULL::text AS tenant_id";
 
         return $"""
@@ -355,36 +390,4 @@ public sealed class PostgresDeadLetterStore(
             """;
     }
 
-    // Returns (and caches) whether alberto_events has a tenant_id column.
-    // When multiTenant was declared at construction the answer is already known (true)
-    // and the catalog is never queried.  Otherwise the probe runs once and the result
-    // is stored so subsequent calls skip the information_schema round-trip (SQL-4).
-    // Worst-case two concurrent first calls both probe and write the same value — benign.
-    private async ValueTask<bool> ResolveHasTenantIdAsync(NpgsqlConnection conn, CancellationToken ct)
-    {
-        if (_hasTenantIdCache.HasValue)
-            return _hasTenantIdCache.Value;
-
-        _hasTenantIdCache = await EventsTableHasTenantIdAsync(conn, ct);
-        return _hasTenantIdCache.Value;
-    }
-
-    private async Task<bool> EventsTableHasTenantIdAsync(NpgsqlConnection conn, CancellationToken ct)
-    {
-        const string sql = """
-            SELECT EXISTS (
-                SELECT 1
-                FROM information_schema.columns
-                WHERE table_schema = @schemaName
-                  AND table_name = 'alberto_events'
-                  AND column_name = 'tenant_id')
-            """;
-
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = sql;
-        cmd.Parameters.AddWithValue("schemaName", _schema.Name);
-
-        var result = await cmd.ExecuteScalarAsync(ct);
-        return result is true;
-    }
 }

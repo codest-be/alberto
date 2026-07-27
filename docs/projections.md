@@ -232,7 +232,7 @@ where it is empty or half-built.
                                                               │
   start ──▶  shadow loop (own checkpoint, from position 0) ─▶ version 2
                                                               │
-  promote ──▶ version 2 becomes active, version 1 deleted ────┘  (one transaction)
+  promote ──▶ version 2 becomes active, version 1 unreachable ──┘  (one transaction; rows swept later)
 ```
 
 ### Enabling it

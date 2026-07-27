@@ -26,6 +26,7 @@ namespace Alberto.Cli;
 public sealed class CliSession
 {
     private readonly AlbertoConfig _config;
+    private readonly CliConfigurationException? _configurationError;
 
     /// <summary>The output adapter in effect for this invocation.</summary>
     public IOutput Output { get; }
@@ -39,7 +40,22 @@ public sealed class CliSession
     public CliSession(bool json, AlbertoConfig? config = null)
     {
         Output = json ? new JsonOutput() : new HumanOutput();
-        _config = config ?? ConfigFileFinder.Find() ?? new AlbertoConfig();
+
+        if (config is not null)
+        {
+            _config = config;
+            return;
+        }
+
+        try
+        {
+            _config = ConfigFileFinder.Find() ?? new AlbertoConfig();
+        }
+        catch (CliConfigurationException ex)
+        {
+            _configurationError = ex;
+            _config = new AlbertoConfig();
+        }
     }
 
     /// <summary>
@@ -138,6 +154,12 @@ public sealed class CliSession
     /// </remarks>
     public async Task<int> RunAsync(Func<Task<int>> body)
     {
+        if (_configurationError is not null)
+        {
+            Output.Error(_configurationError.Message);
+            return 1;
+        }
+
         try
         {
             return await body();

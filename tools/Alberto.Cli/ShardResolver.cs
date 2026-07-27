@@ -136,12 +136,11 @@ public static class ShardResolver
     /// <param name="config">The config to read, rather than the one on disk.</param>
     public static IReadOnlyList<string> DeclaredShardIds(AlbertoConfig? config)
     {
-        if (config?.Shards is not { Count: > 0 } shards)
+        var shards = ConfiguredShards(config);
+        if (shards is null)
             return [];
 
-        return shards
-            .Where(s => !string.IsNullOrWhiteSpace(s.Value?.Url))
-            .Select(s => s.Key)
+        return shards.Keys
             .Order(StringComparer.Ordinal)
             .ToArray();
     }
@@ -180,17 +179,43 @@ public static class ShardResolver
         if (!string.IsNullOrWhiteSpace(urlOption))
             return null;
 
-        if (config?.Shards is not { Count: > 0 } shards)
+        var shards = ConfiguredShards(config);
+        if (shards is null)
             return null;
 
         return shards
-            .Where(s => !string.IsNullOrWhiteSpace(s.Value?.Url))
             .OrderBy(s => s.Key, StringComparer.Ordinal)
             .Select(s => new ShardTarget(
                 s.Key,
                 s.Value.Url!,
-                SchemaOf(schemaOption, s.Value.Schema, config.Schema)))
+                SchemaOf(schemaOption, s.Value.Schema, config!.Schema)))
             .ToArray();
+    }
+
+    /// <summary>
+    /// Returns the complete shard map. A partially configured map is rejected as a unit: silently
+    /// omitting one entry would make an all-shards mutation report success after touching only a
+    /// subset of the module.
+    /// </summary>
+    private static IReadOnlyDictionary<string, ShardConfig>? ConfiguredShards(AlbertoConfig? config)
+    {
+        if (config?.Shards is not { Count: > 0 } shards)
+            return null;
+
+        var incomplete = shards
+            .Where(s => string.IsNullOrWhiteSpace(s.Value?.Url))
+            .Select(s => s.Key)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        if (incomplete.Length > 0)
+        {
+            throw new ShardSelectionException(
+                $"Shard configuration is incomplete. Add a non-empty \"url\" for: " +
+                $"{string.Join(", ", incomplete)}. No shard was selected.");
+        }
+
+        return shards;
     }
 
     private static ShardTarget Unsharded(AlbertoConfig? config, string? urlOption, string? schemaOption) => new(

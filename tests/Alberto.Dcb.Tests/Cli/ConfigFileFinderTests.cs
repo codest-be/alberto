@@ -56,13 +56,25 @@ public class ConfigFileFinderTests : IDisposable
     }
 
     [Fact]
-    public void Returns_Null_When_File_Is_Malformed_JSON()
+    public void Rejects_File_When_JSON_Is_Malformed()
     {
         WriteConfig(_root, "not valid json {{{ broken");
 
-        var result = ConfigFileFinder.Find(_root);
+        var read = () => ConfigFileFinder.Find(_root);
 
-        result.Should().BeNull();
+        read.Should().Throw<CliConfigurationException>()
+            .Which.Message.Should().Contain(Path.Combine(_root.FullName, ".alberto", "config.json"));
+    }
+
+    [Fact]
+    public void Rejects_Unknown_Configuration_Properties()
+    {
+        WriteConfig(_root, """{"shard": {"db1": {"url": "Host=one"}}}""");
+
+        var read = () => ConfigFileFinder.Find(_root);
+
+        read.Should().Throw<CliConfigurationException>()
+            .Which.Message.Should().Contain("shard");
     }
 
     [Fact]

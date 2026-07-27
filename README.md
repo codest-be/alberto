@@ -101,8 +101,7 @@ dotnet add package Alberto.Dcb --prerelease
 | `Alberto.Dcb.Telemetry` | OpenTelemetry tracing and metrics |
 | `Alberto.Cli` | The `alberto` operator CLI (`dotnet tool install`) |
 
-The libraries target **net9.0 and net10.0**, except `Alberto.Dcb.EntityFramework`, which is net10.0
-only. The CLI is a net10.0 tool.
+All libraries target **net10.0**. The CLI is a net10.0 tool.
 
 ## Sixty seconds
 
@@ -128,6 +127,7 @@ The full, runnable version of that program is
 |---|---|
 | [Getting started](docs/getting-started.md) | A complete runnable sample, built up piece by piece |
 | [Concepts](docs/concepts.md) | Events, tags, queries, boundaries, positions, checkpoints |
+| [Event schema versioning](docs/events.md) | Permanent slugs, the `_version` tag, upcasters and their limits |
 | [Projections](docs/projections.md) | Declaring them, storing them, rebuilding them live |
 | [Reactors and the outbox](docs/reactors-and-outbox.md) | Side effects and publishing to the outside world |
 | [Multi-tenancy](docs/multi-tenancy.md) | Tenant isolation, leases, and what it costs |
@@ -157,6 +157,10 @@ dotnet run --project apps/Alberto.AppHost
 Alberto is **pre-1.0** and published as `0.1.0-beta.*`. The whole solution builds clean and the
 suite is green; the API still moves between betas, and every break is recorded in
 [UPGRADING.md](UPGRADING.md).
+
+The multi-database tenant sharding feature is marked **experimental** (`[Experimental("ALB9001")]`
+on all public sharding types). It ships and the tests pass, but the API may change more sharply
+than the rest of the library between betas.
 
 Outbox claims are time-bounded and token-fenced: a relay crash leaves a recoverable `processing`
 row, and a stale relay cannot overwrite a newer claim. Delivery remains at-least-once; see

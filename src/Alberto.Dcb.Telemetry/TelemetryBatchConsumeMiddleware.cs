@@ -40,9 +40,9 @@ public static class TelemetryBatchConsumeMiddleware
                     links: links);
 
                 activity?.SetTag("processor.id", context.ProcessorId);
-                activity?.SetTag("module.key", ShardKey.ModuleOf(context.ModuleKey));
+                activity?.SetTag("module", ShardKey.ModuleOf(context.ModuleKey));
                 if (ShardKey.ShardOf(context.ModuleKey) is { } shardId)
-                    activity?.SetTag("module.shard", shardId);
+                    activity?.SetTag("shard", shardId);
                 activity?.SetTag("batch.size", context.Envelopes.Count);
                 activity?.SetTag("event.position.first", firstEnvelope.GlobalPosition);
                 activity?.SetTag("event.position.last", context.Envelopes[^1].GlobalPosition);
@@ -65,10 +65,12 @@ public static class TelemetryBatchConsumeMiddleware
                         activity?.AddTag("exception.stacktrace", ex.StackTrace);
                     }
 
-                    AlbertoMetrics.ProcessingErrors.Add(
-                        context.DeadLetteredCount,
-                        new KeyValuePair<string, object?>("processor", context.ProcessorId),
-                        new KeyValuePair<string, object?>("exception.type", ex?.GetType().Name ?? "Unknown"));
+                    // Use the same module/shard tag set as EventsProcessed so all three
+                    // per-event metrics (processed, errors, duration) share the same label
+                    // dimensions and can be correlated by a single join key in dashboards.
+                    var deadLetterTags = TelemetryTags.ForModule(context.ProcessorId, context.ModuleKey);
+                    deadLetterTags.Add("exception.type", ex?.GetType().Name ?? "Unknown");
+                    AlbertoMetrics.ProcessingErrors.Add(context.DeadLetteredCount, deadLetterTags);
                 }
                 else
                 {
@@ -85,18 +87,18 @@ public static class TelemetryBatchConsumeMiddleware
                 activity?.AddTag("exception.message", ex.Message);
                 activity?.AddTag("exception.stacktrace", ex.StackTrace);
 
-                AlbertoMetrics.ProcessingErrors.Add(
-                    context.Envelopes.Count,
-                    new KeyValuePair<string, object?>("processor", context.ProcessorId),
-                    new KeyValuePair<string, object?>("exception.type", ex.GetType().Name));
+                var catchTags = TelemetryTags.ForModule(context.ProcessorId, context.ModuleKey);
+                catchTags.Add("exception.type", ex.GetType().Name);
+                AlbertoMetrics.ProcessingErrors.Add(context.Envelopes.Count, catchTags);
                 throw;
             }
             finally
             {
                 activity?.Dispose();
+                // TotalSeconds matches the OTel semantic-convention unit "s" declared on ProcessingDuration.
                 AlbertoMetrics.ProcessingDuration.Record(
-                    sw.ElapsedMilliseconds,
-                    new KeyValuePair<string, object?>("processor", context.ProcessorId));
+                    sw.Elapsed.TotalSeconds,
+                    TelemetryTags.ForModule(context.ProcessorId, context.ModuleKey));
             }
         };
     }

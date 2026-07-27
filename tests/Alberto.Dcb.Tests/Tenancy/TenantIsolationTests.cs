@@ -20,7 +20,7 @@ namespace Alberto.Dcb.Tests.Tenancy;
 public sealed class MultiTenantPostgresFixture(PostgresCluster cluster)
     : PostgresDatabaseFixture(cluster, PostgresTemplates.MultiTenant)
 {
-    private const string ModuleKey = "ti-test";
+    private const string ModuleKey = "ti_test";
 
     /// <summary>
     /// DI service provider that owns the keyed <see cref="IEventStore"/> backed by the
@@ -69,7 +69,7 @@ public sealed class MultiTenantPostgresFixture(PostgresCluster cluster)
 public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
     : IClassFixture<MultiTenantPostgresFixture>
 {
-    private const string ModuleKey = "ti-test";
+    private const string ModuleKey = "ti_test";
     private const string TenantA = "tenanta";
     private const string TenantB = "tenantb";
 
@@ -442,18 +442,20 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
 
         // Resolve the registered adapter: this guards the composition seam as well as the SQL.
         var deadLetterStore = fixture.Services.GetRequiredKeyedService<IDeadLetterStore>(ModuleKey);
-        var entry = new DeadLetterEntry(
-            Id: Guid.NewGuid(),
-            ProcessorId: $"ti-proc-{Guid.NewGuid():N}",
-            EventId: persisted.Id,
-            EventType: persisted.EventType.Id,
-            EventData: persisted.EventData,
-            ErrorMessage: "tenant isolation test",
-            StackTrace: null,
-            AttemptCount: 1,
-            FailedAt: DateTimeOffset.UtcNow,
-            GlobalPosition: persisted.GlobalPosition,
-            TenantId: TenantA);
+        var entry = new DeadLetterEntry
+        {
+            Id = Guid.NewGuid(),
+            ProcessorId = $"ti-proc-{Guid.NewGuid():N}",
+            EventId = persisted.Id,
+            EventType = persisted.EventType.Id,
+            EventData = persisted.EventData,
+            ErrorMessage = "tenant isolation test",
+            StackTrace = null,
+            AttemptCount = 1,
+            FailedAt = DateTimeOffset.UtcNow,
+            GlobalPosition = persisted.GlobalPosition,
+            TenantId = TenantA,
+        };
 
         await deadLetterStore.StoreAsync(entry, ct);
 
@@ -473,7 +475,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
     /// which tenant the failed event belongs to.
     /// </summary>
     [Fact]
-    public async Task DeadLetterStore_ClaimRetryRequested_returns_correct_tenantId_via_events_join()
+    public async Task DeadLetterStore_LegacyFalseHint_StillUsesMultiTenantSchemaForClaims()
     {
         var ct = TestContext.Current.CancellationToken;
         var orderId = Guid.NewGuid();
@@ -492,19 +494,23 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
         }
 
         var processorId = $"ti-proc-{Guid.NewGuid():N}";
-        var deadLetterStore = new PostgresDeadLetterStore(fixture.DataSource, multiTenant: true);
-        var entry = new DeadLetterEntry(
-            Id: Guid.NewGuid(),
-            ProcessorId: processorId,
-            EventId: persisted.Id,
-            EventType: persisted.EventType.Id,
-            EventData: persisted.EventData,
-            ErrorMessage: "retry tenant test",
-            StackTrace: null,
-            AttemptCount: 1,
-            FailedAt: DateTimeOffset.UtcNow,
-            GlobalPosition: persisted.GlobalPosition,
-            TenantId: TenantA);
+        // Already-compiled callers of the former optional-parameter constructor embed false at
+        // the call site. That legacy value must not override the migrated schema after upgrade.
+        var deadLetterStore = new PostgresDeadLetterStore(fixture.DataSource, multiTenant: false);
+        var entry = new DeadLetterEntry
+        {
+            Id = Guid.NewGuid(),
+            ProcessorId = processorId,
+            EventId = persisted.Id,
+            EventType = persisted.EventType.Id,
+            EventData = persisted.EventData,
+            ErrorMessage = "retry tenant test",
+            StackTrace = null,
+            AttemptCount = 1,
+            FailedAt = DateTimeOffset.UtcNow,
+            GlobalPosition = persisted.GlobalPosition,
+            TenantId = TenantA,
+        };
 
         await deadLetterStore.StoreAsync(entry, ct);
         await deadLetterStore.MarkForRetryAsync(processorId, ct);
@@ -591,32 +597,36 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
     {
         var ct = TestContext.Current.CancellationToken;
         var processorId = $"ti-admin-dl-{Guid.NewGuid():N}";
-        var deadLetters = new PostgresDeadLetterStore(fixture.DataSource, multiTenant: true);
+        var deadLetters = new PostgresDeadLetterStore(fixture.DataSource);
 
-        await deadLetters.StoreAsync(new DeadLetterEntry(
-            Id: Guid.NewGuid(),
-            ProcessorId: processorId,
-            EventId: Guid.NewGuid(),
-            EventType: "admin-test",
-            EventData: "{}",
-            ErrorMessage: "tenant A",
-            StackTrace: null,
-            AttemptCount: 1,
-            FailedAt: DateTimeOffset.UtcNow,
-            GlobalPosition: 1,
-            TenantId: TenantA), ct);
-        await deadLetters.StoreAsync(new DeadLetterEntry(
-            Id: Guid.NewGuid(),
-            ProcessorId: processorId,
-            EventId: Guid.NewGuid(),
-            EventType: "admin-test",
-            EventData: "{}",
-            ErrorMessage: "tenant B",
-            StackTrace: null,
-            AttemptCount: 1,
-            FailedAt: DateTimeOffset.UtcNow,
-            GlobalPosition: 2,
-            TenantId: TenantB), ct);
+        await deadLetters.StoreAsync(new DeadLetterEntry
+        {
+            Id = Guid.NewGuid(),
+            ProcessorId = processorId,
+            EventId = Guid.NewGuid(),
+            EventType = "admin-test",
+            EventData = "{}",
+            ErrorMessage = "tenant A",
+            StackTrace = null,
+            AttemptCount = 1,
+            FailedAt = DateTimeOffset.UtcNow,
+            GlobalPosition = 1,
+            TenantId = TenantA,
+        }, ct);
+        await deadLetters.StoreAsync(new DeadLetterEntry
+        {
+            Id = Guid.NewGuid(),
+            ProcessorId = processorId,
+            EventId = Guid.NewGuid(),
+            EventType = "admin-test",
+            EventData = "{}",
+            ErrorMessage = "tenant B",
+            StackTrace = null,
+            AttemptCount = 1,
+            FailedAt = DateTimeOffset.UtcNow,
+            GlobalPosition = 2,
+            TenantId = TenantB,
+        }, ct);
 
         var admin = new PostgresAdminDataAccess(fixture.DataSource);
         var entries = await admin.GetDeadLettersAsync(
@@ -688,19 +698,21 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
         }
 
         var processorId = $"ti-proc-{Guid.NewGuid():N}";
-        var deadLetterStore = new PostgresDeadLetterStore(fixture.DataSource, multiTenant: true);
-        var entry = new DeadLetterEntry(
-            Id: Guid.NewGuid(),
-            ProcessorId: processorId,
-            EventId: persisted.Id,
-            EventType: persisted.EventType.Id,
-            EventData: persisted.EventData,
-            ErrorMessage: "get isolation test",
-            StackTrace: null,
-            AttemptCount: 1,
-            FailedAt: DateTimeOffset.UtcNow,
-            GlobalPosition: persisted.GlobalPosition,
-            TenantId: TenantA);
+        var deadLetterStore = new PostgresDeadLetterStore(fixture.DataSource);
+        var entry = new DeadLetterEntry
+        {
+            Id = Guid.NewGuid(),
+            ProcessorId = processorId,
+            EventId = persisted.Id,
+            EventType = persisted.EventType.Id,
+            EventData = persisted.EventData,
+            ErrorMessage = "get isolation test",
+            StackTrace = null,
+            AttemptCount = 1,
+            FailedAt = DateTimeOffset.UtcNow,
+            GlobalPosition = persisted.GlobalPosition,
+            TenantId = TenantA,
+        };
 
         await deadLetterStore.StoreAsync(entry, ct);
 

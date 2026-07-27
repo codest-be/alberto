@@ -1,5 +1,27 @@
 # Tenant sharding
 
+> **Experimental in v1 — diagnostic `ALB9001`.**
+> Tenant sharding is a preview feature. The sharding API (`AcrossPostgresDatabases`,
+> `PostgresShardBuilder`, and the types listed in [Experimental surface](#experimental-surface))
+> may change in a minor v1.x release; the rest of Alberto will not. Using any part of it produces
+> a compiler diagnostic so you know what you are opting into. To suppress it for a project that
+> has deliberately committed to sharding:
+>
+> ```xml
+> <!-- in the project's .csproj -->
+> <PropertyGroup>
+>   <NoWarn>$(NoWarn);ALB9001</NoWarn>
+> </PropertyGroup>
+> ```
+>
+> Or at a single call site:
+>
+> ```csharp
+> #pragma warning disable ALB9001 // opted into experimental sharding
+> .WithTenancy(t => t.AcrossPostgresDatabases(...))
+> #pragma warning restore ALB9001
+> ```
+
 Alberto's default multi-tenancy is [row-level](../multi-tenancy.md): every event, checkpoint and
 projection document carries a `tenant_id`, and one database holds them all. Sharding puts a second
 layer **above** that one: a module's tenants can be spread over several PostgreSQL databases, with
@@ -215,9 +237,12 @@ The CLI's rules follow from positions being per-database:
   not something you can undo. Pass `--shard <id>` or `--all-shards`.
 - **`ops checkpoint set` takes no `--all-shards` at all.** A position is a per-database sequence,
   so one number cannot apply to several.
-- **A failing shard does not stop the run.** Each database's state is its own, and an operator
-  promoting across a fleet needs to know which of them moved, not only where the run stopped. The
-  exit code is still non-zero.
+- **A failing shard does not stop a run once writes begin.** Each database's state is its own, and
+  an operator promoting across a fleet needs to know which of them moved, not only where the run
+  stopped. The exit code is still non-zero. `ops rebuild start` is the deliberate exception: it
+  probes every selected shard and aborts before allocating any shadow version when that complete
+  plan cannot be built. The operator can retry a consistent start after the unavailable shard
+  recovers, or explicitly select one shard.
 - **`--url` beats the configured shards.** Naming a database explicitly and then fanning out over
   the config's shards anyway would be a surprise, and a destructive one for a mutation.
 
@@ -242,6 +267,31 @@ else:
 `ALB0016` is worth dwelling on: two shards pointing at the same storage would each run their own
 control loops over the same events, under checkpoints that each think they own the log. Separate
 shards must be separate storage — a different database, or at minimum a different schema.
+
+## Experimental surface
+
+The following types carry `[Experimental("ALB9001")]`. Referencing any of them in code that does
+not itself suppress ALB9001 produces a diagnostic. All of them are opt-in; they are unreachable
+without first calling `AcrossPostgresDatabases`.
+
+| Type | Where |
+|---|---|
+| `AcrossPostgresDatabases` | `Alberto.Dcb.Postgres.ShardingBuilderExtensions` |
+| `PostgresShardBuilder` | `Alberto.Dcb.Postgres` |
+| `PostgresTenantShardMap` | `Alberto.Dcb.Postgres` |
+| `ITenantShardMap` | `Alberto.Dcb.Tenancy` |
+| `TenantShardResolver` | `Alberto.Dcb.Tenancy` |
+| `ShardHealth` | `Alberto.Dcb.Tenancy` |
+| `ShardState` | `Alberto.Dcb.Tenancy` |
+| `ShardHealthCheck` | `Alberto.Dcb.Tenancy` |
+| `ShardRoutingEventStore` | `Alberto.Dcb.Tenancy` |
+| `ShardRoutingEventStoreBackend` | `Alberto.Dcb.Tenancy` |
+| `UnknownTenantException` | `Alberto.Dcb.Tenancy` |
+| `ShardUnavailableException` | `Alberto.Dcb.Tenancy` |
+
+`ShardKey` is **not** experimental: it is used by Alberto's telemetry layer on every module,
+sharded or not, so marking it would emit ALB9001 for applications that have never opted into
+sharding.
 
 ## Limits
 
@@ -274,9 +324,3 @@ read layer and merge, or maintain the aggregate in a separate unsharded module f
 In this repository, the Orders example's `getOrdersOverview` is exactly such an aggregate. It is
 not sharded and is unaffected today — but it is the shape of query that would need rewriting as a
 fan-out if it were.
-
-Note also that `getOrdersOverview` is currently broken for an unrelated reason: the JSONB read side
-asks for a tenant the write side never stored, so it returns nothing however many events have been
-consumed. That is a pre-existing mismatch in the example app between `OrderQueries` and
-`OrdersModule` (see the Known Gaps in [CLAUDE.md](../../CLAUDE.md)). Sharding neither causes it nor
-cures it, and the two should not be conflated when debugging.

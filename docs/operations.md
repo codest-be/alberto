@@ -441,8 +441,6 @@ impossible to debug.
 | `alberto.retries` | A rising rate means a flaky dependency |
 | `alberto.concurrency.conflicts` | `DcbConflictException`s — a rising rate means a boundary is too wide |
 | `alberto.tenant_locks_acquired`, `alberto.tenant_lock_failures` | Lease churn |
-| `alberto.tenant_leases_lost` | Replicas losing tenants — flapping or GC pauses |
-| `alberto.events_filtered_by_tenant` | Tenant isolation actually engaging |
 | `alberto.append.duration` | Write latency, including the advisory lock wait |
 | `alberto.processing.duration` | Per-handler latency |
 

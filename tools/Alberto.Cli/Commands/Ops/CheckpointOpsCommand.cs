@@ -282,9 +282,9 @@ public static class CheckpointOpsCommand
             preventing a full replay from the beginning.
 
             Examples:
-              alberto ops checkpoint rename --from OldHandlerName --to NewHandlerName
-              alberto ops checkpoint rename --module orders --from OldHandlerName --to NewHandlerName
-              alberto ops checkpoint rename --from OldHandlerName --to NewHandlerName --all-shards
+              alberto ops checkpoint rename --from OldHandlerName --to NewHandlerName --yes
+              alberto ops checkpoint rename --module orders --from OldHandlerName --to NewHandlerName --yes
+              alberto ops checkpoint rename --from OldHandlerName --to NewHandlerName --all-shards --yes
             """);
 
         var moduleOption = new Option<string?>("--module") { Description = "Module key (for context; shown in startup warnings)" };
@@ -292,15 +292,18 @@ public static class CheckpointOpsCommand
         var toOption = new Option<string?>("--to") { Description = "New processor id (the current handler's derived id)" };
         var urlOption = new Option<string?>("--url") { Description = "PostgreSQL connection string" };
         var schemaOption = new Option<string?>("--schema") { Description = "Database schema name" };
+        var yesOption = new Option<bool>("--yes") { Description = "Skip confirmation prompt" };
 
         command.AddOption(moduleOption);
         command.AddOption(fromOption);
         command.AddOption(toOption);
         command.AddOption(urlOption);
         command.AddOption(schemaOption);
+        command.AddOption(yesOption);
         var (shardOption, allShardsOption) = ShardRun.AddMutationOptions(command);
 
-        command.SetHandler(async (string? module, string? from, string? to, string? url, string? schema, string? shard, bool allShards) =>
+        command.SetHandler(async (string? module, string? from, string? to, string? url, string? schema,
+            bool yes, string? shard, bool allShards) =>
         {
             // rename has no --json: it produces human-readable diagnostic output only.
             var session = new CliSession(json: false);
@@ -323,6 +326,15 @@ public static class CheckpointOpsCommand
                 // A renamed handler is renamed everywhere, so this is the one mutation an operator
                 // usually does want against every database at once.
                 var targets = session.MutationTargets(shard, allShards, url, schema);
+
+                if (session.Confirm(
+                        yes,
+                        $"Rename checkpoint '[bold]{from}[/]' to '[bold]{to}[/]'{ShardRun.Scope(targets)}?",
+                        "Destructive operation requires confirmation. Add --yes to confirm.\n" +
+                        $"  alberto ops checkpoint rename --from {from} --to {to} --yes") is { } confirmCode)
+                {
+                    return confirmCode;
+                }
 
                 var failed = await ShardRun.ApplyAsync(output, targets, async (dataSource, target) =>
                 {
@@ -364,7 +376,7 @@ public static class CheckpointOpsCommand
 
                 return failed ? 1 : 0;
             });
-        }, moduleOption, fromOption, toOption, urlOption, schemaOption, shardOption, allShardsOption);
+        }, moduleOption, fromOption, toOption, urlOption, schemaOption, yesOption, shardOption, allShardsOption);
 
         return command;
     }

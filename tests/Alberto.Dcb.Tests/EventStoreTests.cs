@@ -177,7 +177,7 @@ public sealed class EventStoreTests
 
         public IReadOnlyDictionary<string, TState> Store => _store;
 
-        public Task<Dictionary<string, TState>> LoadManyAsync(
+        public Task<IReadOnlyDictionary<string, TState>> LoadManyAsync(
             IEnumerable<string> documentIds,
             CancellationToken ct = default)
         {
@@ -187,7 +187,7 @@ public sealed class EventStoreTests
                 if (_store.TryGetValue(id, out var state))
                     result[id] = state;
             }
-            return Task.FromResult(result);
+            return Task.FromResult<IReadOnlyDictionary<string, TState>>(result);
         }
 
         public Task ApplyChangesAsync(

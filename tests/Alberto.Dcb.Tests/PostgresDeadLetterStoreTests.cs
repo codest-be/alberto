@@ -155,6 +155,20 @@ public sealed class PostgresDeadLetterStoreTests(SingleTenantPostgresFixture fix
         Assert.Equal(0, await deadLetterStore.CountAsync(entry.ProcessorId, ct));
     }
 
+    [Fact]
+    public async Task ExplicitMultiTenantExpectation_RejectsSingleTenantSchema()
+    {
+        var store = new PostgresDeadLetterStore(fixture.DataSource, multiTenant: true);
+
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.CountAsync(
+                $"processor-{Guid.NewGuid():N}",
+                TestContext.Current.CancellationToken));
+
+        Assert.Contains("tenancy mismatch", failure.Message);
+        Assert.Contains("single-tenant", failure.Message);
+    }
+
     private async Task<(PostgresDeadLetterStore Store, DeadLetterEntry Entry, EventTag Tag)> SeedRetryRequestedEntryAsync()
     {
         var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
@@ -167,17 +181,19 @@ public sealed class PostgresDeadLetterStoreTests(SingleTenantPostgresFixture fix
             cancellationToken: TestContext.Current.CancellationToken);
 
         var persisted = appended.Single();
-        var entry = new DeadLetterEntry(
-            Id: Guid.NewGuid(),
-            ProcessorId: $"processor-{Guid.NewGuid():N}",
-            EventId: persisted.Id,
-            EventType: persisted.EventType.Id,
-            EventData: persisted.EventData,
-            ErrorMessage: "boom",
-            StackTrace: null,
-            AttemptCount: 1,
-            FailedAt: DateTimeOffset.UtcNow,
-            GlobalPosition: persisted.GlobalPosition);
+        var entry = new DeadLetterEntry
+        {
+            Id = Guid.NewGuid(),
+            ProcessorId = $"processor-{Guid.NewGuid():N}",
+            EventId = persisted.Id,
+            EventType = persisted.EventType.Id,
+            EventData = persisted.EventData,
+            ErrorMessage = "boom",
+            StackTrace = null,
+            AttemptCount = 1,
+            FailedAt = DateTimeOffset.UtcNow,
+            GlobalPosition = persisted.GlobalPosition,
+        };
 
         await deadLetterStore.StoreAsync(entry, TestContext.Current.CancellationToken);
         await deadLetterStore.MarkForRetryAsync(entry.ProcessorId, TestContext.Current.CancellationToken);

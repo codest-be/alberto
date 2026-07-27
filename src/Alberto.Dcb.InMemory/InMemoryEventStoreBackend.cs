@@ -2,10 +2,23 @@ namespace Alberto.Dcb.InMemory;
 
 /// <summary>
 /// In-memory implementation of <see cref="IEventStoreBackend"/>.
-/// Single-tenant mode: no tenant scoping applied.
 /// Mimics the PostgreSQL structure with inverted indexes for efficient querying.
 /// Thread-safe for concurrent access.
 /// </summary>
+/// <remarks>
+/// <para>
+/// <strong>Single-tenant mode</strong> (default, via <c>.WithInMemory()</c> without <c>.WithTenancy()</c>):
+/// <see cref="IEventStoreBackend.AppendAsync"/> records every event with <c>TenantId = null</c>,
+/// matching the Postgres schema that has no <c>tenant_id</c> column.
+/// </para>
+/// <para>
+/// <strong>Multi-tenant mode</strong> (via <c>.WithInMemory()</c> plus <c>.WithTenancy()</c>):
+/// <see cref="InMemoryTenantEventStoreDecorator"/> wraps this backend and calls
+/// <see cref="AppendForTenant"/> / <see cref="StreamForTenant"/> instead, stamping and
+/// filtering by the tenant ID supplied from <c>ITenantAccessor</c> — the same way
+/// <c>TenantEventStoreDecorator</c> wraps the Postgres tenant backend.
+/// </para>
+/// </remarks>
 public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEventStoreBackend, IEventStoreHeadBackend
 {
     private readonly object _lock = new();
@@ -32,43 +45,80 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
         CancellationToken cancellationToken = default)
     {
         lock (_lock)
-        {
-            IEnumerable<EventEnvelope> result;
+            return Task.FromResult(StreamCore(query, tenantId: null, afterPosition, limit));
+    }
 
-            if (query.IsEmpty)
+    /// <summary>
+    /// Streams events for a specific tenant. Used by <see cref="InMemoryTenantEventStoreDecorator"/>
+    /// in multi-tenant mode; mirrors <c>PostgresTenantEventStoreBackend.StreamForTenant</c>.
+    /// </summary>
+    internal Task<IReadOnlyCollection<IEventEnvelope>> StreamForTenant(
+        string tenantId,
+        DcbQuery query,
+        long afterPosition = 0,
+        int? limit = null,
+        CancellationToken cancellationToken = default)
+    {
+        lock (_lock)
+            return Task.FromResult(StreamCore(query, tenantId, afterPosition, limit));
+    }
+
+    /// <summary>
+    /// Streams all events across all tenants. Used by <see cref="InMemoryTenantEventStoreDecorator"/>
+    /// for the ControlLoop consumer path; mirrors <c>PostgresTenantEventStoreBackend.StreamAllTenants</c>.
+    /// </summary>
+    internal Task<IReadOnlyCollection<IEventEnvelope>> StreamAllTenants(
+        long afterPosition = 0,
+        int? limit = null,
+        CancellationToken cancellationToken = default)
+        => StreamAllAsync(afterPosition, limit, cancellationToken);
+
+    /// <summary>
+    /// Shared implementation for <see cref="StreamAsync"/> and <see cref="StreamForTenant"/>.
+    /// Must be called under <see cref="_lock"/>.
+    /// When <paramref name="tenantId"/> is non-null the result is filtered to that tenant only.
+    /// </summary>
+    private IReadOnlyCollection<IEventEnvelope> StreamCore(DcbQuery query, string? tenantId, long afterPosition, int? limit)
+    {
+        IEnumerable<EventEnvelope> result;
+
+        if (query.IsEmpty)
+        {
+            result = _events.Where(e => e.GlobalPosition > afterPosition);
+        }
+        else
+        {
+            var typeMatches = query.Types.Count > 0
+                ? CollectTypeMatches(query, afterPosition)
+                : null;
+
+            var tagMatches = query.Tags.Count > 0
+                ? CollectTagMatches(query, afterPosition)
+                : null;
+
+            HashSet<long> matchingPositions;
+            if (typeMatches is not null && tagMatches is not null)
             {
-                result = _events.Where(e => e.GlobalPosition > afterPosition);
+                matchingPositions = query.IntersectsTypesAndTags
+                    ? new HashSet<long>(typeMatches.Where(tagMatches.Contains))
+                    : Union(typeMatches, tagMatches);
             }
             else
             {
-                var typeMatches = query.Types.Count > 0
-                    ? CollectTypeMatches(query, afterPosition)
-                    : null;
-
-                var tagMatches = query.Tags.Count > 0
-                    ? CollectTagMatches(query, afterPosition)
-                    : null;
-
-                HashSet<long> matchingPositions;
-                if (typeMatches is not null && tagMatches is not null)
-                {
-                    matchingPositions = query.IntersectsTypesAndTags
-                        ? new HashSet<long>(typeMatches.Where(tagMatches.Contains))
-                        : Union(typeMatches, tagMatches);
-                }
-                else
-                {
-                    matchingPositions = typeMatches ?? tagMatches!;
-                }
-
-                result = _events.Where(e => matchingPositions.Contains(e.GlobalPosition));
+                matchingPositions = typeMatches ?? tagMatches!;
             }
 
-            var ordered = result.OrderBy(e => e.GlobalPosition);
-            var limited = limit.HasValue ? ordered.Take(limit.Value) : ordered;
-
-            return Task.FromResult<IReadOnlyCollection<IEventEnvelope>>(limited.ToList());
+            result = _events.Where(e => matchingPositions.Contains(e.GlobalPosition));
         }
+
+        // In multi-tenant mode the caller supplies a tenant filter; in single-tenant mode
+        // (tenantId == null) all events are returned regardless of their stored TenantId.
+        if (tenantId is not null)
+            result = result.Where(e => e.TenantId == tenantId);
+
+        var ordered = result.OrderBy(e => e.GlobalPosition);
+        var limited = limit.HasValue ? ordered.Take(limit.Value) : ordered;
+        return limited.ToList();
     }
 
     private HashSet<long> CollectTypeMatches(DcbQuery query, long afterPosition)
@@ -158,64 +208,102 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
         CancellationToken cancellationToken = default)
     {
         lock (_lock)
+            return Task.FromResult(AppendCore(tenantId: null, events, dcbQuery, expectedPosition));
+    }
+
+    /// <summary>
+    /// Appends events tagged with the given tenant. Used by <see cref="InMemoryTenantEventStoreDecorator"/>
+    /// in multi-tenant mode; mirrors <c>PostgresTenantEventStoreBackend.AppendForTenant</c>.
+    /// </summary>
+    internal Task<IReadOnlyCollection<IEventEnvelope>> AppendForTenant(
+        string tenantId,
+        IEnumerable<IEventToPersist> events,
+        DcbQuery? dcbQuery = null,
+        long? expectedPosition = null,
+        CancellationToken cancellationToken = default)
+    {
+        lock (_lock)
+            return Task.FromResult(AppendCore(tenantId, events, dcbQuery, expectedPosition));
+    }
+
+    /// <summary>
+    /// Shared append logic for single-tenant and multi-tenant paths.
+    /// Must be called under <see cref="_lock"/>.
+    /// When <paramref name="tenantId"/> is non-null, that ID is stamped on every appended event
+    /// and conflict detection is scoped to that tenant only — matching the Postgres behaviour where
+    /// DCB boundaries are per-tenant.
+    /// </summary>
+    private IReadOnlyCollection<IEventEnvelope> AppendCore(
+        string? tenantId,
+        IEnumerable<IEventToPersist> events,
+        DcbQuery? dcbQuery,
+        long? expectedPosition)
+    {
+        // DCB conflict check — scoped to the tenant when one is provided, so events from
+        // other tenants never cause a false conflict (mirroring the Postgres tenant_id WHERE clause).
+        if (dcbQuery is not null && expectedPosition.HasValue)
         {
-            // DCB conflict check
-            if (dcbQuery is not null && expectedPosition.HasValue)
+            var conflictPosition = FindConflictPosition(dcbQuery, expectedPosition.Value, tenantId);
+            if (conflictPosition.HasValue)
             {
-                var conflictPosition = FindConflictPosition(dcbQuery, expectedPosition.Value);
-                if (conflictPosition.HasValue)
-                {
-                    throw new DcbConflictException(conflictPosition.Value, expectedPosition.Value, dcbQuery);
-                }
+                throw new DcbConflictException(conflictPosition.Value, expectedPosition.Value, dcbQuery);
             }
-
-            // Append events
-            var appended = new List<EventEnvelope>();
-            var now = timeProvider.GetUtcNow().UtcDateTime;
-
-            foreach (var evt in events)
-            {
-                var position = _nextPosition++;
-
-                var envelope = new EventEnvelope
-                {
-                    Id = evt.Id,
-                    TenantId = null,
-                    GlobalPosition = position,
-                    EventType = evt.EventType,
-                    Tags = evt.Tags,
-                    EventData = evt.EventData,
-                    Metadata = evt.Metadata,
-                    CreatedAt = now
-                };
-
-                _events.Add(envelope);
-                appended.Add(envelope);
-
-                // Update type index
-                var typeKey = evt.EventType.Id;
-                if (!_typeIndex.TryGetValue(typeKey, out var typePositions))
-                {
-                    typePositions = [];
-                    _typeIndex[typeKey] = typePositions;
-                }
-                typePositions.Add(position);
-
-                // Update tag index
-                foreach (var tag in evt.Tags)
-                {
-                    var tagKey = tag.Value;
-                    if (!_tagIndex.TryGetValue(tagKey, out var tagPositions))
-                    {
-                        tagPositions = [];
-                        _tagIndex[tagKey] = tagPositions;
-                    }
-                    tagPositions.Add(position);
-                }
-            }
-
-            return Task.FromResult<IReadOnlyCollection<IEventEnvelope>>(appended);
         }
+
+        // Append events
+        var appended = new List<EventEnvelope>();
+        var now = timeProvider.GetUtcNow();
+
+        foreach (var evt in events)
+        {
+            var position = _nextPosition++;
+
+            // Derive the schema version from the stored _version:N tag rather than trusting
+            // EventType.Version on the input object.  This mirrors what the Postgres
+            // backend does when it reconstructs an EventType on read: storage is the
+            // source of truth, so the envelope handed to the upcaster chain is driven
+            // by the tag, not by whatever the caller's in-memory object said at write
+            // time.  Absent tag → v1 (pre-versioning rows).
+            var schemaVersion = EventVersionTag.ParseFromTags(evt.Tags);
+
+            var envelope = new EventEnvelope
+            {
+                Id = evt.Id,
+                TenantId = tenantId,   // null in single-tenant mode; caller-supplied in multi-tenant
+                GlobalPosition = position,
+                EventType = new EventType(evt.EventType.Id, schemaVersion),
+                Tags = evt.Tags,
+                EventData = evt.EventData,
+                Metadata = evt.Metadata,
+                CreatedAt = now
+            };
+
+            _events.Add(envelope);
+            appended.Add(envelope);
+
+            // Update type index
+            var typeKey = evt.EventType.Id;
+            if (!_typeIndex.TryGetValue(typeKey, out var typePositions))
+            {
+                typePositions = [];
+                _typeIndex[typeKey] = typePositions;
+            }
+            typePositions.Add(position);
+
+            // Update tag index
+            foreach (var tag in evt.Tags)
+            {
+                var tagKey = tag.Value;
+                if (!_tagIndex.TryGetValue(tagKey, out var tagPositions))
+                {
+                    tagPositions = [];
+                    _tagIndex[tagKey] = tagPositions;
+                }
+                tagPositions.Add(position);
+            }
+        }
+
+        return appended;
     }
 
     public Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default)
@@ -249,8 +337,10 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
     /// <summary>
     /// Finds the first position after expectedPosition that matches the DCB query.
     /// Returns null if no conflict exists.
+    /// When <paramref name="tenantId"/> is non-null, only positions belonging to that tenant
+    /// are considered — matching the per-tenant WHERE clause in the Postgres append path.
     /// </summary>
-    private long? FindConflictPosition(DcbQuery query, long expectedPosition)
+    private long? FindConflictPosition(DcbQuery query, long expectedPosition, string? tenantId)
     {
         if (query.IsEmpty)
             return null;
@@ -273,6 +363,18 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
         else
         {
             matches = (IEnumerable<long>?)typeMatches ?? tagMatches!;
+        }
+
+        // Scope conflicts to the given tenant so that appends from different tenants
+        // never interfere with each other — the same isolation the Postgres schema
+        // achieves by partitioning the events table on tenant_id.
+        if (tenantId is not null)
+        {
+            var tenantPositions = _events
+                .Where(e => e.TenantId == tenantId)
+                .Select(e => e.GlobalPosition)
+                .ToHashSet();
+            matches = matches.Where(tenantPositions.Contains);
         }
 
         long? conflict = null;

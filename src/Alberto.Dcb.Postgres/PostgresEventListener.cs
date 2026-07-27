@@ -9,8 +9,10 @@ namespace Alberto.Dcb.Postgres;
 /// Consumes PostgreSQL LISTEN/NOTIFY on the events channel and pulses an
 /// <see cref="IEventAppendedSignal"/> so <see cref="EventStoreHead"/> refreshes as
 /// soon as an append commits, rather than waiting for its polling interval. The
-/// trigger that raises the notification is defined in the initial schema migration
-/// (<c>alberto_notify_events</c> → <c>pg_notify('{schema}_events', ...)</c>).
+/// notification is raised by the append functions themselves — one
+/// <c>pg_notify('{schema}_events', ...)</c> per append call, carrying the position of
+/// the last event written (migration 025; before it, a trigger on
+/// <c>alberto_events</c> raised one per event inserted).
 ///
 /// Holds one dedicated connection. Reconnects with a short backoff on failure and
 /// pulses once on (re)connect so anything appended during a gap is picked up by the
@@ -33,7 +35,7 @@ internal sealed class PostgresEventListener : BackgroundService
         _signal = signal ?? throw new ArgumentNullException(nameof(signal));
         _logger = logger;
 
-        // Must match alberto_notify_events(): pg_notify('$schema$_events', ...),
+        // Must match alberto_append_events*(): pg_notify('$schema$_events', ...),
         // where $schema$ is the schema name or "public" when none is configured.
         var schemaName = string.IsNullOrWhiteSpace(schema) ? "public" : schema;
         _channel = $"{schemaName}_events";

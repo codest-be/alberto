@@ -186,7 +186,7 @@ public abstract class EventStoreBackendSpecification
     /// <summary>
     /// An intersect query whose tag axis lists several tags carried by the same event must
     /// return that event once.  The Postgres backend serves this with a tag-driven semi-join
-    /// (migration 025) that emits one row per matching tag before deduplication, so this is
+    /// (migration 028) that emits one row per matching tag before deduplication, so this is
     /// the shape that fails if the deduplication is dropped.
     /// </summary>
     [Fact]
@@ -744,6 +744,77 @@ public abstract class EventStoreBackendSpecification
 
         Assert.True(stableHead >= startPosition,
             $"expected stable head >= {startPosition}, got {stableHead}");
+    }
+
+    #endregion
+
+    #region Version Tag Regression Tests
+
+    // These two tests verify the safety guarantees that the schema versioning design rests on.
+    // They run against BOTH the InMemory and Postgres backends because the two implementations
+    // are maintained independently — the InMemory matcher and the Postgres HAVING-COUNT
+    // containment check are separately implemented and have diverged on subtle points before.
+
+    [Fact]
+    public async Task ByAllTags_WithExtraVersionTag_ContainmentNotEquality()
+    {
+        // After schema versioning, every appended event carries an extra reserved _version:N tag.
+        // A ByAllTags boundary that specifies only user-domain tags must still match those
+        // events. This requires the underlying query to use CONTAINMENT (event tags ⊇ query
+        // tags), not set equality.  If the implementation were equality-based, this test
+        // would return zero results after the _v tag was added, silently breaking every
+        // existing boundary in production.
+        var backend = await CreateBackend();
+
+        var userTag = $"order:{TestId}-containment";
+        var versionTag = EventTag.ForVersion(2);
+        var orderTagParsed = EventTag.FromStorage("order", $"{TestId}-containment");
+
+        // Append an event that carries BOTH the user tag and the reserved version tag.
+        await backend.AppendAsync(
+            [new EventToPersist
+            {
+                EventType = new EventType("versioned-thing", 2),
+                EventData = """{"test":true}""",
+                Tags = [orderTagParsed, versionTag],
+                Metadata = new Dictionary<string, string>()
+            }],
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        // Query specifies ONLY the user-domain tag — no version tag in the boundary.
+        var results = await backend.StreamAsync(
+            DcbQuery.ByAllTags(userTag),
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Single(results);
+    }
+
+    [Fact]
+    public async Task LegacyEvent_WithoutVersionTag_ReadsAsVersion1()
+    {
+        // Events written before schema versioning was introduced have no _v tag in storage.
+        // On read, both backends must return Version = 1 for such events.
+        // This is the entire back-compat story for every row already in production.
+        var backend = await CreateBackend();
+
+        var tag = $"order:{TestId}-legacy";
+
+        await backend.AppendAsync(
+            [new EventToPersist
+            {
+                EventType = new EventType("legacy-event-type"),  // version defaults to 1
+                EventData = """{"test":true}""",
+                Tags = [EventTag.FromStorage("order", $"{TestId}-legacy")],  // no _v tag
+                Metadata = new Dictionary<string, string>()
+            }],
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        var results = await backend.StreamAsync(
+            DcbQuery.ByTags(tag),
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Single(results);
+        Assert.Equal(1, results.Single().EventType.Version);
     }
 
     #endregion

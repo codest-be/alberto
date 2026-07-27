@@ -468,22 +468,27 @@ internal static class PostgresBackendHelpers
         var eventTags = reader.GetFieldValue<string[]>(ord.EventTags);
         var eventData = reader.GetString(ord.EventData);
         var eventMetadata = reader.GetString(ord.EventMetadata);
-        var createdAt = reader.GetDateTime(ord.CreatedAt);
+        // TIMESTAMPTZ maps natively to DateTimeOffset in Npgsql — no SpecifyKind fix-up needed.
+        var createdAt = reader.GetFieldValue<DateTimeOffset>(ord.CreatedAt);
 
         var metadata = JsonSerializer.Deserialize<Dictionary<string, string>>(eventMetadata) ?? [];
+
+        // Parse the schema version from the reserved _version:N tag via the shared helper.
+        // Events written before versioning was introduced carry no such tag and default to v1.
+        var schemaVersion = EventVersionTag.ParseFromRawTags(eventTags);
 
         return new EventEnvelope
         {
             Id = eventId,
             TenantId = effectiveTenantId,
             GlobalPosition = globalPosition,
-            EventType = new EventType(eventType),
+            EventType = new EventType(eventType, schemaVersion),
             // EventTag.FromStorage skips the validation regex — tags stored in the
             // DB are already valid by construction (validated at write time).
             Tags = eventTags.Select(EventTag.FromStorage).ToArray(),
             EventData = eventData,
             Metadata = metadata,
-            CreatedAt = DateTime.SpecifyKind(createdAt, DateTimeKind.Utc)
+            CreatedAt = createdAt
         };
     }
 

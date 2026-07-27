@@ -83,6 +83,6 @@ public class EvolverTests
         public IReadOnlyCollection<EventTag> Tags { get; } = [];
         public string EventData => Data;
         public IReadOnlyDictionary<string, string> Metadata { get; } = new Dictionary<string, string>();
-        public DateTime CreatedAt { get; } = DateTime.UtcNow;
+        public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
     }
 }

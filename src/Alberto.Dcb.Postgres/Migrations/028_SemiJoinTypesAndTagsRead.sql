@@ -1,4 +1,4 @@
--- Alberto DCB Event Store - Migration 025 (Multi-Tenant)
+-- Alberto DCB Event Store - Migration 028 (Multi-Tenant)
 --
 -- Rewrite alberto_read_by_types_and_tags from INTERSECT to a correlated semi-join.
 --

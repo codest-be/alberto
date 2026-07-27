@@ -5,6 +5,627 @@ The most recent cycle is at the top. Older changes follow.
 
 ---
 
+## net10.0 only; public surface hardened; timestamps, record shapes, tag reservation, and metric dimensions
+
+The changes in this cycle close gaps in the public API surface, standardise timestamps on
+`DateTimeOffset`, and establish the reserved `_version` tag that the schema versioning feature writes.
+The ExternalMessage routing fields are a small addition but they land as a breaking change because
+they touch a persisted table.
+
+| Change | Area | Severity | What broke |
+|---|---|---|---|
+| TF-1 | Target framework | **High** | net9.0 target removed from all core libraries |
+| PS-1..4 | Surface — internal | Medium | `FencingContext`, `ConsistentHashRing`, `FunctionalReactor<T>`, `DeadLetterRetryLoop` made `internal` |
+| PS-5..6 | Surface — internal | Medium | `AlbertoStore.FoldWithPosition<TState>`, `ReconstituteWithPosition<TState>` made `internal` |
+| PS-7..8 | Surface — deleted | **High** | `IReact<TEvent>` and `AsyncReactor<TReactor>` deleted |
+| AS-1 | API shape | Medium | `IStateStore<TState>.LoadManyAsync` return type changed |
+| AS-2 | API shape | Low | `IEventProcessor.IsActive` / `IsRebuilding` are now getter-only |
+| AS-3..5 | API shape | Medium | Three records lost their positional constructors |
+| AS-6 | API shape + migration | **High** | `ExternalMessage` / `OutboxEntry` gain routing fields; migration 027 required |
+| DT-1..3 | Timestamps | Medium | Eight timestamp properties changed from `DateTime` to `DateTimeOffset` |
+| TV-1..3 | Tag reservation | Low | `EventTag` and `[Tag]` reject any concept starting with `_` |
+| MT-1..2 | Metric dimensions | Medium | Sharded-module metric tags split from one combined string into two dimensions |
+| MT-3 | Metric dimensions | Medium | Tenant-ownership gauges rename tag `module.key` → `module`; sharded composite key values are now split into `module` + `shard` |
+| MT-4..5 | Metric removal | Medium | `alberto.events_filtered_by_tenant` and `alberto.tenant_leases_lost` counters removed |
+| MT-6 | Metric units | Low | `alberto.append.duration` and `alberto.processing.duration` units changed from `"ms"` to `"s"` |
+| TT-1 | Trace span attributes | Medium | Consume-path span attributes renamed: `"module.key"` → `"module"`, `"module.shard"` → `"shard"` |
+| EX-1 | Experimental API | Medium | Sharding types marked `[Experimental("ALB9001")]`; referencing them without suppression is a compile-time diagnostic |
+| EV-1 | Evolver — runtime guard | Medium | `Evolver.Reconstitute(envelopes)` and `Evolver.Evolve(state, envelope)` now throw `InvalidOperationException` when the envelope's stored version is older than the handler's declared version |
+| PE-1 | ParseEvent&lt;T&gt; obsoleted | Medium | `EventEnvelopeExtensions.ParseEvent<T>` is marked `[Obsolete]`; projects with `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>` get a hard build failure on upgrade |
+| MM-1 | Surface — interface member | Medium | `IMessageMappingRegistry` gains a `ModuleKey` property; direct implementations no longer compile |
+| OT-1 | Outbox transport lifecycle | Medium | Failed startup triggers bounded cleanup; store faults stop the relay; shared registrations use one lifecycle |
+| VA-1 | Startup validation | Medium | New codes `ALB0018`/`ALB0019`/`ALB0020` reject upcaster misconfigurations that previously started and failed at runtime |
+
+---
+
+### TF-1 — net9.0 target removed
+
+The seven core libraries (`Alberto.Dcb`, `Alberto.Dcb.Commands`, `Alberto.Dcb.InMemory`,
+`Alberto.Dcb.Postgres`, `Alberto.Dcb.EntityFramework`, `Alberto.Dcb.Messaging`,
+`Alberto.Dcb.Postgres.Messaging`) previously shipped both `net9.0` and `net10.0` target folders.
+They now ship `net10.0` only.
+
+**Symptom.** NuGet resolves the package but the project fails to compile because no compatible
+target exists (`error NU1202` or `error NETSDK1138`).
+
+**Fix.** Set `<TargetFramework>net10.0</TargetFramework>` (or add `net10.0` to your
+`<TargetFrameworks>` list) in every project that references an Alberto package.
+
+---
+
+### PS-1..4 — `FencingContext`, `ConsistentHashRing`, `FunctionalReactor<T>`, `DeadLetterRetryLoop` made `internal`
+
+These four types were never intended for application use:
+
+- `FencingContext` wraps the token thread-local used by checkpoint fencing. Applications work
+  with `IFencedCheckpointStore`.
+- `ConsistentHashRing<T>` is the internal shard-routing helper. Applications declare shards with
+  `WithTenancy(t => t.AcrossPostgresDatabases(...))`.
+- `FunctionalReactor<TEvent>` is the internal wrapper the module builder creates when you call
+  `ReactTo<TEvent>(...)`. Use that builder method; do not construct the wrapper yourself.
+- `DeadLetterRetryLoop` is the internal hosted service that drives dead-letter retries.
+
+**Symptom.** `error CS0122: '...' is inaccessible due to its protection level`.
+
+**Fix.** Use the public abstractions each type was hiding behind, as described above. If you
+have no direct reference, the error will not appear — these types were not meant to be extended
+or instantiated from application code.
+
+---
+
+### PS-5..6 — `AlbertoStore.FoldWithPosition<TState>` and `ReconstituteWithPosition<TState>` made `internal`
+
+The position-returning overloads exist so the command pipeline can capture the boundary position
+without a second round-trip. Exposing them created a temptation to fold state and note the
+position separately from a command pipeline, then pass the captured position to the next
+command — a window through which conflicting writes could slip undetected.
+
+```csharp
+// before
+var (state, position) = await store.FoldWithPosition(query, State.Initial, Apply, ct);
+
+// after — use the single-return overload; the command pipeline handles position capture internally
+var state = await store.Fold(query, State.Initial, Apply, ct);
+```
+
+If you genuinely need the position for a reason outside the command pipeline — for example
+to pass it to a downstream service as a fence — read it from `IEventStoreBackend.GetLastPositionAsync`
+rather than from a fold.
+
+---
+
+### PS-7..8 — `IReact<TEvent>` and `AsyncReactor<TReactor>` deleted
+
+`IReact<TEvent>` was the obsolete reactor interface the reflection-based `RegisterReactor` call
+used. `AsyncReactor<TReactor>` was its adapter. Both were marked `[Obsolete]` and were never
+reachable through any current registration path.
+
+```csharp
+// before — required implementing IReact<TEvent>
+public class NotificationReactor : IReact<OrderConfirmed>
+{
+    public Task ReactAsync(OrderConfirmed @event, CancellationToken ct) => ...;
+}
+
+// after — a plain method; the module builder wires it
+public class NotificationReactor
+{
+    public Task OnOrderConfirmed(OrderConfirmed @event, CancellationToken ct) => ...;
+}
+
+// registration
+services.AddAlberto("orders", builder => builder
+    .ReactTo<OrderConfirmed, NotificationReactor>(h => h.OnOrderConfirmed));
+```
+
+**Symptom.** `error CS0246: The type or namespace name 'IReact<>' could not be found`.
+
+---
+
+### AS-1 — `IStateStore<TState>.LoadManyAsync` return type narrowed
+
+`LoadManyAsync` previously returned `Task<Dictionary<TKey, TState?>>` (a mutable concrete type).
+It now returns `Task<IReadOnlyDictionary<TKey, TState?>>`.
+
+```csharp
+// before
+Dictionary<Guid, OrderState?> states = await store.LoadManyAsync(ids, ct);
+
+// after
+IReadOnlyDictionary<Guid, OrderState?> states = await store.LoadManyAsync(ids, ct);
+// or, if you need mutation:
+var states = (await store.LoadManyAsync(ids, ct)).ToDictionary(...);
+```
+
+---
+
+### AS-2 — `IEventProcessor.IsActive` and `IsRebuilding` are now getter-only
+
+These properties describe processor state that the framework sets. Setting them directly from
+application code could put the processor into an incoherent state.
+
+**Symptom.** `error CS0200: Property or indexer '...' cannot be assigned to — it is read only`.
+
+**Fix.** Remove the assignment. If you are implementing `IEventProcessor` yourself, remove the
+setter from your implementation.
+
+---
+
+### AS-3..5 — positional constructors removed from `DeadLetterEntry`, `ProcessorExecutionOptions`, and `ProjectionStoreContext`
+
+All three records previously exposed a positional constructor whose parameter order became
+fragile as the records grew. They are now constructed with named properties only.
+
+```csharp
+// before
+var entry = new DeadLetterEntry(eventId, processorId, reason, failedAt);
+
+// after
+var entry = new DeadLetterEntry
+{
+    EventId       = eventId,
+    ProcessorId   = processorId,
+    Reason        = reason,
+    FailedAt      = failedAt,
+};
+```
+
+`ProcessorExecutionOptions` and `ProjectionStoreContext` follow the same pattern.
+
+**Symptom.** `error CS7036: There is no argument given that corresponds to the required parameter`
+or `error CS1729: '...' does not contain a constructor that takes N arguments`.
+
+---
+
+### AS-6 — `ExternalMessage` and `OutboxEntry` gain routing fields; migration 027 required
+
+Two properties are added to `ExternalMessage` (and its database projection `OutboxEntry`):
+
+| Property | Type | Purpose |
+|---|---|---|
+| `Destination` | `string` (required) | The logical routing target — a topic, queue or exchange name |
+| `RoutingHint` | `string?` (optional) | An optional hint such as a partition key or routing key |
+
+**Deployment order matters.** Migration 027 adds the two columns to `alberto_outbox_entries`.
+Run it **before** deploying the new binary. A binary deployed without the migration will fail at
+runtime when it tries to insert outbox rows.
+
+```csharp
+// before
+new ExternalMessage { Payload = ..., ContentType = "application/json" }
+
+// after
+new ExternalMessage
+{
+    Destination  = "notifications",
+    RoutingHint  = order.TenantId.ToString(),
+    Payload      = ...,
+    ContentType  = "application/json",
+}
+```
+
+**Symptom.** `error CS9035: Required member '...' must be set in the object initializer` when
+constructing `ExternalMessage` without `Destination`.
+
+---
+
+### OT-1 — the outbox owns the complete message-transport lifecycle
+
+Supplying an `IMessageTransport` now transfers responsibility for its start/stop lifecycle to the
+outbox. Alberto starts it before claiming or publishing, stops it once after the last relay exits,
+and attempts cleanup even when `StartAsync` partially initializes the transport and then throws.
+Cleanup receives a cancellation token and Alberto stops waiting after 30 seconds. Alberto still
+does not dispose the caller-owned transport instance.
+
+A transport that rejected cleanup unless startup completed will now mask neither failure, but its
+`StopAsync` exception is attached to the startup exception's `Data` dictionary:
+
+```csharp
+// before — no longer valid: partial startup could allocate _client and then throw
+public Task StopAsync(CancellationToken ct) =>
+    _started
+        ? _client!.CloseAsync(ct)
+        : throw new InvalidOperationException("Transport was not started");
+
+// after — cleanup is safe after successful or partial startup
+public async Task StopAsync(CancellationToken ct)
+{
+    if (_client is null)
+        return;
+
+    await _client.CloseAsync(ct);
+    _client = null;
+}
+```
+
+Reusing one transport instance in several `WithOutbox` registrations now shares one lifecycle
+within that service provider. Those relays may call `PublishAsync` concurrently.
+
+An outbox-store exception outside per-message publishing now faults the relay and closes the
+transport instead of being swallowed and retried forever. The host's background-service failure
+and restart policy determines recovery.
+
+**Migration steps.**
+
+1. Make `StopAsync` safe when `StartAsync` allocated some resources and then threw.
+2. Honor the cleanup cancellation token and keep flushing/closing work within 30 seconds.
+3. If one instance is reused across registrations, make `PublishAsync` concurrency-safe or supply
+   a separate transport instance to each registration.
+4. Confirm the host restarts or terminates as intended when the outbox store becomes unavailable;
+   use the store/client's own transient-failure resilience where retry is appropriate.
+5. Keep disposing the transport in the application code that constructed it; Alberto only owns
+   `StartAsync` and `StopAsync`.
+
+---
+
+### DT-1..3 — `DateTime` and `DateTime?` timestamp properties changed to `DateTimeOffset`
+
+Every timestamp surface in the library that was a `DateTime` is now `DateTimeOffset`. This aligns
+with .NET best practices (preserve the UTC offset through serialisation and IANA timezone
+conversions), Npgsql's preference for `timestamptz`, and System.Text.Json's default serialisation.
+
+Affected properties:
+
+| Type | Property | Before | After |
+|---|---|---|---|
+| `IEventEnvelope` | `CreatedAt` | `DateTime` | `DateTimeOffset` |
+| `ProcessorInfo` | `UpdatedAt` | `DateTime?` | `DateTimeOffset?` |
+| `CheckpointInfo` | `UpdatedAt` | `DateTime?` | `DateTimeOffset?` |
+| `DeadLetterInfo` | `FailedAt` | `DateTime?` | `DateTimeOffset?` |
+| `ProjectionState` | `UpdatedAt` | `DateTime?` | `DateTimeOffset?` |
+| `AdminTenantLease` | `ExpiresAt` | `DateTime?` | `DateTimeOffset?` |
+| `ActiveProcessorLease` | `ExpiresAt` | `DateTime` | `DateTimeOffset` |
+
+**Symptom.** `error CS0029: Cannot implicitly convert type 'DateTimeOffset' to 'DateTime'`.
+
+**Fix.** Change local variable declarations from `DateTime` to `DateTimeOffset`. If you persist
+these values into a store that requires `DateTime`, call `.UtcDateTime` on the
+`DateTimeOffset`. Because all stored values were previously UTC (Npgsql returns UTC for
+`timestamptz` columns), the `.UtcDateTime` conversion is exact and lossless.
+
+---
+
+### TV-1..3 — leading-underscore tag concepts reserved
+
+`_version:N` is the tag Alberto writes on every stored event to record its schema version. The
+whole `_` prefix — not just `_version` — is reserved, so application code cannot collide with it
+now or with any framework tag added later. Reserving only the names in use would make every
+future framework tag a breaking change for whoever had already chosen that name; doing it once,
+before the API freezes, costs nothing, because domain concepts are things like `order` and
+`customer`.
+
+Two construction points enforce the reservation:
+
+```csharp
+// both throw ArgumentException:
+new EventTag("_version", "1")        // EventTag public constructor — throws at call site
+// [Tag("_internal")] on a property  // throws on first append of that event type
+```
+
+Boundaries need no separate guard: `DcbQuery` takes `EventTag` values, so a query over a
+reserved concept cannot be constructed in the first place.
+
+**Symptom.** `ArgumentException: Concept '_x' starts with '_', which is reserved for
+framework-internal tags…` at the construction call site (for `EventTag`), or on
+the first append of an event type that carries a leading-underscore `[Tag(...)]` property
+(attributes are scanned lazily on first use).
+
+**Fix.** Rename any application tag whose concept starts with `_`. If you are iterating
+`IEventEnvelope.Tags` and need to skip framework tags, filter by
+`!tag.Concept.StartsWith(EventTag.ReservedConceptPrefix, StringComparison.Ordinal)`.
+
+---
+
+### MT-1..2 — Metric tag shapes for sharded modules corrected
+
+The `alberto.dead_letters`, `alberto.retries`, and `alberto.processor.lag` metrics previously
+reported the module key as a single combined string when a module was sharded:
+
+```
+module = "orders#shard1"
+```
+
+The dimension is now split into two separate tags:
+
+```
+module = "orders"
+shard  = "shard1"
+```
+
+Non-sharded modules are unaffected: their `module` tag keeps the plain module key and no
+`shard` tag is emitted.
+
+**Impact.** Any dashboard, alert, or OTel collector configuration that filters or groups on the
+combined `module` value for a sharded module will stop matching. Update the filter to use
+`module="orders"` and, if you need shard-level isolation, add `shard="shard1"`.
+
+---
+
+### MT-3 — Tenant-ownership gauge tag renamed from `module.key` to `module`
+
+The `alberto.owned_tenant_count` and `alberto.tenant_cooldown_count` observable gauges previously
+emitted a tag named `module.key`:
+
+```
+consumer.id = "replica-1"
+module.key  = "orders"
+```
+
+The tag is renamed to `module` (matching every other consume-path instrument, enabling
+Prometheus joins without a label transform):
+
+```
+consumer.id = "replica-1"
+module      = "orders"
+```
+
+For sharded modules the raw composite key was previously passed through as-is. It is now split,
+consistent with MT-1..2:
+
+```
+consumer.id = "replica-1"
+module      = "orders"
+shard       = "eu"        # only for sharded modules
+```
+
+**Impact.** Any Prometheus query, dashboard panel, or alert that references the `module.key`
+label on `alberto.owned_tenant_count` or `alberto.tenant_cooldown_count` will stop matching
+after upgrade. Rename the label selector to `module`. For sharded modules, also add a `shard`
+filter if you need per-shard isolation.
+
+---
+
+### MT-4..5 — `alberto.events_filtered_by_tenant` and `alberto.tenant_leases_lost` counters removed
+
+These two counters were removed from `AlbertoMetrics` in this cycle:
+
+- `alberto.events_filtered_by_tenant` (unit: `"events"`) — counted events skipped due to tenant ownership filtering.
+- `alberto.tenant_leases_lost` (unit: `"leases"`) — counted tenant leases lost due to failed renewal.
+
+**Symptom.** Dashboards or alerts that query either counter will return no data after upgrade.
+
+**Fix.** Remove or replace the counter queries. Tenant lease health is reflected in the tenant-ownership gauges (`alberto.owned_tenant_count`, `alberto.tenant_cooldown_count`).
+
+---
+
+### MT-6 — `alberto.append.duration` and `alberto.processing.duration` histogram units changed from `"ms"` to `"s"`
+
+The unit strings on both duration histograms were corrected to match the OTel semantic convention (unit `"s"`, values in seconds):
+
+| Instrument | Old unit | Old value range | New unit | New value range |
+|---|---|---|---|---|
+| `alberto.append.duration` | `"ms"` | e.g. `5.0` | `"s"` | e.g. `0.005` |
+| `alberto.processing.duration` | `"ms"` | e.g. `12.0` | `"s"` | e.g. `0.012` |
+
+**Symptom.** Prometheus histogram bucket thresholds and alerts that assumed millisecond values will fire incorrectly — all durations appear 1000× smaller than expected.
+
+**Fix.** Multiply all threshold values in histogram queries, recording rules, and alert expressions for these two instruments by `0.001`. Verify that any explicit bucket boundaries configured in your OTel SDK exporter also use second-scale values.
+
+---
+
+### TT-1 — Consume-path trace span attributes `"module.key"` → `"module"` and `"module.shard"` → `"shard"`
+
+`TelemetryConsumeMiddleware` and `TelemetryBatchConsumeMiddleware` previously set two span attributes on the consume-path activity:
+
+```
+module.key   = "orders"
+module.shard = "eu"    # only for sharded modules
+```
+
+These are renamed to match the metric tag names established in MT-1..3:
+
+```
+module = "orders"
+shard  = "eu"          # only for sharded modules
+```
+
+**Symptom.** Trace queries, sampling rules, and dashboards that filter on `module.key` or `module.shard` span attributes will stop matching after upgrade.
+
+**Fix.** Rename the attribute key in every trace filter: `span.attributes["module.key"]` → `span.attributes["module"]`; `span.attributes["module.shard"]` → `span.attributes["shard"]`.
+
+---
+
+### EX-1 — Sharding types marked `[Experimental("ALB9001")]`
+
+The entire PostgreSQL tenant-sharding surface is now annotated with
+`[Experimental("ALB9001", UrlFormat = "...")]`. Any project that references these types without
+suppressing the diagnostic will receive a **compile-time warning** (or an error under
+`<TreatWarningsAsErrors>true</TreatWarningsAsErrors>`).
+
+Affected types:
+
+| Type / method | Assembly |
+|---|---|
+| `AcrossPostgresDatabases(...)` extension | `Alberto.Dcb.Postgres` |
+| `PostgresTenantShardMap` | `Alberto.Dcb.Postgres` |
+| `PostgresShardBuilder` | `Alberto.Dcb.Postgres` |
+| `ITenantShardMap` | `Alberto.Dcb` |
+| `ShardRoutingEventStore` | `Alberto.Dcb` |
+| `ShardHealthCheck` | `Alberto.Dcb` |
+| `ShardHealth` | `Alberto.Dcb` |
+| `ShardExceptions` (`ShardUnroutableException`, `ShardNotFoundException`) | `Alberto.Dcb` |
+
+**Symptom.** `warning ALB9001: '...' is for evaluation purposes only and is subject to change
+or removal in future updates.` (or the equivalent error when warnings are treated as errors).
+
+**Fix.** If you are using tenant sharding intentionally and accept the preview stability
+guarantee, suppress the diagnostic at the call site or project level:
+
+```csharp
+// At the call site
+#pragma warning disable ALB9001
+.WithTenancy(t => t.AcrossPostgresDatabases(...))
+#pragma warning restore ALB9001
+```
+
+```xml
+<!-- In the .csproj — suppress for the whole project -->
+<PropertyGroup>
+  <NoWarn>$(NoWarn);ALB9001</NoWarn>
+</PropertyGroup>
+```
+
+If you are not using tenant sharding, the diagnostic will not fire.
+
+---
+
+### EV-1 — `Evolver.Reconstitute` and `Evolver.Evolve` throw for stale-version envelopes
+
+Calling `Evolver<TState>.Reconstitute(envelopes)` or `Evolver<TState>.Evolve(state, envelope)`
+without threading an `EventSerializer` previously silently returned wrong state when the event
+was stored at an older schema version than the handler's CLR type expected — raw JSON
+deserialization produced a partial or default-filled object instead of the correctly upcasted
+shape. These overloads now throw `InvalidOperationException` whenever the envelope's stored
+version is less than the version declared by `[EventType(Version = N)]` on the handler type.
+
+**Symptom.** `InvalidOperationException: Event '...' is stored at schema version N but this
+evolver handler expects version M. Raw JSON deserialization would produce stale state. Supply
+an EventSerializer so the upcaster chain runs before reconstitution: …`
+
+**Fix.** Use the serializer-threaded overloads:
+
+```csharp
+// before — silently wrong for stale-version envelopes (now throws)
+var state = evolver.Reconstitute(envelopes);
+
+// after — correct; upcaster chain fires before the handler sees the event
+var state = evolver.Reconstitute(envelopes, initial: default, serializer.Deserialize);
+```
+
+If you go through the command pipeline (`CommandPipeline.Load(boundary, evolver)`) or
+`DeciderExtensions.DecideAndAppendAsync` with an `EventSerializer`, upcasting is threaded
+automatically and no change is required. The only call sites that need updating are those that
+construct an evolver and call its public `Reconstitute` or `Evolve` methods directly, without
+a serializer, against a boundary that may contain pre-migration events.
+
+Call sites where all events are guaranteed to be at the current version are unaffected.
+
+The same guard is also applied by the internal `EventEnvelopeExtensions.DeserializeEvent<TEvent>` seam, which is called by `ProjectionDeclaration<TState>.GetDocumentId(IEventEnvelope)` and `ProjectionDeclaration<TState>.Apply(TState, IEventEnvelope, ProjectionContext)`. These two methods are used by testing utilities and standalone projection invocations that bypass the control loop. If you call either with an envelope whose stored version is older than the handler's declared version and no `EventSerializer` is wired for the module, an `InvalidOperationException` is thrown. Wire an `EventSerializer` via `AddUpcaster` (see `docs/events.md`) so that upcasting runs before any projection handler or test helper sees the envelope.
+
+---
+
+### PE-1 — `EventEnvelopeExtensions.ParseEvent<T>` is marked `[Obsolete]`
+
+`EventEnvelopeExtensions.ParseEvent<T>(this IEventEnvelope envelope)` performs raw JSON
+deserialization and bypasses any registered upcaster chains. It was never removed after the
+upcasting feature landed, leaving a well-named helper that silently does the wrong thing for
+any event type that has upcasters.
+
+The method is now annotated `[Obsolete(...)]`. Calling it produces a compiler warning
+(`CS0618`). Projects with `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>` will receive
+a **hard build failure** on upgrade instead of a warning.
+
+**Symptom.**
+```
+error CS0618: 'EventEnvelopeExtensions.ParseEvent<T>(IEventEnvelope)' is obsolete:
+'ParseEvent<T>() bypasses upcasters — registered upcaster chains never fire on this path. ...'
+```
+
+**Fix.** Replace every call with `EventSerializer.Deserialize(envelope)` followed by a cast, or
+use the `DeserializeEvent<T>` seam inside your own consumer if you already have the handler
+infrastructure available:
+
+```csharp
+// Before — bypasses upcasters; wrong for any event type with a registered upcaster chain
+var order = envelope.ParseEvent<OrderCreated>();
+
+// After — correct; upcaster chain fires before the handler sees the event
+var order = (OrderCreated)serializer.Deserialize(envelope);
+```
+
+Inject `EventSerializer` from DI (it is registered as a keyed singleton by `WithEventsFrom`
+under the module key). If you are inside a consumer registered with `AddProjection`,
+`AddEfProjection`, or `ReactTo`, the serializer is already threaded into the pipeline; you
+do not need to call `ParseEvent` or `serializer.Deserialize` manually.
+
+Call sites that are guaranteed to process only current-version events and genuinely do not need
+upcasting can suppress the warning per-call:
+
+```csharp
+#pragma warning disable CS0618
+var order = envelope.ParseEvent<OrderCreated>(); // only v-current events reach here
+#pragma warning restore CS0618
+```
+
+---
+
+### MM-1 — `IMessageMappingRegistry` gains a `ModuleKey` property
+
+Outbox message mappers registered with `Map<TEvent, TMessage>(...)` resolve the module's
+`EventSerializer` so that upcasters fire before an event is mapped to an outgoing message.
+Previously the mappers resolved an *unkeyed* serializer, which meant that in a host with more
+than one module the first module registered won the slot and every other module's mappers
+silently used the wrong serializer. The serializer is now resolved with the module key, and the
+registry carries that key so the `Map` extension methods keep their existing signatures.
+
+`IMessageMappingRegistry` therefore has a fifth member:
+
+```csharp
+string? ModuleKey { get; set; }
+```
+
+**Who is affected.** Only code that implements `IMessageMappingRegistry` directly — most
+commonly a hand-written test double. Callers of `Map<TEvent, TMessage>(...)` are unaffected;
+no call-site signature changed.
+
+**Symptom.**
+```
+error CS0535: 'TestMappingRegistry' does not implement interface member
+'IMessageMappingRegistry.ModuleKey'
+```
+
+**Fix.** Add the property to the implementation. Alberto sets it during module registration;
+a test double can leave it as an auto-property:
+
+```csharp
+public string? ModuleKey { get; set; }
+```
+
+A `null` `ModuleKey` resolves no serializer, which means upcasters do not fire on that path — so
+if your double is exercising versioned events, set it to the module key under test.
+
+---
+
+### VA-1 — new startup validation for upcaster configuration
+
+Three validation codes now run during the module validation phase. Each rejects a configuration
+that previously started successfully and then failed — or silently misbehaved — at runtime.
+
+| Code | Rejects |
+|---|---|
+| `ALB0018` | An event type declaring `[EventType(Version = N)]` with `N > 1` and no registered upcaster |
+| `ALB0019` | An upcaster whose event-type slug is not present in the assembly passed to `WithEventsFrom` |
+| `ALB0020` | An upcaster chain that does not terminate at the version the event type declares |
+
+`ALB0018` is the one most likely to fire on upgrade: bumping an event's `Version` without
+registering an upcaster used to be accepted at startup and would then write `null` into every
+field the new shape added, with no exception. It is now a startup failure.
+
+`ALB0020` catches the near-miss — a chain that exists but stops short:
+
+```csharp
+[EventType("order-placed", Version = 3)]        // declares v3
+public sealed record OrderPlaced(...) : IEvent;
+
+builder.AddUpcaster(DeclareUpcaster.For<OrderPlaced>("order-placed")
+    .From<OrderPlacedV1>(1, v1 => ...)          // chain reaches v2 only
+    .Build());
+```
+
+Previously this started cleanly and threw only when a v1 or v2 event was actually read, which
+can be days after the deploy. The remedy in the failure message names the missing step.
+
+The mirror mistake is also rejected: a chain that was extended while the attribute was left
+behind. That one never throws at all — events keep being written at the old version and every
+read runs the whole chain forever — so `ALB0020` is the only thing that will ever tell you.
+This applies at version 1 too, so a `[EventType("x")]` with no explicit `Version` and a
+one-step chain is now a startup failure; raise the attribute to match the chain.
+
+These checks only run when `WithEventsFrom(...)` was called; a module configured without an
+events assembly skips them.
+
+---
+
 ## The command pipeline is reshaped; `Persist` is now `Commit`
 
 The fluent pipeline in `Alberto.Dcb.Commands` was rebuilt around one idea: **the boundary should
@@ -110,7 +731,10 @@ against exactly that.
 .LoadUnder(async (cmd, ct) =>
 {
     var boundary = BuildBoundary(cmd);
-    var (state, position) = await store.FoldWithPosition(boundary, State.Initial, Apply, ct);
+    // Use IEventStore.StreamAsync directly: fold state and track the max position in one pass.
+    var envelopes = await eventStore.StreamAsync(boundary, cancellationToken: ct);
+    var state = envelopes.Aggregate(State.Initial, (s, e) => Apply(s, serializer.Deserialize(e)));
+    var position = envelopes.Count > 0 ? envelopes.Max(e => e.GlobalPosition) : 0L;
     return (state, boundary, position);
 })
 .Decide((cmd, state) => Decide(state, …))

@@ -5,6 +5,9 @@
         <Nullable>enable</Nullable>
         <IsPackable>false</IsPackable>
         <IsTestProject>true</IsTestProject>
+        <!-- Suppress experimental-sharding diagnostic across all test files; the sole purpose of
+             this project is testing Alberto including sharding, so per-file pragmas would be noisy. -->
+        <NoWarn>$(NoWarn);ALB9001</NoWarn>
     </PropertyGroup>
 
     <ItemGroup>
@@ -23,6 +26,9 @@
         <ProjectReference Include="../../tools/Alberto.Cli/Alberto.Cli.csproj" />
         <ProjectReference Include="../../benchmarks/Alberto.Dcb.Benchmarks.Core/Alberto.Dcb.Benchmarks.Core.csproj" />
         <ProjectReference Include="../../benchmarks/Alberto.Dcb.Benchmarks.Compare/Alberto.Dcb.Benchmarks.Compare.csproj" />
+        <!-- A slug-collision-free events assembly, so tests can exercise the real
+             .WithEventsFrom(assembly) configuration path. See its Events.cs for why. -->
+        <ProjectReference Include="../Alberto.Dcb.Tests.SampleEvents/Alberto.Dcb.Tests.SampleEvents.csproj" />
     </ItemGroup>
 
     <ItemGroup>

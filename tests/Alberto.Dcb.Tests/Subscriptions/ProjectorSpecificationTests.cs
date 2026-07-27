@@ -64,7 +64,7 @@ public class ProjectorSpecificationTests
         public IReadOnlyDictionary<string, OrderSummary> Store => _store;
         public List<string> DeletedIds { get; } = new();
 
-        public Task<Dictionary<string, OrderSummary>> LoadManyAsync(
+        public Task<IReadOnlyDictionary<string, OrderSummary>> LoadManyAsync(
             IEnumerable<string> documentIds,
             CancellationToken ct = default)
         {
@@ -74,7 +74,7 @@ public class ProjectorSpecificationTests
                 if (_store.TryGetValue(id, out var state))
                     result[id] = state;
             }
-            return Task.FromResult(result);
+            return Task.FromResult<IReadOnlyDictionary<string, OrderSummary>>(result);
         }
 
         public Task ApplyChangesAsync(
@@ -443,10 +443,10 @@ public class ProjectorSpecificationTests
 
     private class ThrowOnApplyStateStore : IStateStore<OrderSummary>
     {
-        public Task<Dictionary<string, OrderSummary>> LoadManyAsync(
+        public Task<IReadOnlyDictionary<string, OrderSummary>> LoadManyAsync(
             IEnumerable<string> documentIds,
             CancellationToken ct = default)
-            => Task.FromResult(new Dictionary<string, OrderSummary>());
+            => Task.FromResult<IReadOnlyDictionary<string, OrderSummary>>(new Dictionary<string, OrderSummary>());
 
         public Task ApplyChangesAsync(
             IReadOnlyDictionary<string, OrderSummary> upserts,

@@ -1,7 +1,7 @@
--- Alberto DCB Event Store - Migration 025 (Single-Tenant)
+-- Alberto DCB Event Store - Migration 028 (Single-Tenant)
 --
 -- Rewrite alberto_read_by_types_and_tags from INTERSECT to a correlated semi-join.
--- See multi-tenant 025_SemiJoinTypesAndTagsRead.sql for the full rationale and the
+-- See multi-tenant 028_SemiJoinTypesAndTagsRead.sql for the full rationale and the
 -- measured plan evidence; the only difference here is that the function carries no
 -- tenant argument and the position lookups have no tenant predicate.
 

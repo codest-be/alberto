@@ -65,10 +65,8 @@ internal static class RetryAndDeadLetterCore
 
                 if (attempt <= retry.MaxRetries)
                 {
-                    AlbertoMetrics.Retries.Add(
-                        retryMetricCount,
-                        new KeyValuePair<string, object?>("processor", context.ProcessorId),
-                        new KeyValuePair<string, object?>("module", context.ModuleKey));
+                    AlbertoMetrics.Retries.Add(retryMetricCount,
+                        ProcessorTags.ForModule(context.ProcessorId, context.ModuleKey));
 
                     await Task.Delay(retry.CalculateDelay(attempt), context.CancellationToken);
                 }

@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Alberto.Dcb.Tenancy;
 
 /// <summary>
@@ -20,6 +22,7 @@ namespace Alberto.Dcb.Tenancy;
 /// holding several tenants isolates them exactly as an unsharded module does.
 /// </para>
 /// </remarks>
+[Experimental("ALB9001")]
 public sealed class ShardRoutingEventStore(
     string moduleKey,
     ITenantAccessor tenantAccessor,
@@ -39,6 +42,11 @@ public sealed class ShardRoutingEventStore(
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// <paramref name="afterPosition"/> must be a position issued by this tenant's shard.
+    /// Positions are per-database sequences; passing a value obtained from a different shard
+    /// produces silently wrong results — events may be skipped or repeated.
+    /// </remarks>
     public async Task<IReadOnlyCollection<IEventEnvelope>> StreamAsync(
         DcbQuery query,
         long afterPosition = 0,
@@ -68,6 +76,12 @@ public sealed class ShardRoutingEventStore(
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// The returned position belongs to the current tenant's shard. Each shard maintains its own
+    /// independent <c>position</c> sequence starting at 1, so a value from shard A is meaningless
+    /// in shard B. Never compare, order, or use a position from one shard as a cursor into
+    /// another — the result would silently be nonsense with no runtime error to catch it.
+    /// </remarks>
     public async Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default)
     {
         var store = await ForCurrentTenantAsync(cancellationToken).ConfigureAwait(false);

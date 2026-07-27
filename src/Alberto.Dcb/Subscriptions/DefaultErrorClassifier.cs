@@ -87,9 +87,19 @@ internal sealed class DefaultErrorClassifier : IErrorClassifier
         if (ex is NotSupportedException or NotImplementedException)
             return ErrorClassification.Permanent;
 
-        // Permanent: Invalid operation (usually programmer error)
-        if (ex is InvalidOperationException)
-            return ErrorClassification.Permanent;
+        // InvalidOperationException is intentionally NOT classified as Permanent here.
+        //
+        // The original comment said "usually programmer error", which is true for pure application
+        // code, but InvalidOperationException is also the exception EF Core raises on connection-pool
+        // exhaustion ("Timeout expired. The timeout period elapsed prior to obtaining a connection
+        // from the pool") and Npgsql raises for several transient protocol states. Classifying it
+        // Permanent means a single load spike silently dead-letters every event being processed —
+        // the projection then stalls behind a wall of dead letters with no automatic recovery.
+        //
+        // Falling through to Unknown lets the standard retry-then-dead-letter policy run, which is
+        // far cheaper than discarding events. Callers who genuinely want instant dead-lettering for
+        // their own InvalidOperationException subclasses can supply a custom IErrorClassifier via
+        // UseErrorClassifier<TClassifier>() on the module builder.
 
         // Permanent: File not found (resource doesn't exist)
         if (ex is FileNotFoundException or DirectoryNotFoundException)

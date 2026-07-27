@@ -1,5 +1,6 @@
 using System.CommandLine;
 using Alberto.Dcb.Postgres;
+using Alberto.Dcb.Tenancy;
 using Npgsql;
 
 namespace Alberto.Cli.Commands;
@@ -192,6 +193,21 @@ public static class ShardsCommand
                     return 1;
                 }
 
+                // TenantContext.SetTenant enforces the same rule at runtime: a tenant whose ID
+                // does not match it can never be resolved. Catching the mismatch here prevents
+                // a catalog row that is permanently unreachable — once written, the row is not
+                // automatically cleaned up, and the operator would have to remove it by hand.
+                if (!TenantContext.IsValidTenantId(tenant))
+                {
+                    output.Error(
+                        $"Tenant ID '{tenant}' is not a valid Alberto identifier. " +
+                        $"{TenantContext.TenantIdRule} " +
+                        "A tenant whose ID does not match this rule cannot be resolved at runtime: " +
+                        "TenantContext.SetTenant rejects it, so the shard assignment would be " +
+                        "permanently unreachable.");
+                    return 1;
+                }
+
                 var declared = session.DeclaredShardIds();
                 if (declared.Count > 0 && !declared.Contains(shardId, StringComparer.Ordinal))
                 {
@@ -243,10 +259,12 @@ public static class ShardsCommand
     /// <summary>
     /// An open catalog, and the data source behind it for the caller to dispose.
     /// </summary>
+#pragma warning disable ALB9001 // ShardsCommand operates the experimental sharding catalog.
     private sealed record Catalog(
         NpgsqlDataSource DataSource,
         PostgresTenantShardMap Map,
         string ModuleKey);
+#pragma warning restore ALB9001
 
     /// <summary>
     /// Opens the control database and returns the catalog for the module in play.
@@ -267,8 +285,10 @@ public static class ShardsCommand
         var target = session.CatalogTarget(url, schema);
         var moduleKey = session.ModuleKey(module);
 
+#pragma warning disable ALB9001 // ShardsCommand operates the experimental sharding catalog.
         var dataSource = new NpgsqlDataSourceBuilder(target.ConnectionString).Build();
         return new Catalog(dataSource, new PostgresTenantShardMap(dataSource, moduleKey, target.Schema), moduleKey);
+#pragma warning restore ALB9001
     }
 
     private static (Option<string?> Url, Option<string?> Schema, Option<string?> Module, Option<bool> Json)

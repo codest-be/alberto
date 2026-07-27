@@ -1,0 +1,2 @@
+Alberto.Dcb.Postgres.PostgresDeadLetterStore.PostgresDeadLetterStore(Npgsql.NpgsqlDataSource! dataSource) -> void
+Alberto.Dcb.Postgres.PostgresDeadLetterStore.PostgresDeadLetterStore(Npgsql.NpgsqlDataSource! dataSource, string? schema) -> void

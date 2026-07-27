@@ -10,6 +10,9 @@ namespace Alberto.Dcb.Tests.Subscriptions;
 /// </summary>
 public sealed class MiddlewareTests
 {
+    private static readonly DateTime EventCreatedAt =
+        new(2026, 7, 26, 12, 34, 56, DateTimeKind.Utc);
+
     #region Helpers
 
     private static ConsumeEventContext MakeContext(CancellationToken ct = default)
@@ -17,12 +20,13 @@ public sealed class MiddlewareTests
         var envelope = new EventEnvelope
         {
             Id = Guid.NewGuid(),
+            TenantId = "tenant-a",
             GlobalPosition = 1,
             EventType = new EventType("test-event"),
-            Tags = [],
+            Tags = [new EventTag("order", "123")],
             EventData = "{}",
-            Metadata = new Dictionary<string, string>(),
-            CreatedAt = DateTime.UtcNow
+            Metadata = new Dictionary<string, string> { ["correlation-id"] = "corr-1" },
+            CreatedAt = EventCreatedAt
         };
         return new ConsumeEventContext
         {
@@ -209,7 +213,12 @@ public sealed class MiddlewareTests
         Assert.NotNull(context.LastError);
         Assert.Equal(3, context.Attempt); // 1 initial + 2 retries
         Assert.Single(deadLetterStore.Entries);
-        Assert.Equal(context.ProcessorId, deadLetterStore.Entries[0].ProcessorId);
+        var entry = deadLetterStore.Entries[0];
+        Assert.Equal(context.ProcessorId, entry.ProcessorId);
+        Assert.Equal("tenant-a", entry.TenantId);
+        Assert.Equal(["order:123"], entry.Tags);
+        Assert.Equal("corr-1", entry.Metadata!["correlation-id"]);
+        Assert.Equal(EventCreatedAt, entry.CreatedAt);
     }
 
     #endregion

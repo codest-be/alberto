@@ -11,7 +11,7 @@ namespace Alberto.Dcb.Messaging;
 internal sealed class OutboxHandler(
     IMessageMappingRegistry registry,
     IOutboxStore store,
-    IServiceScopeFactory scopeFactory) : IEventProcessor, IBatchableProcessor
+    IServiceScopeFactory scopeFactory) : IEventProcessor, IBatchableProcessor, IProcessorLifecycle
 {
     internal const string ProcessorIdValue = "outbox";
 
@@ -81,5 +81,7 @@ internal sealed class OutboxHandler(
             LastError: null,
             CreatedAt: DateTimeOffset.UtcNow,
             DeliveredAt: null,
-            TenantId: tenantId);
+            TenantId: tenantId,
+            Destination: message.Destination,
+            RoutingHint: message.RoutingHint);
 }

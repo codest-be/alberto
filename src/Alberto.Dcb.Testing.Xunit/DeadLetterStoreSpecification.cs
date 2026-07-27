@@ -31,16 +31,18 @@ public abstract class DeadLetterStoreSpecification
 
     /// <summary>Creates a minimal <see cref="DeadLetterEntry"/> for the given processor.</summary>
     /// <param name="processorId">The processor ID to assign to the entry.</param>
-    protected static DeadLetterEntry NewEntry(string processorId) => new(
-        Id: Guid.NewGuid(),
-        ProcessorId: processorId,
-        EventId: Guid.NewGuid(),
-        EventType: "order-placed",
-        EventData: """{"orderId":"test"}""",
-        ErrorMessage: "Processing failed in test",
-        StackTrace: null,
-        AttemptCount: 1,
-        FailedAt: DateTimeOffset.UtcNow);
+    protected static DeadLetterEntry NewEntry(string processorId) => new()
+    {
+        Id = Guid.NewGuid(),
+        ProcessorId = processorId,
+        EventId = Guid.NewGuid(),
+        EventType = "order-placed",
+        EventData = """{"orderId":"test"}""",
+        ErrorMessage = "Processing failed in test",
+        StackTrace = null,
+        AttemptCount = 1,
+        FailedAt = DateTimeOffset.UtcNow,
+    };
 
     // ── CountAsync ────────────────────────────────────────────────────────────
 

@@ -1,3 +1,4 @@
+#pragma warning disable ALB9001 // This class is part of the sharding implementation and lives alongside the experimental surface it references.
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
