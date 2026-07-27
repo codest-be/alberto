@@ -1,6 +1,7 @@
 # Benchmarks
 
-Postgres-backed BenchmarkDotNet suite. Design:
+Postgres-backed BenchmarkDotNet suite. Latest results and interpretation:
+[docs/benchmarks/results.md](../docs/benchmarks/results.md). Design:
 [docs/superpowers/specs/2026-07-26-benchmark-suite-design.md](../docs/superpowers/specs/2026-07-26-benchmark-suite-design.md)
 
 ## Running
