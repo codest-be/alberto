@@ -2,7 +2,8 @@ using Alberto.Dcb.Benchmarks.Compare;
 using Alberto.Dcb.Benchmarks.Core;
 
 // Usage:
-//   compare --import <bdn-report-full.json> --out <candidate.json> [--git-sha <sha>] [--version <v>]
+//   compare --import <bdn-report-full.json|results-dir> --out <candidate.json>
+//           --postgres-image <tag> | --external-postgres  [--git-sha <sha>] [--version <v>]
 //   compare --baseline <baseline.json> --candidate <candidate.json> [--markdown <out.md>]
 //   compare --baseline <baseline.json> --candidate <candidate.json> --accept
 //
@@ -27,12 +28,25 @@ try
             throw new InvalidOperationException($"No *-report-full.json found under {bdnReportPath}.");
         }
 
+        // The image is part of the profile hash, so defaulting it would mint a profile no
+        // real baseline can ever match -- and the comparer refuses mismatched profiles
+        // rather than warning, so the mistake surfaces much later as "no baseline found".
+        // Demand it instead. --external-postgres already pins the field to "external".
+        var externalPostgres = options.ContainsKey("external-postgres");
+        if (!externalPostgres && !options.ContainsKey("postgres-image"))
+        {
+            throw new InvalidOperationException(
+                "--postgres-image is required (or pass --external-postgres). It is part of the "
+                + "machine profile, so importing without it produces results that cannot be "
+                + "compared against any baseline.");
+        }
+
         var metadata = new RunMetadata(
             Timestamp: DateTimeOffset.UtcNow.ToString("O"),
             GitSha: options.GetValueOrDefault("git-sha", "unknown"),
             ProfileId: MachineProfile.Capture(
                 postgresImage: options.GetValueOrDefault("postgres-image", "unknown"),
-                externalPostgres: options.ContainsKey("external-postgres")).ProfileId,
+                externalPostgres: externalPostgres).ProfileId,
             AlbertoVersion: options.GetValueOrDefault("version", "0.0.0"));
 
         var run = BdnImporter.ImportMany(reportPaths.Select(File.ReadAllText), metadata);

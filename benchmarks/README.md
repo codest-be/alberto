@@ -21,13 +21,21 @@ Against an existing Postgres rather than Testcontainers:
 
 ## Comparing
 
-Normalize a BenchmarkDotNet report, then diff it against the committed baseline:
+Normalize a BenchmarkDotNet report, then diff it against the committed baseline. Point
+`--import` at the whole results directory — a full run writes one report per benchmark
+class, and importing a single file would compare a fraction of the suite:
 
     dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks.Compare -- \
-      --import BenchmarkDotNet.Artifacts/results/<report>-report-full.json --out candidate.json
+      --import BenchmarkDotNet.Artifacts/results --postgres-image postgres:16-alpine \
+      --out candidate.json
 
     dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks.Compare -- \
       --baseline benchmarks/results/<profileId>/baseline.json --candidate candidate.json
+
+`--postgres-image` is required, and must name the image the run actually used
+(`postgres:16-alpine`, from `BenchmarkDatabase`) — it is part of the machine profile, so
+importing with the wrong value produces a profile no baseline matches. Use
+`--external-postgres` instead when the run went against `ALBERTO_BENCH_POSTGRES`.
 
 Exit code 1 means a regression. Thresholds: mean +20% (and outside the combined standard
 deviation band), allocations +10% (no noise band — allocation counts do not drift).
