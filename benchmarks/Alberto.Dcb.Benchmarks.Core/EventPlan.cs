@@ -11,9 +11,24 @@ namespace Alberto.Dcb.Benchmarks.Core;
 /// </summary>
 public static class EventPlan
 {
-    /// <summary>The event types seeded stores are built from.</summary>
+    /// <summary>
+    /// The event types seeded stores are built from, drawn uniformly.
+    ///
+    /// Twenty of them, and the count is the point. With three, a boundary naming three types
+    /// selects the entire corpus, so any measurement of "does filtering by type pay off" is
+    /// really measuring a filter that matches everything. Twenty uniform types make the named
+    /// type count a selectivity knob: naming k of them selects k/20 of the log.
+    /// </summary>
     public static IReadOnlyList<string> TypeIds { get; } =
-        ["order-placed", "order-cancelled", "payment-received"];
+    [
+        "order-placed", "order-cancelled", "payment-received",
+        "order-confirmed", "order-shipped", "order-delivered",
+        "order-returned", "order-line-added", "order-line-removed",
+        "order-address-changed", "order-discount-applied", "order-note-added",
+        "payment-authorized", "payment-captured", "payment-refunded",
+        "payment-failed", "invoice-issued", "invoice-settled",
+        "shipment-dispatched", "shipment-delayed",
+    ];
 
     /// <summary>Distinct order tags. Models the tag fan-out of a busy service.</summary>
     public const int DistinctOrders = 100;

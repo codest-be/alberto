@@ -286,14 +286,15 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
 
     #endregion
 
-    #region Regression: single-element fast path in alberto_read_by_types_and_tags
+    #region Regression: single-tag fast path in alberto_read_by_types_and_tags
 
     /// <summary>
-    /// Guards the single-tag/single-type branch added in migration 029, which drops the
-    /// <c>DISTINCT</c> the general path relies on. That is safe only because a single tag
-    /// matches each position at most once under the tag PK and an event carries exactly
-    /// one type — properties of the schema, not of the query. If either changes, or if the
-    /// branch is ever widened to multiple tags without restoring the dedup, this fails.
+    /// Guards the single-tag fast path (added for one type in migration 029, widened to any
+    /// number of types in 030), which drops the <c>DISTINCT</c> the general path relies on.
+    /// That is safe only because a single tag matches each position at most once under the
+    /// tag PK and an event carries exactly one type — properties of the schema, not of the
+    /// query. If either changes, or if the branch is ever widened to multiple tags without
+    /// restoring the dedup, this fails.
     /// <para>
     /// The DCB conflict tests above reach this branch too, but they assert only that a
     /// conflict was detected; nothing there would notice a duplicated or missing row.
@@ -334,6 +335,52 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
         Assert.Equal([positions[1]], second.Select(e => e.GlobalPosition));
 
         Assert.Equal(4, appended.Count);
+    }
+
+    /// <summary>
+    /// The same branch with several types named. Migration 030 matches the type axis with
+    /// <c>= ANY</c> here and still emits no <c>DISTINCT</c>; that holds because an event has
+    /// exactly one type, so widening the array cannot make a position match twice. A regression
+    /// that reintroduced duplication would show up as an event counted more than once — which
+    /// on a paged read silently costs a slot of the limit rather than throwing.
+    /// </summary>
+    [Fact]
+    public async Task StreamAsync_ByThreeTypesAndOneTag_ReturnsEachMatchOnceInPositionOrder()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
+
+        var orderId = Guid.NewGuid();
+        var tag = new EventTag("multitype-order", orderId.ToString());
+        var otherTag = new EventTag("multitype-order", Guid.NewGuid().ToString());
+
+        await eventStore.AppendAsync(
+            [
+                CreateEvent(new OrderCreated(orderId, 100m), tag),        // match
+                CreateEvent(new OrderConfirmed(orderId), tag),            // match
+                CreateEvent(new OrderCancelled(orderId), tag),            // right tag, unnamed type
+                CreateEvent(new OrderCreated(orderId, 250m), tag),        // match
+                CreateEvent(new OrderConfirmed(orderId), otherTag),       // named type, wrong tag
+            ],
+            cancellationToken: ct);
+
+        // Three named types, one of which matches nothing here: the array must filter, not
+        // just widen. A fourth name that no event carries also keeps the test honest about
+        // ANY over a set larger than the matching set.
+        var query = DcbQuery.Empty
+            .WithTypes("order-created", "order-confirmed", "order-shipped")
+            .WithTags(tag);
+
+        var events = await eventStore.StreamAsync(query, cancellationToken: ct);
+
+        var positions = events.Select(e => e.GlobalPosition).ToArray();
+        Assert.Equal(3, positions.Length);
+        Assert.Equal(positions.OrderBy(p => p), positions);
+        Assert.All(events, e => Assert.Contains(e.EventType.Id, new[] { "order-created", "order-confirmed" }));
+
+        // Paging must resume inside the fast path rather than restart it.
+        var second = await eventStore.StreamAsync(query, afterPosition: positions[0], cancellationToken: ct);
+        Assert.Equal(positions[1..], second.Select(e => e.GlobalPosition));
     }
 
     #endregion

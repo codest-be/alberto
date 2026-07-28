@@ -270,13 +270,18 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
 
     /// <summary>
     /// The test above uses two tags and so exercises the general path. This one uses a
-    /// single tag and a single type, which migration 029 routes to a separate branch that
-    /// omits the <c>DISTINCT</c> — so it needs its own tenant-scoping guard. plpgsql
-    /// resolves references per branch at first execution, meaning a mistyped tenant
-    /// predicate in the fast path is invisible to every multi-tag test.
+    /// single tag, which migrations 029 and 030 route to a separate branch that omits the
+    /// <c>DISTINCT</c> — so it needs its own tenant-scoping guard. plpgsql resolves
+    /// references per branch at first execution, meaning a mistyped tenant predicate in the
+    /// fast path is invisible to every multi-tag test.
+    /// <para>
+    /// Both type shapes the branch accepts are asserted: one named type, and several. They
+    /// compile to different predicates (<c>= $v</c> against <c>= ANY</c>) on the same
+    /// branch, and only the second is reachable after 030.
+    /// </para>
     /// </summary>
     [Fact]
-    public async Task Stream_ByOneTypeAndOneTag_IsTenantScoped()
+    public async Task Stream_BySingleTagFastPath_IsTenantScoped()
     {
         var ct = TestContext.Current.CancellationToken;
         var orderId = Guid.NewGuid();
@@ -325,6 +330,17 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
             var ev = Assert.Single(events);
             Assert.Equal(TenantA, ev.TenantId);
             Assert.Equal("ti-order-created", ev.EventType.Id);
+
+            // Same branch, `= ANY` on the type axis. Tenant A appended both types under the
+            // tag, tenant B only the first, so a leaking predicate shows up as three rows.
+            var multiTypeQuery = DcbQuery.Empty
+                .WithTypes("ti-order-created", "ti-order-shipped")
+                .WithTags(orderTag.Value);
+
+            var multiTypeEvents = await storeA2.StreamAsync(multiTypeQuery, cancellationToken: ct);
+
+            Assert.Equal(2, multiTypeEvents.Count);
+            Assert.All(multiTypeEvents, e => Assert.Equal(TenantA, e.TenantId));
         }
     }
 

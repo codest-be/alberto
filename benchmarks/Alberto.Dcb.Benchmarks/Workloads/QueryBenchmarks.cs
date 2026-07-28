@@ -66,6 +66,7 @@ public class QueryBenchmarks : QueryBenchmarkBase
     private DcbQuery _byType = null!;
     private DcbQuery _byTag = null!;
     private DcbQuery _byTypeAndTag = null!;
+    private DcbQuery _byTypesAndTag = null!;
     private DcbQuery _boundary = null!;
 
     protected override Task OnSetupAsync()
@@ -74,6 +75,8 @@ public class QueryBenchmarks : QueryBenchmarkBase
         _byType = DcbQuery.ByTypes("order-placed");
         _byTag = DcbQuery.ByTags(new EventTag("order", "42"));
         _byTypeAndTag = DcbQuery.For("order", "42").WithTypes("order-placed");
+        _byTypesAndTag = DcbQuery.For("order", "42")
+            .WithTypes("order-placed", "order-cancelled", "payment-received");
         _boundary = DcbQuery.For("order", "7");
 
         return Task.CompletedTask;
@@ -93,6 +96,9 @@ public class QueryBenchmarks : QueryBenchmarkBase
 
     [GlobalSetup(Target = nameof(StreamByTypeAndTag))]
     public Task SetupStreamByTypeAndTag() => InitAsync(StreamByTypeAndTag);
+
+    [GlobalSetup(Target = nameof(StreamByTypesAndTag))]
+    public Task SetupStreamByTypesAndTag() => InitAsync(StreamByTypesAndTag);
 
     [GlobalSetup(Target = nameof(BoundaryRead))]
     public Task SetupBoundaryRead() => InitAsync(BoundaryRead);
@@ -128,6 +134,18 @@ public class QueryBenchmarks : QueryBenchmarkBase
     [Benchmark, BenchmarkCategory(Categories.Query)]
     public Task<IReadOnlyCollection<IEventEnvelope>> StreamByTypeAndTag()
         => Backend.StreamAsync(_byTypeAndTag, afterPosition: 0, limit: PageSize);
+
+    /// <summary>
+    /// One tag intersected with three of the twenty seeded types — the shape a real boundary
+    /// takes when it cares about a handful of a context's events.
+    ///
+    /// Its sibling above names exactly one type, which is the only two-axis shape the scalar
+    /// fast path recognises; this case is deliberately just outside that guard, so the two
+    /// together price what the narrow guard leaves on the table.
+    /// </summary>
+    [Benchmark, BenchmarkCategory(Categories.Query)]
+    public Task<IReadOnlyCollection<IEventEnvelope>> StreamByTypesAndTag()
+        => Backend.StreamAsync(_byTypesAndTag, afterPosition: 0, limit: PageSize);
 
     /// <summary>
     /// A small selective read before a decision — the latency a user actually feels.
