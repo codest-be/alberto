@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "run": {
-    "timestamp": "2026-07-28T06:44:42.5082110\u002B00:00",
+    "timestamp": "2026-07-28T12:17:32.5294530\u002B00:00",
     "gitSha": "unknown",
     "profileId": "local-3575380c",
     "albertoVersion": "0.0.0"
@@ -12,39 +12,39 @@
       "params": {
         "BatchSize": "10"
       },
-      "meanNs": 1630829.1,
-      "stdDevNs": 262862.84873905464,
-      "opsPerSec": 613.1850357588052,
-      "allocatedBytes": 29080
+      "meanNs": 1644145.6,
+      "stdDevNs": 250186.56880869257,
+      "opsPerSec": 608.2186395170841,
+      "allocatedBytes": 28800
     },
     {
       "id": "BatchAppendBenchmarks.BatchAppend",
       "params": {
         "BatchSize": "100"
       },
-      "meanNs": 4262683.3,
-      "stdDevNs": 105341.6018706654,
-      "opsPerSec": 234.59401734114286,
-      "allocatedBytes": 201728
+      "meanNs": 4276900,
+      "stdDevNs": 156709.88122500622,
+      "opsPerSec": 233.81421122775842,
+      "allocatedBytes": 202336
     },
     {
       "id": "BatchAppendBenchmarks.BatchAppend",
       "params": {
         "BatchSize": "1000"
       },
-      "meanNs": 29571458.4,
-      "stdDevNs": 959435.7894579038,
-      "opsPerSec": 33.81639101032636,
-      "allocatedBytes": 1959384
+      "meanNs": 30055329,
+      "stdDevNs": 1345353.7236252115,
+      "opsPerSec": 33.271969839358604,
+      "allocatedBytes": 1970584
     },
     {
       "id": "TagFanOutBenchmarks.AppendWithTagFanOut",
       "params": {
         "TagsPerEvent": "1"
       },
-      "meanNs": 879712.4,
-      "stdDevNs": 78615.12933582753,
-      "opsPerSec": 1136.7351420759785,
+      "meanNs": 906458.4,
+      "stdDevNs": 95086.34899710893,
+      "opsPerSec": 1103.1945867565462,
       "allocatedBytes": 11760
     },
     {
@@ -52,9 +52,9 @@
       "params": {
         "TagsPerEvent": "5"
       },
-      "meanNs": 1052758.3,
-      "stdDevNs": 190220.370490562,
-      "opsPerSec": 949.8856480162635,
+      "meanNs": 950129.1,
+      "stdDevNs": 69993.45428990724,
+      "opsPerSec": 1052.4885512926612,
       "allocatedBytes": 17160
     },
     {
@@ -62,9 +62,9 @@
       "params": {
         "TagsPerEvent": "20"
       },
-      "meanNs": 1568946.1,
-      "stdDevNs": 68325.47438295292,
-      "opsPerSec": 637.3705253481938,
+      "meanNs": 1226396.1,
+      "stdDevNs": 132067.8422776634,
+      "opsPerSec": 815.397244006239,
       "allocatedBytes": 20520
     },
     {
@@ -73,10 +73,10 @@
         "UnionTags": "2",
         "StoreSize": "10000"
       },
-      "meanNs": 685587.4,
-      "stdDevNs": 40349.844094976244,
-      "opsPerSec": 1458.603235707074,
-      "allocatedBytes": 135976
+      "meanNs": 691987.5,
+      "stdDevNs": 93863.70732817285,
+      "opsPerSec": 1445.1128091186617,
+      "allocatedBytes": 136800
     },
     {
       "id": "MultiTagQueryBenchmarks.StreamByMultiTag",
@@ -84,10 +84,10 @@
         "UnionTags": "2",
         "StoreSize": "100000"
       },
-      "meanNs": 1383058.2,
-      "stdDevNs": 59103.25905058028,
-      "opsPerSec": 723.0353719026431,
-      "allocatedBytes": 329240
+      "meanNs": 1469454,
+      "stdDevNs": 91739.08075381808,
+      "opsPerSec": 680.5248752257642,
+      "allocatedBytes": 330976
     },
     {
       "id": "MultiTagQueryBenchmarks.StreamByMultiTag",
@@ -95,10 +95,10 @@
         "UnionTags": "2",
         "StoreSize": "1000000"
       },
-      "meanNs": 1380275.1,
-      "stdDevNs": 176514.08006379168,
-      "opsPerSec": 724.4932550040205,
-      "allocatedBytes": 328872
+      "meanNs": 1574245.9,
+      "stdDevNs": 197513.46853172654,
+      "opsPerSec": 635.224776510455,
+      "allocatedBytes": 330792
     },
     {
       "id": "MultiTagQueryBenchmarks.StreamByMultiTag",
@@ -106,10 +106,10 @@
         "UnionTags": "8",
         "StoreSize": "10000"
       },
-      "meanNs": 1068129.3,
-      "stdDevNs": 38436.18066657161,
-      "opsPerSec": 936.2162427339086,
-      "allocatedBytes": 326576
+      "meanNs": 1189208.3,
+      "stdDevNs": 87106.42065128022,
+      "opsPerSec": 840.8955773349378,
+      "allocatedBytes": 328608
     },
     {
       "id": "MultiTagQueryBenchmarks.StreamByMultiTag",
@@ -117,10 +117,10 @@
         "UnionTags": "8",
         "StoreSize": "100000"
       },
-      "meanNs": 1964137.4,
-      "stdDevNs": 119271.85087503068,
-      "opsPerSec": 509.1293511339889,
-      "allocatedBytes": 326208
+      "meanNs": 2286095.8,
+      "stdDevNs": 900991.2660159734,
+      "opsPerSec": 437.42698796787084,
+      "allocatedBytes": 329712
     },
     {
       "id": "MultiTagQueryBenchmarks.StreamByMultiTag",
@@ -128,69 +128,79 @@
         "UnionTags": "8",
         "StoreSize": "1000000"
       },
-      "meanNs": 2039683.4,
-      "stdDevNs": 133552.3665069249,
-      "opsPerSec": 490.2721667490161,
-      "allocatedBytes": 326704
+      "meanNs": 2178370.9,
+      "stdDevNs": 175523.8448723326,
+      "opsPerSec": 459.0586479097752,
+      "allocatedBytes": 328304
     },
     {
       "id": "QueryBenchmarks.TailRead",
       "params": {
         "StoreSize": "10000"
       },
-      "meanNs": 687695.9,
-      "stdDevNs": 39611.45390596569,
-      "opsPerSec": 1454.1311064963452,
-      "allocatedBytes": 333472
+      "meanNs": 754483.2,
+      "stdDevNs": 77712.25880244235,
+      "opsPerSec": 1325.41055917481,
+      "allocatedBytes": 336488
     },
     {
       "id": "QueryBenchmarks.StreamByType",
       "params": {
         "StoreSize": "10000"
       },
-      "meanNs": 1390875,
-      "stdDevNs": 68180.48157647466,
-      "opsPerSec": 718.9718702255774,
-      "allocatedBytes": 328944
+      "meanNs": 1493845.9,
+      "stdDevNs": 68162.39092124043,
+      "opsPerSec": 669.4130900650463,
+      "allocatedBytes": 330496
     },
     {
       "id": "QueryBenchmarks.StreamByTag",
       "params": {
         "StoreSize": "10000"
       },
-      "meanNs": 771737.2,
-      "stdDevNs": 125161.82464118647,
-      "opsPerSec": 1295.7778891570863,
-      "allocatedBytes": 73808
+      "meanNs": 582879.2,
+      "stdDevNs": 52493.47923059904,
+      "opsPerSec": 1715.621350015578,
+      "allocatedBytes": 73712
     },
     {
       "id": "QueryBenchmarks.StreamByTypeAndTag",
       "params": {
         "StoreSize": "10000"
       },
-      "meanNs": 587887.5,
-      "stdDevNs": 71552.58974775903,
-      "opsPerSec": 1701.0057196317323,
-      "allocatedBytes": 30304
+      "meanNs": 525995.9,
+      "stdDevNs": 71742.87551225325,
+      "opsPerSec": 1901.1555033033526,
+      "allocatedBytes": 12312
+    },
+    {
+      "id": "QueryBenchmarks.StreamByTypesAndTag",
+      "params": {
+        "StoreSize": "10000"
+      },
+      "meanNs": 540491.6,
+      "stdDevNs": 60627.16722944151,
+      "opsPerSec": 1850.1675141667326,
+      "allocatedBytes": 15656
     },
     {
       "id": "QueryBenchmarks.BoundaryRead",
       "params": {
         "StoreSize": "10000"
       },
-      "meanNs": 499620.8,
-      "stdDevNs": 83191.13167586502,
-      "opsPerSec": 2001.5179512142008,
-      "allocatedBytes": 40128
+      "meanNs": 448324.9,
+      "stdDevNs": 64621.674579302984,
+      "opsPerSec": 2230.525228467123,
+      "allocatedBytes": 39624
     },
     {
       "id": "QueryBenchmarks.GetLastPosition",
       "params": {
         "StoreSize": "10000"
       },
-      "meanNs": 362375.1,
-      "stdDevNs": 79910.89779588542,
-      "opsPerSec": 2759.5715047750246,
+      "meanNs": 269187.5,
+      "stdDevNs": 40813.918789359646,
+      "opsPerSec": 3714.8827490132344,
       "allocatedBytes": 0
     },
     {
@@ -198,9 +208,9 @@
       "params": {
         "StoreSize": "10000"
       },
-      "meanNs": 412300.1,
-      "stdDevNs": 80573.85092013414,
-      "opsPerSec": 2425.4177964060646,
+      "meanNs": 320104.2,
+      "stdDevNs": 82575.90107127704,
+      "opsPerSec": 3123.9827531160163,
       "allocatedBytes": 0
     },
     {
@@ -208,69 +218,79 @@
       "params": {
         "StoreSize": "10000"
       },
-      "meanNs": 680579.1,
-      "stdDevNs": 44188.387849826184,
-      "opsPerSec": 1469.3369220418317,
-      "allocatedBytes": 329880
+      "meanNs": 664754.1,
+      "stdDevNs": 37459.873406827675,
+      "opsPerSec": 1504.3156559696286,
+      "allocatedBytes": 332088
     },
     {
       "id": "QueryBenchmarks.TailRead",
       "params": {
         "StoreSize": "100000"
       },
-      "meanNs": 654345.9,
-      "stdDevNs": 28928.046204524617,
-      "opsPerSec": 1528.2437010761432,
-      "allocatedBytes": 333928
+      "meanNs": 635262.5,
+      "stdDevNs": 27073.140208003617,
+      "opsPerSec": 1574.1524173078058,
+      "allocatedBytes": 335912
     },
     {
       "id": "QueryBenchmarks.StreamByType",
       "params": {
         "StoreSize": "100000"
       },
-      "meanNs": 1997033.3,
-      "stdDevNs": 88121.13945403667,
-      "opsPerSec": 500.74277679796324,
-      "allocatedBytes": 328288
+      "meanNs": 1931375.2,
+      "stdDevNs": 105341.9997318786,
+      "opsPerSec": 517.7657867823922,
+      "allocatedBytes": 331232
     },
     {
       "id": "QueryBenchmarks.StreamByTag",
       "params": {
         "StoreSize": "100000"
       },
-      "meanNs": 1371579.3,
-      "stdDevNs": 67958.61950571262,
-      "opsPerSec": 729.0865354996243,
-      "allocatedBytes": 335872
+      "meanNs": 1253341.5,
+      "stdDevNs": 111084.83657422476,
+      "opsPerSec": 797.8671415571894,
+      "allocatedBytes": 336608
     },
     {
       "id": "QueryBenchmarks.StreamByTypeAndTag",
       "params": {
         "StoreSize": "100000"
       },
-      "meanNs": 2676308.3,
-      "stdDevNs": 134169.51926412596,
-      "opsPerSec": 373.64902989689193,
-      "allocatedBytes": 221456
+      "meanNs": 912470.7,
+      "stdDevNs": 82053.23968964703,
+      "opsPerSec": 1095.9256006795615,
+      "allocatedBytes": 33504
+    },
+    {
+      "id": "QueryBenchmarks.StreamByTypesAndTag",
+      "params": {
+        "StoreSize": "100000"
+      },
+      "meanNs": 1386150,
+      "stdDevNs": 87982.54742466447,
+      "opsPerSec": 721.4226454568409,
+      "allocatedBytes": 96152
     },
     {
       "id": "QueryBenchmarks.BoundaryRead",
       "params": {
         "StoreSize": "100000"
       },
-      "meanNs": 431487.5,
-      "stdDevNs": 71571.81467162118,
-      "opsPerSec": 2317.564239983777,
-      "allocatedBytes": 39456
+      "meanNs": 459416.4,
+      "stdDevNs": 54389.68533176938,
+      "opsPerSec": 2176.6745810554435,
+      "allocatedBytes": 39336
     },
     {
       "id": "QueryBenchmarks.GetLastPosition",
       "params": {
         "StoreSize": "100000"
       },
-      "meanNs": 297804.1,
-      "stdDevNs": 60837.90231143375,
-      "opsPerSec": 3357.912130826943,
+      "meanNs": 230220.9,
+      "stdDevNs": 19344.766788462453,
+      "opsPerSec": 4343.6542902924975,
       "allocatedBytes": 0
     },
     {
@@ -278,9 +298,9 @@
       "params": {
         "StoreSize": "100000"
       },
-      "meanNs": 337341.6,
-      "stdDevNs": 33484.33904645241,
-      "opsPerSec": 2964.3542332164193,
+      "meanNs": 333304.1,
+      "stdDevNs": 42328.60227749868,
+      "opsPerSec": 3000.263123075894,
       "allocatedBytes": 0
     },
     {
@@ -288,69 +308,79 @@
       "params": {
         "StoreSize": "100000"
       },
-      "meanNs": 689099.9,
-      "stdDevNs": 29390.50359271398,
-      "opsPerSec": 1451.1684009822088,
-      "allocatedBytes": 329880
+      "meanNs": 681808.4,
+      "stdDevNs": 37446.59387328987,
+      "opsPerSec": 1466.687708746328,
+      "allocatedBytes": 331904
     },
     {
       "id": "QueryBenchmarks.TailRead",
       "params": {
         "StoreSize": "1000000"
       },
-      "meanNs": 676508.2,
-      "stdDevNs": 36033.9983435397,
-      "opsPerSec": 1478.178682830452,
-      "allocatedBytes": 333328
+      "meanNs": 683266.8,
+      "stdDevNs": 42297.23929472886,
+      "opsPerSec": 1463.5571346361332,
+      "allocatedBytes": 335688
     },
     {
       "id": "QueryBenchmarks.StreamByType",
       "params": {
         "StoreSize": "1000000"
       },
-      "meanNs": 2435604.2,
-      "stdDevNs": 86292.74386876338,
-      "opsPerSec": 410.5757413293999,
-      "allocatedBytes": 328392
+      "meanNs": 9332058.1,
+      "stdDevNs": 286042.0923863596,
+      "opsPerSec": 107.15749830147328,
+      "allocatedBytes": 330680
     },
     {
       "id": "QueryBenchmarks.StreamByTag",
       "params": {
         "StoreSize": "1000000"
       },
-      "meanNs": 1273933.2,
-      "stdDevNs": 101044.59372837981,
-      "opsPerSec": 784.9705149375179,
-      "allocatedBytes": 334584
+      "meanNs": 1424670.9,
+      "stdDevNs": 249858.0329135594,
+      "opsPerSec": 701.916491731529,
+      "allocatedBytes": 336296
     },
     {
       "id": "QueryBenchmarks.StreamByTypeAndTag",
       "params": {
         "StoreSize": "1000000"
       },
-      "meanNs": 3204683.5,
-      "stdDevNs": 175279.667141305,
-      "opsPerSec": 312.04329538314784,
-      "allocatedBytes": 332240
+      "meanNs": 4828870.8,
+      "stdDevNs": 225770.8254426747,
+      "opsPerSec": 207.08775227533528,
+      "allocatedBytes": 290936
+    },
+    {
+      "id": "QueryBenchmarks.StreamByTypesAndTag",
+      "params": {
+        "StoreSize": "1000000"
+      },
+      "meanNs": 4681441.5,
+      "stdDevNs": 343900.20284322475,
+      "opsPerSec": 213.60941923550683,
+      "allocatedBytes": 334864
     },
     {
       "id": "QueryBenchmarks.BoundaryRead",
       "params": {
         "StoreSize": "1000000"
       },
-      "meanNs": 416575,
-      "stdDevNs": 67919.01647959543,
-      "opsPerSec": 2400.528116185561,
-      "allocatedBytes": 39456
+      "meanNs": 462004.3,
+      "stdDevNs": 55738.397533178744,
+      "opsPerSec": 2164.4820188903004,
+      "allocatedBytes": 39312
     },
     {
       "id": "QueryBenchmarks.GetLastPosition",
       "params": {
         "StoreSize": "1000000"
       },
-      "meanNs": 253033,
-      "stdDevNs": 52751.4348304069,
-      "opsPerSec": 3952.0536846972527,
+      "meanNs": 269729.2,
+      "stdDevNs": 41411.28479801396,
+      "opsPerSec": 3707.4221107688745,
       "allocatedBytes": 0
     },
     {
@@ -358,9 +388,9 @@
       "params": {
         "StoreSize": "1000000"
       },
-      "meanNs": 309891.6,
-      "stdDevNs": 31837.130074455166,
-      "opsPerSec": 3226.9348378594323,
+      "meanNs": 339179.1,
+      "stdDevNs": 71385.75297704717,
+      "opsPerSec": 2948.294868404333,
       "allocatedBytes": 0
     },
     {
@@ -368,33 +398,33 @@
       "params": {
         "StoreSize": "1000000"
       },
-      "meanNs": 673229.2,
-      "stdDevNs": 45483.23418530784,
-      "opsPerSec": 1485.378233742684,
-      "allocatedBytes": 329880
+      "meanNs": 685933.3,
+      "stdDevNs": 47578.96618383193,
+      "opsPerSec": 1457.8676964655308,
+      "allocatedBytes": 332272
     },
     {
       "id": "AppendBenchmarks.AppendWithDcbCheck",
       "params": {},
-      "meanNs": 949808.2,
-      "stdDevNs": 91977.36162508202,
-      "opsPerSec": 1052.8441426384823,
+      "meanNs": 1443966.7,
+      "stdDevNs": 158036.1717252309,
+      "opsPerSec": 692.5367461728862,
       "allocatedBytes": 12280
     },
     {
       "id": "AppendBenchmarks.AppendWithConflictDetected",
       "params": {},
-      "meanNs": 693596,
-      "stdDevNs": 48050.64829716429,
-      "opsPerSec": 1441.761486513763,
-      "allocatedBytes": 22080
+      "meanNs": 922233.4,
+      "stdDevNs": 163831.03485278157,
+      "opsPerSec": 1084.3242068656373,
+      "allocatedBytes": 21784
     },
     {
       "id": "AppendBenchmarks.SingleAppend",
       "params": {},
-      "meanNs": 881874.8,
-      "stdDevNs": 70959.92435452563,
-      "opsPerSec": 1133.9478120930544,
+      "meanNs": 986741.6,
+      "stdDevNs": 180546.90076370124,
+      "opsPerSec": 1013.4365471162866,
       "allocatedBytes": 11752
     }
   ]
