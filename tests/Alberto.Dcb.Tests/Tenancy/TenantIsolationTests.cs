@@ -268,6 +268,66 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
         }
     }
 
+    /// <summary>
+    /// The test above uses two tags and so exercises the general path. This one uses a
+    /// single tag and a single type, which migration 029 routes to a separate branch that
+    /// omits the <c>DISTINCT</c> — so it needs its own tenant-scoping guard. plpgsql
+    /// resolves references per branch at first execution, meaning a mistyped tenant
+    /// predicate in the fast path is invisible to every multi-tag test.
+    /// </summary>
+    [Fact]
+    public async Task Stream_ByOneTypeAndOneTag_IsTenantScoped()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var orderId = Guid.NewGuid();
+        var orderTag = new EventTag("ti-fp-order", orderId.ToString());
+
+        static EventToPersist Tagged<TEvent>(TEvent @event, params EventTag[] tags)
+            where TEvent : IEvent => new()
+            {
+                EventType = new EventType(EventTypeAttribute.GetEventTypeId(typeof(TEvent))),
+                Tags = tags,
+                EventData = JsonSerializer.Serialize(@event),
+            };
+
+        await using (var scopeA = CreateScopeForTenant(TenantA))
+        {
+            var storeA = scopeA.ServiceProvider.GetRequiredKeyedService<IEventStore>(ModuleKey);
+            await storeA.AppendAsync(
+                [
+                    Tagged(new OrderCreated(orderId), orderTag),  // the only match
+                    Tagged(new OrderShipped(orderId), orderTag),  // right tag, wrong type
+                ],
+                dcbQuery: null,
+                expectedPosition: null,
+                cancellationToken: ct);
+        }
+
+        await using (var scopeB = CreateScopeForTenant(TenantB))
+        {
+            var storeB = scopeB.ServiceProvider.GetRequiredKeyedService<IEventStore>(ModuleKey);
+            await storeB.AppendAsync(
+                [Tagged(new OrderCreated(orderId), orderTag)], // right shape, wrong tenant
+                dcbQuery: null,
+                expectedPosition: null,
+                cancellationToken: ct);
+        }
+
+        await using (var scopeA2 = CreateScopeForTenant(TenantA))
+        {
+            var storeA2 = scopeA2.ServiceProvider.GetRequiredKeyedService<IEventStore>(ModuleKey);
+            var query = DcbQuery.Empty
+                .WithTypes("ti-order-created")
+                .WithTags(orderTag.Value);
+
+            var events = await storeA2.StreamAsync(query, cancellationToken: ct);
+
+            var ev = Assert.Single(events);
+            Assert.Equal(TenantA, ev.TenantId);
+            Assert.Equal("ti-order-created", ev.EventType.Id);
+        }
+    }
+
     // ─── Regression: multi-tenant stable-head barrier SQL ───────────────────
 
     /// <summary>
