@@ -286,6 +286,58 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
 
     #endregion
 
+    #region Regression: single-element fast path in alberto_read_by_types_and_tags
+
+    /// <summary>
+    /// Guards the single-tag/single-type branch added in migration 029, which drops the
+    /// <c>DISTINCT</c> the general path relies on. That is safe only because a single tag
+    /// matches each position at most once under the tag PK and an event carries exactly
+    /// one type — properties of the schema, not of the query. If either changes, or if the
+    /// branch is ever widened to multiple tags without restoring the dedup, this fails.
+    /// <para>
+    /// The DCB conflict tests above reach this branch too, but they assert only that a
+    /// conflict was detected; nothing there would notice a duplicated or missing row.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task StreamAsync_ByOneTypeAndOneTag_ReturnsEachMatchOnceInPositionOrder()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
+
+        var orderId = Guid.NewGuid();
+        var tag = new EventTag("fastpath-order", orderId.ToString());
+        var otherTag = new EventTag("fastpath-order", Guid.NewGuid().ToString());
+
+        var appended = await eventStore.AppendAsync(
+            [
+                CreateEvent(new OrderCreated(orderId, 100m), tag),   // match
+                CreateEvent(new OrderConfirmed(orderId), tag),       // right tag, wrong type
+                CreateEvent(new OrderCreated(orderId, 250m), tag),   // match
+                CreateEvent(new OrderCreated(orderId, 999m), otherTag), // right type, wrong tag
+            ],
+            cancellationToken: ct);
+
+        var query = DcbQuery.Empty
+            .WithTypes("order-created")
+            .WithTags(tag);
+
+        var events = await eventStore.StreamAsync(query, cancellationToken: ct);
+
+        var positions = events.Select(e => e.GlobalPosition).ToArray();
+        Assert.Equal(2, positions.Length);
+        Assert.Equal(positions.OrderBy(p => p), positions);
+        Assert.All(events, e => Assert.Equal("order-created", e.EventType.Id));
+
+        // afterPosition must page the fast path, not restart it.
+        var second = await eventStore.StreamAsync(query, afterPosition: positions[0], cancellationToken: ct);
+        Assert.Equal([positions[1]], second.Select(e => e.GlobalPosition));
+
+        Assert.Equal(4, appended.Count);
+    }
+
+    #endregion
+
     #region GetLastPosition Tests
 
     [Fact]
