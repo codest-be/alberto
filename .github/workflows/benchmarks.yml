@@ -35,15 +35,32 @@ jobs:
           dotnet-version: '10.0.x'
 
       - name: Run benchmarks
+        env:
+          # Read through the environment rather than interpolated into the script, so a
+          # dispatch input is data and never shell syntax.
+          CATEGORIES: ${{ github.event.inputs.categories }}
         run: |
           # BenchmarkSwitcher prompts interactively when given no filter at all, so a
           # scheduled run with no category input would sit at a menu instead of
           # benchmarking. '--filter *' is how you say "everything" non-interactively.
-          FILTER="--filter *"
-          if [ -n "${{ github.event.inputs.categories }}" ]; then
-            FILTER="--anyCategories=${{ github.event.inputs.categories }}"
+          # The glob has to stay quoted and the arguments have to travel as an array:
+          # unquoted, the shell expands '*' against the repo root and BenchmarkDotNet
+          # receives 'AGENTS.md', 'apps', 'src', ... which matches no benchmark at all.
+          if [ -n "$CATEGORIES" ]; then
+            FILTER=(--anyCategories="$CATEGORIES")
+          else
+            FILTER=(--filter '*')
           fi
-          dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks -- $FILTER
+          dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks -- "${FILTER[@]}"
+
+          # A filter that matches nothing is not an error to BenchmarkSwitcher — it prints
+          # suggestions and exits 0. Without this check the run reports success and the
+          # failure only surfaces two steps later as an unexplained missing directory.
+          if [ ! -d BenchmarkDotNet.Artifacts/results ]; then
+            echo "The benchmark run produced no results directory. See the output above:" >&2
+            echo "the filter most likely matched no benchmarks." >&2
+            exit 1
+          fi
 
       # Passes the whole results directory: the run spans several benchmark classes and
       # BenchmarkDotNet writes one report per class.
