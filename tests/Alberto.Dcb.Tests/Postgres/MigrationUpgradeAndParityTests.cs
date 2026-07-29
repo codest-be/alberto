@@ -171,6 +171,10 @@ public sealed class MigrationUpgradeAndParityTests
         // 026: dead_letter event_type column must be widened to VARCHAR(500) to match alberto_events.
         await AssertDeadLetterEventTypeColumnWidthAsync(conn);
 
+        // 032: the checkpoint and dead-letter notify triggers are gone — no consumer ever
+        // listened on their channels, and each one charged its writer a notify-queue commit.
+        await AssertUnlistenedNotifyTriggersAreGoneAsync(conn);
+
         // Core invariant: alberto_events must still have the tenant_id column.
         (await ColumnExistsAsync(conn, "alberto_events", "tenant_id"))
             .Should().BeTrue(because: "multi-tenant schema must retain the tenant_id column on alberto_events");
@@ -230,6 +234,10 @@ public sealed class MigrationUpgradeAndParityTests
 
         // 026: dead_letter event_type column must be widened to VARCHAR(500) to match alberto_events.
         await AssertDeadLetterEventTypeColumnWidthAsync(conn);
+
+        // 032: the checkpoint and dead-letter notify triggers are gone — no consumer ever
+        // listened on their channels, and each one charged its writer a notify-queue commit.
+        await AssertUnlistenedNotifyTriggersAreGoneAsync(conn);
 
         // Core invariant: single-tenant schema must NOT have a tenant_id column on events.
         (await ColumnExistsAsync(conn, "alberto_events", "tenant_id"))
@@ -752,6 +760,70 @@ public sealed class MigrationUpgradeAndParityTests
         cmd.Parameters.AddWithValue("@name", functionName);
         cmd.Parameters.AddWithValue("@fragment", fragment);
         return Convert.ToBoolean(await cmd.ExecuteScalarAsync());
+    }
+
+    /// <summary>
+    /// The checkpoint and dead-letter notify triggers are gone, along with the functions
+    /// behind them.
+    /// </summary>
+    /// <remarks>
+    /// Migration 001 opened three notification channels but only <c>$schema$_events</c> ever
+    /// grew a consumer — <c>PostgresEventListener</c> is the only <c>LISTEN</c> in the codebase.
+    /// The other two triggers wrote into a queue nobody read, and a NOTIFY costs the writer:
+    /// its commit takes an exclusive lock on the cluster-wide notification queue. Migration 032
+    /// drops them. This asserts the triggers are absent rather than merely detached, because a
+    /// detached trigger is what migration 010 left behind and 025 had to come back for.
+    /// </remarks>
+    private static async Task AssertUnlistenedNotifyTriggersAreGoneAsync(NpgsqlConnection conn)
+    {
+        (string Trigger, string Table)[] droppedTriggers =
+        [
+            ("alberto_trg_notify_checkpoint", "alberto_processor_checkpoints"),
+            ("alberto_trg_dead_letter_insert_notify", "alberto_dead_letter_events"),
+            ("alberto_trg_dead_letter_delete_notify", "alberto_dead_letter_events"),
+        ];
+
+        foreach (var (trigger, table) in droppedTriggers)
+        {
+            (await TriggerExistsAsync(conn, trigger, table))
+                .Should().BeFalse(because:
+                    $"migration 032 drops {trigger} — nothing LISTENs on the channel it raised, " +
+                    "so every row it fired on paid the notify-queue commit lock for no consumer");
+        }
+
+        string[] droppedFunctions =
+        [
+            "alberto_notify_checkpoint",
+            "alberto_notify_dead_letter_insert",
+            "alberto_notify_dead_letter_delete",
+        ];
+
+        foreach (var function in droppedFunctions)
+        {
+            (await FunctionExistsAsync(conn, function))
+                .Should().BeFalse(because:
+                    $"migration 032 drops {function} along with the trigger it backed");
+        }
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when the named trigger exists on the named table.
+    /// </summary>
+    private static async Task<bool> TriggerExistsAsync(NpgsqlConnection conn, string triggerName, string tableName)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.triggers
+                WHERE trigger_name = @name
+                  AND event_object_schema = 'public'
+                  AND event_object_table = @table
+            )
+            """;
+        cmd.Parameters.AddWithValue("@name", triggerName);
+        cmd.Parameters.AddWithValue("@table", tableName);
+        return (bool)(await cmd.ExecuteScalarAsync())!;
     }
 
     /// <summary>
