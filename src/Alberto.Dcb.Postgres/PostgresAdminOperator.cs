@@ -227,8 +227,15 @@ public sealed class PostgresAdminOperator : IAdminOperator
         await using (var cmd = conn.CreateCommand())
         {
             cmd.Transaction = tx;
+            // Typed explicitly rather than via AddWithValue: a null consumerId would
+            // otherwise reach PostgreSQL as an untyped NULL, and "@consumerId IS NULL"
+            // gives the planner nothing to infer a type from — the whole statement fails
+            // with 42P08. That is precisely the release-every-lease case, so the default
+            // call was the only one that did not work.
             cmd.Parameters.Add(new NpgsqlParameter("consumerId", NpgsqlTypes.NpgsqlDbType.Text)
-                { Value = (object?)consumerId ?? DBNull.Value });
+            {
+                Value = (object?)consumerId ?? DBNull.Value,
+            });
             cmd.CommandText = $"""
                 DELETE FROM {_schema.Table("alberto_tenant_leases")}
                 WHERE (@consumerId IS NULL OR consumer_id = @consumerId)

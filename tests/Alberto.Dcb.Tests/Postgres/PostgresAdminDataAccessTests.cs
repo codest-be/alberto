@@ -260,3 +260,122 @@ public sealed class PostgresAdminDataAccessTests(PostgresAdminDataAccessFixture 
         Assert.Equal("tenant", exception.ParamName);
     }
 }
+
+/// <summary>
+/// A private database on the shared cluster running the shipped multi-tenant migrations,
+/// which is the only set that creates <c>alberto_tenant_leases</c>.
+/// </summary>
+public sealed class PostgresAdminTenantLeaseFixture(PostgresCluster cluster)
+    : PostgresDatabaseFixture(cluster, PostgresTemplates.MultiTenant);
+
+/// <summary>
+/// Integration tests for <see cref="PostgresAdminDataAccess.ReleaseTenantLeasesAsync"/>.
+/// </summary>
+public sealed class PostgresAdminTenantLeaseTests(PostgresAdminTenantLeaseFixture fixture)
+    : IClassFixture<PostgresAdminTenantLeaseFixture>
+{
+    private PostgresAdminDataAccess CreateAdmin() => new(fixture.DataSource);
+
+    private async Task InsertLeaseAsync(string consumerId, string tenantId, CancellationToken ct)
+    {
+        await using var conn = await fixture.DataSource.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand(
+            """
+            INSERT INTO alberto_tenant_leases
+                (consumer_id, tenant_id, replica_id, expires_at)
+            VALUES
+                (@consumerId, @tenantId, 'replica-1', now() + interval '5 minutes')
+            """,
+            conn);
+        cmd.Parameters.AddWithValue("consumerId", consumerId);
+        cmd.Parameters.AddWithValue("tenantId", tenantId);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private async Task<int> CountLeasesAsync(CancellationToken ct)
+    {
+        await using var conn = await fixture.DataSource.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand(
+            "SELECT count(*) FROM alberto_tenant_leases", conn);
+        return Convert.ToInt32(await cmd.ExecuteScalarAsync(ct));
+    }
+
+    /// <summary>
+    /// Both tests below assert on the total lease count, and the leases table has no
+    /// per-test key to scope them by — so each starts from an empty table rather than
+    /// depending on the order xUnit happens to run them in.
+    /// </summary>
+    private async Task ClearLeasesAsync(CancellationToken ct)
+    {
+        await using var conn = await fixture.DataSource.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand("DELETE FROM alberto_tenant_leases", conn);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    [Fact]
+    public async Task ReleaseTenantLeasesAsync_NullConsumerId_ReleasesEveryLease()
+    {
+        // Regression: a null consumerId used to be added with AddWithValue, so it reached
+        // PostgreSQL as an untyped NULL. "@consumerId IS NULL" then gave the planner nothing
+        // to infer a parameter type from and the statement failed outright with 42P08 —
+        // meaning the release-everything call, the one an operator reaches for by default,
+        // was the only one that did not work.
+        var ct = TestContext.Current.CancellationToken;
+        await ClearLeasesAsync(ct);
+        await InsertLeaseAsync("consumer-a", $"tenant_{Guid.NewGuid():N}", ct);
+        await InsertLeaseAsync("consumer-b", $"tenant_{Guid.NewGuid():N}", ct);
+
+        var released = await CreateAdmin().ReleaseTenantLeasesAsync(consumerId: null, ct);
+
+        Assert.Equal(2, released);
+        Assert.Equal(0, await CountLeasesAsync(ct));
+    }
+
+    [Fact]
+    public async Task ReleaseTenantLeasesAsync_WithConsumerId_ReleasesOnlyThatConsumersLeases()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await ClearLeasesAsync(ct);
+        await InsertLeaseAsync("consumer-target", $"tenant_{Guid.NewGuid():N}", ct);
+        await InsertLeaseAsync("consumer-other", $"tenant_{Guid.NewGuid():N}", ct);
+
+        var released = await CreateAdmin().ReleaseTenantLeasesAsync("consumer-target", ct);
+
+        Assert.Equal(1, released);
+        Assert.Equal(1, await CountLeasesAsync(ct));
+    }
+
+    // The operator carries its own copy of this statement rather than delegating to the
+    // reader, so it had — and needs — its own coverage: the reader's tests passing said
+    // nothing about the path the GraphQL mutation and the MCP tools actually take.
+
+    [Fact]
+    public async Task Operator_ReleaseTenantLeasesAsync_NullConsumerId_ReleasesEveryLease()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await ClearLeasesAsync(ct);
+        await InsertLeaseAsync("consumer-a", $"tenant_{Guid.NewGuid():N}", ct);
+        await InsertLeaseAsync("consumer-b", $"tenant_{Guid.NewGuid():N}", ct);
+
+        var released = await new PostgresAdminOperator(fixture.DataSource)
+            .ReleaseTenantLeasesAsync(consumerId: null, "test-operator", ct);
+
+        Assert.Equal(2, released);
+        Assert.Equal(0, await CountLeasesAsync(ct));
+    }
+
+    [Fact]
+    public async Task Operator_ReleaseTenantLeasesAsync_WithConsumerId_ReleasesOnlyThatConsumersLeases()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await ClearLeasesAsync(ct);
+        await InsertLeaseAsync("consumer-target", $"tenant_{Guid.NewGuid():N}", ct);
+        await InsertLeaseAsync("consumer-other", $"tenant_{Guid.NewGuid():N}", ct);
+
+        var released = await new PostgresAdminOperator(fixture.DataSource)
+            .ReleaseTenantLeasesAsync("consumer-target", "test-operator", ct);
+
+        Assert.Equal(1, released);
+        Assert.Equal(1, await CountLeasesAsync(ct));
+    }
+}

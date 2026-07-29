@@ -18,5 +18,5 @@ public static class AdminGraphQLExtensions
     /// </remarks>
     public static IRequestExecutorBuilder AddAlbertoAdminGraphQL(
         this IRequestExecutorBuilder builder) =>
-        builder.AddTypes(typeof(AdminQueries), typeof(AdminMutations), typeof(AdminSubscriptions));
+        builder.AddAdminTypes();
 }

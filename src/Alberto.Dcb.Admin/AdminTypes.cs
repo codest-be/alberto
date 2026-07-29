@@ -115,3 +115,24 @@ public enum CheckpointRenameStatus
 public sealed record CheckpointRenameResult(
     CheckpointRenameStatus Status,
     long? Position = null);
+
+/// <summary>
+/// Rebuild state for a single projection as seen from the admin surface.
+/// <para>
+/// <see cref="Status"/> is one of the lowercase strings <c>idle</c>, <c>rebuilding</c>,
+/// <c>ready</c>, <c>completed</c>, or <c>aborted</c>.
+/// <see cref="RequestedAction"/> is one of <c>promote</c>, <c>force-promote</c>, <c>abort</c>,
+/// or <see langword="null"/> when no operator action is pending.
+/// </para>
+/// </summary>
+public record RebuildStateInfo(
+    string ProcessorId,
+    string ProjectionType,
+    int ActiveVersion,
+    int? RebuildingVersion,
+    string Status,
+    string? RequestedAction,
+    long? ReplayedPosition,
+    long? TargetPosition,
+    DateTimeOffset? StartedAt,
+    DateTimeOffset? CompletedAt);
