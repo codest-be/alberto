@@ -88,6 +88,11 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
     [EventType("ti-probe-beta")]
     private sealed record ProbeBeta(Guid OrderId) : IEvent;
 
+    // Used only by Stream_ByTagAxisShapes_IsTenantScoped, for the same reason: the union shapes
+    // match on the type axis without a tag to narrow them.
+    [EventType("ti-union-alpha")]
+    private sealed record UnionAlpha(Guid OrderId) : IEvent;
+
     private sealed record OrderState(string Label, decimal Amount);
 
     // ─── helpers ────────────────────────────────────────────────────────────
@@ -100,6 +105,22 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
         {
             EventType = new EventType(eventTypeId),
             Tags = tag.HasValue ? [tag.Value] : [],
+            EventData = JsonSerializer.Serialize(@event),
+        };
+    }
+
+    /// <summary>
+    /// The multi-tag counterpart of <see cref="CreateEvent"/>, separate rather than an overload
+    /// so the existing single-tag call sites keep resolving as they do.
+    /// </summary>
+    private static EventToPersist CreateTagged<TEvent>(TEvent @event, params EventTag[] tags)
+        where TEvent : IEvent
+    {
+        var eventTypeId = EventTypeAttribute.GetEventTypeId(typeof(TEvent));
+        return new EventToPersist
+        {
+            EventType = new EventType(eventTypeId),
+            Tags = [..tags],
             EventData = JsonSerializer.Serialize(@event),
         };
     }
@@ -427,6 +448,86 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
 
             Assert.Equal(single.Select(e => e.GlobalPosition), repeated.Select(e => e.GlobalPosition));
         }
+    }
+
+    /// <summary>
+    /// The four tag-axis reads migration 033 rewrote: <c>alberto_read_by_all_tags</c>,
+    /// <c>_types_and_all_tags</c>, <c>_types_or_tags</c> and <c>_types_or_all_tags</c>. Each grew
+    /// several new scans that must each carry the tenant predicate — a bounded probe per tag in
+    /// <c>alberto_pick_all_tags_driver</c>, a driving scan, one <c>EXISTS</c> probe per remaining
+    /// tag, and in the union shapes a probe per named type. Dropping the predicate from any one
+    /// of them leaks, and the ones easiest to miss are the innermost: the EXISTS probes decide
+    /// whether an event carries the other tags, so an unscoped one would admit tenant A's event
+    /// on the strength of tenant B's tag row.
+    /// <para>
+    /// Both tenants therefore write the <em>same</em> tags here. A leak shows up as a count that
+    /// is too high; a tenant predicate that matches nothing shows up as one that is too low.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Stream_ByTagAxisShapes_IsTenantScoped()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var orderId = Guid.NewGuid();
+        var order = new EventTag("ti-alltags-order", orderId.ToString());
+        var region = new EventTag("ti-alltags-region", Guid.NewGuid().ToString());
+
+        // The identical five appends for both tenants, so every assertion below has a
+        // same-shaped row in the other tenant that must not be returned.
+        EventToPersist[] Batch() =>
+        [
+            CreateTagged(new OrderCreated(orderId), order, region),   // both tags
+            CreateTagged(new OrderShipped(orderId), order, region),   // both tags, other type
+            CreateTagged(new OrderCreated(orderId), order),           // one tag short
+            CreateTagged(new UnionAlpha(orderId)),                    // type axis only
+        ];
+
+        foreach (var tenant in new[] { TenantA, TenantB })
+        {
+            await using var scope = CreateScopeForTenant(tenant);
+            var store = scope.ServiceProvider.GetRequiredKeyedService<IEventStore>(ModuleKey);
+            await store.AppendAsync(Batch(), dcbQuery: null, expectedPosition: null, cancellationToken: ct);
+        }
+
+        await using var scopeA = CreateScopeForTenant(TenantA);
+        var storeA = scopeA.ServiceProvider.GetRequiredKeyedService<IEventStore>(ModuleKey);
+
+        // alberto_read_by_all_tags: driver probe, driving scan, one EXISTS probe.
+        var allTags = await storeA.StreamAsync(DcbQuery.ByAllTags(order, region), cancellationToken: ct);
+        Assert.Equal(2, allTags.Count);
+        Assert.All(allTags, e => Assert.Equal(TenantA, e.TenantId));
+
+        // Reversing the tags changes which one drives — and must change nothing else.
+        var reversed = await storeA.StreamAsync(DcbQuery.ByAllTags(region, order), cancellationToken: ct);
+        Assert.Equal(allTags.Select(e => e.GlobalPosition), reversed.Select(e => e.GlobalPosition));
+
+        // alberto_read_by_types_and_all_tags, one named type: the scalar type-position probe.
+        var oneType = await storeA.StreamAsync(
+            DcbQuery.ByAllTags(order, region).WithTypes("ti-order-created"), cancellationToken: ct);
+        Assert.Equal(TenantA, Assert.Single(oneType).TenantId);
+
+        // The same function, several named types: here the type is tested on the events row,
+        // which carries no tenant predicate of its own and relies on the driving scan's.
+        var severalTypes = await storeA.StreamAsync(
+            DcbQuery.ByAllTags(order, region).WithTypes("ti-order-created", "ti-order-shipped"),
+            cancellationToken: ct);
+        Assert.Equal(2, severalTypes.Count);
+        Assert.All(severalTypes, e => Assert.Equal(TenantA, e.TenantId));
+
+        // alberto_read_by_types_or_tags: a bounded probe per type and per tag, unioned.
+        var orTags = await storeA.StreamAsync(
+            DcbQuery.ByTags(order).WithTypes("ti-union-alpha").AsUnion(), cancellationToken: ct);
+        Assert.Equal(4, orTags.Count);
+        Assert.All(orTags, e => Assert.Equal(TenantA, e.TenantId));
+        Assert.Equal(
+            orTags.Select(e => e.GlobalPosition).Order(),
+            orTags.Select(e => e.GlobalPosition));
+
+        // alberto_read_by_types_or_all_tags: the type probes unioned with the all-tags scan.
+        var orAllTags = await storeA.StreamAsync(
+            DcbQuery.ByAllTags(order, region).WithTypes("ti-union-alpha").AsUnion(), cancellationToken: ct);
+        Assert.Equal(3, orAllTags.Count);
+        Assert.All(orAllTags, e => Assert.Equal(TenantA, e.TenantId));
     }
 
     // ─── Regression: multi-tenant stable-head barrier SQL ───────────────────
