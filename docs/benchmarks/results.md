@@ -327,12 +327,116 @@ the three wildcard readers filed as never-audited follow-up work
 live body to audit: [migration 024](../../src/Alberto.Dcb.Postgres/Migrations/024_DropWildcardTagBoundaries.sql)
 dropped all three, and `MigrationUpgradeAndParityTests` asserts they stay dropped.
 `alberto_read_by_tags`, `_types_or_tags` and `_by_all_tags` still carry `= ANY` on the tag axis
-and are a separate question, because a tag axis genuinely can duplicate positions.
+and are a separate question, because a tag axis genuinely can duplicate positions. That question
+is [answered below](#migration-033-the-tag-axis), and it turned out to have three answers.
 
 **Tag unions are cheaper than they look.** Eight tags cost roughly 1.5× two tags, not 4×, and
 neither grows with the store. The union is served by one index range scan per tag against
 `(tag, global_position)`, so adding tags adds scans over already-ordered data rather than
 multiplying work.
+
+### Migration 033: the tag axis
+
+The follow-up 031 filed. Five functions still matched tags with `= ANY`; one of them was already
+fine and four were not, in three different ways.
+
+`alberto_read_by_tags` needed nothing — migration 009 had already rewritten it as one bounded
+probe per tag, which is the same shape 031 later arrived at independently on the type axis. The
+other four each put a **blocking node** above the opaque scan: a `GROUP BY … HAVING
+COUNT(DISTINCT tag)` in the two all-tags functions, a `UNION` dedup over two unbounded arms in
+`_types_or_tags`, and a `SELECT DISTINCT` over whole event rows — two `jsonb` columns included —
+in `_types_or_all_tags`. A blocking node is worse than opacity alone: opacity costs a `Sort`,
+but a `Sort` also removes the accidental early exit a `LIMIT` might otherwise have got. Measured
+plan for `alberto_read_by_all_tags` on one tag carried by half the log:
+
+```
+Limit (actual rows=500)
+  -> GroupAggregate (actual rows=500)
+       Filter: (count(DISTINCT tag) = array_length($1, 1))
+       -> Sort  Sort Method: external merge  Disk: 13720kB
+            -> Index Only Scan (cost rows=47357) (actual rows=500000)
+```
+
+Half a million index rows read and spilled to disk to return five hundred, on an estimate off by
+a factor of ten. The diagnostic that separates this from ordinary slowness is dropping the limit
+from 500 to 10: a correctly bounded read gets about 15× cheaper, and all four of these stayed
+flat.
+
+**The union shapes are 031's remedy applied to both axes at once.** Each named type gets its own
+scalar probe with its own `LIMIT`, each named tag likewise; the arms are merged, top-N sorted and
+re-limited. Bounding an arm at `p_limit` is safe for the reason 031 gives: if a position belongs
+in the true first `p_limit` of the union, at most `p_limit − 1` positions precede it, so it is
+within the first `p_limit` of whichever arm produced it. One detail is easy to get wrong and
+silent when you do — a trailing `ORDER BY … LIMIT` after a `UNION` binds to the *whole union*, so
+each arm has to be parenthesised to be individually bounded. Written the obvious way, the fix
+applies to one arm and the function stays slow.
+
+**The all-tags shapes cannot use that remedy, and the reason is instructive.** Under AND
+semantics an event matching every named tag must appear in *every* tag's list, so no single
+probe's first `p_limit` rows are a complete candidate set. But that same fact supplies a
+different fix: every match carries the driving tag, so one scalar probe on *one* tag is complete
+on its own. It is an ordered range scan the `LIMIT` terminates as soon as `p_limit` matches are
+found, and each candidate tests the remaining tags with one index probe apiece. `GROUP BY`,
+external sort and `= ANY` all disappear together.
+
+**Which tag drives has to be decided at runtime, and that is the genuinely new part.** Under a
+generic plan — what a pooled connection gets — the planner has no tag values at all, so it cannot
+know which of them is rare. Taking `p_tags[1]` and hoping costs 20× on the shape this is most
+likely to meet: one aggregate tag AND one category tag, named in whichever order the caller
+happened to write them. `alberto_pick_all_tags_driver` measures instead. For each tag it reads at
+most `p_limit` positions above `p_after_position`, index-only, and keeps two facts: whether the
+tag ran out before the cap, and how far along the log its `p_limit`-th position sits. A tag that
+ran out has fewer rows in range than the caller asked for, which caps the whole conjunction, so
+it wins outright. Otherwise the winner is the tag whose `p_limit`-th position is *furthest along*
+— the sparsest over the stretch the driving scan will actually walk, which matters more than the
+tag's total frequency. The probe costs about 50 µs for two tags and is skipped entirely at one.
+
+Measured at the SQL level under `force_generic_plan`, 1M events, limit 500 from position 0. The
+corpus puts one order tag on each event, so every tag reaches about 1% of the log; `order:hot` is
+a synthetic tag added to half the corpus, standing in for the tag shapes a real store has and
+this corpus does not — a status or category tag, a tenant-wide marker, a busy customer.
+
+| | shipped | 033 |
+|---|---:|---:|
+| `by_all_tags`, 1 tag @1% | 1.067 | 0.509 |
+| `by_all_tags`, 1 tag @50% | 55.544 | **0.557** |
+| `by_all_tags`, 2 tags (hot named first) | 53.121 | **1.033** |
+| `by_all_tags`, 2 tags (rare named first) | 53.121 | **1.035** |
+| `types_and_all_tags`, 1 type + 1 tag @50% | 51.424 | **0.948** |
+| `types_and_all_tags`, 3 types + 1 tag @50% | 55.942 | **1.847** |
+| `types_or_tags`, 3 types + 1 tag | 84.435 | **0.768** |
+| `types_or_all_tags`, 3 types + 2 tags | 390.934 | **1.512** |
+
+The two design choices, isolated:
+
+| | ms | | ms |
+|---|---:|---|---:|
+| driver chosen by probe | 1.033 | driver = `p_tags[1]` | 20.053 |
+| 1 type: scalar type probe | 0.948 | 1 type: type on events row | 4.598 |
+| 3 types: type on events row | 1.847 | 3 types: `EXISTS` on type index | 7.755 |
+
+The second and third rows are 030's finding reproduced on a new shape, and 033 keeps 030's
+branch for the same reason: at one type the scalar probe into the type-position PK is a single
+descent, and from two types up, testing `event_type` on the events row the query must fetch
+anyway is cheaper than an index probe per candidate. 030's caveat still holds, which is why the
+branch is not widened further — that test is only safe while something else bounds how many
+events rows are considered, and here it is the driving tag scan.
+
+**One behaviour change, and it is a bug fix.** `DcbQuery` concatenates tags without
+deduplicating, so `ByAllTags("a").WithTags("a")` reached these functions as `{a,a}`. The old
+bodies compared `COUNT(DISTINCT tag)` — one — against `array_length(p_tags, 1)` — two — and so
+returned **nothing** for a query that plainly should match every event tagged `a`. The in-memory
+backend intersects per tag and was never affected, so the two backends disagreed; 033 removes
+every occurrence of the driving tag before testing the rest, which collapses the duplicate and
+aligns them. Every other shape was checked to return byte-identical rows to the body it replaced,
+in both directions, before being timed.
+
+**None of this is visible to the benchmark gate**, which is the uncomfortable part.
+`EventPlan` puts exactly one tag on each event, so `StreamByMultiTag` measures an OR over
+several tags and nothing in the suite exercises an AND over several tags at all — the whole
+`_all_tags` family, and the driver selection that makes it fast, are unmeasured by the committed
+baselines. That is a corpus gap, not a harness gap, and closing it means changing the seed and
+resetting every baseline.
 
 ### Plan choice, and why SQL-level timings are quoted separately
 
@@ -460,8 +564,11 @@ environmental state differs. Neither is done.
 - Postgres in a Docker VM on macOS. Absolute latencies are not production latencies.
 - One machine profile. Results are keyed by machine, and the comparer refuses to diff across
   profiles rather than warning, so these numbers say nothing about CI's hardware.
-- `alberto_read_by_tags`, `_types_or_tags` and `_by_all_tags` still carry `= ANY` on the tag
-  axis and have not been audited for the same plan defect. (`alberto_read_by_types` was the
-  last one with a known defect and is fixed by migration 031; the three wildcard readers were
-  dropped by migration 024 and have no live body to audit.)
+- **No read function has a known `= ANY` plan defect left.** The tag axis was audited and fixed
+  by [migration 033](#migration-033-the-tag-axis); the three wildcard readers were dropped by
+  migration 024 and have no live body to audit.
+- **The corpus puts one tag on each event, so AND-over-several-tags is not benchmarked.**
+  Migration 033's largest wins are on shapes no committed baseline covers, and they were
+  measured at the SQL level against a hand-seeded corpus instead. Closing this means widening
+  `EventPlan` and resetting every baseline, which is why it has not been done in passing.
 - No comparison against other event stores yet.
