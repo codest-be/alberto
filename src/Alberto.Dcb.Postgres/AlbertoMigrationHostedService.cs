@@ -113,6 +113,15 @@ internal sealed class AlbertoMigrationHostedService(
                 result = PostgresMigrator.Migrate(
                     options.ConnectionString, options.Schema, singleTenant: !definition.TenancyEnabled);
             }
+            catch (AlbertoStoreMismatchException mismatch)
+            {
+                // Returned unwrapped. Migrate refused before running anything and its diagnostic
+                // already names both the declaration and the store, so the "schema migration
+                // failed" prefix below would say the opposite of what happened. Still returned
+                // rather than thrown, so the caller's policy still decides: fatal for a
+                // single-database module, reported against the shard for a sharded one.
+                return mismatch;
+            }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 return new InvalidOperationException(

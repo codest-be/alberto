@@ -34,6 +34,12 @@ public static class PostgresMigrator
             EnsureSchemaExists(connectionString, schema);
         }
 
+        // Before a single script runs: the store decides whether this migration set may be
+        // applied to it at all. Running the wrong set is not a no-op that a later correction
+        // undoes — the two sets share a journal, so a half-applied one leaves the store in a
+        // state neither set describes.
+        GuardTenancyMode(connectionString, schema, singleTenant);
+
         // A handful of statements — CREATE INDEX CONCURRENTLY above all — are rejected by
         // PostgreSQL inside a transaction block, and those are exactly the statements that make
         // a migration safe to run against a live database. DbUp's transaction mode is a property
@@ -63,6 +69,12 @@ public static class PostgresMigrator
             if (!result.Successful)
                 return new MigrationResult(false, executed, result.Error);
         }
+
+        // Recorded only once every script has landed. A run that fails partway leaves no imprint,
+        // but it does leave an events table of the mode it was migrating to — which the sniff in
+        // ResolveTenancy reads, so the next attempt is still held to that mode. Recording before
+        // the scripts would instead pin a store that was never successfully created.
+        StoreImprint.RecordTenancy(connectionString, ResolveSchemaName(schema), singleTenant);
 
         return new MigrationResult(true, executed, null);
     }
@@ -168,6 +180,10 @@ public static class PostgresMigrator
         if (!string.IsNullOrWhiteSpace(schema))
             SchemaQualifier.ValidateName(schema);
 
+        // Held to the same gate as Migrate. Without it, inspection would list every script of a
+        // set the store can never accept, and report a mismatched store as merely behind.
+        GuardTenancyMode(connectionString, schema, singleTenant);
+
         var upgrader = BuildUpgradeEngine(connectionString, schema, singleTenant);
 
         return upgrader.GetScriptsToExecute()
@@ -176,52 +192,51 @@ public static class PostgresMigrator
     }
 
     /// <summary>
-    /// Checks that the schema in the database was created with a tenancy mode consistent
-    /// with <paramref name="singleTenant"/>. Fails fast if they disagree, so a mis-applied
-    /// migration set cannot silently run with the wrong stored-function signatures.
+    /// Checks that the store was created with a tenancy mode consistent with
+    /// <paramref name="singleTenant"/>, and throws if they disagree.
     /// </summary>
     /// <remarks>
-    /// Detection heuristic: the multi-tenant migration adds a <c>tenant_id</c> column to
-    /// <c>alberto_events</c>; the single-tenant migration does not. A mismatch means the DB
-    /// was migrated with the opposite mode from what the code expects.
+    /// <see cref="Migrate"/> already runs this gate before any script, so calling it separately
+    /// is a second opinion rather than the load-bearing check. It remains public for callers that
+    /// migrate out of band and want the check on its own.
+    /// <para>
+    /// A store with no <c>alberto_events</c> table and no imprint is fresh, not mismatched: it is
+    /// free to become either mode, so this returns quietly. Before the gate moved ahead of the
+    /// migration, the same call against an empty database threw for multi-tenant.
+    /// </para>
     /// </remarks>
-    /// <exception cref="InvalidOperationException">
-    /// Thrown when the configured tenancy mode does not match the schema shape.
+    /// <exception cref="AlbertoStoreMismatchException">
+    /// Thrown when the store's tenancy mode does not match <paramref name="singleTenant"/>.
     /// </exception>
     public static void ValidateTenancyMode(string connectionString, string? schema, bool singleTenant)
     {
-        var tableSchema = string.IsNullOrWhiteSpace(schema) ? "public" : schema;
+        if (!string.IsNullOrWhiteSpace(schema))
+            SchemaQualifier.ValidateName(schema);
 
-        using var connection = new NpgsqlConnection(connectionString);
-        connection.Open();
-
-        using var cmd = connection.CreateCommand();
-        cmd.CommandText = """
-            SELECT COUNT(*) FROM information_schema.columns
-            WHERE table_schema = @tableSchema
-              AND table_name   = 'alberto_events'
-              AND column_name  = 'tenant_id'
-            """;
-        cmd.Parameters.AddWithValue("tableSchema", tableSchema);
-
-        var count = Convert.ToInt32(cmd.ExecuteScalar());
-        var hasTenantColumn = count > 0;
-
-        // Mismatch: code says single-tenant but DB has the multi-tenant column, or vice-versa.
-        if (singleTenant && hasTenantColumn)
-            throw new InvalidOperationException(
-                $"Alberto tenancy mismatch (schema '{tableSchema}'): the application is configured for " +
-                "single-tenant mode but the database was migrated in multi-tenant mode " +
-                "(alberto_events.tenant_id exists). " +
-                "Re-run migrations with the correct mode, or update the application configuration.");
-
-        if (!singleTenant && !hasTenantColumn)
-            throw new InvalidOperationException(
-                $"Alberto tenancy mismatch (schema '{tableSchema}'): the application is configured for " +
-                "multi-tenant mode but the database was migrated in single-tenant mode " +
-                "(alberto_events.tenant_id is absent). " +
-                "Re-run migrations with the correct mode, or update the application configuration.");
+        GuardTenancyMode(connectionString, schema, singleTenant);
     }
+
+    /// <summary>
+    /// Refuses a migration set the store cannot accept. Does nothing for a fresh store, which has
+    /// no mode yet.
+    /// </summary>
+    private static void GuardTenancyMode(string connectionString, string? schema, bool singleTenant)
+    {
+        var schemaName = ResolveSchemaName(schema);
+
+        if (StoreImprint.ResolveTenancy(connectionString, schemaName) is { } recorded
+            && recorded.SingleTenant != singleTenant)
+        {
+            throw AlbertoStoreMismatchException.ForTenancy(schemaName, recorded, singleTenant);
+        }
+    }
+
+    /// <summary>
+    /// The schema as it appears in catalog queries: the default, unqualified schema is
+    /// <c>public</c>.
+    /// </summary>
+    private static string ResolveSchemaName(string? schema)
+        => string.IsNullOrWhiteSpace(schema) ? "public" : schema;
 
     private static bool IsInFolder(string scriptName, string folderPath)
     {
@@ -253,7 +268,7 @@ public static class PostgresMigrator
         Func<string, bool>? scriptFilter = null,
         bool runsOutsideTransaction = false)
     {
-        var schemaName = string.IsNullOrWhiteSpace(schema) ? "public" : schema;
+        var schemaName = ResolveSchemaName(schema);
         var schemaPrefix = string.IsNullOrWhiteSpace(schema) ? "" : $"{schema}.";
         var scriptFolder = singleTenant ? SingleTenantScriptFolder : MultiTenantScriptFolder;
         scriptFilter ??= scriptName => IsInFolder(scriptName, scriptFolder);
