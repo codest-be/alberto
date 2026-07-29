@@ -24,29 +24,6 @@ public static class OrderMutations
     private const int ConflictRetries = 3;
 
     /// <summary>
-    /// Ships an order.
-    /// </summary>
-    [Mutation]
-    [GraphQLDescription("Ships a confirmed order with tracking information.")]
-    public static async Task<MutationResult> ShipOrder(
-        ShipOrderInput input,
-        [Service] IServiceProvider sp,
-        [Service] TimeProvider timeProvider,
-        CancellationToken ct)
-    {
-        var result = await Store(sp)
-            .Handle(input)
-            .Load(cmd => OrderDecider.BoundaryFor(cmd.OrderId), _evolver)
-            .Decide((cmd, state) =>
-                OrderDecider.Ship(state, cmd.TrackingNumber, cmd.Carrier, timeProvider.GetUtcNow()))
-            .RetryOnConflict(ConflictRetries)
-            .Commit(ct);
-
-        result.EnsureCommitted();
-        return new MutationResult();
-    }
-
-    /// <summary>
     /// Marks an order as delivered.
     /// </summary>
     [Mutation]
