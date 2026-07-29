@@ -1,0 +1,38 @@
+subscription OnSystemUpdated {
+  onAdminSystemUpdated {
+    globalPosition
+    processorCount
+    deadLetterCount
+    lastEventAt
+  }
+}
+
+subscription OnCheckpointUpdated {
+  onAdminCheckpointUpdated {
+    processorId
+    success
+  }
+}
+
+subscription OnDeadLettersChanged {
+  onAdminDeadLettersChanged {
+    deletedCount
+  }
+}
+
+subscription OnRebuildUpdated {
+  onAdminRebuildUpdated {
+    processorId
+    action
+    status
+  }
+}
+
+subscription OnAuditEvent {
+  onAdminAuditEvent {
+    eventType
+    operatorId
+    description
+    timestamp
+  }
+}

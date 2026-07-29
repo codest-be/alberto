@@ -1,5 +1,6 @@
 using System.CommandLine;
 using Alberto.Cli.Output;
+using Alberto.Dcb.Admin;
 using Alberto.Dcb.Postgres;
 using Npgsql;
 
