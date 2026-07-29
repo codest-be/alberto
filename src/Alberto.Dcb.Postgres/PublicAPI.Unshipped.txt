@@ -1,2 +1,4 @@
+Alberto.Dcb.Postgres.AlbertoStoreMismatchException
+Alberto.Dcb.Postgres.AlbertoStoreMismatchException.AlbertoStoreMismatchException(string! message) -> void
 Alberto.Dcb.Postgres.PostgresDeadLetterStore.PostgresDeadLetterStore(Npgsql.NpgsqlDataSource! dataSource) -> void
 Alberto.Dcb.Postgres.PostgresDeadLetterStore.PostgresDeadLetterStore(Npgsql.NpgsqlDataSource! dataSource, string? schema) -> void

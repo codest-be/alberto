@@ -400,6 +400,40 @@ surfacing them in one error message.
 | `ALB0016` | Two shards resolve to the same database and schema | Give each shard its own database, or at minimum its own schema — separate shards must be separate storage |
 | `ALB0017` | Module declares `.WithInMemory("sharedKey")` (sharing a backend registered by another module) together with `.WithTenancy()` | The shared in-memory backend is a singleton; it cannot carry per-tenant state for a module that declared tenancy. Either remove `.WithTenancy()` from the sharing module, or give it its own backend with `.WithInMemory()` (no shared key) |
 
+### Store imprint (ALB0021)
+
+Every code above validates the declaration against itself. `ALB0021` is the one that
+validates it against the store it is pointed at, and it is raised by
+`PostgresMigrator`, not by `AlbertoModuleValidator` — as an
+`AlbertoStoreMismatchException`, before a single migration script runs.
+
+| Code | Condition | Remedy |
+|---|---|---|
+| `ALB0021` | The module's tenancy declaration contradicts what the store was created as — `.WithTenancy()` added to a single-tenant store, or removed from a multi-tenant one | Point the module at a new database and replay into it, or restore the declaration the store was created with |
+
+Single-tenant and multi-tenant are two disjoint migration sets, not a setting. There is
+no in-place migration between them and no backfill for `tenant_id` on existing events,
+so **`.WithTenancy()` cannot be added to or removed from a store that already has
+data.** Both sets journal to the same `schemaversions` table, which is why running the
+wrong one is not a no-op that a later correction undoes.
+
+The store's mode is recorded in an `alberto_store_imprint` table, created by the
+migrator itself rather than by a migration script — the check that must precede every
+script cannot depend on a script having run. Where the imprint is absent, the mode is
+inferred from whether `alberto_events` carries a `tenant_id` column, which covers both
+stores that predate the imprint and stores left behind by a run that failed partway.
+A store with no `alberto_events` table at all is fresh and may become either mode.
+
+The diagnostic names which of the two sources disagreed with the declaration, and ends
+by confirming that no scripts were run — the store is exactly as it was.
+
+`TenancyEnabled` has no configuration overlay, so this can only ever be triggered by a
+code change, never by an `appsettings` edit.
+
+> **Not covered:** pointing a module at an *empty* database — a renamed schema, a wrong
+> connection string, a lost volume. There is nothing to contradict, so it migrates
+> cleanly and serves an empty store with reset checkpoints.
+
 ### Postgres codes (ALB1xxx)
 
 Reported by `PostgresBackendDescriptor.Validate`, called from the same pass.
