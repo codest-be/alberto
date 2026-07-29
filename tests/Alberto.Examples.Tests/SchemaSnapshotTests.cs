@@ -72,7 +72,58 @@ public sealed class SchemaSnapshotTests
     // Line endings differ between the machine that took the snapshot and the one checking it;
     // nothing about the schema does.
     private static string Normalise(string schema) =>
-        schema.ReplaceLineEndings("\n").TrimEnd();
+        SortRootFields(schema.ReplaceLineEndings("\n").TrimEnd());
+
+    /// <summary>
+    /// Sorts the fields of <c>type Query</c> and <c>type Mutation</c> by name.
+    /// </summary>
+    /// <remarks>
+    /// The order of fields on the root operation types is the one thing the vertical-slice
+    /// refactor genuinely does change: HotChocolate emits them in the order it discovers the
+    /// classes that declare them, so moving <c>createOrder</c> from a seven-mutation class into
+    /// its own slice reshuffles the block. Nothing consumes that order — operations are sent by
+    /// name, and the K6 tests name every field they use — so pinning it would fail twelve times
+    /// for a change no client can observe.
+    /// <para>
+    /// Everything else stays byte-exact, including each field's description, arguments, defaults
+    /// and directives: this sorts entries, it does not rewrite them. A renamed field, a dropped
+    /// argument or a changed type still fails, because the sorted entry itself differs.
+    /// </para>
+    /// </remarks>
+    private static string SortRootFields(string schema)
+    {
+        foreach (var rootType in (string[])["type Query {", "type Mutation {"])
+        {
+            var start = schema.IndexOf(rootType, StringComparison.Ordinal);
+            if (start < 0)
+                continue;
+
+            var bodyStart = start + rootType.Length + 1;
+            var bodyEnd = schema.IndexOf("\n}", bodyStart, StringComparison.Ordinal);
+            var body = schema[bodyStart..bodyEnd];
+
+            var entries = new List<List<string>>();
+            foreach (var line in body.Split('\n'))
+            {
+                // A field is one entry; a description line above it belongs to that entry, and a
+                // description is a single line in the SDL HotChocolate prints.
+                if (entries.Count == 0 || entries[^1].Count == 2 || IsDescription(entries[^1][0]) is false)
+                    entries.Add([line]);
+                else
+                    entries[^1].Add(line);
+            }
+
+            var sorted = entries
+                .OrderBy(entry => entry[^1], StringComparer.Ordinal)
+                .SelectMany(entry => entry);
+
+            schema = schema[..bodyStart] + string.Join('\n', sorted) + schema[bodyEnd..];
+        }
+
+        return schema;
+
+        static bool IsDescription(string line) => line.TrimStart().StartsWith('"');
+    }
 
     // Resolves against the source tree rather than the output directory, so REWRITE_SNAPSHOT
     // writes the file a reviewer will actually see in the diff.

@@ -24,28 +24,6 @@ public static class OrderMutations
     private const int ConflictRetries = 3;
 
     /// <summary>
-    /// Adds an item to an existing order.
-    /// </summary>
-    [Mutation]
-    [GraphQLDescription("Adds a line item to an existing draft order.")]
-    public static async Task<MutationResult> AddOrderItem(
-        AddOrderItemInput input,
-        [Service] IServiceProvider sp,
-        CancellationToken ct)
-    {
-        var result = await Store(sp)
-            .Handle(input)
-            .Load(cmd => OrderDecider.BoundaryFor(cmd.OrderId), _evolver)
-            .Decide((cmd, state) =>
-                OrderDecider.AddItem(state, cmd.ProductId, cmd.ProductName, cmd.Quantity, cmd.UnitPrice))
-            .RetryOnConflict(ConflictRetries)
-            .Commit(ct);
-
-        result.EnsureCommitted();
-        return new MutationResult();
-    }
-
-    /// <summary>
     /// Removes an item from an order.
     /// </summary>
     [Mutation]
