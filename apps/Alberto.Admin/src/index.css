@@ -1,304 +1,445 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* Class-based dark variant — ThemeProvider toggles `.dark` on <html> */
+@custom-variant dark (&:is(.dark *));
+
+/* --------------------------------------------------------------------------
+ * Design tokens — CurioStack identity
+ *
+ * Taken from CurioStack.Web (see curiostack/DESIGN.md and
+ * apps/CurioStack.Web/client/src/index.css). Warm paper, ink-black borders,
+ * amber as --main, and hard offset shadows with no blur.
+ *
+ * The two values that carry the whole look are --border and --shadow-ink.
+ * Both are near-black ink in light mode. The components ask for `border-2` and
+ * `shadow-shadow` everywhere; if these are set to a soft grey the borders and
+ * offset shadows all but vanish and what is left is indistinguishable from
+ * stock shadcn. Keep them at full ink contrast.
+ *
+ * Light is the default. CurioStack is a paper-first design and the dark values
+ * below are warm near-black, not a neutral slate — they are the same palette
+ * under different light, not a second theme.
+ * -------------------------------------------------------------------------- */
+
 :root {
-  --text: #9ca3af;
-  --text-h: #f3f4f6;
-  --bg: #0f1117;
-  --bg-card: #181a24;
-  --border: #2e303a;
-  --accent: #6366f1;
-  --accent-hover: #818cf8;
-  --success: #22c55e;
-  --warning: #f59e0b;
-  --danger: #ef4444;
-  --danger-hover: #f87171;
+  /* Geometry */
+  --border-radius: 6px;
+  --box-shadow-x: 4px;
+  --box-shadow-y: 4px;
+  --reverse-box-shadow-x: -4px;
+  --reverse-box-shadow-y: -4px;
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --heading-font-weight: 700;
+  --base-font-weight: 500;
+  --radius: 0.375rem;
 
-  --sans: system-ui, "Segoe UI", Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  /* Stroke widths — keep 1.5px available for small chrome (kbd, inline rules). */
+  --stroke-1: 1.5px;
 
-  font: 14px/1.5 var(--sans);
-  color-scheme: dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  -webkit-font-smoothing: antialiased;
+  /* Warm paper palette */
+  --background: oklch(0.98 0.007 90);
+  --foreground: oklch(0.13 0.005 60);
+  --secondary-background: oklch(0.95 0.01 85);
+  --main: oklch(0.87 0.17 95);
+  --main-foreground: oklch(0.13 0.005 60);
+  --border: oklch(0.13 0.005 60);
+  --ring: oklch(0.13 0.005 60);
+  --overlay: oklch(0.13 0.005 60 / 0.8);
+
+  /* Shadow ink — the colour cast by every offset shadow. Themed per mode. */
+  --shadow-ink: oklch(0.13 0.005 60);
+  --shadow-2: 2px 2px 0px 0px var(--shadow-ink);
+  --shadow: var(--box-shadow-x) var(--box-shadow-y) 0px 0px var(--shadow-ink);
+  --shadow-6: 6px 6px 0px 0px var(--shadow-ink);
+
+  /* Ink-at-opacity — compositional primitives for secondary text and dividers.
+     Auto-follow --foreground across light/dark themes. */
+  --ink-60: color-mix(in oklch, var(--foreground) 62%, transparent);
+  --ink-40: color-mix(in oklch, var(--foreground) 38%, transparent);
+  --ink-10: color-mix(in oklch, var(--foreground) 8%, transparent);
+
+  --card: oklch(100% 0 0);
+  --card-foreground: oklch(0.13 0.005 60);
+  --popover: oklch(100% 0 0);
+  --popover-foreground: oklch(0.13 0.005 60);
+  --primary: oklch(0.87 0.17 95);
+  --primary-foreground: oklch(0.13 0.005 60);
+  --secondary: oklch(0.95 0.01 85);
+  --secondary-foreground: oklch(0.13 0.005 60);
+  --muted: oklch(0.95 0.01 85);
+  --muted-foreground: oklch(0.45 0.02 75);
+  --accent: oklch(0.95 0.01 85);
+  --accent-foreground: oklch(0.13 0.005 60);
+  --destructive: oklch(0.50 0.20 25);
+  --destructive-foreground: oklch(0.985 0 0);
+  --input: oklch(0.13 0.005 60);
+
+  --sidebar: oklch(0.95 0.01 85);
+  --sidebar-foreground: oklch(0.13 0.005 60);
+  --sidebar-primary: oklch(0.87 0.17 95);
+  --sidebar-primary-foreground: oklch(0.13 0.005 60);
+  --sidebar-accent: oklch(0.90 0.10 95);
+  --sidebar-accent-foreground: oklch(0.13 0.005 60);
+  --sidebar-border: oklch(0.13 0.005 60);
+  --sidebar-ring: oklch(0.13 0.005 60);
+
+  /* Accent palette — decorative fills for badges and chips. */
+  --mint: #5FD39A;
+  --mint-foreground: oklch(0.13 0.005 60);
+  --coral: #FF7A6B;
+  --coral-foreground: oklch(0.13 0.005 60);
+  --lilac: #B7A7FF;
+  --lilac-foreground: oklch(0.13 0.005 60);
+  --sky: #7FC8FF;
+  --sky-foreground: oklch(0.13 0.005 60);
+  --amber: #F4A52E;
+  --amber-foreground: oklch(0.13 0.005 60);
+  --amber-ink: #9A6200;
+
+  /* Semantic status — anchored to the same hues as the accent palette above,
+     but darkened until they are legible as *text* on paper. The decorative
+     accents are too light for that: this console writes lag figures and error
+     counts in colour far more often than it fills a shape with one, and a
+     coral-on-paper number is a number nobody can read. Fills therefore pair
+     with a paper foreground rather than ink. */
+  --success: oklch(0.52 0.13 160);
+  --success-foreground: oklch(0.98 0.007 90);
+  --warning: oklch(0.55 0.13 70);
+  --warning-foreground: oklch(0.98 0.007 90);
+  --danger: oklch(0.52 0.19 27);
+  --danger-foreground: oklch(0.98 0.007 90);
+  --info: oklch(0.52 0.12 240);
+  --info-foreground: oklch(0.98 0.007 90);
 }
 
-* {
-  box-sizing: border-box;
+.dark {
+  /* Warm near-black */
+  --background: oklch(0.16 0.01 70);
+  --foreground: oklch(0.95 0.02 85);
+  --secondary-background: oklch(0.20 0.01 70);
+  --main: oklch(0.87 0.17 95);
+  --main-foreground: oklch(0.16 0.01 70);
+  --border: oklch(0.95 0.02 85);
+  --ring: oklch(0.95 0.02 85);
+  --overlay: oklch(0% 0 0 / 0.85);
+
+  /* Shadow ink in dark mode is the very-dark warm near-black, not the ivory
+     border — an ivory shadow would glow rather than sit behind the surface. */
+  --shadow-ink: oklch(0.08 0.01 70);
+
+  --card: oklch(0.20 0.01 70);
+  --card-foreground: oklch(0.95 0.02 85);
+  --popover: oklch(0.20 0.01 70);
+  --popover-foreground: oklch(0.95 0.02 85);
+  --primary: oklch(0.87 0.17 95);
+  --primary-foreground: oklch(0.16 0.01 70);
+  --secondary: oklch(0.24 0.01 70);
+  --secondary-foreground: oklch(0.95 0.02 85);
+  --muted: oklch(0.24 0.01 70);
+  --muted-foreground: oklch(0.68 0.02 80);
+  --accent: oklch(0.24 0.01 70);
+  --accent-foreground: oklch(0.95 0.02 85);
+  --destructive: oklch(0.55 0.20 25);
+  --destructive-foreground: oklch(0.95 0.02 85);
+  --input: oklch(0.95 0.02 85);
+
+  --sidebar: oklch(0.20 0.01 70);
+  --sidebar-foreground: oklch(0.95 0.02 85);
+  --sidebar-primary: oklch(0.87 0.17 95);
+  --sidebar-primary-foreground: oklch(0.16 0.01 70);
+  --sidebar-accent: oklch(0.30 0.04 85);
+  --sidebar-accent-foreground: oklch(0.95 0.02 85);
+  --sidebar-border: oklch(0.95 0.02 85);
+  --sidebar-ring: oklch(0.95 0.02 85);
+
+  /* Dark mode accent palette */
+  --mint: #47B383;
+  --mint-foreground: oklch(0.13 0.005 60);
+  --coral: oklch(0.73 0.16 28);
+  --coral-foreground: oklch(0.13 0.005 60);
+  --lilac: #A598E8;
+  --lilac-foreground: oklch(0.13 0.005 60);
+  --sky: #6FB5E6;
+  --sky-foreground: oklch(0.13 0.005 60);
+  --amber: #F0A93E;
+  --amber-foreground: oklch(0.13 0.005 60);
+  --amber-ink: #F4B860;
+
+  /* Semantic status — inverted against light mode. On near-black these read as
+     text at the accent palette's own lightness, so the fills take ink
+     foregrounds the way the decorative accents do. */
+  --success: oklch(0.75 0.15 160);
+  --success-foreground: oklch(0.16 0.01 70);
+  --warning: oklch(0.78 0.15 75);
+  --warning-foreground: oklch(0.16 0.01 70);
+  --danger: oklch(0.70 0.17 28);
+  --danger-foreground: oklch(0.16 0.01 70);
+  --info: oklch(0.74 0.12 240);
+  --info-foreground: oklch(0.16 0.01 70);
 }
 
-body {
-  margin: 0;
+/* --------------------------------------------------------------------------
+ * Tailwind v4 theme mapping
+ * -------------------------------------------------------------------------- */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --color-main: var(--main);
+  --color-main-foreground: var(--main-foreground);
+  --color-secondary-background: var(--secondary-background);
+  --color-overlay: var(--overlay);
+
+  --color-mint: var(--mint);
+  --color-mint-foreground: var(--mint-foreground);
+  --color-coral: var(--coral);
+  --color-coral-foreground: var(--coral-foreground);
+  --color-lilac: var(--lilac);
+  --color-lilac-foreground: var(--lilac-foreground);
+  --color-sky: var(--sky);
+  --color-sky-foreground: var(--sky-foreground);
+  --color-amber: var(--amber);
+  --color-amber-foreground: var(--amber-foreground);
+  --color-amber-ink: var(--amber-ink);
+
+  --color-ink-60: var(--ink-60);
+  --color-ink-40: var(--ink-40);
+  --color-ink-10: var(--ink-10);
+
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-danger: var(--danger);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-base: var(--border-radius);
+
+  --shadow-shadow: var(--shadow);
+  --shadow-2: var(--shadow-2);
+  --shadow-6: var(--shadow-6);
+  --shadow-nav: 4px 4px 0px 0px var(--shadow-ink);
+  --shadow-hero: 6px 6px 0px 0px var(--shadow-ink);
+
+  --spacing-boxShadowX: var(--box-shadow-x);
+  --spacing-boxShadowY: var(--box-shadow-y);
+  --spacing-reverseBoxShadowX: var(--reverse-box-shadow-x);
+  --spacing-reverseBoxShadowY: var(--reverse-box-shadow-y);
+
+  --font-weight-base: var(--base-font-weight);
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 }
 
-#root {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
+@utility font-heading {
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  font-weight: var(--heading-font-weight);
 }
 
-/* Layout */
-.app {
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
+@utility font-brand {
+  font-family: 'Bricolage Grotesque', 'Space Grotesk', system-ui, sans-serif;
+  font-weight: 800;
 }
 
-.app-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 16px 24px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-card);
+/* --------------------------------------------------------------------------
+ * Neo-pressable interactive affordance
+ *
+ * The shadow is not decoration — it is the travel a control has left. Pressing
+ * translates the element by exactly the shadow offset and removes the shadow,
+ * so the surface lands flush against the page.
+ * -------------------------------------------------------------------------- */
+.neo-pressable,
+.neo-card-link,
+.neo-pressable-sm {
+  transition-property: transform, box-shadow, background-color, color, opacity;
+  transition-duration: 140ms;
+  transition-timing-function: var(--ease-out-quart);
 }
 
-.app-header h1 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text-h);
-  letter-spacing: -0.3px;
+.neo-pressable:active,
+.neo-pressable[data-state="open"] {
+  transform: translate(var(--box-shadow-x), var(--box-shadow-y));
+  box-shadow: none;
+  transition-duration: 80ms;
 }
 
-.app-header .logo {
-  font-size: 24px;
+.neo-pressable-sm:active,
+.neo-pressable-sm[data-state="open"] {
+  transform: translate(2px, 2px);
+  box-shadow: none;
+  transition-duration: 80ms;
 }
 
-.app-body {
-  flex: 1;
-  padding: 24px;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-  gap: 20px;
-  align-content: start;
-}
+@media (hover: hover) and (pointer: fine) {
+  .neo-pressable:is(:hover, :focus-visible):not(:active):not([data-state="open"]),
+  .neo-card-link:is(:hover, :focus-visible):not(:active) {
+    transform: translate(-1px, -1px);
+    box-shadow: var(--shadow-6);
+  }
 
-@media (max-width: 860px) {
-  .app-body {
-    grid-template-columns: 1fr;
-    padding: 16px;
+  .neo-pressable-sm:is(:hover, :focus-visible):not(:active):not([data-state="open"]) {
+    transform: translate(-1px, -1px);
+    box-shadow: 3px 3px 0 0 var(--shadow-ink);
+  }
+
+  .neo-card-link:active {
+    transform: translate(var(--box-shadow-x), var(--box-shadow-y));
+    box-shadow: none;
+    transition-duration: 80ms;
   }
 }
 
-/* Cards */
-.card {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 20px;
+@media (prefers-reduced-motion: reduce) {
+  .neo-pressable,
+  .neo-card-link,
+  .neo-pressable-sm {
+    transition: none !important;
+  }
+
+  .neo-pressable:is(:hover, :focus-visible, :active),
+  .neo-pressable[data-state="open"],
+  .neo-card-link:is(:hover, :focus-visible, :active),
+  .neo-pressable-sm:is(:hover, :focus-visible, :active),
+  .neo-pressable-sm[data-state="open"] {
+    transform: none !important;
+  }
 }
 
-.card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
+/* --------------------------------------------------------------------------
+ * Animation
+ * -------------------------------------------------------------------------- */
+@keyframes card-enter {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-.card-header h2 {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-h);
+@keyframes card-exit {
+  to { opacity: 0; transform: translateX(16px); }
 }
 
-.card-header .badge {
-  font-size: 12px;
-  font-weight: 500;
-  padding: 2px 8px;
-  border-radius: 9999px;
-  background: rgba(99, 102, 241, 0.15);
-  color: var(--accent);
+/* Stays invisible for 200ms, then fades in. Skeletons that unmount sooner
+ * (fast loads) never appear, killing the "skeleton flash" effect. */
+@keyframes skeleton-fade-in {
+  to { opacity: 1; }
 }
 
-/* Stat grid */
-.stat-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
+.skeleton-fade-in {
+  opacity: 0;
+  animation: skeleton-fade-in 150ms ease-in 200ms forwards;
 }
 
-.stat {
-  text-align: center;
+@utility animate-card-enter {
+  animation: card-enter 0.35s ease-out both;
 }
 
-.stat-value {
-  font-size: 28px;
-  font-weight: 700;
-  font-family: var(--mono);
-  color: var(--text-h);
-  line-height: 1.2;
+@utility animate-card-exit {
+  animation: card-exit 0.25s ease-in forwards;
+  pointer-events: none;
 }
 
-.stat-label {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--text);
-  margin-top: 2px;
+@media (prefers-reduced-motion: reduce) {
+  .animate-card-enter,
+  .animate-card-exit,
+  .skeleton-fade-in {
+    animation: none !important;
+  }
+  .skeleton-fade-in {
+    opacity: 1;
+  }
 }
 
-.stat-value.danger {
-  color: var(--danger);
-}
+/* --------------------------------------------------------------------------
+ * Base layer
+ * -------------------------------------------------------------------------- */
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-border, currentColor);
+  }
 
-/* Tables */
-.table-wrap {
-  overflow-x: auto;
-}
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Space Grotesk', system-ui, sans-serif;
+    font-weight: var(--base-font-weight);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
 
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-heading;
+  }
 
-th {
-  text-align: left;
-  font-weight: 500;
-  color: var(--text);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
-}
+  /* Positions, checkpoint offsets, processor IDs, tenant IDs and event payloads
+     are the bulk of this console's content, and all of them are read by
+     comparing digits down a column. Tabular figures keep those columns aligned
+     even in the proportional face. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
 
-td {
-  padding: 8px 12px;
-  border-bottom: 1px solid rgba(46, 48, 58, 0.5);
-  color: var(--text-h);
-}
+  html:has(.group\/sidebar-wrapper),
+  html:has(.group\/sidebar-wrapper) body {
+    overflow: hidden;
+    height: 100svh;
+  }
 
-tr:last-child td {
-  border-bottom: none;
-}
+  /* Hide native search input clear button */
+  input[type="search"]::-webkit-search-cancel-button,
+  input[type="search"]::-webkit-search-decoration {
+    -webkit-appearance: none;
+    appearance: none;
+  }
 
-td code {
-  font-family: var(--mono);
-  font-size: 12px;
-  background: rgba(99, 102, 241, 0.1);
-  padding: 2px 6px;
-  border-radius: 4px;
-  color: var(--accent);
-}
+  /* Thin, consistent scrollbar */
+  body, .scrollbar {
+    --sb-track-color: var(--secondary-background);
+    --sb-thumb-color: var(--ink-40);
+  }
 
-/* Buttons */
-.btn {
-  font-size: 12px;
-  font-weight: 500;
-  padding: 6px 12px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-h);
-  cursor: pointer;
-  transition: all 0.15s;
-}
+  @media (pointer: fine) {
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--sb-track-color); }
+    ::-webkit-scrollbar-thumb { background: var(--sb-thumb-color); border-radius: 3px; }
 
-.btn:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.btn-danger {
-  border-color: rgba(239, 68, 68, 0.3);
-  color: var(--danger);
-}
-
-.btn-danger:hover {
-  border-color: var(--danger);
-  background: rgba(239, 68, 68, 0.1);
-}
-
-.btn-sm {
-  padding: 3px 8px;
-  font-size: 11px;
-}
-
-/* Audit log */
-.audit-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  max-height: 300px;
-  overflow-y: auto;
-}
-
-.audit-item {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 6px 0;
-  border-bottom: 1px solid rgba(46, 48, 58, 0.5);
-  font-size: 13px;
-}
-
-.audit-item:last-child {
-  border-bottom: none;
-}
-
-.audit-time {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--text);
-  white-space: nowrap;
-}
-
-.audit-type {
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--accent);
-  white-space: nowrap;
-}
-
-.audit-desc {
-  color: var(--text-h);
-  flex: 1;
-  min-width: 0;
-}
-
-/* Loading & empty */
-.loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 40px;
-  color: var(--text);
-}
-
-.empty {
-  text-align: center;
-  padding: 24px;
-  color: var(--text);
-  font-size: 13px;
-}
-
-.error-msg {
-  color: var(--danger);
-  font-size: 13px;
-  padding: 12px;
-  background: rgba(239, 68, 68, 0.1);
-  border-radius: 6px;
-}
-
-/* Scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 3px;
+    @supports not selector(::-webkit-scrollbar) {
+      body, .scrollbar {
+        scrollbar-color: var(--sb-thumb-color) var(--sb-track-color);
+      }
+    }
+  }
 }
