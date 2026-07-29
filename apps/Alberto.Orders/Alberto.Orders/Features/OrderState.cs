@@ -6,7 +6,6 @@ namespace Alberto.Orders.Features;
 /// The current state of an order, rebuilt from events.
 /// </summary>
 public sealed record OrderState :
-    ICreateOrderState,
     IAddItemState,
     IRemoveItemState,
     IConfirmOrderState,

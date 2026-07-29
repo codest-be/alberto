@@ -24,33 +24,6 @@ public static class OrderMutations
     private const int ConflictRetries = 3;
 
     /// <summary>
-    /// Creates a new order.
-    /// </summary>
-    [Mutation]
-    [GraphQLDescription("Creates a new order with the specified line items.")]
-    public static async Task<CreateOrderResult> CreateOrder(
-        CreateOrderInput input,
-        [Service] IServiceProvider sp,
-        CancellationToken ct)
-    {
-        var orderId = Guid.CreateVersion7();
-        var lineItems = input.LineItems
-            .Select(x => new OrderLineItem(x.ProductId, x.ProductName, x.Quantity, x.UnitPrice))
-            .ToList();
-
-        // The boundary is empty for a fresh id, so the append is still conflict-checked:
-        // it fails if anything claimed this order between the read and the write.
-        var result = await Store(sp)
-            .Handle(input)
-            .Load(OrderDecider.BoundaryFor(orderId), _evolver)
-            .Decide((cmd, state) => OrderDecider.Create(state, orderId, cmd.CustomerId, lineItems, cmd.Notes))
-            .Commit(ct);
-
-        result.EnsureCommitted();
-        return new CreateOrderResult(orderId);
-    }
-
-    /// <summary>
     /// Adds an item to an existing order.
     /// </summary>
     [Mutation]
