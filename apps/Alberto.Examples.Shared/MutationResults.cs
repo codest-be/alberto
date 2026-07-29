@@ -1,12 +1,18 @@
 using Alberto.Dcb;
 
-namespace Alberto.Orders.Api.GraphQL;
+namespace Alberto.Examples.Shared;
 
 /// <summary>
 /// Turns a failed <see cref="Result"/> into a GraphQL error, preserving the
 /// <see cref="Problem.Code"/> so clients branch on the code rather than the message.
 /// </summary>
-internal static class MutationResults
+/// <remarks>
+/// Public rather than internal, and shared rather than per-module, because every slice in both
+/// modules ends the same way: commit, then surface whatever the decision refused. Twelve copies
+/// of this would be twelve chances for one of them to drop the code and leave a client matching
+/// on message text.
+/// </remarks>
+public static class MutationResults
 {
     public static void EnsureCommitted(this Result result)
     {

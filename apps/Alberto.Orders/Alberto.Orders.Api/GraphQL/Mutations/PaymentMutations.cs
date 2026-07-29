@@ -1,4 +1,5 @@
 using Alberto.Dcb;
+using Alberto.Examples.Shared;
 using Alberto.Orders.Api.GraphQL.Types;
 using Alberto.Payments.Core.Payment;
 using Alberto.Payments.Infrastructure;

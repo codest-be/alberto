@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\Alberto.Examples.Shared\Alberto.Examples.Shared.csproj" />
     <ProjectReference Include="..\Alberto.Orders.Infrastructure\Alberto.Orders.Infrastructure.csproj" />
     <ProjectReference Include="..\..\Alberto.Payments\Alberto.Payments.Infrastructure\Alberto.Payments.Infrastructure.csproj" />
     <ProjectReference Include="..\..\..\src\Alberto.Dcb.Telemetry\Alberto.Dcb.Telemetry.csproj" />

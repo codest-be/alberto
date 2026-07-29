@@ -118,16 +118,3 @@ public sealed record CancelOrderInput(
 /// Result of a create mutation.
 /// </summary>
 public readonly record struct CreateOrderResult(Guid OrderId);
-
-/// <summary>
-/// Result of a mutation that doesn't return data.
-/// </summary>
-public readonly record struct MutationResult
-{
-    public bool Success => true;
-}
-
-/// <summary>
-/// Error result for failed mutations.
-/// </summary>
-public sealed record MutationError(string Message);
