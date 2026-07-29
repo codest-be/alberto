@@ -644,6 +644,7 @@ public static class DcbModuleBuilderExtensions
                     sp.GetRequiredKeyedService<ShadowControlLoopFactory>(moduleKey),
                     sp.GetKeyedServices<IProjectionStateClearer>(moduleKey).ToList(),
                     coordinatorOptions,
+                    sp.GetService<TimeProvider>(),
                     sp.GetService<ILogger<RebuildCoordinator>>());
             });
         });

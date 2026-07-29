@@ -59,8 +59,10 @@ internal sealed class RebuildCoordinator(
     ShadowControlLoopFactory loopFactory,
     IReadOnlyList<IProjectionStateClearer> clearers,
     RebuildCoordinatorOptions options,
+    TimeProvider? timeProvider = null,
     ILogger<RebuildCoordinator>? logger = null) : BackgroundService
 {
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly Dictionary<string, ShadowLoop> _shadowLoops = new(StringComparer.Ordinal);
     private readonly Dictionary<string, RebuildStatus> _lastSeen = new(StringComparer.Ordinal);
 
@@ -420,7 +422,7 @@ internal sealed class RebuildCoordinator(
         RebuildableProjection projection, ProjectionRebuildState state, CancellationToken ct)
     {
         if (state.CompletedAt is { } completedAt &&
-            DateTimeOffset.UtcNow - completedAt < options.ReclaimGracePeriod)
+            _timeProvider.GetUtcNow() - completedAt < options.ReclaimGracePeriod)
         {
             _pendingReclaim.Add(projection.ProcessorId);
             return false;
