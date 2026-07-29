@@ -79,6 +79,14 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
     [EventType("ti-order-shipped")]
     private sealed record OrderShipped(Guid OrderId) : IEvent;
 
+    // Used only by Stream_ByTypes_IsTenantScoped: a types-only read cannot be narrowed by a tag,
+    // so it would otherwise also see the ti-order-* events of every other test in this class.
+    [EventType("ti-probe-alpha")]
+    private sealed record ProbeAlpha(Guid OrderId) : IEvent;
+
+    [EventType("ti-probe-beta")]
+    private sealed record ProbeBeta(Guid OrderId) : IEvent;
+
     private sealed record OrderState(string Label, decimal Amount);
 
     // ─── helpers ────────────────────────────────────────────────────────────
@@ -341,6 +349,82 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
 
             Assert.Equal(2, multiTypeEvents.Count);
             Assert.All(multiTypeEvents, e => Assert.Equal(TenantA, e.TenantId));
+        }
+    }
+
+    /// <summary>
+    /// The types-only read, <c>alberto_read_by_types</c>, which migration 031 rewrote from a
+    /// single <c>event_type = ANY($2)</c> scan into one bounded probe per named type. The probes
+    /// carry the tenant predicate individually now, so a rewrite that dropped it from one of them
+    /// — or that moved the tenant check onto the events row, where <c>global_position</c> already
+    /// matches — would leak every other tenant's events of that type.
+    /// <para>
+    /// This read has no tag to narrow it, so it sees every event of a named type in the database.
+    /// <c>ti-probe-*</c> is therefore used by this test and no other, which is what makes the
+    /// counts below exact.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Stream_ByTypes_IsTenantScoped()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var orderId = Guid.NewGuid();
+
+        await using (var scopeA = CreateScopeForTenant(TenantA))
+        {
+            var storeA = scopeA.ServiceProvider.GetRequiredKeyedService<IEventStore>(ModuleKey);
+            await storeA.AppendAsync(
+                [
+                    CreateEvent(new ProbeAlpha(orderId)),  // match
+                    CreateEvent(new ProbeBeta(orderId)),   // tenant A, unnamed type
+                    CreateEvent(new ProbeAlpha(orderId)),  // match
+                ],
+                dcbQuery: null,
+                expectedPosition: null,
+                cancellationToken: ct);
+        }
+
+        await using (var scopeB = CreateScopeForTenant(TenantB))
+        {
+            var storeB = scopeB.ServiceProvider.GetRequiredKeyedService<IEventStore>(ModuleKey);
+            await storeB.AppendAsync(
+                [
+                    CreateEvent(new ProbeAlpha(orderId)),  // right type, wrong tenant
+                    CreateEvent(new ProbeBeta(orderId)),
+                ],
+                dcbQuery: null,
+                expectedPosition: null,
+                cancellationToken: ct);
+        }
+
+        await using (var scopeA2 = CreateScopeForTenant(TenantA))
+        {
+            var storeA2 = scopeA2.ServiceProvider.GetRequiredKeyedService<IEventStore>(ModuleKey);
+
+            // One named type: a single probe, the shape a leaked tenant predicate would widen
+            // from two rows to three.
+            var single = await storeA2.StreamAsync(DcbQuery.ByTypes("ti-probe-alpha"), cancellationToken: ct);
+
+            Assert.Equal(2, single.Count);
+            Assert.All(single, e => Assert.Equal(TenantA, e.TenantId));
+            Assert.All(single, e => Assert.Equal("ti-probe-alpha", e.EventType.Id));
+
+            // Several named types: one probe each, every one of which must be scoped.
+            var several = await storeA2.StreamAsync(
+                DcbQuery.ByTypes("ti-probe-alpha", "ti-probe-beta"), cancellationToken: ct);
+
+            Assert.Equal(3, several.Count);
+            Assert.All(several, e => Assert.Equal(TenantA, e.TenantId));
+            Assert.Equal(
+                several.Select(e => e.GlobalPosition).Order(),
+                several.Select(e => e.GlobalPosition));
+
+            // The same type twice, which is what DcbQuery produces from ByTypes(x).WithTypes(x):
+            // deduplicated to one probe, so still tenant A's two events and not four rows.
+            var repeated = await storeA2.StreamAsync(
+                DcbQuery.ByTypes("ti-probe-alpha").WithTypes("ti-probe-alpha"), cancellationToken: ct);
+
+            Assert.Equal(single.Select(e => e.GlobalPosition), repeated.Select(e => e.GlobalPosition));
         }
     }
 

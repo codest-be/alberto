@@ -43,28 +43,28 @@ read, so table size should not change the answer — and it is worth naming as a
 because the suite does not test it. Index maintenance on a 1M-row table is not obviously free.
 Adding a store-size axis to one append case would settle it cheaply.
 
-| Case | Mean | ±sd | Allocated | Re-measured |
+| Case | Mean | ±sd | Allocated | Previous baseline |
 |---|---:|---:|---:|---:|
-| `SingleAppend` | 987 µs | 18.3% | 11.5 KB | 948 µs |
-| `AppendWithDcbCheck` | 1444 µs | 10.9% | 12.0 KB | 974 µs |
-| `AppendWithConflictDetected` | 922 µs | 17.8% | 21.3 KB | 715 µs |
+| `SingleAppend` | 919 µs | 10.2% | 11.5 KB | 987 µs |
+| `AppendWithDcbCheck` | 947 µs | 8.0% | 12.0 KB | 1444 µs |
+| `AppendWithConflictDetected` | 674 µs | 10.2% | 21.3 KB | 922 µs |
 
-**This baseline caught the whole append family in its high mode, and the last column is why
-that matters.** An isolated re-run of the same three cases against the same commit, minutes
-later, returned the numbers on the right — `AppendWithDcbCheck` at 974 µs rather than 1444 µs.
-Both runs are honest measurements of identical code; the run, not the code, moves between two
-modes (see [Run-to-run bimodality](#run-to-run-bimodality)). The baseline keeps the high values
-because a baseline must be one coherent run and cannot have individual entries spliced in, and
-because a high baseline under-detects rather than false-alarms. **Read the right-hand column
-for what appends cost, and the left for what the gate will compare against.**
+**Nothing in this change touches the append path, and the whole family still moved — that is
+the point of the last column.** The previous baseline caught these three cases in their high
+mode; this run caught them in their low mode, and the earlier revision's isolated re-run
+(948 / 974 / 715 µs) landed in the low mode too. Three measurements of identical code, two
+modes, and the run rather than the code decides which (see
+[Run-to-run bimodality](#run-to-run-bimodality)). The gate compares against whichever run was
+promoted, so these three cases will read as "improved" against the old baseline and would read
+as "regressed" the other way round. **Neither is a code change.**
 
-**On the re-measured numbers, the DCB consistency check is not a meaningful tax.** 948 µs
-against 974 µs is +2.8%, far inside both cases' standard deviations. Appending with a
-consistency boundary costs about the same as appending without one. That is the important
-result: DCB's whole premise is that the boundary is checked in the same round trip as the
-write, and the measurement is consistent with that. It would be easy to read the baseline
-column alone as +46% and conclude the opposite, which is exactly the trap the bimodality
-section exists to flag.
+**The DCB consistency check is not a meaningful tax.** 919 µs against 947 µs is +3.1%, well
+inside both cases' standard deviations, and the earlier re-run put the same pair at +2.8%.
+Appending with a consistency boundary costs about the same as appending without one. That is
+the important result: DCB's whole premise is that the boundary is checked in the same round
+trip as the write, and the measurement is consistent with that. The old baseline's high mode
+made the same comparison read as +46%, which is exactly the trap the bimodality section exists
+to flag.
 
 The conflict path is *cheaper* than the success path in both runs, which is the right shape —
 a detected conflict aborts before doing the insert work. Its higher allocation (21.3 KB vs
@@ -74,15 +74,15 @@ a detected conflict aborts before doing the insert work. Its higher allocation (
 
 | Batch size | Mean | Per event | Allocated | Per event |
 |---:|---:|---:|---:|---:|
-| 1 (`SingleAppend`) | 987 µs | 987 µs | 11.5 KB | 11.5 KB |
-| 10 | 1644 µs | 164 µs | 28.1 KB | 2.8 KB |
-| 100 | 4277 µs | 42.8 µs | 197.6 KB | 2.0 KB |
-| 1000 | 30055 µs | 30.1 µs | 1924.4 KB | 1.9 KB |
+| 1 (`SingleAppend`) | 919 µs | 919 µs | 11.5 KB | 11.5 KB |
+| 10 | 1615 µs | 162 µs | 29.1 KB | 2.9 KB |
+| 100 | 4570 µs | 45.7 µs | 197.9 KB | 2.0 KB |
+| 1000 | 29639 µs | 29.6 µs | 1924.4 KB | 1.9 KB |
 
 **This is the single biggest operational lever in the suite.** Batching 1000 events costs
-30 µs each against ~950–990 µs each one at a time — call it a 30× efficiency gain — and the
+30 µs each against ~920–990 µs each one at a time — call it a 30× efficiency gain — and the
 per-event allocation flattens at about 1.9 KB. The curve is steeply concave: batches of 10
-already recover 6× of that, and 100 recovers 23×. Most of the win is available well before you
+already recover 6× of that, and 100 recovers 20×. Most of the win is available well before you
 need 1000-event batches, which matters because a large batch is one transaction holding locks
 for 30 ms.
 
@@ -94,15 +94,15 @@ that for it.
 
 | Tags per event | Mean | Allocated |
 |---:|---:|---:|
-| 1 | 906 µs | 11.5 KB |
-| 5 | 950 µs | 16.8 KB |
-| 20 | 1226 µs | 20.0 KB |
+| 1 | 882 µs | 11.5 KB |
+| 5 | 970 µs | 16.8 KB |
+| 20 | 1120 µs | 20.0 KB |
 
 **Tag fan-out is cheap, but this is the one row in the suite whose number should not be quoted
-to three digits.** The 20-tag case moves between runs: five measurements of the same code have
-now given 1086, 1152, 1226, 1569 and 1602 µs. A four-run view of this case previously looked
-like two tight clusters; the fifth value sits between them, so that reading was too clean and
-is withdrawn — what can be said is that the spread is wide and reproducible, not that it is
+to three digits.** The 20-tag case moves between runs: six measurements of the same code have
+now given 1086, 1120, 1152, 1226, 1569 and 1602 µs. A four-run view of this case once looked
+like two tight clusters; the two values since sit between them, so that reading was too clean
+and is withdrawn — what can be said is that the spread is wide and reproducible, not that it is
 cleanly bimodal. Twenty times the tags costs somewhere between +20% and +80%, and the suite as
 it stands cannot narrow that further.
 
@@ -118,17 +118,17 @@ All reads return a 500-event page (or fewer, where the query is selective).
 
 | Case | 10k | 100k | 1M | Shape |
 |---|---:|---:|---:|---|
-| `GetLastPosition` | 269 µs | 230 µs | 270 µs | flat |
-| `GetStableHead` | 320 µs | 333 µs | 339 µs | flat |
-| `BoundaryRead` | 448 µs | 459 µs | 462 µs | flat |
-| `StreamAllFromZero` | 665 µs | 682 µs | 686 µs | flat |
-| `TailRead` | 754 µs | 635 µs | 683 µs | flat |
-| `StreamByTag` | 583 µs | 1253 µs | 1425 µs | grows, then flat |
-| `StreamByTypeAndTag` (1 type) | 526 µs | 912 µs | 4829 µs | grows |
-| `StreamByTypesAndTag` (3 types) | 540 µs | 1386 µs | 4681 µs | grows |
-| `StreamByType` | 1494 µs | 1931 µs | 9332 µs | grows |
-| `StreamByMultiTag` (2 tags) | 692 µs | 1470 µs | 1574 µs | grows, then flat |
-| `StreamByMultiTag` (8 tags) | 1189 µs | 2286 µs | 2178 µs | grows, then flat |
+| `GetLastPosition` | 340 µs | 233 µs | 266 µs | flat |
+| `GetStableHead` | 468 µs | 296 µs | 362 µs | flat |
+| `BoundaryRead` | 706 µs | 516 µs | 422 µs | flat |
+| `StreamAllFromZero` | 655 µs | 681 µs | 847 µs | flat |
+| `TailRead` | 695 µs | 809 µs | 682 µs | flat |
+| `StreamByTag` | 688 µs | 1494 µs | 1438 µs | grows, then flat |
+| `StreamByTypeAndTag` (1 type) | 532 µs | 918 µs | 4632 µs | grows |
+| `StreamByTypesAndTag` (3 types) | 769 µs | 1507 µs | 5010 µs | grows |
+| `StreamByType` | 1068 µs | 1764 µs | 1229 µs | flat |
+| `StreamByMultiTag` (2 tags) | 749 µs | 1427 µs | 1457 µs | grows, then flat |
+| `StreamByMultiTag` (8 tags) | 1374 µs | 2438 µs | 1907 µs | grows, then flat |
 
 **The headline is that the unfiltered reads are flat across a 100× growth in the log.** That
 is the property an event store lives or dies by: a paged read should cost what it *returns*,
@@ -137,50 +137,35 @@ every size, and position lookups allocate nothing at all and answer in a few hun
 microseconds throughout.
 
 **Where a filtered read looks cheap, check whether it returned less** — and with twenty types
-the allocation column now predicts exactly how much less. A full page costs ~320 KB, about
-640 bytes per event, so allocations divide back into a row count. The seed holds 100 order
+the allocation column now predicts exactly how much less. A full page costs ~330 KB, about
+660 bytes per event, so allocations divide back into a row count. The seed holds 100 order
 tags, so a single tag matches `storeSize/100` events, and naming *k* of twenty types keeps
 *k*/20 of those:
 
 | Case | 10k | 100k | 1M |
 |---|---|---|---|
 | `StreamByTypeAndTag` predicted | 5 | 50 | 500 (page-capped) |
-| …allocated | 12.3 KB | 32.7 KB | 284 KB |
+| …allocated | 12.3 KB | 33.5 KB | 291 KB |
 | `StreamByTypesAndTag` predicted | 15 | 150 | 1500 → 500 |
-| …allocated | 15.7 KB | 96.2 KB | 335 KB |
+| …allocated | 15.0 KB | 96.3 KB | 336 KB |
 
-96.2 KB is 150 events to within a rounding error, and 32.7 KB is 51. The arithmetic and the
-measurement agree, which is the strongest evidence in this document that the seed does what it
-claims. It also means **the two-axis cases are the only reads that reach a full page at 1M and
-not before**, so their 10k and 100k columns are cheap for the boring reason.
+96.3 KB is 146 events against a predicted 150, and 33.5 KB is 51 against 50. The arithmetic and
+the measurement agree, which is the strongest evidence in this document that the seed does what
+it claims. It also means **the two-axis cases are the only reads that reach a full page at 1M
+and not before**, so their 10k and 100k columns are cheap for the boring reason.
 
 **`StreamByType`, `StreamByTag` at 100k+ and `StreamByMultiTag` return a full page at every
-size**, so their curves are like-for-like. `StreamByTag` goes 1253 → 1425 µs (+14%) over the
-last 10×, and `StreamByMultiTag` 1470 → 1574 µs (+7%) at two tags and 2286 → 2178 µs (−5%) at
+size**, so their curves are like-for-like. `StreamByTag` goes 1494 → 1438 µs (−4%) over the
+last 10×, and `StreamByMultiTag` 1427 → 1457 µs (+2%) at two tags and 2438 → 1907 µs (−22%) at
 eight. Those are the flat-at-scale shapes you want.
 
-**`StreamByType` is now the slowest read in the suite, and the corpus change is what made that
-visible.** It reads 1494 / 1931 / **9332** µs; against the old three-type corpus the 1M column
-was 2436 µs. Naming one of twenty types instead of one of three is the whole difference, and
-investigating it turned up a real defect rather than just a harder workload. `EXPLAIN` on
-`alberto_read_by_types` shows its generic plan never uses the
-`(tenant_id, event_type, global_position)` index at all: it sequentially scans the whole of
-`alberto_event_type_positions` — one row per event in the store — filters, sorts, and
-merge-joins the result against `alberto_events` walked in position order. That is the same
-`= ANY` opacity
-pathology that migrations 028–030 removed from the two-axis read, still present here on the
-one-axis read.
-
-The corpus explains why it surfaced now. At 1M, `order-placed` is 50,133 of the million events
-and the 500th one sits at global position 9,557; with three types the 500th would have sat
-near 1,500. The merge join therefore walks ~6.4× more full `alberto_events` rows — each
-carrying JSONB — to fill the same page, which is the right order of magnitude for
-2436 → 9332 µs. Measured directly at 1M, one type, limit 500, wrapped in real plpgsql
-functions: the shipped body takes **7.9 ms** (73 ms forced onto a generic plan) against
-**0.25 ms** for a scalar single-type branch of the same shape as migration 029's. That fix is
-not in this change — it is a different function and was outside the question this work set out
-to settle — but it is a ~30× win sitting in plain sight, and it is filed as follow-up work
-along with the three never-audited wildcard read functions.
+**`StreamByType` was the slowest read in the suite and is now among the flattest.** It reads
+1068 / 1764 / **1229** µs, against 1494 / 1931 / **9332** µs before
+[migration 031](../../src/Alberto.Dcb.Postgres/Migrations/031_BoundedProbePerTypeReadByTypes.sql)
+— **−86.8% at 1M**, the largest single move the suite has recorded. The 1M column now costs
+about what the 10k column costs, which is the property this whole document is about: a paged
+read should cost what it returns, not what the store holds. What the fix had to be, and why it
+is not the one migration 030 used, is [below](#migration-031-the-one-axis-read).
 
 **`StreamByTypeAndTag` was the one read that genuinely scaled with the store, and the fix
 sequence is worth keeping because each step exposed the next.** All three of these figures come
@@ -211,11 +196,11 @@ That the 100k column did not move (2672 → 2676 µs) was the same mechanism see
 side, and the best evidence the explanation was right: at 100k the query returned a partial
 page, so there was no early termination to win.
 
-On today's twenty-type corpus the same case reads **526 / 912 / 4829 µs**. The 1M column is
+On today's twenty-type corpus the same case reads **532 / 918 / 4632 µs**. The 1M column is
 higher than 029's 3205 µs and that is not a regression — a tag∩type cell now holds ~500 events
 instead of ~3300, so filling a 500-event page means traversing essentially the whole 10,000-row
 tag range rather than the first sixth of it. Same code, harder question. The 100k column fell
-by two thirds (2676 → 912 µs) for the mirror-image reason: it now returns ~50 events instead of
+by two thirds (2676 → 918 µs) for the mirror-image reason: it now returns ~50 events instead of
 ~335.
 
 ### Migration 030: what 029's evidence could not have shown
@@ -262,16 +247,87 @@ of 12 warm calls, twenty-type corpus, one tag, limit 500 (ms):
 | type tested on the events row | 7.648 | **2.561** | **0.799** | **0.636** |
 | 029 scalar type | **3.202** | n/a | n/a | n/a |
 
-Through the suite, migration 030 moves `StreamByTypesAndTag` from 675 / 2783 / 14731 µs to
-**540 / 1386 / 4681 µs** — −20% / −50% / **−68%** — and leaves the single-type sibling
-untouched. At 1M the two now cost the same (4681 vs 4829 µs) for the same 500-event page, which
-is the result worth having: a boundary that names three of a context's event types is no longer
+Through the suite, migration 030 moved `StreamByTypesAndTag` from 675 / 2783 / 14731 µs to
+**540 / 1386 / 4681 µs** — −20% / −50% / **−68%** — and left the single-type sibling untouched.
+At 1M the two then cost the same (4681 vs 4829 µs) for the same 500-event page, which is the
+result worth having: a boundary that names three of a context's event types is no longer
 penalised for not naming exactly one.
 
 Neither branch needs a `DISTINCT`. An event carries exactly one `event_type`, so testing it —
 on the type-position primary key or on the events row — cannot make a position match twice, and
 a single scalar tag yields at most one tag-position row per position. No result can consume two
 slots of `p_limit`.
+
+Those five figures are the 030-era run, kept as the before/after that justified the migration.
+The current baseline reads the same case at **769 / 1507 / 5010 µs**, against its single-type
+sibling's 532 / 918 / 4632 — the same shape, measured a run or two later and correspondingly
+noisier (see [Run-to-run bimodality](#run-to-run-bimodality)). Migration 031 does not touch
+this function: it has a tag axis, and 031 changed only the one-axis read.
+
+### Migration 031: the one-axis read
+
+The defect was the same `= ANY` planner opacity that migrations 028–030 removed from the
+two-axis read, still present on the one-axis read. `EXPLAIN` on the shipped
+`alberto_read_by_types` showed its generic plan never using the
+`(tenant_id, event_type, global_position)` index at all: it sequentially scanned the whole of
+`alberto_event_type_positions` — one row per event in the store — filtered, sorted, and
+merge-joined the result against `alberto_events` walked in position order. At 1M it sorted
+about 150,000 positions to return 500.
+
+The corpus is what made it visible. At 1M, `order-placed` is 50,133 of the million events and
+the 500th one sits at global position 9,557; with the old three-type corpus the 500th would
+have sat near 1,500, so the same plan walked ~6.4× fewer `alberto_events` rows and the case
+measured 2436 µs. Same code, harder question — and then a real defect underneath it.
+
+**031 does not copy 030's remedy, and measuring is what settled that.** 030's second branch
+drops the type-position index and tests `event_type` on the `alberto_events` row the query has
+to fetch anyway; that works there because the *tag* scan bounds how many rows are ever
+considered. This function has no tag axis, so nothing bounds the scan, and the shape degrades
+from cheap to reading the whole log exactly when the query is most selective. Candidate
+timings as plpgsql functions under `SET plan_cache_mode = force_generic_plan`, min of 25 warm
+calls, twenty-type corpus, limit 500 from position 0 (ms) — *k* is how many of the twenty types
+the query names, and "absent" names a type no event carries:
+
+| Single-tenant, 1M | k=1 | k=3 | k=10 | k=20 | absent |
+|---|---:|---:|---:|---:|---:|
+| shipped body | 23.561 | 28.233 | 44.631 | 60.021 | 17.221 |
+| type tested on the events row (030's trick) | 0.764 | 0.306 | 0.186 | **0.149** | 66.183 |
+| bounded probe per type (031) | 0.319 | 0.410 | 0.643 | 0.926 | **0.026** |
+| 029's scalar probe | 0.312 | n/a | n/a | n/a | n/a |
+
+| Multi-tenant, 2 × 1M | t1 k=1 | t1 k=3 | t1 k=10 | t2 k=3 | absent |
+|---|---:|---:|---:|---:|---:|
+| shipped body | 50.191 | 8.242 | 29.816 | 70.958 | 2.184 |
+| type tested on the events row | 0.783 | 0.359 | 0.208 | 53.234 | 183.814 |
+| bounded probe per type (031) | 0.329 | 0.461 | 0.733 | **0.454** | **0.032** |
+
+The two right-hand columns are the argument. Tenant t1 holds the first half of the log and t2
+the second, so t2 is what any tenant that did not start writing first looks like. 030's trick
+wins the middle of the table and loses catastrophically at both edges, and both edges are the
+same thing: an ordered walk of `alberto_events` from `p_after_position` that travels a long way
+before the `LIMIT` is satisfied. Probing per type is within noise of the best shape at one type,
+costs about 30 µs per additional named type, and has no edge — naming all twenty types still
+beats the shipped body by 65×, and naming a type that does not exist costs 26 µs instead of
+66 ms. So 031 ships one uniform body with no guard, where 029 and 030 both needed one.
+
+The probe source is deduplicated, and that is load-bearing rather than tidy. `DcbQuery`
+concatenates types without deduplicating, so `ByTypes("a").WithTypes("a")` reaches the function
+as `{a,a}`; one probe per array element would then return every position twice. Measured
+without the `DISTINCT`, a 500-row page held 327 distinct positions — no error, just a third of
+the caller's page spent on duplicates. The `= ANY` form was immune to this by accident, so the
+`DISTINCT` preserves the old behaviour rather than optimising anything. Given a deduplicated
+source, no `DISTINCT` over *positions* is needed: an event carries exactly one `event_type`, so
+one type's probe cannot repeat a position and two distinct types' probes cannot collide.
+
+Two notes on what did **not** change. `StreamByType[100k]` reads 1764 µs with a 93% standard
+deviation — it is bimodal in this run, not slower than its 1M sibling; the 10k and 1M columns
+(6.4% and 5.6% sd) are the trustworthy ones, and a confirmation run put 100k at 1171 µs. And
+the three wildcard readers filed as never-audited follow-up work
+(`alberto_read_by_tag_patterns`, `_types_or_tag_patterns`, `_types_and_tag_patterns`) have no
+live body to audit: [migration 024](../../src/Alberto.Dcb.Postgres/Migrations/024_DropWildcardTagBoundaries.sql)
+dropped all three, and `MigrationUpgradeAndParityTests` asserts they stay dropped.
+`alberto_read_by_tags`, `_types_or_tags` and `_by_all_tags` still carry `= ANY` on the tag axis
+and are a separate question, because a tag axis genuinely can duplicate positions.
 
 **Tag unions are cheaper than they look.** Eight tags cost roughly 1.5× two tags, not 4×, and
 neither grows with the store. The union is served by one index range scan per tag against
@@ -292,16 +348,19 @@ Two traps, both hit during this work and both worth inheriting:
 - **SQL-level timings do not transfer to suite timings.** They under-predicted the benchmark's
   own 1M figure by ~3× for 029, which is why every win here is verified by re-running the suite
   rather than by trusting a hand-driven `psql` measurement.
-- **A set-returning plpgsql function cannot use a parallel plan, but a standalone
-  `PREPARE`/`EXECUTE` of the same SQL can.** `EXPLAIN` on the bare statement will happily show
-  you a `Gather Merge` the shipped function will never get. Every candidate above was therefore
-  wrapped in an actual plpgsql function before being timed. The same mechanism running the
-  *other* way is what made an earlier draft of 028 37% slower at 100k despite a perfectly good
-  custom plan — see that migration's comment block.
+- **A candidate must be timed inside an actual plpgsql function, not as a standalone
+  `PREPARE`/`EXECUTE` of the same SQL.** Earlier revisions of this document explained that as
+  "a set-returning plpgsql function cannot use a parallel plan"; `auto_explain` with
+  `log_nested_statements` during the 031 work showed the shipped `alberto_read_by_types` body
+  getting a `Gather Merge` *inside* the function, so that explanation is wrong and is withdrawn.
+  The practice it justified still stands — parameter form, plan-cache mode and estimation all
+  differ between the two framings, so every candidate above was wrapped in a real function
+  before being timed. The same class of mismatch is what made an earlier draft of 028 37%
+  slower at 100k despite a perfectly good custom plan — see that migration's comment block.
 
 ### Allocations
 
-A 500-event page allocates ~320 KB, about 640 bytes per event, consistently across every read
+A 500-event page allocates ~330 KB, about 660 bytes per event, consistently across every read
 family and every store size. `GetLastPosition` and `GetStableHead` allocate zero. Both are
 what you want: paging cost is proportional to the page, and the polling loop's cheapest
 question is free.
@@ -354,28 +413,37 @@ that lands in a mode and stays there.
 **Two later observations qualify that picture and neither is comfortable.** A fifth run put
 `AppendWithTagFanOut` (20 tags) at 1226 µs — between the two supposed clusters — so "cleanly
 bimodal" was an over-reading of four points, and the honest statement is that the spread is
-wide and reproducible with structure that is not established. And the run promoted as the
-current baseline caught the entire *append family* high at once (`AppendWithDcbCheck` 1444 µs
-against 974 µs on an isolated re-run of the same commit), which is a larger swing than any
-previously catalogued case and affects the family whose headline conclusion is the DCB check's
-cost. The likely culprits remain per-process environmental state — container placement, CPU
-frequency, page-cache warmth — but the suite measures none of them, so the mechanism is still
-unidentified.
+wide and reproducible with structure that is not established. And the *whole append family*
+moves together: the previous baseline caught all three cases high (`AppendWithDcbCheck` 1444 µs)
+and the current one caught all three low (947 µs), with an isolated re-run of the intervening
+commit also landing low (974 µs) — a larger swing than any previously catalogued case, on the
+family whose headline conclusion is the DCB check's cost. The likely culprits remain per-process
+environmental state — container placement, CPU frequency, page-cache warmth — but the suite
+measures none of them, so the mechanism is still unidentified.
+
+Migration 031's run added one more instance, in a read this time. `StreamByType[100k]` measured
+1764 µs with a **93.4%** standard deviation — the widest in the suite, and the one case where
+the modes were visible *within* a run rather than only between them. A confirmation run of the
+same commit put it at 1171 µs with 4.5% sd, which is where its 10k and 1M siblings sit. The
+committed value is the high one.
 
 Three consequences, in order of how much they should change your reading:
 
 1. **Short cases carry a run-to-run mode gap larger than the 20% regression gate.** For
-   `GetLastPosition` (10k), `AppendWithTagFanOut` (20 tags), `TailRead` (1M) and the whole
-   append family, the gate cannot currently distinguish a real regression from a mode flip.
-2. **The committed baseline holds high-mode values for those cases**, deliberately: a high
-   baseline under-detects regressions there but never false-alarms, while a low baseline would
-   fail the build on roughly every other run. A baseline must be one coherent run, so
-   re-measured values cannot be spliced in to fix individual entries — which is why the Appends
-   table above carries the re-measurement in its own column instead.
-3. **It does not affect the conclusions above.** Every affected case is short (under ~1.6 ms),
-   the affected rows are called out where they appear, and the two structural results — 029's
-   47% and 030's 68% — are on multi-millisecond cases, reproduced across independent runs, and
-   corroborated by SQL-level measurement of the specific plans involved.
+   `GetLastPosition` (10k), `AppendWithTagFanOut` (20 tags), `TailRead` (1M),
+   `StreamByType` (100k) and the whole append family, the gate cannot currently distinguish a
+   real regression from a mode flip.
+2. **The committed baseline holds the high-mode value wherever the two modes were both seen**,
+   which under-detects regressions there but never false-alarms; a low baseline would fail the
+   build on roughly every other run. That is a property of which run was promoted, not a choice
+   made per row — the append family is the exception, committed low because the promoted run
+   caught it low and a baseline must be one coherent run. Re-measured values cannot be spliced
+   in to fix individual entries, which is why the Appends table above carries the
+   re-measurement in its own column instead.
+3. **It does not affect the conclusions above.** Every affected case is short (under ~1.8 ms),
+   the affected rows are called out where they appear, and the three structural results — 029's
+   47%, 030's 68% and 031's 87% — are on multi-millisecond cases, reproduced across independent
+   runs, and corroborated by SQL-level measurement of the specific plans involved.
 
 Raising `IterationCount` would not help — the modes are between runs, not within them. The fix
 is to run each case in several processes and take the minimum, or to identify and pin whatever
@@ -392,6 +460,8 @@ environmental state differs. Neither is done.
 - Postgres in a Docker VM on macOS. Absolute latencies are not production latencies.
 - One machine profile. Results are keyed by machine, and the comparer refuses to diff across
   profiles rather than warning, so these numbers say nothing about CI's hardware.
-- `alberto_read_by_types` has a known unfixed plan defect (~30× available); the three wildcard
-  read functions have never been audited for the same pattern.
+- `alberto_read_by_tags`, `_types_or_tags` and `_by_all_tags` still carry `= ANY` on the tag
+  axis and have not been audited for the same plan defect. (`alberto_read_by_types` was the
+  last one with a known defect and is fixed by migration 031; the three wildcard readers were
+  dropped by migration 024 and have no live body to audit.)
 - No comparison against other event stores yet.

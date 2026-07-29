@@ -22,6 +22,18 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
     [EventType("order-cancelled")]
     public record OrderCancelled(Guid OrderId) : IEvent;
 
+    // Types-only reads cannot be narrowed by a tag, so they see every event of a named type in
+    // the fixture database. These three names are used by the alberto_read_by_types regression
+    // tests and by nothing else, which is what keeps those assertions exact.
+    [EventType("probe-alpha")]
+    public record ProbeAlpha(Guid OrderId) : IEvent;
+
+    [EventType("probe-beta")]
+    public record ProbeBeta(Guid OrderId) : IEvent;
+
+    [EventType("probe-gamma")]
+    public record ProbeGamma(Guid OrderId) : IEvent;
+
     #endregion
 
     #region Test State and Projection
@@ -381,6 +393,177 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
         // Paging must resume inside the fast path rather than restart it.
         var second = await eventStore.StreamAsync(query, afterPosition: positions[0], cancellationToken: ct);
         Assert.Equal(positions[1..], second.Select(e => e.GlobalPosition));
+    }
+
+    #endregion
+
+    #region Regression: bounded probe per type in alberto_read_by_types
+
+    /// <summary>
+    /// Migration 031 replaced <c>event_type = ANY($1)</c> in <c>alberto_read_by_types</c> with one
+    /// bounded index probe per named type, merged by a top-N sort. The rewrite is a plan change,
+    /// not a semantic one, so what these tests guard is that it stayed one: the same rows, once
+    /// each, in position order, honouring <c>afterPosition</c> and <c>limit</c>.
+    /// <para>
+    /// Every query anchors on the position taken before its own append. The types-only path has
+    /// no tag to narrow it, so it would otherwise also return the identically-typed events of
+    /// whichever tests ran earlier against this fixture.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task StreamAsync_ByOneType_ReturnsEachMatchOnceInPositionOrder()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
+        var orderId = Guid.NewGuid();
+
+        var anchor = await eventStore.GetLastPositionAsync(ct);
+        await eventStore.AppendAsync(
+            [
+                CreateEvent(new ProbeAlpha(orderId)),   // match
+                CreateEvent(new ProbeBeta(orderId)),    // unnamed type
+                CreateEvent(new ProbeAlpha(orderId)),   // match
+                CreateEvent(new ProbeGamma(orderId)),   // unnamed type
+                CreateEvent(new ProbeAlpha(orderId)),   // match
+            ],
+            cancellationToken: ct);
+
+        var query = DcbQuery.ByTypes("probe-alpha");
+
+        var events = await eventStore.StreamAsync(query, afterPosition: anchor, cancellationToken: ct);
+
+        var positions = events.Select(e => e.GlobalPosition).ToArray();
+        Assert.Equal(3, positions.Length);
+        Assert.Equal(positions.OrderBy(p => p), positions);
+        Assert.Equal(positions.Distinct(), positions);
+        Assert.All(events, e => Assert.Equal("probe-alpha", e.EventType.Id));
+
+        // The probe's own LIMIT must page from afterPosition rather than restart at the type's
+        // first position.
+        var second = await eventStore.StreamAsync(query, afterPosition: positions[0], cancellationToken: ct);
+        Assert.Equal(positions[1..], second.Select(e => e.GlobalPosition));
+
+        // The limit applies to the merged result, not per probe.
+        var limited = await eventStore.StreamAsync(query, afterPosition: anchor, limit: 2, cancellationToken: ct);
+        Assert.Equal(positions[..2], limited.Select(e => e.GlobalPosition));
+    }
+
+    /// <summary>
+    /// Several named types. Each gets its own probe, so this is the case where the merge has to
+    /// interleave: the result must be the union in global position order, not one type's run
+    /// followed by another's. A type no event carries must contribute nothing rather than widen
+    /// the result, and a limit must cut the merged order — the failure mode of a per-probe limit
+    /// that forgets to re-limit is a page holding the first <c>limit</c> rows of every type.
+    /// </summary>
+    [Fact]
+    public async Task StreamAsync_BySeveralTypes_ReturnsTheUnionOnceInPositionOrder()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
+        var orderId = Guid.NewGuid();
+
+        var anchor = await eventStore.GetLastPositionAsync(ct);
+        var appended = await eventStore.AppendAsync(
+            [
+                CreateEvent(new ProbeAlpha(orderId)),   // match
+                CreateEvent(new ProbeBeta(orderId)),    // unnamed type
+                CreateEvent(new ProbeGamma(orderId)),   // match
+                CreateEvent(new ProbeAlpha(orderId)),   // match
+                CreateEvent(new ProbeGamma(orderId)),   // match
+            ],
+            cancellationToken: ct);
+
+        // The types of the appended events, in append order — index 1 is the beta that must not
+        // come back.
+        var expected = appended
+            .Where((_, i) => i != 1)
+            .Select(e => e.GlobalPosition)
+            .ToArray();
+
+        // "probe-delta" is carried by no event: the array must filter, not merely widen.
+        var query = DcbQuery.ByTypes("probe-alpha", "probe-gamma", "probe-delta");
+
+        var events = await eventStore.StreamAsync(query, afterPosition: anchor, cancellationToken: ct);
+
+        var positions = events.Select(e => e.GlobalPosition).ToArray();
+        Assert.Equal(expected, positions);
+        Assert.All(events, e => Assert.Contains(e.EventType.Id, new[] { "probe-alpha", "probe-gamma" }));
+
+        // A limit smaller than either probe's own yield: the answer is the merged prefix, which
+        // here alternates between the two types.
+        var limited = await eventStore.StreamAsync(query, afterPosition: anchor, limit: 3, cancellationToken: ct);
+        Assert.Equal(expected[..3], limited.Select(e => e.GlobalPosition));
+
+        // Paging resumes inside the merge.
+        var second = await eventStore.StreamAsync(query, afterPosition: expected[1], cancellationToken: ct);
+        Assert.Equal(expected[2..], second.Select(e => e.GlobalPosition));
+    }
+
+    /// <summary>
+    /// The dedup guard. <see cref="DcbQuery"/> concatenates types without deduplicating, so
+    /// <c>ByTypes("x").WithTypes("x")</c> reaches the function as <c>{x,x}</c>. Under
+    /// <c>= ANY</c> that was harmless — a row either satisfied the predicate or did not, however
+    /// many times the value appeared — but one probe per array element would run the same probe
+    /// twice and return every position twice. Migration 031 deduplicates the probe source, and
+    /// this is what notices if that ever comes out: not an exception, but a page silently spending
+    /// half its limit on duplicates.
+    /// </summary>
+    [Fact]
+    public async Task StreamAsync_ByTheSameTypeTwice_ReturnsEachMatchOnce()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
+        var orderId = Guid.NewGuid();
+
+        var anchor = await eventStore.GetLastPositionAsync(ct);
+        await eventStore.AppendAsync(
+            [
+                CreateEvent(new ProbeAlpha(orderId)),
+                CreateEvent(new ProbeBeta(orderId)),
+                CreateEvent(new ProbeAlpha(orderId)),
+                CreateEvent(new ProbeAlpha(orderId)),
+            ],
+            cancellationToken: ct);
+
+        var once = await eventStore.StreamAsync(
+            DcbQuery.ByTypes("probe-alpha"), afterPosition: anchor, cancellationToken: ct);
+        var twice = await eventStore.StreamAsync(
+            DcbQuery.ByTypes("probe-alpha").WithTypes("probe-alpha"), afterPosition: anchor, cancellationToken: ct);
+
+        Assert.Equal(
+            once.Select(e => e.GlobalPosition),
+            twice.Select(e => e.GlobalPosition));
+
+        // And a limited page must not be half duplicates.
+        var limited = await eventStore.StreamAsync(
+            DcbQuery.ByTypes("probe-alpha").WithTypes("probe-alpha"),
+            afterPosition: anchor,
+            limit: 2,
+            cancellationToken: ct);
+        var positions = limited.Select(e => e.GlobalPosition).ToArray();
+        Assert.Equal(2, positions.Length);
+        Assert.Equal(positions.Distinct(), positions);
+    }
+
+    /// <summary>
+    /// A type no event carries. This is the case the shipped body was slowest on and the one the
+    /// rejected alternative — testing <c>event_type</c> on the events row — degraded worst on, so
+    /// it is worth an explicit assertion that it returns nothing rather than everything.
+    /// </summary>
+    [Fact]
+    public async Task StreamAsync_ByAbsentType_ReturnsNothing()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
+
+        await eventStore.AppendAsync(
+            [CreateEvent(new ProbeAlpha(Guid.NewGuid()))],
+            cancellationToken: ct);
+
+        var events = await eventStore.StreamAsync(
+            DcbQuery.ByTypes("probe-no-such-type"), cancellationToken: ct);
+
+        Assert.Empty(events);
     }
 
     #endregion
