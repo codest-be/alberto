@@ -25,12 +25,27 @@ var ordersApi = builder.AddProject<Projects.Alberto_Orders_Api>("orders-api")
     .WithReference(albertoDb)
     .WaitFor(ordersMigrations);
 
-// Admin Dashboard (React + Apollo, proxies /graphql to Orders API)
+// Admin Dashboard (React + urql) — served through the BFF in development.
+// The BFF learns the Vite URL via WithReference(adminDashboard) which injects
+// services__admin-dashboard__http__0 into the BFF process.
 var adminPath = Path.GetFullPath(Path.Combine(builder.AppHostDirectory, "../Alberto.Admin"));
-builder.AddNpmApp("admin-dashboard", adminPath, "dev")
+var adminDashboard = builder.AddNpmApp("admin-dashboard", adminPath, "dev")
     .WithHttpEndpoint(port: 5174, env: "PORT")
-    .WithExternalHttpEndpoints()
     .WaitFor(ordersApi);
+
+// Admin BFF — YARP reverse proxy + auth seam. This is the front door for the
+// admin UI: it proxies /api/graphql (with WebSocket upgrade for subscriptions),
+// /api/mcp (passthrough for MCP clients), and /* to the Vite dev server in
+// development (or serves wwwroot in production).
+var adminBff = builder.AddProject<Projects.Alberto_Admin_Bff>("admin-bff")
+    .WithReference(ordersApi)
+    .WithReference(adminDashboard)
+    .WaitFor(ordersApi)
+    .WithExternalHttpEndpoints();
+
+// Nest the Vite dev server under the BFF in the Aspire dashboard so operators
+// see the BFF as the single entry point, not the raw Vite port.
+adminDashboard.WithParentRelationship(adminBff);
 
 // K6 Load Tests (runs on-demand from dashboard)
 var loadTestsPath = Path.GetFullPath(Path.Combine(builder.AppHostDirectory, "../../tests/Alberto.Orders.LoadTests"));

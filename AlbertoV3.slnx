@@ -14,11 +14,13 @@
     <Project Path="src/Alberto.Dcb.Postgres.Messaging/Alberto.Dcb.Postgres.Messaging.csproj" />
     <Project Path="src/Alberto.Dcb.Testing/Alberto.Dcb.Testing.csproj" />
     <Project Path="src/Alberto.Dcb.Testing.Xunit/Alberto.Dcb.Testing.Xunit.csproj" />
+    <Project Path="src/Alberto.Dcb.Admin.Mcp/Alberto.Dcb.Admin.Mcp.csproj" />
     <Project Path="src/Alberto.Dcb.Admin/Alberto.Dcb.Admin.csproj" />
     <Project Path="src/Alberto.Dcb.Admin.GraphQL/Alberto.Dcb.Admin.GraphQL.csproj" />
   </Folder>
   <Folder Name="/apps/">
     <Project Path="apps/Alberto.AppHost/Alberto.AppHost.csproj" />
+    <Project Path="apps/Alberto.Admin.Bff/Alberto.Admin.Bff.csproj" />
     <Project Path="apps/Alberto.Orders/Alberto.Orders.Core/Alberto.Orders.Core.csproj" />
     <Project Path="apps/Alberto.Orders/Alberto.Orders.Infrastructure/Alberto.Orders.Infrastructure.csproj" />
     <Project Path="apps/Alberto.Orders/Alberto.Orders.Api/Alberto.Orders.Api.csproj" />
