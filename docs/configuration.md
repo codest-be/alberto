@@ -399,6 +399,9 @@ surfacing them in one error message.
 | `ALB0015` | Configuration declares a shard the module does not | Add `.AddShard("...", ...)` in code, or remove the `Tenancy:Shards:{id}` section — shard services are registered before configuration is read, so a configuration-only shard could never serve a request |
 | `ALB0016` | Two shards resolve to the same database and schema | Give each shard its own database, or at minimum its own schema — separate shards must be separate storage |
 | `ALB0017` | Module declares `.WithInMemory("sharedKey")` (sharing a backend registered by another module) together with `.WithTenancy()` | The shared in-memory backend is a singleton; it cannot carry per-tenant state for a module that declared tenancy. Either remove `.WithTenancy()` from the sharing module, or give it its own backend with `.WithInMemory()` (no shared key) |
+| `ALB0018` | An event type declares `[EventType(Version = N)]` with `N > 1` but no upcaster is registered for it | Add `.AddUpcaster(DeclareUpcaster.For<T>("...").From<TOld>(1, ...).Build())` to cover versions `1..N-1`. Without an upcaster, reading any event stored before version `N` will throw at runtime |
+| `ALB0019` | A declared upcaster references an event type that is not registered in the module's events assembly | Ensure the type annotated with `[EventType("...")]` is in the assembly passed to `.WithEventsFrom(...)`, or remove the upcaster if the event type is no longer in use |
+| `ALB0020` | An event type declares `[EventType(Version = N)]` but its upcaster chain produces a different version | If the chain stops short, add the missing step(s) so it reaches version `N` — `.From<TOld>(chainVersion, ...)` continues where the current chain stops. If it overshoots, either raise `[EventType("...", Version = chainVersion)]` to match the chain, or drop the step(s) past version `N` |
 
 ### Postgres codes (ALB1xxx)
 
