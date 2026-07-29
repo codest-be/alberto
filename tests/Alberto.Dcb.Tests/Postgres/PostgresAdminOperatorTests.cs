@@ -546,6 +546,14 @@ public sealed class PostgresAdminOperatorMultiTenantTests(PostgresAdminOperatorM
     public async Task ReleaseTenantLeasesAsync_NullConsumerId_ReleasesAllLeasesAndAppendsAuditEvent()
     {
         var ct = TestContext.Current.CancellationToken;
+
+        // Flush any leases left by other tests sharing this fixture. Releasing with a
+        // null consumerId is by definition not scoped, so this test counts every row in
+        // the table — including the one ReleaseTenantLeasesAsync_SpecificConsumerId
+        // deliberately leaves behind. Without the flush the expected count depends on
+        // which tests ran first.
+        await CreateOperator().ReleaseTenantLeasesAsync(null, "flush", ct);
+
         var consumerA = $"consumer-{Guid.NewGuid():N}";
         var consumerB = $"consumer-{Guid.NewGuid():N}";
         await InsertTenantLeaseAsync(consumerA, "tenant-1", ct);
