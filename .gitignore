@@ -19,3 +19,7 @@ BenchmarkDotNet.Artifacts/
 candidate.json
 delta.md
 *.sln.DotSettings.user
+
+# Node / React admin dashboard
+node_modules/
+dist/

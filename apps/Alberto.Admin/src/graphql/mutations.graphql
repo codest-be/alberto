@@ -1,0 +1,61 @@
+mutation SetCheckpoint($processorId: String!, $position: Long!, $operatorId: String) {
+  adminSetCheckpoint(processorId: $processorId, position: $position, operatorId: $operatorId) {
+    processorId
+    success
+  }
+}
+
+mutation ResetCheckpoint($processorId: String!, $operatorId: String) {
+  adminResetCheckpoint(processorId: $processorId, operatorId: $operatorId) {
+    processorId
+    success
+  }
+}
+
+mutation ClearAllDeadLetters($operatorId: String) {
+  adminClearAllDeadLetters(operatorId: $operatorId) {
+    deletedCount
+  }
+}
+
+mutation ClearDeadLettersForProcessor($processorId: String!, $operatorId: String) {
+  adminClearDeadLettersForProcessor(processorId: $processorId, operatorId: $operatorId) {
+    deletedCount
+  }
+}
+
+mutation RetryByRewind($processorId: String!, $operatorId: String) {
+  adminRetryByRewind(processorId: $processorId, operatorId: $operatorId) {
+    processorId
+    rewindPosition
+    deletedCount
+  }
+}
+
+mutation ReleaseTenantLeases($consumerId: String, $operatorId: String) {
+  adminReleaseTenantLeases(consumerId: $consumerId, operatorId: $operatorId) {
+    releasedCount
+  }
+}
+
+mutation StartRebuild($processorId: String!, $projectionType: String!, $targetPosition: Long!, $operatorId: String) {
+  adminStartRebuild(processorId: $processorId, projectionType: $projectionType, targetPosition: $targetPosition, operatorId: $operatorId) {
+    activeVersion
+    rebuildingVersion
+    targetPosition
+  }
+}
+
+mutation PromoteRebuild($processorId: String!, $force: Boolean, $operatorId: String) {
+  adminPromoteRebuild(processorId: $processorId, force: $force, operatorId: $operatorId) {
+    processorId
+    status
+  }
+}
+
+mutation AbortRebuild($processorId: String!, $operatorId: String) {
+  adminAbortRebuild(processorId: $processorId, operatorId: $operatorId) {
+    processorId
+    status
+  }
+}
