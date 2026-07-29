@@ -1,4 +1,5 @@
 <Solution>
+  <Folder Name="/apps/Alberto.Orders/" />
   <Folder Name="/apps/Alberto.Payments/">
     <Project Path="apps/Alberto.Payments/Alberto.Payments.Core/Alberto.Payments.Core.csproj" />
     <Project Path="apps/Alberto.Payments/Alberto.Payments.Infrastructure/Alberto.Payments.Infrastructure.csproj" />
@@ -28,6 +29,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/Alberto.Dcb.Tests/Alberto.Dcb.Tests.csproj" />
     <Project Path="tests/Alberto.Dcb.Tests.SampleEvents/Alberto.Dcb.Tests.SampleEvents.csproj" />
+    <Project Path="tests/Alberto.Examples.Tests/Alberto.Examples.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/Alberto.Cli/Alberto.Cli.csproj" />
