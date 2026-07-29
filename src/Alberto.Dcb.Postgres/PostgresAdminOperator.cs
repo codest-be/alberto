@@ -227,7 +227,8 @@ public sealed class PostgresAdminOperator : IAdminOperator
         await using (var cmd = conn.CreateCommand())
         {
             cmd.Transaction = tx;
-            cmd.Parameters.AddWithValue("consumerId", (object?)consumerId ?? DBNull.Value);
+            cmd.Parameters.Add(new NpgsqlParameter("consumerId", NpgsqlTypes.NpgsqlDbType.Text)
+                { Value = (object?)consumerId ?? DBNull.Value });
             cmd.CommandText = $"""
                 DELETE FROM {_schema.Table("alberto_tenant_leases")}
                 WHERE (@consumerId IS NULL OR consumer_id = @consumerId)
