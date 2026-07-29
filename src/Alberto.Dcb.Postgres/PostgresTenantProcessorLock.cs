@@ -162,11 +162,25 @@ public sealed class PostgresTenantProcessorLock : ITenantProcessorLock
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Reads the <c>alberto_tenants</c> catalog rather than scanning the event log. The
+    /// catalog is what migration 012 created this method in mind for: a statement-level
+    /// trigger on <c>alberto_events</c> upserts each tenant in the appended batch, and the
+    /// migration backfills from the existing log, so an established store is complete from
+    /// the moment it migrates. The trigger fires inside the appender's own transaction, so
+    /// a new tenant becomes discoverable at the instant its first event is durable — the
+    /// same moment a <c>SELECT DISTINCT</c> over the log would have found it.
+    ///
+    /// The two disagree in one case: the catalog has no delete path, so a tenant whose
+    /// events have been purged keeps its row. Distribution then hands out a lease for a
+    /// tenant with no work, which costs a lease row and an empty pass, rather than
+    /// re-scanning the whole event log on every startup to avoid it.
+    /// </remarks>
     public async Task<IReadOnlyList<string>> GetKnownTenantsAsync(CancellationToken ct = default)
     {
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand(
-            $"SELECT DISTINCT tenant_id FROM {_schema.Table("alberto_events")} ORDER BY tenant_id",
+            $"SELECT tenant_id FROM {_schema.Table("alberto_tenants")} ORDER BY tenant_id",
             connection);
 
         var tenants = new List<string>();
