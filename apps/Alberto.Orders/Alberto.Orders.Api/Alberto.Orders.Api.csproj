@@ -20,7 +20,6 @@
   <ItemGroup>
     <PackageReference Include="HotChocolate.AspNetCore" />
     <PackageReference Include="HotChocolate.Subscriptions.InMemory" />
-    <PackageReference Include="HotChocolate.Types.Analyzers" />
   </ItemGroup>
 
 </Project>

@@ -35,25 +35,25 @@ public static class PaymentSummaryProjection
             Amount = e.Amount,
             Currency = e.Currency,
             PaymentMethod = e.PaymentMethod,
-            Status = PaymentStatus.Initiated,
+            Status = PaymentSummaryStatus.Initiated,
             CreatedAt = ctx.Timestamp
         };
 
     private static PaymentSummary Apply(PaymentSummary state, PaymentAuthorized e)
         => state with
         {
-            Status = PaymentStatus.Authorized,
+            Status = PaymentSummaryStatus.Authorized,
             AuthorizationCode = e.AuthorizationCode,
             AuthorizedAt = e.AuthorizedAt
         };
 
     private static PaymentSummary Apply(PaymentSummary state, PaymentCaptured e)
-        => state with { Status = PaymentStatus.Captured, CapturedAt = e.CapturedAt };
+        => state with { Status = PaymentSummaryStatus.Captured, CapturedAt = e.CapturedAt };
 
     private static PaymentSummary Apply(PaymentSummary state, PaymentFailed e)
         => state with
         {
-            Status = PaymentStatus.Failed,
+            Status = PaymentSummaryStatus.Failed,
             ErrorCode = e.ErrorCode,
             ErrorMessage = e.ErrorMessage
         };
@@ -61,7 +61,7 @@ public static class PaymentSummaryProjection
     private static PaymentSummary Apply(PaymentSummary state, PaymentRefunded e)
         => state with
         {
-            Status = PaymentStatus.Refunded,
+            Status = PaymentSummaryStatus.Refunded,
             RefundedAmount = e.RefundedAmount,
             RefundedAt = e.RefundedAt
         };

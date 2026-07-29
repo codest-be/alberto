@@ -1,16 +1,15 @@
 using Alberto.Dcb;
+using Microsoft.Extensions.DependencyInjection;
 using Alberto.Dcb.Postgres;
 using Alberto.Dcb.Subscriptions;
 using Alberto.Dcb.Tenancy;
-using Alberto.Orders.Api.GraphQL.Types;
 using Alberto.Orders.Contracts;
 using Alberto.Orders.Features;
 using Alberto.Orders.Platform;
-using HotChocolate.Resolvers;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
-namespace Alberto.Orders.Api.GraphQL.Queries;
+namespace Alberto.Orders.Features;
 
 /// <summary>
 /// GraphQL queries for orders.
@@ -26,7 +25,6 @@ public static class OrderQueries
     [GraphQLDescription("Gets an order by ID, rebuilt from events for consistency.")]
     public static async Task<Order?> GetOrder(
         Guid orderId,
-        IResolverContext context,
         [Service] IServiceProvider sp,
         CancellationToken ct)
     {
@@ -45,7 +43,6 @@ public static class OrderQueries
     [Query]
     [GraphQLDescription("Gets aggregated order statistics from the async projection.")]
     public static async Task<OrdersOverview?> GetOrdersOverview(
-        IResolverContext context,
         [Service] IServiceProvider sp,
         CancellationToken ct)
     {
@@ -72,7 +69,7 @@ public static class OrderQueries
     [Query]
     [GraphQLDescription("Gets orders with optional filtering by status, customer, and date range.")]
     public static async Task<OrdersConnection> GetOrders(
-        IResolverContext context,
+        [Service] ITenantAccessor tenantAccessor,
         [Service] IDbContextFactory<OrdersDbContext> contextFactory,
         OrderStatus? status = null,
         Guid? customerId = null,
@@ -82,7 +79,7 @@ public static class OrderQueries
         int take = 20,
         CancellationToken ct = default)
     {
-        var tenantId = GetTenantId(context);
+        var tenantId = tenantAccessor.TenantId;
         await using var dbContext = await contextFactory.CreateDbContextAsync(ct);
 
         var query = dbContext.OrderSummaries
@@ -124,12 +121,12 @@ public static class OrderQueries
     [Query]
     [GraphQLDescription("Gets recent orders, ordered by creation date.")]
     public static async Task<IReadOnlyList<Order>> GetRecentOrders(
-        IResolverContext context,
+        [Service] ITenantAccessor tenantAccessor,
         [Service] IDbContextFactory<OrdersDbContext> contextFactory,
         int limit = 20,
         CancellationToken ct = default)
     {
-        var tenantId = GetTenantId(context);
+        var tenantId = tenantAccessor.TenantId;
         await using var dbContext = await contextFactory.CreateDbContextAsync(ct);
 
         var entities = await dbContext.OrderSummaries
@@ -142,10 +139,6 @@ public static class OrderQueries
     }
 
     #region Helper Methods
-
-    private static string GetTenantId(IResolverContext context) =>
-        context.GetGlobalState<string>(TenantHttpRequestInterceptor.TenantIdKey)
-        ?? throw new InvalidOperationException("Tenant ID not found in resolver context");
 
     private static async Task<OrderState> LoadOrderState(
         IEventStoreBackend backend,

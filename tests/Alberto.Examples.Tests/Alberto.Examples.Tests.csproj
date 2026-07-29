@@ -11,7 +11,8 @@
         <!-- The host, because the schema snapshot has to be taken from whatever the host serves.
              As slices move out of here the reference stays: it is what proves the move changed
              nothing a client can see. -->
-        <ProjectReference Include="../../apps/Alberto.Orders/Alberto.Orders.Api/Alberto.Orders.Api.csproj" />
+    <ProjectReference Include="..\..\apps\Alberto.Orders\Alberto.Orders\Alberto.Orders.csproj" />
+    <ProjectReference Include="..\..\apps\Alberto.Payments\Alberto.Payments\Alberto.Payments.csproj" />
     </ItemGroup>
 
     <ItemGroup>

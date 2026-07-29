@@ -10,7 +10,7 @@ public sealed record PaymentSummary
     public decimal Amount { get; init; }
     public string Currency { get; init; } = string.Empty;
     public string PaymentMethod { get; init; } = string.Empty;
-    public PaymentStatus Status { get; init; }
+    public PaymentSummaryStatus Status { get; init; }
     public string? AuthorizationCode { get; init; }
     public string? ErrorCode { get; init; }
     public string? ErrorMessage { get; init; }
@@ -21,7 +21,7 @@ public sealed record PaymentSummary
     public DateTimeOffset? RefundedAt { get; init; }
 }
 
-public enum PaymentStatus
+public enum PaymentSummaryStatus
 {
     Initiated,
     Authorized,

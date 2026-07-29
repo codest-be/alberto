@@ -1,11 +1,11 @@
 using Alberto.Dcb;
+using Microsoft.Extensions.DependencyInjection;
 using Alberto.Examples.Shared;
-using Alberto.Orders.Api.GraphQL.Types;
 using Alberto.Orders.Contracts;
 using Alberto.Orders.Features;
 using Alberto.Orders.Platform;
 
-namespace Alberto.Orders.Api.GraphQL.Mutations;
+namespace Alberto.Orders.Features;
 
 /// <summary>
 /// GraphQL mutations for order operations.

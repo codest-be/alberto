@@ -46,7 +46,8 @@ builder.Services
         o.Scopes = ActivityScopes.ExecuteHttpRequest;
         o.RenameRootActivity = true;
     })
-    .AddTypes()
+    .AddOrdersTypes()
+    .AddPaymentsTypes()
     .AddAlbertoAdminGraphQL()
     .AddInMemorySubscriptions();
 

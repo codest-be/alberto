@@ -36,7 +36,8 @@ public sealed class SchemaSnapshotTests
     {
         var schema = await new ServiceCollection()
             .AddGraphQLServer()
-            .AddTypes()
+            .AddOrdersTypes()
+            .AddPaymentsTypes()
             .BuildSchemaAsync();
 
         return schema.ToString();

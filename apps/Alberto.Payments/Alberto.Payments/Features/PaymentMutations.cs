@@ -1,11 +1,11 @@
 using Alberto.Dcb;
+using Microsoft.Extensions.DependencyInjection;
 using Alberto.Examples.Shared;
-using Alberto.Orders.Api.GraphQL.Types;
 using Alberto.Payments.Contracts;
 using Alberto.Payments.Features;
 using Alberto.Payments.Platform;
 
-namespace Alberto.Orders.Api.GraphQL.Mutations;
+namespace Alberto.Payments.Features;
 
 /// <summary>
 /// GraphQL mutations for payment operations.

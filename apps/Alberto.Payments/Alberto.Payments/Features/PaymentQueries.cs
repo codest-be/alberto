@@ -1,16 +1,15 @@
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using Alberto.Dcb;
 using Alberto.Dcb.Postgres;
 using Alberto.Dcb.Subscriptions;
 using Alberto.Dcb.Tenancy;
-using Alberto.Orders.Api.GraphQL.Types;
 using Alberto.Payments.Contracts;
 using Alberto.Payments.Features;
 using Alberto.Payments.Platform;
-using HotChocolate.Resolvers;
 using Npgsql;
 
-namespace Alberto.Orders.Api.GraphQL.Queries;
+namespace Alberto.Payments.Features;
 
 /// <summary>
 /// GraphQL queries for payments.
@@ -24,7 +23,6 @@ public static class PaymentQueries
     [GraphQLDescription("Gets a payment by ID, rebuilt from events for consistency.")]
     public static async Task<Payment?> GetPayment(
         Guid paymentId,
-        IResolverContext context,
         [Service] IServiceProvider sp,
         CancellationToken ct)
     {
@@ -43,7 +41,6 @@ public static class PaymentQueries
     [Query]
     [GraphQLDescription("Gets aggregated payment statistics from the async projection.")]
     public static async Task<PaymentsOverview?> GetPaymentsOverview(
-        IResolverContext context,
         [Service] IServiceProvider sp,
         CancellationToken ct)
     {
@@ -66,7 +63,7 @@ public static class PaymentQueries
     [Query]
     [GraphQLDescription("Gets the calling tenant's recent payments, ordered by last update.")]
     public static async Task<IReadOnlyList<Payment>> GetRecentPayments(
-        IResolverContext context,
+        [Service] ITenantAccessor tenantAccessor,
         [Service] IServiceProvider sp,
         int limit = 20,
         CancellationToken ct = default)
@@ -77,7 +74,7 @@ public static class PaymentQueries
         // is where the filtering happens: a tenant-enabled module's projection rows are keyed by
         // tenant, so there is no unscoped read to accidentally fall back to.
         var stateStore = ReaderFor<PaymentSummary>(
-            sp, nameof(PaymentSummaryProjection), GetTenantId(context));
+            sp, nameof(PaymentSummaryProjection), tenantAccessor.TenantId);
 
         var summaries = await stateStore.ListRecentAsync(limit, ct);
         return summaries.Select(Payment.FromSummary).ToList();
@@ -108,10 +105,6 @@ public static class PaymentQueries
 
         return factory(tenantId);
     }
-
-    private static string GetTenantId(IResolverContext context) =>
-        context.GetGlobalState<string>(TenantHttpRequestInterceptor.TenantIdKey)
-        ?? throw new InvalidOperationException("Tenant ID not found in resolver context");
 
     private static async Task<PaymentState> LoadPaymentState(
         IEventStoreBackend backend,
