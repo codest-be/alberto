@@ -24,28 +24,6 @@ public static class OrderMutations
     private const int ConflictRetries = 3;
 
     /// <summary>
-    /// Removes an item from an order.
-    /// </summary>
-    [Mutation]
-    [GraphQLDescription("Removes a line item from a draft order.")]
-    public static async Task<MutationResult> RemoveOrderItem(
-        Guid orderId,
-        Guid productId,
-        [Service] IServiceProvider sp,
-        CancellationToken ct)
-    {
-        var result = await Store(sp)
-            .Handle(productId)
-            .Load(OrderDecider.BoundaryFor(orderId), _evolver)
-            .Decide((product, state) => OrderDecider.RemoveItem(state, product))
-            .RetryOnConflict(ConflictRetries)
-            .Commit(ct);
-
-        result.EnsureCommitted();
-        return new MutationResult();
-    }
-
-    /// <summary>
     /// Confirms an order for processing.
     /// </summary>
     [Mutation]
