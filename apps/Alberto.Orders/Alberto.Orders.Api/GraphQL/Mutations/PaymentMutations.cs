@@ -1,10 +1,9 @@
 using Alberto.Dcb;
 using Alberto.Examples.Shared;
 using Alberto.Orders.Api.GraphQL.Types;
-using Alberto.Payments.Core.Payment;
-using Alberto.Payments.Infrastructure;
-using PaymentActions = Alberto.Payments.Core.Payment.Actions.PaymentDecider;
-using PaymentBoundary = Alberto.Payments.Core.Payment.PaymentDecider;
+using Alberto.Payments.Contracts;
+using Alberto.Payments.Features;
+using Alberto.Payments.Platform;
 
 namespace Alberto.Orders.Api.GraphQL.Mutations;
 
@@ -33,8 +32,8 @@ public static class PaymentMutations
 
         var result = await Store(sp)
             .Handle(input)
-            .Load(PaymentBoundary.BoundaryFor(paymentId), _evolver)
-            .Decide((cmd, state) => PaymentActions.Initiate(
+            .Load(PaymentDecider.BoundaryFor(paymentId), _evolver)
+            .Decide((cmd, state) => PaymentDecider.Initiate(
                 state, paymentId, cmd.OrderId, cmd.Amount, cmd.Currency, cmd.PaymentMethod))
             .Commit(ct);
 
@@ -56,8 +55,8 @@ public static class PaymentMutations
     {
         var result = await Store(sp)
             .Handle(authorizationCode)
-            .Load(PaymentBoundary.BoundaryFor(paymentId), _evolver)
-            .Decide((code, state) => PaymentActions.Authorize(state, code, timeProvider.GetUtcNow()))
+            .Load(PaymentDecider.BoundaryFor(paymentId), _evolver)
+            .Decide((code, state) => PaymentDecider.Authorize(state, code, timeProvider.GetUtcNow()))
             .RetryOnConflict(ConflictRetries)
             .Commit(ct);
 
@@ -78,8 +77,8 @@ public static class PaymentMutations
     {
         var result = await Store(sp)
             .Handle(input)
-            .Load(cmd => PaymentBoundary.BoundaryFor(cmd.PaymentId), _evolver)
-            .Decide((cmd, state) => PaymentActions.Capture(state, cmd.Amount, timeProvider.GetUtcNow()))
+            .Load(cmd => PaymentDecider.BoundaryFor(cmd.PaymentId), _evolver)
+            .Decide((cmd, state) => PaymentDecider.Capture(state, cmd.Amount, timeProvider.GetUtcNow()))
             .RetryOnConflict(ConflictRetries)
             .Commit(ct);
 
@@ -99,8 +98,8 @@ public static class PaymentMutations
     {
         var result = await Store(sp)
             .Handle(input)
-            .Load(cmd => PaymentBoundary.BoundaryFor(cmd.PaymentId), _evolver)
-            .Decide((cmd, state) => PaymentActions.Fail(state, cmd.ErrorCode, cmd.ErrorMessage))
+            .Load(cmd => PaymentDecider.BoundaryFor(cmd.PaymentId), _evolver)
+            .Decide((cmd, state) => PaymentDecider.Fail(state, cmd.ErrorCode, cmd.ErrorMessage))
             .RetryOnConflict(ConflictRetries)
             .Commit(ct);
 
@@ -121,9 +120,9 @@ public static class PaymentMutations
     {
         var result = await Store(sp)
             .Handle(input)
-            .Load(cmd => PaymentBoundary.BoundaryFor(cmd.PaymentId), _evolver)
+            .Load(cmd => PaymentDecider.BoundaryFor(cmd.PaymentId), _evolver)
             .Decide((cmd, state) =>
-                PaymentActions.Refund(state, cmd.Amount, cmd.Reason, timeProvider.GetUtcNow()))
+                PaymentDecider.Refund(state, cmd.Amount, cmd.Reason, timeProvider.GetUtcNow()))
             .RetryOnConflict(ConflictRetries)
             .Commit(ct);
 

@@ -1,0 +1,49 @@
+using Alberto.Orders.Contracts;
+using Alberto.Dcb;
+
+namespace Alberto.Orders.Features;
+
+public interface IAddItemState
+{
+    bool Exists { get; }
+    bool CanBeModified { get; }
+    OrderStatus Status { get; }
+    Guid OrderId { get; }
+    IReadOnlyList<OrderLineItem> LineItems { get; }
+}
+
+public sealed partial class OrderDecider
+{
+    /// <summary>
+    /// Adds an item to the order.
+    /// </summary>
+    public static Decision AddItem(
+        IAddItemState state,
+        Guid productId,
+        string productName,
+        int quantity,
+        decimal unitPrice)
+    {
+        if (!state.Exists)
+            return Decision.Fail(OrderProblems.NotFound());
+
+        if (!state.CanBeModified)
+            return Decision.Fail(OrderProblems.InvalidStatus("modified", state.Status));
+
+        if (quantity <= 0)
+            return Decision.Fail(OrderProblems.InvalidQuantity());
+
+        if (unitPrice < 0)
+            return Decision.Fail(OrderProblems.InvalidUnitPrice());
+
+        return Decision.Succeed(new OrderItemAdded(state.OrderId, productId, productName, quantity, unitPrice));
+    }
+
+    public OrderState Apply(OrderState state, OrderItemAdded e) => state with
+    {
+        LineItems = state.LineItems
+            .Where(x => x.ProductId != e.ProductId)
+            .Append(new OrderLineItem(e.ProductId, e.ProductName, e.Quantity, e.UnitPrice))
+            .ToList()
+    };
+}

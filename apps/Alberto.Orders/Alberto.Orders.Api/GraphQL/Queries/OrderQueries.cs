@@ -3,12 +3,9 @@ using Alberto.Dcb.Postgres;
 using Alberto.Dcb.Subscriptions;
 using Alberto.Dcb.Tenancy;
 using Alberto.Orders.Api.GraphQL.Types;
-using Alberto.Orders.Core.Order;
-using Alberto.Orders.Infrastructure;
-using Alberto.Orders.Infrastructure.Data;
-using OrderBoundary = Alberto.Orders.Core.Order.OrderDecider;
-using Alberto.Orders.Infrastructure.Projections;
-using Alberto.Orders.Infrastructure.ReadModels;
+using Alberto.Orders.Contracts;
+using Alberto.Orders.Features;
+using Alberto.Orders.Platform;
 using HotChocolate.Resolvers;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -155,7 +152,7 @@ public static class OrderQueries
         Guid orderId,
         CancellationToken ct)
     {
-        var events = await backend.StreamAsync(OrderBoundary.BoundaryFor(orderId), cancellationToken: ct);
+        var events = await backend.StreamAsync(OrderDecider.BoundaryFor(orderId), cancellationToken: ct);
         return _evolver.Reconstitute(events);
     }
 

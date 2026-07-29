@@ -1,5 +1,5 @@
-using Alberto.Orders.Core.Order;
-using Alberto.Orders.Infrastructure.Entities;
+using Alberto.Orders.Contracts;
+using Alberto.Orders.Platform;
 
 namespace Alberto.Orders.Api.GraphQL.Types;
 

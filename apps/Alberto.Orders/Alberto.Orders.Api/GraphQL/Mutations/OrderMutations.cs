@@ -1,11 +1,9 @@
 using Alberto.Dcb;
 using Alberto.Examples.Shared;
 using Alberto.Orders.Api.GraphQL.Types;
-using Alberto.Orders.Core;
-using Alberto.Orders.Core.Order;
-using Alberto.Orders.Infrastructure;
-using OrderActions = Alberto.Orders.Core.Order.Actions.OrderDecider;
-using OrderBoundary = Alberto.Orders.Core.Order.OrderDecider;
+using Alberto.Orders.Contracts;
+using Alberto.Orders.Features;
+using Alberto.Orders.Platform;
 
 namespace Alberto.Orders.Api.GraphQL.Mutations;
 
@@ -44,8 +42,8 @@ public static class OrderMutations
         // it fails if anything claimed this order between the read and the write.
         var result = await Store(sp)
             .Handle(input)
-            .Load(OrderBoundary.BoundaryFor(orderId), _evolver)
-            .Decide((cmd, state) => OrderActions.Create(state, orderId, cmd.CustomerId, lineItems, cmd.Notes))
+            .Load(OrderDecider.BoundaryFor(orderId), _evolver)
+            .Decide((cmd, state) => OrderDecider.Create(state, orderId, cmd.CustomerId, lineItems, cmd.Notes))
             .Commit(ct);
 
         result.EnsureCommitted();
@@ -64,9 +62,9 @@ public static class OrderMutations
     {
         var result = await Store(sp)
             .Handle(input)
-            .Load(cmd => OrderBoundary.BoundaryFor(cmd.OrderId), _evolver)
+            .Load(cmd => OrderDecider.BoundaryFor(cmd.OrderId), _evolver)
             .Decide((cmd, state) =>
-                OrderActions.AddItem(state, cmd.ProductId, cmd.ProductName, cmd.Quantity, cmd.UnitPrice))
+                OrderDecider.AddItem(state, cmd.ProductId, cmd.ProductName, cmd.Quantity, cmd.UnitPrice))
             .RetryOnConflict(ConflictRetries)
             .Commit(ct);
 
@@ -87,8 +85,8 @@ public static class OrderMutations
     {
         var result = await Store(sp)
             .Handle(productId)
-            .Load(OrderBoundary.BoundaryFor(orderId), _evolver)
-            .Decide((product, state) => OrderActions.RemoveItem(state, product))
+            .Load(OrderDecider.BoundaryFor(orderId), _evolver)
+            .Decide((product, state) => OrderDecider.RemoveItem(state, product))
             .RetryOnConflict(ConflictRetries)
             .Commit(ct);
 
@@ -109,8 +107,8 @@ public static class OrderMutations
     {
         var result = await Store(sp)
             .Handle(orderId)
-            .Load(OrderBoundary.BoundaryFor(orderId), _evolver)
-            .Decide(state => OrderActions.Confirm(state, timeProvider.GetUtcNow()))
+            .Load(OrderDecider.BoundaryFor(orderId), _evolver)
+            .Decide(state => OrderDecider.Confirm(state, timeProvider.GetUtcNow()))
             .RetryOnConflict(ConflictRetries)
             .Commit(ct);
 
@@ -131,9 +129,9 @@ public static class OrderMutations
     {
         var result = await Store(sp)
             .Handle(input)
-            .Load(cmd => OrderBoundary.BoundaryFor(cmd.OrderId), _evolver)
+            .Load(cmd => OrderDecider.BoundaryFor(cmd.OrderId), _evolver)
             .Decide((cmd, state) =>
-                OrderActions.Ship(state, cmd.TrackingNumber, cmd.Carrier, timeProvider.GetUtcNow()))
+                OrderDecider.Ship(state, cmd.TrackingNumber, cmd.Carrier, timeProvider.GetUtcNow()))
             .RetryOnConflict(ConflictRetries)
             .Commit(ct);
 
@@ -154,8 +152,8 @@ public static class OrderMutations
     {
         var result = await Store(sp)
             .Handle(orderId)
-            .Load(OrderBoundary.BoundaryFor(orderId), _evolver)
-            .Decide(state => OrderActions.Deliver(state, timeProvider.GetUtcNow()))
+            .Load(OrderDecider.BoundaryFor(orderId), _evolver)
+            .Decide(state => OrderDecider.Deliver(state, timeProvider.GetUtcNow()))
             .RetryOnConflict(ConflictRetries)
             .Commit(ct);
 
@@ -176,8 +174,8 @@ public static class OrderMutations
     {
         var result = await Store(sp)
             .Handle(input)
-            .Load(cmd => OrderBoundary.BoundaryFor(cmd.OrderId), _evolver)
-            .Decide((cmd, state) => OrderActions.Cancel(state, cmd.Reason, timeProvider.GetUtcNow()))
+            .Load(cmd => OrderDecider.BoundaryFor(cmd.OrderId), _evolver)
+            .Decide((cmd, state) => OrderDecider.Cancel(state, cmd.Reason, timeProvider.GetUtcNow()))
             .RetryOnConflict(ConflictRetries)
             .Commit(ct);
 

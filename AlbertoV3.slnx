@@ -1,8 +1,7 @@
 <Solution>
   <Folder Name="/apps/Alberto.Orders/" />
   <Folder Name="/apps/Alberto.Payments/">
-    <Project Path="apps/Alberto.Payments/Alberto.Payments.Core/Alberto.Payments.Core.csproj" />
-    <Project Path="apps/Alberto.Payments/Alberto.Payments.Infrastructure/Alberto.Payments.Infrastructure.csproj" />
+    <Project Path="apps/Alberto.Payments/Alberto.Payments/Alberto.Payments.csproj" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/Alberto.Dcb/Alberto.Dcb.csproj" />
@@ -20,8 +19,7 @@
   </Folder>
   <Folder Name="/apps/">
     <Project Path="apps/Alberto.AppHost/Alberto.AppHost.csproj" />
-    <Project Path="apps/Alberto.Orders/Alberto.Orders.Core/Alberto.Orders.Core.csproj" />
-    <Project Path="apps/Alberto.Orders/Alberto.Orders.Infrastructure/Alberto.Orders.Infrastructure.csproj" />
+    <Project Path="apps/Alberto.Orders/Alberto.Orders/Alberto.Orders.csproj" />
     <Project Path="apps/Alberto.Examples.Shared/Alberto.Examples.Shared.csproj" />
     <Project Path="apps/Alberto.Orders/Alberto.Orders.Api/Alberto.Orders.Api.csproj" />
     <Project Path="apps/Alberto.Orders/Alberto.Orders.Migrations/Alberto.Orders.Migrations.csproj" />

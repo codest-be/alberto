@@ -1,6 +1,6 @@
 using Alberto.Dcb.Postgres;
-using Alberto.Orders.Infrastructure.Data;
 using Alberto.Orders.Migrations;
+using Alberto.Orders.Platform;
 using Microsoft.EntityFrameworkCore;
 using ServiceDefaults;
 

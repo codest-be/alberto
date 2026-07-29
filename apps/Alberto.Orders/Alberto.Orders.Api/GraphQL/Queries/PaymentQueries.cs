@@ -4,15 +4,11 @@ using Alberto.Dcb.Postgres;
 using Alberto.Dcb.Subscriptions;
 using Alberto.Dcb.Tenancy;
 using Alberto.Orders.Api.GraphQL.Types;
-using Alberto.Payments.Core.Events;
-using Alberto.Payments.Core.Payment;
-using Alberto.Payments.Infrastructure;
-using Alberto.Payments.Infrastructure.Projections;
-using Alberto.Payments.Infrastructure.ReadModels;
+using Alberto.Payments.Contracts;
+using Alberto.Payments.Features;
+using Alberto.Payments.Platform;
 using HotChocolate.Resolvers;
 using Npgsql;
-using PaymentActions = Alberto.Payments.Core.Payment.Actions.PaymentDecider;
-using PaymentBoundary = Alberto.Payments.Core.Payment.PaymentDecider;
 
 namespace Alberto.Orders.Api.GraphQL.Queries;
 
@@ -122,10 +118,10 @@ public static class PaymentQueries
         Guid paymentId,
         CancellationToken ct)
     {
-        var decider = new PaymentActions();
+        var decider = new PaymentDecider();
         var state = new PaymentState();
 
-        var events = await backend.StreamAsync(PaymentBoundary.BoundaryFor(paymentId), cancellationToken: ct);
+        var events = await backend.StreamAsync(PaymentDecider.BoundaryFor(paymentId), cancellationToken: ct);
 
         foreach (var envelope in events)
         {

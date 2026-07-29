@@ -1,5 +1,5 @@
-using Alberto.Payments.Infrastructure.ReadModels;
-using CorePaymentStatus = Alberto.Payments.Core.Payment.PaymentStatus;
+using Alberto.Payments.Platform;
+using CorePaymentStatus = Alberto.Payments.Contracts.PaymentStatus;
 
 namespace Alberto.Orders.Api.GraphQL.Types;
 
