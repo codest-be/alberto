@@ -18,6 +18,7 @@
     <PackageReference Include="Npgsql" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="../../src/Alberto.Dcb.Admin/Alberto.Dcb.Admin.csproj" />
     <ProjectReference Include="../../src/Alberto.Dcb.Postgres/Alberto.Dcb.Postgres.csproj" />
   </ItemGroup>
   <ItemGroup>

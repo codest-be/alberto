@@ -1,3 +1,4 @@
+using Alberto.Dcb.Admin;
 using Alberto.Dcb.Postgres;
 using Alberto.Dcb.Tests.Infrastructure;
 using Npgsql;
