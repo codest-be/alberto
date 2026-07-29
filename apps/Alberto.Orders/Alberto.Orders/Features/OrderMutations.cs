@@ -24,28 +24,6 @@ public static class OrderMutations
     private const int ConflictRetries = 3;
 
     /// <summary>
-    /// Confirms an order for processing.
-    /// </summary>
-    [Mutation]
-    [GraphQLDescription("Confirms a draft order, making it ready for shipment.")]
-    public static async Task<MutationResult> ConfirmOrder(
-        Guid orderId,
-        [Service] IServiceProvider sp,
-        [Service] TimeProvider timeProvider,
-        CancellationToken ct)
-    {
-        var result = await Store(sp)
-            .Handle(orderId)
-            .Load(OrderDecider.BoundaryFor(orderId), _evolver)
-            .Decide(state => OrderDecider.Confirm(state, timeProvider.GetUtcNow()))
-            .RetryOnConflict(ConflictRetries)
-            .Commit(ct);
-
-        result.EnsureCommitted();
-        return new MutationResult();
-    }
-
-    /// <summary>
     /// Ships an order.
     /// </summary>
     [Mutation]
