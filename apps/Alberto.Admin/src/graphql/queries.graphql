@@ -1,0 +1,97 @@
+query GetSystemInfo {
+  adminSystemInfo {
+    globalPosition
+    processorCount
+    deadLetterCount
+    lastEventAt
+  }
+}
+
+query GetCheckpoints {
+  adminCheckpoints {
+    processorId
+    lastPosition
+    updatedAt
+  }
+}
+
+query GetCheckpoint($processorId: String!) {
+  adminCheckpoint(processorId: $processorId) {
+    processorId
+    lastPosition
+    updatedAt
+  }
+}
+
+query GetDeadLetters($processorId: String, $limit: Int) {
+  adminDeadLetters(processorId: $processorId, limit: $limit) {
+    id
+    processorId
+    eventType
+    globalPosition
+    errorMessage
+    failedAt
+    tenantId
+  }
+}
+
+query GetDeadLetterCount($processorId: String) {
+  adminDeadLetterCount(processorId: $processorId)
+}
+
+query GetEvents($limit: Int, $fromPosition: Long) {
+  adminEvents(limit: $limit, fromPosition: $fromPosition) {
+    globalPosition
+    eventType
+    tags
+    createdAt
+    tenantId
+  }
+}
+
+query GetProcessors {
+  adminProcessors {
+    processorId
+    lastPosition
+    updatedAt
+  }
+}
+
+query GetProjectionTypes {
+  adminProjectionTypes
+}
+
+query GetProjectionStates($projectionType: String!, $tenantId: String, $limit: Int) {
+  adminProjectionStates(projectionType: $projectionType, tenantId: $tenantId, limit: $limit) {
+    documentId
+    tenantId
+    updatedAt
+  }
+}
+
+query GetTenantLeases {
+  adminTenantLeases {
+    tenancy {
+      mode
+      isMultiTenant
+    }
+    leases {
+      tenantId
+      consumerId
+      replicaId
+      expiresAt
+    }
+  }
+}
+
+query GetProcessorLeases {
+  adminProcessorLeases {
+    consumerId
+    replicaId
+    expiresAt
+  }
+}
+
+query GetGlobalPosition {
+  adminGlobalPosition
+}

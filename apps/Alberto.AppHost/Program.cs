@@ -25,6 +25,13 @@ var ordersApi = builder.AddProject<Projects.Alberto_Orders_Api>("orders-api")
     .WithReference(albertoDb)
     .WaitFor(ordersMigrations);
 
+// Admin Dashboard (React + Apollo, proxies /graphql to Orders API)
+var adminPath = Path.GetFullPath(Path.Combine(builder.AppHostDirectory, "../Alberto.Admin"));
+builder.AddNpmApp("admin-dashboard", adminPath, "dev")
+    .WithHttpEndpoint(port: 5174, env: "PORT")
+    .WithExternalHttpEndpoints()
+    .WaitFor(ordersApi);
+
 // K6 Load Tests (runs on-demand from dashboard)
 var loadTestsPath = Path.GetFullPath(Path.Combine(builder.AppHostDirectory, "../../tests/Alberto.Orders.LoadTests"));
 

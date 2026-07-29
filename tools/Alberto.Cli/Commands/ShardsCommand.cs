@@ -1,4 +1,5 @@
 using System.CommandLine;
+using Alberto.Dcb.Admin;
 using Alberto.Dcb.Postgres;
 using Alberto.Dcb.Tenancy;
 using Npgsql;

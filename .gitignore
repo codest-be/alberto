@@ -18,3 +18,8 @@ BenchmarkDotNet.Artifacts/
 # benchmarks/results/ and are committed deliberately; these two are per-run.
 candidate.json
 delta.md
+*.sln.DotSettings.user
+
+# Node / React admin dashboard
+node_modules/
+dist/
