@@ -19,10 +19,10 @@ services.AddTenancy();                       // once, on the application's IServ
 
 services.AddAlberto("orders", builder => builder
     .WithTenancy()
-    .WithPostgres(options =>
+    .WithPostgres(o => o with
     {
-        options.ConnectionString = connectionString;
-        options.Schema = "orders";
+        ConnectionString = connectionString,
+        Schema = "orders",
     })
     …);
 ```

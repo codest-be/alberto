@@ -187,11 +187,16 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
                         processorId);
                 }
 
-                _runningLoops.TryRemove(processorId, out _);
-
-                // Drop the token before the loop can flush again: the lease is gone, and a
-                // write presenting its generation must be refused rather than merely stale.
+                // Remove the fence token BEFORE removing the loop entry. OnScanTimer's only guard
+                // is _runningLoops.ContainsKey; if the loop entry were removed first, a concurrent
+                // scan could pass that guard, re-acquire the lease, and store a new token T2 — then
+                // this continuation would remove T2, leaving the newly-started loop with fence
+                // token 0 and causing every fenced checkpoint write to be rejected. Keeping the
+                // loop entry present for the full duration of the window blocks the scan from
+                // attempting re-acquisition until the cleanup is complete. Removing an absent key
+                // from a ConcurrentDictionary is a harmless no-op, so the inverted order is safe.
                 _fenceTokens.TryRemove(processorId, out _);
+                _runningLoops.TryRemove(processorId, out _);
             }
         }
         catch (OperationCanceledException) { /* shutting down */ }

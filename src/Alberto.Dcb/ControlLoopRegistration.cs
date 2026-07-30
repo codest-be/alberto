@@ -99,7 +99,8 @@ internal static class ControlLoopRegistration
                 options.Retry,
                 Classifier(sp, moduleKey),
                 sp.GetKeyedService<IDeadLetterStore>(moduleKey),
-                sp.GetService<TimeProvider>());
+                sp.GetService<TimeProvider>(),
+                sp.GetService<ILoggerFactory>()?.CreateLogger($"Alberto.Dcb.DeadLetter.{moduleKey}"));
 
             var loops = processors
                 .Select(p => assembler.Create(p, head, backend, checkpoints,
@@ -113,8 +114,27 @@ internal static class ControlLoopRegistration
             if (!options.Leases.Enabled)
                 return new ControlLoopGroup(loops);
 
-            var replicaId = options.Leases.ReplicaId ?? Environment.MachineName;
-            var leaseManager = sp.GetRequiredKeyedService<IProcessorLeaseManager>(moduleKey);
+            // An empty or whitespace value is as dangerous as null: every replica misconfigured
+            // this way stamps the same blank string into claimed_by, making all of them look
+            // identical and defeating fencing just as completely as if the option were omitted.
+            var replicaId = string.IsNullOrWhiteSpace(options.Leases.ReplicaId)
+                ? Environment.MachineName
+                : options.Leases.ReplicaId;
+
+            // Backstop for a backend that permits leases but registers no manager. The built-in
+            // backends are already covered earlier: the in-memory descriptor rejects leases at
+            // validation time with ALB0024, and Postgres registers a manager. What reaches here
+            // is a custom IAlbertoBackendDescriptor whose Validate does not object — resolve with
+            // GetKeyedService so that becomes a diagnostic rather than a raw DI exception.
+            var leaseManager = sp.GetKeyedService<IProcessorLeaseManager>(moduleKey)
+                ?? throw new InvalidOperationException(
+                    $"ALB0022: Alberto module '{moduleKey}' has Leases.Enabled = true but no " +
+                    "IProcessorLeaseManager is registered under that module key, so leases " +
+                    "cannot be acquired, renewed or fenced." + Environment.NewLine +
+                    "  → Register an IProcessorLeaseManager for this module, switch to " +
+                    ".WithPostgres(...), which provides one, or disable leases via " +
+                    ".WithControlLoop(o => o with { Leases = o.Leases with { Enabled = false } }) " +
+                    $"or by setting 'Alberto:Modules:{moduleKey}:ControlLoop:Leases:Enabled' to false.");
 
             // Enable fenced checkpoint writes and wire the group-stop handler through
             // IFencableCheckpointStore.SubscribeFenceViolation so that it coexists with
@@ -169,7 +189,11 @@ internal static class ControlLoopRegistration
                 ConsumeMiddlewares.RetryAndDeadLetter(options.Retry, classifier, deadLetterStore),
             };
 
-            var replicaId = options.Leases.ReplicaId ?? Environment.MachineName;
+            // Same empty-string guard as the control loop above: a blank ReplicaId stamps the
+            // same value into every replica's dead-letter claim and defeats claim isolation.
+            var replicaId = string.IsNullOrWhiteSpace(options.Leases.ReplicaId)
+                ? Environment.MachineName
+                : options.Leases.ReplicaId;
 
             var retryLoops = processors
                 .Select(p => new DeadLetterRetryLoop(

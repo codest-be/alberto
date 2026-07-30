@@ -605,7 +605,8 @@ public static class DcbModuleBuilderExtensions
                     opts.Retry,
                     Classifier(sp, moduleKey),
                     sp.GetKeyedService<IDeadLetterStore>(moduleKey),
-                    sp.GetService<TimeProvider>());
+                    sp.GetService<TimeProvider>(),
+                    sp.GetService<ILoggerFactory>()?.CreateLogger($"Alberto.Dcb.DeadLetter.{moduleKey}"));
 
                 return new ShadowControlLoopFactory(processor =>
                 {

@@ -102,7 +102,7 @@ var overview = new InMemoryStateStore<OrdersOverview>();
 `IStateStore<TState>` is deliberately small — two methods, both keyed by document id:
 
 ```csharp
-Task<Dictionary<string, TState>> LoadManyAsync(IEnumerable<string> documentIds,
+Task<IReadOnlyDictionary<string, TState>> LoadManyAsync(IEnumerable<string> documentIds,
                                                CancellationToken ct = default);
 Task ApplyChangesAsync(IReadOnlyDictionary<string, TState> upserts,
                        IReadOnlyCollection<string> deletes,
@@ -238,7 +238,7 @@ where it is empty or half-built.
 ### Enabling it
 
 ```csharp
-.WithControlLoop(loop => loop.WithRebuilds())
+.WithRebuilds()
 ```
 
 Plus the two requirements you have already met if you followed the sections above:

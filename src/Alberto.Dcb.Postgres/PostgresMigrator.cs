@@ -28,56 +28,118 @@ public static class PostgresMigrator
 
         EnsureDatabase.For.PostgresqlDatabase(connectionString);
 
-        // Create schema if specified and doesn't exist
-        if (!string.IsNullOrWhiteSpace(schema))
+        // Serialize concurrent migrators. Two pods starting against a fresh store both pass
+        // GuardTenancyMode (no imprint, no alberto_events yet) and both reach DbUp with an
+        // empty journal. DbUp's scripts use IF NOT EXISTS so the DDL is idempotent, but the
+        // schemaversions inserts are not: one winner commits and the loser's transaction rolls
+        // back, crashing the pod. A session-level advisory lock ensures only one migrator runs
+        // at a time; the loser waits and then finds everything already applied.
+        //
+        // Key-space isolation: the append path uses the two-argument form
+        // pg_advisory_xact_lock(1, hashtext(stream_key)), which lives in a distinct namespace
+        // from this single-argument lock. The same convention already followed for
+        // processor-leadership locks (see PostgresBackendHelpers.AcquireAppendLockAsync) means
+        // migration and append locks can never share a slot and cannot deadlock each other.
+        using var lockConn = new NpgsqlConnection(connectionString);
+        lockConn.Open();
+        AcquireMigrationLock(lockConn);
+
+        try
         {
-            EnsureSchemaExists(connectionString, schema);
+            // Create schema if specified and doesn't exist
+            if (!string.IsNullOrWhiteSpace(schema))
+            {
+                EnsureSchemaExists(connectionString, schema);
+            }
+
+            // Before a single script runs: the store decides whether this migration set may be
+            // applied to it at all. Running the wrong set is not a no-op that a later correction
+            // undoes — the two sets share a journal, so a half-applied one leaves the store in a
+            // state neither set describes.
+            GuardTenancyMode(connectionString, schema, singleTenant);
+
+            // A handful of statements — CREATE INDEX CONCURRENTLY above all — are rejected by
+            // PostgreSQL inside a transaction block, and those are exactly the statements that make
+            // a migration safe to run against a live database. DbUp's transaction mode is a property
+            // of the upgrader, not of the script, so a script that needs one of them is run by its
+            // own upgrader built WithoutTransaction. Scripts are grouped into consecutive runs of
+            // the same mode so that ordering is preserved and the common case is still a single
+            // upgrader over every script.
+            var scriptFolder = singleTenant ? SingleTenantScriptFolder : MultiTenantScriptFolder;
+            var runs = PartitionIntoTransactionRuns(GetOrderedScriptNames(scriptFolder));
+
+            var executed = new List<string>();
+
+            foreach (var run in runs)
+            {
+                var upgrader = BuildUpgradeEngine(
+                    connectionString,
+                    schema,
+                    singleTenant,
+                    scriptFilter: run.Contains,
+                    runsOutsideTransaction: run.RunsOutsideTransaction);
+
+                var result = upgrader.PerformUpgrade();
+                executed.AddRange(result.Scripts.Select(s => s.Name));
+
+                // Stop at the first failing run rather than pressing on: a later script may well
+                // depend on the schema the failed one was supposed to produce.
+                if (!result.Successful)
+                    return new MigrationResult(false, executed, result.Error);
+            }
+
+            // Recorded only once every script has landed. A run that fails partway leaves no imprint,
+            // but it does leave an events table of the mode it was migrating to — which the sniff in
+            // ResolveTenancy reads, so the next attempt is still held to that mode. Recording before
+            // the scripts would instead pin a store that was never successfully created.
+            StoreImprint.RecordTenancy(connectionString, ResolveSchemaName(schema), singleTenant);
+
+            return new MigrationResult(true, executed, null);
         }
-
-        // Before a single script runs: the store decides whether this migration set may be
-        // applied to it at all. Running the wrong set is not a no-op that a later correction
-        // undoes — the two sets share a journal, so a half-applied one leaves the store in a
-        // state neither set describes.
-        GuardTenancyMode(connectionString, schema, singleTenant);
-
-        // A handful of statements — CREATE INDEX CONCURRENTLY above all — are rejected by
-        // PostgreSQL inside a transaction block, and those are exactly the statements that make
-        // a migration safe to run against a live database. DbUp's transaction mode is a property
-        // of the upgrader, not of the script, so a script that needs one of them is run by its
-        // own upgrader built WithoutTransaction. Scripts are grouped into consecutive runs of
-        // the same mode so that ordering is preserved and the common case is still a single
-        // upgrader over every script.
-        var scriptFolder = singleTenant ? SingleTenantScriptFolder : MultiTenantScriptFolder;
-        var runs = PartitionIntoTransactionRuns(GetOrderedScriptNames(scriptFolder));
-
-        var executed = new List<string>();
-
-        foreach (var run in runs)
+        finally
         {
-            var upgrader = BuildUpgradeEngine(
-                connectionString,
-                schema,
-                singleTenant,
-                scriptFilter: run.Contains,
-                runsOutsideTransaction: run.RunsOutsideTransaction);
-
-            var result = upgrader.PerformUpgrade();
-            executed.AddRange(result.Scripts.Select(s => s.Name));
-
-            // Stop at the first failing run rather than pressing on: a later script may well
-            // depend on the schema the failed one was supposed to produce.
-            if (!result.Successful)
-                return new MigrationResult(false, executed, result.Error);
+            using var releaseCmd = lockConn.CreateCommand();
+            releaseCmd.CommandText = "SELECT pg_advisory_unlock(hashtext('alberto:migrate')::bigint)";
+            releaseCmd.ExecuteNonQuery();
         }
-
-        // Recorded only once every script has landed. A run that fails partway leaves no imprint,
-        // but it does leave an events table of the mode it was migrating to — which the sniff in
-        // ResolveTenancy reads, so the next attempt is still held to that mode. Recording before
-        // the scripts would instead pin a store that was never successfully created.
-        StoreImprint.RecordTenancy(connectionString, ResolveSchemaName(schema), singleTenant);
-
-        return new MigrationResult(true, executed, null);
     }
+
+    /// <summary>
+    /// Waits for the migration lock by polling, never by blocking inside a single statement.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The obvious implementation — one <c>SELECT pg_advisory_lock(...)</c> that blocks until the
+    /// lock is free — deadlocks against this migration set. A blocked <c>SELECT</c> is a statement
+    /// still running, and a running statement holds a snapshot. <c>CREATE INDEX CONCURRENTLY</c>,
+    /// which scripts 020, 022 and 024 depend on, finishes only once every transaction holding an
+    /// older snapshot has ended. So the waiter's own wait pins the winner's index build open, the
+    /// winner never reaches its <c>finally</c>, and the lock it would have released is the one the
+    /// waiter is waiting for. Both sides hang until a command timeout fires.
+    /// </para>
+    /// <para>
+    /// Polling with <c>pg_try_advisory_lock</c> removes the snapshot from the waiting side: each
+    /// attempt returns immediately and the connection sits idle between attempts, holding nothing
+    /// the index build has to wait for. The wait stays unbounded — the winner may legitimately be
+    /// running a long migration against a large table, and any ceiling short enough to be useful
+    /// as a hang detector would be short enough to abort a healthy deployment.
+    /// </para>
+    /// </remarks>
+    private static void AcquireMigrationLock(NpgsqlConnection lockConn)
+    {
+        using var acquireCmd = lockConn.CreateCommand();
+        acquireCmd.CommandText = "SELECT pg_try_advisory_lock(hashtext('alberto:migrate')::bigint)";
+
+        while (!Equals(acquireCmd.ExecuteScalar(), true))
+            Thread.Sleep(LockPollInterval);
+    }
+
+    /// <summary>
+    /// Gap between <c>pg_try_advisory_lock</c> attempts. Short enough that a waiting pod starts
+    /// promptly once the winner is done, long enough that a slow migration is not polled thousands
+    /// of times.
+    /// </summary>
+    private static readonly TimeSpan LockPollInterval = TimeSpan.FromMilliseconds(250);
 
     /// <summary>
     /// Marker a migration script places in a leading comment to declare that it must not run

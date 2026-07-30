@@ -271,7 +271,7 @@ internal sealed class DeadLetterRetryLoop(
 /// <summary>
 /// Options for configuring the dead letter retry loop.
 /// </summary>
-public record DeadLetterRetryLoopOptions(
+internal sealed record DeadLetterRetryLoopOptions(
     TimeSpan PollingInterval = default,
     int BatchSize = 10)
 {
