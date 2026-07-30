@@ -87,14 +87,14 @@ public static class CreateOrderMutation
 
         // No RetryOnConflict: a conflict here means someone else claimed this id, and re-deciding
         // would only refuse it again.
-        var result = await sp.GetRequiredKeyedService<AlbertoStore>(OrdersModule.ModuleKey)
+        await sp.GetRequiredKeyedService<AlbertoStore>(OrdersModule.ModuleKey)
             .Handle(input)
             .Load(CreateOrderDecider.Boundary(orderId), new CreateOrderEvolver())
             .Decide((cmd, state) =>
                 CreateOrderDecider.Decide(state, orderId, cmd.CustomerId, lineItems, cmd.Notes))
-            .Commit(ct);
+            .Commit(ct)
+            .OrThrow();
 
-        result.EnsureCommitted();
         return new CreateOrderResult(orderId);
     }
 }

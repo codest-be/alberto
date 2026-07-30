@@ -99,15 +99,15 @@ public static class AddOrderItemMutation
         [Service] IServiceProvider sp,
         CancellationToken ct)
     {
-        var result = await sp.GetRequiredKeyedService<AlbertoStore>(OrdersModule.ModuleKey)
+        await sp.GetRequiredKeyedService<AlbertoStore>(OrdersModule.ModuleKey)
             .Handle(input)
             .Load(cmd => AddOrderItemDecider.Boundary(cmd.OrderId), new AddOrderItemEvolver())
             .Decide((cmd, state) =>
                 AddOrderItemDecider.Decide(state, cmd.ProductId, cmd.ProductName, cmd.Quantity, cmd.UnitPrice))
             .RetryOnConflict(OrderSlices.ConflictRetries)
-            .Commit(ct);
+            .Commit(ct)
+            .OrThrow();
 
-        result.EnsureCommitted();
         return new MutationResult();
     }
 }
