@@ -138,7 +138,9 @@ The table below shows how each knob is set in code and in configuration:
 
 ## Module Configuration Example
 
-Taken from `apps/Alberto.Orders/Alberto.Orders.Infrastructure/OrdersModule.cs`:
+Taken from `apps/Alberto.Orders/Alberto.Orders/Platform/OrdersModule.cs`. The state store is built
+by the projection's own slice (`OrdersOverviewProjection.StateStore`) so the writer and every query
+over it share one definition — see [vertical-slices.md](vertical-slices.md):
 
 ```csharp
 services.AddAlberto(ModuleKey, builder => builder
@@ -156,15 +158,7 @@ services.AddAlberto(ModuleKey, builder => builder
             npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "orders"));
     })
     .WithTelemetry()
-    .AddProjection(OrdersOverviewProjection.Declaration, ctx =>
-    {
-        var dataSource = ctx.Services.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
-        return () => new PostgresStateStore<OrdersOverview>(
-            dataSource,
-            projectionType: nameof(OrdersOverviewProjection),
-            schema: "orders",
-            rebuildVersion: ctx.RebuildVersion);
-    })
+    .AddProjection(OrdersOverviewProjection.Declaration, OrdersOverviewProjection.StateStore)
     .AddEfProjection<OrderSummaryEntity, OrdersDbContext>(OrderSummaryEfProjection.Declaration)
     .WithControlLoop(o => o with { PollingInterval = TimeSpan.FromMilliseconds(100), BatchSize = 500 }));
 ```
@@ -207,9 +201,10 @@ services.AddAlberto("orders", builder => builder
     .AddProjection(OrdersOverviewProjection.Declaration, ctx =>
     {
         var dataSource = ctx.Services.GetRequiredKeyedService<NpgsqlDataSource>("orders");
-        return () => new PostgresStateStore<OrdersOverview>(
+        return tenantId => new PostgresStateStore<OrdersOverview>(
             dataSource, nameof(OrdersOverviewProjection), "orders",
-            rebuildVersion: ctx.RebuildVersion);   // <- the projection follows the version
+            rebuildVersion: ctx.RebuildVersion,    // <- the projection follows the version
+            tenantId: TenantScope.CrossTenantFor(tenantId));
     })
     .WithRebuilds());
 ```

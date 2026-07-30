@@ -14,7 +14,7 @@ namespace Alberto.Dcb.Tests.Subscriptions;
 ///
 /// <para>
 /// <strong>Historical bug (fixed):</strong>
-/// <c>OrderQueries.GetOrdersOverview</c> and <c>PaymentQueries.CreateStateStore</c>
+/// <c>OrdersOverviewQuery.GetOrdersOverview</c> and <c>PaymentsOverviewQuery.GetPaymentsOverview</c>
 /// constructed their reader stores <em>with</em> a <c>tenantId:</c> argument while the
 /// writers (<c>OrdersModule</c> / <c>PaymentsModule</c>) constructed theirs
 /// <em>without</em> one. Because <see cref="PostgresStateStore{TState}"/> generates
@@ -51,7 +51,7 @@ public sealed class CrossTenantProjectionContractTests(SingleTenantPostgresFixtu
     /// <para>
     /// This is the regression test for the fixed behaviour. Before the fix the reader
     /// was constructed <em>with</em> <c>tenantId: "some-tenant"</c> — mirroring
-    /// <c>OrderQueries.GetOrdersOverview</c> — which on the single-tenant schema threw
+    /// <c>OrdersOverviewQuery.GetOrdersOverview</c> — which on the single-tenant schema threw
     /// <c>PostgresException</c> ("column tenant_id does not exist"), causing the test
     /// to fail before the assertion was ever reached.
     /// </para>
