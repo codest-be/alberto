@@ -29,6 +29,8 @@ public sealed class ShardRoutingEventStore(
     TenantShardResolver resolver,
     Func<string, IEventStore> shardStores) : IEventStore
 {
+    private readonly ShardRouter<IEventStore> _router = new(moduleKey, tenantAccessor, resolver, shardStores);
+
     /// <inheritdoc />
     public async Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
         IEnumerable<IEventToPersist> events,
@@ -36,7 +38,7 @@ public sealed class ShardRoutingEventStore(
         long? expectedPosition = null,
         CancellationToken cancellationToken = default)
     {
-        var store = await ForCurrentTenantAsync(cancellationToken).ConfigureAwait(false);
+        var store = await _router.ForCurrentTenantAsync(cancellationToken).ConfigureAwait(false);
         return await store.AppendAsync(events, dcbQuery, expectedPosition, cancellationToken)
             .ConfigureAwait(false);
     }
@@ -53,7 +55,7 @@ public sealed class ShardRoutingEventStore(
         int? limit = null,
         CancellationToken cancellationToken = default)
     {
-        var store = await ForCurrentTenantAsync(cancellationToken).ConfigureAwait(false);
+        var store = await _router.ForCurrentTenantAsync(cancellationToken).ConfigureAwait(false);
         return await store.StreamAsync(query, afterPosition, limit, cancellationToken)
             .ConfigureAwait(false);
     }
@@ -70,7 +72,7 @@ public sealed class ShardRoutingEventStore(
         int? limit = null,
         CancellationToken cancellationToken = default)
     {
-        var store = await ForCurrentTenantAsync(cancellationToken).ConfigureAwait(false);
+        var store = await _router.ForCurrentTenantAsync(cancellationToken).ConfigureAwait(false);
         return await store.StreamAllAsync(afterPosition, limit, cancellationToken)
             .ConfigureAwait(false);
     }
@@ -84,17 +86,7 @@ public sealed class ShardRoutingEventStore(
     /// </remarks>
     public async Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default)
     {
-        var store = await ForCurrentTenantAsync(cancellationToken).ConfigureAwait(false);
+        var store = await _router.ForCurrentTenantAsync(cancellationToken).ConfigureAwait(false);
         return await store.GetLastPositionAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    private async ValueTask<IEventStore> ForCurrentTenantAsync(CancellationToken cancellationToken)
-    {
-        // TenantId throws its own "no tenant in context" error, which is the right one to
-        // surface: a sharded module cannot answer any question without knowing the tenant.
-        var shardId = await resolver.ResolveAsync(tenantAccessor.TenantId, cancellationToken)
-            .ConfigureAwait(false);
-
-        return shardStores(ShardKey.Compose(moduleKey, shardId));
     }
 }
