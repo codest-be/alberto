@@ -14,15 +14,30 @@ namespace Alberto.Examples.Shared;
 /// </remarks>
 public static class MutationResults
 {
-    public static void EnsureCommitted(this Result result)
+    /// <summary>
+    /// Throws a <see cref="GraphQLException"/> if the decision refused; otherwise returns.
+    /// </summary>
+    public static void OrThrow(this Result result)
     {
         if (result.IsFailure)
             throw ToException(result.Problems);
     }
 
+    /// <inheritdoc cref="OrThrow(Result)"/>
     // Fully qualified: HotChocolate's global usings pull in GreenDonut.Result<T>.
-    public static T EnsureCommitted<T>(this Alberto.Dcb.Result<T> result) =>
+    public static T OrThrow<T>(this Alberto.Dcb.Result<T> result) =>
         result.IsSuccess ? result.Value : throw ToException(result.Problems);
+
+    /// <summary>
+    /// Awaits a commit and throws a <see cref="GraphQLException"/> if the decision refused, so a
+    /// slice ends as one expression: <c>Handle → Load → Decide → Commit → OrThrow</c>.
+    /// </summary>
+    public static async Task OrThrow(this Task<Result> commit) =>
+        (await commit).OrThrow();
+
+    /// <inheritdoc cref="OrThrow(Task{Result})"/>
+    public static async Task<T> OrThrow<T>(this Task<Alberto.Dcb.Result<T>> commit) =>
+        (await commit).OrThrow();
 
     private static GraphQLException ToException(IReadOnlyList<Problem> problems) =>
         new(problems

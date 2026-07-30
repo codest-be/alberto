@@ -80,14 +80,14 @@ public static class InitiatePaymentMutation
 
         // No RetryOnConflict: a conflict here means someone else claimed this id, and re-deciding
         // would only refuse it again.
-        var result = await sp.GetRequiredKeyedService<AlbertoStore>(PaymentsModule.ModuleKey)
+        await sp.GetRequiredKeyedService<AlbertoStore>(PaymentsModule.ModuleKey)
             .Handle(input)
             .Load(InitiatePaymentDecider.Boundary(paymentId), new InitiatePaymentEvolver())
             .Decide((cmd, state) => InitiatePaymentDecider.Decide(
                 state, paymentId, cmd.OrderId, cmd.Amount, cmd.Currency, cmd.PaymentMethod))
-            .Commit(ct);
+            .Commit(ct)
+            .OrThrow();
 
-        result.EnsureCommitted();
         return new InitiatePaymentResult(paymentId);
     }
 }

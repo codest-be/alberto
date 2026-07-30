@@ -82,15 +82,15 @@ public static class RefundPaymentMutation
         [Service] TimeProvider timeProvider,
         CancellationToken ct)
     {
-        var result = await sp.GetRequiredKeyedService<AlbertoStore>(PaymentsModule.ModuleKey)
+        await sp.GetRequiredKeyedService<AlbertoStore>(PaymentsModule.ModuleKey)
             .Handle(input)
             .Load(cmd => RefundPaymentDecider.Boundary(cmd.PaymentId), new RefundPaymentEvolver())
             .Decide((cmd, state) =>
                 RefundPaymentDecider.Decide(state, cmd.Amount, cmd.Reason, timeProvider.GetUtcNow()))
             .RetryOnConflict(PaymentSlices.ConflictRetries)
-            .Commit(ct);
+            .Commit(ct)
+            .OrThrow();
 
-        result.EnsureCommitted();
         return new MutationResult();
     }
 }

@@ -70,14 +70,14 @@ public static class DeliverOrderMutation
         [Service] TimeProvider timeProvider,
         CancellationToken ct)
     {
-        var result = await sp.GetRequiredKeyedService<AlbertoStore>(OrdersModule.ModuleKey)
+        await sp.GetRequiredKeyedService<AlbertoStore>(OrdersModule.ModuleKey)
             .Handle(orderId)
             .Load(DeliverOrderDecider.Boundary(orderId), new DeliverOrderEvolver())
             .Decide(state => DeliverOrderDecider.Decide(state, timeProvider.GetUtcNow()))
             .RetryOnConflict(OrderSlices.ConflictRetries)
-            .Commit(ct);
+            .Commit(ct)
+            .OrThrow();
 
-        result.EnsureCommitted();
         return new MutationResult();
     }
 }

@@ -77,15 +77,15 @@ public static class AuthorizePaymentMutation
         [Service] TimeProvider timeProvider,
         CancellationToken ct)
     {
-        var result = await sp.GetRequiredKeyedService<AlbertoStore>(PaymentsModule.ModuleKey)
+        await sp.GetRequiredKeyedService<AlbertoStore>(PaymentsModule.ModuleKey)
             .Handle(authorizationCode)
             .Load(AuthorizePaymentDecider.Boundary(paymentId), new AuthorizePaymentEvolver())
             .Decide((code, state) =>
                 AuthorizePaymentDecider.Decide(state, code, timeProvider.GetUtcNow()))
             .RetryOnConflict(PaymentSlices.ConflictRetries)
-            .Commit(ct);
+            .Commit(ct)
+            .OrThrow();
 
-        result.EnsureCommitted();
         return new MutationResult();
     }
 }

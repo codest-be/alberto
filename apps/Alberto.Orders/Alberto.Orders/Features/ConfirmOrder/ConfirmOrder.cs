@@ -90,14 +90,14 @@ public static class ConfirmOrderMutation
         [Service] TimeProvider timeProvider,
         CancellationToken ct)
     {
-        var result = await sp.GetRequiredKeyedService<AlbertoStore>(OrdersModule.ModuleKey)
+        await sp.GetRequiredKeyedService<AlbertoStore>(OrdersModule.ModuleKey)
             .Handle(orderId)
             .Load(ConfirmOrderDecider.Boundary(orderId), new ConfirmOrderEvolver())
             .Decide(state => ConfirmOrderDecider.Decide(state, timeProvider.GetUtcNow()))
             .RetryOnConflict(OrderSlices.ConflictRetries)
-            .Commit(ct);
+            .Commit(ct)
+            .OrThrow();
 
-        result.EnsureCommitted();
         return new MutationResult();
     }
 }

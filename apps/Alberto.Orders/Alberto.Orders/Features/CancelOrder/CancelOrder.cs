@@ -81,15 +81,15 @@ public static class CancelOrderMutation
         [Service] TimeProvider timeProvider,
         CancellationToken ct)
     {
-        var result = await sp.GetRequiredKeyedService<AlbertoStore>(OrdersModule.ModuleKey)
+        await sp.GetRequiredKeyedService<AlbertoStore>(OrdersModule.ModuleKey)
             .Handle(input)
             .Load(cmd => CancelOrderDecider.Boundary(cmd.OrderId), new CancelOrderEvolver())
             .Decide((cmd, state) =>
                 CancelOrderDecider.Decide(state, cmd.Reason, timeProvider.GetUtcNow()))
             .RetryOnConflict(OrderSlices.ConflictRetries)
-            .Commit(ct);
+            .Commit(ct)
+            .OrThrow();
 
-        result.EnsureCommitted();
         return new MutationResult();
     }
 }

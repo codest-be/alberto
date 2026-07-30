@@ -90,14 +90,14 @@ public static class RemoveOrderItemMutation
         [Service] IServiceProvider sp,
         CancellationToken ct)
     {
-        var result = await sp.GetRequiredKeyedService<AlbertoStore>(OrdersModule.ModuleKey)
+        await sp.GetRequiredKeyedService<AlbertoStore>(OrdersModule.ModuleKey)
             .Handle(productId)
             .Load(RemoveOrderItemDecider.Boundary(orderId), new RemoveOrderItemEvolver())
             .Decide((product, state) => RemoveOrderItemDecider.Decide(state, product))
             .RetryOnConflict(OrderSlices.ConflictRetries)
-            .Commit(ct);
+            .Commit(ct)
+            .OrThrow();
 
-        result.EnsureCommitted();
         return new MutationResult();
     }
 }

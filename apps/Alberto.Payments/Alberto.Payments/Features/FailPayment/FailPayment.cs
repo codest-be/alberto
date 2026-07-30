@@ -74,15 +74,15 @@ public static class FailPaymentMutation
         [Service] IServiceProvider sp,
         CancellationToken ct)
     {
-        var result = await sp.GetRequiredKeyedService<AlbertoStore>(PaymentsModule.ModuleKey)
+        await sp.GetRequiredKeyedService<AlbertoStore>(PaymentsModule.ModuleKey)
             .Handle(input)
             .Load(cmd => FailPaymentDecider.Boundary(cmd.PaymentId), new FailPaymentEvolver())
             .Decide((cmd, state) =>
                 FailPaymentDecider.Decide(state, cmd.ErrorCode, cmd.ErrorMessage))
             .RetryOnConflict(PaymentSlices.ConflictRetries)
-            .Commit(ct);
+            .Commit(ct)
+            .OrThrow();
 
-        result.EnsureCommitted();
         return new MutationResult();
     }
 }

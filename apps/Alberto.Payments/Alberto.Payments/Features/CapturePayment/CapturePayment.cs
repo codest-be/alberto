@@ -80,15 +80,15 @@ public static class CapturePaymentMutation
         [Service] TimeProvider timeProvider,
         CancellationToken ct)
     {
-        var result = await sp.GetRequiredKeyedService<AlbertoStore>(PaymentsModule.ModuleKey)
+        await sp.GetRequiredKeyedService<AlbertoStore>(PaymentsModule.ModuleKey)
             .Handle(input)
             .Load(cmd => CapturePaymentDecider.Boundary(cmd.PaymentId), new CapturePaymentEvolver())
             .Decide((cmd, state) =>
                 CapturePaymentDecider.Decide(state, cmd.Amount, timeProvider.GetUtcNow()))
             .RetryOnConflict(PaymentSlices.ConflictRetries)
-            .Commit(ct);
+            .Commit(ct)
+            .OrThrow();
 
-        result.EnsureCommitted();
         return new MutationResult();
     }
 }
