@@ -255,7 +255,7 @@ Because aborts consume numbers without moving the active one, the startup sweep 
 The following appear in the schema or the type system but have no orchestration behind them. Do not rely on them.
 
 - **Rebuild-mode processor tuning.** `IEventProcessor.IsRebuilding` is set for shadow loops, but there is no lag threshold and no separate rebuild batch size — a shadow loop runs on the module's configured batch size.
-- **Real-time admin push.** There is no admin HTTP API, no GraphQL admin subscriptions, and no admin dashboard in this repository. The `{schema}_events` NOTIFY channel exists to refresh `EventStoreHead`, not to feed a UI. The operator surface is the CLI in `tools/Alberto.Cli`.
+- **Real-time admin push.** There is no admin HTTP API, no GraphQL admin subscriptions, and no admin dashboard on this branch. The `{schema}_events` NOTIFY channel exists to refresh `EventStoreHead`, not to feed a UI. The operator surface is the CLI in `tools/Alberto.Cli`. All of it exists on `feature/admin-surface`, held out of 1.0; note that even there the control loop pushes nothing — the subscriptions fire on operator mutations, so a console watching lag polls underneath.
 
 ## Event deserialization invariant
 

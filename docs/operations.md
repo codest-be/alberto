@@ -7,8 +7,14 @@ Running Alberto in production comes down to four questions:
 3. **Who is doing the work?** — processor and tenant leases.
 4. **How do I intervene?** — the `alberto` CLI.
 
-There is no admin HTTP API and no admin package. The operator surface is the CLI, which talks
-straight to Postgres.
+The operator surface is the CLI, which talks straight to Postgres. That is the point of it: the
+CLI still works when the application is the thing that is broken.
+
+There is no admin HTTP API here. `Alberto.Dcb.Admin` ships as a package, but only as the
+`IAdminReader`/`IAdminOperator` abstraction the CLI is built on — it serves no endpoint. An
+in-process GraphQL admin API, an MCP server, a React console and a BFF were built and are parked
+on the `feature/admin-surface` branch, deliberately held out of 1.0 until their shape is settled.
+Check that branch before building any of it again.
 
 ## The CLI
 
