@@ -3,6 +3,7 @@ using Alberto.Dcb.EntityFramework;
 using Alberto.Dcb.Postgres;
 using Alberto.Dcb.Telemetry;
 using Alberto.Dcb.Tenancy;
+using Alberto.Orders.Features;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

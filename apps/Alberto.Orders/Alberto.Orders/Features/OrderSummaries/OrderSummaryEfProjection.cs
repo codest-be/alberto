@@ -1,7 +1,8 @@
 using Alberto.Dcb.Subscriptions;
 using Alberto.Orders.Contracts;
+using Alberto.Orders.Platform;
 
-namespace Alberto.Orders.Platform;
+namespace Alberto.Orders.Features;
 
 /// <summary>
 /// EF-based projection that builds <see cref="OrderSummaryEntity"/> read models from order events.

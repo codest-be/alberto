@@ -1,19 +1,19 @@
 using Alberto.Dcb;
 using Microsoft.Extensions.DependencyInjection;
-using Alberto.Dcb.Postgres;
 using Alberto.Dcb.Subscriptions;
 using Alberto.Dcb.Tenancy;
 using Alberto.Orders.Contracts;
-using Alberto.Orders.Features;
 using Alberto.Orders.Platform;
-using Microsoft.EntityFrameworkCore;
-using Npgsql;
 
 namespace Alberto.Orders.Features;
 
 /// <summary>
 /// GraphQL queries for orders.
 /// </summary>
+/// <remarks>
+/// Staging: what is left here moves into <c>Features/GetOrder</c> and
+/// <c>Features/OrdersOverview</c>, after which this file goes.
+/// </remarks>
 public static class OrderQueries
 {
     private static readonly OrderEvolver _evolver = new();
@@ -61,81 +61,6 @@ public static class OrderQueries
             ct: ct);
 
         return states.GetValueOrDefault(OrdersOverviewProjection.DocumentId);
-    }
-
-    /// <summary>
-    /// Gets orders with optional filtering, sorting, and pagination.
-    /// </summary>
-    [Query]
-    [GraphQLDescription("Gets orders with optional filtering by status, customer, and date range.")]
-    public static async Task<OrdersConnection> GetOrders(
-        [Service] ITenantAccessor tenantAccessor,
-        [Service] IDbContextFactory<OrdersDbContext> contextFactory,
-        OrderStatus? status = null,
-        Guid? customerId = null,
-        DateTimeOffset? createdAfter = null,
-        DateTimeOffset? createdBefore = null,
-        int skip = 0,
-        int take = 20,
-        CancellationToken ct = default)
-    {
-        var tenantId = tenantAccessor.TenantId;
-        await using var dbContext = await contextFactory.CreateDbContextAsync(ct);
-
-        var query = dbContext.OrderSummaries
-            .Where(o => o.TenantId == tenantId);
-
-        // Apply filters
-        if (status.HasValue)
-            query = query.Where(o => o.Status == status.Value);
-
-        if (customerId.HasValue)
-            query = query.Where(o => o.CustomerId == customerId.Value);
-
-        if (createdAfter.HasValue)
-            query = query.Where(o => o.CreatedAt >= createdAfter.Value);
-
-        if (createdBefore.HasValue)
-            query = query.Where(o => o.CreatedAt <= createdBefore.Value);
-
-        // Get total count for pagination
-        var totalCount = await query.CountAsync(ct);
-
-        // Get page of results
-        var entities = await query
-            .OrderByDescending(o => o.CreatedAt)
-            .Skip(skip)
-            .Take(take)
-            .ToListAsync(ct);
-
-        return new OrdersConnection(
-            entities.Select(Order.FromEntity).ToList(),
-            totalCount,
-            skip,
-            take);
-    }
-
-    /// <summary>
-    /// Gets recent orders (convenience method).
-    /// </summary>
-    [Query]
-    [GraphQLDescription("Gets recent orders, ordered by creation date.")]
-    public static async Task<IReadOnlyList<Order>> GetRecentOrders(
-        [Service] ITenantAccessor tenantAccessor,
-        [Service] IDbContextFactory<OrdersDbContext> contextFactory,
-        int limit = 20,
-        CancellationToken ct = default)
-    {
-        var tenantId = tenantAccessor.TenantId;
-        await using var dbContext = await contextFactory.CreateDbContextAsync(ct);
-
-        var entities = await dbContext.OrderSummaries
-            .Where(o => o.TenantId == tenantId)
-            .OrderByDescending(o => o.CreatedAt)
-            .Take(limit)
-            .ToListAsync(ct);
-
-        return entities.Select(Order.FromEntity).ToList();
     }
 
     #region Helper Methods
