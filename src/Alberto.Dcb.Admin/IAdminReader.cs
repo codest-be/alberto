@@ -29,22 +29,36 @@ public interface IAdminReader
     Task<CheckpointInfo?> GetSingleCheckpointAsync(string processorId, CancellationToken ct = default);
 
     /// <summary>
-    /// Lists dead letter entries with optional filtering by processor and event type.
+    /// Lists dead letter entries with optional filtering by processor, event type, and tenant.
     /// Returns at most <paramref name="limit"/> results ordered by <c>failed_at DESC</c>.
     /// </summary>
+    /// <remarks>
+    /// The tenant filter is applied in SQL, not over the returned page: filtering a
+    /// <paramref name="limit"/>-capped result client-side would silently hide a tenant's
+    /// entries whenever a noisier tenant filled the page.
+    /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="tenant"/> is non-blank on a single-tenant store, which has no tenant
+    /// column to filter on.
+    /// </exception>
     Task<List<DeadLetterInfo>> GetDeadLettersAsync(
         string? processorId,
         string? type,
+        string? tenant,
         int limit,
         CancellationToken ct = default);
 
     /// <summary>
-    /// Lists events from the event log with optional filtering by type and tag.
+    /// Lists events from the event log with optional filtering by type, tag, and tenant.
     /// Returns at most <paramref name="limit"/> results after <paramref name="afterPosition"/>.
     /// </summary>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="tenant"/> is non-blank on a single-tenant store.
+    /// </exception>
     Task<List<EventInfo>> GetEventsAsync(
         string? type,
         string? tag,
+        string? tenant,
         long afterPosition,
         int limit,
         CancellationToken ct = default);
@@ -83,6 +97,18 @@ public interface IAdminReader
     Task<TenantLeaseInventory> GetTenantLeaseInventoryAsync(CancellationToken ct = default);
 
     /// <summary>
+    /// Lists every tenant the store has ever seen an event for, ordered by tenant ID.
+    /// Returns an empty list for single-tenant stores.
+    /// </summary>
+    /// <remarks>
+    /// This is deliberately not the lease list. A lease exists only while a consumer is
+    /// actively processing a tenant, so a tenant that is idle — or whose consumer is
+    /// stopped — holds none, and a filter offering only leased tenants would be empty
+    /// on exactly the store an operator is trying to inspect.
+    /// </remarks>
+    Task<List<string>> GetTenantsAsync(CancellationToken ct = default);
+
+    /// <summary>
     /// Returns the active (non-expired) processor leases held for the given processor ID.
     /// </summary>
     Task<List<ActiveProcessorLease>> GetActiveProcessorLeasesAsync(
@@ -100,5 +126,14 @@ public interface IAdminReader
     Task<CheckpointRenameResult> RenameCheckpointAsync(
         string fromProcessorId,
         string toProcessorId,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Lists rebuild state for all projections, or for a single processor when
+    /// <paramref name="processorId"/> is provided. Returns an empty list when the processor
+    /// has never had a rebuild started.
+    /// </summary>
+    Task<List<RebuildStateInfo>> GetRebuildStatesAsync(
+        string? processorId = null,
         CancellationToken ct = default);
 }

@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+        <!-- Package Metadata -->
+        <PackageId>Alberto.Dcb.Admin.Mcp</PackageId>
+        <Title>Alberto DCB Admin - MCP Surface</Title>
+        <Description>Model Context Protocol tools for the Alberto DCB admin surface. Exposes processor, checkpoint, dead-letter, projection and rebuild operations to MCP clients over Streamable HTTP.</Description>
+        <IsPackable>true</IsPackable>
+        <RootNamespace>Alberto.Dcb.Admin.Mcp</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="../Alberto.Dcb.Admin/Alberto.Dcb.Admin.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="ModelContextProtocol" />
+        <PackageReference Include="ModelContextProtocol.AspNetCore" />
+    </ItemGroup>
+</Project>

@@ -13,9 +13,11 @@ namespace Alberto.Dcb.Tests.Regression;
 /// implementation. Each region groups tests by the source issue.
 ///
 /// <para>
-/// Tests marked <c>[Fact(Skip = "...")]</c> document design gaps or infrastructure-level
-/// bugs that cannot be verified without database access or src/ changes. The skip message
-/// explains what the missing fix should be.
+/// Every fact here runs. The <c>[Fact(Skip = "...")]</c> convention this comment used to
+/// describe — a skipped placeholder standing in for a design gap that could not be verified
+/// without a src/ change — was only ever used elsewhere, and those placeholders are gone:
+/// each was re-enabled once the underlying fix landed. A regression that cannot be executed
+/// does not belong here as a skipped fact; fix it, then pin it.
 /// </para>
 /// </summary>
 public sealed class DiscoveredIssuesTests

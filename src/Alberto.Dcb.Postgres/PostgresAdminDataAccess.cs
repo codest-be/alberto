@@ -1,4 +1,5 @@
 using Alberto.Dcb.Admin;
+using Alberto.Dcb.Subscriptions;
 using Npgsql;
 
 namespace Alberto.Dcb.Postgres;
@@ -389,8 +390,15 @@ public sealed class PostgresAdminDataAccess : IAdminReader
         await using (var cmd = conn.CreateCommand())
         {
             cmd.CommandText = $"SELECT created_at FROM {_schema.Table("alberto_events")} ORDER BY global_position DESC LIMIT 1";
-            var result = await cmd.ExecuteScalarAsync(ct);
-            lastEventAt = result is DBNull or null ? null : (DateTimeOffset)result;
+
+            // Read through the reader rather than ExecuteScalar: created_at is timestamptz,
+            // which Npgsql boxes as a DateTime, so unboxing it straight to DateTimeOffset
+            // throws on any store that actually has events. GetFieldValue does the conversion.
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            if (await reader.ReadAsync(ct) && !reader.IsDBNull(0))
+            {
+                lastEventAt = reader.GetFieldValue<DateTimeOffset>(0);
+            }
         }
 
         return new SystemInfo(globalPosition, processorCount, deadLetterCount, lastEventAt);
@@ -526,6 +534,38 @@ public sealed class PostgresAdminDataAccess : IAdminReader
         return new TenantLeaseInventory(topology.TenancyMode, leases);
     }
 
+    /// <summary>
+    /// Lists every tenant the store has seen an event for, read from the
+    /// <c>alberto_tenants</c> catalog that the append trigger maintains.
+    /// </summary>
+    /// <remarks>
+    /// The catalog exists precisely so this does not have to be a
+    /// <c>SELECT DISTINCT tenant_id FROM alberto_events</c> over the whole log.
+    /// </remarks>
+    public async Task<List<string>> GetTenantsAsync(CancellationToken ct = default)
+    {
+        var topology = await GetTopologyAsync(ct);
+        if (!topology.IsMultiTenant)
+            return [];
+
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"""
+            SELECT tenant_id
+            FROM {_schema.Table("alberto_tenants")}
+            ORDER BY tenant_id
+            """;
+
+        var tenants = new List<string>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            tenants.Add(reader.GetString(0));
+        }
+
+        return tenants;
+    }
+
     private static void EnsureTenantFilterSupported(
         AdminStoreTopology topology,
         string? tenant)
@@ -608,7 +648,14 @@ public sealed class PostgresAdminDataAccess : IAdminReader
     {
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = conn.CreateCommand();
-        cmd.Parameters.AddWithValue("consumerId", (object?)consumerId ?? DBNull.Value);
+        // Typed explicitly rather than via AddWithValue: a null consumerId would otherwise
+        // reach PostgreSQL as an untyped NULL, and "@consumerId IS NULL" gives the planner
+        // nothing to infer a type from — the whole statement fails with 42P08. That is
+        // precisely the release-every-lease case, so the default call was the broken one.
+        cmd.Parameters.Add(new NpgsqlParameter("consumerId", NpgsqlTypes.NpgsqlDbType.Text)
+        {
+            Value = (object?)consumerId ?? DBNull.Value,
+        });
         cmd.CommandText = $"""
             DELETE FROM {_schema.Table("alberto_tenant_leases")}
             WHERE (@consumerId IS NULL OR consumer_id = @consumerId)
@@ -693,27 +740,73 @@ public sealed class PostgresAdminDataAccess : IAdminReader
     }
 
     // -----------------------------------------------------------------------
-    // IAdminReader explicit implementations (bridge to tenant-aware overloads)
+    // Rebuild state queries
     // -----------------------------------------------------------------------
 
     /// <summary>
-    /// IAdminReader implementation: delegates to the tenant-aware overload with no tenant filter.
+    /// Lists rebuild state for all projections, or for a single processor when
+    /// <paramref name="processorId"/> is provided. Returns an empty list when the processor
+    /// has never had a rebuild started.
     /// </summary>
-    Task<List<DeadLetterInfo>> IAdminReader.GetDeadLettersAsync(
-        string? processorId,
-        string? type,
-        int limit,
-        CancellationToken ct) =>
-        GetDeadLettersAsync(processorId, type, null, limit, ct);
+    public async Task<List<RebuildStateInfo>> GetRebuildStatesAsync(
+        string? processorId = null,
+        CancellationToken ct = default)
+    {
+        var rawSchema = _schema.HasSchema ? _schema.Name : null;
+        var rebuildStore = new PostgresProjectionRebuildStore(_dataSource, rawSchema);
+        var allStates = await rebuildStore.ListAsync(ct);
 
-    /// <summary>
-    /// IAdminReader implementation: delegates to the tenant-aware overload with no tenant filter.
-    /// </summary>
-    Task<List<EventInfo>> IAdminReader.GetEventsAsync(
-        string? type,
-        string? tag,
-        long afterPosition,
-        int limit,
-        CancellationToken ct) =>
-        GetEventsAsync(type, tag, null, afterPosition, limit, ct);
+        IEnumerable<ProjectionRebuildState> states = processorId is null
+            ? allStates
+            : allStates.Where(s => s.ProcessorId == processorId);
+
+        var result = new List<RebuildStateInfo>();
+        foreach (var state in states)
+        {
+            long? replayedPosition = null;
+            if (state.IsRebuildInFlight && state.RebuildingVersion.HasValue)
+            {
+                var shadowId = $"{state.ProcessorId}::rebuild::{state.RebuildingVersion.Value}";
+                var checkpoint = await GetSingleCheckpointAsync(shadowId, ct);
+                replayedPosition = checkpoint?.LastPosition;
+            }
+
+            result.Add(new RebuildStateInfo(
+                state.ProcessorId,
+                state.ProjectionType,
+                state.ActiveVersion,
+                state.RebuildingVersion,
+                MapRebuildStatus(state.Status),
+                MapRebuildAction(state.RequestedAction),
+                replayedPosition,
+                state.TargetPosition,
+                state.StartedAt,
+                state.CompletedAt));
+        }
+
+        return result;
+    }
+
+    private static string MapRebuildStatus(RebuildStatus status) => status switch
+    {
+        RebuildStatus.Idle => "idle",
+        RebuildStatus.Rebuilding => "rebuilding",
+        RebuildStatus.Ready => "ready",
+        RebuildStatus.Completed => "completed",
+        RebuildStatus.Aborted => "aborted",
+        _ => status.ToString().ToLowerInvariant(),
+    };
+
+    private static string? MapRebuildAction(RebuildOperatorAction? action) => action switch
+    {
+        RebuildOperatorAction.Promote => "promote",
+        RebuildOperatorAction.ForcePromote => "force-promote",
+        RebuildOperatorAction.Abort => "abort",
+        _ => null,
+    };
+
+    // The tenant-aware GetDeadLettersAsync / GetEventsAsync overloads above satisfy
+    // IAdminReader directly. They used to be reachable only through explicit-interface
+    // bridges that passed a null tenant, which meant the SQL tenant filter existed but
+    // nothing above this class could ever ask for it.
 }

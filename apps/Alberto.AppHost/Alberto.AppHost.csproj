@@ -18,5 +18,6 @@
     <ItemGroup>
         <ProjectReference Include="..\Alberto.Orders\Alberto.Orders.Api\Alberto.Orders.Api.csproj" IsAspireProjectResource="true" />
         <ProjectReference Include="..\Alberto.Orders\Alberto.Orders.Migrations\Alberto.Orders.Migrations.csproj" IsAspireProjectResource="true" />
+        <ProjectReference Include="..\Alberto.Admin.Bff\Alberto.Admin.Bff.csproj" IsAspireProjectResource="true" />
     </ItemGroup>
 </Project>

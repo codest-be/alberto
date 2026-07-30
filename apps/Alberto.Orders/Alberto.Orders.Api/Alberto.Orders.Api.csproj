@@ -14,12 +14,20 @@
     <ProjectReference Include="..\..\ServiceDefaults\ServiceDefaults.csproj" />
     <ProjectReference Include="..\..\..\src\Alberto.Dcb.Admin\Alberto.Dcb.Admin.csproj" />
     <ProjectReference Include="..\..\..\src\Alberto.Dcb.Admin.GraphQL\Alberto.Dcb.Admin.GraphQL.csproj" />
+    <ProjectReference Include="..\..\..\src\Alberto.Dcb.Admin.Mcp\Alberto.Dcb.Admin.Mcp.csproj" />
     <ProjectReference Include="..\..\..\src\Alberto.Dcb.Postgres\Alberto.Dcb.Postgres.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="HotChocolate.AspNetCore" />
-    <PackageReference Include="HotChocolate.Subscriptions.InMemory" />
+    <PackageReference Include="HotChocolate.AspNetCore.CommandLine" />
+    <PackageReference Include="HotChocolate.Subscriptions.Postgres" />
+    <!--
+      No HotChocolate.Types.Analyzers here: every GraphQL type now lives in a slice inside the
+      Alberto.Orders and Alberto.Payments module projects, which run the analyzer themselves.
+      This host only composes their generated type modules.
+    -->
+
   </ItemGroup>
 
 </Project>
