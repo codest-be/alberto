@@ -38,17 +38,9 @@ public static class PaymentsModule
             .WithTelemetry()
             .WithEventsFrom(typeof(Contracts.PaymentInitiated).Assembly)
             // A single running total blended across every tenant, so it is stored under
-            // TenantScope.CrossTenant rather than under any one of them.
-            .AddProjection(PaymentsOverviewProjection.Declaration, ctx =>
-            {
-                var dataSource = ctx.Services.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
-                return tenantId => new PostgresStateStore<PaymentsOverview>(
-                    dataSource,
-                    nameof(PaymentsOverviewProjection),
-                    "payments",
-                    rebuildVersion: ctx.RebuildVersion,
-                    tenantId: TenantScope.CrossTenantFor(tenantId));
-            })
+            // TenantScope.CrossTenant rather than under any one of them. The store is built by
+            // the slice, which is also what reads it.
+            .AddProjection(PaymentsOverviewProjection.Declaration, PaymentsOverviewProjection.StateStore)
             // One document per payment, so one document set per tenant: the store takes the
             // tenant of the events it is given, and a reader gets back only its own tenant's
             // payments. The store is built by the slice, which is also what reads it.

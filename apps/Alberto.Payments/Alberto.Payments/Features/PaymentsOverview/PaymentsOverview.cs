@@ -1,4 +1,4 @@
-namespace Alberto.Payments.Platform;
+namespace Alberto.Payments.Features;
 
 /// <summary>
 /// Overview/aggregate read model for payments.
