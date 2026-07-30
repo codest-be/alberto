@@ -97,7 +97,9 @@ Note: `apps/Alberto.Payments` is in the solution and builds, but it has no host 
 - **GraphQL** (Orders example only): HotChocolate 15.x
 
 ### Admin surface
-The operator surface is the CLI in `tools/Alberto.Cli`. There is no admin HTTP API or admin package.
+The operator surface is the CLI in `tools/Alberto.Cli`. There is no admin HTTP API. `src/Alberto.Dcb.Admin` is a package, but only the `IAdminReader`/`IAdminOperator` abstraction the CLI's 14 command files are built on — it serves no endpoint, and `AddAlbertoPostgresAdmin` in `src/Alberto.Dcb.Postgres` is its only implementation.
+
+**The in-process front doors are parked, not missing.** A GraphQL admin API, an MCP server, a React console and a BFF live on `feature/admin-surface`, held out of 1.0 so their field and tool names are not frozen by semver. Do not rebuild them on main — extend that branch. Keep `IAdminReader`/`IAdminOperator` additive when changing them here, or the branch stops merging cleanly.
 
 - **Per-processor mutations** go through the core interfaces: `ICheckpointStore` (`SaveAsync`, `ResetAsync`, `RewindAsync`) and `IDeadLetterStore` (`CountAsync`, `ClearAsync`, `MarkForRetryAsync`).
 - **`PostgresAdminDataAccess`** (`src/Alberto.Dcb.Postgres`) holds the inspection queries and the composite transactional mutations (`RetryByRewindAsync`, `ReleaseTenantLeasesAsync`) that span multiple tables and so cannot be composed from per-processor interfaces.

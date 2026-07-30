@@ -1,13 +1,8 @@
-using Alberto.Dcb.Admin;
-using Alberto.Dcb.Admin.GraphQL;
-using Alberto.Dcb.Admin.Mcp;
-using Alberto.Dcb.Postgres;
 using Alberto.Dcb.Tenancy;
 using Alberto.Orders.Api.GraphQL;
 using Alberto.Orders.Platform;
 using Alberto.Payments.Platform;
 using HotChocolate.Diagnostics;
-using Npgsql;
 using ServiceDefaults;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -33,27 +28,13 @@ builder.Services.AddOrdersModule(builder.Configuration);
 // Add Payments module
 builder.Services.AddPaymentsModule(builder.Configuration);
 
-// Add the admin surface for every module this process hosts.
+// Add GraphQL.
 //
-// Both modules are registered because both are real event stores with their own schema,
-// checkpoints and dead letters. Registering only Orders — as this did — did not make
-// Payments unsupported, it made it invisible: the console showed Orders' numbers under
-// no particular label, and a Payments projection could fall arbitrarily far behind
-// without anything on screen changing. Orders stays the default so a caller that names
-// no module, including the MCP tools, keeps seeing exactly what it saw before.
-builder.Services.AddAlbertoPostgresAdmin(OrdersModule.ModuleKey, schema: "orders", isDefault: true);
-builder.Services.AddAlbertoPostgresAdmin(PaymentsModule.ModuleKey, schema: "payments");
-
-// Add the admin MCP surface — the same IAdminReader/IAdminOperator the GraphQL
-// admin types consume, exposed as tools over stateless Streamable HTTP.
-builder.Services.AddAlbertoAdminMcp();
-
-// Add GraphQL with subscriptions.
-//
-// The subscription backplane is Postgres LISTEN/NOTIFY, not in-process. The API runs
-// with replicas (see apps/Alberto.AppHost/Program.cs), and the admin dashboard reaches
-// it through a load-balancing BFF: a mutation handled by one replica must reach a
-// subscriber connected to any other, which an in-memory topic cannot do.
+// There is no subscription backplane here because nothing in this host subscribes: the
+// admin surface that did is parked on the feature/admin-surface branch, and the Orders
+// and Payments slices expose queries and mutations only. Reinstating it means adding
+// AddPostgresSubscriptions back alongside UseWebSockets — an in-memory topic will not
+// do, since the API runs with replicas (see apps/Alberto.AppHost/Program.cs).
 builder.Services
     .AddGraphQLServer()
     .AddHttpRequestInterceptor<TenantHttpRequestInterceptor>()
@@ -64,21 +45,13 @@ builder.Services
         o.RenameRootActivity = true;
     })
     .AddOrdersTypes()
-    .AddPaymentsTypes()
-    .AddAlbertoAdminGraphQL()
-    .AddPostgresSubscriptions((sp, options) =>
-    {
-        var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(OrdersModule.ModuleKey);
-        options.ConnectionFactory = ct => dataSource.OpenConnectionAsync(ct);
-    });
+    .AddPaymentsTypes();
 
 var app = builder.Build();
 
 // Configure pipeline
 app.UseRouting();
-app.UseWebSockets();
 app.MapGraphQL();
-app.MapAlbertoAdminMcp("/mcp");
 
 await app.RunWithGraphQLCommandsAsync(args);
 
