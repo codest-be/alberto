@@ -45,17 +45,9 @@ public static class OrdersModule
             .WithTelemetry()
             .WithEventsFrom(typeof(Contracts.OrderCreated).Assembly)
             // A single overview blended across every tenant, so it is stored under
-            // TenantScope.CrossTenant rather than under any one of them.
-            .AddProjection(OrdersOverviewProjection.Declaration, ctx =>
-            {
-                var dataSource = ctx.Services.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
-                return tenantId => new PostgresStateStore<OrdersOverview>(
-                    dataSource,
-                    nameof(OrdersOverviewProjection),
-                    "orders",
-                    rebuildVersion: ctx.RebuildVersion,
-                    tenantId: TenantScope.CrossTenantFor(tenantId));
-            })
+            // TenantScope.CrossTenant rather than under any one of them. The store is built by
+            // the slice, which is also what reads it.
+            .AddProjection(OrdersOverviewProjection.Declaration, OrdersOverviewProjection.StateStore)
             .AddEfProjection<OrderSummaryEntity, OrdersDbContext>(OrderSummaryEfProjection.Declaration)
             .WithControlLoop(o => o with { PollingInterval = TimeSpan.FromMilliseconds(100), BatchSize = 500 })
             .WithRebuilds());

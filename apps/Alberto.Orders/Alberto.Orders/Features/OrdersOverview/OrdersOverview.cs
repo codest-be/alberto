@@ -1,4 +1,4 @@
-namespace Alberto.Orders.Platform;
+namespace Alberto.Orders.Features;
 
 /// <summary>
 /// Aggregate read model for orders overview dashboard.
