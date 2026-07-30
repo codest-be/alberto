@@ -5,9 +5,7 @@ namespace Alberto.Orders.Features;
 /// <summary>
 /// The current state of an order, rebuilt from events.
 /// </summary>
-public sealed record OrderState :
-    IDeliverOrderState,
-    ICancelOrderState
+public sealed record OrderState
 {
     public Guid OrderId { get; init; }
     public Guid CustomerId { get; init; }
