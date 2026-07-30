@@ -2,7 +2,6 @@ using Alberto.Dcb;
 using Microsoft.Extensions.DependencyInjection;
 using Alberto.Dcb.Subscriptions;
 using Alberto.Dcb.Tenancy;
-using Alberto.Orders.Contracts;
 using Alberto.Orders.Platform;
 
 namespace Alberto.Orders.Features;
@@ -11,32 +10,11 @@ namespace Alberto.Orders.Features;
 /// GraphQL queries for orders.
 /// </summary>
 /// <remarks>
-/// Staging: what is left here moves into <c>Features/GetOrder</c> and
-/// <c>Features/OrdersOverview</c>, after which this file goes.
+/// Staging: what is left here moves into <c>Features/OrdersOverview</c>, after which this file
+/// goes.
 /// </remarks>
 public static class OrderQueries
 {
-    private static readonly OrderEvolver _evolver = new();
-
-    /// <summary>
-    /// Gets an order by ID from the event store (real-time, consistent).
-    /// </summary>
-    [Query]
-    [GraphQLDescription("Gets an order by ID, rebuilt from events for consistency.")]
-    public static async Task<Order?> GetOrder(
-        Guid orderId,
-        [Service] IServiceProvider sp,
-        CancellationToken ct)
-    {
-        var backend = sp.GetRequiredKeyedService<IEventStoreBackend>(OrdersModule.ModuleKey);
-        var state = await LoadOrderState(backend, orderId, ct);
-
-        if (!state.Exists)
-            return null;
-
-        return ToGraphQL(state);
-    }
-
     /// <summary>
     /// Gets the orders overview statistics from the async projection.
     /// </summary>
@@ -62,34 +40,4 @@ public static class OrderQueries
 
         return states.GetValueOrDefault(OrdersOverviewProjection.DocumentId);
     }
-
-    #region Helper Methods
-
-    private static async Task<OrderState> LoadOrderState(
-        IEventStoreBackend backend,
-        Guid orderId,
-        CancellationToken ct)
-    {
-        var events = await backend.StreamAsync(OrderDecider.BoundaryFor(orderId), cancellationToken: ct);
-        return _evolver.Reconstitute(events);
-    }
-
-    private static Order ToGraphQL(OrderState state) => new(
-        state.OrderId,
-        state.CustomerId,
-        state.LineItems.Select(x => new OrderItem(x.ProductId, x.ProductName, x.Quantity, x.UnitPrice, x.Total)).ToList(),
-        state.Notes,
-        state.Status,
-        state.Total,
-        state.TrackingNumber,
-        state.Carrier,
-        state.CancellationReason,
-        DateTimeOffset.MinValue, // Would need to track this in state
-        state.ConfirmedAt,
-        state.ShippedAt,
-        state.DeliveredAt,
-        state.CancelledAt,
-        null);
-
-    #endregion
 }
