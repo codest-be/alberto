@@ -1,13 +1,41 @@
+using Alberto.Dcb;
+using Alberto.Dcb.Postgres;
 using Alberto.Dcb.Subscriptions;
 using Alberto.Payments.Contracts;
+using Alberto.Payments.Platform;
+using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 
-namespace Alberto.Payments.Platform;
+namespace Alberto.Payments.Features;
 
 /// <summary>
 /// One row per payment, tracking where it got to in the authorize/capture/refund lifecycle.
 /// </summary>
+/// <remarks>
+/// Unlike <see cref="PaymentsOverviewProjection"/> this is not an aggregate: it keys one document
+/// per <c>PaymentId</c>, so every document belongs to a single tenant and both the writer and
+/// <see cref="PaymentSummariesQuery.GetRecentPayments"/> read it under one. <see cref="StateStore"/>
+/// lives here so the two cannot disagree about that — a store built tenant-agnostically queries a
+/// different primary key and returns nothing.
+/// </remarks>
 public static class PaymentSummaryProjection
 {
+    /// <summary>
+    /// Builds the state store this projection writes and <c>recentPayments</c> reads, so the two
+    /// cannot disagree about schema, projection name, rebuild version or tenancy.
+    /// </summary>
+    public static Func<string?, IStateStore<PaymentSummary>> StateStore(ProjectionStoreContext ctx)
+    {
+        var dataSource = ctx.Services.GetRequiredKeyedService<NpgsqlDataSource>(PaymentsModule.ModuleKey);
+
+        return tenantId => new PostgresStateStore<PaymentSummary>(
+            dataSource,
+            nameof(PaymentSummaryProjection),
+            "payments",
+            rebuildVersion: ctx.RebuildVersion,
+            tenantId: tenantId);
+    }
+
     public static readonly ProjectionDeclaration<PaymentSummary> Declaration =
         DeclareProjection.For<PaymentSummary>(nameof(PaymentSummaryProjection))
             .On<PaymentInitiated>(

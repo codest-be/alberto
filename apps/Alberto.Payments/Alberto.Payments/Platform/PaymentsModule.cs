@@ -2,6 +2,7 @@ using Alberto.Dcb;
 using Alberto.Dcb.Postgres;
 using Alberto.Dcb.Telemetry;
 using Alberto.Dcb.Tenancy;
+using Alberto.Payments.Features;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -50,17 +51,8 @@ public static class PaymentsModule
             })
             // One document per payment, so one document set per tenant: the store takes the
             // tenant of the events it is given, and a reader gets back only its own tenant's
-            // payments.
-            .AddProjection(PaymentSummaryProjection.Declaration, ctx =>
-            {
-                var dataSource = ctx.Services.GetRequiredKeyedService<NpgsqlDataSource>(ModuleKey);
-                return tenantId => new PostgresStateStore<PaymentSummary>(
-                    dataSource,
-                    nameof(PaymentSummaryProjection),
-                    "payments",
-                    rebuildVersion: ctx.RebuildVersion,
-                    tenantId: tenantId);
-            })
+            // payments. The store is built by the slice, which is also what reads it.
+            .AddProjection(PaymentSummaryProjection.Declaration, PaymentSummaryProjection.StateStore)
             .WithControlLoop(o => o with { PollingInterval = TimeSpan.FromMilliseconds(100), BatchSize = 500 }));
 
         return services;

@@ -1,10 +1,20 @@
+using Alberto.Dcb;
+using Alberto.Dcb.Subscriptions;
+using Alberto.Dcb.Tenancy;
+using Alberto.Payments.Contracts;
 using Alberto.Payments.Platform;
+using Microsoft.Extensions.DependencyInjection;
 
-namespace Alberto.Payments.Contracts;
+namespace Alberto.Payments.Features;
 
 /// <summary>
 /// GraphQL type for Payment.
 /// </summary>
+/// <remarks>
+/// Declared by this slice because this slice's projection is what fills it. <c>payment</c> also
+/// returns it — a shared <em>output contract</em> between two read slices, which is a different
+/// thing from a shared state record: nothing folds events into a <see cref="Payment"/>.
+/// </remarks>
 public sealed record Payment(
     Guid PaymentId,
     Guid OrderId,
@@ -65,4 +75,30 @@ public sealed record Payment(
         _ => throw new ArgumentOutOfRangeException(
             nameof(status), status, "Unmapped payment status from the read model."),
     };
+}
+
+public static class PaymentSummariesQuery
+{
+    /// <summary>
+    /// Gets recent payments from the async projection.
+    /// </summary>
+    [Query]
+    [GraphQLDescription("Gets the calling tenant's recent payments, ordered by last update.")]
+    public static async Task<IReadOnlyList<Payment>> GetRecentPayments(
+        [Service] ITenantAccessor tenantAccessor,
+        [Service] IServiceProvider sp,
+        int limit = 20,
+        CancellationToken ct = default)
+    {
+        // One document per PaymentId, so the documents belong to individual tenants and this field
+        // must be read under one. The factory resolved here is the writer's own, so the only thing
+        // this resolver decides is which tenant to read — and that is where the filtering happens:
+        // a tenant-enabled module's projection rows are keyed by tenant, so there is no unscoped
+        // read to accidentally fall back to.
+        var factory = sp.GetRequiredKeyedService<Func<string?, IStateStore<PaymentSummary>>>(
+            $"{PaymentsModule.ModuleKey}:{nameof(PaymentSummaryProjection)}");
+
+        var summaries = await factory(tenantAccessor.TenantId).ListRecentAsync(limit, ct);
+        return summaries.Select(Payment.FromSummary).ToList();
+    }
 }

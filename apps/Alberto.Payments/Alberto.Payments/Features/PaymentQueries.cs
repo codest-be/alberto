@@ -46,65 +46,19 @@ public static class PaymentQueries
     {
         // PaymentsOverviewProjection blends every tenant into one document, stored under
         // TenantScope.CrossTenant. Reading it with the request's tenant would look correct
-        // and return nothing.
-        var stateStore = ReaderFor<PaymentsOverview>(
-            sp, nameof(PaymentsOverviewProjection), TenantScope.CrossTenant);
+        // and return nothing. The factory resolved here is the writer's own, so the only thing
+        // this resolver decides is which tenant to read.
+        var factory = sp.GetRequiredKeyedService<Func<string?, IStateStore<PaymentsOverview>>>(
+            $"{PaymentsModule.ModuleKey}:{nameof(PaymentsOverviewProjection)}");
 
-        var states = await stateStore.LoadManyAsync(
+        var states = await factory(TenantScope.CrossTenant).LoadManyAsync(
             ["overview"],
             ct: ct);
 
         return states.GetValueOrDefault("overview");
     }
 
-    /// <summary>
-    /// Gets recent payments from the async projection.
-    /// </summary>
-    [Query]
-    [GraphQLDescription("Gets the calling tenant's recent payments, ordered by last update.")]
-    public static async Task<IReadOnlyList<Payment>> GetRecentPayments(
-        [Service] ITenantAccessor tenantAccessor,
-        [Service] IServiceProvider sp,
-        int limit = 20,
-        CancellationToken ct = default)
-    {
-        // Unlike the two *Overview projections, PaymentSummaryProjection is not an aggregate —
-        // it keys one document per PaymentId, so its documents belong to individual tenants and
-        // this field must be read under one. The store is scoped to the request's tenant, which
-        // is where the filtering happens: a tenant-enabled module's projection rows are keyed by
-        // tenant, so there is no unscoped read to accidentally fall back to.
-        var stateStore = ReaderFor<PaymentSummary>(
-            sp, nameof(PaymentSummaryProjection), tenantAccessor.TenantId);
-
-        var summaries = await stateStore.ListRecentAsync(limit, ct);
-        return summaries.Select(Payment.FromSummary).ToList();
-    }
-
     #region Helper Methods
-
-    /// <summary>
-    /// Resolves the read-side store for one of the Payments module's projections, scoped to
-    /// <paramref name="tenantId"/>.
-    /// </summary>
-    /// <remarks>
-    /// The factory this resolves is the one <c>PaymentsModule</c> gave
-    /// <see cref="Alberto.Dcb.DcbModuleBuilderExtensions.AddProjection{TState}"/>, so the reader
-    /// cannot disagree with the writer about schema, projection type, rebuild version, or
-    /// tenancy mode — the only thing decided here is which tenant to read. Constructing a store
-    /// independently is what let this file read under a <c>(tenant_id, projection_type, …)</c>
-    /// key while the writer stored rows under <c>(projection_type, …)</c>, and return nothing
-    /// for as long as it did.
-    /// </remarks>
-    private static IStateStore<TState> ReaderFor<TState>(
-        IServiceProvider sp,
-        string projectionType,
-        string? tenantId)
-    {
-        var factory = sp.GetRequiredKeyedService<Func<string?, IStateStore<TState>>>(
-            $"{PaymentsModule.ModuleKey}:{projectionType}");
-
-        return factory(tenantId);
-    }
 
     private static async Task<PaymentState> LoadPaymentState(
         IEventStoreBackend backend,
