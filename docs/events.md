@@ -179,9 +179,8 @@ know about older versions.
 `AlbertoStore`; it calls `EventSerializer.Deserialize` and therefore runs the upcaster chain.
 
 **The command pipeline's `Load<TState>` method applies upcasting.** When
-`CommandPipeline.Load<TState>(boundary, evolver)` is called it goes through
-`AlbertoStore.ReconstituteWithPosition`, which threads `EventSerializer.Deserialize` into the
-`Evolver<TState>` dispatch loop. Every envelope is passed through `EventSerializer` — and
+`CommandPipeline.Load<TState>(boundary, evolver)` is called, it threads `EventSerializer.Deserialize`
+into the `Evolver<TState>` dispatch loop. Every envelope is passed through `EventSerializer` — and
 therefore through the upcaster chain — before the evolver handler sees it. The handler always
 receives the current CLR type.
 

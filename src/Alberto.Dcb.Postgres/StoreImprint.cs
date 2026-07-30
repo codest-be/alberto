@@ -52,6 +52,23 @@ internal static class StoreImprint
     private const string UniqueViolation = "23505";
 
     /// <summary>
+    /// PostgreSQL <c>lock_not_available</c>, raised when a database-level <c>lock_timeout</c>
+    /// expires while waiting for the lock behind <c>CREATE TABLE IF NOT EXISTS</c>. The advisory
+    /// migration lock on the <see cref="PostgresMigrator.Migrate"/> path prevents this, but
+    /// <see cref="EnsureTable"/> is also reached from <see cref="ResolveTenancy"/>, called by
+    /// <c>GetPendingMigrations</c> and <c>ValidateTenancyMode</c> outside that lock.
+    /// </summary>
+    /// <remarks>
+    /// Unlike <see cref="DuplicateTable"/> and <see cref="UniqueViolation"/>, this one does not
+    /// prove the table is there — it says only that someone else holds the lock, and that session
+    /// may not have committed yet. Swallowing it is still the better of two loud failures: the
+    /// caller goes on to query the table and either finds it, or fails with <c>undefined_table</c>
+    /// at the point where the missing table actually matters. Neither outcome can be mistaken for
+    /// a fresh store, so no wrong tenancy answer can come out of it.
+    /// </remarks>
+    private const string LockNotAvailable = "55P03";
+
+    /// <summary>
     /// Returns what the store at <paramref name="schemaName"/> was created as, or null when it
     /// is fresh and free to become either.
     /// </summary>
@@ -101,7 +118,7 @@ internal static class StoreImprint
     /// <remarks>
     /// Every replica runs this as the first thing it does at startup, which is a hotter race than
     /// <c>CREATE SCHEMA IF NOT EXISTS</c> elsewhere in the migrator. PostgreSQL's IF NOT EXISTS is
-    /// not atomic against a concurrent creator, so the two SQLSTATEs that race produces are
+    /// not atomic against a concurrent creator, so the three SQLSTATEs that race produces are
     /// swallowed — the other replica created exactly the table this one wanted.
     /// </remarks>
     private static void EnsureTable(NpgsqlConnection connection, string schemaName)
@@ -119,7 +136,7 @@ internal static class StoreImprint
         {
             cmd.ExecuteNonQuery();
         }
-        catch (PostgresException ex) when (ex.SqlState is DuplicateTable or UniqueViolation)
+        catch (PostgresException ex) when (ex.SqlState is DuplicateTable or UniqueViolation or LockNotAvailable)
         {
             // Lost the race; the table is there.
         }

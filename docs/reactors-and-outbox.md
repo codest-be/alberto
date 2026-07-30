@@ -79,11 +79,14 @@ only, precisely because replaying side effects is not something it can make safe
 ### Tuning one processor
 
 ```csharp
-.ReactTo<OrderPlaced>(handler, "order-emails", configure: c => c.WithConcurrency(8))
+.ReactTo<OrderPlaced>(handler, "order-emails", configure: o => o with { MaxConcurrency = 8 })
 ```
 
-The configurator also has `BatchIfSupported()`, `RequireBatching()` and `DisableBatching()` for
-handlers that implement `IBatchableProcessor`. It is ignored for `Sync` reactors.
+The `configure` parameter is `Func<ProcessorExecutionOptions, ProcessorExecutionOptions>` — return
+a modified record to change batching or concurrency. Batching mode values are
+`ProcessorBatchingMode.IfSupported`, `ProcessorBatchingMode.Required` (the default), and
+`ProcessorBatchingMode.Disabled`. For example: `o => o with { BatchingMode = ProcessorBatchingMode.IfSupported }`.
+The setting is ignored for `Sync` reactors.
 
 ## The outbox
 

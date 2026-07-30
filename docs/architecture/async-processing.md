@@ -71,31 +71,33 @@ Attempts exhausted ────────────────────�
                              └─ no  → skip event
 ```
 
-`DeadLetterRetryLoop` separately picks up dead letters that an operator has marked for retry (`IDeadLetterStore.MarkForRetryAsync`, exposed as `alberto ops dead-letters retry`).
+A separate retry loop picks up dead letters that an operator has marked for retry (`IDeadLetterStore.MarkForRetryAsync`, exposed as `alberto ops dead-letters retry`).
 
 ## Key Components
 
-### AsyncProjection
+### DeclaredAsyncProjection
 
 Transforms events into read-model state using pure functions.
 
-**Location:** `src/Alberto.Dcb/Subscriptions/AsyncProjection.cs`
+**Location:** `src/Alberto.Dcb/Subscriptions/DeclaredAsyncProjection.cs`
 
 1. Extract document ID from the event
-2. Get the tenant-scoped state store
-3. Load current state (or create new)
+2. Get the tenant-scoped state store (one store per tenant, built lazily from the factory)
+3. Load current state (or start from the declared initial state)
 4. Apply the event → `Set`, `Delete`, or `Unchanged`
 5. Persist the result
 
-### AsyncReactor
+### FunctionalReactor
 
 Handles side effects in response to events.
 
-**Location:** `src/Alberto.Dcb/Subscriptions/AsyncReactor.cs`
+**Location:** `src/Alberto.Dcb/Subscriptions/FunctionalReactor.cs`
 
-- Reflection-based dispatch to `IReact<TEvent>` handlers
-- No state persistence
-- Scans the reactor type for implemented interfaces at startup
+Reactors are registered declaratively via `ReactTo<TEvent>(handler, processorId, ...)` on the
+module builder, not as classes. Each call wraps the supplied delegate in a `FunctionalReactor<TEvent>`
+and registers it as an async processor. There is no reflection-based dispatch and no `IReact<TEvent>`
+interface — dispatch is entirely delegate-based. Concurrency is controlled by `MaxConcurrency` in
+`ProcessorExecutionOptions`; batching follows `ProcessorBatchingMode` on the same record.
 
 ### BatchedEfProjection
 
@@ -282,8 +284,8 @@ rule" for how to add a file to the allow-list when non-event JSON deserializatio
 | Batch middleware | `src/Alberto.Dcb/Subscriptions/BatchConsumeMiddleware.cs` |
 | RetryOptions | `src/Alberto.Dcb/Configuration/RetryOptions.cs` |
 | IErrorClassifier | `src/Alberto.Dcb/Subscriptions/IErrorClassifier.cs` |
-| AsyncProjection | `src/Alberto.Dcb/Subscriptions/AsyncProjection.cs` |
-| AsyncReactor | `src/Alberto.Dcb/Subscriptions/AsyncReactor.cs` |
+| DeclaredAsyncProjection | `src/Alberto.Dcb/Subscriptions/DeclaredAsyncProjection.cs` |
+| FunctionalReactor | `src/Alberto.Dcb/Subscriptions/FunctionalReactor.cs` |
 | CachingCheckpointStore | `src/Alberto.Dcb/Subscriptions/CachingCheckpointStore.cs` |
 | PostgresCheckpointStore | `src/Alberto.Dcb.Postgres/PostgresCheckpointStore.cs` |
 | PostgresEventListener | `src/Alberto.Dcb.Postgres/PostgresEventListener.cs` |

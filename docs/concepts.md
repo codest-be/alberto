@@ -112,13 +112,11 @@ concurrency.
 
 A boundary is a query used as an **append condition**. The pattern is always three steps:
 
-```csharp
-var (state, lastPosition) = await store.FoldWithPosition(boundary, initial, apply, ct);
-// ... decide, producing events ...
-await eventStore.AppendAsync(events, boundary, expectedPosition: lastPosition, ct);
-```
+1. Fold the boundary events into state and record the position read.
+2. Decide which events to emit.
+3. Append under the same boundary, supplying the position from step 1 as the expected position.
 
-The append succeeds only if nothing matching `boundary` was written after `lastPosition`. If
+The append succeeds only if nothing matching `boundary` was written after that position. If
 something was, the store throws `DcbConflictException` carrying `ExpectedPosition`,
 `ConflictingPosition` and the `Query` — retry the whole read-decide-append, since your state is now
 stale by definition.
