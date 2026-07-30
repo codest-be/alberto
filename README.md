@@ -72,6 +72,10 @@ contend; two people reserving the same seat always do.
   rewind a processor; retry or dismiss dead letters; run a rebuild. Mutating commands confirm before
   they act and most of them take `--dry-run`; every command takes `--json`, so the tool you use
   interactively is the one your runbooks call. See [docs/operations.md](docs/operations.md).
+- **The same operations in-process** — a GraphQL admin API with live subscriptions, and an MCP
+  server so an agent can diagnose a lagging processor. Two lines of DI each; every mutation
+  appends an attributed audit event in the same transaction as the change.
+  See [docs/admin.md](docs/admin.md).
 - **OpenTelemetry throughout** — traces across the append→consume seam and metrics for lag,
   conflicts, retries and dead letters.
 
@@ -132,6 +136,7 @@ The full, runnable version of that program is
 | [Reactors and the outbox](docs/reactors-and-outbox.md) | Side effects and publishing to the outside world |
 | [Multi-tenancy](docs/multi-tenancy.md) | Tenant isolation, leases, and what it costs |
 | [Operations](docs/operations.md) | The `alberto` CLI, dead letters, error policy, telemetry |
+| [The admin surface](docs/admin.md) | Wiring the admin GraphQL API and MCP server into your host |
 | [Configuration reference](docs/configuration.md) | Three-phase pipeline, all options, validation codes, custom backends |
 | [Async processing architecture](docs/architecture/async-processing.md) | How the control loop actually works |
 | [Tenant sharding](docs/architecture/tenant-sharding.md) | Spreading a module's tenants over several databases |

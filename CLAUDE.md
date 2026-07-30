@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Alberto is a DCB (Dynamic Consistency Boundary) Event Store for .NET 10.0. The repository is a monorepo containing packable core libraries (`/src`), example applications (`/apps`), an operator CLI (`/tools`), and tests (`/tests`).
 
-There is no frontend in this repository — the event store is a library plus a terminal CLI.
+The event store is a library, a terminal CLI, and an admin surface (GraphQL + MCP) that hosts opt into. The React operator console under `apps/Alberto.Admin` is an example, not a shipped package.
 
 ## Build & Run Commands
 
@@ -97,7 +97,17 @@ Note: `apps/Alberto.Payments` is in the solution and builds, but it has no host 
 - **GraphQL** (Orders example only): HotChocolate 15.x
 
 ### Admin surface
-The operator surface is the CLI in `tools/Alberto.Cli`. There is no admin HTTP API or admin package.
+Three front doors over one set of operations — see [docs/admin.md](docs/admin.md).
+
+- **CLI** (`tools/Alberto.Cli`) — talks straight to Postgres, needs no changes to the host.
+- **GraphQL** (`src/Alberto.Dcb.Admin.GraphQL`, `AddAlbertoAdminGraphQL`) — every field takes an optional `module`; `null` means the default module. Only `adminDeadLetters`, `adminEvents` and `adminProjectionStates` take `tenant`. Subscription topics are module-scoped (`AdminTopics.ForModule`), and a multi-replica host needs a real backplane — the Orders example uses Postgres `LISTEN`/`NOTIFY`, not `AddInMemorySubscriptions`.
+- **MCP** (`src/Alberto.Dcb.Admin.Mcp`, `AddAlbertoAdminMcp`) — 25 tools over stateless Streamable HTTP. Resolves the *unkeyed* reader/operator, so it only ever addresses the default module.
+
+`AddAlbertoPostgresAdmin(moduleKey, schema, isDefault)` is called once per module and is the only implementation of `IAdminReader`/`IAdminOperator` — there is no in-memory admin. `isDefault` also registers the unkeyed pair. Registering only some modules makes the others invisible, not unsupported.
+
+The React console (`apps/Alberto.Admin`) and its BFF (`apps/Alberto.Admin.Bff`) are **examples, not packages** — integrators copy them. The BFF is anonymous by default; `AdminBffAuthentication.AddAdminAuthentication` is the seam that turns on OIDC, and returning `true` from it is what flips the default authorization policy, maps `/bff/login`, and makes `/bff/user` answer 401 so the console renders a sign-in prompt.
+
+Every mutation appends an `admin-*` event to the module's own log in the same transaction as the change, carrying the caller's `operatorId` (reserved `__admin__` tenant on multi-tenant stores). Readable afterwards via `adminEvents`, live via `onAdminAuditEvent`.
 
 - **Per-processor mutations** go through the core interfaces: `ICheckpointStore` (`SaveAsync`, `ResetAsync`, `RewindAsync`) and `IDeadLetterStore` (`CountAsync`, `ClearAsync`, `MarkForRetryAsync`).
 - **`PostgresAdminDataAccess`** (`src/Alberto.Dcb.Postgres`) holds the inspection queries and the composite transactional mutations (`RetryByRewindAsync`, `ReleaseTenantLeasesAsync`) that span multiple tables and so cannot be composed from per-processor interfaces.
@@ -131,4 +141,9 @@ The operator surface is the CLI in `tools/Alberto.Cli`. There is no admin HTTP A
 
 Documented so they are not mistaken for working features:
 
-*(None currently. The two rebuild-window gaps that were listed here are closed — see "Discarding a rebuild version" above.)*
+*(The two rebuild-window gaps that were listed here are closed — see "Discarding a rebuild version" above.)*
+
+- **The signed-in user does not reach the audit trail.** `apps/Alberto.Admin.Bff` forwards an `X-Alberto-Operator` header, but nothing on the API side reads it — mutations are attributed to the `operatorId` argument, defaulting to `admin-panel`. Wiring an identity provider does not currently change what the audit trail records.
+- **MCP addresses only the default module** — its tools take no module argument and resolve the unkeyed reader/operator.
+- **No `renameCheckpoint` mutation.** `IAdminOperator.RenameCheckpointAsync` is reachable from the CLI and the `alberto_rename_checkpoint` MCP tool, but has no GraphQL equivalent.
+- **`ProjectionState` carries no document body**, so the console can list projection documents and their positions but cannot show one's contents.

@@ -28,8 +28,10 @@ public static class AdminMcpExtensions
         re-run side effects; read the description before calling one, and prefer
         alberto_retry_by_rewind over clearing dead letters and alberto_start_rebuild over resetting
         a checkpoint. Always pass operatorId — mutations are attributed to it, and it defaults to a
-        generic "mcp" otherwise. Note that this attribution is broadcast to live admin subscribers
-        rather than persisted, so there is no audit history to query after the fact.
+        generic "mcp" otherwise. Attribution is durable: every mutation appends an admin-* event to
+        the log in the same transaction as the change, so you can read your own actions back with
+        alberto_list_events, filtering by type — admin-checkpoint-reset, admin-dead-letters-cleared,
+        admin-rebuild-started, and so on.
 
         Two invariants worth holding onto: global positions are per-database, so a position from
         one shard means nothing against another; and a store's single-tenant or multi-tenant mode

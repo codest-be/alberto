@@ -7,8 +7,13 @@ Running Alberto in production comes down to four questions:
 3. **Who is doing the work?** — processor and tenant leases.
 4. **How do I intervene?** — the `alberto` CLI.
 
-There is no admin HTTP API and no admin package. The operator surface is the CLI, which talks
-straight to Postgres.
+This page is about the CLI, which talks straight to Postgres and needs no changes to your
+application. It is the operator surface you can reach when the application is the thing that
+is broken.
+
+The same operations are also available in-process, as a GraphQL API and as an MCP server for
+agents, if you want a console or your own tooling — see [admin.md](admin.md). All of them read
+and write the same tables; none is a cache or a copy.
 
 ## The CLI
 
