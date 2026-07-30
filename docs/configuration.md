@@ -402,6 +402,9 @@ surfacing them in one error message.
 | `ALB0018` | An event type declares `[EventType(Version = N)]` with `N > 1` but no upcaster is registered for it | Add `.AddUpcaster(DeclareUpcaster.For<T>("...").From<TOld>(1, ...).Build())` to cover versions `1..N-1`. Without an upcaster, reading any event stored before version `N` will throw at runtime |
 | `ALB0019` | A declared upcaster references an event type that is not registered in the module's events assembly | Ensure the type annotated with `[EventType("...")]` is in the assembly passed to `.WithEventsFrom(...)`, or remove the upcaster if the event type is no longer in use |
 | `ALB0020` | An event type declares `[EventType(Version = N)]` but its upcaster chain produces a different version | If the chain stops short, add the missing step(s) so it reaches version `N` — `.From<TOld>(chainVersion, ...)` continues where the current chain stops. If it overshoots, either raise `[EventType("...", Version = chainVersion)]` to match the chain, or drop the step(s) past version `N` |
+| `ALB0022` | A processor sets `BatchingMode.Required` but `MaxConcurrency > 1` — pipelined mode dispatches per-event to N workers; the Required guarantee cannot be honoured | Set `MaxConcurrency` to 1 to use batch dispatch, or change `BatchingMode` to `IfSupported` or `Disabled` |
+| `ALB0023` | `.WithRebuilds()` is declared but the in-memory backend does not provide an `IProjectionRebuildStore` | Switch to `.WithPostgres(...)`, or remove `.WithRebuilds()` |
+| `ALB0024` | `Leases.Enabled = true` is declared but the in-memory backend does not provide an `IProcessorLeaseManager` | Switch to `.WithPostgres(...)`, or disable leases with `.WithControlLoop(o => o with { Leases = o.Leases with { Enabled = false } })` |
 
 ### Store imprint (ALB0021)
 

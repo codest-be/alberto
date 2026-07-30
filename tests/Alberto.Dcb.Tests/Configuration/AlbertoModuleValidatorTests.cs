@@ -90,6 +90,17 @@ public class AlbertoModuleValidatorTests
         failures[0].Problem.Should().Contain("busy");
     }
 
+    [Fact]
+    public void BatchingMode_Required_with_MaxConcurrency_greater_than_one_fails_with_ALB0022()
+    {
+        var execution = new ProcessorExecutionOptions { BatchingMode = ProcessorBatchingMode.Required, MaxConcurrency = 4 };
+
+        var failures = Run(Valid(Processor("batch-required", execution)));
+
+        failures.Should().ContainSingle().Which.Code.Should().Be("ALB0022");
+        failures[0].Problem.Should().Contain("batch-required");
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("  ")]

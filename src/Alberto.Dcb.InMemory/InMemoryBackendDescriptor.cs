@@ -40,6 +40,23 @@ public sealed record InMemoryBackendDescriptor : IAlbertoBackendDescriptor
                 "Remove .WithTenancy() from this module, or give it its own .WithInMemory() backend " +
                 "instead of sharing.");
         }
+
+        if (definition.ControlLoop.Rebuilds.Enabled)
+        {
+            yield return new AlbertoValidationFailure(
+                "ALB0023",
+                "The module enables projection rebuilds (.WithRebuilds()) but the in-memory backend does not provide an IProjectionRebuildStore.",
+                "Switch to .WithPostgres(...) for a module that uses projection rebuilds, or remove .WithRebuilds().");
+        }
+
+        if (definition.ControlLoop.Leases.Enabled)
+        {
+            yield return new AlbertoValidationFailure(
+                "ALB0024",
+                "The module enables processor leases (Leases.Enabled = true) but the in-memory backend does not provide an IProcessorLeaseManager.",
+                "Switch to .WithPostgres(...) for a module that uses processor leases, or disable leases with " +
+                ".WithControlLoop(o => o with { Leases = o.Leases with { Enabled = false } }).");
+        }
     }
 
     /// <inheritdoc />

@@ -15,6 +15,19 @@ public interface ICheckpointStore
     /// <summary>
     /// Saves the last processed position for a processor.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This method is monotonic: a position lower than the current checkpoint is silently
+    /// discarded (Postgres via <c>GREATEST</c>, in-memory via an explicit comparison).
+    /// <see cref="RewindAsync"/> is the only way to move a checkpoint backwards.
+    /// </para>
+    /// <para>
+    /// Some implementations buffer the update in memory and flush to durable storage on a
+    /// periodic timer or via an explicit <c>FlushAsync</c>; callers requiring immediate
+    /// durability must flush explicitly on such an implementation, since this interface
+    /// offers no way to demand it.
+    /// </para>
+    /// </remarks>
     Task SaveAsync(string processorId, long position, CancellationToken ct = default);
 
     /// <summary>

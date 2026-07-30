@@ -19,11 +19,11 @@ public sealed class ShardRoutingEventStoreBackend(
     TenantShardResolver resolver,
     Func<string, IEventStoreBackend> shardBackends) : IEventStoreBackend
 {
+    private readonly ShardRouter<IEventStoreBackend> _router = new(moduleKey, tenantAccessor, resolver, shardBackends);
+
     /// <inheritdoc />
     /// <remarks>
-    /// <paramref name="afterPosition"/> must be a position issued by this tenant's shard.
-    /// Positions are per-database sequences; passing a value obtained from a different shard
-    /// produces silently wrong results — events may be skipped or repeated.
+    /// Per-shard position caveat: see <see cref="ShardRoutingEventStore.StreamAsync"/>.
     /// </remarks>
     public async Task<IReadOnlyCollection<IEventEnvelope>> StreamAsync(
         DcbQuery query,
@@ -31,7 +31,7 @@ public sealed class ShardRoutingEventStoreBackend(
         int? limit = null,
         CancellationToken cancellationToken = default)
     {
-        var backend = await ForCurrentTenantAsync(cancellationToken).ConfigureAwait(false);
+        var backend = await _router.ForCurrentTenantAsync(cancellationToken).ConfigureAwait(false);
         return await backend.StreamAsync(query, afterPosition, limit, cancellationToken)
             .ConfigureAwait(false);
     }
@@ -42,7 +42,7 @@ public sealed class ShardRoutingEventStoreBackend(
         int? limit = null,
         CancellationToken cancellationToken = default)
     {
-        var backend = await ForCurrentTenantAsync(cancellationToken).ConfigureAwait(false);
+        var backend = await _router.ForCurrentTenantAsync(cancellationToken).ConfigureAwait(false);
         return await backend.StreamAllAsync(afterPosition, limit, cancellationToken)
             .ConfigureAwait(false);
     }
@@ -54,29 +54,18 @@ public sealed class ShardRoutingEventStoreBackend(
         long? expectedPosition = null,
         CancellationToken cancellationToken = default)
     {
-        var backend = await ForCurrentTenantAsync(cancellationToken).ConfigureAwait(false);
+        var backend = await _router.ForCurrentTenantAsync(cancellationToken).ConfigureAwait(false);
         return await backend.AppendAsync(events, dcbQuery, expectedPosition, cancellationToken)
             .ConfigureAwait(false);
     }
 
     /// <inheritdoc />
     /// <remarks>
-    /// The returned position belongs to the current tenant's shard. Each shard maintains its own
-    /// independent <c>position</c> sequence starting at 1, so a value from shard A is meaningless
-    /// in shard B. Never compare, order, or use a position from one shard as a cursor into
-    /// another — the result would silently be nonsense with no runtime error to catch it.
+    /// Per-shard position caveat: see <see cref="ShardRoutingEventStore.GetLastPositionAsync"/>.
     /// </remarks>
     public async Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default)
     {
-        var backend = await ForCurrentTenantAsync(cancellationToken).ConfigureAwait(false);
+        var backend = await _router.ForCurrentTenantAsync(cancellationToken).ConfigureAwait(false);
         return await backend.GetLastPositionAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    private async ValueTask<IEventStoreBackend> ForCurrentTenantAsync(CancellationToken cancellationToken)
-    {
-        var shardId = await resolver.ResolveAsync(tenantAccessor.TenantId, cancellationToken)
-            .ConfigureAwait(false);
-
-        return shardBackends(ShardKey.Compose(moduleKey, shardId));
     }
 }
