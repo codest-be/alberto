@@ -5,12 +5,7 @@ namespace Alberto.Payments.Features;
 /// <summary>
 /// The current state of a payment, rebuilt from events.
 /// </summary>
-public sealed record PaymentState :
-    IInitiatePaymentState,
-    IAuthorizePaymentState,
-    ICapturePaymentState,
-    IFailPaymentState,
-    IRefundPaymentState
+public sealed record PaymentState
 {
     public Guid PaymentId { get; init; }
     public Guid OrderId { get; init; }
