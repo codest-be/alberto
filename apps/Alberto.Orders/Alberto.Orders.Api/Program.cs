@@ -4,8 +4,8 @@ using Alberto.Dcb.Admin.Mcp;
 using Alberto.Dcb.Postgres;
 using Alberto.Dcb.Tenancy;
 using Alberto.Orders.Api.GraphQL;
-using Alberto.Orders.Infrastructure;
-using Alberto.Payments.Infrastructure;
+using Alberto.Orders.Platform;
+using Alberto.Payments.Platform;
 using HotChocolate.Diagnostics;
 using Npgsql;
 using ServiceDefaults;
@@ -63,7 +63,8 @@ builder.Services
         o.Scopes = ActivityScopes.ExecuteHttpRequest;
         o.RenameRootActivity = true;
     })
-    .AddTypes()
+    .AddOrdersTypes()
+    .AddPaymentsTypes()
     .AddAlbertoAdminGraphQL()
     .AddPostgresSubscriptions((sp, options) =>
     {

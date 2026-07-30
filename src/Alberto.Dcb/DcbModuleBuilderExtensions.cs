@@ -78,12 +78,12 @@ public static class DcbModuleBuilderExtensions
     /// unregistered key throws when it first runs, not when the host is built.
     /// </para>
     /// <code>
-    /// // per-tenant read (e.g. PaymentQueries.GetRecentPayments):
+    /// // per-tenant read (e.g. PaymentSummariesQuery.GetRecentPayments):
     /// var factory = sp.GetRequiredKeyedService&lt;Func&lt;string?, IStateStore&lt;PaymentSummary&gt;&gt;&gt;(
     ///     $"{PaymentsModule.ModuleKey}:{nameof(PaymentSummaryProjection)}");
     /// var store = factory(tenantId);
     ///
-    /// // cross-tenant read (e.g. OrderQueries.GetOrdersOverview):
+    /// // cross-tenant read (e.g. OrdersOverviewQuery.GetOrdersOverview):
     /// var store = factory(TenantScope.CrossTenant);
     /// </code>
     /// </remarks>

@@ -1228,7 +1228,7 @@ services.AddAlberto("orders", module => module
 ```
 
 The full working 1.0 example is
-`apps/Alberto.Orders/Alberto.Orders.Infrastructure/OrdersModule.cs`.
+`apps/Alberto.Orders/Alberto.Orders/Platform/OrdersModule.cs`.
 
 ---
 

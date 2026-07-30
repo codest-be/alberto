@@ -7,8 +7,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Alberto.Orders.Infrastructure\Alberto.Orders.Infrastructure.csproj" />
-    <ProjectReference Include="..\..\Alberto.Payments\Alberto.Payments.Infrastructure\Alberto.Payments.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Alberto.Examples.Shared\Alberto.Examples.Shared.csproj" />
+    <ProjectReference Include="..\Alberto.Orders\Alberto.Orders.csproj" />
+    <ProjectReference Include="..\..\Alberto.Payments\Alberto.Payments\Alberto.Payments.csproj" />
     <ProjectReference Include="..\..\..\src\Alberto.Dcb.Telemetry\Alberto.Dcb.Telemetry.csproj" />
     <ProjectReference Include="..\..\ServiceDefaults\ServiceDefaults.csproj" />
     <ProjectReference Include="..\..\..\src\Alberto.Dcb.Admin\Alberto.Dcb.Admin.csproj" />
@@ -21,7 +22,12 @@
     <PackageReference Include="HotChocolate.AspNetCore" />
     <PackageReference Include="HotChocolate.AspNetCore.CommandLine" />
     <PackageReference Include="HotChocolate.Subscriptions.Postgres" />
-    <PackageReference Include="HotChocolate.Types.Analyzers" />
+    <!--
+      No HotChocolate.Types.Analyzers here: every GraphQL type now lives in a slice inside the
+      Alberto.Orders and Alberto.Payments module projects, which run the analyzer themselves.
+      This host only composes their generated type modules.
+    -->
+
   </ItemGroup>
 
 </Project>

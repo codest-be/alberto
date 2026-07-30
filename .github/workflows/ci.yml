@@ -34,6 +34,17 @@ jobs:
       - name: Test
         run: dotnet test tests/Alberto.Dcb.Tests/Alberto.Dcb.Tests.csproj -c Release --no-build --logger "console;verbosity=normal" --collect:"XPlat Code Coverage"
 
+      # The example modules and their GraphQL schema snapshot. Built separately because they are
+      # not referenced by Alberto.Dcb.Tests; buildable here because the modules are plain SDK
+      # projects — only the Api and AppHost need the Aspire workload, and neither is referenced.
+      # The snapshot is what proves a refactor of the examples changed nothing a client can see,
+      # so it has to run somewhere other than a developer's machine.
+      - name: Build examples
+        run: dotnet build tests/Alberto.Examples.Tests/Alberto.Examples.Tests.csproj -c Release
+
+      - name: Test examples
+        run: dotnet test tests/Alberto.Examples.Tests/Alberto.Examples.Tests.csproj -c Release --no-build --logger "console;verbosity=normal"
+
       # Proves the benchmark suite still compiles and executes. --job dry runs each case
       # once with no warmup, so it measures nothing — it exists to stop the suite from
       # bit-rotting between nightly runs, which is how benchmark suites usually die.
