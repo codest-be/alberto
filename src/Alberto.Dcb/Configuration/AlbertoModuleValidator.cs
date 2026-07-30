@@ -379,6 +379,15 @@ public sealed class AlbertoModuleValidator : IValidateOptions<AlbertoModuleDefin
                     $"Processor '{processor.ProcessorId}' asks for MaxConcurrency {processor.Execution.MaxConcurrency} while batching is Disabled. Concurrency only applies within a batch.",
                     "Set BatchingMode to Required or IfSupported, or set MaxConcurrency back to 1."));
             }
+
+            if (processor.Execution is { MaxConcurrency: > 1, BatchingMode: ProcessorBatchingMode.Required })
+            {
+                failures.Add(new AlbertoValidationFailure(
+                    "ALB0022",
+                    $"Processor '{processor.ProcessorId}' sets BatchingMode.Required but MaxConcurrency is {processor.Execution.MaxConcurrency}. " +
+                    "Pipelined mode dispatches events individually to N concurrent workers; batching is skipped and the Required guarantee cannot be honoured.",
+                    "Set MaxConcurrency to 1 to use batch dispatch, or change BatchingMode to IfSupported or Disabled."));
+            }
         }
     }
 }
