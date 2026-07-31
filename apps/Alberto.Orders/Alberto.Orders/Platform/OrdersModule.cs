@@ -48,7 +48,13 @@ public static class OrdersModule
             // TenantScope.CrossTenant rather than under any one of them. The store is built by
             // the slice, which is also what reads it.
             .AddProjection(OrdersOverviewProjection.Declaration, OrdersOverviewProjection.StateStore)
-            .AddEfProjection<OrderSummaryEntity, OrdersDbContext>(OrderSummaryEfProjection.Declaration)
+            // Every handler keys the document on the order's GUID, so no two tenants can land
+            // on the same row — which is the one thing an EF projection on a tenant-enabled
+            // module has to be able to promise, since IProjectionEntity gives its store no
+            // tenant column to filter on. Without this, registration fails with ALB0027.
+            .AddEfProjection<OrderSummaryEntity, OrdersDbContext>(
+                OrderSummaryEfProjection.Declaration,
+                documentIds: EfDocumentIdUniqueness.AcrossTenants)
             .WithControlLoop(o => o with { PollingInterval = TimeSpan.FromMilliseconds(100), BatchSize = 500 })
             .WithRebuilds());
 

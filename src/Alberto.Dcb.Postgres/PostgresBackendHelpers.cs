@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Npgsql;
@@ -145,18 +146,49 @@ internal static class PostgresBackendHelpers
 
     /// <summary>
     /// Acquires a transaction-scoped advisory lock keyed by <paramref name="lockKey"/>.
-    /// <para>
-    /// The two-argument advisory-lock form (classid 1 = append serialization) occupies
-    /// a distinct namespace from the single-argument processor-leadership locks, so the
-    /// two families never collide. The lock is held until the transaction commits or rolls
-    /// back.
-    /// </para>
+    /// The lock is held until the transaction commits or rolls back.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The key is hashed with <c>hashtextextended</c>, not <c>hashtext</c>. That is the whole
+    /// point of this method's shape and it is worth being explicit about, because the
+    /// alternative is not wrong so much as quietly insufficient.
+    /// </para>
+    /// <para>
+    /// The append lock is what serializes the DCB conflict check: two appends whose boundaries
+    /// could overlap must not evaluate that check concurrently, so they must agree on a lock.
+    /// The corollary is that two appends which could <em>not</em> overlap should take
+    /// <em>different</em> locks — that is where multi-tenant append throughput comes from, since
+    /// the key is <c>alberto-append:{schema}:{tenantId}</c>.
+    /// </para>
+    /// <para>
+    /// The earlier form, <c>pg_advisory_xact_lock(1, hashtext(key))</c>, fixed classid at 1, so
+    /// every distinct key had to fit in <c>hashtext</c>'s 32-bit output. Collisions there are not
+    /// a correctness problem — a shared lock over-serializes, it never under-serializes — but
+    /// they are invisible and they scale badly: by the birthday bound, P(some pair of tenants
+    /// collides) ≈ 1 − exp(−n²/2³³), which is roughly 0.6% at 10k tenants, 10% at 30k, and 50% at
+    /// 77k. The symptom is two unrelated tenants' appends serializing against each other with no
+    /// error, no log line, and nothing in application telemetry to point at it — a throughput
+    /// cliff on the headline feature that gets worse as the deployment grows.
+    /// </para>
+    /// <para>
+    /// <c>hashtextextended</c> returns <c>bigint</c>, which suits the single-argument lock form
+    /// and moves the same bound to 2⁶⁴: under 1 in 10¹⁰ for a million tenants.
+    /// </para>
+    /// <para>
+    /// Moving to the single-argument form puts append locks in the same namespace as the
+    /// migration lock (<c>hashtext('alberto:migrate')</c> in <see cref="PostgresMigrator"/>),
+    /// which the two-argument form had kept separate. That is not a regression: the migration
+    /// lock is one fixed value, so an append key would have to hash to exactly it — a 2⁻⁶⁴ event
+    /// — and the consequence if it ever did is an append waiting behind a schema migration,
+    /// which is what you would want anyway.
+    /// </para>
+    /// </remarks>
     internal static async Task AcquireAppendLockAsync(
         NpgsqlConnection connection, NpgsqlTransaction transaction, string lockKey, CancellationToken cancellationToken)
     {
         await using var lockCmd = new NpgsqlCommand(
-            "SELECT pg_advisory_xact_lock(1, hashtext(@lock_key))", connection, transaction);
+            "SELECT pg_advisory_xact_lock(hashtextextended(@lock_key, 0))", connection, transaction);
         lockCmd.Parameters.AddWithValue("lock_key", lockKey);
         await lockCmd.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -318,8 +350,102 @@ internal static class PostgresBackendHelpers
         }
         catch (PostgresException ex) when (ex.SqlState == "P0001" && ex.Message.Contains("DCB conflict"))
         {
-            throw new DcbConflictException(
-                "DCB conflict detected: events matching the query exist after the expected position", ex);
+            throw ToConflictException(ex, dcbQuery, expectedPosition);
+        }
+    }
+
+    /// <summary>
+    /// Turns the server's <c>P0001</c> conflict into a <see cref="DcbConflictException"/> that
+    /// carries the position, the expected position and the query.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Two of the three are already here: the append that raised the conflict was given
+    /// <paramref name="expectedPosition"/> and <paramref name="dcbQuery"/>, and neither is
+    /// changed by the round trip. Only the conflicting position is genuinely the server's to
+    /// report, because it is the outcome of the boundary check rather than an input to it —
+    /// and the append functions return no rows when they raise, so the message is the one
+    /// channel it comes back on.
+    /// </para>
+    /// <para>
+    /// The server's own wording is kept in the composed message rather than replaced. It names
+    /// which arm of the boundary matched — "event tag matching prefix", "event matching types
+    /// AND all tags" — and that is not derivable from the query, since the same query reaches
+    /// different <c>alberto_append_*</c> functions depending on its tag-match and composition
+    /// modes. <see cref="ConflictMessage"/> is where the coupling to that wording lives, and
+    /// <c>DcbConflictDetailTests</c> pins the SQL side of it.
+    /// </para>
+    /// </remarks>
+    private static DcbConflictException ToConflictException(
+        PostgresException ex, DcbQuery? dcbQuery, long? expectedPosition)
+    {
+        // A conflict can only be raised on an append that supplied both, so the fallbacks are
+        // unreachable in practice; they exist so a future call shape cannot produce a null ref.
+        var query = dcbQuery ?? DcbQuery.Empty;
+        var expected = expectedPosition ?? -1;
+
+        var detail = ConflictMessage.Detail(ex.MessageText);
+        var conflicting = ConflictMessage.TryParsePosition(ex.MessageText, out var parsed) ? parsed : -1;
+
+        return new DcbConflictException(
+            $"DCB conflict: {detail} (expected position was {expected}, query {query})",
+            conflicting, expected, query, ex);
+    }
+
+    /// <summary>
+    /// Reads the two pieces of a <c>RAISE EXCEPTION</c> raised by the <c>alberto_append_*</c>
+    /// functions, whose message is always <c>DCB conflict: {detail} found at position {n}</c>.
+    /// </summary>
+    /// <remarks>
+    /// Parsing a server message is a coupling, so it is named and isolated here rather than
+    /// inlined at the catch site. The alternative — returning the position as a column — is not
+    /// available: <c>RAISE EXCEPTION</c> aborts the statement, so there is no result set left to
+    /// put it in, and restructuring the functions to return a conflict row instead of raising
+    /// would change the contract of six migration-scripted functions across two tenancy modes.
+    /// Both members degrade rather than throw on an unrecognised message, because losing a
+    /// detail is not worth turning a conflict — which callers retry — into a parse failure.
+    /// </remarks>
+    internal static class ConflictMessage
+    {
+        private const string Prefix = "DCB conflict: ";
+        private const string PositionMarker = "found at position ";
+
+        /// <summary>
+        /// The part after <c>DCB conflict: </c>, or the whole message if that prefix is absent.
+        /// </summary>
+        internal static string Detail(string? message) =>
+            string.IsNullOrEmpty(message)
+                ? "event matching the query exists after the expected position"
+                : message.StartsWith(Prefix, StringComparison.Ordinal)
+                    ? message[Prefix.Length..]
+                    : message;
+
+        /// <summary>
+        /// The position after <c>found at position </c>, if the message is in the expected shape.
+        /// </summary>
+        internal static bool TryParsePosition(string? message, out long position)
+        {
+            position = -1;
+
+            if (string.IsNullOrEmpty(message))
+                return false;
+
+            var start = message.LastIndexOf(PositionMarker, StringComparison.Ordinal);
+            if (start < 0)
+                return false;
+
+            var digits = message.AsSpan(start + PositionMarker.Length);
+
+            var end = 0;
+            while (end < digits.Length && char.IsAsciiDigit(digits[end]))
+                end++;
+
+            if (end == 0 ||
+                !long.TryParse(digits[..end], NumberStyles.None, CultureInfo.InvariantCulture, out var parsed))
+                return false;
+
+            position = parsed;
+            return true;
         }
     }
 

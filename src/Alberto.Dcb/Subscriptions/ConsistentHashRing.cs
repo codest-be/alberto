@@ -4,7 +4,7 @@ internal static class ConsistentHashRing
 {
     private const int VirtualNodesPerNode = 150;
 
-    public record VirtualNode(uint Hash, string NodeId);
+    public sealed record VirtualNode(uint Hash, string NodeId);
 
     public static IReadOnlyList<VirtualNode> Build(IReadOnlyList<string> nodeIds)
     {

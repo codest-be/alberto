@@ -259,6 +259,16 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
 
     #region DCB Conflict Tests
 
+    /// <summary>
+    /// A conflict must arrive with the three facts a caller acts on, not just the type.
+    /// </summary>
+    /// <remarks>
+    /// The position, the expected position and the query are what a retry loop reads to decide
+    /// whether to re-derive its decision or give up. The Postgres backend used to report
+    /// <c>-1</c>/<c>-1</c>/<c>*</c> for all three because it built the exception from the
+    /// message-and-inner constructor, so a retry loop that looked at them was reading
+    /// placeholders — and could not tell them apart from a real conflict at position -1.
+    /// </remarks>
     [Fact]
     public async Task AppendAsync_WithDcbConflict_ShouldThrowDcbConflictException()
     {
@@ -267,20 +277,33 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
         var orderId = Guid.NewGuid();
         var tag = new EventTag("order", orderId.ToString());
 
-        await eventStore.AppendAsync(
+        var appended = await eventStore.AppendAsync(
             [CreateEvent(new OrderCreated(orderId, 100m), tag)],
             cancellationToken: TestContext.Current.CancellationToken);
+
+        var conflictingPosition = appended.Single().GlobalPosition;
 
         var dcbQuery = DcbQuery.Empty
             .WithTypes("order-created")
             .WithTags(tag);
 
-        await Assert.ThrowsAsync<DcbConflictException>(() =>
+        var ex = await Assert.ThrowsAsync<DcbConflictException>(() =>
             eventStore.AppendAsync(
                 [CreateEvent(new OrderConfirmed(orderId), tag)],
                 dcbQuery,
                 expectedPosition: 0,
                 cancellationToken: TestContext.Current.CancellationToken));
+
+        // The event just written is the one the boundary check trips over, so its position is
+        // known exactly here rather than merely "not -1".
+        Assert.Equal(conflictingPosition, ex.ConflictingPosition);
+        Assert.Equal(0, ex.ExpectedPosition);
+        Assert.Same(dcbQuery, ex.Query);
+
+        // The server's own wording survives into the message — it names which arm of the
+        // boundary matched, which the query alone does not say.
+        Assert.Contains("event matching types AND tags", ex.Message);
+        Assert.IsType<Npgsql.PostgresException>(ex.InnerException);
     }
 
     [Fact]

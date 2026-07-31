@@ -73,7 +73,7 @@ internal sealed class ControlLoopAssembler
         //   processor.ProcessEventAsync    ← terminal
         var middlewares = new List<ConsumeMiddleware>(diMiddlewares)
         {
-            ConsumeMiddlewares.RetryAndDeadLetter(retryOptions, classifier, deadLetterStore, _timeProvider),
+            ConsumeMiddlewares.RetryAndDeadLetter(retryOptions, classifier, deadLetterStore, _timeProvider, logger),
         };
         var batchMiddlewares = new List<BatchConsumeMiddleware>(diBatchMiddlewares)
         {

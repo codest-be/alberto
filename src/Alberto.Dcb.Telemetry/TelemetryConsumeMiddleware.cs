@@ -59,9 +59,10 @@ public static class TelemetryConsumeMiddleware
                     activity?.SetStatus(ActivityStatusCode.Error, ex?.Message ?? "Dead-lettered");
                     if (ex is not null)
                     {
-                        activity?.AddTag("exception.type", ex.GetType().FullName);
-                        activity?.AddTag("exception.message", ex.Message);
-                        activity?.AddTag("exception.stacktrace", ex.StackTrace);
+                        // An exception EVENT, not span attributes. Exception messages carry
+                        // whatever the thrower put in them — Npgsql's include the failing SQL —
+                        // so they belong where collectors already know to find and scrub them.
+                        activity?.AddException(ex);
                     }
 
                     // Use the same module/shard tag set as EventsProcessed so all three
@@ -81,9 +82,7 @@ public static class TelemetryConsumeMiddleware
             catch (Exception ex)
             {
                 activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-                activity?.AddTag("exception.type", ex.GetType().FullName);
-                activity?.AddTag("exception.message", ex.Message);
-                activity?.AddTag("exception.stacktrace", ex.StackTrace);
+                activity?.AddException(ex);
 
                 var catchTags = TelemetryTags.ForModule(context.ProcessorId, context.ModuleKey);
                 catchTags.Add("exception.type", ex.GetType().Name);

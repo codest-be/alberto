@@ -201,6 +201,42 @@ The same applies to `DeciderExtensions.DecideAndAppendAsync`: the five-argument 
 (without a serializer) will throw for stale-version envelopes; prefer the six-argument overload
 that accepts an `EventSerializer`.
 
+### A gap with nothing covering it is refused
+
+Bumping `[EventType(Version = N)]` and forgetting the upcaster is the mistake this whole feature
+exists to survive, and it does not announce itself: JSON leaves every member the older payload
+lacks at its CLR default, so an evolver folds a `0`, an empty string or a `null` as though it had
+been stored, and the corrupt state is indistinguishable from real state afterwards.
+
+Two checks refuse it, deliberately overlapping:
+
+- **`ALB0018` at startup**, from `AlbertoModuleValidator` — but only for modules configured through
+  DI, and only for the assembly `.WithEventsFrom(...)` scanned.
+- **`EventSerializer.Deserialize` on read**, which throws when the envelope's stored version is
+  below the version the CLR type declares and neither an upcaster nor a waiver covers the gap.
+  A serializer built by hand — in a migration script, a test helper, a one-off tool — never meets
+  the validator, so the serializer carries the check itself.
+
+The same guard catches the chain that was never extended: an upcaster whose steps stop at version
+2 while the attribute says 3 satisfies `ALB0018`, and `ALB0020` is what flags it at startup, but a
+v2 envelope read through a hand-built serializer is refused here too.
+
+**The escape hatch.** One bump genuinely does not need an upcaster: a purely additive change whose
+new members are optional and whose defaults are the values you want for events written before the
+change. State that at the declaration site and both checks stand down:
+
+```csharp
+// v1 had no Region. Every order written before the bump was placed in "eu-west-1",
+// which is exactly what the property defaults to.
+[EventType("order-placed", Version = 2, UpcastingNotRequired = true)]
+public record OrderPlaced(Guid OrderId, decimal Amount, string Region = "eu-west-1") : IEvent;
+```
+
+It is a claim about the JSON, not about the C#. Adding a required member, renaming one, changing a
+type, or narrowing a meaning all compile and all fail this test — write an upcaster for those.
+Reaching for the flag to avoid writing one is how stale state gets into a projection you will
+later have to rebuild from a log that never recorded the difference.
+
 ### Limits of upcasting
 
 An upcaster transforms an existing payload; it cannot invent data that was never captured.

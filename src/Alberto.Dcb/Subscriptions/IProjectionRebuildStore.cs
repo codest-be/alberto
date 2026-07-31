@@ -185,7 +185,7 @@ public interface IProjectionRebuildStore
 /// Adapters implement this interface alongside <see cref="IProjectionRebuildStore"/>, but
 /// operator modules receive only the latter. This keeps the completion seam structural.
 /// </remarks>
-public interface IProjectionRebuildCoordinatorStore
+internal interface IProjectionRebuildCoordinatorStore
 {
     /// <summary>Marks a historical replay ready after its checkpoint reaches the target.</summary>
     Task<ProjectionRebuildState> MarkReadyAsync(

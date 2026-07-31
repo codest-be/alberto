@@ -92,7 +92,7 @@ public interface ITenantProcessorLock
 /// <param name="ReplicaId">The replica instance holding this lease.</param>
 /// <param name="AcquiredAt">When the lease was originally acquired.</param>
 /// <param name="ExpiresAt">When the lease will expire if not renewed.</param>
-public record TenantLeaseInfo(
+public sealed record TenantLeaseInfo(
     string TenantId,
     string ReplicaId,
     DateTimeOffset AcquiredAt,

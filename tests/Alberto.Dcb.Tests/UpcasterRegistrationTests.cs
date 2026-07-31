@@ -294,6 +294,27 @@ public sealed class UpcasterStartupValidationTests
     }
 
     [Fact]
+    public void Version_greater_than_1_that_waived_upcasting_passes_validation()
+    {
+        // [EventType(UpcastingNotRequired = true)]: the bump only added optional members whose
+        // defaults are already right for older events. EventSerializer.Deserialize honours the
+        // same flag at read time, and the two have to agree — a waiver that still failed startup
+        // would be no waiver at all.
+        var definition = new AlbertoModuleDefinition
+        {
+            ModuleKey = "validation-test",
+            Backend = new InMemoryBackendDescriptor(),
+            RegisteredEventTypes =
+                [new RegisteredEventType("val-order-event", 2, UpcastingNotRequired: true)],
+            UpcasterDeclarations = [],
+        };
+
+        var validator = new AlbertoModuleValidator();
+
+        validator.Collect(definition).Should().NotContain(f => f.Code == "ALB0018");
+    }
+
+    [Fact]
     public void Version_greater_than_1_with_matching_upcaster_passes_validation()
     {
         // Same as above, but the upcaster is present.

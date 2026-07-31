@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Alberto.Dcb.Testing;
 
 /// <summary>
@@ -50,6 +52,10 @@ public sealed class EventCollector : IDisposable
     /// <param name="timeout">How long to wait. Defaults to five seconds.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <exception cref="TimeoutException">No matching event arrived within <paramref name="timeout"/>.</exception>
+    [SuppressMessage("ApiDesign", "RS0026:Do not add multiple overloads with optional parameters",
+        Justification = "The overloads are separated by their leading parameters — a predicate against " +
+                        "a processor id and event type — not by the optional tail. A string never " +
+                        "converts to the predicate delegate, so no call can bind to both.")]
     public async Task<IEventEnvelope> WaitForProjectedAsync(
         Func<string, IEventEnvelope, bool> predicate,
         TimeSpan? timeout = null,
@@ -85,6 +91,10 @@ public sealed class EventCollector : IDisposable
     /// <param name="timeout">How long to wait. Defaults to five seconds.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <exception cref="TimeoutException">No matching event arrived within <paramref name="timeout"/>.</exception>
+    [SuppressMessage("ApiDesign", "RS0026:Do not add multiple overloads with optional parameters",
+        Justification = "The overloads are separated by their leading parameters — a predicate against " +
+                        "a processor id and event type — not by the optional tail. A string never " +
+                        "converts to the predicate delegate, so no call can bind to both.")]
     public Task<IEventEnvelope> WaitForProjectedAsync(
         string processorId, string eventType,
         TimeSpan? timeout = null, CancellationToken ct = default)

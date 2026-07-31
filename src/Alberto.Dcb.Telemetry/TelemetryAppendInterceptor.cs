@@ -9,7 +9,7 @@ namespace Alberto.Dcb.Telemetry;
 /// - Creates "Alberto.Append" activity span
 /// - Records events being appended as Activity events (showing what was decided)
 /// </summary>
-internal sealed class TelemetryAppendInterceptor : IAppendInterceptor
+internal sealed class TelemetryAppendInterceptor(bool recordEventTagValues = false) : IAppendInterceptor
 {
     /// <summary>
     /// Metadata key for the trace ID.
@@ -46,7 +46,7 @@ internal sealed class TelemetryAppendInterceptor : IAppendInterceptor
                 {
                     { "event.id", evt.Id.ToString() },
                     { "event.type", evt.EventType.Id },
-                    { "event.tags", string.Join(",", evt.Tags.Select(t => t.Value)) }
+                    { "event.tags", DescribeTags(evt.Tags) }
                 }));
         }
 
@@ -80,8 +80,9 @@ internal sealed class TelemetryAppendInterceptor : IAppendInterceptor
         catch (Exception ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            activity?.SetTag("exception.type", ex.GetType().FullName);
-            activity?.SetTag("exception.message", ex.Message);
+            // An exception EVENT, not span attributes. See the same call in
+            // TelemetryConsumeMiddleware for why messages must not become attributes.
+            activity?.AddException(ex);
             throw;
         }
         finally
@@ -89,6 +90,23 @@ internal sealed class TelemetryAppendInterceptor : IAppendInterceptor
             AlbertoMetrics.AppendDuration.Record(sw.Elapsed.TotalSeconds);
         }
     }
+
+    /// <summary>
+    /// Renders an append's tags for the span event.
+    /// </summary>
+    /// <remarks>
+    /// By default only the concepts are emitted — <c>order,customer</c> rather than
+    /// <c>order:8f21,customer:4471</c>. The concept is what identifies the consistency boundary
+    /// the append was checked against, which is the part that explains the span; the id is a
+    /// business identifier and is withheld unless
+    /// <see cref="Configuration.TelemetryOptions.RecordEventTagValues"/> says otherwise.
+    /// Concepts are deduplicated because an event tagged with several ids of one concept would
+    /// otherwise repeat that concept without adding anything.
+    /// </remarks>
+    private string DescribeTags(IReadOnlyCollection<EventTag> tags) =>
+        recordEventTagValues
+            ? string.Join(",", tags.Select(t => t.Value))
+            : string.Join(",", tags.Select(t => t.Concept).Distinct(StringComparer.Ordinal));
 
     private static IReadOnlyList<IEventToPersist> EnrichEventsWithTraceContext(
         IReadOnlyList<IEventToPersist> events,

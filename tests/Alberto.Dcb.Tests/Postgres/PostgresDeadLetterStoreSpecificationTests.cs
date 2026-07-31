@@ -6,13 +6,13 @@ using Xunit;
 namespace Alberto.Dcb.Tests.Postgres;
 
 /// <summary>
-/// Runs <see cref="DeadLetterStoreSpecification"/> against <see cref="PostgresDeadLetterStore"/>
+/// Runs <see cref="ClaimableDeadLetterStoreSpecification"/> against <see cref="PostgresDeadLetterStore"/>
 /// using the shipped single-tenant schema.
 /// </summary>
 public sealed class PostgresDeadLetterStoreSpecificationTests(SingleTenantPostgresFixture fixture)
-    : DeadLetterStoreSpecification, IClassFixture<SingleTenantPostgresFixture>
+    : ClaimableDeadLetterStoreSpecification, IClassFixture<SingleTenantPostgresFixture>
 {
     /// <inheritdoc/>
-    protected override Task<IDeadLetterStore> CreateStore() =>
-        Task.FromResult<IDeadLetterStore>(new PostgresDeadLetterStore(fixture.DataSource));
+    protected override Task<IClaimableDeadLetterStore> CreateClaimableStore() =>
+        Task.FromResult<IClaimableDeadLetterStore>(new PostgresDeadLetterStore(fixture.DataSource));
 }

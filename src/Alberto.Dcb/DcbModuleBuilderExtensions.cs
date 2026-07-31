@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Alberto.Dcb.Configuration;
 using Alberto.Dcb.Subscriptions;
 using Alberto.Dcb.Tenancy;
@@ -168,6 +169,11 @@ public static class DcbModuleBuilderExtensions
     /// Optional per-processor execution settings for the async control loop.
     /// Ignored for sync reactors.
     /// </param>
+    [SuppressMessage("ApiDesign", "RS0026:Do not add multiple overloads with optional parameters",
+        Justification = "The overloads are separated by the shape of the handler delegate, which " +
+                        "differs in arity, not by the optional tail: no call can bind to both, and " +
+                        "collapsing them would mean asking every caller that does not need " +
+                        "ReactorContext to accept and ignore it.")]
     public static DcbModuleBuilder ReactTo<TEvent>(
         this DcbModuleBuilder builder,
         Func<IServiceProvider, Func<TEvent, CancellationToken, Task>> handlerFactory,
@@ -240,6 +246,11 @@ public static class DcbModuleBuilderExtensions
     /// Optional per-processor execution settings for the async control loop.
     /// Ignored for sync reactors.
     /// </param>
+    [SuppressMessage("ApiDesign", "RS0026:Do not add multiple overloads with optional parameters",
+        Justification = "The overloads are separated by the shape of the handler delegate, which " +
+                        "differs in arity, not by the optional tail: no call can bind to both, and " +
+                        "collapsing them would mean asking every caller that does not need " +
+                        "ReactorContext to accept and ignore it.")]
     public static DcbModuleBuilder ReactTo<TEvent>(
         this DcbModuleBuilder builder,
         Func<IServiceProvider, Func<TEvent, ReactorContext, CancellationToken, Task>> handlerFactory,
@@ -312,6 +323,11 @@ public static class DcbModuleBuilderExtensions
     /// <see cref="ReactorMode.Sync"/>: runs immediately during <see cref="IEventStore.AppendAsync"/>.
     /// </param>
     /// <param name="configure">Optional per-processor execution settings for the async control loop.</param>
+    [SuppressMessage("ApiDesign", "RS0026:Do not add multiple overloads with optional parameters",
+        Justification = "The overloads are separated by the shape of the handler delegate, which " +
+                        "differs in arity, not by the optional tail: no call can bind to both, and " +
+                        "collapsing them would mean asking every caller that does not need " +
+                        "ReactorContext to accept and ignore it.")]
     public static DcbModuleBuilder ReactTo<TEvent, THandler>(
         this DcbModuleBuilder builder,
         Func<THandler, Func<TEvent, CancellationToken, Task>> methodSelector,
@@ -404,6 +420,11 @@ public static class DcbModuleBuilderExtensions
     /// <see cref="ReactorMode.Sync"/>: runs immediately during <see cref="IEventStore.AppendAsync"/>.
     /// </param>
     /// <param name="configure">Optional per-processor execution settings for the async control loop.</param>
+    [SuppressMessage("ApiDesign", "RS0026:Do not add multiple overloads with optional parameters",
+        Justification = "The overloads are separated by the shape of the handler delegate, which " +
+                        "differs in arity, not by the optional tail: no call can bind to both, and " +
+                        "collapsing them would mean asking every caller that does not need " +
+                        "ReactorContext to accept and ignore it.")]
     public static DcbModuleBuilder ReactTo<TEvent, THandler>(
         this DcbModuleBuilder builder,
         Func<THandler, Func<TEvent, ReactorContext, CancellationToken, Task>> methodSelector,

@@ -219,11 +219,41 @@ public sealed class EfProjectionTestFixture(PostgresCluster cluster)
     /// </summary>
     public async Task<CounterEntity?> ReadEntityAsync(string entityId)
     {
-        var optionsBuilder = new DbContextOptionsBuilder<EfTestDbContext>();
-        optionsBuilder.UseNpgsql(ConnectionString);
-        await using var context = new EfTestDbContext(optionsBuilder.Options);
+        await using var context = NewContext();
         return await context.Counters
             .AsNoTracking()
             .FirstOrDefaultAsync(e => e.DocumentId == entityId);
+    }
+
+    /// <summary>
+    /// Reads every stored row for <paramref name="entityId"/>, keyed by
+    /// <see cref="IProjectionEntity.RebuildVersion"/>. Rebuild tests need to see the versions
+    /// the live read path deliberately filters out.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<int, CounterEntity>> ReadVersionsAsync(string entityId)
+    {
+        await using var context = NewContext();
+        return await context.Counters
+            .AsNoTracking()
+            .Where(e => e.DocumentId == entityId)
+            .ToDictionaryAsync(e => e.RebuildVersion);
+    }
+
+    /// <summary>
+    /// Inserts a row directly, bypassing the projection, so a test can set up a table state
+    /// that only a shadow rebuild loop would otherwise produce.
+    /// </summary>
+    public async Task SeedAsync(CounterEntity entity)
+    {
+        await using var context = NewContext();
+        context.Counters.Add(entity);
+        await context.SaveChangesAsync();
+    }
+
+    private EfTestDbContext NewContext()
+    {
+        var optionsBuilder = new DbContextOptionsBuilder<EfTestDbContext>();
+        optionsBuilder.UseNpgsql(ConnectionString);
+        return new EfTestDbContext(optionsBuilder.Options);
     }
 }

@@ -128,7 +128,7 @@ internal static class ControlLoopRegistration
             // GetKeyedService so that becomes a diagnostic rather than a raw DI exception.
             var leaseManager = sp.GetKeyedService<IProcessorLeaseManager>(moduleKey)
                 ?? throw new InvalidOperationException(
-                    $"ALB0022: Alberto module '{moduleKey}' has Leases.Enabled = true but no " +
+                    $"ALB0025: Alberto module '{moduleKey}' has Leases.Enabled = true but no " +
                     "IProcessorLeaseManager is registered under that module key, so leases " +
                     "cannot be acquired, renewed or fenced." + Environment.NewLine +
                     "  → Register an IProcessorLeaseManager for this module, switch to " +
@@ -186,7 +186,8 @@ internal static class ControlLoopRegistration
 
             var middlewares = new List<ConsumeMiddleware>(sp.GetKeyedServices<ConsumeMiddleware>(moduleKey))
             {
-                ConsumeMiddlewares.RetryAndDeadLetter(options.Retry, classifier, deadLetterStore),
+                ConsumeMiddlewares.RetryAndDeadLetter(
+                    options.Retry, classifier, deadLetterStore, timeProvider: null, logger),
             };
 
             // Same empty-string guard as the control loop above: a blank ReplicaId stamps the
@@ -195,10 +196,27 @@ internal static class ControlLoopRegistration
                 ? Environment.MachineName
                 : options.Leases.ReplicaId;
 
+            // Automatic retry needs an atomic claim-and-fence, which is the optional
+            // IClaimableDeadLetterStore capability rather than part of every store's contract.
+            // A store without it can still record and clear dead letters and can still be
+            // marked for retry from the CLI — nothing will act on the mark, so say so once at
+            // startup instead of letting the operator watch a flag that never clears.
+            if (deadLetterStore is not IClaimableDeadLetterStore claimableStore)
+            {
+                logger?.LogWarning(
+                    "The dead letter store registered for module '{ModuleKey}' ({StoreType}) does not " +
+                    "implement IClaimableDeadLetterStore, so no dead-letter retry loop was started. " +
+                    "'alberto ops deadletter retry' will flag entries and nothing will dispatch them.",
+                    moduleKey,
+                    deadLetterStore.GetType().FullName);
+
+                return new DeadLetterRetryLoopGroup([]);
+            }
+
             var retryLoops = processors
                 .Select(p => new DeadLetterRetryLoop(
                     p,
-                    deadLetterStore,
+                    claimableStore,
                     options.DeadLetterRetry.PollingInterval,
                     options.DeadLetterRetry.BatchSize,
                     middlewares,

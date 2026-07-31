@@ -92,7 +92,7 @@ public sealed record ProcessorLease(string ProcessorId, DateTimeOffset ExpiresAt
 /// <param name="ReplicaId">The replica instance holding this lease.</param>
 /// <param name="AcquiredAt">When the lease was originally acquired.</param>
 /// <param name="ExpiresAt">When the lease will expire if not renewed.</param>
-public record ProcessorLeaseInfo(
+public sealed record ProcessorLeaseInfo(
     string ProcessorId,
     string ReplicaId,
     DateTimeOffset AcquiredAt,

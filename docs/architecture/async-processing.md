@@ -15,7 +15,7 @@ ControlLoop reads a batch from the global stream
     ↓
 Batch dispatched through the middleware chain
     ↓
-Events routed to processors (AsyncProjection / AsyncReactor / BatchedEfProjection)
+Events routed to processors (AsyncProjection / AsyncReactor)
     ↓
 State written via IStateStore (PostgresStateStore or EfStateStore)
     ↓
@@ -98,12 +98,6 @@ module builder, not as classes. Each call wraps the supplied delegate in a `Func
 and registers it as an async processor. There is no reflection-based dispatch and no `IReact<TEvent>`
 interface — dispatch is entirely delegate-based. Concurrency is controlled by `MaxConcurrency` in
 `ProcessorExecutionOptions`; batching follows `ProcessorBatchingMode` on the same record.
-
-### BatchedEfProjection
-
-**Location:** `src/Alberto.Dcb.EntityFramework/Batching/BatchedEfProjection.cs`
-
-Accumulates a batch of events in the EF change tracker and flushes with a single `SaveChanges`.
 
 ### Checkpoint stores
 
@@ -290,7 +284,6 @@ rule" for how to add a file to the allow-list when non-event JSON deserializatio
 | PostgresCheckpointStore | `src/Alberto.Dcb.Postgres/PostgresCheckpointStore.cs` |
 | PostgresEventListener | `src/Alberto.Dcb.Postgres/PostgresEventListener.cs` |
 | EfStateStore | `src/Alberto.Dcb.EntityFramework/EfStateStore.cs` |
-| BatchedEfProjection | `src/Alberto.Dcb.EntityFramework/Batching/BatchedEfProjection.cs` |
 | RebuildCoordinator | `src/Alberto.Dcb/Subscriptions/RebuildCoordinator.cs` |
 | ProjectionVersions | `src/Alberto.Dcb/Subscriptions/ProjectionVersions.cs` |
 | IProjectionRebuildStore | `src/Alberto.Dcb/Subscriptions/IProjectionRebuildStore.cs` |

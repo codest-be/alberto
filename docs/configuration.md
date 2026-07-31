@@ -114,7 +114,8 @@ A complete example covering all sections:
         },
         "Telemetry": {
           "Enabled": true,
-          "RecordEventPayloadSize": true
+          "RecordEventPayloadSize": true,
+          "RecordEventTagValues": false
         },
         "Checkpoints": {
           "OrphanPolicy": "Strict"
@@ -248,6 +249,17 @@ deliberate step rather than a consequence of catching up. Both intervals must be
 |---|---|---|---|
 | `Enabled` | `bool` | `true` | `Telemetry:Enabled` |
 | `RecordEventPayloadSize` | `bool` | `true` | `Telemetry:RecordEventPayloadSize` |
+| `RecordEventTagValues` | `bool` | `false` | `Telemetry:RecordEventTagValues` |
+
+A DCB tag value is a domain identifier — `order:8f21`, `customer:4471`. Append spans therefore
+record only the tag **concepts** (`order,customer`) by default, which is what identifies the
+consistency boundary the append was checked against. Set `RecordEventTagValues` to `true` to emit
+the full `concept:id` values, and only where the collector sits inside the same trust boundary as
+the database.
+
+Exception detail is recorded as an OpenTelemetry exception **event** via `Activity.AddException`,
+never as span attributes. Messages carry whatever the thrower put in them — Npgsql's include the
+failing SQL — so they belong in the place collectors and backends already know how to filter.
 
 `.WithTelemetry()` registers Alberto's activity source and meter with the OpenTelemetry
 hosting integration (`services.AddOpenTelemetry().WithTracing(...).WithMetrics(...)`). If
@@ -399,12 +411,22 @@ surfacing them in one error message.
 | `ALB0015` | Configuration declares a shard the module does not | Add `.AddShard("...", ...)` in code, or remove the `Tenancy:Shards:{id}` section — shard services are registered before configuration is read, so a configuration-only shard could never serve a request |
 | `ALB0016` | Two shards resolve to the same database and schema | Give each shard its own database, or at minimum its own schema — separate shards must be separate storage |
 | `ALB0017` | Module declares `.WithInMemory("sharedKey")` (sharing a backend registered by another module) together with `.WithTenancy()` | The shared in-memory backend is a singleton; it cannot carry per-tenant state for a module that declared tenancy. Either remove `.WithTenancy()` from the sharing module, or give it its own backend with `.WithInMemory()` (no shared key) |
-| `ALB0018` | An event type declares `[EventType(Version = N)]` with `N > 1` but no upcaster is registered for it | Add `.AddUpcaster(DeclareUpcaster.For<T>("...").From<TOld>(1, ...).Build())` to cover versions `1..N-1`. Without an upcaster, reading any event stored before version `N` will throw at runtime |
+| `ALB0018` | An event type declares `[EventType(Version = N)]` with `N > 1` but no upcaster is registered for it | Add `.AddUpcaster(DeclareUpcaster.For<T>("...").From<TOld>(1, ...).Build())` to cover versions `1..N-1`. Without an upcaster, reading any event stored before version `N` throws at runtime — `EventSerializer.Deserialize` carries the same check, so a hand-built serializer that never meets this validator refuses it too. If the bump only added optional members whose defaults are already right for older events, waive it at the declaration site instead: `[EventType("...", Version = N, UpcastingNotRequired = true)]` |
 | `ALB0019` | A declared upcaster references an event type that is not registered in the module's events assembly | Ensure the type annotated with `[EventType("...")]` is in the assembly passed to `.WithEventsFrom(...)`, or remove the upcaster if the event type is no longer in use |
 | `ALB0020` | An event type declares `[EventType(Version = N)]` but its upcaster chain produces a different version | If the chain stops short, add the missing step(s) so it reaches version `N` — `.From<TOld>(chainVersion, ...)` continues where the current chain stops. If it overshoots, either raise `[EventType("...", Version = chainVersion)]` to match the chain, or drop the step(s) past version `N` |
 | `ALB0022` | A processor sets `BatchingMode.Required` but `MaxConcurrency > 1` — pipelined mode dispatches per-event to N workers; the Required guarantee cannot be honoured | Set `MaxConcurrency` to 1 to use batch dispatch, or change `BatchingMode` to `IfSupported` or `Disabled` |
 | `ALB0023` | `.WithRebuilds()` is declared but the in-memory backend does not provide an `IProjectionRebuildStore` | Switch to `.WithPostgres(...)`, or remove `.WithRebuilds()` |
 | `ALB0024` | `Leases.Enabled = true` is declared but the in-memory backend does not provide an `IProcessorLeaseManager` | Switch to `.WithPostgres(...)`, or disable leases with `.WithControlLoop(o => o with { Leases = o.Leases with { Enabled = false } })` |
+| `ALB0025` | `Leases.Enabled = true` but no `IProcessorLeaseManager` is registered under the module key, so leases can never be acquired, renewed or fenced. Only reachable through a custom `IAlbertoBackendDescriptor` — the built-in backends are covered earlier, by `ALB0024` for in-memory and by Postgres registering a manager | Register an `IProcessorLeaseManager` for the module, switch to `.WithPostgres(...)`, or disable leases |
+| `ALB0026` | `AddAlberto` was called twice with the same module key | Give each module its own key. To extend a module declared elsewhere, hold onto the `DcbModuleBuilder` rather than calling `AddAlberto` again |
+| `ALB0027` | `AddEfProjection` on a module that declared `.WithTenancy()`. `IProjectionEntity` has no tenant column, so the EF state store and the inline projection both load and write by `(DocumentId, RebuildVersion)` alone — two tenants producing the same document id share one row | If this declaration's ids are already unique across every tenant (a GUID aggregate id, say), state it: `AddEfProjection<TEntity, TDbContext>(declaration, documentIds: EfDocumentIdUniqueness.AcrossTenants)`. If they are not, prefix a tenant discriminator the event itself carries, give each tenant its own database with `.WithTenancy(t => t.AcrossPostgresDatabases(...))`, or use the JSONB store via `AddProjection`, whose tenancy is part of the migrated schema |
+
+Three of these are raised outside `AlbertoModuleValidator`, because they are about
+registration rather than about the declaration: `ALB0025` at host startup when the control
+loop is constructed, `ALB0026` from `AddAlberto` itself — the second call throws before it
+registers anything, so the first module is left intact — and `ALB0027` from
+`AddEfProjection`'s deferred registration callback, which runs once the module lambda has
+completed, so `.WithTenancy()` is seen whether it is chained before or after the projection.
 
 ### Store imprint (ALB0021)
 
@@ -451,6 +473,30 @@ Reported by `PostgresBackendDescriptor.Validate`, called from the same pass.
 | `ALB1003` | `MinPoolSize > MaxPoolSize` | Lower `MinPoolSize` or raise `MaxPoolSize` |
 | `ALB1004` | `LeaseDuration ≤ 0` | Set a positive duration |
 | `ALB1005` | `Schema` is not a safe lowercase PostgreSQL identifier | Use a lowercase letter followed by lowercase letters, digits, or underscores (maximum 63 characters) |
+
+### Compile-time codes (ALB2xxx)
+
+Every code above is raised while the host is starting. `ALB2xxx` is a different kind of
+diagnostic: it comes from a Roslyn analyzer shipped inside `Alberto.Dcb.Commands`, so it
+appears in your build output and in your IDE, before anything runs. Referencing the
+package is all that is needed — NuGet picks up `analyzers/dotnet/cs` automatically.
+
+| Code | Condition | Remedy |
+|---|---|---|
+| `ALB2001` | A command pipeline is built and then discarded, which appends nothing. Every stage up to `Decide` is deferred; only `Commit`, `TryCommit` and `CommitUnconditionally` run the pipeline | Await a terminal operation. If the pipeline is being composed in steps, assign it to a variable — that is not reported. To discard one deliberately, write `_ = store.Handle(...)` |
+
+The usual idiom is already protected by the compiler — `await store.Handle(c).Decide(f);`
+does not compile, because the pipeline types are not awaitable — so what `ALB2001` catches
+is the version with the `await` dropped too, where the handler returns success having
+written nothing.
+
+Severity is `warning`. To make it fail the build, or to turn it off, use an
+`.editorconfig` entry like any other analyzer:
+
+```ini
+[*.cs]
+dotnet_diagnostic.ALB2001.severity = error
+```
 
 ---
 

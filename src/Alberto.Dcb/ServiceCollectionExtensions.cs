@@ -60,6 +60,25 @@ public static class ServiceCollectionExtensions
 
         ArgumentNullException.ThrowIfNull(configure);
 
+        // A module key is an identity, not a name that can be reused. Registering the same one
+        // twice is silently destructive rather than additive: the second call adds a second
+        // Configure callback to the same named options (so the two declarations overlay each
+        // other in registration order, and the later backend silently wins), and registers a
+        // second set of control loops that poll the same log and race on one checkpoint row —
+        // every event is dispatched twice, and neither loop's checkpoint reflects what it
+        // actually processed. Refuse before anything is registered, so the first module is left
+        // exactly as it was.
+        if (IsModuleKeyTaken(services, moduleKey))
+            throw new InvalidOperationException(
+                $"ALB0026: AddAlberto has already been called with module key '{moduleKey}'. " +
+                "A module key is an identity — registering it twice does not extend the first " +
+                "module, it overlays its options and starts a second set of control loops that " +
+                "race on the same checkpoint, dispatching every event twice." + Environment.NewLine +
+                "  → Give each module its own key. To extend a module declared elsewhere, keep a " +
+                "reference to its DcbModuleBuilder rather than calling AddAlberto again.");
+
+        MarkModuleKeyTaken(services, moduleKey);
+
         // Phase 1 — declare. Runs the user's lambda against an accumulator; touches nothing else.
         var builder = new DcbModuleBuilder(moduleKey);
         configure(builder);
@@ -108,6 +127,43 @@ public static class ServiceCollectionExtensions
 
         return services;
     }
+
+    /// <summary>
+    /// Records that a module key has been registered. Nothing resolves this — it exists only so
+    /// that a second <c>AddAlberto</c> with the same key can be detected in the descriptor list.
+    /// </summary>
+    /// <remarks>
+    /// The named <see cref="AlbertoModuleDefinition"/> options instance cannot serve as the marker:
+    /// <c>AddOptions</c> registers descriptors for the unnamed options infrastructure too, so its
+    /// presence says nothing about which names were used. A dedicated marker keyed by module key
+    /// makes the question exact.
+    /// </remarks>
+    private sealed class ModuleKeyMarker;
+
+    /// <summary>
+    /// Whether <c>AddAlberto</c> has already registered <paramref name="moduleKey"/> into this
+    /// collection.
+    /// </summary>
+    /// <remarks>
+    /// Only <see cref="ServiceDescriptor.ServiceType"/> and <see cref="ServiceDescriptor.ServiceKey"/>
+    /// are read. Both are safe on every descriptor, unlike <c>ImplementationInstance</c> and
+    /// <c>ImplementationType</c>, which throw when read from a keyed one — and a collection this
+    /// method is handed will generally contain keyed descriptors from elsewhere in the application.
+    /// </remarks>
+    private static bool IsModuleKeyTaken(IServiceCollection services, string moduleKey)
+    {
+        foreach (var descriptor in services)
+        {
+            if (descriptor.ServiceType == typeof(ModuleKeyMarker)
+                && string.Equals(descriptor.ServiceKey as string, moduleKey, StringComparison.Ordinal))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static void MarkModuleKeyTaken(IServiceCollection services, string moduleKey) =>
+        services.AddKeyedSingleton(moduleKey, new ModuleKeyMarker());
 
     /// <summary>
     /// Registers the named <see cref="AlbertoModuleDefinition"/> options instance that every one

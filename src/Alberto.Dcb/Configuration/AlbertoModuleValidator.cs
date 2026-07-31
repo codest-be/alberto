@@ -285,6 +285,12 @@ public sealed class AlbertoModuleValidator : IValidateOptions<AlbertoModuleDefin
                     if (et.Version <= 1)
                         continue;
 
+                    // The declaration site waived the gap with [EventType(UpcastingNotRequired =
+                    // true)] — a purely additive bump whose defaults are already right for older
+                    // events. EventSerializer.Deserialize honours the same flag, so the two agree.
+                    if (et.UpcastingNotRequired)
+                        continue;
+
                     failures.Add(new AlbertoValidationFailure(
                         "ALB0018",
                         $"Event type '{et.Id}' declares [EventType(Version = {et.Version})] but no upcaster is registered for it.",

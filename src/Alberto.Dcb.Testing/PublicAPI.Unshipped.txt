@@ -1,0 +1,30 @@
+Alberto.Dcb.Testing.AlbertoTestHarness
+Alberto.Dcb.Testing.AlbertoTestHarness.AppendAsync<TEvent>(TEvent payload, System.Collections.Generic.IEnumerable<Alberto.Dcb.EventTag>? tags = null, string? tenantId = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Dcb.Testing.AlbertoTestHarness.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Alberto.Dcb.Testing.AlbertoTestHarness.ModuleKey.get -> string!
+Alberto.Dcb.Testing.AlbertoTestHarness.Services.get -> System.IServiceProvider!
+Alberto.Dcb.Testing.AlbertoTestHarness.WaitForQuiescenceAsync(System.TimeSpan? timeout = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Dcb.Testing.EventCollector
+Alberto.Dcb.Testing.EventCollector.Dispose() -> void
+Alberto.Dcb.Testing.EventCollector.EventCollector(System.TimeProvider? timeProvider = null) -> void
+Alberto.Dcb.Testing.EventCollector.OnProjected(string! processorId, Alberto.Dcb.IEventEnvelope! envelope) -> void
+Alberto.Dcb.Testing.EventCollector.Projected.get -> System.Collections.Generic.IReadOnlyList<(string! ProcessorId, Alberto.Dcb.IEventEnvelope! Envelope)>!
+Alberto.Dcb.Testing.EventCollector.WaitForProjectedAsync(string! processorId, string! eventType, System.TimeSpan? timeout = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Dcb.IEventEnvelope!>!
+Alberto.Dcb.Testing.EventCollector.WaitForProjectedAsync(System.Func<string!, Alberto.Dcb.IEventEnvelope!, bool>! predicate, System.TimeSpan? timeout = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Dcb.IEventEnvelope!>!
+Alberto.Dcb.Testing.InMemoryOutboxStore
+Alberto.Dcb.Testing.InMemoryOutboxStore.ClaimPendingAsync(int limit, System.TimeSpan claimLease, string! claimedBy, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Alberto.Dcb.Messaging.OutboxClaim!>!>!
+Alberto.Dcb.Testing.InMemoryOutboxStore.Entries.get -> System.Collections.Generic.IReadOnlyList<Alberto.Dcb.Messaging.OutboxEntry!>!
+Alberto.Dcb.Testing.InMemoryOutboxStore.InMemoryOutboxStore(System.TimeProvider? timeProvider = null) -> void
+Alberto.Dcb.Testing.InMemoryOutboxStore.InsertAsync(Alberto.Dcb.Messaging.OutboxEntry! entry, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Dcb.Testing.InMemoryOutboxStore.MarkDeliveredAsync(Alberto.Dcb.Messaging.OutboxClaim! claim, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+Alberto.Dcb.Testing.InMemoryOutboxStore.MarkFailedAsync(Alberto.Dcb.Messaging.OutboxClaim! claim, string! error, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+Alberto.Dcb.Testing.InMemoryOutboxStore.PurgeDeliveredAsync(System.DateTimeOffset before, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Dcb.Testing.InMemoryOutboxStore.RetryFailedAsync(string? messageType = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Dcb.Testing.Poll
+Alberto.Dcb.Testing.TestEvents
+static Alberto.Dcb.Testing.AlbertoTestHarness.StartAsync(string! moduleKey, System.Action<Alberto.Dcb.DcbModuleBuilder!>! configure, System.Action<Microsoft.Extensions.DependencyInjection.IServiceCollection!>? configureServices = null, System.TimeProvider? timeProvider = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Dcb.Testing.AlbertoTestHarness!>!
+static Alberto.Dcb.Testing.Poll.UntilAsync(System.Func<bool>! condition, string! what, System.TimeSpan? timeout = null, System.TimeSpan? interval = null, System.TimeProvider? timeProvider = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+static Alberto.Dcb.Testing.Poll.UntilAsync(System.Func<System.Threading.Tasks.ValueTask<bool>>! condition, string! what, System.TimeSpan? timeout = null, System.TimeSpan? interval = null, System.TimeProvider? timeProvider = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+static Alberto.Dcb.Testing.TestEvents.NewEvent<TEvent>(TEvent payload, System.Collections.Generic.IEnumerable<Alberto.Dcb.EventTag>? tags = null, System.Collections.Generic.IReadOnlyDictionary<string!, string!>? metadata = null) -> Alberto.Dcb.EventToPersist!
+static readonly Alberto.Dcb.Testing.Poll.DefaultInterval -> System.TimeSpan
+static readonly Alberto.Dcb.Testing.Poll.DefaultTimeout -> System.TimeSpan

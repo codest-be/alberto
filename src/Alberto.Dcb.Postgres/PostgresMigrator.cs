@@ -35,11 +35,12 @@ public static class PostgresMigrator
         // back, crashing the pod. A session-level advisory lock ensures only one migrator runs
         // at a time; the loser waits and then finds everything already applied.
         //
-        // Key-space isolation: the append path uses the two-argument form
-        // pg_advisory_xact_lock(1, hashtext(stream_key)), which lives in a distinct namespace
-        // from this single-argument lock. The same convention already followed for
-        // processor-leadership locks (see PostgresBackendHelpers.AcquireAppendLockAsync) means
-        // migration and append locks can never share a slot and cannot deadlock each other.
+        // Key space: the append path also takes a single-argument lock, keyed
+        // hashtextextended('alberto-append:{schema}[:{tenant}]', 0), so the two share a
+        // namespace. They cannot practically collide — this lock is one fixed value and an
+        // append key would have to hash to exactly it — and a collision would only mean an
+        // append waiting behind a migration, which is the desired order regardless.
+        // See PostgresBackendHelpers.AcquireAppendLockAsync for why the append key is 64-bit.
         using var lockConn = new NpgsqlConnection(connectionString);
         lockConn.Open();
         AcquireMigrationLock(lockConn);
@@ -378,7 +379,7 @@ public static class PostgresMigrator
 /// <param name="Successful">Whether the migration succeeded.</param>
 /// <param name="ExecutedScripts">Names of scripts that were executed.</param>
 /// <param name="Error">Exception if migration failed, null otherwise.</param>
-public record MigrationResult(
+public sealed record MigrationResult(
     bool Successful,
     IReadOnlyCollection<string> ExecutedScripts,
     Exception? Error);

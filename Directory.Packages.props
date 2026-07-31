@@ -73,5 +73,10 @@
     <!-- Packaging / Source quality (applied only to packable src/ projects via Directory.Build.props) -->
     <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="3.3.4" />
+    <!-- Roslyn, for the analyzer shipped inside Alberto.Dcb.Commands. Pinned to the oldest version
+         exposing the IOperation APIs the analyzer uses: an analyzer binds forward to whatever
+         Roslyn the consumer's SDK hosts it in, never backward, so a newer reference here would
+         only narrow the range of SDKs that can load it. -->
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.1.0" />
   </ItemGroup>
 </Project>

@@ -70,6 +70,38 @@ public sealed partial class EventTypeAttribute : Attribute
     }
 
     /// <summary>
+    /// States that events stored at an older version of this type deserialize correctly into the
+    /// current shape without an upcaster, so the version gap may be read directly. Defaults to
+    /// <see langword="false"/>, which is the safe answer.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Both the startup validator (<c>ALB0018</c>) and <see cref="EventSerializer.Deserialize"/>
+    /// refuse a version gap they have no upcaster for, because the default JSON behaviour for a
+    /// missing property is to leave it at its CLR default — an evolver then folds a zero, an empty
+    /// string or a <see langword="null"/> as though it had been stored, and the corruption is
+    /// silent. This flag is the escape hatch for the one bump where that is genuinely fine:
+    /// <b>a purely additive change whose new members are optional and whose default is the value
+    /// you want for events written before the change</b>.
+    /// </para>
+    /// <para>
+    /// It is a claim about the JSON, not about the C#. Adding a required member, renaming one,
+    /// changing a type, or narrowing a meaning all fail this test even though they compile — write
+    /// an upcaster for those. Setting the flag to avoid writing one is how stale state gets into a
+    /// projection you will later have to rebuild from a log that never recorded the difference.
+    /// </para>
+    /// <example>
+    /// <code>
+    /// // v1 had no Region. Every order written before the bump was placed in "eu-west-1", which
+    /// // is exactly what the property defaults to — so no upcaster is needed to read them.
+    /// [EventType("order-placed", Version = 2, UpcastingNotRequired = true)]
+    /// public record OrderPlaced(Guid OrderId, decimal Amount, string Region = "eu-west-1") : IEvent;
+    /// </code>
+    /// </example>
+    /// </remarks>
+    public bool UpcastingNotRequired { get; set; }
+
+    /// <summary>
     /// Gets the event type attribute from a type, if present.
     /// </summary>
     public static EventTypeAttribute? GetEventType(Type type)
