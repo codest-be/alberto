@@ -120,7 +120,7 @@ The operator surface is the CLI in `tools/Alberto.Cli`. There is no admin HTTP A
 
 ## Configuration
 
-- **Solution file**: `AlbertoV3.slnx` (modern .NET format)
+- **Solution file**: `Alberto.slnx` (modern .NET format)
 - **Build settings**: `Directory.Build.props`
 
 ## Known Gaps

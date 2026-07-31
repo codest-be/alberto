@@ -48,7 +48,7 @@ dotnet format analyzers src/Alberto.Dcb/Alberto.Dcb.csproj --diagnostics RS0016 
 
 Either way the new entries land in `PublicAPI.Unshipped.txt`. **Read that diff before committing
 it** — it is the statement of what you are committing to support. (`dotnet format` does not accept
-`AlbertoV3.slnx`; pass the individual `.csproj`.)
+`Alberto.slnx`; pass the individual `.csproj`.)
 
 **Removing public API.** Delete the entry by hand and add an `UPGRADING.md` section for it.
 
