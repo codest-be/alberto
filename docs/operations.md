@@ -19,16 +19,10 @@ an MCP server, a React console and a BFF were built and are parked on the `featu
 branch, deliberately held out of 1.0 until their shape is settled. Check that branch before
 building any of it again.
 
-Nothing here changes for you as an operator: you install the `Alberto.Cli` tool, which does ship.
+The CLI does not ship as a NuGet package either — 1.0 publishes libraries only. Run it from the
+repository.
 
 ## The CLI
-
-```bash
-dotnet tool install --global Alberto.Cli --prerelease
-alberto status
-```
-
-Or run it from the repository without installing:
 
 ```bash
 dotnet run --project tools/Alberto.Cli -- status
