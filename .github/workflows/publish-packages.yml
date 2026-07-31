@@ -75,6 +75,43 @@ jobs:
             dotnet pack "src/$proj/$proj.csproj" -c Release --no-build --version-suffix "$VERSION_SUFFIX" -o artifacts
           done
 
+      # The only thing standing between an accidental IsPackable=true and a permanent
+      # nuget.org listing. Compares packed IDs against a literal allowlist and fails on any
+      # difference in either direction: an unexpected package, or one that stopped building.
+      # The comparison is whole-ID, not prefix: `Alberto.Messaging` is a prefix of
+      # `Alberto.Messaging.Postgres`, so a substring test would admit an unexpected
+      # `Alberto.Messaging.Something`. Sorted `diff` cannot.
+      # `artifacts/*.nupkg` does not match `.snupkg` — that suffix has no dot before "nupkg".
+      - name: Verify packed set
+        run: |
+          cat > /tmp/expected-packages.txt <<'IDS'
+          Alberto.Dcb
+          Alberto.Dcb.Commands
+          Alberto.Dcb.EntityFramework
+          Alberto.Dcb.InMemory
+          Alberto.Dcb.Messaging
+          Alberto.Dcb.Postgres
+          Alberto.Dcb.Postgres.Messaging
+          Alberto.Dcb.Telemetry
+          Alberto.Dcb.Testing
+          Alberto.Dcb.Testing.Xunit
+          IDS
+          LC_ALL=C sort -o /tmp/expected-packages.txt /tmp/expected-packages.txt
+
+          # Strip a trailing semver and the extension to recover the package ID. No Alberto
+          # package ID ends in a numeric segment, so this is unambiguous.
+          ls artifacts/*.nupkg \
+            | xargs -n1 basename \
+            | sed -E 's/\.[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?\.nupkg$//' \
+            | LC_ALL=C sort -u > /tmp/actual-packages.txt
+
+          echo "Packed:"; cat /tmp/actual-packages.txt
+
+          if ! diff -u /tmp/expected-packages.txt /tmp/actual-packages.txt; then
+            echo "::error::Packed set does not match the allowlist. '-' lines are missing packages, '+' lines are packages that must never be published."
+            exit 1
+          fi
+
       - name: Add GitHub Packages source
         run: |
           dotnet nuget add source "https://nuget.pkg.github.com/codest-be/index.json" \
