@@ -16,7 +16,9 @@ Three things are true of the repository today and shape the answer:
    `IsPackable`. `dotnet pack` on the CLI exits 0 and writes no file, then
    `dotnet nuget push "artifacts/Alberto.Cli*.nupkg"` fails with
    `File does not exist`, five times, and the job exits 1. Runs for #67, #68, #69, #70 and
-   #71 all failed this way; #65 was the last success.
+   #71 all failed this way; #65 was the last success. Since the CLI is now unpublished
+   (see §1), this is repaired by deleting the CLI pack and push steps rather than by
+   opting the project back into packing.
 2. **The admin surface is already excluded correctly.** `Alberto.Dcb.Admin` and
    `Alberto.Dcb.Postgres.Admin` are `IsPackable=false` and absent from the workflow's pack
    loop. The split of `Alberto.Dcb.Postgres.Admin` out of `Alberto.Dcb.Postgres` removed the
@@ -32,6 +34,8 @@ Three things are true of the repository today and shape the answer:
 |---|---|
 | Package IDs | Flatten `Alberto.Dcb.*` → `Alberto.*` |
 | Namespaces | Flatten too — IDs, assemblies, directories and namespaces move together |
+| Ordering | Feature before implementation: `Alberto.Messaging.Postgres`, not `Alberto.Postgres.Messaging` |
+| Published set | 10 libraries. The CLI does not ship |
 | Feeds | Both, on **different triggers** |
 | First nuget.org version | `0.1.0` |
 | Repository visibility | Public, at v0.1.0 |
@@ -45,6 +49,22 @@ transition period, no deprecated shim, and no compatibility package to maintain.
 The rename goes all the way down rather than stopping at the package ID. A package
 `Alberto.Postgres` shipping an assembly `Alberto.Dcb.Postgres.dll` would trade one
 inconsistency for another.
+
+### Why feature before implementation
+
+`Alberto.Dcb.Postgres.Messaging` inverts the ordering every comparable package uses. The
+repository already establishes the right one: `Alberto.Testing` /
+`Alberto.Testing.Xunit` is feature-then-implementation, and .NET at large agrees —
+`Microsoft.EntityFrameworkCore.SqlServer`, `Microsoft.Extensions.Caching.StackExchangeRedis`,
+`Serilog.Sinks.Seq`. The abstraction owns the namespace and providers slot underneath it.
+
+So `Alberto.Messaging.Postgres`, and for the same reason the parked
+`Alberto.Postgres.Admin` becomes `Alberto.Admin.Postgres`. The parked one is free — it has
+never published and never will under the current plan.
+
+Note this is a rename of the bridge only. `Alberto.Postgres` keeps its name: it is the
+Postgres implementation of the core event store, which lives in the root package, so there
+is no intermediate feature segment to insert.
 
 ### Why `0.1.0` and not `1.0.0`
 
@@ -74,16 +94,39 @@ A nuget.org release must never be a side effect of merging a pull request.
 | `src/Alberto.InMemory` | `Alberto.InMemory` | `Alberto.InMemory` | yes |
 | `src/Alberto.Messaging` | `Alberto.Messaging` | `Alberto.Messaging` | yes |
 | `src/Alberto.Postgres` | `Alberto.Postgres` | `Alberto.Postgres` | yes |
-| `src/Alberto.Postgres.Messaging` | `Alberto.Postgres.Messaging` | `Alberto.Postgres.Messaging` | yes |
+| `src/Alberto.Messaging.Postgres` | `Alberto.Messaging.Postgres` | `Alberto.Messaging.Postgres` (**reordered**) | yes |
 | `src/Alberto.Telemetry` | `Alberto.Telemetry` | `Alberto.Telemetry` | yes |
 | `src/Alberto.Testing` | `Alberto.Testing` | `Alberto.Testing` | yes |
 | `src/Alberto.Testing.Xunit` | `Alberto.Testing.Xunit` | `Alberto.Testing.Xunit` | yes |
 | `src/Alberto.Admin` | reserved, unpublished | `Alberto.Admin` | no — parked |
-| `src/Alberto.Postgres.Admin` | reserved, unpublished | `Alberto.Postgres.Admin` | no — parked |
-| `tools/Alberto.Cli` | `Alberto.Cli` | `Alberto.Cli` | yes — tool, command `alberto` |
+| `src/Alberto.Admin.Postgres` | reserved, unpublished | `Alberto.Admin.Postgres` (**reordered**) | no — parked |
+| `tools/Alberto.Cli` | — | `Alberto.Cli` | **no** — see below |
 
 Also renamed: `tests/Alberto.Dcb.Tests` → `tests/Alberto.Tests`,
 `benchmarks/Alberto.Dcb.Benchmarks` → `benchmarks/Alberto.Benchmarks`.
+
+The `InternalsVisibleTo` grant in `Alberto.Postgres` that lets the outbox store reach
+`SchemaQualifier` follows the assembly rename to `Alberto.Messaging.Postgres`.
+
+### The CLI does not ship
+
+`Alberto.Cli` is excluded from both feeds for v0.1.0, keeping the released surface to ten
+libraries. Operators run it from source — `dotnet run --project tools/Alberto.Cli -- status`
+— which is viable precisely because the repository goes public at release.
+
+This also repairs the red pipeline by subtraction. The failing push step, its five-attempt
+retry loop and the comment explaining why a longer timeout does not help are all deleted
+rather than fixed. The `IsPackable=false` default in `Directory.Build.props` then already
+describes the CLI correctly, so that file needs no change. The CLI's `dotnet build` step
+stays — it is the compile check for the parked admin projects it references.
+
+Shipping it later is two lines: `IsPackable=true` in the csproj, and one entry in the §3
+allowlist.
+
+Consequence: nothing published carries the admin assemblies. Previously
+`Alberto.Admin.dll` and `Alberto.Admin.Postgres.dll` would have been bundled into the CLI
+tool package as part of its dependency closure — correct behaviour, but it is now moot. No
+artifact reaching either feed contains admin code at all.
 
 ### Un-merging `Alberto.Commands`
 
@@ -132,13 +175,6 @@ The public-API gate is the verification. Every one of those 1912 declarations mu
 new surface exactly, at error severity, so a rewrite that misses a type or renames one
 inconsistently cannot compile. This is why the rename gets a pull request to itself.
 
-### Admin DLLs inside the CLI package
-
-`Alberto.Admin.dll` and `Alberto.Postgres.Admin.dll` are bundled into the `Alberto.Cli` tool
-package, because a `PackAsTool` package carries its full dependency closure. This is correct
-and is not "an admin package on nuget.org": a tool package cannot be referenced, so the types
-inside it are not a semver-frozen public surface. No action needed.
-
 ## 2. Package README
 
 `Directory.Build.props` packs the repository root `README.md` into every package. It stays
@@ -151,29 +187,50 @@ packability-by-property fails **silently in both directions** — it dropped a p
 meant to ship, so it can equally ship one that was not.
 
 A verification step runs after packing and before any push. It compares the set of
-`artifacts/*.nupkg` basenames against a literal allowlist of the 11 published IDs and fails on
-either an extra or a missing entry:
+`artifacts/*.nupkg` basenames against a literal allowlist of the ten published IDs and fails
+on either an extra or a missing entry:
 
-- an `Alberto.Admin.nupkg` appearing fails the build,
-- an absent `Alberto.Cli.nupkg` fails the build.
+- an `Alberto.Admin.nupkg` or `Alberto.Cli.nupkg` appearing fails the build,
+- an absent `Alberto.Postgres.nupkg` fails the build.
+
+The ten:
+
+```
+Alberto
+Alberto.Commands
+Alberto.EntityFramework
+Alberto.InMemory
+Alberto.Messaging
+Alberto.Messaging.Postgres
+Alberto.Postgres
+Alberto.Telemetry
+Alberto.Testing
+Alberto.Testing.Xunit
+```
 
 The allowlist lives in the workflow as an explicit list. Adding a package to it is a
-reviewable diff.
+reviewable diff. Note the check must match whole IDs, not prefixes — `Alberto.Messaging`
+is a prefix of `Alberto.Messaging.Postgres`, so a substring test would let an unexpected
+`Alberto.Messaging.Something.nupkg` through.
 
 ## 4. Workflow
 
 Everything stays in `.github/workflows/publish-packages.yml`. The nuget.org trusted-publishing
 policy is bound to that filename; a new workflow file would require editing the policy.
 
-**Standing fix, independent of everything else:** `<IsPackable>true</IsPackable>` in
-`tools/Alberto.Cli/Alberto.Cli.csproj`.
+**Standing fix, independent of everything else:** delete the CLI pack and push steps. The
+CLI `dotnet build` step stays — see the note at the end of this section. That is what
+unbreaks the workflow; see "The CLI does not ship" in §1.
 
 ### Trigger: push to `main`
 
-Unchanged from today. Packs `0.1.0-beta.<run_number>`, pushes to GitHub Packages. The
-five-attempt retry loop around the CLI push stays — the `nuget.pkg.github.com` hangs it
-documents are real and the workflow's existing comment explains why a longer timeout does not
-help.
+Packs `0.1.0-beta.<run_number>` and pushes the ten libraries to GitHub Packages. Otherwise
+unchanged.
+
+The observed `nuget.pkg.github.com` hangs were on the CLI push specifically, and that step is
+gone. The library push keeps its existing single 600s timeout; if the hangs turn out not to
+have been CLI-specific, the retry loop can come back on the library push, where it never
+was.
 
 ### Trigger: push tag `v*`
 
@@ -188,15 +245,20 @@ immediately before the push, after packing, not at the top of the job.
 It is added as the repository secret `NUGET_USER`.
 
 `.snupkg` symbol packages push to nuget.org alongside the `.nupkg` files. No retry wrapper —
-the flakiness is specific to GitHub Packages.
+the observed flakiness was on GitHub Packages.
+
+The CLI is still **built** on both triggers even though it never packs — it references the
+parked admin projects, so building it is what keeps a compile break in `Alberto.Admin` or
+`Alberto.Admin.Postgres` from going unnoticed. This is the same reason the workflow already
+gives for building the admin projects it does not pack.
 
 ## 5. Sequencing
 
 Four pull requests. Merging the rename into a pipeline that is already red makes it
 impossible to attribute a failure.
 
-1. **Repair and enforce.** `IsPackable=true` on the CLI, plus the §3 allowlist step, on
-   today's names. Merge and confirm a green GitHub Packages run. The pipeline becomes
+1. **Repair and enforce.** Delete the CLI pack and push steps (keeping the build), add the
+   §3 allowlist step, on today's names. Merge and confirm a green GitHub Packages run. The pipeline becomes
    trustworthy before anything large moves through it.
 2. **The rename.** Nothing else in the diff.
 3. **Wire nuget.org.** Tag trigger, `id-token: write`, `NuGet/login@v1`, the `NUGET_USER`
