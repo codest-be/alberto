@@ -63,6 +63,8 @@ Alberto.Dcb.Configuration.ControlLoopOptions.BatchSize.get -> int
 Alberto.Dcb.Configuration.ControlLoopOptions.BatchSize.init -> void
 Alberto.Dcb.Configuration.ControlLoopOptions.DeadLetterRetry.get -> Alberto.Dcb.Configuration.DeadLetterRetryOptions!
 Alberto.Dcb.Configuration.ControlLoopOptions.DeadLetterRetry.init -> void
+Alberto.Dcb.Configuration.ControlLoopOptions.DrainTimeout.get -> System.TimeSpan
+Alberto.Dcb.Configuration.ControlLoopOptions.DrainTimeout.init -> void
 Alberto.Dcb.Configuration.ControlLoopOptions.HeadRefreshInterval.get -> System.TimeSpan
 Alberto.Dcb.Configuration.ControlLoopOptions.HeadRefreshInterval.init -> void
 Alberto.Dcb.Configuration.ControlLoopOptions.HeadWindowSize.get -> int
@@ -82,6 +84,8 @@ Alberto.Dcb.Configuration.ControlLoopOverrides.BatchSize.set -> void
 Alberto.Dcb.Configuration.ControlLoopOverrides.ControlLoopOverrides() -> void
 Alberto.Dcb.Configuration.ControlLoopOverrides.DeadLetterRetry.get -> Alberto.Dcb.Configuration.DeadLetterRetryOverrides?
 Alberto.Dcb.Configuration.ControlLoopOverrides.DeadLetterRetry.set -> void
+Alberto.Dcb.Configuration.ControlLoopOverrides.DrainTimeout.get -> System.TimeSpan?
+Alberto.Dcb.Configuration.ControlLoopOverrides.DrainTimeout.set -> void
 Alberto.Dcb.Configuration.ControlLoopOverrides.HeadRefreshInterval.get -> System.TimeSpan?
 Alberto.Dcb.Configuration.ControlLoopOverrides.HeadRefreshInterval.set -> void
 Alberto.Dcb.Configuration.ControlLoopOverrides.HeadWindowSize.get -> int?

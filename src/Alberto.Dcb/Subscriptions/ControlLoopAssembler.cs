@@ -107,7 +107,8 @@ internal sealed class ControlLoopAssembler
         int batchSize,
         string moduleKey,
         ProcessorExecutionOptions? executionOptions = null,
-        ILogger<ControlLoop>? logger = null)
+        ILogger<ControlLoop>? logger = null,
+        TimeSpan? drainTimeout = null)
     {
         var loop = new ControlLoop(
             processor, head, backend, checkpointStore,
@@ -115,7 +116,8 @@ internal sealed class ControlLoopAssembler
             _middlewares, _batchMiddlewares,
             _hasUnpairedPerEventMiddlewares,
             executionOptions,
-            logger);
+            logger,
+            drainTimeout);
 
         // Wire a per-loop fence-violation handler through the interface rather than
         // via a concrete-type downcast. If the store is not fencable, this block is skipped

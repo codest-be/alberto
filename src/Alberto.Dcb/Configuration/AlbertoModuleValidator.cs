@@ -214,6 +214,14 @@ public sealed class AlbertoModuleValidator : IValidateOptions<AlbertoModuleDefin
                 $"Set a positive window size via .WithControlLoop(o => o with {{ HeadWindowSize = ... }}) or '{path}:ControlLoop:HeadWindowSize'."));
         }
 
+        if (loop.DrainTimeout <= TimeSpan.Zero)
+        {
+            failures.Add(new AlbertoValidationFailure(
+                "ALB0004",
+                $"ControlLoop.DrainTimeout is {loop.DrainTimeout}, which is not a positive duration.",
+                $"Set a positive timeout via .WithControlLoop(o => o with {{ DrainTimeout = ... }}) or '{path}:ControlLoop:DrainTimeout'."));
+        }
+
         if (loop.Retry.MaxRetries < 0)
         {
             failures.Add(new AlbertoValidationFailure(
