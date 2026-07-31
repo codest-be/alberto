@@ -1,6 +1,7 @@
+using Alberto.Dcb;
 using System.Diagnostics.CodeAnalysis;
 
-namespace Alberto.Dcb;
+namespace Alberto.Commands;
 
 /// <summary>
 /// Extension methods for the DCB decide-and-append pattern on <see cref="IEventStore"/>.

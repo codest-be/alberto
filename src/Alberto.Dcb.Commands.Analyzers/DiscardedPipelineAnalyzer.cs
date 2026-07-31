@@ -56,13 +56,13 @@ public sealed class DiscardedPipelineAnalyzer : DiagnosticAnalyzer
     /// one of these, and dropping a <c>Task</c> is already the compiler's CS4014 to report.
     /// </summary>
     private static readonly ImmutableArray<string> PipelineTypeNames = ImmutableArray.Create(
-        "Alberto.Dcb.CommandPipeline`1",
-        "Alberto.Dcb.BoundPipeline`2",
-        "Alberto.Dcb.UnboundPipeline`2",
-        "Alberto.Dcb.BoundDecision",
-        "Alberto.Dcb.BoundDecision`1",
-        "Alberto.Dcb.UnboundDecision",
-        "Alberto.Dcb.UnboundDecision`1");
+        "Alberto.Commands.CommandPipeline`1",
+        "Alberto.Commands.BoundPipeline`2",
+        "Alberto.Commands.UnboundPipeline`2",
+        "Alberto.Commands.BoundDecision",
+        "Alberto.Commands.BoundDecision`1",
+        "Alberto.Commands.UnboundDecision",
+        "Alberto.Commands.UnboundDecision`1");
 
     /// <inheritdoc/>
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>

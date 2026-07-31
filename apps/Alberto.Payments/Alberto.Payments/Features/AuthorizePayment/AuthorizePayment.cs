@@ -1,3 +1,4 @@
+using Alberto.Commands;
 using Alberto.Dcb;
 using Alberto.Examples.Shared;
 using Alberto.Payments.Contracts;

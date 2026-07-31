@@ -1,3 +1,4 @@
+using Alberto.Commands;
 using Alberto.Dcb;
 using Alberto.Dcb.Postgres;
 using Alberto.Dcb.Telemetry;

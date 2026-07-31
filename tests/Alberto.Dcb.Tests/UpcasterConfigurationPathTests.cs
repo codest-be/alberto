@@ -1,3 +1,4 @@
+using Alberto.Commands;
 using System.Text.Json;
 using Alberto.Dcb.Configuration;
 using Alberto.Dcb.InMemory;

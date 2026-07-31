@@ -1,4 +1,5 @@
-namespace Alberto.Dcb;
+using Alberto.Dcb;
+namespace Alberto.Commands;
 
 /// <summary>
 /// The entry stage of the command pipeline, returned by <see cref="AlbertoStore.Handle{TCommand}"/>.

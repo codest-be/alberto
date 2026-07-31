@@ -199,3 +199,6 @@ Autonomous-run decisions (user is AFK):
 
 ## Ledger
 
+Task 1: complete (commits 25ea77e..77e8376, review clean)
+Task 2: complete (commits 77e8376..f253705, review clean)
+  NOTE for Task 7: 'Push symbols' has if: always() — nuget.org push must not inherit it.

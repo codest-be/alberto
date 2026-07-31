@@ -1,10 +1,11 @@
+using Alberto.Dcb;
 using System.Collections.Immutable;
 using System.Reflection;
 using Alberto.Dcb.Configuration;
 using Alberto.Dcb.Upcasting;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Alberto.Dcb;
+namespace Alberto.Commands;
 
 /// <summary>
 /// Extension methods for registering <see cref="AlbertoStore"/> with a DCB module.

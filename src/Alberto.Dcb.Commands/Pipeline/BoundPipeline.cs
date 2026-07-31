@@ -1,4 +1,5 @@
-namespace Alberto.Dcb;
+using Alberto.Dcb;
+namespace Alberto.Commands;
 
 /// <summary>
 /// A pipeline whose state was read inside a DCB boundary. Because the boundary and the

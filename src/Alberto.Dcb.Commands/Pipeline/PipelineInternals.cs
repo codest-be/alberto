@@ -1,4 +1,5 @@
-namespace Alberto.Dcb;
+using Alberto.Dcb;
+namespace Alberto.Commands;
 
 /// <summary>
 /// A DCB consistency boundary: the query that scoped the read, and the position it was read at.

@@ -1,3 +1,4 @@
+using Alberto.Commands;
 using Alberto.Dcb.InMemory;
 using Alberto.Dcb.Upcasting;
 using FluentAssertions;

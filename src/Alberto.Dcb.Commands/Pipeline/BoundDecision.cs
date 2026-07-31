@@ -1,4 +1,5 @@
-namespace Alberto.Dcb;
+using Alberto.Dcb;
+namespace Alberto.Commands;
 
 /// <summary>
 /// A decision made inside a DCB boundary, ready to commit. <c>Commit(ct)</c> is available

@@ -1,4 +1,5 @@
-namespace Alberto.Dcb;
+using Alberto.Dcb;
+namespace Alberto.Commands;
 
 /// <summary>
 /// A pipeline whose state came from outside a DCB boundary. Nothing here knows what to

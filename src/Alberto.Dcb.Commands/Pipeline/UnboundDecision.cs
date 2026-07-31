@@ -1,4 +1,5 @@
-namespace Alberto.Dcb;
+using Alberto.Dcb;
+namespace Alberto.Commands;
 
 /// <summary>
 /// A decision made without a DCB boundary. There is no <c>Commit(ct)</c>: the caller

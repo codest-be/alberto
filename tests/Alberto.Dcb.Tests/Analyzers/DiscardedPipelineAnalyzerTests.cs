@@ -1,3 +1,4 @@
+using Alberto.Commands;
 using System.Collections.Immutable;
 using System.Reflection;
 using Alberto.Dcb.Analyzers;
@@ -104,6 +105,7 @@ public class DiscardedPipelineAnalyzerTests
         var source = $$"""
             using System.Threading;
             using System.Threading.Tasks;
+            using Alberto.Commands;
             using Alberto.Dcb;
 
             public sealed record PlaceOrder(string OrderId);

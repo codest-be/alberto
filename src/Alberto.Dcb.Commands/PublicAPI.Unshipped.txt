@@ -1,59 +1,59 @@
-Alberto.Dcb.AlbertoStore
-Alberto.Dcb.AlbertoStore.AlbertoStore(Alberto.Dcb.IEventStore! eventStore, Alberto.Dcb.EventSerializer! serializer, System.IServiceProvider? services = null) -> void
-Alberto.Dcb.AlbertoStore.Fold<TState>(Alberto.Dcb.DcbQuery! query, TState initial, System.Func<TState, Alberto.Dcb.IEvent!, TState>! apply, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<TState>!
-Alberto.Dcb.AlbertoStore.Handle<TCommand>(TCommand command) -> Alberto.Dcb.CommandPipeline<TCommand>
-Alberto.Dcb.AlbertoStoreBuilderExtensions
-Alberto.Dcb.BoundDecision
-Alberto.Dcb.BoundDecision.BoundDecision() -> void
-Alberto.Dcb.BoundDecision.Commit(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Dcb.Result>!
-Alberto.Dcb.BoundDecision.RetryOnConflict(int attempts) -> Alberto.Dcb.BoundDecision
-Alberto.Dcb.BoundDecision.TryCommit(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Dcb.Result>!
-Alberto.Dcb.BoundDecision<TValue>
-Alberto.Dcb.BoundDecision<TValue>.BoundDecision() -> void
-Alberto.Dcb.BoundDecision<TValue>.Commit(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Dcb.Result<TValue>>!
-Alberto.Dcb.BoundDecision<TValue>.Map<TNew>(System.Func<TValue, TNew>! map) -> Alberto.Dcb.BoundDecision<TNew>
-Alberto.Dcb.BoundDecision<TValue>.RetryOnConflict(int attempts) -> Alberto.Dcb.BoundDecision<TValue>
-Alberto.Dcb.BoundDecision<TValue>.TryCommit(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Dcb.Result<TValue>>!
-Alberto.Dcb.BoundPipeline<TCommand, TState>
-Alberto.Dcb.BoundPipeline<TCommand, TState>.BoundPipeline() -> void
-Alberto.Dcb.BoundPipeline<TCommand, TState>.Decide(System.Func<TCommand, TState, Alberto.Dcb.Decision>! decide) -> Alberto.Dcb.BoundDecision
-Alberto.Dcb.BoundPipeline<TCommand, TState>.Decide(System.Func<TState, Alberto.Dcb.Decision>! decide) -> Alberto.Dcb.BoundDecision
-Alberto.Dcb.BoundPipeline<TCommand, TState>.Decide<TValue>(System.Func<TCommand, TState, Alberto.Dcb.Decision<TValue>>! decide) -> Alberto.Dcb.BoundDecision<TValue>
-Alberto.Dcb.BoundPipeline<TCommand, TState>.Decide<TValue>(System.Func<TState, Alberto.Dcb.Decision<TValue>>! decide) -> Alberto.Dcb.BoundDecision<TValue>
-Alberto.Dcb.CommandPipeline<TCommand>
-Alberto.Dcb.CommandPipeline<TCommand>.CommandPipeline() -> void
-Alberto.Dcb.CommandPipeline<TCommand>.Decide(System.Func<TCommand, Alberto.Dcb.Decision>! decide) -> Alberto.Dcb.UnboundDecision
-Alberto.Dcb.CommandPipeline<TCommand>.Decide<TValue>(System.Func<TCommand, Alberto.Dcb.Decision<TValue>>! decide) -> Alberto.Dcb.UnboundDecision<TValue>
-Alberto.Dcb.CommandPipeline<TCommand>.Enrich<TNew>(System.Func<TCommand, System.Threading.CancellationToken, System.Threading.Tasks.Task<TNew>!>! enrich) -> Alberto.Dcb.CommandPipeline<TNew>
-Alberto.Dcb.CommandPipeline<TCommand>.Enrich<TNew>(System.Func<TCommand, System.Threading.Tasks.Task<TNew>!>! enrich) -> Alberto.Dcb.CommandPipeline<TNew>
-Alberto.Dcb.CommandPipeline<TCommand>.Load<TState>(Alberto.Dcb.DcbQuery! boundary) -> Alberto.Dcb.BoundPipeline<TCommand, TState>
-Alberto.Dcb.CommandPipeline<TCommand>.Load<TState>(Alberto.Dcb.DcbQuery! boundary, Alberto.Dcb.Evolver<TState>! evolver) -> Alberto.Dcb.BoundPipeline<TCommand, TState>
-Alberto.Dcb.CommandPipeline<TCommand>.Load<TState>(Alberto.Dcb.DcbQuery! boundary, TState initial, System.Func<TState, Alberto.Dcb.IEvent!, TState>! apply) -> Alberto.Dcb.BoundPipeline<TCommand, TState>
-Alberto.Dcb.CommandPipeline<TCommand>.Load<TState>(System.Func<TCommand, Alberto.Dcb.DcbQuery!>! boundary) -> Alberto.Dcb.BoundPipeline<TCommand, TState>
-Alberto.Dcb.CommandPipeline<TCommand>.Load<TState>(System.Func<TCommand, Alberto.Dcb.DcbQuery!>! boundary, Alberto.Dcb.Evolver<TState>! evolver) -> Alberto.Dcb.BoundPipeline<TCommand, TState>
-Alberto.Dcb.CommandPipeline<TCommand>.Load<TState>(System.Func<TCommand, Alberto.Dcb.DcbQuery!>! boundary, TState initial, System.Func<TState, Alberto.Dcb.IEvent!, TState>! apply) -> Alberto.Dcb.BoundPipeline<TCommand, TState>
-Alberto.Dcb.CommandPipeline<TCommand>.LoadUnbound<TState>(System.Func<TCommand, System.Threading.CancellationToken, System.Threading.Tasks.Task<TState>!>! load) -> Alberto.Dcb.UnboundPipeline<TCommand, TState>
-Alberto.Dcb.CommandPipeline<TCommand>.LoadUnbound<TState>(System.Func<TCommand, System.Threading.Tasks.Task<TState>!>! load) -> Alberto.Dcb.UnboundPipeline<TCommand, TState>
-Alberto.Dcb.CommandPipeline<TCommand>.LoadUnder<TState>(System.Func<TCommand, System.Threading.CancellationToken, System.Threading.Tasks.Task<(TState State, Alberto.Dcb.DcbQuery! Boundary, long Position)>!>! load) -> Alberto.Dcb.BoundPipeline<TCommand, TState>
-Alberto.Dcb.CommandPipeline<TCommand>.LoadUnder<TState>(System.Func<TCommand, System.Threading.Tasks.Task<(TState State, Alberto.Dcb.DcbQuery! Boundary, long Position)>!>! load) -> Alberto.Dcb.BoundPipeline<TCommand, TState>
-Alberto.Dcb.CommandPipeline<TCommand>.Map<TNew>(System.Func<TCommand, TNew>! map) -> Alberto.Dcb.CommandPipeline<TNew>
-Alberto.Dcb.CommandPipeline<TCommand>.Validate(System.Func<TCommand, Alberto.Dcb.Result>! validate) -> Alberto.Dcb.CommandPipeline<TCommand>
-Alberto.Dcb.DeciderExtensions
-Alberto.Dcb.UnboundDecision
-Alberto.Dcb.UnboundDecision.Commit(Alberto.Dcb.DcbQuery! query, long expectedPosition, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Dcb.Result>!
-Alberto.Dcb.UnboundDecision.CommitUnconditionally(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Dcb.Result>!
-Alberto.Dcb.UnboundDecision.TryCommit(Alberto.Dcb.DcbQuery! query, long expectedPosition, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Dcb.Result>!
-Alberto.Dcb.UnboundDecision.UnboundDecision() -> void
-Alberto.Dcb.UnboundDecision<TValue>
-Alberto.Dcb.UnboundDecision<TValue>.Commit(Alberto.Dcb.DcbQuery! query, long expectedPosition, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Dcb.Result<TValue>>!
-Alberto.Dcb.UnboundDecision<TValue>.CommitUnconditionally(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Dcb.Result<TValue>>!
-Alberto.Dcb.UnboundDecision<TValue>.Map<TNew>(System.Func<TValue, TNew>! map) -> Alberto.Dcb.UnboundDecision<TNew>
-Alberto.Dcb.UnboundDecision<TValue>.TryCommit(Alberto.Dcb.DcbQuery! query, long expectedPosition, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Dcb.Result<TValue>>!
-Alberto.Dcb.UnboundDecision<TValue>.UnboundDecision() -> void
-Alberto.Dcb.UnboundPipeline<TCommand, TState>
-Alberto.Dcb.UnboundPipeline<TCommand, TState>.Decide(System.Func<TCommand, TState, Alberto.Dcb.Decision>! decide) -> Alberto.Dcb.UnboundDecision
-Alberto.Dcb.UnboundPipeline<TCommand, TState>.Decide<TValue>(System.Func<TCommand, TState, Alberto.Dcb.Decision<TValue>>! decide) -> Alberto.Dcb.UnboundDecision<TValue>
-Alberto.Dcb.UnboundPipeline<TCommand, TState>.UnboundPipeline() -> void
-static Alberto.Dcb.AlbertoStoreBuilderExtensions.WithEventsFrom(this Alberto.Dcb.DcbModuleBuilder! builder, System.Reflection.Assembly! eventsAssembly) -> Alberto.Dcb.DcbModuleBuilder!
-static Alberto.Dcb.DeciderExtensions.DecideAndAppendAsync<TState>(this Alberto.Dcb.IEventStore! eventStore, Alberto.Dcb.DcbQuery! boundary, Alberto.Dcb.Evolver<TState>! evolver, System.Func<TState, Alberto.Dcb.Decision>! decide, System.Func<Alberto.Dcb.IEvent!, Alberto.Dcb.IEventToPersist!>! toEventToPersist, Alberto.Dcb.EventSerializer! serializer, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Dcb.Result>!
-static Alberto.Dcb.DeciderExtensions.DecideAndAppendAsync<TState>(this Alberto.Dcb.IEventStore! eventStore, Alberto.Dcb.DcbQuery! boundary, Alberto.Dcb.Evolver<TState>! evolver, System.Func<TState, Alberto.Dcb.Decision>! decide, System.Func<Alberto.Dcb.IEvent!, Alberto.Dcb.IEventToPersist!>! toEventToPersist, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Dcb.Result>!
+Alberto.Commands.AlbertoStore
+Alberto.Commands.AlbertoStore.AlbertoStore(Alberto.Dcb.IEventStore! eventStore, Alberto.Dcb.EventSerializer! serializer, System.IServiceProvider? services = null) -> void
+Alberto.Commands.AlbertoStore.Fold<TState>(Alberto.Dcb.DcbQuery! query, TState initial, System.Func<TState, Alberto.Dcb.IEvent!, TState>! apply, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<TState>!
+Alberto.Commands.AlbertoStore.Handle<TCommand>(TCommand command) -> Alberto.Commands.CommandPipeline<TCommand>
+Alberto.Commands.AlbertoStoreBuilderExtensions
+Alberto.Commands.BoundDecision
+Alberto.Commands.BoundDecision.BoundDecision() -> void
+Alberto.Commands.BoundDecision.Commit(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Dcb.Result>!
+Alberto.Commands.BoundDecision.RetryOnConflict(int attempts) -> Alberto.Commands.BoundDecision
+Alberto.Commands.BoundDecision.TryCommit(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Dcb.Result>!
+Alberto.Commands.BoundDecision<TValue>
+Alberto.Commands.BoundDecision<TValue>.BoundDecision() -> void
+Alberto.Commands.BoundDecision<TValue>.Commit(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Dcb.Result<TValue>>!
+Alberto.Commands.BoundDecision<TValue>.Map<TNew>(System.Func<TValue, TNew>! map) -> Alberto.Commands.BoundDecision<TNew>
+Alberto.Commands.BoundDecision<TValue>.RetryOnConflict(int attempts) -> Alberto.Commands.BoundDecision<TValue>
+Alberto.Commands.BoundDecision<TValue>.TryCommit(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Dcb.Result<TValue>>!
+Alberto.Commands.BoundPipeline<TCommand, TState>
+Alberto.Commands.BoundPipeline<TCommand, TState>.BoundPipeline() -> void
+Alberto.Commands.BoundPipeline<TCommand, TState>.Decide(System.Func<TCommand, TState, Alberto.Dcb.Decision>! decide) -> Alberto.Commands.BoundDecision
+Alberto.Commands.BoundPipeline<TCommand, TState>.Decide(System.Func<TState, Alberto.Dcb.Decision>! decide) -> Alberto.Commands.BoundDecision
+Alberto.Commands.BoundPipeline<TCommand, TState>.Decide<TValue>(System.Func<TCommand, TState, Alberto.Dcb.Decision<TValue>>! decide) -> Alberto.Commands.BoundDecision<TValue>
+Alberto.Commands.BoundPipeline<TCommand, TState>.Decide<TValue>(System.Func<TState, Alberto.Dcb.Decision<TValue>>! decide) -> Alberto.Commands.BoundDecision<TValue>
+Alberto.Commands.CommandPipeline<TCommand>
+Alberto.Commands.CommandPipeline<TCommand>.CommandPipeline() -> void
+Alberto.Commands.CommandPipeline<TCommand>.Decide(System.Func<TCommand, Alberto.Dcb.Decision>! decide) -> Alberto.Commands.UnboundDecision
+Alberto.Commands.CommandPipeline<TCommand>.Decide<TValue>(System.Func<TCommand, Alberto.Dcb.Decision<TValue>>! decide) -> Alberto.Commands.UnboundDecision<TValue>
+Alberto.Commands.CommandPipeline<TCommand>.Enrich<TNew>(System.Func<TCommand, System.Threading.CancellationToken, System.Threading.Tasks.Task<TNew>!>! enrich) -> Alberto.Commands.CommandPipeline<TNew>
+Alberto.Commands.CommandPipeline<TCommand>.Enrich<TNew>(System.Func<TCommand, System.Threading.Tasks.Task<TNew>!>! enrich) -> Alberto.Commands.CommandPipeline<TNew>
+Alberto.Commands.CommandPipeline<TCommand>.Load<TState>(Alberto.Dcb.DcbQuery! boundary) -> Alberto.Commands.BoundPipeline<TCommand, TState>
+Alberto.Commands.CommandPipeline<TCommand>.Load<TState>(Alberto.Dcb.DcbQuery! boundary, Alberto.Dcb.Evolver<TState>! evolver) -> Alberto.Commands.BoundPipeline<TCommand, TState>
+Alberto.Commands.CommandPipeline<TCommand>.Load<TState>(Alberto.Dcb.DcbQuery! boundary, TState initial, System.Func<TState, Alberto.Dcb.IEvent!, TState>! apply) -> Alberto.Commands.BoundPipeline<TCommand, TState>
+Alberto.Commands.CommandPipeline<TCommand>.Load<TState>(System.Func<TCommand, Alberto.Dcb.DcbQuery!>! boundary) -> Alberto.Commands.BoundPipeline<TCommand, TState>
+Alberto.Commands.CommandPipeline<TCommand>.Load<TState>(System.Func<TCommand, Alberto.Dcb.DcbQuery!>! boundary, Alberto.Dcb.Evolver<TState>! evolver) -> Alberto.Commands.BoundPipeline<TCommand, TState>
+Alberto.Commands.CommandPipeline<TCommand>.Load<TState>(System.Func<TCommand, Alberto.Dcb.DcbQuery!>! boundary, TState initial, System.Func<TState, Alberto.Dcb.IEvent!, TState>! apply) -> Alberto.Commands.BoundPipeline<TCommand, TState>
+Alberto.Commands.CommandPipeline<TCommand>.LoadUnbound<TState>(System.Func<TCommand, System.Threading.CancellationToken, System.Threading.Tasks.Task<TState>!>! load) -> Alberto.Commands.UnboundPipeline<TCommand, TState>
+Alberto.Commands.CommandPipeline<TCommand>.LoadUnbound<TState>(System.Func<TCommand, System.Threading.Tasks.Task<TState>!>! load) -> Alberto.Commands.UnboundPipeline<TCommand, TState>
+Alberto.Commands.CommandPipeline<TCommand>.LoadUnder<TState>(System.Func<TCommand, System.Threading.CancellationToken, System.Threading.Tasks.Task<(TState State, Alberto.Dcb.DcbQuery! Boundary, long Position)>!>! load) -> Alberto.Commands.BoundPipeline<TCommand, TState>
+Alberto.Commands.CommandPipeline<TCommand>.LoadUnder<TState>(System.Func<TCommand, System.Threading.Tasks.Task<(TState State, Alberto.Dcb.DcbQuery! Boundary, long Position)>!>! load) -> Alberto.Commands.BoundPipeline<TCommand, TState>
+Alberto.Commands.CommandPipeline<TCommand>.Map<TNew>(System.Func<TCommand, TNew>! map) -> Alberto.Commands.CommandPipeline<TNew>
+Alberto.Commands.CommandPipeline<TCommand>.Validate(System.Func<TCommand, Alberto.Dcb.Result>! validate) -> Alberto.Commands.CommandPipeline<TCommand>
+Alberto.Commands.DeciderExtensions
+Alberto.Commands.UnboundDecision
+Alberto.Commands.UnboundDecision.Commit(Alberto.Dcb.DcbQuery! query, long expectedPosition, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Dcb.Result>!
+Alberto.Commands.UnboundDecision.CommitUnconditionally(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Dcb.Result>!
+Alberto.Commands.UnboundDecision.TryCommit(Alberto.Dcb.DcbQuery! query, long expectedPosition, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Dcb.Result>!
+Alberto.Commands.UnboundDecision.UnboundDecision() -> void
+Alberto.Commands.UnboundDecision<TValue>
+Alberto.Commands.UnboundDecision<TValue>.Commit(Alberto.Dcb.DcbQuery! query, long expectedPosition, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Dcb.Result<TValue>>!
+Alberto.Commands.UnboundDecision<TValue>.CommitUnconditionally(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Dcb.Result<TValue>>!
+Alberto.Commands.UnboundDecision<TValue>.Map<TNew>(System.Func<TValue, TNew>! map) -> Alberto.Commands.UnboundDecision<TNew>
+Alberto.Commands.UnboundDecision<TValue>.TryCommit(Alberto.Dcb.DcbQuery! query, long expectedPosition, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Dcb.Result<TValue>>!
+Alberto.Commands.UnboundDecision<TValue>.UnboundDecision() -> void
+Alberto.Commands.UnboundPipeline<TCommand, TState>
+Alberto.Commands.UnboundPipeline<TCommand, TState>.Decide(System.Func<TCommand, TState, Alberto.Dcb.Decision>! decide) -> Alberto.Commands.UnboundDecision
+Alberto.Commands.UnboundPipeline<TCommand, TState>.Decide<TValue>(System.Func<TCommand, TState, Alberto.Dcb.Decision<TValue>>! decide) -> Alberto.Commands.UnboundDecision<TValue>
+Alberto.Commands.UnboundPipeline<TCommand, TState>.UnboundPipeline() -> void
+static Alberto.Commands.AlbertoStoreBuilderExtensions.WithEventsFrom(this Alberto.Dcb.DcbModuleBuilder! builder, System.Reflection.Assembly! eventsAssembly) -> Alberto.Dcb.DcbModuleBuilder!
+static Alberto.Commands.DeciderExtensions.DecideAndAppendAsync<TState>(this Alberto.Dcb.IEventStore! eventStore, Alberto.Dcb.DcbQuery! boundary, Alberto.Dcb.Evolver<TState>! evolver, System.Func<TState, Alberto.Dcb.Decision>! decide, System.Func<Alberto.Dcb.IEvent!, Alberto.Dcb.IEventToPersist!>! toEventToPersist, Alberto.Dcb.EventSerializer! serializer, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Dcb.Result>!
+static Alberto.Commands.DeciderExtensions.DecideAndAppendAsync<TState>(this Alberto.Dcb.IEventStore! eventStore, Alberto.Dcb.DcbQuery! boundary, Alberto.Dcb.Evolver<TState>! evolver, System.Func<TState, Alberto.Dcb.Decision>! decide, System.Func<Alberto.Dcb.IEvent!, Alberto.Dcb.IEventToPersist!>! toEventToPersist, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Dcb.Result>!

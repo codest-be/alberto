@@ -8,9 +8,9 @@
         <!-- Package Metadata -->
         <PackageId>Alberto.Dcb.Commands</PackageId>
         <Title>Alberto DCB Command Pipeline</Title>
-        <Description>Fluent command pipeline and store for Alberto DCB. Provides Problem, Result, Decision types and a composable pipeline for validate → load → decide → persist workflows.</Description>
+        <Description>Fluent command pipeline for Alberto DCB. Composes validate → load → decide → persist workflows over a dynamic consistency boundary, with automatic retry on append conflicts.</Description>
         <IsPackable>true</IsPackable>
-        <RootNamespace>Alberto.Dcb</RootNamespace>
+        <RootNamespace>Alberto.Commands</RootNamespace>
     </PropertyGroup>
 
     <ItemGroup>
