@@ -68,7 +68,7 @@ A nuget.org release must never be a side effect of merging a pull request.
 | Directory | Package ID | Root namespace | Ships |
 |---|---|---|---|
 | `src/Alberto` | `Alberto` | `Alberto` | yes |
-| `src/Alberto.Commands` | `Alberto.Commands` | `Alberto` (merged, as today) | yes |
+| `src/Alberto.Commands` | `Alberto.Commands` | `Alberto.Commands` (**changed** — see below) | yes |
 | `src/Alberto.Commands.Analyzers` | — | `Alberto.Commands.Analyzers` | bundled into `Alberto.Commands` |
 | `src/Alberto.EntityFramework` | `Alberto.EntityFramework` | `Alberto.EntityFramework` | yes |
 | `src/Alberto.InMemory` | `Alberto.InMemory` | `Alberto.InMemory` | yes |
@@ -85,9 +85,38 @@ A nuget.org release must never be a side effect of merging a pull request.
 Also renamed: `tests/Alberto.Dcb.Tests` → `tests/Alberto.Tests`,
 `benchmarks/Alberto.Dcb.Benchmarks` → `benchmarks/Alberto.Benchmarks`.
 
-`Alberto.Commands` keeps `RootNamespace` set to `Alberto` rather than taking its own
-namespace, preserving the deliberate merge the csproj does today: command types live
-alongside the core types.
+### Un-merging `Alberto.Commands`
+
+Today all nine source files in `Alberto.Dcb.Commands` declare `namespace Alberto.Dcb;` —
+the same namespace as the core package — and no consumer anywhere writes
+`using Alberto.Dcb.Commands`. This is a real merge, not a `RootNamespace` default.
+
+It ends with the rename. `Alberto.Commands` takes `namespace Alberto.Commands`.
+
+The merge does not carry its weight. The package declares exactly ten public types, all of
+them pipeline machinery: `AlbertoStore`, `AlbertoStoreBuilderExtensions`,
+`CommandPipeline<TCommand>`, `BoundPipeline<,>`, `UnboundPipeline<,>`, `BoundDecision`,
+`BoundDecision<TValue>`, `UnboundDecision`, `UnboundDecision<TValue>` and
+`DeciderExtensions`. The types a consumer needs pervasively — `Result`, `Result<T>`,
+`Decision`, `Decision<T>`, `Problem` — are declared in the **core** package
+(`src/Alberto/Result.cs`, `Decision.cs`, `Problem.cs`) and stay in `namespace Alberto`
+either way. So the merge buys no ergonomics on the types that actually appear everywhere.
+
+Against that, once the root namespace is plain `Alberto`, an optional package injecting types
+into it is actively misleading: `Alberto` reads as the core package's namespace, and every
+other package in the product already has the property that its namespace names its package.
+
+Cost: 21 files gain a `using Alberto.Commands;`, mostly one per vertical slice in the Orders
+and Payments examples. `AlbertoStoreBuilderExtensions` holds extension methods, so DI
+registration sites need the import too or the methods will not resolve.
+
+### Fix the `Alberto.Commands` description while renaming
+
+`Alberto.Dcb.Commands.csproj` currently describes itself as providing "Problem, Result,
+Decision types". It does not — those are core types, as established above. That string
+becomes the package summary on nuget.org, so it is corrected as part of the rename to
+describe what the package actually contains: the fluent
+validate → load → decide → persist pipeline.
 
 The parked admin projects keep their `PackageId`/`Title`/`Description` metadata and their
 `IsPackable=false`, exactly as they do now — unparking stays a one-line diff rather than a
