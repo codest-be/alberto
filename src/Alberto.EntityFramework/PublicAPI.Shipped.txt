@@ -1,1 +1,26 @@
 #nullable enable
+Alberto.EntityFramework.EfBuilderExtensions
+Alberto.EntityFramework.EfConsumerBuilderExtensions
+Alberto.EntityFramework.EfDocumentIdUniqueness
+Alberto.EntityFramework.EfDocumentIdUniqueness.AcrossTenants = 1 -> Alberto.EntityFramework.EfDocumentIdUniqueness
+Alberto.EntityFramework.EfDocumentIdUniqueness.NotDeclared = 0 -> Alberto.EntityFramework.EfDocumentIdUniqueness
+Alberto.EntityFramework.EfProjectionModelBuilderExtensions
+Alberto.EntityFramework.EfStateStore<TEntity, TDbContext>
+Alberto.EntityFramework.EfStateStore<TEntity, TDbContext>.ApplyChangesAsync(System.Collections.Generic.IReadOnlyDictionary<string!, TEntity!>! upserts, System.Collections.Generic.IReadOnlyCollection<string!>! deletes, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.EntityFramework.EfStateStore<TEntity, TDbContext>.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Alberto.EntityFramework.EfStateStore<TEntity, TDbContext>.EfStateStore(Microsoft.EntityFrameworkCore.IDbContextFactory<TDbContext!>! contextFactory, System.Func<int>? rebuildVersion = null) -> void
+Alberto.EntityFramework.EfStateStore<TEntity, TDbContext>.ListRecentAsync(int limit = 20, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<TEntity!>!>!
+Alberto.EntityFramework.EfStateStore<TEntity, TDbContext>.LoadManyAsync(System.Collections.Generic.IEnumerable<string!>! documentIds, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyDictionary<string!, TEntity!>!>!
+Alberto.EntityFramework.Inline.InlineProjectionExhaustedException
+Alberto.EntityFramework.Inline.InlineProjectionExhaustedException.Attempts.get -> int
+Alberto.EntityFramework.Inline.InlineProjectionExhaustedException.DocumentCount.get -> int
+Alberto.EntityFramework.Inline.InlineProjectionExhaustedException.InlineProjectionExhaustedException(string! processorId, int attempts, int documentCount, System.Exception? innerException = null) -> void
+Alberto.EntityFramework.Inline.InlineProjectionExhaustedException.ProcessorId.get -> string!
+Alberto.EntityFramework.ProjectionMode
+Alberto.EntityFramework.ProjectionMode.Async = 0 -> Alberto.EntityFramework.ProjectionMode
+Alberto.EntityFramework.ProjectionMode.Inline = 1 -> Alberto.EntityFramework.ProjectionMode
+static Alberto.EntityFramework.EfBuilderExtensions.WithEntityFramework<TDbContext>(this Alberto.DcbModuleBuilder! builder, System.Action<Microsoft.EntityFrameworkCore.DbContextOptionsBuilder!>! configure) -> Alberto.DcbModuleBuilder!
+static Alberto.EntityFramework.EfBuilderExtensions.WithEntityFramework<TDbContext>(this Alberto.DcbModuleBuilder! builder, System.Action<System.IServiceProvider!, Microsoft.EntityFrameworkCore.DbContextOptionsBuilder!>! configure) -> Alberto.DcbModuleBuilder!
+static Alberto.EntityFramework.EfConsumerBuilderExtensions.AddEfProjection<TEntity, TDbContext>(this Alberto.DcbModuleBuilder! builder, Alberto.Subscriptions.ProjectionDeclaration<TEntity!>! declaration, Alberto.EntityFramework.ProjectionMode mode = Alberto.EntityFramework.ProjectionMode.Async, Alberto.EntityFramework.EfDocumentIdUniqueness documentIds = Alberto.EntityFramework.EfDocumentIdUniqueness.NotDeclared) -> Alberto.DcbModuleBuilder!
+static Alberto.EntityFramework.EfConsumerBuilderExtensions.AddEfProjection<TEntity, TDbContext>(this Alberto.DcbModuleBuilder! builder, Alberto.Subscriptions.ProjectionDeclaration<TEntity!>! declaration, System.Func<System.IServiceProvider!, System.Func<System.Collections.Generic.IReadOnlyList<Alberto.IEventEnvelope!>!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>!>! afterCommit, Alberto.EntityFramework.EfDocumentIdUniqueness documentIds = Alberto.EntityFramework.EfDocumentIdUniqueness.NotDeclared) -> Alberto.DcbModuleBuilder!
+static Alberto.EntityFramework.EfProjectionModelBuilderExtensions.ProjectionEntity<TEntity>(this Microsoft.EntityFrameworkCore.ModelBuilder! modelBuilder, System.Action<Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<TEntity!>!>? configure = null) -> Microsoft.EntityFrameworkCore.ModelBuilder!

@@ -1,1 +1,44 @@
 #nullable enable
+Alberto.InMemory.InMemoryBackendDescriptor
+Alberto.InMemory.InMemoryBackendDescriptor.ApplyConfiguration(Microsoft.Extensions.Configuration.IConfiguration! moduleSection) -> Alberto.Configuration.IAlbertoBackendDescriptor!
+Alberto.InMemory.InMemoryBackendDescriptor.Name.get -> string!
+Alberto.InMemory.InMemoryBackendDescriptor.Register(Alberto.Configuration.AlbertoModuleContext! context) -> void
+Alberto.InMemory.InMemoryBackendDescriptor.SharedModuleKey.get -> string?
+Alberto.InMemory.InMemoryBackendDescriptor.SharedModuleKey.init -> void
+Alberto.InMemory.InMemoryBackendDescriptor.SupportsTenancy.get -> bool
+Alberto.InMemory.InMemoryBackendDescriptor.Validate(Alberto.Configuration.AlbertoModuleDefinition! definition) -> System.Collections.Generic.IEnumerable<Alberto.Configuration.AlbertoValidationFailure!>!
+Alberto.InMemory.InMemoryBuilderExtensions
+Alberto.InMemory.InMemoryCheckpointStore
+Alberto.InMemory.InMemoryCheckpointStore.Clear() -> void
+Alberto.InMemory.InMemoryCheckpointStore.GetAsync(string! processorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<long?>!
+Alberto.InMemory.InMemoryCheckpointStore.InMemoryCheckpointStore() -> void
+Alberto.InMemory.InMemoryCheckpointStore.ListProcessorIdsAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<string!>!>!
+Alberto.InMemory.InMemoryCheckpointStore.ResetAsync(string! processorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.InMemory.InMemoryCheckpointStore.RewindAsync(string! processorId, long position, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.InMemory.InMemoryCheckpointStore.SaveAsync(string! processorId, long position, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.InMemory.InMemoryDeadLetterStore
+Alberto.InMemory.InMemoryDeadLetterStore.AbandonRetryAsync(Alberto.Subscriptions.DeadLetterClaim! claim, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+Alberto.InMemory.InMemoryDeadLetterStore.ClaimRetryRequestedAsync(string! processorId, int batchSize, System.TimeSpan leaseDuration, string! claimedBy, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Alberto.Subscriptions.DeadLetterClaim!>!>!
+Alberto.InMemory.InMemoryDeadLetterStore.ClearAsync(string! processorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.InMemory.InMemoryDeadLetterStore.CompleteRetryAsync(Alberto.Subscriptions.DeadLetterClaim! claim, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+Alberto.InMemory.InMemoryDeadLetterStore.CountAsync(string! processorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
+Alberto.InMemory.InMemoryDeadLetterStore.GetAsync(string! processorId, string? tenantId = null, int limit = 100, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Alberto.Subscriptions.DeadLetterEntry!>!>!
+Alberto.InMemory.InMemoryDeadLetterStore.InMemoryDeadLetterStore(System.TimeProvider? timeProvider = null) -> void
+Alberto.InMemory.InMemoryDeadLetterStore.MarkForRetryAsync(string! processorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.InMemory.InMemoryDeadLetterStore.StoreAsync(Alberto.Subscriptions.DeadLetterEntry! entry, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.InMemory.InMemoryEventStoreBackend
+Alberto.InMemory.InMemoryEventStoreBackend.AppendAsync(System.Collections.Generic.IEnumerable<Alberto.IEventToPersist!>! events, Alberto.DcbQuery? dcbQuery = null, long? expectedPosition = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!
+Alberto.InMemory.InMemoryEventStoreBackend.Clear() -> void
+Alberto.InMemory.InMemoryEventStoreBackend.GetLastPositionAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<long>!
+Alberto.InMemory.InMemoryEventStoreBackend.GetPositionsAsync(long afterPosition, int windowSize, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<long>!>!
+Alberto.InMemory.InMemoryEventStoreBackend.InMemoryEventStoreBackend() -> void
+Alberto.InMemory.InMemoryEventStoreBackend.InMemoryEventStoreBackend(System.TimeProvider! timeProvider) -> void
+Alberto.InMemory.InMemoryEventStoreBackend.StreamAllAsync(long afterPosition = 0, int? limit = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!
+Alberto.InMemory.InMemoryEventStoreBackend.StreamAsync(Alberto.DcbQuery! query, long afterPosition = 0, int? limit = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!
+Alberto.InMemory.InMemoryStateStore<TState>
+Alberto.InMemory.InMemoryStateStore<TState>.ApplyChangesAsync(System.Collections.Generic.IReadOnlyDictionary<string!, TState>! upserts, System.Collections.Generic.IReadOnlyCollection<string!>! deletes, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.InMemory.InMemoryStateStore<TState>.InMemoryStateStore(System.Func<int>? rebuildVersion = null) -> void
+Alberto.InMemory.InMemoryStateStore<TState>.ListRecentAsync(int limit = 20, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<TState>!>!
+Alberto.InMemory.InMemoryStateStore<TState>.LoadManyAsync(System.Collections.Generic.IEnumerable<string!>! documentIds, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyDictionary<string!, TState>!>!
+static Alberto.InMemory.InMemoryBuilderExtensions.WithInMemory(this Alberto.DcbModuleBuilder! builder) -> Alberto.DcbModuleBuilder!
+static Alberto.InMemory.InMemoryBuilderExtensions.WithInMemory(this Alberto.DcbModuleBuilder! builder, string! sharedModuleKey) -> Alberto.DcbModuleBuilder!
