@@ -159,6 +159,9 @@ Task 10: complete (commits ffeeb8a..3d4e1cf, review clean after one fix pass)
     all inside builder.Register(...). Additive and idempotent (SDK dedupes AddSource by name).
   - AddAlbertoInstrumentation (both overloads) marked [Obsolete]; call sites removed from
     apps/ServiceDefaults/Extensions.cs and the now-unused ProjectReference dropped from ServiceDefaults.csproj.
+    LATER REVERSED: the [Obsolete] attribute was removed again in final review (finding I3) — the method is
+    the supported path for manual TracerProvider/MeterProvider wiring, so deprecating it deprecated the only
+    way to do that. The call-site removal stands. See final-review-fix-report.md §I3.
   - #pragma warning disable CS0618 removed from Alberto.Dcb.Telemetry.
   - InternalsVisibleTo("Alberto.Dcb.Telemetry") added to Alberto.Dcb.csproj — needed for `with` on
     AlbertoModuleDefinition's internal set properties; reviewer confirmed every other companion assembly
@@ -176,6 +179,8 @@ Task 10: complete (commits ffeeb8a..3d4e1cf, review clean after one fix pass)
           (expected — they pin existing guarantees).
   - Breaking changes for Task 13 UPGRADING.md:
     B10.1 AddAlbertoInstrumentation is [Obsolete]; WithTelemetry() registers the sources instead.
+          LATER REVERSED (finding I3) — the method is not [Obsolete]; it is retained for manual
+          TracerProvider/MeterProvider wiring. UPGRADING.md ships the corrected row.
     B10.2 .WithTelemetry() now installs the OTel SDK unconditionally (TracerProvider/MeterProvider singletons).
           1.15.3 has no ConfigureOpenTelemetryTracerProvider, so a truly inert registration is not available.
           No exporters means no I/O, but it IS a behavioural difference worth an UPGRADING row.

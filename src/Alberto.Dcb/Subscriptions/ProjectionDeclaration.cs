@@ -8,12 +8,6 @@ namespace Alberto.Dcb.Subscriptions;
 /// </summary>
 internal interface IProjectionEventHandler<TState>
 {
-    /// <summary>Derives the document ID from a raw event envelope.</summary>
-    string? GetDocumentId(IEventEnvelope envelope);
-
-    /// <summary>Applies the event to the current state.</summary>
-    ProjectionResult<TState> Apply(TState state, IEventEnvelope envelope, ProjectionContext ctx);
-
     /// <summary>Derives the document ID from an already-parsed event (for testing).</summary>
     string? GetDocumentId(object parsedEvent);
 
@@ -47,17 +41,6 @@ internal sealed class ProjectionEventHandler<TState, TEvent>(
 {
     public object ParseEvent(IEventEnvelope envelope, EventSerializer? serializer)
         => EventEnvelopeExtensions.DeserializeEvent<TEvent>(envelope, serializer);
-
-    // These envelope-taking overloads implement the internal interface and are called
-    // by the public ProjectionDeclaration API when no serializer is supplied. They pass
-    // null to DeserializeEvent, which fires the EV-1 guard for stale-version envelopes.
-    // The runtime path always goes through DeclaredAsyncProjection which calls
-    // ParseEvent(envelope, serializer) above — these overloads are not reached at runtime.
-    public string? GetDocumentId(IEventEnvelope envelope)
-        => getId(EventEnvelopeExtensions.DeserializeEvent<TEvent>(envelope, null));
-
-    public ProjectionResult<TState> Apply(TState state, IEventEnvelope envelope, ProjectionContext ctx)
-        => apply(state, EventEnvelopeExtensions.DeserializeEvent<TEvent>(envelope, null), ctx);
 
     public string? GetDocumentId(object parsedEvent) => getId((TEvent)parsedEvent);
 

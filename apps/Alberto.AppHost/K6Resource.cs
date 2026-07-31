@@ -46,68 +46,101 @@ public static class K6ResourceBuilderExtensions
                 name: "run-smoke",
                 displayName: "Smoke Test",
                 executeCommand: context => RunK6TestAsync(resource, "smoke", context),
-                iconName: "PlayCircle",
-                iconVariant: IconVariant.Filled)
+                commandOptions: new CommandOptions
+                {
+                    IconName = "PlayCircle",
+                    IconVariant = IconVariant.Filled
+                })
             .WithCommand(
                 name: "run-load",
                 displayName: "Load Test",
                 executeCommand: context => RunK6TestAsync(resource, "load", context),
-                iconName: "Play",
-                iconVariant: IconVariant.Filled)
+                commandOptions: new CommandOptions
+                {
+                    IconName = "Play",
+                    IconVariant = IconVariant.Filled
+                })
             .WithCommand(
                 name: "run-stress",
                 displayName: "Stress Test",
                 executeCommand: context => RunK6TestAsync(resource, "stress", context),
-                iconName: "FastForward",
-                iconVariant: IconVariant.Filled)
+                commandOptions: new CommandOptions
+                {
+                    IconName = "FastForward",
+                    IconVariant = IconVariant.Filled
+                })
             .WithCommand(
                 name: "run-spike",
                 displayName: "Spike Test",
                 executeCommand: context => RunK6TestAsync(resource, "spike", context),
-                iconName: "Flash",
-                iconVariant: IconVariant.Filled)
+                commandOptions: new CommandOptions
+                {
+                    IconName = "Flash",
+                    IconVariant = IconVariant.Filled
+                })
             .WithCommand(
                 name: "run-consistency",
                 displayName: "Consistency Test",
                 executeCommand: context => RunK6TestAsync(resource, "consistency", context),
-                iconName: "Checkmark",
-                iconVariant: IconVariant.Filled)
+                commandOptions: new CommandOptions
+                {
+                    IconName = "Checkmark",
+                    IconVariant = IconVariant.Filled
+                })
             .WithCommand(
                 name: "run-throughput",
                 displayName: "Throughput Test",
                 executeCommand: context => RunK6TestAsync(resource, "throughput", context),
-                iconName: "Gauge",
-                iconVariant: IconVariant.Filled)
+                commandOptions: new CommandOptions
+                {
+                    IconName = "Gauge",
+                    IconVariant = IconVariant.Filled
+                })
             .WithCommand(
                 name: "run-throughput-burst",
                 displayName: "Throughput (Burst)",
                 executeCommand: context => RunK6TestAsync(resource, "throughput-burst", context),
-                iconName: "Rocket",
-                iconVariant: IconVariant.Filled)
+                commandOptions: new CommandOptions
+                {
+                    IconName = "Rocket",
+                    IconVariant = IconVariant.Filled
+                })
             .WithCommand(
                 name: "run-throughput-extended",
                 displayName: "Throughput (Extended)",
                 executeCommand: context => RunK6TestAsync(resource, "throughput-extended", context),
-                iconName: "DataTrending",
-                iconVariant: IconVariant.Filled)
+                commandOptions: new CommandOptions
+                {
+                    IconName = "DataTrending",
+                    IconVariant = IconVariant.Filled
+                })
             .WithCommand(
                 name: "run-throughput-rerun",
                 displayName: "Throughput (Skip Seeding)",
                 executeCommand: context => RunK6TestAsync(resource, "throughput-rerun", context),
-                iconName: "ArrowRepeatAll",
-                iconVariant: IconVariant.Filled)
+                commandOptions: new CommandOptions
+                {
+                    IconName = "ArrowRepeatAll",
+                    IconVariant = IconVariant.Filled
+                })
             .WithCommand(
                 name: "run-throughput-burst-rerun",
                 displayName: "Throughput Burst (Skip Seeding)",
                 executeCommand: context => RunK6TestAsync(resource, "throughput-burst-rerun", context),
-                iconName: "ArrowRepeatAll",
-                iconVariant: IconVariant.Filled)
+                commandOptions: new CommandOptions
+                {
+                    IconName = "ArrowRepeatAll",
+                    IconVariant = IconVariant.Filled
+                })
             .WithCommand(
                 name: "run-throughput-extended-rerun",
                 displayName: "Throughput Extended (Skip Seeding)",
                 executeCommand: context => RunK6TestAsync(resource, "throughput-extended-rerun", context),
-                iconName: "ArrowRepeatAll",
-                iconVariant: IconVariant.Filled);
+                commandOptions: new CommandOptions
+                {
+                    IconName = "ArrowRepeatAll",
+                    IconVariant = IconVariant.Filled
+                });
     }
 
     private static async Task<ExecuteCommandResult> RunK6TestAsync(

@@ -3791,6 +3791,8 @@ precisely so a library can register its own sources; use it.
 - Consumes: `TelemetryOptions` (Task 1); `AlbertoModuleContext`, `AlbertoModuleDefinition` (Task 2); `DcbModuleBuilder.Configure` / `.Register` (Task 5).
 - Produces: `WithTelemetry(this DcbModuleBuilder builder, Func<TelemetryOptions, TelemetryOptions>? configure = null)`. `AddAlbertoInstrumentation(this TracerProviderBuilder)` and `AddAlbertoInstrumentation(this MeterProviderBuilder)` stay, marked `[Obsolete]`, for applications that wire OpenTelemetry without the hosting integration.
 
+> **Superseded — the `[Obsolete]` half of this was reversed.** Both overloads remain public and are **not** marked `[Obsolete]`: they are the supported path for wiring a `TracerProvider` / `MeterProvider` manually, so deprecating them would deprecate the only way to do it. `TelemetryRegistrationTests` now asserts via reflection that neither carries `ObsoleteAttribute`. See `.superpowers/sdd/final-review-fix-report.md` §I3.
+
 - [ ] **Step 1: Write the failing test**
 
 Create `tests/Alberto.Dcb.Tests/Configuration/TelemetryRegistrationTests.cs`:
@@ -3946,6 +3948,12 @@ Add `using Alberto.Dcb.Configuration;`, `using Microsoft.Extensions.Options;` an
 
 - [ ] **Step 5: Deprecate the manual instrumentation calls**
 
+> **Superseded — do not carry out this step.** The attribute was added as written below, then
+> removed again in review: `AddAlbertoInstrumentation` is the supported path for wiring a
+> `TracerProvider` / `MeterProvider` outside the host, so marking it `[Obsolete]` deprecated the
+> only way to do that. Both overloads ship un-obsoleted, and `TelemetryRegistrationTests` asserts
+> via reflection that they stay that way. See `.superpowers/sdd/final-review-fix-report.md` §I3.
+
 In `src/Alberto.Dcb.Telemetry/ServiceCollectionExtensions.cs`, add to both
 `AddAlbertoInstrumentation` overloads, above the method:
 
@@ -3964,7 +3972,8 @@ dotnet test tests/Alberto.Dcb.Tests --filter "FullyQualifiedName~TelemetryRegist
 ```
 
 Expected: PASS, 3 new tests; `Build succeeded`; all tests pass. Remove any now-redundant
-`AddAlbertoInstrumentation()` calls in `apps/` that the obsolete warning surfaces.
+`AddAlbertoInstrumentation()` calls in `apps/`. (With Step 5 superseded there is no obsolete
+warning to surface them — find them by searching `apps/`.)
 
 - [ ] **Step 7: Commit**
 
@@ -4486,7 +4495,7 @@ followed by a before/after of the Orders module taken verbatim from Task 12 Step
 | `ICheckpointStore` gains an optional `ICheckpointInventory` sibling | Nothing — it is a separate interface | Implement it on a custom store to opt into orphan detection |
 | Migrations run at startup, not in `AddAlberto` | Code that built a provider and expected a migrated schema | Start the host, or call `PostgresMigrator.Migrate(...)` directly |
 | `TenancyOrderingValidator` deleted | Nothing | `.WithTenancy()` may now appear anywhere in the chain |
-| `AddAlbertoInstrumentation()` obsolete | A warning | Delete the call; `.WithTelemetry()` registers the source and meter |
+| `AddAlbertoInstrumentation()` redundant alongside `.WithTelemetry()` (**not** obsolete — see the Step 5 note) | Nothing | Delete the call when `.WithTelemetry()` is present; keep it when you wire a `TracerProvider` / `MeterProvider` without the hosting integration |
 
 Lead the file with the sentence that matters most: **processor ids are checkpoint keys, so the
 `ReactTo` change is the only one that can silently reprocess your event log.** Point at
