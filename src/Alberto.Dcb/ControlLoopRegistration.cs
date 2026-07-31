@@ -128,7 +128,7 @@ internal static class ControlLoopRegistration
             // GetKeyedService so that becomes a diagnostic rather than a raw DI exception.
             var leaseManager = sp.GetKeyedService<IProcessorLeaseManager>(moduleKey)
                 ?? throw new InvalidOperationException(
-                    $"ALB0022: Alberto module '{moduleKey}' has Leases.Enabled = true but no " +
+                    $"ALB0025: Alberto module '{moduleKey}' has Leases.Enabled = true but no " +
                     "IProcessorLeaseManager is registered under that module key, so leases " +
                     "cannot be acquired, renewed or fenced." + Environment.NewLine +
                     "  → Register an IProcessorLeaseManager for this module, switch to " +

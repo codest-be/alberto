@@ -87,6 +87,15 @@ public sealed class UpcasterBypassGuardTests
 
             ["Alberto.Dcb.Postgres.Messaging/PostgresOutboxStore.cs"] =
                 "Deserializes a Dictionary<string,string> outbox-entry metadata column, not an event payload.",
+
+            ["Alberto.Dcb.InMemory/EventDataJson.cs"] =
+                "Parses a JsonDocument purely to re-emit the payload text in the canonical form a jsonb " +
+                "column would store it in; it never materializes an event CLR type, so there is nothing " +
+                "for an upcaster to have been applied to.",
+
+            ["Alberto.Dcb.Testing.Xunit/EventStoreBackendSpecification.cs"] =
+                "Parses two JsonNode trees so the round-trip assertion can compare payloads for semantic " +
+                "equality instead of byte equality; no event type is deserialized.",
         };
 
     // Guards against JsonSerializer.Deserialize, JsonDocument.Parse, and JsonNode.Parse —

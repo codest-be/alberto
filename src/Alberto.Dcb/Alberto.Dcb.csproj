@@ -22,9 +22,18 @@
         <InternalsVisibleTo Include="Alberto.Dcb.Telemetry"/>
         <InternalsVisibleTo Include="Alberto.Dcb.Commands"/>
         <InternalsVisibleTo Include="Alberto.Dcb.Benchmarks"/>
-        <!-- The backend conformance suite asserts that a reserved _version tag round-trips and
-             that tag boundaries match by containment. Constructing that tag is exactly what the
-             public API forbids, so the spec needs the internal EventTag.ForVersion/FromStorage. -->
+        <!-- The CLI drives rebuilds, so it needs RebuildableProjection.ShadowProcessorId to name
+             the shadow processor a rebuild runs under. That naming convention is shared between
+             the coordinator and the operator surface but is not something a package consumer
+             composes against, which is why it stays internal rather than becoming public API. -->
+        <InternalsVisibleTo Include="Alberto.Cli"/>
+        <!-- The only grant on this list to an assembly we publish, so it is the only one that
+             couples a shipped package to an internal member. It is deliberately down to a single
+             member: EventTag.ForVersion, which the backend conformance suite needs because a
+             backend is handed events that already carry the reserved _version tag (EventSerializer
+             stamps it a layer up) and the public EventTag surface refuses reserved concepts by
+             design. Keep it at one member — anything added here has to keep working for as long as
+             a consumer might pair an older Alberto.Dcb.Testing.Xunit with a newer Alberto.Dcb. -->
         <InternalsVisibleTo Include="Alberto.Dcb.Testing.Xunit"/>
     </ItemGroup>
 

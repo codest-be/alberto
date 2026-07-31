@@ -23,7 +23,7 @@ public enum OutboxEntryStatus
 /// <c>Destination</c> and <c>RoutingHint</c> are optional transport fields copied from the
 /// originating <see cref="ExternalMessage"/>; both are null when the producer did not supply them.
 /// </summary>
-public record OutboxEntry(
+public sealed record OutboxEntry(
     Guid Id,
     Guid SourceEventId,
     string MessageType,

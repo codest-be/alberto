@@ -60,9 +60,9 @@ public static class TelemetryBatchConsumeMiddleware
                     activity?.SetStatus(ActivityStatusCode.Error, ex?.Message ?? "Dead-lettered");
                     if (ex is not null)
                     {
-                        activity?.AddTag("exception.type", ex.GetType().FullName);
-                        activity?.AddTag("exception.message", ex.Message);
-                        activity?.AddTag("exception.stacktrace", ex.StackTrace);
+                        // An exception EVENT, not span attributes. See the same call in
+                        // TelemetryConsumeMiddleware for why messages must not become attributes.
+                        activity?.AddException(ex);
                     }
 
                     // Use the same module/shard tag set as EventsProcessed so all three
@@ -83,9 +83,7 @@ public static class TelemetryBatchConsumeMiddleware
             catch (Exception ex)
             {
                 activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-                activity?.AddTag("exception.type", ex.GetType().FullName);
-                activity?.AddTag("exception.message", ex.Message);
-                activity?.AddTag("exception.stacktrace", ex.StackTrace);
+                activity?.AddException(ex);
 
                 var catchTags = TelemetryTags.ForModule(context.ProcessorId, context.ModuleKey);
                 catchTags.Add("exception.type", ex.GetType().Name);

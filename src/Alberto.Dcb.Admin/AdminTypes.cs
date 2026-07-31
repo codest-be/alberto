@@ -9,17 +9,17 @@ namespace Alberto.Dcb.Admin;
 /// <summary>
 /// Summary of a processor's checkpoint position as seen from the admin surface.
 /// </summary>
-public record ProcessorInfo(string ProcessorId, long LastPosition, DateTimeOffset? UpdatedAt);
+public sealed record ProcessorInfo(string ProcessorId, long LastPosition, DateTimeOffset? UpdatedAt);
 
 /// <summary>
 /// Checkpoint row for a single processor.
 /// </summary>
-public record CheckpointInfo(string ProcessorId, long LastPosition, DateTimeOffset? UpdatedAt);
+public sealed record CheckpointInfo(string ProcessorId, long LastPosition, DateTimeOffset? UpdatedAt);
 
 /// <summary>
 /// Dead letter entry summary returned by admin inspection queries.
 /// </summary>
-public record DeadLetterInfo(
+public sealed record DeadLetterInfo(
     Guid Id,
     string ProcessorId,
     string? EventType,
@@ -31,7 +31,7 @@ public record DeadLetterInfo(
 /// <summary>
 /// Event summary returned by admin inspection queries.
 /// </summary>
-public record EventInfo(
+public sealed record EventInfo(
     long GlobalPosition,
     string EventType,
     string? Tags,
@@ -41,7 +41,7 @@ public record EventInfo(
 /// <summary>
 /// Aggregate system stats.
 /// </summary>
-public record SystemInfo(
+public sealed record SystemInfo(
     long? GlobalPosition,
     long ProcessorCount,
     long DeadLetterCount,
@@ -50,7 +50,7 @@ public record SystemInfo(
 /// <summary>
 /// Projection state row.
 /// </summary>
-public record ProjectionState(
+public sealed record ProjectionState(
     string DocumentId,
     string? TenantId,
     DateTimeOffset? UpdatedAt);
@@ -77,7 +77,7 @@ public sealed record AdminStoreTopology(AdminTenancyMode TenancyMode)
 /// Distinct from <c>Alberto.Dcb.Subscriptions.TenantLease</c> (the domain record) —
 /// this carries the full admin surface including consumer and replica IDs.
 /// </summary>
-public record AdminTenantLease(
+public sealed record AdminTenantLease(
     string TenantId,
     string ConsumerId,
     string? ReplicaId,
@@ -93,7 +93,7 @@ public sealed record TenantLeaseInventory(
 /// <summary>
 /// An active processor lease found via admin inspection.
 /// </summary>
-public record ActiveProcessorLease(string ConsumerId, string? ReplicaId, DateTimeOffset ExpiresAt);
+public sealed record ActiveProcessorLease(string ConsumerId, string? ReplicaId, DateTimeOffset ExpiresAt);
 
 /// <summary>The outcome of an atomic checkpoint rename.</summary>
 public enum CheckpointRenameStatus
@@ -125,7 +125,7 @@ public sealed record CheckpointRenameResult(
 /// or <see langword="null"/> when no operator action is pending.
 /// </para>
 /// </summary>
-public record RebuildStateInfo(
+public sealed record RebuildStateInfo(
     string ProcessorId,
     string ProjectionType,
     int ActiveVersion,

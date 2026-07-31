@@ -67,10 +67,10 @@ public static class TelemetryBuilderExtensions
 
             services.AddKeyedSingleton<IAppendInterceptor>(moduleKey, (sp, _) =>
             {
-                var enabled = sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>()
-                    .Get(moduleKey).Telemetry.Enabled;
-                return enabled
-                    ? (IAppendInterceptor)new TelemetryAppendInterceptor()
+                var telemetry = sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>()
+                    .Get(moduleKey).Telemetry;
+                return telemetry.Enabled
+                    ? (IAppendInterceptor)new TelemetryAppendInterceptor(telemetry.RecordEventTagValues)
                     : NoOpAppendInterceptor.Instance;
             });
 

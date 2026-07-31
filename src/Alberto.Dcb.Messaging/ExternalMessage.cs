@@ -15,7 +15,7 @@ namespace Alberto.Dcb.Messaging;
 /// Optional hint for the transport layer — e.g. a partition key, a routing key, or a
 /// message-group id. Interpretation is transport-specific and ignored when null.
 /// </param>
-public record ExternalMessage(
+public sealed record ExternalMessage(
     string MessageType,
     string Version,
     string Payload,

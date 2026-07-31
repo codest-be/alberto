@@ -16,7 +16,7 @@ namespace Alberto.Dcb.Subscriptions;
 /// stopped it, and by then the version it should be writing to may have changed.
 /// </para>
 /// </remarks>
-public sealed class RebuildableProjection
+internal sealed class RebuildableProjection
 {
     /// <summary>Creates a registration.</summary>
     /// <param name="processorId">

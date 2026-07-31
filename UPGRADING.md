@@ -122,6 +122,67 @@ services.AddAlberto("orders", builder => builder
 
 ---
 
+### PS-9 — `BatchedEfProjection<TDbContext, THandler>` and `IEfBatchHandler<TDbContext>` deleted
+
+Both were public in `Alberto.Dcb.EntityFramework.Batching` and neither had a registration path —
+there was no `AddBatchedEfProjection`, so the only way to use them was to hand-register the
+processor into keyed DI. Two consequences followed from that, and both are silent:
+
+- **Rebuilds skip it.** A hand-registered processor produces no `RebuildableProjection`, so
+  `RebuildCoordinator` finds no registration for its processor id and passes over it. Once the
+  other projections promote to the new state version, the batch projection is still holding
+  pre-rebuild state, with nothing raised.
+- **A replayed batch is applied twice.** `DeclaredAsyncProjection` skips events at or below
+  `IProjectionEntity.LastProcessedPosition`. `BatchedEfProjection` handed the raw `DbContext`
+  to the handler with no position guard, so a crash between its `SaveChangesAsync` and the
+  control loop's checkpoint write replayed the whole batch — counters incremented twice,
+  status transitions re-run, child rows duplicated.
+
+**Symptom.** `error CS0246: The type or namespace name 'IEfBatchHandler<>' could not be found`,
+or the same for `BatchedEfProjection<,>`.
+
+**Fix.** Move the handler to a projection declaration and register it with `AddEfProjection`.
+The declaration replaces `HandledEventTypes` (it is derived from the `On<TEvent>` calls) and
+`ApplyAsync` (each handler gets the typed event and the entity for its document):
+
+```csharp
+// before
+public sealed class OrderSummaryBatchHandler : IEfBatchHandler<OrdersDbContext>
+{
+    public IReadOnlySet<string> HandledEventTypes { get; } =
+        new HashSet<string> { "order-created", "order-shipped" };
+
+    public async Task ApplyAsync(OrdersDbContext db, IEventEnvelope e, CancellationToken ct)
+    {
+        // hand-written dispatch on e.EventType.Id, hand-written load of the entity
+    }
+}
+
+// after
+public static readonly ProjectionDeclaration<OrderSummary> Declaration =
+    DeclareProjection.For<OrderSummary>("order-summary")
+        .On<OrderCreated>(
+            id:    e => e.OrderId.ToString(),
+            apply: (state, _, _) => state with { Status = "created" })
+        .On<OrderShipped>(
+            id:    e => e.OrderId.ToString(),
+            apply: (state, _, _) => state with { Status = "shipped" })
+        .Build();
+
+builder.AddEfProjection<OrderSummary, OrdersDbContext>(Declaration);
+```
+
+`DeclaredAsyncProjection`, which `AddEfProjection` registers, is an `IBatchableProcessor` in its
+own right: a batch is still one `SaveChanges` per tenant run, so the round-trip saving that
+motivated `BatchedEfProjection` is not lost.
+
+If a projection genuinely cannot be expressed as one entity per document — a handler that must
+write several unrelated tables from one event — use a reactor (`ReactTo<TEvent, THandler>`) with
+its own `DbContext` and its own idempotency key. That is explicit about owning the guard, which
+the deleted type was not.
+
+---
+
 ### AS-1 — `IStateStore<TState>.LoadManyAsync` return type narrowed
 
 `LoadManyAsync` previously returned `Task<Dictionary<TKey, TState?>>` (a mutable concrete type).
@@ -422,6 +483,80 @@ shard  = "eu"          # only for sharded modules
 **Symptom.** Trace queries, sampling rules, and dashboards that filter on `module.key` or `module.shard` span attributes will stop matching after upgrade.
 
 **Fix.** Rename the attribute key in every trace filter: `span.attributes["module.key"]` → `span.attributes["module"]`; `span.attributes["module.shard"]` → `span.attributes["shard"]`.
+
+---
+
+### TT-2 — `event.tags` on the append span event lists concepts, not `concept:value` pairs
+
+`TelemetryAppendInterceptor` adds one `event.appended` span event per appended event. Its
+`event.tags` field was the whole tag, value included:
+
+```
+event.tags = "order:8f21-…,customer:4471-…"
+```
+
+It is now the distinct concepts only:
+
+```
+event.tags = "order,customer"
+```
+
+A DCB tag value is a domain identifier — an order id, a customer id, whatever the decision
+function scoped its consistency boundary to. Emitting it put a business identifier into every
+trace an exporter forwards, for a span that is already explained by the concept: the concept is
+what names the boundary the append was checked against.
+
+**Symptom.** Trace-side lookups by entity id ("show me every span touching order 8f21") return
+nothing. Spans still show *which* boundaries were involved.
+
+**Fix.** If your collector is inside the same trust boundary as the database, or you are in
+development, opt back in:
+
+```csharp
+builder.WithTelemetry(o => o with { RecordEventTagValues = true });
+```
+
+or through configuration:
+
+```json
+{ "Alberto": { "Modules": { "orders": { "Telemetry": { "RecordEventTagValues": true } } } } }
+```
+
+Otherwise, correlate on the event id (`event.id`, still emitted in full) and resolve the entity
+from the event store.
+
+---
+
+### TT-3 — exception details move from span attributes to an exception span event
+
+Both consume middlewares and the append interceptor set the exception as span attributes:
+
+```
+exception.type       = "Npgsql.PostgresException"
+exception.message    = "23505: duplicate key value violates unique constraint …"
+exception.stacktrace = "   at Npgsql…"
+```
+
+All three call sites now call `Activity.AddException(ex)` instead, which records an OpenTelemetry
+`exception` span event carrying the same three fields.
+
+The reason is that an exception message is not the framework's data. Npgsql's include the failing
+SQL, and application exceptions include whatever the thrower put in them. As span attributes those
+strings are indexed alongside every other attribute and there is no unit for a collector to act on;
+as a span event they are one droppable, scrubbable record, which is what the OpenTelemetry
+processors for redacting exception data expect to find.
+
+`Activity.SetStatus(ActivityStatusCode.Error, ex.Message)` is unchanged — the status description
+still carries the message, as OpenTelemetry specifies. The `exception.type` **metric** tag on
+`alberto.dead_letters` and `alberto.retries` is also unchanged; it was always the type name only.
+
+**Symptom.** Trace queries and alert rules filtering on the `exception.message`,
+`exception.stacktrace`, or `exception.type` *span attributes* stop matching.
+
+**Fix.** Re-point them at the span event. In most backends that is a change of accessor rather
+than of field name — for example Tempo/Grafana `span.exception.message` →
+`event.exception.message`, and Honeycomb's `exception.message` now resolves on the span event
+rather than the parent span. The field names themselves are unchanged.
 
 ---
 

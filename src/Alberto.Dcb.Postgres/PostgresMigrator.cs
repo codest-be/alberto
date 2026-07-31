@@ -378,7 +378,7 @@ public static class PostgresMigrator
 /// <param name="Successful">Whether the migration succeeded.</param>
 /// <param name="ExecutedScripts">Names of scripts that were executed.</param>
 /// <param name="Error">Exception if migration failed, null otherwise.</param>
-public record MigrationResult(
+public sealed record MigrationResult(
     bool Successful,
     IReadOnlyCollection<string> ExecutedScripts,
     Exception? Error);

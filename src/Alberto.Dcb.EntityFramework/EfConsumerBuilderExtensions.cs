@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Alberto.Dcb.Configuration;
 using Alberto.Dcb.EntityFramework.Inline;
 using Alberto.Dcb.Subscriptions;
@@ -36,6 +37,10 @@ public static class EfConsumerBuilderExtensions
     /// <see cref="IInlineProjection"/> that runs immediately after each append.
     /// </param>
     /// <returns>The module builder for chaining.</returns>
+    [SuppressMessage("ApiDesign", "RS0027:API with optional parameter(s) should have the most parameters amongst its public overloads",
+        Justification = "The other overload is not a longer form of this one. It registers a " +
+                        "DeclaredAsyncProjection unconditionally, so there is no ProjectionMode for " +
+                        "it to take; giving it one would mean accepting a value it must reject.")]
     public static DcbModuleBuilder AddEfProjection<TEntity, TDbContext>(
         this DcbModuleBuilder builder,
         ProjectionDeclaration<TEntity> declaration,

@@ -163,7 +163,7 @@ public class LeaseFencingRegistrationTests
     }
 
     [Fact]
-    public async Task A_lease_capable_backend_with_no_lease_manager_throws_ALB0022_at_startup()
+    public async Task A_lease_capable_backend_with_no_lease_manager_throws_ALB0025_at_startup()
     {
         // A backend whose Validate raises no objection to leases but which registers no
         // IProcessorLeaseManager. Leases would silently never be acquired, renewed or fenced,
@@ -181,7 +181,7 @@ public class LeaseFencingRegistrationTests
         var act = async () => await host.StartAsync(TestContext.Current.CancellationToken);
 
         var ex = await act.Should().ThrowAsync<InvalidOperationException>();
-        ex.Which.Message.Should().Contain("ALB0022");
+        ex.Which.Message.Should().Contain("ALB0025");
         ex.Which.Message.Should().Contain("IProcessorLeaseManager");
         ex.Which.Message.Should().Contain(ModuleKey);
     }
@@ -189,7 +189,7 @@ public class LeaseFencingRegistrationTests
     [Fact]
     public async Task InMemory_backend_with_leases_enabled_is_rejected_earlier_by_ALB0024()
     {
-        // The in-memory backend never reaches the ALB0022 backstop: its own descriptor rejects
+        // The in-memory backend never reaches the ALB0025 backstop: its own descriptor rejects
         // leases during options validation. Asserted here so that the two diagnostics stay
         // distinct — if ALB0024 were ever dropped, this would fail rather than silently
         // downgrade to the later, vaguer error.
@@ -207,6 +207,6 @@ public class LeaseFencingRegistrationTests
 
         var ex = await act.Should().ThrowAsync<Microsoft.Extensions.Options.OptionsValidationException>();
         ex.Which.Message.Should().Contain("ALB0024");
-        ex.Which.Message.Should().NotContain("ALB0022");
+        ex.Which.Message.Should().NotContain("ALB0025");
     }
 }

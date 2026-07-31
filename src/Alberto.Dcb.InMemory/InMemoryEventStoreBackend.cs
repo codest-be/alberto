@@ -266,15 +266,26 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
             // time.  Absent tag → v1 (pre-versioning rows).
             var schemaVersion = EventVersionTag.ParseFromTags(evt.Tags);
 
+            // Metadata is a jsonb column on the Postgres side too, so it is held to the same
+            // NUL rule as the payload. Keys as well as values: both end up in the document.
+            foreach (var (key, value) in evt.Metadata)
+            {
+                EventDataJson.RejectNul(key, "A metadata key", evt.EventType.Id);
+                EventDataJson.RejectNul(value, $"Metadata value '{key}'", evt.EventType.Id);
+            }
+
             var envelope = new EventEnvelope
             {
                 Id = evt.Id,
                 TenantId = tenantId,   // null in single-tenant mode; caller-supplied in multi-tenant
                 GlobalPosition = position,
                 EventType = new EventType(evt.EventType.Id, schemaVersion),
-                Tags = evt.Tags,
-                EventData = evt.EventData,
-                Metadata = evt.Metadata,
+                // Copied, not aliased. Postgres rebuilds both from the row it read, so a caller
+                // that mutates the collection it appended cannot change what is stored there —
+                // and must not be able to change it here either.
+                Tags = evt.Tags.ToArray(),
+                EventData = EventDataJson.Normalize(evt.EventData, evt.EventType.Id),
+                Metadata = new Dictionary<string, string>(evt.Metadata),
                 CreatedAt = now
             };
 

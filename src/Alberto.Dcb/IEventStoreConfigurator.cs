@@ -12,7 +12,7 @@ namespace Alberto.Dcb;
 /// holds only an <see cref="IEventStore"/> reference from accidentally registering projections or
 /// handlers after the store has already started serving requests.
 /// </remarks>
-public interface IEventStoreConfigurator
+internal interface IEventStoreConfigurator
 {
     /// <summary>
     /// Registers an inline projection that runs immediately after events are appended.

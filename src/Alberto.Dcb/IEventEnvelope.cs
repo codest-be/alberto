@@ -49,6 +49,20 @@ public interface IEventEnvelope
     /// <summary>
     /// The serialized event data as JSON.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>This is JSON semantically equal to what was appended, not the same string.</strong>
+    /// The PostgreSQL backend stores it in a <c>jsonb</c> column, which parses the payload and
+    /// re-emits it from the parsed tree: whitespace is dropped, object keys come back sorted,
+    /// duplicate keys collapse to the last one, and numbers are re-rendered
+    /// (<c>1E+30</c> comes back as thirty zeros). The in-memory backend normalizes too, differently
+    /// — deliberately, so that code which depends on the byte form fails in tests rather than in
+    /// production.
+    /// </para>
+    /// <para>
+    /// Compare payloads with <c>JsonNode.DeepEquals</c> or by deserializing, never with <c>==</c>.
+    /// </para>
+    /// </remarks>
     string EventData { get; }
 
     /// <summary>
