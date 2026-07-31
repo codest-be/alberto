@@ -66,6 +66,14 @@ warnings in the AppHost, and an obsolete Aspire `WithCommand` overload in
 required; `configuration.md` says it is `[Obsolete]`. Fixed `operations.md` to match
 `configuration.md`.
 
+> **Correction (later cycle).** The `[Obsolete]` framing in the two rows above was itself wrong —
+> the attribute was removed from both `AddAlbertoInstrumentation` overloads in final review
+> (finding I3), because the method is the supported path for wiring a `TracerProvider` /
+> `MeterProvider` outside the generic host. The conflict this section fixed was real and the
+> resolution direction was right; only the word "obsolete" was. Both `operations.md` and
+> `configuration.md` now describe the call as *redundant alongside `.WithTelemetry()`, retained
+> for standalone wiring*. See `final-review-fix-report.md` §I3.
+
 ---
 
 ### `docs/architecture/async-processing.md`
