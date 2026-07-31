@@ -44,6 +44,7 @@ public sealed class AlbertoMetricsTests
 
         var (value, _) = await CaptureFirstHistogram<double>(
             "alberto.processing.duration",
+            context.ProcessorId,
             () => middleware(context, () => Task.CompletedTask));
 
         value.Should().BeLessThan(1.0,
@@ -58,6 +59,7 @@ public sealed class AlbertoMetricsTests
 
         var (value, _) = await CaptureFirstHistogram<double>(
             "alberto.processing.duration",
+            context.ProcessorId,
             () => middleware(context, () => Task.CompletedTask));
 
         value.Should().BeLessThan(1.0,
@@ -110,11 +112,12 @@ public sealed class AlbertoMetricsTests
 
         var (_, tags) = await CaptureFirstHistogram<double>(
             "alberto.processing.duration",
+            context.ProcessorId,
             () => middleware(context, () => Task.CompletedTask));
 
         TagValue(tags, "module").Should().Be("my-module",
             "ProcessingDuration must carry a module tag to match EventsProcessed");
-        TagValue(tags, "processor").Should().Be("proc");
+        TagValue(tags, "processor").Should().Be(context.ProcessorId);
     }
 
     [Fact]
@@ -125,6 +128,7 @@ public sealed class AlbertoMetricsTests
 
         var (_, tags) = await CaptureFirstCounter<long>(
             "alberto.processing.errors",
+            context.ProcessorId,
             () => middleware(context, () =>
             {
                 // Simulate the retry middleware marking this event as dead-lettered.
@@ -135,7 +139,7 @@ public sealed class AlbertoMetricsTests
 
         TagValue(tags, "module").Should().Be("my-module",
             "ProcessingErrors must carry a module tag to match EventsProcessed");
-        TagValue(tags, "processor").Should().Be("proc");
+        TagValue(tags, "processor").Should().Be(context.ProcessorId);
         TagValue(tags, "exception.type").Should().Be("InvalidOperationException");
     }
 
@@ -145,22 +149,22 @@ public sealed class AlbertoMetricsTests
         var context = MakeConsumeContext("proc", "my-module");
         var middleware = TelemetryConsumeMiddleware.Create();
 
-        KeyValuePair<string, object?>[]? capturedTags = null;
-        using var listener = BuildListener<long>("alberto.processing.errors",
-            (_, tags) => capturedTags = tags);
-        listener.Start();
+        var (_, tags) = await CaptureFirstCounter<long>(
+            "alberto.processing.errors",
+            context.ProcessorId,
+            async () =>
+            {
+                try
+                {
+                    await middleware(context, () => throw new InvalidOperationException("boom"));
+                }
+                catch (InvalidOperationException) { /* expected: recorded, then re-thrown */ }
+            });
 
-        try
-        {
-            await middleware(context, () => throw new InvalidOperationException("boom"));
-        }
-        catch (InvalidOperationException) { /* expected */ }
-
-        capturedTags.Should().NotBeNull();
-        TagValue(capturedTags!, "module").Should().Be("my-module",
+        TagValue(tags, "module").Should().Be("my-module",
             "ProcessingErrors must carry a module tag even when the exception propagates");
-        TagValue(capturedTags!, "processor").Should().Be("proc");
-        TagValue(capturedTags!, "exception.type").Should().Be("InvalidOperationException");
+        TagValue(tags, "processor").Should().Be(context.ProcessorId);
+        TagValue(tags, "exception.type").Should().Be("InvalidOperationException");
     }
 
     [Fact]
@@ -171,11 +175,12 @@ public sealed class AlbertoMetricsTests
 
         var (_, tags) = await CaptureFirstHistogram<double>(
             "alberto.processing.duration",
+            context.ProcessorId,
             () => middleware(context, () => Task.CompletedTask));
 
         TagValue(tags, "module").Should().Be("my-module",
             "ProcessingDuration must carry a module tag to match EventsProcessed");
-        TagValue(tags, "processor").Should().Be("proc");
+        TagValue(tags, "processor").Should().Be(context.ProcessorId);
     }
 
     [Fact]
@@ -186,6 +191,7 @@ public sealed class AlbertoMetricsTests
 
         var (_, tags) = await CaptureFirstCounter<long>(
             "alberto.processing.errors",
+            context.ProcessorId,
             () => middleware(context, () =>
             {
                 context.DeadLetteredCount = 1;
@@ -195,7 +201,7 @@ public sealed class AlbertoMetricsTests
 
         TagValue(tags, "module").Should().Be("my-module",
             "ProcessingErrors must carry a module tag to match EventsProcessed");
-        TagValue(tags, "processor").Should().Be("proc");
+        TagValue(tags, "processor").Should().Be(context.ProcessorId);
         TagValue(tags, "exception.type").Should().Be("InvalidOperationException");
     }
 
@@ -209,6 +215,7 @@ public sealed class AlbertoMetricsTests
 
         var (_, tags) = await CaptureFirstHistogram<double>(
             "alberto.processing.duration",
+            context.ProcessorId,
             () => middleware(context, () => Task.CompletedTask));
 
         TagValue(tags, "module").Should().Be("my-module");
@@ -217,10 +224,19 @@ public sealed class AlbertoMetricsTests
 
     // ── helpers ──────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Makes <paramref name="processorId"/> unique to the calling test.
+    /// The Alberto meter is a process-wide static, so a <see cref="MeterListener"/> installed here
+    /// receives measurements from every test running concurrently — including siblings that record
+    /// the same instrument with a different tag set. The capture helpers correlate on this id so a
+    /// test can only assert on the measurement it produced itself.
+    /// </summary>
+    private static string UniqueProcessorId(string processorId) => $"{processorId}-{Guid.NewGuid():N}";
+
     private static ConsumeEventContext MakeConsumeContext(string processorId, string moduleKey) =>
         new()
         {
-            ProcessorId = processorId,
+            ProcessorId = UniqueProcessorId(processorId),
             ModuleKey = moduleKey,
             Envelope = MakeEnvelope(),
             IsRebuild = false,
@@ -229,7 +245,7 @@ public sealed class AlbertoMetricsTests
     private static BatchConsumeContext MakeBatchConsumeContext(string processorId, string moduleKey) =>
         new()
         {
-            ProcessorId = processorId,
+            ProcessorId = UniqueProcessorId(processorId),
             ModuleKey = moduleKey,
             Envelopes = [MakeEnvelope()],
             IsRebuild = false,
@@ -249,28 +265,42 @@ public sealed class AlbertoMetricsTests
 
     /// <summary>
     /// Subscribes to the named instrument on the Alberto meter, fires
-    /// <paramref name="action"/>, and returns the first captured measurement.
-    /// Throws if no measurement was recorded.
+    /// <paramref name="action"/>, and returns the captured measurement tagged with
+    /// <paramref name="processorId"/> — see <see cref="UniqueProcessorId"/> for why the correlation
+    /// is required rather than simply taking the first measurement observed.
+    /// Throws if no such measurement was recorded.
     /// </summary>
     private static async Task<(T Value, KeyValuePair<string, object?>[] Tags)> CaptureFirstHistogram<T>(
         string instrumentName,
+        string processorId,
         Func<Task> action) where T : struct
     {
         (T Value, KeyValuePair<string, object?>[] Tags)? captured = null;
-        using var listener = BuildListener<T>(instrumentName, (v, tags) => captured ??= (v, tags));
+        var gate = new object();
+        using var listener = BuildListener<T>(instrumentName, (v, tags) =>
+        {
+            if (TagValue(tags, "processor") != processorId)
+                return;
+
+            lock (gate) captured ??= (v, tags);
+        });
         listener.Start();
 
         await action();
 
-        captured.Should().NotBeNull(
-            $"expected at least one measurement on {instrumentName} but none were recorded");
-        return captured!.Value;
+        lock (gate)
+        {
+            captured.Should().NotBeNull(
+                $"expected at least one measurement on {instrumentName} tagged with processor '{processorId}' but none were recorded");
+            return captured!.Value;
+        }
     }
 
     private static async Task<(T Value, KeyValuePair<string, object?>[] Tags)> CaptureFirstCounter<T>(
         string instrumentName,
+        string processorId,
         Func<Task> action) where T : struct
-        => await CaptureFirstHistogram<T>(instrumentName, action);
+        => await CaptureFirstHistogram<T>(instrumentName, processorId, action);
 
     private static List<(T Value, KeyValuePair<string, object?>[] Tags)> CollectObservableGaugeMeasurements<T>(
         string instrumentName) where T : struct
