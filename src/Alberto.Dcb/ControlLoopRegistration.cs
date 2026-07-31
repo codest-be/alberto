@@ -51,7 +51,8 @@ internal static class ControlLoopRegistration
                 options.HeadRefreshInterval,
                 options.HeadWindowSize,
                 sp.GetService<ILogger<EventStoreHead>>(),
-                signal);
+                signal,
+                options.DrainTimeout);
         });
 
         services.AddSingleton<IHostedService>(sp =>
@@ -108,7 +109,8 @@ internal static class ControlLoopRegistration
                     executionOptionsByProcessorId.GetValueOrDefault(
                         p.ProcessorId,
                         ProcessorExecutionOptions.Default),
-                    logger))
+                    logger,
+                    options.DrainTimeout))
                 .ToList();
 
             if (!options.Leases.Enabled)
@@ -222,7 +224,8 @@ internal static class ControlLoopRegistration
                     middlewares,
                     logger,
                     options.DeadLetterRetry.ClaimLease,
-                    replicaId))
+                    replicaId,
+                    drainTimeout: options.DrainTimeout))
                 .ToList();
 
             return new DeadLetterRetryLoopGroup(retryLoops);

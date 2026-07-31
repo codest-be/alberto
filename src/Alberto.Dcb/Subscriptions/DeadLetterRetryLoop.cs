@@ -22,6 +22,7 @@ namespace Alberto.Dcb.Subscriptions;
 /// <param name="claimedBy">Identity string stamped on each claim. Defaults to <c>MachineName:ProcessId</c>.</param>
 /// <param name="scopeFactory">Optional DI scope factory used to create a per-event tenant scope.</param>
 /// <param name="timeProvider">Clock used to drive poll delays. Defaults to <see cref="TimeProvider.System"/>.</param>
+/// <param name="drainTimeout">How long <see cref="StopAsync"/> waits for the loop to drain before abandoning it. Defaults to <see cref="Configuration.ControlLoopOptions.DrainTimeout"/>.</param>
 internal sealed class DeadLetterRetryLoop(
     IEventProcessor processor,
     IClaimableDeadLetterStore deadLetterStore,
@@ -32,7 +33,8 @@ internal sealed class DeadLetterRetryLoop(
     TimeSpan? claimLeaseDuration = null,
     string? claimedBy = null,
     IServiceScopeFactory? scopeFactory = null,
-    TimeProvider? timeProvider = null) : IHostedService, IAsyncDisposable
+    TimeProvider? timeProvider = null,
+    TimeSpan? drainTimeout = null) : IHostedService, IAsyncDisposable
 {
     private readonly IEventProcessor _processor = processor ?? throw new ArgumentNullException(nameof(processor));
     private readonly IClaimableDeadLetterStore _deadLetterStore = deadLetterStore ?? throw new ArgumentNullException(nameof(deadLetterStore));
@@ -47,6 +49,7 @@ internal sealed class DeadLetterRetryLoop(
         ? $"{Environment.MachineName}:{Environment.ProcessId}"
         : claimedBy!;
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+    private readonly TimeSpan _drainTimeout = drainTimeout ?? Configuration.ControlLoopOptions.Default.DrainTimeout;
     private CancellationTokenSource? _cts;
     private Task? _loop;
 
@@ -85,10 +88,20 @@ internal sealed class DeadLetterRetryLoop(
 
             try
             {
+                // Bounded: a retry handler that ignores cancellation must not stall shutdown.
+                // Abandoning the wait is safe — claimed entries stay claimed only until their
+                // lease expires, after which another worker picks them up.
                 if (_loop is not null)
-                    await _loop;
+                    await _loop.WaitAsync(_drainTimeout, cancellationToken);
             }
             catch (OperationCanceledException) { }
+            catch (TimeoutException)
+            {
+                _logger?.LogWarning(
+                    "DeadLetterRetryLoop for processor '{ProcessorId}' did not drain within {DrainTimeout}; abandoning the wait",
+                    _processor.ProcessorId,
+                    _drainTimeout);
+            }
         }
         _logger?.LogInformation("DeadLetterRetryLoop for processor '{ProcessorId}' stopped", _processor.ProcessorId);
     }
@@ -102,8 +115,26 @@ internal sealed class DeadLetterRetryLoop(
         }
         finally
         {
-            Interlocked.Exchange(ref _cts, null)?.Dispose();
+            var cts = Interlocked.Exchange(ref _cts, null);
+            var loop = _loop;
+
+            if (cts is not null)
+            {
+                // An abandoned loop still observes cts.Token, so defer disposal until it exits.
+                if (loop is not null && !loop.IsCompleted)
+                    _ = DisposeWhenLoopExitsAsync(loop, cts);
+                else
+                    cts.Dispose();
+            }
         }
+    }
+
+    private static async Task DisposeWhenLoopExitsAsync(Task loop, CancellationTokenSource cts)
+    {
+        try { await loop.ConfigureAwait(false); }
+        catch { /* loop failures are logged where they happen */ }
+
+        cts.Dispose();
     }
 
     private async Task RunAsync(CancellationToken ct)

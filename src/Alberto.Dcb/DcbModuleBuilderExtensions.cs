@@ -639,7 +639,8 @@ public static class DcbModuleBuilderExtensions
                         processor, head, backend, checkpoints,
                         opts.PollingInterval, opts.BatchSize, moduleKey,
                         ProcessorExecutionOptions.Default,
-                        sp.GetService<ILogger<ControlLoop>>());
+                        sp.GetService<ILogger<ControlLoop>>(),
+                        opts.DrainTimeout);
                 });
             });
 
