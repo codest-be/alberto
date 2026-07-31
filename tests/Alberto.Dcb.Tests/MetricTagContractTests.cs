@@ -124,6 +124,7 @@ public sealed class MetricTagContractTests
 
         var (_, tags) = await CaptureFirstCounterAsync<long>(
             "alberto.dead_letters",
+            ctx.ProcessorId,
             () => mw(ctx, () => throw new InvalidOperationException("boom")));
 
         TagKeys(tags).Should().BeEquivalentTo(["processor", "module"],
@@ -140,6 +141,7 @@ public sealed class MetricTagContractTests
 
         var (_, tags) = await CaptureFirstCounterAsync<long>(
             "alberto.dead_letters",
+            ctx.ProcessorId,
             () => mw(ctx, () => throw new InvalidOperationException("boom")));
 
         TagKeys(tags).Should().BeEquivalentTo(["processor", "module", "shard"],
@@ -162,6 +164,7 @@ public sealed class MetricTagContractTests
 
         var (_, tags) = await CaptureFirstCounterAsync<long>(
             "alberto.retries",
+            ctx.ProcessorId,
             () => mw(ctx, () =>
             {
                 if (++callCount < 2) throw new InvalidOperationException("transient");
@@ -188,6 +191,7 @@ public sealed class MetricTagContractTests
 
         var (_, tags) = await CaptureFirstCounterAsync<long>(
             "alberto.retries",
+            ctx.ProcessorId,
             () => mw(ctx, () =>
             {
                 if (++callCount < 2) throw new InvalidOperationException("transient");
@@ -239,6 +243,7 @@ public sealed class MetricTagContractTests
 
         var (_, tags) = await CaptureFirstCounterAsync<long>(
             "alberto.events.processed",
+            ctx.ProcessorId,
             () => mw(ctx, () => Task.CompletedTask));
 
         TagKeys(tags).Should().BeEquivalentTo(["processor", "module"],
@@ -253,6 +258,7 @@ public sealed class MetricTagContractTests
 
         var (_, tags) = await CaptureFirstCounterAsync<long>(
             "alberto.events.processed",
+            ctx.ProcessorId,
             () => mw(ctx, () => Task.CompletedTask));
 
         TagKeys(tags).Should().BeEquivalentTo(["processor", "module", "shard"],
@@ -267,6 +273,7 @@ public sealed class MetricTagContractTests
 
         var (_, tags) = await CaptureFirstHistogramAsync<double>(
             "alberto.processing.duration",
+            ctx.ProcessorId,
             () => mw(ctx, () => Task.CompletedTask));
 
         TagKeys(tags).Should().BeEquivalentTo(["processor", "module"],
@@ -281,6 +288,7 @@ public sealed class MetricTagContractTests
 
         var (_, tags) = await CaptureFirstHistogramAsync<double>(
             "alberto.processing.duration",
+            ctx.ProcessorId,
             () => mw(ctx, () => Task.CompletedTask));
 
         TagKeys(tags).Should().BeEquivalentTo(["processor", "module", "shard"],
@@ -295,6 +303,7 @@ public sealed class MetricTagContractTests
 
         var (_, tags) = await CaptureFirstCounterAsync<long>(
             "alberto.processing.errors",
+            ctx.ProcessorId,
             () => mw(ctx, () =>
             {
                 ctx.DeadLettered = true;
@@ -314,6 +323,7 @@ public sealed class MetricTagContractTests
 
         var (_, tags) = await CaptureFirstCounterAsync<long>(
             "alberto.processing.errors",
+            ctx.ProcessorId,
             () => mw(ctx, () =>
             {
                 ctx.DeadLettered = true;
@@ -419,7 +429,7 @@ public sealed class MetricTagContractTests
         var ctx = MakeConsumeContext("projection", "orders");
         var mw = TelemetryConsumeMiddleware.Create();
 
-        var tags = await CaptureConsumeSpanTagsAsync(() => mw(ctx, () => Task.CompletedTask));
+        var tags = await CaptureConsumeSpanTagsAsync(ctx.ProcessorId, () => mw(ctx, () => Task.CompletedTask));
 
         TagKeys(tags).Should().BeEquivalentTo(
             ["processor.id", "module", "event.position", "event.type", "trace.links.count"],
@@ -432,7 +442,7 @@ public sealed class MetricTagContractTests
         var ctx = MakeConsumeContext("projection", "orders#eu");
         var mw = TelemetryConsumeMiddleware.Create();
 
-        var tags = await CaptureConsumeSpanTagsAsync(() => mw(ctx, () => Task.CompletedTask));
+        var tags = await CaptureConsumeSpanTagsAsync(ctx.ProcessorId, () => mw(ctx, () => Task.CompletedTask));
 
         TagKeys(tags).Should().BeEquivalentTo(
             ["processor.id", "module", "shard", "event.position", "event.type", "trace.links.count"],
@@ -445,7 +455,7 @@ public sealed class MetricTagContractTests
         var ctx = MakeBatchConsumeContext("projection", "orders");
         var mw = TelemetryBatchConsumeMiddleware.Create();
 
-        var tags = await CaptureConsumeSpanTagsAsync(() => mw(ctx, () => Task.CompletedTask));
+        var tags = await CaptureConsumeSpanTagsAsync(ctx.ProcessorId, () => mw(ctx, () => Task.CompletedTask));
 
         TagKeys(tags).Should().BeEquivalentTo(
             ["processor.id", "module", "batch.size", "event.position.first", "event.position.last", "trace.links.count"],
@@ -458,19 +468,56 @@ public sealed class MetricTagContractTests
         var ctx = MakeBatchConsumeContext("projection", "orders#eu");
         var mw = TelemetryBatchConsumeMiddleware.Create();
 
-        var tags = await CaptureConsumeSpanTagsAsync(() => mw(ctx, () => Task.CompletedTask));
+        var tags = await CaptureConsumeSpanTagsAsync(ctx.ProcessorId, () => mw(ctx, () => Task.CompletedTask));
 
         TagKeys(tags).Should().BeEquivalentTo(
             ["processor.id", "module", "shard", "batch.size", "event.position.first", "event.position.last", "trace.links.count"],
             "Alberto.Consume batch span attribute contract for a sharded module must emit 'shard', not 'module.shard'");
     }
 
+    [Fact]
+    public async Task ConsumeSpan_capture_ignores_activities_started_by_other_tests()
+    {
+        var ctx = MakeConsumeContext("projection", "orders");
+        var mw = TelemetryConsumeMiddleware.Create();
+
+        var tags = await CaptureConsumeSpanTagsAsync(ctx.ProcessorId, async () =>
+        {
+            // Stands in for a test running concurrently in another collection: it consumes on
+            // the same process-wide ActivitySource and dead-letters, so its span carries three
+            // extra exception.* attributes. The capture must not mistake it for ours.
+            var foreign = MakeConsumeContext("foreign", "orders");
+            await TelemetryConsumeMiddleware.Create()(foreign, () =>
+            {
+                foreign.DeadLettered = true;
+                foreign.LastError = new InvalidOperationException("foreign dead-letter");
+                return Task.CompletedTask;
+            });
+
+            await mw(ctx, () => Task.CompletedTask);
+        });
+
+        TagKeys(tags).Should().BeEquivalentTo(
+            ["processor.id", "module", "event.position", "event.type", "trace.links.count"],
+            "the capture must correlate to the span this test started, not to the first Alberto.Consume span the process happens to stop");
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Makes <paramref name="processorId"/> unique to the calling test.
+    /// The Alberto meter and <c>Alberto.Dcb</c> ActivitySource are process-wide statics, so a
+    /// <see cref="MeterListener"/> or <see cref="ActivityListener"/> installed here observes every
+    /// measurement and span the process emits — including those of tests running concurrently in
+    /// other collections. Every capture helper below correlates on this id, so a test can only ever
+    /// assert on telemetry it produced itself.
+    /// </summary>
+    private static string UniqueProcessorId(string processorId) => $"{processorId}-{Guid.NewGuid():N}";
 
     private static ConsumeEventContext MakeConsumeContext(string processorId, string moduleKey) =>
         new()
         {
-            ProcessorId = processorId,
+            ProcessorId = UniqueProcessorId(processorId),
             ModuleKey = moduleKey,
             Envelope = new EventEnvelope
             {
@@ -499,7 +546,7 @@ public sealed class MetricTagContractTests
         };
         return new BatchConsumeContext
         {
-            ProcessorId = processorId,
+            ProcessorId = UniqueProcessorId(processorId),
             ModuleKey = moduleKey,
             Envelopes = [envelope],
             IsRebuild = false,
@@ -508,12 +555,23 @@ public sealed class MetricTagContractTests
 
     /// <summary>
     /// Runs <paramref name="action"/> under an <see cref="ActivityListener"/> that subscribes to
-    /// <c>Alberto.Dcb</c> activities and captures the <c>Alberto.Consume</c> span's tag objects
-    /// when it stops. Returns the tag key-value pairs so tests can assert the key contract.
+    /// <c>Alberto.Dcb</c> activities and captures the <c>Alberto.Consume</c> span whose
+    /// <c>processor.id</c> is <paramref name="processorId"/>, returning its tag key-value pairs so
+    /// tests can assert the key contract.
     /// </summary>
-    private static async Task<KeyValuePair<string, object?>[]> CaptureConsumeSpanTagsAsync(Func<Task> action)
+    /// <remarks>
+    /// The listener is process-wide and the ActivitySource is a static shared by the whole
+    /// assembly, so it also sees consume spans started by tests running concurrently in other
+    /// collections — a dead-lettering test's span, for one, carries three extra
+    /// <c>exception.*</c> attributes. Matching on <paramref name="processorId"/> (unique per
+    /// context, see <see cref="UniqueProcessorId"/>) is what makes this capture the span this test
+    /// started rather than whichever consume span the process happened to stop first.
+    /// </remarks>
+    private static async Task<KeyValuePair<string, object?>[]> CaptureConsumeSpanTagsAsync(
+        string processorId,
+        Func<Task> action)
     {
-        KeyValuePair<string, object?>[]? captured = null;
+        var captured = new List<KeyValuePair<string, object?>[]>();
 
         using var listener = new ActivityListener
         {
@@ -521,16 +579,26 @@ public sealed class MetricTagContractTests
             Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
             ActivityStopped = activity =>
             {
-                if (activity.OperationName.StartsWith(AlbertoMetrics.ConsumeActivityName, StringComparison.Ordinal))
-                    captured ??= activity.TagObjects.ToArray();
+                if (!activity.OperationName.StartsWith(AlbertoMetrics.ConsumeActivityName, StringComparison.Ordinal))
+                    return;
+
+                var tags = activity.TagObjects.ToArray();
+                if (TagValue(tags, "processor.id") == processorId)
+                {
+                    lock (captured) captured.Add(tags);
+                }
             },
         };
         ActivitySource.AddActivityListener(listener);
 
         await action();
 
-        captured.Should().NotBeNull("expected an Alberto.Consume activity to be started and stopped");
-        return captured!;
+        lock (captured)
+        {
+            captured.Should().ContainSingle(
+                $"expected exactly one Alberto.Consume activity for processor '{processorId}' to be started and stopped");
+            return captured[0];
+        }
     }
 
     private static (T Value, KeyValuePair<string, object?>[] Tags) CaptureFirstCounter<T>(
@@ -545,17 +613,21 @@ public sealed class MetricTagContractTests
         return captured!.Value;
     }
 
+    /// <summary>
+    /// Runs <paramref name="action"/> and captures the measurement on <paramref name="instrumentName"/>
+    /// tagged with <paramref name="processorId"/>.
+    /// </summary>
+    /// <remarks>
+    /// The Alberto meter is a process-wide static, so this listener also receives measurements from
+    /// tests running concurrently in other collections — which record the same instruments with
+    /// different tag sets (a sharded module key adds a <c>shard</c> tag). Correlating on the
+    /// per-context-unique processor id keeps the assertion on this test's own measurement.
+    /// </remarks>
     private static async Task<(T Value, KeyValuePair<string, object?>[] Tags)> CaptureFirstCounterAsync<T>(
         string instrumentName,
-        Func<Task> action) where T : struct
-    {
-        (T, KeyValuePair<string, object?>[])? captured = null;
-        using var listener = BuildListener<T>(instrumentName, (v, tags) => captured ??= (v, tags));
-        listener.Start();
-        await action();
-        captured.Should().NotBeNull($"expected a measurement on {instrumentName}");
-        return captured!.Value;
-    }
+        string processorId,
+        Func<Task> action) where T : struct =>
+        await CaptureFirstMeasurementAsync<T>(instrumentName, processorId, action);
 
     private static (T Value, KeyValuePair<string, object?>[] Tags) CaptureFirstHistogram<T>(
         string instrumentName,
@@ -569,16 +641,35 @@ public sealed class MetricTagContractTests
         return captured!.Value;
     }
 
+    /// <inheritdoc cref="CaptureFirstCounterAsync{T}(string, string, Func{Task})"/>
     private static async Task<(T Value, KeyValuePair<string, object?>[] Tags)> CaptureFirstHistogramAsync<T>(
         string instrumentName,
+        string processorId,
+        Func<Task> action) where T : struct =>
+        await CaptureFirstMeasurementAsync<T>(instrumentName, processorId, action);
+
+    private static async Task<(T Value, KeyValuePair<string, object?>[] Tags)> CaptureFirstMeasurementAsync<T>(
+        string instrumentName,
+        string processorId,
         Func<Task> action) where T : struct
     {
         (T, KeyValuePair<string, object?>[])? captured = null;
-        using var listener = BuildListener<T>(instrumentName, (v, tags) => captured ??= (v, tags));
+        var gate = new object();
+        using var listener = BuildListener<T>(instrumentName, (v, tags) =>
+        {
+            if (TagValue(tags, "processor") != processorId)
+                return;
+
+            lock (gate) captured ??= (v, tags);
+        });
         listener.Start();
         await action();
-        captured.Should().NotBeNull($"expected a measurement on {instrumentName}");
-        return captured!.Value;
+        lock (gate)
+        {
+            captured.Should().NotBeNull(
+                $"expected a measurement on {instrumentName} tagged with processor '{processorId}'");
+            return captured!.Value;
+        }
     }
 
     private static List<(T Value, KeyValuePair<string, object?>[] Tags)> CollectObservableGaugeMeasurements<T>(
