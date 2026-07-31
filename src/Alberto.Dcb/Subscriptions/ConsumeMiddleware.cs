@@ -1,5 +1,6 @@
 using Alberto.Dcb.Configuration;
 using Alberto.Dcb.Telemetry;
+using Microsoft.Extensions.Logging;
 
 namespace Alberto.Dcb.Subscriptions;
 
@@ -25,11 +26,13 @@ public static class ConsumeMiddlewares
     /// <param name="classifier">Determines whether a given exception is transient or permanent.</param>
     /// <param name="deadLetterStore">Store for exhausted events. Null disables dead-lettering.</param>
     /// <param name="timeProvider">Clock used to stamp <see cref="DeadLetterEntry.FailedAt"/>. Defaults to <see cref="TimeProvider.System"/>.</param>
+    /// <param name="logger">Logger used to surface dead-letter write failures. Null disables logging.</param>
     public static ConsumeMiddleware RetryAndDeadLetter(
         RetryOptions retry,
         IErrorClassifier classifier,
         IDeadLetterStore? deadLetterStore,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        ILogger? logger = null)
     {
         var clock = timeProvider ?? TimeProvider.System;
         return async (context, next) =>
@@ -47,14 +50,20 @@ public static class ConsumeMiddlewares
 
             if (retry.DeadLetterOnMaxRetries && deadLetterStore is not null)
             {
-                await deadLetterStore.StoreAsync(
-                    DeadLetterEntryFactory.Create(
-                        context.ProcessorId,
-                        context.Envelope,
-                        lastError,
-                        context.Attempt,
-                        clock.GetUtcNow()),
-                    context.CancellationToken);
+                var entry = DeadLetterEntryFactory.Create(
+                    context.ProcessorId,
+                    context.Envelope,
+                    lastError,
+                    context.Attempt,
+                    clock.GetUtcNow());
+
+                // A failed write here must not escape. The event that failed is already
+                // dead-lettered as far as the loop is concerned; letting the store's error
+                // out would fault the processor and hold the checkpoint back, re-delivering
+                // every healthy event in the window. See
+                // RetryAndDeadLetterCore.StoreDeadLetterAsync.
+                await RetryAndDeadLetterCore.StoreDeadLetterAsync(
+                    deadLetterStore, entry, logger, context.CancellationToken);
             }
         };
     }

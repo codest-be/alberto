@@ -115,7 +115,7 @@ public sealed class DeadLetterRetryLoopBehaviorTests
     /// confirm the background loop has completed at least one full poll cycle before asserting.
     /// Uses composition (not inheritance) for the same reason as <see cref="TrackingDeadLetterStore"/>.
     /// </summary>
-    private sealed class PollSignalingDeadLetterStore : IDeadLetterStore
+    private sealed class PollSignalingDeadLetterStore : IClaimableDeadLetterStore
     {
         private readonly InMemoryDeadLetterStore _inner = new();
         private readonly TaskCompletionSource _pollTcs =
@@ -158,12 +158,12 @@ public sealed class DeadLetterRetryLoopBehaviorTests
 
     /// <summary>
     /// Decorator over <see cref="InMemoryDeadLetterStore"/> that records every
-    /// <see cref="IDeadLetterStore.AbandonRetryAsync"/> call and signals
+    /// <see cref="IClaimableDeadLetterStore.AbandonRetryAsync"/> call and signals
     /// <see cref="WhenAbandoned"/> so tests can await the abandon without wall-clock delays.
     /// Uses composition (not inheritance) because <see cref="InMemoryDeadLetterStore"/>
     /// methods are not virtual and interface dispatch would bypass a derived <c>new</c> member.
     /// </summary>
-    private sealed class TrackingDeadLetterStore : IDeadLetterStore
+    private sealed class TrackingDeadLetterStore : IClaimableDeadLetterStore
     {
         private readonly InMemoryDeadLetterStore _inner = new();
         private readonly TaskCompletionSource _abandonTcs =

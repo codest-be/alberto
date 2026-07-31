@@ -80,8 +80,16 @@ public sealed class EventSerializer
     /// Deserializes an event envelope to its concrete CLR type using the registry.
     /// If an <see cref="UpcasterRegistry"/> is configured and the envelope carries a version
     /// lower than the chain's current version, the upcast chain is applied first.
-    /// Throws <see cref="InvalidOperationException"/> if the event type is not registered.
+    /// Throws <see cref="InvalidOperationException"/> if the event type is not registered, or if
+    /// the envelope is older than the type's declared version and nothing covers the gap.
     /// </summary>
+    /// <remarks>
+    /// The version guard is the runtime counterpart of <c>ALB0018</c>/<c>ALB0020</c>. Those run at
+    /// startup and only on the DI path; a serializer built by hand — a migration script, a test
+    /// helper, a one-off tool — never meets the validator, so the check is repeated here where it
+    /// cannot be bypassed. Opt out per event type with
+    /// <c>[EventType(..., UpcastingNotRequired = true)]</c>.
+    /// </remarks>
     public IEvent Deserialize(IEventEnvelope envelope)
     {
         if (!_registry.TryGetValue(envelope.EventType.Id, out var type))
@@ -89,11 +97,18 @@ public sealed class EventSerializer
                 $"Ensure the type has [EventType(\"{envelope.EventType.Id}\")] and its assembly was included when building the serializer.");
 
         var version = envelope.EventType.Version;
+        var declared = DeclaredVersions.GetOrAdd(type, static t =>
+        {
+            var attr = EventTypeAttribute.GetEventType(t);
+            return (attr?.Version ?? 1, attr?.UpcastingNotRequired ?? false);
+        });
 
         // Apply upcasting if the envelope is at an older schema version.
-        if (_upcasters is not null
-            && _upcasters.TryGet(envelope.EventType.Id, out var upcaster)
-            && upcaster is not null)
+        UpcasterDeclaration? upcaster = null;
+        if (_upcasters is not null && _upcasters.TryGet(envelope.EventType.Id, out var declaration))
+            upcaster = declaration;
+
+        if (upcaster is not null)
         {
             if (version > upcaster.CurrentVersion)
                 throw new InvalidOperationException(
@@ -104,12 +119,46 @@ public sealed class EventSerializer
             if (version < upcaster.CurrentVersion)
                 return upcaster.Apply(version, envelope.EventData, _options);
 
-            // version == currentVersion: fall through to regular deserialization.
+            // version == currentVersion: fall through, but the chain may still stop short of the
+            // version the CLR type declares — the guard below is what catches that.
+        }
+
+        // Nothing brought the envelope up to the shape the CLR type describes. Deserializing it
+        // anyway would not fail: JSON leaves every member the older payload lacks at its CLR
+        // default, so the caller folds a 0, an empty string or a null as though it had been
+        // stored. Refuse instead — a read that throws is recoverable, state built from defaults
+        // is not.
+        if (version < declared.Version && !declared.UpcastingNotRequired)
+        {
+            var cause = upcaster is null
+                ? "No upcaster is registered for it"
+                : $"Its upcaster chain stops at version {upcaster.CurrentVersion}";
+
+            throw new InvalidOperationException(
+                $"Event '{envelope.EventType.Id}' is stored at schema version {version}, but " +
+                $"'{type.Name}' declares [EventType(Version = {declared.Version})]. {cause}, so the " +
+                "stored payload would be deserialized straight into the current shape and every " +
+                $"member added since version {version} would silently take its default value." +
+                Environment.NewLine +
+                $"  → Register an upcaster covering versions {version}..{declared.Version - 1}: " +
+                $".AddUpcaster(DeclareUpcaster.For<{type.Name}>(\"{envelope.EventType.Id}\")" +
+                $".From<{type.Name}V{version}>({version}, ...).Build())." + Environment.NewLine +
+                "  → Or, if this bump only added optional members whose defaults are already the " +
+                "right values for older events, say so at the declaration site: " +
+                $"[EventType(\"{envelope.EventType.Id}\", Version = {declared.Version}, " +
+                "UpcastingNotRequired = true)].");
         }
 
         return (IEvent)(JsonSerializer.Deserialize(envelope.EventData, type, _options)
             ?? throw new InvalidOperationException($"Failed to deserialize event '{envelope.EventType.Id}'."));
     }
+
+    /// <summary>
+    /// <c>[EventType]</c> version and opt-out per CLR type, resolved once. Read on every
+    /// deserialization, and reflection on the hot read path is what this avoids.
+    /// </summary>
+    private static readonly ConcurrentDictionary<Type, (int Version, bool UpcastingNotRequired)>
+        DeclaredVersions = new();
 
     /// <summary>
     /// Serializes an event to its JSON representation.

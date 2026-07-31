@@ -24,7 +24,7 @@ namespace Alberto.Dcb.Subscriptions;
 /// <param name="timeProvider">Clock used to drive poll delays. Defaults to <see cref="TimeProvider.System"/>.</param>
 internal sealed class DeadLetterRetryLoop(
     IEventProcessor processor,
-    IDeadLetterStore deadLetterStore,
+    IClaimableDeadLetterStore deadLetterStore,
     TimeSpan? pollingInterval = null,
     int batchSize = 10,
     IReadOnlyList<ConsumeMiddleware>? middlewares = null,
@@ -35,7 +35,7 @@ internal sealed class DeadLetterRetryLoop(
     TimeProvider? timeProvider = null) : IHostedService, IAsyncDisposable
 {
     private readonly IEventProcessor _processor = processor ?? throw new ArgumentNullException(nameof(processor));
-    private readonly IDeadLetterStore _deadLetterStore = deadLetterStore ?? throw new ArgumentNullException(nameof(deadLetterStore));
+    private readonly IClaimableDeadLetterStore _deadLetterStore = deadLetterStore ?? throw new ArgumentNullException(nameof(deadLetterStore));
     private readonly TimeSpan _pollingInterval = pollingInterval ?? TimeSpan.FromMinutes(1);
     private readonly int _batchSize = batchSize;
     private readonly IReadOnlyList<ConsumeMiddleware> _middlewares = middlewares ?? [];

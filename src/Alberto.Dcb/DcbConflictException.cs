@@ -39,9 +39,42 @@ public sealed class DcbConflictException : Exception
     }
 
     /// <summary>
-    /// Creates a DCB conflict exception with a message and inner exception.
-    /// Used when the conflict details are not available (e.g., from database exceptions).
+    /// Creates a DCB conflict exception carrying both the boundary detail and the underlying
+    /// provider exception.
     /// </summary>
+    /// <remarks>
+    /// A backend that learns of a conflict from its database rather than deciding it itself has
+    /// two things worth keeping: the provider exception, and the details it can reconstruct from
+    /// the append it was performing. This constructor keeps both. Prefer it over
+    /// <see cref="DcbConflictException(string, Exception)"/> wherever the details are knowable —
+    /// the caller's retry loop reads <see cref="ConflictingPosition"/>, not the message.
+    /// </remarks>
+    public DcbConflictException(
+        string message,
+        long conflictingPosition,
+        long expectedPosition,
+        DcbQuery query,
+        Exception innerException)
+        : base(message, innerException)
+    {
+        ConflictingPosition = conflictingPosition;
+        ExpectedPosition = expectedPosition;
+        Query = query;
+    }
+
+    /// <summary>
+    /// Creates a DCB conflict exception with a message and inner exception, for the case where
+    /// the conflict details genuinely are not available.
+    /// </summary>
+    /// <remarks>
+    /// This constructor reports <see cref="ConflictingPosition"/> and
+    /// <see cref="ExpectedPosition"/> as <c>-1</c> and <see cref="Query"/> as
+    /// <see cref="DcbQuery.Empty"/>, which renders as <c>*</c>. Those are placeholders, not
+    /// facts — a caller cannot distinguish them from a real conflict at position -1 against an
+    /// empty query, so anything that inspects the properties silently gets the wrong answer.
+    /// Reach for it only when the backend truly cannot say; use
+    /// <see cref="DcbConflictException(string, long, long, DcbQuery, Exception)"/> otherwise.
+    /// </remarks>
     public DcbConflictException(string message, Exception innerException)
         : base(message, innerException)
     {

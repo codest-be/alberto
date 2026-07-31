@@ -8,8 +8,7 @@ namespace Alberto.Dcb.Tests.Subscriptions;
 
 /// <summary>
 /// Regression tests for the double-delivery defect that occurs when
-/// <see cref="IDeadLetterStore.StoreAsync"/> throws during the single-event tail of
-/// <see cref="BatchConsumeMiddlewares.RetryAndDeadLetter"/>.
+/// <see cref="IDeadLetterStore.StoreAsync"/> throws while dead-lettering an exhausted event.
 /// <para>
 /// Before the fix: a transient DB error from <c>StoreAsync</c> escaped the middleware,
 /// the control loop set <c>IsFaulted</c>, the checkpoint stayed at the pre-batch position,
@@ -21,8 +20,16 @@ namespace Alberto.Dcb.Tests.Subscriptions;
 /// cannot be made durable, the failure is logged at error level and the middleware returns
 /// normally, allowing the checkpoint to advance.
 /// </para>
+/// <para>
+/// Both dispatch paths are covered, and that is the point of the file rather than an
+/// afterthought. The guard was written for <see cref="BatchConsumeMiddlewares.RetryAndDeadLetter"/>
+/// while <see cref="ConsumeMiddlewares.RetryAndDeadLetter"/> kept the bare <c>await
+/// StoreAsync</c> — the same defect, one file away, with a green test sitting next to it. The
+/// two now share <c>RetryAndDeadLetterCore.StoreDeadLetterAsync</c>, and asserting the
+/// behaviour on both is what keeps a future change from re-splitting them.
+/// </para>
 /// </summary>
-public sealed class BatchDeadLetterWriteFailureTests
+public sealed class DeadLetterWriteFailureTests
 {
     private static readonly DateTime EventCreatedAt =
         new(2026, 7, 26, 12, 34, 56, DateTimeKind.Utc);
@@ -43,6 +50,18 @@ public sealed class BatchDeadLetterWriteFailureTests
             CancellationToken = ct,
         };
     }
+
+    private static ConsumeEventContext MakeSingleContext(
+        IEventEnvelope? envelope = null,
+        CancellationToken ct = default) =>
+        new()
+        {
+            ProcessorId = "test-processor",
+            ModuleKey = "test-module",
+            Envelope = envelope ?? MakeEnvelope(position: 1),
+            IsRebuild = false,
+            CancellationToken = ct,
+        };
 
     private static IEventEnvelope MakeEnvelope(long position) =>
         new EventEnvelope
@@ -84,22 +103,11 @@ public sealed class BatchDeadLetterWriteFailureTests
         public Task<int> CountAsync(string processorId, CancellationToken ct = default)
             => Task.FromResult(0);
 
-        public Task<bool> CompleteRetryAsync(DeadLetterClaim claim, CancellationToken ct = default)
-            => Task.FromResult(true);
-
         public Task ClearAsync(string processorId, CancellationToken ct = default)
             => Task.CompletedTask;
 
         public Task MarkForRetryAsync(string processorId, CancellationToken ct = default)
             => Task.CompletedTask;
-
-        public Task<IReadOnlyList<DeadLetterClaim>> ClaimRetryRequestedAsync(
-            string processorId, int batchSize, TimeSpan leaseDuration,
-            string claimedBy, CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<DeadLetterClaim>>([]);
-
-        public Task<bool> AbandonRetryAsync(DeadLetterClaim claim, CancellationToken ct = default)
-            => Task.FromResult(true);
     }
 
     /// <summary>
@@ -242,9 +250,104 @@ public sealed class BatchDeadLetterWriteFailureTests
             () => throw new InvalidOperationException("processor failure"));
 
         // Assert — 3 attempts (1 initial + 2 retries) before the loop gives up.
-        // This constant matches BatchConsumeMiddlewares.DeadLetterWriteMaxAttempts.
+        // This constant matches RetryAndDeadLetterCore.DeadLetterWriteMaxAttempts.
         store.StoreCallCount.Should().Be(3,
             because: "the bounded retry must attempt the write exactly 3 times before giving up");
+    }
+
+    // ── single-event dispatch ────────────────────────────────────────────────
+
+    /// <summary>
+    /// The same protection on the per-event path. This is the one that was missing: the
+    /// per-event middleware awaited <c>StoreAsync</c> bare, so a dead-letter store outage
+    /// faulted the processor and held the checkpoint — re-delivering every healthy event the
+    /// loop had already processed, on every restart, for as long as the outage lasted.
+    /// </summary>
+    [Fact]
+    public async Task SingleEvent_DeadLetterStoreWrite_WhenThrows_MiddlewareReturnsWithoutThrowing()
+    {
+        var store = new ThrowingDeadLetterStore();
+        var middleware = ConsumeMiddlewares.RetryAndDeadLetter(
+            new RetryOptions { MaxRetries = 0, DeadLetterOnMaxRetries = true },
+            new AlwaysPermanentClassifier(),
+            store,
+            timeProvider: null,
+            logger: null);
+
+        var context = MakeSingleContext(ct: TestContext.Current.CancellationToken);
+
+        var act = async () =>
+            await MiddlewareRunner.RunAsync(
+                context,
+                [middleware],
+                () => throw new InvalidOperationException("processor failure"));
+
+        await act.Should().NotThrowAsync(
+            because: "a failing dead-letter write must not propagate — that would strand " +
+                     "already-processed events and cause silent double-delivery on restart");
+
+        // The event is still counted as dead-lettered even though the store write failed.
+        context.DeadLettered.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task SingleEvent_DeadLetterStoreWrite_WhenThrows_LogsErrorNamingEventAndProcessor()
+    {
+        var store = new ThrowingDeadLetterStore();
+        var logger = new CapturingLogger();
+        var middleware = ConsumeMiddlewares.RetryAndDeadLetter(
+            new RetryOptions { MaxRetries = 0, DeadLetterOnMaxRetries = true },
+            new AlwaysPermanentClassifier(),
+            store,
+            timeProvider: null,
+            logger: logger);
+
+        var envelope = MakeEnvelope(position: 42);
+        var context = MakeSingleContext(envelope, TestContext.Current.CancellationToken);
+
+        await MiddlewareRunner.RunAsync(
+            context,
+            [middleware],
+            () => throw new InvalidOperationException("processor failure"));
+
+        var errorEntries = logger.Entries
+            .Where(e => e.Level == LogLevel.Error)
+            .ToList();
+
+        errorEntries.Should().NotBeEmpty(
+            because: "a failing dead-letter write must be logged at error level");
+
+        var errorEntry = errorEntries[0];
+
+        errorEntry.Message.Should().Contain(envelope.Id.ToString(),
+            because: "the error log must identify which event was dropped from the dead-letter queue");
+        errorEntry.Message.Should().Contain("test-processor",
+            because: "the error log must identify which processor dropped the event");
+        errorEntry.Exception.Should().NotBeNull(
+            because: "the original StoreAsync exception must be forwarded so its stack trace is visible");
+    }
+
+    [Fact]
+    public async Task SingleEvent_DeadLetterStoreWrite_WhenAlwaysThrows_AttemptsTheExpectedNumberOfRetries()
+    {
+        var store = new ThrowingDeadLetterStore();
+        var middleware = ConsumeMiddlewares.RetryAndDeadLetter(
+            new RetryOptions { MaxRetries = 0, DeadLetterOnMaxRetries = true },
+            new AlwaysPermanentClassifier(),
+            store,
+            timeProvider: null,
+            logger: null);
+
+        var context = MakeSingleContext(ct: TestContext.Current.CancellationToken);
+
+        await MiddlewareRunner.RunAsync(
+            context,
+            [middleware],
+            () => throw new InvalidOperationException("processor failure"));
+
+        store.StoreCallCount.Should().Be(3,
+            because: "both dispatch paths share the same bounded retry, so both must attempt " +
+                     "the write exactly 3 times before giving up");
     }
 
     // ── classifier ────────────────────────────────────────────────────────────

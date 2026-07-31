@@ -354,7 +354,7 @@ public sealed class MiddlewareTests
         public ErrorClassification Classify(Exception exception) => ErrorClassification.Permanent;
     }
 
-    private sealed class InMemoryDeadLetterStore : IDeadLetterStore
+    private sealed class InMemoryDeadLetterStore : IClaimableDeadLetterStore
     {
         public List<DeadLetterEntry> Entries { get; } = [];
 

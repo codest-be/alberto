@@ -16,12 +16,6 @@ public delegate Task BatchConsumeMiddleware(BatchConsumeContext context, Func<Ta
 public static class BatchConsumeMiddlewares
 {
     /// <summary>
-    /// Maximum number of times the dead-letter store write is retried on transient failure.
-    /// Three attempts give two retries without a long cumulative delay.
-    /// </summary>
-    private const int DeadLetterWriteMaxAttempts = 3;
-
-    /// <summary>
     /// Retries a batch as a unit. If the batch still fails after retries,
     /// a single-event batch is dead-lettered; larger batches bubble the
     /// failure so the control loop can isolate the poison event by splitting.
@@ -83,52 +77,12 @@ public static class BatchConsumeMiddlewares
                 context.Attempt,
                 clock.GetUtcNow());
 
-            // Bounded retry for the dead-letter write: a transient DB error here must NOT
-            // escape. If it does, the control loop marks IsFaulted and the checkpoint stays
-            // at the pre-batch position, so every event that already committed side-effects
-            // (A, B, C in a bisected [A,B,C,D]) is re-delivered on restart — a silent
-            // double-delivery with no signal.
-            // Trade-off: losing one entry from the dead-letter queue is strictly safer than
-            // infinitely re-delivering healthy events that already committed.
-            Exception? storeError = null;
-            for (var attempt = 1; attempt <= DeadLetterWriteMaxAttempts; attempt++)
-            {
-                try
-                {
-                    await deadLetterStore.StoreAsync(entry, context.CancellationToken);
-                    storeError = null;
-                    break;
-                }
-                catch (OperationCanceledException) when (context.CancellationToken.IsCancellationRequested)
-                {
-                    // Shutdown — propagate cancellation so the control loop can stop cleanly.
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    storeError = ex;
-                    if (attempt < DeadLetterWriteMaxAttempts)
-                        await Task.Delay(
-                            TimeSpan.FromMilliseconds(100 * attempt),
-                            context.CancellationToken);
-                }
-            }
-
-            if (storeError is not null)
-            {
-                // Dead-letter write failed after all retries. Log loudly so the operator
-                // knows event {EventId} was dropped from the dead-letter queue, but do NOT
-                // rethrow: the checkpoint must advance to avoid re-delivering the events
-                // that already committed (see comment on the retry loop above).
-                logger?.LogError(
-                    storeError,
-                    "Dead-letter write failed after {Attempts} attempts for event {EventId} " +
-                    "on processor {ProcessorId}. The event is dropped from the dead-letter queue; " +
-                    "checkpoint will advance to avoid re-delivery of already-processed events.",
-                    DeadLetterWriteMaxAttempts,
-                    envelope.Id,
-                    context.ProcessorId);
-            }
+            // A transient DB error on this write must not escape: the checkpoint would stay at
+            // the pre-batch position and every event that already committed side-effects
+            // (A, B, C in a bisected [A, B, C, D]) would be re-delivered on restart. See
+            // RetryAndDeadLetterCore.StoreDeadLetterAsync for the full reasoning.
+            await RetryAndDeadLetterCore.StoreDeadLetterAsync(
+                deadLetterStore, entry, logger, context.CancellationToken);
         };
     }
 

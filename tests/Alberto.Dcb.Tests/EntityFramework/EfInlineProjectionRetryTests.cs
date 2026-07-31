@@ -147,7 +147,7 @@ public sealed class EfInlineProjectionRetryTests(EfProjectionTestFixture fixture
 
         var declaration = EfProjectionTestFixture.BuildDeclaration("exhaustion-log-test");
         var projection = new DeclaredEfInlineProjection<CounterEntity, EfTestDbContext>(
-            declaration, factory, logSink);
+            declaration, factory, logger: logSink);
 
         var entityId = Guid.NewGuid().ToString();
         var events = new[] { EfTestEnvelopes.ForCounterIncremented(entityId, amount: 1, position: 1) };

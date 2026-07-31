@@ -178,7 +178,9 @@ Alberto.Dcb.Configuration.RegisteredEventType
 Alberto.Dcb.Configuration.RegisteredEventType.Id.get -> string!
 Alberto.Dcb.Configuration.RegisteredEventType.Id.init -> void
 Alberto.Dcb.Configuration.RegisteredEventType.RegisteredEventType() -> void
-Alberto.Dcb.Configuration.RegisteredEventType.RegisteredEventType(string! Id, int Version) -> void
+Alberto.Dcb.Configuration.RegisteredEventType.RegisteredEventType(string! Id, int Version, bool UpcastingNotRequired = false) -> void
+Alberto.Dcb.Configuration.RegisteredEventType.UpcastingNotRequired.get -> bool
+Alberto.Dcb.Configuration.RegisteredEventType.UpcastingNotRequired.init -> void
 Alberto.Dcb.Configuration.RegisteredEventType.Version.get -> int
 Alberto.Dcb.Configuration.RegisteredEventType.Version.init -> void
 Alberto.Dcb.Configuration.RetryOptions
@@ -255,6 +257,7 @@ Alberto.Dcb.DcbConflictException
 Alberto.Dcb.DcbConflictException.ConflictingPosition.get -> long
 Alberto.Dcb.DcbConflictException.DcbConflictException(long conflictingPosition, long expectedPosition, Alberto.Dcb.DcbQuery! query) -> void
 Alberto.Dcb.DcbConflictException.DcbConflictException(string! message, long conflictingPosition, long expectedPosition, Alberto.Dcb.DcbQuery! query) -> void
+Alberto.Dcb.DcbConflictException.DcbConflictException(string! message, long conflictingPosition, long expectedPosition, Alberto.Dcb.DcbQuery! query, System.Exception! innerException) -> void
 Alberto.Dcb.DcbConflictException.DcbConflictException(string! message, System.Exception! innerException) -> void
 Alberto.Dcb.DcbConflictException.ExpectedPosition.get -> long
 Alberto.Dcb.DcbConflictException.Query.get -> Alberto.Dcb.DcbQuery!
@@ -370,6 +373,8 @@ Alberto.Dcb.EventType.Version.get -> int
 Alberto.Dcb.EventTypeAttribute
 Alberto.Dcb.EventTypeAttribute.EventTypeAttribute(string! id) -> void
 Alberto.Dcb.EventTypeAttribute.Id.get -> string!
+Alberto.Dcb.EventTypeAttribute.UpcastingNotRequired.get -> bool
+Alberto.Dcb.EventTypeAttribute.UpcastingNotRequired.set -> void
 Alberto.Dcb.EventTypeAttribute.Version.get -> int
 Alberto.Dcb.EventTypeAttribute.Version.set -> void
 Alberto.Dcb.Evolver<TState>
@@ -551,11 +556,12 @@ Alberto.Dcb.Subscriptions.ICheckpointStore.GetAsync(string! processorId, System.
 Alberto.Dcb.Subscriptions.ICheckpointStore.ResetAsync(string! processorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Alberto.Dcb.Subscriptions.ICheckpointStore.RewindAsync(string! processorId, long position, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Alberto.Dcb.Subscriptions.ICheckpointStore.SaveAsync(string! processorId, long position, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Dcb.Subscriptions.IClaimableDeadLetterStore
+Alberto.Dcb.Subscriptions.IClaimableDeadLetterStore.AbandonRetryAsync(Alberto.Dcb.Subscriptions.DeadLetterClaim! claim, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+Alberto.Dcb.Subscriptions.IClaimableDeadLetterStore.ClaimRetryRequestedAsync(string! processorId, int batchSize, System.TimeSpan leaseDuration, string! claimedBy, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Alberto.Dcb.Subscriptions.DeadLetterClaim!>!>!
+Alberto.Dcb.Subscriptions.IClaimableDeadLetterStore.CompleteRetryAsync(Alberto.Dcb.Subscriptions.DeadLetterClaim! claim, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
 Alberto.Dcb.Subscriptions.IDeadLetterStore
-Alberto.Dcb.Subscriptions.IDeadLetterStore.AbandonRetryAsync(Alberto.Dcb.Subscriptions.DeadLetterClaim! claim, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
-Alberto.Dcb.Subscriptions.IDeadLetterStore.ClaimRetryRequestedAsync(string! processorId, int batchSize, System.TimeSpan leaseDuration, string! claimedBy, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Alberto.Dcb.Subscriptions.DeadLetterClaim!>!>!
 Alberto.Dcb.Subscriptions.IDeadLetterStore.ClearAsync(string! processorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Alberto.Dcb.Subscriptions.IDeadLetterStore.CompleteRetryAsync(Alberto.Dcb.Subscriptions.DeadLetterClaim! claim, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
 Alberto.Dcb.Subscriptions.IDeadLetterStore.CountAsync(string! processorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
 Alberto.Dcb.Subscriptions.IDeadLetterStore.GetAsync(string! processorId, string? tenantId = null, int limit = 100, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Alberto.Dcb.Subscriptions.DeadLetterEntry!>!>!
 Alberto.Dcb.Subscriptions.IDeadLetterStore.MarkForRetryAsync(string! processorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
@@ -968,7 +974,7 @@ static Alberto.Dcb.Result<T>.implicit operator Alberto.Dcb.Result<T>(T value) ->
 static Alberto.Dcb.Result<T>.Success(T value) -> Alberto.Dcb.Result<T>
 static Alberto.Dcb.ServiceCollectionExtensions.AddAlberto(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, string! moduleKey, System.Action<Alberto.Dcb.DcbModuleBuilder!>! configure) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static Alberto.Dcb.Subscriptions.BatchConsumeMiddlewares.RetryAndDeadLetter(Alberto.Dcb.Configuration.RetryOptions! retry, Alberto.Dcb.Subscriptions.IErrorClassifier! classifier, Alberto.Dcb.Subscriptions.IDeadLetterStore? deadLetterStore, System.TimeProvider? timeProvider = null, Microsoft.Extensions.Logging.ILogger? logger = null) -> Alberto.Dcb.Subscriptions.BatchConsumeMiddleware!
-static Alberto.Dcb.Subscriptions.ConsumeMiddlewares.RetryAndDeadLetter(Alberto.Dcb.Configuration.RetryOptions! retry, Alberto.Dcb.Subscriptions.IErrorClassifier! classifier, Alberto.Dcb.Subscriptions.IDeadLetterStore? deadLetterStore, System.TimeProvider? timeProvider = null) -> Alberto.Dcb.Subscriptions.ConsumeMiddleware!
+static Alberto.Dcb.Subscriptions.ConsumeMiddlewares.RetryAndDeadLetter(Alberto.Dcb.Configuration.RetryOptions! retry, Alberto.Dcb.Subscriptions.IErrorClassifier! classifier, Alberto.Dcb.Subscriptions.IDeadLetterStore? deadLetterStore, System.TimeProvider? timeProvider = null, Microsoft.Extensions.Logging.ILogger? logger = null) -> Alberto.Dcb.Subscriptions.ConsumeMiddleware!
 static Alberto.Dcb.Subscriptions.DeclareProjection.For<TState>(string! processorId) -> Alberto.Dcb.Subscriptions.ProjectionDeclarationBuilder<TState>!
 static Alberto.Dcb.Subscriptions.ProcessorExecutionOptions.Default.get -> Alberto.Dcb.Subscriptions.ProcessorExecutionOptions!
 static Alberto.Dcb.Subscriptions.ProjectionContext.FromEnvelope(Alberto.Dcb.IEventEnvelope! envelope) -> Alberto.Dcb.Subscriptions.ProjectionContext!

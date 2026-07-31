@@ -184,6 +184,32 @@ Then wire the module and the projection:
 EF projections batch: a whole control-loop batch accumulates in the change tracker and flushes with
 one `SaveChanges`.
 
+### EF projections on a tenant-enabled module
+
+`IProjectionEntity` has exactly the columns above — there is no tenant among them, and adding a
+`TenantId` property to your entity does not change what the store queries on. Both the async store
+and the inline projection load and write by `(DocumentId, RebuildVersion)`, so on a module that
+declared `.WithTenancy()` two tenants producing the same document id share one row: last write
+wins, and every read after it returns the other tenant's data.
+
+Whether that can happen is a property of the declaration's id selectors, which Alberto cannot
+inspect, so it has to be stated. Registration fails with `ALB0027` until it is:
+
+```csharp
+// Every handler keys the document on the order's GUID, so no two tenants can collide.
+.AddEfProjection<OrderSummaryEntity, OrdersDbContext>(
+    OrderSummaryEfProjection.Declaration,
+    documentIds: EfDocumentIdUniqueness.AcrossTenants)
+```
+
+If the ids are *not* unique across tenants, make them so by prefixing a discriminator the event
+itself carries (`id: e => $"{e.TenantId}/{e.OrderId}"`), give each tenant its own database with
+`.WithTenancy(t => t.AcrossPostgresDatabases(...))`, or use the JSONB state store via
+`AddProjection`, whose tenancy is part of the migrated schema and needs no such promise.
+
+Single-tenant modules are unaffected — there is no second tenant to collide with, and the
+parameter's default is correct there.
+
 ### Inline vs async
 
 ```csharp

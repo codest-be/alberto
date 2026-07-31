@@ -131,6 +131,39 @@ the checkpoint write replayed the whole batch into the handler. Use `AddEfProjec
 idempotent per document, participates in rebuilds, and is itself an `IBatchableProcessor` —
 a batch still becomes one `SaveChanges` per tenant run.
 
+**`IDeadLetterStore` split — retry claims moved to `IClaimableDeadLetterStore`** —
+`ClaimRetryRequestedAsync`, `CompleteRetryAsync` and `AbandonRetryAsync` are no longer members of
+`IDeadLetterStore`. They required an atomic claim-and-fence that a store backed by a file, a log,
+or an HTTP endpoint cannot honour, so every such store had to implement three methods it could
+only throw from. They now live on the optional `IClaimableDeadLetterStore`, which both shipped
+stores implement. A store that does not implement it still records, counts, reads and clears dead
+letters; what it loses is the automatic retry loop, and the host now logs a warning naming the
+store type at startup rather than leaving an operator watching a retry flag that never clears.
+The conformance suite splits the same way: `DeadLetterStoreSpecification` keeps the core
+requirements, `ClaimableDeadLetterStoreSpecification` adds the claim ones.
+
+**`AddEfProjection` on a tenant-enabled module now requires a uniqueness declaration** — an EF
+projection is keyed by `(DocumentId, RebuildVersion)`, the only two columns `IProjectionEntity`
+has, so neither the async store nor the inline path can add a tenant predicate. On a module that
+declared `.WithTenancy()` that is only correct if two tenants can never produce the same document
+id. Registration now refuses the combination with `ALB0027` unless the call passes
+`documentIds: EfDocumentIdUniqueness.AcrossTenants`. Single-tenant modules are unaffected.
+
+**`EventSerializer.Deserialize` refuses an uncovered schema-version gap** — reading an envelope
+stored below the version its CLR type declares now throws `InvalidOperationException` instead of
+deserializing the older payload straight into the current shape, where every member added since
+would take its CLR default. `ALB0018` already caught this at startup, but only on the DI path; a
+serializer built by hand never met the validator. Waive the gap at the declaration site with
+`[EventType("slug", Version = N, UpcastingNotRequired = true)]` when the bump only added optional
+members whose defaults are already right for older events — `ALB0018` honours the same flag.
+
+**PostgreSQL append advisory-lock key widened to 64 bits** — the append lock moved from
+`pg_advisory_xact_lock(1, hashtext(key))` to `pg_advisory_xact_lock(hashtextextended(key, 0))`.
+No schema change, but **two application versions appending to the same database concurrently take
+locks in different key spaces and do not serialize against each other**, so the DCB conflict check
+is unprotected for the length of the overlap. Drain or stop the old version before starting the
+new one; see [UPGRADING.md](UPGRADING.md) for the rollout note.
+
 ### Added
 
 - `TelemetryOptions.RecordEventTagValues` (default `false`) — opts append spans back into
@@ -153,6 +186,24 @@ a batch still becomes one `SaveChanges` per tenant run.
 - `ALB0026` — `AddAlberto` now refuses a module key that was already registered, instead of
   overlaying the first module's options and starting a second set of control loops that race on
   its checkpoint. The rejected call registers nothing.
+- `ALB0027` — `AddEfProjection` refuses a tenant-enabled module unless the call declares
+  `EfDocumentIdUniqueness.AcrossTenants`. Raised from the deferred registration callback, so
+  `.WithTenancy()` is seen whether it is chained before or after the projection.
+- `IClaimableDeadLetterStore` and `ClaimableDeadLetterStoreSpecification` — the optional
+  claim-and-fence capability split out of `IDeadLetterStore`, and its conformance suite.
+- `EfDocumentIdUniqueness` — what a caller guarantees about the document ids an EF projection
+  declaration produces on a tenant-enabled module.
+- `EventTypeAttribute.UpcastingNotRequired` — states that events stored at an older version of
+  this type deserialize correctly into the current shape without an upcaster. Honoured by both
+  `ALB0018` and `EventSerializer.Deserialize`. Defaults to `false`, which is the safe answer.
+- `DcbConflictException(string, long, long, DcbQuery, Exception)` — keeps the provider exception
+  *and* the conflict details, for a backend that learns of a conflict from its database.
+- `ILogger` parameter on `ConsumeMiddlewares.RetryAndDeadLetter` (optional, matching the batch
+  overload) — surfaces a dead-letter write that failed and was dropped.
+- **Extension-point contract freeze** — `ExtensionPointContractTests` pins the abstract member set
+  of every interface Alberto expects to be implemented outside this repository, so a member added
+  after 1.0 must ship with a default implementation or move to its own optional interface. See
+  [CONTRIBUTING.md](CONTRIBUTING.md).
 - Event schema versioning: `[EventType("slug", Version = N)]`, the framework-managed `_version:N` tag,
   `UpcasterRegistry`, and the `DeclareUpcaster.For<T>(...).From<TOld>(...).Build()` fluent API.
   See [docs/events.md](docs/events.md) for the full guide and known limits.
@@ -196,6 +247,34 @@ a batch still becomes one `SaveChanges` per tenant run.
 
 ### Fixed
 
+- A failed dead-letter write took the whole processor down with it. The store write at the end of
+  the retry chain was unguarded on the single-event path, so a transient database blip threw out
+  of the middleware chain, faulted the processor, and held the checkpoint — re-delivering every
+  healthy event in that window on the next pass, and on every restart after it. The write is now
+  retried three times and then dropped with an error log naming the event and processor: losing
+  one dead-letter entry is strictly safer than re-delivering healthy events forever. Cancellation
+  still propagates, because a shutdown is not a failed write. Both the single-event and batch
+  middlewares route through the same helper.
+- Every PostgreSQL DCB conflict reported `ConflictingPosition` and `ExpectedPosition` as `-1` and
+  `Query` as `DcbQuery.Empty` — which renders as `*`, indistinguishable from a real conflict
+  against an all-events query. The backend threw the two-argument `DcbConflictException(message,
+  inner)` overload, discarding details it was holding. It now reports the expected position and
+  query it was given, parses the conflicting position out of the server's `RAISE EXCEPTION`
+  message, and keeps the server's own wording — which names *which* arm of the boundary matched —
+  alongside them.
+- The PostgreSQL append advisory lock hashed its key to 32 bits, so two unrelated tenants'
+  appends could share one lock: by the birthday bound, ~0.6% chance of some colliding pair at 10k
+  tenants, 50% at 77k. Never a correctness problem — a shared lock over-serializes, it never
+  under-serializes — but an invisible throughput cliff on the headline multi-tenant feature, with
+  no error, no log line and nothing in telemetry to point at it. The key is now 64-bit
+  (`hashtextextended`), which moves the same bound to under 1 in 10¹⁰ for a million tenants.
+- Inline EF projections neither filtered nor stamped `RebuildVersion`. Register the same entity
+  as both inline and async, start a rebuild of the async side, and the table holds `(docId, v1)`
+  and `(docId, v2)` at once — the unfiltered load returned both and threw a duplicate-key
+  `ArgumentException` out of the caller's `AppendAsync`, for the entire rebuild window. Reads are
+  now filtered by the live version and writes stamp it, exactly as `EfStateStore` does, with the
+  version resolved once per attempt so a promotion landing mid-write cannot split the load, the
+  upserts and the deletes across two versions.
 - The in-memory backend accepted payloads the PostgreSQL backend rejects and returned them
   unchanged, so a suite that passed in memory could fail against a real database. It now
   validates `EventData` as JSON, rejects a NUL byte in the payload or in metadata (`jsonb`

@@ -35,6 +35,11 @@ they touch a persisted table.
 | MM-1 | Surface — interface member | Medium | `IMessageMappingRegistry` gains a `ModuleKey` property; direct implementations no longer compile |
 | OT-1 | Outbox transport lifecycle | Medium | Failed startup triggers bounded cleanup; store faults stop the relay; shared registrations use one lifecycle |
 | VA-1 | Startup validation | Medium | New codes `ALB0018`/`ALB0019`/`ALB0020` reject upcaster misconfigurations that previously started and failed at runtime |
+| DL-1 | Surface — interface split | Medium | The three retry-claim members move from `IDeadLetterStore` to a new optional `IClaimableDeadLetterStore` |
+| EP-1 | Startup validation | Medium | `ALB0027` — `AddEfProjection` on a `.WithTenancy()` module now requires `documentIds: EfDocumentIdUniqueness.AcrossTenants` |
+| SV-1 | Serializer — runtime guard | Medium | `EventSerializer.Deserialize` throws when the stored version is below the type's declared version and nothing covers the gap |
+| LK-1 | PostgreSQL append lock | **High** | The append advisory-lock key space changed; two application versions appending concurrently do not serialize against each other |
+| CF-1 | Exception detail | Low | PostgreSQL `DcbConflictException` messages are reworded and now carry real `ConflictingPosition` / `ExpectedPosition` / `Query` values |
 
 ---
 
@@ -758,6 +763,242 @@ one-step chain is now a startup failure; raise the attribute to match the chain.
 
 These checks only run when `WithEventsFrom(...)` was called; a module configured without an
 events assembly skips them.
+
+---
+
+### DL-1 — retry claims move to `IClaimableDeadLetterStore`
+
+Three members left `IDeadLetterStore`:
+
+```csharp
+Task<IReadOnlyList<DeadLetterClaim>> ClaimRetryRequestedAsync(
+    string processorId, int batchSize, TimeSpan leaseDuration, string claimedBy, CancellationToken ct = default);
+Task<bool> CompleteRetryAsync(DeadLetterClaim claim, CancellationToken ct = default);
+Task<bool> AbandonRetryAsync(DeadLetterClaim claim, CancellationToken ct = default);
+```
+
+They now sit on `IClaimableDeadLetterStore`, which extends `IDeadLetterStore` and is type-tested
+for at the point of use.
+
+**Why.** These three are one operation — claim a batch under a fence, then release or complete it
+— and it has no correct default implementation. A store backed by a table can do it with
+`FOR UPDATE SKIP LOCKED`; a store backed by an append-only file, a log shipper, or an HTTP
+endpoint cannot, and had to implement three methods it could only throw from. That is the shape
+that says the capability is optional, not that the interface is incomplete.
+
+**Symptom.** `error CS0535: '...' does not implement interface member` disappears for
+implementors; `error CS1061: 'IDeadLetterStore' does not contain a definition for
+'ClaimRetryRequestedAsync'` appears for callers.
+
+**Fix — implementing a store.** Both shipped stores (`PostgresDeadLetterStore`,
+`InMemoryDeadLetterStore`) now declare `IClaimableDeadLetterStore`, so nothing changes for them.
+For a custom store, keep the three methods and move the declaration up:
+
+```csharp
+public sealed class MyDeadLetterStore : IClaimableDeadLetterStore { ... }  // was IDeadLetterStore
+```
+
+If your store threw `NotSupportedException` from them, delete them and implement
+`IDeadLetterStore` alone. It still records, counts, reads and clears dead letters; what it loses
+is the automatic retry loop. Alberto logs a warning naming the store type at startup —
+`alberto ops deadletter retry` will still flag entries and nothing will dispatch them, so the
+warning is there rather than leaving an operator watching a flag that never clears.
+
+**Fix — calling the methods.** Type-test:
+
+```csharp
+if (store is IClaimableDeadLetterStore claimable)
+    await claimable.ClaimRetryRequestedAsync(processorId, 10, TimeSpan.FromMinutes(1), "me", ct);
+```
+
+**Fix — the conformance suite.** `DeadLetterStoreSpecification` keeps the core requirements and
+its `CreateStore()` still returns `IDeadLetterStore`. The claim requirements moved to
+`ClaimableDeadLetterStoreSpecification`, which derives from it and adds one abstract member:
+
+```csharp
+public sealed class MyDeadLetterStoreTests : ClaimableDeadLetterStoreSpecification
+{
+    protected override Task<IClaimableDeadLetterStore> CreateClaimableStore() => ...;
+}
+```
+
+A store that is not claimable derives from `DeadLetterStoreSpecification` as before.
+
+**Related.** `ExtensionPointContractTests` now freezes the abstract member set of every interface
+implemented outside this repository, so a member added after 1.0 either ships with a default
+implementation or moves to its own optional interface, as this one did. See
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
+---
+
+### EP-1 — `ALB0027`: EF projections on a tenant-enabled module must declare id uniqueness
+
+An EF projection entity implements `IProjectionEntity`, whose whole surface is `DocumentId`,
+`UpdatedAt`, `LastProcessedPosition`, `Version` and `RebuildVersion`. There is no tenant column,
+so `EfStateStore` and the inline path both load and write by `(DocumentId, RebuildVersion)` alone.
+Adding a `TenantId` column to your entity does not change that — the store cannot see it.
+
+On a module that declared `.WithTenancy()`, the projection is therefore only correct if two
+tenants can never produce the same document id. Nothing can verify that, so it now has to be
+stated:
+
+```csharp
+services.AddAlberto("orders", m =>
+{
+    m.WithPostgres(cs).WithTenancy();
+
+    m.AddEfProjection<OrderSummaryEntity, OrdersDbContext>(
+        declaration,
+        documentIds: EfDocumentIdUniqueness.AcrossTenants);   // ← required
+});
+```
+
+**Symptom.** `InvalidOperationException` at `AddAlberto` with `ALB0027`, naming the processor id.
+The check runs from the deferred registration callback, so it fires whether `.WithTenancy()` is
+chained before or after the projection.
+
+**Fix.** Decide which is true of your declaration:
+
+- **Ids are already globally unique** — a GUID aggregate id, or an id the handler prefixes with a
+  tenant discriminator carried on the event itself. Pass
+  `documentIds: EfDocumentIdUniqueness.AcrossTenants`. Nothing else changes.
+- **Ids are per-tenant** (`"order-42"`) — two tenants share one row today, and have been. Either
+  make the id carry the tenant, give the module `.WithTenancy(t => t.AcrossPostgresDatabases(...))`
+  so each tenant has its own database, or move the projection to `AddProjection` with a JSONB
+  state store, which is tenant-scoped by the store.
+
+Single-tenant modules are unaffected: `EfDocumentIdUniqueness.NotDeclared` stays the default and
+stays correct, because there is no second tenant to collide with.
+
+See [docs/projections.md](docs/projections.md#ef-projections-on-a-tenant-enabled-module).
+
+---
+
+### SV-1 — `EventSerializer.Deserialize` refuses an uncovered version gap
+
+Reading an envelope stored below the version its CLR type declares now throws
+`InvalidOperationException`:
+
+```
+Event 'order-placed' is stored at schema version 1, but 'OrderPlaced' declares
+[EventType(Version = 2)]. No upcaster is registered for it, so the stored payload would be
+deserialized straight into the current shape and every member added since version 1 would
+silently take its default value.
+```
+
+**Why.** `ALB0018` already rejects this at startup — but only on the DI path. A serializer built
+by hand (`EventSerializer.FromAssembly(...)` in a migration script, a test helper, a one-off
+backfill tool) never meets the validator, and the failure it lets through is silent:
+System.Text.Json leaves every member the older payload lacks at its CLR default, so a
+non-nullable `string Region` comes back `null` and an evolver folds it as though it had been
+stored. The guard is now on the serializer itself, where it cannot be bypassed.
+
+It also catches the case `ALB0020` covers — a chain that terminates below the declared version —
+when the envelope sits exactly at the chain's own current version and no step fires.
+
+**Symptom.** A tool or test that read old events now throws where it used to return an object
+with default-valued members.
+
+**Fix — the normal case.** Register the upcaster the version bump needed:
+
+```csharp
+DeclareUpcaster.For<OrderPlaced>("order-placed")
+    .From<OrderPlacedV1>(1, v1 => new OrderPlaced(v1.OrderId, v1.Amount, "eu-west-1"))
+    .Build();
+```
+
+**Fix — the escape hatch.** If the bump only added optional members whose defaults are already
+the values you want for events written before it, say so at the declaration site:
+
+```csharp
+[EventType("order-placed", Version = 2, UpcastingNotRequired = true)]
+public sealed record OrderPlaced(Guid OrderId, decimal Amount, string Region = "eu-west-1") : IEvent;
+```
+
+It is a claim about the JSON, not about the C#: the property default has to be right for every
+event already in the log. `ALB0018` honours the same flag, so a waived gap does not fail startup
+either.
+
+**Not guarded:** reading an envelope *newer* than the running code. System.Text.Json ignores
+members it does not know about, which is what makes a rolling deploy survivable. Only the
+downward gap fabricates values.
+
+---
+
+### LK-1 — the PostgreSQL append advisory-lock key space changed
+
+The append lock moved from the two-argument form to the single-argument one:
+
+```sql
+-- before
+SELECT pg_advisory_xact_lock(1, hashtext('alberto-append:public:tenant-a'));
+-- after
+SELECT pg_advisory_xact_lock(hashtextextended('alberto-append:public:tenant-a', 0));
+```
+
+**Why.** The old form fixed classid at 1, so every distinct key had to fit in `hashtext`'s 32-bit
+output. Collisions there are not a correctness problem — a shared lock over-serializes, it never
+under-serializes — but by the birthday bound P(some pair of tenants collides) ≈ 1 − exp(−n²/2³³),
+which is ~0.6% at 10k tenants, 10% at 30k and 50% at 77k. The symptom is two unrelated tenants'
+appends serializing against each other with no error, no log line and nothing in telemetry to
+point at it. `hashtextextended` returns `bigint`, moving the same bound to under 1 in 10¹⁰ for a
+million tenants.
+
+**No schema change and no migration.** Advisory locks live in shared memory, not in a table.
+
+**Rollout — this is the part that matters.** Two application versions appending to the *same*
+database take locks in *different* key spaces and therefore do not serialize against each other.
+For the length of the overlap the DCB conflict check is unprotected, and two concurrent appends
+can both pass a boundary check that should have rejected one of them.
+
+- **Drain or stop the old version before starting the new one.** A brief write outage on that
+  database is the safe rollout.
+- A rolling deploy with both versions live and appending is **not** safe. If your platform will
+  not let you stop writes, scale the old deployment to zero replicas first, then deploy.
+- Readers, projections, the outbox relay and the CLI are unaffected — none of them take the
+  append lock.
+- Nothing is corrupted by a *past* collision, so there is nothing to repair afterwards.
+
+The migration lock (`hashtext('alberto:migrate')`) now shares a namespace with append keys. An
+append key would have to hash to exactly that one fixed value — a 2⁻⁶⁴ event — and the
+consequence if it ever did is an append waiting behind a schema migration, which is the desired
+order regardless.
+
+---
+
+### CF-1 — PostgreSQL `DcbConflictException` carries real details
+
+Every conflict raised by the PostgreSQL backend used to report `ConflictingPosition` and
+`ExpectedPosition` as `-1` and `Query` as `DcbQuery.Empty` — which renders as `*`, i.e.
+indistinguishable from a genuine conflict at position -1 against an all-events query. The backend
+was throwing the `DcbConflictException(message, inner)` overload while holding the query and the
+expected position it had just been given.
+
+All three now carry real values. The conflicting position is parsed out of the server's
+`RAISE EXCEPTION` message, and the server's own wording — which names *which* arm of the boundary
+matched — is kept inside the composed message rather than replaced.
+
+**Symptom.** Code matching on the old message text
+(`"DCB conflict detected: events matching the query exist after the expected position"`) no
+longer matches. Logs and error strings differ.
+
+**Fix.** Read the properties instead:
+
+```csharp
+catch (DcbConflictException ex)
+{
+    logger.LogWarning("Conflict at {Position}, expected {Expected}, query {Query}",
+        ex.ConflictingPosition, ex.ExpectedPosition, ex.Query);
+}
+```
+
+`RetryOnConflict(n)` and `TryCommit` are unaffected — they never read the message.
+
+For custom backends, prefer the new
+`DcbConflictException(string, long, long, DcbQuery, Exception)` constructor wherever the details
+are knowable. The two-argument `(string, Exception)` overload still exists for the case where a
+backend genuinely cannot say, and its documentation now spells out that the `-1`/`*` it produces
+are placeholders rather than facts.
 
 ---
 

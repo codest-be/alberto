@@ -4,6 +4,7 @@ using Alberto.Dcb.EntityFramework.Inline;
 using Alberto.Dcb.Subscriptions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Alberto.Dcb.EntityFramework;
 
@@ -36,15 +37,27 @@ public static class EfConsumerBuilderExtensions
     /// rebuildable state clearer. <see cref="ProjectionMode.Inline"/> registers an
     /// <see cref="IInlineProjection"/> that runs immediately after each append.
     /// </param>
+    /// <param name="documentIds">
+    /// Required on a module that declared <c>.WithTenancy()</c> — see
+    /// <see cref="EfDocumentIdUniqueness"/>. Ignored on a single-tenant module.
+    /// </param>
     /// <returns>The module builder for chaining.</returns>
     [SuppressMessage("ApiDesign", "RS0027:API with optional parameter(s) should have the most parameters amongst its public overloads",
         Justification = "The other overload is not a longer form of this one. It registers a " +
                         "DeclaredAsyncProjection unconditionally, so there is no ProjectionMode for " +
                         "it to take; giving it one would mean accepting a value it must reject.")]
+    [SuppressMessage("ApiDesign", "RS0026:Do not add multiple overloads with optional parameters",
+        Justification = "Both overloads carry the same trailing documentIds parameter because the " +
+                        "tenancy question it answers is a property of the declaration, and both " +
+                        "register a store that cannot filter by tenant. They stay unambiguous: the " +
+                        "third parameter is an enum here and a delegate there, so no call site can " +
+                        "drift between them. Nothing has shipped yet — the whole baseline is " +
+                        "Unshipped — so there is no binary compatibility to preserve either.")]
     public static DcbModuleBuilder AddEfProjection<TEntity, TDbContext>(
         this DcbModuleBuilder builder,
         ProjectionDeclaration<TEntity> declaration,
-        ProjectionMode mode = ProjectionMode.Async)
+        ProjectionMode mode = ProjectionMode.Async,
+        EfDocumentIdUniqueness documentIds = EfDocumentIdUniqueness.NotDeclared)
         where TEntity : class, IProjectionEntity, new()
         where TDbContext : DbContext
     {
@@ -60,11 +73,27 @@ public static class EfConsumerBuilderExtensions
         if (mode == ProjectionMode.Inline)
         {
             return builder.Register(context =>
+            {
+                GuardTenancy(context, declaration.ProcessorId, documentIds);
+
                 context.Services.AddKeyedSingleton<IInlineProjection>(context.ModuleKey, (sp, _) =>
                 {
                     var contextFactory = sp.GetRequiredService<IDbContextFactory<TDbContext>>();
-                    return new DeclaredEfInlineProjection<TEntity, TDbContext>(declaration, contextFactory);
-                }));
+
+                    // An inline projection is not itself rebuildable, but the entity it writes
+                    // can be: register the same entity as async as well, rebuild that, and the
+                    // table carries two versions per document. The inline path follows the live
+                    // version like every reader does, rather than seeing both.
+                    var version = ProjectionVersions.LiveVersion(
+                        sp, context.ModuleKey, declaration.ProcessorId);
+
+                    return new DeclaredEfInlineProjection<TEntity, TDbContext>(
+                        declaration,
+                        contextFactory,
+                        version,
+                        sp.GetService<ILogger<DeclaredEfInlineProjection<TEntity, TDbContext>>>());
+                });
+            });
         }
 
         builder.DeclareProcessor(new ProcessorDeclaration
@@ -75,6 +104,8 @@ public static class EfConsumerBuilderExtensions
 
         return builder.Register(context =>
         {
+            GuardTenancy(context, declaration.ProcessorId, documentIds);
+
             var moduleKey = context.ModuleKey;
             context.Services.AddKeyedSingleton<IEventProcessor>(moduleKey, (sp, _) =>
             {
@@ -117,11 +148,18 @@ public static class EfConsumerBuilderExtensions
     /// <param name="afterCommit">
     /// A factory that resolves dependencies at startup and returns the post-commit callback.
     /// </param>
+    /// <param name="documentIds">
+    /// Required on a module that declared <c>.WithTenancy()</c> — see
+    /// <see cref="EfDocumentIdUniqueness"/>. Ignored on a single-tenant module.
+    /// </param>
     /// <returns>The module builder for chaining.</returns>
+    [SuppressMessage("ApiDesign", "RS0026:Do not add multiple overloads with optional parameters",
+        Justification = "See the matching suppression on the ProjectionMode overload.")]
     public static DcbModuleBuilder AddEfProjection<TEntity, TDbContext>(
         this DcbModuleBuilder builder,
         ProjectionDeclaration<TEntity> declaration,
-        Func<IServiceProvider, Func<IReadOnlyList<IEventEnvelope>, CancellationToken, Task>> afterCommit)
+        Func<IServiceProvider, Func<IReadOnlyList<IEventEnvelope>, CancellationToken, Task>> afterCommit,
+        EfDocumentIdUniqueness documentIds = EfDocumentIdUniqueness.NotDeclared)
         where TEntity : class, IProjectionEntity, new()
         where TDbContext : DbContext
     {
@@ -140,6 +178,8 @@ public static class EfConsumerBuilderExtensions
 
         return builder.Register(context =>
         {
+            GuardTenancy(context, declaration.ProcessorId, documentIds);
+
             var moduleKey = context.ModuleKey;
             context.Services.AddKeyedSingleton<IEventProcessor>(moduleKey, (sp, _) =>
             {
@@ -168,5 +208,52 @@ public static class EfConsumerBuilderExtensions
                         serializer: serializer));
             });
         });
+    }
+
+    /// <summary>
+    /// Refuses an EF projection on a tenant-enabled module unless the caller has stated that its
+    /// document ids are unique across tenants.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Runs inside the deferred registration callback rather than at the call site, because
+    /// <c>.WithTenancy()</c> may legitimately appear after <c>AddEfProjection</c> in the chain —
+    /// the callbacks do not run until the whole module lambda has completed, so by then the
+    /// declaration is final either way.
+    /// </para>
+    /// <para>
+    /// This is the one tenancy question Alberto cannot answer for the caller. A JSONB state
+    /// store's tenancy is decided by the schema it was migrated with, so <c>AddProjection</c>
+    /// just builds one store per tenant. An EF entity's table belongs to the application, and
+    /// <see cref="IProjectionEntity"/> exposes only <c>DocumentId</c> and <c>RebuildVersion</c>
+    /// — so whether two tenants can collide is a fact about the declaration's id selectors,
+    /// visible to nothing here.
+    /// </para>
+    /// </remarks>
+    private static void GuardTenancy(
+        AlbertoModuleContext context,
+        string processorId,
+        EfDocumentIdUniqueness documentIds)
+    {
+        if (!context.TenancyEnabled || documentIds == EfDocumentIdUniqueness.AcrossTenants)
+            return;
+
+        throw new InvalidOperationException(
+            $"ALB0027: Alberto module '{context.ModuleKey}' declared .WithTenancy(), but the EF " +
+            $"projection '{processorId}' stores its state keyed by document id alone. " +
+            "IProjectionEntity carries no tenant column, so both EfStateStore and the inline " +
+            "projection load and write by (DocumentId, RebuildVersion) with no tenant predicate " +
+            "— adding a TenantId column to the entity does not change what the store queries on. " +
+            "Two tenants that produce the same document id therefore share one row: the last " +
+            "write wins, and every read after it returns the other tenant's data." +
+            Environment.NewLine +
+            "  → If this declaration's document ids are already unique across every tenant — a " +
+            "GUID aggregate id, say — state that and the registration proceeds: " +
+            ".AddEfProjection<TEntity, TDbContext>(declaration, documentIds: " +
+            "EfDocumentIdUniqueness.AcrossTenants)." + Environment.NewLine +
+            "  → If they are not, make them so by prefixing a tenant discriminator the event " +
+            "itself carries (id: e => $\"{e.TenantId}/{e.OrderId}\"), give each tenant its own " +
+            "database with .WithTenancy(t => t.AcrossPostgresDatabases(...)), or use the JSONB " +
+            "state store via AddProjection, whose tenancy is part of the migrated schema.");
     }
 }

@@ -67,6 +67,44 @@ case, add a `[SuppressMessage]` with a `Justification` naming which parameter do
 metadata, SourceLink, and this gate — so a new package needs the property *and* the two tracking
 files, and an app, test, or tool project needs neither.
 
+## Extension points
+
+A handful of interfaces are meant to be implemented *outside* this repository — someone writing a
+backend for a database Alberto does not ship, or a store that fits their own operational setup.
+Public API tracking above records that they widened; it cannot tell you the widening was safe.
+
+The distinction it misses is between the two ways to add an interface member. A member with a
+default body is invisible to existing implementors. An **abstract** member breaks every one of
+them — at compile time when they rebuild, and at load time for anything already deployed against
+the old interface. There is no way to walk that back short of a major version.
+
+So the rule is: **after 1.0, new members on these interfaces ship with a default implementation.**
+
+`ExtensionPointContractTests` in `tests/Alberto.Dcb.Tests` enforces it by pinning today's abstract
+member set on `IEventStoreBackend`, `IDeadLetterStore`, `IClaimableDeadLetterStore` and
+`IProjectionRebuildStore`. A member added with a default body does not appear in the reflected
+abstract set and the test stays green.
+
+**If that test fails**, in order of preference:
+
+1. **Give the member a default**, in terms of the members that already exist. The test stops
+   seeing it.
+2. **There is no correct default** — which means the capability is optional, not universal. Put it
+   on its own interface and type-test for it at the call site. `IClaimableDeadLetterStore` and
+   `IFencedCheckpointStore` are the worked examples: the first exists because atomic
+   claim-and-fence is not something every store can offer, and a default that *looked* right would
+   have moved the break from compile time to a lost event under contention.
+3. **It genuinely has to be required.** Update the baseline in the test *and* add an
+   `UPGRADING.md` section. That is a major-version change; the test exists so you cannot make one
+   by accident.
+
+Interfaces Alberto implements for itself are not in scope here — widen those freely. If you are
+unsure which kind you are looking at, ask whether a third party could plausibly have written it.
+
+`IAdminReader` and `IAdminOperator` are deliberately absent from the baseline. They are consumed
+by the parked front doors on `feature/admin-surface` and must stay **additive** so that branch
+keeps merging; see the note in `CLAUDE.md`.
+
 ## Code style
 
 The repo has a root `.editorconfig`. Its `dotnet_diagnostic` entries configure the public-API

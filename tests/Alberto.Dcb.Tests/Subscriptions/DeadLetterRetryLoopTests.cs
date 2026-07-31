@@ -44,7 +44,7 @@ public sealed class DeadLetterRetryLoopTests
         public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default) => Task.CompletedTask;
     }
 
-    private sealed class TestDeadLetterStore : IDeadLetterStore
+    private sealed class TestDeadLetterStore : IClaimableDeadLetterStore
     {
         public Task StoreAsync(DeadLetterEntry entry, CancellationToken ct = default) => Task.CompletedTask;
 

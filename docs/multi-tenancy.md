@@ -135,6 +135,17 @@ Use named arguments. Every parameter after the data source is an optional string
 positional slip binds the wrong value with no compiler complaint — this bug shipped in the example
 app for a while, quietly reading the wrong schema.
 
+### EF projections have no tenant to pass
+
+That constructor argument is the whole mechanism, and an EF projection does not have it.
+`IProjectionEntity` exposes only `DocumentId` and `RebuildVersion`, so `EfStateStore` queries on
+those two columns and nothing else — a `TenantId` property on your entity is invisible to it.
+
+So an EF projection on a tenant-enabled module is correct only if two tenants can never produce the
+same document id, and `AddEfProjection` refuses to register until you say so, with `ALB0027`. See
+[EF projections on a tenant-enabled module](projections.md#ef-projections-on-a-tenant-enabled-module)
+for the declaration and the alternatives.
+
 ## Single-tenant is not a degenerate case
 
 Without `.WithTenancy()` you get a genuinely different backend: no tenant column in the predicates,
