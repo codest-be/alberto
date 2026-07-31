@@ -20,7 +20,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/Alberto.Dcb.Admin/Alberto.Dcb.Admin.csproj" />
     <ProjectReference Include="../../src/Alberto.Dcb.Postgres/Alberto.Dcb.Postgres.csproj" />
-    <ProjectReference Include="../../src/Alberto.Dcb.Postgres.Admin/Alberto.Dcb.Postgres.Admin.csproj" />
+    <ProjectReference Include="../../src/Alberto.Dcb.Admin.Postgres/Alberto.Dcb.Admin.Postgres.csproj" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Alberto.Dcb.Tests" />

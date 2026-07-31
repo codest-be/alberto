@@ -61,7 +61,7 @@ jobs:
       # Alberto.* package makes the restore fail.
       - name: Pack smoke
         run: |
-          for proj in Alberto.Dcb Alberto.Dcb.Commands Alberto.Dcb.EntityFramework Alberto.Dcb.InMemory Alberto.Dcb.Messaging Alberto.Dcb.Postgres Alberto.Dcb.Postgres.Messaging Alberto.Dcb.Telemetry Alberto.Dcb.Testing Alberto.Dcb.Testing.Xunit; do
+          for proj in Alberto.Dcb Alberto.Dcb.Commands Alberto.Dcb.EntityFramework Alberto.Dcb.InMemory Alberto.Dcb.Messaging Alberto.Dcb.Messaging.Postgres Alberto.Dcb.Postgres Alberto.Dcb.Telemetry Alberto.Dcb.Testing Alberto.Dcb.Testing.Xunit; do
             dotnet pack "src/$proj/$proj.csproj" -c Release --version-suffix ci -o /tmp/alberto-pack
           done
           SMOKEDIR=$(mktemp -d)

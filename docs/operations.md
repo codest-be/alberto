@@ -12,7 +12,7 @@ CLI still works when the application is the thing that is broken.
 
 There is no admin HTTP API here. `Alberto.Dcb.Admin` is the `IAdminReader`/`IAdminOperator`
 abstraction the CLI is built on — it serves no endpoint, and it **does not ship as a NuGet package
-in 1.0**. Neither does its PostgreSQL implementation, `Alberto.Dcb.Postgres.Admin`. Both build and
+in 1.0**. Neither does its PostgreSQL implementation, `Alberto.Dcb.Admin.Postgres`. Both build and
 are referenced by the CLI as projects; holding them back is what keeps 1.0 from freezing the
 abstraction under semver before the things that consume it exist. An in-process GraphQL admin API,
 an MCP server, a React console and a BFF were built and are parked on the `feature/admin-surface`

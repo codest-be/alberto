@@ -53,13 +53,13 @@ jobs:
           # front doors on feature/admin-surface ship. Building it here still catches a Release
           # compile break, which the pack loop below no longer would.
           dotnet build src/Alberto.Dcb.Admin/Alberto.Dcb.Admin.csproj -c Release
-          dotnet build src/Alberto.Dcb.Postgres.Admin/Alberto.Dcb.Postgres.Admin.csproj -c Release
+          dotnet build src/Alberto.Dcb.Admin.Postgres/Alberto.Dcb.Admin.Postgres.csproj -c Release
           dotnet build src/Alberto.Dcb.Commands/Alberto.Dcb.Commands.csproj -c Release
           dotnet build src/Alberto.Dcb.EntityFramework/Alberto.Dcb.EntityFramework.csproj -c Release
           dotnet build src/Alberto.Dcb.InMemory/Alberto.Dcb.InMemory.csproj -c Release
           dotnet build src/Alberto.Dcb.Messaging/Alberto.Dcb.Messaging.csproj -c Release
           dotnet build src/Alberto.Dcb.Postgres/Alberto.Dcb.Postgres.csproj -c Release
-          dotnet build src/Alberto.Dcb.Postgres.Messaging/Alberto.Dcb.Postgres.Messaging.csproj -c Release
+          dotnet build src/Alberto.Dcb.Messaging.Postgres/Alberto.Dcb.Messaging.Postgres.csproj -c Release
           dotnet build src/Alberto.Dcb.Telemetry/Alberto.Dcb.Telemetry.csproj -c Release
           dotnet build src/Alberto.Dcb.Testing/Alberto.Dcb.Testing.csproj -c Release
           dotnet build src/Alberto.Dcb.Testing.Xunit/Alberto.Dcb.Testing.Xunit.csproj -c Release
@@ -71,7 +71,7 @@ jobs:
       - name: Pack
         run: |
           VERSION_SUFFIX="${{ steps.version.outputs.suffix }}"
-          for proj in Alberto.Dcb Alberto.Dcb.Commands Alberto.Dcb.EntityFramework Alberto.Dcb.InMemory Alberto.Dcb.Messaging Alberto.Dcb.Postgres Alberto.Dcb.Postgres.Messaging Alberto.Dcb.Telemetry Alberto.Dcb.Testing Alberto.Dcb.Testing.Xunit; do
+          for proj in Alberto.Dcb Alberto.Dcb.Commands Alberto.Dcb.EntityFramework Alberto.Dcb.InMemory Alberto.Dcb.Messaging Alberto.Dcb.Messaging.Postgres Alberto.Dcb.Postgres Alberto.Dcb.Telemetry Alberto.Dcb.Testing Alberto.Dcb.Testing.Xunit; do
             dotnet pack "src/$proj/$proj.csproj" -c Release --no-build --version-suffix "$VERSION_SUFFIX" -o artifacts
           done
 
@@ -90,8 +90,8 @@ jobs:
           Alberto.Dcb.EntityFramework
           Alberto.Dcb.InMemory
           Alberto.Dcb.Messaging
+          Alberto.Dcb.Messaging.Postgres
           Alberto.Dcb.Postgres
-          Alberto.Dcb.Postgres.Messaging
           Alberto.Dcb.Telemetry
           Alberto.Dcb.Testing
           Alberto.Dcb.Testing.Xunit

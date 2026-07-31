@@ -2,7 +2,7 @@ using System.Text.Json;
 using Alberto.Dcb.Messaging;
 using Alberto.Dcb.Admin;
 using Alberto.Dcb.Postgres;
-using Alberto.Dcb.Postgres.Messaging;
+using Alberto.Dcb.Messaging.Postgres;
 using Alberto.Dcb.Subscriptions;
 using Alberto.Dcb.Tenancy;
 using Alberto.Dcb.Tests.Infrastructure;

@@ -82,7 +82,7 @@ public sealed class UpcasterBypassGuardTests
                 "Deserializes a Dictionary<string,string> event-metadata column; the event_data column " +
                 "is passed through verbatim without deserialization.",
 
-            ["Alberto.Dcb.Postgres.Messaging/PostgresOutboxStore.cs"] =
+            ["Alberto.Dcb.Messaging.Postgres/PostgresOutboxStore.cs"] =
                 "Deserializes a Dictionary<string,string> outbox-entry metadata column, not an event payload.",
 
             ["Alberto.Dcb.InMemory/EventDataJson.cs"] =

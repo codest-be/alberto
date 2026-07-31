@@ -97,7 +97,7 @@ dotnet add package Alberto.Dcb --prerelease
 | `Alberto.Dcb.Postgres` | PostgreSQL backend, migrations, leases |
 | `Alberto.Dcb.EntityFramework` | EF Core–backed projections |
 | `Alberto.Dcb.Messaging` | Transactional outbox abstractions |
-| `Alberto.Dcb.Postgres.Messaging` | PostgreSQL outbox store |
+| `Alberto.Dcb.Messaging.Postgres` | PostgreSQL outbox store |
 | `Alberto.Dcb.Telemetry` | OpenTelemetry tracing and metrics |
 | `Alberto.Cli` | The `alberto` operator CLI (`dotnet tool install`) |
 

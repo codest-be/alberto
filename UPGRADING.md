@@ -49,7 +49,7 @@ they touch a persisted table.
 
 The seven core libraries (`Alberto.Dcb`, `Alberto.Dcb.Commands`, `Alberto.Dcb.InMemory`,
 `Alberto.Dcb.Postgres`, `Alberto.Dcb.EntityFramework`, `Alberto.Dcb.Messaging`,
-`Alberto.Dcb.Postgres.Messaging`) previously shipped both `net9.0` and `net10.0` target folders.
+`Alberto.Dcb.Messaging.Postgres`) previously shipped both `net9.0` and `net10.0` target folders.
 They now ship `net10.0` only.
 
 **Symptom.** NuGet resolves the package but the project fails to compile because no compatible
@@ -1027,7 +1027,7 @@ are placeholders rather than facts.
 
 `Alberto.Dcb.Admin` is no longer pushed to a package feed, and the three PostgreSQL admin types
 moved out of the `Alberto.Dcb.Postgres` package into a new, also-unpublished
-`Alberto.Dcb.Postgres.Admin`:
+`Alberto.Dcb.Admin.Postgres`:
 
 - `PostgresAdminDataAccess`
 - `PostgresAdminOperator`
@@ -1717,7 +1717,7 @@ Fifteen breaking changes were introduced. They fall into the areas below:
 | DX-10 | Event-store interface | Medium | `Register*` methods removed from `IEventStore` |
 | DX-2 / DX-3 / DX-12 | Command/result API | Medium | `DecisionResult<TEvent>` obsoleted; `DecideAndAppendAsync` moved; `AddAlbertoStore` chained from builder |
 | DX-8 | Consumer pipeline | Medium | `ReactTo` arity-ladder overloads removed |
-| DX-5 | Packaging | Medium | `PostgresOutboxStore` moved to `Alberto.Dcb.Postgres.Messaging` |
+| DX-5 | Packaging | Medium | `PostgresOutboxStore` moved to `Alberto.Dcb.Messaging.Postgres` |
 | DX-6 | Tenancy | Low | `.WithTenancy()` after `.WithPostgres()` now fails loudly at startup |
 | P1.1 | Tenancy | Low | Schema name restricted to lowercase identifier pattern |
 | P1.3 | Tenancy | Low | `TenantEventStoreDecorator.StreamAll` now throws |
@@ -2426,11 +2426,11 @@ is unchanged and remains the primary recommendation.
 
 ## Packaging
 
-### DX-5 — `PostgresOutboxStore` moved to `Alberto.Dcb.Postgres.Messaging`
+### DX-5 — `PostgresOutboxStore` moved to `Alberto.Dcb.Messaging.Postgres`
 
 **What changed:** `PostgresOutboxStore` has been extracted from `Alberto.Dcb.Postgres` into a
-new dedicated package: **`Alberto.Dcb.Postgres.Messaging`**. Its namespace changed from
-`Alberto.Dcb.Postgres` to `Alberto.Dcb.Postgres.Messaging`.
+new dedicated package: **`Alberto.Dcb.Messaging.Postgres`**. Its namespace changed from
+`Alberto.Dcb.Postgres` to `Alberto.Dcb.Messaging.Postgres`.
 
 **Why:** adding a reference to `Alberto.Dcb.Postgres` previously pulled in `Alberto.Dcb.Messaging`
 transitively, forcing every Postgres user to take a dependency on the outbox/messaging stack
@@ -2444,7 +2444,7 @@ they might not need.
 <!-- Before: came in transitively — no explicit reference needed -->
 
 <!-- After: add the explicit reference -->
-<PackageReference Include="Alberto.Dcb.Postgres.Messaging" Version="x.x.x" />
+<PackageReference Include="Alberto.Dcb.Messaging.Postgres" Version="x.x.x" />
 ```
 
 2. Update the `using` directive:
@@ -2454,7 +2454,7 @@ they might not need.
 using Alberto.Dcb.Postgres;
 
 // After
-using Alberto.Dcb.Postgres.Messaging;
+using Alberto.Dcb.Messaging.Postgres;
 ```
 
 The type name `PostgresOutboxStore` and its constructor signature are unchanged.

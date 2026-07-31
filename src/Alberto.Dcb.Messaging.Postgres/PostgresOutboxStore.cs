@@ -3,7 +3,7 @@ using Alberto.Dcb.Messaging;
 using Alberto.Dcb.Postgres;
 using Npgsql;
 
-namespace Alberto.Dcb.Postgres.Messaging;
+namespace Alberto.Dcb.Messaging.Postgres;
 
 /// <summary>
 /// PostgreSQL implementation of <see cref="IOutboxStore"/>.

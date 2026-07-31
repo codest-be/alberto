@@ -23,9 +23,9 @@
         <!-- Referenced explicitly, not left to flow in transitively via Alberto.Cli: PostgresAdminDataAccess
              and PostgresAdminOperator have their own test classes here, and those must not stop compiling
              the day the CLI's reference changes. -->
-        <ProjectReference Include="../../src/Alberto.Dcb.Postgres.Admin/Alberto.Dcb.Postgres.Admin.csproj" />
+        <ProjectReference Include="../../src/Alberto.Dcb.Admin.Postgres/Alberto.Dcb.Admin.Postgres.csproj" />
         <ProjectReference Include="../../src/Alberto.Dcb.Messaging/Alberto.Dcb.Messaging.csproj" />
-        <ProjectReference Include="../../src/Alberto.Dcb.Postgres.Messaging/Alberto.Dcb.Postgres.Messaging.csproj" />
+        <ProjectReference Include="../../src/Alberto.Dcb.Messaging.Postgres/Alberto.Dcb.Messaging.Postgres.csproj" />
         <ProjectReference Include="../../src/Alberto.Dcb.EntityFramework/Alberto.Dcb.EntityFramework.csproj" />
         <ProjectReference Include="../../src/Alberto.Dcb.Telemetry/Alberto.Dcb.Telemetry.csproj" />
         <ProjectReference Include="../../src/Alberto.Dcb.Testing/Alberto.Dcb.Testing.csproj" />
