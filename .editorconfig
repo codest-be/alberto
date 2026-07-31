@@ -1,14 +1,29 @@
 root = true
 
-# Silence PublicApiAnalyzers diagnostics while API baselines (PublicAPI.Shipped.txt /
-# PublicAPI.Unshipped.txt) are still empty. Remove these suppressions at the v1 release gate:
-# populate the baseline files, then change severity back to "error" so future public-API
-# changes require explicit updates.
+# The semver gate. Every public type and member of a packable project must be declared in that
+# project's PublicAPI.Shipped.txt (frozen, released surface) or PublicAPI.Unshipped.txt (added
+# since the last release). These run at error severity on purpose: a public API change that
+# nobody wrote down is exactly the change that breaks a consumer in a patch release.
+#
+# To add API: build, then apply the "Add to public API" fix (IDE) or run
+#   dotnet format analyzers --diagnostics RS0016
+# which appends the new entries to PublicAPI.Unshipped.txt. Review that diff — it is the
+# statement of what you are committing to support.
+#
+# At release, move Unshipped's contents into Shipped and empty Unshipped again.
+#
+#   RS0016 — public type/member not in declared API
+#   RS0017 — declared API entry that no longer exists
+#   RS0022 — constructor makes a non-inheritable base class inheritable
+#   RS0025 — symbol duplicated across Shipped/Unshipped
+#   RS0026 — multiple public overloads with optional parameters
+#   RS0027 — overload with optional params should have the most params
+#   RS0037 — nullability of reference types not tracked in declared API
 [*.cs]
-dotnet_diagnostic.RS0016.severity = none
-dotnet_diagnostic.RS0017.severity = none
-dotnet_diagnostic.RS0022.severity = none
-dotnet_diagnostic.RS0025.severity = none
-dotnet_diagnostic.RS0026.severity = none
-dotnet_diagnostic.RS0027.severity = none
-dotnet_diagnostic.RS0037.severity = none
+dotnet_diagnostic.RS0016.severity = error
+dotnet_diagnostic.RS0017.severity = error
+dotnet_diagnostic.RS0022.severity = error
+dotnet_diagnostic.RS0025.severity = error
+dotnet_diagnostic.RS0026.severity = error
+dotnet_diagnostic.RS0027.severity = error
+dotnet_diagnostic.RS0037.severity = error

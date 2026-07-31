@@ -1,6 +1,7 @@
 using Alberto.Dcb;
 using Alberto.Dcb.Configuration;
 using Alberto.Dcb.InMemory;
+using Alberto.Dcb.Postgres;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -85,9 +86,12 @@ public class ControlLoopConfigurationTests
     [Fact]
     public void Leases_are_declared_through_the_options_record()
     {
+        // Postgres, not in-memory: the in-memory backend provides no IProcessorLeaseManager,
+        // so enabling leases on it is rejected at startup by ALB0024. Nothing connects here —
+        // PostgresBackendDescriptor.Validate only checks the connection string is present.
         var services = new ServiceCollection();
         services.AddAlberto("orders", module => module
-            .WithInMemory()
+            .WithPostgres(o => o with { ConnectionString = "Host=localhost;Database=alberto" })
             .WithControlLoop(o => o with { Leases = o.Leases with { Enabled = true, ReplicaId = "pod-1" } }));
 
         var leases = Resolve(services, "orders").ControlLoop.Leases;

@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Alberto.Dcb;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
@@ -63,17 +64,63 @@ public abstract class EventStoreBackendSpecification
         Assert.True(positions[0] < positions[1] && positions[1] < positions[2]);    }
 
     /// <summary>The event payload and tags stored must match those supplied to <c>AppendAsync</c>.</summary>
+    /// <remarks>
+    /// Semantically, not byte for byte. A backend is free to normalize the payload — PostgreSQL's
+    /// <c>jsonb</c> column does, and the in-memory backend does too — so this asserts what
+    /// <see cref="IEventEnvelope.EventData"/> actually promises. The payload here is deliberately
+    /// non-canonical (padded, keys out of order, nested) so that a backend which round-trips
+    /// through a JSON representation is genuinely exercised rather than handed something that
+    /// happens to already be in its own canonical form.
+    /// </remarks>
     [Fact]
     public async Task Append_ShouldPreserveEventData()
     {
         var backend = await CreateBackend();
-        var eventToPersist = CreateEvent("order-placed", $"order:{TestId}");
+        const string payload =
+            """{  "orderId" : "abc" ,  "amount": 100,  "lines":[ {"sku":"x","qty":2} ] , "z": null }""";
+        var eventToPersist = CreateEventWithData("order-placed", payload, $"order:{TestId}");
 
         var result = await backend.AppendAsync([eventToPersist], cancellationToken: TestContext.Current.CancellationToken);
 
         var appended = result.First();
-        Assert.Equal(eventToPersist.EventData, appended.EventData);
+        Assert.True(
+            JsonNode.DeepEquals(JsonNode.Parse(payload), JsonNode.Parse(appended.EventData)),
+            $"EventData must round-trip as semantically equal JSON. Sent {payload}, got {appended.EventData}.");
         Assert.Equal(eventToPersist.Tags.Count, appended.Tags.Count);    }
+
+    /// <summary>
+    /// A payload that is not well-formed JSON must be refused, rather than stored and left to fail
+    /// on the way out. PostgreSQL's <c>jsonb</c> column enforces this; a backend that does not is a
+    /// test double which accepts data the real store would reject.
+    /// </summary>
+    [Fact]
+    public async Task Append_MalformedEventData_ShouldThrow()
+    {
+        var backend = await CreateBackend();
+        var eventToPersist = CreateEventWithData("order-placed", """{"orderId": }""", $"order:{TestId}");
+
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            backend.AppendAsync([eventToPersist], cancellationToken: TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
+    /// A NUL in the payload must be refused. The escape below is well-formed JSON that most
+    /// parsers accept, but PostgreSQL has no representation for U+0000 in a text value and rejects
+    /// it at the <c>jsonb</c> cast — so a backend that accepts it is one where the append
+    /// succeeds in tests and fails in production.
+    /// </summary>
+    [Fact]
+    public async Task Append_EventDataContainingNul_ShouldThrow()
+    {
+        var backend = await CreateBackend();
+        // Written as an escape in the JSON text, not as a NUL in the C# string — the point
+        // is the six characters a serializer would legitimately emit for U+0000.
+        var eventToPersist = CreateEventWithData(
+            "order-placed", "{\"orderId\": \"a\\u0000b\"}", $"order:{TestId}");
+
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            backend.AppendAsync([eventToPersist], cancellationToken: TestContext.Current.CancellationToken));
+    }
 
     /// <summary>All metadata key–value pairs supplied to <c>AppendAsync</c> must survive round-trip.</summary>
     [Fact]
@@ -767,16 +814,17 @@ public abstract class EventStoreBackendSpecification
         var backend = await CreateBackend();
 
         var userTag = $"order:{TestId}-containment";
-        var versionTag = EventTag.ForVersion(2);
-        var orderTagParsed = EventTag.FromStorage("order", $"{TestId}-containment");
 
-        // Append an event that carries BOTH the user tag and the reserved version tag.
+        // Append an event that carries BOTH the user tag and the reserved version tag. The
+        // version tag is the only thing in this suite that reaches for an Alberto.Dcb internal:
+        // EventTag's public surface refuses reserved concepts by design, and a backend is handed
+        // events that already carry the tag because EventSerializer stamps it one layer up.
         await backend.AppendAsync(
             [new EventToPersist
             {
                 EventType = new EventType("versioned-thing", 2),
                 EventData = """{"test":true}""",
-                Tags = [orderTagParsed, versionTag],
+                Tags = [new EventTag("order", $"{TestId}-containment"), EventTag.ForVersion(2)],
                 Metadata = new Dictionary<string, string>()
             }],
             cancellationToken: TestContext.Current.CancellationToken);
@@ -787,6 +835,11 @@ public abstract class EventStoreBackendSpecification
             cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Single(results);
+
+        // The other half of the same contract: the stored tag is where the version comes from on
+        // read. A backend that persists the tag but does not project it back into EventType would
+        // pass the containment assertion above and still lose every event's schema version.
+        Assert.Equal(2, results.Single().EventType.Version);
     }
 
     [Fact]
@@ -804,7 +857,7 @@ public abstract class EventStoreBackendSpecification
             {
                 EventType = new EventType("legacy-event-type"),  // version defaults to 1
                 EventData = """{"test":true}""",
-                Tags = [EventTag.FromStorage("order", $"{TestId}-legacy")],  // no _v tag
+                Tags = [new EventTag("order", $"{TestId}-legacy")],  // no _version tag
                 Metadata = new Dictionary<string, string>()
             }],
             cancellationToken: TestContext.Current.CancellationToken);
@@ -843,6 +896,28 @@ public abstract class EventStoreBackendSpecification
             EventData = """{"test": true}""",
             Tags = tags.Select(EventTag.Parse).ToArray(),
             Metadata = metadata
+        };
+    }
+
+    /// <summary>
+    /// Creates an <see cref="IEventToPersist"/> carrying a specific payload.
+    /// </summary>
+    /// <remarks>
+    /// Distinctly named rather than another <c>CreateEvent</c> overload: <c>CreateEvent(type, x)</c>
+    /// already means "one tag", and an overload taking the payload in that position would silently
+    /// change what every existing two-argument call site does.
+    /// </remarks>
+    /// <param name="eventType">The event type identifier.</param>
+    /// <param name="eventData">The JSON payload, verbatim.</param>
+    /// <param name="tags">One or more tag values in <c>concept:value</c> format.</param>
+    protected IEventToPersist CreateEventWithData(string eventType, string eventData, params string[] tags)
+    {
+        return new EventToPersist
+        {
+            EventType = new EventType(eventType),
+            EventData = eventData,
+            Tags = tags.Select(EventTag.Parse).ToArray(),
+            Metadata = new Dictionary<string, string>()
         };
     }
 

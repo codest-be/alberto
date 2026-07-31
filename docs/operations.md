@@ -15,6 +15,10 @@ The same operations are also available in-process, as a GraphQL API and as an MC
 agents, if you want a console or your own tooling — see [admin.md](admin.md). All of them read
 and write the same tables; none is a cache or a copy.
 
+> **Branch note.** Those two are on this branch only. On `main` — and so in 1.0 — the CLI is the
+> whole operator surface, and `Alberto.Dcb.Admin` and `Alberto.Dcb.Postgres.Admin` build but do not
+> ship as NuGet packages. The CLI itself ships either way.
+
 ## The CLI
 
 ```bash
@@ -369,6 +373,54 @@ is not a way to make a slow rebuild finish.
 The full mechanism, and what you must have configured for it to be safe, is in
 [projections.md](projections.md#rebuilding-a-projection).
 
+## What a mutation records
+
+Every destructive CLI command appends an admin event to `alberto_events` **in the same transaction
+as the change it describes**. There is no separate audit table and no second write that can fail on
+its own: if the checkpoint moved, the record of it moving is committed with it, and if the mutation
+rolls back so does the record.
+
+| Command | Event type |
+|---|---|
+| `ops checkpoint set` | `admin-checkpoint-rewound` |
+| `ops checkpoint reset` | `admin-checkpoint-reset` |
+| `ops checkpoint rename` | `admin-checkpoint-renamed` |
+| `ops dead-letters retry` | `admin-dead-letters-marked-for-retry` |
+| `ops dead-letters retry-rewind` | `admin-dead-letters-retried` |
+| `ops dead-letters dismiss` | `admin-dead-letters-cleared` |
+| `ops outbox purge` | `admin-outbox-purged` |
+| `ops tenants release` | `admin-tenant-leases-released` |
+| `ops rebuild start` | `admin-rebuild-started` |
+| `ops rebuild promote` | `admin-rebuild-promoted` |
+| `ops rebuild abort` | `admin-rebuild-aborted` |
+
+A command that changes nothing records nothing — dismissing dead letters for a processor that has
+none, or flagging ones already flagged, returns zero and appends no event. The count in the event
+is what that invocation actually changed.
+
+The three rebuild events are the exception to the same-transaction rule: the transition is owned by
+`IProjectionRebuildStore`, which manages its own connection, so the event is appended immediately
+afterwards in its own transaction. A process killed between the two loses the record, not the
+transition.
+
+Every event carries an `OperatorId`. The CLI fills it with `Environment.UserName` — the OS account
+the command ran as.
+
+> **This is attribution, not authentication.** The CLI talks straight to PostgreSQL with whatever
+> connection string it was given, and anyone who can run it can set `USER` to anything. The audit
+> trail answers "which account did this, and when" for a team that is not trying to deceive each
+> other. It does not answer "prove it". Database credentials are the actual access control.
+
+They are ordinary events in the log, so you read them the way you read any others — tagged under
+`admin-checkpoint`, `admin-dl`, `admin-rebuild` or `admin-tenant-lease` with the processor id as
+the value. `ops outbox purge` is the one mutation that is not per-processor: it tags under
+`admin-outbox` with the fixed value `purge`. On a multi-tenant store they are written under the
+reserved tenant id `__admin__`, which keeps them out of every application tenant's queries.
+
+`alberto ops checkpoint rename` tags its event under **both** ids. The question "what happened to
+this processor?" has to be answerable from either name, and after a rename the old one is often all
+you have.
+
 ## Running more than one replica
 
 By default every replica of your application runs its own control loop over the same log — they
@@ -445,7 +497,7 @@ impossible to debug.
 | `alberto.dead_letters` | **Alert on any increase** |
 | `alberto.retries` | A rising rate means a flaky dependency |
 | `alberto.concurrency.conflicts` | `DcbConflictException`s — a rising rate means a boundary is too wide |
-| `alberto.tenant_locks_acquired`, `alberto.tenant_lock_failures` | Lease churn |
+| `alberto.tenant_locks_acquired`, `alberto.tenant_lock_failures` | Lease churn — tagged by `consumer.id`, **not** by tenant |
 | `alberto.append.duration` | Write latency, including the advisory lock wait |
 | `alberto.processing.duration` | Per-handler latency |
 
@@ -486,3 +538,4 @@ Each module owns its schema. Two modules in one database are two schemas, migrat
 | One tenant is stalled | `alberto tenants` | Stale lease → `ops tenants release` |
 | One tenant errors, the rest are fine | `alberto shards where <tenant>`, then that shard | Sharded module — the fault is in one database, not the module |
 | Health check reports `Degraded` | Its `data` payload names the unreachable shards | One shard down; the others keep serving — do not pull the instance out |
+| Restored from a backup | `alberto status` vs. each checkpoint | A checkpoint ahead of the log head skips events silently — see [Backup and recovery](backup-and-recovery.md) |

@@ -50,13 +50,20 @@ internal sealed class ControlLoopAssembler
     /// <param name="classifier">Error classifier used by RetryAndDeadLetter.</param>
     /// <param name="deadLetterStore">Dead-letter store, or null if none is registered.</param>
     /// <param name="timeProvider">Clock used to stamp <see cref="DeadLetterEntry.FailedAt"/>. Defaults to <see cref="TimeProvider.System"/>.</param>
+    /// <param name="logger">
+    /// Module-scoped logger for the dead-letter middleware. When a dead-letter write cannot be
+    /// made durable the entry is dropped so the checkpoint can still advance, and this log is the
+    /// only remaining trace that it happened — without it the drop is silent. Optional so tests
+    /// can construct an assembler without a logging stack, but production paths must supply one.
+    /// </param>
     public ControlLoopAssembler(
         IReadOnlyList<ConsumeMiddleware> diMiddlewares,
         IReadOnlyList<BatchConsumeMiddleware> diBatchMiddlewares,
         RetryOptions retryOptions,
         IErrorClassifier classifier,
         IDeadLetterStore? deadLetterStore,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        ILogger? logger = null)
     {
         _timeProvider = timeProvider ?? TimeProvider.System;
 
@@ -66,11 +73,11 @@ internal sealed class ControlLoopAssembler
         //   processor.ProcessEventAsync    ← terminal
         var middlewares = new List<ConsumeMiddleware>(diMiddlewares)
         {
-            ConsumeMiddlewares.RetryAndDeadLetter(retryOptions, classifier, deadLetterStore, _timeProvider),
+            ConsumeMiddlewares.RetryAndDeadLetter(retryOptions, classifier, deadLetterStore, _timeProvider, logger),
         };
         var batchMiddlewares = new List<BatchConsumeMiddleware>(diBatchMiddlewares)
         {
-            BatchConsumeMiddlewares.RetryAndDeadLetter(retryOptions, classifier, deadLetterStore, _timeProvider),
+            BatchConsumeMiddlewares.RetryAndDeadLetter(retryOptions, classifier, deadLetterStore, _timeProvider, logger),
         };
 
         // A per-event middleware with no batch counterpart cannot be honoured on the batch
@@ -100,7 +107,8 @@ internal sealed class ControlLoopAssembler
         int batchSize,
         string moduleKey,
         ProcessorExecutionOptions? executionOptions = null,
-        ILogger<ControlLoop>? logger = null)
+        ILogger<ControlLoop>? logger = null,
+        TimeSpan? drainTimeout = null)
     {
         var loop = new ControlLoop(
             processor, head, backend, checkpointStore,
@@ -108,7 +116,8 @@ internal sealed class ControlLoopAssembler
             _middlewares, _batchMiddlewares,
             _hasUnpairedPerEventMiddlewares,
             executionOptions,
-            logger);
+            logger,
+            drainTimeout);
 
         // Wire a per-loop fence-violation handler through the interface rather than
         // via a concrete-type downcast. If the store is not fencable, this block is skipped

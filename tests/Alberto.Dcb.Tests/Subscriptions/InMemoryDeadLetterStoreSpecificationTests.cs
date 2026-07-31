@@ -6,11 +6,11 @@ using Xunit;
 namespace Alberto.Dcb.Tests.Subscriptions;
 
 /// <summary>
-/// Runs <see cref="DeadLetterStoreSpecification"/> against <see cref="InMemoryDeadLetterStore"/>.
+/// Runs <see cref="ClaimableDeadLetterStoreSpecification"/> against <see cref="InMemoryDeadLetterStore"/>.
 /// </summary>
-public sealed class InMemoryDeadLetterStoreSpecificationTests : DeadLetterStoreSpecification
+public sealed class InMemoryDeadLetterStoreSpecificationTests : ClaimableDeadLetterStoreSpecification
 {
     /// <inheritdoc/>
-    protected override Task<IDeadLetterStore> CreateStore() =>
-        Task.FromResult<IDeadLetterStore>(new InMemoryDeadLetterStore());
+    protected override Task<IClaimableDeadLetterStore> CreateClaimableStore() =>
+        Task.FromResult<IClaimableDeadLetterStore>(new InMemoryDeadLetterStore());
 }

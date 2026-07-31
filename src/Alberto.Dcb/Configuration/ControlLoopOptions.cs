@@ -17,6 +17,18 @@ public sealed record ControlLoopOptions
     /// <summary>Size of the in-flight transaction window the head tracker keeps. Default 2000.</summary>
     public int HeadWindowSize { get; init; } = 2000;
 
+    /// <summary>
+    /// How long shutdown waits for an in-flight handler to drain before abandoning it. Default 5 s.
+    /// <para>
+    /// A handler that ignores its <see cref="CancellationToken"/> would otherwise block
+    /// <c>StopAsync</c> forever, stalling host shutdown and — under leasing — holding the
+    /// processor lease past its expiry. When the timeout elapses the loop stops waiting,
+    /// logs a warning and flushes the checkpoint at the last safely-completed position, so
+    /// abandoned events are re-delivered on the next start.
+    /// </para>
+    /// </summary>
+    public TimeSpan DrainTimeout { get; init; } = TimeSpan.FromSeconds(5);
+
     /// <summary>Retry behaviour for failing handlers.</summary>
     public RetryOptions Retry { get; init; } = new();
 
@@ -48,6 +60,9 @@ public sealed class ControlLoopOverrides : IAlbertoOverrides<ControlLoopOptions>
     /// <summary>Mirror of <see cref="ControlLoopOptions.HeadWindowSize"/>.</summary>
     public int? HeadWindowSize { get; set; }
 
+    /// <summary>Mirror of <see cref="ControlLoopOptions.DrainTimeout"/>.</summary>
+    public TimeSpan? DrainTimeout { get; set; }
+
     /// <summary>Mirror of <see cref="ControlLoopOptions.Retry"/>.</summary>
     public RetryOverrides? Retry { get; set; }
 
@@ -71,6 +86,7 @@ public sealed class ControlLoopOverrides : IAlbertoOverrides<ControlLoopOptions>
             BatchSize = BatchSize ?? options.BatchSize,
             HeadRefreshInterval = HeadRefreshInterval ?? options.HeadRefreshInterval,
             HeadWindowSize = HeadWindowSize ?? options.HeadWindowSize,
+            DrainTimeout = DrainTimeout ?? options.DrainTimeout,
             Retry = Retry?.ApplyTo(options.Retry) ?? options.Retry,
             DeadLetterRetry = DeadLetterRetry?.ApplyTo(options.DeadLetterRetry) ?? options.DeadLetterRetry,
             Leases = Leases?.ApplyTo(options.Leases) ?? options.Leases,

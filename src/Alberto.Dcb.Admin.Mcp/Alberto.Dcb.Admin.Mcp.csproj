@@ -5,11 +5,16 @@
         <Nullable>enable</Nullable>
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
 
-        <!-- Package Metadata -->
+        <!--
+            Package metadata kept for when this ships; not packable while the surface is parked.
+            See Alberto.Dcb.Admin.GraphQL.csproj — the same reasoning applies, and the two unpark
+            together with Alberto.Dcb.Admin and Alberto.Dcb.Postgres.Admin. Tool names are the thing
+            semver would freeze here.
+        -->
         <PackageId>Alberto.Dcb.Admin.Mcp</PackageId>
         <Title>Alberto DCB Admin - MCP Surface</Title>
         <Description>Model Context Protocol tools for the Alberto DCB admin surface. Exposes processor, checkpoint, dead-letter, projection and rebuild operations to MCP clients over Streamable HTTP.</Description>
-        <IsPackable>true</IsPackable>
+        <IsPackable>false</IsPackable>
         <RootNamespace>Alberto.Dcb.Admin.Mcp</RootNamespace>
     </PropertyGroup>
 

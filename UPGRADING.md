@@ -28,13 +28,20 @@ they touch a persisted table.
 | MT-3 | Metric dimensions | Medium | Tenant-ownership gauges rename tag `module.key` → `module`; sharded composite key values are now split into `module` + `shard` |
 | MT-4..5 | Metric removal | Medium | `alberto.events_filtered_by_tenant` and `alberto.tenant_leases_lost` counters removed |
 | MT-6 | Metric units | Low | `alberto.append.duration` and `alberto.processing.duration` units changed from `"ms"` to `"s"` |
+| MT-7 | Metric dimensions | Medium | `alberto.tenant_locks_acquired` and `alberto.tenant_lock_failures` no longer carry a `tenant.id` tag |
 | TT-1 | Trace span attributes | Medium | Consume-path span attributes renamed: `"module.key"` → `"module"`, `"module.shard"` → `"shard"` |
 | EX-1 | Experimental API | Medium | Sharding types marked `[Experimental("ALB9001")]`; referencing them without suppression is a compile-time diagnostic |
 | EV-1 | Evolver — runtime guard | Medium | `Evolver.Reconstitute(envelopes)` and `Evolver.Evolve(state, envelope)` now throw `InvalidOperationException` when the envelope's stored version is older than the handler's declared version |
-| PE-1 | ParseEvent&lt;T&gt; obsoleted | Medium | `EventEnvelopeExtensions.ParseEvent<T>` is marked `[Obsolete]`; projects with `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>` get a hard build failure on upgrade |
+| PE-1 | ParseEvent&lt;T&gt; removed | **High** | `EventEnvelopeExtensions.ParseEvent<T>` is deleted and the now-empty `EventEnvelopeExtensions` class is `internal` |
 | MM-1 | Surface — interface member | Medium | `IMessageMappingRegistry` gains a `ModuleKey` property; direct implementations no longer compile |
 | OT-1 | Outbox transport lifecycle | Medium | Failed startup triggers bounded cleanup; store faults stop the relay; shared registrations use one lifecycle |
 | VA-1 | Startup validation | Medium | New codes `ALB0018`/`ALB0019`/`ALB0020` reject upcaster misconfigurations that previously started and failed at runtime |
+| DL-1 | Surface — interface split | Medium | The three retry-claim members move from `IDeadLetterStore` to a new optional `IClaimableDeadLetterStore` |
+| EP-1 | Startup validation | Medium | `ALB0027` — `AddEfProjection` on a `.WithTenancy()` module now requires `documentIds: EfDocumentIdUniqueness.AcrossTenants` |
+| SV-1 | Serializer — runtime guard | Medium | `EventSerializer.Deserialize` throws when the stored version is below the type's declared version and nothing covers the gap |
+| LK-1 | PostgreSQL append lock | **High** | The append advisory-lock key space changed; two application versions appending concurrently do not serialize against each other |
+| CF-1 | Exception detail | Low | PostgreSQL `DcbConflictException` messages are reworded and now carry real `ConflictingPosition` / `ExpectedPosition` / `Query` values |
+| PK-1 | Packaging | Medium | The `Alberto.Dcb.Admin` package is no longer published, and the `PostgresAdmin*` types are no longer in the `Alberto.Dcb.Postgres` package |
 
 ---
 
@@ -119,6 +126,67 @@ services.AddAlberto("orders", builder => builder
 ```
 
 **Symptom.** `error CS0246: The type or namespace name 'IReact<>' could not be found`.
+
+---
+
+### PS-9 — `BatchedEfProjection<TDbContext, THandler>` and `IEfBatchHandler<TDbContext>` deleted
+
+Both were public in `Alberto.Dcb.EntityFramework.Batching` and neither had a registration path —
+there was no `AddBatchedEfProjection`, so the only way to use them was to hand-register the
+processor into keyed DI. Two consequences followed from that, and both are silent:
+
+- **Rebuilds skip it.** A hand-registered processor produces no `RebuildableProjection`, so
+  `RebuildCoordinator` finds no registration for its processor id and passes over it. Once the
+  other projections promote to the new state version, the batch projection is still holding
+  pre-rebuild state, with nothing raised.
+- **A replayed batch is applied twice.** `DeclaredAsyncProjection` skips events at or below
+  `IProjectionEntity.LastProcessedPosition`. `BatchedEfProjection` handed the raw `DbContext`
+  to the handler with no position guard, so a crash between its `SaveChangesAsync` and the
+  control loop's checkpoint write replayed the whole batch — counters incremented twice,
+  status transitions re-run, child rows duplicated.
+
+**Symptom.** `error CS0246: The type or namespace name 'IEfBatchHandler<>' could not be found`,
+or the same for `BatchedEfProjection<,>`.
+
+**Fix.** Move the handler to a projection declaration and register it with `AddEfProjection`.
+The declaration replaces `HandledEventTypes` (it is derived from the `On<TEvent>` calls) and
+`ApplyAsync` (each handler gets the typed event and the entity for its document):
+
+```csharp
+// before
+public sealed class OrderSummaryBatchHandler : IEfBatchHandler<OrdersDbContext>
+{
+    public IReadOnlySet<string> HandledEventTypes { get; } =
+        new HashSet<string> { "order-created", "order-shipped" };
+
+    public async Task ApplyAsync(OrdersDbContext db, IEventEnvelope e, CancellationToken ct)
+    {
+        // hand-written dispatch on e.EventType.Id, hand-written load of the entity
+    }
+}
+
+// after
+public static readonly ProjectionDeclaration<OrderSummary> Declaration =
+    DeclareProjection.For<OrderSummary>("order-summary")
+        .On<OrderCreated>(
+            id:    e => e.OrderId.ToString(),
+            apply: (state, _, _) => state with { Status = "created" })
+        .On<OrderShipped>(
+            id:    e => e.OrderId.ToString(),
+            apply: (state, _, _) => state with { Status = "shipped" })
+        .Build();
+
+builder.AddEfProjection<OrderSummary, OrdersDbContext>(Declaration);
+```
+
+`DeclaredAsyncProjection`, which `AddEfProjection` registers, is an `IBatchableProcessor` in its
+own right: a batch is still one `SaveChanges` per tenant run, so the round-trip saving that
+motivated `BatchedEfProjection` is not lost.
+
+If a projection genuinely cannot be expressed as one entity per document — a handler that must
+write several unrelated tables from one event — use a reactor (`ReactTo<TEvent, THandler>`) with
+its own `DbContext` and its own idempotency key. That is explicit about owning the guard, which
+the deleted type was not.
 
 ---
 
@@ -403,6 +471,31 @@ The unit strings on both duration histograms were corrected to match the OTel se
 
 ---
 
+### MT-7 — `tenant.id` removed from `alberto.tenant_locks_acquired` and `alberto.tenant_lock_failures`
+
+Both counters were tagged `{consumer.id, tenant.id}`. The tag set is now `{consumer.id}` only.
+
+A tenant id is unbounded — it grows with the customer base, and nothing bounds it above. Every
+distinct tag combination is an independent time series that the .NET `Meter` SDK allocates on first
+use, holds for the life of the process, never evicts, and exports on every collection cycle. So a
+store with 50 000 tenants held 50 000 series per counter per replica, and a store with 500 000 held
+ten times that. At roughly 1–3 KB of Prometheus head-block memory per series, these two counters
+were most expensive exactly when the product was doing best, and the failure mode is a cliff — the
+collector OOMs or starts dropping — not a gradual slowdown.
+
+**Symptom.** Any query that groups, filters, or joins these two counters by `tenant.id` stops
+returning a per-tenant breakdown after upgrade. A `sum by (tenant_id)` collapses to a single
+series; a `{tenant_id="acme"}` selector matches nothing.
+
+**Fix.** Aggregate by `consumer.id` instead — that is the question a counter answers well ("is
+this consumer's lease failure rate rising?"). For the per-tenant question ("did tenant `acme` get
+its lease?"), use traces and logs: it is a question about one event at one moment, not a rate over
+time, and the lease acquisition is already on the consume-path span. For tenant fan-out without
+the cardinality, `alberto.owned_tenant_count` and `alberto.tenant_cooldown_count` report how many
+tenants a consumer holds and how many are in cooldown.
+
+---
+
 ### TT-1 — Consume-path trace span attributes `"module.key"` → `"module"` and `"module.shard"` → `"shard"`
 
 `TelemetryConsumeMiddleware` and `TelemetryBatchConsumeMiddleware` previously set two span attributes on the consume-path activity:
@@ -422,6 +515,80 @@ shard  = "eu"          # only for sharded modules
 **Symptom.** Trace queries, sampling rules, and dashboards that filter on `module.key` or `module.shard` span attributes will stop matching after upgrade.
 
 **Fix.** Rename the attribute key in every trace filter: `span.attributes["module.key"]` → `span.attributes["module"]`; `span.attributes["module.shard"]` → `span.attributes["shard"]`.
+
+---
+
+### TT-2 — `event.tags` on the append span event lists concepts, not `concept:value` pairs
+
+`TelemetryAppendInterceptor` adds one `event.appended` span event per appended event. Its
+`event.tags` field was the whole tag, value included:
+
+```
+event.tags = "order:8f21-…,customer:4471-…"
+```
+
+It is now the distinct concepts only:
+
+```
+event.tags = "order,customer"
+```
+
+A DCB tag value is a domain identifier — an order id, a customer id, whatever the decision
+function scoped its consistency boundary to. Emitting it put a business identifier into every
+trace an exporter forwards, for a span that is already explained by the concept: the concept is
+what names the boundary the append was checked against.
+
+**Symptom.** Trace-side lookups by entity id ("show me every span touching order 8f21") return
+nothing. Spans still show *which* boundaries were involved.
+
+**Fix.** If your collector is inside the same trust boundary as the database, or you are in
+development, opt back in:
+
+```csharp
+builder.WithTelemetry(o => o with { RecordEventTagValues = true });
+```
+
+or through configuration:
+
+```json
+{ "Alberto": { "Modules": { "orders": { "Telemetry": { "RecordEventTagValues": true } } } } }
+```
+
+Otherwise, correlate on the event id (`event.id`, still emitted in full) and resolve the entity
+from the event store.
+
+---
+
+### TT-3 — exception details move from span attributes to an exception span event
+
+Both consume middlewares and the append interceptor set the exception as span attributes:
+
+```
+exception.type       = "Npgsql.PostgresException"
+exception.message    = "23505: duplicate key value violates unique constraint …"
+exception.stacktrace = "   at Npgsql…"
+```
+
+All three call sites now call `Activity.AddException(ex)` instead, which records an OpenTelemetry
+`exception` span event carrying the same three fields.
+
+The reason is that an exception message is not the framework's data. Npgsql's include the failing
+SQL, and application exceptions include whatever the thrower put in them. As span attributes those
+strings are indexed alongside every other attribute and there is no unit for a collector to act on;
+as a span event they are one droppable, scrubbable record, which is what the OpenTelemetry
+processors for redacting exception data expect to find.
+
+`Activity.SetStatus(ActivityStatusCode.Error, ex.Message)` is unchanged — the status description
+still carries the message, as OpenTelemetry specifies. The `exception.type` **metric** tag on
+`alberto.dead_letters` and `alberto.retries` is also unchanged; it was always the type name only.
+
+**Symptom.** Trace queries and alert rules filtering on the `exception.message`,
+`exception.stacktrace`, or `exception.type` *span attributes* stop matching.
+
+**Fix.** Re-point them at the span event. In most backends that is a change of accessor rather
+than of field name — for example Tempo/Grafana `span.exception.message` →
+`event.exception.message`, and Honeycomb's `exception.message` now resolves on the span event
+rather than the parent span. The field names themselves are unchanged.
 
 ---
 
@@ -504,26 +671,26 @@ The same guard is also applied by the internal `EventEnvelopeExtensions.Deserial
 
 ---
 
-### PE-1 — `EventEnvelopeExtensions.ParseEvent<T>` is marked `[Obsolete]`
+### PE-1 — `EventEnvelopeExtensions.ParseEvent<T>` is removed
 
-`EventEnvelopeExtensions.ParseEvent<T>(this IEventEnvelope envelope)` performs raw JSON
-deserialization and bypasses any registered upcaster chains. It was never removed after the
-upcasting feature landed, leaving a well-named helper that silently does the wrong thing for
+`EventEnvelopeExtensions.ParseEvent<T>(this IEventEnvelope envelope)` performed raw JSON
+deserialization and bypassed any registered upcaster chains. It was never removed after the
+upcasting feature landed, leaving a well-named helper that silently did the wrong thing for
 any event type that has upcasters.
 
-The method is now annotated `[Obsolete(...)]`. Calling it produces a compiler warning
-(`CS0618`). Projects with `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>` will receive
-a **hard build failure** on upgrade instead of a warning.
+The method is **deleted**. With it gone, `EventEnvelopeExtensions` has no public members left
+and the class itself is now `internal`.
 
 **Symptom.**
 ```
-error CS0618: 'EventEnvelopeExtensions.ParseEvent<T>(IEventEnvelope)' is obsolete:
-'ParseEvent<T>() bypasses upcasters — registered upcaster chains never fire on this path. ...'
+error CS0117: 'EventEnvelopeExtensions' does not contain a definition for 'ParseEvent'
+```
+or, for extension-method call syntax:
+```
+error CS1061: 'IEventEnvelope' does not contain a definition for 'ParseEvent'
 ```
 
-**Fix.** Replace every call with `EventSerializer.Deserialize(envelope)` followed by a cast, or
-use the `DeserializeEvent<T>` seam inside your own consumer if you already have the handler
-infrastructure available:
+**Fix.** Replace every call with `EventSerializer.Deserialize(envelope)` followed by a cast:
 
 ```csharp
 // Before — bypasses upcasters; wrong for any event type with a registered upcaster chain
@@ -536,16 +703,10 @@ var order = (OrderCreated)serializer.Deserialize(envelope);
 Inject `EventSerializer` from DI (it is registered as a keyed singleton by `WithEventsFrom`
 under the module key). If you are inside a consumer registered with `AddProjection`,
 `AddEfProjection`, or `ReactTo`, the serializer is already threaded into the pipeline; you
-do not need to call `ParseEvent` or `serializer.Deserialize` manually.
+do not need to call `serializer.Deserialize` manually.
 
-Call sites that are guaranteed to process only current-version events and genuinely do not need
-upcasting can suppress the warning per-call:
-
-```csharp
-#pragma warning disable CS0618
-var order = envelope.ParseEvent<OrderCreated>(); // only v-current events reach here
-#pragma warning restore CS0618
-```
+There is no suppression escape hatch: a call site that genuinely processes only
+current-version events gets the same correct result from `serializer.Deserialize`.
 
 ---
 
@@ -623,6 +784,317 @@ one-step chain is now a startup failure; raise the attribute to match the chain.
 
 These checks only run when `WithEventsFrom(...)` was called; a module configured without an
 events assembly skips them.
+
+---
+
+### DL-1 — retry claims move to `IClaimableDeadLetterStore`
+
+Three members left `IDeadLetterStore`:
+
+```csharp
+Task<IReadOnlyList<DeadLetterClaim>> ClaimRetryRequestedAsync(
+    string processorId, int batchSize, TimeSpan leaseDuration, string claimedBy, CancellationToken ct = default);
+Task<bool> CompleteRetryAsync(DeadLetterClaim claim, CancellationToken ct = default);
+Task<bool> AbandonRetryAsync(DeadLetterClaim claim, CancellationToken ct = default);
+```
+
+They now sit on `IClaimableDeadLetterStore`, which extends `IDeadLetterStore` and is type-tested
+for at the point of use.
+
+**Why.** These three are one operation — claim a batch under a fence, then release or complete it
+— and it has no correct default implementation. A store backed by a table can do it with
+`FOR UPDATE SKIP LOCKED`; a store backed by an append-only file, a log shipper, or an HTTP
+endpoint cannot, and had to implement three methods it could only throw from. That is the shape
+that says the capability is optional, not that the interface is incomplete.
+
+**Symptom.** `error CS0535: '...' does not implement interface member` disappears for
+implementors; `error CS1061: 'IDeadLetterStore' does not contain a definition for
+'ClaimRetryRequestedAsync'` appears for callers.
+
+**Fix — implementing a store.** Both shipped stores (`PostgresDeadLetterStore`,
+`InMemoryDeadLetterStore`) now declare `IClaimableDeadLetterStore`, so nothing changes for them.
+For a custom store, keep the three methods and move the declaration up:
+
+```csharp
+public sealed class MyDeadLetterStore : IClaimableDeadLetterStore { ... }  // was IDeadLetterStore
+```
+
+If your store threw `NotSupportedException` from them, delete them and implement
+`IDeadLetterStore` alone. It still records, counts, reads and clears dead letters; what it loses
+is the automatic retry loop. Alberto logs a warning naming the store type at startup —
+`alberto ops deadletter retry` will still flag entries and nothing will dispatch them, so the
+warning is there rather than leaving an operator watching a flag that never clears.
+
+**Fix — calling the methods.** Type-test:
+
+```csharp
+if (store is IClaimableDeadLetterStore claimable)
+    await claimable.ClaimRetryRequestedAsync(processorId, 10, TimeSpan.FromMinutes(1), "me", ct);
+```
+
+**Fix — the conformance suite.** `DeadLetterStoreSpecification` keeps the core requirements and
+its `CreateStore()` still returns `IDeadLetterStore`. The claim requirements moved to
+`ClaimableDeadLetterStoreSpecification`, which derives from it and adds one abstract member:
+
+```csharp
+public sealed class MyDeadLetterStoreTests : ClaimableDeadLetterStoreSpecification
+{
+    protected override Task<IClaimableDeadLetterStore> CreateClaimableStore() => ...;
+}
+```
+
+A store that is not claimable derives from `DeadLetterStoreSpecification` as before.
+
+**Related.** `ExtensionPointContractTests` now freezes the abstract member set of every interface
+implemented outside this repository, so a member added after 1.0 either ships with a default
+implementation or moves to its own optional interface, as this one did. See
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
+---
+
+### EP-1 — `ALB0027`: EF projections on a tenant-enabled module must declare id uniqueness
+
+An EF projection entity implements `IProjectionEntity`, whose whole surface is `DocumentId`,
+`UpdatedAt`, `LastProcessedPosition`, `Version` and `RebuildVersion`. There is no tenant column,
+so `EfStateStore` and the inline path both load and write by `(DocumentId, RebuildVersion)` alone.
+Adding a `TenantId` column to your entity does not change that — the store cannot see it.
+
+On a module that declared `.WithTenancy()`, the projection is therefore only correct if two
+tenants can never produce the same document id. Nothing can verify that, so it now has to be
+stated:
+
+```csharp
+services.AddAlberto("orders", m =>
+{
+    m.WithPostgres(cs).WithTenancy();
+
+    m.AddEfProjection<OrderSummaryEntity, OrdersDbContext>(
+        declaration,
+        documentIds: EfDocumentIdUniqueness.AcrossTenants);   // ← required
+});
+```
+
+**Symptom.** `InvalidOperationException` at `AddAlberto` with `ALB0027`, naming the processor id.
+The check runs from the deferred registration callback, so it fires whether `.WithTenancy()` is
+chained before or after the projection.
+
+**Fix.** Decide which is true of your declaration:
+
+- **Ids are already globally unique** — a GUID aggregate id, or an id the handler prefixes with a
+  tenant discriminator carried on the event itself. Pass
+  `documentIds: EfDocumentIdUniqueness.AcrossTenants`. Nothing else changes.
+- **Ids are per-tenant** (`"order-42"`) — two tenants share one row today, and have been. Either
+  make the id carry the tenant, give the module `.WithTenancy(t => t.AcrossPostgresDatabases(...))`
+  so each tenant has its own database, or move the projection to `AddProjection` with a JSONB
+  state store, which is tenant-scoped by the store.
+
+Single-tenant modules are unaffected: `EfDocumentIdUniqueness.NotDeclared` stays the default and
+stays correct, because there is no second tenant to collide with.
+
+See [docs/projections.md](docs/projections.md#ef-projections-on-a-tenant-enabled-module).
+
+---
+
+### SV-1 — `EventSerializer.Deserialize` refuses an uncovered version gap
+
+Reading an envelope stored below the version its CLR type declares now throws
+`InvalidOperationException`:
+
+```
+Event 'order-placed' is stored at schema version 1, but 'OrderPlaced' declares
+[EventType(Version = 2)]. No upcaster is registered for it, so the stored payload would be
+deserialized straight into the current shape and every member added since version 1 would
+silently take its default value.
+```
+
+**Why.** `ALB0018` already rejects this at startup — but only on the DI path. A serializer built
+by hand (`EventSerializer.FromAssembly(...)` in a migration script, a test helper, a one-off
+backfill tool) never meets the validator, and the failure it lets through is silent:
+System.Text.Json leaves every member the older payload lacks at its CLR default, so a
+non-nullable `string Region` comes back `null` and an evolver folds it as though it had been
+stored. The guard is now on the serializer itself, where it cannot be bypassed.
+
+It also catches the case `ALB0020` covers — a chain that terminates below the declared version —
+when the envelope sits exactly at the chain's own current version and no step fires.
+
+**Symptom.** A tool or test that read old events now throws where it used to return an object
+with default-valued members.
+
+**Fix — the normal case.** Register the upcaster the version bump needed:
+
+```csharp
+DeclareUpcaster.For<OrderPlaced>("order-placed")
+    .From<OrderPlacedV1>(1, v1 => new OrderPlaced(v1.OrderId, v1.Amount, "eu-west-1"))
+    .Build();
+```
+
+**Fix — the escape hatch.** If the bump only added optional members whose defaults are already
+the values you want for events written before it, say so at the declaration site:
+
+```csharp
+[EventType("order-placed", Version = 2, UpcastingNotRequired = true)]
+public sealed record OrderPlaced(Guid OrderId, decimal Amount, string Region = "eu-west-1") : IEvent;
+```
+
+It is a claim about the JSON, not about the C#: the property default has to be right for every
+event already in the log. `ALB0018` honours the same flag, so a waived gap does not fail startup
+either.
+
+**Not guarded:** reading an envelope *newer* than the running code. System.Text.Json ignores
+members it does not know about, which is what makes a rolling deploy survivable. Only the
+downward gap fabricates values.
+
+---
+
+### LK-1 — the PostgreSQL append advisory-lock key space changed
+
+The append lock moved from the two-argument form to the single-argument one:
+
+```sql
+-- before
+SELECT pg_advisory_xact_lock(1, hashtext('alberto-append:public:tenant-a'));
+-- after
+SELECT pg_advisory_xact_lock(hashtextextended('alberto-append:public:tenant-a', 0));
+```
+
+**Why.** The old form fixed classid at 1, so every distinct key had to fit in `hashtext`'s 32-bit
+output. Collisions there are not a correctness problem — a shared lock over-serializes, it never
+under-serializes — but by the birthday bound P(some pair of tenants collides) ≈ 1 − exp(−n²/2³³),
+which is ~0.6% at 10k tenants, 10% at 30k and 50% at 77k. The symptom is two unrelated tenants'
+appends serializing against each other with no error, no log line and nothing in telemetry to
+point at it. `hashtextextended` returns `bigint`, moving the same bound to under 1 in 10¹⁰ for a
+million tenants.
+
+**No schema change and no migration.** Advisory locks live in shared memory, not in a table.
+
+**Rollout — this is the part that matters.** Two application versions appending to the *same*
+database take locks in *different* key spaces and therefore do not serialize against each other.
+For the length of the overlap the DCB conflict check is unprotected, and two concurrent appends
+can both pass a boundary check that should have rejected one of them.
+
+- **Drain or stop the old version before starting the new one.** A brief write outage on that
+  database is the safe rollout.
+- A rolling deploy with both versions live and appending is **not** safe. If your platform will
+  not let you stop writes, scale the old deployment to zero replicas first, then deploy.
+- Readers, projections, the outbox relay and the CLI are unaffected — none of them take the
+  append lock.
+- Nothing is corrupted by a *past* collision, so there is nothing to repair afterwards.
+
+The migration lock (`hashtext('alberto:migrate')`) now shares a namespace with append keys. An
+append key would have to hash to exactly that one fixed value — a 2⁻⁶⁴ event — and the
+consequence if it ever did is an append waiting behind a schema migration, which is the desired
+order regardless.
+
+---
+
+### CF-1 — PostgreSQL `DcbConflictException` carries real details
+
+Every conflict raised by the PostgreSQL backend used to report `ConflictingPosition` and
+`ExpectedPosition` as `-1` and `Query` as `DcbQuery.Empty` — which renders as `*`, i.e.
+indistinguishable from a genuine conflict at position -1 against an all-events query. The backend
+was throwing the `DcbConflictException(message, inner)` overload while holding the query and the
+expected position it had just been given.
+
+All three now carry real values. The conflicting position is parsed out of the server's
+`RAISE EXCEPTION` message, and the server's own wording — which names *which* arm of the boundary
+matched — is kept inside the composed message rather than replaced.
+
+**Symptom.** Code matching on the old message text
+(`"DCB conflict detected: events matching the query exist after the expected position"`) no
+longer matches. Logs and error strings differ.
+
+**Fix.** Read the properties instead:
+
+```csharp
+catch (DcbConflictException ex)
+{
+    logger.LogWarning("Conflict at {Position}, expected {Expected}, query {Query}",
+        ex.ConflictingPosition, ex.ExpectedPosition, ex.Query);
+}
+```
+
+`RetryOnConflict(n)` and `TryCommit` are unaffected — they never read the message.
+
+For custom backends, prefer the new
+`DcbConflictException(string, long, long, DcbQuery, Exception)` constructor wherever the details
+are knowable. The two-argument `(string, Exception)` overload still exists for the case where a
+backend genuinely cannot say, and its documentation now spells out that the `-1`/`*` it produces
+are placeholders rather than facts.
+
+---
+
+### PK-1 — the admin surface is not published in 1.0
+
+`Alberto.Dcb.Admin` is no longer pushed to a package feed, and the three PostgreSQL admin types
+moved out of the `Alberto.Dcb.Postgres` package into a new, also-unpublished
+`Alberto.Dcb.Postgres.Admin`:
+
+- `PostgresAdminDataAccess`
+- `PostgresAdminOperator`
+- `PostgresAdminServiceCollectionExtensions` (`AddAlbertoPostgresAdmin`)
+
+`IAdminReader`/`IAdminOperator` are the contract the parked admin front doors — a GraphQL API, an
+MCP server, a React console and a BFF on `feature/admin-surface` — are built on. Publishing them at
+1.0 would freeze the abstraction under semver before anything that consumes it exists, which is the
+same reason those front doors are parked. Both projects still build, sit in the solution, and are
+covered by tests; they just do not become packages.
+
+**Not affected.** The `Alberto.Cli` tool still ships, and it is the supported operator surface.
+`dotnet tool install --global Alberto.Cli` and every `alberto` command behave exactly as before.
+Nothing in `Alberto.Dcb`, `Alberto.Dcb.Postgres` or any other published package lost a member that
+you could reach without already depending on the admin abstraction.
+
+**Symptom.** A project referencing the `Alberto.Dcb.Admin` package fails to restore (`NU1101`), or
+one referencing `Alberto.Dcb.Postgres` stops compiling against `PostgresAdminDataAccess`,
+`PostgresAdminOperator` or `AddAlbertoPostgresAdmin` (`CS0246` / `CS1061`). Namespaces are
+unchanged — the types are still `Alberto.Dcb.Postgres.*` — so no `using` needs editing; the
+assembly they live in is simply not one you can get from a feed.
+
+**Fix.** If you were driving admin operations from your own code, either build the two projects
+from source and reference them as projects, or shell out to the `alberto` CLI, which does the same
+work through the same interfaces. If you only ever used the CLI, there is nothing to do.
+
+Unparking after 1.0 is `IsPackable=true` on both projects plus capturing their
+`PublicAPI.Shipped.txt` baselines.
+
+---
+
+### OR-1 — delivered outbox entries are deleted after 7 days by default; migration 034 required
+
+`WithOutbox` now registers an `OutboxRetentionService` alongside the relay. Every hour it deletes
+entries whose `status = 'delivered'` and whose `delivered_at` is older than `deliveredRetention`,
+which defaults to **7 days**. Nothing removed delivered entries before, so this is a behaviour
+change that deletes data you currently have.
+
+**Not affected.** `pending`, `processing` and `failed` entries are never removed by age — they are
+work, not history. A `failed` entry sits in the table until you `RetryFailedAsync` it or delete it
+yourself, exactly as before. Nothing about relay behaviour, claim leases or delivery semantics
+changed.
+
+**Symptom.** Rows disappear from `alberto_outbox_entries` about an hour after the upgraded host
+starts, and the first sweep can be a long DELETE — it faces every delivered entry the table has
+ever held, not one window's worth.
+
+**Fix — pick one before you deploy:**
+
+1. **Keep the old behaviour.** Pass `deliveredRetention: Timeout.InfiniteTimeSpan`. Delivered
+   entries are kept forever and the service does nothing. Do this if the table is your integration
+   audit trail — and plan to archive it somewhere, because the growth problem does not go away.
+2. **Take the default, but drain the backlog first.** Run
+   `alberto ops outbox purge --before <timestamp>` during a quiet window, walking the cutoff back
+   in steps if the table is large, then deploy. The CLI command does the same delete and records an
+   `admin-outbox-purged` audit event.
+3. **Start wide and narrow it.** Deploy with `deliveredRetention: TimeSpan.FromDays(90)`, then
+   lower it over subsequent releases until you reach the window you want.
+
+**Run migration 034 before deploying the new binary.** It adds
+`idx_alberto_outbox_delivered` — a partial index on `delivered_at` for `status = 'delivered'` —
+without which every sweep is a sequential scan of the whole outbox. The script is
+`CREATE INDEX CONCURRENTLY` and carries `-- alberto:no-transaction`, so it does not lock the table
+against the relay while it builds.
+
+`retentionSweepInterval` (default 1 hour) tunes how often the sweep runs; it bounds how far past the
+retention window an entry can survive, not how long it is kept.
 
 ---
 

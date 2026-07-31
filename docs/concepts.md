@@ -112,13 +112,11 @@ concurrency.
 
 A boundary is a query used as an **append condition**. The pattern is always three steps:
 
-```csharp
-var (state, lastPosition) = await store.FoldWithPosition(boundary, initial, apply, ct);
-// ... decide, producing events ...
-await eventStore.AppendAsync(events, boundary, expectedPosition: lastPosition, ct);
-```
+1. Fold the boundary events into state and record the position read.
+2. Decide which events to emit.
+3. Append under the same boundary, supplying the position from step 1 as the expected position.
 
-The append succeeds only if nothing matching `boundary` was written after `lastPosition`. If
+The append succeeds only if nothing matching `boundary` was written after that position. If
 something was, the store throws `DcbConflictException` carrying `ExpectedPosition`,
 `ConflictingPosition` and the `Query` — retry the whole read-decide-append, since your state is now
 stale by definition.
@@ -155,6 +153,13 @@ whatever is in the log now. Anything before `Load` — `Validate`, `Enrich` — 
 reused, so an expensive lookup or an external call is not repeated per attempt. `TryCommit` is the
 non-throwing terminal: it returns a failed `Result` carrying a `dcb.conflict` problem instead of
 raising `DcbConflictException`.
+
+Retries are bounded, so `Commit` still throws when the boundary stays contended for all `n`
+attempts. Reach for `TryCommit` when the caller *branches* on that — falls back, queues, reports
+something other than a failure. When it only needs to report, catch `DcbConflictException` and call
+`ToProblem()`: it renders exactly what `TryCommit` would have returned, under the same
+`DcbConflictException.ProblemCode`, so an error surface handles one shape however the conflict
+arrived. That is what the examples' `OrThrow` does.
 
 **This is the whole optimistic-concurrency story.** You never store a version number, and there is
 no aggregate whose identity has to be decided up front. The unit of contention is exactly the

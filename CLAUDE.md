@@ -86,7 +86,7 @@ Note: `apps/Alberto.Payments` is in the solution and builds, but it has no host 
 - **Vertical slices in the examples**: `apps/Alberto.Orders` and `apps/Alberto.Payments` are sliced by behaviour, not layer. One folder per slice under `Features/`, holding that slice's input type, state record, evolver, decision function, boundary and GraphQL operation. **Slices share the event log and nothing else** — no shared state record, no shared evolver, no base state. `Contracts/` (events, status enums, problem codes, tag keys) and `Platform/` (DI, `DbContext`, EF migrations) are the two deliberate exceptions, named so they cannot be mistaken for domain code that happens to be shared. Five slices fold `OrderCreated`, each projecting a different part of it; that duplication is the pattern working. See [docs/architecture/vertical-slices.md](docs/architecture/vertical-slices.md)
 - **Async Processing**: `ControlLoop` polls the event log and dispatches through a middleware chain to projections/reactors. See [docs/architecture/async-processing.md](docs/architecture/async-processing.md)
 - **Middleware**: `MiddlewareRunner` builds both the single-event (`ConsumeEventContext`) and batch (`BatchConsumeContext`) chains. Retry/dead-letter logic is shared via `RetryAndDeadLetterCore` behind `IMiddlewareContext`
-- **Zero-downtime projection rebuilds**: opt in with `.WithControlLoop(loop => loop.WithRebuilds())`. `RebuildCoordinator` replays the log into a shadow copy of a projection's state under its own checkpoint, then swaps versions in one transaction. Driven by `alberto ops rebuild start|status|promote|abort`
+- **Zero-downtime projection rebuilds**: opt in with `.WithRebuilds()`. `RebuildCoordinator` replays the log into a shadow copy of a projection's state under its own checkpoint, then swaps versions in one transaction. Driven by `alberto ops rebuild start|status|promote|abort`
 - **Multi-Tenant**: X-Tenant-Id header propagation, tenant-isolated queries, tenant leases
 - **Store imprint**: single-tenant and multi-tenant are two disjoint migration sets sharing one journal, so **`.WithTenancy()` cannot be added to or removed from a store that already has data** — there is no bridging script and no `tenant_id` backfill. `PostgresMigrator.Migrate` refuses the wrong set before running anything, throwing `AlbertoStoreMismatchException` (ALB0021). The mode is read from `alberto_store_imprint` — a table the migrator creates itself, since the check that must precede every script cannot depend on a script — falling back to sniffing `alberto_events` for a `tenant_id` column, which covers both stores predating the imprint and stores left half-migrated. A store with no `alberto_events` is fresh and may become either mode. Pointing a module at an *empty* database is deliberately **not** covered: nothing contradicts, so it migrates cleanly and serves an empty store
 - **Projection tenancy**: a state store's tenancy is fixed when the store is built and decided by the schema, not by the caller — a module that declared `.WithTenancy()` is migrated with `tenant_id NOT NULL` in its primary key, so a store built without one fails every write with `42P10`, and the reverse mismatch fails with `42703`. `AddProjection` therefore takes a `Func<string?, IStateStore<TState>>`: the projection builds one store per tenant and routes each event to the store for the tenant it carries. A cross-tenant aggregate on a tenant-enabled module stores its single blended document under `TenantScope.CrossTenant` (`"*"`), which readers pass too — resolvers resolve the writer's own factory from DI (`{moduleKey}:{processorId}`) so the only thing they decide is which tenant to read
@@ -97,6 +97,25 @@ Note: `apps/Alberto.Payments` is in the solution and builds, but it has no host 
 - **GraphQL** (Orders example only): HotChocolate 15.x
 
 ### Admin surface
+
+**This is the branch the admin surface lives on.** `main` ships the CLI and nothing else: the
+GraphQL API, the MCP server, the React console and the BFF are held out of 1.0 so their field and
+tool names are not frozen by semver. Everything below exists here and only here. Merge `main` into
+this branch regularly — `main` keeps changing underneath it, and the longer the gap the more of the
+merge is archaeology.
+
+`Alberto.Dcb.Admin` and `Alberto.Dcb.Postgres.Admin` are `IsPackable=false` on `main` for the same
+reason: shipping `IAdminReader`/`IAdminOperator` at 1.0 would freeze the abstraction before the
+things that consume it exist. Unparking them is part of landing this branch — `IsPackable=true` plus
+capturing `PublicAPI.Shipped.txt` (the analyzer is gated on `IsPackable`, so it is inert until then).
+
+`Alberto.Dcb.Postgres.Admin` exists only because `Alberto.Dcb.Postgres` **is** packable.
+`PostgresAdminDataAccess`, `PostgresAdminOperator` and `PostgresAdminServiceCollectionExtensions`
+used to live there, which made its nupkg carry an unresolvable `Alberto.Dcb.Admin` dependency and 33
+public members returning parked types. The three files keep `namespace Alberto.Dcb.Postgres` so no
+consumer's usings changed, and they reach back for internals (`SchemaQualifier`) via
+`InternalsVisibleTo`.
+
 Three front doors over one set of operations — see [docs/admin.md](docs/admin.md).
 
 - **CLI** (`tools/Alberto.Cli`) — talks straight to Postgres, needs no changes to the host.
@@ -107,10 +126,10 @@ Three front doors over one set of operations — see [docs/admin.md](docs/admin.
 
 The React console (`apps/Alberto.Admin`) and its BFF (`apps/Alberto.Admin.Bff`) are **examples, not packages** — integrators copy them. The BFF is anonymous by default; `AdminBffAuthentication.AddAdminAuthentication` is the seam that turns on OIDC, and returning `true` from it is what flips the default authorization policy, maps `/bff/login`, and makes `/bff/user` answer 401 so the console renders a sign-in prompt.
 
-Every mutation appends an `admin-*` event to the module's own log in the same transaction as the change, carrying the caller's `operatorId` (reserved `__admin__` tenant on multi-tenant stores). Readable afterwards via `adminEvents`, live via `onAdminAuditEvent`.
+Every mutation appends an `admin-*` event to the module's own log in the same transaction as the change, carrying the caller's `operatorId` (reserved `__admin__` tenant on multi-tenant stores). Readable afterwards via `adminEvents`, live via `onAdminAuditEvent`. The CLI does the same — `main` routes all of its mutations through `IAdminOperator` for exactly that reason, so the audit trail does not depend on which front door was used.
 
 - **Per-processor mutations** go through the core interfaces: `ICheckpointStore` (`SaveAsync`, `ResetAsync`, `RewindAsync`) and `IDeadLetterStore` (`CountAsync`, `ClearAsync`, `MarkForRetryAsync`).
-- **`PostgresAdminDataAccess`** (`src/Alberto.Dcb.Postgres`) holds the inspection queries and the composite transactional mutations (`RetryByRewindAsync`, `ReleaseTenantLeasesAsync`) that span multiple tables and so cannot be composed from per-processor interfaces.
+- **`PostgresAdminDataAccess`** (`src/Alberto.Dcb.Postgres.Admin`) holds the inspection queries and the composite transactional mutations (`RetryByRewindAsync`, `ReleaseTenantLeasesAsync`) that span multiple tables and so cannot be composed from per-processor interfaces.
 - `SaveAsync` is monotonic by design (`GREATEST`). `RewindAsync` is the deliberate escape hatch for operator-initiated rewinds and is the only way to move a checkpoint backwards.
 - **Sharded modules**: `ShardResolver` turns `--shard`/`--all-shards` plus `.alberto/config.json` into the databases a command runs against. Reads fan out by default; mutations refuse without a selection. `alberto shards list|where|assign` manages the catalog. Shard connection strings live in config, never in the catalog table.
 
@@ -134,7 +153,7 @@ Every mutation appends an `admin-*` event to the module's own log in the same tr
 
 ## Configuration
 
-- **Solution file**: `AlbertoV3.slnx` (modern .NET format)
+- **Solution file**: `Alberto.slnx` (modern .NET format)
 - **Build settings**: `Directory.Build.props`
 
 ## Known Gaps

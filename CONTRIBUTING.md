@@ -23,20 +23,94 @@ running Docker daemon. The in-memory and unit tests run without Docker.
 
 - One logical change per pull request.
 - All public API additions or removals must be reflected in the project's
-  `PublicAPI.Shipped.txt` / `PublicAPI.Unshipped.txt` (see the
-  `Microsoft.CodeAnalysis.PublicApiAnalyzers` setup in `Directory.Build.props`).
+  `PublicAPI.Shipped.txt` / `PublicAPI.Unshipped.txt` — see [Public API tracking](#public-api-tracking).
 - Breaking changes must have a corresponding entry in `UPGRADING.md` using the existing format
   (summary table, before/after code snippets, migration steps).
 - `CHANGELOG.md` entries are added under the `## [Unreleased]` heading.
 - `TreatWarningsAsErrors` is on. The build must be warning-free before a PR can be merged.
 
+## Public API tracking
+
+Every project under `src/` carries two tracking files, and
+`Microsoft.CodeAnalysis.PublicApiAnalyzers` **fails the build** on a public symbol that appears
+in neither. The point is that widening the surface Alberto has to support for the life of a major
+version is a line in a diff a reviewer can see, rather than something that lands with a feature.
+
+The rules are set to `error` in the root `.editorconfig`. Nothing suppresses them — if you find
+yourself adding a `NoWarn`, a `.globalconfig`, or a project-local `.editorconfig` to get a build
+green, that is the gate working.
+
+**Adding public API.** Build, then either apply the "Add to public API" fix in the IDE, or run:
+
+```bash
+dotnet format analyzers src/Alberto.Dcb/Alberto.Dcb.csproj --diagnostics RS0016 --severity error
+```
+
+Either way the new entries land in `PublicAPI.Unshipped.txt`. **Read that diff before committing
+it** — it is the statement of what you are committing to support. (`dotnet format` does not accept
+`Alberto.slnx`; pass the individual `.csproj`.)
+
+**Removing public API.** Delete the entry by hand and add an `UPGRADING.md` section for it.
+
+**At release.** Move everything from `PublicAPI.Unshipped.txt` into `PublicAPI.Shipped.txt` and
+leave `Unshipped` with just its `#nullable enable` line.
+
+**RS0026 / RS0027** flag an added overload with optional parameters. They are evolution
+guidelines, not bugs, and are satisfiable by justification when the overloads are separated by a
+*required* parameter or by delegate shape rather than by the optional tail. Where that is the
+case, add a `[SuppressMessage]` with a `Justification` naming which parameter does the separating
+— see the existing ones in `DcbModuleBuilderExtensions.ReactTo` for the form. Do not reach for
+`#pragma warning disable`, and do not lower the severity.
+
+**Packability.** `Directory.Build.props` defaults `IsPackable` to `false`; each project under
+`src/` opts in with `<IsPackable>true</IsPackable>`. That opt-in is what brings in the package
+metadata, SourceLink, and this gate — so a new package needs the property *and* the two tracking
+files, and an app, test, or tool project needs neither.
+
+## Extension points
+
+A handful of interfaces are meant to be implemented *outside* this repository — someone writing a
+backend for a database Alberto does not ship, or a store that fits their own operational setup.
+Public API tracking above records that they widened; it cannot tell you the widening was safe.
+
+The distinction it misses is between the two ways to add an interface member. A member with a
+default body is invisible to existing implementors. An **abstract** member breaks every one of
+them — at compile time when they rebuild, and at load time for anything already deployed against
+the old interface. There is no way to walk that back short of a major version.
+
+So the rule is: **after 1.0, new members on these interfaces ship with a default implementation.**
+
+`ExtensionPointContractTests` in `tests/Alberto.Dcb.Tests` enforces it by pinning today's abstract
+member set on `IEventStoreBackend`, `IDeadLetterStore`, `IClaimableDeadLetterStore` and
+`IProjectionRebuildStore`. A member added with a default body does not appear in the reflected
+abstract set and the test stays green.
+
+**If that test fails**, in order of preference:
+
+1. **Give the member a default**, in terms of the members that already exist. The test stops
+   seeing it.
+2. **There is no correct default** — which means the capability is optional, not universal. Put it
+   on its own interface and type-test for it at the call site. `IClaimableDeadLetterStore` and
+   `IFencedCheckpointStore` are the worked examples: the first exists because atomic
+   claim-and-fence is not something every store can offer, and a default that *looked* right would
+   have moved the break from compile time to a lost event under contention.
+3. **It genuinely has to be required.** Update the baseline in the test *and* add an
+   `UPGRADING.md` section. That is a major-version change; the test exists so you cannot make one
+   by accident.
+
+Interfaces Alberto implements for itself are not in scope here — widen those freely. If you are
+unsure which kind you are looking at, ask whether a third party could plausibly have written it.
+
+`IAdminReader` and `IAdminOperator` are deliberately absent from the baseline. They are consumed
+by the parked front doors on `feature/admin-surface` and must stay **additive** so that branch
+keeps merging; see the note in `CLAUDE.md`.
+
 ## Code style
 
-The repo has a root `.editorconfig` and a `src/Alberto.Dcb/.editorconfig`, but both exist
-solely to suppress `PublicApiAnalyzers` RS00xx diagnostics while the public-API baselines
-are empty — they are not general formatting rules. For code style, follow the surrounding
-code. Long explanatory comments are encouraged on non-obvious decisions. Do not add narration
-comments on self-evident code.
+The repo has a root `.editorconfig`. Its `dotnet_diagnostic` entries configure the public-API
+analyzer described above; it is not a general formatting ruleset. For code style, follow the
+surrounding code. Long explanatory comments are encouraged on non-obvious decisions. Do not add
+narration comments on self-evident code.
 
 ## Event deserialization rule
 

@@ -79,11 +79,14 @@ only, precisely because replaying side effects is not something it can make safe
 ### Tuning one processor
 
 ```csharp
-.ReactTo<OrderPlaced>(handler, "order-emails", configure: c => c.WithConcurrency(8))
+.ReactTo<OrderPlaced>(handler, "order-emails", configure: o => o with { MaxConcurrency = 8 })
 ```
 
-The configurator also has `BatchIfSupported()`, `RequireBatching()` and `DisableBatching()` for
-handlers that implement `IBatchableProcessor`. It is ignored for `Sync` reactors.
+The `configure` parameter is `Func<ProcessorExecutionOptions, ProcessorExecutionOptions>` — return
+a modified record to change batching or concurrency. Batching mode values are
+`ProcessorBatchingMode.IfSupported`, `ProcessorBatchingMode.Required` (the default), and
+`ProcessorBatchingMode.Disabled`. For example: `o => o with { BatchingMode = ProcessorBatchingMode.IfSupported }`.
+The setting is ignored for `Sync` reactors.
 
 ## The outbox
 
@@ -105,7 +108,8 @@ status = delivered   (or failed, only if the claim token still matches)
 Because the handler is a processor, an entry only ever exists for an event that is already durable.
 Because the relay claims with `FOR UPDATE SKIP LOCKED`, several relay replicas can run without
 holding the same live claim. Delivery remains at-least-once: if a publish succeeds but the relay
-dies before recording success, the entry is published again after its claim expires.
+dies before recording success, the entry is published again after its claim expires. It is also
+**unordered** — see [Ordering](#ordering-there-isnt-any) before you assume otherwise.
 
 ### Wiring it
 
@@ -192,6 +196,77 @@ once another relay has recovered an expired claim, the old relay can no longer m
 worst-case publish time. If it is too short, another relay can recover an entry while the first
 publish is still running, producing the duplicate delivery that at-least-once messaging permits.
 If it is too long, recovery after a crash waits longer.
+
+### Ordering: there isn't any
+
+**The outbox is at-least-once and unordered.** Two messages that were appended in a known order can
+be delivered in the opposite one, and neither Alberto nor the table gives you a total order to fall
+back on. Three separate mechanisms cause it, and removing any one of them would not fix the others:
+
+- **The claim query orders by `created_at`, which is not unique.** `created_at` defaults to `now()`,
+  which in PostgreSQL is transaction-*start* time — so two entries written by concurrent
+  transactions can share a timestamp, and an entry written by a long transaction can carry an
+  earlier timestamp than one committed before it. There is no tiebreaker column; `id` is a v4 UUID
+  and sorts randomly.
+- **A failed delivery is re-delivered later.** `RetryFailedAsync` puts an entry back to `pending`
+  long after its neighbours went out, and an expired claim is recovered the same way.
+- **Relays claim disjoint batches.** `FOR UPDATE SKIP LOCKED` is what lets several replicas run at
+  once; it also means replica B can publish entry 2 while replica A is still publishing entry 1.
+
+This is normal for integration messaging and usually fine: the messages go to *other* systems, which
+have their own state and their own clocks, and a consumer that requires order across systems has a
+design problem the transport cannot solve for it. Order *within* the event log is unaffected — the
+log is strictly ordered, and `OutboxHandler` is a checkpointed processor that reads it in order. It
+is only the delivery leg that reorders.
+
+If you do need per-entity order, that is the transport's job, and `ExternalMessage.RoutingHint` is
+the hook: set it to the entity id and a transport that supports partition keys (Kafka), message
+group ids (SQS FIFO) or a routing key (RabbitMQ) will keep one entity's messages on one ordered
+path. Alberto passes the hint through untouched and never interprets it.
+
+```csharp
+map.Map<OrderPlaced>((envelope, sp, ct) => new ExternalMessage(
+    "order-placed", "1", Serialize(envelope.Event), [],
+    RoutingHint: envelope.Event.OrderId.ToString()));
+```
+
+Otherwise, make consumers order-insensitive the same way you make them idempotent: carry a version
+or a timestamp in the message and let the consumer discard what it has already superseded.
+
+### Retention
+
+Delivered entries stay in the table until something removes them, and nothing did before 1.0 — the
+outbox was append-only in practice, and the partial indexes the relay depends on grew with it.
+`WithOutbox` now registers an `OutboxRetentionService` that deletes delivered entries older than
+`deliveredRetention` (**default 7 days**) every `retentionSweepInterval` (default 1 hour):
+
+```csharp
+.WithOutbox(
+    map => { … },
+    outboxStore: new PostgresOutboxStore(dataSource, schema: "orders"),
+    deliveredRetention: TimeSpan.FromDays(30),
+    retentionSweepInterval: TimeSpan.FromHours(6))
+```
+
+- **Only `delivered` entries are eligible.** `pending`, `processing` and `failed` are work, not
+  history, and are never removed by age — a `failed` entry sits there until you `RetryFailedAsync`
+  it or delete it yourself.
+- Pass `Timeout.InfiniteTimeSpan` as `deliveredRetention` to keep delivered entries forever. Do that
+  if the table is your integration audit trail, and plan to archive it elsewhere.
+- Retention is registered whether or not you supply a `transport`: entries reach `delivered` by
+  being delivered, and a host that drains the table itself still accumulates them.
+- The sweep runs on its own schedule, not on the relay's loop, so a slow purge delays only the next
+  purge and never publishing. It waits out one full interval before its first sweep, because host
+  startup is both the busiest moment and the one where the backlog is largest.
+- Several replicas sweeping concurrently is safe — the deletes are idempotent and the losers delete
+  nothing.
+
+For a one-off cleanup, or to catch up a table that predates this, `alberto ops outbox purge --before
+<timestamp>` does the same delete from the CLI and records an `admin-outbox-purged` audit event.
+
+> **Upgrading:** the first sweep after you take 1.0 faces every delivered entry you have ever
+> written. If that table is large, purge it once from the CLI during a quiet window before enabling
+> the service, or set `deliveredRetention` wide and walk it down.
 
 ## Reactor, outbox, or inline projection?
 

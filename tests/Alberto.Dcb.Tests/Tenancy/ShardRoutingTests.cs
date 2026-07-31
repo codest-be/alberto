@@ -90,6 +90,36 @@ public class ShardRoutingTests
     }
 
     [Fact]
+    public async Task Each_shard_maintains_its_own_independent_position_sequence()
+    {
+        // Two tenants on two shards. Both shards happen to have a last position of 42 — a value
+        // that exists independently in each shard's own sequence.
+        var map = new FakeTenantShardMap().Assign("acme", "db1").Assign("globex", "db2");
+        var resolver = new TenantShardResolver("orders", map, TwoShards, null);
+        var shards = new Dictionary<string, PositionTrackingStore>(StringComparer.Ordinal)
+        {
+            ["orders#db1"] = new PositionTrackingStore(lastPosition: 42L),
+            ["orders#db2"] = new PositionTrackingStore(lastPosition: 42L),
+        };
+
+        var acmeStore = new ShardRoutingEventStore("orders", new StubTenantAccessor("acme"), resolver, key => shards[key]);
+        var globexStore = new ShardRoutingEventStore("orders", new StubTenantAccessor("globex"), resolver, key => shards[key]);
+
+        var positionFromAcmeShard = await acmeStore.GetLastPositionAsync();
+        var positionFromGlobexShard = await globexStore.GetLastPositionAsync();
+
+        positionFromAcmeShard.Should().Be(42L);
+        positionFromGlobexShard.Should().Be(42L);
+
+        // The type system provides no guard: the same long value is accepted as a cursor into
+        // a different shard's store without error, even though position 42 on globex's shard
+        // refers to a completely different event than position 42 on acme's shard.
+        await globexStore.StreamAsync(DcbQuery.Empty, afterPosition: positionFromAcmeShard);
+
+        shards["orders#db2"].LastStreamAfterPosition.Should().Be(42L);
+    }
+
+    [Fact]
     public async Task The_backend_router_routes_the_same_way_as_the_store()
     {
         var map = new FakeTenantShardMap().Assign("acme", "db2");
@@ -175,5 +205,36 @@ public class ShardRoutingTests
             Calls.Add("LastPosition");
             return Task.FromResult(0L);
         }
+    }
+
+    private sealed class PositionTrackingStore(long lastPosition) : IEventStore
+    {
+        public long LastStreamAfterPosition { get; private set; }
+
+        public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
+            IEnumerable<IEventToPersist> events,
+            DcbQuery? dcbQuery = null,
+            long? expectedPosition = null,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
+
+        public Task<IReadOnlyCollection<IEventEnvelope>> StreamAsync(
+            DcbQuery query,
+            long afterPosition = 0,
+            int? limit = null,
+            CancellationToken cancellationToken = default)
+        {
+            LastStreamAfterPosition = afterPosition;
+            return Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
+        }
+
+        public Task<IReadOnlyCollection<IEventEnvelope>> StreamAllAsync(
+            long afterPosition = 0,
+            int? limit = null,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
+
+        public Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(lastPosition);
     }
 }

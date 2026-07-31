@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Alberto.Dcb.Testing;
 
 /// <summary>
@@ -33,6 +35,10 @@ public static class Poll
     /// </param>
     /// <param name="ct">Cancellation token.</param>
     /// <exception cref="TimeoutException">The condition did not hold within <paramref name="timeout"/>.</exception>
+    [SuppressMessage("ApiDesign", "RS0026:Do not add multiple overloads with optional parameters",
+        Justification = "The overloads are separated by the condition delegate — Func<bool> against " +
+                        "Func<ValueTask<bool>> — not by the optional tail. A lambda returning bool " +
+                        "does not convert to the ValueTask form, so no call can bind to both.")]
     public static async Task UntilAsync(
         Func<ValueTask<bool>> condition,
         string what,
@@ -66,6 +72,10 @@ public static class Poll
     }
 
     /// <inheritdoc cref="UntilAsync(Func{ValueTask{bool}}, string, TimeSpan?, TimeSpan?, TimeProvider?, CancellationToken)"/>
+    [SuppressMessage("ApiDesign", "RS0026:Do not add multiple overloads with optional parameters",
+        Justification = "The overloads are separated by the condition delegate — Func<bool> against " +
+                        "Func<ValueTask<bool>> — not by the optional tail. A lambda returning bool " +
+                        "does not convert to the ValueTask form, so no call can bind to both.")]
     public static Task UntilAsync(
         Func<bool> condition,
         string what,

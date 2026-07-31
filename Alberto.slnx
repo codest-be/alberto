@@ -6,6 +6,7 @@
   <Folder Name="/src/">
     <Project Path="src/Alberto.Dcb/Alberto.Dcb.csproj" />
     <Project Path="src/Alberto.Dcb.Commands/Alberto.Dcb.Commands.csproj" />
+    <Project Path="src/Alberto.Dcb.Commands.Analyzers/Alberto.Dcb.Commands.Analyzers.csproj" />
     <Project Path="src/Alberto.Dcb.InMemory/Alberto.Dcb.InMemory.csproj" />
     <Project Path="src/Alberto.Dcb.Postgres/Alberto.Dcb.Postgres.csproj" />
     <Project Path="src/Alberto.Dcb.Telemetry/Alberto.Dcb.Telemetry.csproj" />
@@ -14,9 +15,10 @@
     <Project Path="src/Alberto.Dcb.Postgres.Messaging/Alberto.Dcb.Postgres.Messaging.csproj" />
     <Project Path="src/Alberto.Dcb.Testing/Alberto.Dcb.Testing.csproj" />
     <Project Path="src/Alberto.Dcb.Testing.Xunit/Alberto.Dcb.Testing.Xunit.csproj" />
-    <Project Path="src/Alberto.Dcb.Admin.Mcp/Alberto.Dcb.Admin.Mcp.csproj" />
     <Project Path="src/Alberto.Dcb.Admin/Alberto.Dcb.Admin.csproj" />
+    <Project Path="src/Alberto.Dcb.Postgres.Admin/Alberto.Dcb.Postgres.Admin.csproj" />
     <Project Path="src/Alberto.Dcb.Admin.GraphQL/Alberto.Dcb.Admin.GraphQL.csproj" />
+    <Project Path="src/Alberto.Dcb.Admin.Mcp/Alberto.Dcb.Admin.Mcp.csproj" />
   </Folder>
   <Folder Name="/apps/">
     <Project Path="apps/Alberto.AppHost/Alberto.AppHost.csproj" />

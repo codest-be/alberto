@@ -49,6 +49,13 @@ jobs:
       - name: Build libraries
         run: |
           dotnet build src/Alberto.Dcb/Alberto.Dcb.csproj -c Release
+          # Built but deliberately not packed: the admin surface is IsPackable=false until the
+          # front doors on feature/admin-surface ship. Building it here still catches a Release
+          # compile break, which the pack loop below no longer would.
+          dotnet build src/Alberto.Dcb.Admin/Alberto.Dcb.Admin.csproj -c Release
+          dotnet build src/Alberto.Dcb.Postgres.Admin/Alberto.Dcb.Postgres.Admin.csproj -c Release
+          dotnet build src/Alberto.Dcb.Admin.GraphQL/Alberto.Dcb.Admin.GraphQL.csproj -c Release
+          dotnet build src/Alberto.Dcb.Admin.Mcp/Alberto.Dcb.Admin.Mcp.csproj -c Release
           dotnet build src/Alberto.Dcb.Commands/Alberto.Dcb.Commands.csproj -c Release
           dotnet build src/Alberto.Dcb.EntityFramework/Alberto.Dcb.EntityFramework.csproj -c Release
           dotnet build src/Alberto.Dcb.InMemory/Alberto.Dcb.InMemory.csproj -c Release

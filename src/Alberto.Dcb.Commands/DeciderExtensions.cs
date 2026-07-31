@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Alberto.Dcb;
 
 /// <summary>
@@ -42,6 +44,10 @@ public static class DeciderExtensions
     /// or <see cref="Result.Fail(Problem)"/> when the decision function returned a failure.
     /// Throws <see cref="DcbConflictException"/> if the boundary was violated between the read and append.
     /// </returns>
+    [SuppressMessage("ApiDesign", "RS0026:Do not add multiple overloads with optional parameters",
+        Justification = "The overloads are separated by the required EventSerializer parameter, not by " +
+                        "the optional cancellation token: a CancellationToken never converts to an " +
+                        "EventSerializer, so no call can bind to both.")]
     public static async Task<Result> DecideAndAppendAsync<TState>(
         this IEventStore eventStore,
         DcbQuery boundary,
@@ -82,6 +88,10 @@ public static class DeciderExtensions
     /// Used to deserialize envelopes (including upcasting) during reconstitution.
     /// </param>
     /// <param name="ct">Cancellation token.</param>
+    [SuppressMessage("ApiDesign", "RS0026:Do not add multiple overloads with optional parameters",
+        Justification = "The overloads are separated by the required EventSerializer parameter, not by " +
+                        "the optional cancellation token: a CancellationToken never converts to an " +
+                        "EventSerializer, so no call can bind to both.")]
     public static async Task<Result> DecideAndAppendAsync<TState>(
         this IEventStore eventStore,
         DcbQuery boundary,

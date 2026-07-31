@@ -98,7 +98,7 @@ dotnet add package Alberto.Dcb --prerelease
 | `Alberto.Dcb` | Event store abstractions, control loop, middleware, projections, tenancy |
 | `Alberto.Dcb.Commands` | The `AlbertoStore` command pipeline (`Handle → Load → Decide → Commit`) |
 | `Alberto.Dcb.InMemory` | In-memory backend, checkpoint, dead-letter and state stores — dev and tests |
-| `Alberto.Dcb.Postgres` | PostgreSQL backend, migrations, leases, admin queries |
+| `Alberto.Dcb.Postgres` | PostgreSQL backend, migrations, leases |
 | `Alberto.Dcb.EntityFramework` | EF Core–backed projections |
 | `Alberto.Dcb.Messaging` | Transactional outbox abstractions |
 | `Alberto.Dcb.Postgres.Messaging` | PostgreSQL outbox store |
@@ -137,6 +137,7 @@ The full, runnable version of that program is
 | [Multi-tenancy](docs/multi-tenancy.md) | Tenant isolation, leases, and what it costs |
 | [Operations](docs/operations.md) | The `alberto` CLI, dead letters, error policy, telemetry |
 | [The admin surface](docs/admin.md) | Wiring the admin GraphQL API and MCP server into your host |
+| [Backup and recovery](docs/backup-and-recovery.md) | What is truth, what is derived, and what a restore invalidates |
 | [Configuration reference](docs/configuration.md) | Three-phase pipeline, all options, validation codes, custom backends |
 | [Async processing architecture](docs/architecture/async-processing.md) | How the control loop actually works |
 | [Tenant sharding](docs/architecture/tenant-sharding.md) | Spreading a module's tenants over several databases |

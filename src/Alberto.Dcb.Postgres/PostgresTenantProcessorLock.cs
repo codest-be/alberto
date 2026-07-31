@@ -69,15 +69,24 @@ public sealed class PostgresTenantProcessorLock : ITenantProcessorLock
 
         await using var reader = await cmd.ExecuteReaderAsync(ct);
 
+        // Deliberately tagged by consumer.id ONLY. A tenant id is unbounded and grows with the
+        // customer base, and every distinct tag combination is a separate time series the SDK
+        // allocates for the life of the process and exports on every collection cycle — so
+        // tagging by tenant makes these two counters most expensive exactly when the product is
+        // doing best, and takes the whole metrics pipeline down rather than degrading. The
+        // per-tenant question ("did tenant X get its lease?") is a trace/log question about one
+        // event; the aggregate question ("is this consumer's failure rate rising?") is what a
+        // counter is for, and consumer.id answers it. For tenant fanout without the cardinality,
+        // see the alberto.owned_tenant_count and alberto.tenant_cooldown_count gauges.
         if (await reader.ReadAsync(ct))
         {
-            AlbertoMetrics.TenantLocksAcquired.Add(1, new TagList { { "consumer.id", consumerId }, { "tenant.id", tenantId } });
+            AlbertoMetrics.TenantLocksAcquired.Add(1, new TagList { { "consumer.id", consumerId } });
             var actualExpiresAt = reader.GetDateTime(0);
             return new TenantLease(tenantId, new DateTimeOffset(actualExpiresAt, TimeSpan.Zero));
         }
 
         // No rows returned means the lease is held by another replica and not expired
-        AlbertoMetrics.TenantLockFailures.Add(1, new TagList { { "consumer.id", consumerId }, { "tenant.id", tenantId } });
+        AlbertoMetrics.TenantLockFailures.Add(1, new TagList { { "consumer.id", consumerId } });
         return null;
     }
 

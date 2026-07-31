@@ -64,7 +64,8 @@ public static class AlbertoStoreBuilderExtensions
             .Where(t => typeof(IEvent).IsAssignableFrom(t) && !t.IsAbstract && !t.IsInterface)
             .Select(t => (t, attr: EventTypeAttribute.GetEventType(t)))
             .Where(x => x.attr is not null)
-            .Select(x => new RegisteredEventType(x.attr!.Id, x.attr.Version))
+            .Select(x => new RegisteredEventType(
+                x.attr!.Id, x.attr.Version, x.attr.UpcastingNotRequired))
             .ToImmutableArray();
 
         builder.Configure(d => d with { RegisteredEventTypes = registeredEventTypes });

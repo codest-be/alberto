@@ -13,8 +13,17 @@
     <ItemGroup>
         <ProjectReference Include="../../src/Alberto.Dcb/Alberto.Dcb.csproj" />
         <ProjectReference Include="../../src/Alberto.Dcb.Commands/Alberto.Dcb.Commands.csproj" />
+        <!-- Referenced as a plain assembly, not as OutputItemType="Analyzer": the tests instantiate
+             DiscardedPipelineAnalyzer and run it against compilations they build themselves, which
+             is what lets them assert on the exact diagnostics for a given snippet. Letting Roslyn
+             load it over this project instead would only tell us that this project is clean. -->
+        <ProjectReference Include="../../src/Alberto.Dcb.Commands.Analyzers/Alberto.Dcb.Commands.Analyzers.csproj" />
         <ProjectReference Include="../../src/Alberto.Dcb.InMemory/Alberto.Dcb.InMemory.csproj" />
         <ProjectReference Include="../../src/Alberto.Dcb.Postgres/Alberto.Dcb.Postgres.csproj" />
+        <!-- Referenced explicitly, not left to flow in transitively via Alberto.Cli: PostgresAdminDataAccess
+             and PostgresAdminOperator have their own test classes here, and those must not stop compiling
+             the day the CLI's reference changes. -->
+        <ProjectReference Include="../../src/Alberto.Dcb.Postgres.Admin/Alberto.Dcb.Postgres.Admin.csproj" />
         <ProjectReference Include="../../src/Alberto.Dcb.Messaging/Alberto.Dcb.Messaging.csproj" />
         <ProjectReference Include="../../src/Alberto.Dcb.Postgres.Messaging/Alberto.Dcb.Postgres.Messaging.csproj" />
         <ProjectReference Include="../../src/Alberto.Dcb.EntityFramework/Alberto.Dcb.EntityFramework.csproj" />
@@ -45,6 +54,8 @@
           <PrivateAssets>all</PrivateAssets>
         </PackageReference>
         <PackageReference Include="FluentAssertions" />
+        <!-- Hosts DiscardedPipelineAnalyzer in the analyzer tests. -->
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
         <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
         <PackageReference Include="Testcontainers.PostgreSql" />
         <PackageReference Include="Microsoft.EntityFrameworkCore" />

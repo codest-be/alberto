@@ -23,3 +23,6 @@ delta.md
 # Node / React admin dashboard
 node_modules/
 dist/
+
+# macOS Finder metadata
+.DS_Store

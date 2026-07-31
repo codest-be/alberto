@@ -102,7 +102,7 @@ var overview = new InMemoryStateStore<OrdersOverview>();
 `IStateStore<TState>` is deliberately small — two methods, both keyed by document id:
 
 ```csharp
-Task<Dictionary<string, TState>> LoadManyAsync(IEnumerable<string> documentIds,
+Task<IReadOnlyDictionary<string, TState>> LoadManyAsync(IEnumerable<string> documentIds,
                                                CancellationToken ct = default);
 Task ApplyChangesAsync(IReadOnlyDictionary<string, TState> upserts,
                        IReadOnlyCollection<string> deletes,
@@ -184,6 +184,58 @@ Then wire the module and the projection:
 EF projections batch: a whole control-loop batch accumulates in the change tracker and flushes with
 one `SaveChanges`.
 
+### Reacting after the commit
+
+An overload takes an `afterCommit` factory — it resolves its dependencies once at startup and
+returns a callback run after each successful `SaveChanges`, receiving only the events the
+projection actually handled:
+
+```csharp
+.AddEfProjection<OrderSummaryEntity, OrdersDbContext>(
+    OrderSummaryEfProjection.Declaration,
+    afterCommit: sp =>
+    {
+        var notifier = sp.GetRequiredService<IOrderNotifier>();
+        return (events, ct) => notifier.PublishAsync(events, ct);
+    })
+```
+
+**It fires on live processing only — never during a rebuild replay.** A rebuild replays the entire
+log into a shadow version that no reader can see yet, so firing the callback there would re-emit
+every notification the system has ever sent, once per rebuild, for state that is not live. A
+webhook that has already fired cannot be unfired.
+
+The consequence, so it is a choice and not a surprise: anything the callback maintains *outside*
+the `DbContext` — a search index, an external cache — is not rebuilt by
+`alberto ops rebuild`, and needs a refresh path of its own. Keep the callback to things that are
+cheap to redo, and put anything that must survive a rebuild in the projection entity itself.
+
+### EF projections on a tenant-enabled module
+
+`IProjectionEntity` has exactly the columns above — there is no tenant among them, and adding a
+`TenantId` property to your entity does not change what the store queries on. Both the async store
+and the inline projection load and write by `(DocumentId, RebuildVersion)`, so on a module that
+declared `.WithTenancy()` two tenants producing the same document id share one row: last write
+wins, and every read after it returns the other tenant's data.
+
+Whether that can happen is a property of the declaration's id selectors, which Alberto cannot
+inspect, so it has to be stated. Registration fails with `ALB0027` until it is:
+
+```csharp
+// Every handler keys the document on the order's GUID, so no two tenants can collide.
+.AddEfProjection<OrderSummaryEntity, OrdersDbContext>(
+    OrderSummaryEfProjection.Declaration,
+    documentIds: EfDocumentIdUniqueness.AcrossTenants)
+```
+
+If the ids are *not* unique across tenants, make them so by prefixing a discriminator the event
+itself carries (`id: e => $"{e.TenantId}/{e.OrderId}"`), give each tenant its own database with
+`.WithTenancy(t => t.AcrossPostgresDatabases(...))`, or use the JSONB state store via
+`AddProjection`, whose tenancy is part of the migrated schema and needs no such promise.
+
+Single-tenant modules are unaffected — there is no second tenant to collide with, and the
+parameter's default is correct there.
+
 ### Inline vs async
 
 ```csharp
@@ -238,7 +290,7 @@ where it is empty or half-built.
 ### Enabling it
 
 ```csharp
-.WithControlLoop(loop => loop.WithRebuilds())
+.WithRebuilds()
 ```
 
 Plus the two requirements you have already met if you followed the sections above:

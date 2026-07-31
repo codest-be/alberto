@@ -59,13 +59,10 @@ public sealed class UpcasterBypassGuardTests
                 "as the input to a transform step — not a final event object returned to application code.",
 
             ["Alberto.Dcb/EventEnvelopeExtensions.cs"] =
-                "Contains two raw-deserialization sites: " +
-                "(1) the public [Obsolete] ParseEvent<T> extension method — a documented intentional bypass " +
-                "of the upcaster chain kept solely for backward compatibility, planned for removal in a future release; " +
-                "(2) the internal DeserializeEvent<TEvent> null-serializer fallback used by standalone / testing " +
-                "paths (e.g. ProjectionDeclaration<TState>.GetDocumentId(IEventEnvelope) and " +
+                "Contains the internal DeserializeEvent<TEvent> null-serializer fallback used by standalone / " +
+                "testing paths (e.g. ProjectionDeclaration<TState>.GetDocumentId(IEventEnvelope) and " +
                 "ProjectionDeclaration<TState>.Apply(TState, IEventEnvelope, ProjectionContext)). " +
-                "Site (2) is guarded by the same EV-1 stale-version check as EvolverDispatcher — it throws " +
+                "It is guarded by the same EV-1 stale-version check as EvolverDispatcher — it throws " +
                 "InvalidOperationException rather than silently returning stale state when no serializer is provided " +
                 "and the envelope's stored version is older than the handler's declared version.",
 
@@ -87,6 +84,15 @@ public sealed class UpcasterBypassGuardTests
 
             ["Alberto.Dcb.Postgres.Messaging/PostgresOutboxStore.cs"] =
                 "Deserializes a Dictionary<string,string> outbox-entry metadata column, not an event payload.",
+
+            ["Alberto.Dcb.InMemory/EventDataJson.cs"] =
+                "Parses a JsonDocument purely to re-emit the payload text in the canonical form a jsonb " +
+                "column would store it in; it never materializes an event CLR type, so there is nothing " +
+                "for an upcaster to have been applied to.",
+
+            ["Alberto.Dcb.Testing.Xunit/EventStoreBackendSpecification.cs"] =
+                "Parses two JsonNode trees so the round-trip assertion can compare payloads for semantic " +
+                "equality instead of byte equality; no event type is deserialized.",
         };
 
     // Guards against JsonSerializer.Deserialize, JsonDocument.Parse, and JsonNode.Parse —

@@ -24,6 +24,12 @@ public interface IEventToPersist
     /// <summary>
     /// The serialized event data as JSON.
     /// </summary>
+    /// <remarks>
+    /// Must be well-formed JSON and must not contain a NUL character (U+0000) in any string —
+    /// neither can be stored in the <c>jsonb</c> column the PostgreSQL backend uses. What is read
+    /// back is semantically equal JSON rather than this exact string; see
+    /// <see cref="IEventEnvelope.EventData"/>.
+    /// </remarks>
     string EventData { get; }
 
     /// <summary>

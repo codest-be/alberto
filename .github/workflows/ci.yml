@@ -51,6 +51,30 @@ jobs:
       - name: Benchmark smoke run
         run: dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks -- --job dry --anyCategories=smoke
 
+      # Catches the class of bug where a src/ project is packable and depended upon
+      # by another packable project but accidentally omitted from the pack list —
+      # the .nupkg would be produced but its transitive dependency would never be
+      # pushed, causing NU1101 for anyone who installs the package. Packs every
+      # packable src project into a temp folder, then restores a throwaway project
+      # that references Alberto.Dcb.Postgres (the deepest Alberto dependency) from
+      # that folder only (plus nuget.org for third-party packages). Any missing
+      # Alberto.* package makes the restore fail.
+      - name: Pack smoke
+        run: |
+          for proj in Alberto.Dcb Alberto.Dcb.Commands Alberto.Dcb.EntityFramework Alberto.Dcb.InMemory Alberto.Dcb.Messaging Alberto.Dcb.Postgres Alberto.Dcb.Postgres.Messaging Alberto.Dcb.Telemetry Alberto.Dcb.Testing Alberto.Dcb.Testing.Xunit; do
+            dotnet pack "src/$proj/$proj.csproj" -c Release --version-suffix ci -o /tmp/alberto-pack
+          done
+          SMOKEDIR=$(mktemp -d)
+          cat > "$SMOKEDIR/PackCheck.csproj" <<'CSPROJ'
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+            <ItemGroup><PackageReference Include="Alberto.Dcb.Postgres" Version="0.1.0-ci" /></ItemGroup>
+          </Project>
+          CSPROJ
+          dotnet restore "$SMOKEDIR/PackCheck.csproj" \
+            --source /tmp/alberto-pack \
+            --source https://api.nuget.org/v3/index.json
+
       - name: Upload coverage
         if: always()
         uses: actions/upload-artifact@v4

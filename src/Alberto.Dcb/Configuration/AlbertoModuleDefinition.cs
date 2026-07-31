@@ -141,4 +141,14 @@ public sealed record AlbertoModuleDefinition
 /// <c>WithEventsFrom()</c>. Used by <see cref="AlbertoModuleValidator"/> to cross-check
 /// upcaster coverage at startup.
 /// </summary>
-public readonly record struct RegisteredEventType(string Id, int Version);
+/// <param name="Id">The event type's slug, as declared by <c>[EventType("...")]</c>.</param>
+/// <param name="Version">The schema version the CLR type declares.</param>
+/// <param name="UpcastingNotRequired">
+/// The type's <c>[EventType(UpcastingNotRequired = true)]</c> opt-out, carried through so
+/// <c>ALB0018</c> and <see cref="EventSerializer.Deserialize"/> answer the same question the same
+/// way — a gap waived at the declaration site must not fail startup.
+/// </param>
+public readonly record struct RegisteredEventType(
+    string Id,
+    int Version,
+    bool UpcastingNotRequired = false);

@@ -69,9 +69,35 @@ public enum CompositionMode
 public sealed class DcbQuery
 {
     /// <summary>
-    /// An empty query that matches all events.
+    /// A query naming no types and no tags, used as the seed for the fluent builders
+    /// (<c>DcbQuery.Empty.WithTypes(...)</c>).
     /// </summary>
+    /// <remarks>
+    /// On the read path this matches every event, because a filter that names nothing excludes
+    /// nothing. As a consistency check it is <b>rejected</b>: a boundary that names nothing cannot
+    /// say what a conflict would be. Reaching an append with this value and a non-null
+    /// <c>expectedPosition</c> almost always means a builder chain was left unfinished or a
+    /// collection came back empty at runtime, so it is treated as the mistake it usually is.
+    /// To read the whole log deliberately, prefer <see cref="All"/>, which says so by name.
+    /// </remarks>
     public static DcbQuery Empty { get; } = new([], [], TagMatchMode.Any, CompositionMode.Intersect);
+
+    /// <summary>
+    /// A query that deliberately matches every event in the store.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Structurally identical to <see cref="Empty"/> — both name no types and no tags, so both
+    /// have <see cref="IsEmpty"/> <c>true</c> and both match everything on a read. The difference
+    /// is intent, and intent is the whole point: <see cref="MatchesAll"/> is <c>true</c> only for
+    /// this one, so the store can tell "I meant the whole log" apart from "my filter list came
+    /// back empty" and report the right problem for each.
+    /// </para>
+    /// <para>
+    /// Valid for reading. <b>Not</b> valid as a consistency check — see <see cref="MatchesAll"/>.
+    /// </para>
+    /// </remarks>
+    public static DcbQuery All { get; } = new([], [], TagMatchMode.Any, CompositionMode.Intersect, explicitAll: true);
 
     /// <summary>
     /// Event types to filter by. Events matching ANY of these types are included.
@@ -101,9 +127,40 @@ public sealed class DcbQuery
     public bool RequiresAllTags => TagMatchMode == TagMatchMode.All;
 
     /// <summary>
-    /// Returns true if this query has no filters (matches all events).
+    /// Returns true if this query has no filters (matches all events on a read).
     /// </summary>
+    /// <remarks>
+    /// True for <see cref="All"/> as well as for a query whose filters happen to be empty, since
+    /// the two are structurally identical. Backends use this to route reads, where the two are
+    /// genuinely equivalent. Anything deciding whether an empty query was <i>intended</i> — which
+    /// is only ever the append path — must ask <see cref="MatchesAll"/> instead.
+    /// </remarks>
     public bool IsEmpty => Types.Count == 0 && Tags.Count == 0;
+
+    /// <summary>
+    /// Returns true only for <see cref="All"/> — a query whose emptiness was asked for by name,
+    /// rather than one that merely ended up empty.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Exists because <see cref="IsEmpty"/> cannot distinguish the two cases and the append path
+    /// must. <c>DcbQuery.ByTypes(types)</c> where <c>types</c> came back empty at runtime produces
+    /// exactly the same shape as a deliberate whole-log query, and treating that silently as
+    /// "check nothing" is how a consistency boundary disappears without a single log line.
+    /// </para>
+    /// <para>
+    /// Neither form is accepted as a consistency check, so this does not gate a capability — it
+    /// decides <i>which</i> mistake to report. An accidental empty is a bug at the call site and
+    /// is reported that way. <see cref="All"/> is a coherent request the store declines: a
+    /// boundary spanning the whole log conflicts with every concurrent append, which serialises
+    /// every writer in the store rather than the ones that actually interact.
+    /// </para>
+    /// <para>
+    /// Adding any type or tag clears it, so a query built up from <see cref="All"/> is an ordinary
+    /// narrowed query and is accepted as a check like any other.
+    /// </para>
+    /// </remarks>
+    public bool MatchesAll => _explicitAll && IsEmpty;
 
     /// <summary>
     /// Returns true if this query filters by types only.
@@ -150,21 +207,33 @@ public sealed class DcbQuery
     public bool UnionsTypesAndTags =>
         HasTypesAndTags && CompositionMode == CompositionMode.Union;
 
+    private readonly bool _explicitAll;
+
     private DcbQuery(
         IReadOnlyCollection<EventType> types,
         IReadOnlyCollection<EventTag> tags,
         TagMatchMode tagMatchMode,
-        CompositionMode compositionMode)
+        CompositionMode compositionMode,
+        bool explicitAll = false)
     {
         Types = types.ToImmutableArray();
         Tags = tags.ToImmutableArray();
         TagMatchMode = tagMatchMode;
         CompositionMode = compositionMode;
+        _explicitAll = explicitAll;
     }
 
     /// <summary>
     /// Creates a query that filters by event types.
     /// </summary>
+    /// <remarks>
+    /// Passing an empty array produces a query where <see cref="IsEmpty"/> is <c>true</c>.
+    /// On the read path that matches all events; as a consistency check it is rejected by
+    /// <see cref="IEventStore.AppendAsync"/> — an empty boundary cannot define a conflict.
+    /// Callers that build the array dynamically should guard against the empty case before
+    /// calling this factory. To match every event on purpose, use <see cref="All"/>, which is
+    /// reported as a declined request rather than as a mistake.
+    /// </remarks>
     public static DcbQuery ByTypes(params EventType[] types)
         => new(types, [], TagMatchMode.Any, CompositionMode.Intersect);
 
@@ -183,6 +252,14 @@ public sealed class DcbQuery
     /// <summary>
     /// Creates a query that filters by tags.
     /// </summary>
+    /// <remarks>
+    /// Passing an empty array produces a query where <see cref="IsEmpty"/> is <c>true</c>.
+    /// On the read path that matches all events; as a consistency check it is rejected by
+    /// <see cref="IEventStore.AppendAsync"/> — an empty boundary cannot define a conflict.
+    /// Callers that build the array dynamically should guard against the empty case before
+    /// calling this factory. To match every event on purpose, use <see cref="All"/>, which is
+    /// reported as a declined request rather than as a mistake.
+    /// </remarks>
     public static DcbQuery ByTags(params EventTag[] tags)
         => new([], tags, TagMatchMode.Any, CompositionMode.Intersect);
 
@@ -196,6 +273,14 @@ public sealed class DcbQuery
     /// <summary>
     /// Creates a query that requires events to match all specified tags.
     /// </summary>
+    /// <remarks>
+    /// Passing an empty array produces a query where <see cref="IsEmpty"/> is <c>true</c>.
+    /// On the read path that matches all events; as a consistency check it is rejected by
+    /// <see cref="IEventStore.AppendAsync"/> — an empty boundary cannot define a conflict.
+    /// Callers that build the array dynamically should guard against the empty case before
+    /// calling this factory. To match every event on purpose, use <see cref="All"/>, which is
+    /// reported as a declined request rather than as a mistake.
+    /// </remarks>
     public static DcbQuery ByAllTags(params EventTag[] tags)
         => new([], tags, TagMatchMode.All, CompositionMode.Intersect);
 
@@ -246,7 +331,7 @@ public sealed class DcbQuery
     /// Returns a new query with additional event types.
     /// </summary>
     public DcbQuery WithTypes(params EventType[] types)
-        => new([..Types, ..types], Tags, TagMatchMode, CompositionMode);
+        => new([..Types, ..types], Tags, TagMatchMode, CompositionMode, _explicitAll);
 
     /// <summary>
     /// Returns a new query with additional event types (string overload).
@@ -264,7 +349,7 @@ public sealed class DcbQuery
     /// Returns a new query with additional tag matches.
     /// </summary>
     public DcbQuery WithTags(params EventTag[] tags)
-        => new(Types, [..Tags, ..tags], TagMatchMode, CompositionMode);
+        => new(Types, [..Tags, ..tags], TagMatchMode, CompositionMode, _explicitAll);
 
     /// <summary>
     /// Returns a new query with additional tag matches (string overload).
@@ -286,7 +371,7 @@ public sealed class DcbQuery
     public DcbQuery AsUnion() =>
         CompositionMode == CompositionMode.Union
             ? this
-            : new DcbQuery(Types, Tags, TagMatchMode, CompositionMode.Union);
+            : new DcbQuery(Types, Tags, TagMatchMode, CompositionMode.Union, _explicitAll);
 
     /// <summary>
     /// Returns a new query whose type axis and tag axis combine with AND semantics
@@ -295,7 +380,7 @@ public sealed class DcbQuery
     public DcbQuery AsIntersect() =>
         CompositionMode == CompositionMode.Intersect
             ? this
-            : new DcbQuery(Types, Tags, TagMatchMode, CompositionMode.Intersect);
+            : new DcbQuery(Types, Tags, TagMatchMode, CompositionMode.Intersect, _explicitAll);
 
     /// <summary>
     /// Returns a string representation of the query for debugging and logging.

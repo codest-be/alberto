@@ -12,7 +12,7 @@ namespace Alberto.Dcb.Postgres;
 /// The compatibility constructor's <c>multiTenant</c> flag can assert multi-tenant storage,
 /// but never overrides the topology reported by the schema.
 /// </remarks>
-public sealed class PostgresDeadLetterStore : IDeadLetterStore
+public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly SchemaQualifier _schema;

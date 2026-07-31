@@ -11,6 +11,7 @@ public static class OpsCommand
 
         command.AddCommand(CheckpointOpsCommand.Build());
         command.AddCommand(DeadLetterOpsCommand.Build());
+        command.AddCommand(OutboxOpsCommand.Build());
         command.AddCommand(RebuildCommand.Build());
         command.AddCommand(TenantOpsCommand.Build());
 

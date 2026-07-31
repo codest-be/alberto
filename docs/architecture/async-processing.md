@@ -15,7 +15,7 @@ ControlLoop reads a batch from the global stream
     ↓
 Batch dispatched through the middleware chain
     ↓
-Events routed to processors (AsyncProjection / AsyncReactor / BatchedEfProjection)
+Events routed to processors (AsyncProjection / AsyncReactor)
     ↓
 State written via IStateStore (PostgresStateStore or EfStateStore)
     ↓
@@ -71,37 +71,33 @@ Attempts exhausted ────────────────────�
                              └─ no  → skip event
 ```
 
-`DeadLetterRetryLoop` separately picks up dead letters that an operator has marked for retry (`IDeadLetterStore.MarkForRetryAsync`, exposed as `alberto ops dead-letters retry`).
+A separate retry loop picks up dead letters that an operator has marked for retry (`IDeadLetterStore.MarkForRetryAsync`, exposed as `alberto ops dead-letters retry`).
 
 ## Key Components
 
-### AsyncProjection
+### DeclaredAsyncProjection
 
 Transforms events into read-model state using pure functions.
 
-**Location:** `src/Alberto.Dcb/Subscriptions/AsyncProjection.cs`
+**Location:** `src/Alberto.Dcb/Subscriptions/DeclaredAsyncProjection.cs`
 
 1. Extract document ID from the event
-2. Get the tenant-scoped state store
-3. Load current state (or create new)
+2. Get the tenant-scoped state store (one store per tenant, built lazily from the factory)
+3. Load current state (or start from the declared initial state)
 4. Apply the event → `Set`, `Delete`, or `Unchanged`
 5. Persist the result
 
-### AsyncReactor
+### FunctionalReactor
 
 Handles side effects in response to events.
 
-**Location:** `src/Alberto.Dcb/Subscriptions/AsyncReactor.cs`
+**Location:** `src/Alberto.Dcb/Subscriptions/FunctionalReactor.cs`
 
-- Reflection-based dispatch to `IReact<TEvent>` handlers
-- No state persistence
-- Scans the reactor type for implemented interfaces at startup
-
-### BatchedEfProjection
-
-**Location:** `src/Alberto.Dcb.EntityFramework/Batching/BatchedEfProjection.cs`
-
-Accumulates a batch of events in the EF change tracker and flushes with a single `SaveChanges`.
+Reactors are registered declaratively via `ReactTo<TEvent>(handler, processorId, ...)` on the
+module builder, not as classes. Each call wraps the supplied delegate in a `FunctionalReactor<TEvent>`
+and registers it as an async processor. There is no reflection-based dispatch and no `IReact<TEvent>`
+interface — dispatch is entirely delegate-based. Concurrency is controlled by `MaxConcurrency` in
+`ProcessorExecutionOptions`; batching follows `ProcessorBatchingMode` on the same record.
 
 ### Checkpoint stores
 
@@ -255,7 +251,7 @@ Because aborts consume numbers without moving the active one, the startup sweep 
 The following appear in the schema or the type system but have no orchestration behind them. Do not rely on them.
 
 - **Rebuild-mode processor tuning.** `IEventProcessor.IsRebuilding` is set for shadow loops, but there is no lag threshold and no separate rebuild batch size — a shadow loop runs on the module's configured batch size.
-- **Control-loop push to the admin surface.** The admin GraphQL API does have live subscriptions ([admin.md](../admin.md)), but they are published by admin mutations, not by the control loop: a projection catching up on its own does not push anything, so a console watching checkpoint lag is polling underneath. The `{schema}_events` NOTIFY channel is not the mechanism either — it exists to refresh `EventStoreHead`, not to feed a UI.
+- **Control-loop push to the admin surface.** The admin GraphQL API does have live subscriptions ([admin.md](../admin.md)), but they are published by admin mutations, not by the control loop: a projection catching up on its own does not push anything, so a console watching checkpoint lag is polling underneath. The `{schema}_events` NOTIFY channel is not the mechanism either — it exists to refresh `EventStoreHead`, not to feed a UI. (On `main` the whole GraphQL surface is absent, so there the operator surface is the CLI and nothing pushes at all.)
 
 ## Event deserialization invariant
 
@@ -282,13 +278,12 @@ rule" for how to add a file to the allow-list when non-event JSON deserializatio
 | Batch middleware | `src/Alberto.Dcb/Subscriptions/BatchConsumeMiddleware.cs` |
 | RetryOptions | `src/Alberto.Dcb/Configuration/RetryOptions.cs` |
 | IErrorClassifier | `src/Alberto.Dcb/Subscriptions/IErrorClassifier.cs` |
-| AsyncProjection | `src/Alberto.Dcb/Subscriptions/AsyncProjection.cs` |
-| AsyncReactor | `src/Alberto.Dcb/Subscriptions/AsyncReactor.cs` |
+| DeclaredAsyncProjection | `src/Alberto.Dcb/Subscriptions/DeclaredAsyncProjection.cs` |
+| FunctionalReactor | `src/Alberto.Dcb/Subscriptions/FunctionalReactor.cs` |
 | CachingCheckpointStore | `src/Alberto.Dcb/Subscriptions/CachingCheckpointStore.cs` |
 | PostgresCheckpointStore | `src/Alberto.Dcb.Postgres/PostgresCheckpointStore.cs` |
 | PostgresEventListener | `src/Alberto.Dcb.Postgres/PostgresEventListener.cs` |
 | EfStateStore | `src/Alberto.Dcb.EntityFramework/EfStateStore.cs` |
-| BatchedEfProjection | `src/Alberto.Dcb.EntityFramework/Batching/BatchedEfProjection.cs` |
 | RebuildCoordinator | `src/Alberto.Dcb/Subscriptions/RebuildCoordinator.cs` |
 | ProjectionVersions | `src/Alberto.Dcb/Subscriptions/ProjectionVersions.cs` |
 | IProjectionRebuildStore | `src/Alberto.Dcb/Subscriptions/IProjectionRebuildStore.cs` |

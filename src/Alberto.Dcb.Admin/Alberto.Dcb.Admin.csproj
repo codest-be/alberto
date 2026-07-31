@@ -5,11 +5,24 @@
         <Nullable>enable</Nullable>
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
 
-        <!-- Package Metadata -->
+        <!--
+            Deliberately NOT packable, and deliberately keeping its package metadata for when it is.
+
+            IAdminReader/IAdminOperator are the contract the parked admin front doors are built on
+            — the GraphQL admin API, MCP server, React console and BFF on feature/admin-surface.
+            Shipping this at 1.0 would freeze the abstraction under semver before the things that
+            consume it exist, which is exactly the mistake parking those front doors avoids.
+
+            The only consumer on main is tools/Alberto.Cli, which references this project directly,
+            so nothing needs it from nuget.org today. Unparking is one line: IsPackable=true, plus
+            capturing PublicAPI.Shipped.txt (the analyzer is gated on IsPackable, so it is inert
+            until then and PublicAPI.Unshipped.txt is kept only so unparking is a diff, not a
+            rediscovery).
+        -->
         <PackageId>Alberto.Dcb.Admin</PackageId>
         <Title>Alberto DCB Admin Surface</Title>
         <Description>Admin interfaces and event-sourced audit trail for the Alberto DCB event store. Provides IAdminReader and IAdminOperator abstractions.</Description>
-        <IsPackable>true</IsPackable>
+        <IsPackable>false</IsPackable>
         <RootNamespace>Alberto.Dcb.Admin</RootNamespace>
     </PropertyGroup>
 

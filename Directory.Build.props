@@ -10,16 +10,24 @@
         <VersionPrefix>0.1.0</VersionPrefix>
 
         <!-- Repository Information -->
-        <RepositoryUrl>https://github.com/codest-be/albertoo</RepositoryUrl>
+        <RepositoryUrl>https://github.com/codest-be/alberto</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
 
         <!-- Package Configuration -->
-        <PackageProjectUrl>https://github.com/codest-be/albertoo</PackageProjectUrl>
+        <PackageProjectUrl>https://github.com/codest-be/alberto</PackageProjectUrl>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
         <PackageTags>DCB;events;eventsourcing;dotnet;postgresql;dynamic-consistency-boundary</PackageTags>
 
         <!-- Build Configuration -->
+
+        <!-- Nothing ships to NuGet unless it says so. The SDK default is the other way round, which
+             quietly handed the package metadata, SourceLink and the public-API gate below to every
+             app, test, tool and benchmark project in the repo. Each package under /src sets
+             IsPackable=true in its own PropertyGroup, and a csproj body is evaluated after this
+             file, so opting in still works exactly as before. -->
+        <IsPackable>false</IsPackable>
+
         <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
         <IncludeSymbols>true</IncludeSymbols>
         <SymbolPackageFormat>snupkg</SymbolPackageFormat>
@@ -68,45 +76,18 @@
              graph that consumers see; it is compile-time only. -->
         <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
 
-        <!-- Public API surface tracking — enforces that intentional additions/removals to the
-             public API are captured in PublicAPI.Shipped.txt / PublicAPI.Unshipped.txt.
-             PrivateAssets="All" because this is a build-time analyzer only.
-             RulesNotAsErrors below keeps this from failing the build while the initial baselines
-             are still empty; raise those rules to 'error' when capturing the v1 baseline. -->
+        <!-- Public API surface tracking — every public type and member must appear in this
+             project's PublicAPI.Shipped.txt / PublicAPI.Unshipped.txt, so adding or removing one
+             is a reviewable diff rather than something that slips out in a patch release. The
+             rules are at error severity (see .editorconfig); the build fails on an undeclared
+             symbol. PrivateAssets="All" because this is a build-time analyzer only. -->
         <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="All" />
 
         <!-- Wire the per-project declaration files as additional inputs to the analyzer. The
              Condition guards prevent a misleading "file not found" diagnostic during the window
-             before the files exist — though they should always exist once the project is checked out
-             because we committed them as empty files. -->
+             before the files exist — though they should always exist once the project is checked
+             out because every packable project commits both. -->
         <AdditionalFiles Include="PublicAPI.Shipped.txt"   Condition="Exists('PublicAPI.Shipped.txt')" />
         <AdditionalFiles Include="PublicAPI.Unshipped.txt" Condition="Exists('PublicAPI.Unshipped.txt')" />
-
-        <!-- Silence all PublicApiAnalyzer diagnostics via a global analyzer config so that they
-             apply to source-generated files (in obj/) as well as regular source files. The .editorconfig
-             suppression at the repo root works for regular source but not for all source-generator
-             output paths in every TFM. GlobalAnalyzerConfigFiles is the reliable alternative.
-             TODO (v1 release gate): remove this file reference and re-enable the diagnostics. -->
-        <GlobalAnalyzerConfigFiles Include="$(MSBuildThisFileDirectory)publicapi-silence.globalconfig"
-                                   Condition="Exists('$(MSBuildThisFileDirectory)publicapi-silence.globalconfig')" />
     </ItemGroup>
-
-    <!-- Silence PublicApiAnalyzers diagnostics until the v1 baselines are captured.
-         These rules track every deviation between the live public surface and the committed
-         baseline files (PublicAPI.Shipped.txt / PublicAPI.Unshipped.txt).
-           RS0016 — public type/member not in declared API
-           RS0017 — declared API entry that no longer exists
-           RS0022 — constructor makes a non-inheritable base class inheritable
-           RS0025 — symbol duplicated across Shipped/Unshipped
-           RS0026 — multiple public overloads with optional parameters
-           RS0027 — overload with optional params should have the most params
-           RS0037 — nullability of reference types not tracked in declared API
-         The analyzer emits RS0016 as an error (not a warning), so WarningsNotAsErrors has no
-         effect; NoWarn is required to silence it while baselines are empty.
-         TODO (v1 release gate): remove this PropertyGroup, capture the baselines into each
-         project's PublicAPI.Unshipped.txt, then set all RS00xx rules to severity 'error' in
-         .editorconfig so future public API changes require explicit declaration updates. -->
-    <PropertyGroup Condition="'$(IsPackable)' == 'true'">
-        <NoWarn>$(NoWarn);RS0016;RS0017;RS0022;RS0025;RS0026;RS0027;RS0037</NoWarn>
-    </PropertyGroup>
 </Project>

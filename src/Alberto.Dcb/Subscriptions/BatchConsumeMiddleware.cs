@@ -1,5 +1,6 @@
 using Alberto.Dcb.Configuration;
 using Alberto.Dcb.Telemetry;
+using Microsoft.Extensions.Logging;
 
 namespace Alberto.Dcb.Subscriptions;
 
@@ -26,16 +27,23 @@ public static class BatchConsumeMiddlewares
     ///   so the caller can bisect the batch to isolate the poison event.</item>
     ///   <item>Single-event batches: dead-letter in place.</item>
     /// </list>
+    /// The dead-letter store write itself is wrapped in a bounded retry. If that
+    /// write still cannot be made durable, the failure is logged at error level and
+    /// the method returns normally — losing one dead-letter entry is strictly safer
+    /// than allowing the exception to escape, which would prevent the checkpoint from
+    /// advancing and cause all already-committed events to be re-delivered.
     /// </summary>
     /// <param name="retry">Retry policy (max attempts, backoff, dead-letter flag).</param>
     /// <param name="classifier">Determines whether a given exception is transient or permanent.</param>
     /// <param name="deadLetterStore">Store for exhausted events. Null disables dead-lettering.</param>
     /// <param name="timeProvider">Clock used to stamp <see cref="DeadLetterEntry.FailedAt"/>. Defaults to <see cref="TimeProvider.System"/>.</param>
+    /// <param name="logger">Logger used to surface dead-letter write failures. Null disables logging.</param>
     public static BatchConsumeMiddleware RetryAndDeadLetter(
         RetryOptions retry,
         IErrorClassifier classifier,
         IDeadLetterStore? deadLetterStore,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        ILogger? logger = null)
     {
         var clock = timeProvider ?? TimeProvider.System;
         return async (context, next) =>
@@ -62,14 +70,19 @@ public static class BatchConsumeMiddlewares
                 return;
 
             var envelope = context.Envelopes[0];
-            await deadLetterStore.StoreAsync(
-                DeadLetterEntryFactory.Create(
-                    context.ProcessorId,
-                    envelope,
-                    lastError,
-                    context.Attempt,
-                    clock.GetUtcNow()),
-                context.CancellationToken);
+            var entry = DeadLetterEntryFactory.Create(
+                context.ProcessorId,
+                envelope,
+                lastError,
+                context.Attempt,
+                clock.GetUtcNow());
+
+            // A transient DB error on this write must not escape: the checkpoint would stay at
+            // the pre-batch position and every event that already committed side-effects
+            // (A, B, C in a bisected [A, B, C, D]) would be re-delivered on restart. See
+            // RetryAndDeadLetterCore.StoreDeadLetterAsync for the full reasoning.
+            await RetryAndDeadLetterCore.StoreDeadLetterAsync(
+                deadLetterStore, entry, logger, context.CancellationToken);
         };
     }
 

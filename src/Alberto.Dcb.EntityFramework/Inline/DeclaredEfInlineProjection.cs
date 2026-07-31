@@ -17,6 +17,16 @@ namespace Alberto.Dcb.EntityFramework.Inline;
 /// This makes it safe for the same projection to also be processed by an async path during
 /// a migration window — the row whose position is highest wins.
 /// <para>
+/// Rebuild versions: every read is filtered by <see cref="IProjectionEntity.RebuildVersion"/>
+/// and every write stamps it, exactly as <c>EfStateStore</c> does. This matters precisely
+/// because of the migration window above — register the same entity as both inline and async,
+/// start a rebuild of the async side, and the table holds <c>(docId, v1)</c> and
+/// <c>(docId, v2)</c> at once. An unfiltered load returns both and
+/// <c>ToDictionaryAsync(e =&gt; e.DocumentId)</c> throws a duplicate-key
+/// <see cref="ArgumentException"/> — which, on the inline path, surfaces out of the caller's
+/// <see cref="IEventStore.AppendAsync"/> for the whole rebuild window.
+/// </para>
+/// <para>
 /// Multi-tenant note: <see cref="IProjectionEntity"/> has no tenant column, and the load
 /// query filters only by <see cref="IProjectionEntity.DocumentId"/>. This matches the
 /// async <c>EfStateStore</c> path. If a projection's storage is shared across tenants,
@@ -45,17 +55,29 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : IInlineP
 
     private readonly ProjectionDeclaration<TEntity> _declaration;
     private readonly IDbContextFactory<TDbContext> _contextFactory;
+    private readonly Func<int> _rebuildVersion;
     private readonly ILogger<DeclaredEfInlineProjection<TEntity, TDbContext>>? _logger;
 
+    /// <param name="declaration">The projection declaration.</param>
+    /// <param name="contextFactory">Factory for creating DbContext instances.</param>
+    /// <param name="rebuildVersion">
+    /// Resolves the version to read and write. Resolved per attempt rather than once, for the
+    /// same reason as <c>EfStateStore</c>: a promotion moves it underneath a long-lived
+    /// projection. Omit for a projection whose entity is never rebuilt; it then resolves to
+    /// version 1 forever.
+    /// </param>
+    /// <param name="logger">Logger for the diverged-projection alert. Optional.</param>
     public DeclaredEfInlineProjection(
         ProjectionDeclaration<TEntity> declaration,
         IDbContextFactory<TDbContext> contextFactory,
+        Func<int>? rebuildVersion = null,
         ILogger<DeclaredEfInlineProjection<TEntity, TDbContext>>? logger = null)
     {
         ArgumentNullException.ThrowIfNull(declaration);
         ArgumentNullException.ThrowIfNull(contextFactory);
         _declaration = declaration;
         _contextFactory = contextFactory;
+        _rebuildVersion = rebuildVersion ?? ProjectionVersions.NeverRebuilt;
         _logger = logger;
     }
 
@@ -132,12 +154,18 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : IInlineP
     {
         await using var context = await _contextFactory.CreateDbContextAsync(ct);
 
+        // Resolved once for the whole attempt, so a promotion landing mid-write cannot split
+        // the load, the upserts and the deletes across two versions.
+        var version = _rebuildVersion();
+
         // Load existing rows untracked: the projection rebuilds the entity by `with`-ing the
         // loaded state, producing a new instance that we then Update/Add. If the original
         // instance were tracked, Update would throw an identity-map conflict on the same key.
+        // The version predicate is what keeps this a one-row-per-document query while a
+        // shadow rebuild of the same entity is in flight.
         var existing = await context.Set<TEntity>()
             .AsNoTracking()
-            .Where(e => documentKeys.Contains(e.DocumentId))
+            .Where(e => documentKeys.Contains(e.DocumentId) && e.RebuildVersion == version)
             .ToDictionaryAsync(e => e.DocumentId, ct);
 
         var pending = new Dictionary<string, TEntity>();
@@ -192,6 +220,11 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : IInlineP
         foreach (var (docId, entity) in pending)
         {
             entity.DocumentId = docId;
+            // Stamped rather than left to the column default. A loaded row already carries the
+            // right version, but a declaration that returns a fresh instance leaves it at the
+            // CLR default, and relying on the store default to rewrite that only works while
+            // the live version happens to be 1.
+            entity.RebuildVersion = version;
             entity.UpdatedAt = now;
 
             if (existing.ContainsKey(docId))

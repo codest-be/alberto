@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Alberto.Dcb.Subscriptions;
 
@@ -69,6 +70,11 @@ public sealed class ProjectionCatchUp
     /// <param name="timeout">How long to wait. Defaults to the value given at construction.</param>
     /// <param name="cancellationToken">Cancels the wait.</param>
     /// <exception cref="TimeoutException">The processor did not catch up in time.</exception>
+    [SuppressMessage("ApiDesign", "RS0026:Do not add multiple overloads with optional parameters",
+        Justification = "The overloads are separated by the required position parameter, not by the " +
+                        "optional tail: a long never converts to TimeSpan?, so no call can bind to " +
+                        "both. The two are genuinely different waits — one for the head as of now, " +
+                        "one for a position the caller already holds.")]
     public async Task WaitForProjectionAsync(
         string processorId,
         TimeSpan? timeout = null,
@@ -88,6 +94,11 @@ public sealed class ProjectionCatchUp
     /// <param name="timeout">How long to wait. Defaults to the value given at construction.</param>
     /// <param name="cancellationToken">Cancels the wait.</param>
     /// <exception cref="TimeoutException">The processor did not reach the position in time.</exception>
+    [SuppressMessage("ApiDesign", "RS0026:Do not add multiple overloads with optional parameters",
+        Justification = "The overloads are separated by the required position parameter, not by the " +
+                        "optional tail: a long never converts to TimeSpan?, so no call can bind to " +
+                        "both. The two are genuinely different waits — one for the head as of now, " +
+                        "one for a position the caller already holds.")]
     public async Task WaitForProjectionAsync(
         string processorId,
         long position,

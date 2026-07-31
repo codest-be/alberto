@@ -86,7 +86,7 @@ Note: `apps/Alberto.Payments` is in the solution and builds, but it has no host 
 - **Vertical slices in the examples**: `apps/Alberto.Orders` and `apps/Alberto.Payments` are sliced by behaviour, not layer. One folder per slice under `Features/`, holding that slice's input type, state record, evolver, decision function, boundary and GraphQL operation. **Slices share the event log and nothing else** — no shared state record, no shared evolver, no base state. `Contracts/` (events, status enums, problem codes, tag keys) and `Platform/` (DI, `DbContext`, EF migrations) are the two deliberate exceptions, named so they cannot be mistaken for domain code that happens to be shared. Five slices fold `OrderCreated`, each projecting a different part of it; that duplication is the pattern working. See [docs/architecture/vertical-slices.md](docs/architecture/vertical-slices.md)
 - **Async Processing**: `ControlLoop` polls the event log and dispatches through a middleware chain to projections/reactors. See [docs/architecture/async-processing.md](docs/architecture/async-processing.md)
 - **Middleware**: `MiddlewareRunner` builds both the single-event (`ConsumeEventContext`) and batch (`BatchConsumeContext`) chains. Retry/dead-letter logic is shared via `RetryAndDeadLetterCore` behind `IMiddlewareContext`
-- **Zero-downtime projection rebuilds**: opt in with `.WithControlLoop(loop => loop.WithRebuilds())`. `RebuildCoordinator` replays the log into a shadow copy of a projection's state under its own checkpoint, then swaps versions in one transaction. Driven by `alberto ops rebuild start|status|promote|abort`
+- **Zero-downtime projection rebuilds**: opt in with `.WithRebuilds()`. `RebuildCoordinator` replays the log into a shadow copy of a projection's state under its own checkpoint, then swaps versions in one transaction. Driven by `alberto ops rebuild start|status|promote|abort`
 - **Multi-Tenant**: X-Tenant-Id header propagation, tenant-isolated queries, tenant leases
 - **Projection tenancy**: a state store's tenancy is fixed when the store is built and decided by the schema, not by the caller — a module that declared `.WithTenancy()` is migrated with `tenant_id NOT NULL` in its primary key, so a store built without one fails every write with `42P10`, and the reverse mismatch fails with `42703`. `AddProjection` therefore takes a `Func<string?, IStateStore<TState>>`: the projection builds one store per tenant and routes each event to the store for the tenant it carries. A cross-tenant aggregate on a tenant-enabled module stores its single blended document under `TenantScope.CrossTenant` (`"*"`), which readers pass too — resolvers resolve the writer's own factory from DI (`{moduleKey}:{processorId}`) so the only thing they decide is which tenant to read
 - **Leases and fencing**: checkpoint writes can be fenced against a held lease via `IFencedCheckpointStore`
@@ -94,10 +94,12 @@ Note: `apps/Alberto.Payments` is in the solution and builds, but it has no host 
 - **GraphQL** (Orders example only): HotChocolate 15.x
 
 ### Admin surface
-The operator surface is the CLI in `tools/Alberto.Cli`. There is no admin HTTP API or admin package.
+The operator surface is the CLI in `tools/Alberto.Cli`. There is no admin HTTP API. `src/Alberto.Dcb.Admin` contains the `IAdminReader`/`IAdminOperator` abstraction the CLI's command files are built on; it serves no endpoint.
+
+**Both admin projects are `IsPackable=false`.** `Alberto.Dcb.Admin` and `Alberto.Dcb.Postgres.Admin` build, sit in the solution, are tested, and are referenced by the CLI as projects — they just do not ship to nuget.org, so 1.0 does not freeze `IAdminReader`/`IAdminOperator` under semver before the front doors on `feature/admin-surface` exist. `Alberto.Dcb.Postgres.Admin` was split out of `Alberto.Dcb.Postgres` (which **is** packable) precisely so that package carries no dependency on a parked one; its files keep `namespace Alberto.Dcb.Postgres`, so no consumer's usings changed.
 
 - **Per-processor mutations** go through the core interfaces: `ICheckpointStore` (`SaveAsync`, `ResetAsync`, `RewindAsync`) and `IDeadLetterStore` (`CountAsync`, `ClearAsync`, `MarkForRetryAsync`).
-- **`PostgresAdminDataAccess`** (`src/Alberto.Dcb.Postgres`) holds the inspection queries and the composite transactional mutations (`RetryByRewindAsync`, `ReleaseTenantLeasesAsync`) that span multiple tables and so cannot be composed from per-processor interfaces.
+- **`PostgresAdminDataAccess`** (`src/Alberto.Dcb.Postgres.Admin`) holds the inspection queries and the composite transactional mutations (`RetryByRewindAsync`, `ReleaseTenantLeasesAsync`) that span multiple tables and so cannot be composed from per-processor interfaces.
 - `SaveAsync` is monotonic by design (`GREATEST`). `RewindAsync` is the deliberate escape hatch for operator-initiated rewinds and is the only way to move a checkpoint backwards.
 
 ## Technology Stack
@@ -120,7 +122,7 @@ The operator surface is the CLI in `tools/Alberto.Cli`. There is no admin HTTP A
 
 ## Configuration
 
-- **Solution file**: `AlbertoV3.slnx` (modern .NET format)
+- **Solution file**: `Alberto.slnx` (modern .NET format)
 - **Build settings**: `Directory.Build.props`
 
 ## Known Gaps

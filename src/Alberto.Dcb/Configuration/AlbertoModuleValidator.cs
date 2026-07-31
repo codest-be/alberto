@@ -214,6 +214,14 @@ public sealed class AlbertoModuleValidator : IValidateOptions<AlbertoModuleDefin
                 $"Set a positive window size via .WithControlLoop(o => o with {{ HeadWindowSize = ... }}) or '{path}:ControlLoop:HeadWindowSize'."));
         }
 
+        if (loop.DrainTimeout <= TimeSpan.Zero)
+        {
+            failures.Add(new AlbertoValidationFailure(
+                "ALB0004",
+                $"ControlLoop.DrainTimeout is {loop.DrainTimeout}, which is not a positive duration.",
+                $"Set a positive timeout via .WithControlLoop(o => o with {{ DrainTimeout = ... }}) or '{path}:ControlLoop:DrainTimeout'."));
+        }
+
         if (loop.Retry.MaxRetries < 0)
         {
             failures.Add(new AlbertoValidationFailure(
@@ -283,6 +291,12 @@ public sealed class AlbertoModuleValidator : IValidateOptions<AlbertoModuleDefin
                 {
                     // A version-1 event type needs no upcaster; that is the whole point of v1.
                     if (et.Version <= 1)
+                        continue;
+
+                    // The declaration site waived the gap with [EventType(UpcastingNotRequired =
+                    // true)] — a purely additive bump whose defaults are already right for older
+                    // events. EventSerializer.Deserialize honours the same flag, so the two agree.
+                    if (et.UpcastingNotRequired)
                         continue;
 
                     failures.Add(new AlbertoValidationFailure(
@@ -378,6 +392,15 @@ public sealed class AlbertoModuleValidator : IValidateOptions<AlbertoModuleDefin
                     "ALB0005",
                     $"Processor '{processor.ProcessorId}' asks for MaxConcurrency {processor.Execution.MaxConcurrency} while batching is Disabled. Concurrency only applies within a batch.",
                     "Set BatchingMode to Required or IfSupported, or set MaxConcurrency back to 1."));
+            }
+
+            if (processor.Execution is { MaxConcurrency: > 1, BatchingMode: ProcessorBatchingMode.Required })
+            {
+                failures.Add(new AlbertoValidationFailure(
+                    "ALB0022",
+                    $"Processor '{processor.ProcessorId}' sets BatchingMode.Required but MaxConcurrency is {processor.Execution.MaxConcurrency}. " +
+                    "Pipelined mode dispatches events individually to N concurrent workers; batching is skipped and the Required guarantee cannot be honoured.",
+                    "Set MaxConcurrency to 1 to use batch dispatch, or change BatchingMode to IfSupported or Disabled."));
             }
         }
     }

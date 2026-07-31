@@ -29,6 +29,19 @@ public interface IAdminOperator
     Task ResetCheckpointAsync(string processorId, string operatorId, CancellationToken ct = default);
 
     /// <summary>
+    /// Moves a checkpoint from one processor id to another, carrying its position across a rename
+    /// of the processor itself. Refuses rather than overwrites when the destination already has a
+    /// checkpoint — see <see cref="CheckpointRenameStatus"/> for the outcomes.
+    /// Appends <see cref="AdminCheckpointRenamed"/> in the same transaction when the rename happens.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="IAdminReader"/> exposes a read-only twin of this operation. This is the one that
+    /// records who did it; prefer it for anything an operator triggers.
+    /// </remarks>
+    Task<CheckpointRenameResult> RenameCheckpointAsync(
+        string fromProcessorId, string toProcessorId, string operatorId, CancellationToken ct = default);
+
+    /// <summary>
     /// Removes all dead letter entries across every processor.
     /// Returns the number of rows deleted.
     /// </summary>
@@ -39,6 +52,15 @@ public interface IAdminOperator
     /// Returns the number of rows deleted.
     /// </summary>
     Task<int> ClearDeadLettersForProcessorAsync(string processorId, string operatorId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Flags every dead letter for a processor so its retry loop picks them up on the next cycle.
+    /// The rows stay where they are — nothing is deleted and no checkpoint moves.
+    /// Returns the number of rows flagged.
+    /// Appends <see cref="AdminDeadLettersMarkedForRetry"/> in the same transaction.
+    /// </summary>
+    Task<int> MarkDeadLettersForRetryAsync(
+        string processorId, string operatorId, CancellationToken ct = default);
 
     /// <summary>
     /// Atomically rewinds a processor checkpoint to one position before its earliest dead letter,
@@ -59,6 +81,20 @@ public interface IAdminOperator
     /// Returns the number of rows deleted.
     /// </summary>
     Task<int> ReleaseTenantLeasesAsync(string? consumerId, string operatorId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Permanently removes outbox entries delivered before <paramref name="before"/>.
+    /// Returns the number of rows deleted.
+    /// Appends <see cref="AdminOutboxPurged"/> in the same transaction.
+    /// </summary>
+    /// <remarks>
+    /// Only entries in the <c>delivered</c> state are eligible — a pending, processing or failed
+    /// entry is undelivered work and is never removed here, however old it is. This is the manual
+    /// counterpart to the retention sweep the outbox runs on a schedule; reach for it to reclaim
+    /// space now, or on a store whose retention is disabled.
+    /// </remarks>
+    Task<int> PurgeOutboxAsync(
+        DateTimeOffset before, string operatorId, CancellationToken ct = default);
 
     /// <summary>
     /// Starts a zero-downtime projection rebuild.
@@ -86,8 +122,31 @@ public sealed record RetryByRewindResult(long? RewindPosition, int DeletedCount)
 /// <summary>Result of starting a projection rebuild.</summary>
 public sealed record RebuildStartResult(int ActiveVersion, int RebuildingVersion, long TargetPosition);
 
-/// <summary>Result of promoting a projection rebuild.</summary>
-public sealed record RebuildPromoteResult(string ProcessorId, string Status);
+/// <summary>
+/// Result of promoting a projection rebuild. The versions are the ones in force when the request
+/// was recorded — promotion completes on the coordinator's next poll, not here, so
+/// <paramref name="ActiveVersion"/> is still the version being served.
+/// </summary>
+/// <param name="ProcessorId">The processor whose rebuild was asked to promote.</param>
+/// <param name="Status">The rebuild's status as recorded by the request.</param>
+/// <param name="ActiveVersion">
+/// The version currently being served. <c>0</c> when the caller did not report one — versions are
+/// allocated from 1, so 0 never collides with a real version.
+/// </param>
+/// <param name="RebuildingVersion">The shadow version awaiting promotion, or null when there is none.</param>
+public sealed record RebuildPromoteResult(
+    string ProcessorId, string Status, int ActiveVersion = 0, int? RebuildingVersion = null);
 
-/// <summary>Result of aborting a projection rebuild.</summary>
-public sealed record RebuildAbortResult(string ProcessorId, string Status);
+/// <summary>
+/// Result of aborting a projection rebuild. As with promotion, the abort takes effect on the
+/// coordinator's next poll, so these are the versions as they stood when the request was recorded.
+/// </summary>
+/// <param name="ProcessorId">The processor whose rebuild was asked to abort.</param>
+/// <param name="Status">The rebuild's status as recorded by the request.</param>
+/// <param name="ActiveVersion">
+/// The version currently being served. <c>0</c> when the caller did not report one — versions are
+/// allocated from 1, so 0 never collides with a real version.
+/// </param>
+/// <param name="RebuildingVersion">The shadow version being discarded, or null when there is none.</param>
+public sealed record RebuildAbortResult(
+    string ProcessorId, string Status, int ActiveVersion = 0, int? RebuildingVersion = null);

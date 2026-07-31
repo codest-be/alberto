@@ -19,10 +19,10 @@ services.AddTenancy();                       // once, on the application's IServ
 
 services.AddAlberto("orders", builder => builder
     .WithTenancy()
-    .WithPostgres(options =>
+    .WithPostgres(o => o with
     {
-        options.ConnectionString = connectionString;
-        options.Schema = "orders";
+        ConnectionString = connectionString,
+        Schema = "orders",
     })
     …);
 ```
@@ -134,6 +134,17 @@ new PostgresStateStore<OrdersOverview>(
 Use named arguments. Every parameter after the data source is an optional string or delegate, and a
 positional slip binds the wrong value with no compiler complaint — this bug shipped in the example
 app for a while, quietly reading the wrong schema.
+
+### EF projections have no tenant to pass
+
+That constructor argument is the whole mechanism, and an EF projection does not have it.
+`IProjectionEntity` exposes only `DocumentId` and `RebuildVersion`, so `EfStateStore` queries on
+those two columns and nothing else — a `TenantId` property on your entity is invisible to it.
+
+So an EF projection on a tenant-enabled module is correct only if two tenants can never produce the
+same document id, and `AddEfProjection` refuses to register until you say so, with `ALB0027`. See
+[EF projections on a tenant-enabled module](projections.md#ef-projections-on-a-tenant-enabled-module)
+for the declaration and the alternatives.
 
 ## Single-tenant is not a degenerate case
 

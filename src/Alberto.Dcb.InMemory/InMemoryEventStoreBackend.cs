@@ -266,15 +266,26 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
             // time.  Absent tag → v1 (pre-versioning rows).
             var schemaVersion = EventVersionTag.ParseFromTags(evt.Tags);
 
+            // Metadata is a jsonb column on the Postgres side too, so it is held to the same
+            // NUL rule as the payload. Keys as well as values: both end up in the document.
+            foreach (var (key, value) in evt.Metadata)
+            {
+                EventDataJson.RejectNul(key, "A metadata key", evt.EventType.Id);
+                EventDataJson.RejectNul(value, $"Metadata value '{key}'", evt.EventType.Id);
+            }
+
             var envelope = new EventEnvelope
             {
                 Id = evt.Id,
                 TenantId = tenantId,   // null in single-tenant mode; caller-supplied in multi-tenant
                 GlobalPosition = position,
                 EventType = new EventType(evt.EventType.Id, schemaVersion),
-                Tags = evt.Tags,
-                EventData = evt.EventData,
-                Metadata = evt.Metadata,
+                // Copied, not aliased. Postgres rebuilds both from the row it read, so a caller
+                // that mutates the collection it appended cannot change what is stored there —
+                // and must not be able to change it here either.
+                Tags = evt.Tags.ToArray(),
+                EventData = EventDataJson.Normalize(evt.EventData, evt.EventType.Id),
+                Metadata = new Dictionary<string, string>(evt.Metadata),
                 CreatedAt = now
             };
 
@@ -335,11 +346,26 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
     }
 
     /// <summary>
-    /// Finds the first position after expectedPosition that matches the DCB query.
-    /// Returns null if no conflict exists.
+    /// Finds the first position after <paramref name="expectedPosition"/> that matches the
+    /// DCB query and therefore constitutes a conflict. Returns <c>null</c> only when no
+    /// matching event exists after the expected position — i.e., no real conflict.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>Empty-query guard:</strong> <see cref="EventStore.AppendAsync"/> rejects an
+    /// <see cref="DcbQuery.IsEmpty"/> query before it reaches this method, so the
+    /// <c>IsEmpty</c> branch below is a defensive fallback for callers that invoke the
+    /// backend directly (e.g. tests, or future backends). It must NOT be read as "no events
+    /// match" — an empty query would match every event on a read, so returning null here
+    /// would silently disable the conflict check and allow every concurrent write to succeed.
+    /// Any caller combining an empty query with a non-null expectedPosition has a bug;
+    /// <see cref="EventStore"/> is the authoritative enforcement point.
+    /// </para>
+    /// <para>
     /// When <paramref name="tenantId"/> is non-null, only positions belonging to that tenant
     /// are considered — matching the per-tenant WHERE clause in the Postgres append path.
-    /// </summary>
+    /// </para>
+    /// </remarks>
     private long? FindConflictPosition(DcbQuery query, long expectedPosition, string? tenantId)
     {
         if (query.IsEmpty)

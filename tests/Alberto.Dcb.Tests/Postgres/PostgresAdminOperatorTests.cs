@@ -62,6 +62,24 @@ public sealed class PostgresAdminOperatorSingleTenantTests(PostgresAdminOperator
     }
 
     /// <summary>
+    /// Returns the number of a processor's dead letters in the given retry-requested state.
+    /// Used to assert that flagging for retry moved the flag and left the rows in place.
+    /// </summary>
+    private async Task<long> CountDeadLettersAsync(string processorId, bool retryRequested, CancellationToken ct)
+    {
+        await using var conn = await fixture.DataSource.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand(
+            """
+            SELECT count(*) FROM alberto_dead_letter_events
+            WHERE processor_id = @proc AND retry_requested = @flag
+            """,
+            conn);
+        cmd.Parameters.AddWithValue("proc", processorId);
+        cmd.Parameters.AddWithValue("flag", retryRequested);
+        return (long)(await cmd.ExecuteScalarAsync(ct))!;
+    }
+
+    /// <summary>
     /// Returns the total number of events in the log. Used to assert that no audit event
     /// was appended when a guard clause prevents it.
     /// </summary>
@@ -136,6 +154,74 @@ public sealed class PostgresAdminOperatorSingleTenantTests(PostgresAdminOperator
     }
 
     // -----------------------------------------------------------------------
+    // RenameCheckpointAsync
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task RenameCheckpointAsync_MovesPositionAndAppendsAuditEvent()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var from = $"proc-{Guid.NewGuid():N}";
+        var to = $"proc-{Guid.NewGuid():N}";
+        var checkpoints = CreateCheckpointStore();
+        await checkpoints.SaveAsync(from, 77, ct);
+
+        var result = await CreateOperator().RenameCheckpointAsync(from, to, "test-operator", ct);
+
+        Assert.Equal(CheckpointRenameStatus.Renamed, result.Status);
+        Assert.Equal(77, result.Position);
+
+        // Row-level effect: the position moved, the source is gone
+        Assert.Equal(77, await checkpoints.GetAsync(to, ct));
+        Assert.Null(await checkpoints.GetAsync(from, ct));
+
+        var (eventType, data) = await ReadLastEventAsync(ct);
+        Assert.Equal("admin-checkpoint-renamed", eventType);
+        Assert.Equal(from, data.RootElement.GetProperty("FromProcessorId").GetString());
+        Assert.Equal(to, data.RootElement.GetProperty("ToProcessorId").GetString());
+        Assert.Equal(77, data.RootElement.GetProperty("Position").GetInt64());
+        Assert.Equal("test-operator", data.RootElement.GetProperty("OperatorId").GetString());
+    }
+
+    [Fact]
+    public async Task RenameCheckpointAsync_DestinationTaken_RefusesAndLeavesBothInPlace()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var from = $"proc-{Guid.NewGuid():N}";
+        var to = $"proc-{Guid.NewGuid():N}";
+        var checkpoints = CreateCheckpointStore();
+        await checkpoints.SaveAsync(from, 10, ct);
+        await checkpoints.SaveAsync(to, 20, ct);
+        var eventCountBefore = await CountEventsAsync(ct);
+
+        var result = await CreateOperator().RenameCheckpointAsync(from, to, "test-operator", ct);
+
+        Assert.Equal(CheckpointRenameStatus.DestinationExists, result.Status);
+        // The destination's own position is reported, not the source's — an operator needs to
+        // know what is already there to decide what to do about it.
+        Assert.Equal(20, result.Position);
+
+        // Neither side moved, and nothing was recorded: the refusal is not an operation.
+        Assert.Equal(10, await checkpoints.GetAsync(from, ct));
+        Assert.Equal(20, await checkpoints.GetAsync(to, ct));
+        Assert.Equal(eventCountBefore, await CountEventsAsync(ct));
+    }
+
+    [Fact]
+    public async Task RenameCheckpointAsync_SourceMissing_ReturnsSourceNotFoundAndNoAuditEvent()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var from = $"proc-{Guid.NewGuid():N}";
+        var to = $"proc-{Guid.NewGuid():N}";
+        var eventCountBefore = await CountEventsAsync(ct);
+
+        var result = await CreateOperator().RenameCheckpointAsync(from, to, "test-operator", ct);
+
+        Assert.Equal(CheckpointRenameStatus.SourceNotFound, result.Status);
+        Assert.Equal(eventCountBefore, await CountEventsAsync(ct));
+    }
+
+    // -----------------------------------------------------------------------
     // ResetCheckpointAsync
     // -----------------------------------------------------------------------
 
@@ -171,6 +257,94 @@ public sealed class PostgresAdminOperatorSingleTenantTests(PostgresAdminOperator
         var (eventType, data) = await ReadLastEventAsync(ct);
         Assert.Equal("admin-checkpoint-reset", eventType);
         Assert.Equal(processorId, data.RootElement.GetProperty("ProcessorId").GetString());
+    }
+
+    /// <summary>
+    /// Inserts one outbox entry in the given state. <paramref name="deliveredAt"/> is what the
+    /// retention cutoff is compared against; a <c>pending</c> or <c>failed</c> entry leaves it null.
+    /// </summary>
+    private async Task InsertOutboxEntryAsync(
+        string status, DateTimeOffset? deliveredAt, CancellationToken ct)
+    {
+        await using var conn = await fixture.DataSource.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand(
+            """
+            INSERT INTO alberto_outbox_entries
+                (id, source_event_id, message_type, version, payload, status, delivered_at)
+            VALUES
+                (@id, @sourceEventId, 'test-message', '1', '{}'::jsonb, @status, @deliveredAt)
+            """,
+            conn);
+        cmd.Parameters.AddWithValue("id", Guid.NewGuid());
+        cmd.Parameters.AddWithValue("sourceEventId", Guid.NewGuid());
+        cmd.Parameters.AddWithValue("status", status);
+        cmd.Parameters.AddWithValue("deliveredAt", (object?)deliveredAt ?? DBNull.Value);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private async Task<long> CountOutboxEntriesAsync(string status, CancellationToken ct)
+    {
+        await using var conn = await fixture.DataSource.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand(
+            "SELECT count(*) FROM alberto_outbox_entries WHERE status = @status", conn);
+        cmd.Parameters.AddWithValue("status", status);
+        return (long)(await cmd.ExecuteScalarAsync(ct))!;
+    }
+
+    // -----------------------------------------------------------------------
+    // PurgeOutboxAsync
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// Only <c>delivered</c> entries older than the cutoff go. A recently delivered one stays
+    /// because of the cutoff; <c>pending</c>, <c>processing</c> and <c>failed</c> stay whatever
+    /// their age, because they are work rather than history.
+    /// </summary>
+    [Fact]
+    public async Task PurgeOutboxAsync_RemovesOnlyOldDeliveredEntriesAndAppendsAuditEvent()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var now = DateTimeOffset.UtcNow;
+        var cutoff = now - TimeSpan.FromDays(7);
+
+        // Clear whatever earlier tests sharing this fixture left behind.
+        await CreateOperator().PurgeOutboxAsync(now, "flush", ct);
+
+        await InsertOutboxEntryAsync("delivered", now - TimeSpan.FromDays(30), ct);
+        await InsertOutboxEntryAsync("delivered", now - TimeSpan.FromDays(8), ct);
+        await InsertOutboxEntryAsync("delivered", now - TimeSpan.FromDays(1), ct);
+        await InsertOutboxEntryAsync("pending", null, ct);
+        await InsertOutboxEntryAsync("processing", null, ct);
+        await InsertOutboxEntryAsync("failed", null, ct);
+
+        var deleted = await CreateOperator().PurgeOutboxAsync(cutoff, "test-operator", ct);
+
+        Assert.Equal(2, deleted);
+        Assert.Equal(1, await CountOutboxEntriesAsync("delivered", ct));
+        Assert.Equal(1, await CountOutboxEntriesAsync("pending", ct));
+        Assert.Equal(1, await CountOutboxEntriesAsync("processing", ct));
+        Assert.Equal(1, await CountOutboxEntriesAsync("failed", ct));
+
+        var (eventType, data) = await ReadLastEventAsync(ct);
+        Assert.Equal("admin-outbox-purged", eventType);
+        Assert.Equal(2, data.RootElement.GetProperty("DeletedCount").GetInt32());
+        Assert.Equal("test-operator", data.RootElement.GetProperty("OperatorId").GetString());
+    }
+
+    [Fact]
+    public async Task PurgeOutboxAsync_NothingToPurge_ReturnsZeroAndNoAuditEvent()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var now = DateTimeOffset.UtcNow;
+
+        await CreateOperator().PurgeOutboxAsync(now, "flush", ct);
+
+        var eventCountBefore = await CountEventsAsync(ct);
+
+        var deleted = await CreateOperator().PurgeOutboxAsync(now, "test-operator", ct);
+
+        Assert.Equal(0, deleted);
+        Assert.Equal(eventCountBefore, await CountEventsAsync(ct));
     }
 
     // -----------------------------------------------------------------------
@@ -255,6 +429,65 @@ public sealed class PostgresAdminOperatorSingleTenantTests(PostgresAdminOperator
         var eventCountBefore = await CountEventsAsync(ct);
 
         var count = await CreateOperator().ClearDeadLettersForProcessorAsync(processorId, "test-operator", ct);
+
+        Assert.Equal(0, count);
+        Assert.Equal(eventCountBefore, await CountEventsAsync(ct));
+    }
+
+    // -----------------------------------------------------------------------
+    // MarkDeadLettersForRetryAsync
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task MarkDeadLettersForRetryAsync_FlagsOnlyTargetAndAppendsAuditEvent()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var target = $"proc-{Guid.NewGuid():N}";
+        var other = $"proc-{Guid.NewGuid():N}";
+        await InsertDeadLetterAsync(target, 10, ct);
+        await InsertDeadLetterAsync(target, 20, ct);
+        await InsertDeadLetterAsync(other, 30, ct);
+
+        var count = await CreateOperator().MarkDeadLettersForRetryAsync(target, "test-operator", ct);
+
+        Assert.Equal(2, count);
+
+        // The rows stay put — this flags them, it does not delete them or move a checkpoint.
+        Assert.Equal(2L, await CountDeadLettersAsync(target, retryRequested: true, ct));
+        Assert.Equal(0L, await CountDeadLettersAsync(other, retryRequested: true, ct));
+
+        var (eventType, data) = await ReadLastEventAsync(ct);
+        Assert.Equal("admin-dead-letters-marked-for-retry", eventType);
+        Assert.Equal(target, data.RootElement.GetProperty("ProcessorId").GetString());
+        Assert.Equal(2, data.RootElement.GetProperty("MarkedCount").GetInt32());
+        Assert.Equal("test-operator", data.RootElement.GetProperty("OperatorId").GetString());
+    }
+
+    [Fact]
+    public async Task MarkDeadLettersForRetryAsync_AlreadyFlagged_ReturnsZeroAndNoAuditEvent()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var processorId = $"proc-{Guid.NewGuid():N}";
+        await InsertDeadLetterAsync(processorId, 10, ct);
+        await CreateOperator().MarkDeadLettersForRetryAsync(processorId, "test-operator", ct);
+        var eventCountBefore = await CountEventsAsync(ct);
+
+        // A second call finds nothing left to flag: the count is rows this call changed, not
+        // rows already waiting for the retry loop.
+        var count = await CreateOperator().MarkDeadLettersForRetryAsync(processorId, "test-operator", ct);
+
+        Assert.Equal(0, count);
+        Assert.Equal(eventCountBefore, await CountEventsAsync(ct));
+    }
+
+    [Fact]
+    public async Task MarkDeadLettersForRetryAsync_NoDeadLetters_ReturnsZeroAndNoAuditEvent()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var processorId = $"proc-{Guid.NewGuid():N}";
+        var eventCountBefore = await CountEventsAsync(ct);
+
+        var count = await CreateOperator().MarkDeadLettersForRetryAsync(processorId, "test-operator", ct);
 
         Assert.Equal(0, count);
         Assert.Equal(eventCountBefore, await CountEventsAsync(ct));

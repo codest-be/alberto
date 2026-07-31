@@ -42,13 +42,14 @@ public sealed class ConsumePathTagTests
 
         var (_, tags) = await CaptureFirstCounter<long>(
             "alberto.dead_letters",
+            context.ProcessorId,
             () => middleware(context, () => throw new InvalidOperationException("boom")));
 
         TagValue(tags, "module").Should().Be("orders",
             "the logical module key must be stripped of the shard suffix");
         TagValue(tags, "shard").Should().Be("eu",
             "the shard id must appear as a separate tag, not embedded in the module tag");
-        TagValue(tags, "processor").Should().Be("projection");
+        TagValue(tags, "processor").Should().Be(context.ProcessorId);
     }
 
     [Fact]
@@ -63,6 +64,7 @@ public sealed class ConsumePathTagTests
 
         var (_, tags) = await CaptureFirstCounter<long>(
             "alberto.dead_letters",
+            context.ProcessorId,
             () => middleware(context, () => throw new InvalidOperationException("boom")));
 
         TagValue(tags, "module").Should().Be("orders");
@@ -84,11 +86,12 @@ public sealed class ConsumePathTagTests
 
         var (_, tags) = await CaptureFirstCounter<long>(
             "alberto.dead_letters",
+            context.ProcessorId,
             () => middleware(context, () => throw new InvalidOperationException("boom")));
 
         TagValue(tags, "module").Should().Be("orders");
         TagValue(tags, "shard").Should().Be("eu");
-        TagValue(tags, "processor").Should().Be("projection");
+        TagValue(tags, "processor").Should().Be(context.ProcessorId);
     }
 
     // ── alberto.retries — RetryAndDeadLetterCore ──────────────────────────────
@@ -111,6 +114,7 @@ public sealed class ConsumePathTagTests
 
         var (_, tags) = await CaptureFirstCounter<long>(
             "alberto.retries",
+            context.ProcessorId,
             () => middleware(context, () =>
             {
                 callCount++;
@@ -121,7 +125,7 @@ public sealed class ConsumePathTagTests
 
         TagValue(tags, "module").Should().Be("orders");
         TagValue(tags, "shard").Should().Be("eu");
-        TagValue(tags, "processor").Should().Be("projection");
+        TagValue(tags, "processor").Should().Be(context.ProcessorId);
     }
 
     [Fact]
@@ -140,6 +144,7 @@ public sealed class ConsumePathTagTests
 
         var (_, tags) = await CaptureFirstCounter<long>(
             "alberto.retries",
+            context.ProcessorId,
             () => middleware(context, () =>
             {
                 callCount++;
@@ -227,12 +232,51 @@ public sealed class ConsumePathTagTests
             "an unsharded module must not emit a shard tag");
     }
 
+    // ── listener isolation ────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Counter_capture_ignores_measurements_recorded_by_other_tests()
+    {
+        // Stands in for the unsharded sibling running concurrently in another collection: it
+        // records the same instrument on the same process-wide meter, but with no shard tag.
+        // Taking the first measurement observed would capture it and read shard as null.
+        var context = MakeConsumeContext("projection", "orders#eu");
+        var retry = new RetryOptions { MaxRetries = 0, DeadLetterOnMaxRetries = false };
+        var middleware = ConsumeMiddlewares.RetryAndDeadLetter(
+            retry, new AlwaysPermanentClassifier(), deadLetterStore: null);
+
+        var (_, tags) = await CaptureFirstCounter<long>(
+            "alberto.dead_letters",
+            context.ProcessorId,
+            async () =>
+            {
+                var foreign = MakeConsumeContext("foreign", "orders");
+                await middleware(foreign, () => throw new InvalidOperationException("foreign"));
+                await middleware(context, () => throw new InvalidOperationException("boom"));
+            });
+
+        TagValue(tags, "processor").Should().Be(context.ProcessorId,
+            "the capture must correlate to this test's own measurement");
+        TagValue(tags, "shard").Should().Be("eu",
+            "capturing a concurrent unsharded test's measurement would read shard as null");
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Makes <paramref name="processorId"/> unique to the calling test.
+    /// The Alberto meter is a process-wide static, so a <see cref="MeterListener"/> installed here
+    /// receives measurements from every test running concurrently — including the sharded and
+    /// unsharded siblings in this very file, which record the same instrument with a different tag
+    /// set. <see cref="CaptureFirstCounter{T}"/> correlates on this id so a test can only assert on
+    /// the measurement it produced itself.
+    /// </summary>
+    private static string UniqueProcessorId(string processorId) => $"{processorId}-{Guid.NewGuid():N}";
 
     private static ConsumeEventContext MakeConsumeContext(string processorId, string moduleKey) =>
         new()
         {
-            ProcessorId = processorId,
+            ProcessorId = UniqueProcessorId(processorId),
             ModuleKey = moduleKey,
             Envelope = MakeEnvelope(),
             IsRebuild = false,
@@ -241,7 +285,7 @@ public sealed class ConsumePathTagTests
     private static BatchConsumeContext MakeBatchConsumeContext(string processorId, string moduleKey) =>
         new()
         {
-            ProcessorId = processorId,
+            ProcessorId = UniqueProcessorId(processorId),
             ModuleKey = moduleKey,
             Envelopes = [MakeEnvelope()],
             IsRebuild = false,
@@ -259,19 +303,35 @@ public sealed class ConsumePathTagTests
             CreatedAt = DateTime.UtcNow,
         };
 
+    /// <summary>
+    /// Fires <paramref name="action"/> and returns the measurement on <paramref name="instrumentName"/>
+    /// tagged with <paramref name="processorId"/> — see <see cref="UniqueProcessorId"/> for why the
+    /// correlation is required rather than simply taking the first measurement observed.
+    /// </summary>
     private static async Task<(T Value, KeyValuePair<string, object?>[] Tags)> CaptureFirstCounter<T>(
         string instrumentName,
+        string processorId,
         Func<Task> action) where T : struct
     {
         (T Value, KeyValuePair<string, object?>[] Tags)? captured = null;
-        using var listener = BuildListener<T>(instrumentName, (v, tags) => captured ??= (v, tags));
+        var gate = new object();
+        using var listener = BuildListener<T>(instrumentName, (v, tags) =>
+        {
+            if (TagValue(tags, "processor") != processorId)
+                return;
+
+            lock (gate) captured ??= (v, tags);
+        });
         listener.Start();
 
         await action();
 
-        captured.Should().NotBeNull(
-            $"expected at least one measurement on {instrumentName} but none were recorded");
-        return captured!.Value;
+        lock (gate)
+        {
+            captured.Should().NotBeNull(
+                $"expected at least one measurement on {instrumentName} tagged with processor '{processorId}' but none were recorded");
+            return captured!.Value;
+        }
     }
 
     private static List<(T Value, KeyValuePair<string, object?>[] Tags)> CollectObservableGaugeMeasurements<T>(

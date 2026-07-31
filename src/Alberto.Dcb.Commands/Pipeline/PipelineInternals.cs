@@ -45,13 +45,10 @@ internal static class PipelineInternals
             "Every pipeline must start at AlbertoStore.Handle.");
 
     /// <summary>The problem a <c>TryCommit</c> returns in place of a thrown conflict.</summary>
-    internal static Problem Conflict(DcbConflictException exception) =>
-        Problem.Create(
-            "dcb.conflict",
-            exception.Message,
-            new Dictionary<string, object>
-            {
-                ["expectedPosition"] = exception.ExpectedPosition,
-                ["conflictingPosition"] = exception.ConflictingPosition
-            });
+    /// <remarks>
+    /// Deliberately the same rendering a caller gets from <see cref="DcbConflictException.ToProblem"/>
+    /// when it catches a conflict that outlived <c>Commit</c>'s retries — a conflict looks the same
+    /// however it arrives.
+    /// </remarks>
+    internal static Problem Conflict(DcbConflictException exception) => exception.ToProblem();
 }

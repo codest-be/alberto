@@ -154,7 +154,7 @@ public static class CheckpointOpsCommand
                 var failed = await ShardRun.ApplyAsync(output, targets, async (dataSource, target) =>
                 {
                     var admin = new PostgresAdminDataAccess(dataSource, target.Schema);
-                    var checkpointStore = new PostgresCheckpointStore(dataSource, target.Schema);
+                    IAdminOperator operations = new PostgresAdminOperator(dataSource, target.Schema);
                     var checkpoint = await admin.GetSingleCheckpointAsync(id);
                     var previousPosition = checkpoint?.LastPosition;
 
@@ -167,7 +167,7 @@ public static class CheckpointOpsCommand
                         return;
                     }
 
-                    await checkpointStore.ResetAsync(id);
+                    await operations.ResetCheckpointAsync(id, CliSession.OperatorId);
 
                     if (json)
                         output.Json(new { action = "reset", shard = target.ShardId, processorId = id, previousPosition });
@@ -228,7 +228,7 @@ public static class CheckpointOpsCommand
 
                 await using var dataSource = new NpgsqlDataSourceBuilder(target.ConnectionString).Build();
                 var admin = new PostgresAdminDataAccess(dataSource, target.Schema);
-                var checkpointStore = new PostgresCheckpointStore(dataSource, target.Schema);
+                IAdminOperator operations = new PostgresAdminOperator(dataSource, target.Schema);
                 var checkpoint = await admin.GetSingleCheckpointAsync(id);
                 var previousPosition = checkpoint?.LastPosition;
 
@@ -259,7 +259,7 @@ public static class CheckpointOpsCommand
                     return confirmCode;
                 }
 
-                await checkpointStore.RewindAsync(id, position);
+                await operations.SetCheckpointAsync(id, position, CliSession.OperatorId);
 
                 if (json)
                     output.Json(new { action = "set", shard = target.ShardId, processorId = id, previousPosition, newPosition = position });
@@ -339,9 +339,9 @@ public static class CheckpointOpsCommand
 
                 var failed = await ShardRun.ApplyAsync(output, targets, async (dataSource, target) =>
                 {
-                    var data = new PostgresAdminDataAccess(dataSource, target.Schema);
+                    IAdminOperator operations = new PostgresAdminOperator(dataSource, target.Schema);
 
-                    var result = await data.RenameCheckpointAsync(from, to);
+                    var result = await operations.RenameCheckpointAsync(from, to, CliSession.OperatorId);
                     switch (result.Status)
                     {
                         case CheckpointRenameStatus.Renamed:
