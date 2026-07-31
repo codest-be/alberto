@@ -130,7 +130,7 @@ Do not rebuild the front doors on main — extend that branch. Keep `IAdminReade
 
 ## Configuration
 
-- **Solution file**: `AlbertoV3.slnx` (modern .NET format)
+- **Solution file**: `Alberto.slnx` (modern .NET format)
 - **Build settings**: `Directory.Build.props`
 
 ## Known Gaps

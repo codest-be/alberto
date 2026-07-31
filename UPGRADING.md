@@ -32,7 +32,7 @@ they touch a persisted table.
 | TT-1 | Trace span attributes | Medium | Consume-path span attributes renamed: `"module.key"` → `"module"`, `"module.shard"` → `"shard"` |
 | EX-1 | Experimental API | Medium | Sharding types marked `[Experimental("ALB9001")]`; referencing them without suppression is a compile-time diagnostic |
 | EV-1 | Evolver — runtime guard | Medium | `Evolver.Reconstitute(envelopes)` and `Evolver.Evolve(state, envelope)` now throw `InvalidOperationException` when the envelope's stored version is older than the handler's declared version |
-| PE-1 | ParseEvent&lt;T&gt; obsoleted | Medium | `EventEnvelopeExtensions.ParseEvent<T>` is marked `[Obsolete]`; projects with `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>` get a hard build failure on upgrade |
+| PE-1 | ParseEvent&lt;T&gt; removed | **High** | `EventEnvelopeExtensions.ParseEvent<T>` is deleted and the now-empty `EventEnvelopeExtensions` class is `internal` |
 | MM-1 | Surface — interface member | Medium | `IMessageMappingRegistry` gains a `ModuleKey` property; direct implementations no longer compile |
 | OT-1 | Outbox transport lifecycle | Medium | Failed startup triggers bounded cleanup; store faults stop the relay; shared registrations use one lifecycle |
 | VA-1 | Startup validation | Medium | New codes `ALB0018`/`ALB0019`/`ALB0020` reject upcaster misconfigurations that previously started and failed at runtime |
@@ -671,26 +671,26 @@ The same guard is also applied by the internal `EventEnvelopeExtensions.Deserial
 
 ---
 
-### PE-1 — `EventEnvelopeExtensions.ParseEvent<T>` is marked `[Obsolete]`
+### PE-1 — `EventEnvelopeExtensions.ParseEvent<T>` is removed
 
-`EventEnvelopeExtensions.ParseEvent<T>(this IEventEnvelope envelope)` performs raw JSON
-deserialization and bypasses any registered upcaster chains. It was never removed after the
-upcasting feature landed, leaving a well-named helper that silently does the wrong thing for
+`EventEnvelopeExtensions.ParseEvent<T>(this IEventEnvelope envelope)` performed raw JSON
+deserialization and bypassed any registered upcaster chains. It was never removed after the
+upcasting feature landed, leaving a well-named helper that silently did the wrong thing for
 any event type that has upcasters.
 
-The method is now annotated `[Obsolete(...)]`. Calling it produces a compiler warning
-(`CS0618`). Projects with `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>` will receive
-a **hard build failure** on upgrade instead of a warning.
+The method is **deleted**. With it gone, `EventEnvelopeExtensions` has no public members left
+and the class itself is now `internal`.
 
 **Symptom.**
 ```
-error CS0618: 'EventEnvelopeExtensions.ParseEvent<T>(IEventEnvelope)' is obsolete:
-'ParseEvent<T>() bypasses upcasters — registered upcaster chains never fire on this path. ...'
+error CS0117: 'EventEnvelopeExtensions' does not contain a definition for 'ParseEvent'
+```
+or, for extension-method call syntax:
+```
+error CS1061: 'IEventEnvelope' does not contain a definition for 'ParseEvent'
 ```
 
-**Fix.** Replace every call with `EventSerializer.Deserialize(envelope)` followed by a cast, or
-use the `DeserializeEvent<T>` seam inside your own consumer if you already have the handler
-infrastructure available:
+**Fix.** Replace every call with `EventSerializer.Deserialize(envelope)` followed by a cast:
 
 ```csharp
 // Before — bypasses upcasters; wrong for any event type with a registered upcaster chain
@@ -703,16 +703,10 @@ var order = (OrderCreated)serializer.Deserialize(envelope);
 Inject `EventSerializer` from DI (it is registered as a keyed singleton by `WithEventsFrom`
 under the module key). If you are inside a consumer registered with `AddProjection`,
 `AddEfProjection`, or `ReactTo`, the serializer is already threaded into the pipeline; you
-do not need to call `ParseEvent` or `serializer.Deserialize` manually.
+do not need to call `serializer.Deserialize` manually.
 
-Call sites that are guaranteed to process only current-version events and genuinely do not need
-upcasting can suppress the warning per-call:
-
-```csharp
-#pragma warning disable CS0618
-var order = envelope.ParseEvent<OrderCreated>(); // only v-current events reach here
-#pragma warning restore CS0618
-```
+There is no suppression escape hatch: a call site that genuinely processes only
+current-version events gets the same correct result from `serializer.Deserialize`.
 
 ---
 

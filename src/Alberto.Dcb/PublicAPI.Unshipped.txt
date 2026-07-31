@@ -331,7 +331,6 @@ Alberto.Dcb.EventEnvelope.Tags.get -> System.Collections.Generic.IReadOnlyCollec
 Alberto.Dcb.EventEnvelope.Tags.init -> void
 Alberto.Dcb.EventEnvelope.TenantId.get -> string?
 Alberto.Dcb.EventEnvelope.TenantId.init -> void
-Alberto.Dcb.EventEnvelopeExtensions
 Alberto.Dcb.EventSerializer
 Alberto.Dcb.EventSerializer.Deserialize(Alberto.Dcb.IEventEnvelope! envelope) -> Alberto.Dcb.IEvent!
 Alberto.Dcb.EventSerializer.ExtractTags(Alberto.Dcb.IEvent! event, System.Func<string!, string!, string!>? valueTransform = null) -> System.Collections.Generic.IReadOnlyCollection<Alberto.Dcb.EventTag>!
@@ -948,7 +947,6 @@ static Alberto.Dcb.Decision<T>.implicit operator Alberto.Dcb.Decision(Alberto.Dc
 static Alberto.Dcb.Decision<T>.implicit operator Alberto.Dcb.Decision<T>(Alberto.Dcb.Problem! problem) -> Alberto.Dcb.Decision<T>
 static Alberto.Dcb.Decision<T>.Succeed(T value, params Alberto.Dcb.IEvent![]! events) -> Alberto.Dcb.Decision<T>
 static Alberto.Dcb.Decision<T>.Succeed(T value, System.Collections.Generic.IEnumerable<Alberto.Dcb.IEvent!>! events) -> Alberto.Dcb.Decision<T>
-static Alberto.Dcb.EventEnvelopeExtensions.ParseEvent<T>(this Alberto.Dcb.IEventEnvelope! envelope) -> T
 static Alberto.Dcb.EventSerializer.FromAssemblies(System.Text.Json.JsonSerializerOptions? options = null, params System.Reflection.Assembly![]! assemblies) -> Alberto.Dcb.EventSerializer!
 static Alberto.Dcb.EventSerializer.FromAssembly(System.Reflection.Assembly! assembly, System.Text.Json.JsonSerializerOptions? options = null) -> Alberto.Dcb.EventSerializer!
 static Alberto.Dcb.EventTag.implicit operator string!(Alberto.Dcb.EventTag tag) -> string!

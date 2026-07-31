@@ -13,8 +13,8 @@ public static class TestEvents
     /// </summary>
     /// <remarks>
     /// Payload is serialized with <see cref="JsonSerializer"/>'s default options so that
-    /// <see cref="Alberto.Dcb.EventEnvelopeExtensions.ParseEvent{T}"/> — which also uses the
-    /// default options — can round-trip the payload correctly in projection handlers.
+    /// <see cref="EventSerializer"/> — which also uses the default options — can round-trip
+    /// the payload correctly in projection handlers.
     /// </remarks>
     /// <param name="payload">The event payload.</param>
     /// <param name="tags">Tags to attach. Defaults to none.</param>

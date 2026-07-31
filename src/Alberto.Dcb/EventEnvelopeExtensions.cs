@@ -3,35 +3,10 @@ using System.Text.Json;
 namespace Alberto.Dcb;
 
 /// <summary>
-/// Extension methods for <see cref="IEventEnvelope"/>.
+/// The <see cref="IEventEnvelope"/> → CLR event object conversion seam.
 /// </summary>
-public static class EventEnvelopeExtensions
+internal static class EventEnvelopeExtensions
 {
-    /// <summary>
-    /// Deserializes the event data payload to the requested CLR type.
-    /// </summary>
-    /// <remarks>
-    /// This method performs raw JSON deserialization and bypasses any registered upcaster chains.
-    /// If you have upcasters registered, they will not fire when you call this method.
-    /// Prefer injecting <see cref="EventSerializer"/> and calling
-    /// <c>serializer.Deserialize(envelope)</c> then casting to the expected type.
-    /// </remarks>
-    /// <typeparam name="T">Target type. Must match the event's actual shape.</typeparam>
-    /// <param name="envelope">The event envelope whose data is deserialized.</param>
-    /// <returns>The deserialized event.</returns>
-    /// <exception cref="InvalidOperationException">
-    /// Thrown when the JSON payload cannot be deserialized to <typeparamref name="T"/>.
-    /// </exception>
-    [Obsolete(
-        "ParseEvent<T>() bypasses upcasters — registered upcaster chains never fire on this path. " +
-        "Inject EventSerializer and call serializer.Deserialize(envelope) instead, then cast to the " +
-        "expected event type, or use EventEnvelopeExtensions.DeserializeEvent<T>. " +
-        "This method will be removed in a future release.")]
-    public static T ParseEvent<T>(this IEventEnvelope envelope)
-        => JsonSerializer.Deserialize<T>(envelope.EventData)
-           ?? throw new InvalidOperationException(
-               $"Failed to deserialize event '{envelope.EventType.Id}' to type '{typeof(T).Name}'");
-
     /// <summary>
     /// The single internal seam for <see cref="IEventEnvelope"/> → CLR event object conversion.
     /// When <paramref name="serializer"/> is provided, routes through

@@ -22,6 +22,11 @@ and `DeadLetterRetryLoop` are now `internal`. `AlbertoStore.FoldWithPosition<TSt
 `Reconstitute<TState>` instead. `IReact<TEvent>` and `AsyncReactor<TReactor>` are deleted;
 use `ReactTo<TEvent, THandler>(h => h.Method)` on the module builder instead.
 
+**`EventEnvelopeExtensions.ParseEvent<T>` removed** — the extension method bypassed registered
+upcaster chains. It carried `[Obsolete]` for part of this cycle and is now deleted; with no
+public members left, `EventEnvelopeExtensions` itself is `internal`. Inject `EventSerializer`
+and call `serializer.Deserialize(envelope)` instead.
+
 **`IStateStore<TState>.LoadManyAsync` return type changed** — now returns
 `Task<IReadOnlyDictionary<TKey, TState?>>` (was `Task<Dictionary<TKey, TState?>>`).
 
