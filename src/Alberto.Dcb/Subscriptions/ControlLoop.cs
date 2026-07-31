@@ -27,12 +27,14 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
     private readonly IReadOnlyList<BatchConsumeMiddleware> _batchMiddlewares;
     private readonly bool _hasUnpairedPerEventMiddlewares;
     private readonly ProcessorExecutionOptions _executionOptions;
+    private readonly TimeSpan _drainTimeout;
     private readonly ILogger<ControlLoop>? _logger;
     // Pre-composed middleware chains built once at construction time (PERF-6).
     private readonly Func<ConsumeEventContext, Func<Task>, Task> _composedMiddleware;
     private readonly Func<BatchConsumeContext, Func<Task>, Task> _composedBatchMiddleware;
     private CancellationTokenSource? _cts;
     private Task? _loop;
+    private int _disposed;
 
     public bool IsFaulted { get; private set; }
     public string ProcessorId => _processor.ProcessorId;
@@ -49,7 +51,8 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
         IReadOnlyList<BatchConsumeMiddleware>? batchMiddlewares = null,
         bool hasUnpairedPerEventMiddlewares = false,
         ProcessorExecutionOptions? executionOptions = null,
-        ILogger<ControlLoop>? logger = null)
+        ILogger<ControlLoop>? logger = null,
+        TimeSpan? drainTimeout = null)
     {
         _processor = processor;
         _head = head;
@@ -62,6 +65,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
         _batchMiddlewares = batchMiddlewares ?? [];
         _hasUnpairedPerEventMiddlewares = hasUnpairedPerEventMiddlewares;
         _executionOptions = executionOptions ?? ProcessorExecutionOptions.Default;
+        _drainTimeout = drainTimeout ?? Configuration.ControlLoopOptions.Default.DrainTimeout;
         _logger = logger;
 
         // Pre-build the composed middleware chains once so per-event dispatch does not
@@ -112,6 +116,17 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Cancels the loop and waits for it to drain, bounded by the configured drain timeout.
+    /// <para>
+    /// A handler that ignores its <see cref="CancellationToken"/> cannot stall shutdown
+    /// indefinitely: once the timeout (or <paramref name="cancellationToken"/>) fires the
+    /// wait is abandoned and a warning is logged. Abandoning the wait never advances the
+    /// checkpoint past an unprocessed event — a worker that never returns also never calls
+    /// <c>MarkCompleted</c>, so the safe checkpoint stays behind it and the event is
+    /// re-delivered on the next start.
+    /// </para>
+    /// </summary>
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         if (_cts is not null)
@@ -119,19 +134,72 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
             try { await _cts.CancelAsync(); }
             catch (ObjectDisposedException) { }
         }
-        if (_loop is not null) try { await _loop; } catch (OperationCanceledException) { }
+
+        if (_loop is null) return;
+
+        try
+        {
+            await _loop.WaitAsync(_drainTimeout, cancellationToken);
+        }
+        catch (OperationCanceledException) { }
+        catch (TimeoutException)
+        {
+            _logger?.LogWarning(
+                "ControlLoop {ProcessorId} did not drain within {DrainTimeout}; abandoning the wait. " +
+                "In-flight handlers are still running and were not checkpointed; their events will be " +
+                "re-delivered on the next start.",
+                ProcessorId, _drainTimeout);
+        }
     }
 
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+
+        var loop = _loop;
+        var abandoned = false;
+        CancellationTokenSource? cts = null;
+
         try
         {
             await StopAsync(CancellationToken.None);
         }
         finally
         {
-            Interlocked.Exchange(ref _cts, null)?.Dispose();
-            if (_processor is IAsyncDisposable d) await d.DisposeAsync();
+            abandoned = loop is not null && !loop.IsCompleted;
+            cts = Interlocked.Exchange(ref _cts, null);
+        }
+
+        if (abandoned)
+        {
+            // The loop is still running and its workers still hold tokens from _cts, so
+            // neither the CTS nor the processor may be torn down yet. Hand both off to a
+            // detached continuation that runs once the loop finally exits.
+            _ = ReleaseWhenLoopExitsAsync(loop!, cts, _processor as IAsyncDisposable);
+            return;
+        }
+
+        cts?.Dispose();
+        if (_processor is IAsyncDisposable d) await d.DisposeAsync();
+    }
+
+    /// <summary>
+    /// Deferred teardown for a loop that outlived its drain timeout: waits (unbounded, off
+    /// the shutdown path) for the abandoned loop to exit, then releases the resources its
+    /// workers were still using.
+    /// </summary>
+    private static async Task ReleaseWhenLoopExitsAsync(
+        Task loop, CancellationTokenSource? cts, IAsyncDisposable? processor)
+    {
+        try { await loop.ConfigureAwait(false); }
+        catch { /* the loop's own failure is logged where it happens */ }
+
+        cts?.Dispose();
+
+        if (processor is not null)
+        {
+            try { await processor.DisposeAsync().ConfigureAwait(false); }
+            catch { /* best-effort teardown after an abandoned drain */ }
         }
     }
 
@@ -226,7 +294,9 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
         var maxConcurrency = _executionOptions.MaxConcurrency;
         var initialCheckpoint = await _checkpointStore.GetAsync(ProcessorId, ct) ?? 0L;
         var watermark = new PositionWatermark(initialCheckpoint);
-        using var pipelineCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        // Not `using`: when the worker drain times out the abandoned workers still hold this
+        // token, so disposal is deferred until they actually exit (see the finally block).
+        var pipelineCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         var pipelineToken = pipelineCts.Token;
         Exception? pipelineFailure = null;
 
@@ -308,9 +378,39 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
         finally
         {
             channel.Writer.TryComplete();
-            await Task.WhenAll(workers);
-            // Final flush after all workers have drained
+
+            var drain = Task.WhenAll(workers);
+            var drained = true;
+
+            try
+            {
+                await drain.WaitAsync(_drainTimeout);
+            }
+            catch (TimeoutException)
+            {
+                drained = false;
+            }
+
+            // Final flush. Safe even when the drain timed out: a worker that never returned
+            // never called MarkCompleted, so SafeCheckpoint is still behind its position.
             await SaveWatermarkCheckpointAsync(watermark, CancellationToken.None);
+
+            if (drained)
+            {
+                pipelineCts.Dispose();
+            }
+            else
+            {
+                _logger?.LogWarning(
+                    "ControlLoop {ProcessorId} abandoned {WorkerCount} worker(s) that did not drain within " +
+                    "{DrainTimeout}. Checkpoint flushed at {SafeCheckpoint}; events in flight above that " +
+                    "position will be re-delivered on the next start.",
+                    ProcessorId, workers.Count(w => !w.IsCompleted), _drainTimeout, watermark.SafeCheckpoint);
+
+                // The abandoned workers still observe pipelineCts.Token — dispose only once
+                // they have actually exited.
+                _ = DisposeWhenDrainedAsync(drain, pipelineCts);
+            }
 
             if (pipelineFailure is not null)
             {
@@ -333,6 +433,18 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
             try { pipelineCts.Cancel(); }
             catch (ObjectDisposedException) { }
         }
+    }
+
+    /// <summary>
+    /// Disposes the pipeline's <see cref="CancellationTokenSource"/> once workers abandoned by
+    /// a drain timeout have finally exited, so their token registrations stay valid meanwhile.
+    /// </summary>
+    private static async Task DisposeWhenDrainedAsync(Task drain, CancellationTokenSource cts)
+    {
+        try { await drain.ConfigureAwait(false); }
+        catch { /* worker failures are already reported through ReportFailure */ }
+
+        cts.Dispose();
     }
 
     private async Task RunWorkerAsync(

@@ -89,6 +89,7 @@ A complete example covering all sections:
           "BatchSize": 100,
           "HeadRefreshInterval": "00:00:00.100",
           "HeadWindowSize": 2000,
+          "DrainTimeout": "00:00:05",
           "Retry": {
             "MaxRetries": 3,
             "RetryDelay": "00:00:01",
@@ -183,6 +184,17 @@ the same pattern — see [Custom backends](#custom-backends).
 | `BatchSize` | `int` | `100` | `ControlLoop:BatchSize` |
 | `HeadRefreshInterval` | `TimeSpan` | `00:00:00.100` (100 ms) | `ControlLoop:HeadRefreshInterval` |
 | `HeadWindowSize` | `int` | `2000` | `ControlLoop:HeadWindowSize` |
+| `DrainTimeout` | `TimeSpan` | `00:00:05` (5 s) | `ControlLoop:DrainTimeout` |
+
+`DrainTimeout` bounds how long shutdown waits for in-flight handlers. It applies to the control
+loop, the stable-head tracker and the dead-letter retry loop. A handler that ignores its
+`CancellationToken` would otherwise block `StopAsync` indefinitely — stalling host shutdown and,
+with leasing enabled, holding the processor lease until it expires. When the timeout elapses the
+wait is abandoned with a warning; nothing is lost, because a handler that never returns is never
+checkpointed, so its event is re-delivered on the next start.
+
+Size it above your slowest legitimate handler and below your orchestrator's termination grace
+period (Kubernetes `terminationGracePeriodSeconds`, 30 s by default).
 
 ### Retry options
 
@@ -397,7 +409,7 @@ surfacing them in one error message.
 | `ALB0001` | No backend was declared | Call `.WithPostgres(...)` or `.WithInMemory()` inside `AddAlberto` |
 | `ALB0002` | Two or more processors share the same id within one module | Add `[ProcessorId("...")]` to disambiguate |
 | `ALB0003` | `.WithTenancy()` declared but the backend does not support tenancy | Use `.WithPostgres(...)`, which supports tenancy, or remove `.WithTenancy()` |
-| `ALB0004` | A control loop duration or count is ≤ 0 (`PollingInterval`, `HeadRefreshInterval`, `BatchSize`, or `HeadWindowSize`) | Set a positive value in code or configuration |
+| `ALB0004` | A control loop duration or count is ≤ 0 (`PollingInterval`, `HeadRefreshInterval`, `DrainTimeout`, `BatchSize`, or `HeadWindowSize`) | Set a positive value in code or configuration |
 | `ALB0005` | `MaxConcurrency > 1` with `BatchingMode = Disabled` — concurrency only applies within a batch | Set `BatchingMode` to `IfSupported` or `Required`, or reduce `MaxConcurrency` to 1 |
 | `ALB0006` | A processor id is empty or contains whitespace | Use a non-empty identifier without whitespace |
 | `ALB0007` | `Retry.MaxRetries < 0` or `Retry.BackoffMultiplier < 1.0` | Use 0 to disable retries; use 1.0 for a constant backoff delay |

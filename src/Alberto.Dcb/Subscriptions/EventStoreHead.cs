@@ -10,6 +10,7 @@ public sealed class EventStoreHead : IHostedService
     private readonly int _windowSize;
     private readonly ILogger<EventStoreHead>? _logger;
     private readonly IEventAppendedSignal? _signal;
+    private readonly TimeSpan _drainTimeout;
     private long _current;
     private CancellationTokenSource? _cts;
     private Task? _loop;
@@ -17,13 +18,15 @@ public sealed class EventStoreHead : IHostedService
     internal EventStoreHead(IEventStoreHeadBackend backend,
         TimeSpan? refreshInterval = null, int windowSize = 2000,
         ILogger<EventStoreHead>? logger = null,
-        IEventAppendedSignal? signal = null)
+        IEventAppendedSignal? signal = null,
+        TimeSpan? drainTimeout = null)
     {
         _backend = backend;
         _refreshInterval = refreshInterval ?? TimeSpan.FromMilliseconds(100);
         _windowSize = windowSize;
         _logger = logger;
         _signal = signal;
+        _drainTimeout = drainTimeout ?? Configuration.ControlLoopOptions.Default.DrainTimeout;
     }
 
     public long Current => Volatile.Read(ref _current);
@@ -48,10 +51,31 @@ public sealed class EventStoreHead : IHostedService
         _loop = RunAsync(_cts.Token);
     }
 
+    /// <summary>
+    /// Cancels the refresh loop and waits for it to exit, bounded by the configured drain
+    /// timeout so a backend call that ignores cancellation cannot stall host shutdown.
+    /// </summary>
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        if (_cts is not null) await _cts.CancelAsync();
-        if (_loop is not null) try { await _loop; } catch (OperationCanceledException) { }
+        if (_cts is not null)
+        {
+            try { await _cts.CancelAsync(); }
+            catch (ObjectDisposedException) { }
+        }
+
+        if (_loop is null) return;
+
+        try
+        {
+            await _loop.WaitAsync(_drainTimeout, cancellationToken);
+        }
+        catch (OperationCanceledException) { }
+        catch (TimeoutException)
+        {
+            _logger?.LogWarning(
+                "EventStoreHead did not stop within {DrainTimeout}; abandoning the wait.",
+                _drainTimeout);
+        }
     }
 
     private async Task RunAsync(CancellationToken ct)
