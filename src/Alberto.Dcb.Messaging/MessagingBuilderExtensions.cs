@@ -3,6 +3,7 @@ using Alberto.Dcb.Subscriptions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace Alberto.Dcb.Messaging;
 
@@ -31,13 +32,30 @@ public static class MessagingBuilderExtensions
     /// How long the relay owns a claimed entry before another relay may recover it.
     /// Defaults to <see cref="OutboxRelay.DefaultClaimLease"/>.
     /// </param>
+    /// <param name="deliveredRetention">
+    /// How long a delivered entry is kept before an <see cref="OutboxRetentionService"/> removes
+    /// it. Defaults to <see cref="OutboxRetentionService.DefaultRetention"/>. Pass
+    /// <see cref="Timeout.InfiniteTimeSpan"/> to keep delivered entries forever — the outbox then
+    /// grows without bound, so pair it with a purge you run yourself.
+    /// </param>
+    /// <param name="retentionSweepInterval">
+    /// How often the retention sweep runs. Defaults to
+    /// <see cref="OutboxRetentionService.DefaultSweepInterval"/>.
+    /// </param>
+    /// <remarks>
+    /// The retention sweep is registered whether or not a <paramref name="transport"/> is —
+    /// entries reach <c>delivered</c> by being delivered, and a host that relays elsewhere still
+    /// accumulates them.
+    /// </remarks>
     public static DcbModuleBuilder WithOutbox(
         this DcbModuleBuilder builder,
         Action<IMessageMappingRegistry> configureMappings,
         IOutboxStore outboxStore,
         IMessageTransport? transport = null,
         int relayBatchSize = 1,
-        TimeSpan? relayClaimLease = null)
+        TimeSpan? relayClaimLease = null,
+        TimeSpan? deliveredRetention = null,
+        TimeSpan? retentionSweepInterval = null)
     {
         ArgumentNullException.ThrowIfNull(configureMappings);
         ArgumentNullException.ThrowIfNull(outboxStore);
@@ -63,6 +81,14 @@ public static class MessagingBuilderExtensions
             // OutboxHandler implements IBatchableProcessor, satisfying the default Required batching mode.
             context.Services.AddKeyedSingleton<IEventProcessor>(context.ModuleKey, (sp, _) =>
                 new OutboxHandler(registry, outboxStore, sp.GetRequiredService<IServiceScopeFactory>()));
+
+            context.Services.AddSingleton<IHostedService>(
+                sp => new OutboxRetentionService(
+                    outboxStore,
+                    deliveredRetention,
+                    retentionSweepInterval,
+                    sp.GetService<TimeProvider>(),
+                    sp.GetService<ILogger<OutboxRetentionService>>()));
 
             // Optionally wire up the relay as a hosted service
             if (transport is not null)

@@ -8,39 +8,6 @@ Alberto.Dcb.Postgres.MigrationResult.ExecutedScripts.init -> void
 Alberto.Dcb.Postgres.MigrationResult.MigrationResult(bool Successful, System.Collections.Generic.IReadOnlyCollection<string!>! ExecutedScripts, System.Exception? Error) -> void
 Alberto.Dcb.Postgres.MigrationResult.Successful.get -> bool
 Alberto.Dcb.Postgres.MigrationResult.Successful.init -> void
-Alberto.Dcb.Postgres.PostgresAdminDataAccess
-Alberto.Dcb.Postgres.PostgresAdminDataAccess.ClearAllDeadLettersAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
-Alberto.Dcb.Postgres.PostgresAdminDataAccess.CountAllDeadLettersAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
-Alberto.Dcb.Postgres.PostgresAdminDataAccess.GetActiveProcessorLeasesAsync(string! processorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.List<Alberto.Dcb.Admin.ActiveProcessorLease!>!>!
-Alberto.Dcb.Postgres.PostgresAdminDataAccess.GetCheckpointsAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.List<Alberto.Dcb.Admin.CheckpointInfo!>!>!
-Alberto.Dcb.Postgres.PostgresAdminDataAccess.GetDeadLettersAsync(string? processorId, string? type, string? tenant, int limit, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.List<Alberto.Dcb.Admin.DeadLetterInfo!>!>!
-Alberto.Dcb.Postgres.PostgresAdminDataAccess.GetEventsAsync(string? type, string? tag, string? tenant, long afterPosition, int limit, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.List<Alberto.Dcb.Admin.EventInfo!>!>!
-Alberto.Dcb.Postgres.PostgresAdminDataAccess.GetGlobalPositionAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<long?>!
-Alberto.Dcb.Postgres.PostgresAdminDataAccess.GetProcessorsAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.List<Alberto.Dcb.Admin.ProcessorInfo!>!>!
-Alberto.Dcb.Postgres.PostgresAdminDataAccess.GetProjectionStatesAsync(string! type, string? tenant, string? search, int limit, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.List<Alberto.Dcb.Admin.ProjectionState!>!>!
-Alberto.Dcb.Postgres.PostgresAdminDataAccess.GetProjectionTypesAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.List<string!>!>!
-Alberto.Dcb.Postgres.PostgresAdminDataAccess.GetRebuildStatesAsync(string? processorId = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.List<Alberto.Dcb.Admin.RebuildStateInfo!>!>!
-Alberto.Dcb.Postgres.PostgresAdminDataAccess.GetSingleCheckpointAsync(string! processorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Dcb.Admin.CheckpointInfo?>!
-Alberto.Dcb.Postgres.PostgresAdminDataAccess.GetSystemInfoAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Dcb.Admin.SystemInfo!>!
-Alberto.Dcb.Postgres.PostgresAdminDataAccess.GetTenantLeaseInventoryAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Dcb.Admin.TenantLeaseInventory!>!
-Alberto.Dcb.Postgres.PostgresAdminDataAccess.GetTenantsAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.List<string!>!>!
-Alberto.Dcb.Postgres.PostgresAdminDataAccess.GetTopologyAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Dcb.Admin.AdminStoreTopology!>!
-Alberto.Dcb.Postgres.PostgresAdminDataAccess.PostgresAdminDataAccess(Npgsql.NpgsqlDataSource! dataSource, string? schema = null) -> void
-Alberto.Dcb.Postgres.PostgresAdminDataAccess.ReleaseTenantLeasesAsync(string? consumerId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
-Alberto.Dcb.Postgres.PostgresAdminDataAccess.RenameCheckpointAsync(string! fromProcessorId, string! toProcessorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Dcb.Admin.CheckpointRenameResult!>!
-Alberto.Dcb.Postgres.PostgresAdminDataAccess.RetryByRewindAsync(string! processorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<(long? RewindPosition, int DeletedCount)>!
-Alberto.Dcb.Postgres.PostgresAdminOperator
-Alberto.Dcb.Postgres.PostgresAdminOperator.AbortRebuildAsync(string! processorId, string! operatorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Dcb.Admin.RebuildAbortResult!>!
-Alberto.Dcb.Postgres.PostgresAdminOperator.ClearAllDeadLettersAsync(string! operatorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
-Alberto.Dcb.Postgres.PostgresAdminOperator.ClearDeadLettersForProcessorAsync(string! processorId, string! operatorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
-Alberto.Dcb.Postgres.PostgresAdminOperator.PostgresAdminOperator(Npgsql.NpgsqlDataSource! dataSource, string? schema = null) -> void
-Alberto.Dcb.Postgres.PostgresAdminOperator.PromoteRebuildAsync(string! processorId, bool force, string! operatorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Dcb.Admin.RebuildPromoteResult!>!
-Alberto.Dcb.Postgres.PostgresAdminOperator.ReleaseTenantLeasesAsync(string? consumerId, string! operatorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
-Alberto.Dcb.Postgres.PostgresAdminOperator.ResetCheckpointAsync(string! processorId, string! operatorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Alberto.Dcb.Postgres.PostgresAdminOperator.RetryByRewindAsync(string! processorId, string! operatorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Dcb.Admin.RetryByRewindResult!>!
-Alberto.Dcb.Postgres.PostgresAdminOperator.SetCheckpointAsync(string! processorId, long position, string! operatorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Alberto.Dcb.Postgres.PostgresAdminOperator.StartRebuildAsync(string! processorId, string! projectionType, long targetPosition, string! operatorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Dcb.Admin.RebuildStartResult!>!
-Alberto.Dcb.Postgres.PostgresAdminServiceCollectionExtensions
 Alberto.Dcb.Postgres.PostgresBackendDescriptor
 Alberto.Dcb.Postgres.PostgresBackendDescriptor.ApplyConfiguration(Microsoft.Extensions.Configuration.IConfiguration! moduleSection) -> Alberto.Dcb.Configuration.IAlbertoBackendDescriptor!
 Alberto.Dcb.Postgres.PostgresBackendDescriptor.ApplyShardConfiguration(Microsoft.Extensions.Configuration.IConfiguration! shardSection) -> Alberto.Dcb.Configuration.IAlbertoBackendDescriptor!
@@ -161,7 +128,6 @@ Alberto.Dcb.Postgres.PostgresTenantShardMap.GetAllAsync(System.Threading.Cancell
 Alberto.Dcb.Postgres.PostgresTenantShardMap.PostgresTenantShardMap(Npgsql.NpgsqlDataSource! dataSource, string! moduleKey, string? schema = null) -> void
 Alberto.Dcb.Postgres.PostgresTenantShardMap.ResolveAsync(string! tenantId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<string?>
 Alberto.Dcb.Postgres.ShardingBuilderExtensions
-static Alberto.Dcb.Postgres.PostgresAdminServiceCollectionExtensions.AddAlbertoPostgresAdmin(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, string! moduleKey, string! schema, bool isDefault = false) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static Alberto.Dcb.Postgres.PostgresBuilderExtensions.WithPostgres(this Alberto.Dcb.DcbModuleBuilder! builder, System.Func<Alberto.Dcb.Postgres.PostgresOptions!, Alberto.Dcb.Postgres.PostgresOptions!>! configure) -> Alberto.Dcb.DcbModuleBuilder!
 static Alberto.Dcb.Postgres.PostgresCatalogMigrator.Migrate(string! connectionString, string? schema = null) -> Alberto.Dcb.Postgres.MigrationResult!
 static Alberto.Dcb.Postgres.PostgresMigrator.GetPendingMigrations(string! connectionString, string? schema = null, bool singleTenant = false) -> System.Collections.Generic.IReadOnlyCollection<string!>!

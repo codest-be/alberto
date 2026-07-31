@@ -94,10 +94,12 @@ Note: `apps/Alberto.Payments` is in the solution and builds, but it has no host 
 - **GraphQL** (Orders example only): HotChocolate 15.x
 
 ### Admin surface
-The operator surface is the CLI in `tools/Alberto.Cli`. There is no admin HTTP API. `src/Alberto.Dcb.Admin` is a packable project containing the `IAdminReader`/`IAdminOperator` abstraction the CLI's command files are built on; it serves no endpoint.
+The operator surface is the CLI in `tools/Alberto.Cli`. There is no admin HTTP API. `src/Alberto.Dcb.Admin` contains the `IAdminReader`/`IAdminOperator` abstraction the CLI's command files are built on; it serves no endpoint.
+
+**Both admin projects are `IsPackable=false`.** `Alberto.Dcb.Admin` and `Alberto.Dcb.Postgres.Admin` build, sit in the solution, are tested, and are referenced by the CLI as projects — they just do not ship to nuget.org, so 1.0 does not freeze `IAdminReader`/`IAdminOperator` under semver before the front doors on `feature/admin-surface` exist. `Alberto.Dcb.Postgres.Admin` was split out of `Alberto.Dcb.Postgres` (which **is** packable) precisely so that package carries no dependency on a parked one; its files keep `namespace Alberto.Dcb.Postgres`, so no consumer's usings changed.
 
 - **Per-processor mutations** go through the core interfaces: `ICheckpointStore` (`SaveAsync`, `ResetAsync`, `RewindAsync`) and `IDeadLetterStore` (`CountAsync`, `ClearAsync`, `MarkForRetryAsync`).
-- **`PostgresAdminDataAccess`** (`src/Alberto.Dcb.Postgres`) holds the inspection queries and the composite transactional mutations (`RetryByRewindAsync`, `ReleaseTenantLeasesAsync`) that span multiple tables and so cannot be composed from per-processor interfaces.
+- **`PostgresAdminDataAccess`** (`src/Alberto.Dcb.Postgres.Admin`) holds the inspection queries and the composite transactional mutations (`RetryByRewindAsync`, `ReleaseTenantLeasesAsync`) that span multiple tables and so cannot be composed from per-processor interfaces.
 - `SaveAsync` is monotonic by design (`GREATEST`). `RewindAsync` is the deliberate escape hatch for operator-initiated rewinds and is the only way to move a checkpoint backwards.
 
 ## Technology Stack

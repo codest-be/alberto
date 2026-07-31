@@ -98,20 +98,10 @@ public static class DeadLetterOpsCommand
 
                 var failed = await ShardRun.ApplyAsync(output, targets, async (dataSource, target) =>
                 {
-                    // Clear differs by scope: per-processor ClearAsync returns void; global ClearAllDeadLettersAsync returns int.
-                    int dismissed;
-                    if (!string.IsNullOrWhiteSpace(processor))
-                    {
-                        var deadLetterStore = new PostgresDeadLetterStore(dataSource, target.Schema);
-                        // ClearAsync is void; re-count so the reported figure is this database's own.
-                        dismissed = await deadLetterStore.CountAsync(processor);
-                        await deadLetterStore.ClearAsync(processor);
-                    }
-                    else
-                    {
-                        var admin = new PostgresAdminDataAccess(dataSource, target.Schema);
-                        dismissed = await admin.ClearAllDeadLettersAsync();
-                    }
+                    IAdminOperator operations = new PostgresAdminOperator(dataSource, target.Schema);
+                    var dismissed = !string.IsNullOrWhiteSpace(processor)
+                        ? await operations.ClearDeadLettersForProcessorAsync(processor, CliSession.OperatorId)
+                        : await operations.ClearAllDeadLettersAsync(CliSession.OperatorId);
 
                     if (json)
                         output.Json(new { action = "dismiss", shard = target.ShardId, dismissed, scope });
@@ -206,9 +196,8 @@ public static class DeadLetterOpsCommand
 
                 var failed = await ShardRun.ApplyAsync(output, targets, async (dataSource, target) =>
                 {
-                    var deadLetterStore = new PostgresDeadLetterStore(dataSource, target.Schema);
-                    var count = await deadLetterStore.CountAsync(processorId);
-                    await deadLetterStore.MarkForRetryAsync(processorId);
+                    IAdminOperator operations = new PostgresAdminOperator(dataSource, target.Schema);
+                    var count = await operations.MarkDeadLettersForRetryAsync(processorId, CliSession.OperatorId);
 
                     if (json)
                         output.Json(new { action = "retry", shard = target.ShardId, processorId, markedForRetry = count });
@@ -292,8 +281,9 @@ public static class DeadLetterOpsCommand
 
                 var failed = await ShardRun.ApplyAsync(output, targets, async (dataSource, target) =>
                 {
-                    var admin = new PostgresAdminDataAccess(dataSource, target.Schema);
-                    var (rewindPosition, deletedCount) = await admin.RetryByRewindAsync(processorId);
+                    IAdminOperator operations = new PostgresAdminOperator(dataSource, target.Schema);
+                    var (rewindPosition, deletedCount) =
+                        await operations.RetryByRewindAsync(processorId, CliSession.OperatorId);
 
                     if (rewindPosition is null)
                     {

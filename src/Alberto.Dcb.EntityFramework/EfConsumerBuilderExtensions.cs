@@ -141,12 +141,19 @@ public static class EfConsumerBuilderExtensions
     /// and returns a callback invoked after each successful SaveChanges,
     /// receiving only the events the projection actually handled.
     /// </summary>
+    /// <remarks>
+    /// The callback fires on <b>live processing only</b>. A projection rebuild replays the whole
+    /// log into a shadow version and deliberately does not fire it — see the comment on the
+    /// <c>RebuildableProjection</c> registration below.
+    /// </remarks>
     /// <typeparam name="TEntity">The projection entity type.</typeparam>
     /// <typeparam name="TDbContext">The EF DbContext containing the entity DbSet.</typeparam>
     /// <param name="builder">The module builder.</param>
     /// <param name="declaration">The projection declaration.</param>
     /// <param name="afterCommit">
     /// A factory that resolves dependencies at startup and returns the post-commit callback.
+    /// Invoked after each successful <c>SaveChanges</c> on the live processor, never during a
+    /// rebuild replay.
     /// </param>
     /// <param name="documentIds">
     /// Required on a module that declared <c>.WithTenancy()</c> — see
@@ -195,6 +202,18 @@ public static class EfConsumerBuilderExtensions
                 new EfProjectionStateClearer<TEntity, TDbContext>(
                     sp.GetRequiredService<IDbContextFactory<TDbContext>>(),
                     declaration.ProcessorId));
+            // afterCommit is deliberately NOT passed here. This factory builds the *shadow*
+            // processor, which replays the entire log from position 0 into a version no reader
+            // can see yet. A post-commit callback is a side effect on the outside world —
+            // notifications, cache invalidation, downstream messages — and firing it per replayed
+            // event would re-emit every one of those for the whole of history, once per rebuild,
+            // for state that is not even live. That is unrecoverable in a way the opposite
+            // omission is not: a callback maintaining something derived can be re-run after
+            // promotion, but a webhook that has already fired cannot be unfired.
+            //
+            // The consequence, stated so it is a choice and not a surprise: anything the callback
+            // maintains outside TDbContext is not rebuilt by a projection rebuild, and needs its
+            // own path. See the <remarks> on the overload above.
             context.Services.AddKeyedSingleton(moduleKey, (sp, _) =>
             {
                 var serializer = sp.GetKeyedService<EventSerializer>(moduleKey);

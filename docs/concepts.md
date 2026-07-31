@@ -154,6 +154,13 @@ reused, so an expensive lookup or an external call is not repeated per attempt. 
 non-throwing terminal: it returns a failed `Result` carrying a `dcb.conflict` problem instead of
 raising `DcbConflictException`.
 
+Retries are bounded, so `Commit` still throws when the boundary stays contended for all `n`
+attempts. Reach for `TryCommit` when the caller *branches* on that — falls back, queues, reports
+something other than a failure. When it only needs to report, catch `DcbConflictException` and call
+`ToProblem()`: it renders exactly what `TryCommit` would have returned, under the same
+`DcbConflictException.ProblemCode`, so an error surface handles one shape however the conflict
+arrived. That is what the examples' `OrThrow` does.
+
 **This is the whole optimistic-concurrency story.** You never store a version number, and there is
 no aggregate whose identity has to be decided up front. The unit of contention is exactly the
 question you asked.

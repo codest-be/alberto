@@ -1,5 +1,7 @@
+using System.Diagnostics.Metrics;
 using Alberto.Dcb.Postgres;
 using Alberto.Dcb.Subscriptions;
+using Alberto.Dcb.Telemetry;
 using Xunit;
 
 namespace Alberto.Dcb.Tests.Subscriptions;
@@ -311,4 +313,100 @@ public class TenantProcessorLockTests(PostgresFixture fixture) : IClassFixture<P
 
         Assert.Equal(TimeSpan.FromSeconds(60), lockManager.LeaseDuration);
     }
+
+    // ── Metric tag contract ──────────────────────────────────────────────────
+    //
+    // MetricTagContractTests pins the tag key set of every instrument that can be
+    // driven in-process. These two counters cannot: they are only ever emitted from
+    // PostgresTenantProcessorLock, so the assertion has to live where the lock runs.
+    //
+    // The contract is {consumer.id} and nothing more. A tenant id is unbounded and
+    // grows with the customer base; every distinct tag combination is a separate
+    // time series the SDK holds for the life of the process and exports on every
+    // collection cycle, so tagging by tenant would make these counters most
+    // expensive exactly when the product is doing best. tenant.id was carried here
+    // until v1 and was removed; these tests are what stop it coming back.
+
+    [Fact]
+    public async Task TryAcquireForTenant_OnSuccess_TenantLocksAcquired_isTaggedByConsumerIdOnly()
+    {
+        var lockManager = new PostgresTenantProcessorLock(fixture.DataSource, null);
+        var consumerId = $"consumer-{Guid.NewGuid():N}";
+        var tenantId = $"tenant-{Guid.NewGuid():N}";
+        var replicaId = $"replica-{Guid.NewGuid():N}";
+
+        var tags = await CaptureCounterTagsAsync(
+            "alberto.tenant_locks_acquired",
+            consumerId,
+            () => lockManager.TryAcquireForTenantAsync(consumerId, tenantId, replicaId, TestContext.Current.CancellationToken));
+
+        Assert.Equal(["consumer.id"], TagKeys(tags));
+
+        // Cleanup
+        await lockManager.ReleaseLeaseAsync(consumerId, tenantId, TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task TryAcquireForTenant_OnContention_TenantLockFailures_isTaggedByConsumerIdOnly()
+    {
+        var lockManager = new PostgresTenantProcessorLock(fixture.DataSource, null);
+        var consumerId = $"consumer-{Guid.NewGuid():N}";
+        var tenantId = $"tenant-{Guid.NewGuid():N}";
+
+        // Replica A takes the lease, so replica B's attempt is the failure we want to observe.
+        var held = await lockManager.TryAcquireForTenantAsync(
+            consumerId, tenantId, $"replica-a-{Guid.NewGuid():N}", TestContext.Current.CancellationToken);
+        Assert.NotNull(held);
+
+        var tags = await CaptureCounterTagsAsync(
+            "alberto.tenant_lock_failures",
+            consumerId,
+            () => lockManager.TryAcquireForTenantAsync(
+                consumerId, tenantId, $"replica-b-{Guid.NewGuid():N}", TestContext.Current.CancellationToken));
+
+        Assert.Equal(["consumer.id"], TagKeys(tags));
+
+        // Cleanup
+        await lockManager.ReleaseLeaseAsync(consumerId, tenantId, TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>
+    /// Runs <paramref name="act"/> with a listener on <paramref name="instrumentName"/> and returns
+    /// the tags of the single measurement carrying <paramref name="consumerId"/>. Filtering by the
+    /// caller's unique consumer id keeps the assertion stable when other tests emit concurrently —
+    /// and still matches if an extra tag is reintroduced, which is the failure this must catch.
+    /// </summary>
+    private static async Task<KeyValuePair<string, object?>[]> CaptureCounterTagsAsync(
+        string instrumentName,
+        string consumerId,
+        Func<Task<ITenantLease?>> act)
+    {
+        var captured = new List<KeyValuePair<string, object?>[]>();
+
+        using var listener = new MeterListener();
+        listener.InstrumentPublished = (instrument, l) =>
+        {
+            if (instrument.Meter.Name == AlbertoMetrics.Name && instrument.Name == instrumentName)
+                l.EnableMeasurementEvents(instrument);
+        };
+        listener.SetMeasurementEventCallback<long>((_, _, tags, _) =>
+        {
+            lock (captured) captured.Add(tags.ToArray());
+        });
+        listener.Start();
+
+        await act();
+
+        listener.Dispose();
+
+        lock (captured)
+        {
+            return Assert.Single(
+                captured,
+                t => t.Any(kv => kv.Key == "consumer.id" && (string?)kv.Value == consumerId));
+        }
+    }
+
+    private static string[] TagKeys(KeyValuePair<string, object?>[] tags) =>
+        [.. tags.Select(t => t.Key).Order()];
 }

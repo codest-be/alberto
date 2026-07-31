@@ -8,6 +8,12 @@ namespace Alberto.Dcb;
 public sealed class DcbConflictException : Exception
 {
     /// <summary>
+    /// The <see cref="Problem.Code"/> carried by every conflict surfaced as a <see cref="Problem"/>.
+    /// Named so callers branch on a constant rather than a literal they have to keep in step.
+    /// </summary>
+    public const string ProblemCode = "dcb.conflict";
+
+    /// <summary>
     /// The position where a conflicting event was found.
     /// </summary>
     public long ConflictingPosition { get; }
@@ -82,4 +88,24 @@ public sealed class DcbConflictException : Exception
         ExpectedPosition = -1;
         Query = DcbQuery.Empty;
     }
+
+    /// <summary>
+    /// Renders this conflict as a <see cref="Problem"/> carrying <see cref="ProblemCode"/> and both
+    /// positions, so a conflict that arrives as an exception and one that arrives as a failed
+    /// <see cref="Result"/> are indistinguishable to whatever formats the error.
+    /// </summary>
+    /// <remarks>
+    /// A conflict reaches a caller two ways: as a <see cref="Result"/> failure from a
+    /// <c>TryCommit</c>, or as this exception from a <c>Commit</c> whose retries were exhausted.
+    /// Both paths go through here, so an error surface only has to handle the one shape.
+    /// </remarks>
+    public Problem ToProblem() =>
+        Problem.Create(
+            ProblemCode,
+            Message,
+            new Dictionary<string, object>
+            {
+                ["expectedPosition"] = ExpectedPosition,
+                ["conflictingPosition"] = ConflictingPosition
+            });
 }

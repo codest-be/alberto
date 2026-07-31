@@ -184,6 +184,32 @@ Then wire the module and the projection:
 EF projections batch: a whole control-loop batch accumulates in the change tracker and flushes with
 one `SaveChanges`.
 
+### Reacting after the commit
+
+An overload takes an `afterCommit` factory — it resolves its dependencies once at startup and
+returns a callback run after each successful `SaveChanges`, receiving only the events the
+projection actually handled:
+
+```csharp
+.AddEfProjection<OrderSummaryEntity, OrdersDbContext>(
+    OrderSummaryEfProjection.Declaration,
+    afterCommit: sp =>
+    {
+        var notifier = sp.GetRequiredService<IOrderNotifier>();
+        return (events, ct) => notifier.PublishAsync(events, ct);
+    })
+```
+
+**It fires on live processing only — never during a rebuild replay.** A rebuild replays the entire
+log into a shadow version that no reader can see yet, so firing the callback there would re-emit
+every notification the system has ever sent, once per rebuild, for state that is not live. A
+webhook that has already fired cannot be unfired.
+
+The consequence, so it is a choice and not a surprise: anything the callback maintains *outside*
+the `DbContext` — a search index, an external cache — is not rebuilt by
+`alberto ops rebuild`, and needs a refresh path of its own. Keep the callback to things that are
+cheap to redo, and put anything that must survive a rebuild in the projection entity itself.
+
 ### EF projections on a tenant-enabled module
 
 `IProjectionEntity` has exactly the columns above — there is no tenant among them, and adding a

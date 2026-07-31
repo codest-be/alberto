@@ -59,6 +59,12 @@ renamed.
 `"{moduleKey}#{shardId}"` string. It now splits into two dimensions: `module` and `shard`.
 Custom dashboards built on the old combined value need updating.
 
+**`tenant.id` removed from the tenant-lock counters** — `alberto.tenant_locks_acquired` and
+`alberto.tenant_lock_failures` are now tagged by `consumer.id` only. A tenant id is unbounded, and
+every distinct tag combination is a time series the SDK holds for the life of the process, so the
+old shape cost one series per tenant per replica per counter. Queries that grouped or filtered by
+`tenant.id` need rewriting — aggregate by `consumer.id`, or use traces for the per-tenant question.
+
 **Command pipeline reshape** — `Persist`/`PersistUnconditionally` renamed to `Commit`/`CommitUnconditionally`.
 `NoValidation()` removed (validation was always optional). `Decide` is now synchronous; use the new
 `Enrich` stage for async work before the consistency boundary. `LoadUnder` added for the case where
@@ -169,8 +175,71 @@ locks in different key spaces and do not serialize against each other**, so the 
 is unprotected for the length of the overlap. Drain or stop the old version before starting the
 new one; see [UPGRADING.md](UPGRADING.md) for the rollout note.
 
+**The admin surface does not ship in 1.0** — `Alberto.Dcb.Admin` is no longer published to nuget.org,
+and the PostgreSQL implementation of it moved out of the `Alberto.Dcb.Postgres` package into a new,
+also-unpublished `Alberto.Dcb.Postgres.Admin`. `IAdminReader`/`IAdminOperator` are the contract the
+admin front doors on `feature/admin-surface` are built on, and shipping them at 1.0 would freeze that
+abstraction under semver before anything that consumes it exists. Both projects still build, are in
+the solution, and are referenced by `tools/Alberto.Cli` — the operator CLI is unaffected, and so is
+every consumer that only ever used the CLI.
+
+The concrete break is for anyone referencing `PostgresAdminDataAccess`, `PostgresAdminOperator` or
+`AddAlbertoPostgresAdmin` from the `Alberto.Dcb.Postgres` **package**: those 33 members are gone from
+it. Their namespace is unchanged (`Alberto.Dcb.Postgres`), so no `using` needs editing, but the types
+now live in an assembly you can only get by project reference. Build the CLI from source, or wait for
+the admin surface to be unparked after 1.0.
+
+**Delivered outbox entries are now deleted after 7 days by default** — `WithOutbox` registers an
+`OutboxRetentionService` that sweeps hourly and deletes `delivered` entries older than
+`deliveredRetention`. Nothing removed them before, so **the first sweep after upgrading faces every
+delivered entry the table has ever held**; on a large table that one DELETE can be long. Purge it
+once from the CLI during a quiet window first (`alberto ops outbox purge --before <timestamp>`), or
+start with a wide `deliveredRetention` and walk it down. Pass `Timeout.InfiniteTimeSpan` to keep
+delivered entries forever — do that if the table is your integration audit trail. Only `delivered`
+entries are ever eligible; `pending`, `processing` and `failed` are work, not history, and are never
+removed by age. **Run migration 034 before deploying the new binary** — it adds the partial index on
+`delivered_at` the sweep needs, without which the DELETE is a sequential scan.
+
 ### Added
 
+- **The outbox no longer grows forever, and its ordering guarantee is written down.**
+  `WithOutbox` gains `deliveredRetention` (default 7 days, `Timeout.InfiniteTimeSpan` to disable)
+  and `retentionSweepInterval` (default 1 hour), honoured by a new `OutboxRetentionService`. It is
+  deliberately a separate hosted service rather than a step on the relay's loop: a purge that takes
+  seconds would otherwise be seconds in which nothing is published. It waits out a full interval
+  before its first sweep, several replicas sweeping at once is safe, and a failed sweep is logged
+  and retried rather than faulting the host. `alberto ops outbox purge --before <timestamp>` does
+  the same delete on demand and records an `admin-outbox-purged` audit event;
+  `IAdminOperator.PurgeOutboxAsync` is the operation behind it. Migration 034 adds the partial index
+  on `delivered_at` that keeps the sweep off a sequential scan.
+  Separately, [docs/reactors-and-outbox.md](docs/reactors-and-outbox.md#ordering-there-isnt-any) now
+  states plainly that outbox delivery is **unordered** — `created_at` is transaction-start time with
+  no tiebreaker, retries re-deliver late, and `FOR UPDATE SKIP LOCKED` hands concurrent relays
+  disjoint batches — and points at `ExternalMessage.RoutingHint` as the per-entity ordering hook for
+  transports that have partition keys, message-group ids or routing keys. No behaviour changed
+  there; it was true before and undocumented.
+- **A conflict that outlives `Commit`'s retries now reaches the client as a coded error.**
+  `Commit` retries a `DcbConflictException` up to its attempt limit and then rethrows; the example
+  slices' `OrThrow` awaited that bare, so a boundary that stayed contended surfaced as an unhandled
+  exception — a 500 with no code on it, which is the worst error on the documented happy path.
+  `OrThrow` now catches it and raises the same `Problem` a `TryCommit` would have returned, so
+  `Handle → Load → Decide → Commit → OrThrow` stays the shape a slice is written in and
+  `TryCommit` stays what it was for: branching on the failure rather than reporting it.
+  `DcbConflictException` gains `ProblemCode` (`"dcb.conflict"`) and `ToProblem()` so both paths
+  render one shape and callers branch on a constant. `Problem.Details` now reach GraphQL as error
+  extensions instead of being dropped, which is how `expectedPosition` and `conflictingPosition`
+  get to a client deciding whether to retry.
+- **Every destructive CLI command is now recorded.** Every mutation in `alberto ops` routes
+  through `IAdminOperator`, which appends an admin event to `alberto_events` in the same
+  transaction as the change. Previously `checkpoint set`, `checkpoint reset`, `checkpoint rename`,
+  `dead-letters dismiss`, `dead-letters retry` and `tenants release` reached past it to the
+  underlying stores and left no trace; only `retry-rewind` and the three rebuild verbs were
+  audited. `IAdminOperator` gains `RenameCheckpointAsync` and `MarkDeadLettersForRetryAsync` (and
+  two matching event types, `admin-checkpoint-renamed` and `admin-dead-letters-marked-for-retry`)
+  so the two commands that had no operator-level equivalent now have one. The recorded operator id
+  is the CLI's OS user name — attribution for a cooperating team, not authentication; database
+  credentials remain the access control. See
+  [docs/operations.md](docs/operations.md#what-a-mutation-records).
 - `TelemetryOptions.RecordEventTagValues` (default `false`) — opts append spans back into
   carrying tag values alongside tag keys, for a development environment or a collector inside
   the same trust boundary as the database.

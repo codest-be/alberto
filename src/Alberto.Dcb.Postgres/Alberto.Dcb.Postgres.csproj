@@ -16,11 +16,14 @@
     <ItemGroup>
         <InternalsVisibleTo Include="Alberto.Dcb.Tests"/>
         <InternalsVisibleTo Include="Alberto.Dcb.Postgres.Messaging"/>
+        <!-- The admin implementation was split out of this assembly so that this one can ship
+             while the admin surface stays parked. It still needs the internals it used when the
+             files lived here (SchemaQualifier and friends). -->
+        <InternalsVisibleTo Include="Alberto.Dcb.Postgres.Admin"/>
     </ItemGroup>
 
     <ItemGroup>
         <ProjectReference Include="..\Alberto.Dcb\Alberto.Dcb.csproj" />
-        <ProjectReference Include="..\Alberto.Dcb.Admin\Alberto.Dcb.Admin.csproj" />
     </ItemGroup>
 
     <ItemGroup>

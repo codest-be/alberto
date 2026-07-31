@@ -261,6 +261,7 @@ Alberto.Dcb.DcbConflictException.DcbConflictException(string! message, long conf
 Alberto.Dcb.DcbConflictException.DcbConflictException(string! message, System.Exception! innerException) -> void
 Alberto.Dcb.DcbConflictException.ExpectedPosition.get -> long
 Alberto.Dcb.DcbConflictException.Query.get -> Alberto.Dcb.DcbQuery!
+Alberto.Dcb.DcbConflictException.ToProblem() -> Alberto.Dcb.Problem!
 Alberto.Dcb.DcbModuleBuilder
 Alberto.Dcb.DcbModuleBuilder.Configure(System.Func<Alberto.Dcb.Configuration.AlbertoModuleDefinition!, Alberto.Dcb.Configuration.AlbertoModuleDefinition!>! configure) -> Alberto.Dcb.DcbModuleBuilder!
 Alberto.Dcb.DcbModuleBuilder.DeclareProcessor(Alberto.Dcb.Configuration.ProcessorDeclaration! declaration) -> Alberto.Dcb.DcbModuleBuilder!
@@ -882,6 +883,7 @@ Alberto.Dcb.Upcasting.UpcasterRegistry.UpcasterRegistryBuilder
 Alberto.Dcb.Upcasting.UpcasterRegistry.UpcasterRegistryBuilder.Add(Alberto.Dcb.Upcasting.UpcasterDeclaration! declaration) -> Alberto.Dcb.Upcasting.UpcasterRegistry.UpcasterRegistryBuilder!
 Alberto.Dcb.Upcasting.UpcasterRegistry.UpcasterRegistryBuilder.Build() -> Alberto.Dcb.Upcasting.UpcasterRegistry!
 Alberto.Dcb.Upcasting.UpcasterRegistry.UpcasterRegistryBuilder.UpcasterRegistryBuilder() -> void
+const Alberto.Dcb.DcbConflictException.ProblemCode = "dcb.conflict" -> string!
 const Alberto.Dcb.EventTag.ReservedConceptPrefix = "_" -> string!
 const Alberto.Dcb.EventTag.SchemaVersionConcept = "_version" -> string!
 const Alberto.Dcb.Subscriptions.ProjectionVersions.Initial = 1 -> int

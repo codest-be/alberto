@@ -16,6 +16,9 @@ public static class AdminTags
     /// <summary>Projection rebuild operations (start, promote, abort).</summary>
     public const string Rebuild = "admin-rebuild";
 
+    /// <summary>Outbox operations (purge).</summary>
+    public const string Outbox = "admin-outbox";
+
     /// <summary>Tenant lease operations (release).</summary>
     public const string TenantLease = "admin-tenant-lease";
 }
