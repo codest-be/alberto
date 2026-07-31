@@ -132,6 +132,7 @@ The full, runnable version of that program is
 | [Reactors and the outbox](docs/reactors-and-outbox.md) | Side effects and publishing to the outside world |
 | [Multi-tenancy](docs/multi-tenancy.md) | Tenant isolation, leases, and what it costs |
 | [Operations](docs/operations.md) | The `alberto` CLI, dead letters, error policy, telemetry |
+| [Backup and recovery](docs/backup-and-recovery.md) | What is truth, what is derived, and what a restore invalidates |
 | [Configuration reference](docs/configuration.md) | Three-phase pipeline, all options, validation codes, custom backends |
 | [Async processing architecture](docs/architecture/async-processing.md) | How the control loop actually works |
 | [Tenant sharding](docs/architecture/tenant-sharding.md) | Spreading a module's tenants over several databases |
