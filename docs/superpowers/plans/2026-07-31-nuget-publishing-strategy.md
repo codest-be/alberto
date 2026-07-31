@@ -20,7 +20,7 @@
 - nuget.org pushes are permanent. A package can be unlisted but never deleted, and an ID is never reclaimable.
 - Rename scope excludes `docs/superpowers/**` and `CHANGELOG.md`. Those are historical records of work done under the old names; rewriting them falsifies the record.
 - `Directory.Build.props` needs no change. It already packs the root `README.md` into every package and already defaults `IsPackable=false`; its open `PackageIcon` TODO stays open and does not block v0.1.0.
-- The parked admin projects keep their existing `PackageId` / `Title` / `Description` and their `IsPackable=false`, so unparking stays a one-line diff.
+- The parked admin projects keep their `IsPackable=false` and keep having a `PackageId` / `Title` / `Description` at all, so unparking stays a one-line diff. Those three fields are **not** exempt from the rename: the mechanical pass rewrites `Alberto.Dcb.Admin` → `Alberto.Admin` inside them like anywhere else. What must not happen is the fields being deleted, reworded, or given new `IsPackable` values.
 - The string `Alberto.Dcb` is never followed by a letter anywhere in the repo (verified). Type names that merely contain `Dcb` — `DcbQuery`, `DcbModuleBuilder`, `DcbModuleBuilderExtensions` — must **not** change.
 - "DCB" as prose (the pattern name, e.g. "Alberto DCB event store") stays. Only the dotted identifier `Alberto.Dcb` moves.
 
@@ -907,7 +907,7 @@ git add .github/workflows/publish-packages.yml && git commit -m "ci: publish tag
 
 Every `PublicAPI.Shipped.txt` in the repo is a single `#nullable enable` line; all 1,912 declarations sit in `PublicAPI.Unshipped.txt`. That is correct for a library that has never shipped. Once `0.1.0` is on nuget.org it is no longer true, and leaving it means the analyzer will never flag a removed public member.
 
-Promoting adds deliberate friction: removing a public API afterwards becomes an RS0017 error until you edit `PublicAPI.Shipped.txt` by hand. That is the point — it is the moment you learn you are breaking consumers. If you would rather keep the 0.x surface fluid, skip this task; nothing else depends on it.
+Promoting adds deliberate friction: removing a public API afterwards becomes an RS0017 error until you edit `PublicAPI.Shipped.txt` by hand. That is the point — it is the moment you learn you are breaking consumers. Do this task; it is the plan's chosen tradeoff, and nothing else depends on it either way.
 
 **Files:**
 - Modify: all `src/*/PublicAPI.Shipped.txt` and `src/*/PublicAPI.Unshipped.txt` for projects where the analyzer is active (`IsPackable=true`)
