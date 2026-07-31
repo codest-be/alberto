@@ -94,7 +94,7 @@ dotnet add package Alberto.Dcb --prerelease
 | `Alberto.Dcb` | Event store abstractions, control loop, middleware, projections, tenancy |
 | `Alberto.Dcb.Commands` | The `AlbertoStore` command pipeline (`Handle → Load → Decide → Commit`) |
 | `Alberto.Dcb.InMemory` | In-memory backend, checkpoint, dead-letter and state stores — dev and tests |
-| `Alberto.Dcb.Postgres` | PostgreSQL backend, migrations, leases, admin queries |
+| `Alberto.Dcb.Postgres` | PostgreSQL backend, migrations, leases |
 | `Alberto.Dcb.EntityFramework` | EF Core–backed projections |
 | `Alberto.Dcb.Messaging` | Transactional outbox abstractions |
 | `Alberto.Dcb.Postgres.Messaging` | PostgreSQL outbox store |

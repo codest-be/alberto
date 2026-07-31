@@ -110,6 +110,135 @@ public sealed class PostgresAdminOperator : IAdminOperator
     }
 
     /// <inheritdoc />
+    public async Task<CheckpointRenameResult> RenameCheckpointAsync(
+        string fromProcessorId, string toProcessorId, string operatorId, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(fromProcessorId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(toProcessorId);
+
+        if (string.Equals(fromProcessorId, toProcessorId, StringComparison.Ordinal))
+            return new CheckpointRenameResult(CheckpointRenameStatus.SameProcessorId);
+
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+
+        long? sourcePosition;
+        await using (var source = conn.CreateCommand())
+        {
+            source.Transaction = tx;
+            // FOR UPDATE so a concurrent rename or checkpoint write cannot move the row out from
+            // under the insert-then-delete below.
+            source.CommandText = $"""
+                SELECT last_position
+                FROM {_schema.Table("alberto_processor_checkpoints")}
+                WHERE processor_id = @fromProcessorId
+                FOR UPDATE
+                """;
+            source.Parameters.AddWithValue("fromProcessorId", fromProcessorId);
+            var result = await source.ExecuteScalarAsync(ct);
+            sourcePosition = result is DBNull or null ? null : Convert.ToInt64(result);
+        }
+
+        if (sourcePosition is null)
+            return new CheckpointRenameResult(CheckpointRenameStatus.SourceNotFound);
+
+        int inserted;
+        await using (var destination = conn.CreateCommand())
+        {
+            destination.Transaction = tx;
+            // DO NOTHING rather than DO UPDATE: silently overwriting a live processor's position
+            // would rewind or fast-forward it, so a taken destination is reported, not resolved.
+            destination.CommandText = $"""
+                INSERT INTO {_schema.Table("alberto_processor_checkpoints")}
+                    (processor_id, last_position, updated_at)
+                VALUES (@toProcessorId, @position, now())
+                ON CONFLICT (processor_id) DO NOTHING
+                """;
+            destination.Parameters.AddWithValue("toProcessorId", toProcessorId);
+            destination.Parameters.AddWithValue("position", sourcePosition.Value);
+            inserted = await destination.ExecuteNonQueryAsync(ct);
+        }
+
+        if (inserted == 0)
+        {
+            long? destinationPosition;
+            await using var existing = conn.CreateCommand();
+            existing.Transaction = tx;
+            existing.CommandText = $"""
+                SELECT last_position
+                FROM {_schema.Table("alberto_processor_checkpoints")}
+                WHERE processor_id = @toProcessorId
+                """;
+            existing.Parameters.AddWithValue("toProcessorId", toProcessorId);
+            var result = await existing.ExecuteScalarAsync(ct);
+            destinationPosition = result is DBNull or null ? null : Convert.ToInt64(result);
+
+            // No audit event and no commit: nothing changed.
+            return new CheckpointRenameResult(
+                CheckpointRenameStatus.DestinationExists,
+                destinationPosition);
+        }
+
+        await using (var delete = conn.CreateCommand())
+        {
+            delete.Transaction = tx;
+            delete.CommandText = $"""
+                DELETE FROM {_schema.Table("alberto_processor_checkpoints")}
+                WHERE processor_id = @fromProcessorId
+                """;
+            delete.Parameters.AddWithValue("fromProcessorId", fromProcessorId);
+            await delete.ExecuteNonQueryAsync(ct);
+        }
+
+        var renamed = new AdminCheckpointRenamed(
+            fromProcessorId, toProcessorId, sourcePosition.Value, operatorId);
+        // Tagged under both ids: the question "what happened to this processor?" has to be
+        // answerable from either name, and after the rename the old one is all a reader may have.
+        await AppendAdminEventAsync(conn, tx, "admin-checkpoint-renamed",
+            [new EventTag(AdminTags.Checkpoint, fromProcessorId), new EventTag(AdminTags.Checkpoint, toProcessorId)],
+            renamed, ct);
+
+        await tx.CommitAsync(ct);
+        return new CheckpointRenameResult(CheckpointRenameStatus.Renamed, sourcePosition);
+    }
+
+    /// <inheritdoc />
+    public async Task<int> MarkDeadLettersForRetryAsync(
+        string processorId, string operatorId, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
+
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+
+        int markedCount;
+        await using (var cmd = conn.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            // retry_requested = FALSE in the predicate so the count is rows this call actually
+            // flagged, not rows that were already waiting for the retry loop.
+            cmd.CommandText = $"""
+                UPDATE {_schema.Table("alberto_dead_letter_events")}
+                SET retry_requested = TRUE
+                WHERE processor_id = @processorId AND retry_requested = FALSE
+                """;
+            cmd.Parameters.AddWithValue("processorId", processorId);
+            markedCount = await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (markedCount > 0)
+        {
+            var adminEvent = new AdminDeadLettersMarkedForRetry(processorId, markedCount, operatorId);
+            await AppendAdminEventAsync(conn, tx, "admin-dead-letters-marked-for-retry",
+                [new EventTag(AdminTags.DeadLetter, processorId)],
+                adminEvent, ct);
+        }
+
+        await tx.CommitAsync(ct);
+        return markedCount;
+    }
+
+    /// <inheritdoc />
     public async Task<int> ClearAllDeadLettersAsync(string operatorId, CancellationToken ct = default)
     {
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
@@ -128,6 +257,39 @@ public sealed class PostgresAdminOperator : IAdminOperator
             var adminEvent = new AdminDeadLettersCleared(deletedCount, operatorId);
             await AppendAdminEventAsync(conn, tx, "admin-dead-letters-cleared",
                 [new EventTag(AdminTags.DeadLetter, "all")],
+                adminEvent, ct);
+        }
+
+        await tx.CommitAsync(ct);
+        return deletedCount;
+    }
+
+    /// <inheritdoc />
+    public async Task<int> PurgeOutboxAsync(
+        DateTimeOffset before, string operatorId, CancellationToken ct = default)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+
+        int deletedCount;
+        await using (var cmd = conn.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            // Matches OutboxRetentionService's sweep exactly, including the status predicate:
+            // an entry that has not been delivered is work, not history, and age does not make
+            // it safe to drop.
+            cmd.CommandText =
+                $"DELETE FROM {_schema.Table("alberto_outbox_entries")} " +
+                "WHERE status = 'delivered' AND delivered_at < @before";
+            cmd.Parameters.AddWithValue("before", before);
+            deletedCount = await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (deletedCount > 0)
+        {
+            var adminEvent = new AdminOutboxPurged(before, deletedCount, operatorId);
+            await AppendAdminEventAsync(conn, tx, "admin-outbox-purged",
+                [new EventTag(AdminTags.Outbox, "purge")],
                 adminEvent, ct);
         }
 
@@ -289,7 +451,8 @@ public sealed class PostgresAdminOperator : IAdminOperator
             new AdminRebuildPromoted(processorId, state.Status.ToString(), operatorId),
             ct);
 
-        return new RebuildPromoteResult(processorId, state.Status.ToString());
+        return new RebuildPromoteResult(
+            processorId, state.Status.ToString(), state.ActiveVersion, state.RebuildingVersion);
     }
 
     /// <inheritdoc />
@@ -304,7 +467,8 @@ public sealed class PostgresAdminOperator : IAdminOperator
             new AdminRebuildAborted(processorId, state.Status.ToString(), operatorId),
             ct);
 
-        return new RebuildAbortResult(processorId, state.Status.ToString());
+        return new RebuildAbortResult(
+            processorId, state.Status.ToString(), state.ActiveVersion, state.RebuildingVersion);
     }
 
     // -----------------------------------------------------------------------

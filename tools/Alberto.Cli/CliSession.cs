@@ -31,6 +31,29 @@ public sealed class CliSession
     /// <summary>The output adapter in effect for this invocation.</summary>
     public IOutput Output { get; }
 
+    /// <summary>
+    /// Who to record as having performed a mutation. Every destructive command routes through
+    /// <see cref="Alberto.Dcb.Admin.IAdminOperator"/>, which appends an audit event carrying this
+    /// value in the same transaction as the change.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is the operating-system account the CLI is running as. It is an attribution, not an
+    /// authentication: the CLI talks straight to PostgreSQL with whatever connection string it was
+    /// given, and anyone who can run it can set <c>USER</c> to anything. What the audit trail
+    /// answers is "which account did this, and when" for a team that is not trying to deceive each
+    /// other — it does not answer "prove it" for one that is. Treat database credentials as the
+    /// actual access control.
+    /// </para>
+    /// <para>
+    /// Empty in the odd environment that exposes no user name (some containers), in which case
+    /// <c>"unknown"</c> is recorded rather than an empty string, so the audit event never carries a
+    /// blank that reads as a bug.
+    /// </para>
+    /// </remarks>
+    public static string OperatorId =>
+        string.IsNullOrWhiteSpace(Environment.UserName) ? "unknown" : Environment.UserName;
+
     /// <param name="json">When <see langword="true"/>, selects <see cref="JsonOutput"/>.</param>
     /// <param name="config">
     /// Config already in hand — used by tests and callers that already resolved it. When

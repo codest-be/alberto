@@ -49,7 +49,11 @@ jobs:
       - name: Build libraries
         run: |
           dotnet build src/Alberto.Dcb/Alberto.Dcb.csproj -c Release
+          # Built but deliberately not packed: the admin surface is IsPackable=false until the
+          # front doors on feature/admin-surface ship. Building it here still catches a Release
+          # compile break, which the pack loop below no longer would.
           dotnet build src/Alberto.Dcb.Admin/Alberto.Dcb.Admin.csproj -c Release
+          dotnet build src/Alberto.Dcb.Postgres.Admin/Alberto.Dcb.Postgres.Admin.csproj -c Release
           dotnet build src/Alberto.Dcb.Commands/Alberto.Dcb.Commands.csproj -c Release
           dotnet build src/Alberto.Dcb.EntityFramework/Alberto.Dcb.EntityFramework.csproj -c Release
           dotnet build src/Alberto.Dcb.InMemory/Alberto.Dcb.InMemory.csproj -c Release
@@ -67,7 +71,7 @@ jobs:
       - name: Pack
         run: |
           VERSION_SUFFIX="${{ steps.version.outputs.suffix }}"
-          for proj in Alberto.Dcb Alberto.Dcb.Admin Alberto.Dcb.Commands Alberto.Dcb.EntityFramework Alberto.Dcb.InMemory Alberto.Dcb.Messaging Alberto.Dcb.Postgres Alberto.Dcb.Postgres.Messaging Alberto.Dcb.Telemetry Alberto.Dcb.Testing Alberto.Dcb.Testing.Xunit; do
+          for proj in Alberto.Dcb Alberto.Dcb.Commands Alberto.Dcb.EntityFramework Alberto.Dcb.InMemory Alberto.Dcb.Messaging Alberto.Dcb.Postgres Alberto.Dcb.Postgres.Messaging Alberto.Dcb.Telemetry Alberto.Dcb.Testing Alberto.Dcb.Testing.Xunit; do
             dotnet pack "src/$proj/$proj.csproj" -c Release --no-build --version-suffix "$VERSION_SUFFIX" -o artifacts
           done
           dotnet pack tools/Alberto.Cli/Alberto.Cli.csproj -c Release --no-build --version-suffix "$VERSION_SUFFIX" -o artifacts

@@ -6,6 +6,16 @@ Alberto.Dcb.Admin.ActiveProcessorLease.ExpiresAt.get -> System.DateTimeOffset
 Alberto.Dcb.Admin.ActiveProcessorLease.ExpiresAt.init -> void
 Alberto.Dcb.Admin.ActiveProcessorLease.ReplicaId.get -> string?
 Alberto.Dcb.Admin.ActiveProcessorLease.ReplicaId.init -> void
+Alberto.Dcb.Admin.AdminCheckpointRenamed
+Alberto.Dcb.Admin.AdminCheckpointRenamed.AdminCheckpointRenamed(string! FromProcessorId, string! ToProcessorId, long Position, string! OperatorId) -> void
+Alberto.Dcb.Admin.AdminCheckpointRenamed.FromProcessorId.get -> string!
+Alberto.Dcb.Admin.AdminCheckpointRenamed.FromProcessorId.init -> void
+Alberto.Dcb.Admin.AdminCheckpointRenamed.OperatorId.get -> string!
+Alberto.Dcb.Admin.AdminCheckpointRenamed.OperatorId.init -> void
+Alberto.Dcb.Admin.AdminCheckpointRenamed.Position.get -> long
+Alberto.Dcb.Admin.AdminCheckpointRenamed.Position.init -> void
+Alberto.Dcb.Admin.AdminCheckpointRenamed.ToProcessorId.get -> string!
+Alberto.Dcb.Admin.AdminCheckpointRenamed.ToProcessorId.init -> void
 Alberto.Dcb.Admin.AdminCheckpointReset
 Alberto.Dcb.Admin.AdminCheckpointReset.AdminCheckpointReset(string! ProcessorId, string! OperatorId) -> void
 Alberto.Dcb.Admin.AdminCheckpointReset.OperatorId.get -> string!
@@ -28,6 +38,14 @@ Alberto.Dcb.Admin.AdminDeadLettersCleared.DeletedCount.get -> int
 Alberto.Dcb.Admin.AdminDeadLettersCleared.DeletedCount.init -> void
 Alberto.Dcb.Admin.AdminDeadLettersCleared.OperatorId.get -> string!
 Alberto.Dcb.Admin.AdminDeadLettersCleared.OperatorId.init -> void
+Alberto.Dcb.Admin.AdminDeadLettersMarkedForRetry
+Alberto.Dcb.Admin.AdminDeadLettersMarkedForRetry.AdminDeadLettersMarkedForRetry(string! ProcessorId, int MarkedCount, string! OperatorId) -> void
+Alberto.Dcb.Admin.AdminDeadLettersMarkedForRetry.MarkedCount.get -> int
+Alberto.Dcb.Admin.AdminDeadLettersMarkedForRetry.MarkedCount.init -> void
+Alberto.Dcb.Admin.AdminDeadLettersMarkedForRetry.OperatorId.get -> string!
+Alberto.Dcb.Admin.AdminDeadLettersMarkedForRetry.OperatorId.init -> void
+Alberto.Dcb.Admin.AdminDeadLettersMarkedForRetry.ProcessorId.get -> string!
+Alberto.Dcb.Admin.AdminDeadLettersMarkedForRetry.ProcessorId.init -> void
 Alberto.Dcb.Admin.AdminDeadLettersRetried
 Alberto.Dcb.Admin.AdminDeadLettersRetried.AdminDeadLettersRetried(string! ProcessorId, long RewindPosition, int DeletedCount, string! OperatorId) -> void
 Alberto.Dcb.Admin.AdminDeadLettersRetried.DeletedCount.get -> int
@@ -65,6 +83,14 @@ Alberto.Dcb.Admin.AdminModuleRegistry.GetOperator(string? moduleKey) -> Alberto.
 Alberto.Dcb.Admin.AdminModuleRegistry.GetReader(string? moduleKey) -> Alberto.Dcb.Admin.IAdminReader!
 Alberto.Dcb.Admin.AdminModuleRegistry.Modules.get -> System.Collections.Generic.IReadOnlyList<Alberto.Dcb.Admin.AdminModuleDescriptor!>!
 Alberto.Dcb.Admin.AdminModuleRegistry.ResolveKey(string? moduleKey) -> string!
+Alberto.Dcb.Admin.AdminOutboxPurged
+Alberto.Dcb.Admin.AdminOutboxPurged.AdminOutboxPurged(System.DateTimeOffset Before, int DeletedCount, string! OperatorId) -> void
+Alberto.Dcb.Admin.AdminOutboxPurged.Before.get -> System.DateTimeOffset
+Alberto.Dcb.Admin.AdminOutboxPurged.Before.init -> void
+Alberto.Dcb.Admin.AdminOutboxPurged.DeletedCount.get -> int
+Alberto.Dcb.Admin.AdminOutboxPurged.DeletedCount.init -> void
+Alberto.Dcb.Admin.AdminOutboxPurged.OperatorId.get -> string!
+Alberto.Dcb.Admin.AdminOutboxPurged.OperatorId.init -> void
 Alberto.Dcb.Admin.AdminRebuildAborted
 Alberto.Dcb.Admin.AdminRebuildAborted.AdminRebuildAborted(string! ProcessorId, string! Status, string! OperatorId) -> void
 Alberto.Dcb.Admin.AdminRebuildAborted.OperatorId.get -> string!
@@ -177,8 +203,11 @@ Alberto.Dcb.Admin.IAdminOperator
 Alberto.Dcb.Admin.IAdminOperator.AbortRebuildAsync(string! processorId, string! operatorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Dcb.Admin.RebuildAbortResult!>!
 Alberto.Dcb.Admin.IAdminOperator.ClearAllDeadLettersAsync(string! operatorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
 Alberto.Dcb.Admin.IAdminOperator.ClearDeadLettersForProcessorAsync(string! processorId, string! operatorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
+Alberto.Dcb.Admin.IAdminOperator.MarkDeadLettersForRetryAsync(string! processorId, string! operatorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
 Alberto.Dcb.Admin.IAdminOperator.PromoteRebuildAsync(string! processorId, bool force, string! operatorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Dcb.Admin.RebuildPromoteResult!>!
+Alberto.Dcb.Admin.IAdminOperator.PurgeOutboxAsync(System.DateTimeOffset before, string! operatorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
 Alberto.Dcb.Admin.IAdminOperator.ReleaseTenantLeasesAsync(string? consumerId, string! operatorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
+Alberto.Dcb.Admin.IAdminOperator.RenameCheckpointAsync(string! fromProcessorId, string! toProcessorId, string! operatorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Dcb.Admin.CheckpointRenameResult!>!
 Alberto.Dcb.Admin.IAdminOperator.ResetCheckpointAsync(string! processorId, string! operatorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Alberto.Dcb.Admin.IAdminOperator.RetryByRewindAsync(string! processorId, string! operatorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Dcb.Admin.RetryByRewindResult!>!
 Alberto.Dcb.Admin.IAdminOperator.SetCheckpointAsync(string! processorId, long position, string! operatorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
@@ -217,15 +246,23 @@ Alberto.Dcb.Admin.ProjectionState.TenantId.init -> void
 Alberto.Dcb.Admin.ProjectionState.UpdatedAt.get -> System.DateTimeOffset?
 Alberto.Dcb.Admin.ProjectionState.UpdatedAt.init -> void
 Alberto.Dcb.Admin.RebuildAbortResult
+Alberto.Dcb.Admin.RebuildAbortResult.ActiveVersion.get -> int
+Alberto.Dcb.Admin.RebuildAbortResult.ActiveVersion.init -> void
 Alberto.Dcb.Admin.RebuildAbortResult.ProcessorId.get -> string!
 Alberto.Dcb.Admin.RebuildAbortResult.ProcessorId.init -> void
-Alberto.Dcb.Admin.RebuildAbortResult.RebuildAbortResult(string! ProcessorId, string! Status) -> void
+Alberto.Dcb.Admin.RebuildAbortResult.RebuildAbortResult(string! ProcessorId, string! Status, int ActiveVersion = 0, int? RebuildingVersion = null) -> void
+Alberto.Dcb.Admin.RebuildAbortResult.RebuildingVersion.get -> int?
+Alberto.Dcb.Admin.RebuildAbortResult.RebuildingVersion.init -> void
 Alberto.Dcb.Admin.RebuildAbortResult.Status.get -> string!
 Alberto.Dcb.Admin.RebuildAbortResult.Status.init -> void
 Alberto.Dcb.Admin.RebuildPromoteResult
+Alberto.Dcb.Admin.RebuildPromoteResult.ActiveVersion.get -> int
+Alberto.Dcb.Admin.RebuildPromoteResult.ActiveVersion.init -> void
 Alberto.Dcb.Admin.RebuildPromoteResult.ProcessorId.get -> string!
 Alberto.Dcb.Admin.RebuildPromoteResult.ProcessorId.init -> void
-Alberto.Dcb.Admin.RebuildPromoteResult.RebuildPromoteResult(string! ProcessorId, string! Status) -> void
+Alberto.Dcb.Admin.RebuildPromoteResult.RebuildingVersion.get -> int?
+Alberto.Dcb.Admin.RebuildPromoteResult.RebuildingVersion.init -> void
+Alberto.Dcb.Admin.RebuildPromoteResult.RebuildPromoteResult(string! ProcessorId, string! Status, int ActiveVersion = 0, int? RebuildingVersion = null) -> void
 Alberto.Dcb.Admin.RebuildPromoteResult.Status.get -> string!
 Alberto.Dcb.Admin.RebuildPromoteResult.Status.init -> void
 Alberto.Dcb.Admin.RebuildStartResult
@@ -285,5 +322,6 @@ Alberto.Dcb.Admin.UnknownAdminModuleException.ModuleKey.get -> string!
 Alberto.Dcb.Admin.UnknownAdminModuleException.UnknownAdminModuleException(string! moduleKey, System.Collections.Generic.IEnumerable<string!>! knownKeys) -> void
 const Alberto.Dcb.Admin.AdminTags.Checkpoint = "admin-checkpoint" -> string!
 const Alberto.Dcb.Admin.AdminTags.DeadLetter = "admin-dl" -> string!
+const Alberto.Dcb.Admin.AdminTags.Outbox = "admin-outbox" -> string!
 const Alberto.Dcb.Admin.AdminTags.Rebuild = "admin-rebuild" -> string!
 const Alberto.Dcb.Admin.AdminTags.TenantLease = "admin-tenant-lease" -> string!

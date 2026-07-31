@@ -28,6 +28,7 @@ they touch a persisted table.
 | MT-3 | Metric dimensions | Medium | Tenant-ownership gauges rename tag `module.key` → `module`; sharded composite key values are now split into `module` + `shard` |
 | MT-4..5 | Metric removal | Medium | `alberto.events_filtered_by_tenant` and `alberto.tenant_leases_lost` counters removed |
 | MT-6 | Metric units | Low | `alberto.append.duration` and `alberto.processing.duration` units changed from `"ms"` to `"s"` |
+| MT-7 | Metric dimensions | Medium | `alberto.tenant_locks_acquired` and `alberto.tenant_lock_failures` no longer carry a `tenant.id` tag |
 | TT-1 | Trace span attributes | Medium | Consume-path span attributes renamed: `"module.key"` → `"module"`, `"module.shard"` → `"shard"` |
 | EX-1 | Experimental API | Medium | Sharding types marked `[Experimental("ALB9001")]`; referencing them without suppression is a compile-time diagnostic |
 | EV-1 | Evolver — runtime guard | Medium | `Evolver.Reconstitute(envelopes)` and `Evolver.Evolve(state, envelope)` now throw `InvalidOperationException` when the envelope's stored version is older than the handler's declared version |
@@ -40,6 +41,7 @@ they touch a persisted table.
 | SV-1 | Serializer — runtime guard | Medium | `EventSerializer.Deserialize` throws when the stored version is below the type's declared version and nothing covers the gap |
 | LK-1 | PostgreSQL append lock | **High** | The append advisory-lock key space changed; two application versions appending concurrently do not serialize against each other |
 | CF-1 | Exception detail | Low | PostgreSQL `DcbConflictException` messages are reworded and now carry real `ConflictingPosition` / `ExpectedPosition` / `Query` values |
+| PK-1 | Packaging | Medium | The `Alberto.Dcb.Admin` package is no longer published, and the `PostgresAdmin*` types are no longer in the `Alberto.Dcb.Postgres` package |
 
 ---
 
@@ -466,6 +468,31 @@ The unit strings on both duration histograms were corrected to match the OTel se
 **Symptom.** Prometheus histogram bucket thresholds and alerts that assumed millisecond values will fire incorrectly — all durations appear 1000× smaller than expected.
 
 **Fix.** Multiply all threshold values in histogram queries, recording rules, and alert expressions for these two instruments by `0.001`. Verify that any explicit bucket boundaries configured in your OTel SDK exporter also use second-scale values.
+
+---
+
+### MT-7 — `tenant.id` removed from `alberto.tenant_locks_acquired` and `alberto.tenant_lock_failures`
+
+Both counters were tagged `{consumer.id, tenant.id}`. The tag set is now `{consumer.id}` only.
+
+A tenant id is unbounded — it grows with the customer base, and nothing bounds it above. Every
+distinct tag combination is an independent time series that the .NET `Meter` SDK allocates on first
+use, holds for the life of the process, never evicts, and exports on every collection cycle. So a
+store with 50 000 tenants held 50 000 series per counter per replica, and a store with 500 000 held
+ten times that. At roughly 1–3 KB of Prometheus head-block memory per series, these two counters
+were most expensive exactly when the product was doing best, and the failure mode is a cliff — the
+collector OOMs or starts dropping — not a gradual slowdown.
+
+**Symptom.** Any query that groups, filters, or joins these two counters by `tenant.id` stops
+returning a per-tenant breakdown after upgrade. A `sum by (tenant_id)` collapses to a single
+series; a `{tenant_id="acme"}` selector matches nothing.
+
+**Fix.** Aggregate by `consumer.id` instead — that is the question a counter answers well ("is
+this consumer's lease failure rate rising?"). For the per-tenant question ("did tenant `acme` get
+its lease?"), use traces and logs: it is a question about one event at one moment, not a rate over
+time, and the lease acquisition is already on the consume-path span. For tenant fan-out without
+the cardinality, `alberto.owned_tenant_count` and `alberto.tenant_cooldown_count` report how many
+tenants a consumer holds and how many are in cooldown.
 
 ---
 
@@ -999,6 +1026,81 @@ For custom backends, prefer the new
 are knowable. The two-argument `(string, Exception)` overload still exists for the case where a
 backend genuinely cannot say, and its documentation now spells out that the `-1`/`*` it produces
 are placeholders rather than facts.
+
+---
+
+### PK-1 — the admin surface is not published in 1.0
+
+`Alberto.Dcb.Admin` is no longer pushed to a package feed, and the three PostgreSQL admin types
+moved out of the `Alberto.Dcb.Postgres` package into a new, also-unpublished
+`Alberto.Dcb.Postgres.Admin`:
+
+- `PostgresAdminDataAccess`
+- `PostgresAdminOperator`
+- `PostgresAdminServiceCollectionExtensions` (`AddAlbertoPostgresAdmin`)
+
+`IAdminReader`/`IAdminOperator` are the contract the parked admin front doors — a GraphQL API, an
+MCP server, a React console and a BFF on `feature/admin-surface` — are built on. Publishing them at
+1.0 would freeze the abstraction under semver before anything that consumes it exists, which is the
+same reason those front doors are parked. Both projects still build, sit in the solution, and are
+covered by tests; they just do not become packages.
+
+**Not affected.** The `Alberto.Cli` tool still ships, and it is the supported operator surface.
+`dotnet tool install --global Alberto.Cli` and every `alberto` command behave exactly as before.
+Nothing in `Alberto.Dcb`, `Alberto.Dcb.Postgres` or any other published package lost a member that
+you could reach without already depending on the admin abstraction.
+
+**Symptom.** A project referencing the `Alberto.Dcb.Admin` package fails to restore (`NU1101`), or
+one referencing `Alberto.Dcb.Postgres` stops compiling against `PostgresAdminDataAccess`,
+`PostgresAdminOperator` or `AddAlbertoPostgresAdmin` (`CS0246` / `CS1061`). Namespaces are
+unchanged — the types are still `Alberto.Dcb.Postgres.*` — so no `using` needs editing; the
+assembly they live in is simply not one you can get from a feed.
+
+**Fix.** If you were driving admin operations from your own code, either build the two projects
+from source and reference them as projects, or shell out to the `alberto` CLI, which does the same
+work through the same interfaces. If you only ever used the CLI, there is nothing to do.
+
+Unparking after 1.0 is `IsPackable=true` on both projects plus capturing their
+`PublicAPI.Shipped.txt` baselines.
+
+---
+
+### OR-1 — delivered outbox entries are deleted after 7 days by default; migration 034 required
+
+`WithOutbox` now registers an `OutboxRetentionService` alongside the relay. Every hour it deletes
+entries whose `status = 'delivered'` and whose `delivered_at` is older than `deliveredRetention`,
+which defaults to **7 days**. Nothing removed delivered entries before, so this is a behaviour
+change that deletes data you currently have.
+
+**Not affected.** `pending`, `processing` and `failed` entries are never removed by age — they are
+work, not history. A `failed` entry sits in the table until you `RetryFailedAsync` it or delete it
+yourself, exactly as before. Nothing about relay behaviour, claim leases or delivery semantics
+changed.
+
+**Symptom.** Rows disappear from `alberto_outbox_entries` about an hour after the upgraded host
+starts, and the first sweep can be a long DELETE — it faces every delivered entry the table has
+ever held, not one window's worth.
+
+**Fix — pick one before you deploy:**
+
+1. **Keep the old behaviour.** Pass `deliveredRetention: Timeout.InfiniteTimeSpan`. Delivered
+   entries are kept forever and the service does nothing. Do this if the table is your integration
+   audit trail — and plan to archive it somewhere, because the growth problem does not go away.
+2. **Take the default, but drain the backlog first.** Run
+   `alberto ops outbox purge --before <timestamp>` during a quiet window, walking the cutoff back
+   in steps if the table is large, then deploy. The CLI command does the same delete and records an
+   `admin-outbox-purged` audit event.
+3. **Start wide and narrow it.** Deploy with `deliveredRetention: TimeSpan.FromDays(90)`, then
+   lower it over subsequent releases until you reach the window you want.
+
+**Run migration 034 before deploying the new binary.** It adds
+`idx_alberto_outbox_delivered` — a partial index on `delivered_at` for `status = 'delivered'` —
+without which every sweep is a sequential scan of the whole outbox. The script is
+`CREATE INDEX CONCURRENTLY` and carries `-- alberto:no-transaction`, so it does not lock the table
+against the relay while it builds.
+
+`retentionSweepInterval` (default 1 hour) tunes how often the sweep runs; it bounds how far past the
+retention window an entry can survive, not how long it is kept.
 
 ---
 

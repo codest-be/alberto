@@ -96,7 +96,12 @@ Alberto.Dcb.Messaging.OutboxEntryStatus.Pending = 0 -> Alberto.Dcb.Messaging.Out
 Alberto.Dcb.Messaging.OutboxEntryStatus.Processing = 1 -> Alberto.Dcb.Messaging.OutboxEntryStatus
 Alberto.Dcb.Messaging.OutboxRelay
 Alberto.Dcb.Messaging.OutboxRelay.OutboxRelay(Alberto.Dcb.Messaging.IOutboxStore! store, Alberto.Dcb.Messaging.IMessageTransport! transport, System.TimeSpan? pollingInterval = null, int batchSize = 100, System.TimeSpan? claimLease = null, string? claimedBy = null) -> void
+Alberto.Dcb.Messaging.OutboxRetentionService
+Alberto.Dcb.Messaging.OutboxRetentionService.IsEnabled.get -> bool
+Alberto.Dcb.Messaging.OutboxRetentionService.OutboxRetentionService(Alberto.Dcb.Messaging.IOutboxStore! store, System.TimeSpan? retention = null, System.TimeSpan? sweepInterval = null, System.TimeProvider? timeProvider = null, Microsoft.Extensions.Logging.ILogger<Alberto.Dcb.Messaging.OutboxRetentionService!>? logger = null) -> void
 static Alberto.Dcb.Messaging.MessageMappingRegistryExtensions.Map<TEvent, TDep, TMessage>(this Alberto.Dcb.Messaging.IMessageMappingRegistry! registry, System.Func<TDep, TEvent!, TMessage!>! mapper) -> void
 static Alberto.Dcb.Messaging.MessageMappingRegistryExtensions.Map<TEvent, TMessage>(this Alberto.Dcb.Messaging.IMessageMappingRegistry! registry, System.Func<TEvent!, TMessage!>! mapper) -> void
-static Alberto.Dcb.Messaging.MessagingBuilderExtensions.WithOutbox(this Alberto.Dcb.DcbModuleBuilder! builder, System.Action<Alberto.Dcb.Messaging.IMessageMappingRegistry!>! configureMappings, Alberto.Dcb.Messaging.IOutboxStore! outboxStore, Alberto.Dcb.Messaging.IMessageTransport? transport = null, int relayBatchSize = 1, System.TimeSpan? relayClaimLease = null) -> Alberto.Dcb.DcbModuleBuilder!
+static Alberto.Dcb.Messaging.MessagingBuilderExtensions.WithOutbox(this Alberto.Dcb.DcbModuleBuilder! builder, System.Action<Alberto.Dcb.Messaging.IMessageMappingRegistry!>! configureMappings, Alberto.Dcb.Messaging.IOutboxStore! outboxStore, Alberto.Dcb.Messaging.IMessageTransport? transport = null, int relayBatchSize = 1, System.TimeSpan? relayClaimLease = null, System.TimeSpan? deliveredRetention = null, System.TimeSpan? retentionSweepInterval = null) -> Alberto.Dcb.DcbModuleBuilder!
 static readonly Alberto.Dcb.Messaging.OutboxRelay.DefaultClaimLease -> System.TimeSpan
+static readonly Alberto.Dcb.Messaging.OutboxRetentionService.DefaultRetention -> System.TimeSpan
+static readonly Alberto.Dcb.Messaging.OutboxRetentionService.DefaultSweepInterval -> System.TimeSpan

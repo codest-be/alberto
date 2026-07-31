@@ -35,11 +35,33 @@ public sealed record AdminDeadLettersRetried(
     string OperatorId) : IEvent;
 
 /// <summary>
+/// An operator marked a processor's dead letters for retry, leaving the rows in place for the
+/// retry loop to pick up. Distinct from <see cref="AdminDeadLettersRetried"/>, which records the
+/// heavier retry-by-rewind: that one moves the checkpoint and deletes the rows.
+/// </summary>
+[EventType("admin-dead-letters-marked-for-retry")]
+public sealed record AdminDeadLettersMarkedForRetry(
+    string ProcessorId,
+    int MarkedCount,
+    string OperatorId) : IEvent;
+
+/// <summary>
 /// An operator cleared dead letters.
 /// </summary>
 [EventType("admin-dead-letters-cleared")]
 public sealed record AdminDeadLettersCleared(
     int DeletedCount,
+    string OperatorId) : IEvent;
+
+/// <summary>
+/// An operator renamed a checkpoint, carrying a processor's position across a rename of the
+/// processor itself.
+/// </summary>
+[EventType("admin-checkpoint-renamed")]
+public sealed record AdminCheckpointRenamed(
+    string FromProcessorId,
+    string ToProcessorId,
+    long Position,
     string OperatorId) : IEvent;
 
 /// <summary>
@@ -78,4 +100,18 @@ public sealed record AdminRebuildAborted(
 public sealed record AdminTenantLeasesReleased(
     string? ConsumerId,
     int ReleasedCount,
+    string OperatorId) : IEvent;
+
+/// <summary>
+/// An operator purged delivered outbox entries.
+/// </summary>
+/// <remarks>
+/// Only delivered entries are ever removed, so this records housekeeping, not lost work — but it
+/// is still a deletion, and <see cref="Before"/> is what makes it reconstructible: the count alone
+/// cannot say which rows went.
+/// </remarks>
+[EventType("admin-outbox-purged")]
+public sealed record AdminOutboxPurged(
+    DateTimeOffset Before,
+    int DeletedCount,
     string OperatorId) : IEvent;

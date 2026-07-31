@@ -19,7 +19,8 @@ namespace Alberto.Dcb.Tests;
 /// Coverage:
 /// <list type="bullet">
 ///   <item>All 13 instruments registered on the Alberto meter (names + units)</item>
-///   <item>Tag keys for every instrument that carries tags</item>
+///   <item>Tag keys for every instrument that carries tags and can be driven in-process
+///   (the two tenant-lock counters are pinned in <c>TenantProcessorLockTests</c>)</item>
 ///   <item>No-tag assertion for instruments that carry none</item>
 ///   <item>Shard splitting: sharded module keys must emit module + shard separately</item>
 ///   <item>Unsharded module keys must NOT emit a shard tag</item>
@@ -397,6 +398,17 @@ public sealed class MetricTagContractTests
         TagKeys(match[0].Tags).Should().BeEquivalentTo(["consumer.id", "module", "shard"],
             "alberto.tenant_cooldown_count tag contract is {{consumer.id, module, shard}} for a sharded module");
     }
+
+    // ── 5b. Tenant-lock counters: {consumer.id} ──────────────────────────────
+    //
+    // alberto.tenant_locks_acquired and alberto.tenant_lock_failures have their
+    // names and units pinned above, but their tag keys are pinned in
+    // Subscriptions/TenantProcessorLockTests — they are emitted only from
+    // PostgresTenantProcessorLock and cannot be driven in-process.
+    //
+    // Their contract is {consumer.id} and nothing more. They carried tenant.id
+    // until v1; it was removed because a tenant id is unbounded, and every distinct
+    // tag combination is a time series the SDK keeps for the life of the process.
 
     // ── 6. Ownership gauge module tag value is the logical name (not raw key) ─
 
