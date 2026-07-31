@@ -3,12 +3,7 @@ name: Publish NuGet Packages
 on:
   push:
     branches: [main]
-    paths:
-      - 'src/**'
-      - 'tools/**'
-      - 'Directory.Build.props'
-      - 'Directory.Packages.props'
-      - '.github/workflows/publish-packages.yml'
+    tags: ['v*']
 
   workflow_dispatch:
     inputs:
@@ -16,6 +11,13 @@ on:
         description: 'Version suffix (e.g. beta.1, beta.2). Leave empty to use run number.'
         required: false
         type: string
+
+# No `paths` filter: GitHub applies path filters to tag pushes too, so a release tag on a
+# commit that happened not to touch src/** would be skipped without a word. A few extra
+# prerelease builds are cheaper than a release that silently does not happen.
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
@@ -27,6 +29,7 @@ jobs:
     permissions:
       packages: write
       contents: read
+      id-token: write   # required by NuGet/login for trusted publishing
 
     steps:
       - uses: actions/checkout@v4
@@ -36,15 +39,36 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      # A tag publishes the release version verbatim; anything else publishes a prerelease.
+      # The tag must agree with VersionPrefix, which is the single source of truth — a tag
+      # that disagrees is a mistake worth failing on, not a version worth guessing at.
       - name: Determine version
         id: version
         run: |
-          SUFFIX="${{ inputs.version_suffix }}"
-          if [ -z "$SUFFIX" ]; then
-            SUFFIX="beta.${{ github.run_number }}"
+          PREFIX=$(sed -n 's:.*<VersionPrefix>\(.*\)</VersionPrefix>.*:\1:p' Directory.Build.props | head -1)
+          if [ -z "$PREFIX" ]; then
+            echo "::error::Could not read <VersionPrefix> from Directory.Build.props"
+            exit 1
           fi
-          echo "suffix=$SUFFIX" >> "$GITHUB_OUTPUT"
-          echo "Version suffix: $SUFFIX"
+
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            TAG_VERSION="${GITHUB_REF_NAME#v}"
+            if [ "$TAG_VERSION" != "$PREFIX" ]; then
+              echo "::error::Tag ${GITHUB_REF_NAME} does not match <VersionPrefix>${PREFIX}</VersionPrefix>. Update Directory.Build.props or retag."
+              exit 1
+            fi
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "suffix=" >> "$GITHUB_OUTPUT"
+            echo "Release version: $PREFIX"
+          else
+            SUFFIX="${{ inputs.version_suffix }}"
+            if [ -z "$SUFFIX" ]; then
+              SUFFIX="beta.${{ github.run_number }}"
+            fi
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "suffix=$SUFFIX" >> "$GITHUB_OUTPUT"
+            echo "Prerelease version: $PREFIX-$SUFFIX"
+          fi
 
       - name: Build libraries
         run: |
@@ -70,9 +94,12 @@ jobs:
 
       - name: Pack
         run: |
-          VERSION_SUFFIX="${{ steps.version.outputs.suffix }}"
+          SUFFIX_ARG=""
+          if [ -n "${{ steps.version.outputs.suffix }}" ]; then
+            SUFFIX_ARG="--version-suffix ${{ steps.version.outputs.suffix }}"
+          fi
           for proj in Alberto Alberto.Commands Alberto.EntityFramework Alberto.InMemory Alberto.Messaging Alberto.Messaging.Postgres Alberto.Postgres Alberto.Telemetry Alberto.Testing Alberto.Testing.Xunit; do
-            dotnet pack "src/$proj/$proj.csproj" -c Release --no-build --version-suffix "$VERSION_SUFFIX" -o artifacts
+            dotnet pack "src/$proj/$proj.csproj" -c Release --no-build $SUFFIX_ARG -o artifacts
           done
 
       # The only thing standing between an accidental IsPackable=true and a permanent
@@ -129,3 +156,27 @@ jobs:
       - name: Push symbols to GitHub Packages
         if: always()
         run: dotnet nuget push "artifacts/*.snupkg" --source github --skip-duplicate --timeout 600 || true
+
+      # Trusted publishing: the OIDC token this job is allowed to mint is exchanged for a
+      # nuget.org API key valid for one hour. No long-lived key is stored anywhere. The
+      # policy on nuget.org is bound to this repository AND this workflow filename — renaming
+      # this file breaks publishing until the policy is edited to match.
+      # NUGET_USER is the nuget.org profile name, not an email address.
+      - name: Log in to nuget.org
+        id: nuget-login
+        if: steps.version.outputs.release == 'true'
+        uses: NuGet/login@v1
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
+      # Runs only behind the "Verify packed set" allowlist. nuget.org pushes are permanent:
+      # a package can be unlisted but never deleted, and the ID is never reclaimable.
+      # .snupkg files sitting next to their .nupkg are uploaded automatically.
+      - name: Push to nuget.org
+        if: steps.version.outputs.release == 'true'
+        run: |
+          dotnet nuget push "artifacts/*.nupkg" \
+            --source https://api.nuget.org/v3/index.json \
+            --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}" \
+            --skip-duplicate \
+            --timeout 600
