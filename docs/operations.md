@@ -540,3 +540,4 @@ Each module owns its schema. Two modules in one database are two schemas, migrat
 | One tenant is stalled | `alberto tenants` | Stale lease → `ops tenants release` |
 | One tenant errors, the rest are fine | `alberto shards where <tenant>`, then that shard | Sharded module — the fault is in one database, not the module |
 | Health check reports `Degraded` | Its `data` payload names the unreachable shards | One shard down; the others keep serving — do not pull the instance out |
+| Restored from a backup | `alberto status` vs. each checkpoint | A checkpoint ahead of the log head skips events silently — see [Backup and recovery](backup-and-recovery.md) |

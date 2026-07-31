@@ -202,6 +202,14 @@ removed by age. **Run migration 034 before deploying the new binary** — it add
 
 ### Added
 
+- **A backup and recovery page.** [docs/backup-and-recovery.md](docs/backup-and-recovery.md) states
+  which tables are truth and which are derived, and what restoring them from different points in
+  time silently invalidates. The failure it exists to prevent: checkpoint writes are monotonic
+  (`GREATEST`), so a checkpoint restored *ahead* of the log head never rewinds and never errors — the
+  processor waits for a position the log has not reached again yet and skips everything in between,
+  with nothing logged. `alberto ops checkpoint set` is the only way back. Alberto still ships no
+  backup tool of its own; `pg_dump` and PITR are the whole mechanism, and this documents the part a
+  generic database backup policy does not know about.
 - **The outbox no longer grows forever, and its ordering guarantee is written down.**
   `WithOutbox` gains `deliveredRetention` (default 7 days, `Timeout.InfiniteTimeSpan` to disable)
   and `retentionSweepInterval` (default 1 hour), honoured by a new `OutboxRetentionService`. It is
