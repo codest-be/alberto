@@ -177,3 +177,25 @@ Task 11: complete (commits b4b1007..f400f16 + doc fix, review clean after fix). 
 Task 12: complete (commits ef6d6f5..ee4619f, review clean). Smoke step added to build-test job; verified locally, exits 0 in ~3m21s selecting exactly the two smoke benchmarks.
 Task 13: complete (commits ee4619f..1c021e0, review clean after fixes). Fixed myself: (1) workflow failed on first run for a profile because it cat'd a delta the compare tool correctly never wrote; (2) candidate.json/delta.md were accidentally tracked - now gitignored; (3) README compare commands now use -c Release; (4) summary step distinguishes no-baseline from tool-failure. Promotion rule verified end to end: history step git-adds only the history subdir, baseline.json can never reach the repo. First baseline committed for profile local-3575380c (M4 Pro, .NET 10.0.8, postgres:16-alpine), append family only, 9 measurements.
 ALL 13 TASKS COMPLETE. Next: final whole-branch review.
+
+---
+
+# Wave 2 — NuGet publishing strategy
+
+Plan: `docs/superpowers/plans/2026-07-31-nuget-publishing-strategy.md`
+Branch: `claude/nuget-publishing-strategy-4dd798`
+Base commit: `511c6d9`
+
+Pre-flight fixes applied in `511c6d9`:
+- Global constraint on parked admin projects contradicted Task 5's rename — reworded.
+- Task 8 carried a "skip this task" escape hatch — made unconditional.
+
+Autonomous-run decisions (user is AFK):
+- All 9 tasks land as commits on this one branch. No PRs are opened or merged;
+  the plan's PR boundaries are honoured as commit groupings only.
+- **Task 9 is NOT executed.** Its steps are owner-only and outward-facing
+  (repository secret, flipping the repo public, pushing a release tag,
+  publishing to nuget.org). Left as a runbook for the user.
+
+## Ledger
+
