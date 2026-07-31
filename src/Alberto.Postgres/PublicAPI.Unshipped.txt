@@ -1,0 +1,136 @@
+Alberto.Postgres.AlbertoStoreMismatchException
+Alberto.Postgres.AlbertoStoreMismatchException.AlbertoStoreMismatchException(string! message) -> void
+Alberto.Postgres.MigrationResult
+Alberto.Postgres.MigrationResult.Error.get -> System.Exception?
+Alberto.Postgres.MigrationResult.Error.init -> void
+Alberto.Postgres.MigrationResult.ExecutedScripts.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+Alberto.Postgres.MigrationResult.ExecutedScripts.init -> void
+Alberto.Postgres.MigrationResult.MigrationResult(bool Successful, System.Collections.Generic.IReadOnlyCollection<string!>! ExecutedScripts, System.Exception? Error) -> void
+Alberto.Postgres.MigrationResult.Successful.get -> bool
+Alberto.Postgres.MigrationResult.Successful.init -> void
+Alberto.Postgres.PostgresBackendDescriptor
+Alberto.Postgres.PostgresBackendDescriptor.ApplyConfiguration(Microsoft.Extensions.Configuration.IConfiguration! moduleSection) -> Alberto.Configuration.IAlbertoBackendDescriptor!
+Alberto.Postgres.PostgresBackendDescriptor.ApplyShardConfiguration(Microsoft.Extensions.Configuration.IConfiguration! shardSection) -> Alberto.Configuration.IAlbertoBackendDescriptor!
+Alberto.Postgres.PostgresBackendDescriptor.GetConfigurationSection() -> (string? SectionName, System.Type? OverridesType)
+Alberto.Postgres.PostgresBackendDescriptor.Name.get -> string!
+Alberto.Postgres.PostgresBackendDescriptor.Options.get -> Alberto.Postgres.PostgresOptions!
+Alberto.Postgres.PostgresBackendDescriptor.Options.init -> void
+Alberto.Postgres.PostgresBackendDescriptor.PostgresBackendDescriptor(Alberto.Postgres.PostgresOptions! Options) -> void
+Alberto.Postgres.PostgresBackendDescriptor.Register(Alberto.Configuration.AlbertoModuleContext! context) -> void
+Alberto.Postgres.PostgresBackendDescriptor.RegisterShardCatalog(Alberto.Configuration.AlbertoModuleContext! context) -> void
+Alberto.Postgres.PostgresBackendDescriptor.StorageIdentity.get -> string?
+Alberto.Postgres.PostgresBackendDescriptor.SupportsTenancy.get -> bool
+Alberto.Postgres.PostgresBackendDescriptor.Validate(Alberto.Configuration.AlbertoModuleDefinition! definition) -> System.Collections.Generic.IEnumerable<Alberto.Configuration.AlbertoValidationFailure!>!
+Alberto.Postgres.PostgresBuilderExtensions
+Alberto.Postgres.PostgresCatalogMigrator
+Alberto.Postgres.PostgresCheckpointStore
+Alberto.Postgres.PostgresCheckpointStore.GetAsync(string! processorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<long?>!
+Alberto.Postgres.PostgresCheckpointStore.ListProcessorIdsAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<string!>!>!
+Alberto.Postgres.PostgresCheckpointStore.PostgresCheckpointStore(Npgsql.NpgsqlDataSource! dataSource, string? schema = null) -> void
+Alberto.Postgres.PostgresCheckpointStore.ResetAsync(string! processorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Postgres.PostgresCheckpointStore.RewindAsync(string! processorId, long position, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Postgres.PostgresCheckpointStore.SaveAsync(string! processorId, long position, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Postgres.PostgresCheckpointStore.SaveIfLeaseHeldAsync(string! processorId, long position, string! consumerId, string! replicaId, long fenceToken, bool useProcessorLeaseFencing = false, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+Alberto.Postgres.PostgresDeadLetterStore
+Alberto.Postgres.PostgresDeadLetterStore.AbandonRetryAsync(Alberto.Subscriptions.DeadLetterClaim! claim, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+Alberto.Postgres.PostgresDeadLetterStore.ClaimRetryRequestedAsync(string! processorId, int batchSize, System.TimeSpan leaseDuration, string! claimedBy, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Alberto.Subscriptions.DeadLetterClaim!>!>!
+Alberto.Postgres.PostgresDeadLetterStore.ClearAsync(string! processorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Postgres.PostgresDeadLetterStore.CompleteRetryAsync(Alberto.Subscriptions.DeadLetterClaim! claim, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+Alberto.Postgres.PostgresDeadLetterStore.CountAsync(string! processorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
+Alberto.Postgres.PostgresDeadLetterStore.GetAsync(string! processorId, string? tenantId = null, int limit = 100, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Alberto.Subscriptions.DeadLetterEntry!>!>!
+Alberto.Postgres.PostgresDeadLetterStore.MarkForRetryAsync(string! processorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Postgres.PostgresDeadLetterStore.PostgresDeadLetterStore(Npgsql.NpgsqlDataSource! dataSource) -> void
+Alberto.Postgres.PostgresDeadLetterStore.PostgresDeadLetterStore(Npgsql.NpgsqlDataSource! dataSource, string? schema = null, bool multiTenant = false) -> void
+Alberto.Postgres.PostgresDeadLetterStore.PostgresDeadLetterStore(Npgsql.NpgsqlDataSource! dataSource, string? schema) -> void
+Alberto.Postgres.PostgresDeadLetterStore.StoreAsync(Alberto.Subscriptions.DeadLetterEntry! entry, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Postgres.PostgresEventStoreBackend
+Alberto.Postgres.PostgresEventStoreBackend.AppendAsync(System.Collections.Generic.IEnumerable<Alberto.IEventToPersist!>! events, Alberto.DcbQuery? dcbQuery = null, long? expectedPosition = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!
+Alberto.Postgres.PostgresEventStoreBackend.GetLastPositionAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<long>!
+Alberto.Postgres.PostgresEventStoreBackend.GetPositionsAsync(long afterPosition, int windowSize, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<long>!>!
+Alberto.Postgres.PostgresEventStoreBackend.GetStableHeadAsync(long afterPosition, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<long>!
+Alberto.Postgres.PostgresEventStoreBackend.PostgresEventStoreBackend(Npgsql.NpgsqlDataSource! dataSource, System.TimeProvider? timeProvider = null, string? schema = null, bool enableStableHeadBarrier = true) -> void
+Alberto.Postgres.PostgresEventStoreBackend.StreamAllAsync(long afterPosition = 0, int? limit = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!
+Alberto.Postgres.PostgresEventStoreBackend.StreamAsync(Alberto.DcbQuery! query, long afterPosition = 0, int? limit = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!
+Alberto.Postgres.PostgresMigrator
+Alberto.Postgres.PostgresOptions
+Alberto.Postgres.PostgresOptions.AutoMigrate.get -> bool
+Alberto.Postgres.PostgresOptions.AutoMigrate.init -> void
+Alberto.Postgres.PostgresOptions.ConnectionString.get -> string!
+Alberto.Postgres.PostgresOptions.ConnectionString.init -> void
+Alberto.Postgres.PostgresOptions.EnableNotifyListener.get -> bool
+Alberto.Postgres.PostgresOptions.EnableNotifyListener.init -> void
+Alberto.Postgres.PostgresOptions.EnableStableHeadBarrier.get -> bool
+Alberto.Postgres.PostgresOptions.EnableStableHeadBarrier.init -> void
+Alberto.Postgres.PostgresOptions.LeaseDuration.get -> System.TimeSpan
+Alberto.Postgres.PostgresOptions.LeaseDuration.init -> void
+Alberto.Postgres.PostgresOptions.MaxPoolSize.get -> int
+Alberto.Postgres.PostgresOptions.MaxPoolSize.init -> void
+Alberto.Postgres.PostgresOptions.MinPoolSize.get -> int
+Alberto.Postgres.PostgresOptions.MinPoolSize.init -> void
+Alberto.Postgres.PostgresOptions.Schema.get -> string?
+Alberto.Postgres.PostgresOptions.Schema.init -> void
+Alberto.Postgres.PostgresOverrides
+Alberto.Postgres.PostgresOverrides.ApplyTo(Alberto.Postgres.PostgresOptions! options) -> Alberto.Postgres.PostgresOptions!
+Alberto.Postgres.PostgresOverrides.AutoMigrate.get -> bool?
+Alberto.Postgres.PostgresOverrides.AutoMigrate.set -> void
+Alberto.Postgres.PostgresOverrides.ConnectionString.get -> string?
+Alberto.Postgres.PostgresOverrides.ConnectionString.set -> void
+Alberto.Postgres.PostgresOverrides.EnableNotifyListener.get -> bool?
+Alberto.Postgres.PostgresOverrides.EnableNotifyListener.set -> void
+Alberto.Postgres.PostgresOverrides.EnableStableHeadBarrier.get -> bool?
+Alberto.Postgres.PostgresOverrides.EnableStableHeadBarrier.set -> void
+Alberto.Postgres.PostgresOverrides.LeaseDuration.get -> System.TimeSpan?
+Alberto.Postgres.PostgresOverrides.LeaseDuration.set -> void
+Alberto.Postgres.PostgresOverrides.MaxPoolSize.get -> int?
+Alberto.Postgres.PostgresOverrides.MaxPoolSize.set -> void
+Alberto.Postgres.PostgresOverrides.MinPoolSize.get -> int?
+Alberto.Postgres.PostgresOverrides.MinPoolSize.set -> void
+Alberto.Postgres.PostgresOverrides.PostgresOverrides() -> void
+Alberto.Postgres.PostgresOverrides.Schema.get -> string?
+Alberto.Postgres.PostgresOverrides.Schema.set -> void
+Alberto.Postgres.PostgresProcessorLeaseManager
+Alberto.Postgres.PostgresProcessorLeaseManager.GetAllLeasesAsync(string! consumerId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Alberto.Subscriptions.ProcessorLeaseInfo!>!>!
+Alberto.Postgres.PostgresProcessorLeaseManager.LeaseDuration.get -> System.TimeSpan
+Alberto.Postgres.PostgresProcessorLeaseManager.PostgresProcessorLeaseManager(Npgsql.NpgsqlDataSource! dataSource, string? schema = null, System.TimeSpan? leaseDuration = null) -> void
+Alberto.Postgres.PostgresProcessorLeaseManager.ReleaseAllLeasesAsync(string! consumerId, string! replicaId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Postgres.PostgresProcessorLeaseManager.RenewLeasesAsync(string! consumerId, string! replicaId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<string!>!>!
+Alberto.Postgres.PostgresProcessorLeaseManager.TryAcquireAsync(string! consumerId, string! processorId, string! replicaId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.IProcessorLease?>!
+Alberto.Postgres.PostgresProjectionRebuildStore
+Alberto.Postgres.PostgresProjectionRebuildStore.GetAsync(string! processorId, string! projectionType, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.ProjectionRebuildState!>!
+Alberto.Postgres.PostgresProjectionRebuildStore.ListAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Alberto.Subscriptions.ProjectionRebuildState!>!>!
+Alberto.Postgres.PostgresProjectionRebuildStore.PostgresProjectionRebuildStore(Npgsql.NpgsqlDataSource! dataSource, string? schema = null) -> void
+Alberto.Postgres.PostgresProjectionRebuildStore.RequestAbortAsync(string! processorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.ProjectionRebuildState!>!
+Alberto.Postgres.PostgresProjectionRebuildStore.RequestPromotionAsync(string! processorId, bool force = false, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.ProjectionRebuildState!>!
+Alberto.Postgres.PostgresProjectionRebuildStore.StartAsync(string! processorId, string! projectionType, long targetPosition, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.ProjectionRebuildState!>!
+Alberto.Postgres.PostgresShardBuilder
+Alberto.Postgres.PostgresShardBuilder.AddShard(string! shardId, System.Func<Alberto.Postgres.PostgresOptions!, Alberto.Postgres.PostgresOptions!>! configure) -> Alberto.Postgres.PostgresShardBuilder!
+Alberto.Postgres.PostgresShardBuilder.WithCatalog(System.Func<Alberto.Postgres.PostgresOptions!, Alberto.Postgres.PostgresOptions!>! configure) -> Alberto.Postgres.PostgresShardBuilder!
+Alberto.Postgres.PostgresShardBuilder.WithDefaultShard(string! shardId) -> Alberto.Postgres.PostgresShardBuilder!
+Alberto.Postgres.PostgresShardBuilder.WithRefreshInterval(System.TimeSpan interval) -> Alberto.Postgres.PostgresShardBuilder!
+Alberto.Postgres.PostgresStateStore<TState>
+Alberto.Postgres.PostgresStateStore<TState>.ApplyChangesAsync(System.Collections.Generic.IReadOnlyDictionary<string!, TState>! upserts, System.Collections.Generic.IReadOnlyCollection<string!>! deletes, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Postgres.PostgresStateStore<TState>.ListRecentAsync(int limit = 20, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<TState>!>!
+Alberto.Postgres.PostgresStateStore<TState>.LoadManyAsync(System.Collections.Generic.IEnumerable<string!>! documentIds, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyDictionary<string!, TState>!>!
+Alberto.Postgres.PostgresStateStore<TState>.PostgresStateStore(Npgsql.NpgsqlDataSource! dataSource, string? projectionType = null, string? schema = null, System.Func<int>? rebuildVersion = null, string? tenantId = null) -> void
+Alberto.Postgres.PostgresTenantProcessorLock
+Alberto.Postgres.PostgresTenantProcessorLock.GetAllLeasesAsync(string! consumerId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Alberto.Subscriptions.TenantLeaseInfo!>!>!
+Alberto.Postgres.PostgresTenantProcessorLock.GetKnownTenantsAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<string!>!>!
+Alberto.Postgres.PostgresTenantProcessorLock.LeaseDuration.get -> System.TimeSpan
+Alberto.Postgres.PostgresTenantProcessorLock.PostgresTenantProcessorLock(Npgsql.NpgsqlDataSource! dataSource, string? schema = null, System.TimeSpan? leaseDuration = null) -> void
+Alberto.Postgres.PostgresTenantProcessorLock.ReleaseAllLeasesAsync(string! consumerId, string! replicaId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Postgres.PostgresTenantProcessorLock.ReleaseLeaseAsync(string! consumerId, string! tenantId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Postgres.PostgresTenantProcessorLock.ReleaseTenantLeaseAsync(string! consumerId, string! tenantId, string! replicaId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Postgres.PostgresTenantProcessorLock.RenewLeasesAsync(string! consumerId, string! replicaId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<string!>!>!
+Alberto.Postgres.PostgresTenantProcessorLock.TryAcquireForTenantAsync(string! consumerId, string! tenantId, string! replicaId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.ITenantLease?>!
+Alberto.Postgres.PostgresTenantShardMap
+Alberto.Postgres.PostgresTenantShardMap.AssignAsync(string! tenantId, string! shardId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<string!>
+Alberto.Postgres.PostgresTenantShardMap.GetAllAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<System.Collections.Generic.IReadOnlyDictionary<string!, string!>!>
+Alberto.Postgres.PostgresTenantShardMap.PostgresTenantShardMap(Npgsql.NpgsqlDataSource! dataSource, string! moduleKey, string? schema = null) -> void
+Alberto.Postgres.PostgresTenantShardMap.ResolveAsync(string! tenantId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<string?>
+Alberto.Postgres.ShardingBuilderExtensions
+static Alberto.Postgres.PostgresBuilderExtensions.WithPostgres(this Alberto.DcbModuleBuilder! builder, System.Func<Alberto.Postgres.PostgresOptions!, Alberto.Postgres.PostgresOptions!>! configure) -> Alberto.DcbModuleBuilder!
+static Alberto.Postgres.PostgresCatalogMigrator.Migrate(string! connectionString, string? schema = null) -> Alberto.Postgres.MigrationResult!
+static Alberto.Postgres.PostgresMigrator.GetPendingMigrations(string! connectionString, string? schema = null, bool singleTenant = false) -> System.Collections.Generic.IReadOnlyCollection<string!>!
+static Alberto.Postgres.PostgresMigrator.Migrate(string! connectionString, string? schema = null, bool singleTenant = false) -> Alberto.Postgres.MigrationResult!
+static Alberto.Postgres.PostgresMigrator.ValidateTenancyMode(string! connectionString, string? schema, bool singleTenant) -> void
+static Alberto.Postgres.ShardingBuilderExtensions.AcrossPostgresDatabases(this Alberto.Configuration.TenancyBuilder! tenancy, System.Action<Alberto.Postgres.PostgresShardBuilder!>! configure) -> Alberto.Configuration.TenancyBuilder!

@@ -1,7 +1,7 @@
 using System.CommandLine;
-using Alberto.Dcb.Admin;
-using Alberto.Dcb.Postgres;
-using Alberto.Dcb.Tenancy;
+using Alberto.Admin;
+using Alberto.Postgres;
+using Alberto.Tenancy;
 using Npgsql;
 
 namespace Alberto.Cli.Commands;

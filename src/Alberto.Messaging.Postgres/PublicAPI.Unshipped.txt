@@ -1,0 +1,8 @@
+Alberto.Messaging.Postgres.PostgresOutboxStore
+Alberto.Messaging.Postgres.PostgresOutboxStore.ClaimPendingAsync(int limit, System.TimeSpan claimLease, string! claimedBy, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Alberto.Messaging.OutboxClaim!>!>!
+Alberto.Messaging.Postgres.PostgresOutboxStore.InsertAsync(Alberto.Messaging.OutboxEntry! entry, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Messaging.Postgres.PostgresOutboxStore.MarkDeliveredAsync(Alberto.Messaging.OutboxClaim! claim, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+Alberto.Messaging.Postgres.PostgresOutboxStore.MarkFailedAsync(Alberto.Messaging.OutboxClaim! claim, string! error, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+Alberto.Messaging.Postgres.PostgresOutboxStore.PostgresOutboxStore(Npgsql.NpgsqlDataSource! dataSource, string? schema = null, bool? multiTenant = null) -> void
+Alberto.Messaging.Postgres.PostgresOutboxStore.PurgeDeliveredAsync(System.DateTimeOffset before, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Messaging.Postgres.PostgresOutboxStore.RetryFailedAsync(string? messageType = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!

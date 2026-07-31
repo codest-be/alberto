@@ -40,7 +40,7 @@ dotnet run --project tools/Alberto.Cli -- status
 
 ### Benchmarks
 ```bash
-dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks -- --filter '*Append*'
+dotnet run -c Release --project benchmarks/Alberto.Benchmarks -- --filter '*Append*'
 ```
 
 ## Architecture
@@ -48,14 +48,14 @@ dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks -- --filter '*
 ### Directory Structure
 ```
 /src/                           # Core libraries (packable NuGet)
-  Alberto.Dcb/                  # Event store abstractions, control loop, middleware
-  Alberto.Dcb.Commands/         # Command handling
-  Alberto.Dcb.InMemory/         # In-memory backend (dev/test)
-  Alberto.Dcb.Postgres/         # PostgreSQL backend, migrations, admin data access
-  Alberto.Dcb.EntityFramework/  # EF-backed projections
-  Alberto.Dcb.Messaging/        # Transactional outbox abstractions
-  Alberto.Dcb.Messaging.Postgres/  # PostgreSQL outbox store
-  Alberto.Dcb.Telemetry/        # OpenTelemetry instrumentation
+  Alberto/                  # Event store abstractions, control loop, middleware
+  Alberto.Commands/         # Command handling
+  Alberto.InMemory/         # In-memory backend (dev/test)
+  Alberto.Postgres/         # PostgreSQL backend, migrations, admin data access
+  Alberto.EntityFramework/  # EF-backed projections
+  Alberto.Messaging/        # Transactional outbox abstractions
+  Alberto.Messaging.Postgres/  # PostgreSQL outbox store
+  Alberto.Telemetry/        # OpenTelemetry instrumentation
 
 /apps/                          # Example applications
   Alberto.AppHost/              # Aspire orchestration
@@ -72,11 +72,11 @@ dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks -- --filter '*
   Alberto.Cli/                  # Operator CLI (Spectre.Console + System.CommandLine)
 
 /tests/
-  Alberto.Dcb.Tests/            # Unit + Testcontainers integration tests (xUnit 3)
+  Alberto.Tests/            # Unit + Testcontainers integration tests (xUnit 3)
   Alberto.Orders.LoadTests/     # K6 load tests (TypeScript)
 
 /benchmarks/
-  Alberto.Dcb.Benchmarks/       # BenchmarkDotNet append/read/checkpoint benchmarks
+  Alberto.Benchmarks/       # BenchmarkDotNet append/read/checkpoint benchmarks
 ```
 
 Note: `apps/Alberto.Payments` is in the solution and builds, but it has no host of its own and is not orchestrated by the AppHost — its slices are registered by the Orders API host, which serves their GraphQL fields alongside Orders'.
@@ -97,16 +97,16 @@ Note: `apps/Alberto.Payments` is in the solution and builds, but it has no host 
 - **GraphQL** (Orders example only): HotChocolate 15.x
 
 ### Admin surface
-The operator surface is the CLI in `tools/Alberto.Cli`. There is no admin HTTP API. `src/Alberto.Dcb.Admin` holds the `IAdminReader`/`IAdminOperator` abstraction the CLI's 14 command files are built on — it serves no endpoint — and `AddAlbertoPostgresAdmin` in `src/Alberto.Dcb.Admin.Postgres` is its only implementation.
+The operator surface is the CLI in `tools/Alberto.Cli`. There is no admin HTTP API. `src/Alberto.Admin` holds the `IAdminReader`/`IAdminOperator` abstraction the CLI's 14 command files are built on — it serves no endpoint — and `AddAlbertoPostgresAdmin` in `src/Alberto.Admin.Postgres` is its only implementation.
 
-**The whole admin surface is parked, not missing — and that includes its two projects.** A GraphQL admin API, an MCP server, a React console and a BFF live on `feature/admin-surface`, held out of 1.0 so their field and tool names are not frozen by semver. `Alberto.Dcb.Admin` and `Alberto.Dcb.Admin.Postgres` are both `IsPackable=false` for the same reason: shipping `IAdminReader`/`IAdminOperator` at 1.0 would freeze the abstraction under semver before the things that consume it exist. They build, they are in the solution, they are tested, and the CLI references them by project — they just do not go to nuget.org. Unparking is `IsPackable=true` plus capturing `PublicAPI.Shipped.txt` (the analyzer is gated on `IsPackable`, so it is inert until then).
+**The whole admin surface is parked, not missing — and that includes its two projects.** A GraphQL admin API, an MCP server, a React console and a BFF live on `feature/admin-surface`, held out of 1.0 so their field and tool names are not frozen by semver. `Alberto.Admin` and `Alberto.Admin.Postgres` are both `IsPackable=false` for the same reason: shipping `IAdminReader`/`IAdminOperator` at 1.0 would freeze the abstraction under semver before the things that consume it exist. They build, they are in the solution, they are tested, and the CLI references them by project — they just do not go to nuget.org. Unparking is `IsPackable=true` plus capturing `PublicAPI.Shipped.txt` (the analyzer is gated on `IsPackable`, so it is inert until then).
 
-`Alberto.Dcb.Admin.Postgres` exists only because `Alberto.Dcb.Postgres` **is** packable. `PostgresAdminDataAccess`, `PostgresAdminOperator` and `PostgresAdminServiceCollectionExtensions` used to live there, which made its nupkg carry an unresolvable `Alberto.Dcb.Admin` dependency and 33 public members returning parked types. The three files keep `namespace Alberto.Dcb.Postgres` so no consumer's usings changed, and they reach back for internals (`SchemaQualifier`) via `InternalsVisibleTo`.
+`Alberto.Admin.Postgres` exists only because `Alberto.Postgres` **is** packable. `PostgresAdminDataAccess`, `PostgresAdminOperator` and `PostgresAdminServiceCollectionExtensions` used to live there, which made its nupkg carry an unresolvable `Alberto.Admin` dependency and 33 public members returning parked types. The three files keep `namespace Alberto.Postgres` so no consumer's usings changed, and they reach back for internals (`SchemaQualifier`) via `InternalsVisibleTo`.
 
 Do not rebuild the front doors on main — extend that branch. Keep `IAdminReader`/`IAdminOperator` additive when changing them here, or the branch stops merging cleanly.
 
 - **Per-processor mutations** go through the core interfaces: `ICheckpointStore` (`SaveAsync`, `ResetAsync`, `RewindAsync`) and `IDeadLetterStore` (`CountAsync`, `ClearAsync`, `MarkForRetryAsync`).
-- **`PostgresAdminDataAccess`** (`src/Alberto.Dcb.Admin.Postgres`) holds the inspection queries and the composite transactional mutations (`RetryByRewindAsync`, `ReleaseTenantLeasesAsync`) that span multiple tables and so cannot be composed from per-processor interfaces.
+- **`PostgresAdminDataAccess`** (`src/Alberto.Admin.Postgres`) holds the inspection queries and the composite transactional mutations (`RetryByRewindAsync`, `ReleaseTenantLeasesAsync`) that span multiple tables and so cannot be composed from per-processor interfaces.
 - `SaveAsync` is monotonic by design (`GREATEST`). `RewindAsync` is the deliberate escape hatch for operator-initiated rewinds and is the only way to move a checkpoint backwards.
 - **Sharded modules**: `ShardResolver` turns `--shard`/`--all-shards` plus `.alberto/config.json` into the databases a command runs against. Reads fan out by default; mutations refuse without a selection. `alberto shards list|where|assign` manages the catalog. Shard connection strings live in config, never in the catalog table.
 

@@ -1,0 +1,66 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <IsPackable>false</IsPackable>
+        <IsTestProject>true</IsTestProject>
+        <!-- Suppress experimental-sharding diagnostic across all test files; the sole purpose of
+             this project is testing Alberto including sharding, so per-file pragmas would be noisy. -->
+        <NoWarn>$(NoWarn);ALB9001</NoWarn>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="../../src/Alberto/Alberto.csproj" />
+        <ProjectReference Include="../../src/Alberto.Commands/Alberto.Commands.csproj" />
+        <!-- Referenced as a plain assembly, not as OutputItemType="Analyzer": the tests instantiate
+             DiscardedPipelineAnalyzer and run it against compilations they build themselves, which
+             is what lets them assert on the exact diagnostics for a given snippet. Letting Roslyn
+             load it over this project instead would only tell us that this project is clean. -->
+        <ProjectReference Include="../../src/Alberto.Commands.Analyzers/Alberto.Commands.Analyzers.csproj" />
+        <ProjectReference Include="../../src/Alberto.InMemory/Alberto.InMemory.csproj" />
+        <ProjectReference Include="../../src/Alberto.Postgres/Alberto.Postgres.csproj" />
+        <!-- Referenced explicitly, not left to flow in transitively via Alberto.Cli: PostgresAdminDataAccess
+             and PostgresAdminOperator have their own test classes here, and those must not stop compiling
+             the day the CLI's reference changes. -->
+        <ProjectReference Include="../../src/Alberto.Admin.Postgres/Alberto.Admin.Postgres.csproj" />
+        <ProjectReference Include="../../src/Alberto.Messaging/Alberto.Messaging.csproj" />
+        <ProjectReference Include="../../src/Alberto.Messaging.Postgres/Alberto.Messaging.Postgres.csproj" />
+        <ProjectReference Include="../../src/Alberto.EntityFramework/Alberto.EntityFramework.csproj" />
+        <ProjectReference Include="../../src/Alberto.Telemetry/Alberto.Telemetry.csproj" />
+        <ProjectReference Include="../../src/Alberto.Testing/Alberto.Testing.csproj" />
+        <ProjectReference Include="../../src/Alberto.Testing.Xunit/Alberto.Testing.Xunit.csproj" />
+        <!-- The operator CLI decides, from config alone, which databases a destructive command
+             lands in. That decision is worth testing, so its assembly is referenced here. -->
+        <ProjectReference Include="../../tools/Alberto.Cli/Alberto.Cli.csproj" />
+        <ProjectReference Include="../../benchmarks/Alberto.Benchmarks.Core/Alberto.Benchmarks.Core.csproj" />
+        <ProjectReference Include="../../benchmarks/Alberto.Benchmarks.Compare/Alberto.Benchmarks.Compare.csproj" />
+        <!-- A slug-collision-free events assembly, so tests can exercise the real
+             .WithEventsFrom(assembly) configuration path. See its Events.cs for why. -->
+        <ProjectReference Include="../Alberto.Tests.SampleEvents/Alberto.Tests.SampleEvents.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+        <PackageReference Include="Microsoft.Extensions.Hosting" />
+        <PackageReference Include="Microsoft.NET.Test.Sdk" />
+        <PackageReference Include="xunit.v3" />
+        <PackageReference Include="xunit.runner.visualstudio">
+          <PrivateAssets>all</PrivateAssets>
+          <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+        <PackageReference Include="coverlet.collector">
+          <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+          <PrivateAssets>all</PrivateAssets>
+        </PackageReference>
+        <PackageReference Include="FluentAssertions" />
+        <!-- Hosts DiscardedPipelineAnalyzer in the analyzer tests. -->
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+        <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+        <PackageReference Include="Testcontainers.PostgreSql" />
+        <PackageReference Include="Microsoft.EntityFrameworkCore" />
+        <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+        <PackageReference Include="OpenTelemetry.Exporter.InMemory" />
+        <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    </ItemGroup>
+</Project>

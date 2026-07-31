@@ -1,5 +1,5 @@
 using Alberto.Commands;
-using Alberto.Dcb;
+using Alberto;
 using Alberto.Examples.Shared;
 using Alberto.Payments.Contracts;
 using Alberto.Payments.Platform;

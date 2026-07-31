@@ -1,4 +1,4 @@
-using Alberto.Dcb.Postgres;
+using Alberto.Postgres;
 using Alberto.Orders.Migrations;
 using Alberto.Orders.Platform;
 using Microsoft.EntityFrameworkCore;

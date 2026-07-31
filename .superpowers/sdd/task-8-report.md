@@ -14,7 +14,7 @@ The Large seed completed in ~85 s, well inside the 10-minute threshold. The COPY
 
 ## What Was Implemented
 
-Two files added to `benchmarks/Alberto.Dcb.Benchmarks/Harness/`:
+Two files added to `benchmarks/Alberto.Benchmarks/Harness/`:
 
 **`StoreSizes.cs`** — static constants Small (10k), Medium (100k), Large (1M) with XML summary doc matching the brief verbatim.
 
@@ -62,14 +62,14 @@ Throwaway verification project is in the scratchpad (`BenchVerify/`) — not com
 ## Build
 
 ```
-dotnet build benchmarks/Alberto.Dcb.Benchmarks/Alberto.Dcb.Benchmarks.csproj -c Release
+dotnet build benchmarks/Alberto.Benchmarks/Alberto.Benchmarks.csproj -c Release
 Build succeeded.  0 Warning(s).  0 Error(s).
 ```
 
 ## Files Changed
 
-- `benchmarks/Alberto.Dcb.Benchmarks/Harness/StoreSizes.cs` (created)
-- `benchmarks/Alberto.Dcb.Benchmarks/Harness/BenchmarkDatabase.cs` (created)
+- `benchmarks/Alberto.Benchmarks/Harness/StoreSizes.cs` (created)
+- `benchmarks/Alberto.Benchmarks/Harness/BenchmarkDatabase.cs` (created)
 
 ## Self-Review
 

@@ -1,8 +1,8 @@
 using Alberto.Commands;
-using Alberto.Dcb;
-using Alberto.Dcb.Postgres;
-using Alberto.Dcb.Telemetry;
-using Alberto.Dcb.Tenancy;
+using Alberto;
+using Alberto.Postgres;
+using Alberto.Telemetry;
+using Alberto.Tenancy;
 using Alberto.Payments.Features;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

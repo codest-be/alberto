@@ -48,30 +48,30 @@ jobs:
 
       - name: Build libraries
         run: |
-          dotnet build src/Alberto.Dcb/Alberto.Dcb.csproj -c Release
+          dotnet build src/Alberto/Alberto.csproj -c Release
           # Built but deliberately not packed: the admin surface is IsPackable=false until the
           # front doors on feature/admin-surface ship. Building it here still catches a Release
           # compile break, which the pack loop below no longer would.
-          dotnet build src/Alberto.Dcb.Admin/Alberto.Dcb.Admin.csproj -c Release
-          dotnet build src/Alberto.Dcb.Admin.Postgres/Alberto.Dcb.Admin.Postgres.csproj -c Release
-          dotnet build src/Alberto.Dcb.Commands/Alberto.Dcb.Commands.csproj -c Release
-          dotnet build src/Alberto.Dcb.EntityFramework/Alberto.Dcb.EntityFramework.csproj -c Release
-          dotnet build src/Alberto.Dcb.InMemory/Alberto.Dcb.InMemory.csproj -c Release
-          dotnet build src/Alberto.Dcb.Messaging/Alberto.Dcb.Messaging.csproj -c Release
-          dotnet build src/Alberto.Dcb.Postgres/Alberto.Dcb.Postgres.csproj -c Release
-          dotnet build src/Alberto.Dcb.Messaging.Postgres/Alberto.Dcb.Messaging.Postgres.csproj -c Release
-          dotnet build src/Alberto.Dcb.Telemetry/Alberto.Dcb.Telemetry.csproj -c Release
-          dotnet build src/Alberto.Dcb.Testing/Alberto.Dcb.Testing.csproj -c Release
-          dotnet build src/Alberto.Dcb.Testing.Xunit/Alberto.Dcb.Testing.Xunit.csproj -c Release
+          dotnet build src/Alberto.Admin/Alberto.Admin.csproj -c Release
+          dotnet build src/Alberto.Admin.Postgres/Alberto.Admin.Postgres.csproj -c Release
+          dotnet build src/Alberto.Commands/Alberto.Commands.csproj -c Release
+          dotnet build src/Alberto.EntityFramework/Alberto.EntityFramework.csproj -c Release
+          dotnet build src/Alberto.InMemory/Alberto.InMemory.csproj -c Release
+          dotnet build src/Alberto.Messaging/Alberto.Messaging.csproj -c Release
+          dotnet build src/Alberto.Postgres/Alberto.Postgres.csproj -c Release
+          dotnet build src/Alberto.Messaging.Postgres/Alberto.Messaging.Postgres.csproj -c Release
+          dotnet build src/Alberto.Telemetry/Alberto.Telemetry.csproj -c Release
+          dotnet build src/Alberto.Testing/Alberto.Testing.csproj -c Release
+          dotnet build src/Alberto.Testing.Xunit/Alberto.Testing.Xunit.csproj -c Release
           dotnet build tools/Alberto.Cli/Alberto.Cli.csproj -c Release
 
       - name: Test
-        run: dotnet test tests/Alberto.Dcb.Tests/Alberto.Dcb.Tests.csproj -c Release
+        run: dotnet test tests/Alberto.Tests/Alberto.Tests.csproj -c Release
 
       - name: Pack
         run: |
           VERSION_SUFFIX="${{ steps.version.outputs.suffix }}"
-          for proj in Alberto.Dcb Alberto.Dcb.Commands Alberto.Dcb.EntityFramework Alberto.Dcb.InMemory Alberto.Dcb.Messaging Alberto.Dcb.Messaging.Postgres Alberto.Dcb.Postgres Alberto.Dcb.Telemetry Alberto.Dcb.Testing Alberto.Dcb.Testing.Xunit; do
+          for proj in Alberto Alberto.Commands Alberto.EntityFramework Alberto.InMemory Alberto.Messaging Alberto.Messaging.Postgres Alberto.Postgres Alberto.Telemetry Alberto.Testing Alberto.Testing.Xunit; do
             dotnet pack "src/$proj/$proj.csproj" -c Release --no-build --version-suffix "$VERSION_SUFFIX" -o artifacts
           done
 
@@ -85,16 +85,16 @@ jobs:
       - name: Verify packed set
         run: |
           cat > /tmp/expected-packages.txt <<'IDS'
-          Alberto.Dcb
-          Alberto.Dcb.Commands
-          Alberto.Dcb.EntityFramework
-          Alberto.Dcb.InMemory
-          Alberto.Dcb.Messaging
-          Alberto.Dcb.Messaging.Postgres
-          Alberto.Dcb.Postgres
-          Alberto.Dcb.Telemetry
-          Alberto.Dcb.Testing
-          Alberto.Dcb.Testing.Xunit
+          Alberto
+          Alberto.Commands
+          Alberto.EntityFramework
+          Alberto.InMemory
+          Alberto.Messaging
+          Alberto.Messaging.Postgres
+          Alberto.Postgres
+          Alberto.Telemetry
+          Alberto.Testing
+          Alberto.Testing.Xunit
           IDS
           LC_ALL=C sort -o /tmp/expected-packages.txt /tmp/expected-packages.txt
 
@@ -121,7 +121,7 @@ jobs:
             --store-password-in-clear-text
 
       - name: Push libraries to GitHub Packages
-        run: dotnet nuget push "artifacts/Alberto.Dcb*.nupkg" --source github --skip-duplicate --timeout 600
+        run: dotnet nuget push "artifacts/Alberto*.nupkg" --source github --skip-duplicate --timeout 600
 
       # Symbols are best-effort: a failed .snupkg push must not fail a run whose packages
       # already landed. `if: always()` keeps this reachable after an earlier step fails, and

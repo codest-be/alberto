@@ -10,9 +10,9 @@ Running Alberto in production comes down to four questions:
 The operator surface is the CLI, which talks straight to Postgres. That is the point of it: the
 CLI still works when the application is the thing that is broken.
 
-There is no admin HTTP API here. `Alberto.Dcb.Admin` is the `IAdminReader`/`IAdminOperator`
+There is no admin HTTP API here. `Alberto.Admin` is the `IAdminReader`/`IAdminOperator`
 abstraction the CLI is built on — it serves no endpoint, and it **does not ship as a NuGet package
-in 1.0**. Neither does its PostgreSQL implementation, `Alberto.Dcb.Admin.Postgres`. Both build and
+in 1.0**. Neither does its PostgreSQL implementation, `Alberto.Admin.Postgres`. Both build and
 are referenced by the CLI as projects; holding them back is what keeps 1.0 from freezing the
 abstraction under semver before the things that consume it exist. An in-process GraphQL admin API,
 an MCP server, a React console and a BFF were built and are parked on the `feature/admin-surface`
@@ -459,8 +459,8 @@ services.AddAlberto("orders", builder => builder
     …);
 
 services.AddOpenTelemetry()
-    .WithTracing(t => t.AddSource("Alberto.Dcb"))
-    .WithMetrics(m => m.AddMeter("Alberto.Dcb"));
+    .WithTracing(t => t.AddSource("Alberto"))
+    .WithMetrics(m => m.AddMeter("Alberto"));
 ```
 
 `.WithTelemetry()` registers Alberto's activity source and meter with the OpenTelemetry hosting
@@ -468,7 +468,7 @@ integration automatically — no separate `AddAlbertoInstrumentation()` call is 
 extension is retained for standalone `TracerProvider` / `MeterProvider` wiring outside the generic
 host, and is a harmless no-op duplicate when called alongside `.WithTelemetry()`).
 Call `AddOpenTelemetry()` to configure your
-exporters and subscribe to the Alberto source and meter. The meter is `Alberto.Dcb`. See
+exporters and subscribe to the Alberto source and meter. The meter is `Alberto`. See
 [configuration.md](configuration.md#telemetry-options) for all telemetry options.
 
 `AddOpenTelemetry()` itself comes from `OpenTelemetry.Extensions.Hosting`, which you reference
@@ -509,7 +509,7 @@ rule needs, and is fixed in your query, not your infrastructure.
 
 ## Migrations
 
-The event-store schema is DbUp scripts embedded in `Alberto.Dcb.Postgres`, applied automatically at
+The event-store schema is DbUp scripts embedded in `Alberto.Postgres`, applied automatically at
 startup:
 
 ```csharp

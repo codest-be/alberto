@@ -40,7 +40,7 @@ dotnet run --project tools/Alberto.Cli -- status
 
 ### Benchmarks
 ```bash
-dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks -- --filter '*Append*'
+dotnet run -c Release --project benchmarks/Alberto.Benchmarks -- --filter '*Append*'
 ```
 
 ## Architecture
@@ -48,14 +48,14 @@ dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks -- --filter '*
 ### Directory Structure
 ```
 /src/                           # Core libraries (packable NuGet)
-  Alberto.Dcb/                  # Event store abstractions, control loop, middleware
-  Alberto.Dcb.Commands/         # Command handling
-  Alberto.Dcb.InMemory/         # In-memory backend (dev/test)
-  Alberto.Dcb.Postgres/         # PostgreSQL backend, migrations, admin data access
-  Alberto.Dcb.EntityFramework/  # EF-backed projections
-  Alberto.Dcb.Messaging/        # Transactional outbox abstractions
-  Alberto.Dcb.Messaging.Postgres/  # PostgreSQL outbox store
-  Alberto.Dcb.Telemetry/        # OpenTelemetry instrumentation
+  Alberto/                  # Event store abstractions, control loop, middleware
+  Alberto.Commands/         # Command handling
+  Alberto.InMemory/         # In-memory backend (dev/test)
+  Alberto.Postgres/         # PostgreSQL backend, migrations, admin data access
+  Alberto.EntityFramework/  # EF-backed projections
+  Alberto.Messaging/        # Transactional outbox abstractions
+  Alberto.Messaging.Postgres/  # PostgreSQL outbox store
+  Alberto.Telemetry/        # OpenTelemetry instrumentation
 
 /apps/                          # Example applications
   Alberto.AppHost/              # Aspire orchestration
@@ -72,11 +72,11 @@ dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks -- --filter '*
   Alberto.Cli/                  # Operator CLI (Spectre.Console + System.CommandLine)
 
 /tests/
-  Alberto.Dcb.Tests/            # Unit + Testcontainers integration tests (xUnit 3)
+  Alberto.Tests/            # Unit + Testcontainers integration tests (xUnit 3)
   Alberto.Orders.LoadTests/     # K6 load tests (TypeScript)
 
 /benchmarks/
-  Alberto.Dcb.Benchmarks/       # BenchmarkDotNet append/read/checkpoint benchmarks
+  Alberto.Benchmarks/       # BenchmarkDotNet append/read/checkpoint benchmarks
 ```
 
 Note: `apps/Alberto.Payments` is in the solution and builds, but it has no host of its own and is not orchestrated by the AppHost — its slices are registered by the Orders API host, which serves their GraphQL fields alongside Orders'.
@@ -94,12 +94,12 @@ Note: `apps/Alberto.Payments` is in the solution and builds, but it has no host 
 - **GraphQL** (Orders example only): HotChocolate 15.x
 
 ### Admin surface
-The operator surface is the CLI in `tools/Alberto.Cli`. There is no admin HTTP API. `src/Alberto.Dcb.Admin` contains the `IAdminReader`/`IAdminOperator` abstraction the CLI's command files are built on; it serves no endpoint.
+The operator surface is the CLI in `tools/Alberto.Cli`. There is no admin HTTP API. `src/Alberto.Admin` contains the `IAdminReader`/`IAdminOperator` abstraction the CLI's command files are built on; it serves no endpoint.
 
-**Both admin projects are `IsPackable=false`.** `Alberto.Dcb.Admin` and `Alberto.Dcb.Admin.Postgres` build, sit in the solution, are tested, and are referenced by the CLI as projects — they just do not ship to nuget.org, so 1.0 does not freeze `IAdminReader`/`IAdminOperator` under semver before the front doors on `feature/admin-surface` exist. `Alberto.Dcb.Admin.Postgres` was split out of `Alberto.Dcb.Postgres` (which **is** packable) precisely so that package carries no dependency on a parked one; its files keep `namespace Alberto.Dcb.Postgres`, so no consumer's usings changed.
+**Both admin projects are `IsPackable=false`.** `Alberto.Admin` and `Alberto.Admin.Postgres` build, sit in the solution, are tested, and are referenced by the CLI as projects — they just do not ship to nuget.org, so 1.0 does not freeze `IAdminReader`/`IAdminOperator` under semver before the front doors on `feature/admin-surface` exist. `Alberto.Admin.Postgres` was split out of `Alberto.Postgres` (which **is** packable) precisely so that package carries no dependency on a parked one; its files keep `namespace Alberto.Postgres`, so no consumer's usings changed.
 
 - **Per-processor mutations** go through the core interfaces: `ICheckpointStore` (`SaveAsync`, `ResetAsync`, `RewindAsync`) and `IDeadLetterStore` (`CountAsync`, `ClearAsync`, `MarkForRetryAsync`).
-- **`PostgresAdminDataAccess`** (`src/Alberto.Dcb.Admin.Postgres`) holds the inspection queries and the composite transactional mutations (`RetryByRewindAsync`, `ReleaseTenantLeasesAsync`) that span multiple tables and so cannot be composed from per-processor interfaces.
+- **`PostgresAdminDataAccess`** (`src/Alberto.Admin.Postgres`) holds the inspection queries and the composite transactional mutations (`RetryByRewindAsync`, `ReleaseTenantLeasesAsync`) that span multiple tables and so cannot be composed from per-processor interfaces.
 - `SaveAsync` is monotonic by design (`GREATEST`). `RewindAsync` is the deliberate escape hatch for operator-initiated rewinds and is the only way to move a checkpoint backwards.
 
 ## Technology Stack

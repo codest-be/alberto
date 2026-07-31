@@ -1,4 +1,4 @@
-using Alberto.Dcb;
+using Alberto;
 using Alberto.Examples.Shared;
 using FluentAssertions;
 using HotChocolate;

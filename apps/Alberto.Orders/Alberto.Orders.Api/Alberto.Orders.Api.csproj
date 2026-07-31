@@ -10,9 +10,9 @@
     <ProjectReference Include="..\..\Alberto.Examples.Shared\Alberto.Examples.Shared.csproj" />
     <ProjectReference Include="..\Alberto.Orders\Alberto.Orders.csproj" />
     <ProjectReference Include="..\..\Alberto.Payments\Alberto.Payments\Alberto.Payments.csproj" />
-    <ProjectReference Include="..\..\..\src\Alberto.Dcb.Telemetry\Alberto.Dcb.Telemetry.csproj" />
+    <ProjectReference Include="..\..\..\src\Alberto.Telemetry\Alberto.Telemetry.csproj" />
     <ProjectReference Include="..\..\ServiceDefaults\ServiceDefaults.csproj" />
-    <ProjectReference Include="..\..\..\src\Alberto.Dcb.Postgres\Alberto.Dcb.Postgres.csproj" />
+    <ProjectReference Include="..\..\..\src\Alberto.Postgres\Alberto.Postgres.csproj" />
   </ItemGroup>
 
   <ItemGroup>

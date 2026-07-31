@@ -1,4 +1,4 @@
-using Alberto.Dcb;
+using Alberto;
 using Alberto.Payments.Contracts;
 using Alberto.Payments.Platform;
 using Microsoft.Extensions.DependencyInjection;

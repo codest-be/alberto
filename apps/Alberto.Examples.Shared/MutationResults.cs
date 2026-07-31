@@ -1,4 +1,4 @@
-using Alberto.Dcb;
+using Alberto;
 
 namespace Alberto.Examples.Shared;
 
@@ -25,7 +25,7 @@ public static class MutationResults
 
     /// <inheritdoc cref="OrThrow(Result)"/>
     // Fully qualified: HotChocolate's global usings pull in GreenDonut.Result<T>.
-    public static T OrThrow<T>(this Alberto.Dcb.Result<T> result) =>
+    public static T OrThrow<T>(this Alberto.Result<T> result) =>
         result.IsSuccess ? result.Value : throw ToException(result.Problems);
 
     /// <summary>
@@ -54,7 +54,7 @@ public static class MutationResults
     }
 
     /// <inheritdoc cref="OrThrow(Task{Result})"/>
-    public static async Task<T> OrThrow<T>(this Task<Alberto.Dcb.Result<T>> commit)
+    public static async Task<T> OrThrow<T>(this Task<Alberto.Result<T>> commit)
     {
         try
         {

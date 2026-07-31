@@ -1,4 +1,4 @@
-using Alberto.Dcb.Tenancy;
+using Alberto.Tenancy;
 using Alberto.Orders.Api.GraphQL;
 using Alberto.Orders.Platform;
 using Alberto.Payments.Platform;

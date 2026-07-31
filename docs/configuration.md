@@ -489,7 +489,7 @@ Reported by `PostgresBackendDescriptor.Validate`, called from the same pass.
 ### Compile-time codes (ALB2xxx)
 
 Every code above is raised while the host is starting. `ALB2xxx` is a different kind of
-diagnostic: it comes from a Roslyn analyzer shipped inside `Alberto.Dcb.Commands`, so it
+diagnostic: it comes from a Roslyn analyzer shipped inside `Alberto.Commands`, so it
 appears in your build output and in your IDE, before anything runs. Referencing the
 package is all that is needed — NuGet picks up `analyzers/dotnet/cs` automatically.
 
@@ -532,7 +532,7 @@ public interface IAlbertoBackendDescriptor
 A minimal implementation:
 
 ```csharp
-using Alberto.Dcb.Configuration;
+using Alberto.Configuration;
 using Microsoft.Extensions.Configuration;
 
 namespace MyBackend;

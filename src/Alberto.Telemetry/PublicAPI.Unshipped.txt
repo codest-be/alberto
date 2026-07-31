@@ -1,0 +1,9 @@
+Alberto.Telemetry.ServiceCollectionExtensions
+Alberto.Telemetry.TelemetryBatchConsumeMiddleware
+Alberto.Telemetry.TelemetryBuilderExtensions
+Alberto.Telemetry.TelemetryConsumeMiddleware
+static Alberto.Telemetry.ServiceCollectionExtensions.AddAlbertoInstrumentation(this OpenTelemetry.Metrics.MeterProviderBuilder! builder) -> OpenTelemetry.Metrics.MeterProviderBuilder!
+static Alberto.Telemetry.ServiceCollectionExtensions.AddAlbertoInstrumentation(this OpenTelemetry.Trace.TracerProviderBuilder! builder) -> OpenTelemetry.Trace.TracerProviderBuilder!
+static Alberto.Telemetry.TelemetryBatchConsumeMiddleware.Create(Alberto.Diagnostics.ITraceContextProvider? traceContextProvider = null) -> Alberto.Subscriptions.BatchConsumeMiddleware!
+static Alberto.Telemetry.TelemetryBuilderExtensions.WithTelemetry(this Alberto.DcbModuleBuilder! builder, System.Func<Alberto.Configuration.TelemetryOptions!, Alberto.Configuration.TelemetryOptions!>? configure = null) -> Alberto.DcbModuleBuilder!
+static Alberto.Telemetry.TelemetryConsumeMiddleware.Create(Alberto.Diagnostics.ITraceContextProvider? traceContextProvider = null) -> Alberto.Subscriptions.ConsumeMiddleware!

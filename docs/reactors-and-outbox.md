@@ -182,9 +182,9 @@ Transport cleanup gets an independent cancellation token and is bounded to 30 se
 transport that ignores cancellation cannot hold host shutdown open forever. A cleanup failure is
 observable when the relay otherwise stopped normally. When startup or relay execution has already
 failed, that causal exception keeps precedence; the cleanup exception is attached to its `Data`
-dictionary under `Alberto.Dcb.Messaging.TransportStopException`.
+dictionary under `Alberto.Messaging.TransportStopException`.
 
-`InMemoryTransport` ships in `Alberto.Dcb.Messaging` for tests.
+`InMemoryTransport` ships in `Alberto.Messaging` for tests.
 
 ### Claim leases and relay crashes
 

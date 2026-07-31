@@ -276,18 +276,18 @@ without first calling `AcrossPostgresDatabases`.
 
 | Type | Where |
 |---|---|
-| `AcrossPostgresDatabases` | `Alberto.Dcb.Postgres.ShardingBuilderExtensions` |
-| `PostgresShardBuilder` | `Alberto.Dcb.Postgres` |
-| `PostgresTenantShardMap` | `Alberto.Dcb.Postgres` |
-| `ITenantShardMap` | `Alberto.Dcb.Tenancy` |
-| `TenantShardResolver` | `Alberto.Dcb.Tenancy` |
-| `ShardHealth` | `Alberto.Dcb.Tenancy` |
-| `ShardState` | `Alberto.Dcb.Tenancy` |
-| `ShardHealthCheck` | `Alberto.Dcb.Tenancy` |
-| `ShardRoutingEventStore` | `Alberto.Dcb.Tenancy` |
-| `ShardRoutingEventStoreBackend` | `Alberto.Dcb.Tenancy` |
-| `UnknownTenantException` | `Alberto.Dcb.Tenancy` |
-| `ShardUnavailableException` | `Alberto.Dcb.Tenancy` |
+| `AcrossPostgresDatabases` | `Alberto.Postgres.ShardingBuilderExtensions` |
+| `PostgresShardBuilder` | `Alberto.Postgres` |
+| `PostgresTenantShardMap` | `Alberto.Postgres` |
+| `ITenantShardMap` | `Alberto.Tenancy` |
+| `TenantShardResolver` | `Alberto.Tenancy` |
+| `ShardHealth` | `Alberto.Tenancy` |
+| `ShardState` | `Alberto.Tenancy` |
+| `ShardHealthCheck` | `Alberto.Tenancy` |
+| `ShardRoutingEventStore` | `Alberto.Tenancy` |
+| `ShardRoutingEventStoreBackend` | `Alberto.Tenancy` |
+| `UnknownTenantException` | `Alberto.Tenancy` |
+| `ShardUnavailableException` | `Alberto.Tenancy` |
 
 `ShardKey` is **not** experimental: it is used by Alberto's telemetry layer on every module,
 sharded or not, so marking it would emit ALB9001 for applications that have never opted into

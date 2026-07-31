@@ -1,0 +1,415 @@
+using Xunit;
+
+namespace Alberto.Tests;
+
+public class DcbQueryTests
+{
+    #region Factory Method Tests
+
+    [Fact]
+    public void Empty_ShouldCreateQueryWithNoFilters()
+    {
+        var query = DcbQuery.Empty;
+
+        Assert.True(query.IsEmpty);
+        Assert.Empty(query.Types);
+        Assert.Empty(query.Tags);
+    }
+
+    [Fact]
+    public void ByTypes_WithEventTypes_ShouldCreateTypesOnlyQuery()
+    {
+        var query = DcbQuery.ByTypes(new EventType("order-placed"), new EventType("order-cancelled"));
+
+        Assert.Equal(2, query.Types.Count);
+        Assert.Contains(query.Types, t => t.Id == "order-placed");
+        Assert.Contains(query.Types, t => t.Id == "order-cancelled");
+        Assert.True(query.HasTypesOnly);
+        Assert.False(query.HasTagsOnly);
+        Assert.False(query.HasTypesAndTags);
+        Assert.False(query.IsEmpty);
+    }
+
+    [Fact]
+    public void ByTypes_WithStrings_ShouldCreateTypesOnlyQuery()
+    {
+        var query = DcbQuery.ByTypes("order-placed", "order-cancelled");
+
+        Assert.Equal(2, query.Types.Count);
+        Assert.Contains(query.Types, t => t.Id == "order-placed");
+        Assert.Contains(query.Types, t => t.Id == "order-cancelled");
+    }
+
+    [Fact]
+    public void ByTags_WithEventTags_ShouldCreateTagsOnlyQuery()
+    {
+        var query = DcbQuery.ByTags(new EventTag("order", "123"), new EventTag("customer", "456"));
+
+        Assert.Equal(2, query.Tags.Count);
+        Assert.Contains(query.Tags, t => t.Value == "order:123");
+        Assert.Contains(query.Tags, t => t.Value == "customer:456");
+        Assert.True(query.HasTagsOnly);
+        Assert.False(query.HasTypesOnly);
+    }
+
+    [Fact]
+    public void ByTags_WithStrings_ShouldCreateTagsOnlyQuery()
+    {
+        var query = DcbQuery.ByTags("order:123", "customer:456");
+
+        Assert.Equal(2, query.Tags.Count);
+        Assert.Contains(query.Tags, t => t.Value == "order:123");
+    }
+
+    [Fact]
+    public void ByAllTags_WithStrings_ShouldCreateAllTagsQuery()
+    {
+        var query = DcbQuery.ByAllTags("reader:123", "source:456");
+
+        Assert.Equal(2, query.Tags.Count);
+        Assert.True(query.RequiresAllTags);
+        Assert.True(query.HasTagsOnly);
+    }
+
+    // A tag is always a full concept:id pair. "source:*" was once a concept-wide wildcard;
+    // now it is just an id of "*", which is not a legal id — so the DSL rejects it rather
+    // than quietly matching a single tag literally named "source:*".
+    [Theory]
+    [InlineData("source:*")]
+    [InlineData("order:*")]
+    public void ByTags_WithAConceptWildcard_ShouldThrow(string wildcard)
+    {
+        Assert.Throws<ArgumentException>(() => DcbQuery.ByTags("reader:123", wildcard));
+        Assert.Throws<ArgumentException>(() => DcbQuery.ByAllTags("reader:123", wildcard));
+        Assert.Throws<ArgumentException>(() => DcbQuery.Empty.WithTags(wildcard));
+    }
+
+    [Fact]
+    public void For_WithStringId_ShouldCreateSingleTagQuery()
+    {
+        var query = DcbQuery.For("order", "123");
+
+        Assert.Single(query.Tags);
+        Assert.Equal("order:123", query.Tags.First().Value);
+        Assert.True(query.HasTagsOnly);
+    }
+
+    [Fact]
+    public void For_WithGuidId_ShouldCreateSingleTagQuery()
+    {
+        var id = Guid.NewGuid();
+        var query = DcbQuery.For("order", id);
+
+        Assert.Single(query.Tags);
+        Assert.Equal($"order:{id}", query.Tags.First().Value);
+    }
+
+    [Fact]
+    public void For_WithIntId_ShouldCreateSingleTagQuery()
+    {
+        var query = DcbQuery.For("product", 42);
+
+        Assert.Single(query.Tags);
+        Assert.Equal("product:42", query.Tags.First().Value);
+    }
+
+    [Fact]
+    public void For_WithLongId_ShouldCreateSingleTagQuery()
+    {
+        var query = DcbQuery.For("product", 9999999999L);
+
+        Assert.Single(query.Tags);
+        Assert.Equal("product:9999999999", query.Tags.First().Value);
+    }
+
+    [Fact]
+    public void For_Generic_ShouldCreateSingleTagQuery()
+    {
+        var id = Guid.NewGuid();
+        var query = DcbQuery.For<Guid>("order", id);
+
+        Assert.Single(query.Tags);
+        Assert.Equal($"order:{id}", query.Tags.First().Value);
+    }
+
+    [Fact]
+    public void For_Chaining_ShouldAddTypes()
+    {
+        var id = Guid.NewGuid();
+        var query = DcbQuery.For("order", id).WithTypes("order-placed", "order-cancelled");
+
+        Assert.Single(query.Tags);
+        Assert.Equal(2, query.Types.Count);
+        Assert.True(query.HasTypesAndTags);
+    }
+
+    #endregion
+
+    #region Builder Method Tests
+
+    [Fact]
+    public void WithTypes_ShouldAddTypes()
+    {
+        var query = DcbQuery.Empty
+            .WithTypes(new EventType("order-placed"))
+            .WithTypes(new EventType("order-cancelled"));
+
+        Assert.Equal(2, query.Types.Count);
+    }
+
+    [Fact]
+    public void WithTypes_Strings_ShouldAddTypes()
+    {
+        var query = DcbQuery.Empty
+            .WithTypes("order-placed", "order-cancelled");
+
+        Assert.Equal(2, query.Types.Count);
+    }
+
+    [Fact]
+    public void WithTags_ShouldAddExactTags()
+    {
+        var query = DcbQuery.Empty
+            .WithTags(new EventTag("order", "123"))
+            .WithTags(new EventTag("customer", "456"));
+
+        Assert.Equal(2, query.Tags.Count);
+    }
+
+    [Fact]
+    public void WithTags_Strings_ShouldAddExactTags()
+    {
+        var query = DcbQuery.Empty
+            .WithTags("order:123", "customer:456");
+
+        Assert.Equal(2, query.Tags.Count);
+    }
+
+    [Fact]
+    public void WithTag_ShouldAddSingleTag()
+    {
+        var query = DcbQuery.Empty
+            .WithTag("order", "123");
+
+        Assert.Single(query.Tags);
+        Assert.Equal("order:123", query.Tags.First().Value);
+    }
+
+    [Fact]
+    public void CombiningTypesAndTags_ShouldSetHasTypesAndTags()
+    {
+        var query = DcbQuery.Empty
+            .WithTypes("order-placed")
+            .WithTags("order:123");
+
+        Assert.True(query.HasTypesAndTags);
+        Assert.False(query.HasTypesOnly);
+        Assert.False(query.HasTagsOnly);
+        Assert.False(query.IsEmpty);
+    }
+
+    #endregion
+
+    #region Property Tests
+
+    [Fact]
+    public void Tags_ShouldPreserveEveryTagAdded()
+    {
+        var query = DcbQuery.Empty
+            .WithTags("order:123", "customer:789", "product:456");
+
+        var tags = query.Tags;
+
+        Assert.Equal(3, tags.Count);
+        Assert.Contains(tags, t => t.Value == "order:123");
+        Assert.Contains(tags, t => t.Value == "customer:789");
+        Assert.Contains(tags, t => t.Value == "product:456");
+    }
+
+    #endregion
+
+    #region ToString Tests
+
+    [Fact]
+    public void ToString_EmptyQuery_ShouldReturnStar()
+    {
+        var query = DcbQuery.Empty;
+
+        Assert.Equal("*", query.ToString());
+    }
+
+    [Fact]
+    public void ToString_TypesOnly_ShouldShowTypes()
+    {
+        var query = DcbQuery.ByTypes("order-placed", "order-cancelled");
+
+        var result = query.ToString();
+
+        Assert.Contains("types=", result);
+        Assert.Contains("order-placed", result);
+        Assert.Contains("order-cancelled", result);
+    }
+
+    [Fact]
+    public void ToString_TagsOnly_ShouldShowTags()
+    {
+        var query = DcbQuery.ByTags("order:123");
+
+        var result = query.ToString();
+
+        Assert.Contains("tags=", result);
+        Assert.Contains("order:123", result);
+    }
+
+    [Fact]
+    public void ToString_AllTagsOnly_ShouldShowAllTagsMarker()
+    {
+        var query = DcbQuery.ByAllTags("reader:123", "source:456");
+
+        var result = query.ToString();
+
+        Assert.Contains("tags(all)=", result);
+        Assert.Contains("reader:123", result);
+        Assert.Contains("source:456", result);
+    }
+
+    [Fact]
+    public void ToString_TypesAndTags_ShouldShowBothWithAndByDefault()
+    {
+        var query = DcbQuery.Empty
+            .WithTypes("order-placed")
+            .WithTags("customer:123");
+
+        var result = query.ToString();
+
+        Assert.Contains("types=", result);
+        Assert.Contains("tags=", result);
+        Assert.Contains("AND", result);
+    }
+
+    [Fact]
+    public void ToString_TypesAndTags_AsUnion_ShouldShowOr()
+    {
+        var query = DcbQuery.Empty
+            .WithTypes("order-placed")
+            .WithTags("customer:123")
+            .AsUnion();
+
+        var result = query.ToString();
+
+        Assert.Contains("types=", result);
+        Assert.Contains("tags=", result);
+        Assert.Contains("OR", result);
+    }
+
+    #endregion
+
+    #region CompositionMode Tests
+
+    [Fact]
+    public void Default_CompositionMode_ShouldBeIntersect()
+    {
+        var query = DcbQuery.Empty
+            .WithTypes("order-placed")
+            .WithTags("customer:123");
+
+        Assert.Equal(CompositionMode.Intersect, query.CompositionMode);
+        Assert.True(query.IntersectsTypesAndTags);
+        Assert.False(query.UnionsTypesAndTags);
+    }
+
+    [Fact]
+    public void AsUnion_ShouldFlipToUnion()
+    {
+        var query = DcbQuery.Empty
+            .WithTypes("order-placed")
+            .WithTags("customer:123")
+            .AsUnion();
+
+        Assert.Equal(CompositionMode.Union, query.CompositionMode);
+        Assert.False(query.IntersectsTypesAndTags);
+        Assert.True(query.UnionsTypesAndTags);
+    }
+
+    [Fact]
+    public void AsIntersect_ShouldFlipBackToIntersect()
+    {
+        var query = DcbQuery.Empty
+            .WithTypes("order-placed")
+            .WithTags("customer:123")
+            .AsUnion()
+            .AsIntersect();
+
+        Assert.Equal(CompositionMode.Intersect, query.CompositionMode);
+    }
+
+    [Fact]
+    public void IntersectsTypesAndTags_RequiresBothAxes()
+    {
+        Assert.False(DcbQuery.ByTypes("order-placed").IntersectsTypesAndTags);
+        Assert.False(DcbQuery.ByTags("order:123").IntersectsTypesAndTags);
+    }
+
+    [Fact]
+    public void AsUnion_ShouldPreserveTypesTagsAndMatchMode()
+    {
+        var query = DcbQuery.ByAllTags("reader:1", "source:2")
+            .WithTypes("source-followed")
+            .AsUnion();
+
+        Assert.Equal(2, query.Tags.Count);
+        Assert.Single(query.Types);
+        Assert.Equal(TagMatchMode.All, query.TagMatchMode);
+        Assert.Equal(CompositionMode.Union, query.CompositionMode);
+    }
+
+    #endregion
+
+    #region Immutability Tests
+
+    [Fact]
+    public void WithTypes_ShouldNotModifyOriginal()
+    {
+        var original = DcbQuery.ByTypes("order-placed");
+        var modified = original.WithTypes("order-cancelled");
+
+        Assert.Single(original.Types);
+        Assert.Equal(2, modified.Types.Count);
+    }
+
+    [Fact]
+    public void WithTags_ShouldNotModifyOriginal()
+    {
+        var original = DcbQuery.ByTags("order:123");
+        var modified = original.WithTags("customer:456");
+
+        Assert.Single(original.Tags);
+        Assert.Equal(2, modified.Tags.Count);
+    }
+
+    [Fact]
+    public void ByTypes_ShouldSnapshotCallerOwnedArray()
+    {
+        var supplied = new[] { new EventType("order-placed") };
+        var query = DcbQuery.ByTypes(supplied);
+
+        supplied[0] = new EventType("order-cancelled");
+
+        Assert.Equal("order-placed", Assert.Single(query.Types).Id);
+        Assert.False(query.Types is EventType[]);
+    }
+
+    [Fact]
+    public void ByTags_ShouldSnapshotCallerOwnedArray()
+    {
+        var supplied = new[] { new EventTag("order", "123") };
+        var query = DcbQuery.ByTags(supplied);
+
+        supplied[0] = new EventTag("customer", "456");
+
+        Assert.Equal("order:123", Assert.Single(query.Tags).Value);
+        Assert.False(query.Tags is EventTag[]);
+    }
+
+    #endregion
+}

@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+        <!-- Package Metadata -->
+        <PackageId>Alberto.Testing.Xunit</PackageId>
+        <Title>Alberto DCB Event Store - Backend Conformance Suite</Title>
+        <Description>xUnit contract specifications for Alberto DCB backend implementations. Derive from these to run Alberto's own conformance suite against your event store, checkpoint store, state store, dead-letter store or outbox.</Description>
+        <IsPackable>true</IsPackable>
+        <RootNamespace>Alberto.Testing.Xunit</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Alberto\Alberto.csproj" />
+        <ProjectReference Include="..\Alberto.Messaging\Alberto.Messaging.csproj" />
+        <ProjectReference Include="..\Alberto.Testing\Alberto.Testing.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <!-- These packages are test-only infrastructure. PrivateAssets="all" prevents them from
+             flowing transitively to consumers of this conformance package. FluentAssertions 8.x in
+             particular is under the Xceed Community License (paid for commercial use) and must not
+             leak into the dependency graph of application packages. -->
+        <PackageReference Include="xunit.v3.extensibility.core">
+            <PrivateAssets>all</PrivateAssets>
+        </PackageReference>
+        <PackageReference Include="xunit.v3.assert">
+            <PrivateAssets>all</PrivateAssets>
+        </PackageReference>
+        <PackageReference Include="FluentAssertions">
+            <PrivateAssets>all</PrivateAssets>
+        </PackageReference>
+        <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing">
+            <PrivateAssets>all</PrivateAssets>
+        </PackageReference>
+    </ItemGroup>
+</Project>
