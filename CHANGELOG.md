@@ -200,6 +200,29 @@ entries are ever eligible; `pending`, `processing` and `failed` are work, not hi
 removed by age. **Run migration 034 before deploying the new binary** — it adds the partial index on
 `delivered_at` the sweep needs, without which the DELETE is a sequential scan.
 
+### Changed
+
+- **Breaking — everything renamed from `Alberto.Dcb.*` to `Alberto.*`.** Package IDs, assemblies,
+  namespaces and directories all moved together. `Alberto.Dcb` is now `Alberto`,
+  `Alberto.Dcb.Postgres` is now `Alberto.Postgres`, and so on for all ten packages. Types whose
+  names contain `Dcb` — `DcbQuery`, `DcbModuleBuilder` — are unchanged.
+- **Breaking — `Alberto.Dcb.Postgres.Messaging` is now `Alberto.Messaging.Postgres`.** Package
+  segments now read feature-first, matching `Alberto.Testing` / `Alberto.Testing.Xunit` and .NET
+  convention generally.
+- **Breaking — the command pipeline moved out of the core namespace.** `AlbertoStore`,
+  `CommandPipeline<T>`, `BoundPipeline<T,S>`, `UnboundPipeline<T,S>`, `BoundDecision`,
+  `UnboundDecision`, `DeciderExtensions` and `AlbertoStoreBuilderExtensions` now live in
+  `Alberto.Commands`. `Result`, `Decision` and `Problem` are core types and stay in `Alberto`.
+  Call sites need `using Alberto.Commands;`.
+- **Breaking — existing PostgreSQL stores cannot be upgraded across this rename.** DbUp records
+  each executed migration in `schemaversions` by its embedded-resource name, and those names
+  carry the assembly name. Every script's recorded name changed, so DbUp sees all 34 as pending
+  and a replay against a migrated database fails. Drop and recreate any store created before
+  this version. No bridging script is provided; there were no published packages and no external
+  consumers at the time of the rename.
+- **Breaking — the OpenTelemetry meter and ActivitySource are now named `Alberto`**, not
+  `Alberto.Dcb`. Update any collector filter, dashboard or alert that matches on the old name.
+
 ### Added
 
 - **A backup and recovery page.** [docs/backup-and-recovery.md](docs/backup-and-recovery.md) states
@@ -318,6 +341,9 @@ removed by age. **Run migration 034 before deploying the new binary** — it add
 
 ### Removed
 
+- The operator CLI is no longer published as a NuGet tool. It had not packed since the
+  `IsPackable` default changed, and it is not part of the 1.0 surface. Run it from the repo with
+  `dotnet run --project tools/Alberto.Cli`.
 - `BatchedEfProjection<TState>` and `IEfBatchHandler<TState>` — see Breaking changes above.
 - Wildcard concept-tag boundaries removed from the query DSL and the PostgreSQL backend.
   Use explicit per-concept tag boundaries instead.

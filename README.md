@@ -99,9 +99,11 @@ dotnet add package Alberto --prerelease
 | `Alberto.Messaging` | Transactional outbox abstractions |
 | `Alberto.Messaging.Postgres` | PostgreSQL outbox store |
 | `Alberto.Telemetry` | OpenTelemetry tracing and metrics |
-| `Alberto.Cli` | The `alberto` operator CLI (`dotnet tool install`) |
+| `Alberto.Testing` | In-memory test helpers (`InMemoryAlbertoModule`, assertion extensions) |
+| `Alberto.Testing.Xunit` | xUnit v3 test fixtures and collection definitions |
 
-All libraries target **net10.0**. The CLI is a net10.0 tool.
+All libraries target **net10.0**. The operator CLI (`alberto`) is not a NuGet tool package; run
+it from the repo with `dotnet run --project tools/Alberto.Cli`.
 
 ## Sixty seconds
 
