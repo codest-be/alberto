@@ -98,38 +98,38 @@ public sealed class MigrationUpgradeAndParityTests
     // =========================================================================
 
     /// <summary>
-    /// Simulates a real-world upgrade: applies scripts 001-008 directly via Npgsql,
-    /// records them in the DbUp journal so that the migrator treats them as already-applied,
+    /// Simulates a real-world upgrade: applies <c>001_InitialSchema.sql</c> directly via Npgsql,
+    /// records it in the DbUp journal so that the migrator treats it as already-applied,
     /// then calls <see cref="PostgresMigrator.Migrate"/> which executes only the remaining
-    /// scripts (009+).  Asserts both that the migration succeeds and that the resulting schema
-    /// shape matches the expected post-migration state.
+    /// script (<c>002_QueryFunctions.sql</c>).  Asserts both that the migration succeeds and
+    /// that the resulting schema shape matches the expected post-migration state.
     /// </summary>
     /// <remarks>
     /// Each upgrade test spins up its own isolated container so the two variants do not
     /// interfere with each other. These cannot move onto the shared
     /// <see cref="Infrastructure.PostgresCluster"/>: they exercise the migrator itself from a
-    /// pre-009 baseline, so they need a database that has never been migrated, which is
+    /// base schema baseline, so they need a database that has never been migrated, which is
     /// precisely what the cluster's templates are not.
     /// </remarks>
     [Fact]
-    public async Task MultiTenant_UpgradesFromPre009Schema_ToCurrentMigrations_Successfully()
+    public async Task MultiTenant_UpgradesFromBaseSchema_ToCurrentMigrations_Successfully()
     {
         await using var container = new PostgreSqlBuilder("postgres:16-alpine").Build();
         await container.StartAsync();
         var connectionString = container.GetConnectionString();
 
-        // Phase 1: apply scripts 001-008 directly + record in DbUp journal.
-        await ApplyScriptsAndPopulateJournalAsync(connectionString, singleTenant: false, upToScriptNumber: 8);
+        // Phase 1: apply 001_InitialSchema.sql directly + record in DbUp journal.
+        await ApplyScriptsAndPopulateJournalAsync(connectionString, singleTenant: false, upToScriptNumber: 1);
 
-        // Phase 2: run the full migrator — should only apply 009+ since 001-008 are journaled.
+        // Phase 2: run the full migrator — should only apply 002+ since 001 is journaled.
         var result = PostgresMigrator.Migrate(connectionString, singleTenant: false);
         result.Successful.Should().BeTrue(because: result.Error?.Message ?? "migration failed");
 
-        // The migrator should have run scripts 009 through the current highest number.
-        result.ExecutedScripts.Should().NotBeEmpty(because: "scripts 009+ must have been applied");
+        // The migrator should have run 002_QueryFunctions.sql.
+        result.ExecutedScripts.Should().NotBeEmpty(because: "002_QueryFunctions.sql must have been applied");
         result.ExecutedScripts.Should().OnlyContain(
-            s => ParseScriptNumber(s, MultiTenantPrefix) >= 9,
-            because: "only scripts numbered 009 or later should have been executed in phase 2");
+            s => ParseScriptNumber(s, MultiTenantPrefix) >= 2,
+            because: "only scripts numbered 002 or later should have been executed in phase 2");
 
         // Assert expected schema shape after the full migration.
         await using var conn = new NpgsqlConnection(connectionString);
@@ -181,23 +181,23 @@ public sealed class MigrationUpgradeAndParityTests
     }
 
     [Fact]
-    public async Task SingleTenant_UpgradesFromPre009Schema_ToCurrentMigrations_Successfully()
+    public async Task SingleTenant_UpgradesFromBaseSchema_ToCurrentMigrations_Successfully()
     {
         await using var container = new PostgreSqlBuilder("postgres:16-alpine").Build();
         await container.StartAsync();
         var connectionString = container.GetConnectionString();
 
-        // Phase 1: apply scripts 001-008 directly + record in DbUp journal.
-        await ApplyScriptsAndPopulateJournalAsync(connectionString, singleTenant: true, upToScriptNumber: 8);
+        // Phase 1: apply 001_InitialSchema.sql directly + record in DbUp journal.
+        await ApplyScriptsAndPopulateJournalAsync(connectionString, singleTenant: true, upToScriptNumber: 1);
 
-        // Phase 2: run the full migrator — should only apply 009+ since 001-008 are journaled.
+        // Phase 2: run the full migrator — should only apply 002+ since 001 is journaled.
         var result = PostgresMigrator.Migrate(connectionString, singleTenant: true);
         result.Successful.Should().BeTrue(because: result.Error?.Message ?? "migration failed");
 
-        result.ExecutedScripts.Should().NotBeEmpty(because: "scripts 009+ must have been applied");
+        result.ExecutedScripts.Should().NotBeEmpty(because: "002_QueryFunctions.sql must have been applied");
         result.ExecutedScripts.Should().OnlyContain(
-            s => ParseScriptNumber(s, SingleTenantPrefix) >= 9,
-            because: "only scripts numbered 009 or later should have been executed in phase 2");
+            s => ParseScriptNumber(s, SingleTenantPrefix) >= 2,
+            because: "only scripts numbered 002 or later should have been executed in phase 2");
 
         // Assert expected schema shape after the full migration.
         await using var conn = new NpgsqlConnection(connectionString);

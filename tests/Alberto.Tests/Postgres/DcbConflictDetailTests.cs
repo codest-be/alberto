@@ -39,10 +39,11 @@ public sealed class DcbConflictDetailTests
 
     /// <summary>
     /// Below this, assume the scan is broken rather than that the raises went away. The current
-    /// count is far higher; the floor only has to be high enough that a regex which stopped
-    /// matching, or a resource lookup that returned nothing, cannot pass.
+    /// count is ~20 (10 per tenancy mode in 002_QueryFunctions.sql); the floor only has to be
+    /// high enough that a regex which stopped matching, a missing file, or a resource lookup
+    /// that returned nothing cannot pass.
     /// </summary>
-    private const int MinimumExpectedRaises = 40;
+    private const int MinimumExpectedRaises = 15;
 
     [Fact]
     public void Every_conflict_raise_in_the_migrations_reports_a_parseable_position()
