@@ -62,6 +62,7 @@ jobs:
           PR_INPUT: ${{ inputs.pr }}
           LINE_INPUT: ${{ inputs.line }}
           PR_EVENT: ${{ github.event.pull_request.number }}
+          HAS_RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN != '' }}
         run: |
           set -euo pipefail
 
@@ -154,6 +155,15 @@ jobs:
               "No changelog entry here. It is written when \`$TARGET\` is released, by the" \
               "**Release** workflow run from that branch." \
               > /tmp/pr-body.md
+
+            if [ "${HAS_RELEASE_TOKEN}" != "true" ]; then
+              printf '%s\n' "" \
+                "> **No checks will appear on this pull request.** It was opened with the" \
+                "> built-in \`GITHUB_TOKEN\`, and GitHub does not trigger workflow runs for" \
+                "> those. **Close it and reopen it** to start them. A \`RELEASE_TOKEN\` secret" \
+                "> removes this step; see docs/releasing.md." \
+                >> /tmp/pr-body.md
+            fi
 
             gh pr create \
               --repo "$REPO" \

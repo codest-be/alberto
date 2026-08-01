@@ -45,12 +45,13 @@ jobs:
     steps:
       # fetch-depth: 0 — compute-version.sh needs tags and the commits since the last one.
       #
-      # RELEASE_TOKEN, if set, is a personal access token or GitHub App token with `repo` scope.
-      # It exists because a pull request opened with the built-in GITHUB_TOKEN does not trigger
-      # workflow runs — GitHub suppresses them to stop workflows recursing. The release pull
-      # request would then have no CI, and could never satisfy a required status check. With
-      # RELEASE_TOKEN set, checks run normally; without it, close and reopen the pull request by
-      # hand to kick them off.
+      # RELEASE_TOKEN, if set, is a fine-grained token scoped to this repository with Contents
+      # and Pull requests write — see docs/releasing.md for the exact permissions. It exists
+      # because a pull request opened with the built-in GITHUB_TOKEN does not trigger workflow
+      # runs: GitHub suppresses them to stop workflows recursing. The release pull request would
+      # then have no CI and could never satisfy a required status check. Without the secret the
+      # workflow still works and says so on the pull request it opens — close and reopen it to
+      # start the checks.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -116,6 +117,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
           VERSION: ${{ steps.version.outputs.version }}
+          HAS_RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN != '' }}
         run: |
           BRANCH="release-prep/v${VERSION}"
 
@@ -143,6 +145,15 @@ jobs:
             echo "written to be found rather than to be read, and this is the one editing pass a"
             echo "release gets. Fold in the migration steps for anything labelled \`breaking-change\`."
             echo
+            if [ "${HAS_RELEASE_TOKEN}" != "true" ]; then
+              echo "> **No checks will appear on this pull request.** It was opened with the"
+              echo "> built-in \`GITHUB_TOKEN\`, and GitHub does not trigger workflow runs for"
+              echo "> those. **Close this pull request and reopen it** to start them — the"
+              echo "> required checks cannot be satisfied otherwise. Setting a \`RELEASE_TOKEN\`"
+              echo "> secret removes this step; see docs/releasing.md."
+              echo
+            fi
+
             echo "Once this is merged, tag the merge commit to publish:"
             echo
             echo '```'
