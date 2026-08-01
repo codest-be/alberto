@@ -7,7 +7,7 @@
         <Copyright>Copyright © 2025 Alberto</Copyright>
 
         <!-- Version -->
-        <VersionPrefix>0.1.1</VersionPrefix>
+        <VersionPrefix>0.1.2</VersionPrefix>
 
         <!-- Repository Information -->
         <RepositoryUrl>https://github.com/codest-be/alberto</RepositoryUrl>
@@ -49,8 +49,11 @@
 
     <ItemGroup Condition="'$(IsPackable)' == 'true'">
         <!-- README.md lives at the repo root; PackagePath="\" places it at the nupkg root
-             where NuGet gallery tooling looks for it. -->
+             where NuGet gallery tooling looks for it. Same for the package icon — both are
+             named by properties in Directory.Build.targets, which is where they have to be
+             set (see the comment at the top of that file). -->
         <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="\" />
+        <None Include="$(MSBuildThisFileDirectory)icon.png" Pack="true" PackagePath="\" />
 
         <!-- SourceLink — PrivateAssets="All" keeps this dev-time reference out of the dependency
              graph that consumers see; it is compile-time only. -->

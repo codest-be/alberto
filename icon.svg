@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <g id="bars">
+      <rect x="40" y="72"  width="176" height="34" rx="17"/>
+      <rect x="40" y="111" width="176" height="34" rx="17"/>
+      <rect x="40" y="150" width="176" height="34" rx="17"/>
+    </g>
+    <clipPath id="blade">
+      <polygon points="136,52 186,52 156,204 106,204"/>
+    </clipPath>
+  </defs>
+
+  <rect width="256" height="256" rx="58" fill="#171A2E"/>
+
+  <!-- the fat log: everything that was ever appended -->
+  <use href="#bars" fill="#3E4670"/>
+
+  <!-- one boundary, cutting straight through it -->
+  <g clip-path="url(#blade)">
+    <use href="#bars" fill="#F2A33C"/>
+  </g>
+</svg>

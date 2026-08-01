@@ -38,13 +38,11 @@
              repository to resolve a relative path against. -->
         <PackageReadmeFile>README.md</PackageReadmeFile>
 
-        <!--
-            TODO (human task — cannot be authored here): icon.png
-            Once a square PNG icon (128×128 or 256×256) is committed to the repo root:
-              <PackageIcon>icon.png</PackageIcon>
-            and add the following to the ItemGroup in Directory.Build.props:
-              <None Include="$(MSBuildThisFileDirectory)icon.png" Pack="true" PackagePath="\" />
-        -->
+        <!-- The embedded icon, not the deprecated iconUrl. icon.svg at the repo root is the
+             source; icon.png is rendered from it at 256×256 and is what ships, because NuGet
+             accepts only PNG and JPEG. Regenerate with:
+               rsvg-convert -w 256 -h 256 icon.svg -o icon.png -->
+        <PackageIcon>icon.png</PackageIcon>
     </PropertyGroup>
 
 </Project>
