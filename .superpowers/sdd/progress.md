@@ -204,3 +204,25 @@ Task 2: complete (commits 77e8376..f253705, review clean)
   NOTE for Task 7: 'Push symbols' has if: always() — nuget.org push must not inherit it.
 Task 3: complete (commits f253705..8d38ad1, review clean; analyzer FQN strings updated)
 Task 4: complete (commits 8d38ad1..c32c189, review clean)
+
+### Task 9 — release (partial) + repo lockdown
+
+- PR #75 merged to `main` as squash `19fa4fb`; CI green (11m32s); branch deleted.
+- Secret scan of tree + ~400 history commits: clean. Repo flipped to **public**.
+- Branch protection: free-plan orgs get 403 on rulesets/protection for *private* repos —
+  hence the order merge → public → ruleset. Ruleset `20174288` "protect main" is active on
+  `~DEFAULT_BRANCH`: pull_request (1 approval, dismiss stale, require last push approval),
+  required_status_checks (`build-test`), deletion, non_fast_forward. Bypass = OrganizationAdmin
+  only. VDBBjorn is the sole collaborator (admin), so approval and merge are theirs alone.
+  Bypass is deliberate: GitHub forbids self-approval, so without it a solo maintainer could
+  never merge their own PR.
+- Publish run 30688959108 (branch push) succeeded: packed exactly the 10-ID allowlist,
+  `0.1.0-beta.127` to GitHub Packages, `Log in to nuget.org` and `Push to nuget.org` **skipped**.
+  Version gating verified live.
+- Pre-existing GitHub Packages from before gating still exist and are **private**:
+  `Alberto.Dcb.*` (10), `Alberto.Cli`, `Alberto.Dcb.Admin`. Not deleted — irreversible and
+  out of scope. Never reached nuget.org.
+
+**BLOCKED at the tag.** `gh secret list` is empty: `NUGET_USER` is unset and `NuGet/login@v1`
+fails without it. Its value is the owner's nuget.org profile name — a credential the assistant
+must not obtain or enter. Owner action, then `git tag v0.1.0 && git push origin v0.1.0`.
