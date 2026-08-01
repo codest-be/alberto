@@ -43,7 +43,7 @@ green, that is the gate working.
 **Adding public API.** Build, then either apply the "Add to public API" fix in the IDE, or run:
 
 ```bash
-dotnet format analyzers src/Alberto.Dcb/Alberto.Dcb.csproj --diagnostics RS0016 --severity error
+dotnet format analyzers src/Alberto/Alberto.csproj --diagnostics RS0016 --severity error
 ```
 
 Either way the new entries land in `PublicAPI.Unshipped.txt`. **Read that diff before committing
@@ -80,7 +80,7 @@ the old interface. There is no way to walk that back short of a major version.
 
 So the rule is: **after 1.0, new members on these interfaces ship with a default implementation.**
 
-`ExtensionPointContractTests` in `tests/Alberto.Dcb.Tests` enforces it by pinning today's abstract
+`ExtensionPointContractTests` in `tests/Alberto.Tests` enforces it by pinning today's abstract
 member set on `IEventStoreBackend`, `IDeadLetterStore`, `IClaimableDeadLetterStore` and
 `IProjectionRebuildStore`. A member added with a default body does not appear in the reflected
 abstract set and the test stays green.
@@ -129,7 +129,7 @@ crash in a handler that assumed the field was populated.
 
 This defect was introduced three separate times in three different places, each time with
 a green test sitting next to it.  The rule is enforced by a source-scanning guard test in
-`tests/Alberto.Dcb.Tests/UpcasterBypassGuardTests.cs`.
+`tests/Alberto.Tests/UpcasterBypassGuardTests.cs`.
 
 ### How to obtain an EventSerializer
 

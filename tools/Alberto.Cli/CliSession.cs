@@ -33,7 +33,7 @@ public sealed class CliSession
 
     /// <summary>
     /// Who to record as having performed a mutation. Every destructive command routes through
-    /// <see cref="Alberto.Dcb.Admin.IAdminOperator"/>, which appends an audit event carrying this
+    /// <see cref="Alberto.Admin.IAdminOperator"/>, which appends an audit event carrying this
     /// value in the same transaction as the change.
     /// </summary>
     /// <remarks>

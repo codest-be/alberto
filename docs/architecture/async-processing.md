@@ -24,7 +24,7 @@ Checkpoint saved (CachingCheckpointStore → PostgresCheckpointStore)
 
 ## The control loop
 
-`ControlLoop` (`src/Alberto.Dcb/Subscriptions/ControlLoop.cs`) is the central coordinator. One loop runs per module; `ControlLoopGroup` owns the set.
+`ControlLoop` (`src/Alberto/Subscriptions/ControlLoop.cs`) is the central coordinator. One loop runs per module; `ControlLoopGroup` owns the set.
 
 Each cycle:
 
@@ -36,7 +36,7 @@ Each cycle:
 
 ### Middleware
 
-`MiddlewareRunner` (`src/Alberto.Dcb/Subscriptions/MiddlewareRunner.cs`) builds two chains from the same generic core:
+`MiddlewareRunner` (`src/Alberto/Subscriptions/MiddlewareRunner.cs`) builds two chains from the same generic core:
 
 | Chain | Context | Middleware file |
 |-------|---------|-----------------|
@@ -79,7 +79,7 @@ A separate retry loop picks up dead letters that an operator has marked for retr
 
 Transforms events into read-model state using pure functions.
 
-**Location:** `src/Alberto.Dcb/Subscriptions/DeclaredAsyncProjection.cs`
+**Location:** `src/Alberto/Subscriptions/DeclaredAsyncProjection.cs`
 
 1. Extract document ID from the event
 2. Get the tenant-scoped state store (one store per tenant, built lazily from the factory)
@@ -91,7 +91,7 @@ Transforms events into read-model state using pure functions.
 
 Handles side effects in response to events.
 
-**Location:** `src/Alberto.Dcb/Subscriptions/FunctionalReactor.cs`
+**Location:** `src/Alberto/Subscriptions/FunctionalReactor.cs`
 
 Reactors are registered declaratively via `ReactTo<TEvent>(handler, processorId, ...)` on the
 module builder, not as classes. Each call wraps the supplied delegate in a `FunctionalReactor<TEvent>`
@@ -114,7 +114,7 @@ The Postgres backend wires `CachingCheckpointStore` over `PostgresCheckpointStor
 
 ### PostgresEventListener
 
-**Location:** `src/Alberto.Dcb.Postgres/PostgresEventListener.cs`
+**Location:** `src/Alberto.Postgres/PostgresEventListener.cs`
 
 LISTENs on the `{schema}_events` channel and raises `IEventAppendedSignal` so the control loop wakes immediately instead of waiting for the next poll. The trigger that emits the notification is in `010_BatchNotifyTrigger.sql` and fires once per append batch, not once per event.
 
@@ -263,29 +263,29 @@ Calling `JsonSerializer.Deserialize`, `JsonDocument.Parse`, or `JsonNode.Parse` 
 missing or default fields instead of the current event shape.
 
 This invariant is enforced by a source-scanning guard in
-`tests/Alberto.Dcb.Tests/UpcasterBypassGuardTests.cs`.  See CONTRIBUTING.md §"Event deserialization
+`tests/Alberto.Tests/UpcasterBypassGuardTests.cs`.  See CONTRIBUTING.md §"Event deserialization
 rule" for how to add a file to the allow-list when non-event JSON deserialization is legitimate.
 
 ## Key Files
 
 | Component | File |
 |-----------|------|
-| ControlLoop | `src/Alberto.Dcb/Subscriptions/ControlLoop.cs` |
-| ControlLoopGroup | `src/Alberto.Dcb/Subscriptions/ControlLoopGroup.cs` |
-| MiddlewareRunner | `src/Alberto.Dcb/Subscriptions/MiddlewareRunner.cs` |
-| Retry / dead-letter core | `src/Alberto.Dcb/Subscriptions/RetryAndDeadLetterCore.cs` |
-| Single-event middleware | `src/Alberto.Dcb/Subscriptions/ConsumeMiddleware.cs` |
-| Batch middleware | `src/Alberto.Dcb/Subscriptions/BatchConsumeMiddleware.cs` |
-| RetryOptions | `src/Alberto.Dcb/Configuration/RetryOptions.cs` |
-| IErrorClassifier | `src/Alberto.Dcb/Subscriptions/IErrorClassifier.cs` |
-| DeclaredAsyncProjection | `src/Alberto.Dcb/Subscriptions/DeclaredAsyncProjection.cs` |
-| FunctionalReactor | `src/Alberto.Dcb/Subscriptions/FunctionalReactor.cs` |
-| CachingCheckpointStore | `src/Alberto.Dcb/Subscriptions/CachingCheckpointStore.cs` |
-| PostgresCheckpointStore | `src/Alberto.Dcb.Postgres/PostgresCheckpointStore.cs` |
-| PostgresEventListener | `src/Alberto.Dcb.Postgres/PostgresEventListener.cs` |
-| EfStateStore | `src/Alberto.Dcb.EntityFramework/EfStateStore.cs` |
-| RebuildCoordinator | `src/Alberto.Dcb/Subscriptions/RebuildCoordinator.cs` |
-| ProjectionVersions | `src/Alberto.Dcb/Subscriptions/ProjectionVersions.cs` |
-| IProjectionRebuildStore | `src/Alberto.Dcb/Subscriptions/IProjectionRebuildStore.cs` |
-| PostgresProjectionRebuildStore | `src/Alberto.Dcb.Postgres/PostgresProjectionRebuildStore.cs` |
-| NOTIFY trigger | `src/Alberto.Dcb.Postgres/Migrations/010_BatchNotifyTrigger.sql` |
+| ControlLoop | `src/Alberto/Subscriptions/ControlLoop.cs` |
+| ControlLoopGroup | `src/Alberto/Subscriptions/ControlLoopGroup.cs` |
+| MiddlewareRunner | `src/Alberto/Subscriptions/MiddlewareRunner.cs` |
+| Retry / dead-letter core | `src/Alberto/Subscriptions/RetryAndDeadLetterCore.cs` |
+| Single-event middleware | `src/Alberto/Subscriptions/ConsumeMiddleware.cs` |
+| Batch middleware | `src/Alberto/Subscriptions/BatchConsumeMiddleware.cs` |
+| RetryOptions | `src/Alberto/Configuration/RetryOptions.cs` |
+| IErrorClassifier | `src/Alberto/Subscriptions/IErrorClassifier.cs` |
+| DeclaredAsyncProjection | `src/Alberto/Subscriptions/DeclaredAsyncProjection.cs` |
+| FunctionalReactor | `src/Alberto/Subscriptions/FunctionalReactor.cs` |
+| CachingCheckpointStore | `src/Alberto/Subscriptions/CachingCheckpointStore.cs` |
+| PostgresCheckpointStore | `src/Alberto.Postgres/PostgresCheckpointStore.cs` |
+| PostgresEventListener | `src/Alberto.Postgres/PostgresEventListener.cs` |
+| EfStateStore | `src/Alberto.EntityFramework/EfStateStore.cs` |
+| RebuildCoordinator | `src/Alberto/Subscriptions/RebuildCoordinator.cs` |
+| ProjectionVersions | `src/Alberto/Subscriptions/ProjectionVersions.cs` |
+| IProjectionRebuildStore | `src/Alberto/Subscriptions/IProjectionRebuildStore.cs` |
+| PostgresProjectionRebuildStore | `src/Alberto.Postgres/PostgresProjectionRebuildStore.cs` |
+| NOTIFY trigger | `src/Alberto.Postgres/Migrations/010_BatchNotifyTrigger.sql` |

@@ -1,6 +1,6 @@
-using Alberto.Dcb;
-using Alberto.Dcb.Postgres;
-using Alberto.Dcb.Subscriptions;
+using Alberto;
+using Alberto.Postgres;
+using Alberto.Subscriptions;
 using Alberto.Payments.Contracts;
 using Alberto.Payments.Platform;
 using Microsoft.Extensions.DependencyInjection;

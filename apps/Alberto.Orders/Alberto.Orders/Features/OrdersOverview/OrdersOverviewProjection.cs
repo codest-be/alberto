@@ -1,7 +1,7 @@
-using Alberto.Dcb;
-using Alberto.Dcb.Postgres;
-using Alberto.Dcb.Subscriptions;
-using Alberto.Dcb.Tenancy;
+using Alberto;
+using Alberto.Postgres;
+using Alberto.Subscriptions;
+using Alberto.Tenancy;
 using Alberto.Orders.Contracts;
 using Alberto.Orders.Platform;
 using Microsoft.Extensions.DependencyInjection;

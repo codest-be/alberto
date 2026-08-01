@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+        <!-- Package Metadata -->
+        <PackageId>Alberto.Messaging.Postgres</PackageId>
+        <Title>Alberto DCB Event Store - PostgreSQL Outbox</Title>
+        <Description>PostgreSQL-backed transactional outbox store for Alberto DCB event store. Bridges Alberto.Postgres and Alberto.Messaging; referencing Alberto.Postgres does not pull in messaging dependencies.</Description>
+        <IsPackable>true</IsPackable>
+        <RootNamespace>Alberto.Messaging.Postgres</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="Alberto.Tests"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Alberto.Postgres\Alberto.Postgres.csproj" />
+        <ProjectReference Include="..\Alberto.Messaging\Alberto.Messaging.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Npgsql" />
+    </ItemGroup>
+</Project>

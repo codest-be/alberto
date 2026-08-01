@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+        <!-- Package Metadata -->
+        <PackageId>Alberto</PackageId>
+        <Title>Alberto DCB Event Store</Title>
+        <Description>Dynamic Consistency Boundary event store library for .NET. Provides core abstractions for event sourcing with DCB pattern.</Description>
+        <IsPackable>true</IsPackable>
+        <RootNamespace>Alberto</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="Alberto.Tests"/>
+        <InternalsVisibleTo Include="Alberto.InMemory"/>
+        <InternalsVisibleTo Include="Alberto.Postgres"/>
+        <InternalsVisibleTo Include="Alberto.Messaging"/>
+        <InternalsVisibleTo Include="Alberto.EntityFramework"/>
+        <InternalsVisibleTo Include="Alberto.Telemetry"/>
+        <InternalsVisibleTo Include="Alberto.Commands"/>
+        <InternalsVisibleTo Include="Alberto.Benchmarks"/>
+        <!-- The CLI drives rebuilds, so it needs RebuildableProjection.ShadowProcessorId to name
+             the shadow processor a rebuild runs under. That naming convention is shared between
+             the coordinator and the operator surface but is not something a package consumer
+             composes against, which is why it stays internal rather than becoming public API. -->
+        <InternalsVisibleTo Include="Alberto.Cli"/>
+        <!-- The only grant on this list to an assembly we publish, so it is the only one that
+             couples a shipped package to an internal member. It is deliberately down to a single
+             member: EventTag.ForVersion, which the backend conformance suite needs because a
+             backend is handed events that already carry the reserved _version tag (EventSerializer
+             stamps it a layer up) and the public EventTag surface refuses reserved concepts by
+             design. Keep it at one member — anything added here has to keep working for as long as
+             a consumer might pair an older Alberto.Testing.Xunit with a newer Alberto. -->
+        <InternalsVisibleTo Include="Alberto.Testing.Xunit"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.Extensions.Configuration.Binder"/>
+        <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks"/>
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions"/>
+        <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions"/>
+        <PackageReference Include="Microsoft.Extensions.Logging.Abstractions"/>
+        <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions"/>
+        <PackageReference Include="OpenTelemetry.Api"/>
+    </ItemGroup>
+</Project>

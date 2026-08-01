@@ -1,4 +1,4 @@
-using Alberto.Dcb.Subscriptions;
+using Alberto.Subscriptions;
 using Alberto.Orders.Contracts;
 
 namespace Alberto.Orders.Platform;

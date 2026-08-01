@@ -1,5 +1,5 @@
-using Alberto.Dcb.Subscriptions;
-using Alberto.Dcb.Tenancy;
+using Alberto.Subscriptions;
+using Alberto.Tenancy;
 using Alberto.Payments.Platform;
 using Microsoft.Extensions.DependencyInjection;
 

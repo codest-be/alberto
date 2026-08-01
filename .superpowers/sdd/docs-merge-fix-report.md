@@ -9,7 +9,7 @@
 ## Scratch-project compile result
 
 All 9 C# samples were pasted into a fresh `net10.0` console project referencing
-`Alberto.Dcb`, `Alberto.Dcb.Postgres`, and `Alberto.Dcb.InMemory` from source.
+`Alberto`, `Alberto.Postgres`, and `Alberto.InMemory` from source.
 
 ```
 Build succeeded.
@@ -58,7 +58,7 @@ warnings in the AppHost, and an obsolete Aspire `WithCommand` overload in
 | "Set WithRetryLoopClaimLease longer…" | `Set WithRetryLoopClaimLease longer than your slowest handler.` | `Set ClaimLease longer than your slowest handler.` |
 | §"Running more than one replica" sample | `.WithControlLoop(loop => loop.WithProcessorLeases())` | `.WithControlLoop(o => o with { Leases = o.Leases with { Enabled = true } })` (with ReplicaId comment) |
 | Prose after leases sample | `WithProcessorLeases is required, not optional…` | `Enabling leases is required, not optional…` |
-| §Telemetry code sample | `AddAlbertoInstrumentation()` on tracer/meter provider builders | Raw `AddSource("Alberto.Dcb")` / `AddMeter("Alberto.Dcb")` |
+| §Telemetry code sample | `AddAlbertoInstrumentation()` on tracer/meter provider builders | Raw `AddSource("Alberto")` / `AddMeter("Alberto")` |
 | §Telemetry prose | "Both halves are needed: WithTelemetry + AddAlbertoInstrumentation" | "WithTelemetry registers everything; AddAlbertoInstrumentation is [Obsolete]" + link to configuration.md |
 | §Migrations WithPostgres sample | mutation-style `options.X = y` | `o => o with { X = y, … }` |
 
@@ -86,7 +86,7 @@ required; `configuration.md` says it is `[Obsolete]`. Fixed `operations.md` to m
 | §"Module Configuration Example" prose after example | "ErrorPolicy is a class, not a record, so WithErrorPolicy takes a function that returns a new instance" + stale sample | "RetryOptions is an immutable record; use a with expression" + corrected sample; custom classifier via `UseErrorClassifier<T>()` noted |
 | §"Enabling it" rebuild sample | `.WithControlLoop(loop => loop.WithRebuilds())` | `.WithRebuilds()` (WithRebuilds is a module-level extension, not inside the control loop lambda) |
 | §"Limits" rebuild bullet | `Enable WithProcessorLeases if more than one replica…` | `Enable leases (.WithControlLoop(o => o with { Leases = o.Leases with { Enabled = true } }))…` |
-| §"Key Files" table | Row: `ErrorPolicy` → `src/Alberto.Dcb/Subscriptions/ErrorPolicy.cs` (file deleted) | Two rows: `RetryOptions` → `src/Alberto.Dcb/Configuration/RetryOptions.cs` and `IErrorClassifier` → `src/Alberto.Dcb/Subscriptions/IErrorClassifier.cs` |
+| §"Key Files" table | Row: `ErrorPolicy` → `src/Alberto/Subscriptions/ErrorPolicy.cs` (file deleted) | Two rows: `RetryOptions` → `src/Alberto/Configuration/RetryOptions.cs` and `IErrorClassifier` → `src/Alberto/Subscriptions/IErrorClassifier.cs` |
 
 ---
 

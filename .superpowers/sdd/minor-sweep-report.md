@@ -8,7 +8,7 @@
 ## Ledger findings
 
 ### M5.4 — 9f2bd1b
-`tests/Alberto.Dcb.Tests/Configuration/ModuleDefinitionTests.cs`
+`tests/Alberto.Tests/Configuration/ModuleDefinitionTests.cs`
 
 Strengthened `Deferred_registrations_run_against_the_final_definition`. Added capture of
 `context.TenancyEnabled` in the callback, placed the `.Register(...)` call **before**
@@ -19,7 +19,7 @@ point of registration.
 ---
 
 ### M6.1 — d1d1653
-`tests/Alberto.Dcb.Tests/Configuration/ConsumeMiddlewareRegistrationTests.cs` (new file)
+`tests/Alberto.Tests/Configuration/ConsumeMiddlewareRegistrationTests.cs` (new file)
 
 Added four tests covering the new public API:
 - `AddConsumeMiddleware_registers_a_keyed_ConsumeMiddleware_singleton`
@@ -33,7 +33,7 @@ was effective.
 ---
 
 ### M7.2 — 01fddbe
-`tests/Alberto.Dcb.Tests/Configuration/ProcessorRegistrationTests.cs`
+`tests/Alberto.Tests/Configuration/ProcessorRegistrationTests.cs`
 
 Added `AddProjection_declares_a_projection_processor` test. Also added `[EventType]` to the
 existing `ShipmentDispatched` record at namespace level (required by
@@ -44,7 +44,7 @@ The test resolves the module definition and asserts `ProcessorId == "shipment-su
 ---
 
 ### M9.1 — 7fb5f23
-`src/Alberto.Dcb.EntityFramework/EfConsumerBuilderExtensions.cs`
+`src/Alberto.EntityFramework/EfConsumerBuilderExtensions.cs`
 
 Added `ArgumentNullException.ThrowIfNull(builder)` as the first guard in both
 `AddEfProjection` overloads, consistent with every neighbouring method in the same file.
@@ -52,7 +52,7 @@ Added `ArgumentNullException.ThrowIfNull(builder)` as the first guard in both
 ---
 
 ### M11.2 — 4430ff9
-`src/Alberto.Dcb/OrphanCheckpointHostedService.cs`
+`src/Alberto/OrphanCheckpointHostedService.cs`
 
 When multiple checkpoints are orphaned the CLI hint previously named only `orphans[0]` in a
 single `--from` clause. Replaced with a per-orphan list of rename commands joined by
@@ -62,7 +62,7 @@ Existing test only asserts `Contains("ops checkpoint rename")` — still satisfi
 ---
 
 ### M12.1 — 40c6f53
-`tests/Alberto.Dcb.Tests/Subscriptions/ReactToScopedHandlerTests.cs`
+`tests/Alberto.Tests/Subscriptions/ReactToScopedHandlerTests.cs`
 
 Replaced all four `CancellationToken.None` arguments on `ProcessEventAsync` calls (actual
 lines 72, 73, 103, 133 in the current file — ledger cited 471/499/540 from an earlier
@@ -73,7 +73,7 @@ snapshot) with `TestContext.Current.CancellationToken`.
 ## Unlisted findings
 
 ### m1 — 126abac
-`src/Alberto.Dcb/ServiceCollectionExtensions.cs`
+`src/Alberto/ServiceCollectionExtensions.cs`
 
 **Dead condition**: `declared.Checkpoints.OrphanPolicy == OrphanCheckpointPolicy.Warn` (the
 second `&&` clause in the escalation block) is always true. `AlbertoModuleDefinition.Checkpoints`
@@ -87,7 +87,7 @@ No behaviour change.
 ---
 
 ### m2 — bd16844
-`src/Alberto.Dcb/ServiceCollectionExtensions.cs` and `src/Alberto.Dcb/Configuration/AlbertoModuleContext.cs`
+`src/Alberto/ServiceCollectionExtensions.cs` and `src/Alberto/Configuration/AlbertoModuleContext.cs`
 
 Both files claimed that configuration overlay had already been applied at Phase 3 / when the
 `AlbertoModuleContext` is created. This is incorrect: the context is built from `declared` (the

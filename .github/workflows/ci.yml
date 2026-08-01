@@ -21,21 +21,21 @@ jobs:
           dotnet-version: '10.0.x'
 
       # Building the test project restores and compiles every referenced library
-      # (Alberto.Dcb, Alberto.Dcb.Postgres, Alberto.Dcb.InMemory, ...). The app /
+      # (Alberto, Alberto.Postgres, Alberto.InMemory, ...). The app /
       # Aspire host projects are intentionally excluded — they require the Aspire
       # workload and are not exercised by these tests.
       - name: Build
-        run: dotnet build tests/Alberto.Dcb.Tests/Alberto.Dcb.Tests.csproj -c Release
+        run: dotnet build tests/Alberto.Tests/Alberto.Tests.csproj -c Release
 
       # Runs unit tests plus the Testcontainers-backed PostgreSQL integration
       # tests (Docker is available on ubuntu-latest runners). Coverage is
       # collected but not gated: the figure exists to show movement across the
       # test-suite remediation sub-projects, not to fail builds.
       - name: Test
-        run: dotnet test tests/Alberto.Dcb.Tests/Alberto.Dcb.Tests.csproj -c Release --no-build --logger "console;verbosity=normal" --collect:"XPlat Code Coverage"
+        run: dotnet test tests/Alberto.Tests/Alberto.Tests.csproj -c Release --no-build --logger "console;verbosity=normal" --collect:"XPlat Code Coverage"
 
       # The example modules and their GraphQL schema snapshot. Built separately because they are
-      # not referenced by Alberto.Dcb.Tests; buildable here because the modules are plain SDK
+      # not referenced by Alberto.Tests; buildable here because the modules are plain SDK
       # projects — only the Api and AppHost need the Aspire workload, and neither is referenced.
       # The snapshot is what proves a refactor of the examples changed nothing a client can see,
       # so it has to run somewhere other than a developer's machine.
@@ -49,26 +49,26 @@ jobs:
       # once with no warmup, so it measures nothing — it exists to stop the suite from
       # bit-rotting between nightly runs, which is how benchmark suites usually die.
       - name: Benchmark smoke run
-        run: dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks -- --job dry --anyCategories=smoke
+        run: dotnet run -c Release --project benchmarks/Alberto.Benchmarks -- --job dry --anyCategories=smoke
 
       # Catches the class of bug where a src/ project is packable and depended upon
       # by another packable project but accidentally omitted from the pack list —
       # the .nupkg would be produced but its transitive dependency would never be
       # pushed, causing NU1101 for anyone who installs the package. Packs every
       # packable src project into a temp folder, then restores a throwaway project
-      # that references Alberto.Dcb.Postgres (the deepest Alberto dependency) from
+      # that references Alberto.Postgres (the deepest Alberto dependency) from
       # that folder only (plus nuget.org for third-party packages). Any missing
       # Alberto.* package makes the restore fail.
       - name: Pack smoke
         run: |
-          for proj in Alberto.Dcb Alberto.Dcb.Commands Alberto.Dcb.EntityFramework Alberto.Dcb.InMemory Alberto.Dcb.Messaging Alberto.Dcb.Postgres Alberto.Dcb.Postgres.Messaging Alberto.Dcb.Telemetry Alberto.Dcb.Testing Alberto.Dcb.Testing.Xunit; do
+          for proj in Alberto Alberto.Commands Alberto.EntityFramework Alberto.InMemory Alberto.Messaging Alberto.Messaging.Postgres Alberto.Postgres Alberto.Telemetry Alberto.Testing Alberto.Testing.Xunit; do
             dotnet pack "src/$proj/$proj.csproj" -c Release --version-suffix ci -o /tmp/alberto-pack
           done
           SMOKEDIR=$(mktemp -d)
           cat > "$SMOKEDIR/PackCheck.csproj" <<'CSPROJ'
           <Project Sdk="Microsoft.NET.Sdk">
             <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
-            <ItemGroup><PackageReference Include="Alberto.Dcb.Postgres" Version="0.1.0-ci" /></ItemGroup>
+            <ItemGroup><PackageReference Include="Alberto.Postgres" Version="0.1.0-ci" /></ItemGroup>
           </Project>
           CSPROJ
           dotnet restore "$SMOKEDIR/PackCheck.csproj" \
@@ -80,5 +80,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage
-          path: tests/Alberto.Dcb.Tests/TestResults/**/coverage.cobertura.xml
+          path: tests/Alberto.Tests/TestResults/**/coverage.cobertura.xml
           if-no-files-found: error

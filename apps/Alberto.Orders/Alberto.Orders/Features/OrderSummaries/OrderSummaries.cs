@@ -1,4 +1,4 @@
-using Alberto.Dcb.Tenancy;
+using Alberto.Tenancy;
 using Alberto.Orders.Contracts;
 using Alberto.Orders.Platform;
 using Microsoft.EntityFrameworkCore;

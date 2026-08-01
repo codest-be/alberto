@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!--
+      TreatWarningsAsErrors is intentionally omitted: BenchmarkDotNet generates
+      code that can raise diagnostics warnings (CS8618, CS0649, etc.) that we do
+      not own. Keeping it off avoids a red herring build failure when the rest of
+      the repo has it enabled per-project.
+    -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/Alberto/Alberto.csproj" />
+    <ProjectReference Include="../../src/Alberto.Postgres/Alberto.Postgres.csproj" />
+    <ProjectReference Include="../Alberto.Benchmarks.Core/Alberto.Benchmarks.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" />
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+  </ItemGroup>
+
+</Project>

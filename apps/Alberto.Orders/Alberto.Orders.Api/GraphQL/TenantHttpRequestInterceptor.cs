@@ -1,4 +1,4 @@
-using Alberto.Dcb.Tenancy;
+using Alberto.Tenancy;
 using HotChocolate.AspNetCore;
 using HotChocolate.Execution;
 

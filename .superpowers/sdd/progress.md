@@ -78,7 +78,7 @@ owner's decision** — it should almost certainly be abandoned, but that is not 
 - SP4 Task 2: complete (review clean — retire instead of delete; branch deliberately red, 4 tests fail pending Task 4)
 - SP2 Task 1: complete (commits e3dd5ab..dfca14b, review clean — TimeProvider seam on CachingCheckpointStore, both Task.Delay sleeps gone, 1041 passed)
 - SP2 Task 2: complete (review Approved with one Important finding, fix dispatched — TimeProvider seam on DeadLetterRetryLoop)
-- SP1a Task 1: complete (commits e3dd5ab..f3a1b59, review clean — Alberto.Dcb.Testing package + Poll.UntilAsync, no xunit dependency, 1044 passed)
+- SP1a Task 1: complete (commits e3dd5ab..f3a1b59, review clean — Alberto.Testing package + Poll.UntilAsync, no xunit dependency, 1044 passed)
 - SP1a Task 2: complete (review clean — TestEvents.NewEvent)
 - SP1a Task 3: complete (review clean — EventCollector promoted into the package, TimeProvider-driven, 1096 passed)
 - SP1a Task 4: complete (commit d2022b0, review clean — InMemoryOutboxStore, faithful claim-lease semantics vs Postgres, 1099 passed)
@@ -89,11 +89,11 @@ owner's decision** — it should almost certainly be abandoned, but that is not 
 
 - SP1a Task 5: complete (commits d2022b0..021daa1, spec ✅ / quality Approved). `AlbertoTestHarness` boots a Generic Host, appends, and waits for control-loop quiescence. Two implementer deviations judged sound by the reviewer: quiescence reads `IOptionsMonitor<AlbertoModuleDefinition>` (declared processors) instead of `ICheckpointInventory` (which is vacuously empty before the first checkpoint), and `TestEvents` drops `JsonSerializerDefaults.Web` because camelCase does not round-trip through `ParseEvent<T>`. Stalled-path test verified non-vacuous. Suite 1101 passed / 0 failed / 14 skipped.
 
-- SP1a Task 6: complete (commits 021daa1..2ed987c, spec ✅ / quality Approved after one fix). Adds `Alberto.Dcb.Testing.Xunit` with five conformance specifications (state store, dead letter, outbox + the two promoted ones) and four derivations. Reviewer caught an Important defect — `ClaimPendingAsync_HeldLease_IsNotReclaimable` was gated on `FakeTimeProvider` despite never touching a clock, so the Postgres derivation skipped the one fact proving `FOR UPDATE SKIP LOCKED`-style exclusion; a backend with no concurrency exclusion would have passed the whole suite. Fixed in `2ed987c`; Postgres now runs it. Suite 1161 passed / 0 failed / 17 skipped.
+- SP1a Task 6: complete (commits 021daa1..2ed987c, spec ✅ / quality Approved after one fix). Adds `Alberto.Testing.Xunit` with five conformance specifications (state store, dead letter, outbox + the two promoted ones) and four derivations. Reviewer caught an Important defect — `ClaimPendingAsync_HeldLease_IsNotReclaimable` was gated on `FakeTimeProvider` despite never touching a clock, so the Postgres derivation skipped the one fact proving `FOR UPDATE SKIP LOCKED`-style exclusion; a backend with no concurrency exclusion would have passed the whole suite. Fixed in `2ed987c`; Postgres now runs it. Suite 1161 passed / 0 failed / 17 skipped.
 
 - SP1a Task 7: complete (commit d7ec7e6, spec ✅ / quality Approved, no fixes needed). One canonical `FakeBackend` replaces three divergent nested copies; `Testing/Events.cs` gives the shared event vocabulary. Reviewer verified both reported semantic changes are inert (`bool?` + FluentAssertions `BeTrue` is if anything stricter; `UnknownConfigurationKeyTests` asserts only on ALB0008 codes and never branches on `SupportsTenancy`) and confirmed the eight remaining duplicate-event files are explicitly SP1b scope, not under-delivery. Suite 1162 passed / 0 failed / 17 skipped.
 
-- SP1a Task 8: complete (commit 23da001, spec ✅ / quality Approved, no findings). Both packages ship. Reviewer independently ran `dotnet pack` and read the extracted nuspecs rather than trusting the implementer's grep: both target frameworks carry dependency groups in both packages, all metadata (MIT, authors, repo url, `VersionPrefix`, `IncludeSymbols`/snupkg) flows from `Directory.Build.props` identically to the pre-existing packable projects, `Alberto.Dcb.Testing`'s dependency groups contain no test framework, and the release workflow's `artifacts/Alberto.Dcb*.nupkg` glob already matches both new ids. No unintended public types leak. **SP1a is feature-complete: 1162 passed / 0 failed / 17 skipped.**
+- SP1a Task 8: complete (commit 23da001, spec ✅ / quality Approved, no findings). Both packages ship. Reviewer independently ran `dotnet pack` and read the extracted nuspecs rather than trusting the implementer's grep: both target frameworks carry dependency groups in both packages, all metadata (MIT, authors, repo url, `VersionPrefix`, `IncludeSymbols`/snupkg) flows from `Directory.Build.props` identically to the pre-existing packable projects, `Alberto.Testing`'s dependency groups contain no test framework, and the release workflow's `artifacts/Alberto*.nupkg` glob already matches both new ids. No unintended public types leak. **SP1a is feature-complete: 1162 passed / 0 failed / 17 skipped.**
 
 ## SP1a shipped
 
@@ -135,7 +135,7 @@ Before opening the SP1a PR: enumerate every skipped test in the suite (17 at Tas
 - SP2 Task 1 — `CachingCheckpointStoreTests.cs:148` `WaitForInnerAsync` is called with `cache`, not `inner`, in the resync test; the name misleads. Rename to something like `WaitForValueAsync`.
 - SP2 Task 1 — `CachingCheckpointStoreTests.cs:148-155` the yield loop returns silently on exhaustion, so a genuine hang surfaces as a value-mismatch assertion rather than a timeout. Plan-mandated shape; a `throw` on exhaustion would be more diagnosable.
 - SP1a Task 1 — `PollTests.cs` exercises `Poll.UntilAsync` only against `TimeProvider.System`; no test drives it with a fake clock, so the `TimeProvider` wiring (deadline arithmetic + `Task.Delay`) is correct by construction but unverified. Add a `FakeTimeProvider` test.
-- SP1a Task 2 — `TestEvents.cs` doc comments use `<c>EventToPersist</c>` / `<c>EventTypeAttribute</c>` where `<see cref="..."/>` would resolve (both types live in `Alberto.Dcb`, which the package references). Loses IDE navigation on a shipped surface.
+- SP1a Task 2 — `TestEvents.cs` doc comments use `<c>EventToPersist</c>` / `<c>EventTypeAttribute</c>` where `<see cref="..."/>` would resolve (both types live in `Alberto`, which the package references). Loses IDE navigation on a shipped surface.
 - SP1a Task 2 — no test covers `metadata` pass-through; every other parameter has one.
 
 - SP2 Task 3 — `ControlLoopAssembler` never passes a `TimeProvider` to the middleware factories, so the provider injected into `DeadLetterRetryLoop` does not reach the middleware `FailedAt` stamps in production; the seam is test-only. The brief's own approach had the same hole. Decide at the final review whether the assembler should thread it through.
@@ -177,3 +177,30 @@ Task 11: complete (commits b4b1007..f400f16 + doc fix, review clean after fix). 
 Task 12: complete (commits ef6d6f5..ee4619f, review clean). Smoke step added to build-test job; verified locally, exits 0 in ~3m21s selecting exactly the two smoke benchmarks.
 Task 13: complete (commits ee4619f..1c021e0, review clean after fixes). Fixed myself: (1) workflow failed on first run for a profile because it cat'd a delta the compare tool correctly never wrote; (2) candidate.json/delta.md were accidentally tracked - now gitignored; (3) README compare commands now use -c Release; (4) summary step distinguishes no-baseline from tool-failure. Promotion rule verified end to end: history step git-adds only the history subdir, baseline.json can never reach the repo. First baseline committed for profile local-3575380c (M4 Pro, .NET 10.0.8, postgres:16-alpine), append family only, 9 measurements.
 ALL 13 TASKS COMPLETE. Next: final whole-branch review.
+
+---
+
+# Wave 2 — NuGet publishing strategy
+
+Plan: `docs/superpowers/plans/2026-07-31-nuget-publishing-strategy.md`
+Branch: `claude/nuget-publishing-strategy-4dd798`
+Base commit: `511c6d9`
+
+Pre-flight fixes applied in `511c6d9`:
+- Global constraint on parked admin projects contradicted Task 5's rename — reworded.
+- Task 8 carried a "skip this task" escape hatch — made unconditional.
+
+Autonomous-run decisions (user is AFK):
+- All 9 tasks land as commits on this one branch. No PRs are opened or merged;
+  the plan's PR boundaries are honoured as commit groupings only.
+- **Task 9 is NOT executed.** Its steps are owner-only and outward-facing
+  (repository secret, flipping the repo public, pushing a release tag,
+  publishing to nuget.org). Left as a runbook for the user.
+
+## Ledger
+
+Task 1: complete (commits 25ea77e..77e8376, review clean)
+Task 2: complete (commits 77e8376..f253705, review clean)
+  NOTE for Task 7: 'Push symbols' has if: always() — nuget.org push must not inherit it.
+Task 3: complete (commits f253705..8d38ad1, review clean; analyzer FQN strings updated)
+Task 4: complete (commits 8d38ad1..c32c189, review clean)

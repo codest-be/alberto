@@ -51,7 +51,7 @@ jobs:
           else
             FILTER=(--filter '*')
           fi
-          dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks -- "${FILTER[@]}"
+          dotnet run -c Release --project benchmarks/Alberto.Benchmarks -- "${FILTER[@]}"
 
           # A filter that matches nothing is not an error to BenchmarkSwitcher — it prints
           # suggestions and exits 0. Without this check the run reports success and the
@@ -66,7 +66,7 @@ jobs:
       # BenchmarkDotNet writes one report per class.
       - name: Normalize results
         run: |
-          dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks.Compare -- \
+          dotnet run -c Release --project benchmarks/Alberto.Benchmarks.Compare -- \
             --import BenchmarkDotNet.Artifacts/results \
             --out candidate.json \
             --git-sha "${{ github.sha }}" \
@@ -82,7 +82,7 @@ jobs:
         id: compare
         continue-on-error: true
         run: |
-          dotnet run -c Release --project benchmarks/Alberto.Dcb.Benchmarks.Compare -- \
+          dotnet run -c Release --project benchmarks/Alberto.Benchmarks.Compare -- \
             --baseline "benchmarks/results/${{ steps.profile.outputs.id }}/baseline.json" \
             --candidate candidate.json \
             --markdown delta.md

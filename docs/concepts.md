@@ -121,7 +121,7 @@ something was, the store throws `DcbConflictException` carrying `ExpectedPositio
 `ConflictingPosition` and the `Query` — retry the whole read-decide-append, since your state is now
 stale by definition.
 
-The command pipeline in `Alberto.Dcb.Commands` does all of this for you:
+The command pipeline in `Alberto.Commands` does all of this for you:
 
 ```csharp
 await store.Handle(command)
@@ -262,6 +262,6 @@ One schema per module, containing:
 | `alberto_outbox_entries` | Outbox, `pending → processing → delivered/failed` |
 | `alberto_tenants`, `alberto_tenant_leases`, `alberto_tenant_assignments` | Multi-tenancy |
 
-Migrations are DbUp scripts embedded in `Alberto.Dcb.Postgres` and run automatically when
+Migrations are DbUp scripts embedded in `Alberto.Postgres` and run automatically when
 `PostgresOptions.AutoMigrate` is true (the default). Set it false and run them from your own
 migration step if you would rather control when DDL happens.

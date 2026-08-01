@@ -18,11 +18,11 @@
     <PackageReference Include="Npgsql" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="../../src/Alberto.Dcb.Admin/Alberto.Dcb.Admin.csproj" />
-    <ProjectReference Include="../../src/Alberto.Dcb.Postgres/Alberto.Dcb.Postgres.csproj" />
-    <ProjectReference Include="../../src/Alberto.Dcb.Postgres.Admin/Alberto.Dcb.Postgres.Admin.csproj" />
+    <ProjectReference Include="../../src/Alberto.Admin/Alberto.Admin.csproj" />
+    <ProjectReference Include="../../src/Alberto.Postgres/Alberto.Postgres.csproj" />
+    <ProjectReference Include="../../src/Alberto.Admin.Postgres/Alberto.Admin.Postgres.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <InternalsVisibleTo Include="Alberto.Dcb.Tests" />
+    <InternalsVisibleTo Include="Alberto.Tests" />
   </ItemGroup>
 </Project>

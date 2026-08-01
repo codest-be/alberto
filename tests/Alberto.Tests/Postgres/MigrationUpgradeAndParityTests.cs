@@ -1,0 +1,1147 @@
+using System.Reflection;
+using Alberto.Postgres;
+using Alberto.Subscriptions;
+using FluentAssertions;
+using Npgsql;
+using Testcontainers.PostgreSql;
+using Xunit;
+
+namespace Alberto.Tests.Postgres;
+
+/// <summary>
+/// Migration upgrade-path and parity tests covering TEST-6 and TEST-8 from the Alberto DCB audit.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>TEST-6 — Upgrade path</b>: proves that a database already migrated to the pre-009 schema
+/// can be upgraded in-place by running <see cref="PostgresMigrator.Migrate"/> and ends up with
+/// the same schema shape as a fresh install.  Tests both the multi-tenant and single-tenant
+/// migration sets.
+/// </para>
+/// <para>
+/// <b>TEST-8 — Parity</b>: a pure file-inspection guard (no containers required) that
+/// ensures the single-tenant and multi-tenant migration sets stay in lockstep — same script
+/// numbers and base names for shared scripts, and <c>tenant_id</c> never appearing as SQL
+/// content in single-tenant scripts.  This test fails the CI run before a corrupt migration
+/// can reach a real database, guarding against the class of silent corruption described in
+/// finding P1.4 of the audit.
+/// </para>
+/// </remarks>
+public sealed class MigrationUpgradeAndParityTests
+{
+    // =========================================================================
+    // Constants / reflection helpers (used by both TEST-6 and TEST-8)
+    // =========================================================================
+
+    /// <summary>Embedded-resource name prefix for multi-tenant migration scripts.</summary>
+    private const string MultiTenantPrefix = "Alberto.Postgres.Migrations.";
+
+    /// <summary>Embedded-resource name prefix for single-tenant migration scripts.</summary>
+    private const string SingleTenantPrefix = "Alberto.Postgres.Migrations.SingleTenant.";
+
+    /// <summary>Embedded-resource name prefix for the tenant shard catalog's own scripts.</summary>
+    private const string CatalogPrefix = "Alberto.Postgres.Migrations.Catalog.";
+
+    private static readonly Assembly MigratorAssembly = typeof(PostgresMigrator).Assembly;
+
+    /// <summary>
+    /// Returns embedded resource names for the chosen migration set, sorted by name.
+    /// The multi-tenant filter excludes the <c>SingleTenant</c> subdirectory so that
+    /// both lists are disjoint.
+    /// </summary>
+    private static List<string> GetMigrationResourceNames(bool singleTenant)
+    {
+        var prefix = singleTenant ? SingleTenantPrefix : MultiTenantPrefix;
+        return MigratorAssembly
+            .GetManifestResourceNames()
+            .Where(n =>
+            {
+                if (!n.StartsWith(prefix, StringComparison.Ordinal)) return false;
+
+                // Multi-tenant prefix is a substring of the single-tenant prefix.
+                // Exclude single-tenant names when listing multi-tenant names.
+                if (!singleTenant && n.StartsWith(SingleTenantPrefix, StringComparison.Ordinal))
+                    return false;
+
+                // The tenant shard catalog is a separate schema in a separate database with its
+                // own journal — not a variant of the event store's scripts, so parity does not
+                // apply to it.
+                if (!singleTenant && n.StartsWith(CatalogPrefix, StringComparison.Ordinal))
+                    return false;
+
+                return true;
+            })
+            .OrderBy(n => n)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Extracts the 3-digit leading script number from an embedded resource name.
+    /// Returns <see langword="null"/> when the name does not follow the expected pattern.
+    /// </summary>
+    private static int? ParseScriptNumber(string resourceName, string prefix)
+    {
+        if (resourceName.Length <= prefix.Length) return null;
+        var rest = resourceName[prefix.Length..]; // e.g. "001_InitialSchema.sql"
+        return rest.Length >= 3 && int.TryParse(rest[..3], out var n) ? n : null;
+    }
+
+    /// <summary>
+    /// Returns the base file name of a migration resource (the part after the namespace prefix).
+    /// For example: <c>"001_InitialSchema.sql"</c>.
+    /// </summary>
+    private static string GetBaseName(string resourceName, string prefix)
+        => resourceName[prefix.Length..];
+
+    // =========================================================================
+    // TEST-6  Upgrade path  (Testcontainers required)
+    // =========================================================================
+
+    /// <summary>
+    /// Simulates a real-world upgrade: applies scripts 001-008 directly via Npgsql,
+    /// records them in the DbUp journal so that the migrator treats them as already-applied,
+    /// then calls <see cref="PostgresMigrator.Migrate"/> which executes only the remaining
+    /// scripts (009+).  Asserts both that the migration succeeds and that the resulting schema
+    /// shape matches the expected post-migration state.
+    /// </summary>
+    /// <remarks>
+    /// Each upgrade test spins up its own isolated container so the two variants do not
+    /// interfere with each other. These cannot move onto the shared
+    /// <see cref="Infrastructure.PostgresCluster"/>: they exercise the migrator itself from a
+    /// pre-009 baseline, so they need a database that has never been migrated, which is
+    /// precisely what the cluster's templates are not.
+    /// </remarks>
+    [Fact]
+    public async Task MultiTenant_UpgradesFromPre009Schema_ToCurrentMigrations_Successfully()
+    {
+        await using var container = new PostgreSqlBuilder("postgres:16-alpine").Build();
+        await container.StartAsync();
+        var connectionString = container.GetConnectionString();
+
+        // Phase 1: apply scripts 001-008 directly + record in DbUp journal.
+        await ApplyScriptsAndPopulateJournalAsync(connectionString, singleTenant: false, upToScriptNumber: 8);
+
+        // Phase 2: run the full migrator — should only apply 009+ since 001-008 are journaled.
+        var result = PostgresMigrator.Migrate(connectionString, singleTenant: false);
+        result.Successful.Should().BeTrue(because: result.Error?.Message ?? "migration failed");
+
+        // The migrator should have run scripts 009 through the current highest number.
+        result.ExecutedScripts.Should().NotBeEmpty(because: "scripts 009+ must have been applied");
+        result.ExecutedScripts.Should().OnlyContain(
+            s => ParseScriptNumber(s, MultiTenantPrefix) >= 9,
+            because: "only scripts numbered 009 or later should have been executed in phase 2");
+
+        // Assert expected schema shape after the full migration.
+        await using var conn = new NpgsqlConnection(connectionString);
+        await conn.OpenAsync();
+
+        // 009: alberto_read_by_types_and_tags is a new function introduced in script 009.
+        (await FunctionExistsAsync(conn, "alberto_read_by_types_and_tags"))
+            .Should().BeTrue(because: "function added by migration 009 must exist after upgrade");
+
+        // 025: the notify moved off alberto_events and into the append functions.
+        await AssertAppendNotifiesOnceAsync(conn);
+
+        // 011: checkpoint table must have fillfactor=70.
+        (await TableHasFillfactorAsync(conn, "alberto_processor_checkpoints", fillfactor: 70))
+            .Should().BeTrue(because: "migration 011 sets fillfactor=70 on the checkpoint table");
+
+        // 012 (multi-tenant only): alberto_tenants catalog table must exist.
+        (await TableExistsAsync(conn, "alberto_tenants"))
+            .Should().BeTrue(because: "migration 012 creates the alberto_tenants catalog table");
+
+        // 016: existing outbox tables must gain the complete leased-claim fence.
+        await AssertOutboxClaimLeaseColumnsExistAsync(conn);
+
+        // 017: existing dead-letter tables must gain the claim fencing token.
+        await AssertDeadLetterClaimFenceColumnExistsAsync(conn);
+
+        // 018: operators record completion intent for the coordinator.
+        await AssertRebuildOperatorIntentColumnExistsAsync(conn);
+
+        // 013-015 add their CHECK constraints NOT VALID; a later script must validate them.
+        await AssertCheckConstraintsAreValidatedAsync(conn);
+
+        // 018: the partial index that keeps the stable-head query off a sequential scan.
+        await AssertInFlightVisibilityIndexAsync(conn);
+
+        // 024: the wildcard tag boundary and everything 022/023 built to serve it are gone.
+        await AssertWildcardBoundaryObjectsAreGoneAsync(conn);
+
+        // 026: dead_letter event_type column must be widened to VARCHAR(500) to match alberto_events.
+        await AssertDeadLetterEventTypeColumnWidthAsync(conn);
+
+        // 032: the checkpoint and dead-letter notify triggers are gone — no consumer ever
+        // listened on their channels, and each one charged its writer a notify-queue commit.
+        await AssertUnlistenedNotifyTriggersAreGoneAsync(conn);
+
+        // Core invariant: alberto_events must still have the tenant_id column.
+        (await ColumnExistsAsync(conn, "alberto_events", "tenant_id"))
+            .Should().BeTrue(because: "multi-tenant schema must retain the tenant_id column on alberto_events");
+    }
+
+    [Fact]
+    public async Task SingleTenant_UpgradesFromPre009Schema_ToCurrentMigrations_Successfully()
+    {
+        await using var container = new PostgreSqlBuilder("postgres:16-alpine").Build();
+        await container.StartAsync();
+        var connectionString = container.GetConnectionString();
+
+        // Phase 1: apply scripts 001-008 directly + record in DbUp journal.
+        await ApplyScriptsAndPopulateJournalAsync(connectionString, singleTenant: true, upToScriptNumber: 8);
+
+        // Phase 2: run the full migrator — should only apply 009+ since 001-008 are journaled.
+        var result = PostgresMigrator.Migrate(connectionString, singleTenant: true);
+        result.Successful.Should().BeTrue(because: result.Error?.Message ?? "migration failed");
+
+        result.ExecutedScripts.Should().NotBeEmpty(because: "scripts 009+ must have been applied");
+        result.ExecutedScripts.Should().OnlyContain(
+            s => ParseScriptNumber(s, SingleTenantPrefix) >= 9,
+            because: "only scripts numbered 009 or later should have been executed in phase 2");
+
+        // Assert expected schema shape after the full migration.
+        await using var conn = new NpgsqlConnection(connectionString);
+        await conn.OpenAsync();
+
+        // 009: alberto_read_by_types_and_tags is a new function introduced in script 009.
+        (await FunctionExistsAsync(conn, "alberto_read_by_types_and_tags"))
+            .Should().BeTrue(because: "function added by migration 009 must exist after upgrade");
+
+        // 025: the notify moved off alberto_events and into the append functions.
+        await AssertAppendNotifiesOnceAsync(conn);
+
+        // 011: checkpoint table must have fillfactor=70.
+        (await TableHasFillfactorAsync(conn, "alberto_processor_checkpoints", fillfactor: 70))
+            .Should().BeTrue(because: "migration 011 sets fillfactor=70 on the checkpoint table");
+
+        // 016: existing outbox tables must gain the complete leased-claim fence.
+        await AssertOutboxClaimLeaseColumnsExistAsync(conn);
+
+        // 017: existing dead-letter tables must gain the claim fencing token.
+        await AssertDeadLetterClaimFenceColumnExistsAsync(conn);
+
+        // 018: operators record completion intent for the coordinator.
+        await AssertRebuildOperatorIntentColumnExistsAsync(conn);
+
+        // 013-015 add their CHECK constraints NOT VALID; a later script must validate them.
+        await AssertCheckConstraintsAreValidatedAsync(conn);
+
+        // 018: the partial index that keeps the stable-head query off a sequential scan.
+        await AssertInFlightVisibilityIndexAsync(conn);
+
+        // 024: the wildcard tag boundary and everything 022/023 built to serve it are gone.
+        await AssertWildcardBoundaryObjectsAreGoneAsync(conn);
+
+        // 026: dead_letter event_type column must be widened to VARCHAR(500) to match alberto_events.
+        await AssertDeadLetterEventTypeColumnWidthAsync(conn);
+
+        // 032: the checkpoint and dead-letter notify triggers are gone — no consumer ever
+        // listened on their channels, and each one charged its writer a notify-queue commit.
+        await AssertUnlistenedNotifyTriggersAreGoneAsync(conn);
+
+        // Core invariant: single-tenant schema must NOT have a tenant_id column on events.
+        (await ColumnExistsAsync(conn, "alberto_events", "tenant_id"))
+            .Should().BeFalse(because: "single-tenant schema must not have a tenant_id column on alberto_events");
+    }
+
+    // =========================================================================
+    // TEST-8  Parity  (pure file inspection — no containers required)
+    // =========================================================================
+
+    /// <summary>
+    /// Every script in the single-tenant set must have a corresponding script in the
+    /// multi-tenant set with the same base file name.  This ensures that bug-fixes and
+    /// performance improvements applied to one variant are also applied to the other.
+    /// </summary>
+    [Fact]
+    public void SingleTenantScripts_HaveMatchingMultiTenantScripts_ByBaseName()
+    {
+        var stNames = GetMigrationResourceNames(singleTenant: true)
+            .Select(n => GetBaseName(n, SingleTenantPrefix))
+            .ToHashSet();
+
+        var mtNames = GetMigrationResourceNames(singleTenant: false)
+            .Select(n => GetBaseName(n, MultiTenantPrefix))
+            .ToHashSet();
+
+        // Every single-tenant script must exist in the multi-tenant set.
+        var missingInMultiTenant = stNames.Except(mtNames).ToList();
+        missingInMultiTenant.Should().BeEmpty(
+            because: "every single-tenant migration must have a corresponding multi-tenant migration " +
+                     "— add the missing script(s) to the multi-tenant Migrations folder");
+
+        // Single-tenant scripts that appear only in multi-tenant set (like 012) are acceptable
+        // (tenant-specific additions), but any scripts that exist ONLY in single-tenant are a bug.
+        // (This branch is implicitly covered by the assertion above.)
+    }
+
+    /// <summary>
+    /// For each shared script number, the base file names in both sets must be identical.
+    /// A mismatch (e.g., single-tenant has "009_SomeFix.sql" while multi-tenant has
+    /// "009_DifferentFix.sql") indicates the sets have drifted in content.
+    /// </summary>
+    [Fact]
+    public void SharedScriptNumbers_HaveIdenticalBaseNames_InBothVariants()
+    {
+        var stByNumber = GetMigrationResourceNames(singleTenant: true)
+            .Select(n => (Number: ParseScriptNumber(n, SingleTenantPrefix)!.Value, BaseName: GetBaseName(n, SingleTenantPrefix)))
+            .ToDictionary(x => x.Number, x => x.BaseName);
+
+        var mtByNumber = GetMigrationResourceNames(singleTenant: false)
+            .Select(n => (Number: ParseScriptNumber(n, MultiTenantPrefix)!.Value, BaseName: GetBaseName(n, MultiTenantPrefix)))
+            .ToDictionary(x => x.Number, x => x.BaseName);
+
+        // For every script number that appears in the single-tenant set,
+        // the multi-tenant set must have the same base name at that number.
+        var drifted = stByNumber
+            .Where(kv => mtByNumber.TryGetValue(kv.Key, out var mtName) && mtName != kv.Value)
+            .Select(kv => $"script {kv.Key:D3}: ST='{kv.Value}' vs MT='{mtByNumber[kv.Key]}'")
+            .ToList();
+
+        drifted.Should().BeEmpty(
+            because: "shared script numbers must have the same file name in both variants — " +
+                     "rename the diverging script(s) so they match");
+    }
+
+    /// <summary>
+    /// Single-tenant migration scripts must not reference <c>tenant_id</c> as SQL
+    /// content (only comments are permitted to mention it, e.g. "no tenant_id columns").
+    /// Presence of <c>tenant_id</c> in non-comment SQL lines indicates that a multi-tenant
+    /// script was accidentally copied into the single-tenant folder without removing the
+    /// tenant column — exactly the silent corruption described in finding P1.4.
+    /// </summary>
+    [Fact]
+    public void SingleTenantScripts_DoNotContain_TenantId_InSqlContent()
+    {
+        var violations = new List<string>();
+
+        foreach (var resourceName in GetMigrationResourceNames(singleTenant: true))
+        {
+            using var stream = MigratorAssembly.GetManifestResourceStream(resourceName)!;
+            using var reader = new StreamReader(stream);
+            var lines = reader.ReadToEnd()
+                .Split('\n')
+                .Select(l => l.TrimEnd('\r'));
+
+            var sqlLines = lines
+                .Where(l => !l.TrimStart().StartsWith("--", StringComparison.Ordinal))
+                .ToList();
+
+            var offending = sqlLines
+                .Where(l => l.Contains("tenant_id", StringComparison.OrdinalIgnoreCase))
+                .Select(l => l.Trim())
+                .ToList();
+
+            if (offending.Count > 0)
+            {
+                var baseName = GetBaseName(resourceName, SingleTenantPrefix);
+                violations.AddRange(offending.Select(l => $"{baseName}: {l}"));
+            }
+        }
+
+        violations.Should().BeEmpty(
+            because: "single-tenant migration scripts must not reference tenant_id in SQL — " +
+                     "remove or replace the offending lines or move the script to the multi-tenant set");
+    }
+
+    /// <summary>
+    /// Multi-tenant migration scripts (001-009) that define event-read functions
+    /// (<c>alberto_read_*</c>) must include a <c>p_tenant_id</c> parameter.  A read
+    /// function in this range that omits <c>p_tenant_id</c> would silently return
+    /// cross-tenant data — the class of bug described in P1.4 of the audit.
+    /// </summary>
+    /// <remarks>
+    /// Structural scripts (e.g. checkpoint upsert fixes, column additions) that do not
+    /// define read functions are intentionally excluded: those scripts operate at a
+    /// cross-tenant level by design and do not need a tenant filter parameter.
+    /// </remarks>
+    [Fact]
+    public void MultiTenantReadFunctions_001Through009_Include_TenantIdParameter()
+    {
+        var violations = new List<string>();
+
+        var coreScripts = GetMigrationResourceNames(singleTenant: false)
+            .Where(n => ParseScriptNumber(n, MultiTenantPrefix) is int num && num <= 9);
+
+        foreach (var resourceName in coreScripts)
+        {
+            using var stream = MigratorAssembly.GetManifestResourceStream(resourceName)!;
+            using var reader = new StreamReader(stream);
+            var content = reader.ReadToEnd();
+
+            // Strip comment lines so that comments don't influence the check.
+            var sqlContent = string.Join('\n', content
+                .Split('\n')
+                .Select(l => l.TrimEnd('\r'))
+                .Where(l => !l.TrimStart().StartsWith("--", StringComparison.Ordinal)));
+
+            // Only audit scripts that define event-read functions.
+            // Structural scripts (checkpoint upsert, column additions, triggers) are excluded
+            // because they operate at a cross-tenant level and do not need a tenant filter.
+            if (!sqlContent.Contains("alberto_read_", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (!sqlContent.Contains("p_tenant_id", StringComparison.OrdinalIgnoreCase))
+            {
+                violations.Add(GetBaseName(resourceName, MultiTenantPrefix));
+            }
+        }
+
+        violations.Should().BeEmpty(
+            because: "multi-tenant event-read functions in scripts 001-009 must include a p_tenant_id " +
+                     "parameter — a read function missing this parameter would silently return cross-tenant data");
+    }
+
+    /// <summary>
+    /// An <c>ALTER TABLE … ADD CONSTRAINT … CHECK</c> without <c>NOT VALID</c> makes PostgreSQL
+    /// scan every existing row while it holds an <c>ACCESS EXCLUSIVE</c> lock, so on a live
+    /// database the whole table stops accepting reads and writes for the duration of the scan.
+    /// Adding the constraint <c>NOT VALID</c> takes the same lock but skips the scan, and a
+    /// separate <c>VALIDATE CONSTRAINT</c> statement performs the scan under
+    /// <c>SHARE UPDATE EXCLUSIVE</c>, which readers and writers pass straight through.
+    /// </summary>
+    /// <remarks>
+    /// The rule is applied to every script rather than only to the scripts that touch a table
+    /// large enough to matter today. Which table is "large enough" is a property of the
+    /// deployment, not of the migration, and an exemption list would have to be re-judged on
+    /// every new script. <c>NOT VALID</c> costs nothing on an empty table.
+    /// <para>
+    /// The validating scan must live in a <em>later script</em>, not merely a later statement:
+    /// DbUp runs each script in one transaction (<c>WithTransactionPerScript</c>), so a
+    /// <c>VALIDATE</c> in the same script would still sit behind the <c>ACCESS EXCLUSIVE</c>
+    /// lock taken by the <c>ADD</c> and hold it until commit — the very thing being avoided.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void MigrationScripts_AddCheckConstraints_AsNotValid()
+    {
+        var violations = new List<string>();
+
+        foreach (var singleTenant in new[] { false, true })
+        {
+            var prefix = singleTenant ? SingleTenantPrefix : MultiTenantPrefix;
+
+            foreach (var resourceName in GetMigrationResourceNames(singleTenant))
+            {
+                using var stream = MigratorAssembly.GetManifestResourceStream(resourceName)!;
+                using var reader = new StreamReader(stream);
+                var sqlContent = StripCommentLines(reader.ReadToEnd());
+
+                foreach (var statement in sqlContent.Split(';'))
+                {
+                    // Only ALTER TABLE … ADD CONSTRAINT … CHECK is affected. An inline CHECK in
+                    // CREATE TABLE has no rows to scan, and ADD CONSTRAINT … PRIMARY KEY is a
+                    // different (index-building) code path that NOT VALID does not apply to.
+                    if (!Contains(statement, "ALTER TABLE")) continue;
+                    if (!Contains(statement, "ADD CONSTRAINT")) continue;
+                    if (!Contains(statement, "CHECK")) continue;
+
+                    if (!Contains(statement, "NOT VALID"))
+                    {
+                        var variant = singleTenant ? "single-tenant" : "multi-tenant";
+                        violations.Add($"{variant}/{GetBaseName(resourceName, prefix)}: {Squash(statement)}");
+                    }
+                }
+            }
+        }
+
+        violations.Should().BeEmpty(
+            because: "ADD CONSTRAINT … CHECK must be declared NOT VALID so it does not scan the " +
+                     "table under an ACCESS EXCLUSIVE lock — move the scan into a later script's " +
+                     "ALTER TABLE … VALIDATE CONSTRAINT");
+    }
+
+    /// <summary>
+    /// The counterpart to <see cref="MigrationScripts_AddCheckConstraints_AsNotValid"/>: every
+    /// constraint added <c>NOT VALID</c> must be validated by a later script. Without this the
+    /// first test could be satisfied by simply never enforcing the constraint on existing rows.
+    /// </summary>
+    [Fact]
+    public void EveryNotValidCheckConstraint_IsValidatedByALaterScript()
+    {
+        foreach (var singleTenant in new[] { false, true })
+        {
+            var prefix = singleTenant ? SingleTenantPrefix : MultiTenantPrefix;
+            var addedNotValid = new Dictionary<string, int>(StringComparer.Ordinal);
+            var validated = new Dictionary<string, int>(StringComparer.Ordinal);
+
+            foreach (var resourceName in GetMigrationResourceNames(singleTenant))
+            {
+                var number = ParseScriptNumber(resourceName, prefix) ?? 0;
+                using var stream = MigratorAssembly.GetManifestResourceStream(resourceName)!;
+                using var reader = new StreamReader(stream);
+                var sqlContent = StripCommentLines(reader.ReadToEnd());
+
+                foreach (var statement in sqlContent.Split(';'))
+                {
+                    if (!Contains(statement, "ALTER TABLE")) continue;
+
+                    if (Contains(statement, "ADD CONSTRAINT") && Contains(statement, "NOT VALID"))
+                        addedNotValid[ConstraintNameAfter(statement, "ADD CONSTRAINT")] = number;
+                    else if (Contains(statement, "VALIDATE CONSTRAINT"))
+                        validated[ConstraintNameAfter(statement, "VALIDATE CONSTRAINT")] = number;
+                }
+            }
+
+            var variant = singleTenant ? "single-tenant" : "multi-tenant";
+
+            var unvalidated = addedNotValid.Keys.Except(validated.Keys).ToList();
+            unvalidated.Should().BeEmpty(
+                because: $"[{variant}] a constraint added NOT VALID never verifies the rows that " +
+                         "already existed until a later script runs VALIDATE CONSTRAINT on it");
+
+            var validatedTooEarly = addedNotValid
+                .Where(kv => validated.TryGetValue(kv.Key, out var at) && at <= kv.Value)
+                .Select(kv => $"{kv.Key}: added in {kv.Value:D3}, validated in {validated[kv.Key]:D3}")
+                .ToList();
+            validatedTooEarly.Should().BeEmpty(
+                because: $"[{variant}] VALIDATE must run in a strictly later script than the ADD — " +
+                         "DbUp wraps each script in one transaction, so validating in the same " +
+                         "script holds the ADD's ACCESS EXCLUSIVE lock across the scan");
+        }
+    }
+
+    // =========================================================================
+    // Private helpers for parity tests
+    // =========================================================================
+
+    private static bool Contains(string haystack, string needle)
+        => haystack.Contains(needle, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Removes whole-line SQL comments so they cannot satisfy or trip a content check.</summary>
+    private static string StripCommentLines(string sql)
+        => string.Join('\n', sql
+            .Split('\n')
+            .Select(l => l.TrimEnd('\r'))
+            .Where(l => !l.TrimStart().StartsWith("--", StringComparison.Ordinal)));
+
+    /// <summary>
+    /// Returns the constraint name following <paramref name="keyword"/> in an ALTER TABLE
+    /// statement, lower-cased. Migration scripts write constraint names as bare identifiers,
+    /// which PostgreSQL folds to lower case.
+    /// </summary>
+    private static string ConstraintNameAfter(string statement, string keyword)
+    {
+        var index = statement.IndexOf(keyword, StringComparison.OrdinalIgnoreCase);
+        var rest = statement[(index + keyword.Length)..];
+        return rest
+            .Split([' ', '\t', '\n', '\r', '('], StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault(string.Empty)
+            .ToLowerInvariant();
+    }
+
+    /// <summary>Collapses a SQL statement onto one line so it reads well in an assertion message.</summary>
+    private static string Squash(string statement)
+    {
+        var squashed = string.Join(' ', statement.Split(
+            [' ', '\t', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries));
+        return squashed.Length <= 120 ? squashed : squashed[..117] + "...";
+    }
+
+    // =========================================================================
+    // Private helpers for upgrade-path tests
+    // =========================================================================
+
+    /// <summary>
+    /// Applies SQL scripts <c>001</c> through <paramref name="upToScriptNumber"/> from the
+    /// specified migration set directly via Npgsql (bypassing DbUp), then records each script
+    /// in the DbUp journal table.  A subsequent call to <see cref="PostgresMigrator.Migrate"/>
+    /// will see these scripts as already-applied and execute only the higher-numbered ones.
+    /// </summary>
+    /// <remarks>
+    /// DbUp substitution variables are replaced before execution:
+    /// <c>$schema_prefix$</c> → empty string (public schema),
+    /// <c>$schema$</c> → <c>public</c>.
+    /// Each script runs in its own transaction, mirroring <c>WithTransactionPerScript</c>.
+    /// </remarks>
+    private static async Task ApplyScriptsAndPopulateJournalAsync(
+        string connectionString,
+        bool singleTenant,
+        int upToScriptNumber)
+    {
+        var prefix = singleTenant ? SingleTenantPrefix : MultiTenantPrefix;
+
+        var scriptsToApply = GetMigrationResourceNames(singleTenant)
+            .Where(n => ParseScriptNumber(n, prefix) is int num && num <= upToScriptNumber)
+            .ToList();
+
+        await using var conn = new NpgsqlConnection(connectionString);
+        await conn.OpenAsync();
+
+        // Create the DbUp PostgreSQL journal table.  PostgresMigrator.Migrate will query
+        // this table to determine which scripts have already been applied.
+        await using (var createJournal = conn.CreateCommand())
+        {
+            createJournal.CommandText = """
+                CREATE TABLE IF NOT EXISTS public.schemaversions (
+                    schemaversionsid SERIAL NOT NULL,
+                    scriptname       VARCHAR(255) NOT NULL,
+                    applied          TIMESTAMPTZ NOT NULL,
+                    CONSTRAINT pk_schemaversions_id PRIMARY KEY (schemaversionsid)
+                )
+                """;
+            await createJournal.ExecuteNonQueryAsync();
+        }
+
+        foreach (var resourceName in scriptsToApply)
+        {
+            // Load the embedded SQL and substitute DbUp variables for the default (public) schema.
+            using var stream = MigratorAssembly.GetManifestResourceStream(resourceName)!;
+            using var reader = new StreamReader(stream);
+            var sql = (await reader.ReadToEndAsync())
+                .Replace("$schema_prefix$", "")
+                .Replace("$schema$", "public");
+
+            // Execute the migration script in its own transaction, then record it in
+            // the journal — both in the same transaction so a failure keeps the journal clean.
+            await using var tx = await conn.BeginTransactionAsync();
+            try
+            {
+                await using (var migrationCmd = conn.CreateCommand())
+                {
+                    migrationCmd.Transaction = tx;
+                    migrationCmd.CommandText = sql;
+                    await migrationCmd.ExecuteNonQueryAsync();
+                }
+
+                // The journal scriptname is the full embedded resource name, which is what
+                // DbUp stores and later queries to determine pending scripts.
+                await using (var journalCmd = conn.CreateCommand())
+                {
+                    journalCmd.Transaction = tx;
+                    journalCmd.CommandText = """
+                        INSERT INTO public.schemaversions (scriptname, applied)
+                        VALUES (@name, now())
+                        """;
+                    journalCmd.Parameters.AddWithValue("@name", resourceName);
+                    await journalCmd.ExecuteNonQueryAsync();
+                }
+
+                await tx.CommitAsync();
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+        }
+    }
+
+    // =====================================================================
+    // Schema-shape query helpers
+    // =====================================================================
+
+    private static async Task<bool> FunctionExistsAsync(NpgsqlConnection conn, string functionName)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM pg_proc WHERE proname = @name";
+        cmd.Parameters.AddWithValue("@name", functionName);
+        return Convert.ToInt64(await cmd.ExecuteScalarAsync()) > 0;
+    }
+
+    private static async Task<bool> IndexExistsAsync(NpgsqlConnection conn, string indexName)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT COUNT(*)
+            FROM pg_class c
+            INNER JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE c.relname = @name
+              AND c.relkind = 'i'
+              AND n.nspname = 'public'
+            """;
+        cmd.Parameters.AddWithValue("@name", indexName);
+        return Convert.ToInt64(await cmd.ExecuteScalarAsync()) > 0;
+    }
+
+    /// <summary>
+    /// The wildcard tag boundary (<c>order:*</c>) is gone from the query DSL, and migration 024
+    /// takes its database side with it: three read functions, two append functions, and the
+    /// concept index migration 022 added to make them fast.
+    /// </summary>
+    /// <remarks>
+    /// The index is the reason the assertion matters rather than being housekeeping. It is an
+    /// expression index on <c>alberto_event_tag_positions</c>, so every tag row ever written pays
+    /// to maintain it — measured at +28% on bulk tag-row insert — whether or not anyone asks a
+    /// wildcard question. Leaving it behind would keep charging appends for a query shape the
+    /// store no longer answers.
+    /// <para>
+    /// The functions are asserted by bare name because no caller survives them: nothing in the
+    /// C# backend builds a <c>_tag_patterns</c> call or reaches <c>_v2</c>/<c>_v5</c> any more,
+    /// so any overload left in <c>pg_proc</c> is dead weight regardless of its signature.
+    /// </para>
+    /// </remarks>
+    private static async Task AssertWildcardBoundaryObjectsAreGoneAsync(NpgsqlConnection conn)
+    {
+        string[] droppedFunctions =
+        [
+            "alberto_read_by_tag_patterns",
+            "alberto_read_by_types_or_tag_patterns",
+            "alberto_read_by_types_and_tag_patterns",
+            "alberto_append_events_v2",
+            "alberto_append_events_v5",
+        ];
+
+        foreach (var function in droppedFunctions)
+        {
+            (await FunctionExistsAsync(conn, function))
+                .Should().BeFalse(because:
+                    $"migration 024 drops {function} — the wildcard tag boundary it served is no " +
+                    "longer a query the DSL can express");
+        }
+
+        (await IndexExistsAsync(conn, "ix_alberto_event_tag_positions_concept"))
+            .Should().BeFalse(because:
+                "migration 024 drops the concept index added by 022 — with no wildcard boundary to " +
+                "resolve, it is pure insert cost on every tag row written");
+    }
+
+    /// <summary>
+    /// An append emits exactly one <c>pg_notify</c>, and it emits it from the append function
+    /// rather than from a trigger on <c>alberto_events</c>.
+    /// </summary>
+    /// <remarks>
+    /// Migration 010 tried to collapse an N-event append into one notification by making the
+    /// trigger statement-level, on the premise that an append inserts its batch in one statement.
+    /// It does not: <c>alberto_append_events</c> loops, one INSERT per event, so a statement-level
+    /// trigger fired N times all the same. Migration 025 drops the trigger and both of its
+    /// functions, and puts a single <c>pg_notify</c> at the end of each live append function —
+    /// which is why this asserts the absence of the trigger and the presence of the notify in the
+    /// function bodies. The count itself is proved end-to-end by
+    /// <c>PostgresEventListenerTests.RoundTrip_FiveEventBatch_FiresExactlyOneNotify</c>.
+    /// </remarks>
+    private static async Task AssertAppendNotifiesOnceAsync(NpgsqlConnection conn)
+    {
+        (await GetTriggerActionOrientationAsync(conn, "alberto_trg_notify_events"))
+            .Should().BeNull(because:
+                "migration 025 drops the notify trigger on alberto_events — no trigger placement " +
+                "can fire once per append while the append function inserts one event per statement");
+
+        foreach (var function in new[] { "alberto_notify_events", "alberto_notify_events_batch" })
+        {
+            (await FunctionExistsAsync(conn, function))
+                .Should().BeFalse(because:
+                    $"migration 025 drops {function} along with the trigger it backed");
+        }
+
+        // _v2 and _v5 are absent by 024; the four below are the live append set.
+        string[] appendFunctions =
+        [
+            "alberto_append_events",
+            "alberto_append_events_v3",
+            "alberto_append_events_v4",
+            "alberto_append_events_v6",
+        ];
+
+        foreach (var function in appendFunctions)
+        {
+            (await FunctionSourceContainsAsync(conn, function, "pg_notify"))
+                .Should().BeTrue(because:
+                    $"migration 025 moves the events notification into {function}, so an append " +
+                    "signals subscribers once when it finishes rather than once per event inserted");
+        }
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when the named function's body contains
+    /// <paramref name="fragment"/>. Matches every overload, so a stale overload left behind
+    /// without the fragment fails the check.
+    /// </summary>
+    private static async Task<bool> FunctionSourceContainsAsync(
+        NpgsqlConnection conn, string functionName, string fragment)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT COUNT(*) > 0
+               AND COUNT(*) = COUNT(*) FILTER (WHERE prosrc LIKE '%' || @fragment || '%')
+            FROM pg_proc
+            WHERE proname = @name
+            """;
+        cmd.Parameters.AddWithValue("@name", functionName);
+        cmd.Parameters.AddWithValue("@fragment", fragment);
+        return Convert.ToBoolean(await cmd.ExecuteScalarAsync());
+    }
+
+    /// <summary>
+    /// The checkpoint and dead-letter notify triggers are gone, along with the functions
+    /// behind them.
+    /// </summary>
+    /// <remarks>
+    /// Migration 001 opened three notification channels but only <c>$schema$_events</c> ever
+    /// grew a consumer — <c>PostgresEventListener</c> is the only <c>LISTEN</c> in the codebase.
+    /// The other two triggers wrote into a queue nobody read, and a NOTIFY costs the writer:
+    /// its commit takes an exclusive lock on the cluster-wide notification queue. Migration 032
+    /// drops them. This asserts the triggers are absent rather than merely detached, because a
+    /// detached trigger is what migration 010 left behind and 025 had to come back for.
+    /// </remarks>
+    private static async Task AssertUnlistenedNotifyTriggersAreGoneAsync(NpgsqlConnection conn)
+    {
+        (string Trigger, string Table)[] droppedTriggers =
+        [
+            ("alberto_trg_notify_checkpoint", "alberto_processor_checkpoints"),
+            ("alberto_trg_dead_letter_insert_notify", "alberto_dead_letter_events"),
+            ("alberto_trg_dead_letter_delete_notify", "alberto_dead_letter_events"),
+        ];
+
+        foreach (var (trigger, table) in droppedTriggers)
+        {
+            (await TriggerExistsAsync(conn, trigger, table))
+                .Should().BeFalse(because:
+                    $"migration 032 drops {trigger} — nothing LISTENs on the channel it raised, " +
+                    "so every row it fired on paid the notify-queue commit lock for no consumer");
+        }
+
+        string[] droppedFunctions =
+        [
+            "alberto_notify_checkpoint",
+            "alberto_notify_dead_letter_insert",
+            "alberto_notify_dead_letter_delete",
+        ];
+
+        foreach (var function in droppedFunctions)
+        {
+            (await FunctionExistsAsync(conn, function))
+                .Should().BeFalse(because:
+                    $"migration 032 drops {function} along with the trigger it backed");
+        }
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when the named trigger exists on the named table.
+    /// </summary>
+    private static async Task<bool> TriggerExistsAsync(NpgsqlConnection conn, string triggerName, string tableName)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.triggers
+                WHERE trigger_name = @name
+                  AND event_object_schema = 'public'
+                  AND event_object_table = @table
+            )
+            """;
+        cmd.Parameters.AddWithValue("@name", triggerName);
+        cmd.Parameters.AddWithValue("@table", tableName);
+        return (bool)(await cmd.ExecuteScalarAsync())!;
+    }
+
+    /// <summary>
+    /// Returns the <c>action_orientation</c> of the named trigger on <c>alberto_events</c>
+    /// (<c>"ROW"</c> or <c>"STATEMENT"</c>), or <see langword="null"/> if no such trigger exists.
+    /// </summary>
+    private static async Task<string?> GetTriggerActionOrientationAsync(NpgsqlConnection conn, string triggerName)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT action_orientation
+            FROM information_schema.triggers
+            WHERE trigger_name = @name
+              AND event_object_schema = 'public'
+              AND event_object_table = 'alberto_events'
+            LIMIT 1
+            """;
+        cmd.Parameters.AddWithValue("@name", triggerName);
+        var result = await cmd.ExecuteScalarAsync();
+        return result is DBNull ? null : result as string;
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when the table's <c>reloptions</c> contains
+    /// the specified <c>fillfactor</c> value.
+    /// </summary>
+    private static async Task<bool> TableHasFillfactorAsync(NpgsqlConnection conn, string tableName, int fillfactor)
+    {
+        await using var cmd = conn.CreateCommand();
+        // reloptions is a text[] in pg_class; casting to text produces a comma-separated list.
+        cmd.CommandText = """
+            SELECT EXISTS (
+                SELECT 1
+                FROM pg_class c
+                INNER JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE c.relname = @name
+                  AND n.nspname = 'public'
+                  AND c.relkind = 'r'
+                  AND array_to_string(c.reloptions, ',') LIKE @pattern
+            )
+            """;
+        cmd.Parameters.AddWithValue("@name", tableName);
+        cmd.Parameters.AddWithValue("@pattern", $"%fillfactor={fillfactor}%");
+        return (bool)(await cmd.ExecuteScalarAsync())!;
+    }
+
+    private static async Task<bool> TableExistsAsync(NpgsqlConnection conn, string tableName)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT COUNT(*)
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_name = @name
+            """;
+        cmd.Parameters.AddWithValue("@name", tableName);
+        return Convert.ToInt64(await cmd.ExecuteScalarAsync()) > 0;
+    }
+
+    /// <summary>
+    /// Asserts the partial index that keeps <c>GetStableHeadAsync</c> off a sequential scan is
+    /// present, valid, and shaped the way that query needs it.
+    /// </summary>
+    /// <remarks>
+    /// The stable-head query looks for the first position above the head whose inserting
+    /// transaction is not yet older than every in-flight transaction. Migration 008 added
+    /// <c>pg_xact_id</c> without backfilling it, so on any upgraded database almost every row
+    /// has it NULL and the <c>pg_xact_id IS NOT NULL</c> predicate matches only the recent tail.
+    /// Without a partial index the planner sees a near-zero selectivity filter over the whole
+    /// table and picks a parallel sequential scan. Indexing only the rows that can match turns
+    /// that into a scan of the tail.
+    /// <para>
+    /// <c>indisvalid</c> is checked explicitly rather than assumed: the index is built with
+    /// <c>CREATE INDEX CONCURRENTLY</c>, and an interrupted concurrent build leaves behind an
+    /// index that exists in the catalog but that the planner will never use.
+    /// </para>
+    /// </remarks>
+    private static async Task AssertInFlightVisibilityIndexAsync(NpgsqlConnection conn)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT pg_get_indexdef(i.indexrelid), i.indisvalid
+            FROM pg_index i
+            INNER JOIN pg_class c ON c.oid = i.indexrelid
+            INNER JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE c.relname = 'ix_alberto_events_inflight'
+              AND n.nspname = 'public'
+            """;
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue(
+            because: "migration 020 must create ix_alberto_events_inflight so that " +
+                     "GetStableHeadAsync does not fall back to a sequential scan of alberto_events");
+
+        var definition = reader.GetString(0);
+        var isValid = reader.GetBoolean(1);
+
+        isValid.Should().BeTrue(
+            because: "an interrupted CREATE INDEX CONCURRENTLY leaves an invalid index behind — " +
+                     "it satisfies an existence check but the planner never uses it");
+
+        definition.Should().Contain("alberto_events",
+            because: "the index must be on the event log itself");
+        definition.Should().Contain("global_position",
+            because: "the stable-head query scans ascending by global_position and takes LIMIT 1, " +
+                     "so the index has to supply that ordering");
+        definition.Should().Contain("pg_xact_id IS NOT NULL",
+            because: "the index must be partial — indexing every row would not shrink the scan, " +
+                     "since it is precisely the NULL rows (everything predating migration 008) " +
+                     "that make the predicate so unselective");
+    }
+
+    /// <summary>
+    /// Asserts that every CHECK constraint the migrations add is present <em>and</em> validated.
+    /// Splitting an ADD into <c>NOT VALID</c> plus a later <c>VALIDATE CONSTRAINT</c> is only a
+    /// safe rewrite if the validation actually lands; a missing VALIDATE would silently leave
+    /// pre-existing rows unchecked forever.
+    /// </summary>
+    private static async Task AssertCheckConstraintsAreValidatedAsync(NpgsqlConnection conn)
+    {
+        string[] constraints =
+        [
+            "alberto_outbox_entries_status_check",
+            "alberto_projection_rebuild_meta_status_check",
+            "alberto_projection_rebuild_meta_version_check",
+            "alberto_projection_rebuild_meta_high_water_check",
+        ];
+
+        foreach (var name in constraints)
+        {
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = """
+                SELECT convalidated
+                FROM pg_constraint c
+                INNER JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = @name
+                  AND n.nspname = 'public'
+                  AND c.contype = 'c'
+                """;
+            cmd.Parameters.AddWithValue("@name", name);
+            var convalidated = await cmd.ExecuteScalarAsync();
+
+            convalidated.Should().NotBeNull(because: $"CHECK constraint {name} must exist after migration");
+            convalidated.Should().Be(true,
+                because: $"{name} is added NOT VALID, so a later migration must VALIDATE it — " +
+                         "otherwise rows that predate the constraint are never checked");
+        }
+    }
+
+    private static async Task AssertOutboxClaimLeaseColumnsExistAsync(NpgsqlConnection conn)
+    {
+        foreach (var column in new[] { "claim_id", "claimed_by", "claim_expires_at" })
+        {
+            (await ColumnExistsAsync(conn, "alberto_outbox_entries", column))
+                .Should().BeTrue(
+                    because: $"migration 016 adds the outbox claim fence column {column}");
+        }
+    }
+
+    private static async Task AssertDeadLetterClaimFenceColumnExistsAsync(NpgsqlConnection conn)
+    {
+        (await ColumnExistsAsync(conn, "alberto_dead_letter_events", "claim_id"))
+            .Should().BeTrue(because: "migration 017 adds the dead-letter claim fencing token");
+    }
+
+    private static async Task AssertRebuildOperatorIntentColumnExistsAsync(NpgsqlConnection conn)
+    {
+        (await ColumnExistsAsync(conn, "alberto_projection_rebuild_meta", "requested_action"))
+            .Should().BeTrue(because: "migration 018 adds coordinator-owned operator intent");
+    }
+
+    private static async Task<bool> ColumnExistsAsync(
+        NpgsqlConnection conn, string tableName, string columnName)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT COUNT(*)
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name   = @table
+              AND column_name  = @col
+            """;
+        cmd.Parameters.AddWithValue("@table", tableName);
+        cmd.Parameters.AddWithValue("@col", columnName);
+        return Convert.ToInt64(await cmd.ExecuteScalarAsync()) > 0;
+    }
+
+    /// <summary>
+    /// Returns the declared character maximum length of a VARCHAR column, or null when the
+    /// column does not exist or is not a bounded character type.
+    /// </summary>
+    private static async Task<int?> GetColumnMaxLengthAsync(
+        NpgsqlConnection conn, string tableName, string columnName)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT character_maximum_length
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name   = @table
+              AND column_name  = @col
+            """;
+        cmd.Parameters.AddWithValue("@table", tableName);
+        cmd.Parameters.AddWithValue("@col", columnName);
+        var result = await cmd.ExecuteScalarAsync();
+        return result is DBNull || result is null ? null : Convert.ToInt32(result);
+    }
+
+    private static async Task AssertDeadLetterEventTypeColumnWidthAsync(NpgsqlConnection conn)
+    {
+        var maxLength = await GetColumnMaxLengthAsync(conn, "alberto_dead_letter_events", "event_type");
+        maxLength.Should().Be(500,
+            because: "migration 024 must widen dead_letter_events.event_type to VARCHAR(500) to match " +
+                     "alberto_events.event_type — the previous VARCHAR(200) silently rejected dead-lettering " +
+                     "any event whose type name exceeded 200 characters");
+    }
+
+    // =========================================================================
+    // Migration 024 — dead-letter event_type width — end-to-end
+    // (Testcontainers required)
+    // =========================================================================
+
+    /// <summary>
+    /// Migrates a fresh multi-tenant database to the current schema and verifies that
+    /// <see cref="PostgresDeadLetterStore.StoreAsync"/> accepts an event whose type name is
+    /// longer than 200 characters, which is the old dead-letter column width.
+    /// </summary>
+    /// <remarks>
+    /// Before migration 024 the INSERT would throw:
+    ///   ERROR: value too long for type character varying(200)
+    /// leaving the processor stuck in a retry loop with no escape into quarantine — the worst
+    /// possible outcome for a poison event.  This test uses a dedicated container rather than
+    /// the shared cluster templates so it sees the full migration path, not a pre-baked template
+    /// that already has the widened column.
+    /// </remarks>
+    [Fact]
+    public async Task MultiTenant_DeadLetterStore_AcceptsEventTypeOver200Characters()
+    {
+        await using var container = new PostgreSqlBuilder("postgres:16-alpine").Build();
+        await container.StartAsync();
+        var connectionString = container.GetConnectionString();
+
+        var result = PostgresMigrator.Migrate(connectionString, singleTenant: false);
+        result.Successful.Should().BeTrue(because: result.Error?.Message ?? "migration failed");
+
+        // A fully-qualified .NET type name commonly exceeds 200 characters.
+        // 35 (prefix) + 170 ('A's) = 205 characters — comfortably above the old limit.
+        var longEventType = "Acme.Commerce.Orders.Domain.Events." + new string('A', 170);
+        longEventType.Length.Should().BeGreaterThan(200,
+            because: "the test is only meaningful when the type name exceeds the old VARCHAR(200) cap");
+
+        await using var dataSource = NpgsqlDataSource.Create(connectionString);
+        var store = new PostgresDeadLetterStore(dataSource, multiTenant: true);
+
+        var entry = new DeadLetterEntry
+        {
+            Id = Guid.NewGuid(),
+            ProcessorId = "proc-long-type-test",
+            EventId = Guid.NewGuid(),
+            EventType = longEventType,
+            EventData = "{}",
+            ErrorMessage = "handler threw",
+            StackTrace = null,
+            AttemptCount = 1,
+            FailedAt = DateTimeOffset.UtcNow,
+            GlobalPosition = 1,
+        };
+
+        // Before migration 024 this threw:
+        //   PostgresException: value too long for type character varying(200)
+        await store.Invoking(s => s.StoreAsync(entry))
+            .Should().NotThrowAsync(
+                because: "migration 024 widens event_type to VARCHAR(500) so a 205-character type name must be accepted");
+
+        var stored = await store.GetAsync("proc-long-type-test");
+        stored.Should().ContainSingle(e => e.EventType == longEventType,
+            because: "the dead-lettered entry must be retrievable with the full type name intact");
+    }
+
+    /// <summary>
+    /// Same assertion as <see cref="MultiTenant_DeadLetterStore_AcceptsEventTypeOver200Characters"/>
+    /// but for the single-tenant migration set, which has no tenant_id column.
+    /// </summary>
+    [Fact]
+    public async Task SingleTenant_DeadLetterStore_AcceptsEventTypeOver200Characters()
+    {
+        await using var container = new PostgreSqlBuilder("postgres:16-alpine").Build();
+        await container.StartAsync();
+        var connectionString = container.GetConnectionString();
+
+        var result = PostgresMigrator.Migrate(connectionString, singleTenant: true);
+        result.Successful.Should().BeTrue(because: result.Error?.Message ?? "migration failed");
+
+        var longEventType = "Acme.Commerce.Orders.Domain.Events." + new string('A', 170);
+
+        await using var dataSource = NpgsqlDataSource.Create(connectionString);
+        var store = new PostgresDeadLetterStore(dataSource, multiTenant: false);
+
+        var entry = new DeadLetterEntry
+        {
+            Id = Guid.NewGuid(),
+            ProcessorId = "proc-long-type-test",
+            EventId = Guid.NewGuid(),
+            EventType = longEventType,
+            EventData = "{}",
+            ErrorMessage = "handler threw",
+            StackTrace = null,
+            AttemptCount = 1,
+            FailedAt = DateTimeOffset.UtcNow,
+            GlobalPosition = 1,
+        };
+
+        await store.Invoking(s => s.StoreAsync(entry))
+            .Should().NotThrowAsync(
+                because: "migration 024 widens event_type to VARCHAR(500) so a 205-character type name must be accepted");
+
+        var stored = await store.GetAsync("proc-long-type-test");
+        stored.Should().ContainSingle(e => e.EventType == longEventType,
+            because: "the dead-lettered entry must be retrievable with the full type name intact");
+    }
+}

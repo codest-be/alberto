@@ -1,8 +1,8 @@
 using System.CommandLine;
 using Alberto.Cli.Output;
-using Alberto.Dcb.Admin;
-using Alberto.Dcb.Postgres;
-using Alberto.Dcb.Subscriptions;
+using Alberto.Admin;
+using Alberto.Postgres;
+using Alberto.Subscriptions;
 using Npgsql;
 using Spectre.Console;
 

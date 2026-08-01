@@ -1,8 +1,7 @@
-using Alberto.Dcb;
 
 // The module now carries GraphQL types, so HotChocolate.Types is in scope here and it has a Tag
 // attribute of its own. These tags are DCB consistency-boundary tags, never schema metadata.
-using Tag = Alberto.Dcb.TagAttribute;
+using Tag = Alberto.TagAttribute;
 
 namespace Alberto.Orders.Contracts;
 
@@ -11,7 +10,7 @@ namespace Alberto.Orders.Contracts;
 /// </summary>
 [EventType("order-created")]
 public sealed record OrderCreated(
-    [property: Tag(Tags.Order)] Guid OrderId,
+    [property: @Tag(Tags.Order)] Guid OrderId,
     Guid CustomerId,
     IReadOnlyList<OrderLineItem> LineItems,
     string? Notes) : IEvent;
@@ -21,7 +20,7 @@ public sealed record OrderCreated(
 /// </summary>
 [EventType("order-item-added")]
 public sealed record OrderItemAdded(
-    [property: Tag(Tags.Order)] Guid OrderId,
+    [property: @Tag(Tags.Order)] Guid OrderId,
     Guid ProductId,
     string ProductName,
     int Quantity,
@@ -32,7 +31,7 @@ public sealed record OrderItemAdded(
 /// </summary>
 [EventType("order-item-removed")]
 public sealed record OrderItemRemoved(
-    [property: Tag(Tags.Order)] Guid OrderId,
+    [property: @Tag(Tags.Order)] Guid OrderId,
     Guid ProductId) : IEvent;
 
 /// <summary>
@@ -40,7 +39,7 @@ public sealed record OrderItemRemoved(
 /// </summary>
 [EventType("order-confirmed")]
 public sealed record OrderConfirmed(
-    [property: Tag(Tags.Order)] Guid OrderId,
+    [property: @Tag(Tags.Order)] Guid OrderId,
     DateTimeOffset ConfirmedAt) : IEvent;
 
 /// <summary>
@@ -48,7 +47,7 @@ public sealed record OrderConfirmed(
 /// </summary>
 [EventType("order-shipped")]
 public sealed record OrderShipped(
-    [property: Tag(Tags.Order)] Guid OrderId,
+    [property: @Tag(Tags.Order)] Guid OrderId,
     string TrackingNumber,
     string Carrier,
     DateTimeOffset ShippedAt) : IEvent;
@@ -58,7 +57,7 @@ public sealed record OrderShipped(
 /// </summary>
 [EventType("order-delivered")]
 public sealed record OrderDelivered(
-    [property: Tag(Tags.Order)] Guid OrderId,
+    [property: @Tag(Tags.Order)] Guid OrderId,
     DateTimeOffset DeliveredAt) : IEvent;
 
 /// <summary>
@@ -66,7 +65,7 @@ public sealed record OrderDelivered(
 /// </summary>
 [EventType("order-cancelled")]
 public sealed record OrderCancelled(
-    [property: Tag(Tags.Order)] Guid OrderId,
+    [property: @Tag(Tags.Order)] Guid OrderId,
     string Reason,
     DateTimeOffset CancelledAt) : IEvent;
 

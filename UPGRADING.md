@@ -41,15 +41,15 @@ they touch a persisted table.
 | SV-1 | Serializer — runtime guard | Medium | `EventSerializer.Deserialize` throws when the stored version is below the type's declared version and nothing covers the gap |
 | LK-1 | PostgreSQL append lock | **High** | The append advisory-lock key space changed; two application versions appending concurrently do not serialize against each other |
 | CF-1 | Exception detail | Low | PostgreSQL `DcbConflictException` messages are reworded and now carry real `ConflictingPosition` / `ExpectedPosition` / `Query` values |
-| PK-1 | Packaging | Medium | The `Alberto.Dcb.Admin` package is no longer published, and the `PostgresAdmin*` types are no longer in the `Alberto.Dcb.Postgres` package |
+| PK-1 | Packaging | Medium | The `Alberto.Admin` package is no longer published, and the `PostgresAdmin*` types are no longer in the `Alberto.Postgres` package |
 
 ---
 
 ### TF-1 — net9.0 target removed
 
-The seven core libraries (`Alberto.Dcb`, `Alberto.Dcb.Commands`, `Alberto.Dcb.InMemory`,
-`Alberto.Dcb.Postgres`, `Alberto.Dcb.EntityFramework`, `Alberto.Dcb.Messaging`,
-`Alberto.Dcb.Postgres.Messaging`) previously shipped both `net9.0` and `net10.0` target folders.
+The seven core libraries (`Alberto`, `Alberto.Commands`, `Alberto.InMemory`,
+`Alberto.Postgres`, `Alberto.EntityFramework`, `Alberto.Messaging`,
+`Alberto.Messaging.Postgres`) previously shipped both `net9.0` and `net10.0` target folders.
 They now ship `net10.0` only.
 
 **Symptom.** NuGet resolves the package but the project fails to compile because no compatible
@@ -131,7 +131,7 @@ services.AddAlberto("orders", builder => builder
 
 ### PS-9 — `BatchedEfProjection<TDbContext, THandler>` and `IEfBatchHandler<TDbContext>` deleted
 
-Both were public in `Alberto.Dcb.EntityFramework.Batching` and neither had a registration path —
+Both were public in `Alberto.EntityFramework.Batching` and neither had a registration path —
 there was no `AddBatchedEfProjection`, so the only way to use them was to hand-register the
 processor into keyed DI. Two consequences followed from that, and both are silent:
 
@@ -603,14 +603,14 @@ Affected types:
 
 | Type / method | Assembly |
 |---|---|
-| `AcrossPostgresDatabases(...)` extension | `Alberto.Dcb.Postgres` |
-| `PostgresTenantShardMap` | `Alberto.Dcb.Postgres` |
-| `PostgresShardBuilder` | `Alberto.Dcb.Postgres` |
-| `ITenantShardMap` | `Alberto.Dcb` |
-| `ShardRoutingEventStore` | `Alberto.Dcb` |
-| `ShardHealthCheck` | `Alberto.Dcb` |
-| `ShardHealth` | `Alberto.Dcb` |
-| `ShardExceptions` (`ShardUnroutableException`, `ShardNotFoundException`) | `Alberto.Dcb` |
+| `AcrossPostgresDatabases(...)` extension | `Alberto.Postgres` |
+| `PostgresTenantShardMap` | `Alberto.Postgres` |
+| `PostgresShardBuilder` | `Alberto.Postgres` |
+| `ITenantShardMap` | `Alberto` |
+| `ShardRoutingEventStore` | `Alberto` |
+| `ShardHealthCheck` | `Alberto` |
+| `ShardHealth` | `Alberto` |
+| `ShardExceptions` (`ShardUnroutableException`, `ShardNotFoundException`) | `Alberto` |
 
 **Symptom.** `warning ALB9001: '...' is for evaluation purposes only and is subject to change
 or removal in future updates.` (or the equivalent error when warnings are treated as errors).
@@ -1025,9 +1025,9 @@ are placeholders rather than facts.
 
 ### PK-1 — the admin surface is not published in 1.0
 
-`Alberto.Dcb.Admin` is no longer pushed to a package feed, and the three PostgreSQL admin types
-moved out of the `Alberto.Dcb.Postgres` package into a new, also-unpublished
-`Alberto.Dcb.Postgres.Admin`:
+`Alberto.Admin` is no longer pushed to a package feed, and the three PostgreSQL admin types
+moved out of the `Alberto.Postgres` package into a new, also-unpublished
+`Alberto.Admin.Postgres`:
 
 - `PostgresAdminDataAccess`
 - `PostgresAdminOperator`
@@ -1041,13 +1041,13 @@ covered by tests; they just do not become packages.
 
 **Not affected.** The `Alberto.Cli` tool still ships, and it is the supported operator surface.
 `dotnet tool install --global Alberto.Cli` and every `alberto` command behave exactly as before.
-Nothing in `Alberto.Dcb`, `Alberto.Dcb.Postgres` or any other published package lost a member that
+Nothing in `Alberto`, `Alberto.Postgres` or any other published package lost a member that
 you could reach without already depending on the admin abstraction.
 
-**Symptom.** A project referencing the `Alberto.Dcb.Admin` package fails to restore (`NU1101`), or
-one referencing `Alberto.Dcb.Postgres` stops compiling against `PostgresAdminDataAccess`,
+**Symptom.** A project referencing the `Alberto.Admin` package fails to restore (`NU1101`), or
+one referencing `Alberto.Postgres` stops compiling against `PostgresAdminDataAccess`,
 `PostgresAdminOperator` or `AddAlbertoPostgresAdmin` (`CS0246` / `CS1061`). Namespaces are
-unchanged — the types are still `Alberto.Dcb.Postgres.*` — so no `using` needs editing; the
+unchanged — the types are still `Alberto.Postgres.*` — so no `using` needs editing; the
 assembly they live in is simply not one you can get from a feed.
 
 **Fix.** If you were driving admin operations from your own code, either build the two projects
@@ -1100,7 +1100,7 @@ retention window an entry can survive, not how long it is kept.
 
 ## The command pipeline is reshaped; `Persist` is now `Commit`
 
-The fluent pipeline in `Alberto.Dcb.Commands` was rebuilt around one idea: **the boundary should
+The fluent pipeline in `Alberto.Commands` was rebuilt around one idea: **the boundary should
 decide which terminal you get.** Previously every pipeline exposed `Persist(query, position, ct)`,
 `PersistUnconditionally(ct)` and a `Persist(ct)` that threw at runtime when no boundary had been
 established. Now the type you are holding tells you which of those is legal.
@@ -1288,9 +1288,9 @@ public static Decision Create(...)
 }
 ```
 
-`Decision` lives in `Alberto.Dcb.Commands` (namespace `Alberto.Dcb`), so a project that previously
-only referenced `Alberto.Dcb` for `DecisionResult<TEvent>` needs a reference to
-`Alberto.Dcb.Commands` as well. The two example `Core` projects gained exactly that.
+`Decision` lives in `Alberto.Commands` (namespace `Alberto`), so a project that previously
+only referenced `Alberto` for `DecisionResult<TEvent>` needs a reference to
+`Alberto.Commands` as well. The two example `Core` projects gained exactly that.
 
 `EnsureSuccess()` has no replacement: `Decision` exposes `IsError` / `Problems`, and the caller
 decides how a failure surfaces (an exception, a GraphQL error, an HTTP problem detail) rather than
@@ -1358,7 +1358,7 @@ longer exists, so calls fail to compile rather than warn.
 
 `services.AddAlberto(...)` and `builder.AddAlbertoStore(...)` read as two halves of one bootstrap
 step, as if the first call left the module half-configured. They were not. `AddAlberto` builds the
-module; `AddAlbertoStore` came from the separate, optional `Alberto.Dcb.Commands` package and did
+module; `AddAlbertoStore` came from the separate, optional `Alberto.Commands` package and did
 one thing — declare where the module's `[EventType]` records live, and register the `AlbertoStore`
 command pipeline over them. That is module configuration, so it now reads like the other
 one-per-module settings (`WithPostgres`, `WithControlLoop`, `WithTenancy`) rather than like a
@@ -1717,7 +1717,7 @@ Fifteen breaking changes were introduced. They fall into the areas below:
 | DX-10 | Event-store interface | Medium | `Register*` methods removed from `IEventStore` |
 | DX-2 / DX-3 / DX-12 | Command/result API | Medium | `DecisionResult<TEvent>` obsoleted; `DecideAndAppendAsync` moved; `AddAlbertoStore` chained from builder |
 | DX-8 | Consumer pipeline | Medium | `ReactTo` arity-ladder overloads removed |
-| DX-5 | Packaging | Medium | `PostgresOutboxStore` moved to `Alberto.Dcb.Postgres.Messaging` |
+| DX-5 | Packaging | Medium | `PostgresOutboxStore` moved to `Alberto.Messaging.Postgres` |
 | DX-6 | Tenancy | Low | `.WithTenancy()` after `.WithPostgres()` now fails loudly at startup |
 | P1.1 | Tenancy | Low | Schema name restricted to lowercase identifier pattern |
 | P1.3 | Tenancy | Low | `TenantEventStoreDecorator.StreamAll` now throws |
@@ -1733,7 +1733,7 @@ Fifteen breaking changes were introduced. They fall into the areas below:
 ### Backend-specific event-store types replaced by `EventStore`
 
 `PostgresEventStore` and `InMemoryEventStore` contained the same append, synchronous-projection,
-and post-append orchestration. That behavior now lives once in `Alberto.Dcb.EventStore`; storage
+and post-append orchestration. That behavior now lives once in `Alberto.EventStore`; storage
 variation remains behind the existing `IEventStoreBackend` seam.
 
 ```csharp
@@ -1906,7 +1906,7 @@ catch (InlineProjectionExhaustedException ex)
 }
 ```
 
-The exception type is in `Alberto.Dcb.EntityFramework.Inline.InlineProjectionExhaustedException`.
+The exception type is in `Alberto.EntityFramework.Inline.InlineProjectionExhaustedException`.
 
 ---
 
@@ -2224,10 +2224,10 @@ directly is affected.
 - `RegisterInlineProjection(IInlineProjection)`
 - `RegisterPostAppendHandler(IPostAppendHandler)`
 
-They now live on a new `IEventStoreConfigurator` interface (in `Alberto.Dcb`).
+They now live on a new `IEventStoreConfigurator` interface (in `Alberto`).
 `EventStore` implements **both** `IEventStore` and `IEventStoreConfigurator`.
 `RegisterEfInlineProjection` extension methods in
-`Alberto.Dcb.EntityFramework` now extend `IEventStoreConfigurator` rather than `IEventStore`.
+`Alberto.EntityFramework` now extend `IEventStoreConfigurator` rather than `IEventStore`.
 
 **Why:** `IEventStore` is the runtime consumer surface. Exposing setup-only methods on it lets
 runtime code accidentally register projections or handlers after the store has already started
@@ -2362,7 +2362,7 @@ public static Decision Create(...)
 
 #### 2. `DecideAndAppendAsync` moved from `IEventStoreBackend` to `IEventStore`
 
-The extension method now lives in `Alberto.Dcb.Commands` and extends `IEventStore`. Signature
+The extension method now lives in `Alberto.Commands` and extends `IEventStore`. Signature
 changes:
 
 | Aspect | Before | After |
@@ -2426,13 +2426,13 @@ is unchanged and remains the primary recommendation.
 
 ## Packaging
 
-### DX-5 — `PostgresOutboxStore` moved to `Alberto.Dcb.Postgres.Messaging`
+### DX-5 — `PostgresOutboxStore` moved to `Alberto.Messaging.Postgres`
 
-**What changed:** `PostgresOutboxStore` has been extracted from `Alberto.Dcb.Postgres` into a
-new dedicated package: **`Alberto.Dcb.Postgres.Messaging`**. Its namespace changed from
-`Alberto.Dcb.Postgres` to `Alberto.Dcb.Postgres.Messaging`.
+**What changed:** `PostgresOutboxStore` has been extracted from `Alberto.Postgres` into a
+new dedicated package: **`Alberto.Messaging.Postgres`**. Its namespace changed from
+`Alberto.Postgres` to `Alberto.Messaging.Postgres`.
 
-**Why:** adding a reference to `Alberto.Dcb.Postgres` previously pulled in `Alberto.Dcb.Messaging`
+**Why:** adding a reference to `Alberto.Postgres` previously pulled in `Alberto.Messaging`
 transitively, forcing every Postgres user to take a dependency on the outbox/messaging stack
 they might not need.
 
@@ -2444,24 +2444,24 @@ they might not need.
 <!-- Before: came in transitively — no explicit reference needed -->
 
 <!-- After: add the explicit reference -->
-<PackageReference Include="Alberto.Dcb.Postgres.Messaging" Version="x.x.x" />
+<PackageReference Include="Alberto.Messaging.Postgres" Version="x.x.x" />
 ```
 
 2. Update the `using` directive:
 
 ```csharp
 // Before
-using Alberto.Dcb.Postgres;
+using Alberto.Postgres;
 
 // After
-using Alberto.Dcb.Postgres.Messaging;
+using Alberto.Messaging.Postgres;
 ```
 
 The type name `PostgresOutboxStore` and its constructor signature are unchanged.
 
 **Migration — if you do NOT use `PostgresOutboxStore`:** no action required. If you were
-relying on the transitive `Alberto.Dcb.Messaging` reference for other messaging types, add
-`Alberto.Dcb.Messaging` directly.
+relying on the transitive `Alberto.Messaging` reference for other messaging types, add
+`Alberto.Messaging` directly.
 
 ---
 
@@ -2469,7 +2469,7 @@ relying on the transitive `Alberto.Dcb.Messaging` reference for other messaging 
 
 ### 1. Admin package removed — use the CLI instead
 
-`Alberto.Dcb.Admin` and the embedded Angular admin UI have been removed. Replace with the
+`Alberto.Admin` and the embedded Angular admin UI have been removed. Replace with the
 `alberto` .NET global tool:
 
 ```bash
@@ -2501,7 +2501,7 @@ app.MapDcbAdmin();                                       // ← remove
 
 ```xml
 <!-- remove this -->
-<PackageReference Include="Alberto.Dcb.Admin" />
+<PackageReference Include="Alberto.Admin" />
 ```
 
 **CLI quick reference:**
@@ -2554,7 +2554,7 @@ Five new migrations are applied automatically when the application starts:
 | # | Name | What it adds |
 |---|------|-------------|
 | 013 | DeadLetterPosition | `global_position` column on dead letters |
-| 014 | Outbox | `outbox_entries` table (if using `Alberto.Dcb.Messaging`) |
+| 014 | Outbox | `outbox_entries` table (if using `Alberto.Messaging`) |
 | 015 | TenantAssignments | `tenant_assignments` table for consistent hash ring |
 | 016 | FencedCheckpoint | `save_checkpoint_if_lease_held` SQL function |
 

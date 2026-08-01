@@ -25,14 +25,14 @@ Final result: **687 passed / 4 skipped / 0 failed** (21 new tests added, 0 weake
 
 ### Problem
 
-Both overloads in `src/Alberto.Dcb.Telemetry/ServiceCollectionExtensions.cs` were decorated with `[Obsolete]`. The spec retains them for users who wire `TracerProvider` / `MeterProvider` manually without calling `AddOpenTelemetry()`. The attribute was added by mistake in a prior review cycle.
+Both overloads in `src/Alberto.Telemetry/ServiceCollectionExtensions.cs` were decorated with `[Obsolete]`. The spec retains them for users who wire `TracerProvider` / `MeterProvider` manually without calling `AddOpenTelemetry()`. The attribute was added by mistake in a prior review cycle.
 
 ### Red test (before)
 
 Reflection-based assertions in `TelemetryRegistrationTests`:
 
 ```csharp
-typeof(Alberto.Dcb.Telemetry.ServiceCollectionExtensions)
+typeof(Alberto.Telemetry.ServiceCollectionExtensions)
     .GetMethods()
     .Where(m => m.Name == "AddAlbertoInstrumentation" && ...)
     .Should().ContainSingle()
@@ -46,13 +46,13 @@ Both `_TracerProviderBuilder_is_not_obsolete` and `_MeterProviderBuilder_is_not_
 
 ### Changes
 
-**`src/Alberto.Dcb.Telemetry/ServiceCollectionExtensions.cs`**
+**`src/Alberto.Telemetry/ServiceCollectionExtensions.cs`**
 
 - Removed `[Obsolete]` from both overloads (`TracerProviderBuilder` and `MeterProviderBuilder`).
 - Updated XML docs to explain the retained use case: manual TracerProvider / MeterProvider wiring in hosts that do not call `AddOpenTelemetry()`.
 - Added `ArgumentNullException.ThrowIfNull(builder)` to both methods (was missing and would have been a latent NPE).
 
-**`tests/Alberto.Dcb.Tests/Configuration/TelemetryRegistrationTests.cs`**
+**`tests/Alberto.Tests/Configuration/TelemetryRegistrationTests.cs`**
 
 Added three tests under "Finding I3":
 
@@ -96,7 +96,7 @@ All five failed (no overlay path existed).
 
 ### Changes
 
-**`src/Alberto.Dcb/Subscriptions/ProcessorExecutionOptions.cs`**
+**`src/Alberto/Subscriptions/ProcessorExecutionOptions.cs`**
 
 Added `ProcessorExecutionOverrides` — the mirror class for `ProcessorExecutionOptions`:
 
@@ -116,7 +116,7 @@ public sealed class ProcessorExecutionOverrides : IAlbertoOverrides<ProcessorExe
 
 This is automatically picked up by the reflection-driven `OptionsOverrideParityTests` guard — no extra wiring needed there.
 
-**`src/Alberto.Dcb/Configuration/AlbertoModuleDefinition.cs`**
+**`src/Alberto/Configuration/AlbertoModuleDefinition.cs`**
 
 In `ApplyConfiguration`, added a processor overlay loop before the `return definition with { ... }`:
 
@@ -136,7 +136,7 @@ var overlaidProcessors = definition.Processors.Select(processor =>
 
 The `Processors = overlaidProcessors` expression is included in the returned `with` record. ALB0005 validation already runs against all processors in `AlbertoModuleValidator.ValidateProcessors`, so config-only violations are caught automatically.
 
-**`tests/Alberto.Dcb.Tests/Configuration/ProcessorExecutionConfigurationTests.cs`** (new file)
+**`tests/Alberto.Tests/Configuration/ProcessorExecutionConfigurationTests.cs`** (new file)
 
 5 tests verifying: target-only overlay, adjacent processors unaffected, unknown processor IDs do not throw, absent config leaves defaults, config-only ALB0005 fires.
 
@@ -160,7 +160,7 @@ The test avoids Docker by building a service provider with a fake connection str
 
 ### Changes
 
-**`src/Alberto.Dcb.Postgres/PostgresBackendDescriptor.cs`**
+**`src/Alberto.Postgres/PostgresBackendDescriptor.cs`**
 
 Each of the five factory lambdas was changed to resolve from `IOptionsMonitor<AlbertoModuleDefinition>` at resolution time:
 
@@ -196,7 +196,7 @@ services.AddSingleton<IHostedService>(sp =>
 
 `PostgresNullHostedService` is a `file sealed class` — file-local, zero-allocation no-op implementation of `IHostedService`.
 
-**`src/Alberto.Dcb.Postgres/PostgresBuilderExtensions.cs`**
+**`src/Alberto.Postgres/PostgresBuilderExtensions.cs`**
 
 Same deferred-resolution pattern applied to the `IEventStoreBackend` factory (single-tenant path via `RegisterSingleTenantBackend`) and the `PostgresTenantEventStoreBackend` factory.
 
@@ -227,13 +227,13 @@ All failed because `UnknownConfigurationKeys` did not exist and scanning was not
 
 ### New types
 
-**`src/Alberto.Dcb/Configuration/UnknownConfigurationKey.cs`** (public API)
+**`src/Alberto/Configuration/UnknownConfigurationKey.cs`** (public API)
 
 ```csharp
 public sealed record UnknownConfigurationKey(string FullKey, string? Suggestion);
 ```
 
-**`src/Alberto.Dcb/Configuration/AlbertoConfigurationScanner.cs`** (internal)
+**`src/Alberto/Configuration/AlbertoConfigurationScanner.cs`** (internal)
 
 Static class with:
 
@@ -253,7 +253,7 @@ Top-level section routing:
 | Backend key (e.g. `Postgres`) | returned by `IAlbertoBackendDescriptor.GetConfigurationSection()` |
 | Any other key | flagged as ALB0008 immediately |
 
-**`src/Alberto.Dcb/Configuration/IAlbertoBackendDescriptor.cs`**
+**`src/Alberto/Configuration/IAlbertoBackendDescriptor.cs`**
 
 Added a default interface method to avoid a circular dependency between the core library and backend libraries:
 
@@ -261,7 +261,7 @@ Added a default interface method to avoid a circular dependency between the core
 (string? SectionName, Type? OverridesType) GetConfigurationSection() => (null, null);
 ```
 
-**`src/Alberto.Dcb.Postgres/PostgresBackendDescriptor.cs`**
+**`src/Alberto.Postgres/PostgresBackendDescriptor.cs`**
 
 Override:
 
@@ -270,7 +270,7 @@ public (string? SectionName, Type? OverridesType) GetConfigurationSection() =>
     ("Postgres", typeof(PostgresOverrides));
 ```
 
-**`src/Alberto.Dcb/Configuration/AlbertoModuleDefinition.cs`**
+**`src/Alberto/Configuration/AlbertoModuleDefinition.cs`**
 
 Added `UnknownConfigurationKeys` property and wired the scanner call into `ApplyConfiguration`:
 
@@ -278,11 +278,11 @@ Added `UnknownConfigurationKeys` property and wired the scanner call into `Apply
 public ImmutableArray<UnknownConfigurationKey> UnknownConfigurationKeys { get; internal set; } = [];
 ```
 
-**`src/Alberto.Dcb/ServiceCollectionExtensions.cs`**
+**`src/Alberto/ServiceCollectionExtensions.cs`**
 
 Added `target.UnknownConfigurationKeys = source.UnknownConfigurationKeys;` to `CopyInto`.
 
-**`src/Alberto.Dcb/Configuration/AlbertoModuleValidator.cs`**
+**`src/Alberto/Configuration/AlbertoModuleValidator.cs`**
 
 Added `ValidateUnknownKeys` (called from `Collect`):
 
@@ -316,7 +316,7 @@ Added: "Unknown keys under `Alberto:Modules:{key}` now fail startup with `ALB000
 |------|----------|-----------|
 | I3 test gate | Reflection assertions (`ObsoleteAttribute` absent), not compile-failure | Test project does not have `TreatWarningsAsErrors`, so calling an `[Obsolete]` method only warns. Reflection is the only reliable red gate. |
 | I2 no-DB test | Resolve keyed `IProcessorLeaseManager` with fake connection string; assert `.LeaseDuration` | `PostgresProcessorLeaseManager` exposes `LeaseDuration` as a public property and does not connect in its constructor. Avoids Testcontainers for a pure DI assertion. |
-| I4 backend section | Default interface method `GetConfigurationSection()` on `IAlbertoBackendDescriptor` | Keeps the unknown-key scanner in the core `Alberto.Dcb` assembly without importing `Alberto.Dcb.Postgres` (which would be a circular dependency). Each backend self-describes its section name. |
+| I4 backend section | Default interface method `GetConfigurationSection()` on `IAlbertoBackendDescriptor` | Keeps the unknown-key scanner in the core `Alberto` assembly without importing `Alberto.Postgres` (which would be a circular dependency). Each backend self-describes its section name. |
 | I4 Processors handling | Map `"Processors" → null`; iterate processor-ID children, validate each against `ProcessorExecutionOverrides` | Processor IDs are user-defined at runtime. Flagging them as unknown keys would be a false positive. Only their leaf property names (e.g. `MaxConcurrency`, `BatchingMode`) are validated. |
 | I4 Levenshtein threshold | `Math.Max(2, candidate.Length / 3)` (OrdinalIgnoreCase) | Specified in the review findings. Keeps short keys (≤ 5 chars) requiring at most 2 edits; longer keys scale at 33% of their length. |
 | I1 ALB0005 config-only coverage | No extra validator code needed | `ValidateProcessors` already iterates `definition.Processors`. After the overlay loop in `ApplyConfiguration`, config-supplied values are present in the processor records, so the existing validator catches them automatically. |

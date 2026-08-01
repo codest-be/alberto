@@ -12,12 +12,12 @@ Task 1: complete (commits a22ed4f..f1f2796, review clean)
 
 ### Watch items (for final whole-branch review)
 - Directory.Packages.props:13 pins Microsoft.Extensions.Options at 9.0.0 while the
-  Configuration.Binder / Options.ConfigurationExtensions siblings are 10.0.7. Alberto.Dcb
+  Configuration.Binder / Options.ConfigurationExtensions siblings are 10.0.7. Alberto
   currently resolves Options to 10.0.7 transitively on both TFMs, so no live conflict —
   but the stale pin bites any project that references Options directly.
 - Task 1 Minor (deferred): Overlay<TOptions,TOverrides> has no new() constraint on
   TOverrides though ConfigurationBinder requires a parameterless ctor
-  (src/Alberto.Dcb/Configuration/IAlbertoOverrides.cs:38).
+  (src/Alberto/Configuration/IAlbertoOverrides.cs:38).
 - Task 1 Minor (deferred): TelemetryOptions defaults (Enabled, RecordEventPayloadSize)
   are not pinned by a defaults test.
 Task 2: complete (commits f1f2796..c6acc06, review clean)
@@ -29,10 +29,10 @@ Task 2: complete (commits f1f2796..c6acc06, review clean)
     sites. Both signatures are plan-specified.
 Task 3: complete (commits c6acc06..28bafc1, review clean)
   - Task 3 Minor (deferred): unused `using System.Collections.Immutable;` in
-    tests/Alberto.Dcb.Tests/Configuration/AlbertoModuleValidatorTests.cs:185
+    tests/Alberto.Tests/Configuration/AlbertoModuleValidatorTests.cs:185
   - Task 3 Minor (deferred): ALB0006 guard's IsNullOrWhiteSpace || Any(IsWhiteSpace) is
     redundant; IsNullOrEmpty || Any(IsWhiteSpace) reads clearer
-    (src/Alberto.Dcb/Configuration/AlbertoModuleValidator.cs:160)
+    (src/Alberto/Configuration/AlbertoModuleValidator.cs:160)
   - Task 3 Minor (deferred): ALB0004 theory rows exercise only PollingInterval and BatchSize;
     HeadRefreshInterval and HeadWindowSize are validated but untested
 
@@ -41,7 +41,7 @@ Task 3: complete (commits c6acc06..28bafc1, review clean)
 this branch's work: apps/Alberto.Orders/.../OrderSummaryEfProjection.cs (7x CS0407 wrong Apply
 return type) and apps/Alberto.Payments/.../*Projection.cs (CS1061 ProjectionDeclarationBuilder
 has no 'Handles'). Verified by building the merge base in a scratch worktree: 22 errors there.
-CI (.github/workflows/ci.yml) only builds+tests tests/Alberto.Dcb.Tests, so this does not gate
+CI (.github/workflows/ci.yml) only builds+tests tests/Alberto.Tests, so this does not gate
 green. But Task 12 Step 5 expects a clean `dotnet build`, and Task 12 Steps 3+6 migrate
 OrdersModule.cs and smoke-test the AppHost — both need apps/ to compile. Needs a scope decision
 from the user at the Task 11 -> 12 boundary.
@@ -52,9 +52,9 @@ Task 4: complete (commits 28bafc1..08f4e54, review clean)
     Orders.SummaryHandler != Invoices.SummaryHandler. (da2e2ac introduced a skip-outermost rule;
     08f4e54 reverted it.)
   - Task 4 Minor (deferred): IsNullOrWhiteSpace || Any(IsWhiteSpace) redundant, same shape as the
-    Task 3 minor (src/Alberto.Dcb/Configuration/ProcessorIdAttribute.cs:69)
+    Task 3 minor (src/Alberto/Configuration/ProcessorIdAttribute.cs:69)
   - Task 4 Minor (deferred): test helpers are now namespace-scoped internal types, so a second
-    test file in Alberto.Dcb.Tests.Configuration could collide on names like Outer.
+    test file in Alberto.Tests.Configuration could collide on names like Outer.
   - Residual, accepted: two same-named TOP-LEVEL handlers in different namespaces still derive
     the same id; ALB0002 catches it at startup with a [ProcessorId] remedy.
 
@@ -72,7 +72,7 @@ Task 5: complete (commits 08f4e54..8173cc0, review clean — opus reviewer, Appr
     StartupValidationTests pass against the actual validator, so the strings match.
   - Deferred Minor findings (for final whole-branch review triage):
     M5.1 ControlLoopBuilder.cs file-level `#pragma warning disable CS0618` guards a single access site;
-         narrow it to a disable/restore pair. Same for Alberto.Dcb.Commands/ServiceCollectionExtensions.cs (2 sites).
+         narrow it to a disable/restore pair. Same for Alberto.Commands/ServiceCollectionExtensions.cs (2 sites).
          (Note: Task 12 deletes all pragmas anyway — likely moot.)
     M5.2 ServiceCollectionExtensions.cs `var final = declared;` is a redundant alias; use `declared` directly.
     M5.3 No test covers ArgumentException.ThrowIfNullOrWhiteSpace(moduleKey).
@@ -162,8 +162,8 @@ Task 10: complete (commits ffeeb8a..3d4e1cf, review clean after one fix pass)
     LATER REVERSED: the [Obsolete] attribute was removed again in final review (finding I3) — the method is
     the supported path for manual TracerProvider/MeterProvider wiring, so deprecating it deprecated the only
     way to do that. The call-site removal stands. See final-review-fix-report.md §I3.
-  - #pragma warning disable CS0618 removed from Alberto.Dcb.Telemetry.
-  - InternalsVisibleTo("Alberto.Dcb.Telemetry") added to Alberto.Dcb.csproj — needed for `with` on
+  - #pragma warning disable CS0618 removed from Alberto.Telemetry.
+  - InternalsVisibleTo("Alberto.Telemetry") added to Alberto.csproj — needed for `with` on
     AlbertoModuleDefinition's internal set properties; reviewer confirmed every other companion assembly
     was already on that list.
   - OpenTelemetry.Exporter.InMemory 1.15.3 added to Directory.Packages.props — the brief's Step 1 asks for it,
@@ -195,7 +195,7 @@ Task 11: complete (commits 3d4e1cf..d2725f1, review Approved after one fix pass)
     escalates to Strict, resolved lazily inside the .Configure<IServiceProvider> callback.
   - Reviewer blocker (1 Important), fixed in d2725f1:
     F11.1 The escalation block had zero test coverage — deleting it broke nothing. Added
-          tests/Alberto.Dcb.Tests/Configuration/ProductionEscalationTests.cs. The two behaviour-pinning tests
+          tests/Alberto.Tests/Configuration/ProductionEscalationTests.cs. The two behaviour-pinning tests
           passed immediately (correctly reported as pinning, not red-green).
   - Controller-initiated fix folded into the same pass (was Minor M11.1, promoted): an operator who explicitly
     set OrphanPolicy = Warn in production config was silently escalated to Strict anyway, because Warn is also
@@ -248,7 +248,7 @@ Task 12: complete (commits 0768c25..6b22197, opus review Approved, no Critical/I
   - DcbModuleBuilder.Services deleted along with the _services field and the DI using; ctor is now
     `internal DcbModuleBuilder(string moduleKey) => Definition = new AlbertoModuleDefinition { ModuleKey = moduleKey };`
   - Every CS0618 pragma labelled for the Task 5 bridge removed from DcbModuleBuilderExtensions.cs,
-    MessagingBuilderExtensions.cs and Alberto.Dcb.Commands/ServiceCollectionExtensions.cs. All surviving
+    MessagingBuilderExtensions.cs and Alberto.Commands/ServiceCollectionExtensions.cs. All surviving
     CS0618 pragmas belong to the unrelated obsolete Projection<T> API and are correctly untouched.
   - The brief predicted ~50 broken test files; only ReactToScopedHandlerTests.cs changed. Reviewer verified
     this is benign — every other test already went through services.AddAlberto(...) from earlier tasks.
@@ -269,7 +269,7 @@ Task 12: complete (commits 0768c25..6b22197, opus review Approved, no Critical/I
   - Build 0 errors. Suite: 666 passed / 4 skipped / 0 failed.
 Task 13: complete (commits 6b22197..HEAD, docs only)
   - Created README.md (repo had never had one), UPGRADING.md 0.x->1.0 section, docs/configuration.md.
-  - Every C# sample compiled in a scratch console project against Alberto.Dcb, .Postgres, .EntityFramework,
+  - Every C# sample compiled in a scratch console project against Alberto, .Postgres, .EntityFramework,
     .Telemetry, .InMemory — 0 errors, 0 warnings. Scratch project not committed.
   - Validation catalog verified against source: all 11 codes exist (ALB0001-ALB0007, ALB1001-ALB1004);
     none missing, none extra. ALB0004 covers four conditions (PollingInterval, HeadRefreshInterval,

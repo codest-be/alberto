@@ -1,8 +1,9 @@
-using Alberto.Dcb;
-using Alberto.Dcb.EntityFramework;
-using Alberto.Dcb.Postgres;
-using Alberto.Dcb.Telemetry;
-using Alberto.Dcb.Tenancy;
+using Alberto.Commands;
+using Alberto;
+using Alberto.EntityFramework;
+using Alberto.Postgres;
+using Alberto.Telemetry;
+using Alberto.Tenancy;
 using Alberto.Orders.Features;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;

@@ -12,9 +12,9 @@ that was compiled and run; the finished file is at the bottom, along with the ou
 ```bash
 dotnet new console -o Tickets
 cd Tickets
-dotnet add package Alberto.Dcb --prerelease
-dotnet add package Alberto.Dcb.Commands --prerelease
-dotnet add package Alberto.Dcb.InMemory --prerelease
+dotnet add package Alberto --prerelease
+dotnet add package Alberto.Commands --prerelease
+dotnet add package Alberto.InMemory --prerelease
 dotnet add package Microsoft.Extensions.Hosting
 ```
 
@@ -161,7 +161,7 @@ services.AddAlberto("tickets", builder => builder
 - `AddAlberto(key, …)` registers one **module**. Everything inside is keyed by that string, so an
   application can host several modules with separate stores and control loops.
 - `WithEventsFrom(assembly)` scans for `[EventType]` records, builds the serializer, and registers
-  the `AlbertoStore` command pipeline. It comes from the separate `Alberto.Dcb.Commands` package.
+  the `AlbertoStore` command pipeline. It comes from the separate `Alberto.Commands` package.
 - `AddProjection` takes the declaration and a factory for where state goes. The factory's argument
   is a `ProjectionStoreContext` — ignored here, but it is what carries the rebuild version once you
   want live rebuilds ([projections.md](projections.md#rebuilding-a-projection)).
@@ -183,9 +183,9 @@ Going to production is the same shape with one line swapped:
 
 ```csharp
 using System.Reflection;
-using Alberto.Dcb;
-using Alberto.Dcb.InMemory;
-using Alberto.Dcb.Subscriptions;
+using Alberto;
+using Alberto.InMemory;
+using Alberto.Subscriptions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 

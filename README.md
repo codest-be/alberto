@@ -86,22 +86,24 @@ dotnet nuget add source "https://nuget.pkg.github.com/codest-be/index.json" --na
 Then take the core plus one backend:
 
 ```bash
-dotnet add package Alberto.Dcb --prerelease
+dotnet add package Alberto --prerelease
 ```
 
 | Package | What it gives you |
 |---|---|
-| `Alberto.Dcb` | Event store abstractions, control loop, middleware, projections, tenancy |
-| `Alberto.Dcb.Commands` | The `AlbertoStore` command pipeline (`Handle → Load → Decide → Commit`) |
-| `Alberto.Dcb.InMemory` | In-memory backend, checkpoint, dead-letter and state stores — dev and tests |
-| `Alberto.Dcb.Postgres` | PostgreSQL backend, migrations, leases |
-| `Alberto.Dcb.EntityFramework` | EF Core–backed projections |
-| `Alberto.Dcb.Messaging` | Transactional outbox abstractions |
-| `Alberto.Dcb.Postgres.Messaging` | PostgreSQL outbox store |
-| `Alberto.Dcb.Telemetry` | OpenTelemetry tracing and metrics |
-| `Alberto.Cli` | The `alberto` operator CLI (`dotnet tool install`) |
+| `Alberto` | Event store abstractions, control loop, middleware, projections, tenancy |
+| `Alberto.Commands` | The `AlbertoStore` command pipeline (`Handle → Load → Decide → Commit`) |
+| `Alberto.InMemory` | In-memory backend, checkpoint, dead-letter and state stores — dev and tests |
+| `Alberto.Postgres` | PostgreSQL backend, migrations, leases |
+| `Alberto.EntityFramework` | EF Core–backed projections |
+| `Alberto.Messaging` | Transactional outbox abstractions |
+| `Alberto.Messaging.Postgres` | PostgreSQL outbox store |
+| `Alberto.Telemetry` | OpenTelemetry tracing and metrics |
+| `Alberto.Testing` | In-memory test helpers (`InMemoryAlbertoModule`, assertion extensions) |
+| `Alberto.Testing.Xunit` | xUnit v3 test fixtures and collection definitions |
 
-All libraries target **net10.0**. The CLI is a net10.0 tool.
+All libraries target **net10.0**. The operator CLI (`alberto`) is not a NuGet tool package; run
+it from the repo with `dotnet run --project tools/Alberto.Cli`.
 
 ## Sixty seconds
 
