@@ -26,3 +26,8 @@ dist/
 
 # macOS Finder metadata
 .DS_Store
+
+# Process artifacts: specs, implementation plans and subagent run ledgers.
+# Kept outside the repository so it holds only code and documentation.
+.superpowers/
+docs/superpowers/
