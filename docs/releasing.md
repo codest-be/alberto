@@ -196,11 +196,33 @@ mints a token that nuget.org exchanges for a key valid for one hour. The policy 
 bound to this repository **and to the workflow filename** — renaming `publish-packages.yml` breaks
 publishing until the policy is edited to match.
 
-`RELEASE_TOKEN` is a personal access token or GitHub App token with `repo` scope. It is optional
-but strongly wanted: a pull request opened with the built-in `GITHUB_TOKEN` does not trigger
-workflow runs, so without it the release and backport pull requests arrive with no CI on them and
-cannot satisfy the required checks. The workaround, if you would rather not hold a token, is to
-close and reopen each generated pull request by hand.
+`RELEASE_TOKEN` exists because a pull request opened with the built-in `GITHUB_TOKEN` does not
+trigger workflow runs — GitHub suppresses them to stop workflows recursing. Without it the
+release and backport pull requests arrive with no CI on them and cannot satisfy the required
+checks. The workaround, if you would rather not hold a token, is to close and reopen each
+generated pull request by hand.
+
+Use a **fine-grained** token scoped to this repository alone, not a classic `repo`-scope one,
+which would carry write access to every repository the owner can reach:
+
+| Permission | Access | Needed for |
+|---|---|---|
+| Contents | Read and write | Pushing `release-prep/**` and `backport/**` branches |
+| Pull requests | Read and write | Opening the pull request, labelling it, commenting on a failed backport |
+| Metadata | Read | Mandatory on every fine-grained token |
+
+Nothing else. In particular it needs no `workflow` permission — neither workflow edits any file
+under `.github/workflows`.
+
+The repository is org-owned, so a fine-grained token has to be approved by a `codest-be` owner
+before it works, and it expires. Put the expiry in the calendar; the failure mode is a release
+that stops opening its pull request months from now.
+
+Store it without the value passing through a shell history or a terminal buffer:
+
+```bash
+gh secret set RELEASE_TOKEN --repo codest-be/alberto
+```
 
 ## Files
 
