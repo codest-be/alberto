@@ -1,6 +1,9 @@
-# Code owners are requested for review automatically, and the `protect main` ruleset requires
-# their approval. A path with no owner here still needs the ruleset's one approving review — this
-# file decides *whose*, not *whether*.
+# Code owners are requested for review automatically on the paths they own.
+#
+# Their approval is not currently *required* — the rulesets ask for zero approvals, because
+# GitHub does not let anyone approve their own pull request and this repository has one
+# maintainer. See the repository-configuration section of docs/releasing.md for why, and for the
+# two settings to flip when a second maintainer arrives. This file is written for that day.
 
 # Everything, unless overridden below.
 *                       @VDBBjorn

@@ -173,10 +173,22 @@ requests in a release and what `backport.yml` cherry-picks. `squash_merge_commit
 to `PR_TITLE` for the same reason: the default would use the commit subject instead whenever a
 pull request had exactly one commit, dropping the `(#123)`.
 
-**`main` and `release/**`.** Both require a pull request, one approving review, code-owner
-approval, resolved review threads, and re-approval after a push. Force-pushes and deletion are
-blocked. `main` additionally requires branches to be up to date before merging, and requires both
-the `build-test` and `pr-policy` checks.
+**`main` and `release/**`.** Both require a pull request with resolved review threads. Direct
+pushes, force-pushes and deletion are blocked. `main` additionally requires branches to be up to
+date before merging, and requires both the `build-test` and `pr-policy` checks.
+
+Neither requires an approving review, which is a deliberate choice for a single-maintainer
+repository rather than an oversight. GitHub does not let anyone approve their own pull request, so
+a required approval would be unsatisfiable on the maintainer's own work — and since a ruleset
+bypass is all-or-nothing, working around it would also skip `build-test` and `pr-policy`. A
+requirement that has to be bypassed to merge anything protects nothing and costs the two checks
+that do. Nobody without write access can merge regardless, so the gate that matters is still
+there.
+
+**Add the review requirement back the day a second maintainer joins**: set
+`required_approving_review_count` to `1` and `require_code_owner_review` and
+`require_last_push_approval` to `true` on both rulesets. `.github/CODEOWNERS` is already written
+for it and, in the meantime, still auto-requests review on the paths it names.
 
 **Actions.** Only GitHub-owned, verified-creator, and `NuGet/login@*` actions may run. The default
 `GITHUB_TOKEN` is read-only; each workflow requests the writes it needs and nothing more. Workflow
