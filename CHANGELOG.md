@@ -15,6 +15,10 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ## [Unreleased]
 
+---
+
+## [0.1.2] — 2026-08-01
+
 ### Added
 
 - A package icon, now shown on the nuget.org listing for all ten packages.
@@ -441,6 +445,7 @@ Initial beta release. Core DCB event store abstractions, PostgreSQL backend, in-
 backend, command pipeline, EF Core projection support, transactional outbox, and
 OpenTelemetry instrumentation.
 
-[Unreleased]: https://github.com/codest-be/alberto/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/codest-be/alberto/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/codest-be/alberto/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/codest-be/alberto/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/codest-be/alberto/releases/tag/v0.1.0

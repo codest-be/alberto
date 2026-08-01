@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -177,6 +178,34 @@ def _version_key(name: str) -> tuple:
     return (1, name)
 
 
+def warn_if_previous_disagrees_with_tags(previous: str | None) -> None:
+    """Warn when the changelog's newest version is not the newest reachable tag.
+
+    The compare link is built from the newest ``## [X.Y.Z]`` heading, because that is what the
+    file itself claims shipped last. When a release is tagged but its section never lands — which
+    has happened — the heading falls behind the tags and every compare link from then on spans
+    the wrong range. Git knows the truth, so ask it.
+
+    This warns rather than fails: a shallow clone has no tags, and the first release has no
+    previous one.
+    """
+    try:
+        latest = subprocess.run(
+            ["git", "describe", "--tags", "--abbrev=0", "--match", "v[0-9]*"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip().lstrip("v")
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return
+
+    if latest and latest != previous:
+        print(
+            f"::warning::Newest reachable tag is v{latest}, but the newest CHANGELOG.md section "
+            f"is {'[' + previous + ']' if previous else 'absent'}. The compare link for this "
+            f"release will span the wrong range. Add the missing section before releasing.",
+            file=sys.stderr,
+        )
+
+
 def cut_changelog(version: str, notes: str, date: str, check: bool) -> None:
     lines = CHANGELOG.read_text(encoding="utf-8").splitlines()
     body, refs = _split_link_refs(lines)
@@ -210,6 +239,8 @@ def cut_changelog(version: str, notes: str, date: str, check: bool) -> None:
         if m:
             previous = m.group(1)
             break
+
+    warn_if_previous_disagrees_with_tags(previous)
 
     body_text = merge_bodies(carried, notes) if carried else notes.strip()
 

@@ -119,9 +119,15 @@ pushes to nuget.org via trusted publishing.
 Tagging is deliberately a human step and deliberately last. A push to nuget.org can be unlisted
 but never deleted, and the package ID is never reclaimable.
 
-### 5. GitHub release
+### 5. Verify, then write the GitHub release
 
-Create the GitHub release from the tag and paste in the changelog section.
+A green publish run means the commands exited zero, not that the package is correct — `0.1.0`
+shipped with no README on any of its ten nuget.org pages and every check was green. Check the push
+step for warnings, confirm the versions indexed, and read the `.nuspec` back out of a downloaded
+`.nupkg`. The `release-packages` skill in `.claude/skills/` has the commands and the traps this
+repository has actually hit.
+
+Then create the GitHub release from the tag and paste in the changelog section.
 
 ## Patching an older line
 
