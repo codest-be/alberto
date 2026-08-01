@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/codest-be/alberto/security/advisories/new
+    about: Do not open a public issue. Report privately through a security advisory — see SECURITY.md.
+  - name: Documentation
+    url: https://github.com/codest-be/alberto/tree/main/docs
+    about: Getting started, configuration, operations, multi-tenancy and architecture notes.

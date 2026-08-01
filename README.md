@@ -142,7 +142,8 @@ The full, runnable version of that program is
 | [Configuration reference](https://github.com/codest-be/alberto/blob/main/docs/configuration.md) | Three-phase pipeline, all options, validation codes, custom backends |
 | [Async processing architecture](https://github.com/codest-be/alberto/blob/main/docs/architecture/async-processing.md) | How the control loop actually works |
 | [Tenant sharding](https://github.com/codest-be/alberto/blob/main/docs/architecture/tenant-sharding.md) | Spreading a module's tenants over several databases |
-| [Upgrade notes](https://github.com/codest-be/alberto/blob/main/UPGRADING.md) | Every breaking change, most recent first |
+| [Migrating to 1.0](https://github.com/codest-be/alberto/blob/main/docs/migrating-to-1.0.md) | Every breaking change on the road to 1.0, most recent first |
+| [Releasing](https://github.com/codest-be/alberto/blob/main/docs/releasing.md) | Versioning policy, milestones, release and backport process |
 
 ## Repository layout
 
@@ -167,8 +168,10 @@ nuget.org.
 **What that means, concretely:**
 
 - **Expect breaking changes.** The public API is not frozen until 1.0. Every break is recorded in
-  [UPGRADING.md](https://github.com/codest-be/alberto/blob/main/UPGRADING.md), but there will be breaks, and some will be in the core append and
-  projection APIs. Pin an exact version and read the upgrade notes before you move.
+  [CHANGELOG.md](https://github.com/codest-be/alberto/blob/main/CHANGELOG.md), with the road to 1.0
+  collected in [docs/migrating-to-1.0.md](https://github.com/codest-be/alberto/blob/main/docs/migrating-to-1.0.md) —
+  but there will be breaks, and some will be in the core append and
+  projection APIs. Pin an exact version and read the release notes before you move.
 - **It is well tested, not yet well proven.** The suite covers the libraries with unit tests plus
   Testcontainers-backed PostgreSQL integration tests, and it is green. That is evidence the code
   does what its author intended — it is not the same thing as having survived other people's

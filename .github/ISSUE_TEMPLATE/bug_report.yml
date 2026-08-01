@@ -1,0 +1,72 @@
+name: Bug report
+description: Something in Alberto does not behave as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file this. A maintainer will assign a milestone during
+        triage — that milestone is the version any fix ships in.
+
+        **Do not report security vulnerabilities here.** Use a
+        [private advisory](https://github.com/codest-be/alberto/security/advisories/new) instead.
+
+  - type: input
+    id: version
+    attributes:
+      label: Alberto version
+      description: The package version, e.g. `0.1.1`. `main` is fine if you build from source.
+      placeholder: "0.1.1"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Backend
+      options:
+        - PostgreSQL
+        - In-memory
+        - Both
+        - Not applicable
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you observed, and what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: >
+        The smallest set of steps or code that shows the problem. A failing test against
+        `tests/Alberto.Tests` is the most useful form this can take.
+      render: csharp
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Exception or log output
+      description: Full stack trace if there is one. Include any `ALB####` diagnostic code.
+      render: text
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: tenancy
+    attributes:
+      label: Configuration in play
+      description: Tick anything the affected module uses — these change the code paths involved.
+      options:
+        - label: Multi-tenant (`.WithTenancy()`)
+        - label: Tenant sharding (`.AcrossPostgresDatabases(...)`)
+        - label: Projection rebuilds (`.WithRebuilds()`)
+        - label: Transactional outbox

@@ -1,17 +1,42 @@
 # Changelog
 
 All notable changes to the Alberto NuGet packages are documented here.
-Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and versions follow
+[semantic versioning](https://semver.org/) — see [docs/releasing.md](docs/releasing.md) for what
+counts as a major, minor, and patch in this project.
 
-Breaking changes have detailed migration guides in [UPGRADING.md](UPGRADING.md).
+The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0.md).
+
+> **Do not hand-edit this file in a pull request.** Each section is drafted by the release
+> workflow from the closed issues in its milestone, and edited into prose on the release PR.
+> See [CONTRIBUTING.md](CONTRIBUTING.md#making-changes).
 
 ---
 
-## [Unreleased] — working toward v1
+## [Unreleased]
+
+### Added
+
+- A package icon, now shown on the nuget.org listing for all ten packages.
+
+---
+
+## [0.1.1] — 2026-08-01
+
+### Fixed
+
+- The package README was not declared in the `.nuspec`, so the nuget.org listing for every package
+  rendered empty. Also sets expectations for an early release on the listing itself.
+
+---
+
+## [0.1.0] — 2026-08-01
+
+First version published to nuget.org. Everything below is the delta from `0.1.0-beta`.
 
 ### Breaking changes
 
-For full migration guidance see [UPGRADING.md](UPGRADING.md).
+For full migration guidance see [docs/migrating-to-1.0.md](docs/migrating-to-1.0.md).
 
 **net9.0 target removed** — all seven core libraries now ship `net10.0` only. Projects that
 multi-target net9.0 must upgrade to net10.0 or pin to an earlier beta.
@@ -173,7 +198,7 @@ members whose defaults are already right for older events — `ALB0018` honours 
 No schema change, but **two application versions appending to the same database concurrently take
 locks in different key spaces and do not serialize against each other**, so the DCB conflict check
 is unprotected for the length of the overlap. Drain or stop the old version before starting the
-new one; see [UPGRADING.md](UPGRADING.md) for the rollout note.
+new one; see [docs/migrating-to-1.0.md](docs/migrating-to-1.0.md) for the rollout note.
 
 **The admin surface does not ship in 1.0** — `Alberto.Dcb.Admin` is no longer published to nuget.org,
 and the PostgreSQL implementation of it moved out of the `Alberto.Dcb.Postgres` package into a new,
@@ -415,3 +440,7 @@ removed by age. **Run migration 034 before deploying the new binary** — it add
 Initial beta release. Core DCB event store abstractions, PostgreSQL backend, in-memory
 backend, command pipeline, EF Core projection support, transactional outbox, and
 OpenTelemetry instrumentation.
+
+[Unreleased]: https://github.com/codest-be/alberto/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/codest-be/alberto/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/codest-be/alberto/releases/tag/v0.1.0

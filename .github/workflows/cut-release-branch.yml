@@ -1,0 +1,73 @@
+name: Cut release branch
+
+# Creates a `release/X.Y` branch from `main`, which is what makes patching an older line
+# possible at all. Without it every fix ships in whatever `main` has become, which is the
+# fix-forward model this repository deliberately does not use.
+#
+# Cut the branch when `main` starts moving past a line you still intend to patch — normally
+# right after that line's first release, or just before merging something that would break it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      line:
+        description: 'Release line, MAJOR.MINOR (e.g. 1.0). Creates release/1.0.'
+        required: true
+        type: string
+
+jobs:
+  cut:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Cut
+        env:
+          LINE: ${{ inputs.line }}
+        run: |
+          if ! [[ "$LINE" =~ ^[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::\`$LINE\` is not a MAJOR.MINOR release line. Use e.g. 1.0, not v1.0 or 1.0.0."
+            exit 1
+          fi
+
+          if [ "${GITHUB_REF_NAME}" != "main" ]; then
+            echo "::error::Release branches are cut from \`main\`, not \`${GITHUB_REF_NAME}\`."
+            exit 1
+          fi
+
+          BRANCH="release/$LINE"
+
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            echo "::error::\`$BRANCH\` already exists. A release line is cut once."
+            exit 1
+          fi
+
+          # The line has to match what main is currently carrying, or the branch would be
+          # created already unable to release: compute-version.sh reads VersionPrefix from the
+          # branch, so release/1.0 cut from a main that has moved to 1.1.0 would compute 1.1.1.
+          CURRENT=$(sed -n 's:.*<VersionPrefix>\(.*\)</VersionPrefix>.*:\1:p' Directory.Build.props | head -1)
+          CURRENT_LINE="${CURRENT%.*}"
+
+          if [ "$CURRENT_LINE" != "$LINE" ]; then
+            echo "::error::\`main\` is on $CURRENT (line $CURRENT_LINE), so it cannot be the base for \`$BRANCH\`. Cut a release line before main moves past it."
+            exit 1
+          fi
+
+          git push origin "HEAD:refs/heads/$BRANCH"
+
+          {
+            echo "## Cut \`$BRANCH\`"
+            echo
+            echo "From \`main\` at \`$(git rev-parse --short HEAD)\` (version $CURRENT)."
+            echo
+            echo "Fixes for this line go on \`main\` first, then get backported — run the"
+            echo "**Backport** workflow, or label the merged pull request \`backport/$LINE\`."
+            echo
+            echo "Protect it: add \`$BRANCH\` to the release-branch ruleset if it is not already"
+            echo "covered by the \`release/**\` pattern."
+          } >> "$GITHUB_STEP_SUMMARY"

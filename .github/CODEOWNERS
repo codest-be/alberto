@@ -1,0 +1,20 @@
+# Code owners are requested for review automatically, and the `protect main` ruleset requires
+# their approval. A path with no owner here still needs the ruleset's one approving review — this
+# file decides *whose*, not *whether*.
+
+# Everything, unless overridden below.
+*                       @VDBBjorn
+
+# The published surface. These are the files a semver mistake escapes through: PublicAPI.Shipped
+# is a promise, and Directory.Build.props is the version the packages carry.
+/Directory.Build.props  @VDBBjorn
+/Directory.Packages.props @VDBBjorn
+/src/**/PublicAPI.*.txt @VDBBjorn
+
+# The release and policy machinery, plus anything else that runs with a token.
+/.github/               @VDBBjorn
+
+# The migration guide and the changelog are the contract with people upgrading.
+/CHANGELOG.md           @VDBBjorn
+/docs/migrating-to-1.0.md @VDBBjorn
+/docs/releasing.md      @VDBBjorn
