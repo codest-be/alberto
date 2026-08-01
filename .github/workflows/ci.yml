@@ -61,14 +61,21 @@ jobs:
       # Alberto.* package makes the restore fail.
       - name: Pack smoke
         run: |
+          # The referenced version is derived from VersionPrefix, never hardcoded: a literal here
+          # silently turns this check into a no-op restore failure the moment the version is bumped.
+          PREFIX=$(sed -n 's:.*<VersionPrefix>\(.*\)</VersionPrefix>.*:\1:p' Directory.Build.props | head -1)
+          if [ -z "$PREFIX" ]; then
+            echo "::error::Could not read <VersionPrefix> from Directory.Build.props"
+            exit 1
+          fi
           for proj in Alberto Alberto.Commands Alberto.EntityFramework Alberto.InMemory Alberto.Messaging Alberto.Messaging.Postgres Alberto.Postgres Alberto.Telemetry Alberto.Testing Alberto.Testing.Xunit; do
             dotnet pack "src/$proj/$proj.csproj" -c Release --version-suffix ci -o /tmp/alberto-pack
           done
           SMOKEDIR=$(mktemp -d)
-          cat > "$SMOKEDIR/PackCheck.csproj" <<'CSPROJ'
+          cat > "$SMOKEDIR/PackCheck.csproj" <<CSPROJ
           <Project Sdk="Microsoft.NET.Sdk">
             <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
-            <ItemGroup><PackageReference Include="Alberto.Postgres" Version="0.1.0-ci" /></ItemGroup>
+            <ItemGroup><PackageReference Include="Alberto.Postgres" Version="$PREFIX-ci" /></ItemGroup>
           </Project>
           CSPROJ
           dotnet restore "$SMOKEDIR/PackCheck.csproj" \

@@ -7,7 +7,7 @@
         <Copyright>Copyright © 2025 Alberto</Copyright>
 
         <!-- Version -->
-        <VersionPrefix>0.1.0</VersionPrefix>
+        <VersionPrefix>0.1.1</VersionPrefix>
 
         <!-- Repository Information -->
         <RepositoryUrl>https://github.com/codest-be/alberto</RepositoryUrl>
@@ -40,32 +40,12 @@
         <NoWarn>$(NoWarn);CS1591</NoWarn>
     </PropertyGroup>
 
-    <!-- SourceLink — embeds a source-server pointer into the .pdb so debuggers can step into
-         library source straight from nuget.org. Only meaningful on packable projects; non-packable
-         projects (apps, tests, tools) produce no .snupkg and need none of this.
-         ContinuousIntegrationBuild is gated on the CI env-var so local dev builds stay fast and
-         the compiler does not try to make paths deterministic on a developer machine. -->
-    <PropertyGroup Condition="'$(IsPackable)' == 'true'">
-        <PublishRepositoryUrl>true</PublishRepositoryUrl>
-        <EmbedUntrackedSources>true</EmbedUntrackedSources>
-        <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
-
-        <!--
-            README is at the repo root; each packable project in src/ is one level below the solution
-            root, so the relative path from the project file is ../../README.md. Directory.Build.props
-            uses $(MSBuildThisFileDirectory) (= the repo root) so the absolute path is correct for the
-            None Include in the ItemGroup below.
-        -->
-        <PackageReadmeFile>README.md</PackageReadmeFile>
-
-        <!--
-            TODO (human task — cannot be authored here): icon.png
-            Once a square PNG icon (128×128 or 256×256) is committed to the repo root:
-              <PackageIcon>icon.png</PackageIcon>
-            and add the following None Include to the ItemGroup below:
-              <None Include="$(MSBuildThisFileDirectory)icon.png" Pack="true" PackagePath="\" />
-        -->
-    </PropertyGroup>
+    <!-- Packable-only *properties* live in Directory.Build.targets, not here. MSBuild evaluates
+         every property in file-import order before it evaluates any item, so a PropertyGroup in
+         this file guarded on '$(IsPackable)' == 'true' is tested while IsPackable is still the
+         false set above — the csproj body that flips it has not been read yet. Such a group is
+         silently dead. Items are different: the ItemGroup below is evaluated in a later pass, by
+         which time IsPackable is true, so guarding items here works and is deliberate. -->
 
     <ItemGroup Condition="'$(IsPackable)' == 'true'">
         <!-- README.md lives at the repo root; PackagePath="\" places it at the nupkg root

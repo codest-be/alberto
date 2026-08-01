@@ -1,5 +1,11 @@
 # Alberto
 
+> **Early release — under active testing.** Alberto is in its first public `0.x` versions. It
+> builds clean, the suite is green, and it has not yet been run in anger by anyone but its author.
+> Treat it as something to evaluate and experiment with, not to put in front of production traffic
+> yet. The API will make breaking changes before 1.0. See
+> [Project status](#project-status) for what that means in practice.
+
 An event store for .NET where the consistency boundary is a **query**, not an aggregate.
 
 ```csharp
@@ -20,7 +26,7 @@ That block loads exactly the events the decision depends on, folds them into sta
 appends — refusing the append if anything matching that same query landed in between. No aggregate
 root, no stream to pick in advance.
 
-**[Start here → docs/getting-started.md](docs/getting-started.md)** — a runnable 60-line sample, no
+**[Start here → docs/getting-started.md](https://github.com/codest-be/alberto/blob/main/docs/getting-started.md)** — a runnable 60-line sample, no
 database required.
 
 ---
@@ -61,32 +67,30 @@ contend; two people reserving the same seat always do.
 - **Zero-downtime projection rebuilds.** Change how a projection reads history, then replay the
   whole log into a shadow copy while the live one keeps serving reads, and swap them in one
   transaction. Driven by the CLI, executed by your running application.
-  See [docs/projections.md](docs/projections.md#rebuilding-a-projection).
+  See [docs/projections.md](https://github.com/codest-be/alberto/blob/main/docs/projections.md#rebuilding-a-projection).
 - **Multi-tenancy that reaches the SQL.** Tenant isolation is enforced in the queries and the
-  leases, not by a filter you might forget. See [docs/multi-tenancy.md](docs/multi-tenancy.md).
+  leases, not by a filter you might forget. See [docs/multi-tenancy.md](https://github.com/codest-be/alberto/blob/main/docs/multi-tenancy.md).
 - **An outbox.** A processor turns committed events into outbox rows on the same pipeline as your
   projections, and a relay claims them with `FOR UPDATE SKIP LOCKED`. Messages are derived from
   events that are already durable, so at-least-once delivery needs no distributed transaction.
-  See [docs/reactors-and-outbox.md](docs/reactors-and-outbox.md).
+  See [docs/reactors-and-outbox.md](https://github.com/codest-be/alberto/blob/main/docs/reactors-and-outbox.md).
 - **An operator CLI.** Inspect checkpoints, events, projections, dead letters and tenant leases;
   rewind a processor; retry or dismiss dead letters; run a rebuild. Mutating commands confirm before
   they act and most of them take `--dry-run`; every command takes `--json`, so the tool you use
-  interactively is the one your runbooks call. See [docs/operations.md](docs/operations.md).
+  interactively is the one your runbooks call. See [docs/operations.md](https://github.com/codest-be/alberto/blob/main/docs/operations.md).
 - **OpenTelemetry throughout** — traces across the append→consume seam and metrics for lag,
   conflicts, retries and dead letters.
 
 ## Install
 
-Packages are published to **GitHub Packages** for the `codest-be` organisation. Add the feed:
+Packages are on [nuget.org](https://www.nuget.org/packages/Alberto). Take the core plus one backend:
 
 ```bash
-dotnet nuget add source "https://nuget.pkg.github.com/codest-be/index.json" --name alberto --username <your-github-username> --password <a-github-PAT-with-read:packages>
+dotnet add package Alberto
 ```
 
-Then take the core plus one backend:
-
 ```bash
-dotnet add package Alberto --prerelease
+dotnet add package Alberto.Postgres
 ```
 
 | Package | What it gives you |
@@ -117,28 +121,28 @@ services.AddAlberto("tickets", builder => builder
 
 Nothing is registered until the host starts — declaration, configuration overlay, validation, and
 service registration happen in three distinct phases. See
-[docs/configuration.md](docs/configuration.md) for the full picture. All knobs are also
+[docs/configuration.md](https://github.com/codest-be/alberto/blob/main/docs/configuration.md) for the full picture. All knobs are also
 overridable from `Alberto:Modules:{moduleKey}:{Section}:{Property}` in `appsettings.json`.
 
 The full, runnable version of that program is
-[docs/getting-started.md](docs/getting-started.md) — it needs no Docker and no connection string.
+[docs/getting-started.md](https://github.com/codest-be/alberto/blob/main/docs/getting-started.md) — it needs no Docker and no connection string.
 
 ## Documentation
 
 | | |
 |---|---|
-| [Getting started](docs/getting-started.md) | A complete runnable sample, built up piece by piece |
-| [Concepts](docs/concepts.md) | Events, tags, queries, boundaries, positions, checkpoints |
-| [Event schema versioning](docs/events.md) | Permanent slugs, the `_version` tag, upcasters and their limits |
-| [Projections](docs/projections.md) | Declaring them, storing them, rebuilding them live |
-| [Reactors and the outbox](docs/reactors-and-outbox.md) | Side effects and publishing to the outside world |
-| [Multi-tenancy](docs/multi-tenancy.md) | Tenant isolation, leases, and what it costs |
-| [Operations](docs/operations.md) | The `alberto` CLI, dead letters, error policy, telemetry |
-| [Backup and recovery](docs/backup-and-recovery.md) | What is truth, what is derived, and what a restore invalidates |
-| [Configuration reference](docs/configuration.md) | Three-phase pipeline, all options, validation codes, custom backends |
-| [Async processing architecture](docs/architecture/async-processing.md) | How the control loop actually works |
-| [Tenant sharding](docs/architecture/tenant-sharding.md) | Spreading a module's tenants over several databases |
-| [Upgrade notes](UPGRADING.md) | Every breaking change, most recent first |
+| [Getting started](https://github.com/codest-be/alberto/blob/main/docs/getting-started.md) | A complete runnable sample, built up piece by piece |
+| [Concepts](https://github.com/codest-be/alberto/blob/main/docs/concepts.md) | Events, tags, queries, boundaries, positions, checkpoints |
+| [Event schema versioning](https://github.com/codest-be/alberto/blob/main/docs/events.md) | Permanent slugs, the `_version` tag, upcasters and their limits |
+| [Projections](https://github.com/codest-be/alberto/blob/main/docs/projections.md) | Declaring them, storing them, rebuilding them live |
+| [Reactors and the outbox](https://github.com/codest-be/alberto/blob/main/docs/reactors-and-outbox.md) | Side effects and publishing to the outside world |
+| [Multi-tenancy](https://github.com/codest-be/alberto/blob/main/docs/multi-tenancy.md) | Tenant isolation, leases, and what it costs |
+| [Operations](https://github.com/codest-be/alberto/blob/main/docs/operations.md) | The `alberto` CLI, dead letters, error policy, telemetry |
+| [Backup and recovery](https://github.com/codest-be/alberto/blob/main/docs/backup-and-recovery.md) | What is truth, what is derived, and what a restore invalidates |
+| [Configuration reference](https://github.com/codest-be/alberto/blob/main/docs/configuration.md) | Three-phase pipeline, all options, validation codes, custom backends |
+| [Async processing architecture](https://github.com/codest-be/alberto/blob/main/docs/architecture/async-processing.md) | How the control loop actually works |
+| [Tenant sharding](https://github.com/codest-be/alberto/blob/main/docs/architecture/tenant-sharding.md) | Spreading a module's tenants over several databases |
+| [Upgrade notes](https://github.com/codest-be/alberto/blob/main/UPGRADING.md) | Every breaking change, most recent first |
 
 ## Repository layout
 
@@ -157,17 +161,34 @@ dotnet run --project apps/Alberto.AppHost
 
 ## Project status
 
-Alberto is **pre-1.0** and published as `0.1.0-beta.*`. The whole solution builds clean and the
-suite is green; the API still moves between betas, and every break is recorded in
-[UPGRADING.md](UPGRADING.md).
+Alberto is **pre-1.0 and under active testing**. `0.1.0` is the first version published to
+nuget.org.
+
+**What that means, concretely:**
+
+- **Expect breaking changes.** The public API is not frozen until 1.0. Every break is recorded in
+  [UPGRADING.md](https://github.com/codest-be/alberto/blob/main/UPGRADING.md), but there will be breaks, and some will be in the core append and
+  projection APIs. Pin an exact version and read the upgrade notes before you move.
+- **It is well tested, not yet well proven.** The suite covers the libraries with unit tests plus
+  Testcontainers-backed PostgreSQL integration tests, and it is green. That is evidence the code
+  does what its author intended — it is not the same thing as having survived other people's
+  production workloads, which it has not yet done.
+- **Please try it and report what breaks.** Evaluation, prototypes and side projects are exactly
+  the workloads this release is asking for. Bug reports and API feedback now are worth far more
+  than after 1.0 freezes the surface.
 
 The multi-database tenant sharding feature is marked **experimental** (`[Experimental("ALB9001")]`
-on all public sharding types). It ships and the tests pass, but the API may change more sharply
-than the rest of the library between betas.
+on all public sharding types), which is a step beyond the general pre-1.0 caveat: it ships and its
+tests pass, but the API may change more sharply than the rest of the library.
+
+The admin surface is deliberately **not published**. `Alberto.Admin` and `Alberto.Admin.Postgres`
+build and are tested, but they stay off nuget.org until the GraphQL API, MCP server and console
+that consume them ship — releasing the abstraction at 1.0 would freeze it under semver before its
+consumers exist.
 
 Outbox claims are time-bounded and token-fenced: a relay crash leaves a recoverable `processing`
 row, and a stale relay cannot overwrite a newer claim. Delivery remains at-least-once; see
-[docs/reactors-and-outbox.md](docs/reactors-and-outbox.md#claim-leases-and-relay-crashes).
+[docs/reactors-and-outbox.md](https://github.com/codest-be/alberto/blob/main/docs/reactors-and-outbox.md#claim-leases-and-relay-crashes).
 
 ## Licence
 

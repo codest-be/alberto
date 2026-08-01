@@ -8,7 +8,7 @@
         <!-- Package Metadata -->
         <PackageId>Alberto.InMemory</PackageId>
         <Title>Alberto DCB Event Store - In-Memory Backend</Title>
-        <Description>In-memory backend for Alberto DCB event store. Useful for testing and development.</Description>
+        <Description>In-memory backend for the Alberto DCB event store: event log, checkpoint, state and dead-letter stores, all in process with no database. Intended for unit tests, samples and local development — state is discarded when the process exits.</Description>
         <IsPackable>true</IsPackable>
         <RootNamespace>Alberto.InMemory</RootNamespace>
     </PropertyGroup>

@@ -1,0 +1,50 @@
+<Project>
+
+    <!--
+        Properties that must be tested against IsPackable.
+
+        This file exists because of MSBuild's evaluation order. Directory.Build.props is imported
+        at the very top of every project, before the csproj body; Directory.Build.targets is
+        imported at the bottom, after it. Properties are evaluated in import order, so a
+        Condition="'$(IsPackable)' == 'true'" written in Directory.Build.props is tested while
+        IsPackable is still the repo-wide default of false, and the whole group is skipped without
+        any warning. The same condition here is tested after each src/ project has set
+        IsPackable=true, so it behaves as intended.
+
+        This is not hypothetical: these properties previously lived in Directory.Build.props and
+        were dead for every package. The visible symptom was `warn : Readme missing` on each push
+        to nuget.org — README.md was packed into the .nupkg by the ItemGroup (items are evaluated
+        in a later pass, so that condition did work) but PackageReadmeFile was empty, so nothing
+        declared it in the .nuspec and the gallery never rendered it. Alberto 0.1.0 shipped that
+        way. If you move any of this back into Directory.Build.props, it will stop working.
+
+        Everything is still evaluated before any target runs, so ContinuousIntegrationBuild
+        reaches the compiler and PackageReadmeFile reaches Pack.
+    -->
+    <PropertyGroup Condition="'$(IsPackable)' == 'true'">
+
+        <!-- SourceLink — embeds a source-server pointer into the .pdb so debuggers can step into
+             library source straight from nuget.org. Only meaningful on packable projects;
+             non-packable projects (apps, tests, tools) produce no .snupkg and need none of this.
+             ContinuousIntegrationBuild is gated on the CI env-var so local dev builds stay fast
+             and the compiler does not try to make paths deterministic on a developer machine. -->
+        <PublishRepositoryUrl>true</PublishRepositoryUrl>
+        <EmbedUntrackedSources>true</EmbedUntrackedSources>
+        <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+
+        <!-- The repo-root README is the landing page for every package on nuget.org. The file is
+             placed at the .nupkg root by the None Include in Directory.Build.props; this names it.
+             Because it is the package page, its links are absolute GitHub URLs — nuget.org has no
+             repository to resolve a relative path against. -->
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+
+        <!--
+            TODO (human task — cannot be authored here): icon.png
+            Once a square PNG icon (128×128 or 256×256) is committed to the repo root:
+              <PackageIcon>icon.png</PackageIcon>
+            and add the following to the ItemGroup in Directory.Build.props:
+              <None Include="$(MSBuildThisFileDirectory)icon.png" Pack="true" PackagePath="\" />
+        -->
+    </PropertyGroup>
+
+</Project>

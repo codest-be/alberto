@@ -8,7 +8,7 @@
         <!-- Package Metadata -->
         <PackageId>Alberto</PackageId>
         <Title>Alberto DCB Event Store</Title>
-        <Description>Dynamic Consistency Boundary event store library for .NET. Provides core abstractions for event sourcing with DCB pattern.</Description>
+        <Description>Event store for .NET in which each decision declares its own consistency boundary as a query over event tags, rather than committing to an aggregate or stream up front. This package holds the core: the event log, tags and queries, the async control loop and its middleware chain, projections, and multi-tenancy. Add a backend to use it — Alberto.Postgres for production, Alberto.InMemory for tests. Pre-1.0 and under active testing; expect breaking changes.</Description>
         <IsPackable>true</IsPackable>
         <RootNamespace>Alberto</RootNamespace>
     </PropertyGroup>
