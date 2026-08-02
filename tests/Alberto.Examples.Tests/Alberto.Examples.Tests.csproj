@@ -13,6 +13,10 @@
              nothing a client can see. -->
     <ProjectReference Include="..\..\apps\Alberto.Orders\Alberto.Orders\Alberto.Orders.csproj" />
     <ProjectReference Include="..\..\apps\Alberto.Payments\Alberto.Payments\Alberto.Payments.csproj" />
+
+        <!-- The specification DSL these tests are written in. An integrator gets it from
+             nuget.org as `dotnet add package Alberto.Testing`. -->
+        <ProjectReference Include="..\..\src\Alberto.Testing\Alberto.Testing.csproj" />
     </ItemGroup>
 
     <ItemGroup>

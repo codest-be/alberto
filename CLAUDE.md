@@ -57,8 +57,8 @@ dotnet run -c Release --project benchmarks/Alberto.Benchmarks -- --filter '*Appe
   Alberto.Messaging/            # Transactional outbox abstractions
   Alberto.Messaging.Postgres/   # PostgreSQL outbox store
   Alberto.Telemetry/            # OpenTelemetry instrumentation
-  Alberto.Testing/              # In-memory test helpers for consumers
-  Alberto.Testing.Xunit/        # xUnit v3 fixtures and collection definitions
+  Alberto.Testing/              # `Spec` decider DSL + in-memory harness, for consumers
+  Alberto.Testing.Xunit/        # Backend conformance specifications (xUnit v3)
   Alberto.Admin/                # IAdminReader/IAdminOperator: parked      (not packable)
   Alberto.Admin.Postgres/       # Its only implementation: parked          (not packable)
 
@@ -95,6 +95,7 @@ Note: `apps/Alberto.Payments` is in the solution and builds, but it has no host 
 ### Key Patterns
 - **Event Sourcing with DCB**: Append-only event log with dynamic consistency boundaries
 - **Vertical slices in the examples**: `apps/Alberto.Orders` and `apps/Alberto.Payments` are sliced by behaviour, not layer. One folder per slice under `Features/`, holding that slice's input type, state record, evolver, decision function, boundary and GraphQL operation. **Slices share the event log and nothing else**, no shared state record, no shared evolver, no base state. `Contracts/` (events, status enums, problem codes, tag keys) and `Platform/` (DI, `DbContext`, EF migrations) are the two deliberate exceptions, named so they cannot be mistaken for domain code that happens to be shared. Five slices fold `OrderCreated`, each projecting a different part of it; that duplication is the pattern working. See [docs/architecture/vertical-slices.md](docs/architecture/vertical-slices.md)
+- **Unit-testing a slice**: `Spec.For(evolver).Given(events).When(state => Decider.Decide(...))` plus the `Then*` verbs, from `Alberto.Testing`. `Given` folds history through the real evolver, `ThenState` folds the emitted events on top. Framework-neutral: it throws `SpecificationException`, it never calls `Assert`. The example decider tests in `tests/Alberto.Examples.Tests` are all written this way and are the reference for how a slice's tests should read
 - **Async Processing**: `ControlLoop` polls the event log and dispatches through a middleware chain to projections/reactors. See [docs/architecture/async-processing.md](docs/architecture/async-processing.md)
 - **Middleware**: `MiddlewareRunner` builds both the single-event (`ConsumeEventContext`) and batch (`BatchConsumeContext`) chains. Retry/dead-letter logic is shared via `RetryAndDeadLetterCore` behind `IMiddlewareContext`
 - **Zero-downtime projection rebuilds**: opt in with `.WithRebuilds()`. `RebuildCoordinator` replays the log into a shadow copy of a projection's state under its own checkpoint, then swaps versions in one transaction. Driven by `alberto ops rebuild start|status|promote|abort`

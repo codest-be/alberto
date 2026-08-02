@@ -39,6 +39,29 @@ public abstract class Evolver<TState> where TState : new()
         => _dispatcher.Evolve(state, envelope);
 
     /// <summary>
+    /// Apply a single already-materialized event to the state, dispatching on its runtime type.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The envelope overload is what the command pipeline uses: it reads events back out of the
+    /// log, so it has JSON and a stored schema version to reckon with. This overload is for the
+    /// case where the event is already an object in hand — a unit test arranging history, or a
+    /// caller folding events it just decided. There is nothing to deserialize and nothing to
+    /// upcast, so neither happens.
+    /// </para>
+    /// <para>
+    /// Events this evolver declares no <c>IEvolve&lt;TState, TEvent&gt;</c> handler for leave the
+    /// state unchanged, matching the envelope overload.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the event carries the <c>[EventType]</c> id of a handled event but is not
+    /// assignable to the type that handler declared — two CLR types claiming one id.
+    /// </exception>
+    public TState Evolve(TState state, IEvent @event)
+        => _dispatcher.Evolve(state, @event);
+
+    /// <summary>
     /// Reconstitute state from a sequence of events using raw JSON deserialization.
     /// </summary>
     /// <remarks>
