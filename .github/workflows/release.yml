@@ -13,14 +13,12 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
-      bump:
-        description: 'How to derive the version. `auto` reads breaking-change labels and unshipped public API.'
-        required: true
-        default: auto
-        type: choice
-        options: [auto, major, minor, patch]
+      milestone:
+        description: 'Milestone to release (e.g. 0.2.0). Its title is the version, and its closed issues are the notes.'
+        required: false
+        type: string
       version:
-        description: 'Explicit version (e.g. 1.0.0). Overrides `bump`. Required to cut 1.0.0.'
+        description: 'Explicit version, for a release with no milestone. Overrides `milestone` and skips its checks.'
         required: false
         type: string
       dry_run:
@@ -43,7 +41,8 @@ jobs:
       issues: read           # read milestones for the drafted notes
 
     steps:
-      # fetch-depth: 0 — compute-version.sh needs tags and the commits since the last one.
+      # fetch-depth: 0 — apply-release.py cross-checks the newest changelog section against the
+      # newest reachable tag, and a shallow clone has no tags to check against.
       #
       # RELEASE_TOKEN, if set, is a fine-grained token scoped to this repository with Contents
       # and Pull requests write — see docs/releasing.md for the exact permissions. It exists
@@ -67,14 +66,14 @@ jobs:
               ;;
           esac
 
-      - name: Compute version
+      - name: Resolve version
         id: version
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          VERSION=$(.github/scripts/compute-version.sh \
+          VERSION=$(.github/scripts/resolve-version.sh \
             "${{ github.repository }}" \
-            "${{ inputs.bump }}" \
+            "${{ inputs.milestone }}" \
             "${{ inputs.version }}")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Version: $VERSION"

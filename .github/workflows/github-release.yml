@@ -1,0 +1,79 @@
+name: GitHub release
+
+# Creates the GitHub release for a tag, from that version's CHANGELOG.md section.
+#
+# This used to be step 5 on a checklist, which is why it is a workflow now: the releases page is
+# the first thing most people see, and a step a human does last is the step that gets skipped when
+# a release is cut in a hurry. The notes were already edited on the release pull request, so there
+# is nothing left to write by hand.
+#
+# Separate from publish-packages.yml on purpose. That job holds `id-token: write` to mint the
+# trusted-publishing token, and this one needs `contents: write` — keeping them apart means
+# neither job carries a permission it does not use.
+
+on:
+  push:
+    tags: ['v*']
+
+  # Backfilling a release for an older tag, or replacing one deleted by mistake.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to create the release for (e.g. v1.2.0).'
+        required: true
+        type: string
+
+concurrency:
+  group: github-release-${{ inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # create the release
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          VERSION="${TAG#v}"
+
+          # An existing release is left alone rather than overwritten. Anything already there was
+          # either written by hand or edited after the fact, and neither is worth losing to a
+          # re-run.
+          if gh release view "$TAG" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "Release ${TAG} already exists — leaving it as it is."
+            echo "Release \`${TAG}\` already existed; nothing was changed." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # Fails when the section is missing, which is the check worth having: a tag with no
+          # changelog section is a release nobody can read.
+          .github/scripts/extract-changelog-section.py "$VERSION" > /tmp/release-notes.md
+
+          # A version with a suffix is a prerelease, and GitHub needs telling — it is what keeps
+          # `Latest` on the newest stable release rather than moving it to a beta.
+          PRERELEASE=""
+          case "$VERSION" in
+            *-*) PRERELEASE="--prerelease" ;;
+          esac
+
+          gh release create "$TAG" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "Alberto ${VERSION}" \
+            --notes-file /tmp/release-notes.md \
+            --verify-tag \
+            $PRERELEASE
+
+          {
+            echo "## Alberto ${VERSION}"
+            echo
+            cat /tmp/release-notes.md
+          } >> "$GITHUB_STEP_SUMMARY"

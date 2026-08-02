@@ -47,9 +47,10 @@ jobs:
             exit 1
           fi
 
-          # The line has to match what main is currently carrying, or the branch would be
-          # created already unable to release: compute-version.sh reads VersionPrefix from the
-          # branch, so release/1.0 cut from a main that has moved to 1.1.0 would compute 1.1.1.
+          # The line has to match what main is currently carrying, or the branch would be created
+          # already unable to release: resolve-version.sh checks the milestone against the
+          # branch's own VersionPrefix, so release/1.0 cut from a main already on 1.1.0 would
+          # reject every 1.0.x milestone as not ahead of it.
           CURRENT=$(sed -n 's:.*<VersionPrefix>\(.*\)</VersionPrefix>.*:\1:p' Directory.Build.props | head -1)
           CURRENT_LINE="${CURRENT%.*}"
 
