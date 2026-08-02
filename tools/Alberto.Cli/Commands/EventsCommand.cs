@@ -36,52 +36,57 @@ public static class EventsCommand
         command.AddOption(limitOption);
         var shardOption = ShardRun.AddReadOption(command);
 
-        command.SetHandler(async (string? url, string? schema, string? type, string? tag, string? tenant, long after, int limit, bool json, string? shard) =>
+        command.SetHandler((string? url, string? schema, string? type, string? tag, string? tenant, long after, int limit, bool json, string? shard) =>
         {
             var session = new CliSession(json);
-            return await session.RunAsync(async () =>
-            {
-                var output = session.Output;
-
-                // Each database has its own position sequence, so --after is applied within each
-                // one and the rows are grouped by shard rather than merged into one ordering.
-                var targets = session.ReadTargets(shard, url, schema);
-                var results = await ShardRun.CollectAsync(
-                    targets,
-                    async admin => (IReadOnlyList<EventInfo>)
-                        await admin.GetEventsAsync(type, tag, tenant, after, limit));
-
-                if (json)
-                {
-                    output.Json(ShardRun.Flatten(targets, results, e => new
-                    {
-                        e.GlobalPosition,
-                        e.EventType,
-                        e.Tags,
-                        e.TenantId,
-                        createdAt = e.CreatedAt?.ToString("O")
-                    }));
-                }
-                else
-                {
-                    ShardRun.Table(
-                        output, targets, results,
-                        ["Position", "Event Type", "Tags", "Tenant ID", "Created At"],
-                        e =>
-                        [
-                            e.GlobalPosition.ToString(),
-                            e.EventType,
-                            e.Tags ?? "-",
-                            e.TenantId ?? "-",
-                            e.CreatedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"
-                        ],
-                        "No events found.");
-                }
-
-                return ShardRun.ReportFailures(output, results) ? 1 : 0;
-            });
+            return HandleAsync(url, schema, type, tag, tenant, after, limit, json, shard, session);
         }, urlOption, schemaOption, typeOption, tagOption, tenantOption, afterOption, limitOption, jsonOption, shardOption);
 
         return command;
     }
+
+    internal static Task<int> HandleAsync(
+        string? url, string? schema, string? type, string? tag, string? tenant, long after, int limit,
+        bool json, string? shard, CliSession session) =>
+        session.RunAsync(async () =>
+        {
+            var output = session.Output;
+
+            // Each database has its own position sequence, so --after is applied within each
+            // one and the rows are grouped by shard rather than merged into one ordering.
+            var targets = session.ReadTargets(shard, url, schema);
+            var results = await ShardRun.CollectAsync(
+                targets,
+                async admin => (IReadOnlyList<EventInfo>)
+                    await admin.GetEventsAsync(type, tag, tenant, after, limit));
+
+            if (json)
+            {
+                output.Json(ShardRun.Flatten(targets, results, e => new
+                {
+                    e.GlobalPosition,
+                    e.EventType,
+                    e.Tags,
+                    e.TenantId,
+                    createdAt = e.CreatedAt?.ToString("O")
+                }));
+            }
+            else
+            {
+                ShardRun.Table(
+                    output, targets, results,
+                    ["Position", "Event Type", "Tags", "Tenant ID", "Created At"],
+                    e =>
+                    [
+                        e.GlobalPosition.ToString(),
+                        e.EventType,
+                        e.Tags ?? "-",
+                        e.TenantId ?? "-",
+                        e.CreatedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"
+                    ],
+                    "No events found.");
+            }
+
+            return ShardRun.ReportFailures(output, results) ? 1 : 0;
+        });
 }

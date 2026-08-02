@@ -54,69 +54,10 @@ public static class ShardsCommand
 
         var (urlOption, schemaOption, moduleOption, jsonOption) = AddCatalogOptions(command);
 
-        command.SetHandler(async (string? url, string? schema, string? module, bool json) =>
+        command.SetHandler((string? url, string? schema, string? module, bool json) =>
         {
             var session = new CliSession(json);
-            return await session.RunAsync(async () =>
-            {
-                var output = session.Output;
-                var catalog = Open(session, url, schema, module);
-                await using var dataSource = catalog.DataSource;
-
-                var assignments = await catalog.Map.GetAllAsync();
-                var counts = assignments.Values
-                    .GroupBy(id => id, StringComparer.Ordinal)
-                    .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
-
-                var declared = session.DeclaredShardIds();
-                var ids = declared
-                    .Concat(counts.Keys)
-                    .Distinct(StringComparer.Ordinal)
-                    .Order(StringComparer.Ordinal)
-                    .ToArray();
-
-                if (json)
-                {
-                    output.Json(new
-                    {
-                        module = catalog.ModuleKey,
-                        shards = ids.Select(id => new
-                        {
-                            shard = id,
-                            tenants = counts.GetValueOrDefault(id),
-                            configured = declared.Contains(id, StringComparer.Ordinal),
-                        }),
-                    });
-                    return 0;
-                }
-
-                if (ids.Length == 0)
-                {
-                    output.Text(
-                        "No shards. Nothing is declared in .alberto/config.json and no tenant is " +
-                        "assigned to one.");
-                    return 0;
-                }
-
-                output.Table(
-                    ["Shard", "Tenants", "Configured"],
-                    ids.Select(id => new[]
-                    {
-                        id,
-                        counts.GetValueOrDefault(id).ToString(),
-                        declared.Contains(id, StringComparer.Ordinal) ? "yes" : "no",
-                    }));
-
-                var orphaned = ids.Where(id => !declared.Contains(id, StringComparer.Ordinal)).ToArray();
-                if (orphaned.Length > 0)
-                {
-                    output.Warning(
-                        $"Not declared in .alberto/config.json: {string.Join(", ", orphaned)}. " +
-                        "Tenants assigned to them cannot be routed until the shards are configured.");
-                }
-
-                return 0;
-            });
+            return HandleListAsync(url, schema, module, json, session);
         }, urlOption, schemaOption, moduleOption, jsonOption);
 
         return command;
@@ -130,28 +71,10 @@ public static class ShardsCommand
         command.AddArgument(tenantArgument);
         var (urlOption, schemaOption, moduleOption, jsonOption) = AddCatalogOptions(command);
 
-        command.SetHandler(async (string tenant, string? url, string? schema, string? module, bool json) =>
+        command.SetHandler((string tenant, string? url, string? schema, string? module, bool json) =>
         {
             var session = new CliSession(json);
-            return await session.RunAsync(async () =>
-            {
-                var output = session.Output;
-                var catalog = Open(session, url, schema, module);
-                await using var dataSource = catalog.DataSource;
-
-                var shard = await catalog.Map.ResolveAsync(tenant);
-
-                if (json)
-                    output.Json(new { module = catalog.ModuleKey, tenant, shard });
-                else if (shard is null)
-                    output.Text($"Tenant '{tenant}' is not assigned to a shard.");
-                else
-                    output.Text($"Tenant '{tenant}' is in shard '{shard}'.");
-
-                // Non-zero for an unassigned tenant, so a script can branch on it without
-                // parsing the message.
-                return shard is null ? 1 : 0;
-            });
+            return HandleWhereAsync(tenant, url, schema, module, json, session);
         }, tenantArgument, urlOption, schemaOption, moduleOption, jsonOption);
 
         return command;
@@ -180,82 +103,171 @@ public static class ShardsCommand
         command.AddOption(yesOption);
         var (urlOption, schemaOption, moduleOption, jsonOption) = AddCatalogOptions(command);
 
-        command.SetHandler(async (string tenant, string? shardId, bool yes, string? url, string? schema,
-            string? module, bool json) =>
+        command.SetHandler((string tenant, string? shardId, bool yes, string? url, string? schema, string? module, bool json) =>
         {
             var session = new CliSession(json);
-            return await session.RunAsync(async () =>
-            {
-                var output = session.Output;
-
-                if (string.IsNullOrWhiteSpace(shardId))
-                {
-                    output.Error("--shard is required. Run 'alberto shards list' to see the shards.");
-                    return 1;
-                }
-
-                // TenantContext.SetTenant enforces the same rule at runtime: a tenant whose ID
-                // does not match it can never be resolved. Catching the mismatch here prevents
-                // a catalog row that is permanently unreachable — once written, the row is not
-                // automatically cleaned up, and the operator would have to remove it by hand.
-                if (!TenantContext.IsValidTenantId(tenant))
-                {
-                    output.Error(
-                        $"Tenant ID '{tenant}' is not a valid Alberto identifier. " +
-                        $"{TenantContext.TenantIdRule} " +
-                        "A tenant whose ID does not match this rule cannot be resolved at runtime: " +
-                        "TenantContext.SetTenant rejects it, so the shard assignment would be " +
-                        "permanently unreachable.");
-                    return 1;
-                }
-
-                var declared = session.DeclaredShardIds();
-                if (declared.Count > 0 && !declared.Contains(shardId, StringComparer.Ordinal))
-                {
-                    output.Error(
-                        $"No shard '{shardId}' is declared in .alberto/config.json. " +
-                        $"Declared shards: {string.Join(", ", declared)}.");
-                    return 1;
-                }
-
-                if (session.Confirm(yes,
-                    $"Put tenant '[bold]{tenant}[/]' in shard '[bold]{shardId}[/]'? " +
-                    "Its events stay in that database and cannot be moved from here.",
-                    "This assignment cannot be undone. Add --yes to confirm.\n" +
-                    $"  alberto shards assign {tenant} --shard {shardId} --yes") is { } confirmCode)
-                {
-                    return confirmCode;
-                }
-
-                var catalog = Open(session, url, schema, module);
-                await using var dataSource = catalog.DataSource;
-
-                var assigned = await catalog.Map.AssignAsync(tenant, shardId);
-
-                // The catalog is first-writer-wins, so a different id coming back means the
-                // tenant was already placed rather than that this call failed.
-                if (!string.Equals(assigned, shardId, StringComparison.Ordinal))
-                {
-                    if (json)
-                        output.Json(new { module = catalog.ModuleKey, tenant, shard = assigned, requested = shardId, changed = false });
-
-                    output.Error(
-                        $"Tenant '{tenant}' is already in shard '{assigned}'. Its events were written " +
-                        "there and this command does not move them.");
-                    return 1;
-                }
-
-                if (json)
-                    output.Json(new { module = catalog.ModuleKey, tenant, shard = assigned, requested = shardId, changed = true });
-                else
-                    output.Text($"Tenant '{tenant}' is in shard '{assigned}'.");
-
-                return 0;
-            });
+            return HandleAssignAsync(tenant, shardId, yes, url, schema, module, json, session);
         }, tenantArgument, shardOption, yesOption, urlOption, schemaOption, moduleOption, jsonOption);
 
         return command;
     }
+
+    internal static Task<int> HandleListAsync(
+        string? url, string? schema, string? module, bool json, CliSession session) =>
+        session.RunAsync(async () =>
+        {
+            var output = session.Output;
+            var catalog = Open(session, url, schema, module);
+            await using var dataSource = catalog.DataSource;
+
+            var assignments = await catalog.Map.GetAllAsync();
+            var counts = assignments.Values
+                .GroupBy(id => id, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+
+            var declared = session.DeclaredShardIds();
+            var ids = declared
+                .Concat(counts.Keys)
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .ToArray();
+
+            if (json)
+            {
+                output.Json(new
+                {
+                    module = catalog.ModuleKey,
+                    shards = ids.Select(id => new
+                    {
+                        shard = id,
+                        tenants = counts.GetValueOrDefault(id),
+                        configured = declared.Contains(id, StringComparer.Ordinal),
+                    }),
+                });
+                return 0;
+            }
+
+            if (ids.Length == 0)
+            {
+                output.Text(
+                    "No shards. Nothing is declared in .alberto/config.json and no tenant is " +
+                    "assigned to one.");
+                return 0;
+            }
+
+            output.Table(
+                ["Shard", "Tenants", "Configured"],
+                ids.Select(id => new[]
+                {
+                    id,
+                    counts.GetValueOrDefault(id).ToString(),
+                    declared.Contains(id, StringComparer.Ordinal) ? "yes" : "no",
+                }));
+
+            var orphaned = ids.Where(id => !declared.Contains(id, StringComparer.Ordinal)).ToArray();
+            if (orphaned.Length > 0)
+            {
+                output.Warning(
+                    $"Not declared in .alberto/config.json: {string.Join(", ", orphaned)}. " +
+                    "Tenants assigned to them cannot be routed until the shards are configured.");
+            }
+
+            return 0;
+        });
+
+    internal static Task<int> HandleWhereAsync(
+        string tenant, string? url, string? schema, string? module, bool json, CliSession session) =>
+        session.RunAsync(async () =>
+        {
+            var output = session.Output;
+            var catalog = Open(session, url, schema, module);
+            await using var dataSource = catalog.DataSource;
+
+            var shard = await catalog.Map.ResolveAsync(tenant);
+
+            if (json)
+                output.Json(new { module = catalog.ModuleKey, tenant, shard });
+            else if (shard is null)
+                output.Text($"Tenant '{tenant}' is not assigned to a shard.");
+            else
+                output.Text($"Tenant '{tenant}' is in shard '{shard}'.");
+
+            // Non-zero for an unassigned tenant, so a script can branch on it without
+            // parsing the message.
+            return shard is null ? 1 : 0;
+        });
+
+    internal static Task<int> HandleAssignAsync(
+        string tenant, string? shardId, bool yes, string? url, string? schema, string? module,
+        bool json, CliSession session) =>
+        session.RunAsync(async () =>
+        {
+            var output = session.Output;
+
+            if (string.IsNullOrWhiteSpace(shardId))
+            {
+                output.Error("--shard is required. Run 'alberto shards list' to see the shards.");
+                return 1;
+            }
+
+            // TenantContext.SetTenant enforces the same rule at runtime: a tenant whose ID
+            // does not match it can never be resolved. Catching the mismatch here prevents
+            // a catalog row that is permanently unreachable — once written, the row is not
+            // automatically cleaned up, and the operator would have to remove it by hand.
+            if (!TenantContext.IsValidTenantId(tenant))
+            {
+                output.Error(
+                    $"Tenant ID '{tenant}' is not a valid Alberto identifier. " +
+                    $"{TenantContext.TenantIdRule} " +
+                    "A tenant whose ID does not match this rule cannot be resolved at runtime: " +
+                    "TenantContext.SetTenant rejects it, so the shard assignment would be " +
+                    "permanently unreachable.");
+                return 1;
+            }
+
+            var declared = session.DeclaredShardIds();
+            if (declared.Count > 0 && !declared.Contains(shardId, StringComparer.Ordinal))
+            {
+                output.Error(
+                    $"No shard '{shardId}' is declared in .alberto/config.json. " +
+                    $"Declared shards: {string.Join(", ", declared)}.");
+                return 1;
+            }
+
+            if (session.Confirm(yes,
+                $"Put tenant '[bold]{tenant}[/]' in shard '[bold]{shardId}[/]'? " +
+                "Its events stay in that database and cannot be moved from here.",
+                "This assignment cannot be undone. Add --yes to confirm.\n" +
+                $"  alberto shards assign {tenant} --shard {shardId} --yes") is { } confirmCode)
+            {
+                return confirmCode;
+            }
+
+            var catalog = Open(session, url, schema, module);
+            await using var dataSource = catalog.DataSource;
+
+            var assigned = await catalog.Map.AssignAsync(tenant, shardId);
+
+            // The catalog is first-writer-wins, so a different id coming back means the
+            // tenant was already placed rather than that this call failed.
+            if (!string.Equals(assigned, shardId, StringComparison.Ordinal))
+            {
+                if (json)
+                    output.Json(new { module = catalog.ModuleKey, tenant, shard = assigned, requested = shardId, changed = false });
+
+                output.Error(
+                    $"Tenant '{tenant}' is already in shard '{assigned}'. Its events were written " +
+                    "there and this command does not move them.");
+                return 1;
+            }
+
+            if (json)
+                output.Json(new { module = catalog.ModuleKey, tenant, shard = assigned, requested = shardId, changed = true });
+            else
+                output.Text($"Tenant '{tenant}' is in shard '{assigned}'.");
+
+            return 0;
+        });
 
     /// <summary>
     /// An open catalog, and the data source behind it for the caller to dispose.
