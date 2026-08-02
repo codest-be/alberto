@@ -17,6 +17,20 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ---
 
+## [0.1.3] — 2026-08-02
+
+### Fixed
+
+- The release version is derived twice, from two sources that can disagree (#83)
+
+### Changed
+
+- Consolidate the packable package list so the workflows cannot drift from packages.txt (#85)
+- The GitHub release is created by hand, so it will eventually not be created (#81)
+- No per-release changelog, and no way to target a change at a specific version (#77)
+
+---
+
 ## [0.1.2] — 2026-08-01
 
 ### Added
@@ -445,7 +459,8 @@ Initial beta release. Core DCB event store abstractions, PostgreSQL backend, in-
 backend, command pipeline, EF Core projection support, transactional outbox, and
 OpenTelemetry instrumentation.
 
-[Unreleased]: https://github.com/codest-be/alberto/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/codest-be/alberto/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/codest-be/alberto/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/codest-be/alberto/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/codest-be/alberto/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/codest-be/alberto/releases/tag/v0.1.0
