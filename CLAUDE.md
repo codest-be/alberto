@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Alberto is a DCB (Dynamic Consistency Boundary) Event Store for .NET 10.0. The repository is a monorepo containing packable core libraries (`/src`), example applications (`/apps`), an operator CLI (`/tools`), and tests (`/tests`).
 
-There is no frontend in this repository — the event store is a library plus a terminal CLI.
+There is no frontend in this repository. The event store is a library plus a terminal CLI.
 
 ## Build & Run Commands
 
@@ -47,7 +47,7 @@ dotnet run -c Release --project benchmarks/Alberto.Benchmarks -- --filter '*Appe
 
 ### Directory Structure
 ```
-/src/                           # Core libraries — 10 packable, 3 not
+/src/                           # Core libraries: 10 packable, 3 not
   Alberto/                      # Event store abstractions, control loop, middleware
   Alberto.Commands/             # Command handling
   Alberto.Commands.Analyzers/   # Roslyn analyzers for the command pipeline  (not packable)
@@ -59,8 +59,8 @@ dotnet run -c Release --project benchmarks/Alberto.Benchmarks -- --filter '*Appe
   Alberto.Telemetry/            # OpenTelemetry instrumentation
   Alberto.Testing/              # In-memory test helpers for consumers
   Alberto.Testing.Xunit/        # xUnit v3 fixtures and collection definitions
-  Alberto.Admin/                # IAdminReader/IAdminOperator — parked      (not packable)
-  Alberto.Admin.Postgres/       # Its only implementation — parked          (not packable)
+  Alberto.Admin/                # IAdminReader/IAdminOperator: parked      (not packable)
+  Alberto.Admin.Postgres/       # Its only implementation: parked          (not packable)
 
 /apps/                          # Example applications
   Alberto.AppHost/              # Aspire orchestration
@@ -90,31 +90,31 @@ dotnet run -c Release --project benchmarks/Alberto.Benchmarks -- --filter '*Appe
   Alberto.Benchmarks.Compare/   # CLI that diffs two benchmark runs and renders a report
 ```
 
-Note: `apps/Alberto.Payments` is in the solution and builds, but it has no host of its own and is not orchestrated by the AppHost — its slices are registered by the Orders API host, which serves their GraphQL fields alongside Orders'.
+Note: `apps/Alberto.Payments` is in the solution and builds, but it has no host of its own and is not orchestrated by the AppHost. Its slices are registered by the Orders API host, which serves their GraphQL fields alongside Orders'.
 
 ### Key Patterns
 - **Event Sourcing with DCB**: Append-only event log with dynamic consistency boundaries
-- **Vertical slices in the examples**: `apps/Alberto.Orders` and `apps/Alberto.Payments` are sliced by behaviour, not layer. One folder per slice under `Features/`, holding that slice's input type, state record, evolver, decision function, boundary and GraphQL operation. **Slices share the event log and nothing else** — no shared state record, no shared evolver, no base state. `Contracts/` (events, status enums, problem codes, tag keys) and `Platform/` (DI, `DbContext`, EF migrations) are the two deliberate exceptions, named so they cannot be mistaken for domain code that happens to be shared. Five slices fold `OrderCreated`, each projecting a different part of it; that duplication is the pattern working. See [docs/architecture/vertical-slices.md](docs/architecture/vertical-slices.md)
+- **Vertical slices in the examples**: `apps/Alberto.Orders` and `apps/Alberto.Payments` are sliced by behaviour, not layer. One folder per slice under `Features/`, holding that slice's input type, state record, evolver, decision function, boundary and GraphQL operation. **Slices share the event log and nothing else**, no shared state record, no shared evolver, no base state. `Contracts/` (events, status enums, problem codes, tag keys) and `Platform/` (DI, `DbContext`, EF migrations) are the two deliberate exceptions, named so they cannot be mistaken for domain code that happens to be shared. Five slices fold `OrderCreated`, each projecting a different part of it; that duplication is the pattern working. See [docs/architecture/vertical-slices.md](docs/architecture/vertical-slices.md)
 - **Async Processing**: `ControlLoop` polls the event log and dispatches through a middleware chain to projections/reactors. See [docs/architecture/async-processing.md](docs/architecture/async-processing.md)
 - **Middleware**: `MiddlewareRunner` builds both the single-event (`ConsumeEventContext`) and batch (`BatchConsumeContext`) chains. Retry/dead-letter logic is shared via `RetryAndDeadLetterCore` behind `IMiddlewareContext`
 - **Zero-downtime projection rebuilds**: opt in with `.WithRebuilds()`. `RebuildCoordinator` replays the log into a shadow copy of a projection's state under its own checkpoint, then swaps versions in one transaction. Driven by `alberto ops rebuild start|status|promote|abort`
 - **Multi-Tenant**: X-Tenant-Id header propagation, tenant-isolated queries, tenant leases
-- **Store imprint**: single-tenant and multi-tenant are two disjoint migration sets sharing one journal, so **`.WithTenancy()` cannot be added to or removed from a store that already has data** — there is no bridging script and no `tenant_id` backfill. `PostgresMigrator.Migrate` refuses the wrong set before running anything, throwing `AlbertoStoreMismatchException` (ALB0021). The mode is read from `alberto_store_imprint` — a table the migrator creates itself, since the check that must precede every script cannot depend on a script — falling back to sniffing `alberto_events` for a `tenant_id` column, which covers both stores predating the imprint and stores left half-migrated. A store with no `alberto_events` is fresh and may become either mode. Pointing a module at an *empty* database is deliberately **not** covered: nothing contradicts, so it migrates cleanly and serves an empty store
-- **Projection tenancy**: a state store's tenancy is fixed when the store is built and decided by the schema, not by the caller — a module that declared `.WithTenancy()` is migrated with `tenant_id NOT NULL` in its primary key, so a store built without one fails every write with `42P10`, and the reverse mismatch fails with `42703`. `AddProjection` therefore takes a `Func<string?, IStateStore<TState>>`: the projection builds one store per tenant and routes each event to the store for the tenant it carries. A cross-tenant aggregate on a tenant-enabled module stores its single blended document under `TenantScope.CrossTenant` (`"*"`), which readers pass too — resolvers resolve the writer's own factory from DI (`{moduleKey}:{processorId}`) so the only thing they decide is which tenant to read
-- **Tenant sharding** (opt-in, not the default): a module's tenants can be spread over several PostgreSQL databases with `.WithTenancy(t => t.AcrossPostgresDatabases(...))`, row-level tenancy still applying inside each one. Each shard is a complete module registered under the DI key `{moduleKey}#{shardId}` (composed only by `ShardKey`); `ShardRoutingEventStore` picks the database per call from `TenantShardResolver`, which reads the `alberto_tenant_shards` catalog in a separate control database. **Positions are per database — never compare one shard's with another's.** See [docs/architecture/tenant-sharding.md](docs/architecture/tenant-sharding.md)
+- **Store imprint**: single-tenant and multi-tenant are two disjoint migration sets sharing one journal, so **`.WithTenancy()` cannot be added to or removed from a store that already has data.** There is no bridging script and no `tenant_id` backfill. `PostgresMigrator.Migrate` refuses the wrong set before running anything, throwing `AlbertoStoreMismatchException` (ALB0021). The mode is read from `alberto_store_imprint` (a table the migrator creates itself, since the check that must precede every script cannot depend on a script), falling back to sniffing `alberto_events` for a `tenant_id` column, which covers both stores predating the imprint and stores left half-migrated. A store with no `alberto_events` is fresh and may become either mode. Pointing a module at an *empty* database is deliberately **not** covered: nothing contradicts, so it migrates cleanly and serves an empty store
+- **Projection tenancy**: a state store's tenancy is fixed when the store is built and decided by the schema, not by the caller: a module that declared `.WithTenancy()` is migrated with `tenant_id NOT NULL` in its primary key, so a store built without one fails every write with `42P10`, and the reverse mismatch fails with `42703`. `AddProjection` therefore takes a `Func<string?, IStateStore<TState>>`: the projection builds one store per tenant and routes each event to the store for the tenant it carries. A cross-tenant aggregate on a tenant-enabled module stores its single blended document under `TenantScope.CrossTenant` (`"*"`), which readers pass too: resolvers resolve the writer's own factory from DI (`{moduleKey}:{processorId}`) so the only thing they decide is which tenant to read
+- **Tenant sharding** (opt-in, not the default): a module's tenants can be spread over several PostgreSQL databases with `.WithTenancy(t => t.AcrossPostgresDatabases(...))`, row-level tenancy still applying inside each one. Each shard is a complete module registered under the DI key `{moduleKey}#{shardId}` (composed only by `ShardKey`); `ShardRoutingEventStore` picks the database per call from `TenantShardResolver`, which reads the `alberto_tenant_shards` catalog in a separate control database. **Positions are per database. Never compare one shard's with another's.** See [docs/architecture/tenant-sharding.md](docs/architecture/tenant-sharding.md)
 - **Discarding a rebuild version**: neither promotion nor abort deletes the version it discards. A reader resolves the active version and *then* queries it, so a flip that deleted the superseded rows would strand any reader holding the old number between those two steps. Instead the transition only makes the version unreachable; `RebuildCoordinator`'s sweep reclaims it via `IProjectionRebuildCoordinatorStore.DiscardStateVersionAsync` once `ReclaimGracePeriod` (2× `ProjectionVersions.RefreshInterval`) has elapsed since `CompletedAt`. Abort gets the same treatment for a second reason: a shadow loop only learns of the abort on its next poll, so its last writes land after the transition and the sweep is what actually removes them
 - **Leases and fencing**: checkpoint writes can be fenced against a held lease via `IFencedCheckpointStore`
 - **Transactional outbox**: `IOutboxStore` with `pending → processing → delivered/failed`, claimed via `FOR UPDATE SKIP LOCKED` under a claim lease (`claim_id`, `claimed_by`, `claim_expires_at`). A relay that dies mid-delivery does not strand its row: `ClaimPendingAsync` re-claims any `processing` entry whose `claim_expires_at` has passed or was never set. `RetryFailedAsync` is a separate operator action and matches `failed` only
 - **GraphQL** (Orders example only): HotChocolate 15.x
 
 ### Admin surface
-The operator surface is the CLI in `tools/Alberto.Cli`. There is no admin HTTP API. `src/Alberto.Admin` holds the `IAdminReader`/`IAdminOperator` abstraction the CLI's 14 command files are built on — it serves no endpoint — and `AddAlbertoPostgresAdmin` in `src/Alberto.Admin.Postgres` is its only implementation.
+The operator surface is the CLI in `tools/Alberto.Cli`. There is no admin HTTP API. `src/Alberto.Admin` holds the `IAdminReader`/`IAdminOperator` abstraction the CLI's 14 command files are built on (it serves no endpoint) and `AddAlbertoPostgresAdmin` in `src/Alberto.Admin.Postgres` is its only implementation.
 
-**The whole admin surface is parked, not missing — and that includes its two projects.** A GraphQL admin API, an MCP server, a React console and a BFF live on `feature/admin-surface`, held out of 1.0 so their field and tool names are not frozen by semver. `Alberto.Admin` and `Alberto.Admin.Postgres` are both `IsPackable=false` for the same reason: shipping `IAdminReader`/`IAdminOperator` at 1.0 would freeze the abstraction under semver before the things that consume it exist. They build, they are in the solution, they are tested, and the CLI references them by project — they just do not go to nuget.org. Unparking is `IsPackable=true` plus capturing `PublicAPI.Shipped.txt` (the analyzer is gated on `IsPackable`, so it is inert until then).
+**The whole admin surface is parked, not missing, and that includes its two projects.** A GraphQL admin API, an MCP server, a React console and a BFF live on `feature/admin-surface`, held out of 1.0 so their field and tool names are not frozen by semver. `Alberto.Admin` and `Alberto.Admin.Postgres` are both `IsPackable=false` for the same reason: shipping `IAdminReader`/`IAdminOperator` at 1.0 would freeze the abstraction under semver before the things that consume it exist. They build, they are in the solution, they are tested, and the CLI references them by project. They just do not go to nuget.org. Unparking is `IsPackable=true` plus capturing `PublicAPI.Shipped.txt` (the analyzer is gated on `IsPackable`, so it is inert until then).
 
 `Alberto.Admin.Postgres` exists only because `Alberto.Postgres` **is** packable. `PostgresAdminDataAccess`, `PostgresAdminOperator` and `PostgresAdminServiceCollectionExtensions` used to live there, which made its nupkg carry an unresolvable `Alberto.Admin` dependency and 33 public members returning parked types. The three files keep `namespace Alberto.Postgres` so no consumer's usings changed, and they reach back for internals (`SchemaQualifier`) via `InternalsVisibleTo`.
 
-Do not rebuild the front doors on main — extend that branch. Keep `IAdminReader`/`IAdminOperator` additive when changing them here, or the branch stops merging cleanly.
+Do not rebuild the front doors on main. Extend that branch. Keep `IAdminReader`/`IAdminOperator` additive when changing them here, or the branch stops merging cleanly.
 
 - **Per-processor mutations** go through the core interfaces: `ICheckpointStore` (`SaveAsync`, `ResetAsync`, `RewindAsync`) and `IDeadLetterStore` (`CountAsync`, `ClearAsync`, `MarkForRetryAsync`).
 - **`PostgresAdminDataAccess`** (`src/Alberto.Admin.Postgres`) holds the inspection queries and the composite transactional mutations (`RetryByRewindAsync`, `ReleaseTenantLeasesAsync`) that span multiple tables and so cannot be composed from per-processor interfaces.
@@ -148,4 +148,4 @@ Do not rebuild the front doors on main — extend that branch. Keep `IAdminReade
 
 Documented so they are not mistaken for working features:
 
-*(None currently. The two rebuild-window gaps that were listed here are closed — see "Discarding a rebuild version" above.)*
+*(None currently. The two rebuild-window gaps that were listed here are closed. See "Discarding a rebuild version" above.)*

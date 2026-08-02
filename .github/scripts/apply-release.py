@@ -249,7 +249,7 @@ def cut_changelog(version: str, notes: str, date: str, check: bool) -> None:
         "",
         "---",
         "",
-        f"## [{version}] — {date}",
+        f"## [{version}] - {date}",
         "",
         body_text,
         "",

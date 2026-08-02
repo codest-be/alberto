@@ -4,9 +4,9 @@ Alberto's tenancy is **row-level within one schema**: every event, checkpoint an
 document carries a `tenant_id`, and the tenant filter is applied in the SQL rather than by a
 predicate application code has to remember.
 
-It is opt-in, and it changes the shape of the store — decide before you have data.
+It is opt-in, and it changes the shape of the store: decide before you have data.
 
-Tenants can additionally be spread over several databases — ten in `db1`, three in `db2` — with
+Tenants can additionally be spread over several databases (ten in `db1`, three in `db2`) with
 row-level tenancy still separating them inside each one. That is a layer above everything on this
 page and is documented separately in
 [architecture/tenant-sharding.md](architecture/tenant-sharding.md). Everything below describes a
@@ -29,8 +29,8 @@ services.AddAlberto("orders", builder => builder
 
 **Call order does not matter.** `AddAlberto` runs the whole configuration lambda first,
 accumulating every declaration into an immutable definition, and only then registers services and
-reads tenancy. A `.WithTenancy()` written after `.WithPostgres(...)` — or anywhere else in the
-chain — produces exactly the same result as one written before it. The backend sees the completed
+reads tenancy. A `.WithTenancy()` written after `.WithPostgres(...)`, or anywhere else in the
+chain, produces exactly the same result as one written before it. The backend sees the completed
 definition, not a snapshot captured at the moment `.WithPostgres(...)` was called.
 
 ## Setting the tenant
@@ -64,13 +64,13 @@ bool    HasTenant         { get; }
 
 ### Tenant ids are constrained
 
-`SetTenant` accepts only `^[a-z][a-z0-9_]{0,62}$` — a lowercase letter followed by up to 62
+`SetTenant` accepts only `^[a-z][a-z0-9_]{0,62}$`: a lowercase letter followed by up to 62
 lowercase alphanumerics or underscores. Anything else throws `ArgumentException`.
 
 This is deliberate and stricter than it looks necessary: the same allowlist governs schema names,
 so a mis-configured or injected tenant id cannot become a SQL identifier. **UUIDs, hyphens and
-uppercase are all rejected.** If your tenant ids are Guids today, map them to a slug at the edge —
-do not weaken the pattern.
+uppercase are all rejected.** If your tenant ids are Guids today, map them to a slug at the edge.
+Do not weaken the pattern.
 
 ## What isolation actually buys you
 
@@ -80,11 +80,11 @@ With tenancy on:
   is part of the query, not a `.Where` you could forget.
 - **`StreamAllAsync` throws inside a request.** It legitimately crosses tenants, so it is allowed
   only for the background consumer feed (which runs with no tenant set). Calling it from a
-  request-scoped context — where a tenant *is* set — throws `InvalidOperationException` rather than
+  request-scoped context (where a tenant *is* set) throws `InvalidOperationException` rather than
   quietly returning everyone's events. This guard exists because it is the exact shape of a
   real leak.
 - **Projection state is per tenant; progress is not.** Each tenant's documents are keyed by tenant
-  and read back under it, but a processor keeps a single checkpoint —
+  and read back under it, but a processor keeps a single checkpoint.
   `alberto_processor_checkpoints` is keyed by `processor_id` alone. One tenant's poison event
   therefore does stall the others' read models on that processor, because there is one position
   for all of them. Progress splits per tenant only under
@@ -112,7 +112,7 @@ Inspect and intervene from the CLI:
 
 ```bash
 alberto tenants                  # who holds what, and until when
-alberto ops tenants release      # force reacquisition — after a crashed replica, say
+alberto ops tenants release      # force reacquisition: after a crashed replica, say
 ```
 
 `release` is transactional across the lease and assignment tables, which is why it lives in
@@ -132,14 +132,14 @@ new PostgresStateStore<OrdersOverview>(
 ```
 
 Use named arguments. Every parameter after the data source is an optional string or delegate, and a
-positional slip binds the wrong value with no compiler complaint — this bug shipped in the example
+positional slip binds the wrong value with no compiler complaint. This bug shipped in the example
 app for a while, quietly reading the wrong schema.
 
 ### EF projections have no tenant to pass
 
 That constructor argument is the whole mechanism, and an EF projection does not have it.
 `IProjectionEntity` exposes only `DocumentId` and `RebuildVersion`, so `EfStateStore` queries on
-those two columns and nothing else — a `TenantId` property on your entity is invisible to it.
+those two columns and nothing else: a `TenantId` property on your entity is invisible to it.
 
 So an EF projection on a tenant-enabled module is correct only if two tenants can never produce the
 same document id, and `AddEfProjection` refuses to register until you say so, with `ALB0027`. See
@@ -158,8 +158,8 @@ Choose based on whether tenants share a database:
 |---|---|
 | One customer, or a database per customer | Single-tenant, one module per database |
 | Many customers in one database | `.WithTenancy()` |
-| Many customers, one *schema* each | Single-tenant, one module per schema — `PostgresOptions.Schema` is per module |
-| Many customers, spread over a few databases | `.WithTenancy(t => t.AcrossPostgresDatabases(...))` — see [tenant sharding](architecture/tenant-sharding.md) |
+| Many customers, one *schema* each | Single-tenant, one module per schema. `PostgresOptions.Schema` is per module |
+| Many customers, spread over a few databases | `.WithTenancy(t => t.AcrossPostgresDatabases(...))`. See [tenant sharding](architecture/tenant-sharding.md) |
 
 ## Spreading tenants over several databases
 
@@ -180,7 +180,7 @@ Application code is unchanged: `IEventStore` under the module key routes to whic
 current tenant belongs to, and that database's own tenant filter still applies inside it.
 
 Two things it costs you, before you reach for it: a tenant cannot be moved between databases, and
-there are no cross-shard reads — an aggregate over all tenants is a fan-out you write. Both, and
+there are no cross-shard reads: an aggregate over all tenants is a fan-out you write. Both, and
 the operational surface, are in
 [architecture/tenant-sharding.md](architecture/tenant-sharding.md).
 
@@ -195,7 +195,7 @@ need leases enabled (`.WithControlLoop(o => o with { Leases = o.Leases with { En
 
 ## The example
 
-`apps/Alberto.Orders` is multi-tenant end to end — an `X-Tenant-Id` header interceptor, tenant
+`apps/Alberto.Orders` is multi-tenant end to end: an `X-Tenant-Id` header interceptor, tenant
 propagation into HotChocolate's resolver context, tenant-scoped projections and leases. Run it with:
 
 ```bash

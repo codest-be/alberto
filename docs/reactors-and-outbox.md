@@ -1,6 +1,6 @@
 # Reactors and the outbox
 
-Projections turn the log into state. **Reactors** turn it into *actions* — send an email, call a
+Projections turn the log into state. **Reactors** turn it into *actions*: send an email, call a
 payment provider, schedule a job. The **outbox** is the special case of "publish a message to
 another system", handled properly.
 
@@ -24,7 +24,7 @@ The simplest form is a lambda per event type:
 The factory runs once at startup; the inner delegate runs per event. Resolve scoped services
 *inside* the inner delegate, not in the factory.
 
-For anything with real logic, point at a method on a class instead — the class is registered as
+For anything with real logic, point at a method on a class instead. The class is registered as
 scoped for you and resolved per event:
 
 ```csharp
@@ -46,7 +46,7 @@ Both forms have an overload whose handler also takes a `ReactorContext`, carryin
 
 It is the checkpoint key. Two things follow:
 
-- **Reuse it and the two reactors share a position** — one will skip events the other consumed.
+- **Reuse it and the two reactors share a position**: one will skip events the other consumed.
   One reactor, one id.
 - **Change it and you get a brand-new processor starting at position 0**, which replays the entire
   log through your side effect. Renaming a reactor's id in a deployment is how people accidentally
@@ -68,7 +68,7 @@ for effects that are genuinely optional, and `Async` for everything that matters
 
 ### At-least-once, so be idempotent
 
-A reactor can see the same event twice — a crash between doing the work and saving the checkpoint
+A reactor can see the same event twice: a crash between doing the work and saving the checkpoint
 is enough, and an operator rewind will do it deliberately. Make handlers idempotent: key outgoing
 requests on `ctx.EventId`, or check before you act. There is no exactly-once mode to switch on;
 there is no such thing.
@@ -82,7 +82,7 @@ only, precisely because replaying side effects is not something it can make safe
 .ReactTo<OrderPlaced>(handler, "order-emails", configure: o => o with { MaxConcurrency = 8 })
 ```
 
-The `configure` parameter is `Func<ProcessorExecutionOptions, ProcessorExecutionOptions>` — return
+The `configure` parameter is `Func<ProcessorExecutionOptions, ProcessorExecutionOptions>`: return
 a modified record to change batching or concurrency. Batching mode values are
 `ProcessorBatchingMode.IfSupported`, `ProcessorBatchingMode.Required` (the default), and
 `ProcessorBatchingMode.Disabled`. For example: `o => o with { BatchingMode = ProcessorBatchingMode.IfSupported }`.
@@ -91,7 +91,7 @@ The setting is ignored for `Sync` reactors.
 ## The outbox
 
 Calling a broker directly from a reactor has the classic failure: the broker call succeeds, the
-checkpoint save fails, and the message is sent twice — or the reverse, and it is never sent at all.
+checkpoint save fails, and the message is sent twice, or the reverse, and it is never sent at all.
 The outbox breaks that into two durable steps.
 
 ```
@@ -109,11 +109,11 @@ Because the handler is a processor, an entry only ever exists for an event that 
 Because the relay claims with `FOR UPDATE SKIP LOCKED`, several relay replicas can run without
 holding the same live claim. Delivery remains at-least-once: if a publish succeeds but the relay
 dies before recording success, the entry is published again after its claim expires. It is also
-**unordered** — see [Ordering](#ordering-there-isnt-any) before you assume otherwise.
+**unordered.** See [Ordering](#ordering-there-isnt-any) before you assume otherwise.
 
 ### Wiring it
 
-Declare the external contract — the shape other systems depend on, which is *not* your event:
+Declare the external contract, the shape other systems depend on, which is *not* your event:
 
 ```csharp
 [Message("order-placed", 1)]
@@ -141,7 +141,7 @@ Then map events to it:
 - `Map<TEvent, TMessage>` takes the message type and version from the `[Message]` attribute. The
   three-generic overload resolves one dependency from DI at map time.
 - For full control, `map.Map<TEvent>((envelope, sp, ct) => …)` returns an `ExternalMessage`
-  directly — or `null` to publish nothing for that event, which is the supported way to filter.
+  directly, or `null` to publish nothing for that event, which is the supported way to filter.
 - **`transport` is optional.** Omit it and entries accumulate in the table with no relay; drain
   them from your own process. Provide one and an `OutboxRelay` is registered as a hosted service.
 - The outbox owns a provided transport's **start/stop lifecycle**, but not its disposal. Reusing
@@ -169,12 +169,12 @@ public interface IMessageTransport
 }
 ```
 
-`ExternalMessage` is `(MessageType, Version, Payload, Metadata)` — a JSON string and headers. Throw
+`ExternalMessage` is `(MessageType, Version, Payload, Metadata)`: a JSON string and headers. Throw
 from `PublishAsync` and the entry is marked `failed` with the exception message recorded;
 `RetryFailedAsync` (optionally filtered by message type) puts them back to `pending`.
 
 `StartAsync` completes before the relay makes its first claim or publish call. Once Alberto invokes
-it, Alberto makes exactly one `StopAsync` call after the last relay exits — including when startup
+it, Alberto makes exactly one `StopAsync` call after the last relay exits, including when startup
 partially initializes the transport and then throws. A transport must therefore make `StopAsync`
 safe after a failed `StartAsync`.
 
@@ -204,7 +204,7 @@ be delivered in the opposite one, and neither Alberto nor the table gives you a 
 back on. Three separate mechanisms cause it, and removing any one of them would not fix the others:
 
 - **The claim query orders by `created_at`, which is not unique.** `created_at` defaults to `now()`,
-  which in PostgreSQL is transaction-*start* time — so two entries written by concurrent
+  which in PostgreSQL is transaction-*start* time, so two entries written by concurrent
   transactions can share a timestamp, and an entry written by a long transaction can carry an
   earlier timestamp than one committed before it. There is no tiebreaker column; `id` is a v4 UUID
   and sorts randomly.
@@ -215,7 +215,7 @@ back on. Three separate mechanisms cause it, and removing any one of them would 
 
 This is normal for integration messaging and usually fine: the messages go to *other* systems, which
 have their own state and their own clocks, and a consumer that requires order across systems has a
-design problem the transport cannot solve for it. Order *within* the event log is unaffected — the
+design problem the transport cannot solve for it. Order *within* the event log is unaffected: the
 log is strictly ordered, and `OutboxHandler` is a checkpointed processor that reads it in order. It
 is only the delivery leg that reorders.
 
@@ -235,8 +235,8 @@ or a timestamp in the message and let the consumer discard what it has already s
 
 ### Retention
 
-Delivered entries stay in the table until something removes them, and nothing did before `0.1.0` —
-the outbox was append-only in practice, and the partial indexes the relay depends on grew with it.
+Delivered entries stay in the table until something removes them, and nothing did before `0.1.0`.
+The outbox was append-only in practice, and the partial indexes the relay depends on grew with it.
 `WithOutbox` now registers an `OutboxRetentionService` that deletes delivered entries older than
 `deliveredRetention` (**default 7 days**) every `retentionSweepInterval` (default 1 hour):
 
@@ -249,7 +249,7 @@ the outbox was append-only in practice, and the partial indexes the relay depend
 ```
 
 - **Only `delivered` entries are eligible.** `pending`, `processing` and `failed` are work, not
-  history, and are never removed by age — a `failed` entry sits there until you `RetryFailedAsync`
+  history, and are never removed by age: a `failed` entry sits there until you `RetryFailedAsync`
   it or delete it yourself.
 - Pass `Timeout.InfiniteTimeSpan` as `deliveredRetention` to keep delivered entries forever. Do that
   if the table is your integration audit trail, and plan to archive it elsewhere.
@@ -258,7 +258,7 @@ the outbox was append-only in practice, and the partial indexes the relay depend
 - The sweep runs on its own schedule, not on the relay's loop, so a slow purge delays only the next
   purge and never publishing. It waits out one full interval before its first sweep, because host
   startup is both the busiest moment and the one where the backlog is largest.
-- Several replicas sweeping concurrently is safe — the deletes are idempotent and the losers delete
+- Several replicas sweeping concurrently is safe. The deletes are idempotent and the losers delete
   nothing.
 
 For a one-off cleanup, or to catch up a table that predates this, `alberto ops outbox purge --before

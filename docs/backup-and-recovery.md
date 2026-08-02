@@ -19,10 +19,10 @@ for taking the backup.
 |---|---|---|
 | `alberto_events` | **The truth.** Append-only, `global_position` is a `BIGSERIAL` | Unrecoverable. Everything else is derived from this |
 | `alberto_event_type_positions`, `alberto_event_tag_positions` | Inverted indexes over the log, written in the append transaction | Recoverable only by rebuilding them from `alberto_events`; treat them as part of the log |
-| `alberto_processor_checkpoints` | How far each processor has consumed | Recoverable by replaying — costly, not fatal. **But a checkpoint that is too far *ahead* is fatal**, see below |
+| `alberto_processor_checkpoints` | How far each processor has consumed | Recoverable by replaying: costly, not fatal. **But a checkpoint that is too far *ahead* is fatal**, see below |
 | `alberto_projection_states` | Projection documents, keyed by `rebuild_version` | Rebuildable from the log |
 | `alberto_projection_rebuild_meta` | Which version readers see, and any rebuild in flight | Rebuildable, but a stale copy strands readers on a version that no longer exists |
-| `alberto_outbox_entries` | Messages waiting to go out, and delivered ones kept for `deliveredRetention` | Undelivered entries are lost work — the events survive, the intent to publish them does not |
+| `alberto_outbox_entries` | Messages waiting to go out, and delivered ones kept for `deliveredRetention` | Undelivered entries are lost work. The events survive, the intent to publish them does not |
 | `alberto_dead_letter_events` | Events a processor gave up on | Losing them loses the record of what failed; the events themselves are still in the log |
 | `alberto_processor_leases`, `alberto_tenant_leases` | Who is allowed to run what, right now | Nothing. They expire and are re-acquired |
 | `alberto_tenants`, `alberto_tenant_assignments` | Tenant registry (multi-tenant stores) | Configuration, not derived. Back it up like configuration |
@@ -30,7 +30,7 @@ for taking the backup.
 | `schemaversions` | DbUp's migration journal | Restore it *with* the schema it describes. A journal that disagrees with the tables is worse than no journal |
 
 **EF-backed projections are not in this list.** They live in your own `DbContext` and your own
-tables — often your own database. They are derived state like `alberto_projection_states`, and the
+tables: often your own database. They are derived state like `alberto_projection_states`, and the
 ordering rule below applies to them just as much.
 
 ## Taking a backup
@@ -41,7 +41,7 @@ Nothing Alberto-specific is required. Two things are worth knowing:
   catch an append half-written or a checkpoint that refers to an event the dump missed. You do not
   need to stop the application.
 - **PITR is what you actually want.** The log is the record of everything that happened, so being
-  able to recover to a point in time — rather than to last night — is the difference between losing
+  able to recover to a point in time (rather than to last night) is the difference between losing
   a day of history and losing an hour. Alberto does nothing that interferes with WAL archiving.
 
 ### Sharded modules are N+1 databases with no consistency between them
@@ -55,7 +55,7 @@ control database. That means:
   which makes it easy to forget.
 - **There is no cross-database snapshot.** `pg_dump` of five shards is five snapshots at five
   instants. Positions are per-database and were never comparable across shards, so this does not
-  corrupt anything — but a restore is a per-shard operation, and a tenant moved between shards near
+  corrupt anything, but a restore is a per-shard operation, and a tenant moved between shards near
   the recovery point can land in neither or both. Reconcile the catalog against the shards after any
   restore that is not all-shards-to-the-same-time.
 
@@ -65,7 +65,7 @@ control database. That means:
 
 > **Derived state must never be newer than the log it was derived from.**
 
-Restore the whole database to one point in time and the rule holds automatically — the log, the
+Restore the whole database to one point in time and the rule holds automatically. The log, the
 checkpoints and the projections all move back together. It is only broken when the pieces are
 restored from different points, which happens more easily than it sounds:
 
@@ -78,7 +78,7 @@ If derived state is ahead, checkpoint monotonicity turns it into silent data los
 rewind on its own and does not error. The processor waits for position 9001. Every event the restore
 brought back between 8000 and 9000 is skipped, permanently, with nothing in the logs.
 
-The cure is `alberto ops checkpoint set` — `RewindAsync` is the deliberate escape hatch and the only
+The cure is `alberto ops checkpoint set`. `RewindAsync` is the deliberate escape hatch and the only
 way to move a checkpoint backwards:
 
 ```bash
@@ -90,11 +90,11 @@ set` is the one mutation with no `--all-shards`, for exactly that reason.
 
 ### After any restore, before starting the application
 
-Bring the application up *after* these, not before — a control loop that starts first will act on
+Bring the application up *after* these, not before: a control loop that starts first will act on
 the state you are about to correct.
 
 1. **Compare every checkpoint against the log head.** Anything ahead of it must be rewound.
-   `alberto status` prints both — the store's global position and every processor's — which is the
+   `alberto status` prints both (the store's global position and every processor's), which is the
    whole check in one command.
 
    ```bash
@@ -118,12 +118,12 @@ the state you are about to correct.
    ```
 
    Check `active_version` too. If the restore rolled `alberto_projection_rebuild_meta` back past a
-   promotion, readers resolve a version whose rows the reclaim sweep has since removed — the
+   promotion, readers resolve a version whose rows the reclaim sweep has since removed. The
    projection reads as empty rather than wrong. Starting a fresh rebuild is the fix.
 
 3. **Decide what to do about the outbox.** Entries restored as `processing` carry a claim from a
    relay that no longer exists, and recover on their own: `ClaimPendingAsync` re-claims anything
-   whose `claim_expires_at` has passed or was never set. Entries restored as `failed` stay failed —
+   whose `claim_expires_at` has passed or was never set. Entries restored as `failed` stay failed.
    `IOutboxStore.RetryFailedAsync` (optionally filtered by message type) is what moves them back to
    `pending`, and there is no CLI verb for it; `alberto ops outbox purge` is the only outbox command
    and it only deletes delivered entries.
@@ -148,7 +148,7 @@ the state you are about to correct.
 ### What a restore cannot undo
 
 **Messages already published.** Once the relay handed an `ExternalMessage` to a transport, it is
-gone — in another system's queue, or already processed. Rolling the outbox table back to before that
+gone: in another system's queue, or already processed. Rolling the outbox table back to before that
 delivery does not unsend it; it makes Alberto publish it *again* when the restored entry is
 re-claimed. Consumers must be idempotent for this to be safe, which is the same property
 [at-least-once delivery](reactors-and-outbox.md#the-outbox) already requires of them.
@@ -168,13 +168,13 @@ alberto ops rebuild start <processor-id> --yes
 ```
 
 This replays the log into a shadow version under its own checkpoint and swaps it in one transaction,
-so the projection stays readable throughout — see
+so the projection stays readable throughout. See
 [Rebuilding a projection](projections.md#rebuilding-a-projection). It costs a full replay and it is
 correct by construction, which is often the better trade when you are not certain a restored
 projection is consistent with the restored log.
 
-`alberto ops checkpoint reset` does the cruder version — delete the checkpoint, replay from zero
-into the *live* state — and is appropriate for a reactor, which has no state to swap, but not for a
+`alberto ops checkpoint reset` does the cruder version (delete the checkpoint, replay from zero
+into the *live* state) and is appropriate for a reactor, which has no state to swap, but not for a
 projection readers are querying.
 
 ## Verifying a backup

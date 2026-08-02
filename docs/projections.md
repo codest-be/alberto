@@ -39,14 +39,14 @@ public static class OrdersOverviewProjection
 }
 ```
 
-- **`For<TState>(processorId)`** — the processor id is the projection's identity: its checkpoint
+- **`For<TState>(processorId)`.** The processor id is the projection's identity: its checkpoint
   key, what `alberto status` lists, what you pass to `alberto ops rebuild start`. Use
   `nameof(TheProjectionClass)` so it survives renames visibly rather than silently.
-- **`Collection(name)`** — optional; defaults to the processor id. It names the logical document
+- **`Collection(name)`.** Optional; defaults to the processor id. It names the logical document
   set inside `alberto_projection_states`.
-- **`InitialState(factory)`** — optional; defaults to `new TState()`. `TState` must have a
+- **`InitialState(factory)`.** Optional; defaults to `new TState()`. `TState` must have a
   parameterless constructor.
-- **`On<TEvent>(id, apply)`** — `id` selects the document this event updates, and returning `null`
+- **`On<TEvent>(id, apply)`.** `id` selects the document this event updates, and returning `null`
   skips the event entirely. `apply` gets the current state, the parsed event, and a
   `ProjectionContext` carrying `EventId`, `Position`, `Timestamp`, `TenantId` and `Metadata`.
 
@@ -86,8 +86,8 @@ belong in a [reactor](reactors-and-outbox.md).
 The factory returns a *factory* because a store is created per tenant and per rebuild version, not
 once. `ctx` is a `ProjectionStoreContext` with two members:
 
-- `ctx.Services` — the provider.
-- `ctx.RebuildVersion` — a `Func<int>`. **Pass it through; never call it and cache the result.**
+- `ctx.Services`: the provider.
+- `ctx.RebuildVersion`: a `Func<int>`. **Pass it through; never call it and cache the result.**
   Promotion changes the answer underneath a store that is already running.
 
 In tests and samples, swap the store and change nothing else:
@@ -99,7 +99,7 @@ var overview = new InMemoryStateStore<OrdersOverview>();
 
 ### Reading it back
 
-`IStateStore<TState>` is deliberately small — two methods, both keyed by document id:
+`IStateStore<TState>` is deliberately small, two methods, both keyed by document id:
 
 ```csharp
 Task<IReadOnlyDictionary<string, TState>> LoadManyAsync(IEnumerable<string> documentIds,
@@ -115,10 +115,10 @@ enlist in.
 
 That is the whole read surface: **fetch documents whose ids you already know.** There is no list,
 no filter and no sort. Wanting any of those is the signal to use an EF projection instead of
-forcing it through a document store — with EF you get LINQ over a `DbSet` and real columns to
+forcing it through a document store: with EF you get LINQ over a `DbSet` and real columns to
 index, which is the trade the two options exist to let you make.
 
-**Building a store outside the module builder** — a query handler, a GraphQL resolver — is where a
+**Building a store outside the module builder** (a query handler, a GraphQL resolver) is where a
 subtle bug lives. A store constructed with the default rebuild version pins itself to version 1 and
 keeps serving the *pre-rebuild* copy forever after a promotion. Use `ProjectionVersions.LiveVersion`:
 
@@ -132,7 +132,7 @@ new PostgresStateStore<OrdersOverview>(
 ```
 
 It resolves to version 1 forever in a module with no rebuild pipeline, so it is safe to use
-unconditionally. Note the named arguments — `PostgresStateStore`'s parameters are all optional
+unconditionally. Note the named arguments. `PostgresStateStore`'s parameters are all optional
 strings and a positional mistake binds silently.
 
 ## EF projections
@@ -153,7 +153,7 @@ public sealed class OrderSummaryEntity : IProjectionEntity
 }
 ```
 
-Configure it in `OnModelCreating` — **this is not optional**:
+Configure it in `OnModelCreating`. **This is not optional**:
 
 ```csharp
 protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -169,7 +169,7 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 `ProjectionEntity<T>()` makes the key `(DocumentId, RebuildVersion)`, defaults the version column
 to 1 so existing rows keep working, and adds a `(RebuildVersion, UpdatedAt)` index. Without it, a
 shadow rebuild's rows collide with the live rows on insert and the rebuild overwrites the very
-projection it was shadowing. Adding it to an existing model is a schema change — generate a
+projection it was shadowing. Adding it to an existing model is a schema change: generate a
 migration.
 
 Then wire the module and the projection:
@@ -186,7 +186,7 @@ one `SaveChanges`.
 
 ### Reacting after the commit
 
-An overload takes an `afterCommit` factory — it resolves its dependencies once at startup and
+An overload takes an `afterCommit` factory. It resolves its dependencies once at startup and
 returns a callback run after each successful `SaveChanges`, receiving only the events the
 projection actually handled:
 
@@ -200,19 +200,19 @@ projection actually handled:
     })
 ```
 
-**It fires on live processing only — never during a rebuild replay.** A rebuild replays the entire
+**It fires on live processing only, never during a rebuild replay.** A rebuild replays the entire
 log into a shadow version that no reader can see yet, so firing the callback there would re-emit
 every notification the system has ever sent, once per rebuild, for state that is not live. A
 webhook that has already fired cannot be unfired.
 
 The consequence, so it is a choice and not a surprise: anything the callback maintains *outside*
-the `DbContext` — a search index, an external cache — is not rebuilt by
+the `DbContext` (a search index, an external cache) is not rebuilt by
 `alberto ops rebuild`, and needs a refresh path of its own. Keep the callback to things that are
 cheap to redo, and put anything that must survive a rebuild in the projection entity itself.
 
 ### EF projections on a tenant-enabled module
 
-`IProjectionEntity` has exactly the columns above — there is no tenant among them, and adding a
+`IProjectionEntity` has exactly the columns above. There is no tenant among them, and adding a
 `TenantId` property to your entity does not change what the store queries on. Both the async store
 and the inline projection load and write by `(DocumentId, RebuildVersion)`, so on a module that
 declared `.WithTenancy()` two tenants producing the same document id share one row: last write
@@ -233,7 +233,7 @@ itself carries (`id: e => $"{e.TenantId}/{e.OrderId}"`), give each tenant its ow
 `.WithTenancy(t => t.AcrossPostgresDatabases(...))`, or use the JSONB state store via
 `AddProjection`, whose tenancy is part of the migrated schema and needs no such promise.
 
-Single-tenant modules are unaffected — there is no second tenant to collide with, and the
+Single-tenant modules are unaffected. There is no second tenant to collide with, and the
 parameter's default is correct there.
 
 ### Inline vs async
@@ -248,11 +248,11 @@ parameter's default is correct there.
 | Consistency | Eventual (≈ polling interval) | Read-your-writes |
 | A failure | Dead-letters; the mutation still succeeded | Throws out of `AppendAsync` |
 | Latency cost | None on the write path | Its write latency, added to every mutation |
-| Rebuildable | Yes | **No** — inline projections register no state clearer |
+| Rebuildable | Yes | **No.** Inline projections register no state clearer |
 
 One thing "inline" does *not* mean: atomic. Inline projections run **after** the append transaction
 has committed, on their own connection. A projection that throws therefore fails the caller's
-`AppendAsync` even though the events are already durable — the caller sees an exception, the log
+`AppendAsync` even though the events are already durable. The caller sees an exception, the log
 sees a successful append. Design for that: an inline projection should be simple enough that it
 only fails when the database is down.
 
@@ -269,7 +269,7 @@ await projections.WaitForProjectionAsync("order-summary");
 
 It reads the store's head once and returns as soon as that processor's checkpoint has passed it,
 throwing `TimeoutException` rather than serving a stale read. It watches a checkpoint the local
-control loop advances, so it reports progress made *in this process* — on a replica that does not
+control loop advances, so it reports progress made *in this process*: on a replica that does not
 run the processor it waits out its timeout however far along the projection actually is.
 
 ## Rebuilding a projection
@@ -316,8 +316,8 @@ alberto ops rebuild abort OrdersOverviewProjection
 **The replay runs in your application, not in the CLI.** The CLI only moves the state machine. A
 module without `WithRebuilds()` will leave a started rebuild sitting at `rebuilding` forever.
 
-The coordinator holds no state of its own — everything derives from
-`alberto_projection_rebuild_meta` — so a rebuild started from one process is picked up by another,
+The coordinator holds no state of its own. Everything derives from
+`alberto_projection_rebuild_meta`, so a rebuild started from one process is picked up by another,
 and a coordinator that crashes mid-rebuild resumes on restart.
 
 ### Limits
@@ -336,7 +336,7 @@ and a coordinator that crashes mid-rebuild resumes on restart.
   survives until the coordinator's sweep reclaims it, a grace period of twice the version-cache
   refresh interval after the transition. Expect `alberto ops rebuild status` to show a dead
   version's rows still on disk for a few seconds after a promote or abort.
-- A rebuild reprocesses every event. **Reactors are not rebuilt** — replaying side effects is not
+- A rebuild reprocesses every event. **Reactors are not rebuilt.** Replaying side effects is not
   something the coordinator can make safe.
 - Inline projections cannot be rebuilt this way.
 
@@ -355,5 +355,5 @@ contention and the read shape at once:
 | A composite (`$"{tenant}:{month}"`) | One per bucket | Ids are strings; keep them stable forever |
 | `null` | The event is skipped | The intended way to filter |
 
-Ids are opaque strings. Anything you can compute from the event alone is fair game — but changing
+Ids are opaque strings. Anything you can compute from the event alone is fair game, but changing
 the scheme later means a rebuild, because the old documents are keyed the old way.

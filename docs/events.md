@@ -3,7 +3,7 @@
 This page covers how Alberto identifies events on disk, how it handles schema evolution,
 and the upcaster API for migrating persisted payloads to a newer CLR type.
 
-If you have not read [concepts.md](concepts.md) yet, start there — this page assumes you are
+If you have not read [concepts.md](concepts.md) yet, start there. This page assumes you are
 familiar with the `[EventType]`, `[Tag]`, and `DcbQuery` fundamentals.
 
 ---
@@ -21,7 +21,7 @@ public sealed record OrderPlaced(
 ```
 
 The slug is the on-disk name written into the `event_type` column of every stored row.
-Two side tables — `alberto_event_type_positions` and `alberto_event_tag_positions` — index
+Two side tables (`alberto_event_type_positions` and `alberto_event_tag_positions`) index
 the log by type and by tag respectively; both are keyed by the slug string. Boundary queries
 such as `DcbQuery.ByTypes("order-placed")` filter against those indexes.
 
@@ -31,7 +31,7 @@ for the new name matches nothing, and a boundary that should cover those rows si
 them. Rename the C# record freely; leave the slug alone.
 
 ```csharp
-// Before — a rename of the record that is safe:
+// Before: a rename of the record that is safe:
 [EventType("order-placed")]
 public sealed record OrderCreated(...) : IEvent;   // old name: OrderPlaced
 
@@ -78,10 +78,10 @@ the store. The old record stays in the codebase as a transitional type (or can b
 container) that the upcaster uses to read old payloads:
 
 ```csharp
-// Old shape — used only by the upcaster; no longer the live record
+// Old shape: used only by the upcaster; no longer the live record
 internal sealed record OrderPlacedV1(Guid OrderId, decimal Amount) : IEvent;
 
-// New shape — what new events and projections use
+// New shape: what new events and projections use
 [EventType("order-placed", Version = 2)]
 public sealed record OrderPlaced(
     Guid OrderId, string Currency, decimal Amount) : IEvent;
@@ -95,7 +95,7 @@ at construction time.
 ## Reserved `_` tag concepts
 
 **The entire `_` prefix is reserved for framework tags**, not just the names Alberto uses today.
-Domain concepts are things like `order`, `customer`, or `venue`, so nothing useful is lost — and
+Domain concepts are things like `order`, `customer`, or `venue`, so nothing useful is lost, and
 it means any framework tag added in a later version lands in space that was never available to
 your code, instead of colliding with whoever had already picked that name.
 
@@ -104,7 +104,7 @@ The one reserved concept in use is `_version`, written on every event by
 
 - The `EventTag` public constructor throws `ArgumentException` when the concept starts with `_`.
 - `[Tag("_anything")]` on an event property throws `ArgumentException` when the first event of
-  that type is appended — the tag attributes are scanned lazily on first use, not at startup.
+  that type is appended. The tag attributes are scanned lazily on first use, not at startup.
 - Boundaries need no separate guard: `DcbQuery` takes `EventTag` values, so a query over a
   reserved concept cannot be constructed at all.
 
@@ -125,7 +125,7 @@ into the current CLR type. Build one with `DeclareUpcaster` and register it with
 `UpcasterRegistry`:
 
 ```csharp
-// 1. Declare the chain — every version step from the oldest to the current
+// 1. Declare the chain: every version step from the oldest to the current
 var decl = DeclareUpcaster.For<OrderPlaced>("order-placed")
     .From<OrderPlacedV1>(                      // reads JSON as OrderPlacedV1 (version 1)
         fromVersion: 1,
@@ -135,7 +135,7 @@ var decl = DeclareUpcaster.For<OrderPlaced>("order-placed")
             v1.Amount))
     .Build();
 
-// 2. Build the registry — one declaration per event type
+// 2. Build the registry: one declaration per event type
 var registry = UpcasterRegistry.Create()
     .Add(decl)
     .Build();
@@ -180,8 +180,8 @@ know about older versions.
 
 **The command pipeline's `Load<TState>` method applies upcasting.** When
 `CommandPipeline.Load<TState>(boundary, evolver)` is called, it threads `EventSerializer.Deserialize`
-into the `Evolver<TState>` dispatch loop. Every envelope is passed through `EventSerializer` — and
-therefore through the upcaster chain — before the evolver handler sees it. The handler always
+into the `Evolver<TState>` dispatch loop. Every envelope is passed through `EventSerializer`, and
+therefore through the upcaster chain, before the evolver handler sees it. The handler always
 receives the current CLR type.
 
 **Calling `Evolver.Reconstitute(envelopes)` directly (without a serializer) does not apply
@@ -199,7 +199,7 @@ is no way to fold a boundary that may contain stale-version events by calling th
 yourself. Go through one of the two paths that thread `EventSerializer.Deserialize` for you:
 
 ```csharp
-// The command pipeline — Load(boundary, evolver) threads the serializer into the dispatch loop:
+// The command pipeline: Load(boundary, evolver) threads the serializer into the dispatch loop:
 await store.Handle(command)
     .Load(boundary, evolver)
     .Decide((cmd, state) => …)
@@ -222,11 +222,11 @@ been stored, and the corrupt state is indistinguishable from real state afterwar
 
 Two checks refuse it, deliberately overlapping:
 
-- **`ALB0018` at startup**, from `AlbertoModuleValidator` — but only for modules configured through
+- **`ALB0018` at startup**, from `AlbertoModuleValidator`, but only for modules configured through
   DI, and only for the assembly `.WithEventsFrom(...)` scanned.
 - **`EventSerializer.Deserialize` on read**, which throws when the envelope's stored version is
   below the version the CLR type declares and neither an upcaster nor a waiver covers the gap.
-  A serializer built by hand — in a migration script, a test helper, a one-off tool — never meets
+  A serializer built by hand (in a migration script, a test helper, a one-off tool) never meets
   the validator, so the serializer carries the check itself.
 
 The same guard catches the chain that was never extended: an upcaster whose steps stop at version
@@ -245,7 +245,7 @@ public record OrderPlaced(Guid OrderId, decimal Amount, string Region = "eu-west
 ```
 
 It is a claim about the JSON, not about the C#. Adding a required member, renaming one, changing a
-type, or narrowing a meaning all compile and all fail this test — write an upcaster for those.
+type, or narrowing a meaning all compile and all fail this test. Write an upcaster for those.
 Reaching for the flag to avoid writing one is how stale state gets into a projection you will
 later have to rebuild from a log that never recorded the difference.
 
@@ -253,11 +253,11 @@ later have to rebuild from a log that never recorded the difference.
 
 An upcaster transforms an existing payload; it cannot invent data that was never captured.
 
-If a v1 event is missing a field that the v2 shape requires — and there is no sensible default
-for it — an upcaster cannot recover the missing value. The only options are:
+If a v1 event is missing a field that the v2 shape requires, and there is no sensible default
+for it: an upcaster cannot recover the missing value. The only options are:
 
 - **Choose a real default.** The worked example below does this: old `order-placed` events
-  had no `Currency` field, so they are upcasted to `Currency: "USD"` — a deliberate, chosen
+  had no `Currency` field, so they are upcasted to `Currency: "USD"`, a deliberate, chosen
   default, not recovered data. Record this assumption in comments and in your projection logic,
   because projections that depend on that default inherit the assumption silently.
 - **Backfill the rows.** Write a one-off migration that reads the original context (from a
@@ -274,13 +274,13 @@ There is no third option. An upcaster receives only the JSON that was stored at 
 currency. New decisions must produce a currency-aware result; projections must backfill USD
 for old events.
 
-### Step 1 — Add the attribute and a transitional type
+### Step 1. Add the attribute and a transitional type
 
 ```csharp
 // Events that carry the old shape
 internal sealed record OrderPlacedV1(Guid OrderId, Guid CustomerId, decimal Amount) : IEvent;
 
-// The live record — Version = 2 from this point forward
+// The live record: Version = 2 from this point forward
 [EventType("order-placed", Version = 2)]
 public sealed record OrderPlaced(
     [property: Tag("order")]    Guid OrderId,
@@ -289,7 +289,7 @@ public sealed record OrderPlaced(
     decimal Amount) : IEvent;
 ```
 
-### Step 2 — Declare the upcaster
+### Step 2. Declare the upcaster
 
 ```csharp
 var decl = DeclareUpcaster.For<OrderPlaced>("order-placed")
@@ -300,7 +300,7 @@ var decl = DeclareUpcaster.For<OrderPlaced>("order-placed")
     .Build();
 ```
 
-### Step 3 — Register it on the module builder
+### Step 3. Register it on the module builder
 
 Pass the declaration to `AddUpcaster` on the module builder. `WithEventsFrom` picks up every
 declaration added via `AddUpcaster` and wires the upcaster registry into the `EventSerializer`

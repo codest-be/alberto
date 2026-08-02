@@ -18,7 +18,7 @@ dotnet add package Alberto.InMemory
 dotnet add package Microsoft.Extensions.Hosting
 ```
 
-The packages are on nuget.org — no extra feed to configure. See [Install](../README.md#install)
+The packages are on nuget.org, no extra feed to configure. See [Install](../README.md#install)
 for the full list. Alberto is pre-1.0, so pin an exact version before you rely on it.
 
 ## 2. Events
@@ -43,7 +43,7 @@ public sealed record ReservationCancelled(
 ```
 
 > `[Tag]` targets **properties**. On a record's primary constructor you must write
-> `[property: Tag("show")]` — plain `[Tag("show")]` binds to the parameter and the tag is silently
+> `[property: Tag("show")]`: plain `[Tag("show")]` binds to the parameter and the tag is silently
 > never written.
 
 This one event now carries three boundaries at once: everything about a show, everything about a
@@ -60,10 +60,10 @@ public static DcbQuery Boundary(Guid showId, string seat) =>
         new EventTag("seat", seat));
 ```
 
-`ByAllTags` means *intersection* — an event must carry both tags. `ByTags` would be a union, which
+`ByAllTags` means *intersection*: an event must carry both tags. `ByTags` would be a union, which
 here would drag in every seat of the show and make unrelated reservations contend.
 
-> **The one trap worth memorising.** Guid tag values are written with `ToString("D")` — the
+> **The one trap worth memorising.** Guid tag values are written with `ToString("D")`, the
 > hyphenated form. Build tags with `showId.ToString()`, never `$"show:{showId:N}"`. A wrong format
 > does not throw: the query simply matches nothing, your state comes back empty, and your guard
 > silently never fires. This exact bug ate an hour while writing this page.
@@ -104,15 +104,15 @@ Task<Result> Reserve(string seat) =>
 saw*, then `Commit` appends with that query and that position as an append condition. If anything
 matching the boundary was written while you were deciding, the append is rejected with a
 `DcbConflictException` instead of overwriting someone's reservation. That is the whole optimistic
-concurrency story — you never write a version number yourself.
+concurrency story. You never write a version number yourself.
 
-Because the boundary comes from `Load`, `Commit(ct)` needs no arguments — and the compiler will not
+Because the boundary comes from `Load`, `Commit(ct)` needs no arguments, and the compiler will not
 let you call it without a `Load`. Add `.RetryOnConflict(3)` before `Commit` to re-read and re-decide
 instead of surfacing the conflict, or use `.TryCommit(ct)` to get the conflict back as a
 `dcb.conflict` problem rather than an exception.
 
 Two optional stages sit in front of `Load`. `.Validate(cmd => …)` rejects the command before
-anything touches the store, and `.Enrich(async (cmd, ct) => …)` replaces it with something richer —
+anything touches the store, and `.Enrich(async (cmd, ct) => …)` replaces it with something richer:
 an FX rate, a fraud score, a row from another service. Both run once, even when `RetryOnConflict`
 re-runs the read-decide loop.
 
@@ -122,7 +122,7 @@ throws for a rejected business rule.
 
 ## 6. A read model
 
-Decisions read a tiny boundary. Queries — "how full is this show?" — read a projection, built by a
+Decisions read a tiny boundary. Queries ("how full is this show?") read a projection, built by a
 background loop from the same log.
 
 ```csharp
@@ -142,7 +142,7 @@ public static readonly ProjectionDeclaration<ShowOccupancy> Declaration =
         .Build();
 ```
 
-`id` picks which document the event updates — one row per show here. `apply` is a pure function
+`id` picks which document the event updates, one row per show here. `apply` is a pure function
 returning the new state; it can also return `ProjectionResults.Delete<ShowOccupancy>()` to remove
 the document, or `ProjectionResults.Unchanged<ShowOccupancy>()` to skip the write entirely.
 
@@ -164,14 +164,14 @@ services.AddAlberto("tickets", builder => builder
 - `WithEventsFrom(assembly)` scans for `[EventType]` records, builds the serializer, and registers
   the `AlbertoStore` command pipeline. It comes from the separate `Alberto.Commands` package.
 - `AddProjection` takes the declaration and a factory for where state goes. The factory's argument
-  is a `ProjectionStoreContext` — ignored here, but it is what carries the rebuild version once you
+  is a `ProjectionStoreContext`: ignored here, but it is what carries the rebuild version once you
   want live rebuilds ([projections.md](projections.md#rebuilding-a-projection)).
 - `WithControlLoop` configures the background loop. Omit it entirely and you still get one on
   defaults.
 
 `AlbertoStore` itself is registered **keyed and scoped**, under the same module key as the event
-store it wraps. Resolve it with `GetRequiredKeyedService<AlbertoStore>("tickets")`, from a scope —
-the request scope in a web application, or an explicit `provider.CreateScope()` in a console one.
+store it wraps. Resolve it with `GetRequiredKeyedService<AlbertoStore>("tickets")`, from a scope: the
+request scope in a web application, or an explicit `provider.CreateScope()` in a console one.
 The key is what lets one host serve several modules: each gets its own store over its own log.
 
 Going to production is the same shape with one line swapped:
@@ -269,7 +269,7 @@ public static class Program
         foreach (var hosted in provider.GetServices<IHostedService>())
             await hosted.StartAsync(CancellationToken.None);
 
-        // AlbertoStore is scoped — in a web app that is the request scope. Here we open one by hand.
+        // AlbertoStore is scoped: in a web app that is the request scope. Here we open one by hand.
         using var scope = provider.CreateScope();
         var store = scope.ServiceProvider.GetRequiredKeyedService<AlbertoStore>("tickets");
         var showId = Guid.NewGuid();
@@ -310,7 +310,7 @@ B07              : reserved
 seats taken      : 2
 ```
 
-Note the wait. Projections are **eventually** consistent — the control loop polls, so a read
+Note the wait. Projections are **eventually** consistent. The control loop polls, so a read
 immediately after a write may not see it yet. That lag is the price of the decision path not
 waiting on every read model.
 
@@ -318,7 +318,7 @@ waiting on every read model.
 and returns as soon as that projection's checkpoint has passed it, throwing `TimeoutException`
 rather than quietly serving a stale read. Pass a position to wait for something specific, and a
 `TimeSpan` to override the default (five seconds, or three control-loop polls, whichever is
-longer). It watches a checkpoint, so it only reports progress made *in this process* — on a
+longer). It watches a checkpoint, so it only reports progress made *in this process*: on a
 replica that does not run the processor it will wait out its timeout however far along the
 projection actually is.
 
@@ -327,12 +327,12 @@ all, EF projections can run [inline](projections.md#inline-vs-async) instead.
 
 ## Where to go next
 
-- **[Concepts](concepts.md)** — what positions, checkpoints and processors are, and how queries
+- **[Concepts](concepts.md).** What positions, checkpoints and processors are, and how queries
   really compose.
-- **[Projections](projections.md)** — Postgres and EF stores, and rebuilding a projection without
+- **[Projections](projections.md).** Postgres and EF stores, and rebuilding a projection without
   downtime.
-- **[Reactors and the outbox](reactors-and-outbox.md)** — doing things to the outside world.
-- **[Operations](operations.md)** — the `alberto` CLI, dead letters, retries and telemetry.
-- **A real application** — `apps/Alberto.Orders` is a GraphQL API on Postgres with tenancy,
+- **[Reactors and the outbox](reactors-and-outbox.md).** Doing things to the outside world.
+- **[Operations](operations.md).** The `alberto` CLI, dead letters, retries and telemetry.
+- **A real application.** `apps/Alberto.Orders` is a GraphQL API on Postgres with tenancy,
   EF projections and an outbox. Run the lot with
   `dotnet run --project apps/Alberto.AppHost`.

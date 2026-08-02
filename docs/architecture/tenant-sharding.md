@@ -1,6 +1,6 @@
 # Tenant sharding
 
-> **Experimental in v1 — diagnostic `ALB9001`.**
+> **Experimental in v1: diagnostic `ALB9001`.**
 > Tenant sharding is a preview feature. The sharding API (`AcrossPostgresDatabases`,
 > `PostgresShardBuilder`, and the types listed in [Experimental surface](#experimental-surface))
 > may change in a minor v1.x release; the rest of Alberto will not. Using any part of it produces
@@ -28,7 +28,7 @@ layer **above** that one: a module's tenants can be spread over several PostgreS
 row-level tenancy still separating the tenants **inside** each of them.
 
 Ten tenants in `db1` and three in `db2` is the shape this is for. So is one tenant alone in a
-database of its own — that is just a shard with one row pointing at it.
+database of its own. That is just a shard with one row pointing at it.
 
 This is opt-in and it is not the default. A module that never calls `AcrossPostgresDatabases`
 behaves exactly as it did before sharding existed, down to the CLI's output.
@@ -79,7 +79,7 @@ them:
    database; the shard's own tenant decorator still filters on `tenant_id` inside it. A shard
    holding several tenants isolates them exactly as an unsharded module does.
 3. **`position` is a per-database sequence.** Two shards each number their events from 1. A
-   position from one shard means nothing in another, and no code — yours or Alberto's — may
+   position from one shard means nothing in another, and no code (yours or Alberto's) may
    compare or union them.
 
 ## Configuring it
@@ -106,12 +106,12 @@ services.AddAlberto("orders", module => module
 | `WithDefaultShard(id)` | Where a tenant with no catalog row is placed. Omit it to refuse instead |
 | `WithRefreshInterval(t)` | How often the resolver re-reads the catalog. Default 30 seconds |
 
-**Shard ids are identifiers, not hostnames.** `^[a-z][a-z0-9_]{0,62}$` — the same allowlist Alberto
+**Shard ids are identifiers, not hostnames.** `^[a-z][a-z0-9_]{0,62}$`, the same allowlist Alberto
 applies to schema and tenant ids, because a shard id becomes a DI key, a metric tag and a lease
 holder name. Name the deployment slot (`db1`, `eu`, `legacy`), not the machine; the id is written
 into the catalog next to every tenant assigned to it and outlives any host you might move.
 
-`WithRefreshInterval` is **not** how quickly a new tenant is picked up — a cache miss reads the
+`WithRefreshInterval` is **not** how quickly a new tenant is picked up: a cache miss reads the
 catalog straight away. It is how quickly a mapping *changed by another process* is noticed.
 
 ### Tuning from configuration
@@ -143,7 +143,7 @@ module code (.WithPostgres)  →  shard code (.AddShard)  →  module configurat
 }
 ```
 
-**A shard named only in configuration is reported, never created** — `ALB0015`. Shard services are
+**A shard named only in configuration is reported, never created** (`ALB0015`). Shard services are
 registered while the container is still being built, which is before any configuration is read, so
 a shard that first appeared here would have no data source, no migration and no control loops: a
 database that silently accepts nothing. Add the `.AddShard(...)` call in code, then tune it here.
@@ -151,7 +151,7 @@ database that silently accepts nothing. Add the `.AddShard(...)` call in code, t
 ### Pool sizes multiply
 
 `MaxPoolSize` is per shard, not per module. The example above asks for 30 connections against
-`db1`, 10 against `db2` and 5 against the catalog — 45, not 30. Count the shards before you copy a
+`db1`, 10 against `db2` and 5 against the catalog: 45, not 30. Count the shards before you copy a
 single-database pool size across all of them; the usual way to discover this is a connection
 exhaustion incident on the database server, which sees the sum.
 
@@ -181,7 +181,7 @@ if the two ever share a database.
 
 Assignment is **first-writer-wins**: `ON CONFLICT DO NOTHING`, then read back the winner. Two hosts
 seeing the same new tenant in the same instant must agree on one shard, and the loser must learn
-which one won — writing a tenant's events to two databases is not recoverable.
+which one won: writing a tenant's events to two databases is not recoverable.
 
 ### Resolution
 
@@ -198,7 +198,7 @@ deliberate strict mode: without a default, Alberto will not guess where a tenant
 guessing wrong writes events into a database the tenant will never be read from again.
 
 A catalog row naming a shard this deployment does not declare throws `ShardUnavailableException`
-for the tenants that reference it — an operator's stray `INSERT`, or a deploy that has not rolled
+for the tenants that reference it: an operator's stray `INSERT`, or a deploy that has not rolled
 out yet, fails those tenants rather than blocking the host from starting.
 
 ## Degradation
@@ -217,7 +217,7 @@ splitting them, so nothing in Alberto escalates it into a whole-process failure:
 
 `ShardHealth` is observation, not admission control. Nothing on the request path consults it before
 trying a shard: a stale "unhealthy" would fail requests a recovered database could have served, and
-a stale "healthy" would not have saved the request anyway — the attempt fails on its own and
+a stale "healthy" would not have saved the request anyway. The attempt fails on its own and
 reports here.
 
 ## Telemetry
@@ -266,7 +266,7 @@ else:
 
 `ALB0016` is worth dwelling on: two shards pointing at the same storage would each run their own
 control loops over the same events, under checkpoints that each think they own the log. Separate
-shards must be separate storage — a different database, or at minimum a different schema.
+shards must be separate storage: a different database, or at minimum a different schema.
 
 ## Experimental surface
 
@@ -301,7 +301,7 @@ Two of them, both deliberate, both load-bearing on how you design around this.
 
 There is no relocation command and no supported procedure. Moving a tenant means copying its
 events, its checkpoints, its projection state and its leases into another database while it is
-being written to, and then reconciling two per-database position sequences — a migration you write
+being written to, and then reconciling two per-database position sequences: a migration you write
 and verify against your own data, not a button.
 
 Assign deliberately: `alberto shards assign` is first-writer-wins precisely so an assignment is a
@@ -311,7 +311,7 @@ omit it when placement is a deliberate act.
 
 ### There are no cross-shard reads
 
-`StreamAllAsync` on a sharded module still returns one shard's worth of events — the current
+`StreamAllAsync` on a sharded module still returns one shard's worth of events. The current
 tenant's. It cannot union: `afterPosition` is a per-database sequence, so a merged result would
 order by numbers from unrelated sequences and silently skip events on the next page. Reading every
 shard is a fan-out you write, with a cursor per shard.
@@ -322,5 +322,5 @@ cross-tenant dashboard is not something a sharded module can serve from one quer
 read layer and merge, or maintain the aggregate in a separate unsharded module fed by the outbox.
 
 In this repository, the Orders example's `getOrdersOverview` is exactly such an aggregate. It is
-not sharded and is unaffected today — but it is the shape of query that would need rewriting as a
+not sharded and is unaffected today, but it is the shape of query that would need rewriting as a
 fan-out if it were.

@@ -14,7 +14,7 @@ Slices share the event log and nothing else.
 | | |
 |---|---|
 | `ShipOrderInput` | the GraphQL input type |
-| `ShipOrderState` | this slice's state — two properties |
+| `ShipOrderState` | this slice's state, two properties |
 | `ShipOrderEvolver` | which events it folds, and how |
 | `ShipOrderDecider.Boundary` | the DCB consistency boundary |
 | `ShipOrderDecider.Decide` | the decision, as a pure function |
@@ -37,7 +37,7 @@ else in the module has to be read to be sure nothing else was affected.
 ## Why state is not shared
 
 `ShipOrderState` has two properties. The record it replaced had twelve, and every action carried
-all of them — line items, notes, customer id, the timestamp of every other transition. A field
+all of them: line items, notes, customer id, the timestamp of every other transition. A field
 added for one action was visible to all of them, and a decision could come to depend on data its
 own behaviour had no business seeing.
 
@@ -49,7 +49,7 @@ The clearest case is a pair of payment slices that a single record cannot serve 
   bounded by that, not by what was initiated.
 
 Both are "the payment's amount". On a shared record they are one field, and whichever slice loses
-the argument gets the wrong ceiling — a refund capped at the initiated amount will hand back money
+the argument gets the wrong ceiling: a refund capped at the initiated amount will hand back money
 that was never taken. As two slices they are two fields, each folded from the event that defines
 it, and neither slice has to know the other exists.
 
@@ -64,14 +64,14 @@ current status, so a slice that ignored `OrderDelivered` would tell a client tha
 Four things are shared on purpose, and they live in `Contracts/` so they cannot be mistaken for
 domain code that merely happens to be shared:
 
-- **Events** (`Contracts/OrderEvents.cs`) — the log is the one thing every slice reads. This is
+- **Events** (`Contracts/OrderEvents.cs`). The log is the one thing every slice reads. This is
   what makes slices independent rather than isolated: `OrderCreated` is folded by five different
   slices, each projecting a different part of it.
-- **Status enums** (`Contracts/OrderStatus.cs`) — persisted by name in read models and exposed in
+- **Status enums** (`Contracts/OrderStatus.cs`): persisted by name in read models and exposed in
   the GraphQL schema. Two copies would be two schema enums.
-- **Problem codes** (`Contracts/OrderProblems.cs`) — a client contract. A slice inventing its own
+- **Problem codes** (`Contracts/OrderProblems.cs`): a client contract. A slice inventing its own
   code for "not found" changes the API.
-- **Tag keys** (`Contracts/Tags.cs`) — consistency boundaries are built from them, so two slices
+- **Tag keys** (`Contracts/Tags.cs`): consistency boundaries are built from them, so two slices
   spelling a tag differently would silently stop conflicting with each other.
 
 `Platform/` is the second exception: DI registration, the `DbContext`, EF migrations. Composition,
@@ -100,8 +100,8 @@ Every write slice uses the whole-aggregate boundary:
 public static DcbQuery Boundary(Guid orderId) => DcbQuery.For(Tags.Order, orderId);
 ```
 
-Any concurrent order event conflicts with a ship. Narrowing the type axis — listing only the event
-types that could invalidate *this* decision — would let non-overlapping slices commit together, but
+Any concurrent order event conflicts with a ship. Narrowing the type axis (listing only the event
+types that could invalidate *this* decision) would let non-overlapping slices commit together, but
 every such event has to be enumerated or the decision silently loses updates. That argument is
 per slice, needs a per-slice justification, and belongs on one line in the slice that makes it. So
 far none has.
@@ -126,7 +126,7 @@ Two consequences worth naming:
 `PaymentsOverviewProjection.StateStore` are `Func<ProjectionStoreContext, Func<string?, IStateStore<T>>>`
 handed to `AddProjection`, which also registers them under the DI key `{moduleKey}:{processorId}`.
 Queries resolve *that* factory rather than constructing a store, so writer and reader cannot
-disagree about schema, projection name, rebuild version or tenancy — the only thing a query decides
+disagree about schema, projection name, rebuild version or tenancy. The only thing a query decides
 is which tenant to read. A reader that built its own store is how `ordersOverview` once queried a
 `(tenant_id, projection_type, …)` key while the writer stored rows under `(projection_type, …)`,
 and returned nothing for as long as it did.
@@ -137,5 +137,5 @@ the point: it is one slice's state that happens to be wide, folded by one slice'
 decision depends on it. A write slice reaching for it would be reintroducing the shared record
 under a new name.
 
-The two `Order` and `Payment` GraphQL records are shared between two read slices each — an *output
+The two `Order` and `Payment` GraphQL records are shared between two read slices each: an *output
 contract*, which is a different thing from shared state. Nothing folds events into them.

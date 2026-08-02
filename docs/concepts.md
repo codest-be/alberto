@@ -21,7 +21,7 @@ Every event carries:
 | `event_type` | The `[EventType("...")]` slug. |
 | `tags` | The concepts it touches, extracted from `[Tag]` properties, plus the framework-reserved `_version:N` schema-version tag. See [events.md](events.md#reserved-_-tag-concepts). |
 | `event_data` | The JSON payload. |
-| `metadata` | Free-form headers — trace context lives here. |
+| `metadata` | Free-form headers: trace context lives here. |
 
 Two side tables, `alberto_event_type_positions` and `alberto_event_tag_positions`, index the log by
 type and by tag. They are what makes a boundary query cheap enough to run on every write.
@@ -37,7 +37,7 @@ public sealed record OrderPlaced(
 ```
 
 **`[EventType("…")]` is the on-disk name.** Lowercase letters, digits, hyphens and underscores
-only; anything else throws at construction. Rename the C# record whenever you like — this string
+only; anything else throws at construction. Rename the C# record whenever you like. This string
 is what old rows say and must never change.
 
 **`[Tag("concept")]` marks a property as a concept the event concerns.** Concept and id both accept
@@ -55,7 +55,7 @@ with `EventSerializer.FromAssemblies(…)` and register the `AlbertoStore` by ha
 
 ### Two traps, both silent
 
-**Guid formatting.** Tag values are extracted with `ToString("D")` — hyphenated. A query built with
+**Guid formatting.** Tag values are extracted with `ToString("D")`: hyphenated. A query built with
 `:N` formatting matches *nothing*, and matching nothing is not an error: your fold returns initial
 state, your guard sees a clean slate, and you happily double-book a seat.
 
@@ -70,7 +70,7 @@ symptom is identical to the one above.
 
 ## Queries
 
-A `DcbQuery` selects events along two axes — type and tag — and says how the axes combine.
+A `DcbQuery` selects events along two axes (type and tag) and says how the axes combine.
 
 ```csharp
 DcbQuery.ByTypes("order-placed", "order-cancelled");   // either type, any tag
@@ -95,7 +95,7 @@ DcbQuery.For("order", orderId).WithType<OrderPlaced>().AsUnion();
 ```
 
 Tags match exactly, on the whole `concept:id` pair. There is deliberately **no** way to query a
-concept as a whole — "every event tagged with any order" is not a query this store supports. A
+concept as a whole: "every event tagged with any order" is not a query this store supports. A
 boundary that wide serialises every order against every other, and the only way to answer it
 quickly was an index on every tag row ever written, paid for on every append by everyone. A query
 is always scoped to the entities it names. `order:*` is not a wildcard; it is a tag with an id of
@@ -103,7 +103,7 @@ is always scoped to the entities it names. `order:*` is not a wildcard; it is a 
 
 ### `ByTags` vs `ByAllTags` is a contention decision
 
-`ByTags("show:S", "seat:A12")` matches every event about the show *or* about any A12 anywhere — a
+`ByTags("show:S", "seat:A12")` matches every event about the show *or* about any A12 anywhere: a
 boundary that covers the whole show, so every seat in it serialises against every other. Use
 `ByAllTags`. Getting this backwards does not corrupt anything; it just quietly destroys your
 concurrency.
@@ -118,7 +118,7 @@ A boundary is a query used as an **append condition**. The pattern is always thr
 
 The append succeeds only if nothing matching `boundary` was written after that position. If
 something was, the store throws `DcbConflictException` carrying `ExpectedPosition`,
-`ConflictingPosition` and the `Query` — retry the whole read-decide-append, since your state is now
+`ConflictingPosition` and the `Query`: retry the whole read-decide-append, since your state is now
 stale by definition.
 
 The command pipeline in `Alberto.Commands` does all of this for you:
@@ -136,26 +136,26 @@ await store.Handle(command)
 type system rather than at runtime: `Load` returns a *bound* pipeline and only a bound pipeline has
 `Commit(ct)`.
 
-When state comes from somewhere other than the log — a cache, a read model — use `LoadUnbound`, or
+When state comes from somewhere other than the log (a cache, a read model) use `LoadUnbound`, or
 skip loading entirely and `Decide` straight off `Handle`. Neither establishes a boundary, so the
 pipeline that comes back offers only `Commit(query, expectedPosition, ct)` and
 `CommitUnconditionally(ct)`: you have to say what the append is checked against, or say out loud
 that it is checked against nothing.
 
-For the rarer case where the boundary is only discoverable *during* the read — you fold one query
-to find an id, then fold a second keyed by it — `LoadUnder` takes a loader that returns its state,
+For the rarer case where the boundary is only discoverable *during* the read (you fold one query
+to find an id, then fold a second keyed by it), `LoadUnder` takes a loader that returns its state,
 its boundary and the position it read at, and gives you back a bound pipeline. It is the escape
 hatch, not the default: when the boundary follows from the command, `Load(cmd => boundary, …)` with
 the async part in `Enrich` says the same thing and keeps the I/O out of the window.
 
 `RetryOnConflict(n)` bounds the total number of attempts, re-running `Load` and `Decide` against
-whatever is in the log now. Anything before `Load` — `Validate`, `Enrich` — runs once and is
+whatever is in the log now. Anything before `Load` (`Validate`, `Enrich`) runs once and is
 reused, so an expensive lookup or an external call is not repeated per attempt. `TryCommit` is the
 non-throwing terminal: it returns a failed `Result` carrying a `dcb.conflict` problem instead of
 raising `DcbConflictException`.
 
 Retries are bounded, so `Commit` still throws when the boundary stays contended for all `n`
-attempts. Reach for `TryCommit` when the caller *branches* on that — falls back, queues, reports
+attempts. Reach for `TryCommit` when the caller *branches* on that: falls back, queues, reports
 something other than a failure. When it only needs to report, catch `DcbConflictException` and call
 `ToProblem()`: it renders exactly what `TryCommit` would have returned, under the same
 `DcbConflictException.ProblemCode`, so an error surface handles one shape however the conflict
@@ -175,7 +175,7 @@ Make it as narrow as the rule requires and no narrower:
 | "A customer may hold at most 4 seats" | `For("customer", id)` |
 | "A show cannot oversell" | `For("show", id)` |
 
-The third boundary serialises the whole show — correct, and deliberately expensive. The first does
+The third boundary serialises the whole show: correct, and deliberately expensive. The first does
 not contend with anything else at all. Both are queries over the same events; nothing had to be
 written twice to support both.
 
@@ -185,7 +185,7 @@ written twice to support both.
 as a position, called a **checkpoint**, stored per processor in
 `alberto_processor_checkpoints`.
 
-- Checkpoint writes are **monotonic** — the upsert uses `GREATEST`, so a processor cannot move
+- Checkpoint writes are **monotonic.** The upsert uses `GREATEST`, so a processor cannot move
   itself backwards, even after a restart that resurrects a stale in-memory value.
 - `RewindAsync` is the single deliberate escape hatch that writes unconditionally. It exists for
   operators, and it is what `alberto ops checkpoint set` calls.
@@ -211,8 +211,8 @@ loop** per module drives them all: read a batch after the checkpoint, dispatch i
 middleware chain, save the checkpoint, sleep. Details in
 [architecture/async-processing.md](architecture/async-processing.md).
 
-Projections and reactors can also run **inline** — synchronously inside `AppendAsync`, before it
-returns — trading read-your-writes consistency for latency and coupled failures.
+Projections and reactors can also run **inline**, synchronously inside `AppendAsync`, before it
+returns, trading read-your-writes consistency for latency and coupled failures.
 
 ## Modules
 
@@ -233,7 +233,7 @@ store.
 | Interface | For | Gives you |
 |---|---|---|
 | `IEventStore` | Application code | Appends with boundary conditions, tenancy applied |
-| `IEventStoreBackend` | Infrastructure | The raw log — `StreamAsync`, `StreamAllAsync`, `GetLastPositionAsync` |
+| `IEventStoreBackend` | Infrastructure | The raw log. `StreamAsync`, `StreamAllAsync`, `GetLastPositionAsync` |
 
 ```csharp
 Task<...> AppendAsync(IEnumerable<IEventToPersist> events, DcbQuery? condition = null,
@@ -242,7 +242,7 @@ Task<...> StreamAsync(DcbQuery query, long afterPosition = 0, int? limit = null,
                       CancellationToken ct = default);
 ```
 
-Read models and queries should go through a projection, not `StreamAsync` — folding a large
+Read models and queries should go through a projection, not `StreamAsync`: folding a large
 boundary on every request is exactly the cost projections exist to avoid. `StreamAsync` on the
 request path is fine for a *narrow* boundary (one order, one seat) where you want the log's
 consistency rather than a projection's eventual one.
@@ -264,7 +264,7 @@ One schema per module, containing:
 | `alberto_tenants`, `alberto_tenant_leases`, `alberto_tenant_assignments` | Multi-tenancy |
 
 One further table, `alberto_tenant_shards`, exists only if you shard a module's tenants across
-databases — and it lives in a separate control database rather than in any module's schema. See
+databases, and it lives in a separate control database rather than in any module's schema. See
 [tenant sharding](architecture/tenant-sharding.md).
 
 Migrations are DbUp scripts embedded in `Alberto.Postgres` and run automatically when

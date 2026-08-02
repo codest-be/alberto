@@ -45,8 +45,8 @@ Each cycle:
 
 Both contexts implement `IMiddlewareContext` (`ProcessorId`, `ModuleKey`, `Attempt`, `LastError`, `CancellationToken`). The retry-and-dead-letter behaviour that used to be duplicated across the two middlewares now lives once in `RetryAndDeadLetterCore.ExecuteAsync`, which drives the attempt loop and returns the final error (or `null` on success). The two middlewares differ only in what they do with that error:
 
-- **Single event** — dead-letter it and advance.
-- **Batch** — if the batch holds more than one event, rethrow so the caller can split the batch and isolate the poison event; a single-event batch is dead-lettered directly.
+- **Single event.** Dead-letter it and advance.
+- **Batch.** If the batch holds more than one event, rethrow so the caller can split the batch and isolate the poison event; a single-event batch is dead-lettered directly.
 
 Negative `MaxRetries` is rejected at startup by validator `ALB0007`, which guarantees the attempt loop always runs at least once and always produces an error to act on.
 
@@ -96,7 +96,7 @@ Handles side effects in response to events.
 Reactors are registered declaratively via `ReactTo<TEvent>(handler, processorId, ...)` on the
 module builder, not as classes. Each call wraps the supplied delegate in a `FunctionalReactor<TEvent>`
 and registers it as an async processor. There is no reflection-based dispatch and no `IReact<TEvent>`
-interface — dispatch is entirely delegate-based. Concurrency is controlled by `MaxConcurrency` in
+interface: dispatch is entirely delegate-based. Concurrency is controlled by `MaxConcurrency` in
 `ProcessorExecutionOptions`; batching follows `ProcessorBatchingMode` on the same record.
 
 ### Checkpoint stores
@@ -108,7 +108,7 @@ The Postgres backend wires `CachingCheckpointStore` over `PostgresCheckpointStor
 | `CachingCheckpointStore` | In-memory read/write cache; marks entries dirty and flushes on a timer |
 | `PostgresCheckpointStore` | The durable store; also implements `IFencedCheckpointStore` |
 
-`SaveAsync` is **monotonic** — the Postgres upsert uses `GREATEST`, so a processor can never move its own checkpoint backwards. `RewindAsync` is the deliberate escape hatch that writes unconditionally; it is intended only for operator-initiated rewinds and both decorators bypass their caches and write straight through.
+`SaveAsync` is **monotonic.** The Postgres upsert uses `GREATEST`, so a processor can never move its own checkpoint backwards. `RewindAsync` is the deliberate escape hatch that writes unconditionally; it is intended only for operator-initiated rewinds and both decorators bypass their caches and write straight through.
 
 `SaveIfLeaseHeldAsync` on `IFencedCheckpointStore` makes the write conditional on the caller still holding the processor or tenant lease, so a partitioned replica cannot overwrite a newer checkpoint.
 
@@ -136,7 +136,7 @@ The table below shows how each knob is set in code and in configuration:
 
 Taken from `apps/Alberto.Orders/Alberto.Orders/Platform/OrdersModule.cs`. The state store is built
 by the projection's own slice (`OrdersOverviewProjection.StateStore`) so the writer and every query
-over it share one definition — see [vertical-slices.md](vertical-slices.md):
+over it share one definition. See [vertical-slices.md](vertical-slices.md):
 
 ```csharp
 services.AddAlberto(ModuleKey, builder => builder
@@ -179,7 +179,7 @@ than setting a property on the options record.
 
 Changing how a projection interprets history means its stored state is wrong. A rebuild replays the whole log into a *second copy* of that projection's state while the live copy keeps serving reads, then swaps the two in one transaction. Readers move from a complete old projection to a complete new one; there is no window in which the projection is empty or half-built.
 
-Every projection state row carries a `rebuild_version`. One version is *active* — the one readers and the live control loop use. While a rebuild runs, a second version exists that only the shadow loop can see.
+Every projection state row carries a `rebuild_version`. One version is *active*: the one readers and the live control loop use. While a rebuild runs, a second version exists that only the shadow loop can see.
 
 ```
               live loop ──────────────────────────────▶  version 1  ◀── readers
@@ -224,39 +224,39 @@ The replay runs *in the application*, not in the CLI: the CLI only moves the sta
 
 ### How it works
 
-`RebuildCoordinator` is a hosted service that owns no state of its own — everything it does is derived from `alberto_projection_rebuild_meta`, so a rebuild started from the CLI in one process is picked up in another, and a coordinator that crashes mid-rebuild resumes on restart. Each tick it:
+`RebuildCoordinator` is a hosted service that owns no state of its own. Everything it does is derived from `alberto_projection_rebuild_meta`, so a rebuild started from the CLI in one process is picked up in another, and a coordinator that crashes mid-rebuild resumes on restart. Each tick it:
 
 1. Refreshes `ProjectionVersions`, the module's single cached view of the state machine. Every version selector resolves from this cache, so the coordinator and the stores it configures always agree.
-2. Starts a shadow control loop for each rebuild in flight — `ready` included, since a rebuild waiting on an operator still has to track the live loop, and a replica that restarted while one was already `ready` would otherwise have no loop to catch it up at all. The shadow loop uses its own checkpoint key (`<processor>::rebuild::<version>`) so replaying from position 0 does not drag the live projection back with it, and it always takes the batch path.
+2. Starts a shadow control loop for each rebuild in flight, `ready` included, since a rebuild waiting on an operator still has to track the live loop, and a replica that restarted while one was already `ready` would otherwise have no loop to catch it up at all. The shadow loop uses its own checkpoint key (`<processor>::rebuild::<version>`) so replaying from position 0 does not drag the live projection back with it, and it always takes the batch path.
 3. Marks a rebuild `ready` once its shadow checkpoint passes the target position captured at start. The shadow loop keeps running past that point, so events that arrive during the replay are in the rebuilt version too.
-4. Promotes, but only once the shadow checkpoint has drawn level with the live processor's. It then stops the shadow loop, flips the version, and moves the live checkpoint up to the position the shadow reached. The superseded version's rows are deliberately left in place: a reader resolves a version and then queries it, so deleting them here would strand one that resolved a moment before the flip. A later sweep reclaims them — both from `alberto_projection_states` and from any `IProjectionStateClearer` for backends that keep state elsewhere (EF projections, in particular) — once a grace period of twice the version-cache refresh interval has passed and no reader can still be holding the old number.
+4. Promotes, but only once the shadow checkpoint has drawn level with the live processor's. It then stops the shadow loop, flips the version, and moves the live checkpoint up to the position the shadow reached. The superseded version's rows are deliberately left in place: a reader resolves a version and then queries it, so deleting them here would strand one that resolved a moment before the flip. A later sweep reclaims them, both from `alberto_projection_states` and from any `IProjectionStateClearer` for backends that keep state elsewhere (EF projections, in particular), once a grace period of twice the version-cache refresh interval has passed and no reader can still be holding the old number.
 
 Three properties do most of the safety work here, and all three are load-bearing rather than tidiness:
 
-- **Promotion waits for the rebuilt version to catch up with the live one, and hands over its position.** Reaching the target only means the *historical* replay is done: the target was the head of the log when the rebuild started, and everything appended since has been applied by the live loop to the very version promotion is about to delete. Flip while the shadow is behind and the promoted copy is missing exactly those events, permanently — the live loop's checkpoint is already past them, so nothing goes back. The mirror image matters too: the shadow is usually *ahead* of the live loop, and a live loop left at its own checkpoint would apply everything in between a second time, into the version now serving reads. Fast-forwarding it to the shadow's position at promotion is what makes the hand-off exact.
+- **Promotion waits for the rebuilt version to catch up with the live one, and hands over its position.** Reaching the target only means the *historical* replay is done: the target was the head of the log when the rebuild started, and everything appended since has been applied by the live loop to the very version promotion is about to delete. Flip while the shadow is behind and the promoted copy is missing exactly those events, permanently. The live loop's checkpoint is already past them, so nothing goes back. The mirror image matters too: the shadow is usually *ahead* of the live loop, and a live loop left at its own checkpoint would apply everything in between a second time, into the version now serving reads. Fast-forwarding it to the shadow's position at promotion is what makes the hand-off exact.
 
-- **Version numbers are never reused.** `alberto_projection_rebuild_meta.last_allocated_version` is a high-water mark, and a rebuild takes `last_allocated_version + 1`. Allocating `active_version + 1` instead would be correct after a promotion — which advances the active version — but not after an abort, which deliberately leaves it alone. Abort flips the status in one transaction but leaves the abandoned version's rows in place: the shadow loop writing into that version lives in the application process and only learns of the abort on its next tick, so its late writes arrive after the transition. Reallocating that number seeds the next replay with those leftovers and applies every event twice. The rows are reclaimed by a later sweep, not by the abort transaction itself.
+- **Version numbers are never reused.** `alberto_projection_rebuild_meta.last_allocated_version` is a high-water mark, and a rebuild takes `last_allocated_version + 1`. Allocating `active_version + 1` instead would be correct after a promotion (which advances the active version) but not after an abort, which deliberately leaves it alone. Abort flips the status in one transaction but leaves the abandoned version's rows in place: the shadow loop writing into that version lives in the application process and only learns of the abort on its next tick, so its late writes arrive after the transition. Reallocating that number seeds the next replay with those leftovers and applies every event twice. The rows are reclaimed by a later sweep, not by the abort transaction itself.
 - **The shadow checkpoint belongs to the version, not to the processor.** A key per processor has to be reset between rebuilds, and every moment the coordinator could do that is a moment an operator can start the next rebuild ahead of. A rebuild begun in that window would resume from a checkpoint already at the head of the log, replay nothing, and promote an empty projection. A version-scoped key has no such window: a version nobody has replayed has no checkpoint, and one being resumed after a restart has exactly the position it left off at.
 
-Because aborts consume numbers without moving the active one, the startup sweep runs from `1` to one past the highest version the processor knows about — the version being rebuilt if one is in flight, the active one otherwise — cleaning up after a promotion or abort that happened while the coordinator was down.
+Because aborts consume numbers without moving the active one, the startup sweep runs from `1` to one past the highest version the processor knows about (the version being rebuilt if one is in flight, the active one otherwise), cleaning up after a promotion or abort that happened while the coordinator was down.
 
 ### Limits
 
 - One rebuild per processor at a time. `StartAsync` is guarded against the state it is leaving, so two operators racing cannot both win.
 - The shadow loop runs under the same lease-free assumption as the rest of the module. Enable leases (`.WithControlLoop(o => o with { Leases = o.Leases with { Enabled = true } })`) if more than one replica runs the module, or two replicas will replay into the same version.
-- A rebuild reprocesses every event through the projection. Reactors are not rebuilt — replaying side effects is not something the coordinator can make safe.
+- A rebuild reprocesses every event through the projection. Reactors are not rebuilt: replaying side effects is not something the coordinator can make safe.
 
 ## Not implemented
 
 The following appear in the schema or the type system but have no orchestration behind them. Do not rely on them.
 
-- **Rebuild-mode processor tuning.** `IEventProcessor.IsRebuilding` is set for shadow loops, but there is no lag threshold and no separate rebuild batch size — a shadow loop runs on the module's configured batch size.
-- **Real-time admin push.** There is no admin HTTP API, no GraphQL admin subscriptions, and no admin dashboard on this branch. The `{schema}_events` NOTIFY channel exists to refresh `EventStoreHead`, not to feed a UI. The operator surface is the CLI in `tools/Alberto.Cli`. All of it exists on `feature/admin-surface`, held out of 1.0; note that even there the control loop pushes nothing — the subscriptions fire on operator mutations, so a console watching lag polls underneath.
+- **Rebuild-mode processor tuning.** `IEventProcessor.IsRebuilding` is set for shadow loops, but there is no lag threshold and no separate rebuild batch size: a shadow loop runs on the module's configured batch size.
+- **Real-time admin push.** There is no admin HTTP API, no GraphQL admin subscriptions, and no admin dashboard on this branch. The `{schema}_events` NOTIFY channel exists to refresh `EventStoreHead`, not to feed a UI. The operator surface is the CLI in `tools/Alberto.Cli`. All of it exists on `feature/admin-surface`, held out of 1.0; note that even there the control loop pushes nothing. The subscriptions fire on operator mutations, so a console watching lag polls underneath.
 
 ## Event deserialization invariant
 
-Every path from an `IEventEnvelope` to a typed event object — inside a projection, reactor,
-outbox mapper, fold, or evolver — **must go through `EventSerializer.Deserialize`**.
+Every path from an `IEventEnvelope` to a typed event object (inside a projection, reactor,
+outbox mapper, fold, or evolver) **must go through `EventSerializer.Deserialize`**.
 That method is the only place where the registered upcaster chain fires.
 Calling `JsonSerializer.Deserialize`, `JsonDocument.Parse`, or `JsonNode.Parse` directly on
 `envelope.EventData` silently bypasses upcasting, so old envelopes arrive at handlers with

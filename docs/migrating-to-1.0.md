@@ -4,13 +4,13 @@ This file collects every breaking change on the road from the early `0.1.0-beta`
 grouped by the cycle that introduced it, most recent first. Each section carries a summary table,
 before/after snippets, and the migration steps.
 
-**If you are already on `0.1.0` or later you have all of these** — they were published together in
+**If you are already on `0.1.0` or later you have all of these.** They were published together in
 that release. This document exists for anyone still on `0.1.0-beta`, and as the record of what the
 1.0 surface was shaped by.
 
 From 1.0 onward, breaking changes are documented in the release's own section of
 [CHANGELOG.md](../CHANGELOG.md), and a document like this one is written only when a new major
-needs it. Alberto follows semantic versioning after 1.0 — see [releasing.md](releasing.md) for
+needs it. Alberto follows semantic versioning after 1.0. See [releasing.md](releasing.md) for
 what counts as a major, minor, and patch in this project.
 
 ---
@@ -25,9 +25,9 @@ they touch a persisted table.
 | Change | Area | Severity | What broke |
 |---|---|---|---|
 | TF-1 | Target framework | **High** | net9.0 target removed from all core libraries |
-| PS-1..4 | Surface — internal | Medium | `FencingContext`, `ConsistentHashRing`, `FunctionalReactor<T>`, `DeadLetterRetryLoop` made `internal` |
-| PS-5..6 | Surface — internal | Medium | `AlbertoStore.FoldWithPosition<TState>`, `ReconstituteWithPosition<TState>` made `internal` |
-| PS-7..8 | Surface — deleted | **High** | `IReact<TEvent>` and `AsyncReactor<TReactor>` deleted |
+| PS-1..4 | Surface: internal | Medium | `FencingContext`, `ConsistentHashRing`, `FunctionalReactor<T>`, `DeadLetterRetryLoop` made `internal` |
+| PS-5..6 | Surface: internal | Medium | `AlbertoStore.FoldWithPosition<TState>`, `ReconstituteWithPosition<TState>` made `internal` |
+| PS-7..8 | Surface: deleted | **High** | `IReact<TEvent>` and `AsyncReactor<TReactor>` deleted |
 | AS-1 | API shape | Medium | `IStateStore<TState>.LoadManyAsync` return type changed |
 | AS-2 | API shape | Low | `IEventProcessor.IsActive` / `IsRebuilding` are now getter-only |
 | AS-3..5 | API shape | Medium | Three records lost their positional constructors |
@@ -41,21 +41,21 @@ they touch a persisted table.
 | MT-7 | Metric dimensions | Medium | `alberto.tenant_locks_acquired` and `alberto.tenant_lock_failures` no longer carry a `tenant.id` tag |
 | TT-1 | Trace span attributes | Medium | Consume-path span attributes renamed: `"module.key"` → `"module"`, `"module.shard"` → `"shard"` |
 | EX-1 | Experimental API | Medium | Sharding types marked `[Experimental("ALB9001")]`; referencing them without suppression is a compile-time diagnostic |
-| EV-1 | Evolver — runtime guard | Medium | `Evolver.Reconstitute(envelopes)` and `Evolver.Evolve(state, envelope)` now throw `InvalidOperationException` when the envelope's stored version is older than the handler's declared version |
+| EV-1 | Evolver: runtime guard | Medium | `Evolver.Reconstitute(envelopes)` and `Evolver.Evolve(state, envelope)` now throw `InvalidOperationException` when the envelope's stored version is older than the handler's declared version |
 | PE-1 | ParseEvent&lt;T&gt; removed | **High** | `EventEnvelopeExtensions.ParseEvent<T>` is deleted and the now-empty `EventEnvelopeExtensions` class is `internal` |
-| MM-1 | Surface — interface member | Medium | `IMessageMappingRegistry` gains a `ModuleKey` property; direct implementations no longer compile |
+| MM-1 | Surface: interface member | Medium | `IMessageMappingRegistry` gains a `ModuleKey` property; direct implementations no longer compile |
 | OT-1 | Outbox transport lifecycle | Medium | Failed startup triggers bounded cleanup; store faults stop the relay; shared registrations use one lifecycle |
 | VA-1 | Startup validation | Medium | New codes `ALB0018`/`ALB0019`/`ALB0020` reject upcaster misconfigurations that previously started and failed at runtime |
-| DL-1 | Surface — interface split | Medium | The three retry-claim members move from `IDeadLetterStore` to a new optional `IClaimableDeadLetterStore` |
-| EP-1 | Startup validation | Medium | `ALB0027` — `AddEfProjection` on a `.WithTenancy()` module now requires `documentIds: EfDocumentIdUniqueness.AcrossTenants` |
-| SV-1 | Serializer — runtime guard | Medium | `EventSerializer.Deserialize` throws when the stored version is below the type's declared version and nothing covers the gap |
+| DL-1 | Surface: interface split | Medium | The three retry-claim members move from `IDeadLetterStore` to a new optional `IClaimableDeadLetterStore` |
+| EP-1 | Startup validation | Medium | `ALB0027`: `AddEfProjection` on a `.WithTenancy()` module now requires `documentIds: EfDocumentIdUniqueness.AcrossTenants` |
+| SV-1 | Serializer: runtime guard | Medium | `EventSerializer.Deserialize` throws when the stored version is below the type's declared version and nothing covers the gap |
 | LK-1 | PostgreSQL append lock | **High** | The append advisory-lock key space changed; two application versions appending concurrently do not serialize against each other |
 | CF-1 | Exception detail | Low | PostgreSQL `DcbConflictException` messages are reworded and now carry real `ConflictingPosition` / `ExpectedPosition` / `Query` values |
 | PK-1 | Packaging | Medium | The `Alberto.Admin` package is no longer published, and the `PostgresAdmin*` types are no longer in the `Alberto.Postgres` package |
 
 ---
 
-### TF-1 — net9.0 target removed
+### TF-1: net9.0 target removed
 
 The seven core libraries (`Alberto`, `Alberto.Commands`, `Alberto.InMemory`,
 `Alberto.Postgres`, `Alberto.EntityFramework`, `Alberto.Messaging`,
@@ -70,7 +70,7 @@ target exists (`error NU1202` or `error NETSDK1138`).
 
 ---
 
-### PS-1..4 — `FencingContext`, `ConsistentHashRing`, `FunctionalReactor<T>`, `DeadLetterRetryLoop` made `internal`
+### PS-1..4: `FencingContext`, `ConsistentHashRing`, `FunctionalReactor<T>`, `DeadLetterRetryLoop` made `internal`
 
 These four types were never intended for application use:
 
@@ -85,46 +85,46 @@ These four types were never intended for application use:
 **Symptom.** `error CS0122: '...' is inaccessible due to its protection level`.
 
 **Fix.** Use the public abstractions each type was hiding behind, as described above. If you
-have no direct reference, the error will not appear — these types were not meant to be extended
+have no direct reference, the error will not appear. These types were not meant to be extended
 or instantiated from application code.
 
 ---
 
-### PS-5..6 — `AlbertoStore.FoldWithPosition<TState>` and `ReconstituteWithPosition<TState>` made `internal`
+### PS-5..6: `AlbertoStore.FoldWithPosition<TState>` and `ReconstituteWithPosition<TState>` made `internal`
 
 The position-returning overloads exist so the command pipeline can capture the boundary position
 without a second round-trip. Exposing them created a temptation to fold state and note the
 position separately from a command pipeline, then pass the captured position to the next
-command — a window through which conflicting writes could slip undetected.
+command: a window through which conflicting writes could slip undetected.
 
 ```csharp
 // before
 var (state, position) = await store.FoldWithPosition(query, State.Initial, Apply, ct);
 
-// after — use the single-return overload; the command pipeline handles position capture internally
+// after: use the single-return overload; the command pipeline handles position capture internally
 var state = await store.Fold(query, State.Initial, Apply, ct);
 ```
 
-If you genuinely need the position for a reason outside the command pipeline — for example
-to pass it to a downstream service as a fence — read it from `IEventStoreBackend.GetLastPositionAsync`
+If you genuinely need the position for a reason outside the command pipeline (for example
+to pass it to a downstream service as a fence), read it from `IEventStoreBackend.GetLastPositionAsync`
 rather than from a fold.
 
 ---
 
-### PS-7..8 — `IReact<TEvent>` and `AsyncReactor<TReactor>` deleted
+### PS-7..8: `IReact<TEvent>` and `AsyncReactor<TReactor>` deleted
 
 `IReact<TEvent>` was the obsolete reactor interface the reflection-based `RegisterReactor` call
 used. `AsyncReactor<TReactor>` was its adapter. Both were marked `[Obsolete]` and were never
 reachable through any current registration path.
 
 ```csharp
-// before — required implementing IReact<TEvent>
+// before: required implementing IReact<TEvent>
 public class NotificationReactor : IReact<OrderConfirmed>
 {
     public Task ReactAsync(OrderConfirmed @event, CancellationToken ct) => ...;
 }
 
-// after — a plain method; the module builder wires it
+// after: a plain method; the module builder wires it
 public class NotificationReactor
 {
     public Task OnOrderConfirmed(OrderConfirmed @event, CancellationToken ct) => ...;
@@ -139,10 +139,10 @@ services.AddAlberto("orders", builder => builder
 
 ---
 
-### PS-9 — `BatchedEfProjection<TDbContext, THandler>` and `IEfBatchHandler<TDbContext>` deleted
+### PS-9: `BatchedEfProjection<TDbContext, THandler>` and `IEfBatchHandler<TDbContext>` deleted
 
-Both were public in `Alberto.EntityFramework.Batching` and neither had a registration path —
-there was no `AddBatchedEfProjection`, so the only way to use them was to hand-register the
+Both were public in `Alberto.EntityFramework.Batching` and neither had a registration path.
+There was no `AddBatchedEfProjection`, so the only way to use them was to hand-register the
 processor into keyed DI. Two consequences followed from that, and both are silent:
 
 - **Rebuilds skip it.** A hand-registered processor produces no `RebuildableProjection`, so
@@ -152,7 +152,7 @@ processor into keyed DI. Two consequences followed from that, and both are silen
 - **A replayed batch is applied twice.** `DeclaredAsyncProjection` skips events at or below
   `IProjectionEntity.LastProcessedPosition`. `BatchedEfProjection` handed the raw `DbContext`
   to the handler with no position guard, so a crash between its `SaveChangesAsync` and the
-  control loop's checkpoint write replayed the whole batch — counters incremented twice,
+  control loop's checkpoint write replayed the whole batch: counters incremented twice,
   status transitions re-run, child rows duplicated.
 
 **Symptom.** `error CS0246: The type or namespace name 'IEfBatchHandler<>' could not be found`,
@@ -193,14 +193,14 @@ builder.AddEfProjection<OrderSummary, OrdersDbContext>(Declaration);
 own right: a batch is still one `SaveChanges` per tenant run, so the round-trip saving that
 motivated `BatchedEfProjection` is not lost.
 
-If a projection genuinely cannot be expressed as one entity per document — a handler that must
-write several unrelated tables from one event — use a reactor (`ReactTo<TEvent, THandler>`) with
+If a projection genuinely cannot be expressed as one entity per document (a handler that must
+write several unrelated tables from one event), use a reactor (`ReactTo<TEvent, THandler>`) with
 its own `DbContext` and its own idempotency key. That is explicit about owning the guard, which
 the deleted type was not.
 
 ---
 
-### AS-1 — `IStateStore<TState>.LoadManyAsync` return type narrowed
+### AS-1: `IStateStore<TState>.LoadManyAsync` return type narrowed
 
 `LoadManyAsync` previously returned `Task<Dictionary<TKey, TState?>>` (a mutable concrete type).
 It now returns `Task<IReadOnlyDictionary<TKey, TState?>>`.
@@ -217,19 +217,19 @@ var states = (await store.LoadManyAsync(ids, ct)).ToDictionary(...);
 
 ---
 
-### AS-2 — `IEventProcessor.IsActive` and `IsRebuilding` are now getter-only
+### AS-2: `IEventProcessor.IsActive` and `IsRebuilding` are now getter-only
 
 These properties describe processor state that the framework sets. Setting them directly from
 application code could put the processor into an incoherent state.
 
-**Symptom.** `error CS0200: Property or indexer '...' cannot be assigned to — it is read only`.
+**Symptom.** `error CS0200: Property or indexer '...' cannot be assigned to -- it is read only`.
 
 **Fix.** Remove the assignment. If you are implementing `IEventProcessor` yourself, remove the
 setter from your implementation.
 
 ---
 
-### AS-3..5 — positional constructors removed from `DeadLetterEntry`, `ProcessorExecutionOptions`, and `ProjectionStoreContext`
+### AS-3..5: positional constructors removed from `DeadLetterEntry`, `ProcessorExecutionOptions`, and `ProjectionStoreContext`
 
 All three records previously exposed a positional constructor whose parameter order became
 fragile as the records grew. They are now constructed with named properties only.
@@ -255,13 +255,13 @@ or `error CS1729: '...' does not contain a constructor that takes N arguments`.
 
 ---
 
-### AS-6 — `ExternalMessage` and `OutboxEntry` gain routing fields; migration 027 required
+### AS-6: `ExternalMessage` and `OutboxEntry` gain routing fields; migration 027 required
 
 Two properties are added to `ExternalMessage` (and its database projection `OutboxEntry`):
 
 | Property | Type | Purpose |
 |---|---|---|
-| `Destination` | `string` (required) | The logical routing target — a topic, queue or exchange name |
+| `Destination` | `string` (required) | The logical routing target: a topic, queue or exchange name |
 | `RoutingHint` | `string?` (optional) | An optional hint such as a partition key or routing key |
 
 **Deployment order matters.** Migration 027 adds the two columns to `alberto_outbox_entries`.
@@ -287,7 +287,7 @@ constructing `ExternalMessage` without `Destination`.
 
 ---
 
-### OT-1 — the outbox owns the complete message-transport lifecycle
+### OT-1: the outbox owns the complete message-transport lifecycle
 
 Supplying an `IMessageTransport` now transfers responsibility for its start/stop lifecycle to the
 outbox. Alberto starts it before claiming or publishing, stops it once after the last relay exits,
@@ -299,13 +299,13 @@ A transport that rejected cleanup unless startup completed will now mask neither
 `StopAsync` exception is attached to the startup exception's `Data` dictionary:
 
 ```csharp
-// before — no longer valid: partial startup could allocate _client and then throw
+// before (no longer valid): partial startup could allocate _client and then throw
 public Task StopAsync(CancellationToken ct) =>
     _started
         ? _client!.CloseAsync(ct)
         : throw new InvalidOperationException("Transport was not started");
 
-// after — cleanup is safe after successful or partial startup
+// after: cleanup is safe after successful or partial startup
 public async Task StopAsync(CancellationToken ct)
 {
     if (_client is null)
@@ -336,7 +336,7 @@ and restart policy determines recovery.
 
 ---
 
-### DT-1..3 — `DateTime` and `DateTime?` timestamp properties changed to `DateTimeOffset`
+### DT-1..3: `DateTime` and `DateTime?` timestamp properties changed to `DateTimeOffset`
 
 Every timestamp surface in the library that was a `DateTime` is now `DateTimeOffset`. This aligns
 with .NET best practices (preserve the UTC offset through serialisation and IANA timezone
@@ -363,10 +363,10 @@ these values into a store that requires `DateTime`, call `.UtcDateTime` on the
 
 ---
 
-### TV-1..3 — leading-underscore tag concepts reserved
+### TV-1..3: leading-underscore tag concepts reserved
 
 `_version:N` is the tag Alberto writes on every stored event to record its schema version. The
-whole `_` prefix — not just `_version` — is reserved, so application code cannot collide with it
+whole `_` prefix (not just `_version`) is reserved, so application code cannot collide with it
 now or with any framework tag added later. Reserving only the names in use would make every
 future framework tag a breaking change for whoever had already chosen that name; doing it once,
 before the API freezes, costs nothing, because domain concepts are things like `order` and
@@ -376,7 +376,7 @@ Two construction points enforce the reservation:
 
 ```csharp
 // both throw ArgumentException:
-new EventTag("_version", "1")        // EventTag public constructor — throws at call site
+new EventTag("_version", "1")        // EventTag public constructor: throws at call site
 // [Tag("_internal")] on a property  // throws on first append of that event type
 ```
 
@@ -394,7 +394,7 @@ the first append of an event type that carries a leading-underscore `[Tag(...)]`
 
 ---
 
-### MT-1..2 — Metric tag shapes for sharded modules corrected
+### MT-1..2: Metric tag shapes for sharded modules corrected
 
 The `alberto.dead_letters`, `alberto.retries`, and `alberto.processor.lag` metrics previously
 reported the module key as a single combined string when a module was sharded:
@@ -419,7 +419,7 @@ combined `module` value for a sharded module will stop matching. Update the filt
 
 ---
 
-### MT-3 — Tenant-ownership gauge tag renamed from `module.key` to `module`
+### MT-3: Tenant-ownership gauge tag renamed from `module.key` to `module`
 
 The `alberto.owned_tenant_count` and `alberto.tenant_cooldown_count` observable gauges previously
 emitted a tag named `module.key`:
@@ -453,12 +453,12 @@ filter if you need per-shard isolation.
 
 ---
 
-### MT-4..5 — `alberto.events_filtered_by_tenant` and `alberto.tenant_leases_lost` counters removed
+### MT-4..5: `alberto.events_filtered_by_tenant` and `alberto.tenant_leases_lost` counters removed
 
 These two counters were removed from `AlbertoMetrics` in this cycle:
 
-- `alberto.events_filtered_by_tenant` (unit: `"events"`) — counted events skipped due to tenant ownership filtering.
-- `alberto.tenant_leases_lost` (unit: `"leases"`) — counted tenant leases lost due to failed renewal.
+- `alberto.events_filtered_by_tenant` (unit: `"events"`): counted events skipped due to tenant ownership filtering.
+- `alberto.tenant_leases_lost` (unit: `"leases"`): counted tenant leases lost due to failed renewal.
 
 **Symptom.** Dashboards or alerts that query either counter will return no data after upgrade.
 
@@ -466,7 +466,7 @@ These two counters were removed from `AlbertoMetrics` in this cycle:
 
 ---
 
-### MT-6 — `alberto.append.duration` and `alberto.processing.duration` histogram units changed from `"ms"` to `"s"`
+### MT-6: `alberto.append.duration` and `alberto.processing.duration` histogram units changed from `"ms"` to `"s"`
 
 The unit strings on both duration histograms were corrected to match the OTel semantic convention (unit `"s"`, values in seconds):
 
@@ -475,29 +475,29 @@ The unit strings on both duration histograms were corrected to match the OTel se
 | `alberto.append.duration` | `"ms"` | e.g. `5.0` | `"s"` | e.g. `0.005` |
 | `alberto.processing.duration` | `"ms"` | e.g. `12.0` | `"s"` | e.g. `0.012` |
 
-**Symptom.** Prometheus histogram bucket thresholds and alerts that assumed millisecond values will fire incorrectly — all durations appear 1000× smaller than expected.
+**Symptom.** Prometheus histogram bucket thresholds and alerts that assumed millisecond values will fire incorrectly. All durations appear 1000× smaller than expected.
 
 **Fix.** Multiply all threshold values in histogram queries, recording rules, and alert expressions for these two instruments by `0.001`. Verify that any explicit bucket boundaries configured in your OTel SDK exporter also use second-scale values.
 
 ---
 
-### MT-7 — `tenant.id` removed from `alberto.tenant_locks_acquired` and `alberto.tenant_lock_failures`
+### MT-7: `tenant.id` removed from `alberto.tenant_locks_acquired` and `alberto.tenant_lock_failures`
 
 Both counters were tagged `{consumer.id, tenant.id}`. The tag set is now `{consumer.id}` only.
 
-A tenant id is unbounded — it grows with the customer base, and nothing bounds it above. Every
+A tenant id is unbounded. It grows with the customer base, and nothing bounds it above. Every
 distinct tag combination is an independent time series that the .NET `Meter` SDK allocates on first
 use, holds for the life of the process, never evicts, and exports on every collection cycle. So a
 store with 50 000 tenants held 50 000 series per counter per replica, and a store with 500 000 held
 ten times that. At roughly 1–3 KB of Prometheus head-block memory per series, these two counters
-were most expensive exactly when the product was doing best, and the failure mode is a cliff — the
-collector OOMs or starts dropping — not a gradual slowdown.
+were most expensive exactly when the product was doing best, and the failure mode is a cliff: the
+collector OOMs or starts dropping, not a gradual slowdown.
 
 **Symptom.** Any query that groups, filters, or joins these two counters by `tenant.id` stops
 returning a per-tenant breakdown after upgrade. A `sum by (tenant_id)` collapses to a single
 series; a `{tenant_id="acme"}` selector matches nothing.
 
-**Fix.** Aggregate by `consumer.id` instead — that is the question a counter answers well ("is
+**Fix.** Aggregate by `consumer.id` instead. That is the question a counter answers well ("is
 this consumer's lease failure rate rising?"). For the per-tenant question ("did tenant `acme` get
 its lease?"), use traces and logs: it is a question about one event at one moment, not a rate over
 time, and the lease acquisition is already on the consume-path span. For tenant fan-out without
@@ -506,7 +506,7 @@ tenants a consumer holds and how many are in cooldown.
 
 ---
 
-### TT-1 — Consume-path trace span attributes `"module.key"` → `"module"` and `"module.shard"` → `"shard"`
+### TT-1: Consume-path trace span attributes `"module.key"` → `"module"` and `"module.shard"` → `"shard"`
 
 `TelemetryConsumeMiddleware` and `TelemetryBatchConsumeMiddleware` previously set two span attributes on the consume-path activity:
 
@@ -528,7 +528,7 @@ shard  = "eu"          # only for sharded modules
 
 ---
 
-### TT-2 — `event.tags` on the append span event lists concepts, not `concept:value` pairs
+### TT-2: `event.tags` on the append span event lists concepts, not `concept:value` pairs
 
 `TelemetryAppendInterceptor` adds one `event.appended` span event per appended event. Its
 `event.tags` field was the whole tag, value included:
@@ -543,7 +543,7 @@ It is now the distinct concepts only:
 event.tags = "order,customer"
 ```
 
-A DCB tag value is a domain identifier — an order id, a customer id, whatever the decision
+A DCB tag value is a domain identifier: an order id, a customer id, whatever the decision
 function scoped its consistency boundary to. Emitting it put a business identifier into every
 trace an exporter forwards, for a span that is already explained by the concept: the concept is
 what names the boundary the append was checked against.
@@ -569,7 +569,7 @@ from the event store.
 
 ---
 
-### TT-3 — exception details move from span attributes to an exception span event
+### TT-3: exception details move from span attributes to an exception span event
 
 Both consume middlewares and the append interceptor set the exception as span attributes:
 
@@ -588,7 +588,7 @@ strings are indexed alongside every other attribute and there is no unit for a c
 as a span event they are one droppable, scrubbable record, which is what the OpenTelemetry
 processors for redacting exception data expect to find.
 
-`Activity.SetStatus(ActivityStatusCode.Error, ex.Message)` is unchanged — the status description
+`Activity.SetStatus(ActivityStatusCode.Error, ex.Message)` is unchanged. The status description
 still carries the message, as OpenTelemetry specifies. The `exception.type` **metric** tag on
 `alberto.dead_letters` and `alberto.retries` is also unchanged; it was always the type name only.
 
@@ -596,13 +596,13 @@ still carries the message, as OpenTelemetry specifies. The `exception.type` **me
 `exception.stacktrace`, or `exception.type` *span attributes* stop matching.
 
 **Fix.** Re-point them at the span event. In most backends that is a change of accessor rather
-than of field name — for example Tempo/Grafana `span.exception.message` →
+than of field name: for example Tempo/Grafana `span.exception.message` →
 `event.exception.message`, and Honeycomb's `exception.message` now resolves on the span event
 rather than the parent span. The field names themselves are unchanged.
 
 ---
 
-### EX-1 — Sharding types marked `[Experimental("ALB9001")]`
+### EX-1: Sharding types marked `[Experimental("ALB9001")]`
 
 The entire PostgreSQL tenant-sharding surface is now annotated with
 `[Experimental("ALB9001", UrlFormat = "...")]`. Any project that references these types without
@@ -636,7 +636,7 @@ guarantee, suppress the diagnostic at the call site or project level:
 ```
 
 ```xml
-<!-- In the .csproj — suppress for the whole project -->
+<!-- In the .csproj: suppress for the whole project -->
 <PropertyGroup>
   <NoWarn>$(NoWarn);ALB9001</NoWarn>
 </PropertyGroup>
@@ -646,11 +646,11 @@ If you are not using tenant sharding, the diagnostic will not fire.
 
 ---
 
-### EV-1 — `Evolver.Reconstitute` and `Evolver.Evolve` throw for stale-version envelopes
+### EV-1: `Evolver.Reconstitute` and `Evolver.Evolve` throw for stale-version envelopes
 
 Calling `Evolver<TState>.Reconstitute(envelopes)` or `Evolver<TState>.Evolve(state, envelope)`
 without threading an `EventSerializer` previously silently returned wrong state when the event
-was stored at an older schema version than the handler's CLR type expected — raw JSON
+was stored at an older schema version than the handler's CLR type expected: raw JSON
 deserialization produced a partial or default-filled object instead of the correctly upcasted
 shape. These overloads now throw `InvalidOperationException` whenever the envelope's stored
 version is less than the version declared by `[EventType(Version = N)]` on the handler type.
@@ -660,15 +660,15 @@ evolver handler expects version M. Raw JSON deserialization would produce stale 
 an EventSerializer so the upcaster chain runs before reconstitution: …`
 
 **Fix.** Fold through a path that threads the serializer for you. There is no public
-serializer-taking `Reconstitute` overload — the one `AlbertoStore` uses is `internal` — so a call
+serializer-taking `Reconstitute` overload (the one `AlbertoStore` uses is `internal`), so a call
 site that folds a boundary itself has to move onto the command pipeline or the serializer-taking
 `DecideAndAppendAsync`:
 
 ```csharp
-// before — silently wrong for stale-version envelopes (now throws)
+// before: silently wrong for stale-version envelopes (now throws)
 var state = evolver.Reconstitute(envelopes);
 
-// after — Load(boundary, evolver) fires the upcaster chain before the handler sees the event
+// after: Load(boundary, evolver) fires the upcaster chain before the handler sees the event
 await store.Handle(command)
     .Load(boundary, evolver)
     .Decide((cmd, state) => …)
@@ -689,7 +689,7 @@ The same guard is also applied by the internal `EventEnvelopeExtensions.Deserial
 
 ---
 
-### PE-1 — `EventEnvelopeExtensions.ParseEvent<T>` is removed
+### PE-1: `EventEnvelopeExtensions.ParseEvent<T>` is removed
 
 `EventEnvelopeExtensions.ParseEvent<T>(this IEventEnvelope envelope)` performed raw JSON
 deserialization and bypassed any registered upcaster chains. It was never removed after the
@@ -711,10 +711,10 @@ error CS1061: 'IEventEnvelope' does not contain a definition for 'ParseEvent'
 **Fix.** Replace every call with `EventSerializer.Deserialize(envelope)` followed by a cast:
 
 ```csharp
-// Before — bypasses upcasters; wrong for any event type with a registered upcaster chain
+// Before: bypasses upcasters; wrong for any event type with a registered upcaster chain
 var order = envelope.ParseEvent<OrderCreated>();
 
-// After — correct; upcaster chain fires before the handler sees the event
+// After: correct; upcaster chain fires before the handler sees the event
 var order = (OrderCreated)serializer.Deserialize(envelope);
 ```
 
@@ -728,7 +728,7 @@ current-version events gets the same correct result from `serializer.Deserialize
 
 ---
 
-### MM-1 — `IMessageMappingRegistry` gains a `ModuleKey` property
+### MM-1: `IMessageMappingRegistry` gains a `ModuleKey` property
 
 Outbox message mappers registered with `Map<TEvent, TMessage>(...)` resolve the module's
 `EventSerializer` so that upcasters fire before an event is mapped to an outgoing message.
@@ -743,7 +743,7 @@ registry carries that key so the `Map` extension methods keep their existing sig
 string? ModuleKey { get; set; }
 ```
 
-**Who is affected.** Only code that implements `IMessageMappingRegistry` directly — most
+**Who is affected.** Only code that implements `IMessageMappingRegistry` directly, most
 commonly a hand-written test double. Callers of `Map<TEvent, TMessage>(...)` are unaffected;
 no call-site signature changed.
 
@@ -760,15 +760,15 @@ a test double can leave it as an auto-property:
 public string? ModuleKey { get; set; }
 ```
 
-A `null` `ModuleKey` resolves no serializer, which means upcasters do not fire on that path — so
+A `null` `ModuleKey` resolves no serializer, which means upcasters do not fire on that path, so
 if your double is exercising versioned events, set it to the module key under test.
 
 ---
 
-### VA-1 — new startup validation for upcaster configuration
+### VA-1: new startup validation for upcaster configuration
 
 Three validation codes now run during the module validation phase. Each rejects a configuration
-that previously started successfully and then failed — or silently misbehaved — at runtime.
+that previously started successfully and then failed (or silently misbehaved) at runtime.
 
 | Code | Rejects |
 |---|---|
@@ -780,7 +780,7 @@ that previously started successfully and then failed — or silently misbehaved 
 registering an upcaster used to be accepted at startup and would then write `null` into every
 field the new shape added, with no exception. It is now a startup failure.
 
-`ALB0020` catches the near-miss — a chain that exists but stops short:
+`ALB0020` catches the near-miss: a chain that exists but stops short:
 
 ```csharp
 [EventType("order-placed", Version = 3)]        // declares v3
@@ -795,8 +795,8 @@ Previously this started cleanly and threw only when a v1 or v2 event was actuall
 can be days after the deploy. The remedy in the failure message names the missing step.
 
 The mirror mistake is also rejected: a chain that was extended while the attribute was left
-behind. That one never throws at all — events keep being written at the old version and every
-read runs the whole chain forever — so `ALB0020` is the only thing that will ever tell you.
+behind. That one never throws at all: events keep being written at the old version and every
+read runs the whole chain forever, so `ALB0020` is the only thing that will ever tell you.
 This applies at version 1 too, so a `[EventType("x")]` with no explicit `Version` and a
 one-step chain is now a startup failure; raise the attribute to match the chain.
 
@@ -805,7 +805,7 @@ events assembly skips them.
 
 ---
 
-### DL-1 — retry claims move to `IClaimableDeadLetterStore`
+### DL-1: retry claims move to `IClaimableDeadLetterStore`
 
 Three members left `IDeadLetterStore`:
 
@@ -819,8 +819,8 @@ Task<bool> AbandonRetryAsync(DeadLetterClaim claim, CancellationToken ct = defau
 They now sit on `IClaimableDeadLetterStore`, which extends `IDeadLetterStore` and is type-tested
 for at the point of use.
 
-**Why.** These three are one operation — claim a batch under a fence, then release or complete it
-— and it has no correct default implementation. A store backed by a table can do it with
+**Why.** These three are one operation: claim a batch under a fence, then release or complete it,
+and it has no correct default implementation. A store backed by a table can do it with
 `FOR UPDATE SKIP LOCKED`; a store backed by an append-only file, a log shipper, or an HTTP
 endpoint cannot, and had to implement three methods it could only throw from. That is the shape
 that says the capability is optional, not that the interface is incomplete.
@@ -829,7 +829,7 @@ that says the capability is optional, not that the interface is incomplete.
 implementors; `error CS1061: 'IDeadLetterStore' does not contain a definition for
 'ClaimRetryRequestedAsync'` appears for callers.
 
-**Fix — implementing a store.** Both shipped stores (`PostgresDeadLetterStore`,
+**Fix: implementing a store.** Both shipped stores (`PostgresDeadLetterStore`,
 `InMemoryDeadLetterStore`) now declare `IClaimableDeadLetterStore`, so nothing changes for them.
 For a custom store, keep the three methods and move the declaration up:
 
@@ -839,18 +839,18 @@ public sealed class MyDeadLetterStore : IClaimableDeadLetterStore { ... }  // wa
 
 If your store threw `NotSupportedException` from them, delete them and implement
 `IDeadLetterStore` alone. It still records, counts, reads and clears dead letters; what it loses
-is the automatic retry loop. Alberto logs a warning naming the store type at startup —
+is the automatic retry loop. Alberto logs a warning naming the store type at startup.
 `alberto ops deadletter retry` will still flag entries and nothing will dispatch them, so the
 warning is there rather than leaving an operator watching a flag that never clears.
 
-**Fix — calling the methods.** Type-test:
+**Fix: calling the methods.** Type-test:
 
 ```csharp
 if (store is IClaimableDeadLetterStore claimable)
     await claimable.ClaimRetryRequestedAsync(processorId, 10, TimeSpan.FromMinutes(1), "me", ct);
 ```
 
-**Fix — the conformance suite.** `DeadLetterStoreSpecification` keeps the core requirements and
+**Fix: the conformance suite.** `DeadLetterStoreSpecification` keeps the core requirements and
 its `CreateStore()` still returns `IDeadLetterStore`. The claim requirements moved to
 `ClaimableDeadLetterStoreSpecification`, which derives from it and adds one abstract member:
 
@@ -870,12 +870,12 @@ implementation or moves to its own optional interface, as this one did. See
 
 ---
 
-### EP-1 — `ALB0027`: EF projections on a tenant-enabled module must declare id uniqueness
+### EP-1 (`ALB0027`): EF projections on a tenant-enabled module must declare id uniqueness
 
 An EF projection entity implements `IProjectionEntity`, whose whole surface is `DocumentId`,
 `UpdatedAt`, `LastProcessedPosition`, `Version` and `RebuildVersion`. There is no tenant column,
 so `EfStateStore` and the inline path both load and write by `(DocumentId, RebuildVersion)` alone.
-Adding a `TenantId` column to your entity does not change that — the store cannot see it.
+Adding a `TenantId` column to your entity does not change that. The store cannot see it.
 
 On a module that declared `.WithTenancy()`, the projection is therefore only correct if two
 tenants can never produce the same document id. Nothing can verify that, so it now has to be
@@ -898,10 +898,10 @@ chained before or after the projection.
 
 **Fix.** Decide which is true of your declaration:
 
-- **Ids are already globally unique** — a GUID aggregate id, or an id the handler prefixes with a
+- **Ids are already globally unique:** a GUID aggregate id, or an id the handler prefixes with a
   tenant discriminator carried on the event itself. Pass
   `documentIds: EfDocumentIdUniqueness.AcrossTenants`. Nothing else changes.
-- **Ids are per-tenant** (`"order-42"`) — two tenants share one row today, and have been. Either
+- **Ids are per-tenant** (`"order-42"`). Two tenants share one row today, and have been. Either
   make the id carry the tenant, give the module `.WithTenancy(t => t.AcrossPostgresDatabases(...))`
   so each tenant has its own database, or move the projection to `AddProjection` with a JSONB
   state store, which is tenant-scoped by the store.
@@ -913,7 +913,7 @@ See [projections.md](projections.md#ef-projections-on-a-tenant-enabled-module).
 
 ---
 
-### SV-1 — `EventSerializer.Deserialize` refuses an uncovered version gap
+### SV-1: `EventSerializer.Deserialize` refuses an uncovered version gap
 
 Reading an envelope stored below the version its CLR type declares now throws
 `InvalidOperationException`:
@@ -925,20 +925,20 @@ deserialized straight into the current shape and every member added since versio
 silently take its default value.
 ```
 
-**Why.** `ALB0018` already rejects this at startup — but only on the DI path. A serializer built
+**Why.** `ALB0018` already rejects this at startup, but only on the DI path. A serializer built
 by hand (`EventSerializer.FromAssembly(...)` in a migration script, a test helper, a one-off
 backfill tool) never meets the validator, and the failure it lets through is silent:
 System.Text.Json leaves every member the older payload lacks at its CLR default, so a
 non-nullable `string Region` comes back `null` and an evolver folds it as though it had been
 stored. The guard is now on the serializer itself, where it cannot be bypassed.
 
-It also catches the case `ALB0020` covers — a chain that terminates below the declared version —
+It also catches the case `ALB0020` covers (a chain that terminates below the declared version)
 when the envelope sits exactly at the chain's own current version and no step fires.
 
 **Symptom.** A tool or test that read old events now throws where it used to return an object
 with default-valued members.
 
-**Fix — the normal case.** Register the upcaster the version bump needed:
+**Fix: the normal case.** Register the upcaster the version bump needed:
 
 ```csharp
 DeclareUpcaster.For<OrderPlaced>("order-placed")
@@ -946,7 +946,7 @@ DeclareUpcaster.For<OrderPlaced>("order-placed")
     .Build();
 ```
 
-**Fix — the escape hatch.** If the bump only added optional members whose defaults are already
+**Fix: the escape hatch.** If the bump only added optional members whose defaults are already
 the values you want for events written before it, say so at the declaration site:
 
 ```csharp
@@ -964,7 +964,7 @@ downward gap fabricates values.
 
 ---
 
-### LK-1 — the PostgreSQL append advisory-lock key space changed
+### LK-1: the PostgreSQL append advisory-lock key space changed
 
 The append lock moved from the two-argument form to the single-argument one:
 
@@ -976,8 +976,8 @@ SELECT pg_advisory_xact_lock(hashtextextended('alberto-append:public:tenant-a', 
 ```
 
 **Why.** The old form fixed classid at 1, so every distinct key had to fit in `hashtext`'s 32-bit
-output. Collisions there are not a correctness problem — a shared lock over-serializes, it never
-under-serializes — but by the birthday bound P(some pair of tenants collides) ≈ 1 − exp(−n²/2³³),
+output. Collisions there are not a correctness problem: a shared lock over-serializes and never
+under-serializes, but by the birthday bound P(some pair of tenants collides) ≈ 1 − exp(−n²/2³³),
 which is ~0.6% at 10k tenants, 10% at 30k and 50% at 77k. The symptom is two unrelated tenants'
 appends serializing against each other with no error, no log line and nothing in telemetry to
 point at it. `hashtextextended` returns `bigint`, moving the same bound to under 1 in 10¹⁰ for a
@@ -985,7 +985,7 @@ million tenants.
 
 **No schema change and no migration.** Advisory locks live in shared memory, not in a table.
 
-**Rollout — this is the part that matters.** Two application versions appending to the *same*
+**Rollout: this is the part that matters.** Two application versions appending to the *same*
 database take locks in *different* key spaces and therefore do not serialize against each other.
 For the length of the overlap the DCB conflict check is unprotected, and two concurrent appends
 can both pass a boundary check that should have rejected one of them.
@@ -994,28 +994,28 @@ can both pass a boundary check that should have rejected one of them.
   database is the safe rollout.
 - A rolling deploy with both versions live and appending is **not** safe. If your platform will
   not let you stop writes, scale the old deployment to zero replicas first, then deploy.
-- Readers, projections, the outbox relay and the CLI are unaffected — none of them take the
+- Readers, projections, the outbox relay and the CLI are unaffected: none of them take the
   append lock.
 - Nothing is corrupted by a *past* collision, so there is nothing to repair afterwards.
 
 The migration lock (`hashtext('alberto:migrate')`) now shares a namespace with append keys. An
-append key would have to hash to exactly that one fixed value — a 2⁻⁶⁴ event — and the
+append key would have to hash to exactly that one fixed value (a 2⁻⁶⁴ event), and the
 consequence if it ever did is an append waiting behind a schema migration, which is the desired
 order regardless.
 
 ---
 
-### CF-1 — PostgreSQL `DcbConflictException` carries real details
+### CF-1: PostgreSQL `DcbConflictException` carries real details
 
 Every conflict raised by the PostgreSQL backend used to report `ConflictingPosition` and
-`ExpectedPosition` as `-1` and `Query` as `DcbQuery.Empty` — which renders as `*`, i.e.
+`ExpectedPosition` as `-1` and `Query` as `DcbQuery.Empty`, which renders as `*`, i.e.
 indistinguishable from a genuine conflict at position -1 against an all-events query. The backend
 was throwing the `DcbConflictException(message, inner)` overload while holding the query and the
 expected position it had just been given.
 
 All three now carry real values. The conflicting position is parsed out of the server's
-`RAISE EXCEPTION` message, and the server's own wording — which names *which* arm of the boundary
-matched — is kept inside the composed message rather than replaced.
+`RAISE EXCEPTION` message, and the server's own wording, which names *which* arm of the boundary
+matched, is kept inside the composed message rather than replaced.
 
 **Symptom.** Code matching on the old message text
 (`"DCB conflict detected: events matching the query exist after the expected position"`) no
@@ -1031,7 +1031,7 @@ catch (DcbConflictException ex)
 }
 ```
 
-`RetryOnConflict(n)` and `TryCommit` are unaffected — they never read the message.
+`RetryOnConflict(n)` and `TryCommit` are unaffected. They never read the message.
 
 For custom backends, prefer the new
 `DcbConflictException(string, long, long, DcbQuery, Exception)` constructor wherever the details
@@ -1041,7 +1041,7 @@ are placeholders rather than facts.
 
 ---
 
-### PK-1 — the admin surface is not published in 1.0
+### PK-1: the admin surface is not published in 1.0
 
 `Alberto.Admin` is no longer pushed to a package feed, and the three PostgreSQL admin types
 moved out of the `Alberto.Postgres` package into a new, also-unpublished
@@ -1051,8 +1051,8 @@ moved out of the `Alberto.Postgres` package into a new, also-unpublished
 - `PostgresAdminOperator`
 - `PostgresAdminServiceCollectionExtensions` (`AddAlbertoPostgresAdmin`)
 
-`IAdminReader`/`IAdminOperator` are the contract the parked admin front doors — a GraphQL API, an
-MCP server, a React console and a BFF on `feature/admin-surface` — are built on. Publishing them at
+`IAdminReader`/`IAdminOperator` are the contract the parked admin front doors (a GraphQL API, an
+MCP server, a React console and a BFF on `feature/admin-surface`) are built on. Publishing them at
 1.0 would freeze the abstraction under semver before anything that consumes it exists, which is the
 same reason those front doors are parked. Both projects still build, sit in the solution, and are
 covered by tests; they just do not become packages.
@@ -1065,7 +1065,7 @@ you could reach without already depending on the admin abstraction.
 **Symptom.** A project referencing the `Alberto.Admin` package fails to restore (`NU1101`), or
 one referencing `Alberto.Postgres` stops compiling against `PostgresAdminDataAccess`,
 `PostgresAdminOperator` or `AddAlbertoPostgresAdmin` (`CS0246` / `CS1061`). Namespaces are
-unchanged — the types are still `Alberto.Postgres.*` — so no `using` needs editing; the
+unchanged (the types are still `Alberto.Postgres.*`), so no `using` needs editing; the
 assembly they live in is simply not one you can get from a feed.
 
 **Fix.** If you were driving admin operations from your own code, either build the two projects
@@ -1077,27 +1077,27 @@ Unparking after 1.0 is `IsPackable=true` on both projects plus capturing their
 
 ---
 
-### OR-1 — delivered outbox entries are deleted after 7 days by default; migration 034 required
+### OR-1: delivered outbox entries are deleted after 7 days by default; migration 034 required
 
 `WithOutbox` now registers an `OutboxRetentionService` alongside the relay. Every hour it deletes
 entries whose `status = 'delivered'` and whose `delivered_at` is older than `deliveredRetention`,
 which defaults to **7 days**. Nothing removed delivered entries before, so this is a behaviour
 change that deletes data you currently have.
 
-**Not affected.** `pending`, `processing` and `failed` entries are never removed by age — they are
+**Not affected.** `pending`, `processing` and `failed` entries are never removed by age. They are
 work, not history. A `failed` entry sits in the table until you `RetryFailedAsync` it or delete it
 yourself, exactly as before. Nothing about relay behaviour, claim leases or delivery semantics
 changed.
 
 **Symptom.** Rows disappear from `alberto_outbox_entries` about an hour after the upgraded host
-starts, and the first sweep can be a long DELETE — it faces every delivered entry the table has
+starts, and the first sweep can be a long DELETE. It faces every delivered entry the table has
 ever held, not one window's worth.
 
-**Fix — pick one before you deploy:**
+**Fix: pick one before you deploy:**
 
 1. **Keep the old behaviour.** Pass `deliveredRetention: Timeout.InfiniteTimeSpan`. Delivered
    entries are kept forever and the service does nothing. Do this if the table is your integration
-   audit trail — and plan to archive it somewhere, because the growth problem does not go away.
+   audit trail, and plan to archive it somewhere, because the growth problem does not go away.
 2. **Take the default, but drain the backlog first.** Run
    `alberto ops outbox purge --before <timestamp>` during a quiet window, walking the cutoff back
    in steps if the table is large, then deploy. The CLI command does the same delete and records an
@@ -1106,7 +1106,7 @@ ever held, not one window's worth.
    lower it over subsequent releases until you reach the window you want.
 
 **Run migration 034 before deploying the new binary.** It adds
-`idx_alberto_outbox_delivered` — a partial index on `delivered_at` for `status = 'delivered'` —
+`idx_alberto_outbox_delivered`, a partial index on `delivered_at` for `status = 'delivered'`,
 without which every sweep is a sequential scan of the whole outbox. The script is
 `CREATE INDEX CONCURRENTLY` and carries `-- alberto:no-transaction`, so it does not lock the table
 against the relay while it builds.
@@ -1126,12 +1126,12 @@ established. Now the type you are holding tells you which of those is legal.
 | Change | Severity | What broke |
 |---|---|---|
 | P-1 | **High** | `Persist` renamed to `Commit`; `PersistUnconditionally` to `CommitUnconditionally` |
-| P-2 | **High** | `NoValidation()` removed — validation was always optional |
+| P-2 | **High** | `NoValidation()` removed: validation was always optional |
 | P-3 | **High** | `WithEventsFrom` registers `AlbertoStore` **keyed** by module key |
 | P-4 | Medium | `Decide` is synchronous; use the new `Enrich` stage for async work before the boundary |
 | P-5 | Medium | The three-lambda `Load(loader, querySelector, positionSelector)` is replaced by `LoadUnder` |
 
-### P-1 / P-2 — the pipeline shape
+### P-1 / P-2: the pipeline shape
 
 ```csharp
 // before
@@ -1148,7 +1148,7 @@ await store.Handle(command)
     .Commit(ct);
 ```
 
-`Validate` is now genuinely optional — drop `NoValidation()` and nothing replaces it. It is also
+`Validate` is now genuinely optional. Drop `NoValidation()` and nothing replaces it. It is also
 chainable, and short-circuits on the first failure without reading the log.
 
 `Load` returns a **bound** pipeline, and only a bound pipeline has `Commit(ct)`. Skipping `Load`,
@@ -1158,10 +1158,10 @@ The runtime "no boundary was observed" exception is gone because that state is n
 
 Two terminals are new. `TryCommit` returns a failed `Result` carrying a `dcb.conflict` problem
 instead of throwing `DcbConflictException`. `RetryOnConflict(n)` bounds the total attempts,
-re-running `Load` and `Decide` against the current log on each one — stages before `Load` are
+re-running `Load` and `Decide` against the current log on each one: stages before `Load` are
 memoized and run exactly once.
 
-### P-3 — `AlbertoStore` is keyed
+### P-3: `AlbertoStore` is keyed
 
 ```csharp
 // before
@@ -1172,7 +1172,7 @@ var store = sp.GetRequiredKeyedService<AlbertoStore>("orders");
 ```
 
 `IEventStore` was already keyed by module key. `AlbertoStore` was not, so a host registering two
-modules got one store — whichever registered last — wrapping the wrong log. `WithEventsFrom` now
+modules got one store (whichever registered last) wrapping the wrong log. `WithEventsFrom` now
 registers it with `AddKeyedScoped` under the same key, so each module gets its own.
 
 The store is also handed the service provider, so `Load<TState>(boundary)` can resolve
@@ -1180,10 +1180,10 @@ The store is also handed the service provider, so `Load<TState>(boundary)` can r
 yourself still works; that overload then throws with a message telling you to pass the evolver
 explicitly.
 
-### P-4 — `Decide` is synchronous, `Enrich` is where async goes
+### P-4: `Decide` is synchronous, `Enrich` is where async goes
 
 `Decide` used to accept an async delegate, which put arbitrary I/O *inside* the window between
-reading the boundary and appending under it — the one place where latency turns directly into
+reading the boundary and appending under it. The one place where latency turns directly into
 conflicts. It is now synchronous.
 
 Work that needs to be awaited moves to `Enrich`, which runs before `Load`:
@@ -1199,7 +1199,7 @@ await store.Handle(command)
 
 `Enrich` may change the command's type, and it runs once even when `RetryOnConflict` re-reads.
 
-### P-5 — a custom loader now reports its boundary through `LoadUnder`
+### P-5: a custom loader now reports its boundary through `LoadUnder`
 
 The old three-lambda overload let an async loader declare the boundary it had observed:
 
@@ -1210,7 +1210,7 @@ The old three-lambda overload let an async loader declare the boundary it had ob
 .Persist(ct);
 ```
 
-That shape does not survive the bound/unbound split — the unbound terminal's arguments are
+That shape does not survive the bound/unbound split. The unbound terminal's arguments are
 evaluated *before* the deferred chain runs, so a loader cannot supply them. `LoadUnder` restores
 the capability with the type-state guarantee intact: the loader returns its state, its boundary
 and the position it read at, and the pipeline it produces is **bound**, so `Commit(ct)` checks
@@ -1233,7 +1233,7 @@ against exactly that.
 
 Most call sites do not need it. If the boundary is merely *derived from the command*, prefer
 `Load(cmd => boundary, initial, apply)`, and put any async work in `Enrich` so it lands before the
-window opens — that combination is both shorter and strictly safer, since the I/O then sits outside
+window opens. That combination is both shorter and strictly safer, since the I/O then sits outside
 the read-to-append gap. `LoadUnder` is for the case those cannot express: a boundary that is only
 discoverable **during** the load, such as folding one query to find an id and then folding a second
 keyed by it.
@@ -1243,7 +1243,7 @@ keyed by it.
 ## Deprecated projection and decision APIs removed
 
 **Breaking.** Every type that carried `[Obsolete]` has been deleted, along with the reflection-based
-projection stack that only those types reached. Nothing here had a runtime replacement pending — the
+projection stack that only those types reached. Nothing here had a runtime replacement pending. The
 blessed spelling has shipped for a full cycle in each case, so calls now fail to compile rather than
 warn.
 
@@ -1254,7 +1254,7 @@ warn.
 | `IProject<TState, TEvent>` | `.On<TEvent>(id:, apply:)` on the declaration builder |
 | `ProjectionDispatcher<TState>` | (internal) delegate dispatch inside `ProjectionDeclaration<TState>` |
 | `AsyncProjection<TState, TProjection>` | (internal) `DeclaredAsyncProjection<TState>` |
-| `InlineProjection<TState, TProjection>` | (internal) — see *inline projections* below |
+| `InlineProjection<TState, TProjection>` | (internal), see *inline projections* below |
 | `EfInlineProjection<TEntity, TProjection, TDbContext>` | (internal) `DeclaredEfInlineProjection<TEntity, TDbContext>` |
 | `RegisterEfInlineProjection<TEntity, TProjection, TDbContext>(...)` | `AddEfProjection<TEntity, TDbContext>(declaration, ProjectionMode.Inline)` |
 | `IEventStoreConfigurator.RegisterInlineProjection<TState, TProjection>(IStateStore<TState>)` | `RegisterInlineProjection(IInlineProjection)` |
@@ -1263,7 +1263,7 @@ warn.
 
 ### Event consumers
 
-`IEventConsumer` had no implementation anywhere in the library — it described a processor-routing seam
+`IEventConsumer` had no implementation anywhere in the library. It described a processor-routing seam
 that `ControlLoop` ended up filling with a different shape. Its only extension methods were the two
 `Register*` calls above, so an application could not reach it without writing the consumer itself.
 
@@ -1271,7 +1271,7 @@ Reactors are registered on the module builder, which resolves the handler from D
 interface on the reactor type:
 
 ```csharp
-// Before — required an IEventConsumer implementation that the library never shipped
+// Before: required an IEventConsumer implementation that the library never shipped
 consumer.RegisterReactor(new NotificationReactor(...));   // reactor implements IReact<TEvent>
 
 // After
@@ -1280,8 +1280,8 @@ services.AddAlberto("orders", builder => builder
 );
 ```
 
-`IReact<TEvent>`, `AsyncReactor<TReactor>` and `ReactorDispatcher` — the reflection-dispatched reactor
-path that `RegisterReactor` built — are still present but are no longer reachable from any registration
+`IReact<TEvent>`, `AsyncReactor<TReactor>` and `ReactorDispatcher` (the reflection-dispatched reactor
+path that `RegisterReactor` built) are still present but are no longer reachable from any registration
 API. `ReactTo` uses `FunctionalReactor<TEvent>` / `SyncReactor<TEvent>` and binds the handler method
 explicitly rather than scanning for `IReact<TEvent>` interfaces.
 
@@ -1340,7 +1340,7 @@ public static readonly ProjectionDeclaration<OrderSummary> Declaration =
 ```
 
 `ProjectionResult<TState>`, `ProjectionResults`, `ProjectionContext`, `IStateStore<TState>` and
-`IInlineProjection` are unchanged — only the way handlers are declared changed.
+`IInlineProjection` are unchanged: only the way handlers are declared changed.
 
 One behavioural difference worth knowing: `Projection<TState>.Apply` returned `Unchanged` for an
 event it did not handle, while `ProjectionDeclaration<TState>.Apply` throws for an unregistered
@@ -1351,8 +1351,8 @@ undeclared event is a wiring bug rather than something to swallow.
 
 `Projection<TState>` was the only way to run a **non-EF** inline projection: `InlineProjection<,>`
 wrapped it, and `RegisterInlineProjection<TState, TProjection>(IStateStore<TState>)` was the only
-entry point. Neither has a declaration-based equivalent — `AddProjection<TState>` wires the async
-path only — so the non-EF inline path is gone with them.
+entry point. Neither has a declaration-based equivalent. `AddProjection<TState>` wires the async
+path only, so the non-EF inline path is gone with them.
 
 Two replacements, depending on what the inline write is for:
 
@@ -1364,7 +1364,7 @@ Two replacements, depending on what the inline write is for:
 
 ---
 
-## `AddAlbertoStore` removed — use `WithEventsFrom`
+## `AddAlbertoStore` removed: use `WithEventsFrom`
 
 **Breaking.** `AddAlbertoStore` is gone in both forms. There is no deprecation window: the name no
 longer exists, so calls fail to compile rather than warn.
@@ -1377,7 +1377,7 @@ longer exists, so calls fail to compile rather than warn.
 `services.AddAlberto(...)` and `builder.AddAlbertoStore(...)` read as two halves of one bootstrap
 step, as if the first call left the module half-configured. They were not. `AddAlberto` builds the
 module; `AddAlbertoStore` came from the separate, optional `Alberto.Commands` package and did
-one thing — declare where the module's `[EventType]` records live, and register the `AlbertoStore`
+one thing: declare where the module's `[EventType]` records live, and register the `AlbertoStore`
 command pipeline over them. That is module configuration, so it now reads like the other
 one-per-module settings (`WithPostgres`, `WithControlLoop`, `WithTenancy`) rather than like a
 second registration step. `Add*` stays reserved for the N-of-a-kind calls (`AddProjection`,
@@ -1395,8 +1395,8 @@ services.AddAlberto("orders", builder => builder
     .WithEventsFrom(typeof(OrderCreated).Assembly));
 ```
 
-The standalone `services.AddAlbertoStore(moduleKey, assembly)` overload — `[Obsolete]` since the
-2026-07-24 audit cycle — is removed in the same change rather than left behind as the only
+The standalone `services.AddAlbertoStore(moduleKey, assembly)` overload, `[Obsolete]` since the
+2026-07-24 audit cycle, is removed in the same change rather than left behind as the only
 surviving spelling of a name this cycle retires.
 
 The containing class was renamed to match what it now extends:

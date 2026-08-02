@@ -32,22 +32,22 @@ npm run test:load
 | Load | `test:load` | Normal load | ~14min | 20 |
 | Stress | `test:stress` | Find breaking point | ~17min | 100 |
 | Spike | `test:spike` | Sudden traffic burst | ~3min 20s | 100 |
-| Consistency | `test:consistency` | Read-your-writes under concurrency | — | — |
-| Throughput | `test:throughput` | Sustained append/read ceiling | — | — |
+| Consistency | `test:consistency` | Read-your-writes under concurrency | n/a | n/a |
+| Throughput | `test:throughput` | Sustained append/read ceiling | n/a | n/a |
 
-`test:throughput` has three variants — `test:throughput:burst`, `:extended`, and the
+`test:throughput` has three variants: `test:throughput:burst`, `:extended`, and the
 seeding controls `:skip-seed` / `:quick-seed`. See `package.json` for the full list.
 
 ## Multi-Tenant Support
 
 All tests include `X-Tenant-Id` header with round-robin distribution across predefined tenants.
 
-**Tenant ids must match `^[a-z][a-z0-9_]{0,62}$`** — a lowercase letter followed by lowercase
+**Tenant ids must match `^[a-z][a-z0-9_]{0,62}$`**: a lowercase letter followed by lowercase
 alphanumerics or underscores. Hyphens, uppercase and UUIDs are rejected by the API with
 `INVALID_TENANT` before the request reaches a resolver, because the same allowlist governs
 schema names.
 
-Ten default tenants are defined, `tenant_loadtest_001` through `tenant_loadtest_010` — enough
+Ten default tenants are defined, `tenant_loadtest_001` through `tenant_loadtest_010`, enough
 to exercise tenant cache eviction. See [src/config/tenants.ts](src/config/tenants.ts).
 
 ### Custom Tenants
@@ -107,7 +107,7 @@ Cancel Order (from Draft or Confirmed) → Cancelled
 | p95 latency | < 500ms |
 | p99 latency | < 1000ms |
 | Error rate | < 1% |
-| Full lifecycle | < 3000ms (p95) — includes ~2s of intentional sleeps |
+| Full lifecycle | < 3000ms (p95), includes ~2s of intentional sleeps |
 
 ## Results
 
