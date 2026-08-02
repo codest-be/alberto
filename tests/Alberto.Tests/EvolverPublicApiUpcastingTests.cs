@@ -50,7 +50,8 @@ file sealed record SyntheticEnvelope(string Slug, int Version, string Json) : IE
 // ---------------------------------------------------------------------------
 
 /// <summary>
-/// Verifies that the public <see cref="Evolver{TState}.Reconstitute(System.Collections.Generic.IEnumerable{IEventEnvelope}, TState?)"/>
+/// Verifies that the public
+/// <see cref="Evolver{TState}.Reconstitute(System.Collections.Generic.IEnumerable{Alberto.IEventEnvelope}, TState)"/>
 /// overload (no serializer) throws a clear <see cref="InvalidOperationException"/> when an
 /// envelope's stored schema version is older than the version declared on the handler's CLR type.
 ///

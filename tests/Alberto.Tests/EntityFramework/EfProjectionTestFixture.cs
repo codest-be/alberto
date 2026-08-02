@@ -40,13 +40,15 @@ public class CounterEntity : IProjectionEntity
 
 /// <summary>
 /// EF DbContext used by EF projection tests.
-/// Exposes a <see cref="SaveInterceptor"/> that overrides <see cref="SaveChangesAsync"/>
+/// Exposes a <see cref="SaveInterceptor"/> that overrides
+/// <see cref="SaveChangesAsync(System.Threading.CancellationToken)"/>
 /// so tests can inject faults without replacing the full database provider.
 /// </summary>
 public sealed class EfTestDbContext : DbContext
 {
     /// <summary>
-    /// When set, called instead of the real <see cref="DbContext.SaveChangesAsync"/>.
+    /// When set, called instead of the real
+    /// <see cref="DbContext.SaveChangesAsync(System.Threading.CancellationToken)"/>.
     /// The delegate receives a callback to the real base implementation so that
     /// "fail N times, then succeed" test patterns remain easy to express.
     /// </summary>
@@ -186,7 +188,7 @@ public static class EfTestEnvelopes
 /// Gives each EF test class its own database carrying the EF test entities.
 /// </summary>
 /// <remarks>
-/// The schema comes from <see cref="DbContext.Database.EnsureCreatedAsync"/> rather than
+/// The schema comes from <c>DbContext.Database.EnsureCreatedAsync</c> rather than
 /// Aspire/DbUp, because the EF test entities live in a table Alberto's migrations do not
 /// manage. Both this and the container it used to own are per test class — sharing happens
 /// at the container, not the database.

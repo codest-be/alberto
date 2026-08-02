@@ -13,7 +13,7 @@ namespace Alberto.Orders.Platform.Migrations
 {
     [DbContext(typeof(OrdersDbContext))]
     [Migration("20260118122739_version column")]
-    partial class versioncolumn
+    partial class VersionColumn
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)

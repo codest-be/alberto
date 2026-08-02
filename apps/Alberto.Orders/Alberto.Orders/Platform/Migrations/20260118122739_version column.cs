@@ -5,7 +5,7 @@
 namespace Alberto.Orders.Platform.Migrations
 {
     /// <inheritdoc />
-    public partial class versioncolumn : Migration
+    public partial class VersionColumn : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)

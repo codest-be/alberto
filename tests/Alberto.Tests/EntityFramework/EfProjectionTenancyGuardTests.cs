@@ -11,7 +11,7 @@ namespace Alberto.Tests.EntityFramework;
 /// registration unless the caller states that its document ids are unique across tenants.
 ///
 /// <para>
-/// The reason it has to be refused rather than fixed: <see cref="Subscriptions.IProjectionEntity"/>
+/// The reason it has to be refused rather than fixed: <see cref="Alberto.Subscriptions.IProjectionEntity"/>
 /// carries no tenant column, so both <c>EfStateStore</c> and the inline projection load and write
 /// by <c>(DocumentId, RebuildVersion)</c> with no tenant predicate available to them. Two tenants
 /// producing the same document id therefore share one row — last write wins, and every read after
