@@ -50,14 +50,17 @@ check is a feature, not an obstacle to route around.
 ## Workflow
 
 **The version bump, the changelog section and the public-API promotion are not done by hand.**
-The **Release** workflow does all three and opens a pull request with them. Which version it
-picks is decided by the milestones on the issues — [docs/releasing.md](../../../docs/releasing.md)
+The **Release** workflow does all three and opens a pull request with them. You tell it which
+milestone to release and its title is the version — [docs/releasing.md](../../../docs/releasing.md)
 is the reference for that half, and this skill is the reference for everything from the tag
 onward.
 
 1. **Land the work on `main` first and let it go green.** Never tag a commit CI has not passed.
-2. **Run **Release** with `dry_run` on.** It prints the version it computed and the changelog
-   section it drafted, and writes nothing. If the version is wrong, the milestones are wrong.
+2. **Run **Release** with the milestone and `dry_run` on.** The milestone's title is the version
+   and its closed issues are the notes — nothing derives a version from labels or history. The run
+   prints both and writes nothing. It refuses a milestone that does not exist, has no closed
+   issues, is not ahead of the branch's `VersionPrefix`, or is a patch while public API is
+   unshipped.
 3. **Run it again with `dry_run` off,** then edit the drafted notes on the pull request it opens.
    That editing pass is the only one a release gets. Do not hand-edit `CHANGELOG.md` or
    `<VersionPrefix>` outside that pull request.
