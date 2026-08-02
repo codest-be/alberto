@@ -34,7 +34,7 @@ concurrency:
 
 jobs:
   prepare:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     permissions:
       contents: write        # push the release-prep branch
       pull-requests: write   # open the release pull request

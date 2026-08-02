@@ -22,7 +22,11 @@ env:
 
 jobs:
   benchmark:
-    runs-on: ubuntu-latest
+    # Self-hosted is a genuine improvement here rather than just consistency with the other
+    # workflows: a hosted runner is different rented hardware every run, which is why the profile
+    # is keyed by a hardware hash. Three fixed machines make consecutive runs comparable — though
+    # the hash still separates them, since runner-1 and runner-3 are not required to be identical.
+    runs-on: self-hosted
     # Seeding 1M events plus ~80 cases; the default 6h cap is far too generous to rely on.
     timeout-minutes: 120
 

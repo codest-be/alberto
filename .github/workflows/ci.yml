@@ -13,7 +13,14 @@ env:
 
 jobs:
   build-test:
-    runs-on: ubuntu-latest
+    # The org's own runners (codest-runner-1..3, the `default` group), the same ones the other
+    # codest repositories build on. Testcontainers needs a Docker daemon and the runners have one.
+    #
+    # This repository is PUBLIC and self-hosted runners are persistent, so a workflow can leave
+    # state behind for the next job. What keeps that from being a way in is the Actions setting
+    # `Require approval for all external contributors` — a fork's pull request does not run until
+    # a maintainer approves it. Do not relax that setting while this line says `self-hosted`.
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
 

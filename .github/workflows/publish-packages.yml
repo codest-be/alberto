@@ -28,7 +28,12 @@ env:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    # Self-hosted, like every other workflow here. Note what that means for the step below:
+    # `id-token: write` exchanges an OIDC token for a one-hour nuget.org key, and on a persistent
+    # runner that key is minted on hardware we own rather than on an instance that is destroyed
+    # afterwards. The trusted-publishing policy is bound to this repository and this workflow
+    # *filename*, not to the runner, so moving here changed nothing on nuget.org's side.
+    runs-on: self-hosted
     permissions:
       packages: write
       contents: read
