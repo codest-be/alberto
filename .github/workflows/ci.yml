@@ -47,11 +47,11 @@ jobs:
       - name: Test examples
         run: dotnet test tests/Alberto.Examples.Tests/Alberto.Examples.Tests.csproj -c Release --no-build --logger "console;verbosity=normal"
 
-      # Proves the benchmark suite still compiles and executes. --job dry runs each case
-      # once with no warmup, so it measures nothing — it exists to stop the suite from
-      # bit-rotting between nightly runs, which is how benchmark suites usually die.
-      - name: Benchmark smoke run
-        run: dotnet run -c Release --project benchmarks/Alberto.Benchmarks -- --job dry --anyCategories=smoke
+      # No benchmark step here by design. The suite runs on a schedule
+      # (.github/workflows/benchmarks.yml), which builds it as part of running it. Benchmarks.Core
+      # and Benchmarks.Compare are still compiled here via Alberto.Tests' project references.
+      # A break confined to benchmarks/Alberto.Benchmarks therefore surfaces at 02:00 UTC, not on
+      # the PR — the accepted cost of keeping PR CI free of benchmark work.
 
       # Catches the class of bug where a src/ project is packable and depended upon
       # by another packable project but accidentally omitted from the pack list —
