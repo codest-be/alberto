@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <IsPackable>false</IsPackable>
+        <IsTestProject>true</IsTestProject>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <!-- Alberto core: IMessageTransport, ExternalMessage, OutboxEntry, OutboxRelay, etc. -->
+        <ProjectReference Include="../../src/Alberto.Messaging/Alberto.Messaging.csproj" />
+        <!-- PostgresOutboxStore -->
+        <ProjectReference Include="../../src/Alberto.Messaging.Postgres/Alberto.Messaging.Postgres.csproj" />
+        <!-- PostgresMigrator (runs Alberto's DbUp migrations in InitializeAsync) -->
+        <ProjectReference Include="../../src/Alberto.Postgres/Alberto.Postgres.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.NET.Test.Sdk" />
+        <PackageReference Include="xunit.v3" />
+        <PackageReference Include="xunit.runner.visualstudio">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+        <PackageReference Include="coverlet.collector">
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+            <PrivateAssets>all</PrivateAssets>
+        </PackageReference>
+        <PackageReference Include="FluentAssertions" />
+        <PackageReference Include="Testcontainers.PostgreSql" />
+        <!-- Rebus adapter recipe: not shipped in any packable project; lives here as a
+             copy-paste recipe for Alberto consumers who want a Rebus-backed transport. -->
+        <PackageReference Include="Rebus" />
+        <PackageReference Include="Rebus.PostgreSql" />
+    </ItemGroup>
+</Project>

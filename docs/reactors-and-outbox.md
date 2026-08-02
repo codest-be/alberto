@@ -184,7 +184,111 @@ observable when the relay otherwise stopped normally. When startup or relay exec
 failed, that causal exception keeps precedence; the cleanup exception is attached to its `Data`
 dictionary under `Alberto.Messaging.TransportStopException`.
 
-`InMemoryTransport` ships in `Alberto.Messaging` for tests.
+`InMemoryTransport` ships in `Alberto.Messaging` for tests. It is the only implementation in the
+repository: Alberto ships no broker binding and will not ship one. See
+[Message transports](architecture/message-transports.md) for why, and for the traps that apply
+whichever bus you put behind the seam.
+
+### A worked adapter
+
+Three things catch every adapter, whichever bus you use. This walks through them with Rebus, not
+because Rebus is recommended, but because the adapter has to be written against *something*. The
+same three appear with MassTransit, Wolverine or a client you wrote yourself. The complete version,
+with an integration test that drives it through a real relay against PostgreSQL, is in
+[tests/Alberto.Tests.Messaging.Rebus](https://github.com/codest-be/alberto/tree/main/tests/Alberto.Tests.Messaging.Rebus).
+Copy it into your own project; it is a recipe, not a package.
+
+**1. The payload is already serialized.** `ExternalMessage.Payload` is a JSON string, not an object.
+Hand it to a bus client that serializes for you and you get a double-encoded body: the whole
+document wrapped in quotes with its own quotes escaped. Consumers then have to parse twice, and
+usually nobody notices until one is written by a different team.
+
+The fix is to give the bus a serializer that writes those bytes through untouched. Alberto's
+message needs an envelope type to travel in:
+
+```csharp
+public sealed record AlbertoOutboxPayload(string MessageType, string Version, string Payload);
+```
+
+and the serializer writes `Payload` directly rather than encoding it:
+
+```csharp
+public sealed class AlbertoOutboxSerializer : ISerializer
+{
+    public Task<TransportMessage> Serialize(Message message)
+    {
+        var payload = (AlbertoOutboxPayload)message.Body;
+
+        var headers = new Dictionary<string, string>(message.Headers)
+        {
+            [Headers.ContentType] = "application/json;charset=utf-8",
+            // A sentinel, not a CLR type name: nothing should try to load this as a .NET type.
+            [Headers.Type] = "alberto-outbox",
+            ["alberto-message-type"] = payload.MessageType,
+            ["alberto-version"] = payload.Version,
+        };
+
+        // Exactly the bytes the outbox stored. No re-encoding.
+        return Task.FromResult(
+            new TransportMessage(headers, Encoding.UTF8.GetBytes(payload.Payload)));
+    }
+
+    public Task<Message> Deserialize(TransportMessage transportMessage) { /* symmetric */ }
+}
+```
+
+`MessageType` and `Version` ride as headers so a consumer can dispatch on Alberto's own event type
+rather than on a .NET type it would otherwise have to share.
+
+**2. `Destination` is optional, and the fallback is not free.** `ExternalMessage.Destination` is
+null when the outbox mapping did not set one, and null means "use the transport's default routing".
+Honouring that is two branches:
+
+```csharp
+public async Task PublishAsync(ExternalMessage message, CancellationToken ct = default)
+{
+    var payload = new AlbertoOutboxPayload(
+        message.MessageType, message.Version, message.Payload);
+
+    var headers = message.Metadata.Count > 0
+        ? new Dictionary<string, string>(message.Metadata)
+        : null;
+
+    if (message.Destination is not null)
+        await _bus.Advanced.Routing.Send(message.Destination, payload, headers);
+    else
+        await _bus.Send(payload, headers);
+}
+```
+
+The second branch has a catch that is easy to miss. Rebus routes `bus.Send` on the CLR type, so it
+needs a mapping, and without one it throws `ArgumentException` ("Cannot get destination for message
+of type ... because it has not been mapped"):
+
+```csharp
+.Routing(r => r.TypeBased().Map<AlbertoOutboxPayload>("target-queue"))
+```
+
+That mapping is on the *envelope*, and every Alberto message shares it. So the fallback path can
+only ever reach one queue, no matter how many event types flow through it. If different messages
+need different queues, set `Destination` in the outbox mapping, or write a router that reads the
+`alberto-message-type` header. This is not a Rebus quirk: any bus that routes on the static type of
+what you hand it will collapse the same way, because the envelope is what it sees.
+
+**3. Start and stop are no-ops.** The host owns the bus client, so the adapter wraps a resolved
+`IBus` and leaves both lifecycle methods empty. Alberto calls them, but must not start or dispose a
+client it did not construct, and the DI container is already disposing it.
+
+```csharp
+public Task StartAsync(CancellationToken ct = default) => Task.CompletedTask;
+public Task StopAsync(CancellationToken ct = default) => Task.CompletedTask;
+```
+
+One more thing worth knowing when you write the test rather than the adapter: if you assert on a
+payload that has been through a `jsonb` column, compare it structurally with `JsonDocument`, never
+with string equality. PostgreSQL normalizes `jsonb` on the way in, reordering keys and dropping
+insignificant whitespace, so the string that comes back is not the string that went in even when
+nothing was lost.
 
 ### Claim leases and relay crashes
 

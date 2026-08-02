@@ -150,6 +150,7 @@ It needs no Docker and no connection string.
 | [Configuration reference](https://github.com/codest-be/alberto/blob/main/docs/configuration.md) | Three-phase pipeline, all options, validation codes, custom backends |
 | [Async processing architecture](https://github.com/codest-be/alberto/blob/main/docs/architecture/async-processing.md) | How the control loop actually works |
 | [Tenant sharding](https://github.com/codest-be/alberto/blob/main/docs/architecture/tenant-sharding.md) | Spreading a module's tenants over several databases |
+| [Message transports](https://github.com/codest-be/alberto/blob/main/docs/architecture/message-transports.md) | Why no broker binding ships, and how to write the adapter |
 | [Migrating to 1.0](https://github.com/codest-be/alberto/blob/main/docs/migrating-to-1.0.md) | Every breaking change on the road to 1.0, most recent first |
 | [Releasing](https://github.com/codest-be/alberto/blob/main/docs/releasing.md) | Versioning policy, milestones, release and backport process |
 

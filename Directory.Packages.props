@@ -58,6 +58,9 @@
     <!-- BFF -->
     <PackageVersion Include="Yarp.ReverseProxy" Version="2.3.0" />
     <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery.Yarp" Version="10.8.0" />
+    <!-- Rebus (test-only; not shipped in any packable project) -->
+    <PackageVersion Include="Rebus" Version="8.9.2" />
+    <PackageVersion Include="Rebus.PostgreSql" Version="9.1.1" />
     <!-- Testing -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.4.0" />
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
