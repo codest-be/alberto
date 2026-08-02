@@ -24,10 +24,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
+      # No actions/setup-dotnet: the runners already carry the 10.0 SDK at /usr/share/dotnet,
+      # which is root-owned. setup-dotnet resolves '10.0.x' to the newest patch and then fails
+      # copying into that tree as the unprivileged runner user, so asking for the SDK is what
+      # breaks the job. Installing to a writable directory instead would re-download the SDK on
+      # every run, which is most of what moving off hosted runners was meant to avoid.
+      # Provisioning the SDK is the runner's job now — `dotnet --list-sdks` on the host is the
+      # place to change it.
 
       # Building the test project restores and compiles every referenced library
       # (Alberto, Alberto.Postgres, Alberto.InMemory, ...). The app /
@@ -37,7 +40,8 @@ jobs:
         run: dotnet build tests/Alberto.Tests/Alberto.Tests.csproj -c Release
 
       # Runs unit tests plus the Testcontainers-backed PostgreSQL integration
-      # tests (Docker is available on ubuntu-latest runners). Coverage is
+      # tests (the runner host has a Docker daemon and the runner user is in the
+      # `docker` group). Coverage is
       # collected but not gated: the figure exists to show movement across the
       # test-suite remediation sub-projects, not to fail builds.
       - name: Test
