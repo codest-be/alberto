@@ -6,12 +6,15 @@ Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.CompleteAbort_WhileInF
 Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.CompletePromotion_FromReady_FlipsVersionAndReturnsDiscarded() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.CompletePromotion_WhileRebuilding_WithForce_Succeeds() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.CompletePromotion_WhileRebuilding_WithoutForce_ThrowsRebuildStateException() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.CompletePromotion_WithNoRebuildRow_IsRejected() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.DiscardStateVersion_AfterAbort_DoesNotThrow() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.DiscardStateVersion_AfterPromotion_DoesNotThrow() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.Get_UnknownProcessor_ReturnsIdleAtVersionOne() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.List_AfterStart_IncludesProcessor() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.List_EmptyStore_ReturnsEmpty() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.MarkReady_NotInFlight_ThrowsRebuildStateException() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.MarkReady_WhenAborted_ThrowsRebuildStateException() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.MarkReady_WhenCompleted_ThrowsRebuildStateException() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.MarkReady_WhileRebuilding_MovesToReady() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.ProcessorId.get -> string!
 Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.ProjectionRebuildStoreSpecification() -> void
@@ -25,4 +28,5 @@ Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.Start_AfterAbort_Alloc
 Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.Start_AfterCompletedPromotion_AllocatesHigherVersion() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.Start_FirstRebuild_MovesToRebuildingAtVersionTwo() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.Start_WhileInFlight_ThrowsRebuildStateException() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.Start_WhileReady_ThrowsRebuildStateException() -> System.Threading.Tasks.Task!
 virtual Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.SupportsCoordinatorOperations.get -> bool

@@ -145,6 +145,28 @@ public abstract class ProjectionRebuildStoreSpecification
     }
 
     /// <summary>
+    /// Calling <c>StartAsync</c> while a rebuild has reached <see cref="RebuildStatus.Ready"/>
+    /// must also throw <see cref="RebuildStateException"/>: a rebuilt-but-unpromoted version is
+    /// still in flight and counts as a blocked state, exactly like
+    /// <see cref="RebuildStatus.Rebuilding"/>.
+    /// </summary>
+    [Fact]
+    public async Task Start_WhileReady_ThrowsRebuildStateException()
+    {
+        if (!SupportsCoordinatorOperations)
+            Assert.Skip("Requires coordinator operations to reach the Ready status.");
+
+        var store = await CreateStore();
+        await store.StartAsync(ProcessorId, ProjectionType, targetPosition: 100, Ct);
+        await AsCoordinator(store).MarkReadyAsync(ProcessorId, Ct);
+
+        var act = () => store.StartAsync(ProcessorId, ProjectionType, targetPosition: 200, Ct);
+
+        await act.Should().ThrowAsync<RebuildStateException>(
+            "a rebuilt-but-unpromoted version is still in flight");
+    }
+
+    /// <summary>
     /// A rebuild started after an aborted one must receive a version number higher than
     /// the aborted version, not <c>ActiveVersion + 1</c>. Reusing the aborted version
     /// would let a shadow loop that has not yet learned of the abort seed the fresh replay
@@ -168,6 +190,8 @@ public abstract class ProjectionRebuildStoreSpecification
         // The aborted rebuild used version 2. The next must be 3, not 2.
         second.RebuildingVersion.Should().Be(3);
         second.LastAllocatedVersion.Should().Be(3);
+        second.ActiveVersion.Should().Be(1, "an abort leaves the version readers see alone");
+        second.Status.Should().Be(RebuildStatus.Rebuilding);
     }
 
     // ── RequestPromotion / RequestAbort ───────────────────────────────────────
@@ -286,6 +310,49 @@ public abstract class ProjectionRebuildStoreSpecification
         await act.Should().ThrowAsync<RebuildStateException>();
     }
 
+    /// <summary>
+    /// <c>MarkReadyAsync</c> when the processor's most recent rebuild is
+    /// <see cref="RebuildStatus.Completed"/> must throw <see cref="RebuildStateException"/>.
+    /// Only a processor actively in <see cref="RebuildStatus.Rebuilding"/> may transition to Ready.
+    /// </summary>
+    [Fact]
+    public async Task MarkReady_WhenCompleted_ThrowsRebuildStateException()
+    {
+        if (!SupportsCoordinatorOperations)
+            Assert.Skip("Requires coordinator operations.");
+
+        var store = await CreateStore();
+        var coordinator = AsCoordinator(store);
+        await store.StartAsync(ProcessorId, ProjectionType, targetPosition: 100, Ct);
+        await coordinator.MarkReadyAsync(ProcessorId, Ct);
+        await coordinator.CompletePromotionAsync(ProcessorId, force: false, Ct);
+
+        var act = () => coordinator.MarkReadyAsync(ProcessorId, Ct);
+
+        await act.Should().ThrowAsync<RebuildStateException>();
+    }
+
+    /// <summary>
+    /// <c>MarkReadyAsync</c> when the processor's most recent rebuild is
+    /// <see cref="RebuildStatus.Aborted"/> must throw <see cref="RebuildStateException"/>.
+    /// Only a processor actively in <see cref="RebuildStatus.Rebuilding"/> may transition to Ready.
+    /// </summary>
+    [Fact]
+    public async Task MarkReady_WhenAborted_ThrowsRebuildStateException()
+    {
+        if (!SupportsCoordinatorOperations)
+            Assert.Skip("Requires coordinator operations.");
+
+        var store = await CreateStore();
+        var coordinator = AsCoordinator(store);
+        await store.StartAsync(ProcessorId, ProjectionType, targetPosition: 100, Ct);
+        await coordinator.CompleteAbortAsync(ProcessorId, Ct);
+
+        var act = () => coordinator.MarkReadyAsync(ProcessorId, Ct);
+
+        await act.Should().ThrowAsync<RebuildStateException>();
+    }
+
     // ── Coordinator: CompletePromotion ────────────────────────────────────────
 
     /// <summary>
@@ -351,6 +418,25 @@ public abstract class ProjectionRebuildStoreSpecification
         outcome.State.Status.Should().Be(RebuildStatus.Completed);
         outcome.State.ActiveVersion.Should().Be(started.RebuildingVersion!.Value);
         outcome.DiscardedVersion.Should().Be(started.ActiveVersion);
+    }
+
+    /// <summary>
+    /// <c>CompletePromotionAsync</c> when no rebuild row exists at all must throw
+    /// <see cref="RebuildStateException"/> even with <c>force: true</c>. Force overrides an
+    /// unfinished rebuild, not the absence of one.
+    /// </summary>
+    [Fact]
+    public async Task CompletePromotion_WithNoRebuildRow_IsRejected()
+    {
+        if (!SupportsCoordinatorOperations)
+            Assert.Skip("Requires coordinator operations.");
+
+        var store = await CreateStore();
+
+        var act = () => AsCoordinator(store).CompletePromotionAsync(ProcessorId, force: true, Ct);
+
+        await act.Should().ThrowAsync<RebuildStateException>(
+            "force overrides an unfinished rebuild, not the absence of one");
     }
 
     // ── Coordinator: CompleteAbort ─────────────────────────────────────────────
@@ -473,6 +559,12 @@ public abstract class ProjectionRebuildStoreSpecification
 
         // After the first promotion: active_version = 2, last_allocated_version = 2.
         // The second rebuild must get version 3.
-        second.RebuildingVersion.Should().BeGreaterThan(first.RebuildingVersion!.Value);
+        second.ActiveVersion.Should().Be(
+            first.RebuildingVersion!.Value,
+            "promotion makes the rebuilt version the active one");
+        second.RebuildingVersion.Should().Be(
+            first.LastAllocatedVersion + 1,
+            "versions are allocated from the high-water mark, so they never collide with live rows");
+        second.CompletedAt.Should().BeNull("the previous rebuild's completion must not linger");
     }
 }
