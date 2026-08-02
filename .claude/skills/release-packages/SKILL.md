@@ -68,7 +68,8 @@ onward.
 6. **Watch the publish run and check the nuget.org steps ran rather than being skipped.** A green
    run proves nothing on its own — if `release` was `false`, the push steps are skipped and the run
    is still green.
-7. **Verify what shipped** (below). Then write the GitHub release.
+7. **Verify what shipped** (below). The GitHub release is not yours to write — `github-release.yml`
+   creates it from the tag's `CHANGELOG.md` section. Check it appeared.
 
 Exact commands for each step: [REFERENCE.md](REFERENCE.md)
 

@@ -119,15 +119,25 @@ pushes to nuget.org via trusted publishing.
 Tagging is deliberately a human step and deliberately last. A push to nuget.org can be unlisted
 but never deleted, and the package ID is never reclaimable.
 
-### 5. Verify, then write the GitHub release
+### 5. Verify
+
+The GitHub release writes itself. `github-release.yml` fires on the same tag and creates it from
+that version's `CHANGELOG.md` section, with a **Full changelog** compare link. There is nothing to
+paste — the notes you edited on the release pull request are the notes on the releases page, which
+is what stops the two from drifting. It fails loudly if the section is missing rather than
+publishing an empty release, and it never overwrites a release that already exists.
+
+To backfill an older tag, or replace a release deleted by mistake, run it from
+`workflow_dispatch` with the tag.
+
+Verifying the packages is still yours:
+
 
 A green publish run means the commands exited zero, not that the package is correct — `0.1.0`
 shipped with no README on any of its ten nuget.org pages and every check was green. Check the push
 step for warnings, confirm the versions indexed, and read the `.nuspec` back out of a downloaded
 `.nupkg`. The `release-packages` skill in `.claude/skills/` has the commands and the traps this
 repository has actually hit.
-
-Then create the GitHub release from the tag and paste in the changelog section.
 
 ## Patching an older line
 
@@ -250,8 +260,10 @@ gh secret set RELEASE_TOKEN --repo codest-be/alberto
 | `.github/scripts/compute-version.sh` | Works out the next version |
 | `.github/scripts/draft-release-notes.sh` | Drafts a changelog section from a milestone |
 | `.github/scripts/apply-release.py` | Version bump, changelog cut, public-API promotion |
+| `.github/scripts/extract-changelog-section.py` | One version's section, as a release body |
 | `.github/scripts/check-pr-policy.sh` | Issue link, milestone, `breaking-change` agreement |
 | `.github/workflows/release.yml` | Opens the release pull request |
+| `.github/workflows/github-release.yml` | Creates the GitHub release, on a tag |
 | `.github/workflows/cut-release-branch.yml` | Creates `release/X.Y` |
 | `.github/workflows/backport.yml` | Cherry-picks a merged change onto a release branch |
 | `.github/workflows/publish-packages.yml` | Packs and pushes, on a tag |
