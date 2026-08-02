@@ -498,6 +498,7 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
     /// Runs against the freshly allocated rebuilding version before the abort, for tests that
     /// need that version to hold something. Re-runs on each attempt.
     /// </param>
+    /// <param name="ct">Cancels the retry loop and the coordinator calls it makes.</param>
     private async Task<(ProjectionRebuildState Started, RebuildOutcome Outcome)>
         AbortAFreshRebuildAsync(Func<int, Task>? afterStart, CancellationToken ct)
     {

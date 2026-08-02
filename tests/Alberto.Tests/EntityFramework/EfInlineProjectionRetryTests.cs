@@ -15,7 +15,7 @@ namespace Alberto.Tests.EntityFramework;
 ///
 /// Uses <see cref="EfProjectionTestFixture"/> for a shared Postgres container so the
 /// real EF query path (entity load via <c>ToDictionaryAsync</c>) exercises actual SQL.
-/// Save behaviour is controlled via <see cref="ControlledDbContextFactory.SaveInterceptor"/>
+/// Save behaviour is controlled via <see cref="EfTestDbContext.SaveInterceptor"/>
 /// to avoid needing full concurrency setup in the DB.
 /// </summary>
 public sealed class EfInlineProjectionRetryTests(EfProjectionTestFixture fixture)

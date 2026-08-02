@@ -24,7 +24,7 @@ public sealed class StateStoreRebuildVersionFixture(PostgresCluster cluster)
 }
 
 /// <summary>
-/// Adapter-specific facts that go beyond the <see cref="StateStoreSpecification{TState}"/>
+/// Adapter-specific facts that go beyond the <see cref="Alberto.Testing.Xunit.StateStoreSpecification{TState}"/>
 /// contract — either because they test behaviour that is not part of the
 /// <see cref="IStateStore{TState}"/> interface (<c>ListRecentAsync</c>, entity stamping)
 /// or because they exercise the EF retry/conflict machinery that is an implementation
@@ -32,7 +32,7 @@ public sealed class StateStoreRebuildVersionFixture(PostgresCluster cluster)
 ///
 /// The version-isolation contract facts (writes invisible at another version, deletes
 /// scoped to their version, promotion following, default-is-1) have been absorbed into
-/// <see cref="StateStoreSpecification{TState}"/> and are exercised against all three
+/// <see cref="Alberto.Testing.Xunit.StateStoreSpecification{TState}"/> and are exercised against all three
 /// adapters there.
 /// </summary>
 public sealed class StateStoreRebuildVersionTests(StateStoreRebuildVersionFixture fixture)

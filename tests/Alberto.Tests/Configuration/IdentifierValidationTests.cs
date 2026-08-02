@@ -15,10 +15,15 @@ internal sealed record IdentifierProbeEvent(string Id) : IEvent;
 /// <summary>
 /// A handler whose type-derived processor id ("catalog") is a reserved word.
 /// Naming it "catalog" exercises the code path where ValidateProcessorIdArg receives a reserved
-/// word that came from ProcessorId.For<T>(), so the error message directs the user to add
-/// [ProcessorId(...)] to the type rather than change a string they explicitly typed.
+/// word that came from <c>ProcessorId.For&lt;T&gt;()</c>, so the error message directs the user to
+/// add <c>[ProcessorId(...)]</c> to the type rather than change a string they explicitly typed.
 /// </summary>
+// CS8981 fires because the name is all-lowercase ascii, which is exactly the property under
+// test: the id has to collide with a reserved word, and it is derived from this type's name.
+// Renaming the type to satisfy the warning would delete the test.
+#pragma warning disable CS8981
 internal sealed class catalog
+#pragma warning restore CS8981
 {
     public Task HandleAsync(IdentifierProbeEvent e, CancellationToken ct) => Task.CompletedTask;
 }

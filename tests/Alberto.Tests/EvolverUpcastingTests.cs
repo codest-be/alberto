@@ -222,8 +222,9 @@ public sealed class EvolverTypeMismatchTests
 // ---------------------------------------------------------------------------
 
 /// <summary>
-/// Verifies that <see cref="DeciderExtensions.DecideAndAppendAsync{TState}"/> with an
-/// <see cref="EventSerializer"/> parameter applies the upcaster chain on reconstitution,
+/// Verifies that the <see cref="EventSerializer"/>-taking
+/// <see cref="DeciderExtensions.DecideAndAppendAsync{TState}(Alberto.IEventStore, Alberto.DcbQuery, Alberto.Evolver{TState}, System.Func{TState, Alberto.Decision}, System.Func{Alberto.IEvent, Alberto.IEventToPersist}, Alberto.EventSerializer, System.Threading.CancellationToken)"/>
+/// applies the upcaster chain on reconstitution,
 /// and that the existing overload (no serializer) still compiles and falls back to raw JSON.
 /// </summary>
 public sealed class DeciderExtensionsUpcasterTests
@@ -284,8 +285,10 @@ public sealed class DeciderExtensionsUpcasterTests
 // ---------------------------------------------------------------------------
 
 /// <summary>
-/// Verifies that the public <see cref="Evolver{TState}.Reconstitute"/> and
-/// <see cref="Evolver{TState}.Evolve"/> overloads still work without a serializer (raw JSON
+/// Verifies that the public
+/// <see cref="Evolver{TState}.Reconstitute(System.Collections.Generic.IEnumerable{Alberto.IEventEnvelope}, TState)"/>
+/// and <see cref="Evolver{TState}.Evolve(TState, Alberto.IEventEnvelope)"/>
+/// overloads still work without a serializer (raw JSON
 /// fallback), so existing callers that invoke the evolver directly are unaffected.
 /// </summary>
 public sealed class EvolverPublicApiBackwardsCompatTests

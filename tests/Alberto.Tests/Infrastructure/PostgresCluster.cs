@@ -135,7 +135,9 @@ public sealed class PostgresCluster : IAsyncLifetime
     /// Creates a fresh database from <paramref name="template"/> and returns a connection string
     /// for it. The template is built on first use and reused thereafter.
     /// </summary>
+    /// <param name="template">The schema the clone starts from; built on first use, then reused.</param>
     /// <param name="label">Names the database in server-side views; typically the fixture type.</param>
+    /// <param name="ct">Cancels the clone; the template build itself is not cancellable.</param>
     public async Task<string> CloneAsync(
         PostgresTemplate template,
         string label,
