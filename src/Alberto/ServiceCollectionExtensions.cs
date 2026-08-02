@@ -193,24 +193,6 @@ public static class ServiceCollectionExtensions
                     ? declared
                     : AlbertoModuleDefinition.ApplyConfiguration(declared, configuration);
 
-                var environment = provider.GetService<IHostEnvironment>();
-                if (environment is not null && !environment.IsDevelopment()
-                    && bound.Checkpoints.OrphanPolicy == OrphanCheckpointPolicy.Warn)
-                {
-                    // Only escalate when configuration did not explicitly choose Warn.
-                    // An operator who writes OrphanPolicy = Warn in appsettings.Production.json
-                    // is making a deliberate choice and must not be overridden.
-                    var orphanPolicySection = configuration?.GetSection(
-                        $"{declared.ConfigurationPath}:Checkpoints:OrphanPolicy");
-                    if (orphanPolicySection?.Exists() != true)
-                    {
-                        bound = bound with
-                        {
-                            Checkpoints = bound.Checkpoints with { OrphanPolicy = OrphanCheckpointPolicy.Strict },
-                        };
-                    }
-                }
-
                 if (shardId is not null)
                 {
                     // Null when configuration removed the shard. Its services are still

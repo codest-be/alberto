@@ -12,8 +12,10 @@ namespace Alberto;
 /// <remarks>
 /// An orphaned checkpoint almost always means a handler was renamed: the new name has no stored
 /// position, so it replays from the beginning, while the old name's position sits unused. That is
-/// silent, expensive, and easy to miss, so it is a warning in Development and a startup failure
-/// everywhere else.
+/// silent, expensive, and easy to miss, so it is reported as a warning in every environment. The
+/// other cause is a processor that was deleted outright, which is routine and leaves nothing but
+/// an inert row, so failing startup is opt-in
+/// (<see cref="OrphanCheckpointPolicy.Strict"/>) rather than the default.
 /// </remarks>
 internal sealed class OrphanCheckpointHostedService(
     AlbertoModuleDefinition definition,
