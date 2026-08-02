@@ -1,4 +1,11 @@
+<img src="https://raw.githubusercontent.com/codest-be/alberto/main/icon.png" alt="" width="96" align="right">
+
 # Alberto
+
+[![CI](https://github.com/codest-be/alberto/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/codest-be/alberto/actions/workflows/ci.yml)
+[![NuGet](https://img.shields.io/nuget/v/Alberto?logo=nuget&label=NuGet)](https://www.nuget.org/packages/Alberto)
+[![.NET](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/download/dotnet/10.0)
+[![Licence](https://img.shields.io/badge/licence-MIT-blue)](https://github.com/codest-be/alberto/blob/main/LICENSE)
 
 > **Early release — under active testing.** Alberto is in its first public `0.x` versions. It
 > builds clean, the suite is green, and it has not yet been run in anger by anyone but its author.
@@ -193,6 +200,18 @@ Outbox claims are time-bounded and token-fenced: a relay crash leaves a recovera
 row, and a stale relay cannot overwrite a newer claim. Delivery remains at-least-once; see
 [docs/reactors-and-outbox.md](https://github.com/codest-be/alberto/blob/main/docs/reactors-and-outbox.md#claim-leases-and-relay-crashes).
 
+## Contributing
+
+Bug reports and API feedback are the most useful thing you can send right now. Issues go on the
+[issue tracker](https://github.com/codest-be/alberto/issues); before opening a pull request, read
+[CONTRIBUTING.md](https://github.com/codest-be/alberto/blob/main/CONTRIBUTING.md) — it covers the
+build, the public-API tracking files a change has to update, the code style, and the event
+deserialization rule.
+
+Security vulnerabilities do **not** go on the issue tracker. Use GitHub's private vulnerability
+reporting, as described in
+[SECURITY.md](https://github.com/codest-be/alberto/blob/main/SECURITY.md).
+
 ## Licence
 
-MIT.
+[MIT](https://github.com/codest-be/alberto/blob/main/LICENSE).
