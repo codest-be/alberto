@@ -206,7 +206,8 @@ Bug reports and API feedback are the most useful thing you can send right now. I
 [issue tracker](https://github.com/codest-be/alberto/issues); before opening a pull request, read
 [CONTRIBUTING.md](https://github.com/codest-be/alberto/blob/main/CONTRIBUTING.md) — it covers the
 build, the public-API tracking files a change has to update, the code style, and the event
-deserialization rule.
+deserialization rule. Participation is governed by the
+[Code of Conduct](https://github.com/codest-be/alberto/blob/main/CODE_OF_CONDUCT.md).
 
 Security vulnerabilities do **not** go on the issue tracker. Use GitHub's private vulnerability
 reporting, as described in

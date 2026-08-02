@@ -13,8 +13,8 @@ Use [GitHub's private vulnerability reporting](https://docs.github.com/en/code-s
 for this repository. The maintainer will acknowledge the report within a reasonable
 time and coordinate a fix and disclosure.
 
-<!-- TODO: add a direct contact email address once one has been agreed upon.
-     Until then GitHub's private advisory flow is the only supported channel. -->
+If you cannot use that flow, email **security@codest.be** instead. Please do not
+include exploit details in a channel you are not sure is private.
 
 ## Scope
 
