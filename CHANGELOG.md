@@ -19,15 +19,32 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ## [0.1.3] — 2026-08-02
 
+No behavioural change to any package. One documentation correction reaches consumers through
+IntelliSense; everything else is release process, recorded here because this file is the
+project's release record.
+
 ### Fixed
 
-- The release version is derived twice, from two sources that can disagree (#83)
+- `Evolver.Reconstitute`'s documentation pointed at a serializer-threaded overload that is
+  `internal`, so the call it suggested could not compile. It now names the two routes that are
+  actually reachable — `CommandPipeline.Load` and `DeciderExtensions.DecideAndAppendAsync`,
+  both of which thread `EventSerializer.Deserialize` for you.
 
 ### Changed
 
-- Consolidate the packable package list so the workflows cannot drift from packages.txt (#85)
-- The GitHub release is created by hand, so it will eventually not be created (#81)
-- No per-release changelog, and no way to target a change at a specific version (#77)
+Release process only; no effect on the shipped assemblies.
+
+- Every release now has a changelog section, and every pull request must link an issue whose
+  milestone names the version it ships in. Versions are targeted rather than fixed forward —
+  a patch for an older line is released from that line's `release/**` branch (#77)
+- The version a release carries is the milestone's title, not something derived from commit
+  history and labels. There were previously two sources for it and they could disagree
+  silently (#83)
+- The GitHub release is created from this file when a version tag is pushed, rather than
+  written by hand afterwards (#81)
+- The packable package set is read from `.github/packages.txt` everywhere it is enumerated, so
+  the pack loops cannot drift apart. The publish workflow's allowlist stays deliberately
+  separate as an independent second statement of what may reach nuget.org (#85)
 
 ---
 
