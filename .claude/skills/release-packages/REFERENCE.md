@@ -14,30 +14,47 @@ gh run list --branch main --limit 3
 
 The commit you intend to tag must already be on `origin/main` with a green CI run.
 
-## 2. Bump the version
+## 2. Prepare the release
 
-Edit `<VersionPrefix>` in `Directory.Build.props`, then confirm nothing else pinned the old one:
+The version bump, the changelog section and the public-API promotion are done by the **Release**
+workflow, not by hand. The milestone you pass it is the version.
+
+```bash
+gh milestone list --repo codest-be/alberto 2>/dev/null || \
+  gh api 'repos/codest-be/alberto/milestones?state=all&per_page=100' \
+    --jq '.[] | "\(.title)\t\(.state)\t\(.open_issues) open / \(.closed_issues) closed"'
+
+gh workflow run Release --ref main -f milestone=0.2.0 -f dry_run=true
+```
+
+Read the dry run before the real one. It refuses a milestone that does not exist, has no closed
+issues, is not ahead of the branch's `VersionPrefix`, or is a patch while public API is unshipped.
+
+```bash
+gh workflow run Release --ref main -f milestone=0.2.0 -f dry_run=false
+```
+
+Then **edit the drafted notes on the pull request it opens** — the entries are issue titles, and
+this is the only editing pass a release gets. Do not hand-edit `CHANGELOG.md` or `<VersionPrefix>`
+outside that pull request.
+
+## 3. Check nothing else pinned the old version
 
 ```bash
 git grep -n "0\.1\.1" -- '*.yml' '*.props' '*.csproj' '*.json'
 ```
 
-Anything that matches outside `Directory.Build.props` and `CHANGELOG.md` is a hardcoded version
-that must be derived instead. The pattern both workflows use:
+Anything outside `Directory.Build.props` and `CHANGELOG.md` is a hardcoded version that must be
+derived instead. The pattern the workflows use:
 
 ```bash
 PREFIX=$(sed -n 's:.*<VersionPrefix>\(.*\)</VersionPrefix>.*:\1:p' Directory.Build.props | head -1)
 ```
 
-## 3. Update the CHANGELOG
+## 4. Merge, then wait
 
-Move the shipped items out of `[Unreleased]` into a new `## [X.Y.Z]` section. As of 0.1.2 the
-CHANGELOG had no entries for 0.1.0, 0.1.1 or 0.1.2 — the step was missed on every release so far,
-so check the file rather than assuming the previous release set a precedent.
-
-## 4. Push to main
-
-In a worktree, `git checkout main` fails when another worktree holds it. Push explicitly:
+Merging the release pull request is what puts the new version on `main`. In a worktree,
+`git checkout main` fails when another worktree holds it — push explicitly if you need to:
 
 ```bash
 git push origin HEAD:main
@@ -70,7 +87,16 @@ git push origin v0.1.2
 
 The workflow fails the run if `v0.1.2` disagrees with `VersionPrefix`, before anything is pushed.
 
-## 6. Watch the run, and confirm the nuget.org steps were not skipped
+## 6. Watch the runs, and confirm the nuget.org steps were not skipped
+
+The tag starts two workflows: **Publish NuGet Packages** and **GitHub release**. The second builds
+the releases-page entry from the tag's `CHANGELOG.md` section and fails if that section is missing,
+so check it as well as the publish run:
+
+```bash
+gh release view "v0.1.2" --repo codest-be/alberto --json name,isDraft,url -q '.'
+```
+
 
 ```bash
 RUN=$(gh run list --workflow "Publish NuGet Packages" --limit 1 --json databaseId -q '.[0].databaseId')
@@ -150,16 +176,22 @@ magick compare -metric AE x/icon.png icon.png null:   # 0 means identical
 
 ## 8. GitHub release
 
+`github-release.yml` already created it from the tag's `CHANGELOG.md` section. There is nothing to
+write — the notes had their editing pass on the release pull request, and this is what keeps the
+releases page and the changelog from drifting.
+
+Only if it is missing (the workflow was disabled, or the tag predates it):
+
 ```bash
-gh release create v0.1.2 --title "Alberto 0.1.2" --notes "$(cat <<'MD'
-<notes>
-MD
-)"
+gh workflow run "GitHub release" --repo codest-be/alberto -f tag=v0.1.2
 ```
 
-Match the existing tone: state whether there are API or behaviour changes in the first line, then
-explain *why* each change was needed, not only what changed. `gh release view v0.1.1 --json body`
-is the reference.
+That is also the way to backfill an old tag. It refuses to overwrite a release that already exists,
+so it is safe to re-run.
+
+The tone to match, if you are ever writing one by hand: state whether there are API or behaviour
+changes in the first line, then explain *why* each change was needed, not only what changed.
+`gh release view v0.1.1 --json body` is the reference.
 
 ## Regenerating the icon
 

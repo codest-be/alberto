@@ -13,7 +13,7 @@ lockstep. There is no per-package versioning.
 | Get a change into the next release | Open an issue, give it a milestone, link the pull request with `Closes #123` |
 | Know which version my change ships in | Read the milestone on the issue |
 | Ship a breaking change | Label the pull request `breaking-change`, target a major milestone |
-| Cut a release | Run **Release** with `dry_run` on, read it, run it again with `dry_run` off |
+| Cut a release | Run **Release** with the milestone, `dry_run` on; read it; run it again with `dry_run` off |
 | Publish it | Merge the release pull request, then tag the merge commit |
 | Patch an older line | Cut `release/X.Y`, fix on `main`, label the pull request `backport/X.Y` |
 
@@ -25,6 +25,11 @@ not the merge order, not whatever `main` happens to be at.
 That is the whole point. A change is scheduled into a version when it is triaged, which means a
 fix can be aimed at `1.0.2` while `main` is already working on `1.1.0`. This is why the project
 does not fix forward.
+
+It is also literally true rather than a convention: the milestone is the input to the release, its
+title *is* the version number, and its closed issues are the notes. Nothing derives a version from
+anything else. Releasing several changes together is therefore not a separate act — putting them
+on one milestone is the act.
 
 Milestones are named for the exact version they ship: `1.1.0`, `1.0.2`, `2.0.0`. Not `v1.1.0`,
 not `Q3`, not `Next`. `check-pr-policy.sh` enforces the shape.
@@ -44,8 +49,8 @@ Standard semver, with the 0.y.z clause while the project is pre-1.0:
 | Fix, no API change | patch — `1.0.1` | patch — `0.1.2` |
 
 Pre-1.0 there is no major slot to increment, so breaks and additions share the minor slot. That
-is not sloppiness, it is what `0.y.z` means: no stability guarantee yet. Going to `1.0.0` is
-therefore always a deliberate act — the automation will never choose it for you.
+is not sloppiness, it is what `0.y.z` means: no stability guarantee yet. Going to `1.0.0` is a
+deliberate act, and it looks like one: you make the `1.0.0` milestone and release it.
 
 ### `breaking-change`
 
@@ -67,7 +72,10 @@ The packable projects use `Microsoft.CodeAnalysis.PublicApiAnalyzers`. Adding a 
 fails the build until it is declared in that project's `PublicAPI.Unshipped.txt`, so `Unshipped`
 cannot be quietly stale — which is what makes it usable as a signal.
 
-- Non-empty `Unshipped` → the release is at least a minor.
+- Non-empty `Unshipped` → the release is at least a minor. `resolve-version.sh` refuses a patch
+  milestone while any packable project has unshipped entries, which is the only automated check on
+  the additive half of semver — `check-pr-policy.sh` reconciles `breaking-change` against the
+  milestone, but nothing else reads the analyzer.
 - `Shipped` is only ever written by the release workflow. Do not promote entries by hand.
 
 `Alberto.Admin` and `Alberto.Admin.Postgres` are parked and excluded — see `.github/packages.txt`
@@ -78,16 +86,27 @@ and the admin-surface note in `CLAUDE.md`.
 ### 1. Dry run
 
 Run the **Release** workflow from `main` (or from a `release/**` branch, for a patch on an older
-line). Leave `dry_run` checked — it is checked by default.
+line), and give it the `milestone` to release. Leave `dry_run` checked — it is checked by default.
 
-- `bump: auto` derives the version: any `breaking-change` pull request since the last tag → major,
-  else non-empty `Unshipped` → minor, else patch.
-- `bump: major|minor|patch` forces the slot.
-- `version:` sets it outright and overrides `bump`. **This is how you cut `1.0.0`** — `auto` will
-  not leave the 0.x line on its own.
+The milestone's title is the version. `1.0.0` needs no special handling: make the milestone, put
+the issues on it, release it.
 
-The run prints the version it computed and the changelog section it drafted, and writes nothing.
-Read both. If the version is wrong, the milestones are wrong; fix them and run again.
+`version:` is the escape hatch for a release that has no milestone — a one-off with nothing
+triaged into it. It skips every check below, so reach for it rarely.
+
+Before doing anything, the run rejects a release that is wrong on its face:
+
+| Refused | Why |
+|---|---|
+| Milestone does not exist, or is not an `X.Y.Z` | There is nothing to take a version or notes from |
+| Milestone has no closed issues | Nothing to release |
+| Milestone is not ahead of the current `VersionPrefix` | It would move the version backwards or republish one. Usually means the wrong branch |
+| Unshipped public API aimed at a patch | Added API is at least a minor |
+
+An open issue left on the milestone is a warning rather than a refusal — punting unfinished work
+to the next milestone mid-release is normal, and only closed issues become notes.
+
+The run then prints the version and the drafted section, and writes nothing. Read both.
 
 ### 2. Real run
 
@@ -119,15 +138,22 @@ pushes to nuget.org via trusted publishing.
 Tagging is deliberately a human step and deliberately last. A push to nuget.org can be unlisted
 but never deleted, and the package ID is never reclaimable.
 
-### 5. Verify, then write the GitHub release
+### 5. Verify
 
-A green publish run means the commands exited zero, not that the package is correct — `0.1.0`
+The GitHub release writes itself. `github-release.yml` fires on the same tag and creates it from
+that version's `CHANGELOG.md` section, with a **Full changelog** compare link. There is nothing to
+paste — the notes you edited on the release pull request are the notes on the releases page, which
+is what stops the two from drifting. It fails loudly if the section is missing rather than
+publishing an empty release, and it never overwrites a release that already exists.
+
+To backfill an older tag, or replace a release deleted by mistake, run it from
+`workflow_dispatch` with the tag.
+
+Verifying the packages is still yours. A green publish run means the commands exited zero, not that the package is correct — `0.1.0`
 shipped with no README on any of its ten nuget.org pages and every check was green. Check the push
 step for warnings, confirm the versions indexed, and read the `.nuspec` back out of a downloaded
 `.nupkg`. The `release-packages` skill in `.claude/skills/` has the commands and the traps this
 repository has actually hit.
-
-Then create the GitHub release from the tag and paste in the changelog section.
 
 ## Patching an older line
 
@@ -155,15 +181,18 @@ to do it by hand. It does not guess.
 
 ### Release the line
 
-Run **Release** from `release/1.0`. It computes `1.0.2` from that branch's `VersionPrefix`,
-opens the release pull request against that branch, and you tag from there.
+Run **Release** from `release/1.0` with the `1.0.2` milestone. It opens the release pull request
+against that branch, and you tag from there. The branch's own `VersionPrefix` is what the
+milestone is checked against, which is what stops a `1.1.x` milestone being released from a `1.0`
+branch by accident.
 
 Positions, versions and history on a release branch are its own. Do not merge a release branch
 back into `main`.
 
 ## What the automation will not do
 
-- **Choose `1.0.0`.** Leaving the 0.x line is a decision, not a computation.
+- **Choose the version.** It reads the milestone you hand it. Nothing infers a version from
+  labels, commits or history — there is one source, and you set it during triage.
 - **Write your release notes.** It drafts from issue titles; that is a starting point.
 - **Tag.** The last step before a permanent nuget.org push is a person.
 - **Resolve a backport conflict.**
@@ -173,11 +202,11 @@ back into `main`.
 
 The policy above is only real because the repository enforces it. What is set, and why:
 
-**Merging.** Squash only — merge commits and rebase merges are off. Every change is one commit on
-`main` whose subject ends `(#123)`, which is what `compute-version.sh` reads to find the pull
-requests in a release and what `backport.yml` cherry-picks. `squash_merge_commit_title` is pinned
-to `PR_TITLE` for the same reason: the default would use the commit subject instead whenever a
-pull request had exactly one commit, dropping the `(#123)`.
+**Merging.** Squash only — merge commits and rebase merges are off. One commit per change is what
+makes `backport.yml` able to cherry-pick a merged pull request onto a release line as a single
+`-x` pick. `squash_merge_commit_title` is pinned to `PR_TITLE` so every subject ends `(#123)`;
+that is now a readability convention rather than something a script parses, since the release
+tooling reads milestones and `backport.yml` resolves the commit through the API.
 
 **`main` and `release/**`.** Both require a pull request with resolved review threads. Direct
 pushes, force-pushes and deletion are blocked. `main` additionally requires branches to be up to
@@ -247,11 +276,13 @@ gh secret set RELEASE_TOKEN --repo codest-be/alberto
 | | |
 |---|---|
 | `.github/packages.txt` | The ten packages that ship. Scripts read this, never a `src/*` glob |
-| `.github/scripts/compute-version.sh` | Works out the next version |
+| `.github/scripts/resolve-version.sh` | Turns the milestone into the version, and refuses a wrong one |
 | `.github/scripts/draft-release-notes.sh` | Drafts a changelog section from a milestone |
 | `.github/scripts/apply-release.py` | Version bump, changelog cut, public-API promotion |
+| `.github/scripts/extract-changelog-section.py` | One version's section, as a release body |
 | `.github/scripts/check-pr-policy.sh` | Issue link, milestone, `breaking-change` agreement |
 | `.github/workflows/release.yml` | Opens the release pull request |
+| `.github/workflows/github-release.yml` | Creates the GitHub release, on a tag |
 | `.github/workflows/cut-release-branch.yml` | Creates `release/X.Y` |
 | `.github/workflows/backport.yml` | Cherry-picks a merged change onto a release branch |
 | `.github/workflows/publish-packages.yml` | Packs and pushes, on a tag |
