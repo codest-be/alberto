@@ -1,1 +1,29 @@
 #nullable enable
+Alberto.Testing.Spec
+Alberto.Testing.Specification<TState>
+Alberto.Testing.Specification<TState>.Given(TState initialState, params Alberto.IEvent![]! events) -> Alberto.Testing.Specification<TState>!
+Alberto.Testing.Specification<TState>.Given(params Alberto.IEvent![]! events) -> Alberto.Testing.Specification<TState>!
+Alberto.Testing.Specification<TState>.GivenNoEvents() -> Alberto.Testing.Specification<TState>!
+Alberto.Testing.Specification<TState>.ThenState(System.Action<TState>! assert) -> Alberto.Testing.Specification<TState>!
+Alberto.Testing.Specification<TState>.When(System.Func<TState, Alberto.Decision>! decide) -> Alberto.Testing.Specification<TState>!
+Alberto.Testing.Specification<TState>.When<TResult>(System.Func<TState, Alberto.Decision<TResult>>! decide) -> Alberto.Testing.Specification<TState>!
+Alberto.Testing.SpecificationBase<TSelf>
+Alberto.Testing.SpecificationBase<TSelf>.ThenEmits<TEvent>(System.Func<TEvent, bool>? match = null) -> TSelf!
+Alberto.Testing.SpecificationBase<TSelf>.ThenEmitsNothing() -> TSelf!
+Alberto.Testing.SpecificationBase<TSelf>.ThenEmitsOnly<TEvent>(System.Func<TEvent, bool>? match = null) -> TSelf!
+Alberto.Testing.SpecificationBase<TSelf>.ThenEvents(System.Action<System.Collections.Generic.IReadOnlyList<Alberto.IEvent!>!>! assert) -> TSelf!
+Alberto.Testing.SpecificationBase<TSelf>.ThenFails() -> TSelf!
+Alberto.Testing.SpecificationBase<TSelf>.ThenProblems(System.Action<System.Collections.Generic.IReadOnlyList<Alberto.Problem!>!>! assert) -> TSelf!
+Alberto.Testing.SpecificationBase<TSelf>.ThenFails(Alberto.Problem! expected) -> TSelf!
+Alberto.Testing.SpecificationBase<TSelf>.ThenFails(string! code) -> TSelf!
+Alberto.Testing.SpecificationBase<TSelf>.ThenResult<TResult>(System.Action<TResult>! assert) -> TSelf!
+Alberto.Testing.SpecificationBase<TSelf>.ThenSucceeds() -> TSelf!
+Alberto.Testing.SpecificationException
+Alberto.Testing.SpecificationException.SpecificationException() -> void
+Alberto.Testing.SpecificationException.SpecificationException(string! message) -> void
+Alberto.Testing.SpecificationException.SpecificationException(string! message, System.Exception! innerException) -> void
+Alberto.Testing.StatelessSpecification
+Alberto.Testing.StatelessSpecification.When(System.Func<Alberto.Decision>! decide) -> Alberto.Testing.StatelessSpecification!
+Alberto.Testing.StatelessSpecification.When<TResult>(System.Func<Alberto.Decision<TResult>>! decide) -> Alberto.Testing.StatelessSpecification!
+static Alberto.Testing.Spec.For<TState>(Alberto.Evolver<TState>! evolver) -> Alberto.Testing.Specification<TState>!
+static Alberto.Testing.Spec.Stateless() -> Alberto.Testing.StatelessSpecification!

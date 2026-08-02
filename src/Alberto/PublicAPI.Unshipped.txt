@@ -1,1 +1,2 @@
 #nullable enable
+Alberto.Evolver<TState>.Evolve(TState state, Alberto.IEvent! event) -> TState
