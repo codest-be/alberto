@@ -111,9 +111,8 @@ internal sealed class EvolverDispatcher<TState>
                         $"{_declaredVersion}. Raw JSON deserialization would produce stale state. " +
                         "Supply an EventSerializer so the upcaster chain runs before reconstitution: " +
                         "call evolver.Reconstitute(envelopes, initial, serializer.Deserialize), " +
-                        "use CommandPipeline.Load(boundary, evolver) with an AlbertoStore that has " +
-                        "the serializer, or use DeciderExtensions.DecideAndAppendAsync with the " +
-                        "serializer overload.");
+                        "or use AlbertoStore.Handle(...).Load(boundary, evolver).Decide(...).Commit(...) " +
+                        "with an AlbertoStore that has the serializer.");
 
                 @event = JsonSerializer.Deserialize(envelope.EventData, eventType)
                     ?? throw new InvalidOperationException(

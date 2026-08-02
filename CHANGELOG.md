@@ -59,9 +59,8 @@ project's release record.
 ### Fixed
 
 - `Evolver.Reconstitute`'s documentation pointed at a serializer-threaded overload that is
-  `internal`, so the call it suggested could not compile. It now names the two routes that are
-  actually reachable. `CommandPipeline.Load` and `DeciderExtensions.DecideAndAppendAsync`,
-  both of which thread `EventSerializer.Deserialize` for you.
+  `internal`, so the call it suggested could not compile. It now names the canonical route:
+  `CommandPipeline.Load(boundary, evolver)`, which threads `EventSerializer.Deserialize` for you.
 
 ### Changed
 
