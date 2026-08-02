@@ -191,104 +191,102 @@ whichever bus you put behind the seam.
 
 ### A worked adapter
 
-Three things catch every adapter, whichever bus you use. This walks through them with Rebus, not
-because Rebus is recommended, but because the adapter has to be written against *something*. The
-same three appear with MassTransit, Wolverine or a client you wrote yourself. The complete version,
-with an integration test that drives it through a real relay against PostgreSQL, is in
+An adapter is about twenty lines. The complete version, with integration tests that drive it
+through a real relay against PostgreSQL, is in
 [tests/Alberto.Tests.Messaging.Rebus](https://github.com/codest-be/alberto/tree/main/tests/Alberto.Tests.Messaging.Rebus).
-Copy it into your own project; it is a recipe, not a package.
+It is written against Rebus because it has to be written against something; nothing below is
+specific to Rebus except the two client calls. Copy it. It is a recipe, not a package.
 
-**1. The payload is already serialized.** `ExternalMessage.Payload` is a JSON string, not an object.
-Hand it to a bus client that serializes for you and you get a double-encoded body: the whole
-document wrapped in quotes with its own quotes escaped. Consumers then have to parse twice, and
-usually nobody notices until one is written by a different team.
-
-The fix is to give the bus a serializer that writes those bytes through untouched. Alberto's
-message needs an envelope type to travel in:
+Buses dispatch handlers by .NET type and Alberto hands over a JSON string, so the string needs a
+type to travel in:
 
 ```csharp
-public sealed record AlbertoOutboxPayload(string MessageType, string Version, string Payload);
+public sealed record AlbertoMessage(string MessageType, string Version, string Payload);
 ```
 
-and the serializer writes `Payload` directly rather than encoding it:
+and that is the whole adapter:
 
 ```csharp
-public sealed class AlbertoOutboxSerializer : ISerializer
+public sealed class RebusTransport(IBus bus) : IMessageTransport
 {
-    public Task<TransportMessage> Serialize(Message message)
+    public Task PublishAsync(ExternalMessage message, CancellationToken ct = default)
     {
-        var payload = (AlbertoOutboxPayload)message.Body;
+        var body = new AlbertoMessage(message.MessageType, message.Version, message.Payload);
+        var headers = message.Metadata.Count > 0
+            ? new Dictionary<string, string>(message.Metadata)
+            : null;
 
-        var headers = new Dictionary<string, string>(message.Headers)
-        {
-            [Headers.ContentType] = "application/json;charset=utf-8",
-            // A sentinel, not a CLR type name: nothing should try to load this as a .NET type.
-            [Headers.Type] = "alberto-outbox",
-            ["alberto-message-type"] = payload.MessageType,
-            ["alberto-version"] = payload.Version,
-        };
-
-        // Exactly the bytes the outbox stored. No re-encoding.
-        return Task.FromResult(
-            new TransportMessage(headers, Encoding.UTF8.GetBytes(payload.Payload)));
+        return message.Destination is not null
+            ? bus.Advanced.Routing.Send(message.Destination, body, headers)
+            : bus.Send(body, headers);
     }
 
-    public Task<Message> Deserialize(TransportMessage transportMessage) { /* symmetric */ }
+    public Task StartAsync(CancellationToken ct = default) => Task.CompletedTask;
+    public Task StopAsync(CancellationToken ct = default) => Task.CompletedTask;
 }
 ```
 
-`MessageType` and `Version` ride as headers so a consumer can dispatch on Alberto's own event type
-rather than on a .NET type it would otherwise have to share.
+No custom serialization, no configuration beyond wiring the bus up as you already would.
+`Payload` arrives at the consumer as a string field it parses itself, which is an ordinary
+arrangement and not a problem to be solved.
 
-**2. `Destination` is optional, and the fallback is not free.** `ExternalMessage.Destination` is
-null when the outbox mapping did not set one, and null means "use the transport's default routing".
-Honouring that is two branches:
+Two things in there are worth spelling out.
+
+**Both lifecycle methods are empty on purpose.** The host constructed the bus and the container
+disposes it. Alberto calls `StartAsync` and `StopAsync` as part of the relay lifecycle, but an
+adapter must not start or dispose a client it does not own.
+
+**A null `Destination` is not an error.** It means "use the transport's default routing", and
+honouring it is the `bus.Send` branch. That branch needs a mapping, because Rebus routes on the
+static type of what you hand it:
 
 ```csharp
-public async Task PublishAsync(ExternalMessage message, CancellationToken ct = default)
+.Routing(r => r.TypeBased().Map<AlbertoMessage>("target-queue"))
+```
+
+The mapping is on the *envelope*, and every Alberto message shares one envelope, so the fallback
+can only ever reach a single queue no matter how many event types flow through it. If different
+messages need different queues, set `Destination` in the outbox mapping. Any bus that routes on
+static type collapses the same way; it is not a Rebus quirk.
+
+#### Optional: raw JSON on the wire
+
+By default the wire body is the serialized envelope, with the payload inside it as an escaped
+string. If you would rather the body *be* the domain JSON, register a serializer that writes
+`Payload` through untouched. The adapter above does not change.
+
+```csharp
+public Task<TransportMessage> Serialize(Message message)
 {
-    var payload = new AlbertoOutboxPayload(
-        message.MessageType, message.Version, message.Payload);
+    var payload = (AlbertoMessage)message.Body;
 
-    var headers = message.Metadata.Count > 0
-        ? new Dictionary<string, string>(message.Metadata)
-        : null;
+    var headers = new Dictionary<string, string>(message.Headers)
+    {
+        [Headers.ContentType] = "application/json;charset=utf-8",
+        [Headers.Type] = "alberto-outbox",          // a sentinel, not a CLR type name
+        ["alberto-message-type"] = payload.MessageType,
+        ["alberto-version"] = payload.Version,
+    };
 
-    if (message.Destination is not null)
-        await _bus.Advanced.Routing.Send(message.Destination, payload, headers);
-    else
-        await _bus.Send(payload, headers);
+    // Exactly the bytes the outbox stored. No re-encoding.
+    return Task.FromResult(
+        new TransportMessage(headers, Encoding.UTF8.GetBytes(payload.Payload)));
 }
 ```
 
-The second branch has a catch that is easy to miss. Rebus routes `bus.Send` on the CLR type, so it
-needs a mapping, and without one it throws `ArgumentException` ("Cannot get destination for message
-of type ... because it has not been mapped"):
+`Deserialize` is the mirror. This costs about forty lines and both ends have to agree on it, and
+it buys two things. A consumer on another stack sees `{"orderId":...}` rather than an envelope
+wrapping an escaped string. And `rbs2-msg-type` carries a sentinel instead of a CLR type name, so
+the receiver needs neither `AlbertoMessage` on its classpath nor a type-name mapping; it dispatches
+on the `alberto-message-type` header, which is what a non-.NET consumer would want anyway.
 
-```csharp
-.Routing(r => r.TypeBased().Map<AlbertoOutboxPayload>("target-queue"))
-```
+Skip it if both ends are yours and both are .NET. Take it if the wire format is a contract with
+somebody else.
 
-That mapping is on the *envelope*, and every Alberto message shares it. So the fallback path can
-only ever reach one queue, no matter how many event types flow through it. If different messages
-need different queues, set `Destination` in the outbox mapping, or write a router that reads the
-`alberto-message-type` header. This is not a Rebus quirk: any bus that routes on the static type of
-what you hand it will collapse the same way, because the envelope is what it sees.
-
-**3. Start and stop are no-ops.** The host owns the bus client, so the adapter wraps a resolved
-`IBus` and leaves both lifecycle methods empty. Alberto calls them, but must not start or dispose a
-client it did not construct, and the DI container is already disposing it.
-
-```csharp
-public Task StartAsync(CancellationToken ct = default) => Task.CompletedTask;
-public Task StopAsync(CancellationToken ct = default) => Task.CompletedTask;
-```
-
-One more thing worth knowing when you write the test rather than the adapter: if you assert on a
-payload that has been through a `jsonb` column, compare it structurally with `JsonDocument`, never
-with string equality. PostgreSQL normalizes `jsonb` on the way in, reordering keys and dropping
-insignificant whitespace, so the string that comes back is not the string that went in even when
-nothing was lost.
+One note for when you write the test rather than the adapter: if you assert on a payload that has
+been through a `jsonb` column, compare it structurally with `JsonDocument` and never with string
+equality. PostgreSQL normalizes `jsonb` on the way in, reordering keys and dropping insignificant
+whitespace, so what comes back is not the string that went in even when nothing was lost.
 
 ### Claim leases and relay crashes
 

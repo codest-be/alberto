@@ -33,11 +33,10 @@ definition. Alberto sets them and forgets them.
 A broker binding in the box means that broker's client version in Alberto's release matrix, and a
 standing commitment to track its breaking changes. That is a real cost, and what it buys is smaller
 than the cost, because the seam is three methods wide. The worked adapter in
-`tests/Alberto.Tests.Messaging.Rebus` is about seventy lines of code across three files, and only a
-third of that is the transport. Most of the rest is a serializer, needed because Alberto hands over
-a JSON string rather than an object, and every adapter has to deal with that one way or another.
-Owning seventy lines you can read is cheaper than depending on a package that has to be republished
-every time the broker client moves.
+`tests/Alberto.Tests.Messaging.Rebus` is twenty lines: an envelope record, one method that picks
+between two client calls, and two lifecycle methods that do nothing on purpose. Owning twenty lines
+you can read is cheaper than depending on a package that has to be republished every time the
+broker client moves.
 
 The second reason matters more. Shipping a binding picks a winner. Rebus, MassTransit, Wolverine
 and a client you wrote yourself are indistinguishable from where Alberto sits, and Alberto has no
@@ -115,14 +114,21 @@ either.
 ## Writing an adapter
 
 [Implementing a transport](../reactors-and-outbox.md#implementing-a-transport) has the full
-contract, and [A worked adapter](../reactors-and-outbox.md#a-worked-adapter) walks through the three
-things that catch everybody:
+contract, and [A worked adapter](../reactors-and-outbox.md#a-worked-adapter) has the code. Two
+things are worth knowing before you write one:
 
-- `ExternalMessage.Payload` is already serialized JSON, so a bus client that serializes for you
-  produces a double-encoded body.
+- `StartAsync` and `StopAsync` should do nothing. The host constructed the bus client and the
+  container disposes it, so an adapter must not start or dispose one it does not own.
 - A null `Destination` means default routing, and on a bus that routes by static type the default
-  can only ever reach one queue, because every Alberto message shares one envelope type.
-- `StartAsync` and `StopAsync` are no-ops, because the host owns the bus client.
+  can only ever reach one queue, because every Alberto message shares one envelope type. Set
+  `Destination` when different messages need different queues.
+
+`ExternalMessage.Payload` is already-serialized JSON, so by default it rides as a string field
+inside that envelope and the consumer parses it. That is an ordinary arrangement, not a problem. If
+the wire format is a contract with someone outside your codebase, a serializer that writes the
+payload through as the message body costs about forty more lines and takes the .NET type off the
+wire entirely; [Optional: raw JSON on the
+wire](../reactors-and-outbox.md#optional-raw-json-on-the-wire) has it.
 
 The complete code, with an integration test that drives it through a real relay against PostgreSQL,
 is in
