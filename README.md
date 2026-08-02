@@ -7,11 +7,10 @@
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/download/dotnet/10.0)
 [![Licence](https://img.shields.io/badge/licence-MIT-blue)](https://github.com/codest-be/alberto/blob/main/LICENSE)
 
-> **Early release — under active testing.** Alberto is in its first public `0.x` versions. It
-> builds clean, the suite is green, and it has not yet been run in anger by anyone but its author.
-> Treat it as something to evaluate and experiment with, not to put in front of production traffic
-> yet. The API will make breaking changes before 1.0. See
-> [Project status](#project-status) for what that means in practice.
+> **Early release, under active testing.** Alberto is in its first public `0.x` versions. The
+> suite is green, but nobody except its author has run it in anger. Evaluate it and experiment
+> with it; do not put it in front of production traffic yet. The API will break before 1.0. See
+> [Project status](#project-status).
 
 An event store for .NET where the consistency boundary is a **query**, not an aggregate.
 
@@ -30,11 +29,11 @@ await store.Handle(new ReserveSeat(showId, "A12", customerId))
 ```
 
 That block loads exactly the events the decision depends on, folds them into state, decides, and
-appends — refusing the append if anything matching that same query landed in between. No aggregate
+appends, refusing the append if anything matching that same query landed in between. No aggregate
 root, no stream to pick in advance.
 
-**[Start here → docs/getting-started.md](https://github.com/codest-be/alberto/blob/main/docs/getting-started.md)** — a runnable 60-line sample, no
-database required.
+**[Start here → docs/getting-started.md](https://github.com/codest-be/alberto/blob/main/docs/getting-started.md)**.
+A runnable 60-line sample, no database required.
 
 ---
 
@@ -59,13 +58,13 @@ public sealed record SeatReserved(
 
 Each decision then declares its own boundary as a query over those tags. "This seat at this show"
 and "everything this customer has ever booked" are both first-class boundaries over the same
-event — no duplication, no coordination between them. Two people reserving different seats never
-contend; two people reserving the same seat always do.
+event, with no duplication and no coordination between them. Two people reserving different seats
+never contend; two people reserving the same seat always do.
 
 ## Why Alberto specifically
 
 - **Postgres, and nothing else.** The whole store is a handful of tables and functions in the
-  database your application already has — no broker, no separate event-store server. The boundary
+  database your application already has. No broker, no separate event-store server. The boundary
   check and the append run in one transaction under a transaction-scoped advisory lock, so a
   conflicting concurrent write is rejected rather than interleaved.
 - **A real async pipeline, not a `foreach`.** One control loop per module reads batches, dispatches
@@ -85,7 +84,7 @@ contend; two people reserving the same seat always do.
   rewind a processor; retry or dismiss dead letters; run a rebuild. Mutating commands confirm before
   they act and most of them take `--dry-run`; every command that reports takes `--json`, so the tool
   you use interactively is the one your runbooks call. See [docs/operations.md](https://github.com/codest-be/alberto/blob/main/docs/operations.md).
-- **OpenTelemetry throughout** — traces across the append→consume seam and metrics for lag,
+- **OpenTelemetry throughout.** Traces across the append→consume seam, and metrics for lag,
   conflicts, retries and dead letters.
 
 ## Install
@@ -104,9 +103,9 @@ dotnet add package Alberto.Postgres
 |---|---|
 | `Alberto` | Event store abstractions, control loop, middleware, projections, tenancy |
 | `Alberto.Commands` | The `AlbertoStore` command pipeline (`Handle → Load → Decide → Commit`) |
-| `Alberto.InMemory` | In-memory backend, checkpoint, dead-letter and state stores — dev and tests |
+| `Alberto.InMemory` | In-memory backend, checkpoint, dead-letter and state stores, for dev and tests |
 | `Alberto.Postgres` | PostgreSQL backend, migrations, leases |
-| `Alberto.EntityFramework` | EF Core–backed projections |
+| `Alberto.EntityFramework` | EF Core-backed projections |
 | `Alberto.Messaging` | Transactional outbox abstractions |
 | `Alberto.Messaging.Postgres` | PostgreSQL outbox store |
 | `Alberto.Telemetry` | OpenTelemetry tracing and metrics |
@@ -126,13 +125,15 @@ services.AddAlberto("tickets", builder => builder
     .WithControlLoop(o => o with { PollingInterval = TimeSpan.FromMilliseconds(50) }));
 ```
 
-Nothing is registered until the host starts — declaration, configuration overlay, validation, and
-service registration happen in three distinct phases. See
-[docs/configuration.md](https://github.com/codest-be/alberto/blob/main/docs/configuration.md) for the full picture. All knobs are also
-overridable from `Alberto:Modules:{moduleKey}:{Section}:{Property}` in `appsettings.json`.
+Nothing is registered until the host starts. Declaration, configuration overlay, validation, and
+service registration happen in three distinct phases; see
+[docs/configuration.md](https://github.com/codest-be/alberto/blob/main/docs/configuration.md).
+All knobs are also overridable from `Alberto:Modules:{moduleKey}:{Section}:{Property}` in
+`appsettings.json`.
 
 The full, runnable version of that program is
-[docs/getting-started.md](https://github.com/codest-be/alberto/blob/main/docs/getting-started.md) — it needs no Docker and no connection string.
+[docs/getting-started.md](https://github.com/codest-be/alberto/blob/main/docs/getting-started.md).
+It needs no Docker and no connection string.
 
 ## Documentation
 
@@ -156,12 +157,12 @@ The full, runnable version of that program is
 
 ```
 /src        Packable core libraries
-/apps       Example applications — Orders (run by .NET Aspire) and Payments (a library the Orders API reads from)
+/apps       Examples: Orders (run by .NET Aspire) and Payments (a library the Orders API reads from)
 /tools      The alberto operator CLI
 /tests      xUnit v3 unit + Testcontainers integration tests, and K6 load tests
 ```
 
-Run the whole example stack — Postgres, migrations, and the Orders GraphQL API — with:
+Run the whole example stack (Postgres, migrations, and the Orders GraphQL API) with:
 
 ```bash
 dotnet run --project apps/Alberto.AppHost
@@ -172,28 +173,25 @@ dotnet run --project apps/Alberto.AppHost
 Alberto is **pre-1.0 and under active testing**. `0.1.0` is the first version published to
 nuget.org.
 
-**What that means, concretely:**
-
-- **Expect breaking changes.** The public API is not frozen until 1.0. Every break is recorded in
+- **Expect breaking changes.** The public API is not frozen until 1.0, and some breaks will land in
+  the core append and projection APIs. Every one is recorded in
   [CHANGELOG.md](https://github.com/codest-be/alberto/blob/main/CHANGELOG.md), with the road to 1.0
-  collected in [docs/migrating-to-1.0.md](https://github.com/codest-be/alberto/blob/main/docs/migrating-to-1.0.md) —
-  but there will be breaks, and some will be in the core append and
-  projection APIs. Pin an exact version and read the release notes before you move.
-- **It is well tested, not yet well proven.** The suite covers the libraries with unit tests plus
-  Testcontainers-backed PostgreSQL integration tests, and it is green. That is evidence the code
-  does what its author intended — it is not the same thing as having survived other people's
-  production workloads, which it has not yet done.
-- **Please try it and report what breaks.** Evaluation, prototypes and side projects are exactly
-  the workloads this release is asking for. Bug reports and API feedback now are worth far more
-  than after 1.0 freezes the surface.
+  collected in [docs/migrating-to-1.0.md](https://github.com/codest-be/alberto/blob/main/docs/migrating-to-1.0.md).
+  Pin an exact version and read the release notes before you move.
+- **Well tested, not yet well proven.** Unit tests plus Testcontainers-backed PostgreSQL
+  integration tests, all green. That is evidence the code does what its author intended, not that
+  it has survived anyone else's production workload, which it has not.
+- **Please try it and report what breaks.** Evaluation, prototypes and side projects are the
+  workloads this release is asking for. Feedback now is worth far more than after 1.0 freezes the
+  surface.
 
 The multi-database tenant sharding feature is marked **experimental** (`[Experimental("ALB9001")]`
-on all public sharding types), which is a step beyond the general pre-1.0 caveat: it ships and its
-tests pass, but the API may change more sharply than the rest of the library.
+on all public sharding types), a step beyond the general pre-1.0 caveat: it ships and its tests
+pass, but the API may change more sharply than the rest of the library.
 
 The admin surface is deliberately **not published**. `Alberto.Admin` and `Alberto.Admin.Postgres`
 build and are tested, but they stay off nuget.org until the GraphQL API, MCP server and console
-that consume them ship — releasing the abstraction at 1.0 would freeze it under semver before its
+that consume them ship. Releasing the abstraction at 1.0 would freeze it under semver before its
 consumers exist.
 
 Outbox claims are time-bounded and token-fenced: a relay crash leaves a recoverable `processing`
@@ -202,15 +200,13 @@ row, and a stale relay cannot overwrite a newer claim. Delivery remains at-least
 
 ## Contributing
 
-Bug reports and API feedback are the most useful thing you can send right now. Issues go on the
-[issue tracker](https://github.com/codest-be/alberto/issues); before opening a pull request, read
-[CONTRIBUTING.md](https://github.com/codest-be/alberto/blob/main/CONTRIBUTING.md) — it covers the
-build, the public-API tracking files a change has to update, the code style, and the event
-deserialization rule. Participation is governed by the
+Issues go on the [issue tracker](https://github.com/codest-be/alberto/issues). Before opening a
+pull request, read [CONTRIBUTING.md](https://github.com/codest-be/alberto/blob/main/CONTRIBUTING.md),
+which covers the build, the public-API tracking files a change has to update, the code style, and
+the event deserialization rule. Participation is governed by the
 [Code of Conduct](https://github.com/codest-be/alberto/blob/main/CODE_OF_CONDUCT.md).
 
-Security vulnerabilities do **not** go on the issue tracker. Use GitHub's private vulnerability
-reporting, as described in
+Security vulnerabilities do **not** go on the issue tracker. See
 [SECURITY.md](https://github.com/codest-be/alberto/blob/main/SECURITY.md).
 
 ## Licence
