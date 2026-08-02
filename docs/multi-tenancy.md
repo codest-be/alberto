@@ -98,9 +98,9 @@ Each tenant's processing is claimed by one replica at a time via a lease in
 removing a replica moves only the tenants it has to.
 
 ```csharp
-.WithPostgres(options =>
+.WithPostgres(o => o with
 {
-    options.LeaseDuration = TimeSpan.FromSeconds(60);   // the default
+    LeaseDuration = TimeSpan.FromSeconds(60),   // the default
 })
 ```
 

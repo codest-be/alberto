@@ -187,14 +187,26 @@ receives the current CLR type.
 **Calling `Evolver.Reconstitute(envelopes)` directly (without a serializer) does not apply
 upcasting** and will throw `InvalidOperationException` if any envelope was stored at an older
 schema version than the handler type expects. A silent wrong answer is worse than a loud
-failure. If you need to call the evolver directly, use the serializer-threaded overload:
+failure.
 
 ```csharp
-// Correct when upcasting may be needed:
-var state = evolver.Reconstitute(envelopes, initial: default, serializer.Deserialize);
-
 // Safe only when all events are at the current schema version:
 var state = evolver.Reconstitute(envelopes);
+```
+
+The serializer-threaded overload that `AlbertoStore` uses internally is **not public**, so there
+is no way to fold a boundary that may contain stale-version events by calling the evolver
+yourself. Go through one of the two paths that thread `EventSerializer.Deserialize` for you:
+
+```csharp
+// The command pipeline — Load(boundary, evolver) threads the serializer into the dispatch loop:
+await store.Handle(command)
+    .Load(boundary, evolver)
+    .Decide((cmd, state) => …)
+    .Commit(ct);
+
+// Or the serializer-taking overload of DecideAndAppendAsync:
+await eventStore.DecideAndAppendAsync(boundary, evolver, decide, toEventToPersist, serializer, ct);
 ```
 
 The same applies to `DeciderExtensions.DecideAndAppendAsync`: the five-argument overload

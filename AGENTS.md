@@ -47,15 +47,20 @@ dotnet run -c Release --project benchmarks/Alberto.Benchmarks -- --filter '*Appe
 
 ### Directory Structure
 ```
-/src/                           # Core libraries (packable NuGet)
-  Alberto/                  # Event store abstractions, control loop, middleware
-  Alberto.Commands/         # Command handling
-  Alberto.InMemory/         # In-memory backend (dev/test)
-  Alberto.Postgres/         # PostgreSQL backend, migrations, admin data access
-  Alberto.EntityFramework/  # EF-backed projections
-  Alberto.Messaging/        # Transactional outbox abstractions
-  Alberto.Messaging.Postgres/  # PostgreSQL outbox store
-  Alberto.Telemetry/        # OpenTelemetry instrumentation
+/src/                           # Core libraries — 10 packable, 3 not
+  Alberto/                      # Event store abstractions, control loop, middleware
+  Alberto.Commands/             # Command handling
+  Alberto.Commands.Analyzers/   # Roslyn analyzers for the command pipeline  (not packable)
+  Alberto.InMemory/             # In-memory backend (dev/test)
+  Alberto.Postgres/             # PostgreSQL backend, migrations
+  Alberto.EntityFramework/      # EF-backed projections
+  Alberto.Messaging/            # Transactional outbox abstractions
+  Alberto.Messaging.Postgres/   # PostgreSQL outbox store
+  Alberto.Telemetry/            # OpenTelemetry instrumentation
+  Alberto.Testing/              # In-memory test helpers for consumers
+  Alberto.Testing.Xunit/        # xUnit v3 fixtures and collection definitions
+  Alberto.Admin/                # IAdminReader/IAdminOperator — parked      (not packable)
+  Alberto.Admin.Postgres/       # Its only implementation — parked          (not packable)
 
 /apps/                          # Example applications
   Alberto.AppHost/              # Aspire orchestration
@@ -72,11 +77,17 @@ dotnet run -c Release --project benchmarks/Alberto.Benchmarks -- --filter '*Appe
   Alberto.Cli/                  # Operator CLI (Spectre.Console + System.CommandLine)
 
 /tests/
-  Alberto.Tests/            # Unit + Testcontainers integration tests (xUnit 3)
+  Alberto.Tests/                # Unit + Testcontainers integration tests (xUnit 3)
+  Alberto.Tests.SampleEvents/   # Sample [EventType] records in a separate assembly, for
+                                #   assembly-scanning tests
+  Alberto.Examples.Tests/       # Tests over the Orders/Payments examples, incl. GraphQL
+                                #   schema snapshots
   Alberto.Orders.LoadTests/     # K6 load tests (TypeScript)
 
 /benchmarks/
-  Alberto.Benchmarks/       # BenchmarkDotNet append/read/checkpoint benchmarks
+  Alberto.Benchmarks/           # BenchmarkDotNet append/read/checkpoint benchmarks
+  Alberto.Benchmarks.Core/      # Shared harness: event plans, BDN import, result comparison
+  Alberto.Benchmarks.Compare/   # CLI that diffs two benchmark runs and renders a report
 ```
 
 Note: `apps/Alberto.Payments` is in the solution and builds, but it has no host of its own and is not orchestrated by the AppHost — its slices are registered by the Orders API host, which serves their GraphQL fields alongside Orders'.
@@ -88,19 +99,27 @@ Note: `apps/Alberto.Payments` is in the solution and builds, but it has no host 
 - **Middleware**: `MiddlewareRunner` builds both the single-event (`ConsumeEventContext`) and batch (`BatchConsumeContext`) chains. Retry/dead-letter logic is shared via `RetryAndDeadLetterCore` behind `IMiddlewareContext`
 - **Zero-downtime projection rebuilds**: opt in with `.WithRebuilds()`. `RebuildCoordinator` replays the log into a shadow copy of a projection's state under its own checkpoint, then swaps versions in one transaction. Driven by `alberto ops rebuild start|status|promote|abort`
 - **Multi-Tenant**: X-Tenant-Id header propagation, tenant-isolated queries, tenant leases
+- **Store imprint**: single-tenant and multi-tenant are two disjoint migration sets sharing one journal, so **`.WithTenancy()` cannot be added to or removed from a store that already has data** — there is no bridging script and no `tenant_id` backfill. `PostgresMigrator.Migrate` refuses the wrong set before running anything, throwing `AlbertoStoreMismatchException` (ALB0021). The mode is read from `alberto_store_imprint` — a table the migrator creates itself, since the check that must precede every script cannot depend on a script — falling back to sniffing `alberto_events` for a `tenant_id` column, which covers both stores predating the imprint and stores left half-migrated. A store with no `alberto_events` is fresh and may become either mode. Pointing a module at an *empty* database is deliberately **not** covered: nothing contradicts, so it migrates cleanly and serves an empty store
 - **Projection tenancy**: a state store's tenancy is fixed when the store is built and decided by the schema, not by the caller — a module that declared `.WithTenancy()` is migrated with `tenant_id NOT NULL` in its primary key, so a store built without one fails every write with `42P10`, and the reverse mismatch fails with `42703`. `AddProjection` therefore takes a `Func<string?, IStateStore<TState>>`: the projection builds one store per tenant and routes each event to the store for the tenant it carries. A cross-tenant aggregate on a tenant-enabled module stores its single blended document under `TenantScope.CrossTenant` (`"*"`), which readers pass too — resolvers resolve the writer's own factory from DI (`{moduleKey}:{processorId}`) so the only thing they decide is which tenant to read
+- **Tenant sharding** (opt-in, not the default): a module's tenants can be spread over several PostgreSQL databases with `.WithTenancy(t => t.AcrossPostgresDatabases(...))`, row-level tenancy still applying inside each one. Each shard is a complete module registered under the DI key `{moduleKey}#{shardId}` (composed only by `ShardKey`); `ShardRoutingEventStore` picks the database per call from `TenantShardResolver`, which reads the `alberto_tenant_shards` catalog in a separate control database. **Positions are per database — never compare one shard's with another's.** See [docs/architecture/tenant-sharding.md](docs/architecture/tenant-sharding.md)
+- **Discarding a rebuild version**: neither promotion nor abort deletes the version it discards. A reader resolves the active version and *then* queries it, so a flip that deleted the superseded rows would strand any reader holding the old number between those two steps. Instead the transition only makes the version unreachable; `RebuildCoordinator`'s sweep reclaims it via `IProjectionRebuildCoordinatorStore.DiscardStateVersionAsync` once `ReclaimGracePeriod` (2× `ProjectionVersions.RefreshInterval`) has elapsed since `CompletedAt`. Abort gets the same treatment for a second reason: a shadow loop only learns of the abort on its next poll, so its last writes land after the transition and the sweep is what actually removes them
 - **Leases and fencing**: checkpoint writes can be fenced against a held lease via `IFencedCheckpointStore`
 - **Transactional outbox**: `IOutboxStore` with `pending → processing → delivered/failed`, claimed via `FOR UPDATE SKIP LOCKED` under a claim lease (`claim_id`, `claimed_by`, `claim_expires_at`). A relay that dies mid-delivery does not strand its row: `ClaimPendingAsync` re-claims any `processing` entry whose `claim_expires_at` has passed or was never set. `RetryFailedAsync` is a separate operator action and matches `failed` only
 - **GraphQL** (Orders example only): HotChocolate 15.x
 
 ### Admin surface
-The operator surface is the CLI in `tools/Alberto.Cli`. There is no admin HTTP API. `src/Alberto.Admin` contains the `IAdminReader`/`IAdminOperator` abstraction the CLI's command files are built on; it serves no endpoint.
+The operator surface is the CLI in `tools/Alberto.Cli`. There is no admin HTTP API. `src/Alberto.Admin` holds the `IAdminReader`/`IAdminOperator` abstraction the CLI's 14 command files are built on — it serves no endpoint — and `AddAlbertoPostgresAdmin` in `src/Alberto.Admin.Postgres` is its only implementation.
 
-**Both admin projects are `IsPackable=false`.** `Alberto.Admin` and `Alberto.Admin.Postgres` build, sit in the solution, are tested, and are referenced by the CLI as projects — they just do not ship to nuget.org, so 1.0 does not freeze `IAdminReader`/`IAdminOperator` under semver before the front doors on `feature/admin-surface` exist. `Alberto.Admin.Postgres` was split out of `Alberto.Postgres` (which **is** packable) precisely so that package carries no dependency on a parked one; its files keep `namespace Alberto.Postgres`, so no consumer's usings changed.
+**The whole admin surface is parked, not missing — and that includes its two projects.** A GraphQL admin API, an MCP server, a React console and a BFF live on `feature/admin-surface`, held out of 1.0 so their field and tool names are not frozen by semver. `Alberto.Admin` and `Alberto.Admin.Postgres` are both `IsPackable=false` for the same reason: shipping `IAdminReader`/`IAdminOperator` at 1.0 would freeze the abstraction under semver before the things that consume it exist. They build, they are in the solution, they are tested, and the CLI references them by project — they just do not go to nuget.org. Unparking is `IsPackable=true` plus capturing `PublicAPI.Shipped.txt` (the analyzer is gated on `IsPackable`, so it is inert until then).
+
+`Alberto.Admin.Postgres` exists only because `Alberto.Postgres` **is** packable. `PostgresAdminDataAccess`, `PostgresAdminOperator` and `PostgresAdminServiceCollectionExtensions` used to live there, which made its nupkg carry an unresolvable `Alberto.Admin` dependency and 33 public members returning parked types. The three files keep `namespace Alberto.Postgres` so no consumer's usings changed, and they reach back for internals (`SchemaQualifier`) via `InternalsVisibleTo`.
+
+Do not rebuild the front doors on main — extend that branch. Keep `IAdminReader`/`IAdminOperator` additive when changing them here, or the branch stops merging cleanly.
 
 - **Per-processor mutations** go through the core interfaces: `ICheckpointStore` (`SaveAsync`, `ResetAsync`, `RewindAsync`) and `IDeadLetterStore` (`CountAsync`, `ClearAsync`, `MarkForRetryAsync`).
 - **`PostgresAdminDataAccess`** (`src/Alberto.Admin.Postgres`) holds the inspection queries and the composite transactional mutations (`RetryByRewindAsync`, `ReleaseTenantLeasesAsync`) that span multiple tables and so cannot be composed from per-processor interfaces.
 - `SaveAsync` is monotonic by design (`GREATEST`). `RewindAsync` is the deliberate escape hatch for operator-initiated rewinds and is the only way to move a checkpoint backwards.
+- **Sharded modules**: `ShardResolver` turns `--shard`/`--all-shards` plus `.alberto/config.json` into the databases a command runs against. Reads fan out by default; mutations refuse without a selection. `alberto shards list|where|assign` manages the catalog. Shard connection strings live in config, never in the catalog table.
 
 ## Technology Stack
 
@@ -129,5 +148,4 @@ The operator surface is the CLI in `tools/Alberto.Cli`. There is no admin HTTP A
 
 Documented so they are not mistaken for working features:
 
-- **Promotion opens a one-query window where a reader sees nothing.** A reader resolves the active version and then queries it; promotion deletes the superseded rows in the same transaction that flips the version, so a promotion landing between those two steps leaves the reader holding a version number that no longer exists. Closing it properly means deferring the delete until every reader has refreshed its version cache — a grace period tied to `ProjectionVersions`' refresh interval — rather than deleting inside the flip. Reproduced under five concurrent test processes (`Rebuild_ReplacesCorruptedState_WithoutEverServingAPartialProjection`, ~1 run in 20); not reproducible on an unloaded machine.
-- **An aborted version's rows can outlive the abort by a tick.** `AbortedRebuild_LeavesTheLiveVersionUntouched` occasionally finds state still present at the abandoned version: the abort transaction deletes it, but the shadow loop only learns of the abort on its next poll and its late writes land afterwards. The sweep clears them on a later tick, so this is a lag rather than a leak — but a test asserting emptiness immediately after an abort is asserting something the design does not promise. Same frequency and conditions as above.
+*(None currently. The two rebuild-window gaps that were listed here are closed — see "Discarding a rebuild version" above.)*

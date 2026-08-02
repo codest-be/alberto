@@ -514,7 +514,7 @@ dotnet_diagnostic.ALB2001.severity = error
 
 ## Custom backends
 
-Implement `IAlbertoBackendDescriptor` to plug in a third-party event store. The four
+Implement `IAlbertoBackendDescriptor` to plug in a third-party event store. The five
 members you must implement:
 
 ```csharp
@@ -528,6 +528,13 @@ public interface IAlbertoBackendDescriptor
     void Register(AlbertoModuleContext context);
 }
 ```
+
+Four more members have default implementations, so override them only if they apply:
+`StorageIdentity` (returns null, which skips the two-modules-same-storage comparison),
+`ApplyShardConfiguration` (defaults to `ApplyConfiguration`), `GetConfigurationSection` (returns
+`(null, null)`, so the unknown-key detector `ALB0008` skips your section) and
+`RegisterShardCatalog` (throws `NotSupportedException` — override it only if your backend can host
+a tenant shard catalog).
 
 A minimal implementation:
 

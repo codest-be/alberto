@@ -47,15 +47,20 @@ dotnet run -c Release --project benchmarks/Alberto.Benchmarks -- --filter '*Appe
 
 ### Directory Structure
 ```
-/src/                           # Core libraries (packable NuGet)
-  Alberto/                  # Event store abstractions, control loop, middleware
-  Alberto.Commands/         # Command handling
-  Alberto.InMemory/         # In-memory backend (dev/test)
-  Alberto.Postgres/         # PostgreSQL backend, migrations, admin data access
-  Alberto.EntityFramework/  # EF-backed projections
-  Alberto.Messaging/        # Transactional outbox abstractions
-  Alberto.Messaging.Postgres/  # PostgreSQL outbox store
-  Alberto.Telemetry/        # OpenTelemetry instrumentation
+/src/                           # Core libraries — 10 packable, 3 not
+  Alberto/                      # Event store abstractions, control loop, middleware
+  Alberto.Commands/             # Command handling
+  Alberto.Commands.Analyzers/   # Roslyn analyzers for the command pipeline  (not packable)
+  Alberto.InMemory/             # In-memory backend (dev/test)
+  Alberto.Postgres/             # PostgreSQL backend, migrations
+  Alberto.EntityFramework/      # EF-backed projections
+  Alberto.Messaging/            # Transactional outbox abstractions
+  Alberto.Messaging.Postgres/   # PostgreSQL outbox store
+  Alberto.Telemetry/            # OpenTelemetry instrumentation
+  Alberto.Testing/              # In-memory test helpers for consumers
+  Alberto.Testing.Xunit/        # xUnit v3 fixtures and collection definitions
+  Alberto.Admin/                # IAdminReader/IAdminOperator — parked      (not packable)
+  Alberto.Admin.Postgres/       # Its only implementation — parked          (not packable)
 
 /apps/                          # Example applications
   Alberto.AppHost/              # Aspire orchestration
@@ -72,11 +77,17 @@ dotnet run -c Release --project benchmarks/Alberto.Benchmarks -- --filter '*Appe
   Alberto.Cli/                  # Operator CLI (Spectre.Console + System.CommandLine)
 
 /tests/
-  Alberto.Tests/            # Unit + Testcontainers integration tests (xUnit 3)
+  Alberto.Tests/                # Unit + Testcontainers integration tests (xUnit 3)
+  Alberto.Tests.SampleEvents/   # Sample [EventType] records in a separate assembly, for
+                                #   assembly-scanning tests
+  Alberto.Examples.Tests/       # Tests over the Orders/Payments examples, incl. GraphQL
+                                #   schema snapshots
   Alberto.Orders.LoadTests/     # K6 load tests (TypeScript)
 
 /benchmarks/
-  Alberto.Benchmarks/       # BenchmarkDotNet append/read/checkpoint benchmarks
+  Alberto.Benchmarks/           # BenchmarkDotNet append/read/checkpoint benchmarks
+  Alberto.Benchmarks.Core/      # Shared harness: event plans, BDN import, result comparison
+  Alberto.Benchmarks.Compare/   # CLI that diffs two benchmark runs and renders a report
 ```
 
 Note: `apps/Alberto.Payments` is in the solution and builds, but it has no host of its own and is not orchestrated by the AppHost — its slices are registered by the Orders API host, which serves their GraphQL fields alongside Orders'.

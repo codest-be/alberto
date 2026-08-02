@@ -42,10 +42,16 @@ running Docker daemon. The in-memory and unit tests run without Docker.
 
 ## Public API tracking
 
-Every project under `src/` carries two tracking files, and
+Every **packable** project under `src/` carries two tracking files, and
 `Microsoft.CodeAnalysis.PublicApiAnalyzers` **fails the build** on a public symbol that appears
 in neither. The point is that widening the surface Alberto has to support for the life of a major
 version is a line in a diff a reviewer can see, rather than something that lands with a feature.
+
+The gate is conditioned on `IsPackable` (see **Packability** below), so the three non-packable
+projects under `src/` are outside it: `Alberto.Admin.Postgres` and `Alberto.Commands.Analyzers`
+carry no tracking files at all, and `Alberto.Admin` carries them but is not checked against them
+— its files are there so unparking the admin surface is one property flip rather than a surface
+audit. Nothing in those three assemblies is under semver until they are published.
 
 The rules are set to `error` in the root `.editorconfig`. Nothing suppresses them — if you find
 yourself adding a `NoWarn`, a `.globalconfig`, or a project-local `.editorconfig` to get a build

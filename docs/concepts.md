@@ -255,12 +255,17 @@ One schema per module, containing:
 |---|---|
 | `alberto_events` | The log |
 | `alberto_event_type_positions`, `alberto_event_tag_positions` | Query indexes |
-| `alberto_processor_checkpoints` | Per-processor positions and leases |
+| `alberto_processor_checkpoints` | Per-processor positions, and the fence token that guards them |
+| `alberto_processor_leases` | Which replica currently owns each processor, and until when |
 | `alberto_projection_states` | Projection documents, keyed by rebuild version |
 | `alberto_projection_rebuild_meta` | Rebuild state machine |
 | `alberto_dead_letter_events` | Events that exhausted their retries |
 | `alberto_outbox_entries` | Outbox, `pending → processing → delivered/failed` |
 | `alberto_tenants`, `alberto_tenant_leases`, `alberto_tenant_assignments` | Multi-tenancy |
+
+One further table, `alberto_tenant_shards`, exists only if you shard a module's tenants across
+databases — and it lives in a separate control database rather than in any module's schema. See
+[tenant sharding](architecture/tenant-sharding.md).
 
 Migrations are DbUp scripts embedded in `Alberto.Postgres` and run automatically when
 `PostgresOptions.AutoMigrate` is true (the default). Set it false and run them from your own

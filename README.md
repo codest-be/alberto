@@ -76,8 +76,8 @@ contend; two people reserving the same seat always do.
   See [docs/reactors-and-outbox.md](https://github.com/codest-be/alberto/blob/main/docs/reactors-and-outbox.md).
 - **An operator CLI.** Inspect checkpoints, events, projections, dead letters and tenant leases;
   rewind a processor; retry or dismiss dead letters; run a rebuild. Mutating commands confirm before
-  they act and most of them take `--dry-run`; every command takes `--json`, so the tool you use
-  interactively is the one your runbooks call. See [docs/operations.md](https://github.com/codest-be/alberto/blob/main/docs/operations.md).
+  they act and most of them take `--dry-run`; every command that reports takes `--json`, so the tool
+  you use interactively is the one your runbooks call. See [docs/operations.md](https://github.com/codest-be/alberto/blob/main/docs/operations.md).
 - **OpenTelemetry throughout** — traces across the append→consume seam and metrics for lag,
   conflicts, retries and dead letters.
 
@@ -115,7 +115,7 @@ it from the repo with `dotnet run --project tools/Alberto.Cli`.
 services.AddAlberto("tickets", builder => builder
     .WithInMemory()                                       // or .WithPostgres(...)
     .WithEventsFrom(Assembly.GetExecutingAssembly())       // discovers [EventType] events
-    .AddProjection(OccupancyProjection.Declaration, _ => () => occupancy)
+    .AddProjection(OccupancyProjection.Declaration, _ => _ => occupancy)
     .WithControlLoop(o => o with { PollingInterval = TimeSpan.FromMilliseconds(50) }));
 ```
 
