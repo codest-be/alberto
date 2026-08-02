@@ -21,12 +21,23 @@ running Docker daemon. The in-memory and unit tests run without Docker.
 
 ## Making changes
 
+- **Every pull request must close an issue.** Put `Closes #123` in the PR description. This is
+  enforced by the `pr-policy` check, and it is not decoration — the issue's **milestone** is what
+  decides which version your change ships in. See [Releasing](docs/releasing.md).
+- **The linked issue must carry a milestone** naming a real version (`1.1.0`, `1.0.1`). The
+  standing `Backlog` milestone is not a valid target; an issue has to be triaged out of it before
+  a PR can close it. If your issue is still in `Backlog`, ask for it to be scheduled.
+- **Label a PR `breaking-change` if it breaks a consumer**, and describe the migration in the PR
+  description — what broke, and the before/after a caller needs. `pr-policy` will reject the label
+  against a milestone that cannot legally carry a break. That description becomes the release
+  notes, so write it for the person doing the upgrade.
 - One logical change per pull request.
 - All public API additions or removals must be reflected in the project's
   `PublicAPI.Shipped.txt` / `PublicAPI.Unshipped.txt` — see [Public API tracking](#public-api-tracking).
-- Breaking changes must have a corresponding entry in `UPGRADING.md` using the existing format
-  (summary table, before/after code snippets, migration steps).
-- `CHANGELOG.md` entries are added under the `## [Unreleased]` heading.
+  A non-empty `PublicAPI.Unshipped.txt` is also what tells the release job a minor bump is due.
+- **Do not edit `CHANGELOG.md`.** The release workflow drafts each section from the milestone's
+  closed issues, and the release PR is where that draft is edited into prose. Hand-editing
+  `[Unreleased]` on every PR just produces merge conflicts.
 - `TreatWarningsAsErrors` is on. The build must be warning-free before a PR can be merged.
 
 ## Public API tracking
@@ -50,7 +61,9 @@ Either way the new entries land in `PublicAPI.Unshipped.txt`. **Read that diff b
 it** — it is the statement of what you are committing to support. (`dotnet format` does not accept
 `Alberto.slnx`; pass the individual `.csproj`.)
 
-**Removing public API.** Delete the entry by hand and add an `UPGRADING.md` section for it.
+**Removing public API.** Delete the entry by hand, label the PR `breaking-change`, and describe
+the migration in the PR description. Removing a shipped entry is a **major**-version change — see
+[Releasing](docs/releasing.md).
 
 **At release.** Move everything from `PublicAPI.Unshipped.txt` into `PublicAPI.Shipped.txt` and
 leave `Unshipped` with just its `#nullable enable` line.
@@ -94,9 +107,9 @@ abstract set and the test stays green.
    `IFencedCheckpointStore` are the worked examples: the first exists because atomic
    claim-and-fence is not something every store can offer, and a default that *looked* right would
    have moved the break from compile time to a lost event under contention.
-3. **It genuinely has to be required.** Update the baseline in the test *and* add an
-   `UPGRADING.md` section. That is a major-version change; the test exists so you cannot make one
-   by accident.
+3. **It genuinely has to be required.** Update the baseline in the test, label the PR
+   `breaking-change`, and describe the migration in the PR description. That is a major-version
+   change; the test exists so you cannot make one by accident.
 
 Interfaces Alberto implements for itself are not in scope here — widen those freely. If you are
 unsure which kind you are looking at, ask whether a third party could plausibly have written it.

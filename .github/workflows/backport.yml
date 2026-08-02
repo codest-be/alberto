@@ -1,0 +1,177 @@
+name: Backport
+
+# Copies a change that has already merged into `main` onto a `release/**` branch.
+#
+# **Direction rule: fix on `main` first, then backport.** Nothing is fixed directly on a release
+# branch. A fix that lands only on `release/1.0` is a regression waiting for the next release,
+# because `main` never learned about it.
+#
+# Two ways in:
+#   * label a pull request `backport/1.0` — the backport opens when it merges, or when the label
+#     is added afterwards;
+#   * run this workflow by hand with a pull request number and a line.
+
+on:
+  # pull_request_target, not pull_request: a fork's pull_request run gets a read-only token and
+  # could not push a branch. The usual danger of pull_request_target — a writable token in a job
+  # that runs contributor code — does not arise here, because this job never checks out or
+  # executes the pull request's head. It checks out the base repository, cherry-picks a commit
+  # that is already merged and reviewed, and opens a pull request. There is no build step, and
+  # adding one would reintroduce exactly that danger.
+  pull_request_target:
+    types: [closed, labeled]
+
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: 'Pull request number to backport.'
+        required: true
+        type: string
+      line:
+        description: 'Release line, MAJOR.MINOR (e.g. 1.0). Targets release/1.0.'
+        required: true
+        type: string
+
+jobs:
+  backport:
+    # On the label paths, only merged pull requests carrying at least one backport/* label.
+    # `labeled` is included so a line can be added after the fact, which is the common case: the
+    # decision to patch an older release is usually made after the fix is already in.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.merged == true &&
+       contains(join(github.event.pull_request.labels.*.name, ','), 'backport/'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      # RELEASE_TOKEN: see release.yml. A pull request opened with the built-in GITHUB_TOKEN
+      # does not trigger workflow runs, so the backport would arrive with no CI on it.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}
+
+      - name: Backport
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          PR_INPUT: ${{ inputs.pr }}
+          LINE_INPUT: ${{ inputs.line }}
+          PR_EVENT: ${{ github.event.pull_request.number }}
+          HAS_RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN != '' }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            PR="$PR_INPUT"
+            if ! [[ "$LINE_INPUT" =~ ^[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::\`$LINE_INPUT\` is not a MAJOR.MINOR release line."
+              exit 1
+            fi
+            LINES="$LINE_INPUT"
+          else
+            PR="$PR_EVENT"
+            LINES=$(
+              gh pr view "$PR" --repo "$REPO" --json labels --jq '.labels[].name' |
+                sed -n 's:^backport/::p'
+            )
+          fi
+
+          if [ -z "${LINES:-}" ]; then
+            echo "No backport/* labels on #$PR — nothing to do."
+            exit 0
+          fi
+
+          merged_at=$(gh pr view "$PR" --repo "$REPO" --json mergedAt --jq '.mergedAt // ""')
+          if [ -z "$merged_at" ]; then
+            echo "::error::#$PR is not merged. Backport what is on \`main\`, not what might be."
+            exit 1
+          fi
+
+          # The squash merge is one commit, which is what makes this a cherry-pick rather than a
+          # range. Squash-only merging is enforced by the repository settings for this reason.
+          SHA=$(gh pr view "$PR" --repo "$REPO" --json mergeCommit --jq '.mergeCommit.oid')
+          TITLE=$(gh pr view "$PR" --repo "$REPO" --json title --jq '.title')
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          FAILED=0
+
+          for LINE in $LINES; do
+            TARGET="release/$LINE"
+
+            if ! git ls-remote --exit-code --heads origin "$TARGET" >/dev/null 2>&1; then
+              echo "::error::\`$TARGET\` does not exist. Cut it with the \"Cut release branch\" workflow first."
+              FAILED=1
+              continue
+            fi
+
+            BRANCH="backport/$LINE/pr-$PR"
+
+            if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+              echo "\`$BRANCH\` already exists — #$PR has already been backported to $LINE."
+              continue
+            fi
+
+            git switch --force-create "$BRANCH" "origin/$TARGET"
+
+            # -x records the original sha in the message, which is the only durable link back to
+            # the change on main once both branches have moved on.
+            if ! git cherry-pick -x "$SHA"; then
+              git cherry-pick --abort || true
+              echo "::error::#$PR does not cherry-pick cleanly onto \`$TARGET\`. Back it out by hand."
+              printf '%s\n' \
+                "Backport to \`$TARGET\` failed: \`$SHA\` does not cherry-pick cleanly onto it." \
+                "Apply it by hand:" \
+                "" \
+                '```' \
+                "git switch $TARGET && git switch -c $BRANCH" \
+                "git cherry-pick -x $SHA   # resolve the conflicts" \
+                "git push origin $BRANCH" \
+                '```' \
+                > /tmp/comment.md
+              gh pr comment "$PR" --repo "$REPO" --body-file /tmp/comment.md
+              FAILED=1
+              continue
+            fi
+
+            git push origin "$BRANCH"
+
+            # No `Closes #`: the issue is closed by the pull request on main, and closing it
+            # again from here would be wrong. The `release` label exempts this from the
+            # issue-link policy for the same reason.
+            printf '%s\n' \
+              "Backport of #$PR (\`$SHA\`) to \`$TARGET\`, opened by \`backport.yml\`." \
+              "" \
+              "Cherry-picked cleanly. Review it as a change against \`$TARGET\` rather than" \
+              "assuming it is identical to what merged on \`main\` — the surrounding code" \
+              "differs on this line, or the branch would not exist." \
+              "" \
+              "No changelog entry here. It is written when \`$TARGET\` is released, by the" \
+              "**Release** workflow run from that branch." \
+              > /tmp/pr-body.md
+
+            if [ "${HAS_RELEASE_TOKEN}" != "true" ]; then
+              printf '%s\n' "" \
+                "> **No checks will appear on this pull request.** It was opened with the" \
+                "> built-in \`GITHUB_TOKEN\`, and GitHub does not trigger workflow runs for" \
+                "> those. **Close it and reopen it** to start them. A \`RELEASE_TOKEN\` secret" \
+                "> removes this step; see docs/releasing.md." \
+                >> /tmp/pr-body.md
+            fi
+
+            gh pr create \
+              --repo "$REPO" \
+              --base "$TARGET" \
+              --head "$BRANCH" \
+              --title "[$LINE] $TITLE" \
+              --label release \
+              --body-file /tmp/pr-body.md
+          done
+
+          exit "$FAILED"

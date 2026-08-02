@@ -1,0 +1,173 @@
+name: Release
+
+# Prepares a release. It does NOT publish one.
+#
+# The workflow opens a pull request that bumps <VersionPrefix>, cuts the CHANGELOG section and
+# promotes the public API surface. Publishing happens when a maintainer tags the merge commit,
+# which is the trigger publish-packages.yml watches. That separation is deliberate: a push to
+# nuget.org can be unlisted but never deleted, so the last step before it is a human one.
+#
+# Run it from `main` for a normal release, or from a `release/**` branch for a patch on an older
+# line. The version is computed from the branch it runs on, so the branch decides the line.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'How to derive the version. `auto` reads breaking-change labels and unshipped public API.'
+        required: true
+        default: auto
+        type: choice
+        options: [auto, major, minor, patch]
+      version:
+        description: 'Explicit version (e.g. 1.0.0). Overrides `bump`. Required to cut 1.0.0.'
+        required: false
+        type: string
+      dry_run:
+        description: 'Print the version and the drafted notes, change nothing.'
+        required: true
+        default: true
+        type: boolean
+
+# Two release preparations at once would compute the same version twice.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # push the release-prep branch
+      pull-requests: write   # open the release pull request
+      issues: read           # read milestones for the drafted notes
+
+    steps:
+      # fetch-depth: 0 — compute-version.sh needs tags and the commits since the last one.
+      #
+      # RELEASE_TOKEN, if set, is a fine-grained token scoped to this repository with Contents
+      # and Pull requests write — see docs/releasing.md for the exact permissions. It exists
+      # because a pull request opened with the built-in GITHUB_TOKEN does not trigger workflow
+      # runs: GitHub suppresses them to stop workflows recursing. The release pull request would
+      # then have no CI and could never satisfy a required status check. Without the secret the
+      # workflow still works and says so on the pull request it opens — close and reopen it to
+      # start the checks.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}
+
+      - name: Check the branch
+        run: |
+          case "${GITHUB_REF_NAME}" in
+            main|release/*) echo "Releasing from ${GITHUB_REF_NAME}" ;;
+            *)
+              echo "::error::Releases are cut from \`main\` or a \`release/**\` branch, not \`${GITHUB_REF_NAME}\`."
+              exit 1
+              ;;
+          esac
+
+      - name: Compute version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(.github/scripts/compute-version.sh \
+            "${{ github.repository }}" \
+            "${{ inputs.bump }}" \
+            "${{ inputs.version }}")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION"
+
+      - name: Draft release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          .github/scripts/draft-release-notes.sh \
+            "${{ github.repository }}" \
+            "${{ steps.version.outputs.version }}" > /tmp/notes.md
+          cat /tmp/notes.md
+
+      - name: Apply the release
+        run: |
+          .github/scripts/apply-release.py \
+            --version "${{ steps.version.outputs.version }}" \
+            --notes /tmp/notes.md \
+            ${{ inputs.dry_run && '--check' || '' }}
+
+      - name: Summary
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          {
+            echo "## Release ${VERSION}"
+            echo
+            if [ "${{ inputs.dry_run }}" = "true" ]; then
+              echo "> Dry run — nothing was written and no pull request was opened."
+              echo
+            fi
+            echo "Drafted notes:"
+            echo
+            cat /tmp/notes.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Everything below is skipped on a dry run.
+      - name: Open the release pull request
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          HAS_RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN != '' }}
+        run: |
+          BRANCH="release-prep/v${VERSION}"
+
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            echo "::error::Branch ${BRANCH} already exists. Delete it, or close the release pull request that owns it, and run again."
+            exit 1
+          fi
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git switch -c "$BRANCH"
+          git add Directory.Build.props CHANGELOG.md 'src/*/PublicAPI.*.txt'
+          git commit -m "Release ${VERSION}"
+          git push origin "$BRANCH"
+
+          {
+            echo "Prepared by \`release.yml\` from \`${GITHUB_REF_NAME}\`."
+            echo
+            echo "- \`<VersionPrefix>\` → \`${VERSION}\`"
+            echo "- \`CHANGELOG.md\` — new \`[${VERSION}]\` section"
+            echo "- \`PublicAPI.Unshipped.txt\` → \`PublicAPI.Shipped.txt\`"
+            echo
+            echo "**Edit the changelog section in this pull request.** The entries are issue titles,"
+            echo "written to be found rather than to be read, and this is the one editing pass a"
+            echo "release gets. Fold in the migration steps for anything labelled \`breaking-change\`."
+            echo
+            if [ "${HAS_RELEASE_TOKEN}" != "true" ]; then
+              echo "> **No checks will appear on this pull request.** It was opened with the"
+              echo "> built-in \`GITHUB_TOKEN\`, and GitHub does not trigger workflow runs for"
+              echo "> those. **Close this pull request and reopen it** to start them — the"
+              echo "> required checks cannot be satisfied otherwise. Setting a \`RELEASE_TOKEN\`"
+              echo "> secret removes this step; see docs/releasing.md."
+              echo
+            fi
+
+            echo "Once this is merged, tag the merge commit to publish:"
+            echo
+            echo '```'
+            echo "git switch ${GITHUB_REF_NAME} && git pull"
+            echo "git tag v${VERSION} && git push origin v${VERSION}"
+            echo '```'
+          } > /tmp/pr-body.md
+
+          # The `release` label is what exempts this pull request from the issue-link policy —
+          # see the bypass list in check-pr-policy.sh. It is applied here rather than by hand so
+          # the exemption cannot be borrowed by a pull request a person opened.
+          gh pr create \
+            --base "${GITHUB_REF_NAME}" \
+            --head "$BRANCH" \
+            --title "Release ${VERSION}" \
+            --label release \
+            --body-file /tmp/pr-body.md

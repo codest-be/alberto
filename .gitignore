@@ -31,3 +31,4 @@ dist/
 # Kept outside the repository so it holds only code and documentation.
 .superpowers/
 docs/superpowers/
+.claire-tmp/

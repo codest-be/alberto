@@ -35,8 +35,9 @@ namespace Alberto.Tests;
 ///   interface and have consumers type-test for it. <see cref="IClaimableDeadLetterStore"/>
 ///   and <see cref="IFencedCheckpointStore"/> are the worked examples.</item>
 ///   <item>If it genuinely has to be a required member, update the baseline here <em>and</em>
-///   add an <c>UPGRADING.md</c> section. That is a major-version change; the point of this
-///   test is that you cannot make it by accident.</item>
+///   label the pull request <c>breaking-change</c>, describing the migration in its
+///   description. That is a major-version change; the point of this test is that you cannot
+///   make it by accident.</item>
 /// </list>
 /// </remarks>
 public sealed class ExtensionPointContractTests
@@ -115,7 +116,8 @@ public sealed class ExtensionPointContractTests
                 "             Put it on its own interface and type-test for it at the call site.\n" +
                 "             See IClaimableDeadLetterStore and IFencedCheckpointStore.\n\n" +
                 "  Option C — It really must be required. Update the baseline in this file AND\n" +
-                "             add an UPGRADING.md section. That is a major-version change.\n\n" +
+                "             label the PR 'breaking-change', describing the migration in its\n" +
+                "             description. That is a major-version change.\n\n" +
                 "See CONTRIBUTING.md §\"Extension points\".\n");
     }
 

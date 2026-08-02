@@ -1,0 +1,43 @@
+name: PR policy
+
+# `pull_request`, not `pull_request_target`: this job reads attacker-controlled text (a PR title
+# and body from a fork) and must never run with a writable token or the base repo's secrets.
+# Reading issues in a public repo needs neither.
+on:
+  pull_request:
+    types:
+      - opened
+      - edited          # the Closes # line is usually added by editing the description
+      - reopened
+      - synchronize
+      - labeled         # breaking-change added or removed
+      - unlabeled
+      - milestoned      # a milestone moving on the PR itself is not what we read, but it is a
+      - demilestoned    # cheap signal that triage happened and a re-check is worth running
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+concurrency:
+  group: pr-policy-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-policy:
+    name: pr-policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # A milestone assigned during triage does not raise a pull_request event, so a PR that
+      # failed for a missing milestone stays red until something re-runs this. Re-running the
+      # job from the Actions tab is the intended fix, and is why the check is cheap.
+      - name: Check policy
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          .github/scripts/check-pr-policy.sh \
+            "${{ github.repository }}" \
+            "${{ github.event.pull_request.number }}"

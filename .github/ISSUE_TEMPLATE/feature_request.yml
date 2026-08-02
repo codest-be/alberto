@@ -1,0 +1,49 @@
+name: Feature request
+description: Propose a capability Alberto does not have.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A maintainer will assign a milestone during triage. That milestone is the version this
+        would ship in, and no pull request can close this issue until it has one.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: >
+        What are you trying to do that Alberto makes hard or impossible? Describe the situation,
+        not the solution — the shape of the fix is easier to judge from the problem.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What you have in mind, if you have something in mind.
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you tried instead
+      description: Workarounds you have already reached for, and why they fall short.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: breaking
+    attributes:
+      label: Would this break existing consumers?
+      description: >
+        Best guess is fine. Anything that removes or changes public API, or adds an abstract
+        member to an extension-point interface, is a major-version change — see CONTRIBUTING.md.
+      options:
+        - "No — purely additive"
+        - "Yes — changes or removes existing public API"
+        - "Not sure"
+    validations:
+      required: true

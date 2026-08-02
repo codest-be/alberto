@@ -2,7 +2,10 @@ name: Publish NuGet Packages
 
 on:
   push:
-    branches: [main]
+    # A push to either branch publishes a prerelease to GitHub Packages only; the nuget.org
+    # steps are gated on the ref being a tag. Release branches are included so a backport can
+    # be smoke-tested from a real feed before it is tagged.
+    branches: [main, 'release/**']
     tags: ['v*']
 
   workflow_dispatch:

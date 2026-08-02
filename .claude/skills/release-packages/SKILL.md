@@ -49,12 +49,20 @@ check is a feature, not an obstacle to route around.
 
 ## Workflow
 
+**The version bump, the changelog section and the public-API promotion are not done by hand.**
+The **Release** workflow does all three and opens a pull request with them. Which version it
+picks is decided by the milestones on the issues — [docs/releasing.md](../../../docs/releasing.md)
+is the reference for that half, and this skill is the reference for everything from the tag
+onward.
+
 1. **Land the work on `main` first and let it go green.** Never tag a commit CI has not passed.
-2. **Bump `<VersionPrefix>` in `Directory.Build.props`.** Grep for the old version across the repo
-   before assuming it is the only place — see the hardcoded-version trap below.
-3. **Add a CHANGELOG entry** for the version, moving the relevant items out of `[Unreleased]`.
-4. **Push to `main`, wait for CI *and* the publish workflow to finish green.** The prerelease that
-   push produces is a free rehearsal of the exact steps the tag will run.
+2. **Run **Release** with `dry_run` on.** It prints the version it computed and the changelog
+   section it drafted, and writes nothing. If the version is wrong, the milestones are wrong.
+3. **Run it again with `dry_run` off,** then edit the drafted notes on the pull request it opens.
+   That editing pass is the only one a release gets. Do not hand-edit `CHANGELOG.md` or
+   `<VersionPrefix>` outside that pull request.
+4. **Merge it, and wait for CI *and* the publish workflow to finish green.** The prerelease that
+   merge produces is a free rehearsal of the exact steps the tag will run.
 5. **Confirm with the user, then tag.** Annotated, on the verified commit, `v` + the exact
    `VersionPrefix`.
 6. **Watch the publish run and check the nuget.org steps ran rather than being skipped.** A green
@@ -114,6 +122,11 @@ URLs. nuget.org has no repository to resolve a relative path against.
 
 ## After a bad release
 
-You cannot replace the version. Fix forward: correct the cause, bump the patch version, and release
-again. Unlisting the bad version is optional and hides it from search but does not remove it —
+You cannot replace the version. The only remedy is another version: correct the cause, release a
+patch. Unlisting the bad version is optional and hides it from search but does not remove it —
 anyone who pinned it still restores it.
+
+That is the one place a release goes forward rather than back, and it is forced by nuget.org, not
+chosen. It does not mean the project fixes forward: if the bad version is on an older line, the
+fix still lands on `main` first and reaches the line through a `backport/X.Y` label. See
+[docs/releasing.md](../../../docs/releasing.md).

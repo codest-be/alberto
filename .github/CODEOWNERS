@@ -1,0 +1,23 @@
+# Code owners are requested for review automatically on the paths they own.
+#
+# Their approval is not currently *required* — the rulesets ask for zero approvals, because
+# GitHub does not let anyone approve their own pull request and this repository has one
+# maintainer. See the repository-configuration section of docs/releasing.md for why, and for the
+# two settings to flip when a second maintainer arrives. This file is written for that day.
+
+# Everything, unless overridden below.
+*                       @VDBBjorn
+
+# The published surface. These are the files a semver mistake escapes through: PublicAPI.Shipped
+# is a promise, and Directory.Build.props is the version the packages carry.
+/Directory.Build.props  @VDBBjorn
+/Directory.Packages.props @VDBBjorn
+/src/**/PublicAPI.*.txt @VDBBjorn
+
+# The release and policy machinery, plus anything else that runs with a token.
+/.github/               @VDBBjorn
+
+# The migration guide and the changelog are the contract with people upgrading.
+/CHANGELOG.md           @VDBBjorn
+/docs/migrating-to-1.0.md @VDBBjorn
+/docs/releasing.md      @VDBBjorn
