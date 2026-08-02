@@ -7,6 +7,12 @@
 # 327-line PublicAPI.Unshipped.txt that must never be promoted to Shipped.
 #
 # Blank lines and #-comments are ignored by readers.
+#
+# ADDING A PACKAGE TAKES TWO EDITS. This file, and the literal allowlist in the "Verify packed
+# set" step of .github/workflows/publish-packages.yml. That second copy is deliberate — it is the
+# independent check that a new nuget.org listing, which can never be deleted or reclaimed, was
+# written down twice on purpose. The comment on that step explains why it is not consolidated
+# here. Editing only this file packs the new package and then fails the publish job on the diff.
 
 Alberto
 Alberto.Commands

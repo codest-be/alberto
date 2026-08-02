@@ -70,7 +70,15 @@ jobs:
             echo "::error::Could not read <VersionPrefix> from Directory.Build.props"
             exit 1
           fi
-          for proj in Alberto Alberto.Commands Alberto.EntityFramework Alberto.InMemory Alberto.Messaging Alberto.Messaging.Postgres Alberto.Postgres Alberto.Telemetry Alberto.Testing Alberto.Testing.Xunit; do
+          # The packable set comes from .github/packages.txt, never a src/* glob: Alberto.Admin
+          # and Alberto.Admin.Postgres build but are deliberately IsPackable=false. The list is
+          # collected into an array before any dotnet runs, since dotnet in a `while read` body
+          # would inherit the loop's stdin and eat the rest of the list.
+          PROJECTS=()
+          while IFS= read -r proj; do PROJECTS+=("$proj"); done \
+            < <(grep -vE '^\s*(#|$)' .github/packages.txt)
+          [ ${#PROJECTS[@]} -gt 0 ] || { echo "::error::.github/packages.txt lists no packages"; exit 1; }
+          for proj in "${PROJECTS[@]}"; do
             dotnet pack "src/$proj/$proj.csproj" -c Release --version-suffix ci -o /tmp/alberto-pack
           done
           SMOKEDIR=$(mktemp -d)
