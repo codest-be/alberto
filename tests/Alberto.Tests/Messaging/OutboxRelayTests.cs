@@ -53,6 +53,11 @@ public class OutboxRelayTests
         /// </summary>
         public Task WhenPolled => _tcs.Task;
 
+        /// <summary>
+        /// Total number of <see cref="ClaimPendingAsync"/> calls forwarded to the inner store.
+        /// </summary>
+        public int ClaimCalls => Volatile.Read(ref _pollCount);
+
         public Task InsertAsync(OutboxEntry entry, CancellationToken ct = default)
             => _inner.InsertAsync(entry, ct);
 
@@ -413,7 +418,8 @@ public class OutboxRelayTests
     public async Task StartupFailure_StopsPartialTransport_WithoutClaimingOrPublishing()
     {
         var startupFailure = new InvalidOperationException("startup failure");
-        var store = new InMemoryOutboxStore();
+        var inner = new InMemoryOutboxStore();
+        var store = new PollSignalingOutboxStore(inner);
         var transport = new LifecycleTransport(
             start: _ => Task.FromException(startupFailure));
         var relay = new OutboxRelay(store, transport);
@@ -425,7 +431,7 @@ public class OutboxRelayTests
         Assert.Same(startupFailure, exception);
         Assert.Equal(1, transport.Starts);
         Assert.Equal(1, transport.Stops);
-        // transport.Publishes == 0 already confirms no claim was attempted
+        Assert.Equal(0, store.ClaimCalls);
         Assert.Equal(0, transport.Publishes);
         relay.Dispose();
     }
