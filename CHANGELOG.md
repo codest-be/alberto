@@ -17,6 +17,39 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ---
 
+## [0.1.4] - 2026-08-02
+
+One behavioural change, in a default. No public API moves, and nothing a consumer wrote stops
+compiling.
+
+### Changed
+
+- **`Checkpoints:OrphanPolicy` now defaults to `Warn` in every environment, production
+  included.** It previously resolved to `Warn` in `Development` and was escalated to `Strict`
+  everywhere else, so a checkpoint that no declared processor claimed would stop the host from
+  starting.
+
+  An orphan has two causes and the check cannot tell them apart: a **renamed** processor, whose
+  new id replays the log from position zero, and a **deleted** one, whose row is inert. The
+  second is routine, which made the old default turn an ordinary processor deletion into a
+  failed deploy — surfacing at container promotion as a health-check failure rather than as the
+  configuration problem it was, and recoverable only by editing production configuration or
+  deleting rows by hand on a live database.
+
+  `Warn` still logs every orphan at startup by name, along with the
+  `alberto ops checkpoint rename` command that carries the old position over, so the rename case
+  is still reported. The only difference is that the report is no longer an outage.
+
+  **To keep the old behaviour, set the policy explicitly.** It is honoured in every environment,
+  and per-environment configuration now expresses "strict on my machine and in CI, warn in
+  production" directly (#96):
+
+  ```json
+  { "Alberto": { "Modules": { "orders": { "Checkpoints": { "OrphanPolicy": "Strict" } } } } }
+  ```
+
+---
+
 ## [0.1.3] - 2026-08-02
 
 No behavioural change to any package. One documentation correction reaches consumers through
@@ -476,7 +509,8 @@ Initial beta release. Core DCB event store abstractions, PostgreSQL backend, in-
 backend, command pipeline, EF Core projection support, transactional outbox, and
 OpenTelemetry instrumentation.
 
-[Unreleased]: https://github.com/codest-be/alberto/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/codest-be/alberto/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/codest-be/alberto/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/codest-be/alberto/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/codest-be/alberto/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/codest-be/alberto/compare/v0.1.0...v0.1.1
