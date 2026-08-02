@@ -17,6 +17,14 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ---
 
+## [0.1.4] - 2026-08-02
+
+### Fixed
+
+- Orphaned checkpoints should warn rather than fail startup outside Development (#96)
+
+---
+
 ## [0.1.3] - 2026-08-02
 
 No behavioural change to any package. One documentation correction reaches consumers through
@@ -476,7 +484,8 @@ Initial beta release. Core DCB event store abstractions, PostgreSQL backend, in-
 backend, command pipeline, EF Core projection support, transactional outbox, and
 OpenTelemetry instrumentation.
 
-[Unreleased]: https://github.com/codest-be/alberto/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/codest-be/alberto/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/codest-be/alberto/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/codest-be/alberto/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/codest-be/alberto/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/codest-be/alberto/compare/v0.1.0...v0.1.1
