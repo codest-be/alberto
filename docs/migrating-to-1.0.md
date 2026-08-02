@@ -659,21 +659,29 @@ version is less than the version declared by `[EventType(Version = N)]` on the h
 evolver handler expects version M. Raw JSON deserialization would produce stale state. Supply
 an EventSerializer so the upcaster chain runs before reconstitution: …`
 
-**Fix.** Use the serializer-threaded overloads:
+**Fix.** Fold through a path that threads the serializer for you. There is no public
+serializer-taking `Reconstitute` overload — the one `AlbertoStore` uses is `internal` — so a call
+site that folds a boundary itself has to move onto the command pipeline or the serializer-taking
+`DecideAndAppendAsync`:
 
 ```csharp
 // before — silently wrong for stale-version envelopes (now throws)
 var state = evolver.Reconstitute(envelopes);
 
-// after — correct; upcaster chain fires before the handler sees the event
-var state = evolver.Reconstitute(envelopes, initial: default, serializer.Deserialize);
+// after — Load(boundary, evolver) fires the upcaster chain before the handler sees the event
+await store.Handle(command)
+    .Load(boundary, evolver)
+    .Decide((cmd, state) => …)
+    .Commit(ct);
+
+// or, without the pipeline:
+await eventStore.DecideAndAppendAsync(boundary, evolver, decide, toEventToPersist, serializer, ct);
 ```
 
-If you go through the command pipeline (`CommandPipeline.Load(boundary, evolver)`) or
-`DeciderExtensions.DecideAndAppendAsync` with an `EventSerializer`, upcasting is threaded
-automatically and no change is required. The only call sites that need updating are those that
-construct an evolver and call its public `Reconstitute` or `Evolve` methods directly, without
-a serializer, against a boundary that may contain pre-migration events.
+Both thread `EventSerializer.Deserialize` automatically, so call sites already using either need
+no change. The ones that need updating are those that construct an evolver and call its public
+`Reconstitute` or `Evolve` methods directly, without a serializer, against a boundary that may
+contain pre-migration events.
 
 Call sites where all events are guaranteed to be at the current version are unaffected.
 
@@ -858,7 +866,7 @@ A store that is not claimable derives from `DeadLetterStoreSpecification` as bef
 **Related.** `ExtensionPointContractTests` now freezes the abstract member set of every interface
 implemented outside this repository, so a member added after 1.0 either ships with a default
 implementation or moves to its own optional interface, as this one did. See
-[CONTRIBUTING.md](CONTRIBUTING.md).
+[CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ---
 
@@ -901,7 +909,7 @@ chained before or after the projection.
 Single-tenant modules are unaffected: `EfDocumentIdUniqueness.NotDeclared` stays the default and
 stays correct, because there is no second tenant to collide with.
 
-See [docs/projections.md](docs/projections.md#ef-projections-on-a-tenant-enabled-module).
+See [projections.md](projections.md#ef-projections-on-a-tenant-enabled-module).
 
 ---
 

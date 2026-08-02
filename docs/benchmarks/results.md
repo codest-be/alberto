@@ -2,8 +2,11 @@
 
 Every number here comes from `benchmarks/results/local-3575380c/baseline.json`, measured on
 one machine in one sitting. How to run and compare: [benchmarks/README.md](../../benchmarks/README.md).
-Why the suite is shaped this way:
-[the design doc](../superpowers/specs/2026-07-26-benchmark-suite-design.md).
+
+Migrations are referenced below by their original number. The 34 numbered scripts were later
+consolidated into two per tenancy set, so those links all point at
+`SingleTenant/002_QueryFunctions.sql`, which keeps each one as a titled section
+(`-- Alberto DCB Event Store - Migration 031`) along with its original rationale.
 
 ## What was measured
 
@@ -161,7 +164,7 @@ eight. Those are the flat-at-scale shapes you want.
 
 **`StreamByType` was the slowest read in the suite and is now among the flattest.** It reads
 1068 / 1764 / **1229** µs, against 1494 / 1931 / **9332** µs before
-[migration 031](../../src/Alberto.Postgres/Migrations/031_BoundedProbePerTypeReadByTypes.sql)
+[migration 031](../../src/Alberto.Postgres/Migrations/SingleTenant/002_QueryFunctions.sql)
 — **−86.8% at 1M**, the largest single move the suite has recorded. The 1M column now costs
 about what the 10k column costs, which is the property this whole document is about: a paged
 read should cost what it returns, not what the store holds. What the fix had to be, and why it
@@ -174,8 +177,8 @@ from the old three-type corpus and are a self-consistent series:
 | | 10k | 100k | 1M |
 |---|---:|---:|---:|
 | `INTERSECT` (original) | 1213 µs | 4052 µs | 34776 µs |
-| [028](../../src/Alberto.Postgres/Migrations/028_SemiJoinTypesAndTagsRead.sql) semi-join | — | 2672 µs | 6042 µs |
-| [029](../../src/Alberto.Postgres/Migrations/029_ScalarFastPathTypesAndTagsRead.sql) scalar fast path | 588 µs | 2676 µs | 3205 µs |
+| [028](../../src/Alberto.Postgres/Migrations/SingleTenant/002_QueryFunctions.sql) semi-join | — | 2672 µs | 6042 µs |
+| [029](../../src/Alberto.Postgres/Migrations/SingleTenant/002_QueryFunctions.sql) scalar fast path | 588 µs | 2676 µs | 3205 µs |
 
 A 29× jump for a 10× growth was the starting point, because `INTERSECT` is a set operation and
 a `LIMIT` cannot push through one — both branches materialised in full before a single row was
@@ -228,7 +231,7 @@ array form costs one descent per element on every outer row and estimates badly.
 wants a *different plan* than the tag axis, which is what 029's evidence — measured where the
 type predicate was a no-op — had no way to reveal.
 
-[Migration 030](../../src/Alberto.Postgres/Migrations/030_ScalarTagFastPathTypesAndTagsRead.sql)
+[Migration 030](../../src/Alberto.Postgres/Migrations/SingleTenant/002_QueryFunctions.sql)
 therefore adds a second branch rather than widening the first. One tag and one type keeps 029's
 scalar probe. One tag and several types drops the type-position index entirely and tests
 `e.event_type = ANY(p_types)` on the `alberto_events` row the query has to fetch anyway,
@@ -324,7 +327,7 @@ deviation — it is bimodal in this run, not slower than its 1M sibling; the 10k
 (6.4% and 5.6% sd) are the trustworthy ones, and a confirmation run put 100k at 1171 µs. And
 the three wildcard readers filed as never-audited follow-up work
 (`alberto_read_by_tag_patterns`, `_types_or_tag_patterns`, `_types_and_tag_patterns`) have no
-live body to audit: [migration 024](../../src/Alberto.Postgres/Migrations/024_DropWildcardTagBoundaries.sql)
+live body to audit: [migration 024](../../src/Alberto.Postgres/Migrations/SingleTenant/002_QueryFunctions.sql)
 dropped all three, and `MigrationUpgradeAndParityTests` asserts they stay dropped.
 `alberto_read_by_tags`, `_types_or_tags` and `_by_all_tags` still carry `= ANY` on the tag axis
 and are a separate question, because a tag axis genuinely can duplicate positions. That question

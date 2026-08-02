@@ -81,6 +81,15 @@ cannot be quietly stale — which is what makes it usable as a signal.
 `Alberto.Admin` and `Alberto.Admin.Postgres` are parked and excluded — see `.github/packages.txt`
 and the admin-surface note in `CLAUDE.md`.
 
+### Adding a package
+
+Two edits, and the second one is not redundant. Add the ID to `.github/packages.txt` — which the
+release scripts and every build and pack loop read — **and** to the literal allowlist in the
+"Verify packed set" step of `publish-packages.yml`. That step is the only gate between an
+accidental `IsPackable=true` and a nuget.org listing that can be unlisted but never deleted or
+reclaimed, and it only works because it states the shipping set independently of the thing that
+produces it. Edit only `packages.txt` and the publish job fails on the diff rather than pushing.
+
 ## Cutting a release
 
 ### 1. Dry run
@@ -275,7 +284,7 @@ gh secret set RELEASE_TOKEN --repo codest-be/alberto
 
 | | |
 |---|---|
-| `.github/packages.txt` | The ten packages that ship. Scripts read this, never a `src/*` glob |
+| `.github/packages.txt` | The ten packages that ship. Scripts and workflows read this, never a `src/*` glob |
 | `.github/scripts/resolve-version.sh` | Turns the milestone into the version, and refuses a wrong one |
 | `.github/scripts/draft-release-notes.sh` | Drafts a changelog section from a milestone |
 | `.github/scripts/apply-release.py` | Version bump, changelog cut, public-API promotion |

@@ -54,11 +54,11 @@ jobs:
       - name: Test examples
         run: dotnet test tests/Alberto.Examples.Tests/Alberto.Examples.Tests.csproj -c Release --no-build --logger "console;verbosity=normal"
 
-      # Proves the benchmark suite still compiles and executes. --job dry runs each case
-      # once with no warmup, so it measures nothing — it exists to stop the suite from
-      # bit-rotting between nightly runs, which is how benchmark suites usually die.
-      - name: Benchmark smoke run
-        run: dotnet run -c Release --project benchmarks/Alberto.Benchmarks -- --job dry --anyCategories=smoke
+      # No benchmark step here by design. The suite runs on a schedule
+      # (.github/workflows/benchmarks.yml), which builds it as part of running it. Benchmarks.Core
+      # and Benchmarks.Compare are still compiled here via Alberto.Tests' project references.
+      # A break confined to benchmarks/Alberto.Benchmarks therefore surfaces at 02:00 UTC, not on
+      # the PR — the accepted cost of keeping PR CI free of benchmark work.
 
       # Catches the class of bug where a src/ project is packable and depended upon
       # by another packable project but accidentally omitted from the pack list —
@@ -77,7 +77,15 @@ jobs:
             echo "::error::Could not read <VersionPrefix> from Directory.Build.props"
             exit 1
           fi
-          for proj in Alberto Alberto.Commands Alberto.EntityFramework Alberto.InMemory Alberto.Messaging Alberto.Messaging.Postgres Alberto.Postgres Alberto.Telemetry Alberto.Testing Alberto.Testing.Xunit; do
+          # The packable set comes from .github/packages.txt, never a src/* glob: Alberto.Admin
+          # and Alberto.Admin.Postgres build but are deliberately IsPackable=false. The list is
+          # collected into an array before any dotnet runs, since dotnet in a `while read` body
+          # would inherit the loop's stdin and eat the rest of the list.
+          PROJECTS=()
+          while IFS= read -r proj; do PROJECTS+=("$proj"); done \
+            < <(grep -vE '^\s*(#|$)' .github/packages.txt)
+          [ ${#PROJECTS[@]} -gt 0 ] || { echo "::error::.github/packages.txt lists no packages"; exit 1; }
+          for proj in "${PROJECTS[@]}"; do
             dotnet pack "src/$proj/$proj.csproj" -c Release --version-suffix ci -o /tmp/alberto-pack
           done
           SMOKEDIR=$(mktemp -d)

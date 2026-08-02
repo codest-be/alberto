@@ -235,8 +235,8 @@ or a timestamp in the message and let the consumer discard what it has already s
 
 ### Retention
 
-Delivered entries stay in the table until something removes them, and nothing did before 1.0 — the
-outbox was append-only in practice, and the partial indexes the relay depends on grew with it.
+Delivered entries stay in the table until something removes them, and nothing did before `0.1.0` —
+the outbox was append-only in practice, and the partial indexes the relay depends on grew with it.
 `WithOutbox` now registers an `OutboxRetentionService` that deletes delivered entries older than
 `deliveredRetention` (**default 7 days**) every `retentionSweepInterval` (default 1 hour):
 
@@ -264,9 +264,9 @@ outbox was append-only in practice, and the partial indexes the relay depends on
 For a one-off cleanup, or to catch up a table that predates this, `alberto ops outbox purge --before
 <timestamp>` does the same delete from the CLI and records an `admin-outbox-purged` audit event.
 
-> **Upgrading:** the first sweep after you take 1.0 faces every delivered entry you have ever
-> written. If that table is large, purge it once from the CLI during a quiet window before enabling
-> the service, or set `deliveredRetention` wide and walk it down.
+> **Upgrading:** if your outbox predates `0.1.0`, the first sweep faces every delivered entry you
+> have ever written. If that table is large, purge it once from the CLI during a quiet window before
+> enabling the service, or set `deliveredRetention` wide and walk it down.
 
 ## Reactor, outbox, or inline projection?
 

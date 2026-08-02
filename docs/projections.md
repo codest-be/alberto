@@ -94,7 +94,7 @@ In tests and samples, swap the store and change nothing else:
 
 ```csharp
 var overview = new InMemoryStateStore<OrdersOverview>();
-.AddProjection(OrdersOverviewProjection.Declaration, _ => () => overview)
+.AddProjection(OrdersOverviewProjection.Declaration, _ => _ => overview)
 ```
 
 ### Reading it back

@@ -50,11 +50,11 @@ public abstract class Evolver<TState> where TState : new()
     /// <para>
     /// <b>If any envelope was stored at an older schema version than the handler expects</b>
     /// (i.e. upcasting is required), this overload throws <see cref="InvalidOperationException"/>
-    /// rather than silently returning stale state.  Use the serializer-threaded overload instead:
-    /// <c>evolver.Reconstitute(envelopes, initial, serializer.Deserialize)</c>, or go through
-    /// the command pipeline (<c>CommandPipeline.Load(boundary, evolver)</c>) or
-    /// <c>DeciderExtensions.DecideAndAppendAsync</c> with a serializer argument — both thread
-    /// <see cref="EventSerializer.Deserialize"/> automatically.
+    /// rather than silently returning stale state.  The serializer-threaded overload is
+    /// <c>internal</c>, so fold through the command pipeline
+    /// (<c>CommandPipeline.Load(boundary, evolver)</c>) or through
+    /// <c>DeciderExtensions.DecideAndAppendAsync</c> with a serializer argument instead — both
+    /// thread <see cref="EventSerializer.Deserialize"/> automatically.
     /// </para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">

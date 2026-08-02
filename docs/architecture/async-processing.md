@@ -288,4 +288,4 @@ rule" for how to add a file to the allow-list when non-event JSON deserializatio
 | ProjectionVersions | `src/Alberto/Subscriptions/ProjectionVersions.cs` |
 | IProjectionRebuildStore | `src/Alberto/Subscriptions/IProjectionRebuildStore.cs` |
 | PostgresProjectionRebuildStore | `src/Alberto.Postgres/PostgresProjectionRebuildStore.cs` |
-| NOTIFY trigger | `src/Alberto.Postgres/Migrations/010_BatchNotifyTrigger.sql` |
+| NOTIFY trigger | `src/Alberto.Postgres/Migrations/SingleTenant/002_QueryFunctions.sql` (“Migration 010”) |

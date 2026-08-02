@@ -56,3 +56,10 @@ Promotion is manual and deliberate:
       --baseline benchmarks/results/<profileId>/baseline.json --candidate candidate.json --accept
 
 CI appends to `history/` on every nightly run but never touches `baseline.json`.
+
+## Where this runs
+
+Benchmarks execute only in `.github/workflows/benchmarks.yml` — nightly at 02:00 UTC, or on
+manual `workflow_dispatch`. PR and push CI does not build or run this project at all, so a
+refactor that breaks the runner surfaces on the next nightly run rather than on the PR. Build
+it locally when you touch it, or dispatch the Benchmarks workflow from your branch.

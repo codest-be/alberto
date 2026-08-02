@@ -78,23 +78,22 @@ jobs:
             echo "Prerelease version: $PREFIX-$SUFFIX"
           fi
 
+      # The packable set is read from .github/packages.txt so it cannot drift from what Pack
+      # below actually packs. The three projects named after the loop are built but never
+      # packed: the admin surface is IsPackable=false until the front doors on
+      # feature/admin-surface ship, and the CLI is a tool rather than a package. Building them
+      # here still catches a Release compile break, which the pack loop would not.
       - name: Build libraries
         run: |
-          dotnet build src/Alberto/Alberto.csproj -c Release
-          # Built but deliberately not packed: the admin surface is IsPackable=false until the
-          # front doors on feature/admin-surface ship. Building it here still catches a Release
-          # compile break, which the pack loop below no longer would.
+          PROJECTS=()
+          while IFS= read -r proj; do PROJECTS+=("$proj"); done \
+            < <(grep -vE '^\s*(#|$)' .github/packages.txt)
+          [ ${#PROJECTS[@]} -gt 0 ] || { echo "::error::.github/packages.txt lists no packages"; exit 1; }
+          for proj in "${PROJECTS[@]}"; do
+            dotnet build "src/$proj/$proj.csproj" -c Release
+          done
           dotnet build src/Alberto.Admin/Alberto.Admin.csproj -c Release
           dotnet build src/Alberto.Admin.Postgres/Alberto.Admin.Postgres.csproj -c Release
-          dotnet build src/Alberto.Commands/Alberto.Commands.csproj -c Release
-          dotnet build src/Alberto.EntityFramework/Alberto.EntityFramework.csproj -c Release
-          dotnet build src/Alberto.InMemory/Alberto.InMemory.csproj -c Release
-          dotnet build src/Alberto.Messaging/Alberto.Messaging.csproj -c Release
-          dotnet build src/Alberto.Postgres/Alberto.Postgres.csproj -c Release
-          dotnet build src/Alberto.Messaging.Postgres/Alberto.Messaging.Postgres.csproj -c Release
-          dotnet build src/Alberto.Telemetry/Alberto.Telemetry.csproj -c Release
-          dotnet build src/Alberto.Testing/Alberto.Testing.csproj -c Release
-          dotnet build src/Alberto.Testing.Xunit/Alberto.Testing.Xunit.csproj -c Release
           dotnet build tools/Alberto.Cli/Alberto.Cli.csproj -c Release
 
       - name: Test
@@ -106,7 +105,15 @@ jobs:
           if [ -n "${{ steps.version.outputs.suffix }}" ]; then
             SUFFIX_ARG="--version-suffix ${{ steps.version.outputs.suffix }}"
           fi
-          for proj in Alberto Alberto.Commands Alberto.EntityFramework Alberto.InMemory Alberto.Messaging Alberto.Messaging.Postgres Alberto.Postgres Alberto.Telemetry Alberto.Testing Alberto.Testing.Xunit; do
+          # The list is collected into an array before any dotnet runs. Calling dotnet directly
+          # in a `while read` body would let it inherit the loop's stdin and eat the rest of the
+          # list. `mapfile` would say this in one line but does not exist in bash 3.2, which is
+          # what macOS ships — this form lets a maintainer run the loop locally.
+          PROJECTS=()
+          while IFS= read -r proj; do PROJECTS+=("$proj"); done \
+            < <(grep -vE '^\s*(#|$)' .github/packages.txt)
+          [ ${#PROJECTS[@]} -gt 0 ] || { echo "::error::.github/packages.txt lists no packages"; exit 1; }
+          for proj in "${PROJECTS[@]}"; do
             dotnet pack "src/$proj/$proj.csproj" -c Release --no-build $SUFFIX_ARG -o artifacts
           done
 
@@ -117,6 +124,24 @@ jobs:
       # `Alberto.Messaging.Postgres`, so a substring test would admit an unexpected
       # `Alberto.Messaging.Something`. Sorted `diff` cannot.
       # `artifacts/*.nupkg` does not match `.snupkg` — that suffix has no dot before "nupkg".
+      #
+      # This list is written out by hand ON PURPOSE. Every other enumeration of the packable
+      # set — Build libraries and Pack above, Pack smoke in ci.yml — now reads
+      # .github/packages.txt; this one does not, and must not. Its value is that it is an
+      # *independent* second statement of what ships. Sourcing it from packages.txt would make
+      # the step ask "did dotnet pack produce what the loop just asked for?", which is a
+      # tautology: one line added to one file would then both pack a new package and bless it.
+      #
+      # CODEOWNERS is not an alternative. /.github/ is already owned, and the rulesets require
+      # zero approvals because GitHub will not let this repository's sole maintainer approve
+      # their own pull request (see .github/CODEOWNERS). Ownership requests review here; it does
+      # not gate. Swapping a hard gate for an advisory one is the wrong trade when the failure
+      # mode is a nuget.org ID that can be unlisted but never deleted or reclaimed.
+      #
+      # Nothing drifts quietly regardless: an entry added to packages.txt but not here makes
+      # Pack produce an extra .nupkg, which lands as a `+` line in the diff below and fails the
+      # job before any push. So publishing a new package costs two edits in two files. That is
+      # the intended speed bump on an irreversible action, not an oversight — please leave it.
       - name: Verify packed set
         run: |
           cat > /tmp/expected-packages.txt <<'IDS'

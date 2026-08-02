@@ -12,13 +12,14 @@ that was compiled and run; the finished file is at the bottom, along with the ou
 ```bash
 dotnet new console -o Tickets
 cd Tickets
-dotnet add package Alberto --prerelease
-dotnet add package Alberto.Commands --prerelease
-dotnet add package Alberto.InMemory --prerelease
+dotnet add package Alberto
+dotnet add package Alberto.Commands
+dotnet add package Alberto.InMemory
 dotnet add package Microsoft.Extensions.Hosting
 ```
 
-(If you have not added the package feed yet, see [Install](../README.md#install).)
+The packages are on nuget.org — no extra feed to configure. See [Install](../README.md#install)
+for the full list. Alberto is pre-1.0, so pin an exact version before you rely on it.
 
 ## 2. Events
 
@@ -154,7 +155,7 @@ var services  = new ServiceCollection();
 services.AddAlberto("tickets", builder => builder
     .WithInMemory()
     .WithEventsFrom(Assembly.GetExecutingAssembly())
-    .AddProjection(OccupancyProjection.Declaration, _ => () => occupancy)
+    .AddProjection(OccupancyProjection.Declaration, _ => _ => occupancy)
     .WithControlLoop(o => o with { PollingInterval = TimeSpan.FromMilliseconds(50) }));
 ```
 
@@ -184,6 +185,7 @@ Going to production is the same shape with one line swapped:
 ```csharp
 using System.Reflection;
 using Alberto;
+using Alberto.Commands;
 using Alberto.InMemory;
 using Alberto.Subscriptions;
 using Microsoft.Extensions.DependencyInjection;
@@ -260,7 +262,7 @@ public static class Program
         services.AddAlberto("tickets", builder => builder
             .WithInMemory()
             .WithEventsFrom(Assembly.GetExecutingAssembly())
-            .AddProjection(OccupancyProjection.Declaration, _ => () => occupancy)
+            .AddProjection(OccupancyProjection.Declaration, _ => _ => occupancy)
             .WithControlLoop(o => o with { PollingInterval = TimeSpan.FromMilliseconds(50) }));
 
         var provider = services.BuildServiceProvider(validateScopes: true);

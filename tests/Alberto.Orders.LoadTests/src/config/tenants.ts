@@ -5,17 +5,22 @@
 
 // Predefined tenant IDs - configure these for your environment
 // Using 10 tenants to stress test multi-tenant scenarios and tenant cache eviction (Fix 4)
+//
+// These must match TenantContext's rule, ^[a-z][a-z0-9_]{0,62}$ — underscores, never hyphens.
+// The same allowlist governs schema names, so the API rejects anything outside it with
+// INVALID_TENANT before a request reaches a resolver. An earlier hyphenated set here failed
+// every request in every scenario.
 const DEFAULT_TENANT_IDS = [
-  'tenant-loadtest-001',
-  'tenant-loadtest-002',
-  'tenant-loadtest-003',
-  'tenant-loadtest-004',
-  'tenant-loadtest-005',
-  'tenant-loadtest-006',
-  'tenant-loadtest-007',
-  'tenant-loadtest-008',
-  'tenant-loadtest-009',
-  'tenant-loadtest-010',
+  'tenant_loadtest_001',
+  'tenant_loadtest_002',
+  'tenant_loadtest_003',
+  'tenant_loadtest_004',
+  'tenant_loadtest_005',
+  'tenant_loadtest_006',
+  'tenant_loadtest_007',
+  'tenant_loadtest_008',
+  'tenant_loadtest_009',
+  'tenant_loadtest_010',
 ];
 
 // Allow override via environment variable (comma-separated)
