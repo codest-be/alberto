@@ -1,5 +1,6 @@
 using System.CommandLine;
 using Alberto.Admin;
+using Alberto.Cli.Output;
 using Alberto.Postgres;
 
 namespace Alberto.Cli.Commands;
@@ -42,62 +43,71 @@ public static class TenantsCommand
             var results = await ShardRun.CollectAsync(
                 targets, admin => admin.GetTenantLeaseInventoryAsync());
 
-            var showShard = ShardRun.ShowsShard(targets);
-            var succeeded = results.Where(r => r.Succeeded).ToArray();
+            return Render(output, targets, results, json);
+        });
 
-            // Single-tenant is a property of a database, so it is only the whole answer when
-            // every database Alberto looked at reported it.
-            var allSingleTenant = succeeded.Length > 0
-                && succeeded.All(r => r.Value!.TenancyMode is AdminTenancyMode.SingleTenant);
+    internal static int Render(
+        IOutput output,
+        IReadOnlyList<ShardTarget> targets,
+        IReadOnlyList<ShardResult<TenantLeaseInventory>> results,
+        bool json)
+    {
+        var showShard = ShardRun.ShowsShard(targets);
+        var succeeded = results.Where(r => r.Succeeded).ToArray();
 
-            var leaseRows = succeeded
-                .Where(r => r.Value!.TenancyMode is not AdminTenancyMode.SingleTenant)
-                .SelectMany(r => r.Value!.Leases.Select(l => (r.Target.ShardId, Lease: l)))
-                .ToArray();
+        // Single-tenant is a property of a database, so it is only the whole answer when
+        // every database Alberto looked at reported it.
+        var allSingleTenant = succeeded.Length > 0
+            && succeeded.All(r => r.Value!.TenancyMode is AdminTenancyMode.SingleTenant);
 
-            if (json)
+        var leaseRows = succeeded
+            .Where(r => r.Value!.TenancyMode is not AdminTenancyMode.SingleTenant)
+            .SelectMany(r => r.Value!.Leases.Select(l => (r.Target.ShardId, Lease: l)))
+            .ToArray();
+
+        if (json)
+        {
+            output.Json(new
             {
-                output.Json(new
+                singleTenantMode = allSingleTenant,
+                count = leaseRows.Length,
+                leases = leaseRows.Select(row => new
                 {
-                    singleTenantMode = allSingleTenant,
-                    count = leaseRows.Length,
-                    leases = leaseRows.Select(row => new
-                    {
-                        shard = showShard ? row.ShardId : null,
+                    shard = showShard ? row.ShardId : null,
+                    row.Lease.TenantId,
+                    row.Lease.ConsumerId,
+                    row.Lease.ReplicaId,
+                    expiresAt = row.Lease.ExpiresAt?.ToString("O")
+                })
+            });
+        }
+        else if (allSingleTenant)
+        {
+            output.Text("No tenant leases found (single-tenant mode).");
+        }
+        else if (leaseRows.Length == 0)
+        {
+            output.Text("No active tenant leases.");
+        }
+        else
+        {
+            output.Table(
+                showShard
+                    ? ["Shard", "Tenant ID", "Consumer ID", "Replica ID", "Expires At"]
+                    : ["Tenant ID", "Consumer ID", "Replica ID", "Expires At"],
+                leaseRows.Select(row =>
+                {
+                    string[] cells =
+                    [
                         row.Lease.TenantId,
                         row.Lease.ConsumerId,
-                        row.Lease.ReplicaId,
-                        expiresAt = row.Lease.ExpiresAt?.ToString("O")
-                    })
-                });
-            }
-            else if (allSingleTenant)
-            {
-                output.Text("No tenant leases found (single-tenant mode).");
-            }
-            else if (leaseRows.Length == 0)
-            {
-                output.Text("No active tenant leases.");
-            }
-            else
-            {
-                output.Table(
-                    showShard
-                        ? ["Shard", "Tenant ID", "Consumer ID", "Replica ID", "Expires At"]
-                        : ["Tenant ID", "Consumer ID", "Replica ID", "Expires At"],
-                    leaseRows.Select(row =>
-                    {
-                        string[] cells =
-                        [
-                            row.Lease.TenantId,
-                            row.Lease.ConsumerId,
-                            row.Lease.ReplicaId ?? "-",
-                            row.Lease.ExpiresAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"
-                        ];
-                        return showShard ? [row.ShardId!, .. cells] : cells;
-                    }));
-            }
+                        row.Lease.ReplicaId ?? "-",
+                        row.Lease.ExpiresAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"
+                    ];
+                    return showShard ? [row.ShardId!, .. cells] : cells;
+                }));
+        }
 
-            return ShardRun.ReportFailures(output, results) ? 1 : 0;
-        });
+        return ShardRun.ReportFailures(output, results) ? 1 : 0;
+    }
 }

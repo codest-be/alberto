@@ -1,5 +1,6 @@
 using System.CommandLine;
 using Alberto.Admin;
+using Alberto.Cli.Output;
 using Alberto.Postgres;
 
 namespace Alberto.Cli.Commands;
@@ -70,30 +71,7 @@ public static class ProjectionsCommand
             var results = await ShardRun.CollectAsync(
                 targets, async admin => (IReadOnlyList<string>)await admin.GetProjectionTypesAsync());
 
-            var types = results
-                .Where(r => r.Succeeded)
-                .SelectMany(r => r.Value!)
-                .Distinct(StringComparer.Ordinal)
-                .Order(StringComparer.Ordinal)
-                .ToArray();
-
-            if (json)
-            {
-                output.Json(new { projectionTypes = types });
-            }
-            else if (types.Length == 0)
-            {
-                output.Text("No projection types found.");
-            }
-            else
-            {
-                output.Table(
-                    ["Projection Type"],
-                    types.Select(t => new[] { t })
-                );
-            }
-
-            return ShardRun.ReportFailures(output, results) ? 1 : 0;
+            return RenderTypes(output, results, json);
         });
 
     internal static Task<int> HandleListAsync(
@@ -108,41 +86,82 @@ public static class ProjectionsCommand
                 async admin => (IReadOnlyList<ProjectionState>)
                     await admin.GetProjectionStatesAsync(type, tenant, search, limit));
 
-            var showShard = ShardRun.ShowsShard(targets);
-            var states = results
-                .Where(r => r.Succeeded)
-                .SelectMany(r => r.Value!.Select(s => (r.Target.ShardId, State: s)))
-                .ToArray();
-
-            if (json)
-            {
-                output.Json(new
-                {
-                    projectionType = type,
-                    count = states.Length,
-                    states = states.Select(row => new
-                    {
-                        shard = showShard ? row.ShardId : null,
-                        row.State.DocumentId,
-                        row.State.TenantId,
-                        updatedAt = row.State.UpdatedAt?.ToString("O")
-                    })
-                });
-            }
-            else
-            {
-                ShardRun.Table(
-                    output, targets, results,
-                    ["Document ID", "Tenant ID", "Updated At"],
-                    s =>
-                    [
-                        s.DocumentId,
-                        s.TenantId ?? "-",
-                        s.UpdatedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"
-                    ],
-                    $"No projection states found for type '{type}'.");
-            }
-
-            return ShardRun.ReportFailures(output, results) ? 1 : 0;
+            return RenderList(type, output, targets, results, json);
         });
+
+    internal static int RenderTypes(
+        IOutput output,
+        IReadOnlyList<ShardResult<IReadOnlyList<string>>> results,
+        bool json)
+    {
+        var types = results
+            .Where(r => r.Succeeded)
+            .SelectMany(r => r.Value!)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        if (json)
+        {
+            output.Json(new { projectionTypes = types });
+        }
+        else if (types.Length == 0)
+        {
+            output.Text("No projection types found.");
+        }
+        else
+        {
+            output.Table(
+                ["Projection Type"],
+                types.Select(t => new[] { t })
+            );
+        }
+
+        return ShardRun.ReportFailures(output, results) ? 1 : 0;
+    }
+
+    internal static int RenderList(
+        string type,
+        IOutput output,
+        IReadOnlyList<ShardTarget> targets,
+        IReadOnlyList<ShardResult<IReadOnlyList<ProjectionState>>> results,
+        bool json)
+    {
+        var showShard = ShardRun.ShowsShard(targets);
+        var states = results
+            .Where(r => r.Succeeded)
+            .SelectMany(r => r.Value!.Select(s => (r.Target.ShardId, State: s)))
+            .ToArray();
+
+        if (json)
+        {
+            output.Json(new
+            {
+                projectionType = type,
+                count = states.Length,
+                states = states.Select(row => new
+                {
+                    shard = showShard ? row.ShardId : null,
+                    row.State.DocumentId,
+                    row.State.TenantId,
+                    updatedAt = row.State.UpdatedAt?.ToString("O")
+                })
+            });
+        }
+        else
+        {
+            ShardRun.Table(
+                output, targets, results,
+                ["Document ID", "Tenant ID", "Updated At"],
+                s =>
+                [
+                    s.DocumentId,
+                    s.TenantId ?? "-",
+                    s.UpdatedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"
+                ],
+                $"No projection states found for type '{type}'.");
+        }
+
+        return ShardRun.ReportFailures(output, results) ? 1 : 0;
+    }
 }

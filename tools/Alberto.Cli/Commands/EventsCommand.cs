@@ -1,5 +1,6 @@
 using System.CommandLine;
 using Alberto.Admin;
+using Alberto.Cli.Output;
 using Alberto.Postgres;
 
 namespace Alberto.Cli.Commands;
@@ -60,33 +61,42 @@ public static class EventsCommand
                 async admin => (IReadOnlyList<EventInfo>)
                     await admin.GetEventsAsync(type, tag, tenant, after, limit));
 
-            if (json)
-            {
-                output.Json(ShardRun.Flatten(targets, results, e => new
-                {
-                    e.GlobalPosition,
-                    e.EventType,
-                    e.Tags,
-                    e.TenantId,
-                    createdAt = e.CreatedAt?.ToString("O")
-                }));
-            }
-            else
-            {
-                ShardRun.Table(
-                    output, targets, results,
-                    ["Position", "Event Type", "Tags", "Tenant ID", "Created At"],
-                    e =>
-                    [
-                        e.GlobalPosition.ToString(),
-                        e.EventType,
-                        e.Tags ?? "-",
-                        e.TenantId ?? "-",
-                        e.CreatedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"
-                    ],
-                    "No events found.");
-            }
-
-            return ShardRun.ReportFailures(output, results) ? 1 : 0;
+            return Render(output, targets, results, json);
         });
+
+    internal static int Render(
+        IOutput output,
+        IReadOnlyList<ShardTarget> targets,
+        IReadOnlyList<ShardResult<IReadOnlyList<EventInfo>>> results,
+        bool json)
+    {
+        if (json)
+        {
+            output.Json(ShardRun.Flatten(targets, results, e => new
+            {
+                e.GlobalPosition,
+                e.EventType,
+                e.Tags,
+                e.TenantId,
+                createdAt = e.CreatedAt?.ToString("O")
+            }));
+        }
+        else
+        {
+            ShardRun.Table(
+                output, targets, results,
+                ["Position", "Event Type", "Tags", "Tenant ID", "Created At"],
+                e =>
+                [
+                    e.GlobalPosition.ToString(),
+                    e.EventType,
+                    e.Tags ?? "-",
+                    e.TenantId ?? "-",
+                    e.CreatedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"
+                ],
+                "No events found.");
+        }
+
+        return ShardRun.ReportFailures(output, results) ? 1 : 0;
+    }
 }
