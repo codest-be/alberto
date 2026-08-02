@@ -40,9 +40,7 @@ At host startup, ASP.NET Core's options pipeline:
 
 1. Binds `Alberto:Modules:{moduleKey}` from `IConfiguration` on top of the code-declared
    defaults (configuration wins, see [Precedence](#precedence-configuration-beats-code)).
-2. Escalates `Checkpoints:OrphanPolicy` to `Strict` when outside `Development` and the
-   value was not explicitly set in configuration (see [Checkpoint hygiene](#checkpoint-hygiene)).
-3. Runs `AlbertoModuleValidator` (an `IValidateOptions<AlbertoModuleDefinition>`) which
+2. Runs `AlbertoModuleValidator` (an `IValidateOptions<AlbertoModuleDefinition>`) which
    collects every problem and surfaces all of them in one error rather than stopping at
    the first (see [Validation catalog](#validation-catalog)).
 
@@ -290,20 +288,30 @@ because `AddSource` / `AddMeter` are idempotent. `AddAlbertoInstrumentation()` (
 
 | Property | Type | Default | Configuration key |
 |---|---|---|---|
-| `OrphanPolicy` | `OrphanCheckpointPolicy` | `Warn` in Development; `Strict` elsewhere | `Checkpoints:OrphanPolicy` |
+| `OrphanPolicy` | `OrphanCheckpointPolicy` | `Warn` | `Checkpoints:OrphanPolicy` |
 
 Values for `OrphanCheckpointPolicy`:
 
 | Value | Meaning |
 |---|---|
 | `Off` | Ignore checkpoints whose processor id matches no declared processor |
-| `Warn` | Log a warning per orphan at startup (default in `Development`) |
-| `Strict` | Fail startup and name every orphan (default outside `Development`) |
+| `Warn` | Log a warning per orphan at startup (the default) |
+| `Strict` | Fail startup and name every orphan |
 
-**Escalation rule.** When the host environment is not `Development`, Alberto escalates
-`Warn` to `Strict`, but only when the policy was not explicitly supplied through
-configuration. A `Checkpoints:OrphanPolicy = Warn` entry in `appsettings.json` is always
-honoured, in every environment.
+**The default is `Warn` in every environment, including production.** An orphan has two
+causes, and only one of them is a bug. A processor that was *deleted* leaves a row nothing
+will ever read again: inert data, not corruption, and routine enough that failing the host
+over it turns an ordinary cleanup into a production outage discovered at deploy time. A
+processor that was *renamed* is the real problem, and `Warn` still names it at startup.
+
+Set `Strict` where that trade is the other way round — a staging environment, or a service
+whose reactors send mail — and prefer setting it per environment
+(`appsettings.Development.json`) rather than repo-wide, so the mistake is caught before it
+reaches a deploy:
+
+```json
+{ "Alberto": { "Modules": { "orders": { "Checkpoints": { "OrphanPolicy": "Strict" } } } } }
+```
 
 `Checkpoints` is the one section with no `With...()` builder method: it is configured
 through `Alberto:Modules:{key}:Checkpoints:*` only. That is deliberate. The policy is an
@@ -312,8 +320,9 @@ configuration is for.
 
 **Why this matters.** A processor id is a persisted checkpoint key. Renaming a handler
 class (when `processorId` is omitted from `ReactTo<TEvent, THandler>`) changes the derived
-id and leaves the old checkpoint as an orphan. In `Strict` mode the startup error names
-the orphaned id, giving you a chance to recover before any event is replayed.
+id and leaves the old checkpoint as an orphan. The startup report names the orphaned id —
+as a warning by default, as a startup error under `Strict` — giving you a chance to carry
+the position over with `alberto ops checkpoint rename` before the whole log is replayed.
 
 ---
 

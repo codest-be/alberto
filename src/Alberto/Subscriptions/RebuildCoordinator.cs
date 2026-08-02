@@ -461,7 +461,7 @@ internal sealed class RebuildCoordinator(
         // The shadow loop advanced the checkpoint under this key while it was replaying.
         // Without this reset the row lives forever in alberto_processor_checkpoints: the live
         // processor never claims it, the orphan check's declared-processor set never contains
-        // it, and a Strict policy (the non-Development default) throws on the next restart.
+        // it, and a Strict policy throws on the next restart.
         await checkpoints.ResetAsync(
             RebuildableProjection.ShadowProcessorId(projection.ProcessorId, version), ct);
     }
