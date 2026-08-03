@@ -77,7 +77,12 @@ internal static class ControlLoopRegistration
         static TimeSpan Max(TimeSpan left, TimeSpan right) => left > right ? left : right;
 
         // One ControlLoop per registered IEventProcessor.
-        services.AddSingleton<IHostedService>(sp =>
+        //
+        // Registered keyed rather than straight as IHostedService because the group is also the
+        // module's ILiveLoopSuspender: RebuildCoordinator parks a processor's live loop for the
+        // length of a promotion, and it has to park the same instance the host is running. The
+        // IHostedService registration below resolves this one.
+        services.AddKeyedSingleton<ILiveLoopSuspender>(moduleKey, (sp, _) =>
         {
             var options = Options(sp, moduleKey);
             var processors = sp.GetKeyedServices<IEventProcessor>(moduleKey).ToList();
@@ -172,6 +177,9 @@ internal static class ControlLoopRegistration
 
             return leaseGroup;
         });
+
+        services.AddSingleton<IHostedService>(sp =>
+            (IHostedService)sp.GetRequiredKeyedService<ILiveLoopSuspender>(moduleKey));
 
         // Dead letter retry loop — dedicated polling for CLI-requested retries.
         services.AddSingleton<IHostedService>(sp =>

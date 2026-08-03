@@ -9,7 +9,7 @@ namespace Alberto.Subscriptions;
 /// before starting each loop, renews leases periodically, and releases them on
 /// graceful shutdown for fast handoff during blue/green deployments.
 /// </summary>
-internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposable
+internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposable, ILiveLoopSuspender
 {
     private readonly IReadOnlyList<ControlLoop> _allLoops;
     private readonly IProcessorLeaseManager _leaseManager;
@@ -51,6 +51,59 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
     /// replica holds none. 0 is below every token the database issues, so a write presenting it
     /// is refused — which is the right answer for a replica that does not own the processor.
     /// </summary>
+    /// <summary>
+    /// Stops one running loop for a rebuild promotion, holding the scan lock until the returned
+    /// handle is disposed.
+    /// </summary>
+    /// <remarks>
+    /// The lock is the point. The periodic scan starts any leased processor it does not find in
+    /// <see cref="_runningLoops"/>, so without it a scan landing mid-promotion would restart the
+    /// very writer the promotion stopped. The loop's entry stays in <see cref="_runningLoops"/>
+    /// throughout — the scan skips what is listed there, and this replica does still own the
+    /// processor; it is only parked.
+    /// </remarks>
+    public async ValueTask<IAsyncDisposable> SuspendAsync(string processorId, CancellationToken ct)
+    {
+        await _scanLock.WaitAsync(ct);
+
+        try
+        {
+            // Not running here means another replica holds the lease, so there is no local
+            // writer to stop. The lock is still held: releasing it would let this replica pick
+            // the processor up mid-promotion, which is the same race by a longer route.
+            if (!_runningLoops.TryGetValue(processorId, out var loop))
+                return new Suspension(this, loop: null, processorId);
+
+            await loop.StopAsync(ct);
+            return new Suspension(this, loop, processorId);
+        }
+        catch
+        {
+            _scanLock.Release();
+            throw;
+        }
+    }
+
+    private sealed class Suspension(
+        LeaseAwareControlLoopGroup group, ControlLoop? loop, string processorId) : IAsyncDisposable
+    {
+        public async ValueTask DisposeAsync()
+        {
+            try
+            {
+                // Only restart a loop this replica still owns. A lease lost during the promotion
+                // takes the entry out of _runningLoops, and restarting on the strength of a
+                // handle captured before that would put a fenced-out replica back to work.
+                if (loop is not null && group._runningLoops.ContainsKey(processorId))
+                    await loop.StartAsync(CancellationToken.None);
+            }
+            finally
+            {
+                group._scanLock.Release();
+            }
+        }
+    }
+
     public long GetFenceToken(string processorId) =>
         _fenceTokens.TryGetValue(processorId, out var token) ? token : 0;
 
