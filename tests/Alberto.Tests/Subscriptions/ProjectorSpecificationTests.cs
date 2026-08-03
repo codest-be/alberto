@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Alberto.InMemory;
 using Alberto.Subscriptions;
 using Xunit;
 
@@ -55,63 +56,46 @@ public class ProjectorSpecificationTests
 
     #endregion
 
-    #region In-Memory State Store
+    #region Tracking State Store
 
-    private class InMemoryStateStore : IStateStore<OrderSummary>
+    /// <summary>
+    /// Thin wrapper over <see cref="InMemoryStateStore{TState}"/> that records which document
+    /// IDs were passed as deletes in <see cref="ApplyChangesAsync"/>. Tests need this to assert
+    /// that the batch processor computes the correct net diff: the shipped adapter's own
+    /// observable state cannot distinguish "was deleted" from "never existed", so we intercept
+    /// the delete list here rather than reimplement the store.
+    /// </summary>
+    private sealed class TrackingStateStore : IStateStore<OrderSummary>
     {
-        private readonly Dictionary<string, OrderSummary> _store = new();
+        private readonly InMemoryStateStore<OrderSummary> _inner = new();
 
-        public IReadOnlyDictionary<string, OrderSummary> Store => _store;
         public List<string> DeletedIds { get; } = new();
 
         public Task<IReadOnlyDictionary<string, OrderSummary>> LoadManyAsync(
-            IEnumerable<string> documentIds,
-            CancellationToken ct = default)
-        {
-            var result = new Dictionary<string, OrderSummary>();
-            foreach (var id in documentIds)
-            {
-                if (_store.TryGetValue(id, out var state))
-                    result[id] = state;
-            }
-            return Task.FromResult<IReadOnlyDictionary<string, OrderSummary>>(result);
-        }
+            IEnumerable<string> documentIds, CancellationToken ct = default)
+            => _inner.LoadManyAsync(documentIds, ct);
 
         public Task ApplyChangesAsync(
             IReadOnlyDictionary<string, OrderSummary> upserts,
             IReadOnlyCollection<string> deletes,
             CancellationToken ct = default)
         {
-            foreach (var (id, state) in upserts)
-            {
-                _store[id] = state;
-            }
-
-            foreach (var id in deletes)
-            {
-                _store.Remove(id);
-                DeletedIds.Add(id);
-            }
-
-            return Task.CompletedTask;
+            DeletedIds.AddRange(deletes);
+            return _inner.ApplyChangesAsync(upserts, deletes, ct);
         }
 
         public Task<IReadOnlyList<OrderSummary>> ListRecentAsync(
-            int limit = 20,
-            CancellationToken ct = default)
-        {
-            IReadOnlyList<OrderSummary> result = _store.Values.Reverse().Take(limit).ToList();
-            return Task.FromResult(result);
-        }
+            int limit = 20, CancellationToken ct = default)
+            => _inner.ListRecentAsync(limit, ct);
     }
 
     #endregion
 
     #region ProcessEvent Tests
 
-    private static (DeclaredAsyncProjection<OrderSummary> processor, InMemoryStateStore stateStore) CreateProcessor()
+    private static (DeclaredAsyncProjection<OrderSummary> processor, TrackingStateStore stateStore) CreateProcessor()
     {
-        var stateStore = new InMemoryStateStore();
+        var stateStore = new TrackingStateStore();
         var processor = new DeclaredAsyncProjection<OrderSummary>(Declaration(), _ => stateStore);
         return (processor, stateStore);
     }
@@ -126,8 +110,8 @@ public class ProjectorSpecificationTests
 
         await processor.ProcessEventAsync(envelope, TestContext.Current.CancellationToken);
 
-        Assert.Single(stateStore.Store);
-        var state = stateStore.Store[orderId.ToString()];
+        Assert.Single(await stateStore.ListRecentAsync(100, TestContext.Current.CancellationToken));
+        var state = (await stateStore.LoadManyAsync([orderId.ToString()], TestContext.Current.CancellationToken))[orderId.ToString()];
         Assert.Equal(orderId, state.OrderId);
         Assert.Equal(100m, state.Amount);
         Assert.Equal("Created", state.Status);
@@ -151,7 +135,7 @@ public class ProjectorSpecificationTests
             TestContext.Current.CancellationToken);
 
 
-        var state = stateStore.Store[orderId.ToString()];
+        var state = (await stateStore.LoadManyAsync([orderId.ToString()], TestContext.Current.CancellationToken))[orderId.ToString()];
         Assert.Equal("Confirmed", state.Status);
         Assert.Equal(100m, state.Amount); // Preserved
     }
@@ -174,7 +158,7 @@ public class ProjectorSpecificationTests
             TestContext.Current.CancellationToken);
 
 
-        Assert.Empty(stateStore.Store);
+        Assert.Empty(await stateStore.ListRecentAsync(100, TestContext.Current.CancellationToken));
         Assert.Contains(orderId.ToString(), stateStore.DeletedIds);
     }
 
@@ -197,9 +181,10 @@ public class ProjectorSpecificationTests
             TestContext.Current.CancellationToken);
 
 
-        Assert.Equal(2, stateStore.Store.Count);
-        Assert.Equal("Confirmed", stateStore.Store[order1.ToString()].Status);
-        Assert.Equal("Created", stateStore.Store[order2.ToString()].Status);
+        var loaded = await stateStore.LoadManyAsync([order1.ToString(), order2.ToString()], TestContext.Current.CancellationToken);
+        Assert.Equal(2, loaded.Count);
+        Assert.Equal("Confirmed", loaded[order1.ToString()].Status);
+        Assert.Equal("Created", loaded[order2.ToString()].Status);
     }
 
     [Fact]
@@ -219,7 +204,7 @@ public class ProjectorSpecificationTests
 
 
         // Should have folded to final state
-        var state = stateStore.Store[orderId.ToString()];
+        var state = (await stateStore.LoadManyAsync([orderId.ToString()], TestContext.Current.CancellationToken))[orderId.ToString()];
         Assert.Equal("Confirmed", state.Status);
     }
 
@@ -246,7 +231,7 @@ public class ProjectorSpecificationTests
     {
         var processor = new DeclaredAsyncProjection<OrderSummary>(
             Declaration(),
-            _ => new InMemoryStateStore(),
+            _ => new TrackingStateStore(),
             processorIdOverride: "order-summary-shadow");
 
         Assert.Equal("order-summary-shadow", processor.ProcessorId);
@@ -271,13 +256,13 @@ public class ProjectorSpecificationTests
 
         await processor.ProcessEventAsync(envelope, TestContext.Current.CancellationToken);
 
-        Assert.Empty(stateStore.Store);
+        Assert.Empty(await stateStore.ListRecentAsync(100, TestContext.Current.CancellationToken));
     }
 
     [Fact]
     public async Task ProcessEvent_ShouldSkipWhenDocumentIdIsNull()
     {
-        var stateStore = new InMemoryStateStore();
+        var stateStore = new TrackingStateStore();
         var declaration = DeclareProjection.For<OrderSummary>("order-summary-v1")
             .On<OrderCreated>(
                 id: e => null, // opt out of the event entirely
@@ -289,7 +274,7 @@ public class ProjectorSpecificationTests
             CreateEnvelope(new OrderCreated(Guid.NewGuid(), 100m), 1),
             TestContext.Current.CancellationToken);
 
-        Assert.Empty(stateStore.Store);
+        Assert.Empty(await stateStore.ListRecentAsync(100, TestContext.Current.CancellationToken));
     }
 
     #endregion
@@ -313,8 +298,8 @@ public class ProjectorSpecificationTests
         await processor.ProcessBatchAsync(batch, TestContext.Current.CancellationToken);
 
         // State should reflect events applied in order: Created → Confirmed
-        Assert.Single(stateStore.Store);
-        var state = stateStore.Store[orderId.ToString()];
+        Assert.Single(await stateStore.ListRecentAsync(100, TestContext.Current.CancellationToken));
+        var state = (await stateStore.LoadManyAsync([orderId.ToString()], TestContext.Current.CancellationToken))[orderId.ToString()];
         Assert.Equal("Confirmed", state.Status);
         Assert.Equal(100m, state.Amount); // Preserved from OrderCreated
     }
@@ -336,9 +321,10 @@ public class ProjectorSpecificationTests
 
         await processor.ProcessBatchAsync(batch, TestContext.Current.CancellationToken);
 
-        Assert.Equal(2, stateStore.Store.Count);
-        Assert.Equal("Confirmed", stateStore.Store[order1.ToString()].Status);
-        Assert.Equal("Created", stateStore.Store[order2.ToString()].Status);
+        var loaded = await stateStore.LoadManyAsync([order1.ToString(), order2.ToString()], TestContext.Current.CancellationToken);
+        Assert.Equal(2, loaded.Count);
+        Assert.Equal("Confirmed", loaded[order1.ToString()].Status);
+        Assert.Equal("Created", loaded[order2.ToString()].Status);
     }
 
     [Fact]
@@ -348,7 +334,7 @@ public class ProjectorSpecificationTests
 
         await processor.ProcessBatchAsync([], TestContext.Current.CancellationToken);
 
-        Assert.Empty(stateStore.Store);
+        Assert.Empty(await stateStore.ListRecentAsync(100, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -370,7 +356,7 @@ public class ProjectorSpecificationTests
 
         await processor.ProcessBatchAsync([envelope], TestContext.Current.CancellationToken);
 
-        Assert.Empty(stateStore.Store);
+        Assert.Empty(await stateStore.ListRecentAsync(100, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -390,7 +376,7 @@ public class ProjectorSpecificationTests
             [CreateEnvelope(new OrderCancelled(orderId), 2)],
             TestContext.Current.CancellationToken);
 
-        Assert.Empty(stateStore.Store);
+        Assert.Empty(await stateStore.ListRecentAsync(100, TestContext.Current.CancellationToken));
         Assert.Contains(orderId.ToString(), stateStore.DeletedIds);
     }
 
@@ -410,8 +396,8 @@ public class ProjectorSpecificationTests
             TestContext.Current.CancellationToken);
 
         // The trailing Set wins over the earlier Delete
-        Assert.Single(stateStore.Store);
-        Assert.Equal(250m, stateStore.Store[orderId.ToString()].Amount);
+        Assert.Single(await stateStore.ListRecentAsync(100, TestContext.Current.CancellationToken));
+        Assert.Equal(250m, (await stateStore.LoadManyAsync([orderId.ToString()], TestContext.Current.CancellationToken))[orderId.ToString()].Amount);
         Assert.Empty(stateStore.DeletedIds);
     }
 
@@ -437,8 +423,8 @@ public class ProjectorSpecificationTests
         var (processor, stateStore) = CreateProcessor();
         await processor.ProcessEventAsync(batch[0], TestContext.Current.CancellationToken);
 
-        Assert.Single(stateStore.Store);
-        Assert.Equal("Created", stateStore.Store[orderId.ToString()].Status);
+        Assert.Single(await stateStore.ListRecentAsync(100, TestContext.Current.CancellationToken));
+        Assert.Equal("Created", (await stateStore.LoadManyAsync([orderId.ToString()], TestContext.Current.CancellationToken))[orderId.ToString()].Status);
     }
 
     private class ThrowOnApplyStateStore : IStateStore<OrderSummary>

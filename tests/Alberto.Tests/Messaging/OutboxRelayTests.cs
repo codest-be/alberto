@@ -1,5 +1,6 @@
 using Alberto.InMemory;
 using Alberto.Messaging;
+using Alberto.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Time.Testing;
@@ -12,132 +13,39 @@ namespace Alberto.Tests.Messaging;
 /// </summary>
 public class OutboxRelayTests
 {
-    #region In-Memory Outbox Store
-
-    private sealed class InMemoryOutboxStore : IOutboxStore
-    {
-        private readonly List<OutboxEntry> _entries = new();
-        private readonly Dictionary<Guid, OutboxClaim> _claims = new();
-        private readonly Action? _onClaim;
-        private readonly TaskCompletionSource _whenClaimed =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        public InMemoryOutboxStore(Action? onClaim = null) => _onClaim = onClaim;
-
-        public IReadOnlyList<OutboxEntry> Entries => _entries;
-        public int ClaimCalls { get; private set; }
-        public Task WhenClaimed => _whenClaimed.Task;
-
-        public void Seed(OutboxEntry entry) => _entries.Add(entry);
-
-        public Task InsertAsync(OutboxEntry entry, CancellationToken ct = default)
-        {
-            _entries.Add(entry);
-            return Task.CompletedTask;
-        }
-
-        public Task<IReadOnlyList<OutboxClaim>> ClaimPendingAsync(
-            int limit,
-            TimeSpan claimLease,
-            string claimedBy,
-            CancellationToken ct = default)
-        {
-            ClaimCalls++;
-            _onClaim?.Invoke();
-            _whenClaimed.TrySetResult();
-
-            var expiresAt = DateTimeOffset.UtcNow.Add(claimLease);
-            var pending = _entries
-                .Where(e => e.Status == OutboxEntryStatus.Pending)
-                .Take(limit)
-                .ToList();
-            var claims = new List<OutboxClaim>(pending.Count);
-            foreach (var entry in pending)
-            {
-                var index = _entries.FindIndex(e => e.Id == entry.Id);
-                var processing = entry with { Status = OutboxEntryStatus.Processing };
-                _entries[index] = processing;
-                var claim = new OutboxClaim(processing, Guid.NewGuid(), expiresAt);
-                _claims[entry.Id] = claim;
-                claims.Add(claim);
-            }
-            return Task.FromResult<IReadOnlyList<OutboxClaim>>(claims);
-        }
-
-        public Task<bool> MarkDeliveredAsync(OutboxClaim claim, CancellationToken ct = default)
-        {
-            if (!_claims.TryGetValue(claim.Entry.Id, out var current)
-                || current.Token != claim.Token
-                || current.ExpiresAt <= DateTimeOffset.UtcNow)
-                return Task.FromResult(false);
-
-            var idx = _entries.FindIndex(e => e.Id == claim.Entry.Id);
-            if (idx >= 0)
-                _entries[idx] = _entries[idx] with { Status = OutboxEntryStatus.Delivered, DeliveredAt = DateTimeOffset.UtcNow };
-            _claims.Remove(claim.Entry.Id);
-            return Task.FromResult(true);
-        }
-
-        public Task<bool> MarkFailedAsync(OutboxClaim claim, string error, CancellationToken ct = default)
-        {
-            if (!_claims.TryGetValue(claim.Entry.Id, out var current)
-                || current.Token != claim.Token
-                || current.ExpiresAt <= DateTimeOffset.UtcNow)
-                return Task.FromResult(false);
-
-            var idx = _entries.FindIndex(e => e.Id == claim.Entry.Id);
-            if (idx >= 0)
-                _entries[idx] = _entries[idx] with
-                {
-                    Status = OutboxEntryStatus.Failed,
-                    RetryCount = _entries[idx].RetryCount + 1,
-                    LastError = error
-                };
-            _claims.Remove(claim.Entry.Id);
-            return Task.FromResult(true);
-        }
-
-        public Task RetryFailedAsync(string? messageType = null, CancellationToken ct = default)
-        {
-            for (var i = 0; i < _entries.Count; i++)
-            {
-                if (_entries[i].Status == OutboxEntryStatus.Failed &&
-                    (messageType is null || _entries[i].MessageType == messageType))
-                {
-                    _entries[i] = _entries[i] with { Status = OutboxEntryStatus.Pending, RetryCount = 0, LastError = null };
-                    _claims.Remove(_entries[i].Id);
-                }
-            }
-            return Task.CompletedTask;
-        }
-
-        public Task PurgeDeliveredAsync(DateTimeOffset before, CancellationToken ct = default)
-        {
-            _entries.RemoveAll(e => e.Status == OutboxEntryStatus.Delivered && e.DeliveredAt < before);
-            return Task.CompletedTask;
-        }
-    }
-
-    #endregion
-
     #region Poll-Signaling Outbox Store
 
     /// <summary>
-    /// Decorator over <see cref="IOutboxStore"/> that signals <see cref="WhenPolled"/>
-    /// at the start of the second <see cref="ClaimPendingAsync"/> call. By that point
-    /// the first full poll cycle — claiming, publishing, and marking delivered/failed —
-    /// is complete. Tests await this instead of a wall-clock sleep.
-    /// Uses composition so <see cref="InMemoryOutboxStore"/> callers keep direct access
-    /// to <c>Seed</c> and <c>Entries</c> through their own reference.
+    /// Decorator over <see cref="IOutboxStore"/> that signals <see cref="WhenPolled"/> at
+    /// the start of the second <see cref="ClaimPendingAsync"/> call. By that point the first
+    /// full poll cycle — claiming, publishing, and marking delivered/failed — is complete.
+    /// Tests await this instead of a wall-clock sleep. <see cref="WhenFirstPolled"/> fires on
+    /// the very first call, which is sufficient for tests that just need to know the relay's
+    /// loop is running before they stop it.
+    /// Uses composition so callers keep direct access to <c>Entries</c> through their own
+    /// reference to the <see cref="InMemoryOutboxStore"/> passed as the constructor's inner store.
     /// </summary>
     private sealed class PollSignalingOutboxStore : IOutboxStore
     {
         private readonly IOutboxStore _inner;
+        private readonly Action? _onClaim;
+        private readonly TaskCompletionSource _firstPoll =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource _tcs =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         private int _pollCount;
 
-        public PollSignalingOutboxStore(IOutboxStore inner) => _inner = inner;
+        public PollSignalingOutboxStore(IOutboxStore inner, Action? onClaim = null)
+        {
+            _inner = inner;
+            _onClaim = onClaim;
+        }
+
+        /// <summary>
+        /// Completes as soon as <see cref="ClaimPendingAsync"/> is first called, confirming
+        /// the relay's polling loop is running.
+        /// </summary>
+        public Task WhenFirstPolled => _firstPoll.Task;
 
         /// <summary>
         /// Completes when the relay begins its second <see cref="ClaimPendingAsync"/> call,
@@ -145,12 +53,19 @@ public class OutboxRelayTests
         /// </summary>
         public Task WhenPolled => _tcs.Task;
 
+        /// <summary>
+        /// Total number of <see cref="ClaimPendingAsync"/> calls forwarded to the inner store.
+        /// </summary>
+        public int ClaimCalls => Volatile.Read(ref _pollCount);
+
         public Task InsertAsync(OutboxEntry entry, CancellationToken ct = default)
             => _inner.InsertAsync(entry, ct);
 
         public Task<IReadOnlyList<OutboxClaim>> ClaimPendingAsync(
             int limit, TimeSpan claimLease, string claimedBy, CancellationToken ct = default)
         {
+            _firstPoll.TrySetResult();
+            _onClaim?.Invoke();
             if (Interlocked.Increment(ref _pollCount) >= 2)
                 _tcs.TrySetResult();
             return _inner.ClaimPendingAsync(limit, claimLease, claimedBy, ct);
@@ -313,10 +228,11 @@ public class OutboxRelayTests
     private static async Task RunRelayCycleAsync(
         IOutboxStore store,
         IMessageTransport transport,
-        int batchSize = 100)
+        int batchSize = 100,
+        Action? onClaim = null)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        var signal = new PollSignalingOutboxStore(store);
+        var signal = new PollSignalingOutboxStore(store, onClaim);
         var relay = new OutboxRelay(signal, transport, pollingInterval: TimeSpan.FromMilliseconds(10), batchSize: batchSize);
 
         // Start relay and wait until it begins its second poll. By that time the first
@@ -348,8 +264,8 @@ public class OutboxRelayTests
         var store = new InMemoryOutboxStore();
         var transport = new InMemoryTransport();
 
-        store.Seed(MakePendingEntry("order.placed"));
-        store.Seed(MakePendingEntry("order.shipped"));
+        await store.InsertAsync(MakePendingEntry("order.placed"));
+        await store.InsertAsync(MakePendingEntry("order.shipped"));
 
         await RunRelayCycleAsync(store, transport);
 
@@ -363,7 +279,7 @@ public class OutboxRelayTests
         var store = new InMemoryOutboxStore();
         var transport = new InMemoryTransport();
 
-        store.Seed(MakePendingEntry());
+        await store.InsertAsync(MakePendingEntry());
 
         await RunRelayCycleAsync(store, transport);
 
@@ -378,7 +294,7 @@ public class OutboxRelayTests
         var store = new InMemoryOutboxStore();
         var transport = new FailingTransport();
 
-        store.Seed(MakePendingEntry());
+        await store.InsertAsync(MakePendingEntry());
 
         await RunRelayCycleAsync(store, transport);
 
@@ -411,7 +327,7 @@ public class OutboxRelayTests
             Payload = """{"orderId":"test"}""",
             Metadata = new Dictionary<string, string> { ["source"] = "test" }
         };
-        store.Seed(entry);
+        await store.InsertAsync(entry);
 
         await RunRelayCycleAsync(store, transport);
 
@@ -446,11 +362,11 @@ public class OutboxRelayTests
                 calls.Add(call);
         }
 
-        var store = new InMemoryOutboxStore(() => Record("claim"));
+        var store = new InMemoryOutboxStore();
         var transport = new LifecycleTransport(record: Record);
-        store.Seed(MakePendingEntry());
+        await store.InsertAsync(MakePendingEntry());
 
-        await RunRelayCycleAsync(store, transport);
+        await RunRelayCycleAsync(store, transport, onClaim: () => Record("claim"));
 
         Assert.True(calls.IndexOf("start") < calls.IndexOf("claim"));
         Assert.True(calls.IndexOf("claim") < calls.IndexOf("publish"));
@@ -481,13 +397,14 @@ public class OutboxRelayTests
     [Fact]
     public async Task RepeatedHostStopAndDispose_DoNotStopOrDisposeTransportTwice()
     {
-        var store = new InMemoryOutboxStore();
+        var inner = new InMemoryOutboxStore();
+        var store = new PollSignalingOutboxStore(inner);
         var transport = new LifecycleTransport();
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         var relay = new OutboxRelay(store, transport);
 
         await relay.StartAsync(timeout.Token);
-        await store.WhenClaimed.WaitAsync(timeout.Token);
+        await store.WhenFirstPolled.WaitAsync(timeout.Token);
         await relay.StopAsync(timeout.Token);
         await relay.StopAsync(timeout.Token);
         relay.Dispose();
@@ -501,7 +418,8 @@ public class OutboxRelayTests
     public async Task StartupFailure_StopsPartialTransport_WithoutClaimingOrPublishing()
     {
         var startupFailure = new InvalidOperationException("startup failure");
-        var store = new InMemoryOutboxStore();
+        var inner = new InMemoryOutboxStore();
+        var store = new PollSignalingOutboxStore(inner);
         var transport = new LifecycleTransport(
             start: _ => Task.FromException(startupFailure));
         var relay = new OutboxRelay(store, transport);
@@ -513,8 +431,8 @@ public class OutboxRelayTests
         Assert.Same(startupFailure, exception);
         Assert.Equal(1, transport.Starts);
         Assert.Equal(1, transport.Stops);
-        Assert.Equal(0, transport.Publishes);
         Assert.Equal(0, store.ClaimCalls);
+        Assert.Equal(0, transport.Publishes);
         relay.Dispose();
     }
 
@@ -546,11 +464,12 @@ public class OutboxRelayTests
         var cleanupFailure = new InvalidOperationException("cleanup failure");
         var transport = new LifecycleTransport(
             stop: _ => Task.FromException(cleanupFailure));
-        var store = new InMemoryOutboxStore();
+        var inner = new InMemoryOutboxStore();
+        var store = new PollSignalingOutboxStore(inner);
         var relay = new OutboxRelay(store, transport);
 
         await relay.StartAsync(TestContext.Current.CancellationToken);
-        await store.WhenClaimed.WaitAsync(TestContext.Current.CancellationToken);
+        await store.WhenFirstPolled.WaitAsync(TestContext.Current.CancellationToken);
         await relay.StopAsync(TestContext.Current.CancellationToken);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -591,8 +510,10 @@ public class OutboxRelayTests
     {
         var transport = new LifecycleTransport();
         var services = new ServiceCollection();
-        var ordersStore = new InMemoryOutboxStore();
-        var paymentsStore = new InMemoryOutboxStore();
+        var ordersInner = new InMemoryOutboxStore();
+        var ordersStore = new PollSignalingOutboxStore(ordersInner);
+        var paymentsInner = new InMemoryOutboxStore();
+        var paymentsStore = new PollSignalingOutboxStore(paymentsInner);
         services.AddAlberto("orders", builder => builder
             .WithInMemory()
             .WithOutbox(_ => { }, ordersStore, transport));
@@ -611,7 +532,7 @@ public class OutboxRelayTests
             foreach (var relay in relays)
                 await relay.StartAsync(TestContext.Current.CancellationToken);
 
-            await Task.WhenAll(ordersStore.WhenClaimed, paymentsStore.WhenClaimed)
+            await Task.WhenAll(ordersStore.WhenFirstPolled, paymentsStore.WhenFirstPolled)
                 .WaitAsync(TestContext.Current.CancellationToken);
             Assert.Equal(1, transport.Starts);
 
@@ -642,14 +563,15 @@ public class OutboxRelayTests
             transport,
             TimeSpan.FromMinutes(1),
             timeProvider);
-        var store = new InMemoryOutboxStore();
+        var inner = new InMemoryOutboxStore();
+        var store = new PollSignalingOutboxStore(inner);
         var relay = new OutboxRelay(
             store,
             lifecycle.CreateLease(),
             pollingInterval: TimeSpan.FromMinutes(1));
 
         await relay.StartAsync(TestContext.Current.CancellationToken);
-        await store.WhenClaimed.WaitAsync(TestContext.Current.CancellationToken);
+        await store.WhenFirstPolled.WaitAsync(TestContext.Current.CancellationToken);
         var stopTask = relay.StopAsync(TestContext.Current.CancellationToken);
         await cleanupStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
 
@@ -680,7 +602,8 @@ public class OutboxRelayTests
             transport,
             TimeSpan.FromMinutes(1),
             timeProvider);
-        var store = new InMemoryOutboxStore();
+        var inner = new InMemoryOutboxStore();
+        var store = new PollSignalingOutboxStore(inner);
         var relay = new OutboxRelay(
             store,
             lifecycle.CreateLease(),
@@ -689,7 +612,7 @@ public class OutboxRelayTests
         try
         {
             await relay.StartAsync(TestContext.Current.CancellationToken);
-            await store.WhenClaimed.WaitAsync(TestContext.Current.CancellationToken);
+            await store.WhenFirstPolled.WaitAsync(TestContext.Current.CancellationToken);
             var stopTask = relay.StopAsync(TestContext.Current.CancellationToken);
             await cleanupStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
 

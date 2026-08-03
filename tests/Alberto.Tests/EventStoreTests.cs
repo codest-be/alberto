@@ -169,52 +169,6 @@ public sealed class EventStoreTests
 
     #endregion
 
-    #region In-Memory State Store
-
-    private class InMemoryStateStore<TState> : IStateStore<TState>
-    {
-        private readonly Dictionary<string, TState> _store = new();
-
-        public IReadOnlyDictionary<string, TState> Store => _store;
-
-        public Task<IReadOnlyDictionary<string, TState>> LoadManyAsync(
-            IEnumerable<string> documentIds,
-            CancellationToken ct = default)
-        {
-            var result = new Dictionary<string, TState>();
-            foreach (var id in documentIds)
-            {
-                if (_store.TryGetValue(id, out var state))
-                    result[id] = state;
-            }
-            return Task.FromResult<IReadOnlyDictionary<string, TState>>(result);
-        }
-
-        public Task ApplyChangesAsync(
-            IReadOnlyDictionary<string, TState> upserts,
-            IReadOnlyCollection<string> deletes,
-            CancellationToken ct = default)
-        {
-            foreach (var (id, state) in upserts)
-                _store[id] = state;
-
-            foreach (var id in deletes)
-                _store.Remove(id);
-
-            return Task.CompletedTask;
-        }
-
-        public Task<IReadOnlyList<TState>> ListRecentAsync(
-            int limit = 20,
-            CancellationToken ct = default)
-        {
-            IReadOnlyList<TState> result = _store.Values.Reverse().Take(limit).ToList();
-            return Task.FromResult(result);
-        }
-    }
-
-    #endregion
-
     #region Inline Projection Tests
 
     [Fact]
@@ -228,8 +182,9 @@ public sealed class EventStoreTests
         var orderId = Guid.NewGuid();
         await eventStore.AppendAsync([CreateEvent(new OrderCreated(orderId, 100m))], cancellationToken: TestContext.Current.CancellationToken);
 
-        Assert.Single(stateStore.Store);
-        var state = stateStore.Store[orderId.ToString()];
+        var all = await stateStore.ListRecentAsync(100, TestContext.Current.CancellationToken);
+        Assert.Single(all);
+        var state = (await stateStore.LoadManyAsync([orderId.ToString()], TestContext.Current.CancellationToken))[orderId.ToString()];
         Assert.Equal(orderId, state.OrderId);
         Assert.Equal(100m, state.Amount);
         Assert.Equal("Created", state.Status);
@@ -248,7 +203,7 @@ public sealed class EventStoreTests
         await eventStore.AppendAsync([CreateEvent(new OrderCreated(orderId, 100m))], cancellationToken: TestContext.Current.CancellationToken);
         await eventStore.AppendAsync([CreateEvent(new OrderConfirmed(orderId))], cancellationToken: TestContext.Current.CancellationToken);
 
-        var state = stateStore.Store[orderId.ToString()];
+        var state = (await stateStore.LoadManyAsync([orderId.ToString()], TestContext.Current.CancellationToken))[orderId.ToString()];
         Assert.Equal("Confirmed", state.Status);
         Assert.Equal(100m, state.Amount);
     }
@@ -268,8 +223,9 @@ public sealed class EventStoreTests
                 CreateEvent(new OrderConfirmed(orderId))
             ], cancellationToken: TestContext.Current.CancellationToken);
 
-        Assert.Single(stateStore.Store);
-        var state = stateStore.Store[orderId.ToString()];
+        var all = await stateStore.ListRecentAsync(100, TestContext.Current.CancellationToken);
+        Assert.Single(all);
+        var state = (await stateStore.LoadManyAsync([orderId.ToString()], TestContext.Current.CancellationToken))[orderId.ToString()];
         Assert.Equal("Confirmed", state.Status);
     }
 
@@ -288,7 +244,7 @@ public sealed class EventStoreTests
                 EventData = "{}"
             }], cancellationToken: TestContext.Current.CancellationToken);
 
-        Assert.Empty(stateStore.Store);
+        Assert.Empty(await stateStore.ListRecentAsync(100, TestContext.Current.CancellationToken));
     }
 
     [Fact]

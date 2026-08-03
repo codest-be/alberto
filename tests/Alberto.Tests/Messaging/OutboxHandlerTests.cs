@@ -5,6 +5,7 @@ using Alberto.InMemory;
 using Alberto.Messaging;
 using Alberto.Subscriptions;
 using Alberto.Tenancy;
+using Alberto.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -41,101 +42,6 @@ public class OutboxHandlerTests
     public interface IOrderEnricher
     {
         string GetLabel(Guid orderId);
-    }
-
-    #endregion
-
-    #region In-Memory Outbox Store
-
-    private sealed class InMemoryOutboxStore : IOutboxStore
-    {
-        private readonly List<OutboxEntry> _entries = new();
-        private readonly Dictionary<Guid, OutboxClaim> _claims = new();
-
-        public IReadOnlyList<OutboxEntry> Entries => _entries;
-
-        public Task InsertAsync(OutboxEntry entry, CancellationToken ct = default)
-        {
-            _entries.Add(entry);
-            return Task.CompletedTask;
-        }
-
-        public Task<IReadOnlyList<OutboxClaim>> ClaimPendingAsync(
-            int limit,
-            TimeSpan claimLease,
-            string claimedBy,
-            CancellationToken ct = default)
-        {
-            var expiresAt = DateTimeOffset.UtcNow.Add(claimLease);
-            var pending = _entries
-                .Where(e => e.Status == OutboxEntryStatus.Pending)
-                .Take(limit)
-                .ToList();
-            var claims = new List<OutboxClaim>(pending.Count);
-            foreach (var entry in pending)
-            {
-                var index = _entries.FindIndex(e => e.Id == entry.Id);
-                var processing = entry with { Status = OutboxEntryStatus.Processing };
-                _entries[index] = processing;
-                var claim = new OutboxClaim(processing, Guid.NewGuid(), expiresAt);
-                _claims[entry.Id] = claim;
-                claims.Add(claim);
-            }
-            return Task.FromResult<IReadOnlyList<OutboxClaim>>(claims);
-        }
-
-        public Task<bool> MarkDeliveredAsync(OutboxClaim claim, CancellationToken ct = default)
-        {
-            if (!_claims.TryGetValue(claim.Entry.Id, out var current)
-                || current.Token != claim.Token
-                || current.ExpiresAt <= DateTimeOffset.UtcNow)
-                return Task.FromResult(false);
-
-            var idx = _entries.FindIndex(e => e.Id == claim.Entry.Id);
-            if (idx >= 0)
-                _entries[idx] = _entries[idx] with { Status = OutboxEntryStatus.Delivered, DeliveredAt = DateTimeOffset.UtcNow };
-            _claims.Remove(claim.Entry.Id);
-            return Task.FromResult(true);
-        }
-
-        public Task<bool> MarkFailedAsync(OutboxClaim claim, string error, CancellationToken ct = default)
-        {
-            if (!_claims.TryGetValue(claim.Entry.Id, out var current)
-                || current.Token != claim.Token
-                || current.ExpiresAt <= DateTimeOffset.UtcNow)
-                return Task.FromResult(false);
-
-            var idx = _entries.FindIndex(e => e.Id == claim.Entry.Id);
-            if (idx >= 0)
-                _entries[idx] = _entries[idx] with
-                {
-                    Status = OutboxEntryStatus.Failed,
-                    RetryCount = _entries[idx].RetryCount + 1,
-                    LastError = error
-                };
-            _claims.Remove(claim.Entry.Id);
-            return Task.FromResult(true);
-        }
-
-        public Task RetryFailedAsync(string? messageType = null, CancellationToken ct = default)
-        {
-            for (var i = 0; i < _entries.Count; i++)
-            {
-                if (_entries[i].Status == OutboxEntryStatus.Failed &&
-                    (messageType is null || _entries[i].MessageType == messageType))
-                {
-                    _entries[i] = _entries[i] with { Status = OutboxEntryStatus.Pending, RetryCount = 0, LastError = null };
-                    _claims.Remove(_entries[i].Id);
-                }
-            }
-            return Task.CompletedTask;
-        }
-
-        public Task PurgeDeliveredAsync(DateTimeOffset before, CancellationToken ct = default)
-        {
-            _entries.RemoveAll(e => e.Status == OutboxEntryStatus.Delivered && e.DeliveredAt < before);
-            return Task.CompletedTask;
-        }
     }
 
     #endregion
