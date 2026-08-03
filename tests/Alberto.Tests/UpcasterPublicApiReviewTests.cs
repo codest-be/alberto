@@ -3,6 +3,7 @@ using Alberto;
 using Alberto.Configuration;
 using Alberto.InMemory;
 using Alberto.Messaging;
+using Alberto.Testing;
 using Alberto.Upcasting;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -255,8 +256,8 @@ public sealed class MultiModuleSerializerIsolationTests
     [Fact]
     public async Task Outbox_mapping_registry_resolves_module_keyed_serializer()
     {
-        // InMemoryOutboxStore used as test double; records nothing but satisfies the API.
-        var outboxStore = new InMemoryOutboxStoreDouble();
+        // InMemoryOutboxStore used as test double; satisfies the API.
+        var outboxStore = new InMemoryOutboxStore();
 
         IMessageMappingRegistry? capturedRegistry = null;
 
@@ -289,28 +290,3 @@ public sealed class MultiModuleSerializerIsolationTests
     }
 }
 
-// ---------------------------------------------------------------------------
-// Inline helper — minimal IOutboxStore double for the messaging test.
-// ---------------------------------------------------------------------------
-
-file sealed class InMemoryOutboxStoreDouble : IOutboxStore
-{
-    public Task InsertAsync(OutboxEntry entry, CancellationToken ct = default)
-        => Task.CompletedTask;
-
-    public Task<IReadOnlyList<OutboxClaim>> ClaimPendingAsync(
-        int limit, TimeSpan claimLease, string claimedBy, CancellationToken ct = default)
-        => Task.FromResult<IReadOnlyList<OutboxClaim>>([]);
-
-    public Task<bool> MarkDeliveredAsync(OutboxClaim claim, CancellationToken ct = default)
-        => Task.FromResult(true);
-
-    public Task<bool> MarkFailedAsync(OutboxClaim claim, string error, CancellationToken ct = default)
-        => Task.FromResult(false);
-
-    public Task RetryFailedAsync(string? messageType = null, CancellationToken ct = default)
-        => Task.CompletedTask;
-
-    public Task PurgeDeliveredAsync(DateTimeOffset before, CancellationToken ct = default)
-        => Task.CompletedTask;
-}

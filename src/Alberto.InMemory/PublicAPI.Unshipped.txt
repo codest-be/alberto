@@ -1,1 +1,8 @@
 #nullable enable
+Alberto.InMemory.InMemoryProjectionRebuildStore
+Alberto.InMemory.InMemoryProjectionRebuildStore.GetAsync(string! processorId, string! projectionType, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.ProjectionRebuildState!>!
+Alberto.InMemory.InMemoryProjectionRebuildStore.InMemoryProjectionRebuildStore() -> void
+Alberto.InMemory.InMemoryProjectionRebuildStore.ListAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Alberto.Subscriptions.ProjectionRebuildState!>!>!
+Alberto.InMemory.InMemoryProjectionRebuildStore.RequestAbortAsync(string! processorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.ProjectionRebuildState!>!
+Alberto.InMemory.InMemoryProjectionRebuildStore.RequestPromotionAsync(string! processorId, bool force = false, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.ProjectionRebuildState!>!
+Alberto.InMemory.InMemoryProjectionRebuildStore.StartAsync(string! processorId, string! projectionType, long targetPosition, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.ProjectionRebuildState!>!

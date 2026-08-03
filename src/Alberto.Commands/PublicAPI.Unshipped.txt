@@ -1,1 +1,4 @@
 #nullable enable
+*REMOVED*Alberto.Commands.DeciderExtensions
+*REMOVED*static Alberto.Commands.DeciderExtensions.DecideAndAppendAsync<TState>(this Alberto.IEventStore! eventStore, Alberto.DcbQuery! boundary, Alberto.Evolver<TState>! evolver, System.Func<TState, Alberto.Decision>! decide, System.Func<Alberto.IEvent!, Alberto.IEventToPersist!>! toEventToPersist, Alberto.EventSerializer! serializer, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Result>!
+*REMOVED*static Alberto.Commands.DeciderExtensions.DecideAndAppendAsync<TState>(this Alberto.IEventStore! eventStore, Alberto.DcbQuery! boundary, Alberto.Evolver<TState>! evolver, System.Func<TState, Alberto.Decision>! decide, System.Func<Alberto.IEvent!, Alberto.IEventToPersist!>! toEventToPersist, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Result>!

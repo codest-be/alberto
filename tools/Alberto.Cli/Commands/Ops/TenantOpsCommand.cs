@@ -67,7 +67,7 @@ public static class TenantOpsCommand
 
             var failed = await ShardRun.ApplyAsync(output, targets, async (dataSource, target) =>
             {
-                IAdminOperator operations = new PostgresAdminOperator(dataSource, target.Schema);
+                var operations = AdminAdapters.Operator(dataSource, target.Schema);
                 var deleted = await operations.ReleaseTenantLeasesAsync(processorId, CliSession.OperatorId);
                 output.Text($"Released {deleted} tenant lease(s) for {scope}.");
             });

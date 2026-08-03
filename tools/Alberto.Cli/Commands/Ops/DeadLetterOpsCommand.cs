@@ -177,7 +177,7 @@ public static class DeadLetterOpsCommand
 
             var failed = await ShardRun.ApplyAsync(output, targets, async (dataSource, target) =>
             {
-                IAdminOperator operations = new PostgresAdminOperator(dataSource, target.Schema);
+                var operations = AdminAdapters.Operator(dataSource, target.Schema);
                 var dismissed = !string.IsNullOrWhiteSpace(processor)
                     ? await operations.ClearDeadLettersForProcessorAsync(processor, CliSession.OperatorId)
                     : await operations.ClearAllDeadLettersAsync(CliSession.OperatorId);
@@ -200,7 +200,7 @@ public static class DeadLetterOpsCommand
         if (!string.IsNullOrWhiteSpace(processor))
             return await new PostgresDeadLetterStore(dataSource, schema).CountAsync(processor);
 
-        return await new PostgresAdminDataAccess(dataSource, schema).CountAllDeadLettersAsync();
+        return await AdminAdapters.Reader(dataSource, schema).CountAllDeadLettersAsync();
     }
 
     internal static Task<int> HandleRetryAsync(
@@ -246,7 +246,7 @@ public static class DeadLetterOpsCommand
 
             var failed = await ShardRun.ApplyAsync(output, targets, async (dataSource, target) =>
             {
-                IAdminOperator operations = new PostgresAdminOperator(dataSource, target.Schema);
+                var operations = AdminAdapters.Operator(dataSource, target.Schema);
                 var count = await operations.MarkDeadLettersForRetryAsync(processorId, CliSession.OperatorId);
 
                 if (json)
@@ -300,7 +300,7 @@ public static class DeadLetterOpsCommand
 
             var failed = await ShardRun.ApplyAsync(output, targets, async (dataSource, target) =>
             {
-                IAdminOperator operations = new PostgresAdminOperator(dataSource, target.Schema);
+                var operations = AdminAdapters.Operator(dataSource, target.Schema);
                 var (rewindPosition, deletedCount) =
                     await operations.RetryByRewindAsync(processorId, CliSession.OperatorId);
 

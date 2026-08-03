@@ -218,7 +218,7 @@ public static class RebuildCommand
                 {
                     await using var dataSource =
                         new NpgsqlDataSourceBuilder(target.ConnectionString).Build();
-                    var admin = new PostgresAdminDataAccess(dataSource, target.Schema);
+                    var admin = AdminAdapters.Reader(dataSource, target.Schema);
                     var store = new PostgresProjectionRebuildStore(dataSource, target.Schema);
                     var current = await store.GetAsync(id, type);
                     var head = await admin.GetGlobalPositionAsync() ?? 0;
@@ -297,7 +297,7 @@ public static class RebuildCommand
 
                     await using var dataSource =
                         new NpgsqlDataSourceBuilder(target.ConnectionString).Build();
-                    IAdminOperator operations = new PostgresAdminOperator(dataSource, target.Schema);
+                    var operations = AdminAdapters.Operator(dataSource, target.Schema);
                     var state = await operations.StartRebuildAsync(
                         id, type, plan.Head, CliSession.OperatorId);
                     if (json)
@@ -337,7 +337,7 @@ public static class RebuildCommand
 
             var results = await ShardRun.ProbeAsync(targets, async (dataSource, target) =>
             {
-                var admin = new PostgresAdminDataAccess(dataSource, target.Schema);
+                var admin = AdminAdapters.Reader(dataSource, target.Schema);
                 var store = new PostgresProjectionRebuildStore(dataSource, target.Schema);
 
                 IReadOnlyList<ProjectionRebuildState> states = id is null
@@ -514,7 +514,7 @@ public static class RebuildCommand
     private static async Task<int> RunAsync(
         IOutput output,
         IReadOnlyList<ShardTarget> targets,
-        Func<PostgresAdminDataAccess, IAdminOperator, ShardTarget, Task<int>> run)
+        Func<IAdminReader, IAdminOperator, ShardTarget, Task<int>> run)
     {
         var showShard = ShardRun.ShowsShard(targets);
         var exitCode = 0;
@@ -528,8 +528,8 @@ public static class RebuildCommand
             try
             {
                 await using var dataSource = new NpgsqlDataSourceBuilder(target.ConnectionString).Build();
-                var admin = new PostgresAdminDataAccess(dataSource, target.Schema);
-                IAdminOperator operations = new PostgresAdminOperator(dataSource, target.Schema);
+                var admin = AdminAdapters.Reader(dataSource, target.Schema);
+                var operations = AdminAdapters.Operator(dataSource, target.Schema);
 
                 if (await run(admin, operations, target) != 0)
                     exitCode = 1;

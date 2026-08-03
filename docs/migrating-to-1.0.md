@@ -659,10 +659,9 @@ version is less than the version declared by `[EventType(Version = N)]` on the h
 evolver handler expects version M. Raw JSON deserialization would produce stale state. Supply
 an EventSerializer so the upcaster chain runs before reconstitution: …`
 
-**Fix.** Fold through a path that threads the serializer for you. There is no public
-serializer-taking `Reconstitute` overload (the one `AlbertoStore` uses is `internal`), so a call
-site that folds a boundary itself has to move onto the command pipeline or the serializer-taking
-`DecideAndAppendAsync`:
+**Fix.** Fold through the command pipeline, which threads the serializer for you. There is no
+public serializer-taking `Reconstitute` overload (the one `AlbertoStore` uses is `internal`), so
+a call site that folds a boundary itself must move onto the command pipeline:
 
 ```csharp
 // before: silently wrong for stale-version envelopes (now throws)
@@ -673,15 +672,12 @@ await store.Handle(command)
     .Load(boundary, evolver)
     .Decide((cmd, state) => …)
     .Commit(ct);
-
-// or, without the pipeline:
-await eventStore.DecideAndAppendAsync(boundary, evolver, decide, toEventToPersist, serializer, ct);
 ```
 
-Both thread `EventSerializer.Deserialize` automatically, so call sites already using either need
-no change. The ones that need updating are those that construct an evolver and call its public
-`Reconstitute` or `Evolve` methods directly, without a serializer, against a boundary that may
-contain pre-migration events.
+The pipeline threads `EventSerializer.Deserialize` automatically. Call sites already using it
+need no change. The ones that need updating are those that construct an evolver and call its
+public `Reconstitute` or `Evolve` methods directly, without a serializer, against a boundary
+that may contain pre-migration events.
 
 Call sites where all events are guaranteed to be at the current version are unaffected.
 
