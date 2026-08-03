@@ -196,22 +196,15 @@ var state = evolver.Reconstitute(envelopes);
 
 The serializer-threaded overload that `AlbertoStore` uses internally is **not public**, so there
 is no way to fold a boundary that may contain stale-version events by calling the evolver
-yourself. Go through one of the two paths that thread `EventSerializer.Deserialize` for you:
+yourself. Use the command pipeline, which threads `EventSerializer.Deserialize` for you:
 
 ```csharp
-// The command pipeline: Load(boundary, evolver) threads the serializer into the dispatch loop:
+// Load(boundary, evolver) threads the serializer into the dispatch loop:
 await store.Handle(command)
     .Load(boundary, evolver)
     .Decide((cmd, state) => …)
     .Commit(ct);
-
-// Or the serializer-taking overload of DecideAndAppendAsync:
-await eventStore.DecideAndAppendAsync(boundary, evolver, decide, toEventToPersist, serializer, ct);
 ```
-
-The same applies to `DeciderExtensions.DecideAndAppendAsync`: the five-argument overload
-(without a serializer) will throw for stale-version envelopes; prefer the six-argument overload
-that accepts an `EventSerializer`.
 
 ### A gap with nothing covering it is refused
 

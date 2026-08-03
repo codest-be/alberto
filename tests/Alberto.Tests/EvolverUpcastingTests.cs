@@ -218,26 +218,25 @@ public sealed class EvolverTypeMismatchTests
 }
 
 // ---------------------------------------------------------------------------
-// 3. DeciderExtensions — new overload with EventSerializer
+// 3. Pipeline with serializer applies the upcaster chain
 // ---------------------------------------------------------------------------
 
 /// <summary>
-/// Verifies that the <see cref="EventSerializer"/>-taking
-/// <see cref="DeciderExtensions.DecideAndAppendAsync{TState}(Alberto.IEventStore, Alberto.DcbQuery, Alberto.Evolver{TState}, System.Func{TState, Alberto.Decision}, System.Func{Alberto.IEvent, Alberto.IEventToPersist}, Alberto.EventSerializer, System.Threading.CancellationToken)"/>
-/// applies the upcaster chain on reconstitution,
-/// and that the existing overload (no serializer) still compiles and falls back to raw JSON.
+/// Verifies that the command pipeline threads the <see cref="EventSerializer"/> upcaster chain
+/// through reconstitution when <see cref="AlbertoStore"/> is built with a serializer.
+/// The pipeline path (<c>AlbertoStore.Handle(...).Load(boundary, evolver).Decide(...).Commit(...)</c>)
+/// is the canonical way to fold a boundary that may contain stale-version envelopes.
 /// </summary>
-public sealed class DeciderExtensionsUpcasterTests
+public sealed class PipelineUpcasterTests
 {
     private static readonly string Slug = "upcast-evolver-order";
 
     [Fact]
-    public async Task DecideAndAppendAsync_WithSerializer_AppliesUpcasterChain()
+    public async Task Pipeline_WithSerializerAndEvolver_AppliesUpcasterChain()
     {
         // Arrange: v1 event in store.
         var orderId = Guid.NewGuid();
-        var backend = new InMemoryEventStoreBackend();
-        var eventStore = new EventStore(backend);
+        var eventStore = new EventStore(new InMemoryEventStoreBackend());
 
         await eventStore.AppendAsync([
             new EventToPersist
@@ -259,20 +258,20 @@ public sealed class DeciderExtensionsUpcasterTests
                     .Build())
                 .Build());
 
+        var store = new AlbertoStore(eventStore, serializer);
         var evolver = new UpcastEvolverOrderEvolver();
         string? observedRegion = null;
 
-        // Act: use the serializer overload of DecideAndAppendAsync.
-        var result = await eventStore.DecideAndAppendAsync(
-            boundary: DcbQuery.ByTypes(Slug),
-            evolver: evolver,
-            decide: state =>
+        // Act: pipeline threads the serializer into the dispatch loop automatically.
+        var result = await store
+            .Handle(orderId)
+            .Load(DcbQuery.ByTypes(Slug), evolver)
+            .Decide((_, state) =>
             {
                 observedRegion = state.LastRegion;
                 return Decision.Succeed();
-            },
-            toEventToPersist: _ => throw new InvalidOperationException("should not append"),
-            serializer: serializer);
+            })
+            .Commit(TestContext.Current.CancellationToken);
 
         // Assert: upcasted shape reached the evolver.
         result.IsSuccess.Should().BeTrue();
