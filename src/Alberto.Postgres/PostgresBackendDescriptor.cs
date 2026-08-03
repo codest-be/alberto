@@ -143,6 +143,11 @@ public sealed record PostgresBackendDescriptor(PostgresOptions Options) : IAlber
             var builder = new NpgsqlDataSourceBuilder(options.ConnectionString);
             builder.ConnectionStringBuilder.MaxPoolSize = options.MaxPoolSize;
             builder.ConnectionStringBuilder.MinPoolSize = options.MinPoolSize;
+            // The catalog issues very few distinct statements (~3–4 for shard routing and
+            // catalog migration checks), so most of the 50-slot ceiling goes unused. Applying
+            // the same settings is simpler than special-casing and costs nothing.
+            builder.ConnectionStringBuilder.MaxAutoPrepare = options.MaxAutoPrepare;
+            builder.ConnectionStringBuilder.AutoPrepareMinUsages = options.AutoPrepareMinUsages;
             return builder.Build();
         });
 
@@ -188,13 +193,21 @@ public sealed record PostgresBackendDescriptor(PostgresOptions Options) : IAlber
 #pragma warning restore ALB9001
             shardId));
 
-        // Register NpgsqlDataSource with connection pool settings.
+        // Register NpgsqlDataSource with connection pool and auto-prepare settings.
         services.AddKeyedSingleton<NpgsqlDataSource>(moduleKey, (sp, _) =>
         {
             var opts = runtime.Resolve(sp);
             var builder = new NpgsqlDataSourceBuilder(opts.ConnectionString);
             builder.ConnectionStringBuilder.MaxPoolSize = opts.MaxPoolSize;
             builder.ConnectionStringBuilder.MinPoolSize = opts.MinPoolSize;
+            // Enable Npgsql automatic statement preparation. Alberto issues a small, bounded set
+            // of SQL strings per module — stream reads, appends, checkpoint/dead-letter/lease/
+            // rebuild operations total ~45–50 distinct statements. Caching them as server-side
+            // prepared plans eliminates repeated parse-and-plan round trips on every call.
+            // Both settings take precedence over any values in the connection string, consistent
+            // with how MaxPoolSize and MinPoolSize are handled above.
+            builder.ConnectionStringBuilder.MaxAutoPrepare = opts.MaxAutoPrepare;
+            builder.ConnectionStringBuilder.AutoPrepareMinUsages = opts.AutoPrepareMinUsages;
             return builder.Build();
         });
 
