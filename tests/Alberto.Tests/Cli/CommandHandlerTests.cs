@@ -569,30 +569,3 @@ public sealed class CommandHandlerTests
     private static IReadOnlyList<ShardResult<T>> Failure<T>(ShardTarget target, string message) =>
         [new ShardResult<T>(target, default, new InvalidOperationException(message))];
 }
-
-/// <summary>
-/// Test double that records every IOutput call so tests can assert on what was written.
-/// HumanOutput routes Text/Table/Box through Spectre's internal console (which ignores
-/// Console.SetOut), so a real output adapter cannot be observed in tests — hence this double.
-/// </summary>
-internal sealed class TestOutput : IOutput
-{
-    public List<object> JsonCalls { get; } = [];
-    public List<string> TextCalls { get; } = [];
-    public List<string> ErrorCalls { get; } = [];
-    public List<string> WarningCalls { get; } = [];
-    public List<(string[] Headers, string[][] Rows)> TableCalls { get; } = [];
-    public List<(string Title, Dictionary<string, string> Fields)> BoxCalls { get; } = [];
-
-    public void Text(string text) => TextCalls.Add(text);
-
-    public void Table(string[] headers, IEnumerable<string[]> rows) =>
-        TableCalls.Add((headers, rows.ToArray()));
-
-    public void Box(string title, Dictionary<string, string> fields) =>
-        BoxCalls.Add((title, fields));
-
-    public void Json(object data) => JsonCalls.Add(data);
-    public void Warning(string message) => WarningCalls.Add(message);
-    public void Error(string message) => ErrorCalls.Add(message);
-}

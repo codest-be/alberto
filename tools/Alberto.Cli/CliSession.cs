@@ -60,9 +60,16 @@ public sealed class CliSession
     /// <see langword="null"/>, the config is loaded once from disk via
     /// <see cref="ConfigFileFinder.Find()"/>.
     /// </param>
-    public CliSession(bool json, AlbertoConfig? config = null)
+    /// <param name="output">
+    /// The adapter to write through, overriding the one <paramref name="json"/> would select. Both
+    /// shipped adapters write to <see cref="Console.Error"/>, which is process-global, so a test
+    /// that asserts on what an operator was told has to redirect the whole process to read it back
+    /// — and then it cannot run beside anything else that writes there. Passing a double instead
+    /// keeps that assertion scoped to the one session under test.
+    /// </param>
+    public CliSession(bool json, AlbertoConfig? config = null, IOutput? output = null)
     {
-        Output = json ? new JsonOutput() : new HumanOutput();
+        Output = output ?? (json ? new JsonOutput() : new HumanOutput());
 
         if (config is not null)
         {

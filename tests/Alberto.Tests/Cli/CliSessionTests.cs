@@ -49,28 +49,20 @@ public class CliSessionTests
     {
         // dotnet test does not attach a real TTY so AnsiConsole.Profile.Capabilities.Interactive
         // is false in this environment. This test validates the non-interactive path.
-        var errorWriter = new StringWriter();
-        var savedError = Console.Error;
-        Console.SetError(errorWriter);
-        try
-        {
-            var session = new CliSession(json: false, config: new AlbertoConfig());
-            var result = session.Confirm(
-                yes: false,
-                prompt: "interactive prompt",
-                nonInteractiveError: "add --yes to confirm");
+        var output = new TestOutput();
+        var session = new CliSession(json: false, config: new AlbertoConfig(), output: output);
 
-            // If this assertion fails it means the test is running in a real interactive terminal,
-            // which should not happen in CI or via `dotnet test`.
-            if (result is not null)
-            {
-                result.Should().Be(1);
-                errorWriter.ToString().Should().Contain("add --yes to confirm");
-            }
-        }
-        finally
+        var result = session.Confirm(
+            yes: false,
+            prompt: "interactive prompt",
+            nonInteractiveError: "add --yes to confirm");
+
+        // If this assertion fails it means the test is running in a real interactive terminal,
+        // which should not happen in CI or via `dotnet test`.
+        if (result is not null)
         {
-            Console.SetError(savedError);
+            result.Should().Be(1);
+            output.ErrorCalls.Should().ContainSingle().Which.Should().Contain("add --yes to confirm");
         }
     }
 
@@ -99,45 +91,27 @@ public class CliSessionTests
     [Fact]
     public async Task RunAsync_Body_Throws_Exception_Returns_One_And_Writes_Error()
     {
-        var errorWriter = new StringWriter();
-        var savedError = Console.Error;
-        Console.SetError(errorWriter);
-        try
-        {
-            var session = new CliSession(json: false, config: new AlbertoConfig());
+        var output = new TestOutput();
+        var session = new CliSession(json: false, config: new AlbertoConfig(), output: output);
 
-            var result = await session.RunAsync(
-                () => Task.FromException<int>(new InvalidOperationException("database exploded")));
+        var result = await session.RunAsync(
+            () => Task.FromException<int>(new InvalidOperationException("database exploded")));
 
-            result.Should().Be(1);
-            errorWriter.ToString().Should().Contain("database exploded");
-        }
-        finally
-        {
-            Console.SetError(savedError);
-        }
+        result.Should().Be(1);
+        output.ErrorCalls.Should().ContainSingle().Which.Should().Contain("database exploded");
     }
 
     [Fact]
     public async Task RunAsync_ShardSelectionException_Returns_One_And_Writes_Error()
     {
-        var errorWriter = new StringWriter();
-        var savedError = Console.Error;
-        Console.SetError(errorWriter);
-        try
-        {
-            var session = new CliSession(json: false, config: new AlbertoConfig());
+        var output = new TestOutput();
+        var session = new CliSession(json: false, config: new AlbertoConfig(), output: output);
 
-            var result = await session.RunAsync(
-                () => Task.FromException<int>(new ShardSelectionException("must specify --shard or --all-shards")));
+        var result = await session.RunAsync(
+            () => Task.FromException<int>(new ShardSelectionException("must specify --shard or --all-shards")));
 
-            result.Should().Be(1);
-            errorWriter.ToString().Should().Contain("must specify --shard or --all-shards");
-        }
-        finally
-        {
-            Console.SetError(savedError);
-        }
+        result.Should().Be(1);
+        output.ErrorCalls.Should().ContainSingle().Which.Should().Contain("must specify --shard or --all-shards");
     }
 
     // ── Target resolution delegates to ShardResolver using the pre-loaded config ─
