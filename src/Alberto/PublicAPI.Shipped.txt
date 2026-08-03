@@ -383,6 +383,7 @@ Alberto.EventTypeAttribute.UpcastingNotRequired.set -> void
 Alberto.EventTypeAttribute.Version.get -> int
 Alberto.EventTypeAttribute.Version.set -> void
 Alberto.Evolver<TState>
+Alberto.Evolver<TState>.Evolve(TState state, Alberto.IEvent! event) -> TState
 Alberto.Evolver<TState>.Evolve(TState state, Alberto.IEventEnvelope! envelope) -> TState
 Alberto.Evolver<TState>.Evolver() -> void
 Alberto.Evolver<TState>.HandledEventTypes.get -> System.Collections.Generic.IReadOnlySet<string!>!

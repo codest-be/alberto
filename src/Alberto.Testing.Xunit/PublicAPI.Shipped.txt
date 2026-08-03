@@ -97,6 +97,35 @@ Alberto.Testing.Xunit.OutboxStoreSpecification.PurgeDeliveredAsync_RemovesOldDel
 Alberto.Testing.Xunit.OutboxStoreSpecification.RetryFailedAsync_ResetsFailed_ToPending() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.OutboxStoreSpecification.RetryFailedAsync_WithMessageTypeFilter_OnlyResetsMatchingType() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.OutboxStoreSpecification.TestId.get -> string!
+Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification
+Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.CompleteAbort_NotInFlight_ThrowsRebuildStateException() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.CompleteAbort_WhileInFlight_ReturnsAbandonedVersionAndLeavesActiveUnchanged() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.CompletePromotion_FromReady_FlipsVersionAndReturnsDiscarded() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.CompletePromotion_WhileRebuilding_WithForce_Succeeds() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.CompletePromotion_WhileRebuilding_WithoutForce_ThrowsRebuildStateException() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.CompletePromotion_WithNoRebuildRow_IsRejected() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.DiscardStateVersion_AfterAbort_DoesNotThrow() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.DiscardStateVersion_AfterPromotion_DoesNotThrow() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.Get_UnknownProcessor_ReturnsIdleAtVersionOne() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.List_AfterStart_IncludesProcessor() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.List_EmptyStore_ReturnsEmpty() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.MarkReady_NotInFlight_ThrowsRebuildStateException() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.MarkReady_WhenAborted_ThrowsRebuildStateException() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.MarkReady_WhenCompleted_ThrowsRebuildStateException() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.MarkReady_WhileRebuilding_MovesToReady() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.ProcessorId.get -> string!
+Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.ProjectionRebuildStoreSpecification() -> void
+Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.ProjectionType.get -> string!
+Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.RequestAbort_NotInFlight_ThrowsRebuildStateException() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.RequestAbort_WhileInFlight_RecordsAbortIntent() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.RequestPromotion_Force_RecordsForcePromoteIntent() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.RequestPromotion_NotInFlight_ThrowsRebuildStateException() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.RequestPromotion_WhileInFlight_RecordsPromoteIntent() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.Start_AfterAbort_AllocatesNewVersionNotAbortedVersion() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.Start_AfterCompletedPromotion_AllocatesHigherVersion() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.Start_FirstRebuild_MovesToRebuildingAtVersionTwo() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.Start_WhileInFlight_ThrowsRebuildStateException() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.Start_WhileReady_ThrowsRebuildStateException() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.StateStoreSpecification<TState>
 Alberto.Testing.Xunit.StateStoreSpecification<TState>.ApplyChanges_DeleteNonExistent_DoesNotThrow() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.StateStoreSpecification<TState>.ApplyChanges_Delete_RemovesDocument() -> System.Threading.Tasks.Task!
@@ -133,6 +162,7 @@ abstract Alberto.Testing.Xunit.DeadLetterStoreSpecification.CreateStore() -> Sys
 abstract Alberto.Testing.Xunit.EventStoreBackendSpecification.CreateBackend() -> System.Threading.Tasks.Task<Alberto.IEventStoreBackend!>!
 abstract Alberto.Testing.Xunit.OutboxStoreSpecification.CreateStore() -> System.Threading.Tasks.Task<Alberto.Messaging.IOutboxStore!>!
 abstract Alberto.Testing.Xunit.OutboxStoreSpecification.TimeProvider.get -> System.TimeProvider!
+abstract Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.CreateStore() -> System.Threading.Tasks.Task<Alberto.Subscriptions.IProjectionRebuildStore!>!
 abstract Alberto.Testing.Xunit.StateStoreSpecification<TState>.CreateStore(string! projectionType, System.Func<int>? rebuildVersion = null) -> System.Threading.Tasks.Task<Alberto.Subscriptions.IStateStore<TState>!>!
 abstract Alberto.Testing.Xunit.StateStoreSpecification<TState>.MakeState(int value) -> TState
 abstract Alberto.Testing.Xunit.StateStoreSpecification<TState>.ReadValue(TState state) -> int
@@ -140,6 +170,7 @@ override Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.CreateStore
 static Alberto.Testing.Xunit.DeadLetterStoreSpecification.Ct.get -> System.Threading.CancellationToken
 static Alberto.Testing.Xunit.DeadLetterStoreSpecification.NewEntry(string! processorId) -> Alberto.Subscriptions.DeadLetterEntry!
 static Alberto.Testing.Xunit.OutboxStoreSpecification.NewEntry(string! messageType = "order-placed") -> Alberto.Messaging.OutboxEntry!
+virtual Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.SupportsCoordinatorOperations.get -> bool
 virtual Alberto.Testing.Xunit.StateStoreSpecification<TState>.CreateStoreForTenant(string! projectionType, string! tenantId, System.Func<int>? rebuildVersion = null) -> System.Threading.Tasks.Task<Alberto.Subscriptions.IStateStore<TState>!>!
 virtual Alberto.Testing.Xunit.StateStoreSpecification<TState>.SupportsProjectionTypeIsolation.get -> bool
 virtual Alberto.Testing.Xunit.StateStoreSpecification<TState>.SupportsSharedBackingStore.get -> bool

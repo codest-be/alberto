@@ -17,6 +17,34 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ---
 
+## [0.2.0] - 2026-08-03
+
+### Added
+
+- Testing a decider should not require rebuilding state by hand (#112)
+- Delete DeciderExtensions in favour of the command pipeline (#104)
+- Add an in-process adapter for the rebuild seam (#103)
+- One home for test adapters, not twenty-two (#102)
+- Give the CLI commands an interface to be tested through (#101)
+- Route the CLI through the admin seam instead of past it (#100)
+- Run the workflows on the org's self-hosted runners (#86)
+
+### Fixed
+
+- Rebuild promotion loses events appended during the flip (#127)
+- OutputAdapterTests reads its parallel siblings' console output (#121)
+- PostgresEventListener reconnect test can end its wait before the pulse it waits for (#119)
+- TenantProcessorLock expiry test races its own 100 ms lease (#115)
+- CliSessionTests reads its assertions off process-global stderr (#113)
+
+### Changed
+
+- Move the release and policy workflows to isolated self-hosted runners (#125)
+- Run PR CI and benchmarks on an isolated self-hosted runner (#123)
+- Measure and enforce test quality: mutation testing plus a coverage gate (#117)
+
+---
+
 ## [0.1.4] - 2026-08-02
 
 One behavioural change, in a default. No public API moves, and nothing a consumer wrote stops
@@ -509,7 +537,8 @@ Initial beta release. Core DCB event store abstractions, PostgreSQL backend, in-
 backend, command pipeline, EF Core projection support, transactional outbox, and
 OpenTelemetry instrumentation.
 
-[Unreleased]: https://github.com/codest-be/alberto/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/codest-be/alberto/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/codest-be/alberto/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/codest-be/alberto/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/codest-be/alberto/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/codest-be/alberto/compare/v0.1.1...v0.1.2

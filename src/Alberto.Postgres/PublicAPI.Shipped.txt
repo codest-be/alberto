@@ -56,6 +56,8 @@ Alberto.Postgres.PostgresMigrator
 Alberto.Postgres.PostgresOptions
 Alberto.Postgres.PostgresOptions.AutoMigrate.get -> bool
 Alberto.Postgres.PostgresOptions.AutoMigrate.init -> void
+Alberto.Postgres.PostgresOptions.AutoPrepareMinUsages.get -> int
+Alberto.Postgres.PostgresOptions.AutoPrepareMinUsages.init -> void
 Alberto.Postgres.PostgresOptions.ConnectionString.get -> string!
 Alberto.Postgres.PostgresOptions.ConnectionString.init -> void
 Alberto.Postgres.PostgresOptions.EnableNotifyListener.get -> bool
@@ -64,6 +66,8 @@ Alberto.Postgres.PostgresOptions.EnableStableHeadBarrier.get -> bool
 Alberto.Postgres.PostgresOptions.EnableStableHeadBarrier.init -> void
 Alberto.Postgres.PostgresOptions.LeaseDuration.get -> System.TimeSpan
 Alberto.Postgres.PostgresOptions.LeaseDuration.init -> void
+Alberto.Postgres.PostgresOptions.MaxAutoPrepare.get -> int
+Alberto.Postgres.PostgresOptions.MaxAutoPrepare.init -> void
 Alberto.Postgres.PostgresOptions.MaxPoolSize.get -> int
 Alberto.Postgres.PostgresOptions.MaxPoolSize.init -> void
 Alberto.Postgres.PostgresOptions.MinPoolSize.get -> int
@@ -74,6 +78,8 @@ Alberto.Postgres.PostgresOverrides
 Alberto.Postgres.PostgresOverrides.ApplyTo(Alberto.Postgres.PostgresOptions! options) -> Alberto.Postgres.PostgresOptions!
 Alberto.Postgres.PostgresOverrides.AutoMigrate.get -> bool?
 Alberto.Postgres.PostgresOverrides.AutoMigrate.set -> void
+Alberto.Postgres.PostgresOverrides.AutoPrepareMinUsages.get -> int?
+Alberto.Postgres.PostgresOverrides.AutoPrepareMinUsages.set -> void
 Alberto.Postgres.PostgresOverrides.ConnectionString.get -> string?
 Alberto.Postgres.PostgresOverrides.ConnectionString.set -> void
 Alberto.Postgres.PostgresOverrides.EnableNotifyListener.get -> bool?
@@ -82,6 +88,8 @@ Alberto.Postgres.PostgresOverrides.EnableStableHeadBarrier.get -> bool?
 Alberto.Postgres.PostgresOverrides.EnableStableHeadBarrier.set -> void
 Alberto.Postgres.PostgresOverrides.LeaseDuration.get -> System.TimeSpan?
 Alberto.Postgres.PostgresOverrides.LeaseDuration.set -> void
+Alberto.Postgres.PostgresOverrides.MaxAutoPrepare.get -> int?
+Alberto.Postgres.PostgresOverrides.MaxAutoPrepare.set -> void
 Alberto.Postgres.PostgresOverrides.MaxPoolSize.get -> int?
 Alberto.Postgres.PostgresOverrides.MaxPoolSize.set -> void
 Alberto.Postgres.PostgresOverrides.MinPoolSize.get -> int?
