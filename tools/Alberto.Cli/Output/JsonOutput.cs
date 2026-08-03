@@ -6,6 +6,31 @@ public class JsonOutput : IOutput
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
+    private readonly TextWriter? _stdout;
+    private readonly TextWriter? _stderr;
+
+    /// <summary>Writes to the process console.</summary>
+    public JsonOutput()
+    {
+    }
+
+    /// <summary>
+    /// Writes to <paramref name="stdout"/> and <paramref name="stderr"/> instead of the process
+    /// console. This is what a test uses: <see cref="Console.Out"/> belongs to the process rather
+    /// than to a test, so redirecting it makes the test read whatever its parallel siblings
+    /// happened to emit.
+    /// </summary>
+    public JsonOutput(TextWriter stdout, TextWriter stderr)
+    {
+        _stdout = stdout ?? throw new ArgumentNullException(nameof(stdout));
+        _stderr = stderr ?? throw new ArgumentNullException(nameof(stderr));
+    }
+
+    // Resolved per write rather than captured in the constructor, so writes to the process
+    // console stay as late-bound as they were when these methods called Console directly.
+    private TextWriter Stdout => _stdout ?? Console.Out;
+    private TextWriter Stderr => _stderr ?? Console.Error;
+
     public void Text(string text)
     {
         // No-op for JSON output mode
@@ -23,16 +48,16 @@ public class JsonOutput : IOutput
 
     public void Json(object data)
     {
-        Console.WriteLine(JsonSerializer.Serialize(data, JsonOptions));
+        Stdout.WriteLine(JsonSerializer.Serialize(data, JsonOptions));
     }
 
     public void Warning(string message)
     {
-        Console.Error.WriteLine($"warning: {message}");
+        Stderr.WriteLine($"warning: {message}");
     }
 
     public void Error(string message)
     {
-        Console.Error.WriteLine($"error: {message}");
+        Stderr.WriteLine($"error: {message}");
     }
 }
