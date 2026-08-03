@@ -7,44 +7,40 @@ namespace Alberto.Examples.Tests.Orders;
 public sealed class ConfirmOrderTests
 {
     private static readonly Guid OrderId = Guid.Parse("0197b003-0000-7000-8000-000000000001");
+    private static readonly Guid CustomerId = Guid.Parse("0197b003-0000-7000-8000-000000000002");
     private static readonly DateTimeOffset Now = DateTimeOffset.UnixEpoch;
 
-    private static ConfirmOrderState Created(params OrderLineItem[] items) =>
-        new ConfirmOrderEvolver().Apply(
-            new ConfirmOrderState(),
-            new OrderCreated(OrderId, Guid.NewGuid(), items, null));
+    private static OrderCreated CreatedWith(params OrderLineItem[] items) =>
+        new(OrderId, CustomerId, items, null);
+
+    private static readonly OrderLineItem Widget =
+        new(Guid.Parse("0197b003-0000-7000-8000-000000000003"), "Widget", 1, 9.99m);
 
     [Fact]
     public void Confirms_a_draft_order_that_has_items()
     {
-        var state = Created(new OrderLineItem(Guid.NewGuid(), "Widget", 1, 9.99m));
-
-        var decision = ConfirmOrderDecider.Decide(state, Now);
-
-        decision.IsSuccess.Should().BeTrue();
-        decision.Events.Single().Should().BeOfType<OrderConfirmed>();
+        Spec.For(new ConfirmOrderEvolver())
+            .Given(CreatedWith(Widget))
+            .When(state => ConfirmOrderDecider.Decide(state, Now))
+            .ThenEmitsOnly<OrderConfirmed>(e => e.OrderId == OrderId)
+            .ThenState(s => s.Status.Should().Be(OrderStatus.Confirmed));
     }
 
     [Fact]
     public void Refuses_an_empty_order_with_the_empty_problem_not_the_status_one()
     {
-        var decision = ConfirmOrderDecider.Decide(Created(), Now);
-
-        decision.IsError.Should().BeTrue();
-        decision.Problems.Single().Code.Should().Be("order.empty");
+        Spec.For(new ConfirmOrderEvolver())
+            .Given(CreatedWith())
+            .When(state => ConfirmOrderDecider.Decide(state, Now))
+            .ThenFails(OrderProblems.Empty());
     }
 
     [Fact]
     public void Refuses_an_order_that_is_already_confirmed()
     {
-        var evolver = new ConfirmOrderEvolver();
-        var state = evolver.Apply(
-            Created(new OrderLineItem(Guid.NewGuid(), "Widget", 1, 9.99m)),
-            new OrderConfirmed(OrderId, Now));
-
-        var decision = ConfirmOrderDecider.Decide(state, Now);
-
-        decision.IsError.Should().BeTrue();
-        decision.Problems.Single().Code.Should().Be("order.invalid-status");
+        Spec.For(new ConfirmOrderEvolver())
+            .Given(CreatedWith(Widget), new OrderConfirmed(OrderId, Now))
+            .When(state => ConfirmOrderDecider.Decide(state, Now))
+            .ThenFails(OrderProblems.InvalidStatus("confirmed", OrderStatus.Confirmed));
     }
 }
