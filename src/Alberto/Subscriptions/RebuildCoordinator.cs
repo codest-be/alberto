@@ -57,6 +57,7 @@ internal sealed class RebuildCoordinator(
     ProjectionVersions versions,
     ICheckpointStore checkpoints,
     ShadowControlLoopFactory loopFactory,
+    ILiveLoopSuspender liveLoops,
     IReadOnlyList<IProjectionStateClearer> clearers,
     RebuildCoordinatorOptions options,
     TimeProvider? timeProvider = null,
@@ -270,9 +271,6 @@ internal sealed class RebuildCoordinator(
         var shadowId = RebuildableProjection.ShadowProcessorId(
             projection.ProcessorId, rebuildingVersion);
 
-        var shadowPosition = await checkpoints.GetAsync(shadowId, ct) ?? 0L;
-        var livePosition = await checkpoints.GetAsync(projection.ProcessorId, ct) ?? 0L;
-
         // Reaching the target position only means the historical replay is done. The target was
         // the head of the log when the rebuild started, and everything appended since has been
         // applied by the live loop to the version this promotion is about to delete. Flipping
@@ -280,13 +278,33 @@ internal sealed class RebuildCoordinator(
         // events, and nothing afterwards goes back for them — the live loop's checkpoint is
         // already past. Wait for the rebuilt version to draw level instead; the shadow loop is
         // still running and still catching up, so this settles within a poll or two.
-        if (shadowPosition < livePosition)
+        //
+        // Read once here only to avoid parking the live loop on a promotion that is not going to
+        // happen. The comparison that decides is the one below, taken with both writers stopped.
+        if (await checkpoints.GetAsync(shadowId, ct) < await checkpoints.GetAsync(projection.ProcessorId, ct))
             return;
 
         // Stop the shadow loop first. Its version selector would follow the promotion and keep
         // writing into the newly-active version under the shadow checkpoint, racing the live
         // loop for the same rows.
         await StopShadowLoopAsync(projection.ProcessorId, ct);
+
+        // Then the live loop, for the length of the flip. A promotion is not an instant: the
+        // three awaits below each give a running live loop time to consume more events into the
+        // version about to be discarded and carry its own checkpoint past the position the
+        // rebuilt version reached. The handoff cannot undo that — checkpoint writes are
+        // monotonic, so a checkpoint that has drifted forward stays there, and the events behind
+        // it are never applied to the version that now serves reads. Stopping both writers is
+        // what makes the positions read below true for as long as it takes to act on them.
+        await using var suspension = await liveLoops.SuspendAsync(projection.ProcessorId, ct);
+
+        var shadowPosition = await checkpoints.GetAsync(shadowId, ct) ?? 0L;
+        var livePosition = await checkpoints.GetAsync(projection.ProcessorId, ct) ?? 0L;
+
+        // The live loop may have drawn ahead between the pre-check and the stop. Nothing is lost
+        // by leaving: both loops restart and the next tick tries again from a level start.
+        if (shadowPosition < livePosition)
+            return;
 
         var outcome = await rebuildStore.CompletePromotionAsync(
             projection.ProcessorId,

@@ -353,6 +353,7 @@ public class OrphanCheckpointTests
             checkpoints: checkpointStore,
             loopFactory: new ShadowControlLoopFactory(
                 _ => throw new InvalidOperationException("no shadow loop should start during a sweep")),
+            liveLoops: NoLiveLoops.Instance,
             clearers: [],
             options: new RebuildCoordinatorOptions(
                 PollingInterval: TimeSpan.FromSeconds(10),
