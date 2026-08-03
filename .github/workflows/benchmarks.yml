@@ -11,9 +11,6 @@ on:
         required: false
         default: ''
 
-permissions:
-  contents: write
-
 env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
@@ -21,18 +18,35 @@ env:
   ALBERTO_BENCH_PROFILE_LABEL: ci
 
 jobs:
+  # Measuring on self-hosted is the point: consecutive runs land on the same hardware instead of
+  # a differently rented instance each time, which is what the hardware-hashed profile is
+  # compensating for. Two caveats worth knowing before reading a delta.
+  #
+  # First, this is a weaker claim than "a dedicated machine". Other runner services share the
+  # same host, so its CPU, disk and page cache are contended. A build running next door during a
+  # benchmark will skew the numbers, and the hardware hash cannot see it because the hardware
+  # genuinely is identical. A surprising delta is worth re-running before it is worth believing.
+  #
+  # Second, there is one runner in the public-ci group, so a run here occupies it for its whole
+  # duration and PR CI queues behind it. At 02:00 UTC that is cheap. If it stops being cheap, the
+  # remedy is a second runner in the group, not a shorter suite.
   benchmark:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, public-ci]
+    # This job measures; it does not publish. The write token lives in publish-history below, on
+    # a hosted runner, so no credential capable of changing the repository is ever present on the
+    # box that also builds pull requests.
+    permissions:
+      contents: read
     # Seeding 1M events plus ~80 cases; the default 6h cap is far too generous to rely on.
     timeout-minutes: 120
+    outputs:
+      profile: ${{ steps.profile.outputs.id }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
+      # No actions/setup-dotnet — same reason as ci.yml: the host carries the 10.0 SDK under a
+      # root-owned path, and asking setup-dotnet for it is what fails. See the comment there.
 
       - name: Run benchmarks
         env:
@@ -100,6 +114,8 @@ jobs:
             echo "No delta: the compare tool failed before writing one. See the step log." >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      # Also the hand-off to publish-history: candidate.json reaches the hosted job as an
+      # artifact rather than as a commit made from here.
       - name: Upload raw reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -108,20 +124,6 @@ jobs:
           path: |
             BenchmarkDotNet.Artifacts/results/
             candidate.json
-
-      # History accumulates automatically; baseline.json is only ever moved by a human
-      # running `--accept`. An auto-promoting baseline ratchets silently and stops being a gate.
-      - name: Append to history
-        if: github.event_name == 'schedule'
-        run: |
-          DIR="benchmarks/results/${{ steps.profile.outputs.id }}/history"
-          mkdir -p "$DIR"
-          cp candidate.json "$DIR/$(date -u +%Y-%m-%dT%H-%MZ)-${GITHUB_SHA::7}.json"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add "$DIR"
-          git diff --staged --quiet || git commit -m "chore(benchmarks): nightly result [skip ci]"
-          git push
 
       # The compare step fails on a regression (exit 1) and on its own errors (exit 2).
       # Both must fail the job, but saying "regression" for a crashed tool sends whoever
@@ -135,3 +137,46 @@ jobs:
             echo "The comparison tool failed. See the 'Compare against baseline' step log." >&2
           fi
           exit 1
+
+  # Split out for one reason: to keep the repository-write token off the self-hosted runner.
+  # Everything here is a file copy and a commit, so running it hosted costs nothing that matters
+  # — whereas a contents:write token on a persistent box that also builds pull requests would let
+  # anything a PR job left behind be picked up later by a job that can push to main.
+  publish-history:
+    needs: benchmark
+    # always(), because history is recorded even when the run regressed — a regression is a
+    # result worth keeping, and the benchmark job deliberately fails on one. Guarded on the
+    # profile id so a run that died before producing candidate.json never gets here.
+    if: always() && github.event_name == 'schedule' && needs.benchmark.outputs.profile != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download the run's results
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmark-reports
+          path: incoming
+
+      # History accumulates automatically; baseline.json is only ever moved by a human
+      # running `--accept`. An auto-promoting baseline ratchets silently and stops being a gate.
+      - name: Append to history
+        run: |
+          # upload-artifact only warns about a missing path, so the artifact can exist without
+          # candidate.json inside it. Committing nothing is the right outcome; failing here would
+          # report a publishing problem for what is really a failed benchmark run.
+          if [ ! -f incoming/candidate.json ]; then
+            echo "No candidate.json in the artifact — the benchmark run produced no result." >&2
+            exit 0
+          fi
+          DIR="benchmarks/results/${{ needs.benchmark.outputs.profile }}/history"
+          mkdir -p "$DIR"
+          cp incoming/candidate.json "$DIR/$(date -u +%Y-%m-%dT%H-%MZ)-${GITHUB_SHA::7}.json"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "$DIR"
+          git diff --staged --quiet || git commit -m "chore(benchmarks): nightly result [skip ci]"
+          git push
