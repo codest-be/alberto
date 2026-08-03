@@ -15,6 +15,7 @@ namespace Alberto.Tests.Subscriptions;
 /// multi-tenant set creates alberto_tenant_leases instead, which PostgresTenantProcessorLock
 /// owns. The two lease tables never coexist in one schema.
 /// </summary>
+[Trait("Category", "Integration")]
 public sealed class ProcessorLeaseManagerTests(SingleTenantPostgresFixture fixture)
     : IClassFixture<SingleTenantPostgresFixture>
 {

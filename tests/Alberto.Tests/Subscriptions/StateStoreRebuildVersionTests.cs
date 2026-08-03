@@ -35,6 +35,7 @@ public sealed class StateStoreRebuildVersionFixture(PostgresCluster cluster)
 /// <see cref="Alberto.Testing.Xunit.StateStoreSpecification{TState}"/> and are exercised against all three
 /// adapters there.
 /// </summary>
+[Trait("Category", "Integration")]
 public sealed class StateStoreRebuildVersionTests(StateStoreRebuildVersionFixture fixture)
     : IClassFixture<StateStoreRebuildVersionFixture>
 {

@@ -77,6 +77,7 @@ public sealed class InMemoryStateStoreSpecificationTests : StateStoreSpecificati
 /// semantics via <see cref="StateStoreSpecification{TState}.SupportsTenantIsolation"/>.
 /// </para>
 /// </summary>
+[Trait("Category", "Integration")]
 public sealed class PostgresStateStoreSpecificationTests(SingleTenantPostgresFixture fixture)
     : StateStoreSpecification<SimpleState>, IClassFixture<SingleTenantPostgresFixture>
 {
@@ -115,6 +116,7 @@ public sealed class PostgresStateStoreSpecificationTests(SingleTenantPostgresFix
 /// interference.
 /// </para>
 /// </summary>
+[Trait("Category", "Integration")]
 public sealed class EfStateStoreSpecificationTests(EfProjectionTestFixture fixture)
     : StateStoreSpecification<CounterEntity>, IClassFixture<EfProjectionTestFixture>
 {
@@ -159,6 +161,7 @@ public sealed class EfStateStoreSpecificationTests(EfProjectionTestFixture fixtu
 /// isolate data between tenants.
 /// </para>
 /// </summary>
+[Trait("Category", "Integration")]
 public sealed class MultiTenantPostgresStateStoreSpecificationTests(MultiTenantDbFixture fixture)
     : StateStoreSpecification<SimpleState>, IClassFixture<MultiTenantDbFixture>
 {

@@ -9,6 +9,7 @@ namespace Alberto.Tests.Postgres;
 /// Runs <see cref="ClaimableDeadLetterStoreSpecification"/> against <see cref="PostgresDeadLetterStore"/>
 /// using the shipped single-tenant schema.
 /// </summary>
+[Trait("Category", "Integration")]
 public sealed class PostgresDeadLetterStoreSpecificationTests(SingleTenantPostgresFixture fixture)
     : ClaimableDeadLetterStoreSpecification, IClassFixture<SingleTenantPostgresFixture>
 {

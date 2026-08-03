@@ -9,6 +9,7 @@ namespace Alberto.Tests;
 /// Integration tests for <see cref="EventStore"/> over the Postgres backend.
 /// Verifies that events are persisted and projections run immediately after.
 /// </summary>
+[Trait("Category", "Integration")]
 public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture) : IClassFixture<SingleTenantPostgresFixture>
 {
     #region Test Events

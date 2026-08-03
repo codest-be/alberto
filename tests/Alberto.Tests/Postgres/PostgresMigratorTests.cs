@@ -4,6 +4,7 @@ using Xunit;
 
 namespace Alberto.Tests.Postgres;
 
+[Trait("Category", "Integration")]
 public sealed class PostgresMigratorTests(SingleTenantPostgresFixture fixture)
     : IClassFixture<SingleTenantPostgresFixture>
 {

@@ -13,6 +13,7 @@ namespace Alberto.Tests.Tenancy;
 /// One shard being down is not the module being down. A host whose second database refuses
 /// connections still starts, still serves the tenants of the first, and says which one is missing.
 /// </summary>
+[Trait("Category", "Integration")]
 public sealed class ShardDegradationTests(PostgresCluster cluster)
 {
     private const string ModuleKey = "degraded_test";

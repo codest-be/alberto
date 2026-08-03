@@ -125,7 +125,21 @@ public sealed class PostgresCluster : IAsyncLifetime
     private string _adminConnectionString = string.Empty;
     private int _databaseCount;
 
-    public async ValueTask InitializeAsync()
+    /// <remarks>
+    /// The container starts on first <see cref="CloneAsync"/>, not from
+    /// <see cref="InitializeAsync"/>. An assembly fixture is constructed for every run of this
+    /// assembly, including runs that select none of the Postgres-backed classes, and starting a
+    /// postmaster for those would put a Docker daemon on the critical path of the unit suite.
+    /// Mutation testing is what makes that matter: Stryker re-runs the filtered suite for every
+    /// mutant, so a container start there is paid thousands of times over.
+    /// </remarks>
+    private readonly Lazy<Task> _start;
+
+    public PostgresCluster() => _start = new Lazy<Task>(StartContainerAsync);
+
+    public ValueTask InitializeAsync() => ValueTask.CompletedTask;
+
+    private async Task StartContainerAsync()
     {
         await _container.StartAsync();
         _adminConnectionString = _container.GetConnectionString();
@@ -143,6 +157,7 @@ public sealed class PostgresCluster : IAsyncLifetime
         string label,
         CancellationToken ct = default)
     {
+        await _start.Value;
         await EnsureTemplateAsync(template);
 
         var database = NextDatabaseName(label);
@@ -218,8 +233,15 @@ public sealed class PostgresCluster : IAsyncLifetime
     }
 
     // The cloned databases are not dropped: the container is torn down at the end of the run
-    // and takes all of them with it.
-    public async ValueTask DisposeAsync() => await _container.DisposeAsync();
+    // and takes all of them with it. A run that never asked for a database never started the
+    // container, and must not reach for Docker on the way out either.
+    public async ValueTask DisposeAsync()
+    {
+        if (_start.IsValueCreated)
+        {
+            await _container.DisposeAsync();
+        }
+    }
 }
 
 /// <summary>

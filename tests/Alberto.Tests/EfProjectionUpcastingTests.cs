@@ -190,6 +190,7 @@ public sealed class EfProjectionUpcastingFixture(PostgresCluster cluster)
 /// The test asserts <c>Country == "upcasted-country"</c>.  Before the fix that field is null
 /// (raw JSON has no Country field); after the fix the upcaster fills it in.
 /// </summary>
+[Trait("Category", "Integration")]
 public sealed class EfProjectionUpcastingTests(EfProjectionUpcastingFixture fixture)
     : IClassFixture<EfProjectionUpcastingFixture>
 {

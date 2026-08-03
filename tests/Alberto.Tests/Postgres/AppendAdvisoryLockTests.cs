@@ -25,6 +25,7 @@ namespace Alberto.Tests.Postgres;
 /// why the property is asserted against the database rather than inferred from behaviour.
 /// </para>
 /// </remarks>
+[Trait("Category", "Integration")]
 public sealed class AppendAdvisoryLockTests(PostgresCluster cluster)
 {
     /// <summary>

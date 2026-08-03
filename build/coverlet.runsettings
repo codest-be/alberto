@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat code coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+
+          <!-- Only the shipped libraries are measured. Test projects, the sample-events
+               assembly, the benchmark harnesses and the example apps would otherwise each
+               contribute their own near-100% line rate and inflate the total past the point
+               where it says anything about Alberto. -->
+          <Include>
+            [Alberto]*,
+            [Alberto.Commands]*,
+            [Alberto.InMemory]*,
+            [Alberto.Postgres]*,
+            [Alberto.EntityFramework]*,
+            [Alberto.Messaging]*,
+            [Alberto.Messaging.Postgres]*,
+            [Alberto.Telemetry]*,
+            [Alberto.Testing]*
+          </Include>
+
+          <ExcludeByAttribute>
+            Obsolete,
+            GeneratedCodeAttribute,
+            CompilerGeneratedAttribute,
+            ExcludeFromCodeCoverageAttribute
+          </ExcludeByAttribute>
+
+          <ExcludeByFile>
+            **/obj/**/*.cs,
+            **/*.g.cs,
+            **/*.Designer.cs
+          </ExcludeByFile>
+
+          <SingleHit>false</SingleHit>
+          <UseSourceLink>true</UseSourceLink>
+          <IncludeTestAssembly>false</IncludeTestAssembly>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

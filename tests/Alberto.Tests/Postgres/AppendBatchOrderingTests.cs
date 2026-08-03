@@ -25,6 +25,7 @@ namespace Alberto.Tests.Postgres;
 /// <see cref="AppendAdvisoryLockTests"/>.
 /// </para>
 /// </remarks>
+[Trait("Category", "Integration")]
 public sealed class AppendBatchOrderingTests(SingleTenantPostgresFixture fixture)
     : IClassFixture<SingleTenantPostgresFixture>
 {

@@ -166,6 +166,7 @@ public sealed class InMemoryVersionParityTests
 /// These tests require Docker (Testcontainers); the class is skipped automatically
 /// when Docker is unavailable.
 /// </summary>
+[Trait("Category", "Integration")]
 public sealed class PostgresVersionParityTests(SingleTenantPostgresFixture fixture)
     : IClassFixture<SingleTenantPostgresFixture>
 {

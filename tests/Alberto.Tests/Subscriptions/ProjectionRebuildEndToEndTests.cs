@@ -166,6 +166,7 @@ public sealed class ProjectionRebuildHostFixture(PostgresCluster cluster)
 /// Each still uses its own player id, and reads the rebuild version out of the state machine
 /// rather than assuming a number.
 /// </remarks>
+[Trait("Category", "Integration")]
 public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture fixture)
     : IClassFixture<ProjectionRebuildHostFixture>
 {

@@ -51,6 +51,7 @@ public sealed class KnownTenantsFixture(PostgresCluster cluster)
 /// Tests for <see cref="PostgresTenantProcessorLock.GetKnownTenantsAsync"/>, which reads the
 /// <c>alberto_tenants</c> catalog rather than scanning the event log.
 /// </summary>
+[Trait("Category", "Integration")]
 public sealed class KnownTenantsTests(KnownTenantsFixture fixture)
     : IClassFixture<KnownTenantsFixture>
 {

@@ -21,9 +21,26 @@ Aspire starts PostgreSQL, runs the Orders migrations, then starts the Orders API
 dotnet build                    # Build all projects
 dotnet test                     # Run all xUnit tests
 dotnet test --filter "FullyQualifiedName~TestName"  # Run single test
+dotnet test tests/Alberto.Tests/Alberto.Tests.csproj --filter "Category!=Integration"  # No Docker, ~2s
 ```
 
-Postgres-backed tests use Testcontainers and need a running Docker daemon.
+Postgres-backed tests use Testcontainers and need a running Docker daemon. They are all tagged
+`[Trait("Category", "Integration")]`, so the filter above selects the in-memory suite alone.
+`PostgresCluster` is an assembly fixture that starts its container **lazily**, on the first
+request for a database, so a filtered run never reaches for Docker — keep it that way.
+
+### Test quality
+```bash
+build/coverage.sh                       # Line/branch coverage, whole suite
+build/mutation-test.sh                  # Stryker over the core packages
+build/mutation-test.sh --since main     # Only what the branch changed (what PR CI gates on)
+```
+
+Coverage runs the whole suite; mutation testing runs `Category!=Integration` only, because it
+re-runs the suite once per mutant. That is why `Alberto.Postgres`, `Alberto.Messaging.Postgres`
+and `Alberto.EntityFramework` are **not** in the mutation set — scoring them without their
+integration tests would report a fabricated number, not a low one. See
+[docs/development/mutation-testing.md](docs/development/mutation-testing.md).
 
 ### Load Tests
 ```bash

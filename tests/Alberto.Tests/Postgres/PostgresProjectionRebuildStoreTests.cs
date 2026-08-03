@@ -58,6 +58,7 @@ internal static class ProjectionRebuildCoordinatorTestExtensions
 /// Reclaiming a discarded version is a separate step, so that a reader holding a version
 /// number it resolved a moment before the flip still finds rows behind it.
 /// </summary>
+[Trait("Category", "Integration")]
 public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuildStoreFixture fixture)
     : IClassFixture<PostgresProjectionRebuildStoreFixture>
 {

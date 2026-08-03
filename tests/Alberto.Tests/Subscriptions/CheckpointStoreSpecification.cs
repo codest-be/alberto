@@ -23,6 +23,7 @@ public class InMemoryCheckpointStoreTests : CheckpointStoreSpecification
 /// Tests for PostgresCheckpointStore.
 /// Uses a shared Testcontainers PostgreSQL instance.
 /// </summary>
+[Trait("Category", "Integration")]
 public class PostgresCheckpointStoreTests(PostgresFixture fixture)
     : CheckpointStoreSpecification, IClassFixture<PostgresFixture>
 {

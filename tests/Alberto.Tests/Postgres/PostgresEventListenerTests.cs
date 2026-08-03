@@ -27,6 +27,7 @@ namespace Alberto.Tests.Postgres;
 ///     for them even though no NOTIFY was delivered.</item>
 /// </list>
 /// </summary>
+[Trait("Category", "Integration")]
 public sealed class PostgresEventListenerTests : IAsyncLifetime
 {
     // Deliberately not on the shared PostgresCluster: these tests drive a LISTEN/NOTIFY
