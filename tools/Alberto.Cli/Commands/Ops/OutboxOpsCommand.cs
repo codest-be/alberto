@@ -1,6 +1,4 @@
 using System.CommandLine;
-using Alberto.Admin;
-using Alberto.Postgres;
 
 namespace Alberto.Cli.Commands.Ops;
 
@@ -60,7 +58,7 @@ public static class OutboxOpsCommand
 
                 var failed = await ShardRun.ApplyAsync(output, targets, async (dataSource, target) =>
                 {
-                    IAdminOperator operations = new PostgresAdminOperator(dataSource, target.Schema);
+                    var operations = AdminAdapters.Operator(dataSource, target.Schema);
                     var deleted = await operations.PurgeOutboxAsync(cutoff, CliSession.OperatorId);
                     output.Text($"Purged {deleted} delivered outbox entr{(deleted == 1 ? "y" : "ies")}.");
                 });

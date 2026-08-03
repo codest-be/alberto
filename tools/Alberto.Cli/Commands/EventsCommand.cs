@@ -1,6 +1,5 @@
 using System.CommandLine;
 using Alberto.Admin;
-using Alberto.Postgres;
 
 namespace Alberto.Cli.Commands;
 

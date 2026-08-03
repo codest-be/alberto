@@ -1,7 +1,6 @@
 using System.CommandLine;
 using Alberto.Cli.Output;
 using Alberto.Admin;
-using Alberto.Postgres;
 using Npgsql;
 
 namespace Alberto.Cli;
@@ -60,7 +59,7 @@ public static class ShardRun
     }
 
     /// <summary>
-    /// Opens each target in turn and runs <paramref name="body"/> against its admin data access.
+    /// Opens each target in turn and runs <paramref name="body"/> against its admin reader.
     /// </summary>
     /// <remarks>
     /// Sequential rather than parallel: an operator command's cost is dominated by the operator
@@ -69,9 +68,9 @@ public static class ShardRun
     /// </remarks>
     public static Task<IReadOnlyList<ShardResult<T>>> CollectAsync<T>(
         IReadOnlyList<ShardTarget> targets,
-        Func<PostgresAdminDataAccess, Task<T>> body) =>
+        Func<IAdminReader, Task<T>> body) =>
         ProbeAsync(targets, (dataSource, target) =>
-            body(new PostgresAdminDataAccess(dataSource, target.Schema)));
+            body(AdminAdapters.Reader(dataSource, target.Schema)));
 
     /// <summary>
     /// The same fan-out as <see cref="CollectAsync"/> but handing the body the data source, for
