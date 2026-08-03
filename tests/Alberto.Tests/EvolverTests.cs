@@ -71,6 +71,72 @@ public class EvolverTests
         Assert.Equal(2, evolver.HandledEventTypes.Count);
     }
 
+    // ── The typed overload: an event already in hand, no envelope, no JSON ─────────
+
+    [Fact]
+    public void Evolve_TypedEvent_DispatchesOnTheRuntimeType()
+    {
+        var evolver = new CounterEvolver();
+
+        var state = evolver.Evolve(new CounterState(), new CounterIncremented(5));
+
+        Assert.Equal(5, state.Count);
+    }
+
+    [Fact]
+    public void Evolve_TypedEvents_FoldInOrder()
+    {
+        var evolver = new CounterEvolver();
+        IEvent[] events = [new CounterIncremented(5), new CounterIncremented(3), new CounterReset(), new CounterIncremented(10)];
+
+        var state = events.Aggregate(new CounterState(), evolver.Evolve);
+
+        Assert.Equal(10, state.Count);
+    }
+
+    [Fact]
+    public void Evolve_TypedEvent_UnhandledTypeLeavesStateUnchanged()
+    {
+        var evolver = new CounterEvolver();
+        var before = new CounterState(7);
+
+        var after = evolver.Evolve(before, new UnrelatedEvent());
+
+        Assert.Equal(7, after.Count);
+    }
+
+    [Fact]
+    public void Evolve_TypedEvent_AgreesWithTheEnvelopeOverload()
+    {
+        var evolver = new CounterEvolver();
+
+        var fromEvent = evolver.Evolve(new CounterState(), new CounterIncremented(4));
+        var fromEnvelope = evolver.Evolve(new CounterState(), MakeEnvelope("counter-incremented", """{"Amount":4}"""));
+
+        Assert.Equal(fromEnvelope, fromEvent);
+    }
+
+    [Fact]
+    public void Evolve_TypedEvent_TwoClrTypesSharingAnEventTypeIdFailsLoudly()
+    {
+        var evolver = new CounterEvolver();
+
+        // Same [EventType] id as CounterIncremented, but not assignable to it. Folding an
+        // envelope would upcast; folding an object in hand has nothing to upcast from, so the
+        // only honest answer is to say the handler cannot take this.
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => evolver.Evolve(new CounterState(), new CounterIncrementedImpostor()));
+
+        Assert.Contains("CounterIncrementedImpostor", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("CounterIncremented", ex.Message, StringComparison.Ordinal);
+    }
+
+    [EventType("unrelated-event")]
+    private sealed record UnrelatedEvent : IEvent;
+
+    [EventType("counter-incremented")]
+    private sealed record CounterIncrementedImpostor : IEvent;
+
     private static IEventEnvelope MakeEnvelope(string eventType, string data)
         => new TestEnvelope(eventType, data);
 

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Linq.Expressions;
 using System.Reflection;
 using System.Text.Json;
 using Alberto.Upcasting;
@@ -171,7 +172,16 @@ public sealed class EventSerializer
     /// </summary>
     public IEnumerable<string> RegisteredTypeIds => _registry.Keys;
 
-    private static readonly ConcurrentDictionary<Type, (PropertyInfo prop, string concept)[]> TagCache = new();
+    /// <summary>
+    /// Per-type cache entry for <see cref="TagCache"/>: a compiled getter per tagged property
+    /// plus the schema version read from <see cref="EventTypeAttribute"/> — both resolved once
+    /// per type instead of once per event.
+    /// </summary>
+    private readonly record struct TagCacheEntry(
+        (Func<object, object?> Getter, string Concept)[] Properties,
+        int SchemaVersion);
+
+    private static readonly ConcurrentDictionary<Type, TagCacheEntry> TagCache = new();
 
     /// <summary>
     /// Extracts <see cref="EventTag"/>s from an event using <see cref="TagAttribute"/> on properties,
@@ -187,18 +197,36 @@ public sealed class EventSerializer
         IEvent @event,
         Func<string, string, string>? valueTransform = null)
     {
-        var tagged = TagCache.GetOrAdd(@event.GetType(), static t =>
-            t.GetProperties(BindingFlags.Public | BindingFlags.Instance)
-             .Select(p => (prop: p, attr: p.GetCustomAttribute<TagAttribute>()))
-             .Where(x => x.attr is not null)
-             .Select(x => (x.prop, x.attr!.Concept))
-             .ToArray());
-
-        var tags = new List<EventTag>(tagged.Length + 1);
-
-        foreach (var (prop, concept) in tagged)
+        var cached = TagCache.GetOrAdd(@event.GetType(), static t =>
         {
-            var value = prop.GetValue(@event);
+            var objParam = Expression.Parameter(typeof(object), "obj");
+            var cast = Expression.Convert(objParam, t);
+
+            var properties = t.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                .Select(p => (prop: p, attr: p.GetCustomAttribute<TagAttribute>()))
+                .Where(x => x.attr is not null)
+                .Select(x =>
+                {
+                    // Build (object obj) => (object?)((T)obj).Prop
+                    // Expression.Convert to typeof(object) emits a box instruction for value types.
+                    var propExpr = Expression.Property(cast, x.prop);
+                    var boxed = Expression.Convert(propExpr, typeof(object));
+                    var getter = Expression.Lambda<Func<object, object?>>(boxed, objParam).Compile();
+                    return (Getter: getter, Concept: x.attr!.Concept);
+                })
+                .ToArray();
+
+            // Resolve the schema version once and fold it into the cache entry so the
+            // EventTypeAttribute lookup (Item 3) does not repeat on every append.
+            var schemaVersion = EventTypeAttribute.GetEventType(t)?.Version ?? 1;
+            return new TagCacheEntry(properties, schemaVersion);
+        });
+
+        var tags = new List<EventTag>(cached.Properties.Length + 1);
+
+        foreach (var (getter, concept) in cached.Properties)
+        {
+            var value = getter(@event);
             if (value is null) continue;
 
             var rawValue = value is Guid g ? g.ToString("D") : value.ToString()!;
@@ -206,12 +234,9 @@ public sealed class EventSerializer
             tags.Add(new EventTag(concept, tagValue));
         }
 
-        // Stamp the reserved schema-version tag. The EventTypeAttribute is the single
-        // authoritative source for the version; EventTag.ForVersion uses FromStorage so
+        // Stamp the reserved schema-version tag LAST. EventTag.ForVersion uses FromStorage so
         // it never triggers the public-constructor reservation guard.
-        var attr = EventTypeAttribute.GetEventType(@event.GetType());
-        var schemaVersion = attr?.Version ?? 1;
-        tags.Add(EventTag.ForVersion(schemaVersion));
+        tags.Add(EventTag.ForVersion(cached.SchemaVersion));
 
         return tags;
     }

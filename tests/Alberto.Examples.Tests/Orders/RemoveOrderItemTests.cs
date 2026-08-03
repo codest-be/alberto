@@ -7,43 +7,43 @@ namespace Alberto.Examples.Tests.Orders;
 public sealed class RemoveOrderItemTests
 {
     private static readonly Guid OrderId = Guid.Parse("0197b002-0000-7000-8000-000000000001");
+    private static readonly Guid CustomerId = Guid.Parse("0197b002-0000-7000-8000-000000000003");
     private static readonly Guid ProductId = Guid.Parse("0197b002-0000-7000-8000-000000000002");
 
-    private static RemoveOrderItemState WithOneItem()
-    {
-        var evolver = new RemoveOrderItemEvolver();
-        var state = evolver.Apply(
-            new RemoveOrderItemState(),
-            new OrderCreated(OrderId, Guid.NewGuid(), [], null));
-
-        return evolver.Apply(
-            state, new OrderItemAdded(OrderId, ProductId, "Widget", 1, 9.99m));
-    }
+    /// <summary>An order with one item on it, as events.</summary>
+    private static IEvent[] WithOneItem() =>
+    [
+        new OrderCreated(OrderId, CustomerId, [], null),
+        new OrderItemAdded(OrderId, ProductId, "Widget", 1, 9.99m)
+    ];
 
     [Fact]
     public void Removes_an_item_that_is_on_the_order()
     {
-        var decision = RemoveOrderItemDecider.Decide(WithOneItem(), ProductId);
-
-        decision.IsSuccess.Should().BeTrue();
-        decision.Events.Single().Should().BeOfType<OrderItemRemoved>();
+        Spec.For(new RemoveOrderItemEvolver())
+            .Given(WithOneItem())
+            .When(state => RemoveOrderItemDecider.Decide(state, ProductId))
+            .ThenEmitsOnly<OrderItemRemoved>(e => e.ProductId == ProductId)
+            .ThenState(s => s.ProductIds.Should().BeEmpty());
     }
 
     [Fact]
     public void Refuses_a_product_that_is_not_on_the_order()
     {
-        var decision = RemoveOrderItemDecider.Decide(WithOneItem(), Guid.NewGuid());
+        var absent = Guid.Parse("0197b002-0000-7000-8000-00000000ffff");
 
-        decision.IsError.Should().BeTrue();
-        decision.Problems.Single().Code.Should().Be("order.product-not-found");
+        Spec.For(new RemoveOrderItemEvolver())
+            .Given(WithOneItem())
+            .When(state => RemoveOrderItemDecider.Decide(state, absent))
+            .ThenFails(OrderProblems.ProductNotFound(absent));
     }
 
     [Fact]
     public void Forgets_an_item_that_was_already_removed()
     {
-        var state = new RemoveOrderItemEvolver()
-            .Apply(WithOneItem(), new OrderItemRemoved(OrderId, ProductId));
-
-        RemoveOrderItemDecider.Decide(state, ProductId).IsError.Should().BeTrue();
+        Spec.For(new RemoveOrderItemEvolver())
+            .Given([.. WithOneItem(), new OrderItemRemoved(OrderId, ProductId)])
+            .When(state => RemoveOrderItemDecider.Decide(state, ProductId))
+            .ThenFails(OrderProblems.ProductNotFound(ProductId));
     }
 }

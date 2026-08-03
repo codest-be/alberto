@@ -1,4 +1,5 @@
 using System.Collections.Frozen;
+using System.Linq.Expressions;
 using System.Reflection;
 using System.Text.Json;
 
@@ -32,7 +33,26 @@ internal sealed class EvolverDispatcher<TState>
             var applyMethod = iface.GetMethod(nameof(IEvolve<TState, IEvent>.Apply));
             if (applyMethod is null) continue;
 
-            dispatcher._handlers[eventTypeId] = new Handler(eventType, evolver, applyMethod);
+            // Compile a strongly-typed delegate once at startup so that the per-event hot path
+            // avoids MethodInfo.Invoke overhead, the object[2] argument allocation, and the
+            // boxing of TState when it is a value type.
+            //
+            // Shape: Func<TState, object, TState>
+            //   - TState stays typed throughout so value-type states are never boxed.
+            //   - The event parameter is object because the concrete type is only known
+            //     reflectively; Expression.Convert casts it before the call.
+            var stateParam = Expression.Parameter(typeof(TState), "state");
+            var eventParam = Expression.Parameter(typeof(object), "ev");
+            var body = Expression.Call(
+                Expression.Constant(evolver),
+                applyMethod,
+                stateParam,
+                Expression.Convert(eventParam, eventType));
+            var applyDelegate = Expression
+                .Lambda<Func<TState, object, TState>>(body, stateParam, eventParam)
+                .Compile();
+
+            dispatcher._handlers[eventTypeId] = new Handler(eventType, applyDelegate);
         }
 
         dispatcher._handledEventTypes = dispatcher._handlers.Keys.ToFrozenSet(StringComparer.Ordinal);
@@ -45,6 +65,20 @@ internal sealed class EvolverDispatcher<TState>
             return state; // Unhandled events leave state unchanged
 
         return handler.Evolve(state, envelope, deserialize: null);
+    }
+
+    /// <summary>
+    /// Evolves state from an already-materialized event, skipping the envelope and the
+    /// deserializer entirely. Used by <see cref="Evolver{TState}"/>'s typed overload.
+    /// </summary>
+    public TState Evolve(TState state, IEvent @event)
+    {
+        var eventTypeId = EventTypeAttribute.GetEventTypeId(@event.GetType());
+
+        if (!_handlers.TryGetValue(eventTypeId, out var handler))
+            return state; // Unhandled events leave state unchanged
+
+        return handler.Apply(state, @event);
     }
 
     /// <summary>
@@ -62,7 +96,7 @@ internal sealed class EvolverDispatcher<TState>
         return handler.Evolve(state, envelope, deserialize);
     }
 
-    private sealed class Handler(Type eventType, object evolver, MethodInfo applyMethod)
+    private sealed class Handler(Type eventType, Func<TState, object, TState> applyDelegate)
     {
         // The schema version the CLR event type declares — read once and cached.
         // Used to guard against silently deserialising a stale-version envelope through
@@ -120,8 +154,31 @@ internal sealed class EvolverDispatcher<TState>
                         $"Failed to deserialize event '{envelope.EventType.Id}' to type '{eventType.Name}'");
             }
 
-            var result = applyMethod.Invoke(evolver, [state, @event]);
-            return (TState)result!;
+            return applyDelegate(state, @event);
+        }
+
+        /// <summary>
+        /// Applies an already-materialized event. No envelope, no deserialization, and so no
+        /// upcasting: the caller handed us a live object, and the only thing that can be wrong
+        /// is that it is a different version of the event than the handler declared.
+        /// </summary>
+        /// <remarks>
+        /// The type check is not redundant with the <c>Expression.Convert</c> compiled into
+        /// <c>applyDelegate</c>. That cast would throw <see cref="InvalidCastException"/> naming
+        /// two CLR types and nothing about why they collided, which is the one thing the caller
+        /// needs to know.
+        /// </remarks>
+        public TState Apply(TState state, object @event)
+        {
+            if (!eventType.IsInstanceOfType(@event))
+                throw new InvalidOperationException(
+                    $"Event '{@event.GetType().Name}' shares the event type id of " +
+                    $"'{eventType.Name}', which this evolver handles, but is not assignable to it. " +
+                    "Two CLR types are declaring the same [EventType] id — usually an older " +
+                    "schema version. Upcasting only runs when folding envelopes, so pass the " +
+                    "version the handler declares.");
+
+            return applyDelegate(state, @event);
         }
     }
 }
