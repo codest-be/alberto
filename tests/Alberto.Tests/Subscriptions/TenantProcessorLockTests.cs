@@ -87,7 +87,11 @@ public class TenantProcessorLockTests(PostgresFixture fixture) : IClassFixture<P
         var lease1 = await lockManager.TryAcquireForTenantAsync(consumerId, tenantId, replica1, TestContext.Current.CancellationToken);
         Assert.NotNull(lease1);
 
-        // Second replica should fail for same tenant (lease not expired)
+        // Second replica should fail for same tenant (lease not expired). The default 60 s
+        // lease is what makes this assertion safe: it has to hold across two round-trips to
+        // Postgres, so the window it depends on must comfortably contain both. The expiry
+        // counterpart lives in TryAcquireForTenant_AfterLeaseExpired_OtherReplicaCanClaim,
+        // which needs a short lease and so cannot carry this assertion too.
         var lease2 = await lockManager.TryAcquireForTenantAsync(consumerId, tenantId, replica2, TestContext.Current.CancellationToken);
         Assert.Null(lease2);
 
@@ -154,19 +158,23 @@ public class TenantProcessorLockTests(PostgresFixture fixture) : IClassFixture<P
         var lease1 = await lockManager.TryAcquireForTenantAsync(consumerId, tenantId, replica1, TestContext.Current.CancellationToken);
         Assert.NotNull(lease1);
 
-        // Second replica should fail (lease not expired yet)
-        var lease2 = await lockManager.TryAcquireForTenantAsync(consumerId, tenantId, replica2, TestContext.Current.CancellationToken);
-        Assert.Null(lease2);
+        // Nothing is asserted about replica2 before the delay. A "lease not expired yet"
+        // assertion here would require replica1's acquire and replica2's attempt to complete
+        // within the 100 ms lease, and two round-trips to a Testcontainers Postgres under a
+        // parallel suite run do not reliably fit in that window. That fact is asserted by
+        // TryAcquireForTenant_SameTenantDifferentReplicas_ShouldOnlyOneSucceed, whose default
+        // 60 s lease gives it the room this test cannot.
 
         // Wall-clock, deliberately: the lease expiry is evaluated by PostgreSQL's now(),
         // which no client-side TimeProvider can move. Advancing a fake clock here would
-        // read as determinism that is not there.
+        // read as determinism that is not there. The delay only has to exceed the lease,
+        // and overshooting it is harmless — this assertion cannot be raced from the far side.
         await Task.Delay(150, TestContext.Current.CancellationToken);
 
         // Now second replica should succeed
-        var lease3 = await lockManager.TryAcquireForTenantAsync(consumerId, tenantId, replica2, TestContext.Current.CancellationToken);
-        Assert.NotNull(lease3);
-        Assert.Equal(tenantId, lease3.TenantId);
+        var lease2 = await lockManager.TryAcquireForTenantAsync(consumerId, tenantId, replica2, TestContext.Current.CancellationToken);
+        Assert.NotNull(lease2);
+        Assert.Equal(tenantId, lease2.TenantId);
 
         // Cleanup
         await lockManager.ReleaseLeaseAsync(consumerId, tenantId, TestContext.Current.CancellationToken);
