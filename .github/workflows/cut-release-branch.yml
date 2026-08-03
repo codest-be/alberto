@@ -17,7 +17,11 @@ on:
 
 jobs:
   cut:
-    runs-on: ubuntu-latest
+    # release-ci: a self-hosted group whose runner user runs no contributor code. workflow_dispatch
+    # from a protected branch is the only way in.
+    runs-on: [self-hosted, release-ci]
+    # A branch push and nothing else.
+    timeout-minutes: 15
     permissions:
       contents: write
 

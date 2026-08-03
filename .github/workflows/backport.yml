@@ -41,7 +41,13 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (github.event.pull_request.merged == true &&
        contains(join(github.event.pull_request.labels.*.name, ','), 'backport/'))
-    runs-on: ubuntu-latest
+    # release-ci: a self-hosted group on an unprivileged user that runs no contributor code. The
+    # note above about this job never checking out the pull request's head is what makes that
+    # placement correct — a writable token and a fork's code must not share a runner, and here
+    # only the token is present.
+    runs-on: [self-hosted, release-ci]
+    # git and gh only; it finishes in seconds.
+    timeout-minutes: 15
     permissions:
       contents: write
       pull-requests: write
@@ -65,6 +71,11 @@ jobs:
           HAS_RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN != '' }}
         run: |
           set -euo pipefail
+
+          # Scratch files go under RUNNER_TEMP, which the runner clears per job, rather than a
+          # fixed /tmp path. On this persistent runner a fixed path is shared between every run
+          # of every workflow, so a stale file could be posted as a comment on the wrong PR.
+          TMP="${RUNNER_TEMP:-/tmp}"
 
           if [ "$EVENT" = "workflow_dispatch" ]; then
             PR="$PR_INPUT"
@@ -134,8 +145,8 @@ jobs:
                 "git cherry-pick -x $SHA   # resolve the conflicts" \
                 "git push origin $BRANCH" \
                 '```' \
-                > /tmp/comment.md
-              gh pr comment "$PR" --repo "$REPO" --body-file /tmp/comment.md
+                > "$TMP/comment.md"
+              gh pr comment "$PR" --repo "$REPO" --body-file "$TMP/comment.md"
               FAILED=1
               continue
             fi
@@ -154,7 +165,7 @@ jobs:
               "" \
               "No changelog entry here. It is written when \`$TARGET\` is released, by the" \
               "**Release** workflow run from that branch." \
-              > /tmp/pr-body.md
+              > "$TMP/pr-body.md"
 
             if [ "${HAS_RELEASE_TOKEN}" != "true" ]; then
               printf '%s\n' "" \
@@ -162,7 +173,7 @@ jobs:
                 "> built-in \`GITHUB_TOKEN\`, and GitHub does not trigger workflow runs for" \
                 "> those. **Close it and reopen it** to start them. A \`RELEASE_TOKEN\` secret" \
                 "> removes this step; see docs/releasing.md." \
-                >> /tmp/pr-body.md
+                >> "$TMP/pr-body.md"
             fi
 
             gh pr create \
@@ -171,7 +182,7 @@ jobs:
               --head "$BRANCH" \
               --title "[$LINE] $TITLE" \
               --label release \
-              --body-file /tmp/pr-body.md
+              --body-file "$TMP/pr-body.md"
           done
 
           exit "$FAILED"

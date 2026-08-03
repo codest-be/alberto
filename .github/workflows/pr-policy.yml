@@ -27,7 +27,15 @@ concurrency:
 jobs:
   pr-policy:
     name: pr-policy
-    runs-on: ubuntu-latest
+    # public-ci, not release-ci, even though this job is about release hygiene. The checkout
+    # above is the PR's own merge ref, so check-pr-policy.sh below is contributor-controlled
+    # code — this workflow *runs a script from the pull request*. It belongs on the runner that
+    # already executes contributor code, never on the one holding the publishing credentials.
+    # The read-only token in the header is what makes that placement safe.
+    runs-on: [self-hosted, public-ci]
+    # Two API calls and a few greps; it takes about ten seconds. The default 6h cap on a
+    # single-runner group means a wedged job would block every PR until someone noticed.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 

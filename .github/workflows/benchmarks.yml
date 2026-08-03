@@ -138,17 +138,23 @@ jobs:
           fi
           exit 1
 
-  # Split out for one reason: to keep the repository-write token off the self-hosted runner.
-  # Everything here is a file copy and a commit, so running it hosted costs nothing that matters
-  # — whereas a contents:write token on a persistent box that also builds pull requests would let
+  # Split out for one reason: to keep the repository-write token off the runner that builds pull
+  # requests. A contents:write token on a persistent box that also runs contributor code would let
   # anything a PR job left behind be picked up later by a job that can push to main.
+  #
+  # That is a statement about *which* runner, not about self-hosted in general, which is why this
+  # sits on release-ci rather than on a hosted runner: release-ci is a separate group on a
+  # separate unprivileged user that runs no contributor code, and holding write credentials is
+  # what it is for. The hand-off stays an artifact rather than a shared directory — the two
+  # runners cannot read each other's home, and that is deliberate.
   publish-history:
     needs: benchmark
     # always(), because history is recorded even when the run regressed — a regression is a
     # result worth keeping, and the benchmark job deliberately fails on one. Guarded on the
     # profile id so a run that died before producing candidate.json never gets here.
     if: always() && github.event_name == 'schedule' && needs.benchmark.outputs.profile != ''
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, release-ci]
+    timeout-minutes: 15
     permissions:
       contents: write
 
