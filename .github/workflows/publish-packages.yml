@@ -28,7 +28,17 @@ env:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    # release-ci, not public-ci. Both are self-hosted runner groups on the same host serving only
+    # this repository, but they exist as two groups on two unprivileged users precisely so this
+    # job never shares a machine account with one that builds pull requests. This job holds a
+    # GitHub Packages token and mints a nuget.org publishing key; the public-ci runner executes
+    # whatever a contributor pushed. A persistent runner lets one job leave state behind for the
+    # next, so those two must not meet. Nothing here ever checks out a pull request: the triggers
+    # are pushes to protected branches and tags.
+    runs-on: [self-hosted, release-ci]
+    # Runs the Testcontainers suite and pushes to two feeds; ~6 minutes in practice. The cap is a
+    # stop for a wedged job on a single-runner group, not a budget.
+    timeout-minutes: 60
     permissions:
       packages: write
       contents: read
@@ -37,10 +47,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
+      # No actions/setup-dotnet — same reason as ci.yml: the host carries the 10.0 SDK at
+      # /usr/share/dotnet, which is root-owned while jobs run unprivileged, so setup-dotnet fails
+      # copying into that tree. Worth stating here because this is the job that decides what
+      # ships: the SDK that builds these packages is the host's newest, there is no global.json
+      # pinning it, and `dotnet --list-sdks` on the runner host is where that changes.
 
       # A tag publishes the release version verbatim; anything else publishes a prerelease.
       # The tag must agree with VersionPrefix, which is the single source of truth — a tag
@@ -91,11 +102,20 @@ jobs:
           dotnet build src/Alberto.Admin.Postgres/Alberto.Admin.Postgres.csproj -c Release
           dotnet build tools/Alberto.Cli/Alberto.Cli.csproj -c Release
 
+      # Includes the Testcontainers-backed PostgreSQL tests, so this runner needs a Docker daemon
+      # of its own — a rootless one owned by the runner user, with DOCKER_HOST exported by the
+      # runner service. It is not the same daemon the public-ci runner uses.
       - name: Test
         run: dotnet test tests/Alberto.Tests/Alberto.Tests.csproj -c Release
 
       - name: Pack
         run: |
+          # Start from an empty output directory. actions/checkout already cleans the workspace,
+          # and the runner wipes it after every job, but "Verify packed set" below decides what
+          # gets published by listing this directory — so it is worth not depending on either.
+          # A leftover .nupkg for a project that just stopped being packed would otherwise be
+          # published and would satisfy the allowlist while doing it.
+          rm -rf artifacts
           SUFFIX_ARG=""
           if [ -n "${{ steps.version.outputs.suffix }}" ]; then
             SUFFIX_ARG="--version-suffix ${{ steps.version.outputs.suffix }}"
@@ -139,7 +159,10 @@ jobs:
       # the intended speed bump on an irreversible action, not an oversight — please leave it.
       - name: Verify packed set
         run: |
-          cat > /tmp/expected-packages.txt <<'IDS'
+          # RUNNER_TEMP rather than a fixed /tmp path: the runner is persistent and clears this
+          # directory per job, so two runs can never read each other's list.
+          TMP="${RUNNER_TEMP:-/tmp}"
+          cat > "$TMP/expected-packages.txt" <<'IDS'
           Alberto
           Alberto.Commands
           Alberto.EntityFramework
@@ -151,24 +174,38 @@ jobs:
           Alberto.Testing
           Alberto.Testing.Xunit
           IDS
-          LC_ALL=C sort -o /tmp/expected-packages.txt /tmp/expected-packages.txt
+          LC_ALL=C sort -o "$TMP/expected-packages.txt" "$TMP/expected-packages.txt"
 
           # Strip a trailing semver and the extension to recover the package ID. No Alberto
           # package ID ends in a numeric segment, so this is unambiguous.
           ls artifacts/*.nupkg \
             | xargs -n1 basename \
             | sed -E 's/\.[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?\.nupkg$//' \
-            | LC_ALL=C sort -u > /tmp/actual-packages.txt
+            | LC_ALL=C sort -u > "$TMP/actual-packages.txt"
 
-          echo "Packed:"; cat /tmp/actual-packages.txt
+          echo "Packed:"; cat "$TMP/actual-packages.txt"
 
-          if ! diff -u /tmp/expected-packages.txt /tmp/actual-packages.txt; then
+          if ! diff -u "$TMP/expected-packages.txt" "$TMP/actual-packages.txt"; then
             echo "::error::Packed set does not match the allowlist. '-' lines are missing packages, '+' lines are packages that must never be published."
             exit 1
           fi
 
+      # Two things about this step are specific to running on a persistent runner.
+      #
+      # `dotnet nuget add source` writes to the *user-level* NuGet.config, which on a hosted
+      # runner died with the machine. Here it survives the job, and `add source` fails outright
+      # on a name that already exists — so without the remove below, this workflow would work
+      # exactly once and then fail every run afterwards with "The name github already exists".
+      #
+      # The token also lands on disk in cleartext, which is what --store-password-in-clear-text
+      # says and is required because the Linux credential store is not available. The removal
+      # step after the pushes takes it back off; the runner additionally deletes this file after
+      # every job, so a cancelled run cannot leave one behind either. GITHUB_TOKEN expires when
+      # the job ends regardless — this is about not leaving a credential-shaped file lying in a
+      # home directory, not about the token still being useful.
       - name: Add GitHub Packages source
         run: |
+          dotnet nuget remove source github >/dev/null 2>&1 || true
           dotnet nuget add source "https://nuget.pkg.github.com/codest-be/index.json" \
             --name github \
             --username ${{ github.actor }} \
@@ -184,6 +221,14 @@ jobs:
       - name: Push symbols to GitHub Packages
         if: always()
         run: dotnet nuget push "artifacts/*.snupkg" --source github --skip-duplicate --timeout 600 || true
+
+      # if: always() so a failed push still takes the stored token back off disk. Placed before
+      # the nuget.org steps rather than at the end of the job because nothing after this point
+      # uses the github source — the trusted-publishing key is minted fresh and never written to
+      # a config file.
+      - name: Remove GitHub Packages source
+        if: always()
+        run: dotnet nuget remove source github >/dev/null 2>&1 || true
 
       # Trusted publishing: the OIDC token this job is allowed to mint is exchanged for a
       # nuget.org API key valid for one hour. No long-lived key is stored anywhere. The

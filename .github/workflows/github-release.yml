@@ -29,7 +29,12 @@ concurrency:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    # release-ci: a self-hosted group whose runner user runs no contributor code. The trigger is a
+    # tag push on this repository, so nothing checked out here came from a fork. Scratch files use
+    # $RUNNER_TEMP rather than /tmp because the runner is persistent — see release.yml.
+    runs-on: [self-hosted, release-ci]
+    # Reads the changelog and calls gh; seconds, not minutes.
+    timeout-minutes: 15
     permissions:
       contents: write   # create the release
 
@@ -56,7 +61,7 @@ jobs:
 
           # Fails when the section is missing, which is the check worth having: a tag with no
           # changelog section is a release nobody can read.
-          .github/scripts/extract-changelog-section.py "$VERSION" > /tmp/release-notes.md
+          .github/scripts/extract-changelog-section.py "$VERSION" > "$RUNNER_TEMP/release-notes.md"
 
           # A version with a suffix is a prerelease, and GitHub needs telling — it is what keeps
           # `Latest` on the newest stable release rather than moving it to a beta.
@@ -68,12 +73,12 @@ jobs:
           gh release create "$TAG" \
             --repo "${GITHUB_REPOSITORY}" \
             --title "Alberto ${VERSION}" \
-            --notes-file /tmp/release-notes.md \
+            --notes-file "$RUNNER_TEMP/release-notes.md" \
             --verify-tag \
             $PRERELEASE
 
           {
             echo "## Alberto ${VERSION}"
             echo
-            cat /tmp/release-notes.md
+            cat "$RUNNER_TEMP/release-notes.md"
           } >> "$GITHUB_STEP_SUMMARY"

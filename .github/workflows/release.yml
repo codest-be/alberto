@@ -34,7 +34,17 @@ concurrency:
 
 jobs:
   prepare:
-    runs-on: ubuntu-latest
+    # release-ci: a self-hosted group whose runner user runs no contributor code. workflow_dispatch
+    # from a protected branch is the only way in, so nothing here is attacker-supplied.
+    #
+    # The steps below hand files between each other through $RUNNER_TEMP rather than a fixed /tmp
+    # path. That is not cosmetic on a persistent runner: /tmp is shared by every run of every
+    # workflow on the box, so a stale notes.md from a cancelled run could end up in a release pull
+    # request. RUNNER_TEMP is per job and cleared between them, and it is an environment variable
+    # rather than a shell variable precisely because these files cross step boundaries.
+    runs-on: [self-hosted, release-ci]
+    # Scripts and gh calls; no build.
+    timeout-minutes: 30
     permissions:
       contents: write        # push the release-prep branch
       pull-requests: write   # open the release pull request
@@ -84,14 +94,14 @@ jobs:
         run: |
           .github/scripts/draft-release-notes.sh \
             "${{ github.repository }}" \
-            "${{ steps.version.outputs.version }}" > /tmp/notes.md
-          cat /tmp/notes.md
+            "${{ steps.version.outputs.version }}" > "$RUNNER_TEMP/notes.md"
+          cat "$RUNNER_TEMP/notes.md"
 
       - name: Apply the release
         run: |
           .github/scripts/apply-release.py \
             --version "${{ steps.version.outputs.version }}" \
-            --notes /tmp/notes.md \
+            --notes "$RUNNER_TEMP/notes.md" \
             ${{ inputs.dry_run && '--check' || '' }}
 
       - name: Summary
@@ -107,7 +117,7 @@ jobs:
             fi
             echo "Drafted notes:"
             echo
-            cat /tmp/notes.md
+            cat "$RUNNER_TEMP/notes.md"
           } >> "$GITHUB_STEP_SUMMARY"
 
       # Everything below is skipped on a dry run.
@@ -159,7 +169,7 @@ jobs:
             echo "git switch ${GITHUB_REF_NAME} && git pull"
             echo "git tag v${VERSION} && git push origin v${VERSION}"
             echo '```'
-          } > /tmp/pr-body.md
+          } > "$RUNNER_TEMP/pr-body.md"
 
           # The `release` label is what exempts this pull request from the issue-link policy —
           # see the bypass list in check-pr-policy.sh. It is applied here rather than by hand so
@@ -169,4 +179,4 @@ jobs:
             --head "$BRANCH" \
             --title "Release ${VERSION}" \
             --label release \
-            --body-file /tmp/pr-body.md
+            --body-file "$RUNNER_TEMP/pr-body.md"
