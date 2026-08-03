@@ -109,8 +109,8 @@ dotnet add package Alberto.Postgres
 | `Alberto.Messaging` | Transactional outbox abstractions |
 | `Alberto.Messaging.Postgres` | PostgreSQL outbox store |
 | `Alberto.Telemetry` | OpenTelemetry tracing and metrics |
-| `Alberto.Testing` | In-memory test helpers (`InMemoryAlbertoModule`, assertion extensions) |
-| `Alberto.Testing.Xunit` | xUnit v3 test fixtures and collection definitions |
+| `Alberto.Testing` | Test helpers: an in-memory module harness, quiescence polling, an in-memory outbox |
+| `Alberto.Testing.Xunit` | The conformance suite Alberto runs against its own backends, for you to run against yours |
 
 All libraries target **net10.0**. The operator CLI (`alberto`) is not a NuGet tool package; run
 it from the repo with `dotnet run --project tools/Alberto.Cli`.
@@ -134,6 +134,112 @@ All knobs are also overridable from `Alberto:Modules:{moduleKey}:{Section}:{Prop
 The full, runnable version of that program is
 [docs/getting-started.md](https://github.com/codest-be/alberto/blob/main/docs/getting-started.md).
 It needs no Docker and no connection string.
+
+## Testing your application
+
+```bash
+dotnet add package Alberto.Testing
+```
+
+### Deciders and evolvers, with no infrastructure at all
+
+A decision function is pure: past events in, events or problems out. `Spec` tests it as such —
+no host, no event store, no `await`. Past events go in `Given`, the decider goes in `When`, and
+the `Then` verbs assert on what came back:
+
+```csharp
+Spec.For(new ConfirmOrderEvolver())
+    .Given(new OrderCreated(orderId, customerId, [widget], null))
+    .When(state => ConfirmOrderDecider.Decide(state, now))
+    .ThenEmitsOnly<OrderConfirmed>(e => e.OrderId == orderId)
+    .ThenState(s => s.Status.Should().Be(OrderStatus.Confirmed));
+```
+
+`Given` folds those events through the evolver the same way the command pipeline does, so the
+state under test is the state production would have built. `ThenState` folds the *emitted* events
+in on top, which is how you assert that a decision leaves the aggregate somewhere sensible.
+
+The failure verbs mirror it. Pass the same problem factory production calls, and the code stays a
+single source of truth:
+
+```csharp
+Spec.For(new ConfirmOrderEvolver())
+    .Given(new OrderCreated(orderId, customerId, [], null))
+    .When(state => ConfirmOrderDecider.Decide(state, now))
+    .ThenFails(OrderProblems.Empty());
+```
+
+| | |
+|---|---|
+| `Given(...)` / `Given(state, ...)` / `GivenNoEvents()` | The history. Repeated calls accumulate; the state overload starts from one you built by hand |
+| `When(state => ...)` | The decider. An overload takes `Func<TState, Decision<TResult>>` |
+| `ThenSucceeds()` / `ThenFails()` / `ThenFails(code)` / `ThenFails(problem)` | The outcome. `ThenFails(problem)` compares `Code` only |
+| `ThenEmits<T>(match?)` / `ThenEmitsOnly<T>(match?)` / `ThenEmitsNothing()` | What was recorded. `ThenEmits` says nothing about the other events; `ThenEmitsOnly` requires this to be the only one |
+| `ThenState(...)` / `ThenResult<T>(...)` | The state after the emitted events fold in, and the value a `Decision<T>` carried |
+| `ThenEvents(...)` / `ThenProblems(...)` | The escape hatches, handing you the lists in order |
+
+`Spec.Stateless()` drops `Given` and `ThenState` for decisions that fold no history. Every verb
+returns the concrete specification rather than a base type, so a chain never narrows — you can
+still reach `ThenState` after `ThenSucceeds`.
+
+Failures throw `SpecificationException` with the decision in the message: expecting
+`order.not-found` from a decider that returned `order.cancellation-reason-required` names both.
+Like the rest of the package it calls no test framework's `Assert`, so it reads the same from
+xUnit, NUnit, TUnit or MSTest.
+
+### Whole modules, over the in-memory backend
+
+The control loop is asynchronous, so a test that appends an event and asserts on a projection in
+the next line is asserting on a race. `AlbertoTestHarness` exists to make the correct sequence —
+append, wait, assert — shorter than the incorrect one. It runs a real module over the in-memory
+backend, so your production `AddAlberto` configuration is what the test exercises:
+
+```csharp
+await using var harness = await AlbertoTestHarness.StartAsync("tickets", builder => builder
+    .WithInMemory()
+    .WithEventsFrom(typeof(SeatReserved).Assembly)
+    .AddProjection(OccupancyProjection.Declaration, _ => _ => occupancy));
+
+await harness.AppendAsync(new SeatReserved(showId, seat), [new EventTag("show", showId)]);
+await harness.WaitForQuiescenceAsync();   // every processor's checkpoint has reached the head
+
+var states = await occupancy.LoadManyAsync([showId]);
+```
+
+`WaitForQuiescenceAsync` throws `TimeoutException` rather than returning quietly, so a projection
+that never catches up fails where it broke instead of in an unrelated assertion later.
+`Poll.UntilAsync` covers conditions the harness cannot see, `EventCollector` captures what was
+projected, and `InMemoryOutboxStore` stands in for a relay in reactor tests.
+
+Two rules tend to bite on the first test:
+
+- **Module keys are Alberto identifiers**, not free text: lowercase letters, digits and
+  underscores, starting with a letter, 63 characters at most. `"ticket_shop"` is a module key;
+  `"ticket-shop"` throws `ArgumentException`. The key is composed into DI service keys
+  (`{moduleKey}:{processorId}`, `{moduleKey}#{shardId}`) and used as a PostgreSQL schema name, so
+  the rule is not stylistic. Tenant ids and shard ids are validated by the same rule; processor
+  ids are not, and may contain dots and hyphens.
+- **The `state` handed to a projection's `apply` is never null.** For a document that does not
+  exist yet it is the initial state — `new TState()` unless you supplied `InitialState(...)` — so
+  write `state.Reserved + 1`, not `state?.Reserved ?? 0`.
+
+### Your own backend, against Alberto's own suite
+
+If you write one — an event store, state store, checkpoint store, dead-letter store or outbox —
+`Alberto.Testing.Xunit` is the suite Alberto runs against its own. Derive from the specification
+and implement one factory method; xUnit discovers the facts from the base class:
+
+```csharp
+public sealed class MyStoreTests : EventStoreBackendSpecification
+{
+    protected override async Task<IEventStoreBackend> CreateBackend() => new MyBackend(...);
+}
+```
+
+That inherits 38 facts for an event store backend, 26 for a state store, 15 for an outbox, 9 each
+for a checkpoint or dead-letter store, and 8 more for a claimable dead-letter store. Its xUnit and
+FluentAssertions references are `PrivateAssets="all"`, so nothing test-only reaches your
+application's dependency graph.
 
 ## Documentation
 
