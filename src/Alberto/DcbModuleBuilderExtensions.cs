@@ -665,6 +665,7 @@ public static class DcbModuleBuilderExtensions
                     projectionVersions,
                     sp.GetRequiredKeyedService<ICheckpointStore>(moduleKey),
                     sp.GetRequiredKeyedService<ShadowControlLoopFactory>(moduleKey),
+                    sp.GetRequiredKeyedService<ILiveLoopSuspender>(moduleKey),
                     sp.GetKeyedServices<IProjectionStateClearer>(moduleKey).ToList(),
                     coordinatorOptions,
                     sp.GetService<TimeProvider>(),
