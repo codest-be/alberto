@@ -5,6 +5,7 @@ using Xunit;
 
 namespace Alberto.Tests;
 
+[Trait("Category", "Integration")]
 public sealed class PostgresDeadLetterStoreTests(SingleTenantPostgresFixture fixture)
     : IClassFixture<SingleTenantPostgresFixture>
 {

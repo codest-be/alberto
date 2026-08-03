@@ -18,6 +18,7 @@ namespace Alberto.Tests.EntityFramework;
 /// Save behaviour is controlled via <see cref="EfTestDbContext.SaveInterceptor"/>
 /// to avoid needing full concurrency setup in the DB.
 /// </summary>
+[Trait("Category", "Integration")]
 public sealed class EfInlineProjectionRetryTests(EfProjectionTestFixture fixture)
     : IClassFixture<EfProjectionTestFixture>
 {

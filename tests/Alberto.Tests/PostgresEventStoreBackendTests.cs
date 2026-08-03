@@ -10,6 +10,7 @@ namespace Alberto.Tests;
 /// Runs with single-tenant migrations (no tenant_id on events tables).
 /// Test isolation is achieved through unique event tags per test.
 /// </summary>
+[Trait("Category", "Integration")]
 public sealed class PostgresEventStoreBackendTests(SingleTenantPostgresFixture fixture)
     : EventStoreBackendSpecification, IClassFixture<SingleTenantPostgresFixture>
 {

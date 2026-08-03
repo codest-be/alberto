@@ -17,6 +17,7 @@ namespace Alberto.Tests.EntityFramework;
 /// <c>AppendAsync</c>, so the failure is not a lagging read model — it is every write to the
 /// module failing, for as long as the rebuild runs.
 /// </remarks>
+[Trait("Category", "Integration")]
 public sealed class EfInlineProjectionRebuildVersionTests(EfProjectionTestFixture fixture)
     : IClassFixture<EfProjectionTestFixture>
 {

@@ -57,14 +57,45 @@ jobs:
       - name: Build
         run: dotnet build tests/Alberto.Tests/Alberto.Tests.csproj -c Release
 
+      # reportgenerator, from .config/dotnet-tools.json. build/coverage.sh runs it to turn the
+      # per-assembly Cobertura files into the one the gate below reads.
+      - name: Restore tools
+        run: dotnet tool restore
+
       # Runs unit tests plus the Testcontainers-backed PostgreSQL integration tests. Docker on
       # this runner is a *rootless* daemon owned by the runner user; the runner exports
       # DOCKER_HOST to its socket, which is how Testcontainers finds it. Nothing here needs to
       # know that, but a job that suddenly cannot reach Docker is a host problem, not a
-      # workflow one. Coverage is collected but not gated: the figure exists to show movement
-      # across the test-suite remediation sub-projects, not to fail builds.
-      - name: Test
-        run: dotnet test tests/Alberto.Tests/Alberto.Tests.csproj -c Release --no-build --logger "console;verbosity=normal" --collect:"XPlat Code Coverage"
+      # workflow one.
+      #
+      # The whole suite runs here, integration included. Mutation testing (see
+      # .github/workflows/mutation.yml) has to exclude the Postgres-backed classes because it
+      # re-runs the suite once per mutant; coverage runs it once, so the ten seconds those
+      # tests cost buys an honest number for Alberto.Postgres instead of a near-zero one.
+      #
+      # build/coverage.sh replaces the bare --collect:"XPlat Code Coverage" that used to be
+      # here: it scopes collection to the shipped libraries via build/coverlet.runsettings, so
+      # the figure is not diluted by the test and example assemblies.
+      - name: Test with coverage
+        run: build/coverage.sh --no-build
+
+      # The figure used to be collected but not gated — it showed movement rather than failing
+      # builds. It is now a gate. The threshold trails the achieved number rather than leading
+      # it, so an unrelated PR is never blocked by a gap it did not introduce; raise it as the
+      # suite improves.
+      - name: Enforce coverage
+        run: python3 build/coverage-summary.py --break 93
+
+      - name: Publish coverage summary
+        if: always()
+        run: |
+          {
+            echo '## Coverage'
+            echo
+            echo '```'
+            python3 build/coverage-summary.py || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # The example modules and their GraphQL schema snapshot. Built separately because they are
       # not referenced by Alberto.Tests; buildable here because the modules are plain SDK
@@ -143,5 +174,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage
-          path: tests/Alberto.Tests/TestResults/**/coverage.cobertura.xml
+          path: |
+            artifacts/coverage/report/Cobertura.xml
+            artifacts/coverage/report/index.html
           if-no-files-found: error

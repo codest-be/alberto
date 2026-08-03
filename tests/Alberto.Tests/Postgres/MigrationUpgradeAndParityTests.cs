@@ -27,6 +27,7 @@ namespace Alberto.Tests.Postgres;
 /// finding P1.4 of the audit.
 /// </para>
 /// </remarks>
+[Trait("Category", "Integration")]
 public sealed class MigrationUpgradeAndParityTests
 {
     // =========================================================================

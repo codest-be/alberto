@@ -1,0 +1,131 @@
+name: Mutation testing
+
+on:
+  pull_request:
+  push:
+    branches: [main, 'release/**']
+  schedule:
+    # 05:00 UTC. The benchmark suite starts at 02:00 with a 120-minute budget, and there is one
+    # runner in the public-ci group, so anything before 04:00 queues behind its worst case
+    # rather than running beside it. This is the heaviest job in the repository; it goes last.
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Same reasoning as ci.yml, and it bites harder here: one runner in the group, and this is the
+# longest job on the PR path. Three pushes in a minute must not leave two dead mutation runs
+# squatting on the only machine everybody else's PR is waiting for.
+# Pushes to main and release/** are exempt — a commit on a maintained line gets its own verdict.
+concurrency:
+  group: mutation-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  # What a PR is actually gated on. Stryker's --since mutates only the code the diff
+  # touched, so the run is proportional to the change rather than to the repo: a full
+  # sweep of Alberto alone is ~1500 tested mutants and over an hour, which no one would
+  # wait for on a PR. The floor here is deliberately higher than the repo aggregate —
+  # new code is held to a standard the back catalogue is still climbing towards.
+  diff:
+    name: Changed code
+    if: github.event_name == 'pull_request'
+    # Self-hosted, for the same reasons as ci.yml — and because a mutation run is the one job
+    # here that genuinely cannot afford a two-core hosted runner: it rebuilds and re-runs the
+    # suite once per mutant.
+    runs-on: [self-hosted, public-ci]
+    # --since keeps a normal PR to minutes, but a PR that touches something Alberto-wide
+    # (a shared interface, a global using) mutates most of the package and takes as long as
+    # the full sweep. Without a cap that would sit on the only runner in the group until
+    # GitHub's six-hour default, blocking every other PR behind it. Forty-five minutes is a
+    # stop, not a budget: the signal is "this diff is too broad to gate this way", and the
+    # nightly full run covers what this one gives up.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # --since diffs against the merge base, so the history has to be there.
+          fetch-depth: 0
+
+      # No actions/setup-dotnet — the host carries the 10.0 SDK under a root-owned path and
+      # asking setup-dotnet for it is what fails the job. See the comment in ci.yml.
+
+      - name: Restore tools
+        run: dotnet tool restore
+
+      - name: Build
+        run: dotnet build tests/Alberto.Tests/Alberto.Tests.csproj -c Release
+
+      - name: Mutate changed code
+        run: build/mutation-test.sh --since "origin/${{ github.base_ref }}"
+
+      # --allow-empty because a PR that touches no mutated package legitimately produces
+      # no mutants, and "nothing to score" must read as a pass rather than a 0%.
+      - name: Enforce mutation score on changed code
+        run: python3 build/mutation-summary.py artifacts/stryker --break 90 --allow-empty
+
+      - name: Publish summary
+        if: always()
+        run: |
+          {
+            echo '## Mutation score — changed code'
+            echo
+            echo '```'
+            python3 build/mutation-summary.py artifacts/stryker || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutation-report-diff
+          path: artifacts/stryker/*/reports/mutation-report.html
+          if-no-files-found: ignore
+
+  # The whole-repo number, off the PR path. Its floor trails the achieved score so an
+  # unrelated PR is never blocked by a mutant it did not introduce; raise it as the
+  # score climbs.
+  full:
+    name: All core packages
+    if: github.event_name != 'pull_request'
+    runs-on: [self-hosted, public-ci]
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      # No actions/setup-dotnet — see the comment in the diff job above, and in ci.yml.
+
+      - name: Restore tools
+        run: dotnet tool restore
+
+      - name: Build
+        run: dotnet build tests/Alberto.Tests/Alberto.Tests.csproj -c Release
+
+      - name: Mutate core packages
+        run: build/mutation-test.sh
+
+      - name: Enforce aggregate mutation score
+        run: python3 build/mutation-summary.py artifacts/stryker --break 90
+
+      - name: Publish summary
+        if: always()
+        run: |
+          {
+            echo '## Mutation score — core packages'
+            echo
+            echo '```'
+            python3 build/mutation-summary.py artifacts/stryker || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutation-report-full
+          path: artifacts/stryker/*/reports/
+          if-no-files-found: ignore

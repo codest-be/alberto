@@ -38,6 +38,7 @@ namespace Alberto.Tests.Subscriptions;
 /// covered by <see cref="CrossTenantProjectionOnMultiTenantSchemaTests"/>.
 /// </para>
 /// </summary>
+[Trait("Category", "Integration")]
 public sealed class CrossTenantProjectionContractTests(SingleTenantPostgresFixture fixture)
     : IClassFixture<SingleTenantPostgresFixture>
 {
@@ -144,6 +145,7 @@ public sealed class CrossTenantProjectionContractTests(SingleTenantPostgresFixtu
 /// single blended document has a row to live in without colliding with anyone's.
 /// </para>
 /// </summary>
+[Trait("Category", "Integration")]
 public sealed class CrossTenantProjectionOnMultiTenantSchemaTests(MultiTenantDbFixture fixture)
     : IClassFixture<MultiTenantDbFixture>
 {

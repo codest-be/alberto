@@ -11,6 +11,7 @@ namespace Alberto.Tests.Tenancy;
 /// Sharding against two real databases: a tenant's events are in its own database and nowhere
 /// else, and everything shard-local — positions, checkpoints, dead letters — stays that way.
 /// </summary>
+[Trait("Category", "Integration")]
 public sealed class ShardedEventStoreTests(ShardedPostgresFixture fixture)
     : IClassFixture<ShardedPostgresFixture>
 {

@@ -18,6 +18,7 @@ public sealed class PostgresAdminDataAccessFixture(PostgresCluster cluster)
 /// Integration tests for <see cref="PostgresAdminDataAccess"/>, focusing on the composite
 /// transactional mutation <see cref="PostgresAdminDataAccess.RetryByRewindAsync"/>.
 /// </summary>
+[Trait("Category", "Integration")]
 public sealed class PostgresAdminDataAccessTests(PostgresAdminDataAccessFixture fixture)
     : IClassFixture<PostgresAdminDataAccessFixture>
 {
@@ -271,6 +272,7 @@ public sealed class PostgresAdminTenantLeaseFixture(PostgresCluster cluster)
 /// <summary>
 /// Integration tests for <see cref="PostgresAdminDataAccess.ReleaseTenantLeasesAsync"/>.
 /// </summary>
+[Trait("Category", "Integration")]
 public sealed class PostgresAdminTenantLeaseTests(PostgresAdminTenantLeaseFixture fixture)
     : IClassFixture<PostgresAdminTenantLeaseFixture>
 {

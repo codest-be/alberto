@@ -15,6 +15,7 @@ namespace Alberto.Tests.Postgres;
 /// against it before anything checked. These tests hold the gate ahead of the first script, and
 /// hold the store untouched when it fires.
 /// </remarks>
+[Trait("Category", "Integration")]
 public sealed class StoreImprintTests(PostgresCluster cluster)
 {
     private Task<string> FreshDatabaseAsync() =>

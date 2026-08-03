@@ -27,6 +27,7 @@ namespace Alberto.Tests.EntityFramework;
 /// deliberately, together with the documented contract on the overload.
 /// </para>
 /// </remarks>
+[Trait("Category", "Integration")]
 public sealed class EfProjectionAfterCommitRebuildTests(EfProjectionTestFixture fixture)
     : IClassFixture<EfProjectionTestFixture>
 {

@@ -67,6 +67,7 @@ public sealed class MultiTenantPostgresFixture(PostgresCluster cluster)
 /// <item>P1.2: <c>PostgresDeadLetterStore</c> in multi-tenant mode — storage and retry isolation.</item>
 /// </list>
 /// </summary>
+[Trait("Category", "Integration")]
 public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
     : IClassFixture<MultiTenantPostgresFixture>
 {

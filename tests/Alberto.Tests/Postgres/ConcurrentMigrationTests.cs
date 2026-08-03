@@ -18,6 +18,7 @@ namespace Alberto.Tests.Postgres;
 /// already recorded every script, finds the journal fully populated, and completes without
 /// running anything.
 /// </remarks>
+[Trait("Category", "Integration")]
 public sealed class ConcurrentMigrationTests(PostgresCluster cluster)
 {
     private Task<string> FreshDatabaseAsync(CancellationToken ct = default) =>

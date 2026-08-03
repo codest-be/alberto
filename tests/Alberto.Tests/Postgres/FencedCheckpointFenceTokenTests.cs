@@ -37,6 +37,7 @@ public sealed class FenceTokenMultiTenantFixture(PostgresCluster cluster)
 /// that has written to it.
 /// </para>
 /// </remarks>
+[Trait("Category", "Integration")]
 public sealed class FencedCheckpointFenceTokenTests(FenceTokenSingleTenantFixture fixture)
     : IClassFixture<FenceTokenSingleTenantFixture>
 {
@@ -237,6 +238,7 @@ public sealed class FencedCheckpointFenceTokenTests(FenceTokenSingleTenantFixtur
 /// for every module regardless of tenancy, so a multi-tenant deployment that enables leases runs
 /// exactly this path.
 /// </summary>
+[Trait("Category", "Integration")]
 public sealed class FencedCheckpointMultiTenantParityTests(FenceTokenMultiTenantFixture fixture)
     : IClassFixture<FenceTokenMultiTenantFixture>
 {

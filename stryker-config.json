@@ -1,0 +1,28 @@
+{
+  "stryker-config": {
+    "project-info": {
+      "name": "github.com/codest-be/alberto",
+      "module": "core"
+    },
+    "test-projects": ["Alberto.Tests.csproj"],
+    "test-case-filter": "Category!=Integration",
+    "test-runner": "mtp",
+    "configuration": "Release",
+    "mutate": [
+      "**/*.cs",
+      "!**/obj/**/*.cs",
+      "!**/bin/**/*.cs",
+      "!**/*.g.cs",
+      "!**/*.Designer.cs",
+      "!**/GlobalUsings.cs"
+    ],
+    "mutation-level": "Standard",
+    "ignore-mutations": ["string"],
+    "thresholds": {
+      "high": 95,
+      "low": 85,
+      "break": 80
+    },
+    "reporters": ["progress", "html", "json", "markdown"]
+  }
+}

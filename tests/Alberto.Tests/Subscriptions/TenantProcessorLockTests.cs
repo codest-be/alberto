@@ -9,6 +9,7 @@ namespace Alberto.Tests.Subscriptions;
 /// <summary>
 /// Tests for PostgresTenantProcessorLock (tenant-distributed leader election with database-backed leases).
 /// </summary>
+[Trait("Category", "Integration")]
 public class TenantProcessorLockTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
     [Fact]

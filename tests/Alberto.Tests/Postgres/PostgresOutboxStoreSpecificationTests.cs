@@ -28,6 +28,7 @@ namespace Alberto.Tests.Postgres;
 /// </list>
 /// </para>
 /// </summary>
+[Trait("Category", "Integration")]
 public sealed class PostgresOutboxStoreSpecificationTests(PostgresOutboxStoreFixture fixture)
     : OutboxStoreSpecification, IClassFixture<PostgresOutboxStoreFixture>
 {

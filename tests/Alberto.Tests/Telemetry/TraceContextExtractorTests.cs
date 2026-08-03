@@ -19,11 +19,12 @@ public sealed class TraceContextExtractorTests
     private const string ValidSpanId = "00f067aa0ba902b7";
 
     private static IEventEnvelope MakeEnvelope(
-        IReadOnlyDictionary<string, string>? metadata = null) =>
+        IReadOnlyDictionary<string, string>? metadata = null,
+        long globalPosition = 1) =>
         new EventEnvelope
         {
             Id = Guid.NewGuid(),
-            GlobalPosition = 1,
+            GlobalPosition = globalPosition,
             EventType = new EventType("test-event"),
             Tags = [],
             EventData = "{}",
@@ -57,6 +58,25 @@ public sealed class TraceContextExtractorTests
         Assert.NotNull(link);
         Assert.Equal(ValidTraceId, link.Value.Context.TraceId.ToHexString());
         Assert.Equal(ValidSpanId, link.Value.Context.SpanId.ToHexString());
+    }
+
+    [Fact]
+    public void ExtractTraceLink_TagsTheLinkWithTheEventPosition()
+    {
+        // The link's only tag is what ties the consuming span back to a place in the log.
+        // Without this assertion the whole ActivityTagsCollection can be emptied and every
+        // other test here still passes — the link is still returned and its context is
+        // still correct, it just no longer says which event it came from.
+        var provider = new FixedTraceContextProvider(ValidTraceId, ValidSpanId);
+
+        var link = TraceContextExtractor.ExtractTraceLink(
+            MakeEnvelope(globalPosition: 4242), provider);
+
+        Assert.NotNull(link);
+        Assert.NotNull(link.Value.Tags);
+        Assert.Contains(
+            link.Value.Tags!,
+            tag => tag.Key == "event.position" && Equals(tag.Value, 4242L));
     }
 
     [Fact]

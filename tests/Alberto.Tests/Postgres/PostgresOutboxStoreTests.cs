@@ -20,6 +20,7 @@ public sealed class PostgresOutboxStoreFixture(PostgresCluster cluster)
 /// atomically-claiming <c>FOR UPDATE SKIP LOCKED</c> pattern (P0.4) and the
 /// relay crash-between-publish-and-mark scenario.
 /// </summary>
+[Trait("Category", "Integration")]
 public sealed class PostgresOutboxStoreTests(PostgresOutboxStoreFixture fixture)
     : IClassFixture<PostgresOutboxStoreFixture>
 {

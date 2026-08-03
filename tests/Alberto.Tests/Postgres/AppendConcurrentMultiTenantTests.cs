@@ -17,6 +17,7 @@ namespace Alberto.Tests.Postgres;
 /// yields the range (2, 5] = {3, 4, 5}; filtered to <c>tenant_id = A</c> that returns
 /// only {3, 5} — silently dropping position 1.
 /// </summary>
+[Trait("Category", "Integration")]
 public sealed class AppendConcurrentMultiTenantTests(MultiTenantDbFixture fixture)
     : IClassFixture<MultiTenantDbFixture>
 {

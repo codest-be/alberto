@@ -35,6 +35,7 @@ public sealed class PostgresAdminOperatorMultiTenantFixture(PostgresCluster clus
 /// single-tenant store. Every mutation asserts both the row-level effect and that the
 /// expected admin audit event was appended to <c>alberto_events</c>.
 /// </summary>
+[Trait("Category", "Integration")]
 public sealed class PostgresAdminOperatorSingleTenantTests(PostgresAdminOperatorSingleTenantFixture fixture)
     : IClassFixture<PostgresAdminOperatorSingleTenantFixture>
 {
@@ -701,6 +702,7 @@ public sealed class PostgresAdminOperatorSingleTenantTests(PostgresAdminOperator
 /// multi-tenant audit event paths. Uses a multi-tenant database because
 /// <c>alberto_tenant_leases</c> only exists in that schema.
 /// </summary>
+[Trait("Category", "Integration")]
 public sealed class PostgresAdminOperatorMultiTenantTests(PostgresAdminOperatorMultiTenantFixture fixture)
     : IClassFixture<PostgresAdminOperatorMultiTenantFixture>
 {

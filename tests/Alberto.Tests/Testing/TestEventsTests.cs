@@ -35,6 +35,29 @@ public class TestEventsTests
     }
 
     [Fact]
+    public void NewEvent_CarriesMetadata()
+    {
+        // `metadata ?? new Dictionary<string, string>()` — drop the left operand and every
+        // caller-supplied entry is silently replaced by an empty dictionary. Alberto.Testing
+        // ships to consumers, so that failure lands in someone else's test suite as an
+        // assertion about metadata that mysteriously never arrives.
+        var appended = TestEvents.NewEvent(
+            new Probe("hello"),
+            metadata: new Dictionary<string, string> { ["tenant"] = "acme" });
+
+        Assert.Equal("acme", appended.Metadata["tenant"]);
+    }
+
+    [Fact]
+    public void NewEvent_DefaultsMetadataToEmptyRatherThanNull()
+    {
+        var appended = TestEvents.NewEvent(new Probe("hello"));
+
+        Assert.NotNull(appended.Metadata);
+        Assert.Empty(appended.Metadata);
+    }
+
+    [Fact]
     public void NewEvent_GivesEachEventADistinctId()
     {
         Assert.NotEqual(

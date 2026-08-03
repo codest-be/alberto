@@ -17,7 +17,40 @@ dotnet test
 ```
 
 Tests whose names start with `Postgres` or that live in a Testcontainers fixture class require a
-running Docker daemon. The in-memory and unit tests run without Docker.
+running Docker daemon. The in-memory and unit tests run without Docker, and are selectable —
+every Docker-backed class is tagged `[Trait("Category", "Integration")]`:
+
+```bash
+dotnet test tests/Alberto.Tests/Alberto.Tests.csproj --filter "Category!=Integration"
+```
+
+That subset runs in a couple of seconds and is the fastest useful feedback loop while working.
+Keep the trait on any new test class that takes a Postgres fixture: mutation testing selects
+against it, and an untagged one silently puts a container start into a run that performs
+thousands of them.
+
+## Test quality gates
+
+Two numbers gate a PR, and both have a floor CI enforces:
+
+- **Line coverage** over the shipped packages, from the whole suite.
+- **Mutation score on the code your branch changed**, from Stryker. This is the one that
+  usually needs attention, because a line can be covered by a test that asserts nothing about
+  it.
+
+Check either locally before pushing:
+
+```bash
+build/coverage.sh
+```
+
+```bash
+build/mutation-test.sh --since main
+```
+
+Neither is a target to maximise, and a surviving mutant is not automatically a bug — see
+[docs/development/mutation-testing.md](docs/development/mutation-testing.md) for the
+thresholds, what is measured, and how to triage a survivor that is not worth killing.
 
 ## Making changes
 
