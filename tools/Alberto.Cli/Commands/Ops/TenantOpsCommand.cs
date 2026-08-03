@@ -1,4 +1,6 @@
 using System.CommandLine;
+using Alberto.Admin;
+using Alberto.Postgres;
 
 namespace Alberto.Cli.Commands.Ops;
 
@@ -28,43 +30,48 @@ public static class TenantOpsCommand
         command.AddOption(yesOption);
         var (shardOption, allShardsOption) = ShardRun.AddMutationOptions(command);
 
-        command.SetHandler(async (string? url, string? schema, string? processorId, bool yes, string? shard, bool allShards) =>
+        command.SetHandler((string? url, string? schema, string? processorId, bool yes, string? shard, bool allShards) =>
         {
             // release produces human-readable output only — no --json flag.
             var session = new CliSession(json: false);
-            return await session.RunAsync(async () =>
-            {
-                var output = session.Output;
-
-                var scope = processorId is not null
-                    ? $"consumer '{processorId}'"
-                    : "all consumers";
-
-                // Leases live in the same database as the events they fence, so a sharded module
-                // holds a separate set per shard and each has to be released on its own.
-                var targets = session.MutationTargets(shard, allShards, url, schema);
-
-                if (session.Confirm(
-                        yes,
-                        $"Release tenant leases for {scope}{ShardRun.Scope(targets)}? " +
-                        "The running application will reacquire them.",
-                        "Destructive operation requires confirmation. Add --yes to confirm.\n" +
-                        "  alberto ops tenants release --yes") is { } confirmCode)
-                {
-                    return confirmCode;
-                }
-
-                var failed = await ShardRun.ApplyAsync(output, targets, async (dataSource, target) =>
-                {
-                    var operations = AdminAdapters.Operator(dataSource, target.Schema);
-                    var deleted = await operations.ReleaseTenantLeasesAsync(processorId, CliSession.OperatorId);
-                    output.Text($"Released {deleted} tenant lease(s) for {scope}.");
-                });
-
-                return failed ? 1 : 0;
-            });
+            return HandleReleaseAsync(url, schema, processorId, yes, shard, allShards, session);
         }, urlOption, schemaOption, processorIdOption, yesOption, shardOption, allShardsOption);
 
         return command;
     }
+
+    internal static Task<int> HandleReleaseAsync(
+        string? url, string? schema, string? processorId, bool yes,
+        string? shard, bool allShards, CliSession session) =>
+        session.RunAsync(async () =>
+        {
+            var output = session.Output;
+
+            var scope = processorId is not null
+                ? $"consumer '{processorId}'"
+                : "all consumers";
+
+            // Leases live in the same database as the events they fence, so a sharded module
+            // holds a separate set per shard and each has to be released on its own.
+            var targets = session.MutationTargets(shard, allShards, url, schema);
+
+            if (session.Confirm(
+                    yes,
+                    $"Release tenant leases for {scope}{ShardRun.Scope(targets)}? " +
+                    "The running application will reacquire them.",
+                    "Destructive operation requires confirmation. Add --yes to confirm.\n" +
+                    "  alberto ops tenants release --yes") is { } confirmCode)
+            {
+                return confirmCode;
+            }
+
+            var failed = await ShardRun.ApplyAsync(output, targets, async (dataSource, target) =>
+            {
+                var operations = AdminAdapters.Operator(dataSource, target.Schema);
+                var deleted = await operations.ReleaseTenantLeasesAsync(processorId, CliSession.OperatorId);
+                output.Text($"Released {deleted} tenant lease(s) for {scope}.");
+            });
+
+            return failed ? 1 : 0;
+        });
 }

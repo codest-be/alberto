@@ -1,5 +1,7 @@
 using System.CommandLine;
 using Alberto.Admin;
+using Alberto.Cli.Output;
+using Alberto.Postgres;
 
 namespace Alberto.Cli.Commands;
 
@@ -22,44 +24,10 @@ public static class ProjectionsCommand
         var (urlOption, schemaOption, jsonOption) = CliOptions.AddConnectionOptions(command);
         var shardOption = ShardRun.AddReadOption(command);
 
-        command.SetHandler(async (string? url, string? schema, bool json, string? shard) =>
+        command.SetHandler((string? url, string? schema, bool json, string? shard) =>
         {
             var session = new CliSession(json);
-            return await session.RunAsync(async () =>
-            {
-                var output = session.Output;
-
-                // Every shard runs the same projections, so the types are deduplicated into one
-                // list rather than repeated per database.
-                var targets = session.ReadTargets(shard, url, schema);
-                var results = await ShardRun.CollectAsync(
-                    targets, async admin => (IReadOnlyList<string>)await admin.GetProjectionTypesAsync());
-
-                var types = results
-                    .Where(r => r.Succeeded)
-                    .SelectMany(r => r.Value!)
-                    .Distinct(StringComparer.Ordinal)
-                    .Order(StringComparer.Ordinal)
-                    .ToArray();
-
-                if (json)
-                {
-                    output.Json(new { projectionTypes = types });
-                }
-                else if (types.Length == 0)
-                {
-                    output.Text("No projection types found.");
-                }
-                else
-                {
-                    output.Table(
-                        ["Projection Type"],
-                        types.Select(t => new[] { t })
-                    );
-                }
-
-                return ShardRun.ReportFailures(output, results) ? 1 : 0;
-            });
+            return HandleTypesAsync(url, schema, json, shard, session);
         }, urlOption, schemaOption, jsonOption, shardOption);
 
         return command;
@@ -82,57 +50,118 @@ public static class ProjectionsCommand
         command.AddOption(limitOption);
         var shardOption = ShardRun.AddReadOption(command);
 
-        command.SetHandler(async (string type, string? url, string? schema, string? tenant, string? search, int limit, bool json, string? shard) =>
+        command.SetHandler((string type, string? url, string? schema, string? tenant, string? search, int limit, bool json, string? shard) =>
         {
             var session = new CliSession(json);
-            return await session.RunAsync(async () =>
-            {
-                var output = session.Output;
-                var targets = session.ReadTargets(shard, url, schema);
-                var results = await ShardRun.CollectAsync(
-                    targets,
-                    async admin => (IReadOnlyList<ProjectionState>)
-                        await admin.GetProjectionStatesAsync(type, tenant, search, limit));
-
-                var showShard = ShardRun.ShowsShard(targets);
-                var states = results
-                    .Where(r => r.Succeeded)
-                    .SelectMany(r => r.Value!.Select(s => (r.Target.ShardId, State: s)))
-                    .ToArray();
-
-                if (json)
-                {
-                    output.Json(new
-                    {
-                        projectionType = type,
-                        count = states.Length,
-                        states = states.Select(row => new
-                        {
-                            shard = showShard ? row.ShardId : null,
-                            row.State.DocumentId,
-                            row.State.TenantId,
-                            updatedAt = row.State.UpdatedAt?.ToString("O")
-                        })
-                    });
-                }
-                else
-                {
-                    ShardRun.Table(
-                        output, targets, results,
-                        ["Document ID", "Tenant ID", "Updated At"],
-                        s =>
-                        [
-                            s.DocumentId,
-                            s.TenantId ?? "-",
-                            s.UpdatedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"
-                        ],
-                        $"No projection states found for type '{type}'.");
-                }
-
-                return ShardRun.ReportFailures(output, results) ? 1 : 0;
-            });
+            return HandleListAsync(type, url, schema, tenant, search, limit, json, shard, session);
         }, typeArgument, urlOption, schemaOption, tenantOption, searchOption, limitOption, jsonOption, shardOption);
 
         return command;
+    }
+
+    internal static Task<int> HandleTypesAsync(
+        string? url, string? schema, bool json, string? shard, CliSession session) =>
+        session.RunAsync(async () =>
+        {
+            var output = session.Output;
+
+            // Every shard runs the same projections, so the types are deduplicated into one
+            // list rather than repeated per database.
+            var targets = session.ReadTargets(shard, url, schema);
+            var results = await ShardRun.CollectAsync(
+                targets, async admin => (IReadOnlyList<string>)await admin.GetProjectionTypesAsync());
+
+            return RenderTypes(output, results, json);
+        });
+
+    internal static Task<int> HandleListAsync(
+        string type, string? url, string? schema, string? tenant, string? search, int limit,
+        bool json, string? shard, CliSession session) =>
+        session.RunAsync(async () =>
+        {
+            var output = session.Output;
+            var targets = session.ReadTargets(shard, url, schema);
+            var results = await ShardRun.CollectAsync(
+                targets,
+                async admin => (IReadOnlyList<ProjectionState>)
+                    await admin.GetProjectionStatesAsync(type, tenant, search, limit));
+
+            return RenderList(type, output, targets, results, json);
+        });
+
+    internal static int RenderTypes(
+        IOutput output,
+        IReadOnlyList<ShardResult<IReadOnlyList<string>>> results,
+        bool json)
+    {
+        var types = results
+            .Where(r => r.Succeeded)
+            .SelectMany(r => r.Value!)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        if (json)
+        {
+            output.Json(new { projectionTypes = types });
+        }
+        else if (types.Length == 0)
+        {
+            output.Text("No projection types found.");
+        }
+        else
+        {
+            output.Table(
+                ["Projection Type"],
+                types.Select(t => new[] { t })
+            );
+        }
+
+        return ShardRun.ReportFailures(output, results) ? 1 : 0;
+    }
+
+    internal static int RenderList(
+        string type,
+        IOutput output,
+        IReadOnlyList<ShardTarget> targets,
+        IReadOnlyList<ShardResult<IReadOnlyList<ProjectionState>>> results,
+        bool json)
+    {
+        var showShard = ShardRun.ShowsShard(targets);
+        var states = results
+            .Where(r => r.Succeeded)
+            .SelectMany(r => r.Value!.Select(s => (r.Target.ShardId, State: s)))
+            .ToArray();
+
+        if (json)
+        {
+            output.Json(new
+            {
+                projectionType = type,
+                count = states.Length,
+                states = states.Select(row => new
+                {
+                    shard = showShard ? row.ShardId : null,
+                    row.State.DocumentId,
+                    row.State.TenantId,
+                    updatedAt = row.State.UpdatedAt?.ToString("O")
+                })
+            });
+        }
+        else
+        {
+            ShardRun.Table(
+                output, targets, results,
+                ["Document ID", "Tenant ID", "Updated At"],
+                s =>
+                [
+                    s.DocumentId,
+                    s.TenantId ?? "-",
+                    s.UpdatedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"
+                ],
+                $"No projection states found for type '{type}'.");
+        }
+
+        return ShardRun.ReportFailures(output, results) ? 1 : 0;
     }
 }
