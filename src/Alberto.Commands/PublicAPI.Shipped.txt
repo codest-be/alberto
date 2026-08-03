@@ -1,7 +1,4 @@
 #nullable enable
-*REMOVED*Alberto.Commands.DeciderExtensions
-*REMOVED*static Alberto.Commands.DeciderExtensions.DecideAndAppendAsync<TState>(this Alberto.IEventStore! eventStore, Alberto.DcbQuery! boundary, Alberto.Evolver<TState>! evolver, System.Func<TState, Alberto.Decision>! decide, System.Func<Alberto.IEvent!, Alberto.IEventToPersist!>! toEventToPersist, Alberto.EventSerializer! serializer, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Result>!
-*REMOVED*static Alberto.Commands.DeciderExtensions.DecideAndAppendAsync<TState>(this Alberto.IEventStore! eventStore, Alberto.DcbQuery! boundary, Alberto.Evolver<TState>! evolver, System.Func<TState, Alberto.Decision>! decide, System.Func<Alberto.IEvent!, Alberto.IEventToPersist!>! toEventToPersist, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Result>!
 Alberto.Commands.AlbertoStore
 Alberto.Commands.AlbertoStore.AlbertoStore(Alberto.IEventStore! eventStore, Alberto.EventSerializer! serializer, System.IServiceProvider? services = null) -> void
 Alberto.Commands.AlbertoStore.Fold<TState>(Alberto.DcbQuery! query, TState initial, System.Func<TState, Alberto.IEvent!, TState>! apply, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<TState>!
@@ -42,7 +39,6 @@ Alberto.Commands.CommandPipeline<TCommand>.LoadUnder<TState>(System.Func<TComman
 Alberto.Commands.CommandPipeline<TCommand>.LoadUnder<TState>(System.Func<TCommand, System.Threading.Tasks.Task<(TState State, Alberto.DcbQuery! Boundary, long Position)>!>! load) -> Alberto.Commands.BoundPipeline<TCommand, TState>
 Alberto.Commands.CommandPipeline<TCommand>.Map<TNew>(System.Func<TCommand, TNew>! map) -> Alberto.Commands.CommandPipeline<TNew>
 Alberto.Commands.CommandPipeline<TCommand>.Validate(System.Func<TCommand, Alberto.Result>! validate) -> Alberto.Commands.CommandPipeline<TCommand>
-Alberto.Commands.DeciderExtensions
 Alberto.Commands.UnboundDecision
 Alberto.Commands.UnboundDecision.Commit(Alberto.DcbQuery! query, long expectedPosition, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Result>!
 Alberto.Commands.UnboundDecision.CommitUnconditionally(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Result>!
@@ -59,5 +55,3 @@ Alberto.Commands.UnboundPipeline<TCommand, TState>.Decide(System.Func<TCommand, 
 Alberto.Commands.UnboundPipeline<TCommand, TState>.Decide<TValue>(System.Func<TCommand, TState, Alberto.Decision<TValue>>! decide) -> Alberto.Commands.UnboundDecision<TValue>
 Alberto.Commands.UnboundPipeline<TCommand, TState>.UnboundPipeline() -> void
 static Alberto.Commands.AlbertoStoreBuilderExtensions.WithEventsFrom(this Alberto.DcbModuleBuilder! builder, System.Reflection.Assembly! eventsAssembly) -> Alberto.DcbModuleBuilder!
-static Alberto.Commands.DeciderExtensions.DecideAndAppendAsync<TState>(this Alberto.IEventStore! eventStore, Alberto.DcbQuery! boundary, Alberto.Evolver<TState>! evolver, System.Func<TState, Alberto.Decision>! decide, System.Func<Alberto.IEvent!, Alberto.IEventToPersist!>! toEventToPersist, Alberto.EventSerializer! serializer, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Result>!
-static Alberto.Commands.DeciderExtensions.DecideAndAppendAsync<TState>(this Alberto.IEventStore! eventStore, Alberto.DcbQuery! boundary, Alberto.Evolver<TState>! evolver, System.Func<TState, Alberto.Decision>! decide, System.Func<Alberto.IEvent!, Alberto.IEventToPersist!>! toEventToPersist, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Result>!

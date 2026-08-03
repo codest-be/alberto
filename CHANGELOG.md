@@ -104,6 +104,10 @@ Test and release infrastructure only; no effect on the shipped assemblies.
   the pulse it waited for (#119), and a lease-expiry test racing its own 100 ms lease (#115)
 - CI, benchmarks, and the release and policy workflows run on the organisation's isolated
   self-hosted runners (#86, #123, #125)
+- The public API promotion in `apply-release.py` reads `*REMOVED*` markers rather than copying
+  them into `PublicAPI.Shipped.txt`, where `RS0024` rejects them. This is the first release to
+  delete public API, so it is the first one the omission could affect — it made the release pull
+  request fail to build the package it was preparing
 
 ---
 

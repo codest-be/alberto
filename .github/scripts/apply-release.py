@@ -287,6 +287,13 @@ def cut_changelog(version: str, notes: str, date: str, check: bool) -> None:
 
 HEADER = "#nullable enable"
 
+# A deletion is recorded in PublicAPI.Unshipped.txt as the removed member's line prefixed with
+# this marker. The marker is a *pending* instruction, not an entry: promoting it verbatim into
+# PublicAPI.Shipped.txt is what RS0024 ("the shipped API file can't have removed members")
+# rejects, and it fails the build of the very package the release is preparing. Promotion has to
+# read the marker and delete the member instead.
+REMOVED_PREFIX = "*REMOVED*"
+
 
 def promote_public_api(check: bool) -> None:
     moved_any = False
@@ -304,6 +311,9 @@ def promote_public_api(check: bool) -> None:
         if not new_entries:
             continue
 
+        added = [ln for ln in new_entries if not ln.startswith(REMOVED_PREFIX)]
+        removed = [ln[len(REMOVED_PREFIX):] for ln in new_entries if ln.startswith(REMOVED_PREFIX)]
+
         moved_any = True
         existing = [
             ln
@@ -311,12 +321,22 @@ def promote_public_api(check: bool) -> None:
             if ln.strip() and ln.strip() != HEADER
         ]
 
+        # A *REMOVED* line that names nothing in the shipped file is a ledger that has already
+        # drifted. Say so here rather than let the release pull request fail its own build.
+        orphans = [ln for ln in removed if ln not in set(existing)]
+        if orphans:
+            raise SystemExit(
+                f"{pkg}: PublicAPI.Unshipped.txt marks members removed that are not in "
+                f"PublicAPI.Shipped.txt:\n  " + "\n  ".join(orphans)
+            )
+
         # C-locale sort, matching how these files are already ordered, so the diff shows only
         # the added entries rather than a reshuffle of all 1000-odd lines.
-        merged = sorted(set(existing) | set(new_entries))
+        merged = sorted((set(existing) | set(added)) - set(removed))
 
-        print(f"  {pkg}: promoting {len(new_entries)} public API entr"
-              f"{'y' if len(new_entries) == 1 else 'ies'}")
+        print(f"  {pkg}: promoting {len(added)} public API entr"
+              f"{'y' if len(added) == 1 else 'ies'}"
+              + (f", removing {len(removed)}" if removed else ""))
         if not check:
             shipped.write_text("\n".join([HEADER] + merged) + "\n", encoding="utf-8")
             unshipped.write_text(HEADER + "\n", encoding="utf-8")
