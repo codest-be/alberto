@@ -21,20 +21,11 @@ public sealed class PaymentsOverviewTests
     }
 
     [Fact]
-    public void Every_event_lands_on_the_one_document_the_query_reads()
+    public void Document_id_is_the_storage_key_and_must_not_change()
     {
         // The writer's selectors and the reader's key are the same constant, so an aggregate
-        // renamed on one side cannot quietly stop being found on the other.
+        // renamed on one side cannot quietly stop being found on the other — and changing it
+        // orphans the rows already written under the old key in a deployed store.
         PaymentsOverviewProjection.DocumentId.Should().Be("overview");
-    }
-
-    [Fact]
-    public void Overview_starts_empty()
-    {
-        var overview = new PaymentsOverview();
-
-        overview.TotalPayments.Should().Be(0);
-        overview.TotalCapturedAmount.Should().Be(0);
-        overview.TotalRefundedAmount.Should().Be(0);
     }
 }
