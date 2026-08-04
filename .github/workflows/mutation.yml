@@ -2,8 +2,6 @@ name: Mutation testing
 
 on:
   pull_request:
-  push:
-    branches: [main, 'release/**']
   schedule:
     # 05:00 UTC. The benchmark suite starts at 02:00 with a 120-minute budget, and there is one
     # runner in the public-ci group, so anything before 04:00 queues behind its worst case
@@ -11,13 +9,21 @@ on:
     - cron: '0 5 * * *'
   workflow_dispatch:
 
+# There is deliberately no `push` trigger. The full sweep used to run on every push to main and
+# release/**, and on one public-ci runner that made it a queue for everything else: the 0.2.0
+# release pull request waited about two hours for its checks behind a sweep that then timed out
+# anyway. A commit on a maintained line still gets its own verdict, from the nightly cron rather
+# than immediately, and what actually gates a change is the `diff` job below. Dispatch this
+# workflow by hand when a specific main commit needs the whole number sooner.
+
 permissions:
   contents: read
 
 # Same reasoning as ci.yml, and it bites harder here: one runner in the group, and this is the
 # longest job on the PR path. Three pushes in a minute must not leave two dead mutation runs
 # squatting on the only machine everybody else's PR is waiting for.
-# Pushes to main and release/** are exempt — a commit on a maintained line gets its own verdict.
+# The nightly and dispatched full sweeps are exempt: they are not superseded by a newer commit
+# the way a pull request's run is, and cancelling one wastes hours for nothing.
 concurrency:
   group: mutation-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -94,7 +100,19 @@ jobs:
     name: All core packages
     if: github.event_name != 'pull_request'
     runs-on: [self-hosted, public-ci]
-    timeout-minutes: 180
+    # Measured, not guessed. The 180 this started at was never enough to finish once: the run on
+    # c5c2399 spent 33m on Alberto.Telemetry, 65m on Alberto.InMemory and 46m on Alberto.Messaging
+    # (after a failed first attempt that the script retried), then died 35m into Alberto.Commands
+    # with Alberto.Testing and Alberto — the largest — not yet started. Six packages at those
+    # rates is around five hours, so this is that plus headroom.
+    #
+    # It is a stop, not a target. Roughly a quarter to a third of tested mutants in every package
+    # come back Timeout, and each one burns a full timeout window instead of milliseconds. They
+    # are not all in polling code either — TelemetryBuilderExtensions.cs, which only registers
+    # services, produced eight — so the cause is tests that hang when wiring is perturbed rather
+    # than mutants that genuinely loop forever. Fix those and this number should come back down;
+    # do not raise it again instead.
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
 

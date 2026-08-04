@@ -105,7 +105,7 @@ Three numbers, enforced in two workflows.
 |---|---|---|---|---|
 | Line coverage | `ci.yml`, every PR | 93% | 95.27% | All shipped packages |
 | Mutation score, changed code | `mutation.yml`, every PR | 90% | — | The diff only |
-| Mutation score, aggregate | `mutation.yml`, main + nightly | 90% | 92.59% | Core packages |
+| Mutation score, aggregate | `mutation.yml`, nightly | 90% | 92.59% | Core packages |
 
 A fourth number, `thresholds.break` in `stryker-config.json` (80%), is Stryker's own
 per-package floor. It is not the gate — the script deliberately keeps going when a package
@@ -128,6 +128,20 @@ The two whole-repo thresholds trail the achieved score rather than lead it. That
 purpose: a gate set above where the repo currently sits blocks every PR, including the ones
 trying to fix it. Raise them as the score climbs — a few points at a time, once the headroom
 is real.
+
+**The aggregate runs nightly, not on push.** It used to run on every push to `main` and
+`release/**`, which on a single `public-ci` runner meant a five-hour job standing between
+everyone else's pull request and the machine — the 0.2.0 release pull request waited about two
+hours for its checks that way. `workflow_dispatch` is there for when a particular commit needs
+the whole number sooner.
+
+The sweep is also slower than it should be. Between a quarter and a third of tested mutants in
+every core package come back `Timeout`, and a timed-out mutant costs a full timeout window
+rather than the milliseconds a killed one costs. They are not confined to the polling code you
+would expect: `TelemetryBuilderExtensions.cs`, which does nothing but register services,
+produced eight of them. That points at tests which hang when wiring is perturbed instead of
+failing fast, so the fix is in the suite rather than in the budget. Until that is done the
+nightly is allowed 360 minutes; do not raise it further to make a red run green.
 
 ## Where the numbers stand
 
