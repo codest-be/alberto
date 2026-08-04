@@ -1,9 +1,1 @@
 #nullable enable
-Alberto.Postgres.PostgresOptions.AutoPrepareMinUsages.get -> int
-Alberto.Postgres.PostgresOptions.AutoPrepareMinUsages.init -> void
-Alberto.Postgres.PostgresOptions.MaxAutoPrepare.get -> int
-Alberto.Postgres.PostgresOptions.MaxAutoPrepare.init -> void
-Alberto.Postgres.PostgresOverrides.AutoPrepareMinUsages.get -> int?
-Alberto.Postgres.PostgresOverrides.AutoPrepareMinUsages.set -> void
-Alberto.Postgres.PostgresOverrides.MaxAutoPrepare.get -> int?
-Alberto.Postgres.PostgresOverrides.MaxAutoPrepare.set -> void

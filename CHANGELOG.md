@@ -17,6 +17,100 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ---
 
+## [0.2.0] - 2026-08-03
+
+One deletion from the public surface, a specification DSL that lets a decider be tested as the
+pure function it is, and a lost-write fix in zero-downtime projection rebuilds. The deletion is
+the only change here that stops a consumer compiling.
+
+### Breaking changes
+
+**`Alberto.Commands.DeciderExtensions` is deleted, and both `DecideAndAppendAsync` overloads
+with it.** It was a second, shallower path to what the command pipeline already does, and the
+five-argument overload carried a documented footgun: it reconstituted state without the
+upcaster chain, so a boundary that touched any event stored at an older schema version threw at
+reconstitution rather than upcasting it. The two diagnostics that used to point at it now point
+at the pipeline (#104).
+
+Rewrite the call as a pipeline. It threads `EventSerializer.Deserialize` for you, so the
+upcaster chain is no longer something a caller can skip:
+
+```csharp
+await store
+    .Handle(input)
+    .Load(boundary, evolver)
+    .Decide((cmd, state) => Decider.Decide(state, cmd.OrderId))
+    .Commit(ct);
+```
+
+### Added
+
+- **`Spec`, a specification DSL for deciders, in `Alberto.Testing`.** A decision function is
+  pure — past events in, events or problems out — but nothing in the package made it cheap to
+  test as one, so every decider test rebuilt state by calling `Apply` event by event. That is
+  not how the pipeline builds state, which meant a fold-order or dispatch bug in the evolver
+  could not surface in a decider test at all.
+
+  `Spec.For(evolver)` folds history through the real evolver, `When` runs the decision, and the
+  `Then*` verbs assert on the decision rather than on a property of it — `ThenEmits`,
+  `ThenEmitsOnly`, `ThenEmitsNothing`, `ThenSucceeds`, `ThenFails`, `ThenProblems`,
+  `ThenResult`, and `ThenState`, which folds the emitted events on top of the given ones.
+  `Spec.Stateless()` covers a decider with no state. It is framework-neutral: it throws
+  `SpecificationException` and never calls an assertion library (#112).
+
+  ```csharp
+  Spec.For(new AuthorizePaymentEvolver())
+      .Given(Initiated)
+      .When(state => AuthorizePaymentDecider.Decide(state, "AUTH-1", Now))
+      .ThenEmitsOnly<PaymentAuthorized>(e => e.AuthorizationCode == "AUTH-1")
+      .ThenState(s => s.Status.Should().Be(PaymentStatus.Authorized));
+  ```
+
+- **`InMemoryProjectionRebuildStore` in `Alberto.InMemory`, and
+  `ProjectionRebuildStoreSpecification` in `Alberto.Testing.Xunit`.** The rebuild seam had a
+  single adapter, so every test of the most intricate behaviour in the store — shadow loop,
+  pinned version, promote, abort, grace-period sweep — needed Testcontainers and a real clock.
+  Both adapters now answer one conformance specification, alongside the five that already
+  existed (#103).
+
+- **`MaxAutoPrepare` and `AutoPrepareMinUsages` on `PostgresOptions` and `PostgresOverrides`.**
+  Npgsql's automatic statement preparation is now configurable per module, from the work that
+  took reflection and row-at-a-time SQL out of the per-event hot paths.
+
+### Fixed
+
+- **Projection rebuild promotion could lose events appended during the flip.** A promotion has
+  two writers to the projection and `PromoteAsync` stopped only the shadow one: it read both
+  checkpoints, guarded on the shadow having caught up, and then flipped — while the live loop
+  kept consuming. An event that arrived in that window was consumed by the live loop against
+  the version about to be superseded, so the promoted version never received it. That is a lost
+  write, not a slow one, and it is why the end-to-end test failed roughly one run in five under
+  parallel load. The live loop is now parked across the flip (#127).
+
+### Changed
+
+Test and release infrastructure only; no effect on the shipped assemblies.
+
+- Test quality is measured and enforced on pull requests: mutation testing plus a coverage
+  gate (#117)
+- 22 private fakes across the test suite are replaced by the shipped `Alberto.Testing`
+  adapters, which take a `TimeProvider` instead of reading the wall clock and are held to their
+  contracts by the conformance specifications (#102)
+- The CLI runs through the `IAdminReader`/`IAdminOperator` seam rather than past it, and its
+  commands are reachable through an interface, so they can be tested without a process
+  (#100, #101)
+- Four tests that read shared process state or raced their own timing are fixed: console output
+  captured from parallel siblings (#121, #113), a listener reconnect wait that could end before
+  the pulse it waited for (#119), and a lease-expiry test racing its own 100 ms lease (#115)
+- CI, benchmarks, and the release and policy workflows run on the organisation's isolated
+  self-hosted runners (#86, #123, #125)
+- The public API promotion in `apply-release.py` reads `*REMOVED*` markers rather than copying
+  them into `PublicAPI.Shipped.txt`, where `RS0024` rejects them. This is the first release to
+  delete public API, so it is the first one the omission could affect — it made the release pull
+  request fail to build the package it was preparing
+
+---
+
 ## [0.1.4] - 2026-08-02
 
 One behavioural change, in a default. No public API moves, and nothing a consumer wrote stops
@@ -509,7 +603,8 @@ Initial beta release. Core DCB event store abstractions, PostgreSQL backend, in-
 backend, command pipeline, EF Core projection support, transactional outbox, and
 OpenTelemetry instrumentation.
 
-[Unreleased]: https://github.com/codest-be/alberto/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/codest-be/alberto/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/codest-be/alberto/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/codest-be/alberto/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/codest-be/alberto/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/codest-be/alberto/compare/v0.1.1...v0.1.2
