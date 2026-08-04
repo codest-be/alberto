@@ -6,6 +6,15 @@ namespace Alberto.Tests.Subscriptions;
 
 public class CachingCheckpointStoreTests
 {
+    /// <summary>
+    /// How long a wait on a gated read may take before the test calls it a failure. The gate
+    /// opens as soon as the store is entered, so reaching this means it never was — not that
+    /// the machine was slow. <c>TestContext.Current.CancellationToken</c> does not bound such a
+    /// wait on its own; nothing here sets a <c>[Fact(Timeout = ...)]</c> for it to fire from.
+    /// See <see href="https://github.com/codest-be/alberto/issues/133">#133</see>.
+    /// </summary>
+    private static readonly TimeSpan Patience = TimeSpan.FromSeconds(5);
+
     #region GetAsync Tests
 
     [Fact]
@@ -554,7 +563,7 @@ public class CachingCheckpointStoreTests
 
         // A reader misses the cache and goes to the database, which has no row for this processor.
         var read = cache.GetAsync("processor-1", ct);
-        await inner.ReadStarted.Task;
+        await inner.ReadStarted.Task.WaitAsync(Patience, ct);
 
         // While that read is in flight, the loop processes a batch and records position 4.
         await cache.SaveAsync("processor-1", 4, ct);

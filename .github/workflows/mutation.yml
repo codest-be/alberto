@@ -72,8 +72,16 @@ jobs:
 
       # --allow-empty because a PR that touches no mutated package legitimately produces
       # no mutants, and "nothing to score" must read as a pass rather than a 0%.
+      #
+      # 80 rather than the 90 this was, and it now sits ABOVE the aggregate gate instead of a
+      # couple of points below it. That inversion is deliberate. The old pair was calibrated
+      # against an aggregate inflated by false timeouts; measured truthfully the back catalogue
+      # is at 70%, and the point of the diff gate has always been that new code is held to a
+      # higher standard than the catalogue without asking anyone to fix the catalogue first.
+      # 90 against a real 70% baseline would fail honest pull requests, and a gate people learn
+      # to re-run until it passes is worse than no gate.
       - name: Enforce mutation score on changed code
-        run: python3 build/mutation-summary.py artifacts/stryker --break 90 --allow-empty
+        run: python3 build/mutation-summary.py artifacts/stryker --break 80 --allow-empty
 
       - name: Publish summary
         if: always()
@@ -106,12 +114,25 @@ jobs:
     # with Alberto.Testing and Alberto — the largest — not yet started. Six packages at those
     # rates is around five hours, so this is that plus headroom.
     #
-    # It is a stop, not a target. Roughly a quarter to a third of tested mutants in every package
-    # come back Timeout, and each one burns a full timeout window instead of milliseconds. They
-    # are not all in polling code either — TelemetryBuilderExtensions.cs, which only registers
-    # services, produced eight — so the cause is tests that hang when wiring is perturbed rather
-    # than mutants that genuinely loop forever. Fix those and this number should come back down;
-    # do not raise it again instead.
+    # This number used to carry a note saying it was a stop rather than a target: a quarter to a
+    # third of tested mutants came back Timeout, and fixing that was expected to bring the sweep
+    # time down with it. The timeouts are fixed — 24 of 2531 scored mutants, 0.95%, down from
+    # around a third — and the sweep did NOT get materially faster. A full local sweep on the
+    # corrected configuration measured 4h43m against the ~5h it took before.
+    #
+    # The expectation was simply wrong, and it is worth writing down why so nobody re-derives it.
+    # Two effects cancelled. Bounding the suite's waits stopped hung tests from burning a window
+    # each, which saved time; giving mutants a window long enough to be scored truthfully means a
+    # survivor now runs the suite to completion instead of being cut off partway, which cost it
+    # back. The floor underneath both is that the preview MTP runner does not attribute coverage
+    # per test, so every covered mutant runs all 1890 tests. Until that is fixed upstream — 4.16.0
+    # is the current latest, so there is nothing to upgrade to — roughly five hours is what a
+    # truthful sweep of six packages costs.
+    #
+    # So this stays at 360: 4h43m measured plus about 27% headroom for a runner of unknown speed.
+    # Do not raise it. Lowering it is not a matter of trimming the margin either — it needs
+    # per-test coverage attribution, which is upstream work.
+    # See https://github.com/codest-be/alberto/issues/133.
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
@@ -127,8 +148,14 @@ jobs:
       - name: Mutate core packages
         run: build/mutation-test.sh
 
+      # 70.01% measured on the corrected configuration. This was 90, and it passed — against a
+      # score of 92.59% that counted false Timeouts as kills. Correcting the timeout window did
+      # not change one line of test code; it changed 571 mutants from "timed out, call it a kill"
+      # to "survived". The gate follows the documented rule that whole-repo thresholds trail the
+      # achieved score rather than lead it, because a gate above where the repo sits blocks the
+      # pull requests trying to fix it. Raise it as the score climbs.
       - name: Enforce aggregate mutation score
-        run: python3 build/mutation-summary.py artifacts/stryker --break 90
+        run: python3 build/mutation-summary.py artifacts/stryker --break 68
 
       - name: Publish summary
         if: always()

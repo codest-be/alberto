@@ -8,6 +8,7 @@
     "test-case-filter": "Category!=Integration",
     "test-runner": "mtp",
     "configuration": "Release",
+    "additional-timeout": 120000,
     "mutate": [
       "**/*.cs",
       "!**/obj/**/*.cs",
@@ -19,9 +20,9 @@
     "mutation-level": "Standard",
     "ignore-mutations": ["string"],
     "thresholds": {
-      "high": 95,
-      "low": 85,
-      "break": 80
+      "high": 85,
+      "low": 70,
+      "break": 55
     },
     "reporters": ["progress", "html", "json", "markdown"]
   }
