@@ -79,6 +79,20 @@ jobs:
       - name: Test with coverage
         run: build/coverage.sh --no-build
 
+      # Before this step a failing suite named the failing test only in the raw job log,
+      # which on ~2000 tests is a scroll to find one line — and every step after the
+      # failure was skipped, so the run's front page said nothing at all. The summary is
+      # written whatever happened, and --annotate puts each failure on the Files-changed
+      # tab as well.
+      - name: Publish test summary
+        if: always()
+        run: |
+          {
+            echo '## Tests'
+            echo
+            python3 build/test-summary.py 'artifacts/coverage/raw/*.trx' --annotate
+          } >> "$GITHUB_STEP_SUMMARY"
+
       # The figure used to be collected but not gated — it showed movement rather than failing
       # builds. It is now a gate. The threshold trails the achieved number rather than leading
       # it, so an unrelated PR is never blocked by a gap it did not introduce; raise it as the
@@ -106,7 +120,20 @@ jobs:
         run: dotnet build tests/Alberto.Examples.Tests/Alberto.Examples.Tests.csproj -c Release
 
       - name: Test examples
-        run: dotnet test tests/Alberto.Examples.Tests/Alberto.Examples.Tests.csproj -c Release --no-build --logger "console;verbosity=normal"
+        run: |
+          dotnet test tests/Alberto.Examples.Tests/Alberto.Examples.Tests.csproj -c Release --no-build \
+            --logger "console;verbosity=normal" \
+            --logger "trx;LogFileName=Alberto.Examples.Tests.trx" \
+            --results-directory artifacts/coverage/raw
+
+      - name: Publish example test summary
+        if: always()
+        run: |
+          {
+            echo '## Example tests'
+            echo
+            python3 build/test-summary.py 'artifacts/coverage/raw/Alberto.Examples.Tests.trx' --annotate
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # No benchmark step here by design. The suite runs on a schedule
       # (.github/workflows/benchmarks.yml), which builds it as part of running it. Benchmarks.Core

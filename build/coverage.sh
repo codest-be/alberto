@@ -18,17 +18,31 @@ OUT="artifacts/coverage"
 rm -rf "$OUT"
 mkdir -p "$OUT"
 
+# A failing suite must not skip the report. The old `set -e` exit here meant a single
+# failed test left no Cobertura.xml, so the coverage summary printed nothing and the
+# artifact upload failed too — two red steps hiding the one that mattered. The status is
+# carried to the end instead: the report is rendered from whatever was collected, and
+# the script still exits non-zero.
+status=0
 dotnet test tests/Alberto.Tests/Alberto.Tests.csproj \
   -c Release \
   "$@" \
   --settings build/coverlet.runsettings \
   --collect:"XPlat Code Coverage" \
-  --results-directory "$OUT/raw"
+  --logger "trx;LogFileName=Alberto.Tests.trx" \
+  --results-directory "$OUT/raw" || status=$?
 
+# Tolerant for the same reason: a run that died before collecting anything still has a
+# test summary worth printing, and reportgenerator's "no reports" error on top of it
+# would only bury it.
 dotnet reportgenerator \
   -reports:"$OUT/raw/**/coverage.cobertura.xml" \
   -targetdir:"$OUT/report" \
-  -reporttypes:"Html;Cobertura;TextSummary;MarkdownSummaryGithub"
+  -reporttypes:"Html;Cobertura;TextSummary;MarkdownSummaryGithub" || true
 
 echo
-python3 build/coverage-summary.py "$OUT/report/Cobertura.xml"
+python3 build/test-summary.py "$OUT/raw"/*.trx
+echo
+python3 build/coverage-summary.py "$OUT/report/Cobertura.xml" || status=1
+
+exit "$status"
