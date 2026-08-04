@@ -1,3 +1,4 @@
+using System.Reflection;
 using Alberto.Testing;
 using Xunit;
 
@@ -97,24 +98,56 @@ public class SpecificationTests
             .ThenFails(NotFound);
     }
 
-    [Fact]
-    public void Given_after_When_is_rejected_rather_than_silently_ignored()
-    {
-        var spec = Spec.For(new TabEvolver())
-            .Given(new TabOpened("t-1"))
-            .When(state => Order(state, 1m));
+    // ── What the chain cannot say ─────────────────────────────────────────────────
+    //
+    // These were runtime guards. They are compile errors now, so what is left to
+    // assert is the shape of the stages: the verbs are simply not on the types the
+    // illegal chains would have to go through. The tests read as reflection because a
+    // test that called them would not build.
 
-        var ex = Assert.Throws<SpecificationException>(() => spec.Given(new RoundOrdered(1m)));
-        Assert.Contains("before When", ex.Message, StringComparison.Ordinal);
+    private static bool Has(Type stage, string verb) =>
+        stage.GetMethods(BindingFlags.Public | BindingFlags.Instance).Any(m => m.Name == verb);
+
+    private static string[] ThenVerbs(Type stage) =>
+        stage.GetMethods(BindingFlags.Public | BindingFlags.Instance)
+            .Where(m => m.Name.StartsWith("Then", StringComparison.Ordinal))
+            .Select(m => m.Name)
+            .Distinct()
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+    [Fact]
+    public void Arrange_is_over_once_a_decision_has_been_made()
+    {
+        Assert.False(Has(typeof(DecisionSpecification<TabState>), "Given"));
+        Assert.False(Has(typeof(DecisionResultSpecification<TabState, string>), "Given"));
     }
 
     [Fact]
-    public void A_Then_verb_before_When_is_rejected()
+    public void A_decider_decides_once()
     {
-        var spec = Spec.For(new TabEvolver()).Given(new TabOpened("t-1"));
+        Assert.False(Has(typeof(DecisionSpecification<TabState>), "When"));
+        Assert.False(Has(typeof(DecisionResultSpecification<TabState, string>), "When"));
+        Assert.False(Has(typeof(StatelessDecisionSpecification), "When"));
+    }
 
-        var ex = Assert.Throws<SpecificationException>(() => spec.ThenSucceeds());
-        Assert.Contains("Call When(...)", ex.Message, StringComparison.Ordinal);
+    [Fact]
+    public void There_is_nothing_to_assert_about_a_decision_before_When()
+    {
+        // The opening stage arranges or acts, and nothing else.
+        Assert.Empty(ThenVerbs(typeof(Specification<TabState>)));
+        Assert.Empty(ThenVerbs(typeof(StatelessSpecification)));
+
+        // After Given the fold can be asserted, but no decision has been made yet.
+        Assert.Equal(["ThenState"], ThenVerbs(typeof(HistorySpecification<TabState>)));
+    }
+
+    [Fact]
+    public void A_seeded_state_can_only_be_given_before_any_events_are_folded()
+    {
+        Assert.DoesNotContain(
+            typeof(HistorySpecification<TabState>).GetMethods().Where(m => m.Name == "Given"),
+            m => m.GetParameters()[0].ParameterType == typeof(TabState));
     }
 
     // ── ThenSucceeds / ThenFails ──────────────────────────────────────────────────
@@ -346,20 +379,22 @@ public class SpecificationTests
             .Given(new TabOpened("t-1"))
             .When(state => OrderReturningReference(state, 5m))
             .ThenEmitsOnly<RoundOrdered>()
-            .ThenResult<string>(r => Assert.Equal("ref-t-1", r))
+            .ThenResult(r => Assert.Equal("ref-t-1", r))
             .ThenState(s => Assert.Equal(5m, s.Total));
     }
 
     [Fact]
-    public void ThenResult_on_an_untyped_decision_points_at_the_right_When_overload()
+    public void ThenResult_exists_only_where_a_decision_carries_a_value()
     {
-        var ex = Assert.Throws<SpecificationException>(() =>
-            Spec.For(new TabEvolver())
-                .Given(new TabOpened("t-1"))
-                .When(state => Order(state, 5m))
-                .ThenResult<string>(_ => { }));
+        // The When overload picks the stage: Decision lands on one without ThenResult,
+        // Decision<TResult> on one where it is typed to TResult and needs no argument.
+        Assert.False(Has(typeof(DecisionSpecification<TabState>), "ThenResult"));
+        Assert.False(Has(typeof(StatelessDecisionSpecification), "ThenResult"));
 
-        Assert.Contains("Decision<TResult>", ex.Message, StringComparison.Ordinal);
+        var thenResult = typeof(DecisionResultSpecification<TabState, string>).GetMethod("ThenResult");
+        Assert.NotNull(thenResult);
+        Assert.False(thenResult.IsGenericMethod);
+        Assert.Equal(typeof(Action<string>), thenResult.GetParameters()[0].ParameterType);
     }
 
     // ── Stateless ─────────────────────────────────────────────────────────────────
@@ -387,6 +422,15 @@ public class SpecificationTests
         Spec.Stateless()
             .When(() => Decision<int>.Succeed(42, new TabOpened("t-1")))
             .ThenEmitsOnly<TabOpened>()
-            .ThenResult<int>(r => Assert.Equal(42, r));
+            .ThenResult(r => Assert.Equal(42, r));
+    }
+
+    [Fact]
+    public void A_stateless_specification_has_no_history_and_no_state_to_assert_on()
+    {
+        Assert.False(Has(typeof(StatelessSpecification), "Given"));
+        Assert.False(Has(typeof(StatelessSpecification), "GivenNoEvents"));
+        Assert.False(Has(typeof(StatelessDecisionSpecification), "ThenState"));
+        Assert.False(Has(typeof(StatelessDecisionResultSpecification<int>), "ThenState"));
     }
 }
