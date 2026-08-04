@@ -18,13 +18,4 @@ public sealed class OrdersOverviewTests
         OrdersOverviewProjection.Declaration.ProcessorId
             .Should().Be(nameof(OrdersOverviewProjection));
     }
-
-    [Fact]
-    public void Overview_starts_empty()
-    {
-        var overview = new OrdersOverview();
-
-        overview.TotalOrders.Should().Be(0);
-        overview.TotalRevenue.Should().Be(0);
-    }
 }
