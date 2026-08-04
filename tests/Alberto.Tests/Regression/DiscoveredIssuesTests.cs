@@ -22,6 +22,19 @@ namespace Alberto.Tests.Regression;
 /// </summary>
 public sealed class DiscoveredIssuesTests
 {
+    /// <summary>
+    /// How long a bounded shutdown may take before the test calls it a failure.
+    ///
+    /// <remarks>
+    /// Every loop here bounds its own drain, so a correct <c>StopAsync</c> returns in
+    /// milliseconds — this is a failure detector, not a budget. Awaiting it unbounded instead
+    /// turns any mutant that removes the drain bound into a hung test rather than a failing one,
+    /// which costs a full Stryker timeout window and wedges a CI agent.
+    /// See <see href="https://github.com/codest-be/alberto/issues/133">#133</see>.
+    /// </remarks>
+    /// </summary>
+    private static readonly TimeSpan StopBudget = TimeSpan.FromSeconds(5);
+
     // ── Shared helpers ─────────────────────────────────────────────────────────────
 
     [EventType("discovered-issues-regression-event")]
@@ -276,8 +289,10 @@ public sealed class DiscoveredIssuesTests
             TimeSpan.FromSeconds(10),
             TestContext.Current.CancellationToken);
 
-        await loop.StopAsync(CancellationToken.None);
-        await head.StopAsync(CancellationToken.None);
+        await loop.StopAsync(CancellationToken.None)
+            .WaitAsync(StopBudget, TestContext.Current.CancellationToken);
+        await head.StopAsync(CancellationToken.None)
+            .WaitAsync(StopBudget, TestContext.Current.CancellationToken);
 
         // ── Assert ────────────────────────────────────────────────────────────────
         var checkpoint = await checkpoints.GetAsync(
@@ -348,8 +363,10 @@ public sealed class DiscoveredIssuesTests
         await cts.CancelAsync();
         shutdownRequested.TrySetResult();
 
-        await loop.StopAsync(CancellationToken.None);
-        await head.StopAsync(CancellationToken.None);
+        await loop.StopAsync(CancellationToken.None)
+            .WaitAsync(StopBudget, TestContext.Current.CancellationToken);
+        await head.StopAsync(CancellationToken.None)
+            .WaitAsync(StopBudget, TestContext.Current.CancellationToken);
 
         // The OCE carries no cancelled token, so it is an escaped failure regardless of
         // the shutdown that is under way.
@@ -408,8 +425,10 @@ public sealed class DiscoveredIssuesTests
         await cts.CancelAsync();
         shutdownRequested.TrySetResult();
 
-        await loop.StopAsync(CancellationToken.None);
-        await head.StopAsync(CancellationToken.None);
+        await loop.StopAsync(CancellationToken.None)
+            .WaitAsync(StopBudget, TestContext.Current.CancellationToken);
+        await head.StopAsync(CancellationToken.None)
+            .WaitAsync(StopBudget, TestContext.Current.CancellationToken);
 
         Assert.True(loop.IsFaulted);
 

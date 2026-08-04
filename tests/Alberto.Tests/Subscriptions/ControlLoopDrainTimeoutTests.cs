@@ -43,6 +43,14 @@ public sealed class ControlLoopDrainTimeoutTests
     /// <summary>
     /// Upper bound asserted on a bounded stop. Generously above <see cref="DrainTimeout"/> so a
     /// loaded CI agent cannot fail the test, but far below the "hangs forever" behaviour it guards.
+    ///
+    /// <remarks>
+    /// It also bounds the <c>StopAsync</c> await itself, not just the assertion that follows it.
+    /// Measuring the elapsed time only tells you anything once the await returns, so a mutant that
+    /// removes the drain bound outright — the exact regression this file exists to catch — used to
+    /// hang here rather than fail. Under Stryker that costs a full timeout window per mutant; in
+    /// CI it is a wedged agent. See <see href="https://github.com/codest-be/alberto/issues/133">#133</see>.
+    /// </remarks>
     /// </summary>
     private static readonly TimeSpan StopBudget = TimeSpan.FromSeconds(5);
 
@@ -225,7 +233,8 @@ public sealed class ControlLoopDrainTimeoutTests
 
             var sw = Stopwatch.StartNew();
             await cts.CancelAsync();
-            await loop.StopAsync(CancellationToken.None);
+            await loop.StopAsync(CancellationToken.None)
+                .WaitAsync(StopBudget, TestContext.Current.CancellationToken);
             sw.Stop();
 
             // Pre-fix this await never returned.
@@ -233,7 +242,8 @@ public sealed class ControlLoopDrainTimeoutTests
                 sw.Elapsed < StopBudget,
                 $"StopAsync took {sw.Elapsed} — expected it to be bounded by the {DrainTimeout} drain timeout.");
 
-            await head.StopAsync(CancellationToken.None);
+            await head.StopAsync(CancellationToken.None)
+                .WaitAsync(StopBudget, TestContext.Current.CancellationToken);
         }
         finally
         {
@@ -284,7 +294,8 @@ public sealed class ControlLoopDrainTimeoutTests
                 TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
 
             await cts.CancelAsync();
-            await loop.StopAsync(CancellationToken.None);
+            await loop.StopAsync(CancellationToken.None)
+                .WaitAsync(StopBudget, TestContext.Current.CancellationToken);
 
             var checkpoint = await checkpoints.GetAsync(
                 "drain-sequential-checkpoint", TestContext.Current.CancellationToken);
@@ -294,7 +305,8 @@ public sealed class ControlLoopDrainTimeoutTests
                 checkpoint is null or 0L,
                 $"Checkpoint advanced to {checkpoint} even though the handler never completed.");
 
-            await head.StopAsync(CancellationToken.None);
+            await head.StopAsync(CancellationToken.None)
+                .WaitAsync(StopBudget, TestContext.Current.CancellationToken);
         }
         finally
         {
@@ -365,7 +377,8 @@ public sealed class ControlLoopDrainTimeoutTests
 
             var sw = Stopwatch.StartNew();
             await cts.CancelAsync();
-            await loop.StopAsync(CancellationToken.None);
+            await loop.StopAsync(CancellationToken.None)
+                .WaitAsync(StopBudget, TestContext.Current.CancellationToken);
             sw.Stop();
 
             Assert.True(
@@ -380,7 +393,8 @@ public sealed class ControlLoopDrainTimeoutTests
             // though the final flush runs with CancellationToken.None.
             Assert.Equal(1L, checkpoint);
 
-            await head.StopAsync(CancellationToken.None);
+            await head.StopAsync(CancellationToken.None)
+                .WaitAsync(StopBudget, TestContext.Current.CancellationToken);
         }
         finally
         {
@@ -434,7 +448,8 @@ public sealed class ControlLoopDrainTimeoutTests
             await loop.DisposeAsync();
             await loop.DisposeAsync(); // second call must be a no-op, not a double teardown
 
-            await head.StopAsync(CancellationToken.None);
+            await head.StopAsync(CancellationToken.None)
+                .WaitAsync(StopBudget, TestContext.Current.CancellationToken);
         }
         finally
         {
@@ -466,7 +481,8 @@ public sealed class ControlLoopDrainTimeoutTests
 
             var sw = Stopwatch.StartNew();
             await cts.CancelAsync();
-            await head.StopAsync(CancellationToken.None);
+            await head.StopAsync(CancellationToken.None)
+                .WaitAsync(StopBudget, TestContext.Current.CancellationToken);
             sw.Stop();
 
             Assert.True(
@@ -510,7 +526,8 @@ public sealed class ControlLoopDrainTimeoutTests
 
             var sw = Stopwatch.StartNew();
             await cts.CancelAsync();
-            await loop.StopAsync(CancellationToken.None);
+            await loop.StopAsync(CancellationToken.None)
+                .WaitAsync(StopBudget, TestContext.Current.CancellationToken);
             sw.Stop();
 
             Assert.True(

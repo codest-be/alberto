@@ -13,6 +13,25 @@ namespace Alberto.Tests.Messaging;
 /// </summary>
 public class OutboxRelayTests
 {
+    /// <summary>
+    /// How long a wait on a relay signal may take before the test calls it a failure.
+    /// </summary>
+    /// <remarks>
+    /// Every wait below is on something the relay does within milliseconds when it is wired
+    /// correctly, so this is a failure detector rather than a budget — reaching it means the
+    /// loop never started, not that the machine was slow.
+    /// <para>
+    /// <c>TestContext.Current.CancellationToken</c> alone does not bound these. It is cancelled
+    /// when the run is cancelled or when a <c>[Fact(Timeout = ...)]</c> elapses, and nothing here
+    /// sets one — so a signal that never fires waits forever. That is what makes a mutant in the
+    /// relay's wiring cost a full Stryker timeout window instead of a fast failure, and it is
+    /// equally a test that would one day hang CI for a reason nobody mutated into it. See
+    /// <see href="https://github.com/codest-be/alberto/issues/133">#133</see>.
+    /// </para>
+    /// Matches <c>Patience</c> in <c>OutboxRetentionServiceTests</c>.
+    /// </remarks>
+    private static readonly TimeSpan Patience = TimeSpan.FromSeconds(5);
+
     #region Poll-Signaling Outbox Store
 
     /// <summary>
@@ -469,7 +488,7 @@ public class OutboxRelayTests
         var relay = new OutboxRelay(store, transport);
 
         await relay.StartAsync(TestContext.Current.CancellationToken);
-        await store.WhenFirstPolled.WaitAsync(TestContext.Current.CancellationToken);
+        await store.WhenFirstPolled.WaitAsync(Patience, TestContext.Current.CancellationToken);
         await relay.StopAsync(TestContext.Current.CancellationToken);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -533,7 +552,7 @@ public class OutboxRelayTests
                 await relay.StartAsync(TestContext.Current.CancellationToken);
 
             await Task.WhenAll(ordersStore.WhenFirstPolled, paymentsStore.WhenFirstPolled)
-                .WaitAsync(TestContext.Current.CancellationToken);
+                .WaitAsync(Patience, TestContext.Current.CancellationToken);
             Assert.Equal(1, transport.Starts);
 
             await relays[0].StopAsync(TestContext.Current.CancellationToken);
@@ -571,12 +590,12 @@ public class OutboxRelayTests
             pollingInterval: TimeSpan.FromMinutes(1));
 
         await relay.StartAsync(TestContext.Current.CancellationToken);
-        await store.WhenFirstPolled.WaitAsync(TestContext.Current.CancellationToken);
+        await store.WhenFirstPolled.WaitAsync(Patience, TestContext.Current.CancellationToken);
         var stopTask = relay.StopAsync(TestContext.Current.CancellationToken);
-        await cleanupStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
+        await cleanupStarted.Task.WaitAsync(Patience, TestContext.Current.CancellationToken);
 
         timeProvider.Advance(TimeSpan.FromMinutes(1));
-        await stopTask;
+        await stopTask.WaitAsync(Patience, TestContext.Current.CancellationToken);
 
         var exception = await Assert.ThrowsAsync<TimeoutException>(
             () => relay.ExecuteTask!);
@@ -612,12 +631,12 @@ public class OutboxRelayTests
         try
         {
             await relay.StartAsync(TestContext.Current.CancellationToken);
-            await store.WhenFirstPolled.WaitAsync(TestContext.Current.CancellationToken);
+            await store.WhenFirstPolled.WaitAsync(Patience, TestContext.Current.CancellationToken);
             var stopTask = relay.StopAsync(TestContext.Current.CancellationToken);
-            await cleanupStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
+            await cleanupStarted.Task.WaitAsync(Patience, TestContext.Current.CancellationToken);
 
             timeProvider.Advance(TimeSpan.FromMinutes(1));
-            await stopTask;
+            await stopTask.WaitAsync(Patience, TestContext.Current.CancellationToken);
 
             var exception = await Assert.ThrowsAsync<TimeoutException>(
                 () => relay.ExecuteTask!);
