@@ -384,9 +384,13 @@ public sealed class LeaseAwareControlLoopGroupTests
         await group.StartAsync(CancellationToken.None);
         mgr.ResetCounters();
 
-        // Hold _scanLock to simulate an in-progress scan.
+        // Hold _scanLock to simulate an in-progress scan. Bounded: the group is not scanning,
+        // so the lock is free and this returns at once. Waiting forever for it instead would
+        // turn any mutant that leaves a scan holding the lock into a hung test rather than a
+        // failing one. See https://github.com/codest-be/alberto/issues/133.
         var scanLock = GetScanLock(group);
-        await scanLock.WaitAsync(TestContext.Current.CancellationToken);
+        (await scanLock.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken))
+            .Should().BeTrue("the group is idle, so its scan lock must be free");
         try
         {
             InvokeScanTimer(group);
