@@ -135,13 +135,49 @@ everyone else's pull request and the machine — the 0.2.0 release pull request 
 hours for its checks that way. `workflow_dispatch` is there for when a particular commit needs
 the whole number sooner.
 
-The sweep is also slower than it should be. Between a quarter and a third of tested mutants in
-every core package come back `Timeout`, and a timed-out mutant costs a full timeout window
-rather than the milliseconds a killed one costs. They are not confined to the polling code you
-would expect: `TelemetryBuilderExtensions.cs`, which does nothing but register services,
-produced eight of them. That points at tests which hang when wiring is perturbed instead of
-failing fast, so the fix is in the suite rather than in the budget. Until that is done the
-nightly is allowed 360 minutes; do not raise it further to make a red run green.
+## The timeout window, and why it decides the score
+
+**Stryker counts a `Timeout` as a kill.** So does `build/mutation-summary.py` — the score is
+`(killed + timeout) / (killed + timeout + survived + no-coverage)`. That is the right call for
+a mutant that genuinely hangs: an infinite loop is a defect the tests noticed. It is the wrong
+answer for a mutant that merely ran slowly, and the two are indistinguishable in the report.
+
+For a long time this repo could not tell them apart, and the score paid for it. Measured on
+`Alberto.Telemetry`, same code, same tests, only the per-mutant window changed:
+
+| `additional-timeout` | Timeout | Killed | Survived | reported score |
+|---|---|---|---|---|
+| 5000 (the default) | 62 | 29 | 2 | **86.67%** |
+| 120000 | **0** | 57 | 36 | **54.29%** |
+
+Not one of those 62 was a hang. Thirty-four surviving mutants were hiding behind the window,
+and the reported score was thirty-two points too high.
+
+Two things make the default window too tight here:
+
+- **The preview MTP runner does not attribute coverage per test.** It reports every covered
+  mutant as covered by all 1890 tests — `coveredBy` in the report takes exactly two values, 0
+  and 1890, never anything between. So a mutant no test kills has to run the entire suite
+  before it can be called a survivor. Setting `coverage-analysis` does not help: `perTest` is
+  already the default and produces an identical report. `test-runner: vstest` is worse — it
+  captures no coverage at all, marking 103 of 195 mutants `Survived` for a 1.90% score.
+- **Stryker runs mutants concurrently.** The suite takes about 15 seconds alone; seven copies
+  of it sharing a machine take considerably longer, and the window is derived from the solo
+  baseline.
+
+`additional-timeout: 120000` in `stryker-config.json` is the fix. **Do not shrink it to make
+the sweep faster** — that buys a fast number by making it a false one.
+
+Granting a window that large is only safe because the suite no longer hangs. Every wait in it
+is bounded, so a mutant that breaks wiring fails in about five seconds instead of sitting in
+the window until it expires. Those two changes belong together: unbounded waits made a big
+window ruinously expensive, and a small window made unbounded waits invisible. See
+[#133](https://github.com/codest-be/alberto/issues/133).
+
+**If you add a test that waits on a signal, bound the wait.** The bound is a failure detector,
+not a budget — it should be far above what correct code needs and far below "forever". Five
+seconds is the convention here; `Patience` and `StopBudget` in the test suite are the existing
+names for it.
 
 ## Where the numbers stand
 

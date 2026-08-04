@@ -8,6 +8,7 @@
     "test-case-filter": "Category!=Integration",
     "test-runner": "mtp",
     "configuration": "Release",
+    "additional-timeout": 120000,
     "mutate": [
       "**/*.cs",
       "!**/obj/**/*.cs",
