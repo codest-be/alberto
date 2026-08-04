@@ -104,25 +104,32 @@ Three numbers, enforced in two workflows.
 | Gate | Where | Threshold | Achieved | Scope |
 |---|---|---|---|---|
 | Line coverage | `ci.yml`, every PR | 93% | 95.27% | All shipped packages |
-| Mutation score, changed code | `mutation.yml`, every PR | 90% | — | The diff only |
-| Mutation score, aggregate | `mutation.yml`, nightly | 90% | 92.59% | Core packages |
+| Mutation score, changed code | `mutation.yml`, every PR | 80% | — | The diff only |
+| Mutation score, aggregate | `mutation.yml`, nightly | 68% | 70.01% | Core packages |
 
-A fourth number, `thresholds.break` in `stryker-config.json` (80%), is Stryker's own
+A fourth number, `thresholds.break` in `stryker-config.json` (55%), is Stryker's own
 per-package floor. It is not the gate — the script deliberately keeps going when a package
 trips it, because one low package must not hide every score after it — but it makes a
 single-package run exit non-zero, which is what you want while iterating on one package.
+
+**Both mutation thresholds moved down sharply, and no test got worse.** They were calibrated
+against an aggregate of 92.59% that counted false timeouts as kills. The same suite, measured
+with a window long enough to tell a slow mutant from a hanging one, scores 70.01%. Nothing
+regressed; the old number was wrong. See the next section for the measurement.
 
 **The PR gate that matters is the middle one.** `--since` mutates only what the branch
 touched, so it holds new code to a standard without asking anyone to fix the whole back
 catalogue first. Fixing your own diff is a bounded job in a way that fixing the back
 catalogue is not.
 
-It sits a couple of points *under* the repo aggregate rather than above it, which is not an
-oversight. A diff is a small sample, and a small sample makes the percentage jumpy: ten
-mutants with two missed reads as 80% and fails. Setting the diff gate above the aggregate
-would mostly generate false failures on ten-line PRs, and a gate people learn to re-run
-until it passes is worse than no gate. 90% catches a diff that is genuinely untested while
-leaving room for one awkward mutant in a small change.
+It sits *above* the repo aggregate rather than below it, which is the opposite of how this
+pair used to be set. When the aggregate read 92.59% the diff gate sat a couple of points under
+it, because a diff is a small sample and a small sample makes the percentage jumpy — ten
+mutants with two missed reads as 80%. Against a real back catalogue of 70% that reasoning
+inverts: the whole point of gating the diff is that new code should be better than what is
+already there, and 80% does that while leaving room for one awkward mutant in a small change.
+Setting it back to 90 would fail honest pull requests, and a gate people learn to re-run until
+it passes is worse than no gate.
 
 The two whole-repo thresholds trail the achieved score rather than lead it. That is on
 purpose: a gate set above where the repo currently sits blocks every PR, including the ones
@@ -135,47 +142,92 @@ everyone else's pull request and the machine — the 0.2.0 release pull request 
 hours for its checks that way. `workflow_dispatch` is there for when a particular commit needs
 the whole number sooner.
 
-The sweep is also slower than it should be. Between a quarter and a third of tested mutants in
-every core package come back `Timeout`, and a timed-out mutant costs a full timeout window
-rather than the milliseconds a killed one costs. They are not confined to the polling code you
-would expect: `TelemetryBuilderExtensions.cs`, which does nothing but register services,
-produced eight of them. That points at tests which hang when wiring is perturbed instead of
-failing fast, so the fix is in the suite rather than in the budget. Until that is done the
-nightly is allowed 360 minutes; do not raise it further to make a red run green.
+## The timeout window, and why it decides the score
+
+**Stryker counts a `Timeout` as a kill.** So does `build/mutation-summary.py` — the score is
+`(killed + timeout) / (killed + timeout + survived + no-coverage)`. That is the right call for
+a mutant that genuinely hangs: an infinite loop is a defect the tests noticed. It is the wrong
+answer for a mutant that merely ran slowly, and the two are indistinguishable in the report.
+
+For a long time this repo could not tell them apart, and the score paid for it. Measured on
+`Alberto.Telemetry`, same code, same tests, only the per-mutant window changed:
+
+| `additional-timeout` | Timeout | Killed | Survived | reported score |
+|---|---|---|---|---|
+| 5000 (the default) | 62 | 29 | 2 | **86.67%** |
+| 120000 | **0** | 57 | 36 | **54.29%** |
+
+Not one of those 62 was a hang. Thirty-four surviving mutants were hiding behind the window,
+and the reported score was thirty-two points too high.
+
+Two things make the default window too tight here:
+
+- **The preview MTP runner does not attribute coverage per test.** It reports every covered
+  mutant as covered by all 1890 tests — `coveredBy` in the report takes exactly two values, 0
+  and 1890, never anything between. So a mutant no test kills has to run the entire suite
+  before it can be called a survivor. Setting `coverage-analysis` does not help: `perTest` is
+  already the default and produces an identical report. `test-runner: vstest` is worse — it
+  captures no coverage at all, marking 103 of 195 mutants `Survived` for a 1.90% score.
+- **Stryker runs mutants concurrently.** The suite takes about 15 seconds alone; seven copies
+  of it sharing a machine take considerably longer, and the window is derived from the solo
+  baseline.
+
+`additional-timeout: 120000` in `stryker-config.json` is the fix. **Do not shrink it to make
+the sweep faster** — that buys a fast number by making it a false one.
+
+Granting a window that large is only safe because the suite no longer hangs. Every wait in it
+is bounded, so a mutant that breaks wiring fails in about five seconds instead of sitting in
+the window until it expires. Those two changes belong together: unbounded waits made a big
+window ruinously expensive, and a small window made unbounded waits invisible. See
+[#133](https://github.com/codest-be/alberto/issues/133).
+
+**If you add a test that waits on a signal, bound the wait.** The bound is a failure detector,
+not a budget — it should be far above what correct code needs and far below "forever". Five
+seconds is the convention here; `Patience` and `StopBudget` in the test suite are the existing
+names for it.
 
 ## Where the numbers stand
 
 `Alberto.Postgres`, `Alberto.Messaging.Postgres` and `Alberto.EntityFramework` appear under
-coverage only, for the reason given above. The baseline column is the first full run, kept so
-later movement means something.
+coverage only, for the reason given above.
 
-| package | mutation | was | line coverage | was | branch |
+The mutation column is the first sweep measured with a truthful timeout window. The column
+beside it is what the same suite reported before that window was fixed, kept because it is the
+number the gates and every earlier revision of this document were calibrated against — not
+because anything regressed between the two. No test changed except to bound its own waits.
+
+| package | mutation | as reported before | survivors | line coverage | branch |
 |---|---|---|---|---|---|
-| `Alberto` | 91.93% | 88.69% | 95.41% | 91.25% | 87.50% |
-| `Alberto.Commands` | 98.10% | 74.29% | 98.77% | 83.54% | 90.00% |
-| `Alberto.InMemory` | 93.48% | 93.48% | 94.20% | 94.20% | 95.00% |
-| `Alberto.Messaging` | 97.73% | 92.42% | 97.95% | 95.49% | 88.64% |
-| `Alberto.Telemetry` | 88.57% | 87.62% | 96.35% | 96.35% | 64.29% |
-| `Alberto.Testing` | 92.90% | 92.35% | 93.21% | 93.21% | 86.59% |
-| `Alberto.EntityFramework` | not measured | — | 95.17% | 95.17% | 74.07% |
-| `Alberto.Messaging.Postgres` | not measured | — | 88.57% | 88.57% | 50.00% |
-| `Alberto.Postgres` | not measured | — | 94.28% | 94.28% | 78.03% |
-| **total** | **92.59%** | 88.95% | **95.27%** | 92.33% | **85.20%** |
+| `Alberto` | 69.75% | 91.93% | 364 | 95.41% | 87.50% |
+| `Alberto.Commands` | 79.78% | 98.10% | 16 | 98.77% | 90.00% |
+| `Alberto.InMemory` | 75.37% | 93.48% | 51 | 94.20% | 95.00% |
+| `Alberto.Messaging` | 76.52% | 97.73% | 28 | 97.95% | 88.64% |
+| `Alberto.Telemetry` | 56.19% | 88.57% | 34 | 96.35% | 64.29% |
+| `Alberto.Testing` | 64.98% | 92.90% | 78 | 93.21% | 86.59% |
+| `Alberto.EntityFramework` | not measured | — | — | 95.17% | 74.07% |
+| `Alberto.Messaging.Postgres` | not measured | — | — | 88.57% | 50.00% |
+| `Alberto.Postgres` | not measured | — | — | 94.28% | 78.03% |
+| **total** | **70.01%** | 92.59% | **571** | **95.27%** | **85.20%** |
 
-The shape matters more than the number. Of 2415 scored mutants, **none survive**: every
-remaining miss is `NoCoverage`, code no test reaches. There is currently no place in the core
-packages where a test runs a line and fails to assert on it.
+2531 scored mutants: 1748 killed, 24 timed out, 571 survived, 188 never reached by a test.
+This document used to claim that **none** survive and that every remaining miss was
+`NoCoverage`. That claim was an artefact of the measurement — a mutant that survived and made
+the suite slow was scored `Timeout`, and `Timeout` counts as a kill. 571 of them do survive:
+places where a test runs the line and does not assert on what it did.
 
-That is also why the last two rows moved on mutation while sitting still on coverage.
-`Alberto.Telemetry` and `Alberto.Testing` each gained a point from a single new assertion on a
-line that was already executed — the trace link's `event.position` tag, and `TestEvents`
-keeping caller-supplied metadata instead of silently swapping in an empty dictionary. Coverage
-could not have found either, because coverage already counted both lines as covered.
+Timeouts are now 24 of 2531, 0.95%, down from between a quarter and a third. The one in
+`Alberto.Telemetry` was checked by hand — `TelemetryBatchConsumeMiddleware.cs:57`, an equality
+mutation in code that only sets tags and records metrics and has no loop to hang in. That is a
+contention straggler on a machine running seven mutants at once, not a wait somebody forgot to
+bound.
 
-The 179 remaining misses are spread across 49 files with no file holding more than 16, and
-they concentrate in the async loop code — `ControlLoop`, `DeadLetterRetryLoop`,
-`LeaseAwareControlLoopGroup`, `RebuildCoordinator`. That is the expensive end: each needs a
-test that drives a real polling loop through a timing window. The cheap wins are spent.
+Where the misses are has not changed, only how many of them there are. They concentrate in the
+async loop code — `ControlLoop`, `DeadLetterRetryLoop`, `LeaseAwareControlLoopGroup`,
+`RebuildCoordinator` — which is the expensive end, because each needs a test that drives a real
+polling loop through a timing window. `Alberto.Telemetry` scoring lowest of the six is the same
+story read from the other side: it has the repo's highest line coverage at 96.35% and its
+lowest branch coverage at 64.29%, which is the signature of tests that execute instrumentation
+without asserting on what it emitted.
 
 ## A known Stryker flake
 
