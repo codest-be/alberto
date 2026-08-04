@@ -94,9 +94,22 @@ public sealed class Specification<TState> : SpecificationBase<Specification<TSta
     /// Asserts on the state as it stands after the emitted events are folded in — what the next
     /// command on this slice would see.
     /// </summary>
+    /// <remarks>
+    /// Without a <c>When</c> it asserts on the history alone, which is how an evolver is
+    /// specified directly: <c>Spec.For(evolver).Given(events).ThenState(...)</c>. An evolver is
+    /// otherwise covered through the deciders that read it, and that is usually enough — reach
+    /// for this when a fold is worth pinning on its own, as a counter or a collection that
+    /// several events contribute to tends to be.
+    /// </remarks>
     public Specification<TState> ThenState(Action<TState> assert)
     {
         ArgumentNullException.ThrowIfNull(assert);
+
+        if (!_acted)
+        {
+            assert(_state);
+            return this;
+        }
 
         if (Decision.IsError)
             throw new SpecificationException(

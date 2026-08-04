@@ -187,6 +187,56 @@ Failures throw `SpecificationException` with the decision in the message: expect
 Like the rest of the package it calls no test framework's `Assert`, so it reads the same from
 xUnit, NUnit, TUnit or MSTest.
 
+An evolver is specified by dropping the `When`, which asserts on the history alone:
+
+```csharp
+Spec.For(new ConfirmOrderEvolver())
+    .Given(new OrderCreated(...), new OrderItemAdded(...), new OrderItemAdded(...))
+    .ThenState(s => s.LineItems.Should().HaveCount(3));
+```
+
+Most evolvers are covered well enough by the deciders that read them. Reach for this when a fold
+is worth pinning on its own, as a counter or a collection several events contribute to tends to be.
+
+### Projections, with no state store either
+
+A projection is the same kind of pure thing: events in, documents out. `ProjectionSpec` runs the
+`ProjectionDeclaration` and nothing else — no state store, no control loop, no database:
+
+```csharp
+ProjectionSpec.For(OrdersOverviewProjection.Declaration)
+    .Given(new OrderCreated(orderId, customerId, [widget], null))
+    .When(new OrderConfirmed(orderId, now))
+    .ThenDocument(overview =>
+    {
+        overview.DraftOrders.Should().Be(0);
+        overview.ConfirmedOrders.Should().Be(1);
+    });
+```
+
+`Given` folds history exactly as `When` does — the split is documentation, plus the line
+`ThenUnchanged` and `ThenDeleted` compare across. Events the projection declares no handler for
+pass through it untouched, the same way they do in production, so you can hand it the slice of the
+log a test cares about without filtering it first.
+
+Storage never enters into it: the same specification runs against a JSONB projection and an EF one,
+because the difference between them is where the document lands and this asserts on how it was
+built.
+
+| | |
+|---|---|
+| `Given(...)` / `GivenNoEvents()` | The history. Repeated calls accumulate |
+| `When(...)` | The events under test. Repeated calls re-base what `ThenUnchanged` and `ThenDeleted` compare against |
+| `ForTenant(id)` / `At(when)` / `AtPosition(n)` / `WithMetadata(...)` | The `ProjectionContext` the handlers see. Timestamps default to `ProjectionSpec.Epoch`, positions to 1 |
+| `ThenDocument(...)` / `ThenDocument(id, ...)` | The document. Without an id there must be exactly one, which is the common case for an aggregate |
+| `ThenNoDocument(id)` / `ThenNoDocuments()` / `ThenDocumentCount(n)` | What is and is not there |
+| `ThenUnchanged()` / `ThenDeleted(id)` | What the `When` did, rather than what it left behind |
+| `ThenDocuments(...)` | The escape hatch, handing you every document by id |
+
+`AtPosition` is also how you specify a redelivery: a state implementing `IProjectionEntity` carries
+the position it last processed, and an event at or below it is skipped, which is what makes
+at-least-once delivery safe.
+
 ### Whole modules, over the in-memory backend
 
 The control loop is asynchronous, so a test that appends an event and asserts on a projection in

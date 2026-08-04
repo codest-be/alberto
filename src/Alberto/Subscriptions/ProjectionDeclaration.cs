@@ -126,15 +126,47 @@ public sealed class ProjectionDeclaration<TState> where TState : new()
     /// <summary>
     /// Returns the document ID for a typed event. No envelope construction needed — for testing.
     /// </summary>
+    /// <remarks>
+    /// Dispatches on the event's runtime type, not on <typeparamref name="TEvent"/>, so a caller
+    /// holding a list of <see cref="IEvent"/> — a test arranging history — reaches the same
+    /// handler the runtime would.
+    /// </remarks>
     public string? GetDocumentId<TEvent>(TEvent @event) where TEvent : IEvent
-        => GetHandler(EventTypeAttribute.GetEventTypeId(typeof(TEvent))).GetDocumentId(@event!);
+    {
+        ArgumentNullException.ThrowIfNull(@event);
+        return GetHandler(EventTypeAttribute.GetEventTypeId(@event.GetType())).GetDocumentId(@event);
+    }
 
     /// <summary>
     /// Applies a typed event to the given state. No envelope construction needed — for testing.
     /// </summary>
+    /// <remarks>
+    /// Dispatches on the event's runtime type, not on <typeparamref name="TEvent"/>, so a caller
+    /// holding a list of <see cref="IEvent"/> — a test arranging history — reaches the same
+    /// handler the runtime would.
+    /// </remarks>
     public ProjectionResult<TState> Apply<TEvent>(TState state, TEvent @event, ProjectionContext context)
         where TEvent : IEvent
-        => GetHandler(EventTypeAttribute.GetEventTypeId(typeof(TEvent))).Apply(state, @event!, context);
+    {
+        ArgumentNullException.ThrowIfNull(@event);
+        return GetHandler(EventTypeAttribute.GetEventTypeId(@event.GetType())).Apply(state, @event, context);
+    }
+
+    /// <summary>
+    /// Whether this projection declares a handler for the event's type — the same check the
+    /// runtime makes before parsing, and the reason an event a projection does not care about
+    /// passes through it without effect rather than failing.
+    /// </summary>
+    /// <returns>
+    /// <see langword="false"/> for an event with no <c>[EventType]</c> attribute, which could
+    /// never have been appended and so could never have reached a projection.
+    /// </returns>
+    public bool Handles(IEvent @event)
+    {
+        ArgumentNullException.ThrowIfNull(@event);
+        var id = EventTypeAttribute.GetEventType(@event.GetType())?.Id;
+        return id is not null && HandledEventTypes.Contains(id);
+    }
 
     private IProjectionEventHandler<TState> GetHandler(string eventTypeId)
         => Handlers.TryGetValue(eventTypeId, out var handler)

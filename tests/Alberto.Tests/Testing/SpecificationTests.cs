@@ -285,6 +285,39 @@ public class SpecificationTests
         Assert.Contains("ThenFails", ex.Message, StringComparison.Ordinal);
     }
 
+    // ── ThenState without a When: specifying an evolver on its own ────────────────
+
+    [Fact]
+    public void ThenState_without_a_When_asserts_on_the_history_alone()
+    {
+        // An evolver is covered through the deciders that read it. This is the escape hatch for
+        // a fold worth pinning on its own — a running total that several events contribute to.
+        Spec.For(new TabEvolver())
+            .Given(new TabOpened("t-1"), new RoundOrdered(10m), new RoundOrdered(5m))
+            .ThenState(s =>
+            {
+                Assert.True(s.Exists);
+                Assert.Equal("t-1", s.TabId);
+                Assert.Equal(15m, s.Total);
+            });
+    }
+
+    [Fact]
+    public void ThenState_without_a_When_and_without_events_is_the_initial_state()
+    {
+        Spec.For(new TabEvolver())
+            .GivenNoEvents()
+            .ThenState(s => Assert.False(s.Exists));
+    }
+
+    [Fact]
+    public void ThenState_without_a_When_ignores_an_event_the_evolver_declares_no_handler_for()
+    {
+        Spec.For(new TabEvolver())
+            .Given(new TabOpened("t-1"), new LightsDimmed(), new RoundOrdered(2m))
+            .ThenState(s => Assert.Equal(2m, s.Total));
+    }
+
     // ── The chain does not narrow ─────────────────────────────────────────────────
 
     [Fact]

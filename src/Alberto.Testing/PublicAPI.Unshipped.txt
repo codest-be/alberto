@@ -1,1 +1,20 @@
 #nullable enable
+Alberto.Testing.ProjectionSpec
+Alberto.Testing.ProjectionSpecification<TState>
+Alberto.Testing.ProjectionSpecification<TState>.At(System.DateTimeOffset timestamp) -> Alberto.Testing.ProjectionSpecification<TState>!
+Alberto.Testing.ProjectionSpecification<TState>.AtPosition(long position) -> Alberto.Testing.ProjectionSpecification<TState>!
+Alberto.Testing.ProjectionSpecification<TState>.ForTenant(string? tenantId) -> Alberto.Testing.ProjectionSpecification<TState>!
+Alberto.Testing.ProjectionSpecification<TState>.Given(params Alberto.IEvent![]! events) -> Alberto.Testing.ProjectionSpecification<TState>!
+Alberto.Testing.ProjectionSpecification<TState>.GivenNoEvents() -> Alberto.Testing.ProjectionSpecification<TState>!
+Alberto.Testing.ProjectionSpecification<TState>.ThenDeleted(string! documentId) -> Alberto.Testing.ProjectionSpecification<TState>!
+Alberto.Testing.ProjectionSpecification<TState>.ThenDocument(System.Action<TState>! assert) -> Alberto.Testing.ProjectionSpecification<TState>!
+Alberto.Testing.ProjectionSpecification<TState>.ThenDocument(string! documentId, System.Action<TState>! assert) -> Alberto.Testing.ProjectionSpecification<TState>!
+Alberto.Testing.ProjectionSpecification<TState>.ThenDocumentCount(int expected) -> Alberto.Testing.ProjectionSpecification<TState>!
+Alberto.Testing.ProjectionSpecification<TState>.ThenDocuments(System.Action<System.Collections.Generic.IReadOnlyDictionary<string!, TState>!>! assert) -> Alberto.Testing.ProjectionSpecification<TState>!
+Alberto.Testing.ProjectionSpecification<TState>.ThenNoDocument(string! documentId) -> Alberto.Testing.ProjectionSpecification<TState>!
+Alberto.Testing.ProjectionSpecification<TState>.ThenNoDocuments() -> Alberto.Testing.ProjectionSpecification<TState>!
+Alberto.Testing.ProjectionSpecification<TState>.ThenUnchanged() -> Alberto.Testing.ProjectionSpecification<TState>!
+Alberto.Testing.ProjectionSpecification<TState>.When(params Alberto.IEvent![]! events) -> Alberto.Testing.ProjectionSpecification<TState>!
+Alberto.Testing.ProjectionSpecification<TState>.WithMetadata(System.Collections.Generic.IReadOnlyDictionary<string!, string!>! metadata) -> Alberto.Testing.ProjectionSpecification<TState>!
+static readonly Alberto.Testing.ProjectionSpec.Epoch -> System.DateTimeOffset
+static Alberto.Testing.ProjectionSpec.For<TState>(Alberto.Subscriptions.ProjectionDeclaration<TState>! declaration) -> Alberto.Testing.ProjectionSpecification<TState>!

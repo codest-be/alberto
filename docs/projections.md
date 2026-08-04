@@ -67,6 +67,36 @@ reads of other documents. A rebuild replays the entire log through this function
 at the same answer; anything ambient makes the rebuilt copy differ from the live one. Side effects
 belong in a [reactor](reactors-and-outbox.md).
 
+### Testing it
+
+Purity is what makes the declaration testable on its own, and `ProjectionSpec` in
+`Alberto.Testing` is what does it: events in, documents out, no state store and no control loop.
+
+```csharp
+ProjectionSpec.For(OrdersOverviewProjection.Declaration)
+    .Given(new OrderCreated(orderId, customerId, [widget], null))
+    .When(new OrderConfirmed(orderId, now))
+    .ThenDocument(overview =>
+    {
+        overview.DraftOrders.Should().Be(0);
+        overview.ConfirmedOrders.Should().Be(1);
+    });
+```
+
+`Given` and `When` both fold; the split is documentation, plus the line `ThenUnchanged` and
+`ThenDeleted` compare across. Events the projection declares no handler for pass through untouched,
+as they do in production, so a test can hand it whatever slice of the log it cares about.
+
+`ThenDocument(id, …)`, `ThenNoDocument(id)`, `ThenNoDocuments()`, `ThenDocumentCount(n)`,
+`ThenDeleted(id)`, `ThenUnchanged()` and `ThenDocuments(…)` are the rest of the verbs;
+`ForTenant`, `At`, `AtPosition` and `WithMetadata` set the `ProjectionContext` the handlers see.
+Timestamps default to `ProjectionSpec.Epoch` and event ids are derived from the position, so two
+runs of a specification are the same run — which is the same determinism a rebuild depends on.
+
+None of this knows where the document lands, so [an EF projection](#ef-projections) is specified
+exactly like a JSONB one. To test the storage as well, or the control loop that drives it, use
+`AlbertoTestHarness` over the in-memory backend instead.
+
 ## Storing it
 
 `AddProjection` pairs the declaration with a factory for where state lands:

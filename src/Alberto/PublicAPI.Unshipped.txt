@@ -1,1 +1,2 @@
 #nullable enable
+Alberto.Subscriptions.ProjectionDeclaration<TState>.Handles(Alberto.IEvent! event) -> bool
