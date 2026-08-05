@@ -74,7 +74,7 @@ public sealed class EfInlineProjectionRebuildVersionTests(EfProjectionTestFixtur
         var projection = new DeclaredEfInlineProjection<CounterEntity, EfTestDbContext>(
             EfProjectionTestFixture.BuildDeclaration("rebuild-window-shadow"),
             fixture.CreateFactory(),
-            rebuildVersion: () => 2);
+            rebuildVersion: ProjectionVersion.From(() => 2));
 
         await projection.ProcessAsync(
             [EfTestEnvelopes.ForCounterIncremented(entityId, amount: 7, position: 10)],
@@ -93,7 +93,7 @@ public sealed class EfInlineProjectionRebuildVersionTests(EfProjectionTestFixtur
         var projection = new DeclaredEfInlineProjection<CounterEntity, EfTestDbContext>(
             EfProjectionTestFixture.BuildDeclaration("rebuild-window-insert"),
             fixture.CreateFactory(),
-            rebuildVersion: () => 3);
+            rebuildVersion: ProjectionVersion.From(() => 3));
 
         await projection.ProcessAsync(
             [EfTestEnvelopes.ForCounterIncremented(entityId, amount: 4, position: 1)],

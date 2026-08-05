@@ -1,1 +1,3 @@
 #nullable enable
+Alberto.InMemory.InMemoryStateStore<TState>.InMemoryStateStore(Alberto.Subscriptions.ProjectionVersion rebuildVersion = default(Alberto.Subscriptions.ProjectionVersion)) -> void
+*REMOVED*Alberto.InMemory.InMemoryStateStore<TState>.InMemoryStateStore(System.Func<int>? rebuildVersion = null) -> void

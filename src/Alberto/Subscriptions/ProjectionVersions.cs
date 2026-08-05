@@ -31,10 +31,10 @@ public sealed class ProjectionVersions : IAsyncDisposable
     public const int Initial = 1;
 
     /// <summary>
-    /// The version selector for a projection that is not participating in rebuilds. Shared
+    /// The version handle for a projection that is not participating in rebuilds. Shared
     /// rather than allocated per store, since it is the default for almost every projection.
     /// </summary>
-    public static readonly Func<int> NeverRebuilt = () => Initial;
+    public static readonly ProjectionVersion NeverRebuilt = ProjectionVersion.NeverRebuilt;
 
     private readonly IProjectionRebuildStore _store;
     private readonly ConcurrentDictionary<string, ProjectionRebuildState> _cache = new();
@@ -89,10 +89,11 @@ public sealed class ProjectionVersions : IAsyncDisposable
         => _cache.GetValueOrDefault(processorId);
 
     /// <summary>
-    /// A version selector to hand to a state store serving the live projection and its
+    /// A version handle to hand to a state store serving the live projection and its
     /// readers. Tracks promotions without the store having to know rebuilds exist.
     /// </summary>
-    public Func<int> ForLive(string processorId) => () => ActiveVersion(processorId);
+    public ProjectionVersion ForLive(string processorId)
+        => ProjectionVersion.From(() => ActiveVersion(processorId));
 
     /// <summary>
     /// The live version selector for a projection in a given module, resolved from the
@@ -109,7 +110,7 @@ public sealed class ProjectionVersions : IAsyncDisposable
     /// Resolves to version 1 forever in a module that has no rebuild pipeline, so it is safe to
     /// use unconditionally.
     /// </remarks>
-    public static Func<int> LiveVersion(IServiceProvider services, object? moduleKey, string processorId)
+    public static ProjectionVersion LiveVersion(IServiceProvider services, object? moduleKey, string processorId)
     {
         ArgumentNullException.ThrowIfNull(services);
 

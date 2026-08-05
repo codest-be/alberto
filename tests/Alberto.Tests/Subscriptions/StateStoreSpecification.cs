@@ -45,7 +45,7 @@ public sealed class InMemoryStateStoreSpecificationTests : StateStoreSpecificati
 
     protected override Task<IStateStore<SimpleState>> CreateStore(
         string projectionType,
-        Func<int>? rebuildVersion = null) =>
+        ProjectionVersion rebuildVersion = default) =>
         Task.FromResult<IStateStore<SimpleState>>(
             new InMemoryStateStore<SimpleState>(rebuildVersion));
 
@@ -83,7 +83,7 @@ public sealed class PostgresStateStoreSpecificationTests(SingleTenantPostgresFix
 {
     protected override Task<IStateStore<SimpleState>> CreateStore(
         string projectionType,
-        Func<int>? rebuildVersion = null) =>
+        ProjectionVersion rebuildVersion = default) =>
         Task.FromResult<IStateStore<SimpleState>>(
             new PostgresStateStore<SimpleState>(
                 fixture.DataSource,
@@ -124,7 +124,7 @@ public sealed class EfStateStoreSpecificationTests(EfProjectionTestFixture fixtu
 
     protected override Task<IStateStore<CounterEntity>> CreateStore(
         string projectionType,
-        Func<int>? rebuildVersion = null) =>
+        ProjectionVersion rebuildVersion = default) =>
         // projectionType is accepted to satisfy the spec seam but is not forwarded to
         // EfStateStore — it has no such parameter.
         Task.FromResult<IStateStore<CounterEntity>>(
@@ -176,7 +176,7 @@ public sealed class MultiTenantPostgresStateStoreSpecificationTests(MultiTenantD
     /// </summary>
     protected override Task<IStateStore<SimpleState>> CreateStore(
         string projectionType,
-        Func<int>? rebuildVersion = null) =>
+        ProjectionVersion rebuildVersion = default) =>
         Task.FromResult<IStateStore<SimpleState>>(
             new PostgresStateStore<SimpleState>(
                 fixture.DataSource,
@@ -192,7 +192,7 @@ public sealed class MultiTenantPostgresStateStoreSpecificationTests(MultiTenantD
     protected override Task<IStateStore<SimpleState>> CreateStoreForTenant(
         string projectionType,
         string tenantId,
-        Func<int>? rebuildVersion = null) =>
+        ProjectionVersion rebuildVersion = default) =>
         Task.FromResult<IStateStore<SimpleState>>(
             new PostgresStateStore<SimpleState>(
                 fixture.DataSource,

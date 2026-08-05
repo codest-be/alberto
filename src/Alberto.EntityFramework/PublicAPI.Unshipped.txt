@@ -1,1 +1,3 @@
 #nullable enable
+Alberto.EntityFramework.EfStateStore<TEntity, TDbContext>.EfStateStore(Microsoft.EntityFrameworkCore.IDbContextFactory<TDbContext!>! contextFactory, Alberto.Subscriptions.ProjectionVersion rebuildVersion = default(Alberto.Subscriptions.ProjectionVersion)) -> void
+*REMOVED*Alberto.EntityFramework.EfStateStore<TEntity, TDbContext>.EfStateStore(Microsoft.EntityFrameworkCore.IDbContextFactory<TDbContext!>! contextFactory, System.Func<int>? rebuildVersion = null) -> void

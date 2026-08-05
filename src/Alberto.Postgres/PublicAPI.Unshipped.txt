@@ -1,1 +1,3 @@
 #nullable enable
+Alberto.Postgres.PostgresStateStore<TState>.PostgresStateStore(Npgsql.NpgsqlDataSource! dataSource, string? projectionType = null, string? schema = null, Alberto.Subscriptions.ProjectionVersion rebuildVersion = default(Alberto.Subscriptions.ProjectionVersion), string? tenantId = null) -> void
+*REMOVED*Alberto.Postgres.PostgresStateStore<TState>.PostgresStateStore(Npgsql.NpgsqlDataSource! dataSource, string? projectionType = null, string? schema = null, System.Func<int>? rebuildVersion = null, string? tenantId = null) -> void

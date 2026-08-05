@@ -251,7 +251,7 @@ public sealed class EfProjectionUpcastingTests(EfProjectionUpcastingFixture fixt
 
         var capturedSerializer = UpcastEfHelpers.BuildSerializer(); // captured outside version =>
         const int rebuildShadowVersion = 2; // shadow loop writes at a different version than live
-        Func<int> version = () => rebuildShadowVersion;
+        var version = ProjectionVersion.From(() => rebuildShadowVersion);
 
         var projection = new DeclaredAsyncProjection<UpcastEfOrderEntity>(
             declaration,

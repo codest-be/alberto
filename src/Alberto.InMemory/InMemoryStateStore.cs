@@ -20,11 +20,12 @@ namespace Alberto.InMemory;
 /// </para>
 /// </remarks>
 /// <param name="rebuildVersion">
-/// The version this store reads and writes. Resolved per operation rather than captured, because
+/// A live handle on the version this store reads and writes. Its
+/// <see cref="ProjectionVersion.Current"/> is resolved per operation rather than cached, because
 /// promoting a rebuild changes it underneath a long-lived store. Omit it for a projection that is
 /// never rebuilt; it then resolves to version 1 forever.
 /// </param>
-public sealed class InMemoryStateStore<TState>(Func<int>? rebuildVersion = null) : IStateStore<TState>
+public sealed class InMemoryStateStore<TState>(ProjectionVersion rebuildVersion = default) : IStateStore<TState>
 {
     /// <summary>
     /// A stored document and the write that last touched it. The sequence stands in for the
@@ -35,7 +36,7 @@ public sealed class InMemoryStateStore<TState>(Func<int>? rebuildVersion = null)
     private readonly record struct Entry(TState State, long Sequence);
 
     private readonly ConcurrentDictionary<(int Version, string DocumentId), Entry> _documents = new();
-    private readonly Func<int> _rebuildVersion = rebuildVersion ?? ProjectionVersions.NeverRebuilt;
+    private readonly ProjectionVersion _rebuildVersion = rebuildVersion;
     private long _sequence;
 
     /// <inheritdoc/>
@@ -45,7 +46,7 @@ public sealed class InMemoryStateStore<TState>(Func<int>? rebuildVersion = null)
     {
         ArgumentNullException.ThrowIfNull(documentIds);
 
-        var version = _rebuildVersion();
+        var version = _rebuildVersion.Current;
         var result = new Dictionary<string, TState>();
 
         foreach (var id in documentIds)
@@ -68,7 +69,7 @@ public sealed class InMemoryStateStore<TState>(Func<int>? rebuildVersion = null)
         ArgumentNullException.ThrowIfNull(upserts);
         ArgumentNullException.ThrowIfNull(deletes);
 
-        var version = _rebuildVersion();
+        var version = _rebuildVersion.Current;
 
         foreach (var (id, state) in upserts)
             _documents[(version, id)] = new Entry(state, Interlocked.Increment(ref _sequence));
@@ -84,7 +85,7 @@ public sealed class InMemoryStateStore<TState>(Func<int>? rebuildVersion = null)
         int limit = 20,
         CancellationToken ct = default)
     {
-        var version = _rebuildVersion();
+        var version = _rebuildVersion.Current;
 
         IReadOnlyList<TState> result = _documents
             .Where(kvp => kvp.Key.Version == version)
