@@ -1,41 +1,28 @@
 namespace Alberto.Testing;
 
 /// <summary>
-/// The Then-verbs shared by <see cref="Specification{TState}"/> and
-/// <see cref="StatelessSpecification"/>.
+/// The Then-verbs that read a decision. Every one of them needs a decision to read, so this type
+/// is only ever reached through <c>When(...)</c> — there is no stage of the chain that exposes a
+/// decision verb before one has been made.
 /// </summary>
 /// <typeparam name="TSelf">
-/// The concrete specification type. Every verb returns it rather than this base, so a chain never
-/// narrows: <c>.ThenSucceeds().ThenState(...)</c> still sees the state-aware verbs.
+/// The concrete stage. Every verb returns it rather than this base, so a chain never narrows:
+/// <c>.ThenSucceeds().ThenState(...)</c> still sees the verbs the stage adds on top of these.
 /// </typeparam>
-public abstract class SpecificationBase<TSelf> where TSelf : SpecificationBase<TSelf>
+/// <remarks>
+/// The four stages that derive from it — with state or without, carrying a result or not — differ
+/// only in what they add. What a decision *is* does not change between them, so the verbs that
+/// read one live here and are written once.
+/// </remarks>
+public abstract class DecisionAssertions<TSelf> where TSelf : DecisionAssertions<TSelf>
 {
-    private Decision? _decision;
-    private object? _result;
-    private bool _hasResult;
+    private protected DecisionAssertions(Decision decision) => Decision = decision;
 
-    private protected SpecificationBase() { }
+    /// <summary>The decision produced by <c>When(...)</c>.</summary>
+    private protected Decision Decision { get; }
 
     /// <summary>The derived instance, so every verb can return <typeparamref name="TSelf"/>.</summary>
     private protected abstract TSelf Self { get; }
-
-    /// <summary>The decision produced by <c>When(...)</c>.</summary>
-    private protected Decision Decision => _decision ?? throw new SpecificationException(
-        "There is no decision to assert on yet. Call When(...) before any Then verb.");
-
-    private protected void Act(Decision decision)
-    {
-        _decision = decision;
-        _result = null;
-        _hasResult = false;
-    }
-
-    private protected void Act<TResult>(Decision<TResult> decision)
-    {
-        _decision = decision;
-        _hasResult = decision.IsSuccess;
-        _result = decision.IsSuccess ? decision.Value : null;
-    }
 
     /// <summary>Asserts the decision succeeded.</summary>
     public TSelf ThenSucceeds()
@@ -167,29 +154,6 @@ public abstract class SpecificationBase<TSelf> where TSelf : SpecificationBase<T
     {
         ArgumentNullException.ThrowIfNull(assert);
         assert(Decision.Problems);
-        return Self;
-    }
-
-    /// <summary>
-    /// Asserts on the value a <see cref="Decision{T}"/> carried. Requires the
-    /// <c>When</c> overload that returns one.
-    /// </summary>
-    public TSelf ThenResult<TResult>(Action<TResult> assert)
-    {
-        ArgumentNullException.ThrowIfNull(assert);
-        ThenSucceeds();
-
-        if (!_hasResult)
-            throw new SpecificationException(
-                "The decision carries no result value. Use the When(...) overload that returns " +
-                "Decision<TResult> when you want to assert on one.");
-
-        if (_result is not TResult typed)
-            throw new SpecificationException(
-                $"Expected a result of type {typeof(TResult).Name}, but the decision carried " +
-                $"{(_result is null ? "null" : _result.GetType().Name)}.");
-
-        assert(typed);
         return Self;
     }
 

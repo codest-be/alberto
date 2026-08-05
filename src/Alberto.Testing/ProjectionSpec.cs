@@ -20,6 +20,13 @@ namespace Alberto.Testing;
 /// (Entity Framework) without either knowing the difference, because the difference is storage
 /// and this asserts on projection.
 /// </para>
+/// <para>
+/// Given, When and Then are three stages and three types, not one type with three kinds of method,
+/// so the order is the compiler's business rather than a runtime check. There are no Then-verbs
+/// before anything has been projected, no <c>Given</c> after <c>When</c>, and no
+/// <c>ThenDeleted</c> or <c>ThenUnchanged</c> until there is a <c>When</c> for them to compare
+/// across.
+/// </para>
 /// </remarks>
 /// <example>
 /// <code>
@@ -36,7 +43,7 @@ namespace Alberto.Testing;
 public static class ProjectionSpec
 {
     /// <summary>
-    /// The timestamp every event carries unless <see cref="ProjectionSpecification{TState}.At"/>
+    /// The timestamp every event carries unless <see cref="ProjectionStage{TState,TSelf}.At"/>
     /// says otherwise. Fixed rather than "now" so that a projection writing
     /// <c>ctx.Timestamp</c> into its state can be asserted against a literal.
     /// </summary>
