@@ -385,7 +385,18 @@ internal static class PostgresBackendHelpers
         var expected = expectedPosition ?? -1;
 
         var detail = ConflictMessage.Detail(ex.MessageText);
-        var conflicting = ConflictMessage.TryParsePosition(ex.MessageText, out var parsed) ? parsed : -1;
+
+        // Migration 004 attaches the conflict position to PostgresException.Hint as a bare
+        // decimal integer (v_conflict_position::TEXT), which Npgsql surfaces here without any
+        // prose that could drift.  HINT is used rather than DETAIL because Npgsql redacts
+        // Detail by default (it returns a "[Detail redacted...]" placeholder unless the consumer
+        // sets "Include Error Detail=true", which Alberto cannot require).  Hint is not
+        // redacted.  Try the structured field first; fall back to prose-parsing MessageText for
+        // backward compatibility with databases that have not yet run migration 004 and still
+        // raise without HINT.
+        var conflicting = ConflictMessage.TryParseStructuredHint(ex.Hint, out var structuredPos)
+            ? structuredPos
+            : ConflictMessage.TryParsePosition(ex.MessageText, out var parsed) ? parsed : -1;
 
         return new DcbConflictException(
             $"DCB conflict: {detail} (expected position was {expected}, query {query})",
@@ -397,13 +408,25 @@ internal static class PostgresBackendHelpers
     /// functions, whose message is always <c>DCB conflict: {detail} found at position {n}</c>.
     /// </summary>
     /// <remarks>
-    /// Parsing a server message is a coupling, so it is named and isolated here rather than
-    /// inlined at the catch site. The alternative — returning the position as a column — is not
-    /// available: <c>RAISE EXCEPTION</c> aborts the statement, so there is no result set left to
-    /// put it in, and restructuring the functions to return a conflict row instead of raising
-    /// would change the contract of six migration-scripted functions across two tenancy modes.
-    /// Both members degrade rather than throw on an unrecognised message, because losing a
-    /// detail is not worth turning a conflict — which callers retry — into a parse failure.
+    /// <para>
+    /// Migration 004 attaches the conflict position to the <c>HINT</c> error field
+    /// (<c>USING ERRCODE = 'P0001', HINT = v_conflict_position::TEXT</c>) so Npgsql surfaces
+    /// it via <c>PostgresException.Hint</c> without any prose that could silently drift.
+    /// <c>DETAIL</c> was rejected: Npgsql redacts <c>PostgresException.Detail</c> by default
+    /// (returning a placeholder sentence) unless the consumer sets <c>Include Error Detail=true</c>,
+    /// which Alberto cannot require — the flag is global and would expose row data from
+    /// constraint violations on the same data source.  <c>Hint</c> is not redacted.
+    /// <see cref="TryParseStructuredHint"/> reads that field; it is the primary path on any
+    /// database that has run migration 004.
+    /// </para>
+    /// <para>
+    /// <see cref="TryParsePosition"/> parses the prose <c>MessageText</c> and exists only for
+    /// backward compatibility with databases that predate migration 004 and therefore raise
+    /// without a <c>HINT</c> field.  It is called only when <c>Hint</c> is absent or
+    /// unparseable.  Both members degrade rather than throw on an unrecognised input, because
+    /// losing a position is not worth turning a conflict — which callers retry — into a parse
+    /// failure.
+    /// </para>
     /// </remarks>
     internal static class ConflictMessage
     {
@@ -419,6 +442,28 @@ internal static class PostgresBackendHelpers
                 : message.StartsWith(Prefix, StringComparison.Ordinal)
                     ? message[Prefix.Length..]
                     : message;
+
+        /// <summary>
+        /// Reads the conflict position from the structured <c>HINT</c> field set by migration
+        /// 004.  The field contains a bare decimal integer (<c>v_conflict_position::TEXT</c>),
+        /// nothing else.  Returns <c>false</c> when the field is absent or not a plain integer,
+        /// which is the expected result for any database that has not yet run migration 004.
+        /// <c>HINT</c> is used rather than <c>DETAIL</c> because Npgsql redacts
+        /// <c>PostgresException.Detail</c> by default; <c>Hint</c> is not redacted.
+        /// </summary>
+        internal static bool TryParseStructuredHint(string? hint, out long position)
+        {
+            position = -1;
+
+            if (string.IsNullOrEmpty(hint))
+                return false;
+
+            if (!long.TryParse(hint, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed))
+                return false;
+
+            position = parsed;
+            return true;
+        }
 
         /// <summary>
         /// The position after <c>found at position </c>, if the message is in the expected shape.

@@ -307,6 +307,53 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
         Assert.IsType<Npgsql.PostgresException>(ex.InnerException);
     }
 
+    /// <summary>
+    /// Asserts that the conflict position is carried by <c>PostgresException.Hint</c> as a bare
+    /// decimal integer.  This is the contract migration 004 establishes so that
+    /// <see cref="Alberto.Postgres.PostgresBackendHelpers"/> can recover the position from a
+    /// structured field rather than parsing prose.
+    /// </summary>
+    /// <remarks>
+    /// The assertion is against the raw <c>Hint</c> field on the inner exception, not against
+    /// <see cref="Alberto.DcbConflictException.ConflictingPosition"/>, which the prose-fallback
+    /// path can also populate.  If <c>HINT</c> is ever removed from the SQL functions, this test
+    /// will fail with <c>Hint == null</c>, independent of whether the fallback still works.
+    /// </remarks>
+    [Fact]
+    public async Task AppendAsync_WithDcbConflict_ConflictPosition_IsCarriedByStructuredHintField()
+    {
+        var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
+
+        var orderId = Guid.NewGuid();
+        var tag = new EventTag("order", orderId.ToString());
+
+        var appended = await eventStore.AppendAsync(
+            [CreateEvent(new OrderCreated(orderId, 100m), tag)],
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        var conflictingPosition = appended.Single().GlobalPosition;
+
+        var dcbQuery = DcbQuery.Empty.WithTypes("order-created").WithTags(tag);
+
+        var conflictException = await Assert.ThrowsAsync<DcbConflictException>(() =>
+            eventStore.AppendAsync(
+                [CreateEvent(new OrderConfirmed(orderId), tag)],
+                dcbQuery,
+                expectedPosition: 0,
+                cancellationToken: TestContext.Current.CancellationToken));
+
+        // Inner exception must be the Postgres error that migration 004 raises.
+        var pgEx = Assert.IsType<Npgsql.PostgresException>(conflictException.InnerException);
+
+        // HINT carries the conflict position as a bare decimal integer (v_conflict_position::TEXT).
+        // This assertion fails if the SQL functions are changed to raise without HINT, making the
+        // rot detectable even if the prose-fallback path would still recover the position.
+        Assert.Equal(
+            conflictingPosition.ToString(),
+            pgEx.Hint,
+            StringComparer.Ordinal);
+    }
+
     [Fact]
     public async Task AppendAsync_WithCorrectExpectedPosition_ShouldSucceed()
     {
