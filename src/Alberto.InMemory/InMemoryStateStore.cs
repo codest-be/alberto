@@ -35,8 +35,23 @@ public sealed class InMemoryStateStore<TState>(ProjectionVersion rebuildVersion 
     /// </summary>
     private readonly record struct Entry(TState State, long Sequence);
 
+    // A plain lock — not ReaderWriterLockSlim — because InMemoryStateStore is a dev/test
+    // backend where read throughput does not justify a reader-writer split. Every method
+    // finishes its work synchronously (the returned Tasks are already completed), so there
+    // are no awaits inside the lock region and no risk of holding the lock across a yield.
+    private readonly Lock _lock = new();
+
+    // ConcurrentDictionary is kept even though _lock now guards all access. Switching to a
+    // plain Dictionary would require changing the field type and the constructor call with no
+    // observable benefit: the concurrent operations (TryGetValue, AddOrUpdate) are no more
+    // expensive than their plain equivalents, and the type is already well understood by readers.
     private readonly ConcurrentDictionary<(int Version, string DocumentId), Entry> _documents = new();
     private readonly ProjectionVersion _rebuildVersion = rebuildVersion;
+
+    // Interlocked.Increment is kept for the same reason as ConcurrentDictionary above:
+    // _lock already makes the increment exclusive against all other writers, so the
+    // Interlocked is redundant but harmless, and removing it would not change the observable
+    // behaviour.
     private long _sequence;
 
     /// <inheritdoc/>
@@ -49,10 +64,13 @@ public sealed class InMemoryStateStore<TState>(ProjectionVersion rebuildVersion 
         var version = _rebuildVersion.Current;
         var result = new Dictionary<string, TState>();
 
-        foreach (var id in documentIds)
+        lock (_lock)
         {
-            if (_documents.TryGetValue((version, id), out var entry))
-                result[id] = entry.State;
+            foreach (var id in documentIds)
+            {
+                if (_documents.TryGetValue((version, id), out var entry))
+                    result[id] = entry.State;
+            }
         }
 
         // Explicit type arg required: Task<T> is not covariant, so Task.FromResult(result)
@@ -71,11 +89,17 @@ public sealed class InMemoryStateStore<TState>(ProjectionVersion rebuildVersion 
 
         var version = _rebuildVersion.Current;
 
-        foreach (var (id, state) in upserts)
-            _documents[(version, id)] = new Entry(state, Interlocked.Increment(ref _sequence));
+        lock (_lock)
+        {
+            // Upserts run first, deletes run second — matching the order the Postgres adapter
+            // uses inside its transaction. The result is delete-wins: a document ID present in
+            // both collections is absent after the batch, regardless of dict insertion order.
+            foreach (var (id, state) in upserts)
+                _documents[(version, id)] = new Entry(state, Interlocked.Increment(ref _sequence));
 
-        foreach (var id in deletes)
-            _documents.TryRemove((version, id), out _);
+            foreach (var id in deletes)
+                _documents.TryRemove((version, id), out _);
+        }
 
         return Task.CompletedTask;
     }
@@ -87,12 +111,16 @@ public sealed class InMemoryStateStore<TState>(ProjectionVersion rebuildVersion 
     {
         var version = _rebuildVersion.Current;
 
-        IReadOnlyList<TState> result = _documents
-            .Where(kvp => kvp.Key.Version == version)
-            .OrderByDescending(kvp => kvp.Value.Sequence)
-            .Take(limit)
-            .Select(kvp => kvp.Value.State)
-            .ToList();
+        IReadOnlyList<TState> result;
+        lock (_lock)
+        {
+            result = _documents
+                .Where(kvp => kvp.Key.Version == version)
+                .OrderByDescending(kvp => kvp.Value.Sequence)
+                .Take(limit)
+                .Select(kvp => kvp.Value.State)
+                .ToList();
+        }
 
         return Task.FromResult(result);
     }
