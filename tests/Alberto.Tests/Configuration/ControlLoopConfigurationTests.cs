@@ -100,4 +100,46 @@ public class ControlLoopConfigurationTests
         leases.ReplicaId.Should().Be("pod-1");
     }
 
+    [Fact]
+    public void EffectiveReplicaId_returns_machine_name_when_ReplicaId_is_null()
+    {
+        var options = new ProcessorLeaseOptions { ReplicaId = null };
+
+        options.EffectiveReplicaId.Should().Be(Environment.MachineName);
+    }
+
+    [Fact]
+    public void EffectiveReplicaId_returns_machine_name_when_ReplicaId_is_empty()
+    {
+        var options = new ProcessorLeaseOptions { ReplicaId = "" };
+
+        options.EffectiveReplicaId.Should().Be(Environment.MachineName);
+    }
+
+    [Fact]
+    public void EffectiveReplicaId_returns_machine_name_when_ReplicaId_is_whitespace()
+    {
+        var options = new ProcessorLeaseOptions { ReplicaId = "   " };
+
+        options.EffectiveReplicaId.Should().Be(Environment.MachineName);
+    }
+
+    [Fact]
+    public void EffectiveReplicaId_returns_the_value_verbatim_when_set()
+    {
+        var options = new ProcessorLeaseOptions { ReplicaId = "pod-1" };
+
+        options.EffectiveReplicaId.Should().Be("pod-1");
+    }
+
+    [Fact]
+    public void EffectiveReplicaId_does_not_trim_surrounding_content()
+    {
+        // The guard is IsNullOrWhiteSpace, not a trim: a value with leading or trailing
+        // spaces is non-whitespace and is returned exactly as supplied.
+        var options = new ProcessorLeaseOptions { ReplicaId = " pod-1 " };
+
+        options.EffectiveReplicaId.Should().Be(" pod-1 ");
+    }
+
 }

@@ -1,4 +1,5 @@
 #nullable enable
+Alberto.Configuration.ProcessorLeaseOptions.EffectiveReplicaId.get -> string!
 Alberto.Subscriptions.ProjectionDeclaration<TState>.Handles(Alberto.IEvent! event) -> bool
 Alberto.Subscriptions.ProjectionVersion
 Alberto.Subscriptions.ProjectionVersion.Current.get -> int
