@@ -56,6 +56,8 @@ public sealed class PostgresStateStore<TState>(
         IEnumerable<string> documentIds,
         CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(documentIds);
+
         var ids = documentIds.ToList();
         if (ids.Count == 0)
             return new Dictionary<string, TState>();
@@ -126,6 +128,9 @@ public sealed class PostgresStateStore<TState>(
         IReadOnlyCollection<string> deletes,
         CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(upserts);
+        ArgumentNullException.ThrowIfNull(deletes);
+
         if (upserts.Count == 0 && deletes.Count == 0)
             return;
 

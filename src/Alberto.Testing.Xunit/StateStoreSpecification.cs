@@ -137,6 +137,31 @@ public abstract class StateStoreSpecification<TState>
         result.Should().BeEmpty();
     }
 
+    /// <summary>
+    /// A null collection is a caller bug, not an empty batch, and every adapter must say so the
+    /// same way. Without this the error mode drifts per adapter — one throwing
+    /// <see cref="ArgumentNullException"/> up front while another dereferences its way to a
+    /// <see cref="NullReferenceException"/> somewhere further in, after work may already have
+    /// happened.
+    /// </summary>
+    [Fact]
+    public async Task NullCollections_AreRejected()
+    {
+        var store = await CreateStore(NewProjectionType());
+
+        await FluentActions.Awaiting(() => store.LoadManyAsync(null!, Ct))
+            .Should().ThrowAsync<ArgumentNullException>()
+            .WithParameterName("documentIds");
+
+        await FluentActions.Awaiting(() => store.ApplyChangesAsync(null!, [], Ct))
+            .Should().ThrowAsync<ArgumentNullException>()
+            .WithParameterName("upserts");
+
+        await FluentActions.Awaiting(() => store.ApplyChangesAsync(new Dictionary<string, TState>(), null!, Ct))
+            .Should().ThrowAsync<ArgumentNullException>()
+            .WithParameterName("deletes");
+    }
+
     /// <summary>After an upsert, <c>LoadManyAsync</c> must return the stored state for the document ID.</summary>
     [Fact]
     public async Task ApplyChanges_Upsert_ThenLoadMany_ReturnsStoredState()

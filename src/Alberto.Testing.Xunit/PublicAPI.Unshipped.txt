@@ -1,6 +1,7 @@
 #nullable enable
 Alberto.Testing.Xunit.StateStoreSpecification<TState>.ApplyChanges_IsNotObservedPartiallyApplied() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.StateStoreSpecification<TState>.ApplyChanges_SameDocument_InUpsertsAndDeletes_DeleteWins() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.StateStoreSpecification<TState>.NullCollections_AreRejected() -> System.Threading.Tasks.Task!
 abstract Alberto.Testing.Xunit.StateStoreSpecification<TState>.CreateStore(string! projectionType, Alberto.Subscriptions.ProjectionVersion rebuildVersion = default(Alberto.Subscriptions.ProjectionVersion)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.IStateStore<TState>!>!
 virtual Alberto.Testing.Xunit.StateStoreSpecification<TState>.CreateStoreForTenant(string! projectionType, string! tenantId, Alberto.Subscriptions.ProjectionVersion rebuildVersion = default(Alberto.Subscriptions.ProjectionVersion)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.IStateStore<TState>!>!
 *REMOVED*abstract Alberto.Testing.Xunit.StateStoreSpecification<TState>.CreateStore(string! projectionType, System.Func<int>? rebuildVersion = null) -> System.Threading.Tasks.Task<Alberto.Subscriptions.IStateStore<TState>!>!

@@ -15,6 +15,7 @@ public interface IStateStore<TState>
     /// <param name="documentIds">The document IDs to load.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>Dictionary of document ID to state for found documents.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="documentIds"/> is null.</exception>
     Task<IReadOnlyDictionary<string, TState>> LoadManyAsync(
         IEnumerable<string> documentIds,
         CancellationToken ct = default);
@@ -38,10 +39,20 @@ public interface IStateStore<TState>
     /// EF suppresses the upsert so the delete runs uncontested — but the observable outcome is
     /// identical: a batch that intends to drop a document cannot accidentally resurrect it.
     /// </para>
+    /// <para>
+    /// <strong>Empty is not null.</strong> Either collection may be empty — an upsert-only or
+    /// delete-only batch is ordinary — but neither may be null. A null collection is a caller
+    /// bug rather than an empty batch, so every adapter rejects it up front with
+    /// <see cref="ArgumentNullException"/> instead of failing later, or differently, once the
+    /// batch is already under way.
+    /// </para>
     /// </remarks>
     /// <param name="upserts">States to insert or update, keyed by document ID.</param>
     /// <param name="deletes">Document IDs to delete.</param>
     /// <param name="ct">Cancellation token.</param>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="upserts"/> or <paramref name="deletes"/> is null.
+    /// </exception>
     Task ApplyChangesAsync(
         IReadOnlyDictionary<string, TState> upserts,
         IReadOnlyCollection<string> deletes,
