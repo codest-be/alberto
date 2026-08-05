@@ -7,8 +7,16 @@ public sealed class MessageMappingRegistry : IMessageMappingRegistry
 {
     private readonly Dictionary<string, EventToMessageMapper> _mappers = new();
 
+    /// <summary>
+    /// Creates a registry bound to <paramref name="moduleKey"/>.
+    /// Passing <c>null</c> is valid for scenarios where no keyed <see cref="EventSerializer"/>
+    /// exists (e.g. modules without upcasters) — extension-method mappers will resolve
+    /// <c>GetKeyedService&lt;EventSerializer&gt;(null)</c> and fall back to raw JSON.
+    /// </summary>
+    public MessageMappingRegistry(string? moduleKey) => ModuleKey = moduleKey;
+
     /// <inheritdoc/>
-    public string? ModuleKey { get; set; }
+    public string? ModuleKey { get; }
 
     /// <inheritdoc/>
     public void Map(string eventType, EventToMessageMapper mapper)

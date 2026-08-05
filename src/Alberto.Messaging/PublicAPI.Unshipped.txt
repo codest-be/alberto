@@ -1,1 +1,5 @@
 #nullable enable
+*REMOVED*Alberto.Messaging.IMessageMappingRegistry.ModuleKey.set -> void
+*REMOVED*Alberto.Messaging.MessageMappingRegistry.MessageMappingRegistry() -> void
+*REMOVED*Alberto.Messaging.MessageMappingRegistry.ModuleKey.set -> void
+Alberto.Messaging.MessageMappingRegistry.MessageMappingRegistry(string? moduleKey) -> void

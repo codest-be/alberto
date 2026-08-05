@@ -27,10 +27,10 @@ public interface IMessageMappingRegistry
 
     /// <summary>
     /// The DI service key of the Alberto module this registry belongs to.
-    /// Set automatically by <c>WithOutbox</c> during module registration.
+    /// Supplied at construction time by <c>WithOutbox</c> during module registration.
     /// Used by the convenience <c>Map</c> extension methods to resolve the module's
     /// keyed <see cref="EventSerializer"/> so that the upcaster chain runs before
     /// event deserialization.
     /// </summary>
-    string? ModuleKey { get; set; }
+    string? ModuleKey { get; }
 }
