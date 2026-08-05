@@ -50,8 +50,9 @@ public static class DcbModuleBuilderExtensions
     /// that everything resolved in the outer one is shared across tenants — a cross-tenant
     /// projection backed by a single in-memory dictionary depends on that.
     /// <para>
-    /// A store that ignores <see cref="ProjectionStoreContext.RebuildVersion"/> still works — it
-    /// simply cannot be rebuilt without downtime. A store that ignores the tenant does not:
+    /// A store that ignores <see cref="ProjectionStoreContext.RebuildVersion"/> (or always reads
+    /// version 1 from it) still works — it simply cannot be rebuilt without downtime. A store that
+    /// ignores the tenant does not:
     /// against a tenant-enabled schema it writes nothing and dead-letters every event — see the
     /// remarks on <c>PostgresStateStore</c>.
     /// </para>

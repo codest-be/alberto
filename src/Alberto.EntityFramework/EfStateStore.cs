@@ -28,21 +28,22 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
     private const int MaxWriteAttempts = 5;
 
     private readonly IDbContextFactory<TDbContext> _contextFactory;
-    private readonly Func<int> _rebuildVersion;
+    private readonly ProjectionVersion _rebuildVersion;
 
     /// <summary>
     /// Creates a new EF state store.
     /// </summary>
     /// <param name="contextFactory">Factory for creating DbContext instances.</param>
     /// <param name="rebuildVersion">
-    /// Resolves the version to read and write, on every operation rather than once, because a
-    /// promotion moves it underneath a long-lived store. Omit for a projection that is never
-    /// rebuilt; it then resolves to version 1 forever.
+    /// A live handle on the version to read and write. Its
+    /// <see cref="ProjectionVersion.Current"/> is resolved per operation rather than cached,
+    /// because a promotion moves it underneath a long-lived store. Omit for a projection that
+    /// is never rebuilt; it then resolves to version 1 forever.
     /// </param>
-    public EfStateStore(IDbContextFactory<TDbContext> contextFactory, Func<int>? rebuildVersion = null)
+    public EfStateStore(IDbContextFactory<TDbContext> contextFactory, ProjectionVersion rebuildVersion = default)
     {
         _contextFactory = contextFactory ?? throw new ArgumentNullException(nameof(contextFactory));
-        _rebuildVersion = rebuildVersion ?? ProjectionVersions.NeverRebuilt;
+        _rebuildVersion = rebuildVersion;
     }
 
     /// <inheritdoc/>
@@ -56,7 +57,7 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
 
         await using var context = await _contextFactory.CreateDbContextAsync(ct);
 
-        var version = _rebuildVersion();
+        var version = _rebuildVersion.Current;
         var entities = await context.Set<TEntity>()
             .AsNoTracking()
             .Where(e => ids.Contains(e.DocumentId) && e.RebuildVersion == version)
@@ -77,7 +78,7 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
     {
         await using var context = await _contextFactory.CreateDbContextAsync(ct);
 
-        var version = _rebuildVersion();
+        var version = _rebuildVersion.Current;
         return await context.Set<TEntity>()
             .AsNoTracking()
             .Where(e => e.RebuildVersion == version)
@@ -97,7 +98,7 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
 
         // Resolved once for the whole batch, so a promotion landing mid-batch cannot split
         // attempts, upserts, and deletes across two versions.
-        var version = _rebuildVersion();
+        var version = _rebuildVersion.Current;
         var delay = TimeSpan.FromMilliseconds(50);
 
         for (var attempt = 1; attempt <= MaxWriteAttempts; attempt++)

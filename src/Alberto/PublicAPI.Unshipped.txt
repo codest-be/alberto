@@ -1,2 +1,15 @@
 #nullable enable
 Alberto.Subscriptions.ProjectionDeclaration<TState>.Handles(Alberto.IEvent! event) -> bool
+Alberto.Subscriptions.ProjectionVersion
+Alberto.Subscriptions.ProjectionVersion.Current.get -> int
+Alberto.Subscriptions.ProjectionVersion.ProjectionVersion() -> void
+Alberto.Subscriptions.ProjectionStoreContext.RebuildVersion.get -> Alberto.Subscriptions.ProjectionVersion
+Alberto.Subscriptions.ProjectionVersions.ForLive(string! processorId) -> Alberto.Subscriptions.ProjectionVersion
+static Alberto.Subscriptions.ProjectionVersion.From(System.Func<int>! selector) -> Alberto.Subscriptions.ProjectionVersion
+static Alberto.Subscriptions.ProjectionVersion.NeverRebuilt.get -> Alberto.Subscriptions.ProjectionVersion
+static Alberto.Subscriptions.ProjectionVersions.LiveVersion(System.IServiceProvider! services, object? moduleKey, string! processorId) -> Alberto.Subscriptions.ProjectionVersion
+static readonly Alberto.Subscriptions.ProjectionVersions.NeverRebuilt -> Alberto.Subscriptions.ProjectionVersion
+*REMOVED*Alberto.Subscriptions.ProjectionStoreContext.RebuildVersion.get -> System.Func<int>!
+*REMOVED*Alberto.Subscriptions.ProjectionVersions.ForLive(string! processorId) -> System.Func<int>!
+*REMOVED*static Alberto.Subscriptions.ProjectionVersions.LiveVersion(System.IServiceProvider! services, object? moduleKey, string! processorId) -> System.Func<int>!
+*REMOVED*static readonly Alberto.Subscriptions.ProjectionVersions.NeverRebuilt -> System.Func<int>!

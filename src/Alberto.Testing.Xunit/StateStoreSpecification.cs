@@ -64,13 +64,15 @@ public abstract class StateStoreSpecification<TState>
 
     /// <summary>
     /// Creates a store scoped to <paramref name="projectionType"/>, optionally
-    /// with a custom rebuild-version selector.
+    /// with a custom rebuild-version handle.
     /// </summary>
     /// <param name="projectionType">The projection type name used as a scope discriminator.</param>
-    /// <param name="rebuildVersion">Optional selector that returns the active rebuild version.</param>
+    /// <param name="rebuildVersion">
+    /// Optional live version handle. Defaults to <see cref="ProjectionVersion.NeverRebuilt"/>.
+    /// </param>
     protected abstract Task<IStateStore<TState>> CreateStore(
         string projectionType,
-        Func<int>? rebuildVersion = null);
+        ProjectionVersion rebuildVersion = default);
 
     /// <summary>
     /// Creates a store scoped to both <paramref name="projectionType"/> and
@@ -80,11 +82,13 @@ public abstract class StateStoreSpecification<TState>
     /// </summary>
     /// <param name="projectionType">The projection type name used as a scope discriminator.</param>
     /// <param name="tenantId">The tenant identifier to scope the store to.</param>
-    /// <param name="rebuildVersion">Optional selector that returns the active rebuild version.</param>
+    /// <param name="rebuildVersion">
+    /// Optional live version handle. Defaults to <see cref="ProjectionVersion.NeverRebuilt"/>.
+    /// </param>
     protected virtual Task<IStateStore<TState>> CreateStoreForTenant(
         string projectionType,
         string tenantId,
-        Func<int>? rebuildVersion = null)
+        ProjectionVersion rebuildVersion = default)
         => throw new NotSupportedException(
             $"{GetType().Name} does not support tenant-scoped stores " +
             "(SupportsTenantIsolation is false).");
@@ -311,7 +315,7 @@ public abstract class StateStoreSpecification<TState>
     {
         var projType = NewProjectionType();
         var version = 1;
-        var store = await CreateStore(projType, () => version);
+        var store = await CreateStore(projType, ProjectionVersion.From(() => version));
         var docId = $"doc-{TestId}-vis";
 
         await store.ApplyChangesAsync(MakeDict(docId, 10), [], Ct);
@@ -335,7 +339,7 @@ public abstract class StateStoreSpecification<TState>
     {
         var projType = NewProjectionType();
         var version = 1;
-        var store = await CreateStore(projType, () => version);
+        var store = await CreateStore(projType, ProjectionVersion.From(() => version));
         var docId = $"doc-{TestId}-vdel";
 
         await store.ApplyChangesAsync(MakeDict(docId, 10), [], Ct);
@@ -360,7 +364,7 @@ public abstract class StateStoreSpecification<TState>
     {
         var projType = NewProjectionType();
         var version = 1;
-        var store = await CreateStore(projType, () => version);
+        var store = await CreateStore(projType, ProjectionVersion.From(() => version));
         var docId = $"doc-{TestId}-promo";
 
         await store.ApplyChangesAsync(MakeDict(docId, 10), [], Ct);  // live at v1
@@ -400,7 +404,7 @@ public abstract class StateStoreSpecification<TState>
 
         // Nothing at version 2 — holds for all adapters (different reason for InMemory).
         var version = 2;
-        var probe = await CreateStore(projType, () => version);
+        var probe = await CreateStore(projType, ProjectionVersion.From(() => version));
         (await probe.LoadManyAsync([docId], Ct))
             .Should().BeEmpty("the no-selector store writes at version 1, not 2");
 
@@ -571,7 +575,7 @@ public abstract class StateStoreSpecification<TState>
     public async Task ListRecent_ScopedToRebuildVersion()
     {
         var version = 1;
-        var store = await CreateStore(NewProjectionType(), () => version);
+        var store = await CreateStore(NewProjectionType(), ProjectionVersion.From(() => version));
 
         await store.ApplyChangesAsync(
             MakeDict($"doc-{TestId}-lr-v1", ListRecentValueBase + 41), [], Ct);

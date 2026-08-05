@@ -54,7 +54,7 @@ public sealed class EfProjectionAfterCommitRebuildTests(EfProjectionTestFixture 
         var (provider, seen) = BuildProvider();
 
         var rebuildable = provider.GetRequiredKeyedService<RebuildableProjection>(ModuleKey);
-        var shadow = rebuildable.CreateProcessor(() => 2);
+        var shadow = rebuildable.CreateProcessor(ProjectionVersion.From(() => 2));
 
         await ProcessAsync(shadow, EfTestEnvelopes.ForCounterIncremented(entityId, amount: 3, position: 1));
 
