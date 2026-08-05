@@ -1,8 +1,15 @@
 #nullable enable
+Alberto.Testing.Xunit.RebuildCoordinatorFacade
+Alberto.Testing.Xunit.RebuildCoordinatorFacade.RebuildCoordinatorFacade() -> void
+abstract Alberto.Testing.Xunit.RebuildCoordinatorFacade.CompleteAbortAsync(string! processorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.RebuildOutcome!>!
+abstract Alberto.Testing.Xunit.RebuildCoordinatorFacade.CompletePromotionAsync(string! processorId, bool force = false, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.RebuildOutcome!>!
+abstract Alberto.Testing.Xunit.RebuildCoordinatorFacade.DiscardStateVersionAsync(string! projectionType, int version, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+abstract Alberto.Testing.Xunit.RebuildCoordinatorFacade.MarkReadyAsync(string! processorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.ProjectionRebuildState!>!
 Alberto.Testing.Xunit.StateStoreSpecification<TState>.ApplyChanges_IsNotObservedPartiallyApplied() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.StateStoreSpecification<TState>.ApplyChanges_SameDocument_InUpsertsAndDeletes_DeleteWins() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.StateStoreSpecification<TState>.NullCollections_AreRejected() -> System.Threading.Tasks.Task!
 abstract Alberto.Testing.Xunit.StateStoreSpecification<TState>.CreateStore(string! projectionType, Alberto.Subscriptions.ProjectionVersion rebuildVersion = default(Alberto.Subscriptions.ProjectionVersion)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.IStateStore<TState>!>!
+abstract Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.GetCoordinator(Alberto.Subscriptions.IProjectionRebuildStore! store) -> Alberto.Testing.Xunit.RebuildCoordinatorFacade!
 virtual Alberto.Testing.Xunit.StateStoreSpecification<TState>.CreateStoreForTenant(string! projectionType, string! tenantId, Alberto.Subscriptions.ProjectionVersion rebuildVersion = default(Alberto.Subscriptions.ProjectionVersion)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.IStateStore<TState>!>!
 *REMOVED*abstract Alberto.Testing.Xunit.StateStoreSpecification<TState>.CreateStore(string! projectionType, System.Func<int>? rebuildVersion = null) -> System.Threading.Tasks.Task<Alberto.Subscriptions.IStateStore<TState>!>!
 *REMOVED*virtual Alberto.Testing.Xunit.StateStoreSpecification<TState>.CreateStoreForTenant(string! projectionType, string! tenantId, System.Func<int>? rebuildVersion = null) -> System.Threading.Tasks.Task<Alberto.Subscriptions.IStateStore<TState>!>!
