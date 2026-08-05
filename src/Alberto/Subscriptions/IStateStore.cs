@@ -2,7 +2,9 @@ namespace Alberto.Subscriptions;
 
 /// <summary>
 /// State storage used by projection processors.
-/// Each adapter owns the transaction required to apply a set of changes atomically.
+/// Each adapter owns the transaction required to apply a set of changes atomically;
+/// see <see cref="ApplyChangesAsync"/> for the exact atomicity guarantee every adapter
+/// must honour.
 /// </summary>
 /// <typeparam name="TState">The type of state being stored.</typeparam>
 public interface IStateStore<TState>
@@ -18,8 +20,25 @@ public interface IStateStore<TState>
         CancellationToken ct = default);
 
     /// <summary>
-    /// Applies upserts and deletes to the state store.
+    /// Applies upserts and deletes to the state store in one atomic batch.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>Atomicity.</strong> No concurrent read through this store observes the batch
+    /// partially applied. A reader sees either every upsert and delete in the batch or none —
+    /// never a subset. The boundary that enforces this is the adapter's own transaction or lock
+    /// region, not the caller's, which is why there is no <c>ITransaction</c> argument: the
+    /// guarantee cannot be delegated outward without losing it.
+    /// </para>
+    /// <para>
+    /// <strong>Same document ID in both collections.</strong> Delete wins. When a document ID
+    /// appears in both <paramref name="upserts"/> and <paramref name="deletes"/>, the document
+    /// is absent after the batch completes. The precise mechanism varies by adapter — Postgres
+    /// and InMemory execute the upsert first and the delete last within the same atomic boundary;
+    /// EF suppresses the upsert so the delete runs uncontested — but the observable outcome is
+    /// identical: a batch that intends to drop a document cannot accidentally resurrect it.
+    /// </para>
+    /// </remarks>
     /// <param name="upserts">States to insert or update, keyed by document ID.</param>
     /// <param name="deletes">Document IDs to delete.</param>
     /// <param name="ct">Cancellation token.</param>

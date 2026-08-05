@@ -697,4 +697,111 @@ public abstract class StateStoreSpecification<TState>
         result.Should().ContainKey(docId, "at least one concurrent write must have committed");
         ReadValue(result[docId]).Should().BeOneOf(1, 2);
     }
+
+    // ── Spec facts — ApplyChanges atomicity ───────────────────────────────────
+
+    /// <summary>
+    /// When the same document ID appears in both <c>upserts</c> and <c>deletes</c>, the
+    /// document must be absent after the batch — delete wins over upsert within one batch.
+    /// Both adapters run upserts before deletes inside the same transaction or lock region,
+    /// so the delete always executes last and the document cannot be accidentally resurrected.
+    /// </summary>
+    [Fact]
+    public async Task ApplyChanges_SameDocument_InUpsertsAndDeletes_DeleteWins()
+    {
+        var store = await CreateStore(NewProjectionType());
+        var docId = $"doc-{TestId}-delete-wins";
+
+        await store.ApplyChangesAsync(
+            new Dictionary<string, TState> { [docId] = MakeState(99) },
+            [docId],
+            Ct);
+
+        (await store.LoadManyAsync([docId], Ct)).Should().BeEmpty(
+            "delete wins when the same document ID appears in both upserts and deletes");
+    }
+
+    /// <summary>
+    /// A concurrent reader must never observe a batch half-applied: each read through the store
+    /// sees either the complete before-state or the complete after-state, never a mix of both.
+    /// The test is bounded by iteration count and structured so it fails deterministically
+    /// against an unsynchronised implementation — two document sets are swapped back and forth
+    /// in one thread while another thread asserts each observed snapshot is consistent.
+    /// </summary>
+    [Fact]
+    public async Task ApplyChanges_IsNotObservedPartiallyApplied()
+    {
+        const int n = 20;
+        const int writerIterations = 300;
+
+        var store = await CreateStore(NewProjectionType());
+
+        var beforeIds = Enumerable.Range(0, n)
+            .Select(i => $"doc-{TestId}-atom-before-{i}").ToArray();
+        var afterIds = Enumerable.Range(0, n)
+            .Select(i => $"doc-{TestId}-atom-after-{i}").ToArray();
+        var allIds = beforeIds.Concat(afterIds).ToList();
+
+        IReadOnlyDictionary<string, TState> beforeUpserts =
+            beforeIds.ToDictionary(id => id, _ => MakeState(1));
+        IReadOnlyDictionary<string, TState> afterUpserts =
+            afterIds.ToDictionary(id => id, _ => MakeState(2));
+
+        // Seed the initial "before" state so the reader has something to see from the start.
+        await store.ApplyChangesAsync(beforeUpserts, [], Ct);
+
+        // Written by the reader, read by both — Volatile rather than a plain bool because the
+        // two loops run on different thread-pool threads and neither takes a lock.
+        var partial = 0;
+
+        // Capture the cancellation token before entering Task.Run — TestContext.Current is
+        // thread-local and not available on the thread pool threads.
+        var ct = Ct;
+
+        // The reader runs until the writer stops rather than for a fixed count: against a
+        // remote adapter the two loops advance at very different rates, and a reader that
+        // outlasts the writer only re-reads a store nothing is changing any more.
+        using var writerDone = new CancellationTokenSource();
+
+        var writer = Task.Run(async () =>
+        {
+            try
+            {
+                for (var i = 0; i < writerIterations && Volatile.Read(ref partial) == 0; i++)
+                {
+                    // Flip the store from "before" documents to "after" documents in one batch.
+                    // An unsynchronised implementation exposes a window between the upsert loop
+                    // (which adds the "after" set) and the delete loop (which removes the
+                    // "before" set) where a reader observes both sets simultaneously.
+                    await store.ApplyChangesAsync(afterUpserts, beforeIds, ct);
+                    await store.ApplyChangesAsync(beforeUpserts, afterIds, ct);
+                }
+            }
+            finally
+            {
+                await writerDone.CancelAsync();
+            }
+        });
+
+        var reader = Task.Run(async () =>
+        {
+            while (!writerDone.IsCancellationRequested && Volatile.Read(ref partial) == 0)
+            {
+                var result = await store.LoadManyAsync(allIds, ct);
+                var hasBefore = beforeIds.Any(result.ContainsKey);
+                var hasAfter = afterIds.Any(result.ContainsKey);
+
+                // A consistent snapshot contains documents from exactly one of the two sets.
+                // Seeing both simultaneously is the partial-apply defect this fact guards.
+                if (hasBefore && hasAfter)
+                    Volatile.Write(ref partial, 1);
+            }
+        });
+
+        await Task.WhenAll(writer, reader);
+
+        (partial == 0).Should().BeTrue(
+            "a concurrent read must see either the complete before-state or the complete " +
+            "after-state, never documents from both sets at once");
+    }
 }

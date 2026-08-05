@@ -137,6 +137,13 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
             .Where(e => allDocIds.Contains(e.DocumentId) && e.RebuildVersion == version)
             .ToDictionaryAsync(e => e.DocumentId, ct);
 
+        // Delete-wins: a document ID present in both upserts and deletes must be absent
+        // after the batch. EF cannot express "insert then delete in one statement" the way
+        // the Postgres adapter does (upsert SQL followed by delete SQL in one transaction),
+        // so the same result is achieved by suppressing any upsert whose ID is also being
+        // deleted — the delete then runs uncontested, whether the row exists or not.
+        var deleteSet = deletes.Count > 0 ? new HashSet<string>(deletes) : null;
+
         foreach (var docId in deletes)
         {
             if (existingEntities.TryGetValue(docId, out var existing))
@@ -145,6 +152,9 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
 
         foreach (var (docId, newEntity) in upserts)
         {
+            if (deleteSet?.Contains(docId) == true)
+                continue; // delete wins; skip the upsert for this document
+
             newEntity.DocumentId = docId;
             newEntity.RebuildVersion = version;
             newEntity.UpdatedAt = DateTimeOffset.UtcNow;
