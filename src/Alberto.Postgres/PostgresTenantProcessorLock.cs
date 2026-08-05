@@ -14,6 +14,14 @@ public sealed class PostgresTenantProcessorLock : ITenantProcessorLock
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly SchemaQualifier _schema;
+    private readonly string? _moduleKey;
+
+    // In-memory tracking of which tenants each consumerId currently owns in this process.
+    // Updated synchronously with the DB operation so the observable gauge always reflects
+    // the last known ownership state. A consumer that releases all tenants gets a zero
+    // snapshot (not absent) — a stale non-zero gauge is worse than a visible zero.
+    private readonly Dictionary<string, HashSet<string>> _ownedByConsumer = new(StringComparer.Ordinal);
+    private readonly object _ownedLock = new();
 
     /// <summary>
     /// Creates a new PostgresTenantProcessorLock.
@@ -21,18 +29,39 @@ public sealed class PostgresTenantProcessorLock : ITenantProcessorLock
     /// <param name="dataSource">The PostgreSQL data source.</param>
     /// <param name="schema">The database schema name (e.g., "orders"). Can be null for default schema.</param>
     /// <param name="leaseDuration">How long a lease is valid before expiring. Default is 60 seconds.</param>
+    /// <param name="moduleKey">
+    /// The module key used to tag <c>alberto.owned_tenant_count</c> gauge measurements.
+    /// When null the gauge is not updated — production registrations always supply this via
+    /// <see cref="PostgresBackendDescriptor"/>.
+    /// </param>
     public PostgresTenantProcessorLock(
         NpgsqlDataSource dataSource,
         string? schema = null,
-        TimeSpan? leaseDuration = null)
+        TimeSpan? leaseDuration = null,
+        string? moduleKey = null)
     {
         _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
         _schema = new SchemaQualifier(schema);
         LeaseDuration = leaseDuration ?? TimeSpan.FromSeconds(60);
+        _moduleKey = moduleKey;
     }
 
     /// <inheritdoc/>
     public TimeSpan LeaseDuration { get; }
+
+    // Upserts the owned-tenant snapshot for consumerId and emits the gauge.
+    // No-op when _moduleKey is null (tests that don't care about the gauge
+    // can skip passing moduleKey to keep their construction site simple).
+    private void RecordOwnership(string consumerId)
+    {
+        if (_moduleKey is null) return;
+        int count;
+        lock (_ownedLock)
+        {
+            count = _ownedByConsumer.TryGetValue(consumerId, out var set) ? set.Count : 0;
+        }
+        AlbertoMetrics.RecordTenantOwnership(consumerId, _moduleKey, count);
+    }
 
     /// <inheritdoc/>
     public async Task<ITenantLease?> TryAcquireForTenantAsync(
@@ -77,11 +106,20 @@ public sealed class PostgresTenantProcessorLock : ITenantProcessorLock
         // per-tenant question ("did tenant X get its lease?") is a trace/log question about one
         // event; the aggregate question ("is this consumer's failure rate rising?") is what a
         // counter is for, and consumer.id answers it. For tenant fanout without the cardinality,
-        // see the alberto.owned_tenant_count and alberto.tenant_cooldown_count gauges.
+        // see the alberto.owned_tenant_count gauge.
         if (await reader.ReadAsync(ct))
         {
             AlbertoMetrics.TenantLocksAcquired.Add(1, new TagList { { "consumer.id", consumerId } });
             var actualExpiresAt = reader.GetDateTime(0);
+
+            lock (_ownedLock)
+            {
+                if (!_ownedByConsumer.TryGetValue(consumerId, out var set))
+                    _ownedByConsumer[consumerId] = set = new HashSet<string>(StringComparer.Ordinal);
+                set.Add(tenantId);
+            }
+            RecordOwnership(consumerId);
+
             return new TenantLease(tenantId, new DateTimeOffset(actualExpiresAt, TimeSpan.Zero));
         }
 
@@ -116,6 +154,14 @@ public sealed class PostgresTenantProcessorLock : ITenantProcessorLock
             renewedTenants.Add(reader.GetString(0));
         }
 
+        // Replace the in-memory set with exactly what the database renewed.
+        // Tenants that were not renewed (lease stolen or expired) fall off automatically.
+        lock (_ownedLock)
+        {
+            _ownedByConsumer[consumerId] = new HashSet<string>(renewedTenants, StringComparer.Ordinal);
+        }
+        RecordOwnership(consumerId);
+
         return renewedTenants;
     }
 
@@ -133,6 +179,13 @@ public sealed class PostgresTenantProcessorLock : ITenantProcessorLock
         cmd.Parameters.AddWithValue("tenant_id", tenantId);
 
         await cmd.ExecuteNonQueryAsync(ct);
+
+        lock (_ownedLock)
+        {
+            if (_ownedByConsumer.TryGetValue(consumerId, out var set))
+                set.Remove(tenantId);
+        }
+        RecordOwnership(consumerId);
     }
 
     /// <inheritdoc/>
@@ -152,6 +205,13 @@ public sealed class PostgresTenantProcessorLock : ITenantProcessorLock
         cmd.Parameters.AddWithValue("replica_id", replicaId);
 
         await cmd.ExecuteNonQueryAsync(ct);
+
+        lock (_ownedLock)
+        {
+            if (_ownedByConsumer.TryGetValue(consumerId, out var set))
+                set.Remove(tenantId);
+        }
+        RecordOwnership(consumerId);
     }
 
     /// <inheritdoc/>
@@ -168,6 +228,14 @@ public sealed class PostgresTenantProcessorLock : ITenantProcessorLock
         cmd.Parameters.AddWithValue("replica_id", replicaId);
 
         await cmd.ExecuteNonQueryAsync(ct);
+
+        // Emit a zero snapshot rather than removing the entry: a stale non-zero gauge is
+        // worse than a visible zero, and zero is the correct answer after a full release.
+        lock (_ownedLock)
+        {
+            _ownedByConsumer[consumerId] = new HashSet<string>(StringComparer.Ordinal);
+        }
+        RecordOwnership(consumerId);
     }
 
     /// <inheritdoc/>

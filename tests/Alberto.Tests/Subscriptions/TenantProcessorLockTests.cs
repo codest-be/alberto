@@ -379,6 +379,68 @@ public class TenantProcessorLockTests(PostgresFixture fixture) : IClassFixture<P
         await lockManager.ReleaseLeaseAsync(consumerId, tenantId, TestContext.Current.CancellationToken);
     }
 
+    // ── Ownership gauge wiring ───────────────────────────────────────────────
+    //
+    // RecordTenantOwnership has no runtime callers except PostgresTenantProcessorLock.
+    // The integration test below is the only place the full acquire → gauge → release
+    // flow can be driven. MetricTagContractTests pins the tag contract; this test pins
+    // that the wiring exists at all.
+
+    [Fact]
+    public async Task OwnedTenantCount_gauge_reflects_acquisition_and_full_release()
+    {
+        const string moduleKey = "orders";
+        var lockManager = new PostgresTenantProcessorLock(fixture.DataSource, null, null, moduleKey);
+        var consumerId = $"consumer-{Guid.NewGuid():N}";
+        var replicaId = $"replica-{Guid.NewGuid():N}";
+        var tenants = Enumerable.Range(1, 3).Select(_ => $"tenant-{Guid.NewGuid():N}").ToList();
+
+        // Acquire 3 tenants with a lock that has a moduleKey wired to the gauge.
+        foreach (var tenantId in tenants)
+            Assert.NotNull(await lockManager.TryAcquireForTenantAsync(consumerId, tenantId, replicaId, TestContext.Current.CancellationToken));
+
+        // After acquisition the observable gauge must show 3 for this consumer.
+        var afterAcquire = CollectGaugeMeasurements<int>("alberto.owned_tenant_count");
+        var myAfterAcquire = afterAcquire
+            .Where(m => m.Tags.Any(kv => kv.Key == "consumer.id" && (string?)kv.Value == consumerId))
+            .ToList();
+        var afterAcquireMeasurement = Assert.Single(myAfterAcquire);
+        Assert.Equal(3, afterAcquireMeasurement.Value);
+
+        // Release all leases.
+        await lockManager.ReleaseAllLeasesAsync(consumerId, replicaId, TestContext.Current.CancellationToken);
+
+        // After full release the gauge must emit zero (not be absent): a stale non-zero
+        // is worse than a visible zero, and zero is the correct answer once all tenants
+        // are handed back.
+        var afterRelease = CollectGaugeMeasurements<int>("alberto.owned_tenant_count");
+        var myAfterRelease = afterRelease
+            .Where(m => m.Tags.Any(kv => kv.Key == "consumer.id" && (string?)kv.Value == consumerId))
+            .ToList();
+        var afterReleaseMeasurement = Assert.Single(myAfterRelease);
+        Assert.Equal(0, afterReleaseMeasurement.Value);
+    }
+
+    /// <summary>
+    /// Collects a single round of measurements from an observable gauge.
+    /// </summary>
+    private static List<(T Value, KeyValuePair<string, object?>[] Tags)> CollectGaugeMeasurements<T>(
+        string instrumentName) where T : struct
+    {
+        var measurements = new List<(T Value, KeyValuePair<string, object?>[] Tags)>();
+        using var listener = new MeterListener();
+        listener.InstrumentPublished = (instrument, l) =>
+        {
+            if (instrument.Meter.Name == AlbertoMetrics.Name && instrument.Name == instrumentName)
+                l.EnableMeasurementEvents(instrument);
+        };
+        listener.SetMeasurementEventCallback<T>((_, value, tags, _) =>
+            measurements.Add((value, tags.ToArray())));
+        listener.Start();
+        listener.RecordObservableInstruments();
+        return measurements;
+    }
+
     /// <summary>
     /// Runs <paramref name="act"/> with a listener on <paramref name="instrumentName"/> and returns
     /// the tags of the single measurement carrying <paramref name="consumerId"/>. Filtering by the

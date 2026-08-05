@@ -130,13 +130,7 @@ public static class AlbertoMetrics
     public static readonly ObservableGauge<int> OwnedTenantCount =
         Meter.CreateObservableGauge("alberto.owned_tenant_count", GetOwnedTenantMeasurements, "tenants", "Number of tenants currently owned by this consumer");
 
-    /// <summary>
-    /// Observable gauge for number of tenants in lock cooldown.
-    /// </summary>
-    public static readonly ObservableGauge<int> TenantCooldownCount =
-        Meter.CreateObservableGauge("alberto.tenant_cooldown_count", GetCooldownTenantMeasurements, "tenants", "Number of tenants in lock cooldown");
-
-    private record TenantOwnershipSnapshot(string ConsumerId, string ModuleKey, int OwnedCount, int CooldownCount);
+    private record TenantOwnershipSnapshot(string ConsumerId, string ModuleKey, int OwnedCount);
 
     private static readonly List<TenantOwnershipSnapshot> _tenantOwnershipSnapshots = [];
     private static readonly object _tenantOwnershipLock = new();
@@ -151,18 +145,8 @@ public static class AlbertoMetrics
         }
     }
 
-    private static IEnumerable<Measurement<int>> GetCooldownTenantMeasurements()
-    {
-        lock (_tenantOwnershipLock)
-        {
-            return _tenantOwnershipSnapshots
-                .Select(s => new Measurement<int>(s.CooldownCount, TenantOwnershipTags(s)))
-                .ToArray();
-        }
-    }
-
     /// <summary>
-    /// Builds the tag set for both tenant-ownership gauges.
+    /// Builds the tag set for the tenant-ownership gauge.
     /// Uses <c>consumer.id</c> (the instance that owns the leases) and <c>module</c>
     /// (matching every other consume-path instrument so they can be joined in queries).
     /// For sharded modules the physical key is split: <c>module</c> carries the logical
@@ -184,14 +168,14 @@ public static class AlbertoMetrics
     }
 
     /// <summary>
-    /// Updates tenant ownership metrics for observable gauges.
+    /// Updates tenant ownership metrics for the <c>alberto.owned_tenant_count</c> observable gauge.
     /// </summary>
-    public static void RecordTenantOwnership(string consumerId, string moduleKey, int ownedCount, int cooldownCount)
+    public static void RecordTenantOwnership(string consumerId, string moduleKey, int ownedCount)
     {
         lock (_tenantOwnershipLock)
         {
             _tenantOwnershipSnapshots.RemoveAll(s => s.ConsumerId == consumerId);
-            _tenantOwnershipSnapshots.Add(new TenantOwnershipSnapshot(consumerId, moduleKey, ownedCount, cooldownCount));
+            _tenantOwnershipSnapshots.Add(new TenantOwnershipSnapshot(consumerId, moduleKey, ownedCount));
         }
     }
 

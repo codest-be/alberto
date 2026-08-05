@@ -262,7 +262,7 @@ public sealed record PostgresBackendDescriptor(PostgresOptions Options) : IAlber
         {
             var opts = runtime.Resolve(sp);
             var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
-            return new PostgresTenantProcessorLock(dataSource, opts.Schema, opts.LeaseDuration);
+            return new PostgresTenantProcessorLock(dataSource, opts.Schema, opts.LeaseDuration, moduleKey);
         });
 
         // Processor lease manager.
