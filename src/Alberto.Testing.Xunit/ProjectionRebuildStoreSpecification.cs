@@ -12,11 +12,12 @@ namespace Alberto.Testing.Xunit;
 /// contract that all implementations must satisfy.
 ///
 /// <para>
-/// Several facts exercise coordinator-only transitions by casting the returned store to
-/// <c>IProjectionRebuildCoordinatorStore</c>. Both adapters ship as a single class that
-/// implements both interfaces, so the cast succeeds. When a future adapter intentionally
-/// separates them, override <see cref="SupportsCoordinatorOperations"/> to <see langword="false"/>
-/// and those facts will be skipped automatically.
+/// Several facts exercise coordinator-only transitions. Override <see cref="GetCoordinator"/>
+/// to return a <see cref="RebuildCoordinatorFacade"/> backed by the object in your adapter
+/// that handles those transitions. First-party adapters implement both interfaces on the same
+/// class and satisfy this with a one-line cast; a third-party adapter may use a separate
+/// coordinator object. Set <see cref="SupportsCoordinatorOperations"/> to
+/// <see langword="false"/> to skip coordinator facts entirely.
 /// </para>
 /// </summary>
 public abstract class ProjectionRebuildStoreSpecification
@@ -43,20 +44,29 @@ public abstract class ProjectionRebuildStoreSpecification
     // ── Capability hooks ─────────────────────────────────────────────────────
 
     /// <summary>
-    /// True when the returned store also implements the internal coordinator interface and
-    /// supports <c>MarkReady</c>, <c>CompletePromotion</c>, <c>CompleteAbort</c>, and
-    /// <c>DiscardStateVersion</c>. Both shipped adapters return <see langword="true"/>.
+    /// True when the store supports <c>MarkReady</c>, <c>CompletePromotion</c>,
+    /// <c>CompleteAbort</c>, and <c>DiscardStateVersion</c> via
+    /// <see cref="GetCoordinator"/>. Both shipped adapters return <see langword="true"/>.
     /// </summary>
     protected virtual bool SupportsCoordinatorOperations => true;
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Casts the store to <c>IProjectionRebuildCoordinatorStore</c>. Only called from facts
-    /// that first verify <see cref="SupportsCoordinatorOperations"/>.
+    /// Returns the <see cref="RebuildCoordinatorFacade"/> for the given store. Only called
+    /// from facts that first check <see cref="SupportsCoordinatorOperations"/>.
     /// </summary>
-    private static IProjectionRebuildCoordinatorStore AsCoordinator(IProjectionRebuildStore store) =>
-        (IProjectionRebuildCoordinatorStore)store;
+    /// <remarks>
+    /// Override this method to return a <see cref="RebuildCoordinatorFacade"/> that delegates
+    /// to the object responsible for coordinator-only transitions in your adapter. First-party
+    /// adapters (<c>InMemoryProjectionRebuildStore</c> and <c>PostgresProjectionRebuildStore</c>)
+    /// implement the coordinator interface on the same class as the public store, so their
+    /// overrides are a single-line cast wrapped in <c>RebuildCoordinatorFacade.FromCoordinatorStore</c>.
+    /// A third-party adapter that separates coordinator operations onto a different object
+    /// subclasses <see cref="RebuildCoordinatorFacade"/> directly, without needing to reference
+    /// the internal interface at all.
+    /// </remarks>
+    protected abstract RebuildCoordinatorFacade GetCoordinator(IProjectionRebuildStore store);
 
     // ── GetAsync ─────────────────────────────────────────────────────────────
 
@@ -158,7 +168,7 @@ public abstract class ProjectionRebuildStoreSpecification
 
         var store = await CreateStore();
         await store.StartAsync(ProcessorId, ProjectionType, targetPosition: 100, Ct);
-        await AsCoordinator(store).MarkReadyAsync(ProcessorId, Ct);
+        await GetCoordinator(store).MarkReadyAsync(ProcessorId, Ct);
 
         var act = () => store.StartAsync(ProcessorId, ProjectionType, targetPosition: 200, Ct);
 
@@ -182,7 +192,7 @@ public abstract class ProjectionRebuildStoreSpecification
 
         // Start and immediately abort.
         await store.StartAsync(ProcessorId, ProjectionType, targetPosition: 100, Ct);
-        await AsCoordinator(store).CompleteAbortAsync(ProcessorId, Ct);
+        await GetCoordinator(store).CompleteAbortAsync(ProcessorId, Ct);
 
         // Start a second rebuild.
         var second = await store.StartAsync(ProcessorId, ProjectionType, targetPosition: 200, Ct);
@@ -285,7 +295,7 @@ public abstract class ProjectionRebuildStoreSpecification
         var store = await CreateStore();
         var started = await store.StartAsync(ProcessorId, ProjectionType, targetPosition: 100, Ct);
 
-        var state = await AsCoordinator(store).MarkReadyAsync(ProcessorId, Ct);
+        var state = await GetCoordinator(store).MarkReadyAsync(ProcessorId, Ct);
 
         state.Status.Should().Be(RebuildStatus.Ready);
         state.ActiveVersion.Should().Be(started.ActiveVersion);
@@ -305,7 +315,7 @@ public abstract class ProjectionRebuildStoreSpecification
 
         var store = await CreateStore();
 
-        var act = () => AsCoordinator(store).MarkReadyAsync(ProcessorId, Ct);
+        var act = () => GetCoordinator(store).MarkReadyAsync(ProcessorId, Ct);
 
         await act.Should().ThrowAsync<RebuildStateException>();
     }
@@ -322,7 +332,7 @@ public abstract class ProjectionRebuildStoreSpecification
             Assert.Skip("Requires coordinator operations.");
 
         var store = await CreateStore();
-        var coordinator = AsCoordinator(store);
+        var coordinator = GetCoordinator(store);
         await store.StartAsync(ProcessorId, ProjectionType, targetPosition: 100, Ct);
         await coordinator.MarkReadyAsync(ProcessorId, Ct);
         await coordinator.CompletePromotionAsync(ProcessorId, force: false, Ct);
@@ -344,7 +354,7 @@ public abstract class ProjectionRebuildStoreSpecification
             Assert.Skip("Requires coordinator operations.");
 
         var store = await CreateStore();
-        var coordinator = AsCoordinator(store);
+        var coordinator = GetCoordinator(store);
         await store.StartAsync(ProcessorId, ProjectionType, targetPosition: 100, Ct);
         await coordinator.CompleteAbortAsync(ProcessorId, Ct);
 
@@ -367,7 +377,7 @@ public abstract class ProjectionRebuildStoreSpecification
             Assert.Skip("Requires coordinator operations.");
 
         var store = await CreateStore();
-        var coordinator = AsCoordinator(store);
+        var coordinator = GetCoordinator(store);
         var started = await store.StartAsync(ProcessorId, ProjectionType, targetPosition: 100, Ct);
         await coordinator.MarkReadyAsync(ProcessorId, Ct);
 
@@ -394,7 +404,7 @@ public abstract class ProjectionRebuildStoreSpecification
         var store = await CreateStore();
         await store.StartAsync(ProcessorId, ProjectionType, targetPosition: 100, Ct);
 
-        var act = () => AsCoordinator(store).CompletePromotionAsync(ProcessorId, force: false, Ct);
+        var act = () => GetCoordinator(store).CompletePromotionAsync(ProcessorId, force: false, Ct);
 
         await act.Should().ThrowAsync<RebuildStateException>();
     }
@@ -410,7 +420,7 @@ public abstract class ProjectionRebuildStoreSpecification
             Assert.Skip("Requires coordinator operations.");
 
         var store = await CreateStore();
-        var coordinator = AsCoordinator(store);
+        var coordinator = GetCoordinator(store);
         var started = await store.StartAsync(ProcessorId, ProjectionType, targetPosition: 100, Ct);
 
         var outcome = await coordinator.CompletePromotionAsync(ProcessorId, force: true, Ct);
@@ -433,7 +443,7 @@ public abstract class ProjectionRebuildStoreSpecification
 
         var store = await CreateStore();
 
-        var act = () => AsCoordinator(store).CompletePromotionAsync(ProcessorId, force: true, Ct);
+        var act = () => GetCoordinator(store).CompletePromotionAsync(ProcessorId, force: true, Ct);
 
         await act.Should().ThrowAsync<RebuildStateException>(
             "force overrides an unfinished rebuild, not the absence of one");
@@ -454,7 +464,7 @@ public abstract class ProjectionRebuildStoreSpecification
             Assert.Skip("Requires coordinator operations.");
 
         var store = await CreateStore();
-        var coordinator = AsCoordinator(store);
+        var coordinator = GetCoordinator(store);
         var started = await store.StartAsync(ProcessorId, ProjectionType, targetPosition: 100, Ct);
 
         var outcome = await coordinator.CompleteAbortAsync(ProcessorId, Ct);
@@ -478,7 +488,7 @@ public abstract class ProjectionRebuildStoreSpecification
 
         var store = await CreateStore();
 
-        var act = () => AsCoordinator(store).CompleteAbortAsync(ProcessorId, Ct);
+        var act = () => GetCoordinator(store).CompleteAbortAsync(ProcessorId, Ct);
 
         await act.Should().ThrowAsync<RebuildStateException>();
     }
@@ -498,7 +508,7 @@ public abstract class ProjectionRebuildStoreSpecification
             Assert.Skip("Requires coordinator operations.");
 
         var store = await CreateStore();
-        var coordinator = AsCoordinator(store);
+        var coordinator = GetCoordinator(store);
         await store.StartAsync(ProcessorId, ProjectionType, targetPosition: 100, Ct);
         await coordinator.MarkReadyAsync(ProcessorId, Ct);
         var outcome = await coordinator.CompletePromotionAsync(ProcessorId, force: false, Ct);
@@ -523,7 +533,7 @@ public abstract class ProjectionRebuildStoreSpecification
             Assert.Skip("Requires coordinator operations.");
 
         var store = await CreateStore();
-        var coordinator = AsCoordinator(store);
+        var coordinator = GetCoordinator(store);
         await store.StartAsync(ProcessorId, ProjectionType, targetPosition: 100, Ct);
         var outcome = await coordinator.CompleteAbortAsync(ProcessorId, Ct);
 
@@ -549,7 +559,7 @@ public abstract class ProjectionRebuildStoreSpecification
             Assert.Skip("Requires coordinator operations.");
 
         var store = await CreateStore();
-        var coordinator = AsCoordinator(store);
+        var coordinator = GetCoordinator(store);
 
         var first = await store.StartAsync(ProcessorId, ProjectionType, targetPosition: 100, Ct);
         await coordinator.MarkReadyAsync(ProcessorId, Ct);

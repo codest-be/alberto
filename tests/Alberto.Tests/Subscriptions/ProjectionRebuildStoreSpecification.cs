@@ -16,6 +16,9 @@ public sealed class InMemoryProjectionRebuildStoreSpecificationTests
 {
     protected override Task<IProjectionRebuildStore> CreateStore() =>
         Task.FromResult<IProjectionRebuildStore>(new InMemoryProjectionRebuildStore());
+
+    protected override RebuildCoordinatorFacade GetCoordinator(IProjectionRebuildStore store) =>
+        new RebuildCoordinatorFacade.FromCoordinatorStore((IProjectionRebuildCoordinatorStore)store);
 }
 
 /// <summary>
@@ -31,4 +34,7 @@ public sealed class PostgresProjectionRebuildStoreSpecificationTests(
     protected override Task<IProjectionRebuildStore> CreateStore() =>
         Task.FromResult<IProjectionRebuildStore>(
             new PostgresProjectionRebuildStore(fixture.DataSource));
+
+    protected override RebuildCoordinatorFacade GetCoordinator(IProjectionRebuildStore store) =>
+        new RebuildCoordinatorFacade.FromCoordinatorStore((IProjectionRebuildCoordinatorStore)store);
 }
