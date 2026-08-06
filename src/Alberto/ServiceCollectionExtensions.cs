@@ -223,7 +223,7 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<IHostedService>(sp => new OrphanCheckpointHostedService(
             sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>().Get(serviceKey),
-            sp.GetKeyedService<ICheckpointStore>(serviceKey) is CachingCheckpointStore caching ? caching.AsInventory : sp.GetKeyedService<ICheckpointStore>(serviceKey) as ICheckpointInventory,
+            sp.GetKeyedService<ICheckpointStore>(serviceKey) is ICheckpointInventory { CanEnumerate: true } inv ? inv : null,
             sp.GetService<ILogger<OrphanCheckpointHostedService>>()
                 ?? NullLogger<OrphanCheckpointHostedService>.Instance));
 
