@@ -9,6 +9,7 @@ using Alberto.Tenancy;
 using Alberto.Testing;
 using Alberto.Upcasting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Xunit;
 
@@ -138,6 +139,103 @@ public class OutboxHandlerTests
         Assert.Equal(OutboxHandler.ProcessorIdValue, declaration.ProcessorId);
         Assert.Equal(ProcessorKind.Reactor, declaration.Kind);
         Assert.Equal(ProcessorBatchingMode.Required, declaration.Execution.BatchingMode);
+    }
+
+    #endregion
+
+    #region WithOutbox registration contracts
+
+    // Helper: drives all deferred registrations from builder into a fresh ServiceCollection
+    // and builds a provider, following the same pattern as
+    // WithOutbox_in_sharded_module_each_shard_resolves_its_own_keyed_serializer.
+    private static ServiceProvider DriveRegistrations(DcbModuleBuilder builder, string moduleKey)
+    {
+        var services = new ServiceCollection();
+        var def = new AlbertoModuleDefinition { ModuleKey = moduleKey };
+        foreach (var reg in builder.DeferredRegistrations)
+            reg(new AlbertoModuleContext(services, def));
+        return services.BuildServiceProvider();
+    }
+
+    [Fact]
+    public void WithOutbox_ThrowsWhenConfigureMappingsIsNull()
+    {
+        var builder = new DcbModuleBuilder("test");
+        var store = new InMemoryOutboxStore();
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            builder.WithOutbox(null!, store));
+        Assert.Equal("configureMappings", ex.ParamName);
+    }
+
+    [Fact]
+    public void WithOutbox_ThrowsWhenOutboxStoreIsNull()
+    {
+        var builder = new DcbModuleBuilder("test");
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            builder.WithOutbox(_ => { }, null!));
+        Assert.Equal("outboxStore", ex.ParamName);
+    }
+
+    /// <summary>
+    /// Deleting the <c>AddKeyedSingleton&lt;IEventProcessor&gt;</c> call at L83 produces a
+    /// silent no-op: <c>WithOutbox</c> still returns the builder, the module still builds,
+    /// but no event is ever written to the outbox. This test pins the registration.
+    /// </summary>
+    [Fact]
+    public void WithOutbox_RegistersOutboxHandlerAsKeyedEventProcessor()
+    {
+        const string key = "orders";
+        var builder = new DcbModuleBuilder(key);
+        builder.WithOutbox(_ => { }, new InMemoryOutboxStore());
+
+        using var provider = DriveRegistrations(builder, key);
+
+        var processors = provider.GetKeyedServices<IEventProcessor>(key).ToList();
+        Assert.Single(processors);
+        Assert.IsType<OutboxHandler>(processors[0]);
+    }
+
+    /// <summary>
+    /// The XML doc states: "The retention sweep is registered whether or not a transport is."
+    /// This pins that stated contract even when no transport is passed.
+    /// </summary>
+    [Fact]
+    public void WithOutbox_RegistersRetentionServiceEvenWithoutTransport()
+    {
+        const string key = "orders";
+        var builder = new DcbModuleBuilder(key);
+        builder.WithOutbox(_ => { }, new InMemoryOutboxStore());
+
+        using var provider = DriveRegistrations(builder, key);
+
+        var hostedServices = provider.GetServices<IHostedService>().ToList();
+        Assert.Contains(hostedServices, s => s is OutboxRetentionService);
+    }
+
+    [Fact]
+    public void WithOutbox_RegistersRelayWhenTransportProvided()
+    {
+        const string key = "orders";
+        var builder = new DcbModuleBuilder(key);
+        builder.WithOutbox(_ => { }, new InMemoryOutboxStore(), transport: new InMemoryTransport());
+
+        using var provider = DriveRegistrations(builder, key);
+
+        var hostedServices = provider.GetServices<IHostedService>().ToList();
+        Assert.Contains(hostedServices, s => s is OutboxRelay);
+    }
+
+    [Fact]
+    public void WithOutbox_DoesNotRegisterRelayWhenNoTransport()
+    {
+        const string key = "orders";
+        var builder = new DcbModuleBuilder(key);
+        builder.WithOutbox(_ => { }, new InMemoryOutboxStore());
+
+        using var provider = DriveRegistrations(builder, key);
+
+        var hostedServices = provider.GetServices<IHostedService>().ToList();
+        Assert.DoesNotContain(hostedServices, s => s is OutboxRelay);
     }
 
     #endregion
