@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Alberto.Postgres;
+using Alberto.TestInfrastructure;
 using Alberto.Tests.EntityFramework;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -116,9 +117,18 @@ public sealed class PostgresCluster : IAsyncLifetime
     /// <summary>Postgres caps identifiers at 63 bytes.</summary>
     private const int MaxIdentifierLength = 63;
 
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:16-alpine")
-        .WithCommand("-c", $"max_connections={MaxConnections}")
-        .Build();
+    private static PostgreSqlContainer NewContainer() =>
+        new PostgreSqlBuilder("postgres:16-alpine")
+            .WithCommand("-c", $"max_connections={MaxConnections}")
+            .Build();
+
+    /// <remarks>
+    /// Assigned by <see cref="StartContainerAsync"/> rather than at construction, because
+    /// <see cref="ContainerStartup.StartNewAsync"/> may discard a container whose host port
+    /// bind lost a race and build another. Null until the first successful start, which is
+    /// also what <see cref="DisposeAsync"/> checks.
+    /// </remarks>
+    private PostgreSqlContainer? _container;
 
     private readonly ConcurrentDictionary<string, Lazy<Task>> _templates = new();
 
@@ -141,7 +151,7 @@ public sealed class PostgresCluster : IAsyncLifetime
 
     private async Task StartContainerAsync()
     {
-        await _container.StartAsync();
+        _container = await ContainerStartup.StartNewAsync(NewContainer);
         _adminConnectionString = _container.GetConnectionString();
     }
 
@@ -234,10 +244,12 @@ public sealed class PostgresCluster : IAsyncLifetime
 
     // The cloned databases are not dropped: the container is torn down at the end of the run
     // and takes all of them with it. A run that never asked for a database never started the
-    // container, and must not reach for Docker on the way out either.
+    // container, and must not reach for Docker on the way out either — which is what the null
+    // check is for. It also covers a start that failed outright, where there is nothing to
+    // dispose and a NullReferenceException here would bury the real error.
     public async ValueTask DisposeAsync()
     {
-        if (_start.IsValueCreated)
+        if (_container is not null)
         {
             await _container.DisposeAsync();
         }

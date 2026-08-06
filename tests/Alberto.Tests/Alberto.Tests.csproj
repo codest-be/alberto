@@ -11,6 +11,14 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <!-- Shared with Alberto.Tests.Messaging.Rebus and Alberto.Benchmarks — the three projects
+             that start containers, none of which references the others. Linked rather than given a
+             project of its own: it is one static class, and a project would make the benchmarks
+             depend on a test assembly. -->
+        <Compile Include="../Shared/ContainerStartup.cs" Link="Infrastructure/ContainerStartup.cs" />
+    </ItemGroup>
+
+    <ItemGroup>
         <ProjectReference Include="../../src/Alberto/Alberto.csproj" />
         <ProjectReference Include="../../src/Alberto.Commands/Alberto.Commands.csproj" />
         <!-- Referenced as a plain assembly, not as OutputItemType="Analyzer": the tests instantiate

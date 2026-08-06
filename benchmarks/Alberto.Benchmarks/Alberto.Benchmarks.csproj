@@ -15,6 +15,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- See tests/Shared/ContainerStartup.cs — shared with Alberto.Tests and
+         Alberto.Tests.Messaging.Rebus. -->
+    <Compile Include="../../tests/Shared/ContainerStartup.cs" Link="Harness/ContainerStartup.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="../../src/Alberto/Alberto.csproj" />
     <ProjectReference Include="../../src/Alberto.Postgres/Alberto.Postgres.csproj" />
     <ProjectReference Include="../Alberto.Benchmarks.Core/Alberto.Benchmarks.Core.csproj" />
