@@ -1,3 +1,5 @@
 #nullable enable
 Alberto.Postgres.PostgresStateStore<TState>.PostgresStateStore(Npgsql.NpgsqlDataSource! dataSource, string? projectionType = null, string? schema = null, Alberto.Subscriptions.ProjectionVersion rebuildVersion = default(Alberto.Subscriptions.ProjectionVersion), string? tenantId = null) -> void
+Alberto.Postgres.PostgresTenantProcessorLock.PostgresTenantProcessorLock(Npgsql.NpgsqlDataSource! dataSource, string? schema = null, System.TimeSpan? leaseDuration = null, string? moduleKey = null) -> void
 *REMOVED*Alberto.Postgres.PostgresStateStore<TState>.PostgresStateStore(Npgsql.NpgsqlDataSource! dataSource, string? projectionType = null, string? schema = null, System.Func<int>? rebuildVersion = null, string? tenantId = null) -> void
+*REMOVED*Alberto.Postgres.PostgresTenantProcessorLock.PostgresTenantProcessorLock(Npgsql.NpgsqlDataSource! dataSource, string? schema = null, System.TimeSpan? leaseDuration = null) -> void

@@ -421,8 +421,7 @@ combined `module` value for a sharded module will stop matching. Update the filt
 
 ### MT-3: Tenant-ownership gauge tag renamed from `module.key` to `module`
 
-The `alberto.owned_tenant_count` and `alberto.tenant_cooldown_count` observable gauges previously
-emitted a tag named `module.key`:
+The `alberto.owned_tenant_count` observable gauge previously emitted a tag named `module.key`:
 
 ```
 consumer.id = "replica-1"
@@ -447,9 +446,9 @@ shard       = "eu"        # only for sharded modules
 ```
 
 **Impact.** Any Prometheus query, dashboard panel, or alert that references the `module.key`
-label on `alberto.owned_tenant_count` or `alberto.tenant_cooldown_count` will stop matching
-after upgrade. Rename the label selector to `module`. For sharded modules, also add a `shard`
-filter if you need per-shard isolation.
+label on `alberto.owned_tenant_count` will stop matching after upgrade. Rename the label
+selector to `module`. For sharded modules, also add a `shard` filter if you need per-shard
+isolation.
 
 ---
 
@@ -462,7 +461,7 @@ These two counters were removed from `AlbertoMetrics` in this cycle:
 
 **Symptom.** Dashboards or alerts that query either counter will return no data after upgrade.
 
-**Fix.** Remove or replace the counter queries. Tenant lease health is reflected in the tenant-ownership gauges (`alberto.owned_tenant_count`, `alberto.tenant_cooldown_count`).
+**Fix.** Remove or replace the counter queries. Tenant lease health is reflected in the tenant-ownership gauge (`alberto.owned_tenant_count`).
 
 ---
 
@@ -501,8 +500,7 @@ series; a `{tenant_id="acme"}` selector matches nothing.
 this consumer's lease failure rate rising?"). For the per-tenant question ("did tenant `acme` get
 its lease?"), use traces and logs: it is a question about one event at one moment, not a rate over
 time, and the lease acquisition is already on the consume-path span. For tenant fan-out without
-the cardinality, `alberto.owned_tenant_count` and `alberto.tenant_cooldown_count` report how many
-tenants a consumer holds and how many are in cooldown.
+the cardinality, `alberto.owned_tenant_count` reports how many tenants a consumer currently holds.
 
 ---
 
