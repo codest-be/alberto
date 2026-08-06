@@ -439,6 +439,85 @@ public class OrphanCheckpointTests
             "never call ListProcessorIdsAsync on a store that cannot enumerate");
     }
 
+    /// <summary>
+    /// A store that implements <see cref="ICheckpointInventory"/> and says nothing about
+    /// <see cref="ICheckpointInventory.CanEnumerate"/>. It relies entirely on the interface's
+    /// default implementation, which is the case every store written before the property
+    /// existed falls into.
+    /// </summary>
+    private sealed class SilentInventoryStore : ICheckpointStore, ICheckpointInventory
+    {
+        private readonly Dictionary<string, long> _data = new();
+
+        public int ListProcessorIdsAsyncCallCount { get; private set; }
+
+        public Task<IReadOnlyList<string>> ListProcessorIdsAsync(CancellationToken ct = default)
+        {
+            ListProcessorIdsAsyncCallCount++;
+            return Task.FromResult<IReadOnlyList<string>>([.. _data.Keys]);
+        }
+
+        public Task<long?> GetAsync(string processorId, CancellationToken ct = default)
+            => Task.FromResult(_data.TryGetValue(processorId, out var v) ? (long?)v : null);
+
+        public Task SaveAsync(string processorId, long position, CancellationToken ct = default)
+        {
+            _data[processorId] = position;
+            return Task.CompletedTask;
+        }
+
+        public Task ResetAsync(string processorId, CancellationToken ct = default)
+        {
+            _data.Remove(processorId);
+            return Task.CompletedTask;
+        }
+
+        public Task RewindAsync(string processorId, long position, CancellationToken ct = default)
+        {
+            _data[processorId] = position;
+            return Task.CompletedTask;
+        }
+    }
+
+    [Fact]
+    public async Task StoreThatDoesNotOverrideCanEnumerate_IsOptedInByResolutionSite()
+    {
+        // The other half of the CanEnumerate contract. ThirdPartyDecorator above proves a store
+        // can opt OUT; this proves that saying nothing opts you IN, which is what makes the
+        // property safe to add to a shipped interface: every ICheckpointInventory written before
+        // CanEnumerate existed keeps being asked for its inventory, unchanged.
+        //
+        // The default matters in the dangerous direction. If `CanEnumerate => true` were ever
+        // flipped to `=> false`, every store that does not override it would silently drop out
+        // of the orphan check — Strict policy would stop throwing, and the absence of a complaint
+        // would read as "no orphans" rather than "nobody looked". That is the same false all-clear
+        // the CanEnumerate work exists to remove, arriving through the default instead of the cast.
+        var ct = TestContext.Current.CancellationToken;
+
+        var store = new SilentInventoryStore();
+        await store.SaveAsync("OrphanedProcessor", 42, ct);
+
+        var services = new ServiceCollection();
+        services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment("Production"));
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.AddAlberto("orders", m => m.WithInMemory());
+        services.AddKeyedSingleton<ICheckpointStore>("orders", store);
+
+        await using var sp = services.BuildServiceProvider();
+
+        sp.GetKeyedService<ICheckpointStore>("orders").Should().BeSameAs(store,
+            "the last AddKeyedSingleton registration must win for GetKeyedService (singular)");
+
+        var orphanService = sp.GetServices<IHostedService>()
+            .OfType<OrphanCheckpointHostedService>()
+            .Single();
+        await orphanService.StartAsync(ct);
+
+        store.ListProcessorIdsAsyncCallCount.Should().Be(1,
+            "a store that implements ICheckpointInventory without overriding CanEnumerate must " +
+            "still be asked for its inventory — the default is opt-in, not opt-out");
+    }
+
     [Fact]
     public async Task ClearAsync_ResetsTheShadowCheckpoint_SoItDoesNotOrphan()
     {

@@ -189,10 +189,13 @@ public class CachingCheckpointStoreFenceRejectionTests
     /// <summary>
     /// <see cref="CachingCheckpointStore.SubscribeFenceViolation"/> must reject a null handler
     /// with <see cref="ArgumentNullException"/> before touching any shared state.
-    /// Kills the Statement mutant that removes <c>ArgumentNullException.ThrowIfNull(handler)</c>
-    /// (line 182): without the guard, null is silently added to the subscriber array and an
-    /// attempt to invoke it later throws <see cref="NullReferenceException"/> inside FlushAsync
-    /// rather than at the registration call site.
+    ///
+    /// <para>
+    /// Without the null guard, null is silently added to the subscriber array and an attempt
+    /// to invoke it during a fence rejection throws <see cref="NullReferenceException"/> deep
+    /// inside <c>FlushAsync</c> rather than at the registration call site — making the bug
+    /// extremely hard to diagnose in production.
+    /// </para>
     /// </summary>
     [Fact]
     public async Task SubscribeFenceViolation_NullHandler_ThrowsArgumentNullException()
@@ -207,8 +210,13 @@ public class CachingCheckpointStoreFenceRejectionTests
     /// <summary>
     /// A handler registered via <see cref="CachingCheckpointStore.SubscribeFenceViolation"/>
     /// must be invoked when a fenced write is rejected.
-    /// Kills the statement mutant at the copy-on-write append (line 184) and the foreach-body
-    /// invocation (line 367): removing either silences the callback.
+    ///
+    /// <para>
+    /// The callback is the signal by which the control loop learns it must stop processing
+    /// until the lease is re-acquired. If it is never called, the loop continues reading
+    /// events it can no longer safely checkpoint, risking duplicate processing when another
+    /// replica acquires the lease and picks up from the last persisted position.
+    /// </para>
     /// </summary>
     [Fact]
     public async Task SubscribeFenceViolation_RegisteredHandler_IsCalledOnFenceRejection()
@@ -266,8 +274,12 @@ public class CachingCheckpointStoreFenceRejectionTests
     /// <summary>
     /// When a fenced write is accepted, handlers registered via
     /// <see cref="CachingCheckpointStore.SubscribeFenceViolation"/> must NOT be invoked.
-    /// Kills the LogicalNot mutant at line 346 that inverts <c>!leaseHeld</c> to <c>leaseHeld</c>:
-    /// with the mutation the violation path fires even on a successful write.
+    ///
+    /// <para>
+    /// If the condition guarding the violation path were inverted, handlers would fire on
+    /// every successful flush, causing the control loop to incorrectly suspend itself even
+    /// when the lease is healthy — stopping all processing until an operator intervened.
+    /// </para>
     /// </summary>
     [Fact]
     public async Task FlushAsync_AcceptedFence_SubscribedHandlers_AreNotCalled()

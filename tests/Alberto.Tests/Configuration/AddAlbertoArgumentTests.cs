@@ -7,20 +7,23 @@ using Xunit;
 namespace Alberto.Tests.Configuration;
 
 /// <summary>
-/// Tests that close surviving mutants in <see cref="ServiceCollectionExtensions.AddAlberto"/>
-/// for the argument-guard statements and the auto-control-loop registration.
+/// Specifies the argument-validation rules for <see cref="ServiceCollectionExtensions.AddAlberto"/>
+/// and the auto-control-loop registration behaviour when <c>WithControlLoop</c> is omitted.
 /// </summary>
 public class AddAlbertoArgumentTests
 {
-    #region Null guard — services (line 41)
+    #region Null guard — services
 
     /// <summary>
-    /// <c>AddAlberto</c> must throw <see cref="ArgumentNullException"/> when <c>services</c>
-    /// is null, before any other validation.
-    /// Kills the Statement mutant at line 41 (<c>ArgumentNullException.ThrowIfNull(services)</c>
-    /// removed): without the guard, calling <c>IsModuleKeyTaken(null, moduleKey)</c> iterates a
-    /// null collection and throws <see cref="NullReferenceException"/> instead, which does not
-    /// satisfy <c>Assert.Throws&lt;ArgumentNullException&gt;</c>.
+    /// <c>AddAlberto</c> must throw <see cref="ArgumentNullException"/> with parameter name
+    /// <c>services</c> when <c>services</c> is null, before any other validation.
+    ///
+    /// <para>
+    /// Without the null guard, the method proceeds to call <c>IsModuleKeyTaken(null, moduleKey)</c>,
+    /// which iterates a null collection and throws <see cref="NullReferenceException"/> instead —
+    /// a different exception type from a different call site, which does not satisfy a caller
+    /// that is catching <see cref="ArgumentNullException"/>.
+    /// </para>
     /// </summary>
     [Fact]
     public void AddAlberto_NullServices_ThrowsArgumentNullException()
@@ -33,16 +36,19 @@ public class AddAlbertoArgumentTests
 
     #endregion
 
-    #region Null guard — moduleKey (line 42)
+    #region Null guard — moduleKey
 
     /// <summary>
-    /// <c>AddAlberto</c> must throw <see cref="ArgumentNullException"/> when <c>moduleKey</c>
-    /// is null.
-    /// Kills the Statement mutant at line 42 (<c>ArgumentException.ThrowIfNullOrWhiteSpace(moduleKey)</c>
-    /// removed): without the guard, null falls through to <c>IdentifierRules.IsValidIdentifier(null)</c>
-    /// which returns false, and the subsequent throw produces a plain <see cref="ArgumentException"/>,
-    /// not an <see cref="ArgumentNullException"/> — so <c>Assert.Throws&lt;ArgumentNullException&gt;</c>
-    /// fails.
+    /// <c>AddAlberto</c> must throw <see cref="ArgumentNullException"/> with parameter name
+    /// <c>moduleKey</c> when <c>moduleKey</c> is null.
+    ///
+    /// <para>
+    /// Without the null guard, null falls through to <c>IdentifierRules.IsValidIdentifier(null)</c>,
+    /// which returns false, and the subsequent throw produces a plain <see cref="ArgumentException"/>
+    /// about an invalid identifier — correct in spirit, but the wrong exception type and the
+    /// wrong parameter name, so a caller catching <see cref="ArgumentNullException"/> does not
+    /// see it.
+    /// </para>
     /// </summary>
     [Fact]
     public void AddAlberto_NullModuleKey_ThrowsArgumentNullException()
@@ -57,14 +63,18 @@ public class AddAlbertoArgumentTests
 
     #endregion
 
-    #region Null guard — configure (line 61)
+    #region Null guard — configure
 
     /// <summary>
-    /// <c>AddAlberto</c> must throw <see cref="ArgumentNullException"/> when the
-    /// <c>configure</c> action is null.
-    /// Kills the Statement mutant at line 61 (<c>ArgumentNullException.ThrowIfNull(configure)</c>
-    /// removed): without the guard, <c>configure(builder)</c> calls a null delegate and throws
-    /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>.
+    /// <c>AddAlberto</c> must throw <see cref="ArgumentNullException"/> with parameter name
+    /// <c>configure</c> when the <c>configure</c> action is null.
+    ///
+    /// <para>
+    /// Without the null guard, <c>configure(builder)</c> calls a null delegate and throws
+    /// <see cref="NullReferenceException"/> — the wrong exception type — from inside the
+    /// builder rather than at the call site, obscuring both the cause and the culprit
+    /// parameter.
+    /// </para>
     /// </summary>
     [Fact]
     public void AddAlberto_NullConfigure_ThrowsArgumentNullException()
@@ -79,15 +89,19 @@ public class AddAlbertoArgumentTests
 
     #endregion
 
-    #region Auto-ControlLoop registration (line 92 / task line 94)
+    #region Auto-ControlLoop registration
 
     /// <summary>
     /// When <c>WithControlLoop</c> is NOT called in the configure action,
     /// <c>AddAlberto</c> must auto-register the control loop components
     /// (including <see cref="EventStoreHead"/>) by default.
-    /// Kills the Boolean→false mutant on <c>if (!builder.ControlLoopConfigured)</c>:
-    /// with the mutation the block is never entered, so <see cref="EventStoreHead"/> is never
-    /// added to the service collection and the assertion below fails.
+    ///
+    /// <para>
+    /// Without the auto-registration block, a module that omits <c>WithControlLoop</c>
+    /// silently starts with no control loop. Projections and reactors never receive events,
+    /// and there is no startup error to signal the misconfiguration — the application just
+    /// does nothing, indefinitely.
+    /// </para>
     /// </summary>
     [Fact]
     public void AddAlberto_WithoutWithControlLoop_AutoRegistersEventStoreHead()

@@ -6,27 +6,36 @@ using Xunit;
 namespace Alberto.Tests.Subscriptions;
 
 /// <summary>
-/// Targeted tests that fill coverage gaps and kill surviving mutants in
-/// <see cref="CachingCheckpointStore"/> identified by the Stryker run on
-/// arch/inventory-capability-query.
+/// Behavioural specifications for the buffering, flush, and resync mechanics of
+/// <see cref="CachingCheckpointStore"/>.
 ///
 /// <para>
-/// Each test names the line(s) it targets in its XML doc so the mapping from mutant
-/// to test stays legible when the mutant table is re-run.
+/// Covers: the <c>Ahead()</c> position-merge semantics that prevent a cache write from
+/// ever lowering a position; dirty-entry monotonicity so that flush always writes the
+/// furthest-advanced checkpoint; external-reset detection in both <c>FlushAsync</c> and
+/// <c>ResyncFromStoreAsync</c>; timer callback exception handling; and the
+/// <c>DisposeAsync</c> drain guarantee.
 /// </para>
 /// </summary>
-public class CachingCheckpointStoreCoverageTests
+public class CachingCheckpointStoreFlushAndResyncTests
 {
-    #region Ahead() null-guard paths (lines 122–123)
+    #region Merging a new position into a cached entry
 
     /// <summary>
-    /// When the cache holds <c>null</c> for a processor (seeded by a <c>GetAsync</c> against
-    /// an empty inner store) and <c>SaveAsync</c> is subsequently called for the same processor,
-    /// the <c>AddOrUpdate</c> update factory in <c>SaveAsync</c> is triggered:
-    /// <c>Ahead(existing=null, position=50)</c>.
-    /// Kills the Conditional→false mutant at line 122: with the mutation the null-left guard
-    /// (<c>left is null ? right</c>) is skipped, and the expression falls through to
-    /// <c>Math.Max(null.Value, 50)</c> → <see cref="NullReferenceException"/>.
+    /// When the cache holds <c>null</c> for a processor — set by a <c>GetAsync</c> against
+    /// an empty inner store — and <c>SaveAsync</c> is subsequently called for the same
+    /// processor, the <c>AddOrUpdate</c> update factory fires with
+    /// <c>Ahead(existing: null, position: 50)</c>. The null-left branch must return the
+    /// incoming position rather than attempting to call <c>.Value</c> on a null nullable.
+    ///
+    /// <para>
+    /// The null-cache-entry path is reachable any time a processor starts from a blank store:
+    /// <c>GetAsync</c> stores the null it receives from the inner store so that the next call
+    /// hits the cache instead of going to the database, then <c>SaveAsync</c> triggers the
+    /// update factory. Without the null-left guard the update factory would reach
+    /// <c>Math.Max(null.Value, position)</c> and throw <see cref="NullReferenceException"/>
+    /// on the very first save after a cache-miss read.
+    /// </para>
     /// </summary>
     [Fact]
     public async Task SaveAsync_AheadUpdateFactory_NullCachedEntry_ReturnsNewPosition()
@@ -51,9 +60,16 @@ public class CachingCheckpointStoreCoverageTests
 
     /// <summary>
     /// When the inner store is deleted after the cache has warmed, <c>GetAsync</c> calls the
-    /// update factory <c>Ahead(cachedPosition, null)</c> (left is non-null, right is null).
-    /// Kills the Conditional→false mutant at line 123: with the mutation the null-right guard
-    /// is bypassed and <c>Math.Max(left.Value, null.Value)</c> throws <see cref="NullReferenceException"/>.
+    /// update factory with <c>Ahead(cachedPosition, null)</c>. The null-right branch must
+    /// return the cached position rather than attempting to call <c>.Value</c> on a null nullable.
+    ///
+    /// <para>
+    /// This path arises when an operator resets a processor's checkpoint row directly in the
+    /// database (bypassing the cache). The cache still holds the last-read position, so the
+    /// update factory sees a non-null left and a null right. Without the null-right guard,
+    /// <c>Math.Max(left.Value, null.Value)</c> throws <see cref="NullReferenceException"/>
+    /// on the next read after such a reset.
+    /// </para>
     /// </summary>
     [Fact]
     public async Task GetAsync_AheadUpdateFactory_NonNullLeft_NullRight_ReturnsLeft()
@@ -73,21 +89,25 @@ public class CachingCheckpointStoreCoverageTests
 
         // Second call: cache key exists (100), inner returns null → update factory fires:
         // Ahead(100, null) → right is null → return left (100).
-        // With the Conditional→false mutation this becomes Math.Max(100, null.Value) → NullReferenceException.
         var result = await cache.GetAsync("proc", ct);
         Assert.Equal(100L, result);
     }
 
     #endregion
 
-    #region SaveAsync dirty-entry monotonicity (line 139)
+    #region Dirty-entry monotonicity
 
     /// <summary>
     /// The dirty entry for a processor always tracks the highest position ever saved, even
     /// when a lower position arrives after a higher one. This ensures the flush writes the
     /// furthest-advanced checkpoint, never a rollback.
-    /// Kills the Math.Max→Math.Min mutant at line 139: with Min the later lower position
-    /// wins and the flush writes 100 to the inner store instead of 200.
+    ///
+    /// <para>
+    /// The control loop can call <c>SaveAsync</c> multiple times between flush ticks. If
+    /// the dirty entry used the last position rather than the maximum, a lower position
+    /// arriving after a higher one would win and the flush would write a rollback, causing
+    /// the processor to replay events it has already handled.
+    /// </para>
     /// </summary>
     [Fact]
     public async Task SaveAsync_DirtyEntry_KeepsHigherPosition_WhenLowerFollows()
@@ -108,15 +128,18 @@ public class CachingCheckpointStoreCoverageTests
 
     #endregion
 
-    #region FlushAsync external-reset detection (lines 390, 396, 407)
+    #region External-reset detection during flush
 
     /// <summary>
-    /// When the inner store has the same position as <c>_persisted</c> (no external reset
-    /// occurred), <see cref="CachingCheckpointStore.FlushAsync"/> must write the dirty
-    /// entry through to the inner store.
-    /// Kills the Equality mutant at line 396 (<c>storePosition >= persistedPosition</c> →
-    /// <c>storePosition > persistedPosition</c>): with the mutation, storePosition == persistedPosition
-    /// (100 == 100) is treated as a reset and the write is skipped, so inner stays at 100.
+    /// When the inner store holds exactly the same position as the last known-persisted value,
+    /// no external reset has occurred, and the flush must proceed to write the dirty entry.
+    ///
+    /// <para>
+    /// The reset-detection guard uses <c>storePosition &gt;= persistedPosition</c>. Using
+    /// strict greater-than instead would treat an equal value as a reset, drop the dirty write,
+    /// and stall the processor at its last-persisted position indefinitely — every flush tick
+    /// would see the same equality and discard the pending advance.
+    /// </para>
     /// </summary>
     [Fact]
     public async Task FlushAsync_WhenStoreMatchesPersisted_WritesThrough()
@@ -145,8 +168,13 @@ public class CachingCheckpointStoreCoverageTests
     /// When the inner store has been externally reset below the last known-persisted position,
     /// <see cref="CachingCheckpointStore.FlushAsync"/> must drop the pending write and update
     /// the cache to the reset position.
-    /// Kills the Negate-expression mutant at line 390 (<c>!_persisted.TryGetValue</c> inverted)
-    /// and the Statement mutant at line 407 (<c>_dirty.TryRemove</c> removed).
+    ///
+    /// <para>
+    /// Writing the buffered position on top of an operator reset would reverse the reset,
+    /// causing the processor to skip ahead without reprocessing the events the reset was
+    /// intended to replay. Leaving the cache at the pre-reset position after the detection
+    /// would cause the processor to resume from the wrong offset on the next read.
+    /// </para>
     /// </summary>
     [Fact]
     public async Task FlushAsync_WhenExternalResetDetectedDuringFlush_DropsWriteAndUpdatesCache()
@@ -180,17 +208,20 @@ public class CachingCheckpointStoreCoverageTests
 
     #endregion
 
-    #region ResyncFromStoreAsync persisted update (line 295)
+    #region Persisted-position update after resync
 
     /// <summary>
     /// After <see cref="CachingCheckpointStore.ResyncFromStoreAsync"/> detects an external
     /// reset and lowers the cache, <c>_persisted</c> must be updated to the new (lower)
-    /// position.  If it is not, a subsequent <see cref="CachingCheckpointStore.FlushAsync"/>
-    /// will pass a stale <c>_persisted</c> value to
-    /// <c>ApplyExternalResetIfDetectedAsync</c>, falsely detect another reset against the
-    /// advancing write, and skip it — the processor would get stuck.
-    /// Kills the Statement mutant at line 295 (<c>_persisted[processorId] = storePosition;</c>
-    /// removed).
+    /// position so that subsequent flush calls see the correct baseline.
+    ///
+    /// <para>
+    /// If <c>_persisted</c> still holds the pre-reset value after a resync, the next
+    /// <c>FlushAsync</c> compares the advancing write against the stale baseline, falsely
+    /// detects a second reset, and drops the write. The processor gets stuck at the reset
+    /// position and cannot advance, even though the operator reset has long since been
+    /// acknowledged and the inner store is accepting new values.
+    /// </para>
     /// </summary>
     [Fact]
     public async Task ResyncFromStore_AfterDetectingReset_UpdatesPersistedSoSubsequentFlushSucceeds()
@@ -218,7 +249,7 @@ public class CachingCheckpointStoreCoverageTests
 
         // Flush: ApplyExternalResetIfDetectedAsync should see persistedPosition=100 (updated by
         // resync), storePosition=100 (inner hasn't changed), 100 >= 100 → no reset → write 150.
-        // Without the fix (mutation): persistedPosition=500, storePosition=100, 100 < 500 →
+        // Without the persisted update: persistedPosition=500, storePosition=100, 100 < 500 →
         // falsely detected reset → write skipped, inner stays at 100.
         await cache.FlushAsync(ct);
 
@@ -227,14 +258,18 @@ public class CachingCheckpointStoreCoverageTests
 
     #endregion
 
-    #region ResyncFromStoreAsync equality guard (line 292 equality mutant)
+    #region Resync equality guard
 
     /// <summary>
-    /// When the inner store value equals the cached value, no external reset occurred and
+    /// When the inner store value equals the cached value, no external reset has occurred and
     /// no warning must be logged.
-    /// Kills the Equality mutant at line 292 (<c>storePosition &lt; cachedPosition</c> →
-    /// <c>storePosition &lt;= cachedPosition</c>): with the mutation, an equal value is
-    /// treated as a reset and a spurious warning is emitted.
+    ///
+    /// <para>
+    /// The reset-detection condition in <c>ResyncFromStoreAsync</c> is
+    /// <c>storePosition &lt; cachedPosition</c>. Using <c>&lt;=</c> instead would treat
+    /// equal values as a reset on every resync tick when nothing is wrong, emitting spurious
+    /// warnings that would mask genuine resets in operator logs.
+    /// </para>
     /// </summary>
     [Fact]
     public async Task ResyncFromStore_WhenStoreMatchesCache_DoesNotLogWarning()
@@ -255,8 +290,6 @@ public class CachingCheckpointStoreCoverageTests
         await cache.GetAsync("proc", ct);
 
         // Resync: storePosition(500) < cachedPosition(500) → false → no update, no warning.
-        // With equality mutation: 500 <= 500 → true → TryUpdate(500, 500), _persisted updated,
-        // LogWarning emitted.
         await cache.ResyncFromStoreAsync(ct);
 
         var warnings = logger.Entries.Where(e => e.Level == LogLevel.Warning).ToList();
@@ -265,13 +298,19 @@ public class CachingCheckpointStoreCoverageTests
 
     #endregion
 
-    #region OnFlushTimer exception path (line 252)
+    #region Flush-timer exception handling
 
     /// <summary>
     /// When a timer-triggered flush throws, the exception must be caught and logged at
     /// <see cref="LogLevel.Error"/> via the supplied logger.
-    /// Kills the Statement mutant at line 252 (<c>_logger?.LogError(...)</c> removed):
-    /// without the log call the error is silently swallowed and the logger has no entry.
+    ///
+    /// <para>
+    /// The flush timer runs on an async-void callback. An unhandled exception there would
+    /// propagate to the thread pool and crash the host process. Catching and logging the
+    /// error keeps the processor alive across transient storage failures; the error entry
+    /// gives the operator visibility into the degraded state so the underlying issue can
+    /// be investigated without losing the process.
+    /// </para>
     /// </summary>
     [Fact]
     public async Task OnFlushTimer_WhenInnerSaveThrows_LogsError()
@@ -305,13 +344,17 @@ public class CachingCheckpointStoreCoverageTests
 
     #endregion
 
-    #region OnResyncTimer exception path (line 266)
+    #region Resync-timer exception handling
 
     /// <summary>
     /// When a timer-triggered resync throws, the exception must be caught and logged at
     /// <see cref="LogLevel.Error"/> via the supplied logger.
-    /// Kills the Statement mutant at line 266 (<c>_logger?.LogError(...)</c> removed):
-    /// without the log call the error is silently swallowed and the logger has no entry.
+    ///
+    /// <para>
+    /// The resync timer runs on the same async-void pattern as the flush timer. An unhandled
+    /// exception would crash the host. Catching and logging it lets the store continue
+    /// operating from its cached state until the inner store recovers.
+    /// </para>
     /// </summary>
     [Fact]
     public async Task OnResyncTimer_WhenInnerGetThrows_LogsError()
@@ -338,6 +381,90 @@ public class CachingCheckpointStoreCoverageTests
 
         var errors = logger.Entries.Where(e => e.Level == LogLevel.Error).ToList();
         Assert.NotEmpty(errors);
+    }
+
+    #endregion
+
+    #region DisposeAsync
+
+    /// <summary>
+    /// Disposing the decorator drains whatever the flush timer has not yet written. The buffer
+    /// is the whole point of the decorator, so shutdown is the one moment where losing it turns
+    /// a latency optimisation into data loss: a processor that checkpointed at 100 and then had
+    /// its host stopped must not restart at whatever the last timer tick happened to persist.
+    /// </summary>
+    [Fact]
+    public async Task DisposeAsync_WritesPendingCheckpointsThroughToTheInnerStore()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var inner = new SimpleCheckpointStore();
+
+        // Intervals long enough that no timer can fire — the only thing that can persist this
+        // write is DisposeAsync itself.
+        var cache = new CachingCheckpointStore(
+            inner, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
+
+        await cache.SaveAsync("proc", 100L, ct);
+        Assert.Null(await inner.GetAsync("proc", ct));
+
+        await cache.DisposeAsync();
+
+        Assert.Equal(100L, await inner.GetAsync("proc", ct));
+    }
+
+    /// <summary>
+    /// Disposing twice is a no-op the second time. Both <c>await using</c> and an explicit
+    /// <c>DisposeAsync</c> in a shutdown path are ordinary, and they coincide often enough that
+    /// the second call must not re-enter the flush or dispose the timers again.
+    /// </summary>
+    [Fact]
+    public async Task DisposeAsync_IsIdempotent_AndDoesNotFlushTwice()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var inner = new CountingSaveStore();
+
+        var cache = new CachingCheckpointStore(
+            inner, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
+
+        await cache.SaveAsync("proc", 100L, ct);
+
+        await cache.DisposeAsync();
+        var savesAfterFirstDispose = inner.SaveCount;
+
+        await cache.DisposeAsync();
+
+        Assert.Equal(1, savesAfterFirstDispose);
+        Assert.Equal(savesAfterFirstDispose, inner.SaveCount);
+    }
+
+    /// <summary>Counts writes so a second flush is distinguishable from none.</summary>
+    private sealed class CountingSaveStore : ICheckpointStore
+    {
+        private readonly Dictionary<string, long> _data = new();
+
+        public int SaveCount { get; private set; }
+
+        public Task<long?> GetAsync(string processorId, CancellationToken ct = default)
+            => Task.FromResult(_data.TryGetValue(processorId, out var v) ? (long?)v : null);
+
+        public Task SaveAsync(string processorId, long position, CancellationToken ct = default)
+        {
+            SaveCount++;
+            _data[processorId] = position;
+            return Task.CompletedTask;
+        }
+
+        public Task ResetAsync(string processorId, CancellationToken ct = default)
+        {
+            _data.Remove(processorId);
+            return Task.CompletedTask;
+        }
+
+        public Task RewindAsync(string processorId, long position, CancellationToken ct = default)
+        {
+            _data[processorId] = position;
+            return Task.CompletedTask;
+        }
     }
 
     #endregion
@@ -392,9 +519,9 @@ public class CachingCheckpointStoreCoverageTests
 
     /// <summary>
     /// Store whose <c>SaveAsync</c> throws on the first call and succeeds on all subsequent
-    /// calls — used to exercise the flush-timer exception path (line 252).  The one-time throw
-    /// means the timer callback catches and logs the error, while the final flush in
-    /// <see cref="IAsyncDisposable.DisposeAsync"/> succeeds and can drain the dirty set cleanly.
+    /// calls. The one-time throw means the timer callback catches and logs the error, while
+    /// the final flush in <see cref="IAsyncDisposable.DisposeAsync"/> succeeds and drains
+    /// the dirty set cleanly — making the two behaviours independently observable.
     /// </summary>
     private sealed class ThrowOnFirstSaveStore : ICheckpointStore
     {
@@ -419,7 +546,9 @@ public class CachingCheckpointStoreCoverageTests
 
     /// <summary>
     /// Store whose <c>GetAsync</c> succeeds on the first call (returns 100) and throws on
-    /// every subsequent call — used to exercise the resync-timer exception path (line 266).
+    /// every subsequent call. The split lets the cache warm successfully on the initial read
+    /// while the resync timer's subsequent read fails, triggering the error-logging path
+    /// under test without preventing cache initialisation.
     /// </summary>
     private sealed class FailOnSecondGetStore : ICheckpointStore
     {
