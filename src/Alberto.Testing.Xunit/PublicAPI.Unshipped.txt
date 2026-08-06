@@ -24,3 +24,23 @@ virtual Alberto.Testing.Xunit.EventStoreBackendSpecification.SupportsStreamAll.g
 virtual Alberto.Testing.Xunit.StateStoreSpecification<TState>.CreateStoreForTenant(string! projectionType, string! tenantId, Alberto.Subscriptions.ProjectionVersion rebuildVersion = default(Alberto.Subscriptions.ProjectionVersion)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.IStateStore<TState>!>!
 *REMOVED*abstract Alberto.Testing.Xunit.StateStoreSpecification<TState>.CreateStore(string! projectionType, System.Func<int>? rebuildVersion = null) -> System.Threading.Tasks.Task<Alberto.Subscriptions.IStateStore<TState>!>!
 *REMOVED*virtual Alberto.Testing.Xunit.StateStoreSpecification<TState>.CreateStoreForTenant(string! projectionType, string! tenantId, System.Func<int>? rebuildVersion = null) -> System.Threading.Tasks.Task<Alberto.Subscriptions.IStateStore<TState>!>!
+Alberto.Testing.Xunit.FencedCheckpointStoreSpecification
+Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.ContendedLease_SecondReplica_CannotAcquire() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.ConsumerId.get -> string!
+Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.ExpiredLease_FencedWrite_ReturnsFalseAndDoesNotWrite() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.FencedCheckpointStoreSpecification() -> void
+Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.FencedWrites_ApplyGreatestSemantics_BackwardPositionDiscarded() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.FenceTokens_StrictlyIncreasing_AcrossAcquisitions() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.HeldLease_FencedWrite_ReturnsTrueAndPersistsPosition() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.LeaseRenewal_PreservesToken_FencedWriteSucceeds() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.MultipleProcessors_FencingIsIndependent() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.ProcessorId.get -> string!
+Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.SupersededToken_FencedWrite_ReturnsFalseEvenWithActiveLease() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.UnfencedSave_DoesNotBlockSubsequentFencedWrite() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.WrongReplica_FencedWrite_ReturnsFalseAndDoesNotWrite() -> System.Threading.Tasks.Task!
+abstract Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.CreateLeaseManager() -> System.Threading.Tasks.Task<Alberto.Subscriptions.IProcessorLeaseManager!>!
+abstract Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.CreateStore() -> System.Threading.Tasks.Task<Alberto.Subscriptions.IFencedCheckpointStore!>!
+abstract Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.ExpireLeaseAsync(string! processorId) -> System.Threading.Tasks.Task!
+abstract Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.SeedCheckpointFenceTokenAsync(string! processorId, long position, long fenceToken) -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.CheckpointRow_HigherToken_FencedWrite_ReturnsFalse() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.CheckpointRow_SameToken_FencedWrite_Succeeds() -> System.Threading.Tasks.Task!
