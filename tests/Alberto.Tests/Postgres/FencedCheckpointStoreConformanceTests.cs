@@ -47,4 +47,28 @@ public sealed class PostgresFencedCheckpointStoreConformanceTests(SingleTenantPo
         cmd.Parameters.AddWithValue("processor_id", processorId);
         await cmd.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
     }
+
+    /// <summary>
+    /// Seeds the checkpoint row in the database with the supplied position and fence token,
+    /// bypassing all guards. Used by the specification to exercise guard 2 (checkpoint-row
+    /// fence-token check) in isolation.
+    /// </summary>
+    protected override async Task SeedCheckpointFenceTokenAsync(
+        string processorId, long position, long fenceToken)
+    {
+        await using var connection = await fixture.DataSource.OpenConnectionAsync(
+            TestContext.Current.CancellationToken);
+        await using var cmd = new NpgsqlCommand(
+            """
+            INSERT INTO alberto_processor_checkpoints (processor_id, last_position, fence_token)
+            VALUES (@processor_id, @position, @fence_token)
+            ON CONFLICT (processor_id) DO UPDATE
+                SET last_position = @position, fence_token = @fence_token
+            """,
+            connection);
+        cmd.Parameters.AddWithValue("processor_id", processorId);
+        cmd.Parameters.AddWithValue("position", position);
+        cmd.Parameters.AddWithValue("fence_token", fenceToken);
+        await cmd.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+    }
 }

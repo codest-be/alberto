@@ -41,3 +41,6 @@ Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.WrongReplica_FencedWrit
 abstract Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.CreateLeaseManager() -> System.Threading.Tasks.Task<Alberto.Subscriptions.IProcessorLeaseManager!>!
 abstract Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.CreateStore() -> System.Threading.Tasks.Task<Alberto.Subscriptions.IFencedCheckpointStore!>!
 abstract Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.ExpireLeaseAsync(string! processorId) -> System.Threading.Tasks.Task!
+abstract Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.SeedCheckpointFenceTokenAsync(string! processorId, long position, long fenceToken) -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.CheckpointRow_HigherToken_FencedWrite_ReturnsFalse() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.CheckpointRow_SameToken_FencedWrite_Succeeds() -> System.Threading.Tasks.Task!

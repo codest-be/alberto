@@ -7,7 +7,7 @@ namespace Alberto.Testing.Xunit;
 /// Conformance specification for the fencing seam: the combination of
 /// <see cref="IProcessorLeaseManager"/> and <see cref="IFencedCheckpointStore"/>.
 ///
-/// Derive from this class, implement the three factory/helper members, and every
+/// Derive from this class, implement the factory/helper members, and every
 /// Alberto-defined fencing contract fact runs against your adapter pair.
 /// </summary>
 /// <remarks>
@@ -26,6 +26,19 @@ namespace Alberto.Testing.Xunit;
 /// <para>
 /// Facts are limited to <c>useProcessorLeaseFencing = true</c> (the processor-lease path
 /// used by the control loop). Tenant-lease fencing has no conformance contract here.
+/// </para>
+/// <para>
+/// <b>Guard 2 (checkpoint-row fence-token check)</b>: even when the lease check (guard 1)
+/// passes, a conforming fenced checkpoint store must also reject a write when the checkpoint
+/// row already carries a <em>higher</em> fence token — defence in depth against a superseded
+/// generation. Guard 2 cannot be provoked through <see cref="IFencedCheckpointStore"/> alone
+/// because the token sequence is strictly increasing: for guard 1 to pass, the presented token
+/// must equal the live lease's current token, and the current lease token is always ≥ the
+/// stored checkpoint token (the row is only ever written by a token that itself passed guard 1
+/// at that moment). <see cref="SeedCheckpointFenceTokenAsync"/> bypasses that impossibility
+/// by writing the checkpoint row at an arbitrarily high token so that guard 2 can be specified
+/// and mutation-killed. Subclasses provide their adapter-specific seeding mechanism (direct
+/// method call for in-memory, a raw SQL INSERT/UPDATE for PostgreSQL).
 /// </para>
 /// </remarks>
 public abstract class FencedCheckpointStoreSpecification
@@ -64,6 +77,23 @@ public abstract class FencedCheckpointStoreSpecification
     /// </remarks>
     /// <param name="processorId">The processor whose lease should be expired.</param>
     protected abstract Task ExpireLeaseAsync(string processorId);
+
+    /// <summary>
+    /// Seeds the checkpoint row for <paramref name="processorId"/> with the supplied
+    /// <paramref name="position"/> and <paramref name="fenceToken"/> without going through
+    /// any guard, enabling guard 2 (checkpoint-row fence-token check) to be exercised in
+    /// isolation.
+    /// </summary>
+    /// <remarks>
+    /// In-memory implementations call directly into the test adapter. PostgreSQL
+    /// implementations issue a raw INSERT … ON CONFLICT DO UPDATE on
+    /// <c>alberto_processor_checkpoints</c>.
+    /// </remarks>
+    /// <param name="processorId">Processor whose checkpoint row should be seeded.</param>
+    /// <param name="position">Checkpoint position to write.</param>
+    /// <param name="fenceToken">Fence token to write — typically higher than any lease token.</param>
+    protected abstract Task SeedCheckpointFenceTokenAsync(
+        string processorId, long position, long fenceToken);
 
     // -------------------------------------------------------------------------
     // Helper: fenced write with processor-lease fencing enabled.
@@ -382,5 +412,74 @@ public abstract class FencedCheckpointStoreSpecification
 
         Assert.Equal(111, await store.GetAsync(processorX, TestContext.Current.CancellationToken));
         Assert.Equal(222, await store.GetAsync(processorY, TestContext.Current.CancellationToken));
+    }
+
+    // =========================================================================
+    // Checkpoint-row fence-token guard (guard 2) facts
+    //
+    // Guard 2 cannot be provoked through the interface — see class doc.
+    // SeedCheckpointFenceTokenAsync bypasses the guards so these facts can run.
+    // =========================================================================
+
+    /// <summary>
+    /// When the checkpoint row carries a fence token higher than the one presented,
+    /// the write is rejected even though the lease check (guard 1) would pass.
+    ///
+    /// This is guard 2 — defence in depth. The row is seeded directly because guard 2
+    /// cannot be provoked through <see cref="IFencedCheckpointStore"/>: the strictly
+    /// increasing token sequence means any token that passes guard 1 is already ≥ the
+    /// stored checkpoint token (see class doc for the full argument).
+    /// </summary>
+    [Fact]
+    public async Task CheckpointRow_HigherToken_FencedWrite_ReturnsFalse()
+    {
+        var leases = await CreateLeaseManager();
+        var store = await CreateStore();
+        var replicaId = $"replica-{Guid.NewGuid():N}";
+
+        var lease = await leases.TryAcquireAsync(
+            ConsumerId, ProcessorId, replicaId, TestContext.Current.CancellationToken);
+        Assert.NotNull(lease);
+        var leaseToken = lease!.FenceToken;
+
+        // Seed the checkpoint row at a token much higher than the current lease token.
+        // Guard 1 will pass (live lease, correct replica, correct token).
+        // Guard 2 must fire (stored token > presented token).
+        await SeedCheckpointFenceTokenAsync(ProcessorId, position: 500, fenceToken: leaseToken + 1000);
+
+        var saved = await FencedSave(store, ProcessorId, 600, ConsumerId, replicaId, leaseToken,
+            TestContext.Current.CancellationToken);
+
+        Assert.False(saved);
+        Assert.Equal(500, await store.GetAsync(ProcessorId, TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
+    /// When the checkpoint row carries the same fence token as the one presented,
+    /// the write proceeds (GREATEST applied to position). Equal tokens represent a
+    /// repeat write from the same generation, which is valid (idempotent progress).
+    /// </summary>
+    [Fact]
+    public async Task CheckpointRow_SameToken_FencedWrite_Succeeds()
+    {
+        var leases = await CreateLeaseManager();
+        var store = await CreateStore();
+        var replicaId = $"replica-{Guid.NewGuid():N}";
+
+        var lease = await leases.TryAcquireAsync(
+            ConsumerId, ProcessorId, replicaId, TestContext.Current.CancellationToken);
+        Assert.NotNull(lease);
+
+        // First write — establishes position 100 with the lease token
+        var first = await FencedSave(store, ProcessorId, 100, ConsumerId, replicaId, lease!.FenceToken,
+            TestContext.Current.CancellationToken);
+        Assert.True(first);
+
+        // Second write with the same token and a higher position — must succeed
+        var second = await FencedSave(store, ProcessorId, 200, ConsumerId, replicaId, lease!.FenceToken,
+            TestContext.Current.CancellationToken);
+        Assert.True(second);
+
+        Assert.Equal(200, await store.GetAsync(ProcessorId, TestContext.Current.CancellationToken));
     }
 }
