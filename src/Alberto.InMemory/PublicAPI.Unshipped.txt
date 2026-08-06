@@ -1,18 +1,3 @@
 #nullable enable
 Alberto.InMemory.InMemoryStateStore<TState>.InMemoryStateStore(Alberto.Subscriptions.ProjectionVersion rebuildVersion = default(Alberto.Subscriptions.ProjectionVersion)) -> void
 *REMOVED*Alberto.InMemory.InMemoryStateStore<TState>.InMemoryStateStore(System.Func<int>? rebuildVersion = null) -> void
-Alberto.InMemory.InMemoryFencedCheckpointStore
-Alberto.InMemory.InMemoryFencedCheckpointStore.GetAsync(string! processorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<long?>!
-Alberto.InMemory.InMemoryFencedCheckpointStore.InMemoryFencedCheckpointStore(Alberto.InMemory.InMemoryProcessorLeaseManager! leaseManager) -> void
-Alberto.InMemory.InMemoryFencedCheckpointStore.ListProcessorIdsAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<string!>!>!
-Alberto.InMemory.InMemoryFencedCheckpointStore.ResetAsync(string! processorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Alberto.InMemory.InMemoryFencedCheckpointStore.RewindAsync(string! processorId, long position, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Alberto.InMemory.InMemoryFencedCheckpointStore.SaveAsync(string! processorId, long position, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Alberto.InMemory.InMemoryFencedCheckpointStore.SaveIfLeaseHeldAsync(string! processorId, long position, string! consumerId, string! replicaId, long fenceToken, bool useProcessorLeaseFencing = false, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
-Alberto.InMemory.InMemoryProcessorLeaseManager
-Alberto.InMemory.InMemoryProcessorLeaseManager.GetAllLeasesAsync(string! consumerId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Alberto.Subscriptions.ProcessorLeaseInfo!>!>!
-Alberto.InMemory.InMemoryProcessorLeaseManager.InMemoryProcessorLeaseManager(System.TimeProvider? clock = null, System.TimeSpan? leaseDuration = null) -> void
-Alberto.InMemory.InMemoryProcessorLeaseManager.LeaseDuration.get -> System.TimeSpan
-Alberto.InMemory.InMemoryProcessorLeaseManager.ReleaseAllLeasesAsync(string! consumerId, string! replicaId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Alberto.InMemory.InMemoryProcessorLeaseManager.RenewLeasesAsync(string! consumerId, string! replicaId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<string!>!>!
-Alberto.InMemory.InMemoryProcessorLeaseManager.TryAcquireAsync(string! consumerId, string! processorId, string! replicaId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.IProcessorLease?>!

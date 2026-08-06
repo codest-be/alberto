@@ -1,14 +1,14 @@
-using Alberto.InMemory;
 using Alberto.Subscriptions;
 using Alberto.Testing.Xunit;
+using Alberto.Tests.Fencing;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
 namespace Alberto.Tests.Subscriptions;
 
 /// <summary>
-/// Runs the <see cref="FencedCheckpointStoreSpecification"/> against the in-memory adapter
-/// pair: <see cref="InMemoryProcessorLeaseManager"/> + <see cref="InMemoryFencedCheckpointStore"/>.
+/// Runs the <see cref="FencedCheckpointStoreSpecification"/> against the in-process test adapter
+/// pair: <see cref="TestProcessorLeaseManager"/> + <see cref="TestFencedCheckpointStore"/>.
 ///
 /// No Docker, no database, no integration trait — all fencing behaviour is exercised in process
 /// with time advanced by a <see cref="FakeTimeProvider"/>.
@@ -16,13 +16,13 @@ namespace Alberto.Tests.Subscriptions;
 public sealed class InMemoryFencedCheckpointStoreConformanceTests : FencedCheckpointStoreSpecification
 {
     private readonly FakeTimeProvider _clock = new();
-    private readonly InMemoryProcessorLeaseManager _leaseManager;
-    private readonly InMemoryFencedCheckpointStore _store;
+    private readonly TestProcessorLeaseManager _leaseManager;
+    private readonly TestFencedCheckpointStore _store;
 
     public InMemoryFencedCheckpointStoreConformanceTests()
     {
-        _leaseManager = new InMemoryProcessorLeaseManager(_clock);
-        _store = new InMemoryFencedCheckpointStore(_leaseManager);
+        _leaseManager = new TestProcessorLeaseManager(_clock);
+        _store = new TestFencedCheckpointStore(_leaseManager);
     }
 
     protected override Task<IProcessorLeaseManager> CreateLeaseManager() =>
@@ -44,15 +44,17 @@ public sealed class InMemoryFencedCheckpointStoreConformanceTests : FencedCheckp
 }
 
 /// <summary>
-/// Implementation-specific tests for <see cref="InMemoryFencedCheckpointStore"/> that
-/// exercise code paths unreachable through the public API.
+/// Implementation-specific tests for <see cref="TestFencedCheckpointStore"/> that exercise
+/// code paths unreachable through the public API.
 ///
 /// The checkpoint-row fence-token guard (guard 2) cannot fire independently of the lease
-/// guard (guard 1) through the public API, because the same monotonic token sequence
-/// co-satisfies both: the lease and the checkpoint always carry the same token.
-/// <c>InjectCheckpointFenceToken</c> (internal, exposed via <c>InternalsVisibleTo</c>)
-/// seeds a checkpoint row with an arbitrary fence token so the row guard can be tested
-/// in isolation.
+/// guard (guard 1) through the public API: the monotonicity of the token sequence guarantees
+/// that any token that passes guard 1 (i.e. equals the lease's current token) is already >=
+/// the stored checkpoint token (written by a previous successful fenced write). This property
+/// holds for both the in-process and PostgreSQL adapters.
+///
+/// <see cref="TestFencedCheckpointStore.InjectCheckpointFenceToken"/> seeds a checkpoint row
+/// with an arbitrary fence token so the row guard can be tested in isolation.
 /// </summary>
 public sealed class InMemoryFencedCheckpointStoreGuard2Tests
 {
@@ -60,17 +62,16 @@ public sealed class InMemoryFencedCheckpointStoreGuard2Tests
     /// When the checkpoint row carries a fence token higher than the one presented,
     /// the write is rejected even though the lease check would pass.
     ///
-    /// Scenario: generation T_high wrote to the checkpoint row (fenceToken = T_high),
-    /// and then the lease was re-acquired by the same replica with token T_low (impossible
-    /// in practice, but directly injected here to test the guard in isolation).
-    /// The write with T_low must be rejected to prevent the checkpoint from rolling back.
+    /// This scenario is unreachable through the public API (see class doc) but is important
+    /// to specify because guard 2 is present in the PostgreSQL implementation and this test
+    /// kills the Stryker mutant that removes the checkpoint-row fence-token check entirely.
     /// </summary>
     [Fact]
     public async Task CheckpointRowHasHigherToken_FencedWrite_ReturnsFalseAndDoesNotWrite()
     {
         var clock = new FakeTimeProvider();
-        var leaseManager = new InMemoryProcessorLeaseManager(clock);
-        var store = new InMemoryFencedCheckpointStore(leaseManager);
+        var leaseManager = new TestProcessorLeaseManager(clock);
+        var store = new TestFencedCheckpointStore(leaseManager);
 
         var consumerId = $"consumer-{Guid.NewGuid():N}";
         var processorId = $"processor-{Guid.NewGuid():N}";
@@ -83,7 +84,6 @@ public sealed class InMemoryFencedCheckpointStoreGuard2Tests
         var leaseToken = lease!.FenceToken;
 
         // Inject a checkpoint row with a fence token much higher than the lease token.
-        // This simulates the state left by a later generation that has already written.
         var highToken = leaseToken + 1000;
         store.InjectCheckpointFenceToken(processorId, position: 500, fenceToken: highToken);
 
@@ -96,22 +96,20 @@ public sealed class InMemoryFencedCheckpointStoreGuard2Tests
             ct: TestContext.Current.CancellationToken);
 
         Assert.False(saved);
-
-        // Checkpoint must not have moved forward from the injected value
         Assert.Equal(500, await store.GetAsync(processorId, TestContext.Current.CancellationToken));
     }
 
     /// <summary>
     /// When the checkpoint row carries the same fence token as the one presented,
-    /// the write proceeds (GREATEST applied to position). Equal tokens are a repeat write
-    /// from the same generation, which is valid (idempotent forward progress).
+    /// the write proceeds (GREATEST applied to position). Equal tokens represent a
+    /// repeat write from the same generation, which is valid (idempotent progress).
     /// </summary>
     [Fact]
     public async Task CheckpointRowHasSameToken_FencedWrite_Succeeds()
     {
         var clock = new FakeTimeProvider();
-        var leaseManager = new InMemoryProcessorLeaseManager(clock);
-        var store = new InMemoryFencedCheckpointStore(leaseManager);
+        var leaseManager = new TestProcessorLeaseManager(clock);
+        var store = new TestFencedCheckpointStore(leaseManager);
 
         var consumerId = $"consumer-{Guid.NewGuid():N}";
         var processorId = $"processor-{Guid.NewGuid():N}";
@@ -141,15 +139,15 @@ public sealed class InMemoryFencedCheckpointStoreGuard2Tests
     }
 
     /// <summary>
-    /// Calling <see cref="InMemoryFencedCheckpointStore.SaveIfLeaseHeldAsync"/> with
+    /// Calling <see cref="TestFencedCheckpointStore.SaveIfLeaseHeldAsync"/> with
     /// <c>useProcessorLeaseFencing = false</c> throws <see cref="NotSupportedException"/>.
     /// Tenant-lease fencing has no in-memory infrastructure to check against.
     /// </summary>
     [Fact]
     public async Task TenantLeaseFencing_ThrowsNotSupportedException()
     {
-        var leaseManager = new InMemoryProcessorLeaseManager();
-        var store = new InMemoryFencedCheckpointStore(leaseManager);
+        var leaseManager = new TestProcessorLeaseManager();
+        var store = new TestFencedCheckpointStore(leaseManager);
 
         await Assert.ThrowsAsync<NotSupportedException>(() =>
             store.SaveIfLeaseHeldAsync(
