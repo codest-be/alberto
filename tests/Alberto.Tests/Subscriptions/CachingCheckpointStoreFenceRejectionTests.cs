@@ -187,9 +187,27 @@ public class CachingCheckpointStoreFenceRejectionTests
     #region SubscribeFenceViolation
 
     /// <summary>
+    /// <see cref="CachingCheckpointStore.SubscribeFenceViolation"/> must reject a null handler
+    /// with <see cref="ArgumentNullException"/> before touching any shared state.
+    /// Kills the Statement mutant that removes <c>ArgumentNullException.ThrowIfNull(handler)</c>
+    /// (line 182): without the guard, null is silently added to the subscriber array and an
+    /// attempt to invoke it later throws <see cref="NullReferenceException"/> inside FlushAsync
+    /// rather than at the registration call site.
+    /// </summary>
+    [Fact]
+    public async Task SubscribeFenceViolation_NullHandler_ThrowsArgumentNullException()
+    {
+        var inner = new FencedCheckpointStore(leaseHeld: true);
+        await using var cache = new CachingCheckpointStore(
+            inner, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
+
+        Assert.Throws<ArgumentNullException>(() => cache.SubscribeFenceViolation(null!));
+    }
+
+    /// <summary>
     /// A handler registered via <see cref="CachingCheckpointStore.SubscribeFenceViolation"/>
     /// must be invoked when a fenced write is rejected.
-    /// Kills the statement mutant at the copy-on-write append (line 182) and the foreach-body
+    /// Kills the statement mutant at the copy-on-write append (line 184) and the foreach-body
     /// invocation (line 367): removing either silences the callback.
     /// </summary>
     [Fact]
