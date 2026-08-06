@@ -4,6 +4,7 @@ using Alberto;
 using Alberto.Configuration;
 using Alberto.InMemory;
 using Alberto.Telemetry;
+using Alberto.Tests.Telemetry;
 using Xunit;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
@@ -16,6 +17,7 @@ using OpenTelemetry.Trace;
 
 namespace Alberto.Tests.Configuration;
 
+[Collection(OtelTracingCollection.Name)]
 public class TelemetryRegistrationTests
 {
     private static AlbertoModuleDefinition Resolve(IServiceCollection services) =>
