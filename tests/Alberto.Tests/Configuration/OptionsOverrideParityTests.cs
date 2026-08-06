@@ -63,7 +63,8 @@ public class OptionsOverrideParityTests
 
         foreach (var (overridesType, optionsType) in DiscoverPairs())
         {
-            foreach (var prop in PublicProperties(optionsType))
+            // Computed properties (no SetMethod) are not configuration knobs and have no mirror.
+            foreach (var prop in PublicProperties(optionsType).Where(p => p.SetMethod != null))
             {
                 var mirror = overridesType.GetProperty(prop.Name, BindingFlags.Public | BindingFlags.Instance);
 

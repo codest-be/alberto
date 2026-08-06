@@ -121,12 +121,7 @@ internal static class ControlLoopRegistration
             if (!options.Leases.Enabled)
                 return new ControlLoopGroup(loops);
 
-            // An empty or whitespace value is as dangerous as null: every replica misconfigured
-            // this way stamps the same blank string into claimed_by, making all of them look
-            // identical and defeating fencing just as completely as if the option were omitted.
-            var replicaId = string.IsNullOrWhiteSpace(options.Leases.ReplicaId)
-                ? Environment.MachineName
-                : options.Leases.ReplicaId;
+            var replicaId = options.Leases.EffectiveReplicaId;
 
             // Backstop for a backend that permits leases but registers no manager. The built-in
             // backends are already covered earlier: the in-memory descriptor rejects leases at
@@ -200,11 +195,7 @@ internal static class ControlLoopRegistration
                     options.Retry, classifier, deadLetterStore, timeProvider: null, logger),
             };
 
-            // Same empty-string guard as the control loop above: a blank ReplicaId stamps the
-            // same value into every replica's dead-letter claim and defeats claim isolation.
-            var replicaId = string.IsNullOrWhiteSpace(options.Leases.ReplicaId)
-                ? Environment.MachineName
-                : options.Leases.ReplicaId;
+            var replicaId = options.Leases.EffectiveReplicaId;
 
             // Automatic retry needs an atomic claim-and-fence, which is the optional
             // IClaimableDeadLetterStore capability rather than part of every store's contract.
