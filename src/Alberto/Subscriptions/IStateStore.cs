@@ -44,7 +44,11 @@ public interface IStateStore<TState>
     /// delete-only batch is ordinary — but neither may be null. A null collection is a caller
     /// bug rather than an empty batch, so every adapter rejects it up front with
     /// <see cref="ArgumentNullException"/> instead of failing later, or differently, once the
-    /// batch is already under way.
+    /// batch is already under way. When both collections are empty the call completes without
+    /// error and leaves every existing document in the store untouched. A control loop that
+    /// processes an event with no state effects may therefore call <c>ApplyChangesAsync</c>
+    /// with two empty collections and rely on the store reaching a consistent checkpoint without
+    /// touching any stored state.
     /// </para>
     /// </remarks>
     /// <param name="upserts">States to insert or update, keyed by document ID.</param>
@@ -70,8 +74,11 @@ public interface IStateStore<TState>
     /// </para>
     /// <para>
     /// "Recently updated" means by the store's own write timestamp, not by any field of
-    /// <typeparamref name="TState"/>. Documents written in the same batch have no guaranteed
-    /// order relative to each other.
+    /// <typeparamref name="TState"/>. All documents written in a single
+    /// <see cref="ApplyChangesAsync"/> call appear in the result when <paramref name="limit"/>
+    /// is large enough to include them; their relative order within that batch is not defined.
+    /// This completeness guarantee is what lets a resolver page through a projection without
+    /// wondering whether all same-batch documents made it into the list.
     /// </para>
     /// <para>
     /// This is the read-side counterpart to <see cref="LoadManyAsync"/>, which needs the
