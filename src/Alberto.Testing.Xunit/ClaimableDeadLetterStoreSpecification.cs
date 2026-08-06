@@ -135,6 +135,32 @@ public abstract class ClaimableDeadLetterStoreSpecification : DeadLetterStoreSpe
         Assert.Equal(1, await store.CountAsync(ProcessorId, Ct));
     }
 
+    /// <summary>
+    /// <c>CompleteRetryAsync</c> must return <see langword="false"/> when the entry
+    /// has already been removed — for example, when a previous call already completed
+    /// the retry. The interface contract is "returns true when the claimed row was
+    /// removed"; if there is no row, the outcome is false.
+    /// </summary>
+    [Fact]
+    public async Task CompleteRetryAsync_WhenEntryAlreadyGone_ReturnsFalse()
+    {
+        var store = await CreateClaimableStore();
+        await store.StoreAsync(NewEntry(ProcessorId), Ct);
+        await store.MarkForRetryAsync(ProcessorId, Ct);
+        var claims = await store.ClaimRetryRequestedAsync(
+            ProcessorId, batchSize: 10, leaseDuration: TimeSpan.FromMinutes(5),
+            claimedBy: "worker", ct: Ct);
+        var claim = Assert.Single(claims);
+
+        // First call removes the entry.
+        Assert.True(await store.CompleteRetryAsync(claim, Ct));
+
+        // Second call: entry is gone — must return false, not throw.
+        var result = await store.CompleteRetryAsync(claim, Ct);
+
+        Assert.False(result);
+    }
+
     // ── AbandonRetryAsync ─────────────────────────────────────────────────────
 
     /// <summary>
@@ -201,6 +227,33 @@ public abstract class ClaimableDeadLetterStoreSpecification : DeadLetterStoreSpe
 
         var fabricated = new DeadLetterClaim(realClaim.Entry, Guid.NewGuid(), realClaim.ExpiresAt);
         var result = await store.AbandonRetryAsync(fabricated, Ct);
+
+        Assert.False(result);
+    }
+
+    /// <summary>
+    /// <c>AbandonRetryAsync</c> must return <see langword="false"/> when the entry
+    /// has already been removed — for example, after a concurrent
+    /// <c>CompleteRetryAsync</c> deleted the row. The interface contract is
+    /// "returns true when the active claim was abandoned"; if there is no row to
+    /// update, the outcome is false.
+    /// </summary>
+    [Fact]
+    public async Task AbandonRetryAsync_WhenEntryAlreadyGone_ReturnsFalse()
+    {
+        var store = await CreateClaimableStore();
+        await store.StoreAsync(NewEntry(ProcessorId), Ct);
+        await store.MarkForRetryAsync(ProcessorId, Ct);
+        var claims = await store.ClaimRetryRequestedAsync(
+            ProcessorId, batchSize: 10, leaseDuration: TimeSpan.FromMinutes(5),
+            claimedBy: "worker", ct: Ct);
+        var claim = Assert.Single(claims);
+
+        // Remove the entry via a successful completion.
+        Assert.True(await store.CompleteRetryAsync(claim, Ct));
+
+        // Trying to abandon a claim for a row that no longer exists must return false.
+        var result = await store.AbandonRetryAsync(claim, Ct);
 
         Assert.False(result);
     }

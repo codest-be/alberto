@@ -1,4 +1,8 @@
 #nullable enable
+Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.AbandonRetryAsync_WhenEntryAlreadyGone_ReturnsFalse() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.CompleteRetryAsync_WhenEntryAlreadyGone_ReturnsFalse() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.DeadLetterStoreSpecification.GetAsync_MultiTenantStore_TenantScopedQuery_ExcludesOtherTenantEntries() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.DeadLetterStoreSpecification.GetAsync_ReturnsEntriesNewestFirst() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.DeadLetterStoreSpecification.GetAsync_SingleTenantStore_NonNullTenantId_ReturnsEntries() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.RebuildCoordinatorFacade
 Alberto.Testing.Xunit.RebuildCoordinatorFacade.RebuildCoordinatorFacade() -> void
@@ -6,6 +10,8 @@ abstract Alberto.Testing.Xunit.RebuildCoordinatorFacade.CompleteAbortAsync(strin
 abstract Alberto.Testing.Xunit.RebuildCoordinatorFacade.CompletePromotionAsync(string! processorId, bool force = false, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.RebuildOutcome!>!
 abstract Alberto.Testing.Xunit.RebuildCoordinatorFacade.DiscardStateVersionAsync(string! projectionType, int version, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 abstract Alberto.Testing.Xunit.RebuildCoordinatorFacade.MarkReadyAsync(string! processorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.ProjectionRebuildState!>!
+virtual Alberto.Testing.Xunit.DeadLetterStoreSpecification.SupportsMultiTenantFiltering.get -> bool
+virtual Alberto.Testing.Xunit.DeadLetterStoreSpecification.SupportsNullTenantPassthrough.get -> bool
 Alberto.Testing.Xunit.StateStoreSpecification<TState>.ApplyChanges_EmptyBatch_PreservesExistingDocuments() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.StateStoreSpecification<TState>.ApplyChanges_IsNotObservedPartiallyApplied() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.StateStoreSpecification<TState>.ApplyChanges_SameDocument_InUpsertsAndDeletes_DeleteWins() -> System.Threading.Tasks.Task!
