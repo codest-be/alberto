@@ -8,6 +8,11 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <!-- See tests/Shared/ContainerStartup.cs — shared with Alberto.Tests and Alberto.Benchmarks. -->
+        <Compile Include="../Shared/ContainerStartup.cs" Link="ContainerStartup.cs" />
+    </ItemGroup>
+
+    <ItemGroup>
         <!-- Alberto core: IMessageTransport, ExternalMessage, OutboxEntry, OutboxRelay, etc. -->
         <ProjectReference Include="../../src/Alberto.Messaging/Alberto.Messaging.csproj" />
         <!-- PostgresOutboxStore -->

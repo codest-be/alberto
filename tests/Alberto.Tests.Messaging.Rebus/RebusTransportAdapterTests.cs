@@ -3,6 +3,7 @@ using System.Text.Json;
 using Alberto.Messaging;
 using Alberto.Messaging.Postgres;
 using Alberto.Postgres;
+using Alberto.TestInfrastructure;
 using FluentAssertions;
 using Npgsql;
 using Rebus.Activation;
@@ -26,22 +27,31 @@ namespace Alberto.Tests.Messaging.Rebus;
 /// </remarks>
 public sealed class RebusTransportAdapterTests : IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:16-alpine")
-        .Build();
+    private PostgreSqlContainer _container = null!;
 
     private NpgsqlDataSource _dataSource = null!;
 
     public async ValueTask InitializeAsync()
     {
-        await _container.StartAsync();
+        _container = await ContainerStartup.StartNewAsync(
+            () => new PostgreSqlBuilder("postgres:16-alpine").Build());
         PostgresMigrator.Migrate(_container.GetConnectionString(), singleTenant: true);
         _dataSource = NpgsqlDataSource.Create(_container.GetConnectionString());
     }
 
     public async ValueTask DisposeAsync()
     {
-        await _dataSource.DisposeAsync();
-        await _container.DisposeAsync();
+        // Either can still be null: InitializeAsync throws out of a failed start or a failed
+        // migration, and a NullReferenceException from teardown would hide which.
+        if (_dataSource is not null)
+        {
+            await _dataSource.DisposeAsync();
+        }
+
+        if (_container is not null)
+        {
+            await _container.DisposeAsync();
+        }
     }
 
     // -------------------------------------------------------------------------

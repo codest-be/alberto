@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using Alberto.Postgres;
 using Alberto.Subscriptions;
+using Alberto.TestInfrastructure;
 using Npgsql;
 using Testcontainers.PostgreSql;
 using Xunit;
@@ -34,7 +35,7 @@ public sealed class PostgresEventListenerTests : IAsyncLifetime
     // listener against the server, which is connection- and server-scoped rather than
     // database-scoped, so a private database would not isolate it. One fresh container per
     // test-class instance; tests run sequentially within the class.
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:16-alpine").Build();
+    private PostgreSqlContainer _container = null!;
 
     private NpgsqlDataSource _dataSource = null!;
     private string _connectionString = null!;
@@ -54,7 +55,8 @@ public sealed class PostgresEventListenerTests : IAsyncLifetime
 
     public async ValueTask InitializeAsync()
     {
-        await _container.StartAsync();
+        _container = await ContainerStartup.StartNewAsync(
+            () => new PostgreSqlBuilder("postgres:16-alpine").Build());
         _connectionString = _container.GetConnectionString();
 
         var migrationResult = PostgresMigrator.Migrate(_connectionString, singleTenant: true);
@@ -67,8 +69,18 @@ public sealed class PostgresEventListenerTests : IAsyncLifetime
 
     public async ValueTask DisposeAsync()
     {
-        await _dataSource.DisposeAsync();
-        await _container.DisposeAsync();
+        // Both are assigned during InitializeAsync, which can throw before either — a container
+        // that never started, a migration that failed. Guarding keeps that error visible instead
+        // of replacing it with a NullReferenceException out of teardown.
+        if (_dataSource is not null)
+        {
+            await _dataSource.DisposeAsync();
+        }
+
+        if (_container is not null)
+        {
+            await _container.DisposeAsync();
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────

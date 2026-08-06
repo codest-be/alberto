@@ -29,6 +29,12 @@ Postgres-backed tests use Testcontainers and need a running Docker daemon. They 
 `PostgresCluster` is an assembly fixture that starts its container **lazily**, on the first
 request for a database, so a filtered run never reaches for Docker — keep it that way.
 
+Every container in the repo starts through `ContainerStartup.StartNewAsync`
+(`tests/Shared/ContainerStartup.cs`, compiled as a linked item into the three projects that
+start containers), which retries the host-port collision that rootless Docker produces under
+load. A bare `container.StartAsync()` is the bug. See
+[docs/development/rootless-docker-ports.md](docs/development/rootless-docker-ports.md).
+
 ### Test quality
 ```bash
 build/coverage.sh                       # Line/branch coverage, whole suite
