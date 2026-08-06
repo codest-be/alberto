@@ -29,6 +29,11 @@ public sealed class InMemoryDeadLetterStore(TimeProvider? timeProvider = null) :
     {
         var entries = _entries.Values
             .Where(e => e.ProcessorId == processorId)
+            // Invariant: e.TenantId is null only for single-tenant entries. Multi-tenant events
+            // are always stamped with a non-null TenantId by the tenant decorator before append,
+            // and DeadLetterEntryFactory.Create copies envelope.TenantId verbatim. The
+            // `e.TenantId is null` clause therefore matches only single-tenant entries and
+            // never leaks entries across tenants in a multi-tenant store.
             .Where(e => tenantId is null || e.TenantId is null || e.TenantId == tenantId)
             .OrderByDescending(e => e.FailedAt)
             .Take(limit)

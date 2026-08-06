@@ -33,17 +33,23 @@ public abstract class EventStoreBackendSpecification
     // ── Capability hooks ─────────────────────────────────────────────────────
 
     /// <summary>
-    /// True when the backend under test supports <see cref="IEventStoreBackend.StreamAllAsync"/>.
+    /// Selects which contract the two <c>StreamAllAsync</c> facts assert.
     ///
     /// <para>
-    /// The default is <see langword="true"/>. Set this to <see langword="false"/> for backends
-    /// that intentionally restrict cross-tenant streaming — specifically, the request-scoped
-    /// tenant decorator (<c>InMemoryTenantEventStoreDecorator</c> /
-    /// <c>TenantEventStoreDecorator</c>) whose <c>StreamAllAsync</c> throws
-    /// <see cref="InvalidOperationException"/> when <c>HasTenant</c> is true. That restriction
-    /// is a deliberate isolation guard, not a missing feature; setting this hook to
-    /// <see langword="false"/> skips the two <c>StreamAllAsync</c> facts rather than treating
-    /// the guard as a contract violation.
+    /// When <see langword="true"/> (the default) each fact asserts that
+    /// <see cref="IEventStoreBackend.StreamAllAsync"/> returns all events after the given
+    /// position — the normal cross-tenant streaming contract.
+    /// </para>
+    ///
+    /// <para>
+    /// When <see langword="false"/> each fact instead asserts that
+    /// <see cref="IEventStoreBackend.StreamAllAsync"/> throws
+    /// <see cref="InvalidOperationException"/>. Set this for backends that intentionally
+    /// restrict cross-tenant streaming — specifically the request-scoped tenant decorators
+    /// (<c>InMemoryTenantEventStoreDecorator</c> / <c>TenantEventStoreDecorator</c>) whose
+    /// <c>StreamAllAsync</c> throws when <c>HasTenant</c> is true. That restriction is a
+    /// deliberate isolation guard, not a missing feature; the guard is part of the contract
+    /// and must be asserted, not skipped.
     /// </para>
     /// </summary>
     protected virtual bool SupportsStreamAll => true;
@@ -320,15 +326,21 @@ public abstract class EventStoreBackendSpecification
         Assert.Contains(matched.Tags, tag => tag.Value == $"source:{TestId}");
     }
 
-    /// <summary>An empty query (no type or tag filter) must return all events after the given position.</summary>
+    /// <summary>
+    /// An empty query (no type or tag filter) must return all events after the given position
+    /// when <see cref="SupportsStreamAll"/> is <see langword="true"/>, or throw
+    /// <see cref="InvalidOperationException"/> when it is <see langword="false"/> (isolation guard).
+    /// </summary>
     [Fact]
     public async Task Stream_EmptyQuery_ShouldReturnAllEvents()
     {
         if (!SupportsStreamAll)
-            Assert.Skip(
-                "This backend does not support StreamAllAsync when a tenant is in scope. " +
-                "The tenant decorator intentionally throws to prevent cross-tenant data leakage; " +
-                "this restriction is a deliberate isolation guard, not a missing feature.");
+        {
+            var guardBackend = await CreateBackend();
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () => guardBackend.StreamAllAsync(cancellationToken: TestContext.Current.CancellationToken));
+            return;
+        }
 
         var backend = await CreateBackend();
 
@@ -343,7 +355,8 @@ public abstract class EventStoreBackendSpecification
 
         var result = await backend.StreamAllAsync(afterPosition: startPosition, cancellationToken: TestContext.Current.CancellationToken);
 
-        Assert.Equal(3, result.Count);    }
+        Assert.Equal(3, result.Count);
+    }
 
     /// <summary>When an <c>afterPosition</c> is supplied only events with a greater position must be returned.</summary>
     [Fact]
@@ -489,15 +502,21 @@ public abstract class EventStoreBackendSpecification
 
     #region StreamAll Tests
 
-    /// <summary><c>StreamAllAsync</c> must return every event appended after the given position.</summary>
+    /// <summary>
+    /// <c>StreamAllAsync</c> must return every event appended after the given position when
+    /// <see cref="SupportsStreamAll"/> is <see langword="true"/>, or throw
+    /// <see cref="InvalidOperationException"/> when it is <see langword="false"/> (isolation guard).
+    /// </summary>
     [Fact]
     public async Task StreamAll_ShouldReturnAllEvents()
     {
         if (!SupportsStreamAll)
-            Assert.Skip(
-                "This backend does not support StreamAllAsync when a tenant is in scope. " +
-                "The tenant decorator intentionally throws to prevent cross-tenant data leakage; " +
-                "this restriction is a deliberate isolation guard, not a missing feature.");
+        {
+            var guardBackend = await CreateBackend();
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () => guardBackend.StreamAllAsync(cancellationToken: TestContext.Current.CancellationToken));
+            return;
+        }
 
         var backend = await CreateBackend();
 

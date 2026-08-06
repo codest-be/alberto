@@ -45,13 +45,15 @@ public class InMemoryEventStoreBackendTests : EventStoreBackendSpecification
 /// <see cref="EventStoreBackendSpecification.SupportsStreamAll"/> is <c>false</c>: the
 /// decorator's <c>StreamAllAsync</c> intentionally throws <see cref="InvalidOperationException"/>
 /// when <c>HasTenant = true</c> to prevent a request-scoped caller from reading all tenants'
-/// events. The two <c>StreamAllAsync</c> facts are skipped; the isolation guard itself is
-/// covered by <see cref="InMemoryTenantBackendTests.Decorator_StreamAllAsync_ThrowsWhenHasTenant"/>.
+/// events. Both <c>StreamAllAsync</c> facts assert the throw — the isolation guard is part
+/// of the contract and is verified here. <see cref="InMemoryTenantBackendTests.Decorator_StreamAllAsync_ThrowsWhenHasTenant"/>
+/// provides an additional assertion on the exception message shape.
 /// </para>
 /// </summary>
 public sealed class InMemoryTenantEventStoreDecoratorSpecificationTests : EventStoreBackendSpecification
 {
-    // StreamAllAsync throws when HasTenant = true — this is the isolation guard, not a gap.
+    // StreamAllAsync throws when HasTenant = true — this is the isolation guard. Both StreamAll
+    // facts assert the throw so the guard is under specification, not skipped.
     protected override bool SupportsStreamAll => false;
 
     protected override Task<IEventStoreBackend> CreateBackend()

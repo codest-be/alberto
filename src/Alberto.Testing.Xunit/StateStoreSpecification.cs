@@ -618,7 +618,11 @@ public abstract class StateStoreSpecification<TState>
 
         var recent = await store.ListRecentAsync(20, Ct);
 
-        // Filter to the values from this fact's band to avoid cross-test interference on EF.
+        // Filter to the values this fact wrote. Adapters where SupportsProjectionTypeIsolation
+        // is false (e.g. EF, where projectionType is structural rather than a runtime key) store
+        // all documents in one shared table, so ListRecentAsync may return documents written by
+        // other facts. The +71/+72/+73 band is reserved for this fact alone — no other fact
+        // in the ListRecent_* group uses those offsets — so the filter is exact, not approximate.
         var values = recent.Select(ReadValue)
             .Where(v => v is ListRecentValueBase + 71 or ListRecentValueBase + 72 or ListRecentValueBase + 73)
             .ToList();
