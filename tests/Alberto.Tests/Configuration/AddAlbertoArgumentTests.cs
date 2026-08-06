@@ -121,5 +121,37 @@ public class AddAlbertoArgumentTests
             "is not called explicitly; its absence means the auto-registration block was skipped.");
     }
 
+    /// <summary>
+    /// After <c>AddAlberto</c> auto-registers the control loop, it must set
+    /// <c>ControlLoopConfigured</c> to <c>true</c> on the builder. The flag is the latch
+    /// that prevents a subsequent <c>WithControlLoop</c> call on the same builder — such as
+    /// an internal call made by <c>WithRebuilds</c> — from registering the control loop a
+    /// second time. Without the assignment, the flag stays <c>false</c> after
+    /// auto-registration, leaving the door open for any builder extension that calls
+    /// <c>WithControlLoop</c> internally to add a duplicate registration and start two
+    /// control loops that race on the same checkpoint.
+    /// </summary>
+    [Fact]
+    public void AddAlberto_AutoRegistration_SetsControlLoopConfiguredLatch()
+    {
+        var services = new ServiceCollection();
+        DcbModuleBuilder? captured = null;
+
+        // No explicit WithControlLoop — the auto-registration block must fire.
+        // DcbModuleBuilder is a class; captured holds the reference that AddAlberto
+        // continues to operate on after configure() returns, so it reflects the post-block state.
+        services.AddAlberto("orders", b =>
+        {
+            captured = b;
+            b.WithInMemory();
+        });
+
+        Assert.NotNull(captured);
+        Assert.True(captured.ControlLoopConfigured,
+            "ControlLoopConfigured must be true after the auto-registration block runs. " +
+            "Without the assignment, any subsequent WithControlLoop call on the same builder " +
+            "sees the flag clear and registers a second control loop.");
+    }
+
     #endregion
 }
