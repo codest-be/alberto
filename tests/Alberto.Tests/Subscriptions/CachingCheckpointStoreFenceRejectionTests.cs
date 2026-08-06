@@ -184,6 +184,98 @@ public class CachingCheckpointStoreFenceRejectionTests
 
     #endregion
 
+    #region SubscribeFenceViolation
+
+    /// <summary>
+    /// A handler registered via <see cref="CachingCheckpointStore.SubscribeFenceViolation"/>
+    /// must be invoked when a fenced write is rejected.
+    /// Kills the statement mutant at the copy-on-write append (line 182) and the foreach-body
+    /// invocation (line 367): removing either silences the callback.
+    /// </summary>
+    [Fact]
+    public async Task SubscribeFenceViolation_RegisteredHandler_IsCalledOnFenceRejection()
+    {
+        const string processorId = "proc-1";
+
+        var inner = new FencedCheckpointStore(leaseHeld: false);
+        await inner.SaveAsync(processorId, 50L, TestContext.Current.CancellationToken);
+
+        await using var cache = new CachingCheckpointStore(
+            inner, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
+        cache.SetFencingContext(new FencingContext("consumer-1", "replica-1"));
+
+        var violations = new List<string>();
+        cache.SubscribeFenceViolation(id => violations.Add(id));
+
+        await cache.GetAsync(processorId, TestContext.Current.CancellationToken);
+        await cache.SaveAsync(processorId, 100L, TestContext.Current.CancellationToken);
+
+        await cache.FlushAsync(TestContext.Current.CancellationToken);
+
+        Assert.Contains(processorId, violations);
+    }
+
+    /// <summary>
+    /// All handlers registered via multiple <see cref="CachingCheckpointStore.SubscribeFenceViolation"/>
+    /// calls must be invoked on a fence rejection (copy-on-write array is fully enumerated).
+    /// </summary>
+    [Fact]
+    public async Task SubscribeFenceViolation_MultipleHandlers_AllAreCalled()
+    {
+        const string processorId = "proc-1";
+
+        var inner = new FencedCheckpointStore(leaseHeld: false);
+        await inner.SaveAsync(processorId, 10L, TestContext.Current.CancellationToken);
+
+        await using var cache = new CachingCheckpointStore(
+            inner, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
+        cache.SetFencingContext(new FencingContext("consumer-1", "replica-1"));
+
+        var firstCalled = false;
+        var secondCalled = false;
+        cache.SubscribeFenceViolation(_ => firstCalled = true);
+        cache.SubscribeFenceViolation(_ => secondCalled = true);
+
+        await cache.GetAsync(processorId, TestContext.Current.CancellationToken);
+        await cache.SaveAsync(processorId, 200L, TestContext.Current.CancellationToken);
+
+        await cache.FlushAsync(TestContext.Current.CancellationToken);
+
+        Assert.True(firstCalled, "First subscribed handler was not called");
+        Assert.True(secondCalled, "Second subscribed handler was not called");
+    }
+
+    /// <summary>
+    /// When a fenced write is accepted, handlers registered via
+    /// <see cref="CachingCheckpointStore.SubscribeFenceViolation"/> must NOT be invoked.
+    /// Kills the LogicalNot mutant at line 346 that inverts <c>!leaseHeld</c> to <c>leaseHeld</c>:
+    /// with the mutation the violation path fires even on a successful write.
+    /// </summary>
+    [Fact]
+    public async Task FlushAsync_AcceptedFence_SubscribedHandlers_AreNotCalled()
+    {
+        const string processorId = "proc-1";
+
+        var inner = new FencedCheckpointStore(leaseHeld: true);
+        await inner.SaveAsync(processorId, 100L, TestContext.Current.CancellationToken);
+
+        await using var cache = new CachingCheckpointStore(
+            inner, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
+        cache.SetFencingContext(new FencingContext("consumer-1", "replica-1"));
+
+        var violationFired = false;
+        cache.SubscribeFenceViolation(_ => violationFired = true);
+
+        await cache.GetAsync(processorId, TestContext.Current.CancellationToken);
+        await cache.SaveAsync(processorId, 200L, TestContext.Current.CancellationToken);
+
+        await cache.FlushAsync(TestContext.Current.CancellationToken);
+
+        Assert.False(violationFired, "Violation handler fired on a successful fenced write");
+    }
+
+    #endregion
+
     #region Test helpers
 
     /// <summary>
