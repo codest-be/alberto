@@ -29,7 +29,7 @@ public sealed class InMemoryDeadLetterStore(TimeProvider? timeProvider = null) :
     {
         var entries = _entries.Values
             .Where(e => e.ProcessorId == processorId)
-            .Where(e => tenantId is null || e.TenantId == tenantId)
+            .Where(e => tenantId is null || e.TenantId is null || e.TenantId == tenantId)
             .OrderByDescending(e => e.FailedAt)
             .Take(limit)
             .ToList();

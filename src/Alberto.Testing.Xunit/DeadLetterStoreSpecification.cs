@@ -108,6 +108,34 @@ public abstract class DeadLetterStoreSpecification
         Assert.Equal(entry.Id, results[0].Id);
     }
 
+    /// <summary>
+    /// Passing a non-null <c>tenantId</c> to a single-tenant store must return entries whose
+    /// stored <see cref="DeadLetterEntry.TenantId"/> is <see langword="null"/> — the same entries
+    /// that a null tenant argument would return. In a single-tenant deployment entries are stored
+    /// without a tenant identifier because there is no tenant column to write to; passing an
+    /// argument that filters by it would silently discard every entry, turning a valid operator
+    /// inquiry into an empty response. Both adapters agree: Postgres ignores the tenant argument
+    /// when in single-tenant mode (no tenant_id column), and InMemory treats a null-TenantId
+    /// entry as unscoped and returns it regardless of the argument.
+    /// </summary>
+    [Fact]
+    public async Task GetAsync_SingleTenantStore_NonNullTenantId_ReturnsEntries()
+    {
+        var store = await CreateStore();
+
+        // NewEntry produces an entry with TenantId = null — the shape used by single-tenant stores.
+        var entry = NewEntry(ProcessorId);
+        await store.StoreAsync(entry, Ct);
+
+        // A caller that passes a non-null tenantId to a single-tenant store must still see
+        // the entry. Filtering it out would make the CLI return nothing on single-tenant
+        // deployments while the Postgres implementation returns the full list.
+        var results = await store.GetAsync(ProcessorId, "any-tenant-does-not-filter", 100, Ct);
+
+        Assert.Single(results);
+        Assert.Equal(entry.Id, results[0].Id);
+    }
+
     /// <summary><c>GetAsync</c> must not return entries belonging to a different processor.</summary>
     [Fact]
     public async Task GetAsync_DoesNotReturnEntriesForOtherProcessor()

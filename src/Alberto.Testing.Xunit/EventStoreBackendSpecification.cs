@@ -30,6 +30,24 @@ public abstract class EventStoreBackendSpecification
     /// </summary>
     protected abstract Task<IEventStoreBackend> CreateBackend();
 
+    // ── Capability hooks ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// True when the backend under test supports <see cref="IEventStoreBackend.StreamAllAsync"/>.
+    ///
+    /// <para>
+    /// The default is <see langword="true"/>. Set this to <see langword="false"/> for backends
+    /// that intentionally restrict cross-tenant streaming — specifically, the request-scoped
+    /// tenant decorator (<c>InMemoryTenantEventStoreDecorator</c> /
+    /// <c>TenantEventStoreDecorator</c>) whose <c>StreamAllAsync</c> throws
+    /// <see cref="InvalidOperationException"/> when <c>HasTenant</c> is true. That restriction
+    /// is a deliberate isolation guard, not a missing feature; setting this hook to
+    /// <see langword="false"/> skips the two <c>StreamAllAsync</c> facts rather than treating
+    /// the guard as a contract violation.
+    /// </para>
+    /// </summary>
+    protected virtual bool SupportsStreamAll => true;
+
     #region Append Tests
 
     /// <summary>A single event must be persisted and returned by <c>AppendAsync</c>.</summary>
@@ -306,6 +324,12 @@ public abstract class EventStoreBackendSpecification
     [Fact]
     public async Task Stream_EmptyQuery_ShouldReturnAllEvents()
     {
+        if (!SupportsStreamAll)
+            Assert.Skip(
+                "This backend does not support StreamAllAsync when a tenant is in scope. " +
+                "The tenant decorator intentionally throws to prevent cross-tenant data leakage; " +
+                "this restriction is a deliberate isolation guard, not a missing feature.");
+
         var backend = await CreateBackend();
 
         // Get starting position to filter out events from other tests
@@ -469,6 +493,12 @@ public abstract class EventStoreBackendSpecification
     [Fact]
     public async Task StreamAll_ShouldReturnAllEvents()
     {
+        if (!SupportsStreamAll)
+            Assert.Skip(
+                "This backend does not support StreamAllAsync when a tenant is in scope. " +
+                "The tenant decorator intentionally throws to prevent cross-tenant data leakage; " +
+                "this restriction is a deliberate isolation guard, not a missing feature.");
+
         var backend = await CreateBackend();
 
         // Get starting position to filter out events from other tests

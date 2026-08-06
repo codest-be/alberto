@@ -227,6 +227,29 @@ public abstract class StateStoreSpecification<TState>
         await act.Should().NotThrowAsync();
     }
 
+    /// <summary>
+    /// An empty batch — both collections empty — must not modify any previously stored
+    /// document. A control loop that processes an event with no state effects calls
+    /// <c>ApplyChangesAsync(empty, empty)</c> to advance a consistent checkpoint without
+    /// touching any stored state. If that call silently cleared or altered documents,
+    /// the projection would diverge without a detectable error.
+    /// </summary>
+    [Fact]
+    public async Task ApplyChanges_EmptyBatch_PreservesExistingDocuments()
+    {
+        var store = await CreateStore(NewProjectionType());
+        var docId = $"doc-{TestId}-empty-batch";
+
+        await store.ApplyChangesAsync(MakeDict(docId, 77), [], Ct);
+
+        // An empty batch issued after the upsert must be a no-op.
+        await store.ApplyChangesAsync(new Dictionary<string, TState>(), [], Ct);
+
+        var result = await store.LoadManyAsync([docId], Ct);
+        result.Should().ContainKey(docId, "the document must survive an empty batch");
+        ReadValue(result[docId]).Should().Be(77, "the value must be unchanged by the empty batch");
+    }
+
     /// <summary>A batch that both upserts and deletes must apply all changes atomically.</summary>
     [Fact]
     public async Task ApplyChanges_UpsertAndDelete_BothAppliedInOneBatch()
@@ -569,6 +592,40 @@ public abstract class StateStoreSpecification<TState>
                 MakeDict($"doc-{TestId}-lr-limit-{i}", ListRecentValueBase + 20 + i), [], Ct);
 
         (await store.ListRecentAsync(2, Ct)).Should().HaveCount(2);
+    }
+
+    /// <summary>
+    /// Every document written in a single <c>ApplyChangesAsync</c> call appears in the
+    /// result when <c>limit</c> is large enough to include them. The contract makes no
+    /// promise about the relative order of same-batch documents — that is intentionally
+    /// unspecified — but it does promise completeness: a caller listing a projection
+    /// must not find that the last write left some of its documents missing.
+    /// </summary>
+    [Fact]
+    public async Task ListRecent_BatchWritten_AllDocumentsAppear()
+    {
+        var store = await CreateStore(NewProjectionType());
+
+        // Write three documents in one atomic batch. Their relative order in ListRecent is
+        // unspecified (same timestamp / same sequence band), but all three must appear.
+        var upserts = new Dictionary<string, TState>
+        {
+            [$"doc-{TestId}-lr-batch-a"] = MakeState(ListRecentValueBase + 71),
+            [$"doc-{TestId}-lr-batch-b"] = MakeState(ListRecentValueBase + 72),
+            [$"doc-{TestId}-lr-batch-c"] = MakeState(ListRecentValueBase + 73),
+        };
+        await store.ApplyChangesAsync(upserts, [], Ct);
+
+        var recent = await store.ListRecentAsync(20, Ct);
+
+        // Filter to the values from this fact's band to avoid cross-test interference on EF.
+        var values = recent.Select(ReadValue)
+            .Where(v => v is ListRecentValueBase + 71 or ListRecentValueBase + 72 or ListRecentValueBase + 73)
+            .ToList();
+
+        values.Should().HaveCount(3,
+            "all documents written in one batch must appear in ListRecentAsync " +
+            "when limit is large enough, regardless of their within-batch order");
     }
 
     /// <summary>Deleted documents must not appear in the listing.</summary>
