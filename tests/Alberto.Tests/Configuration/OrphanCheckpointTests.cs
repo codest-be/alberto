@@ -3,6 +3,10 @@ using Alberto.Configuration;
 using Alberto.InMemory;
 using Alberto.Subscriptions;
 using FluentAssertions;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -10,6 +14,14 @@ namespace Alberto.Tests.Configuration;
 
 public class OrphanCheckpointTests
 {
+    private sealed class FakeHostEnvironment(string environmentName) : IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = environmentName;
+        public string ApplicationName { get; set; } = "TestApp";
+        public string ContentRootPath { get; set; } = "/";
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
+    }
+
     private sealed class FakeInventory(params string[] processorIds) : ICheckpointInventory
     {
         public int Calls { get; private set; }
@@ -259,8 +271,10 @@ public class OrphanCheckpointTests
         (await inner.GetAsync("OldProcessorName", ct)).Should().BeNull(
             "the checkpoint is still buffered; the inner store must not have it yet");
 
-        // The inventory must flush and then include the buffered entry.
-        var inventory = caching.AsInventory;
+        // InMemoryCheckpointStore implements ICheckpointInventory and CanEnumerate defaults
+        // to true, so the resolution pattern must yield a non-null inventory.
+        ICheckpointInventory? inventory =
+            caching is ICheckpointInventory { CanEnumerate: true } inv ? inv : null;
         inventory.Should().NotBeNull("InMemoryCheckpointStore implements ICheckpointInventory");
 
         var ids = await inventory!.ListProcessorIdsAsync(ct);
@@ -281,10 +295,10 @@ public class OrphanCheckpointTests
     {
         // When a custom store opts out of ICheckpointInventory by not implementing it,
         // wrapping it in CachingCheckpointStore must not silently advertise inventory
-        // support. Before the fix, CachingCheckpointStore did not implement the interface
-        // at all, so the cast at the resolution site returned null and the check was skipped.
-        // After the fix, AsInventory returns null for non-inventory inners, preserving
-        // the opt-out and preventing a false all-clear under Strict policy.
+        // support. CachingCheckpointStore.CanEnumerate returns false when the inner store
+        // does not implement ICheckpointInventory, so the resolution-site pattern match
+        // (`is ICheckpointInventory { CanEnumerate: true }`) correctly returns null, and
+        // the hosted service skips the check rather than receiving a false all-clear.
         var ct = TestContext.Current.CancellationToken;
         var inner = new NoInventoryStore();
         await inner.SaveAsync("OrphanedProcessor", 42, ct);
@@ -294,9 +308,15 @@ public class OrphanCheckpointTests
             flushInterval: TimeSpan.FromHours(1),
             resyncInterval: TimeSpan.FromHours(1));
 
-        // The decorator must honour the inner store's opt-out.
-        caching.AsInventory.Should().BeNull(
-            "a decorator wrapping a non-inventory store must return null from AsInventory, " +
+        // The decorator must honour the inner store's opt-out via CanEnumerate.
+        ((ICheckpointInventory)caching).CanEnumerate.Should().BeFalse(
+            "a decorator wrapping a non-inventory store must report CanEnumerate = false");
+
+        // The resolution pattern must yield null when CanEnumerate is false.
+        ICheckpointInventory? resolved =
+            caching is ICheckpointInventory { CanEnumerate: true } inv ? inv : null;
+        resolved.Should().BeNull(
+            "the resolution pattern must return null for a store that cannot enumerate, " +
             "not an ICheckpointInventory that would return an empty list and look like an all-clear");
 
         // Passing null to the hosted service under Strict must skip the check, not pass it.
@@ -306,6 +326,196 @@ public class OrphanCheckpointTests
 
         await act.Should().NotThrowAsync(
             "when the store cannot enumerate, the orphan check is skipped — not passed");
+    }
+
+    // -----------------------------------------------------------------------
+    // Regression: third-party decorator must be able to express CanEnumerate = false
+    // -----------------------------------------------------------------------
+    // Before the CanEnumerate fix the resolution site named the concrete CachingCheckpointStore
+    // type and fell through to a plain `as ICheckpointInventory` cast for every other store.
+    // A third-party decorator implementing ICheckpointStore + ICheckpointInventory over a
+    // non-enumerable inner had no way to express "I cannot enumerate" through the public
+    // interface — the cast always succeeded and returned a live inventory whose ListProcessorIdsAsync
+    // returned [], which is indistinguishable from a genuine all-clear under Strict policy.
+
+    /// <summary>
+    /// A minimal decorator that uses only the public Alberto API (no internals). Overrides
+    /// <see cref="ICheckpointInventory.CanEnumerate"/> to return <c>false</c> when the inner
+    /// store does not support enumeration — the pattern the fix enables.
+    /// </summary>
+    private sealed class ThirdPartyDecorator(ICheckpointStore inner) : ICheckpointStore, ICheckpointInventory
+    {
+        public int ListProcessorIdsAsyncCallCount { get; private set; }
+
+        // CanEnumerate correctly delegates to the inner store's capability.
+        // This override is only expressible after ICheckpointInventory.CanEnumerate was added.
+        public bool CanEnumerate => inner is ICheckpointInventory;
+
+        public Task<IReadOnlyList<string>> ListProcessorIdsAsync(CancellationToken ct = default)
+        {
+            ListProcessorIdsAsyncCallCount++;
+            return inner is ICheckpointInventory inv
+                ? inv.ListProcessorIdsAsync(ct)
+                : Task.FromResult<IReadOnlyList<string>>([]);
+        }
+
+        public Task<long?> GetAsync(string processorId, CancellationToken ct = default)
+            => inner.GetAsync(processorId, ct);
+
+        public Task SaveAsync(string processorId, long position, CancellationToken ct = default)
+            => inner.SaveAsync(processorId, position, ct);
+
+        public Task ResetAsync(string processorId, CancellationToken ct = default)
+            => inner.ResetAsync(processorId, ct);
+
+        public Task RewindAsync(string processorId, long position, CancellationToken ct = default)
+            => inner.RewindAsync(processorId, position, ct);
+    }
+
+    [Fact]
+    public async Task ThirdPartyDecorator_CanEnumerateFalse_IsOptedOutByResolutionSite()
+    {
+        // Regression test for the "shallow seam" defect. The resolution site in
+        // ServiceCollectionExtensions.cs used to cast to the concrete CachingCheckpointStore
+        // type and fall through to `as ICheckpointInventory` for every other store. A
+        // third-party decorator implementing ICheckpointStore + ICheckpointInventory over a
+        // non-enumerable inner had no way to express "I cannot enumerate" through the public
+        // interface — the cast always succeeded; its ListProcessorIdsAsync returned []; and
+        // OrphanCheckpointHostedService saw no orphans even when real ones existed — a false
+        // all-clear under Strict policy.
+        //
+        // After the fix, ICheckpointInventory carries `bool CanEnumerate => true;` (default).
+        // The production expression in ServiceCollectionExtensions.cs is now:
+        //     store is ICheckpointInventory { CanEnumerate: true } inv ? inv : null
+        // A decorator that overrides CanEnumerate to false receives null, and the hosted
+        // service logs the skip instead of calling ListProcessorIdsAsync.
+        //
+        // RED on origin/main: ICheckpointInventory has no CanEnumerate, so ThirdPartyDecorator
+        // (which overrides it) does not compile. That is the defect — the interface offered no
+        // way to ask the capability question at all.
+        //
+        // This test goes through the PRODUCTION resolution site (ServiceCollectionExtensions.cs)
+        // via real DI, not a local copy of the pattern. If someone reverts that expression to
+        // the old `as ICheckpointInventory` cast, the decorator is resolved as a live inventory,
+        // ListProcessorIdsAsync is called, and ListProcessorIdsAsyncCallCount becomes 1.
+        var ct = TestContext.Current.CancellationToken;
+
+        // Write a real orphan: an empty-list return from ThirdPartyDecorator would be a
+        // false all-clear (no orphans detected), which is distinct from a correct skip.
+        var inner = new NoInventoryStore();
+        await inner.SaveAsync("OrphanedProcessor", 42, ct);
+        var decorator = new ThirdPartyDecorator(inner);
+
+        // Build the DI container as a real host would, then replace the keyed ICheckpointStore
+        // with the decorator. The last AddKeyedSingleton registration wins for GetKeyedService
+        // (singular), so the production lambda receives the decorator when it calls
+        // GetKeyedService<ICheckpointStore>("orders").
+        var services = new ServiceCollection();
+        services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment("Production"));
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.AddAlberto("orders", m => m.WithInMemory());
+        services.AddKeyedSingleton<ICheckpointStore>("orders", decorator);
+
+        await using var sp = services.BuildServiceProvider();
+
+        // Pin the override assumption: if last-registration-wins ever stops applying here,
+        // the rest of the test would pass vacuously (InMemoryCheckpointStore.CanEnumerate
+        // is true, ListProcessorIdsAsync runs on the inner store, and the count stays 0).
+        sp.GetKeyedService<ICheckpointStore>("orders").Should().BeSameAs(decorator,
+            "the last AddKeyedSingleton registration must win for GetKeyedService (singular)");
+
+        // OrphanCheckpointHostedService is registered as IHostedService by AddAlberto.
+        // Starting it exercises the production resolution expression.
+        var orphanService = sp.GetServices<IHostedService>()
+            .OfType<OrphanCheckpointHostedService>()
+            .Single();
+        await orphanService.StartAsync(ct);
+
+        // The production expression must have returned null (CanEnumerate: false → opted-out).
+        // If the expression were reverted to the old `as ICheckpointInventory` cast, the
+        // decorator would be non-null, ListProcessorIdsAsync would be called, and this fails.
+        decorator.ListProcessorIdsAsyncCallCount.Should().Be(0,
+            "the production resolution site must treat CanEnumerate: false as opted-out and " +
+            "never call ListProcessorIdsAsync on a store that cannot enumerate");
+    }
+
+    /// <summary>
+    /// A store that implements <see cref="ICheckpointInventory"/> and says nothing about
+    /// <see cref="ICheckpointInventory.CanEnumerate"/>. It relies entirely on the interface's
+    /// default implementation, which is the case every store written before the property
+    /// existed falls into.
+    /// </summary>
+    private sealed class SilentInventoryStore : ICheckpointStore, ICheckpointInventory
+    {
+        private readonly Dictionary<string, long> _data = new();
+
+        public int ListProcessorIdsAsyncCallCount { get; private set; }
+
+        public Task<IReadOnlyList<string>> ListProcessorIdsAsync(CancellationToken ct = default)
+        {
+            ListProcessorIdsAsyncCallCount++;
+            return Task.FromResult<IReadOnlyList<string>>([.. _data.Keys]);
+        }
+
+        public Task<long?> GetAsync(string processorId, CancellationToken ct = default)
+            => Task.FromResult(_data.TryGetValue(processorId, out var v) ? (long?)v : null);
+
+        public Task SaveAsync(string processorId, long position, CancellationToken ct = default)
+        {
+            _data[processorId] = position;
+            return Task.CompletedTask;
+        }
+
+        public Task ResetAsync(string processorId, CancellationToken ct = default)
+        {
+            _data.Remove(processorId);
+            return Task.CompletedTask;
+        }
+
+        public Task RewindAsync(string processorId, long position, CancellationToken ct = default)
+        {
+            _data[processorId] = position;
+            return Task.CompletedTask;
+        }
+    }
+
+    [Fact]
+    public async Task StoreThatDoesNotOverrideCanEnumerate_IsOptedInByResolutionSite()
+    {
+        // The other half of the CanEnumerate contract. ThirdPartyDecorator above proves a store
+        // can opt OUT; this proves that saying nothing opts you IN, which is what makes the
+        // property safe to add to a shipped interface: every ICheckpointInventory written before
+        // CanEnumerate existed keeps being asked for its inventory, unchanged.
+        //
+        // The default matters in the dangerous direction. If `CanEnumerate => true` were ever
+        // flipped to `=> false`, every store that does not override it would silently drop out
+        // of the orphan check — Strict policy would stop throwing, and the absence of a complaint
+        // would read as "no orphans" rather than "nobody looked". That is the same false all-clear
+        // the CanEnumerate work exists to remove, arriving through the default instead of the cast.
+        var ct = TestContext.Current.CancellationToken;
+
+        var store = new SilentInventoryStore();
+        await store.SaveAsync("OrphanedProcessor", 42, ct);
+
+        var services = new ServiceCollection();
+        services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment("Production"));
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.AddAlberto("orders", m => m.WithInMemory());
+        services.AddKeyedSingleton<ICheckpointStore>("orders", store);
+
+        await using var sp = services.BuildServiceProvider();
+
+        sp.GetKeyedService<ICheckpointStore>("orders").Should().BeSameAs(store,
+            "the last AddKeyedSingleton registration must win for GetKeyedService (singular)");
+
+        var orphanService = sp.GetServices<IHostedService>()
+            .OfType<OrphanCheckpointHostedService>()
+            .Single();
+        await orphanService.StartAsync(ct);
+
+        store.ListProcessorIdsAsyncCallCount.Should().Be(1,
+            "a store that implements ICheckpointInventory without overriding CanEnumerate must " +
+            "still be asked for its inventory — the default is opt-in, not opt-out");
     }
 
     [Fact]
