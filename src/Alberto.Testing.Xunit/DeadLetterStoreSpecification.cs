@@ -89,6 +89,44 @@ public abstract class DeadLetterStoreSpecification
         FailedAt = DateTimeOffset.UtcNow,
     };
 
+    // ── Tenancy configuration guard ───────────────────────────────────────────
+
+    /// <summary>
+    /// A subclass must declare at least one tenancy mode.
+    ///
+    /// <para>
+    /// <see cref="SupportsNullTenantPassthrough"/> and <see cref="SupportsMultiTenantFiltering"/>
+    /// are independent booleans. Three of the four combinations are valid:
+    /// </para>
+    /// <list type="bullet">
+    ///   <item><see cref="SupportsNullTenantPassthrough"/>=true, <see cref="SupportsMultiTenantFiltering"/>=false
+    ///     — single-tenant: isolation fact skips, passthrough fact runs.</item>
+    ///   <item><see cref="SupportsNullTenantPassthrough"/>=true, <see cref="SupportsMultiTenantFiltering"/>=true
+    ///     — InMemory: both tenancy facts run.</item>
+    ///   <item><see cref="SupportsNullTenantPassthrough"/>=false, <see cref="SupportsMultiTenantFiltering"/>=true
+    ///     — multi-tenant Postgres: passthrough fact skips, isolation fact runs.</item>
+    /// </list>
+    /// <para>
+    /// The fourth state — both false — skips every tenancy fact and produces a green suite
+    /// with no tenancy coverage. That is the exact false-all-clear this specification exists
+    /// to remove. This fact fails loudly when both are false so the configuration error is
+    /// visible immediately.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void TenancyCapabilities_MustDeclareOneMode()
+    {
+        if (!SupportsNullTenantPassthrough && !SupportsMultiTenantFiltering)
+            Assert.Fail(
+                $"{GetType().Name} has set both SupportsNullTenantPassthrough=false and " +
+                "SupportsMultiTenantFiltering=false. That combination leaves every tenancy " +
+                "fact skipped, producing a false-all-clear: the suite reports green while " +
+                "no tenancy contract is verified. " +
+                "Set SupportsMultiTenantFiltering=true if the store filters entries by " +
+                "tenant, or leave SupportsNullTenantPassthrough at its default (true) if " +
+                "the store returns null-TenantId entries regardless of the tenantId argument.");
+    }
+
     // ── CountAsync ────────────────────────────────────────────────────────────
 
     /// <summary>An empty store must return zero for any processor ID.</summary>

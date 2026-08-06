@@ -2,6 +2,7 @@
 Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.AbandonRetryAsync_WhenEntryAlreadyGone_ReturnsFalse() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.CompleteRetryAsync_WhenEntryAlreadyGone_ReturnsFalse() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.DeadLetterStoreSpecification.GetAsync_MultiTenantStore_TenantScopedQuery_ExcludesOtherTenantEntries() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.DeadLetterStoreSpecification.TenancyCapabilities_MustDeclareOneMode() -> void
 Alberto.Testing.Xunit.DeadLetterStoreSpecification.GetAsync_ReturnsEntriesNewestFirst() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.DeadLetterStoreSpecification.GetAsync_SingleTenantStore_NonNullTenantId_ReturnsEntries() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.RebuildCoordinatorFacade
