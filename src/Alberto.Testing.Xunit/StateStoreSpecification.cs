@@ -64,13 +64,15 @@ public abstract class StateStoreSpecification<TState>
 
     /// <summary>
     /// Creates a store scoped to <paramref name="projectionType"/>, optionally
-    /// with a custom rebuild-version selector.
+    /// with a custom rebuild-version handle.
     /// </summary>
     /// <param name="projectionType">The projection type name used as a scope discriminator.</param>
-    /// <param name="rebuildVersion">Optional selector that returns the active rebuild version.</param>
+    /// <param name="rebuildVersion">
+    /// Optional live version handle. Defaults to <see cref="ProjectionVersion.NeverRebuilt"/>.
+    /// </param>
     protected abstract Task<IStateStore<TState>> CreateStore(
         string projectionType,
-        Func<int>? rebuildVersion = null);
+        ProjectionVersion rebuildVersion = default);
 
     /// <summary>
     /// Creates a store scoped to both <paramref name="projectionType"/> and
@@ -80,11 +82,13 @@ public abstract class StateStoreSpecification<TState>
     /// </summary>
     /// <param name="projectionType">The projection type name used as a scope discriminator.</param>
     /// <param name="tenantId">The tenant identifier to scope the store to.</param>
-    /// <param name="rebuildVersion">Optional selector that returns the active rebuild version.</param>
+    /// <param name="rebuildVersion">
+    /// Optional live version handle. Defaults to <see cref="ProjectionVersion.NeverRebuilt"/>.
+    /// </param>
     protected virtual Task<IStateStore<TState>> CreateStoreForTenant(
         string projectionType,
         string tenantId,
-        Func<int>? rebuildVersion = null)
+        ProjectionVersion rebuildVersion = default)
         => throw new NotSupportedException(
             $"{GetType().Name} does not support tenant-scoped stores " +
             "(SupportsTenantIsolation is false).");
@@ -131,6 +135,31 @@ public abstract class StateStoreSpecification<TState>
             [$"missing-{TestId}-a", $"missing-{TestId}-b"], Ct);
 
         result.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// A null collection is a caller bug, not an empty batch, and every adapter must say so the
+    /// same way. Without this the error mode drifts per adapter — one throwing
+    /// <see cref="ArgumentNullException"/> up front while another dereferences its way to a
+    /// <see cref="NullReferenceException"/> somewhere further in, after work may already have
+    /// happened.
+    /// </summary>
+    [Fact]
+    public async Task NullCollections_AreRejected()
+    {
+        var store = await CreateStore(NewProjectionType());
+
+        await FluentActions.Awaiting(() => store.LoadManyAsync(null!, Ct))
+            .Should().ThrowAsync<ArgumentNullException>()
+            .WithParameterName("documentIds");
+
+        await FluentActions.Awaiting(() => store.ApplyChangesAsync(null!, [], Ct))
+            .Should().ThrowAsync<ArgumentNullException>()
+            .WithParameterName("upserts");
+
+        await FluentActions.Awaiting(() => store.ApplyChangesAsync(new Dictionary<string, TState>(), null!, Ct))
+            .Should().ThrowAsync<ArgumentNullException>()
+            .WithParameterName("deletes");
     }
 
     /// <summary>After an upsert, <c>LoadManyAsync</c> must return the stored state for the document ID.</summary>
@@ -196,6 +225,29 @@ public abstract class StateStoreSpecification<TState>
             await store.ApplyChangesAsync(new Dictionary<string, TState>(), [], Ct);
 
         await act.Should().NotThrowAsync();
+    }
+
+    /// <summary>
+    /// An empty batch — both collections empty — must not modify any previously stored
+    /// document. A control loop that processes an event with no state effects calls
+    /// <c>ApplyChangesAsync(empty, empty)</c> to advance a consistent checkpoint without
+    /// touching any stored state. If that call silently cleared or altered documents,
+    /// the projection would diverge without a detectable error.
+    /// </summary>
+    [Fact]
+    public async Task ApplyChanges_EmptyBatch_PreservesExistingDocuments()
+    {
+        var store = await CreateStore(NewProjectionType());
+        var docId = $"doc-{TestId}-empty-batch";
+
+        await store.ApplyChangesAsync(MakeDict(docId, 77), [], Ct);
+
+        // An empty batch issued after the upsert must be a no-op.
+        await store.ApplyChangesAsync(new Dictionary<string, TState>(), [], Ct);
+
+        var result = await store.LoadManyAsync([docId], Ct);
+        result.Should().ContainKey(docId, "the document must survive an empty batch");
+        ReadValue(result[docId]).Should().Be(77, "the value must be unchanged by the empty batch");
     }
 
     /// <summary>A batch that both upserts and deletes must apply all changes atomically.</summary>
@@ -311,7 +363,7 @@ public abstract class StateStoreSpecification<TState>
     {
         var projType = NewProjectionType();
         var version = 1;
-        var store = await CreateStore(projType, () => version);
+        var store = await CreateStore(projType, ProjectionVersion.From(() => version));
         var docId = $"doc-{TestId}-vis";
 
         await store.ApplyChangesAsync(MakeDict(docId, 10), [], Ct);
@@ -335,7 +387,7 @@ public abstract class StateStoreSpecification<TState>
     {
         var projType = NewProjectionType();
         var version = 1;
-        var store = await CreateStore(projType, () => version);
+        var store = await CreateStore(projType, ProjectionVersion.From(() => version));
         var docId = $"doc-{TestId}-vdel";
 
         await store.ApplyChangesAsync(MakeDict(docId, 10), [], Ct);
@@ -360,7 +412,7 @@ public abstract class StateStoreSpecification<TState>
     {
         var projType = NewProjectionType();
         var version = 1;
-        var store = await CreateStore(projType, () => version);
+        var store = await CreateStore(projType, ProjectionVersion.From(() => version));
         var docId = $"doc-{TestId}-promo";
 
         await store.ApplyChangesAsync(MakeDict(docId, 10), [], Ct);  // live at v1
@@ -400,7 +452,7 @@ public abstract class StateStoreSpecification<TState>
 
         // Nothing at version 2 — holds for all adapters (different reason for InMemory).
         var version = 2;
-        var probe = await CreateStore(projType, () => version);
+        var probe = await CreateStore(projType, ProjectionVersion.From(() => version));
         (await probe.LoadManyAsync([docId], Ct))
             .Should().BeEmpty("the no-selector store writes at version 1, not 2");
 
@@ -542,6 +594,44 @@ public abstract class StateStoreSpecification<TState>
         (await store.ListRecentAsync(2, Ct)).Should().HaveCount(2);
     }
 
+    /// <summary>
+    /// Every document written in a single <c>ApplyChangesAsync</c> call appears in the
+    /// result when <c>limit</c> is large enough to include them. The contract makes no
+    /// promise about the relative order of same-batch documents — that is intentionally
+    /// unspecified — but it does promise completeness: a caller listing a projection
+    /// must not find that the last write left some of its documents missing.
+    /// </summary>
+    [Fact]
+    public async Task ListRecent_BatchWritten_AllDocumentsAppear()
+    {
+        var store = await CreateStore(NewProjectionType());
+
+        // Write three documents in one atomic batch. Their relative order in ListRecent is
+        // unspecified (same timestamp / same sequence band), but all three must appear.
+        var upserts = new Dictionary<string, TState>
+        {
+            [$"doc-{TestId}-lr-batch-a"] = MakeState(ListRecentValueBase + 71),
+            [$"doc-{TestId}-lr-batch-b"] = MakeState(ListRecentValueBase + 72),
+            [$"doc-{TestId}-lr-batch-c"] = MakeState(ListRecentValueBase + 73),
+        };
+        await store.ApplyChangesAsync(upserts, [], Ct);
+
+        var recent = await store.ListRecentAsync(20, Ct);
+
+        // Filter to the values this fact wrote. Adapters where SupportsProjectionTypeIsolation
+        // is false (e.g. EF, where projectionType is structural rather than a runtime key) store
+        // all documents in one shared table, so ListRecentAsync may return documents written by
+        // other facts. The +71/+72/+73 band is reserved for this fact alone — no other fact
+        // in the ListRecent_* group uses those offsets — so the filter is exact, not approximate.
+        var values = recent.Select(ReadValue)
+            .Where(v => v is ListRecentValueBase + 71 or ListRecentValueBase + 72 or ListRecentValueBase + 73)
+            .ToList();
+
+        values.Should().HaveCount(3,
+            "all documents written in one batch must appear in ListRecentAsync " +
+            "when limit is large enough, regardless of their within-batch order");
+    }
+
     /// <summary>Deleted documents must not appear in the listing.</summary>
     [Fact]
     public async Task ListRecent_ExcludesDeletedDocuments()
@@ -571,7 +661,7 @@ public abstract class StateStoreSpecification<TState>
     public async Task ListRecent_ScopedToRebuildVersion()
     {
         var version = 1;
-        var store = await CreateStore(NewProjectionType(), () => version);
+        var store = await CreateStore(NewProjectionType(), ProjectionVersion.From(() => version));
 
         await store.ApplyChangesAsync(
             MakeDict($"doc-{TestId}-lr-v1", ListRecentValueBase + 41), [], Ct);
@@ -692,5 +782,112 @@ public abstract class StateStoreSpecification<TState>
         var result = await store.LoadManyAsync([docId], Ct);
         result.Should().ContainKey(docId, "at least one concurrent write must have committed");
         ReadValue(result[docId]).Should().BeOneOf(1, 2);
+    }
+
+    // ── Spec facts — ApplyChanges atomicity ───────────────────────────────────
+
+    /// <summary>
+    /// When the same document ID appears in both <c>upserts</c> and <c>deletes</c>, the
+    /// document must be absent after the batch — delete wins over upsert within one batch.
+    /// Both adapters run upserts before deletes inside the same transaction or lock region,
+    /// so the delete always executes last and the document cannot be accidentally resurrected.
+    /// </summary>
+    [Fact]
+    public async Task ApplyChanges_SameDocument_InUpsertsAndDeletes_DeleteWins()
+    {
+        var store = await CreateStore(NewProjectionType());
+        var docId = $"doc-{TestId}-delete-wins";
+
+        await store.ApplyChangesAsync(
+            new Dictionary<string, TState> { [docId] = MakeState(99) },
+            [docId],
+            Ct);
+
+        (await store.LoadManyAsync([docId], Ct)).Should().BeEmpty(
+            "delete wins when the same document ID appears in both upserts and deletes");
+    }
+
+    /// <summary>
+    /// A concurrent reader must never observe a batch half-applied: each read through the store
+    /// sees either the complete before-state or the complete after-state, never a mix of both.
+    /// The test is bounded by iteration count and structured so it fails deterministically
+    /// against an unsynchronised implementation — two document sets are swapped back and forth
+    /// in one thread while another thread asserts each observed snapshot is consistent.
+    /// </summary>
+    [Fact]
+    public async Task ApplyChanges_IsNotObservedPartiallyApplied()
+    {
+        const int n = 20;
+        const int writerIterations = 300;
+
+        var store = await CreateStore(NewProjectionType());
+
+        var beforeIds = Enumerable.Range(0, n)
+            .Select(i => $"doc-{TestId}-atom-before-{i}").ToArray();
+        var afterIds = Enumerable.Range(0, n)
+            .Select(i => $"doc-{TestId}-atom-after-{i}").ToArray();
+        var allIds = beforeIds.Concat(afterIds).ToList();
+
+        IReadOnlyDictionary<string, TState> beforeUpserts =
+            beforeIds.ToDictionary(id => id, _ => MakeState(1));
+        IReadOnlyDictionary<string, TState> afterUpserts =
+            afterIds.ToDictionary(id => id, _ => MakeState(2));
+
+        // Seed the initial "before" state so the reader has something to see from the start.
+        await store.ApplyChangesAsync(beforeUpserts, [], Ct);
+
+        // Written by the reader, read by both — Volatile rather than a plain bool because the
+        // two loops run on different thread-pool threads and neither takes a lock.
+        var partial = 0;
+
+        // Capture the cancellation token before entering Task.Run — TestContext.Current is
+        // thread-local and not available on the thread pool threads.
+        var ct = Ct;
+
+        // The reader runs until the writer stops rather than for a fixed count: against a
+        // remote adapter the two loops advance at very different rates, and a reader that
+        // outlasts the writer only re-reads a store nothing is changing any more.
+        using var writerDone = new CancellationTokenSource();
+
+        var writer = Task.Run(async () =>
+        {
+            try
+            {
+                for (var i = 0; i < writerIterations && Volatile.Read(ref partial) == 0; i++)
+                {
+                    // Flip the store from "before" documents to "after" documents in one batch.
+                    // An unsynchronised implementation exposes a window between the upsert loop
+                    // (which adds the "after" set) and the delete loop (which removes the
+                    // "before" set) where a reader observes both sets simultaneously.
+                    await store.ApplyChangesAsync(afterUpserts, beforeIds, ct);
+                    await store.ApplyChangesAsync(beforeUpserts, afterIds, ct);
+                }
+            }
+            finally
+            {
+                await writerDone.CancelAsync();
+            }
+        });
+
+        var reader = Task.Run(async () =>
+        {
+            while (!writerDone.IsCancellationRequested && Volatile.Read(ref partial) == 0)
+            {
+                var result = await store.LoadManyAsync(allIds, ct);
+                var hasBefore = beforeIds.Any(result.ContainsKey);
+                var hasAfter = afterIds.Any(result.ContainsKey);
+
+                // A consistent snapshot contains documents from exactly one of the two sets.
+                // Seeing both simultaneously is the partial-apply defect this fact guards.
+                if (hasBefore && hasAfter)
+                    Volatile.Write(ref partial, 1);
+            }
+        });
+
+        await Task.WhenAll(writer, reader);
+
+        (partial == 0).Should().BeTrue(
+            "a concurrent read must see either the complete before-state or the complete " +
+            "after-state, never documents from both sets at once");
     }
 }

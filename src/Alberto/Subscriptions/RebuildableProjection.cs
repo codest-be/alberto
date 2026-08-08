@@ -7,11 +7,11 @@ namespace Alberto.Subscriptions;
 /// <remarks>
 /// <para>
 /// Registered by <c>AddProjection</c> and <c>AddEfProjection</c> alongside the live processor.
-/// The coordinator calls <see cref="CreateProcessor"/> with a shadow version selector to get a
+/// The coordinator calls <see cref="CreateProcessor"/> with a shadow version handle to get a
 /// second, independent processor over the same declaration, then runs it from position 0.
 /// </para>
 /// <para>
-/// The rebuild version is a selector rather than a value because a rebuild outlives its own
+/// The rebuild version is a handle rather than a value because a rebuild outlives its own
 /// promotion by a few events: the shadow processor keeps running until the coordinator has
 /// stopped it, and by then the version it should be writing to may have changed.
 /// </para>
@@ -29,12 +29,12 @@ internal sealed class RebuildableProjection
     /// </param>
     /// <param name="createProcessor">
     /// Builds a processor whose state store resolves its rebuild version through the supplied
-    /// selector.
+    /// version handle.
     /// </param>
     public RebuildableProjection(
         string processorId,
         string projectionType,
-        Func<Func<int>, IEventProcessor> createProcessor)
+        Func<ProjectionVersion, IEventProcessor> createProcessor)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
         ArgumentException.ThrowIfNullOrWhiteSpace(projectionType);
@@ -51,8 +51,8 @@ internal sealed class RebuildableProjection
     /// <summary>The key this projection's state rows are stored under.</summary>
     public string ProjectionType { get; }
 
-    /// <summary>Builds a processor bound to the supplied version selector.</summary>
-    public Func<Func<int>, IEventProcessor> CreateProcessor { get; }
+    /// <summary>Builds a processor bound to the supplied version handle.</summary>
+    public Func<ProjectionVersion, IEventProcessor> CreateProcessor { get; }
 
     /// <summary>
     /// The checkpoint key a shadow rebuild loop advances. Separate from the live processor's

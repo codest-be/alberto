@@ -27,6 +27,43 @@ public abstract class DeadLetterStoreSpecification
     /// <summary>The ambient test cancellation token.</summary>
     protected static CancellationToken Ct => TestContext.Current.CancellationToken;
 
+    // ── Capability hooks ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// True when entries whose stored <see cref="DeadLetterEntry.TenantId"/> is
+    /// <see langword="null"/> are returned regardless of the <c>tenantId</c> argument
+    /// passed to <see cref="IDeadLetterStore.GetAsync"/>.
+    ///
+    /// <para>
+    /// In a single-tenant deployment there is no <c>tenant_id</c> column, so every
+    /// entry has a null TenantId and a non-null argument must still return them.
+    /// InMemory and single-tenant Postgres: <c>true</c>. Multi-tenant Postgres:
+    /// <c>false</c> — <c>NULL = @tenantId</c> is false in SQL, so null-TenantId
+    /// rows are not returned when a specific tenant is requested. The contract for
+    /// multi-tenant mode is tested by
+    /// <see cref="GetAsync_MultiTenantStore_TenantScopedQuery_ExcludesOtherTenantEntries"/>.
+    /// </para>
+    /// </summary>
+    protected virtual bool SupportsNullTenantPassthrough => true;
+
+    /// <summary>
+    /// True when the store under test supports multi-tenant filtering via the
+    /// <c>tenantId</c> argument on <see cref="IDeadLetterStore.GetAsync"/>: a
+    /// non-null <c>tenantId</c> must exclude entries whose stored
+    /// <see cref="DeadLetterEntry.TenantId"/> belongs to a different tenant.
+    ///
+    /// <para>
+    /// InMemory: <c>true</c> — TenantId is a first-class field on every entry.
+    /// Single-tenant Postgres: <c>false</c> — the schema has no <c>tenant_id</c> column,
+    /// so filtering is structurally impossible; the contract for that mode is tested
+    /// by <see cref="GetAsync_SingleTenantStore_NonNullTenantId_ReturnsEntries"/>.
+    /// Multi-tenant Postgres: <c>true</c>.
+    /// </para>
+    /// </summary>
+    protected virtual bool SupportsMultiTenantFiltering => false;
+
+    // ── Factory methods ───────────────────────────────────────────────────────
+
     /// <summary>
     /// Factory method called once per fact to create the store under test.
     /// Each call may return the same or a new instance; the specification uses
@@ -51,6 +88,44 @@ public abstract class DeadLetterStoreSpecification
         AttemptCount = 1,
         FailedAt = DateTimeOffset.UtcNow,
     };
+
+    // ── Tenancy configuration guard ───────────────────────────────────────────
+
+    /// <summary>
+    /// A subclass must declare at least one tenancy mode.
+    ///
+    /// <para>
+    /// <see cref="SupportsNullTenantPassthrough"/> and <see cref="SupportsMultiTenantFiltering"/>
+    /// are independent booleans. Three of the four combinations are valid:
+    /// </para>
+    /// <list type="bullet">
+    ///   <item><see cref="SupportsNullTenantPassthrough"/>=true, <see cref="SupportsMultiTenantFiltering"/>=false
+    ///     — single-tenant: isolation fact skips, passthrough fact runs.</item>
+    ///   <item><see cref="SupportsNullTenantPassthrough"/>=true, <see cref="SupportsMultiTenantFiltering"/>=true
+    ///     — InMemory: both tenancy facts run.</item>
+    ///   <item><see cref="SupportsNullTenantPassthrough"/>=false, <see cref="SupportsMultiTenantFiltering"/>=true
+    ///     — multi-tenant Postgres: passthrough fact skips, isolation fact runs.</item>
+    /// </list>
+    /// <para>
+    /// The fourth state — both false — skips every tenancy fact and produces a green suite
+    /// with no tenancy coverage. That is the exact false-all-clear this specification exists
+    /// to remove. This fact fails loudly when both are false so the configuration error is
+    /// visible immediately.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void TenancyCapabilities_MustDeclareOneMode()
+    {
+        if (!SupportsNullTenantPassthrough && !SupportsMultiTenantFiltering)
+            Assert.Fail(
+                $"{GetType().Name} has set both SupportsNullTenantPassthrough=false and " +
+                "SupportsMultiTenantFiltering=false. That combination leaves every tenancy " +
+                "fact skipped, producing a false-all-clear: the suite reports green while " +
+                "no tenancy contract is verified. " +
+                "Set SupportsMultiTenantFiltering=true if the store filters entries by " +
+                "tenant, or leave SupportsNullTenantPassthrough at its default (true) if " +
+                "the store returns null-TenantId entries regardless of the tenantId argument.");
+    }
 
     // ── CountAsync ────────────────────────────────────────────────────────────
 
@@ -108,6 +183,47 @@ public abstract class DeadLetterStoreSpecification
         Assert.Equal(entry.Id, results[0].Id);
     }
 
+    /// <summary>
+    /// Passing a non-null <c>tenantId</c> to a single-tenant store must return entries whose
+    /// stored <see cref="DeadLetterEntry.TenantId"/> is <see langword="null"/> — the same entries
+    /// that a null tenant argument would return. In a single-tenant deployment entries are stored
+    /// without a tenant identifier because there is no tenant column to write to; passing an
+    /// argument that filters by it would silently discard every entry, turning a valid operator
+    /// inquiry into an empty response. Both adapters agree: Postgres ignores the tenant argument
+    /// when in single-tenant mode (no tenant_id column), and InMemory treats a null-TenantId
+    /// entry as unscoped and returns it regardless of the argument.
+    ///
+    /// <para>
+    /// Skipped for multi-tenant Postgres, where <c>NULL = @tenantId</c> is false in SQL and
+    /// entries stored without a tenant are not returned for a specific tenant query. That is the
+    /// correct behaviour in multi-tenant mode; see
+    /// <see cref="GetAsync_MultiTenantStore_TenantScopedQuery_ExcludesOtherTenantEntries"/>.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task GetAsync_SingleTenantStore_NonNullTenantId_ReturnsEntries()
+    {
+        if (!SupportsNullTenantPassthrough)
+            Assert.Skip(
+                "Multi-tenant stores apply SQL tenant filtering; NULL = @tenantId is false, " +
+                "so entries stored without a tenant are not returned for a specific tenant query. " +
+                "That is correct for multi-tenant mode — this fact covers single-tenant semantics only.");
+
+        var store = await CreateStore();
+
+        // NewEntry produces an entry with TenantId = null — the shape used by single-tenant stores.
+        var entry = NewEntry(ProcessorId);
+        await store.StoreAsync(entry, Ct);
+
+        // A caller that passes a non-null tenantId to a single-tenant store must still see
+        // the entry. Filtering it out would make the CLI return nothing on single-tenant
+        // deployments while the Postgres implementation returns the full list.
+        var results = await store.GetAsync(ProcessorId, "any-tenant-does-not-filter", 100, Ct);
+
+        Assert.Single(results);
+        Assert.Equal(entry.Id, results[0].Id);
+    }
+
     /// <summary><c>GetAsync</c> must not return entries belonging to a different processor.</summary>
     [Fact]
     public async Task GetAsync_DoesNotReturnEntriesForOtherProcessor()
@@ -132,6 +248,64 @@ public abstract class DeadLetterStoreSpecification
         var results = await store.GetAsync(ProcessorId, null, 2, Ct);
 
         Assert.Equal(2, results.Count);
+    }
+
+    /// <summary>
+    /// <c>GetAsync</c> must return entries sorted newest-first by
+    /// <see cref="DeadLetterEntry.FailedAt"/>. The operator views (CLI, admin) display
+    /// most-recent failures at the top; both adapters agree on <c>ORDER BY failed_at DESC</c>.
+    /// </summary>
+    [Fact]
+    public async Task GetAsync_ReturnsEntriesNewestFirst()
+    {
+        var store = await CreateStore();
+        var now = DateTimeOffset.UtcNow;
+        var older = NewEntry(ProcessorId) with { FailedAt = now.AddSeconds(-10) };
+        var newer = NewEntry(ProcessorId) with { FailedAt = now };
+
+        await store.StoreAsync(older, Ct);
+        await store.StoreAsync(newer, Ct);
+
+        var results = await store.GetAsync(ProcessorId, null, 100, Ct);
+
+        Assert.Equal(2, results.Count);
+        Assert.Equal(newer.Id, results[0].Id);
+        Assert.Equal(older.Id, results[1].Id);
+    }
+
+    /// <summary>
+    /// In a multi-tenant store, a query scoped to tenant A must not return entries
+    /// whose <see cref="DeadLetterEntry.TenantId"/> belongs to tenant B.
+    /// Dead letter entries carry the full event payload; leaking one tenant's data to
+    /// another tenant's query would be a data-isolation failure.
+    ///
+    /// <para>
+    /// Skipped for adapters where <see cref="SupportsMultiTenantFiltering"/> is
+    /// <see langword="false"/> (e.g. single-tenant Postgres, where the schema has no
+    /// <c>tenant_id</c> column and the <c>tenantId</c> argument is always a no-op).
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task GetAsync_MultiTenantStore_TenantScopedQuery_ExcludesOtherTenantEntries()
+    {
+        if (!SupportsMultiTenantFiltering)
+            Assert.Skip(
+                "This adapter does not support multi-tenant filtering. " +
+                "In single-tenant mode the tenantId argument is a no-op by contract — " +
+                "see GetAsync_SingleTenantStore_NonNullTenantId_ReturnsEntries for that path. " +
+                "Only InMemory and multi-tenant Postgres exercise this fact.");
+
+        var store = await CreateStore();
+        var entryA = NewEntry(ProcessorId) with { TenantId = $"tenant-A-{TestId}" };
+        var entryB = NewEntry(ProcessorId) with { TenantId = $"tenant-B-{TestId}" };
+
+        await store.StoreAsync(entryA, Ct);
+        await store.StoreAsync(entryB, Ct);
+
+        var results = await store.GetAsync(ProcessorId, entryA.TenantId, 100, Ct);
+
+        Assert.Single(results);
+        Assert.Equal(entryA.Id, results[0].Id);
     }
 
     // ── ClearAsync ────────────────────────────────────────────────────────────

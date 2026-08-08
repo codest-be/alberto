@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Alberto.Benchmarks.Core;
 using Alberto.Postgres;
+using Alberto.TestInfrastructure;
 using Npgsql;
 using Testcontainers.PostgreSql;
 
@@ -53,11 +54,10 @@ public sealed class BenchmarkDatabase : IAsyncDisposable
             return new BenchmarkDatabase(container: null, external);
         }
 
-        var container = new PostgreSqlBuilder(Image)
-            .WithCommand("-c", $"max_connections={MaxConnections}")
-            .Build();
-
-        await container.StartAsync();
+        var container = await ContainerStartup.StartNewAsync(
+            () => new PostgreSqlBuilder(Image)
+                .WithCommand("-c", $"max_connections={MaxConnections}")
+                .Build());
 
         return new BenchmarkDatabase(container, container.GetConnectionString());
     }

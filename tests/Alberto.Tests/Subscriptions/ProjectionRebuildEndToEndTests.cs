@@ -558,7 +558,7 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
     /// than at what the application happens to be serving.
     /// </summary>
     private PostgresStateStore<Totals> StoreAtVersion(int version) =>
-        new(fixture.DataSource, ProjectionType, rebuildVersion: () => version);
+        new(fixture.DataSource, ProjectionType, rebuildVersion: ProjectionVersion.From(() => version));
 
     private async Task<Totals?> ReadAsync(int version, string player, CancellationToken ct)
     {

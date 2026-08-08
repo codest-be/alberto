@@ -93,6 +93,11 @@ as they do in production, so a test can hand it whatever slice of the log it car
 Timestamps default to `ProjectionSpec.Epoch` and event ids are derived from the position, so two
 runs of a specification are the same run — which is the same determinism a rebuild depends on.
 
+Each stage of that chain is its own type, so the order is a compile error rather than a runtime
+one: nothing asserts before something has been projected, `Given` is gone once the projection has
+acted, and `ThenDeleted` and `ThenUnchanged` appear only after a `When` for them to compare
+across. The context verbs are on every stage, because context is set for what comes next.
+
 None of this knows where the document lands, so [an EF projection](#ef-projections) is specified
 exactly like a JSONB one. To test the storage as well, or the control loop that drives it, use
 `AlbertoTestHarness` over the in-memory backend instead.

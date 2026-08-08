@@ -113,7 +113,6 @@ A complete example covering all sections:
         },
         "Telemetry": {
           "Enabled": true,
-          "RecordEventPayloadSize": true,
           "RecordEventTagValues": false
         },
         "Checkpoints": {
@@ -258,7 +257,6 @@ deliberate step rather than a consequence of catching up. Both intervals must be
 | Property | Type | Default | Configuration key |
 |---|---|---|---|
 | `Enabled` | `bool` | `true` | `Telemetry:Enabled` |
-| `RecordEventPayloadSize` | `bool` | `true` | `Telemetry:RecordEventPayloadSize` |
 | `RecordEventTagValues` | `bool` | `false` | `Telemetry:RecordEventTagValues` |
 
 A DCB tag value is a domain identifier such as `order:8f21` or `customer:4471`. Append spans

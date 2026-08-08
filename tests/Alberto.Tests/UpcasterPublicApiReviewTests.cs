@@ -248,10 +248,10 @@ public sealed class MultiModuleSerializerIsolationTests
     }
 
     /// <summary>
-    /// Verifies that an IMessageMappingRegistry.ModuleKey set in WithOutbox's Register
-    /// callback correctly resolves the module-keyed serializer at runtime.
-    /// Module A has a serializer; the registry.ModuleKey is set to "mod_a" by WithOutbox;
-    /// resolving the serializer via the registry key returns module A's serializer.
+    /// Verifies that a registry built by WithOutbox's Register callback carries the module key
+    /// from <c>AlbertoModuleContext.ModuleKey</c> and therefore resolves the correct
+    /// module-keyed serializer at runtime. Each shard (or the sole module when unsharded)
+    /// gets its own registry constructed with its own immutable key.
     /// </summary>
     [Fact]
     public async Task Outbox_mapping_registry_resolves_module_keyed_serializer()
@@ -276,11 +276,12 @@ public sealed class MultiModuleSerializerIsolationTests
 
         using var sp = services.BuildServiceProvider();
 
-        // After service provider build, ModuleKey must be stamped by the Register callback.
+        // The registry is built with ModuleKey = context.ModuleKey inside the Register callback,
+        // so capturedRegistry is non-null only after AddAlberto processes the deferred registrations.
         capturedRegistry.Should().NotBeNull("WithOutbox must invoke the configureMappings delegate");
         capturedRegistry!.ModuleKey.Should().Be("msg_mod",
-            "WithOutbox's Register callback must stamp registry.ModuleKey = context.ModuleKey " +
-            "so that Map extension methods can resolve the module-keyed EventSerializer at runtime");
+            "the registry must be constructed with ModuleKey = context.ModuleKey so that " +
+            "Map extension methods always resolve the correct module-keyed EventSerializer");
 
         // The keyed serializer for "msg_mod" is resolvable via the module key.
         sp.GetKeyedService<EventSerializer>("msg_mod").Should().NotBeNull(

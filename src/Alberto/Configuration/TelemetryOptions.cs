@@ -8,9 +8,6 @@ public sealed record TelemetryOptions
     /// <summary>Whether tracing and metrics instrumentation is active. Default true.</summary>
     public bool Enabled { get; init; } = true;
 
-    /// <summary>Whether append spans carry the serialized payload size. Default true.</summary>
-    public bool RecordEventPayloadSize { get; init; } = true;
-
     /// <summary>
     /// Whether append spans carry event tag <em>values</em> as well as their keys. Default false.
     /// </summary>
@@ -31,9 +28,6 @@ public sealed class TelemetryOverrides : IAlbertoOverrides<TelemetryOptions>
     /// <summary>Mirror of <see cref="TelemetryOptions.Enabled"/>.</summary>
     public bool? Enabled { get; set; }
 
-    /// <summary>Mirror of <see cref="TelemetryOptions.RecordEventPayloadSize"/>.</summary>
-    public bool? RecordEventPayloadSize { get; set; }
-
     /// <summary>Mirror of <see cref="TelemetryOptions.RecordEventTagValues"/>.</summary>
     public bool? RecordEventTagValues { get; set; }
 
@@ -45,7 +39,6 @@ public sealed class TelemetryOverrides : IAlbertoOverrides<TelemetryOptions>
         return options with
         {
             Enabled = Enabled ?? options.Enabled,
-            RecordEventPayloadSize = RecordEventPayloadSize ?? options.RecordEventPayloadSize,
             RecordEventTagValues = RecordEventTagValues ?? options.RecordEventTagValues,
         };
     }

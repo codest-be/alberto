@@ -55,14 +55,15 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : IInlineP
 
     private readonly ProjectionDeclaration<TEntity> _declaration;
     private readonly IDbContextFactory<TDbContext> _contextFactory;
-    private readonly Func<int> _rebuildVersion;
+    private readonly ProjectionVersion _rebuildVersion;
     private readonly ILogger<DeclaredEfInlineProjection<TEntity, TDbContext>>? _logger;
 
     /// <param name="declaration">The projection declaration.</param>
     /// <param name="contextFactory">Factory for creating DbContext instances.</param>
     /// <param name="rebuildVersion">
-    /// Resolves the version to read and write. Resolved per attempt rather than once, for the
-    /// same reason as <c>EfStateStore</c>: a promotion moves it underneath a long-lived
+    /// A live handle on the version to read and write. Its
+    /// <see cref="ProjectionVersion.Current"/> is resolved per attempt rather than cached, for
+    /// the same reason as <c>EfStateStore</c>: a promotion moves it underneath a long-lived
     /// projection. Omit for a projection whose entity is never rebuilt; it then resolves to
     /// version 1 forever.
     /// </param>
@@ -70,14 +71,14 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : IInlineP
     public DeclaredEfInlineProjection(
         ProjectionDeclaration<TEntity> declaration,
         IDbContextFactory<TDbContext> contextFactory,
-        Func<int>? rebuildVersion = null,
+        ProjectionVersion rebuildVersion = default,
         ILogger<DeclaredEfInlineProjection<TEntity, TDbContext>>? logger = null)
     {
         ArgumentNullException.ThrowIfNull(declaration);
         ArgumentNullException.ThrowIfNull(contextFactory);
         _declaration = declaration;
         _contextFactory = contextFactory;
-        _rebuildVersion = rebuildVersion ?? ProjectionVersions.NeverRebuilt;
+        _rebuildVersion = rebuildVersion;
         _logger = logger;
     }
 
@@ -156,7 +157,7 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : IInlineP
 
         // Resolved once for the whole attempt, so a promotion landing mid-write cannot split
         // the load, the upserts and the deletes across two versions.
-        var version = _rebuildVersion();
+        var version = _rebuildVersion.Current;
 
         // Load existing rows untracked: the projection rebuilds the entity by `with`-ing the
         // loaded state, producing a new instance that we then Update/Add. If the original

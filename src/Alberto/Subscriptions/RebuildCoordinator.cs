@@ -200,7 +200,7 @@ internal sealed class RebuildCoordinator(
         // rebuild the *next* rebuild's version, and its replay would land on top of the one
         // already running there. Both loops would then apply the same events to the same rows.
         var processor = new ShadowProcessor(
-            projection.CreateProcessor(() => rebuildingVersion), shadowId);
+            projection.CreateProcessor(ProjectionVersion.From(() => rebuildingVersion)), shadowId);
 
         var loop = loopFactory.Create(processor);
         await loop.StartAsync(ct);

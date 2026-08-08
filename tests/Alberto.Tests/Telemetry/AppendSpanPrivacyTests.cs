@@ -24,6 +24,7 @@ namespace Alberto.Tests.Telemetry;
 /// span happened to stop first.
 /// </para>
 /// </remarks>
+[Collection(OtelTracingCollection.Name)]
 public sealed class AppendSpanPrivacyTests
 {
     private static readonly EventType OrderPlaced = new("order-placed");

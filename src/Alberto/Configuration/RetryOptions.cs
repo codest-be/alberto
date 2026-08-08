@@ -116,8 +116,21 @@ public sealed record ProcessorLeaseOptions
     /// <summary>Whether processors acquire a fenced lease before consuming. Default false.</summary>
     public bool Enabled { get; init; }
 
-    /// <summary>Stable identity for this replica. Defaults to the machine name when null.</summary>
+    /// <summary>
+    /// Stable identity for this replica. Null and whitespace are both treated as absent — see
+    /// <see cref="EffectiveReplicaId"/> for the resolved value.
+    /// </summary>
     public string? ReplicaId { get; init; }
+
+    /// <summary>
+    /// The replica identity used at runtime. Returns <see cref="ReplicaId"/> when it is set to a
+    /// non-whitespace value, and <see cref="Environment.MachineName"/> otherwise. Whitespace is
+    /// treated as absent for the same reason null is: a blank id makes every replica look identical
+    /// in <c>claimed_by</c>, defeating fencing and dead-letter claim isolation just as completely
+    /// as omitting the option entirely.
+    /// </summary>
+    public string EffectiveReplicaId =>
+        string.IsNullOrWhiteSpace(ReplicaId) ? Environment.MachineName : ReplicaId;
 }
 
 /// <summary>Configuration mirror for <see cref="ProcessorLeaseOptions"/>.</summary>

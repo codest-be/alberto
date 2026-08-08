@@ -29,6 +29,25 @@ public interface IDeadLetterStore
     /// tenant to avoid disclosing another tenant's data. Pass <see langword="null"/> for the
     /// cross-tenant operator view (the CLI) and in single-tenant deployments.
     /// </param>
+    /// <remarks>
+    /// <para>
+    /// <strong>Single-tenant stores.</strong> In a single-tenant deployment entries are stored
+    /// without a tenant identifier, so their stored <see cref="DeadLetterEntry.TenantId"/> is
+    /// <see langword="null"/>. Passing a non-null <paramref name="tenantId"/> to a store that
+    /// holds only unscoped entries is a no-op: every implementation must return those entries
+    /// regardless, because the argument is meaningless when the store has no tenant column to
+    /// filter on. A caller that passes a tenant ID is entitled to ask "these events for this
+    /// tenant"; if the store has no tenancy, the most recent dead-letter events are the same
+    /// list no matter which tenant is named. Filtering them out would make the CLI return
+    /// nothing on a single-tenant deployment while Postgres returns the full list.
+    /// </para>
+    /// <para>
+    /// <strong>Multi-tenant stores.</strong> Every entry is stored with the non-null tenant
+    /// that owned the event; passing a non-null <paramref name="tenantId"/> filters to that
+    /// tenant only, and <see langword="null"/> returns entries for all tenants (the cross-tenant
+    /// operator view).
+    /// </para>
+    /// </remarks>
     /// <param name="limit">Maximum entries to return.</param>
     /// <param name="ct">Cancellation token.</param>
     Task<IReadOnlyList<DeadLetterEntry>> GetAsync(

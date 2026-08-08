@@ -71,7 +71,6 @@ public sealed class MetricTagContractTests
                 // Observable gauges
                 ("alberto.processor.lag",         "events"),
                 ("alberto.owned_tenant_count",    "tenants"),
-                ("alberto.tenant_cooldown_count", "tenants"),
             },
             options => options.WithoutStrictOrdering(),
             "renaming an instrument or changing its unit is a breaking change for dashboards and alerts");
@@ -347,7 +346,7 @@ public sealed class MetricTagContractTests
     public void OwnedTenantCount_unsharded_tag_keys_are_consumer_id_and_module()
     {
         var consumerId = $"consumer-{Guid.NewGuid():N}";
-        AlbertoMetrics.RecordTenantOwnership(consumerId, moduleKey: "payments", ownedCount: 3, cooldownCount: 0);
+        AlbertoMetrics.RecordTenantOwnership(consumerId, moduleKey: "payments", ownedCount: 3);
 
         var all = CollectObservableGaugeMeasurements<int>("alberto.owned_tenant_count");
         var match = all.Where(m => TagValue(m.Tags, "consumer.id") == consumerId).ToList();
@@ -361,7 +360,7 @@ public sealed class MetricTagContractTests
     public void OwnedTenantCount_sharded_tag_keys_include_shard()
     {
         var consumerId = $"consumer-{Guid.NewGuid():N}";
-        AlbertoMetrics.RecordTenantOwnership(consumerId, moduleKey: "payments#eu", ownedCount: 2, cooldownCount: 1);
+        AlbertoMetrics.RecordTenantOwnership(consumerId, moduleKey: "payments#eu", ownedCount: 2);
 
         var all = CollectObservableGaugeMeasurements<int>("alberto.owned_tenant_count");
         var match = all.Where(m => TagValue(m.Tags, "consumer.id") == consumerId).ToList();
@@ -369,34 +368,6 @@ public sealed class MetricTagContractTests
         match.Should().ContainSingle();
         TagKeys(match[0].Tags).Should().BeEquivalentTo(["consumer.id", "module", "shard"],
             "alberto.owned_tenant_count tag contract is {{consumer.id, module, shard}} for a sharded module");
-    }
-
-    [Fact]
-    public void TenantCooldownCount_unsharded_tag_keys_are_consumer_id_and_module()
-    {
-        var consumerId = $"consumer-{Guid.NewGuid():N}";
-        AlbertoMetrics.RecordTenantOwnership(consumerId, moduleKey: "payments", ownedCount: 0, cooldownCount: 2);
-
-        var all = CollectObservableGaugeMeasurements<int>("alberto.tenant_cooldown_count");
-        var match = all.Where(m => TagValue(m.Tags, "consumer.id") == consumerId).ToList();
-
-        match.Should().ContainSingle();
-        TagKeys(match[0].Tags).Should().BeEquivalentTo(["consumer.id", "module"],
-            "alberto.tenant_cooldown_count tag contract is {{consumer.id, module}} — 'module.key' was renamed to 'module' at v1 freeze");
-    }
-
-    [Fact]
-    public void TenantCooldownCount_sharded_tag_keys_include_shard()
-    {
-        var consumerId = $"consumer-{Guid.NewGuid():N}";
-        AlbertoMetrics.RecordTenantOwnership(consumerId, moduleKey: "payments#us", ownedCount: 1, cooldownCount: 3);
-
-        var all = CollectObservableGaugeMeasurements<int>("alberto.tenant_cooldown_count");
-        var match = all.Where(m => TagValue(m.Tags, "consumer.id") == consumerId).ToList();
-
-        match.Should().ContainSingle();
-        TagKeys(match[0].Tags).Should().BeEquivalentTo(["consumer.id", "module", "shard"],
-            "alberto.tenant_cooldown_count tag contract is {{consumer.id, module, shard}} for a sharded module");
     }
 
     // ── 5b. Tenant-lock counters: {consumer.id} ──────────────────────────────
@@ -416,7 +387,7 @@ public sealed class MetricTagContractTests
     public void OwnedTenantCount_module_tag_value_is_logical_name_not_raw_key()
     {
         var consumerId = $"consumer-{Guid.NewGuid():N}";
-        AlbertoMetrics.RecordTenantOwnership(consumerId, moduleKey: "payments#eu", ownedCount: 1, cooldownCount: 0);
+        AlbertoMetrics.RecordTenantOwnership(consumerId, moduleKey: "payments#eu", ownedCount: 1);
 
         var all = CollectObservableGaugeMeasurements<int>("alberto.owned_tenant_count");
         var match = all.Where(m => TagValue(m.Tags, "consumer.id") == consumerId).Single();

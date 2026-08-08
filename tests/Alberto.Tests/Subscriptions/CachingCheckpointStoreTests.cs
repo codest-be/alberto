@@ -230,6 +230,42 @@ public class CachingCheckpointStoreTests
 
     #endregion
 
+    #region RewindAsync Tests
+
+    /// <summary>
+    /// <c>RewindAsync</c> must persist the rewound position to the inner store, not only
+    /// update the in-process caches. An operator rewind is the only mechanism that can
+    /// move a checkpoint backwards — it exists so the control loop replays from the
+    /// rewound position after the next restart. If the write never reaches the inner store,
+    /// the cache reflects the new position during this process lifetime, but the durable
+    /// store still holds the old one; on restart the control loop resumes from there and
+    /// the rewind is silently lost.
+    /// </summary>
+    [Fact]
+    public async Task RewindAsync_WritesPositionToInnerStore_NotOnlyToCache()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var inner = new InMemoryCheckpointStore();
+        await inner.SaveAsync("proc", 500L, ct);
+
+        // Long intervals so no timer fires during the test.
+        await using var cache = new CachingCheckpointStore(
+            inner, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
+
+        // Warm the cache so an in-process read returns 500 — the bug is invisible through
+        // the cache because RewindAsync also updates the in-process layers.
+        await cache.GetAsync("proc", ct);
+
+        await cache.RewindAsync("proc", 100L, ct);
+
+        // Assert against the inner store directly to verify the write reached durable
+        // storage, not just the in-memory cache layers.
+        var innerPosition = await inner.GetAsync("proc", ct);
+        Assert.Equal(100L, innerPosition);
+    }
+
+    #endregion
+
     #region DisposeAsync Tests
 
     [Fact]

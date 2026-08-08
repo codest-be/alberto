@@ -273,6 +273,115 @@ public sealed class CommandPipelineRetryTests
     }
 
     // -----------------------------------------------------------------------
+    // Retry scope: DcbConflictException from the prepare step (decide) must
+    // NOT be caught and retried — only the persist step is inside the catch.
+    //
+    // These two tests are the regression guard for the extraction: they fail if
+    // ConflictRetryLoop.Run moves prepare inside the try block. Each pins one of
+    // the two independent Commit implementations (non-generic and generic).
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task Commit_ConflictFromPrepareStep_PropagatesImmediatelyWithoutRetrying()
+    {
+        // The decide callback is invoked inside the prepare step, which runs OUTSIDE
+        // the DcbConflictException catch that guards the persist step. A conflict thrown
+        // there must propagate immediately — RetryOnConflict(3) must not retry it.
+        var decideCalls = 0;
+
+        await Assert.ThrowsAsync<DcbConflictException>(() =>
+            InMemoryStore().Handle(new CreateWidget("w"))
+                .Load(DcbQuery.Empty, WidgetState.Empty, (s, _) => s)
+                .Decide((_, _) =>
+                {
+                    decideCalls++;
+                    throw new DcbConflictException(
+                        conflictingPosition: 1,
+                        expectedPosition: 0,
+                        query: DcbQuery.Empty);
+                })
+                .RetryOnConflict(3)
+                .Commit(TestContext.Current.CancellationToken));
+
+        // Must be exactly 1 — the prepare step must not be retried.
+        Assert.Equal(1, decideCalls);
+    }
+
+    [Fact]
+    public async Task Commit_ValuedDecision_ConflictFromPrepareStep_PropagatesImmediatelyWithoutRetrying()
+    {
+        // Same regression test for BoundDecision<TValue>.Commit (generic struct).
+        // ConflictRetryLoop.Run is shared but Stryker generates independent mutants
+        // for each call site, so both need coverage.
+        var decideCalls = 0;
+
+        await Assert.ThrowsAsync<DcbConflictException>(() =>
+            InMemoryStore().Handle(new CreateWidget("w"))
+                .Load(DcbQuery.Empty, WidgetState.Empty, (s, _) => s)
+                .Decide<int>((_, _) =>
+                {
+                    decideCalls++;
+                    throw new DcbConflictException(
+                        conflictingPosition: 1,
+                        expectedPosition: 0,
+                        query: DcbQuery.Empty);
+                })
+                .RetryOnConflict(3)
+                .Commit(TestContext.Current.CancellationToken));
+
+        // Must be exactly 1 — the prepare step must not be retried.
+        Assert.Equal(1, decideCalls);
+    }
+
+    // -----------------------------------------------------------------------
+    // BoundDecision<TValue>.TryCommit — kills the NoCoverage try body and
+    // catch body in the generic struct.
+    //
+    // The non-generic BoundDecision.TryCommit is covered in CommandPipelineTests.
+    // The generic variant lives at different line numbers in BoundDecision.cs and
+    // Stryker generates independent mutants for each copy, so it needs its own
+    // two tests: one for the successful delegation path and one for the
+    // exception-to-Problem conversion path.
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task TryCommit_ValuedDecision_SuccessPath_ReturnsValue()
+    {
+        // Covers the try body: TryCommit delegates to Commit and returns the value.
+        // A tag-based boundary is required: DcbQuery.Empty is rejected by the
+        // in-memory store when an expectedPosition is supplied.
+        var store = InMemoryStore();
+        var boundary = DcbQuery.ByTags(new EventTag("widget-id", Guid.NewGuid().ToString()));
+
+        var result = await store.Handle(new CreateWidget("w"))
+            .Load(boundary, WidgetState.Empty, (s, _) => s)
+            .Decide((_, _) => Decision<int>.Succeed(42, new WidgetCreated()))
+            .TryCommit(TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(42, result.Value);
+    }
+
+    [Fact]
+    public async Task TryCommit_ValuedDecision_ConflictPath_ReturnsConflictProblemInsteadOfThrowing()
+    {
+        // Covers the catch body: a conflict from Commit is converted to a
+        // dcb.conflict Problem rather than propagated as an exception.
+        // The store always conflicts; with the default one attempt TryCommit
+        // must catch the DcbConflictException that escapes Commit.
+        var fake = new ConflictingEventStore(conflictsBeforeSuccess: int.MaxValue);
+        var store = MakeStore(fake);
+
+        var result = await store.Handle(new CreateWidget("w"))
+            .Load(DcbQuery.Empty, WidgetState.Empty, (s, _) => s)
+            .Decide((_, _) => Decision<int>.Succeed(0, new WidgetCreated()))
+            .TryCommit(TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(DcbConflictException.ProblemCode, Assert.Single(result.Problems).Code);
+    }
+
+    // -----------------------------------------------------------------------
     // BoundDecision<TValue>.RetryOnConflict(0) — kills L127.
     // The non-generic overload is covered in CommandPipelineTests; the generic
     // one lives at a different line and needs its own test.

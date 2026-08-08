@@ -28,21 +28,22 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
     private const int MaxWriteAttempts = 5;
 
     private readonly IDbContextFactory<TDbContext> _contextFactory;
-    private readonly Func<int> _rebuildVersion;
+    private readonly ProjectionVersion _rebuildVersion;
 
     /// <summary>
     /// Creates a new EF state store.
     /// </summary>
     /// <param name="contextFactory">Factory for creating DbContext instances.</param>
     /// <param name="rebuildVersion">
-    /// Resolves the version to read and write, on every operation rather than once, because a
-    /// promotion moves it underneath a long-lived store. Omit for a projection that is never
-    /// rebuilt; it then resolves to version 1 forever.
+    /// A live handle on the version to read and write. Its
+    /// <see cref="ProjectionVersion.Current"/> is resolved per operation rather than cached,
+    /// because a promotion moves it underneath a long-lived store. Omit for a projection that
+    /// is never rebuilt; it then resolves to version 1 forever.
     /// </param>
-    public EfStateStore(IDbContextFactory<TDbContext> contextFactory, Func<int>? rebuildVersion = null)
+    public EfStateStore(IDbContextFactory<TDbContext> contextFactory, ProjectionVersion rebuildVersion = default)
     {
         _contextFactory = contextFactory ?? throw new ArgumentNullException(nameof(contextFactory));
-        _rebuildVersion = rebuildVersion ?? ProjectionVersions.NeverRebuilt;
+        _rebuildVersion = rebuildVersion;
     }
 
     /// <inheritdoc/>
@@ -50,13 +51,15 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
         IEnumerable<string> documentIds,
         CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(documentIds);
+
         var ids = documentIds.ToList();
         if (ids.Count == 0)
             return new Dictionary<string, TEntity>();
 
         await using var context = await _contextFactory.CreateDbContextAsync(ct);
 
-        var version = _rebuildVersion();
+        var version = _rebuildVersion.Current;
         var entities = await context.Set<TEntity>()
             .AsNoTracking()
             .Where(e => ids.Contains(e.DocumentId) && e.RebuildVersion == version)
@@ -77,7 +80,7 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
     {
         await using var context = await _contextFactory.CreateDbContextAsync(ct);
 
-        var version = _rebuildVersion();
+        var version = _rebuildVersion.Current;
         return await context.Set<TEntity>()
             .AsNoTracking()
             .Where(e => e.RebuildVersion == version)
@@ -92,12 +95,15 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
         IReadOnlyCollection<string> deletes,
         CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(upserts);
+        ArgumentNullException.ThrowIfNull(deletes);
+
         if (upserts.Count == 0 && deletes.Count == 0)
             return;
 
         // Resolved once for the whole batch, so a promotion landing mid-batch cannot split
         // attempts, upserts, and deletes across two versions.
-        var version = _rebuildVersion();
+        var version = _rebuildVersion.Current;
         var delay = TimeSpan.FromMilliseconds(50);
 
         for (var attempt = 1; attempt <= MaxWriteAttempts; attempt++)
@@ -136,6 +142,13 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
             .Where(e => allDocIds.Contains(e.DocumentId) && e.RebuildVersion == version)
             .ToDictionaryAsync(e => e.DocumentId, ct);
 
+        // Delete-wins: a document ID present in both upserts and deletes must be absent
+        // after the batch. EF cannot express "insert then delete in one statement" the way
+        // the Postgres adapter does (upsert SQL followed by delete SQL in one transaction),
+        // so the same result is achieved by suppressing any upsert whose ID is also being
+        // deleted — the delete then runs uncontested, whether the row exists or not.
+        var deleteSet = deletes.Count > 0 ? new HashSet<string>(deletes) : null;
+
         foreach (var docId in deletes)
         {
             if (existingEntities.TryGetValue(docId, out var existing))
@@ -144,6 +157,9 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
 
         foreach (var (docId, newEntity) in upserts)
         {
+            if (deleteSet?.Contains(docId) == true)
+                continue; // delete wins; skip the upsert for this document
+
             newEntity.DocumentId = docId;
             newEntity.RebuildVersion = version;
             newEntity.UpdatedAt = DateTimeOffset.UtcNow;

@@ -34,8 +34,10 @@ PACKAGES=(
 )
 
 EXTRA_ARGS=()
+SINCE_REF=""
 if [[ ${1:-} == "--since" ]]; then
-  EXTRA_ARGS+=("--since:${2:-main}")
+  SINCE_REF="${2:-main}"
+  EXTRA_ARGS+=("--since:$SINCE_REF")
   shift 2 || shift 1
 elif [[ ${1:-} == *.csproj ]]; then
   PACKAGES=("$1")
@@ -82,6 +84,24 @@ REPO_ROOT="$PWD"
 OUT_ROOT="$REPO_ROOT/artifacts/stryker"
 mkdir -p "$OUT_ROOT"
 
+# In --since mode, compute the diff once so the per-package loop can skip packages that
+# have no changed .cs source files.  Stryker computes the same merge-base internally
+# (via LibGit2Sharp), so the skip decision and Stryker's own mutation filter can never
+# disagree about which files count.
+#
+# If the diff cannot be determined for any reason, SINCE_CHANGED_FILES_KNOWN stays false
+# and every package runs — the failure mode is "do the work", not "skip it silently".
+SINCE_CHANGED_FILES_KNOWN=false
+SINCE_CHANGED_FILES=""
+if [[ -n "$SINCE_REF" ]]; then
+  if SINCE_MERGE_BASE=$(git merge-base "$SINCE_REF" HEAD 2>/dev/null); then
+    SINCE_CHANGED_FILES=$(git diff --name-only "$SINCE_MERGE_BASE" 2>/dev/null || true)
+    SINCE_CHANGED_FILES_KNOWN=true
+  else
+    echo "warning: could not compute merge-base for $SINCE_REF; all packages will run" >&2
+  fi
+fi
+
 # Stryker runs from the test project's own directory, which is its documented layout and the
 # only one that reliably pins the test project down. Run from the repo root instead and it
 # auto-discovers every test project that references the target — which drags in
@@ -113,6 +133,22 @@ crashed=()     # Stryker died, no report, retry exhausted
 for proj in "${PACKAGES[@]}"; do
   name="${proj%.csproj}"
   report="$OUT_ROOT/$name/reports/mutation-report.json"
+
+  # In --since mode, skip packages with no changed .cs files under src/<name>/.  Stryker
+  # would spin up, build the project, run coverage, find nothing to mutate, and log
+  # "unable to calculate a mutation score" — several minutes of dead time that is the
+  # proximate cause of the diff job timing out on PRs that touch a single package.
+  #
+  # The skip is always announced in the log so "we did not look" is never silent.
+  # It is suppressed when the changed-file set could not be determined (SINCE_CHANGED_FILES_KNOWN
+  # false), because the safe failure mode is to run the package, not to drop it quietly.
+  if [[ $SINCE_CHANGED_FILES_KNOWN == true ]]; then
+    if ! printf '%s\n' "$SINCE_CHANGED_FILES" | grep -q "^src/$name/.*\.cs$"; then
+      echo "=== $name — skipped (no changed .cs files under src/$name/)"
+      continue
+    fi
+  fi
+
   rm -f "$report"
 
   # Plain `if`s rather than `[[ ... ]] && cmd`: under `set -e` an and-list whose test fails

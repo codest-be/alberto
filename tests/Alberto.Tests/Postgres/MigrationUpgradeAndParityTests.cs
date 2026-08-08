@@ -1,6 +1,7 @@
 using System.Reflection;
 using Alberto.Postgres;
 using Alberto.Subscriptions;
+using Alberto.TestInfrastructure;
 using FluentAssertions;
 using Npgsql;
 using Testcontainers.PostgreSql;
@@ -115,8 +116,8 @@ public sealed class MigrationUpgradeAndParityTests
     [Fact]
     public async Task MultiTenant_UpgradesFromBaseSchema_ToCurrentMigrations_Successfully()
     {
-        await using var container = new PostgreSqlBuilder("postgres:16-alpine").Build();
-        await container.StartAsync();
+        await using var container = await ContainerStartup.StartNewAsync(
+            () => new PostgreSqlBuilder("postgres:16-alpine").Build());
         var connectionString = container.GetConnectionString();
 
         // Phase 1: apply 001_InitialSchema.sql directly + record in DbUp journal.
@@ -184,8 +185,8 @@ public sealed class MigrationUpgradeAndParityTests
     [Fact]
     public async Task SingleTenant_UpgradesFromBaseSchema_ToCurrentMigrations_Successfully()
     {
-        await using var container = new PostgreSqlBuilder("postgres:16-alpine").Build();
-        await container.StartAsync();
+        await using var container = await ContainerStartup.StartNewAsync(
+            () => new PostgreSqlBuilder("postgres:16-alpine").Build());
         var connectionString = container.GetConnectionString();
 
         // Phase 1: apply 001_InitialSchema.sql directly + record in DbUp journal.
@@ -1063,8 +1064,8 @@ public sealed class MigrationUpgradeAndParityTests
     [Fact]
     public async Task MultiTenant_DeadLetterStore_AcceptsEventTypeOver200Characters()
     {
-        await using var container = new PostgreSqlBuilder("postgres:16-alpine").Build();
-        await container.StartAsync();
+        await using var container = await ContainerStartup.StartNewAsync(
+            () => new PostgreSqlBuilder("postgres:16-alpine").Build());
         var connectionString = container.GetConnectionString();
 
         var result = PostgresMigrator.Migrate(connectionString, singleTenant: false);
@@ -1111,8 +1112,8 @@ public sealed class MigrationUpgradeAndParityTests
     [Fact]
     public async Task SingleTenant_DeadLetterStore_AcceptsEventTypeOver200Characters()
     {
-        await using var container = new PostgreSqlBuilder("postgres:16-alpine").Build();
-        await container.StartAsync();
+        await using var container = await ContainerStartup.StartNewAsync(
+            () => new PostgreSqlBuilder("postgres:16-alpine").Build());
         var connectionString = container.GetConnectionString();
 
         var result = PostgresMigrator.Migrate(connectionString, singleTenant: true);

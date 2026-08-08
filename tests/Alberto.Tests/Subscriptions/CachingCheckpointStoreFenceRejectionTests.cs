@@ -184,6 +184,128 @@ public class CachingCheckpointStoreFenceRejectionTests
 
     #endregion
 
+    #region SubscribeFenceViolation
+
+    /// <summary>
+    /// <see cref="CachingCheckpointStore.SubscribeFenceViolation"/> must reject a null handler
+    /// with <see cref="ArgumentNullException"/> before touching any shared state.
+    ///
+    /// <para>
+    /// Without the null guard, null is silently added to the subscriber array and an attempt
+    /// to invoke it during a fence rejection throws <see cref="NullReferenceException"/> deep
+    /// inside <c>FlushAsync</c> rather than at the registration call site — making the bug
+    /// extremely hard to diagnose in production.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task SubscribeFenceViolation_NullHandler_ThrowsArgumentNullException()
+    {
+        var inner = new FencedCheckpointStore(leaseHeld: true);
+        await using var cache = new CachingCheckpointStore(
+            inner, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
+
+        Assert.Throws<ArgumentNullException>(() => cache.SubscribeFenceViolation(null!));
+    }
+
+    /// <summary>
+    /// A handler registered via <see cref="CachingCheckpointStore.SubscribeFenceViolation"/>
+    /// must be invoked when a fenced write is rejected.
+    ///
+    /// <para>
+    /// The callback is the signal by which the control loop learns it must stop processing
+    /// until the lease is re-acquired. If it is never called, the loop continues reading
+    /// events it can no longer safely checkpoint, risking duplicate processing when another
+    /// replica acquires the lease and picks up from the last persisted position.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task SubscribeFenceViolation_RegisteredHandler_IsCalledOnFenceRejection()
+    {
+        const string processorId = "proc-1";
+
+        var inner = new FencedCheckpointStore(leaseHeld: false);
+        await inner.SaveAsync(processorId, 50L, TestContext.Current.CancellationToken);
+
+        await using var cache = new CachingCheckpointStore(
+            inner, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
+        cache.SetFencingContext(new FencingContext("consumer-1", "replica-1"));
+
+        var violations = new List<string>();
+        cache.SubscribeFenceViolation(id => violations.Add(id));
+
+        await cache.GetAsync(processorId, TestContext.Current.CancellationToken);
+        await cache.SaveAsync(processorId, 100L, TestContext.Current.CancellationToken);
+
+        await cache.FlushAsync(TestContext.Current.CancellationToken);
+
+        Assert.Contains(processorId, violations);
+    }
+
+    /// <summary>
+    /// All handlers registered via multiple <see cref="CachingCheckpointStore.SubscribeFenceViolation"/>
+    /// calls must be invoked on a fence rejection (copy-on-write array is fully enumerated).
+    /// </summary>
+    [Fact]
+    public async Task SubscribeFenceViolation_MultipleHandlers_AllAreCalled()
+    {
+        const string processorId = "proc-1";
+
+        var inner = new FencedCheckpointStore(leaseHeld: false);
+        await inner.SaveAsync(processorId, 10L, TestContext.Current.CancellationToken);
+
+        await using var cache = new CachingCheckpointStore(
+            inner, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
+        cache.SetFencingContext(new FencingContext("consumer-1", "replica-1"));
+
+        var firstCalled = false;
+        var secondCalled = false;
+        cache.SubscribeFenceViolation(_ => firstCalled = true);
+        cache.SubscribeFenceViolation(_ => secondCalled = true);
+
+        await cache.GetAsync(processorId, TestContext.Current.CancellationToken);
+        await cache.SaveAsync(processorId, 200L, TestContext.Current.CancellationToken);
+
+        await cache.FlushAsync(TestContext.Current.CancellationToken);
+
+        Assert.True(firstCalled, "First subscribed handler was not called");
+        Assert.True(secondCalled, "Second subscribed handler was not called");
+    }
+
+    /// <summary>
+    /// When a fenced write is accepted, handlers registered via
+    /// <see cref="CachingCheckpointStore.SubscribeFenceViolation"/> must NOT be invoked.
+    ///
+    /// <para>
+    /// If the condition guarding the violation path were inverted, handlers would fire on
+    /// every successful flush, causing the control loop to incorrectly suspend itself even
+    /// when the lease is healthy — stopping all processing until an operator intervened.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task FlushAsync_AcceptedFence_SubscribedHandlers_AreNotCalled()
+    {
+        const string processorId = "proc-1";
+
+        var inner = new FencedCheckpointStore(leaseHeld: true);
+        await inner.SaveAsync(processorId, 100L, TestContext.Current.CancellationToken);
+
+        await using var cache = new CachingCheckpointStore(
+            inner, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
+        cache.SetFencingContext(new FencingContext("consumer-1", "replica-1"));
+
+        var violationFired = false;
+        cache.SubscribeFenceViolation(_ => violationFired = true);
+
+        await cache.GetAsync(processorId, TestContext.Current.CancellationToken);
+        await cache.SaveAsync(processorId, 200L, TestContext.Current.CancellationToken);
+
+        await cache.FlushAsync(TestContext.Current.CancellationToken);
+
+        Assert.False(violationFired, "Violation handler fired on a successful fenced write");
+    }
+
+    #endregion
+
     #region Test helpers
 
     /// <summary>

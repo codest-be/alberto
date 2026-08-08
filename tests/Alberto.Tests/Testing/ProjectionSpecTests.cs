@@ -1,3 +1,4 @@
+using System.Reflection;
 using Alberto.Subscriptions;
 using Alberto.Testing;
 using Xunit;
@@ -131,13 +132,39 @@ public class ProjectionSpecTests
             .ThenNoDocuments();
     }
 
-    [Fact]
-    public void Given_after_When_says_arrange_comes_before_act()
-    {
-        var spec = ProjectionSpec.For(Tabs()).When(new TabOpened("t-1", "Corner"));
+    // ── What the chain cannot say ─────────────────────────────────────────────────
+    //
+    // These were runtime guards. They are compile errors now, so what is left to
+    // assert is the shape of the stages: the verbs are simply not on the types the
+    // illegal chains would have to go through. The tests read as reflection because a
+    // test that called them would not build.
 
-        var ex = Assert.Throws<SpecificationException>(() => spec.Given(new RoundOrdered("t-1", 1m)));
-        Assert.Contains("before When", ex.Message);
+    private static bool Has(Type stage, string verb) =>
+        stage.GetMethods(BindingFlags.Public | BindingFlags.Instance).Any(m => m.Name == verb);
+
+    [Fact]
+    public void Arrange_is_over_once_a_projection_has_acted()
+    {
+        Assert.False(Has(typeof(ProjectionOutcomeSpecification<TabDocument>), "Given"));
+        Assert.False(Has(typeof(ProjectionOutcomeSpecification<TabDocument>), "GivenNoEvents"));
+    }
+
+    [Fact]
+    public void ThenUnchanged_and_ThenDeleted_need_a_When_to_compare_across()
+    {
+        // Both read the baseline When re-based, so neither exists before there is one.
+        Assert.False(Has(typeof(ProjectionSpecification<TabDocument>), "ThenUnchanged"));
+        Assert.False(Has(typeof(ProjectionSpecification<TabDocument>), "ThenDeleted"));
+        Assert.False(Has(typeof(ProjectionHistorySpecification<TabDocument>), "ThenUnchanged"));
+        Assert.False(Has(typeof(ProjectionHistorySpecification<TabDocument>), "ThenDeleted"));
+    }
+
+    [Fact]
+    public void The_opening_stage_arranges_or_acts_and_asserts_nothing()
+    {
+        Assert.Empty(typeof(ProjectionSpecification<TabDocument>)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+            .Where(m => m.Name.StartsWith("Then", StringComparison.Ordinal)));
     }
 
     [Fact]
@@ -380,24 +407,6 @@ public class ProjectionSpecTests
 
         var ex = Assert.Throws<SpecificationException>(spec.ThenUnchanged);
         Assert.Contains("deleted 't-1'", ex.Message);
-    }
-
-    [Fact]
-    public void ThenUnchanged_needs_a_When_to_compare_across()
-    {
-        var spec = ProjectionSpec.For(Tabs()).Given(new TabOpened("t-1", "Corner"));
-
-        var ex = Assert.Throws<SpecificationException>(spec.ThenUnchanged);
-        Assert.Contains("needs a When", ex.Message);
-    }
-
-    [Fact]
-    public void ThenDeleted_needs_a_When_to_compare_across()
-    {
-        var spec = ProjectionSpec.For(Tabs()).Given(new TabOpened("t-1", "Corner"));
-
-        var ex = Assert.Throws<SpecificationException>(() => spec.ThenDeleted("t-1"));
-        Assert.Contains("needs a When", ex.Message);
     }
 
     [Fact]

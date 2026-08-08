@@ -45,7 +45,7 @@ public sealed class StateStoreRebuildVersionTests(StateStoreRebuildVersionFixtur
 
     // ---------------------------------------------------------------- Postgres
 
-    private PostgresStateStore<Counter> PostgresStore(string projectionType, Func<int> version)
+    private PostgresStateStore<Counter> PostgresStore(string projectionType, ProjectionVersion version)
         => new(fixture.DataSource, projectionType, schema: null, rebuildVersion: version);
 
     /// <summary>
@@ -58,8 +58,8 @@ public sealed class StateStoreRebuildVersionTests(StateStoreRebuildVersionFixtur
         var ct = TestContext.Current.CancellationToken;
         var projectionType = NewProjectionType();
 
-        var live = PostgresStore(projectionType, () => 1);
-        var shadow = PostgresStore(projectionType, () => 2);
+        var live = PostgresStore(projectionType, ProjectionVersion.From(() => 1));
+        var shadow = PostgresStore(projectionType, ProjectionVersion.From(() => 2));
 
         await live.ApplyChangesAsync(
             new Dictionary<string, Counter> { ["doc-1"] = new("doc-1", 10) }, [], ct: ct);
@@ -77,7 +77,7 @@ public sealed class StateStoreRebuildVersionTests(StateStoreRebuildVersionFixtur
 
     // ---------------------------------------------------------------------- EF
 
-    private EfStateStore<CounterEntity, EfTestDbContext> EfStore(Func<int> version)
+    private EfStateStore<CounterEntity, EfTestDbContext> EfStore(ProjectionVersion version)
         => new(fixture.ContextFactory(), version);
 
     private static CounterEntity Entity(string docId, int counter)
@@ -100,12 +100,12 @@ public sealed class StateStoreRebuildVersionTests(StateStoreRebuildVersionFixtur
 
         // The entity carries the default of 1; the store must overwrite it rather than
         // trusting the caller to have set it.
-        await EfStore(() => 3).ApplyChangesAsync(
+        await EfStore(ProjectionVersion.From(() => 3)).ApplyChangesAsync(
             new Dictionary<string, CounterEntity> { [docId] = Entity(docId, 42) }, [], ct: ct);
 
-        (await EfStore(() => 3).LoadManyAsync([docId], ct: ct))[docId]
+        (await EfStore(ProjectionVersion.From(() => 3)).LoadManyAsync([docId], ct: ct))[docId]
             .RebuildVersion.Should().Be(3);
-        (await EfStore(() => 1).LoadManyAsync([docId], ct: ct)).Should().BeEmpty();
+        (await EfStore(ProjectionVersion.From(() => 1)).LoadManyAsync([docId], ct: ct)).Should().BeEmpty();
     }
 
     [Fact]
@@ -114,9 +114,9 @@ public sealed class StateStoreRebuildVersionTests(StateStoreRebuildVersionFixtur
         var ct = TestContext.Current.CancellationToken;
         var docId = NewDocId();
 
-        await EfStore(() => 1).ApplyChangesAsync(
+        await EfStore(ProjectionVersion.From(() => 1)).ApplyChangesAsync(
             new Dictionary<string, CounterEntity> { [docId] = Entity(docId, 10) }, [], ct: ct);
-        await EfStore(() => 2).ApplyChangesAsync(
+        await EfStore(ProjectionVersion.From(() => 2)).ApplyChangesAsync(
             new Dictionary<string, CounterEntity> { [docId] = Entity(docId, 99) }, [], ct: ct);
 
         IProjectionStateClearer clearer =
@@ -125,13 +125,13 @@ public sealed class StateStoreRebuildVersionTests(StateStoreRebuildVersionFixtur
 
         await clearer.ClearVersionAsync(2, ct);
 
-        (await EfStore(() => 1).LoadManyAsync([docId], ct: ct)).Should().ContainKey(
+        (await EfStore(ProjectionVersion.From(() => 1)).LoadManyAsync([docId], ct: ct)).Should().ContainKey(
             docId, "clearing the abandoned rebuild must leave the live projection standing");
-        (await EfStore(() => 2).LoadManyAsync([docId], ct: ct)).Should().BeEmpty();
+        (await EfStore(ProjectionVersion.From(() => 2)).LoadManyAsync([docId], ct: ct)).Should().BeEmpty();
 
         // Re-running is a no-op, which is what makes it safe after a coordinator crash.
         await clearer.ClearVersionAsync(2, ct);
-        (await EfStore(() => 1).LoadManyAsync([docId], ct: ct)).Should().ContainKey(docId);
+        (await EfStore(ProjectionVersion.From(() => 1)).LoadManyAsync([docId], ct: ct)).Should().ContainKey(docId);
     }
 
     [Fact]
@@ -140,7 +140,7 @@ public sealed class StateStoreRebuildVersionTests(StateStoreRebuildVersionFixtur
         var ct = TestContext.Current.CancellationToken;
         var updatedId = NewDocId();
         var deletedId = NewDocId();
-        await EfStore(() => 1).ApplyChangesAsync(
+        await EfStore(ProjectionVersion.From(() => 1)).ApplyChangesAsync(
             new Dictionary<string, CounterEntity>
             {
                 [updatedId] = Entity(updatedId, 10),
@@ -160,11 +160,11 @@ public sealed class StateStoreRebuildVersionTests(StateStoreRebuildVersionFixtur
         var versionResolutionCount = 0;
         var store = new EfStateStore<CounterEntity, EfTestDbContext>(
             factory,
-            () =>
+            ProjectionVersion.From(() =>
             {
                 versionResolutionCount++;
                 return 1;
-            });
+            }));
 
         await store.ApplyChangesAsync(
             new Dictionary<string, CounterEntity>
@@ -174,7 +174,7 @@ public sealed class StateStoreRebuildVersionTests(StateStoreRebuildVersionFixtur
             [deletedId],
             ct);
 
-        var state = await EfStore(() => 1).LoadManyAsync([updatedId, deletedId], ct);
+        var state = await EfStore(ProjectionVersion.From(() => 1)).LoadManyAsync([updatedId, deletedId], ct);
         state[updatedId].Counter.Should().Be(99);
         state.Should().NotContainKey(deletedId, "deletes are part of every atomic retry attempt");
         versionResolutionCount.Should().Be(
@@ -222,6 +222,6 @@ public sealed class StateStoreRebuildVersionTests(StateStoreRebuildVersionFixtur
         var thrown = await act.Should().ThrowAsync<ConcurrencyConflictException>();
         thrown.Which.DocumentId.Should().Be(docId);
         thrown.Which.InnerException.Should().BeSameAs(permanentConflict);
-        (await EfStore(() => 1).LoadManyAsync([docId], ct)).Should().BeEmpty();
+        (await EfStore(ProjectionVersion.From(() => 1)).LoadManyAsync([docId], ct)).Should().BeEmpty();
     }
 }

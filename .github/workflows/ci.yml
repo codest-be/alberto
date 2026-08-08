@@ -68,6 +68,13 @@ jobs:
       # know that, but a job that suddenly cannot reach Docker is a host problem, not a
       # workflow one.
       #
+      # Rootless has one failure mode worth naming, because it reads as a test failure and is
+      # not: a container that never starts because the daemon's published-port allocator and
+      # the host kernel's ephemeral range picked the same port ("bind: address already in use",
+      # attributed to whichever test happened to be starting a container). Container startup
+      # retries it — see docs/development/rootless-docker-ports.md, which also has the host
+      # sysctl that stops the two allocators competing in the first place.
+      #
       # The whole suite runs here, integration included. Mutation testing (see
       # .github/workflows/mutation.yml) has to exclude the Postgres-backed classes because it
       # re-runs the suite once per mutant; coverage runs it once, so the ten seconds those

@@ -175,12 +175,17 @@ Spec.For(new ConfirmOrderEvolver())
 | `When(state => ...)` | The decider. An overload takes `Func<TState, Decision<TResult>>` |
 | `ThenSucceeds()` / `ThenFails()` / `ThenFails(code)` / `ThenFails(problem)` | The outcome. `ThenFails(problem)` compares `Code` only |
 | `ThenEmits<T>(match?)` / `ThenEmitsOnly<T>(match?)` / `ThenEmitsNothing()` | What was recorded. `ThenEmits` says nothing about the other events; `ThenEmitsOnly` requires this to be the only one |
-| `ThenState(...)` / `ThenResult<T>(...)` | The state after the emitted events fold in, and the value a `Decision<T>` carried |
+| `ThenState(...)` / `ThenResult(...)` | The state after the emitted events fold in, and the value a `Decision<TResult>` carried |
 | `ThenEvents(...)` / `ThenProblems(...)` | The escape hatches, handing you the lists in order |
 
-`Spec.Stateless()` drops `Given` and `ThenState` for decisions that fold no history. Every verb
-returns the concrete specification rather than a base type, so a chain never narrows — you can
-still reach `ThenState` after `ThenSucceeds`.
+Given, When and Then are three stages and three types, so the order is the compiler's business
+rather than a runtime check. There is no `Given` after `When`, no second `When`, no decision verb
+before the first one, and `ThenResult` exists only on the stage a `Decision<TResult>` lands on —
+where it is already typed to `TResult` and needs no type argument. Within a stage every verb
+returns the concrete specification rather than a base type, so a chain never narrows: `ThenState`
+is still reachable after `ThenSucceeds`.
+
+`Spec.Stateless()` drops `Given` and `ThenState` for decisions that fold no history.
 
 Failures throw `SpecificationException` with the decision in the message: expecting
 `order.not-found` from a decider that returned `order.cancellation-reason-required` names both.
@@ -230,8 +235,13 @@ built.
 | `ForTenant(id)` / `At(when)` / `AtPosition(n)` / `WithMetadata(...)` | The `ProjectionContext` the handlers see. Timestamps default to `ProjectionSpec.Epoch`, positions to 1 |
 | `ThenDocument(...)` / `ThenDocument(id, ...)` | The document. Without an id there must be exactly one, which is the common case for an aggregate |
 | `ThenNoDocument(id)` / `ThenNoDocuments()` / `ThenDocumentCount(n)` | What is and is not there |
-| `ThenUnchanged()` / `ThenDeleted(id)` | What the `When` did, rather than what it left behind |
+| `ThenUnchanged()` / `ThenDeleted(id)` | What the `When` did, rather than what it left behind. Only after one |
 | `ThenDocuments(...)` | The escape hatch, handing you every document by id |
+
+Here too the stages are types: nothing asserts before something has been projected, `Given` is
+gone once a projection has acted, and `ThenUnchanged` and `ThenDeleted` do not exist until there
+is a `When` for them to compare across. The context verbs are legal at every stage, because
+context is set for what comes next.
 
 `AtPosition` is also how you specify a redelivery: a state implementing `IProjectionEntity` carries
 the position it last processed, and an event at or below it is skipped, which is what makes

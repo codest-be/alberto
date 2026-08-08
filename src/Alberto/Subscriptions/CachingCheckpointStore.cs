@@ -184,15 +184,15 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
             _subscribedFenceHandlers = [.. _subscribedFenceHandlers, handler];
     }
 
-    /// <summary>
-    /// Returns <c>this</c> as an <see cref="ICheckpointInventory"/> when the inner store
-    /// supports enumeration, <c>null</c> when it does not. Use this at the DI resolution site
-    /// instead of a plain <c>as ICheckpointInventory</c> cast: because this decorator always
-    /// implements the interface (so the cast would never be null), a direct cast would hand a
-    /// non-null inventory to a caller even when the inner store opted out — silently turning
-    /// "not supported" into a false all-clear under the orphan check.
-    /// </summary>
-    internal ICheckpointInventory? AsInventory => _inner is ICheckpointInventory ? this : null;
+    /// <inheritdoc />
+    /// <remarks>
+    /// Returns <c>false</c> when the inner store does not implement
+    /// <see cref="ICheckpointInventory"/>. This lets the DI resolution site use a plain
+    /// property-pattern match (<c>is ICheckpointInventory { CanEnumerate: true }</c>) without
+    /// naming any concrete decorator type, so third-party decorators can express the same
+    /// opt-out through the public interface rather than requiring Alberto internals.
+    /// </remarks>
+    public bool CanEnumerate => _inner is ICheckpointInventory;
 
     /// <inheritdoc />
     /// <remarks>
@@ -202,22 +202,22 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
     /// <c>_dirty</c> and are unioned into the result so the caller sees a complete picture.
     /// <para>
     /// Throws <see cref="NotSupportedException"/> when the inner store does not implement
-    /// <see cref="ICheckpointInventory"/>. That path is unreachable through the intended
-    /// <see cref="AsInventory"/> gateway, which returns <c>null</c> in that case; the exception
-    /// is a defensive backstop for code that directly casts this decorator to the interface.
+    /// <see cref="ICheckpointInventory"/> (i.e. when <see cref="CanEnumerate"/> is
+    /// <c>false</c>). Well-behaved callers check <see cref="CanEnumerate"/> first; this
+    /// exception is a backstop for code that bypasses that check.
     /// </para>
     /// </remarks>
     public async Task<IReadOnlyList<string>> ListProcessorIdsAsync(CancellationToken ct = default)
     {
         // Guard first: returning an empty list when the inner store cannot enumerate would
         // be a false all-clear under a Strict orphan policy — indistinguishable from "all
-        // processors accounted for" rather than "we simply don't know". Callers should reach
-        // this method only through AsInventory, which returns null for non-inventory stores.
+        // processors accounted for" rather than "we simply don't know". Callers should check
+        // CanEnumerate before calling this method; the throw is a backstop for those that don't.
         if (_inner is not ICheckpointInventory innerInventory)
             throw new NotSupportedException(
                 $"{nameof(CachingCheckpointStore)}: the wrapped {_inner.GetType().Name} does not " +
-                $"implement {nameof(ICheckpointInventory)}. Resolve via {nameof(AsInventory)} to " +
-                "avoid this path.");
+                $"implement {nameof(ICheckpointInventory)}. Check {nameof(CanEnumerate)} before " +
+                "calling this method.");
 
         // Drive pending writes into the inner store before listing. Without this, a processor
         // whose checkpoint was SaveAsync'd but not yet timer-flushed would be absent from the
