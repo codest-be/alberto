@@ -231,7 +231,7 @@ public sealed class OutboxMessageMappingUpcastingTests
         var serializer = ConsumerUpcastFixtures.BuildSerializer();
         var envelope = ConsumerUpcastFixtures.MakeV1Envelope(orderId);
 
-        var registry = new MessageMappingRegistry();
+        var registry = new MessageMappingRegistry(null);
         registry.Map<UpcastConsumerOrderV2, ConsumerOrderMessage>(e => new ConsumerOrderMessage(e.Country));
 
         // The service provider exposes EventSerializer as an unkeyed singleton so the mapper

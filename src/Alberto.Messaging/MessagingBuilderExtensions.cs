@@ -60,9 +60,6 @@ public static class MessagingBuilderExtensions
         ArgumentNullException.ThrowIfNull(configureMappings);
         ArgumentNullException.ThrowIfNull(outboxStore);
 
-        var registry = new MessageMappingRegistry();
-        configureMappings(registry);
-
         builder.DeclareProcessor(new ProcessorDeclaration
         {
             ProcessorId = OutboxHandler.ProcessorIdValue,
@@ -73,9 +70,13 @@ public static class MessagingBuilderExtensions
 
         builder.Register(context =>
         {
-            // Stamp the module key onto the registry so the convenience Map extension methods can
-            // resolve the module-keyed EventSerializer at runtime (for upcaster support).
-            registry.ModuleKey = context.ModuleKey;
+            // Construct a fresh registry per shard (or per module when unsharded): each
+            // shard's Register callback receives its own context.ModuleKey, so the registry
+            // it builds carries that key immutably. Without this, a sharded module would
+            // share one mutable registry across all shards and the last shard's key would win —
+            // every mapper in every shard would resolve the last shard's EventSerializer.
+            var registry = new MessageMappingRegistry(context.ModuleKey);
+            configureMappings(registry);
 
             // Register the handler as a keyed IEventProcessor so the ControlLoop picks it up.
             // OutboxHandler implements IBatchableProcessor, satisfying the default Required batching mode.
