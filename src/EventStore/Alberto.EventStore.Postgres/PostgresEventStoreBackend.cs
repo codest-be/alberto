@@ -176,6 +176,31 @@ public class PostgresEventStoreBackend : IEventStoreBackend, IMultiTenantEventSt
         NpgsqlConnection connection = ambientContext.Connection;
         NpgsqlTransaction transaction = ambientContext.Transaction;
 
+        // Serialise all appends for the same (schema, tenant) pair with a transaction-scoped
+        // advisory lock.  This makes the consistency-boundary check and the subsequent INSERT
+        // atomic from every other concurrent append in the same logical partition: the lock is
+        // held until the transaction commits or rolls back, so no other session can sneak an
+        // INSERT between our EXISTS check and our INSERT within the same boundary.
+        //
+        // Key: "events-append:<schema>:<tenantId>"
+        //   - schema-qualified so modules that share a Postgres cluster but use different schemas
+        //     do not block one another unnecessarily.
+        //   - hashtextextended(key, 0) maps the string to the full 64-bit advisory-lock space,
+        //     avoiding the class/object split and the 32-bit collision risk of hashtext alone.
+        //   - pg_advisory_xact_lock (not pg_advisory_lock) is transaction-scoped: it is released
+        //     automatically on commit or rollback and is safe under connection pooling.
+        //
+        // The lock is unconditional (not gated on consistencyBoundary != null) because an
+        // unguarded append that commits during another session's boundary check would otherwise
+        // bypass the guarantee entirely.
+        var lockKey = $"events-append:{_options.Schema}:{tenant.Id}";
+        await connection.ExecuteAsync(
+            CreateCommand(
+                "SELECT pg_advisory_xact_lock(hashtextextended(@key, 0))",
+                new { key = lockKey },
+                transaction,
+                cancellationToken));
+
         List<long>? positions = eventsList.Count >= _bulkInsertThreshold
             ? await BulkInsertEventsWithConsistencyCheck(
                 eventsList,
