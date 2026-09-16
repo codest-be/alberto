@@ -17,6 +17,40 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ---
 
+## [0.3.0] - 2026-09-16
+
+### Added
+
+- A failing CI run does not say which test failed (#139)
+- Spec and ProjectionSpec allow illegal chains that only fail at runtime (#138)
+
+### Fixed
+
+- A container that loses the rootless host-port race fails CI as a test failure (#165)
+
+### Changed
+
+- CI fails with NU1902: Microsoft.Build.Tasks.Git 8.0.0 vulnerability (GHSA-23fw-v26w-5fgq) (#175)
+- The mutation diff job spends a quarter of its budget on packages with no changed files (#162)
+- The fencing seam has one adapter, no specification, and no coverage without Docker (#158)
+- Four IStateStore/IDeadLetterStore contracts are unpinned, and one hides an InMemory bug (#157)
+- The conflict-retry loop is written twice in the command pipeline (#156)
+- Only Alberto's own decorator can answer whether a checkpoint store can enumerate (#155)
+- Sharded modules share one MessageMappingRegistry, so every shard resolves the last shard's EventSerializer (#154)
+- A shipped conformance specification only works for first-party adapters (#153)
+- The DCB conflict position is recovered by parsing English out of a SQL error message (#151)
+- Telemetry activity tests are flaky: OTel's ActivityListener is process-wide (#147)
+- One telemetry knob controls nothing, and two registered gauges report nothing (#146)
+- The blank-ReplicaId guard is duplicated at both registration sites (#145)
+- IStateStore promises atomic batches; the in-memory adapter does not deliver one (#143)
+- Rebuild version arrives as an unnamed Func<int> that prose forbids caching (#141)
+- Projection example tests carry leftovers the new specifications cover (#134)
+- A quarter of mutants time out because tests hang instead of failing fast (#133)
+- Projections cannot be unit-tested without a state store (#131)
+- Full mutation sweep times out on main and blocks the only public-ci runner (#130)
+
+---
+
 ## [0.2.0] - 2026-08-03
 
 One deletion from the public surface, a specification DSL that lets a decider be tested as the
@@ -603,7 +637,8 @@ Initial beta release. Core DCB event store abstractions, PostgreSQL backend, in-
 backend, command pipeline, EF Core projection support, transactional outbox, and
 OpenTelemetry instrumentation.
 
-[Unreleased]: https://github.com/codest-be/alberto/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/codest-be/alberto/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/codest-be/alberto/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/codest-be/alberto/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/codest-be/alberto/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/codest-be/alberto/compare/v0.1.2...v0.1.3
