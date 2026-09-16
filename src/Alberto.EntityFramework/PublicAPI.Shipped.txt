@@ -8,7 +8,7 @@ Alberto.EntityFramework.EfProjectionModelBuilderExtensions
 Alberto.EntityFramework.EfStateStore<TEntity, TDbContext>
 Alberto.EntityFramework.EfStateStore<TEntity, TDbContext>.ApplyChangesAsync(System.Collections.Generic.IReadOnlyDictionary<string!, TEntity!>! upserts, System.Collections.Generic.IReadOnlyCollection<string!>! deletes, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Alberto.EntityFramework.EfStateStore<TEntity, TDbContext>.DisposeAsync() -> System.Threading.Tasks.ValueTask
-Alberto.EntityFramework.EfStateStore<TEntity, TDbContext>.EfStateStore(Microsoft.EntityFrameworkCore.IDbContextFactory<TDbContext!>! contextFactory, System.Func<int>? rebuildVersion = null) -> void
+Alberto.EntityFramework.EfStateStore<TEntity, TDbContext>.EfStateStore(Microsoft.EntityFrameworkCore.IDbContextFactory<TDbContext!>! contextFactory, Alberto.Subscriptions.ProjectionVersion rebuildVersion = default(Alberto.Subscriptions.ProjectionVersion)) -> void
 Alberto.EntityFramework.EfStateStore<TEntity, TDbContext>.ListRecentAsync(int limit = 20, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<TEntity!>!>!
 Alberto.EntityFramework.EfStateStore<TEntity, TDbContext>.LoadManyAsync(System.Collections.Generic.IEnumerable<string!>! documentIds, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyDictionary<string!, TEntity!>!>!
 Alberto.EntityFramework.Inline.InlineProjectionExhaustedException

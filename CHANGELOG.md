@@ -17,6 +17,115 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ---
 
+## [0.3.0] - 2026-09-16
+
+A named rebuild version, module identity frozen where it used to be mutable, and the decider
+and projection specification chains rebuilt as type-level state machines. Three changes here
+stop a consumer compiling; none of the rest change how a correct caller already using these
+seams behaves.
+
+### Breaking changes
+
+**The rebuild version is a `ProjectionVersion`, not a bare `Func<int>`.** A rebuild version used
+to arrive as an unnamed closure, which the docs then had to forbid callers from caching because
+nothing about the type said whether it was safe to. `Alberto.Subscriptions.ProjectionVersion`
+now carries that meaning itself — `ProjectionVersion.Current`, `.NeverRebuilt`, and
+`.From(Func<int>)` for the rare case a caller still needs to adapt a live counter. Every
+constructor that took `rebuildVersion` as `Func<int>?` — `EfStateStore`, `InMemoryStateStore`,
+`PostgresStateStore` — now takes `ProjectionVersion`, defaulting to `default(ProjectionVersion)`
+instead of `null` (#141):
+
+```csharp
+// Before
+new PostgresStateStore<OrderSummary>(dataSource, rebuildVersion: () => currentVersion);
+// After
+new PostgresStateStore<OrderSummary>(dataSource, rebuildVersion: ProjectionVersion.From(() => currentVersion));
+```
+
+**`MessageMappingRegistry.ModuleKey` is set once, at construction, not after.** The mutable
+setter and parameterless constructor let a module key be assigned — or reassigned — after
+registration, which is exactly how a sharded module ended up with every shard resolving the
+last shard's `EventSerializer`: nothing stopped two shards sharing one registry instance whose
+key was overwritten out from under the first. Construct it with the key instead
+(`new MessageMappingRegistry(moduleKey)`); `IMessageMappingRegistry.ModuleKey` is now
+get-only (#154). `PostgresTenantProcessorLock` gained the matching `moduleKey` constructor
+parameter so a lock can be scoped the same way.
+
+**The decider and projection specification DSLs are rebuilt as type-level state machines.**
+`Specification<TState>`, `SpecificationBase<TSelf>`, `StatelessSpecification`, and their
+`Given`/`When`/`ThenState`/`ThenEmits*`/`ThenFails*`/`ThenProblems`/`ThenResult`/`ThenSucceeds`
+methods are gone, along with the equivalent projection-side base types. Each stage of a
+specification is now its own class under `src/Alberto.Testing/Deciders/` and
+`src/Alberto.Testing/Projections/` (`DecisionAssertions`, `DecisionSpecification`,
+`DecisionResultSpecification`, `HistorySpecification` and their projection counterparts), so a
+verb is only callable at the stage it makes sense for — calling `ThenState` before `When`, which
+used to throw `SpecificationException` at runtime, no longer compiles (#138, #131). `Spec.For`
+and `ProjectionSpec.For` are unchanged as the entry points; only what happens after `Given`
+moved. If your specs only chain the documented verbs in the documented order, nothing to change
+beyond recompiling.
+
+**Two telemetry knobs are removed because neither did anything.**
+`TelemetryOptions.RecordEventPayloadSize` / `TelemetryOverrides.RecordEventPayloadSize` never
+gated any recording, and `AlbertoMetrics.TenantCooldownCount` was a gauge nothing ever reported
+to. Both are deleted rather than fixed in place — a knob that has never worked is not something
+a consumer can be relying on. `AlbertoMetrics.RecordTenantOwnership` loses the `cooldownCount`
+parameter that fed the deleted gauge (#146).
+
+### Added
+
+- **`ICheckpointInventory.CanEnumerate`.** Whether a checkpoint store can enumerate its
+  checkpoints used to be answered by casting to Alberto's own concrete decorator type, which
+  broke for any custom `ICheckpointStore` implementation. It's now a capability the store
+  answers directly. A custom checkpoint store implementing `ICheckpointInventory` needs to add
+  this member (#155).
+- **`FencedCheckpointStoreSpecification` and `RebuildCoordinatorFacade`, in
+  `Alberto.Testing.Xunit`.** The fencing seam and the rebuild coordinator each had exactly one
+  adapter and no conformance suite, so neither could be verified against a third-party
+  implementation. Both now have one, alongside the backend conformance specifications that
+  already existed (#158, #153).
+- **`DeadLetterStoreSpecification` gains coverage for the four `IStateStore`/`IDeadLetterStore`
+  behaviours the suite wasn't asking about**, plus `SupportsStreamAll`. The gap wasn't only
+  missing coverage: `InMemoryStateStore`'s batch write was not atomic against concurrent
+  readers, and the new specification is what caught it (see Fixed) (#157).
+- **`ProjectionDeclaration<TState>.Handles(IEvent)`** and **`ProcessorLeaseOptions.EffectiveReplicaId`**,
+  two small additions that back the changes above: the former lets a projection answer whether
+  it processes an event without folding it, the latter gives a lease its default replica id in
+  one place instead of two (#145).
+
+### Fixed
+
+- **`InMemoryStateStore`'s batch write was not atomic against a concurrent reader.** The
+  conformance work above (#157) specified atomicity for every `IStateStore`, and the in-memory
+  adapter failed it: a reader could observe a batch partway applied. It now writes under a lock
+  a reader also takes (#143).
+- **A container that loses the rootless-Docker host-port race failed CI as a test failure**
+  rather than a retried startup. Every container in the repo now starts through
+  `ContainerStartup.StartNewAsync`, which retries the collision instead of surfacing it (#165).
+- **The DCB conflict position was recovered by pattern-matching the constraint-violation text
+  out of a Postgres error message.** It now comes from a structured field the write path sets
+  itself, so a Postgres wording or locale change can no longer silently break conflict
+  reporting (#151).
+
+### Changed
+
+Test and release infrastructure only; no effect on the shipped assemblies.
+
+- `Microsoft.SourceLink.GitHub` bumped to 10.0.401, resolving the NU1902 advisory
+  (GHSA-23fw-v26w-5fgq) against its transitive `Microsoft.Build.Tasks.Git` dependency. Dev-time
+  only (`PrivateAssets="All"`); does not appear in a consumer's dependency graph (#175)
+- A failing CI run now names the failing test on the run's summary page instead of requiring a
+  log dive (#139)
+- Mutation testing's `--since` mode no longer spends budget re-scoring packages the branch
+  didn't touch, and the full sweep runs nightly rather than on every push to `main` — both were
+  timing out the only public CI runner (#162, #130, #133)
+- The command pipeline's conflict-retry loop, previously written once per call site, is now
+  written once (#156)
+- Telemetry's two activity-listener test classes no longer share OTel's process-wide
+  `ActivityListener`, which was making both flaky under parallel runs (#147)
+- Leftover projection example tests superseded by the new specifications are removed (#134)
+
+---
+
 ## [0.2.0] - 2026-08-03
 
 One deletion from the public surface, a specification DSL that lets a decider be tested as the
@@ -603,7 +712,8 @@ Initial beta release. Core DCB event store abstractions, PostgreSQL backend, in-
 backend, command pipeline, EF Core projection support, transactional outbox, and
 OpenTelemetry instrumentation.
 
-[Unreleased]: https://github.com/codest-be/alberto/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/codest-be/alberto/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/codest-be/alberto/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/codest-be/alberto/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/codest-be/alberto/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/codest-be/alberto/compare/v0.1.2...v0.1.3
