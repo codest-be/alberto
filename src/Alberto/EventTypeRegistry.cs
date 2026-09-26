@@ -293,6 +293,11 @@ public sealed class EventTypeRegistryBuilder
     /// extractor that disagrees writes events a consistency boundary will not match.
     /// </param>
     /// <exception cref="InvalidOperationException"><typeparamref name="TEvent"/> has no <see cref="EventTypeAttribute"/>.</exception>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("ApiDesign", "RS0027:API with optional parameter(s) should have the most parameters amongst its public overloads",
+        Justification = "The typed sibling below is not a longer form of this one: it has the " +
+                        "same arity and a required tags parameter of a different delegate shape. " +
+                        "OverloadResolutionPriority, not parameter count, is what keeps existing " +
+                        "cast-style calls bound here.")]
     [System.Diagnostics.CodeAnalysis.SuppressMessage("ApiDesign", "RS0026:Do not add multiple overloads with optional parameters",
         Justification = "The overloads differ by the leading required id; no call binds to both.")]
     public EventTypeRegistryBuilder Add<TEvent>(JsonTypeInfo<TEvent> jsonTypeInfo, EventTagExtractor? tags = null)
@@ -311,6 +316,11 @@ public sealed class EventTypeRegistryBuilder
     }
 
     /// <summary>Registers <typeparamref name="TEvent"/> under an explicit id and version.</summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("ApiDesign", "RS0027:API with optional parameter(s) should have the most parameters amongst its public overloads",
+        Justification = "The typed sibling below is not a longer form of this one: it has the " +
+                        "same arity and a required tags parameter of a different delegate shape. " +
+                        "OverloadResolutionPriority, not parameter count, is what keeps existing " +
+                        "cast-style calls bound here.")]
     [System.Diagnostics.CodeAnalysis.SuppressMessage("ApiDesign", "RS0026:Do not add multiple overloads with optional parameters",
         Justification = "The overloads differ by the leading required id; no call binds to both.")]
     public EventTypeRegistryBuilder Add<TEvent>(
