@@ -337,6 +337,7 @@ Alberto.EventSerializer
 Alberto.EventSerializer.Deserialize(Alberto.IEventEnvelope! envelope) -> Alberto.IEvent!
 Alberto.EventSerializer.ExtractTags(Alberto.IEvent! event, System.Func<string!, string!, string!>? valueTransform = null) -> System.Collections.Generic.IReadOnlyCollection<Alberto.EventTag>!
 Alberto.EventSerializer.RegisteredTypeIds.get -> System.Collections.Generic.IEnumerable<string!>!
+Alberto.EventSerializer.Registry.get -> Alberto.IEventTypeRegistry!
 Alberto.EventSerializer.Serialize(Alberto.IEvent! event) -> string!
 Alberto.EventSerializer.WithUpcasters(Alberto.Upcasting.UpcasterRegistry! upcasters) -> Alberto.EventSerializer!
 Alberto.EventStore
@@ -354,6 +355,7 @@ Alberto.EventTag.EventTag() -> void
 Alberto.EventTag.EventTag(string! concept, string! id) -> void
 Alberto.EventTag.Id.get -> string!
 Alberto.EventTag.Value.get -> string!
+Alberto.EventTagExtractor
 Alberto.EventToPersist
 Alberto.EventToPersist.EventData.get -> string!
 Alberto.EventToPersist.EventData.init -> void
@@ -379,6 +381,21 @@ Alberto.EventTypeAttribute.UpcastingNotRequired.get -> bool
 Alberto.EventTypeAttribute.UpcastingNotRequired.set -> void
 Alberto.EventTypeAttribute.Version.get -> int
 Alberto.EventTypeAttribute.Version.set -> void
+Alberto.EventTypeDescriptor
+Alberto.EventTypeDescriptor.ClrType.get -> System.Type!
+Alberto.EventTypeDescriptor.EventType.get -> Alberto.EventType
+Alberto.EventTypeDescriptor.EventTypeDescriptor(string! id, int version, bool upcastingNotRequired, System.Text.Json.Serialization.Metadata.JsonTypeInfo! jsonTypeInfo, Alberto.EventTagExtractor! tagExtractor) -> void
+Alberto.EventTypeDescriptor.Id.get -> string!
+Alberto.EventTypeDescriptor.JsonTypeInfo.get -> System.Text.Json.Serialization.Metadata.JsonTypeInfo!
+Alberto.EventTypeDescriptor.TagExtractor.get -> Alberto.EventTagExtractor!
+Alberto.EventTypeDescriptor.UpcastingNotRequired.get -> bool
+Alberto.EventTypeDescriptor.Version.get -> int
+Alberto.EventTypeRegistry
+Alberto.EventTypeRegistryBuilder
+Alberto.EventTypeRegistryBuilder.Add(Alberto.EventTypeDescriptor! descriptor) -> Alberto.EventTypeRegistryBuilder!
+Alberto.EventTypeRegistryBuilder.Add<TEvent>(System.Text.Json.Serialization.Metadata.JsonTypeInfo<TEvent>! jsonTypeInfo, Alberto.EventTagExtractor? tags = null) -> Alberto.EventTypeRegistryBuilder!
+Alberto.EventTypeRegistryBuilder.Add<TEvent>(string! id, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TEvent>! jsonTypeInfo, Alberto.EventTagExtractor? tags = null, int version = 1, bool upcastingNotRequired = false) -> Alberto.EventTypeRegistryBuilder!
+Alberto.EventTypeRegistryBuilder.Build() -> Alberto.IEventTypeRegistry!
 Alberto.Evolver<TState>
 Alberto.Evolver<TState>.Evolve(TState state, Alberto.IEvent! event) -> TState
 Alberto.Evolver<TState>.Evolve(TState state, Alberto.IEventEnvelope! envelope) -> TState
@@ -416,6 +433,10 @@ Alberto.IEventToPersist.EventType.get -> Alberto.EventType
 Alberto.IEventToPersist.Id.get -> System.Guid
 Alberto.IEventToPersist.Metadata.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>!
 Alberto.IEventToPersist.Tags.get -> System.Collections.Generic.IReadOnlyCollection<Alberto.EventTag>!
+Alberto.IEventTypeRegistry
+Alberto.IEventTypeRegistry.Descriptors.get -> System.Collections.Generic.IReadOnlyCollection<Alberto.EventTypeDescriptor!>!
+Alberto.IEventTypeRegistry.TryGetById(string! id, out Alberto.EventTypeDescriptor? descriptor) -> bool
+Alberto.IEventTypeRegistry.TryGetByType(System.Type! clrType, out Alberto.EventTypeDescriptor? descriptor) -> bool
 Alberto.IEvolve<TState, TEvent>
 Alberto.IEvolve<TState, TEvent>.Apply(TState state, TEvent event) -> TState
 Alberto.Problem
@@ -912,6 +933,7 @@ override Alberto.EventType.GetHashCode() -> int
 override Alberto.EventType.ToString() -> string!
 static Alberto.Configuration.AlbertoModuleDefinition.ApplyConfiguration(Alberto.Configuration.AlbertoModuleDefinition! definition, Microsoft.Extensions.Configuration.IConfiguration! configuration) -> Alberto.Configuration.AlbertoModuleDefinition!
 static Alberto.Configuration.AlbertoOptionsOverlay.Overlay<TOptions, TOverrides>(Microsoft.Extensions.Configuration.IConfiguration! parent, string! key, TOptions! current) -> TOptions!
+static Alberto.Configuration.AlbertoOptionsOverlay.Overlay<TOptions, TOverrides>(Microsoft.Extensions.Configuration.IConfiguration! parent, string! key, TOptions! current, System.Func<Microsoft.Extensions.Configuration.IConfigurationSection!, TOverrides?>! bind) -> TOptions!
 static Alberto.Configuration.AlbertoValidationReport.Describe(string! moduleKey, System.Collections.Generic.IReadOnlyList<Alberto.Configuration.AlbertoValidationFailure!>! failures) -> string!
 static Alberto.Configuration.ControlLoopOptions.Default.get -> Alberto.Configuration.ControlLoopOptions!
 static Alberto.Configuration.ProcessorId.For(System.Type! handlerType) -> string!
@@ -957,6 +979,7 @@ static Alberto.Decision<T>.implicit operator Alberto.Decision(Alberto.Decision<T
 static Alberto.Decision<T>.implicit operator Alberto.Decision<T>(Alberto.Problem! problem) -> Alberto.Decision<T>
 static Alberto.EventSerializer.FromAssemblies(System.Text.Json.JsonSerializerOptions? options = null, params System.Reflection.Assembly![]! assemblies) -> Alberto.EventSerializer!
 static Alberto.EventSerializer.FromAssembly(System.Reflection.Assembly! assembly, System.Text.Json.JsonSerializerOptions? options = null) -> Alberto.EventSerializer!
+static Alberto.EventSerializer.FromRegistry(Alberto.IEventTypeRegistry! registry) -> Alberto.EventSerializer!
 static Alberto.EventTag.Parse(string! tag) -> Alberto.EventTag
 static Alberto.EventTag.TryParse(string! tag, out Alberto.EventTag result) -> bool
 static Alberto.EventTag.implicit operator string!(Alberto.EventTag tag) -> string!
@@ -970,6 +993,9 @@ static Alberto.EventType.operator !=(Alberto.EventType left, Alberto.EventType r
 static Alberto.EventType.operator ==(Alberto.EventType left, Alberto.EventType right) -> bool
 static Alberto.EventTypeAttribute.GetEventType(System.Type! type) -> Alberto.EventTypeAttribute?
 static Alberto.EventTypeAttribute.GetEventTypeId(System.Type! type) -> string!
+static Alberto.EventTypeRegistry.CreateBuilder() -> Alberto.EventTypeRegistryBuilder!
+static Alberto.EventTypeRegistry.FromAssemblies(System.Text.Json.JsonSerializerOptions? options, params System.Reflection.Assembly![]! assemblies) -> Alberto.IEventTypeRegistry!
+static Alberto.EventTypeRegistry.FromAssembly(System.Reflection.Assembly! assembly, System.Text.Json.JsonSerializerOptions? options = null) -> Alberto.IEventTypeRegistry!
 static Alberto.Problem.Create(string! code, string! message, System.Collections.Generic.IReadOnlyDictionary<string!, object!>? details = null) -> Alberto.Problem!
 static Alberto.Result.Fail(Alberto.Problem! problem) -> Alberto.Result
 static Alberto.Result.Fail(System.Collections.Generic.IEnumerable<Alberto.Problem!>! problems) -> Alberto.Result
