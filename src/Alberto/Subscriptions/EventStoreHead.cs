@@ -24,9 +24,9 @@ public sealed class EventStoreHead : IHostedService
     // stuck" warning below and the alberto.head.stalled gauge.
     private DateTimeOffset? _stallStartedAt;
 
-    // Warn once per stall, not on every poll: the gauge above is what an alert rule watches
-    // continuously, so the log only needs to name the likely cause once per incident, not
-    // spam the log every _refreshInterval until an operator intervenes.
+    // Warn once per incident (one continuous hold, until the barrier releases), not on every
+    // poll: the gauge is what an alert rule watches continuously, so the log only needs to
+    // name the likely cause once.
     private bool _warnedForCurrentStall;
 
     internal EventStoreHead(IEventStoreHeadBackend backend,
@@ -185,20 +185,20 @@ public sealed class EventStoreHead : IHostedService
         }
         else
         {
-            // A partial advance while still holding (headAdvanced, holding still true) clears the
-            // stall clock/gauge like a real release, but must not be logged as one: the barrier is
-            // still clamping the head, so claiming "released" here would stand an operator down
-            // mid-incident.
-            if (_warnedForCurrentStall && !holding)
+            // Any advance restarts the clock, so a head that keeps creeping forward never reads as
+            // stalled. But the incident only ends when the barrier stops holding: a partial advance
+            // keeps it open, so one continuous hold warns once and logs one release.
+            _stallStartedAt = null;
+            if (!holding)
             {
-                _logger?.LogInformation(
-                    "EventStoreHead for module '{ModuleKey}' is no longer stalled; the stable-head " +
-                    "barrier has released.",
-                    _moduleKey);
+                if (_warnedForCurrentStall)
+                    _logger?.LogInformation(
+                        "EventStoreHead for module '{ModuleKey}' is no longer stalled; the stable-head " +
+                        "barrier has released.",
+                        _moduleKey);
+                _warnedForCurrentStall = false;
             }
 
-            _stallStartedAt = null;
-            _warnedForCurrentStall = false;
             AlbertoMetrics.RecordHeadStalled(_moduleKey, 0d);
         }
     }

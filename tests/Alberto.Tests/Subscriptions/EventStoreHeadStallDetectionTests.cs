@@ -93,13 +93,13 @@ public sealed class EventStoreHeadStallDetectionTests
     }
 
     [Fact]
-    public async Task WarnedStall_PartiallyAdvancesWhileStillHolding_DoesNotLogReleased()
+    public async Task WarnedStall_PartiallyAdvancesWhileStillHolding_StaysOneIncident()
     {
         // A blocker releasing in stages (several overlapping transactions committing one at a
         // time) can nudge the barrier forward without actually letting it go: the head moves,
-        // but stableHead is still behind the contiguous head. That must reset the stall clock/
-        // gauge like a real release (avoids false positives under this kind of partial progress),
-        // but must NOT be logged as "released" — the barrier is still clamping the head.
+        // but stableHead is still behind the contiguous head. That resets the stall clock and
+        // gauge (a creeping head is not stalled), but it is one incident: no "released" log, no
+        // second warning, and one release log when the barrier finally lets go.
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var logger = new CapturingLogger<EventStoreHead>();
         var backend = new FakeHeadBackend { Positions = [1, 2, 3, 4, 5, 6], StableHead = 1 };
@@ -123,12 +123,17 @@ public sealed class EventStoreHeadStallDetectionTests
         Assert.DoesNotContain(logger.Entries, e => e.Level == LogLevel.Information);
         AssertGauge("m5", g => g == 0);
 
-        // Because the clock reset, it takes the full threshold again — from this new baseline —
-        // before it re-warns. One poll to (re-)start the clock, then advance past the threshold.
+        // Still the same incident: freezing again past the threshold does not warn a second
+        // time, and the eventual real release is logged exactly once.
         await head.RefreshAsync(ct);
         time.Advance(Threshold + TimeSpan.FromSeconds(1));
         await head.RefreshAsync(ct);
-        Assert.Equal(2, logger.Entries.Count(e => e.Level == LogLevel.Warning));
+        Assert.Single(logger.Entries, e => e.Level == LogLevel.Warning);
+        AssertGauge("m5", g => g > 0);
+
+        backend.StableHead = long.MaxValue;
+        await head.RefreshAsync(ct);
+        Assert.Single(logger.Entries, e => e.Level == LogLevel.Information);
     }
 
     [Fact]
