@@ -32,6 +32,7 @@ internal sealed class AlbertoMigrationHostedService(
 
     private readonly CancellationTokenSource _stopping = new();
     private Task? _retryLoop;
+    private int _disposed;
 
     /// <inheritdoc />
     public Task StartAsync(CancellationToken cancellationToken)
@@ -62,9 +63,25 @@ internal sealed class AlbertoMigrationHostedService(
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// A no-op once the service is disposed. A host can be stopped more than once (a
+    /// <c>WebApplicationFactory</c> may stop it again after disposing it), and by then there is
+    /// nothing left to stop: <see cref="Dispose"/> already cancelled the retry loop.
+    /// </remarks>
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        await _stopping.CancelAsync();
+        if (Volatile.Read(ref _disposed) != 0)
+            return;
+
+        try
+        {
+            await _stopping.CancelAsync();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Disposed between the check above and the cancel. Dispose cancelled it first.
+            return;
+        }
 
         if (_retryLoop is not null)
         {
@@ -80,7 +97,16 @@ internal sealed class AlbertoMigrationHostedService(
     }
 
     /// <inheritdoc />
-    public void Dispose() => _stopping.Dispose();
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return;
+
+        // Cancel before disposing, so a retry loop still running (the host was disposed without
+        // being stopped) ends instead of waiting on a token that can no longer fire.
+        _stopping.Cancel();
+        _stopping.Dispose();
+    }
 
     /// <summary>
     /// Runs the migration and the tenancy-mode check. Returns the failure rather than throwing so
