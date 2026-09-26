@@ -1,0 +1,18 @@
+diff --git a/src/Alberto.Postgres/PostgresBackendHelpers.cs b/src/Alberto.Postgres/PostgresBackendHelpers.cs
+index 9ff7c67..ffb1e3e 100644
+--- a/src/Alberto.Postgres/PostgresBackendHelpers.cs
++++ b/src/Alberto.Postgres/PostgresBackendHelpers.cs
+@@ -252,7 +252,12 @@ internal static class PostgresBackendHelpers
+ 
+         try
+         {
+-            await AcquireAppendLockAsync(connection, effectiveTransaction, lockKey, cancellationToken);
++            // EXPERIMENT ONLY (benchmarks/experiments/no-append-lock.patch): skips the append
++            // lock entirely, to measure B1's ceiling. This must never reach main — apply the
++            // patch to a throwaway working tree for one benchmark run, then revert it. Not an
++            // env-var branch: a flag here would be a lock-free path production code could take
++            // by accident, and a patch that has to be applied by hand cannot be.
++            // await AcquireAppendLockAsync(connection, effectiveTransaction, lockKey, cancellationToken);
+ 
+             var results = await ExecuteAppendAsync(
+                 sql, connection, effectiveTransaction, tenantId,
