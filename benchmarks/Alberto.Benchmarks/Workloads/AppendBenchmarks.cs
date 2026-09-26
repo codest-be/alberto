@@ -254,7 +254,7 @@ public class AppendWithDcbCheckStoreSizeBenchmarks : AppendBenchmarkBase
         // nothing has been appended past it. Kept as a real, existing tag anyway: it is the
         // more honest input for what this class measures (append-time DCB check cost across
         // StoreSize) even though the predicate's shape means that cost stays flat by design,
-        // which is itself an answer to Q2(b) -- not a harness gap to work around further.
+        // which is itself the answer to whether the check slows as the store grows -- not a harness gap to work around further.
         _realHistoryQuery = DcbQuery.ByTags(new EventTag("order", "1"));
         return Task.CompletedTask;
     }

@@ -70,7 +70,7 @@ reciprocal, not a throughput ceiling. Three classes answer the concurrency quest
   tag no other writer touches, so nothing in DCB semantics requires serializing them — but the
   single-tenant append lock is keyed `alberto-append:{schema}`, one key for the whole store,
   not per boundary. If `Disjoint` throughput does not scale with `Writers`, that is the lock,
-  not genuine contention, and it is what a per-boundary locking redesign ("B1") would target.
+  not genuine contention, and it is what a per-boundary locking redesign would target.
   `Shared` is the control that should *not* scale — every writer targets the same tag, so real
   conflicts exist regardless of locking strategy — and it also answers the conflict-rate half
   of the question: BenchmarkDotNet has no column for a second metric, so `Shared` prints
@@ -103,7 +103,26 @@ compile-time constant and can't vary with a `[Params]` value. The same amount of
 by the same constant at every `Writers` value is what makes the reported mean a genuine
 per-append time rather than a per-writer-round time.
 
-### Experimental ceiling: B1's upper bound
+### What it showed (September 2026)
+
+On a laptop against Postgres in Docker Desktop, with the machine under load (so ±20%):
+
+| Case, 32 writers | Lock held across round trips | Lock + append in one batch |
+|---|---|---|
+| Single-tenant `Disjoint` | 770 µs/append | 500 µs/append |
+| Single-tenant `NoCondition` | 713 µs/append | 421 µs/append |
+| Multi-tenant, same tenant | 785 µs/append | 460 µs/append |
+| Multi-tenant, different tenants | 123 µs/append | 96 µs/append |
+
+Same-lock writers stay flat from 1 to 32 writers in both columns: the store-wide lock is the
+cap, and different lock keys scale about 5x past it. Sending the lock and the append as one
+implicit-transaction batch (instead of `BEGIN` / lock / append / `COMMIT` round trips) took
+network time out of the critical section, which is the first column to second. What is left
+under the lock is server work and the commit's WAL flush, so the remaining headroom for writers
+with disjoint boundaries on one store is only reachable with finer-grained locks.
+`AppendWithDcbCheckStoreSizeBenchmarks` was flat at 1.14 / 1.25 / 1.28 ms for 10k / 100k / 1M.
+
+### Experimental ceiling: per-boundary locking's upper bound
 
 `benchmarks/experiments/no-append-lock.patch` comments out the append lock acquisition
 entirely, to show what `Disjoint` could reach if per-boundary locking existed. It is not a

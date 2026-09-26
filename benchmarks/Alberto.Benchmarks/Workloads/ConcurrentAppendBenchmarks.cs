@@ -24,7 +24,7 @@ public enum AppendBoundary
 }
 
 /// <summary>
-/// Answers Q1/Q2 from the design brief: does the single per-store advisory append lock
+/// Does the single per-store advisory append lock
 /// (<c>PostgresBackendHelpers.AcquireAppendLockAsync</c>, keyed
 /// <c>alberto-append:{schema}</c> for the single-tenant backend this class uses — one key for
 /// the *whole store*, not per boundary) cap throughput even when writers' consistency
@@ -34,7 +34,7 @@ public enum AppendBoundary
 /// unique, so nothing in the DCB semantics requires serializing them, but today's lock key
 /// does not know that — it locks the whole store regardless of which tags a writer names.
 /// If <c>Disjoint</c> throughput does not scale with <c>Writers</c>, that is the lock, not
-/// genuine contention, and it is what a per-boundary locking redesign ("B1") would target.
+/// genuine contention, and it is what a per-boundary locking redesign would target.
 /// <see cref="AppendBoundary.Shared"/> is the control that should NOT scale — real conflicts
 /// exist there regardless of locking strategy — and <see cref="AppendBoundary.NoCondition"/>
 /// isolates the lock+insert cost from the conflict-check SELECT the other two also pay.
@@ -185,7 +185,7 @@ public class ConcurrentAppendBenchmarks
 }
 
 /// <summary>
-/// The multi-tenant half of Q1: does giving disjoint writers different tenants — and so
+/// The multi-tenant control: does giving disjoint writers different tenants — and so
 /// different advisory lock keys (<c>alberto-append:{schema}:{tenantId}</c>, see
 /// <see cref="PostgresTenantEventStoreBackend"/>) — actually buy throughput, as the natural
 /// control against <see cref="ConcurrentAppendBenchmarks"/>'s single-tenant
@@ -197,7 +197,7 @@ public class ConcurrentAppendBenchmarks
 /// multi-tenant database (empty — these writers create their own small store, so the
 /// template-clone/seed machinery StoreSizes exists for would be pure overhead here).
 /// No DCB query on either side (mirrors <see cref="AppendBoundary.NoCondition"/>), so what's
-/// isolated is exactly the lock, not the conflict-check scan Q1's other class also prices.
+/// isolated is exactly the lock, not the conflict-check scan the single-tenant class also prices.
 /// </summary>
 [Config(typeof(BenchmarkConfig))]
 public class TenantConcurrentAppendBenchmarks
