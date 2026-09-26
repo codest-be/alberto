@@ -144,6 +144,8 @@ internal static class PostgresBackendHelpers
     // Advisory-lock acquisition
     // ---------------------------------------------------------------------------
 
+    private const string AppendLockSql = "SELECT pg_advisory_xact_lock(hashtextextended(@lock_key, 0))";
+
     /// <summary>
     /// Acquires a transaction-scoped advisory lock keyed by <paramref name="lockKey"/>.
     /// The lock is held until the transaction commits or rolls back.
@@ -187,8 +189,7 @@ internal static class PostgresBackendHelpers
     internal static async Task AcquireAppendLockAsync(
         NpgsqlConnection connection, NpgsqlTransaction transaction, string lockKey, CancellationToken cancellationToken)
     {
-        await using var lockCmd = new NpgsqlCommand(
-            "SELECT pg_advisory_xact_lock(hashtextextended(@lock_key, 0))", connection, transaction);
+        await using var lockCmd = new NpgsqlCommand(AppendLockSql, connection, transaction);
         lockCmd.Parameters.AddWithValue("lock_key", lockKey);
         await lockCmd.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -212,15 +213,9 @@ internal static class PostgresBackendHelpers
     /// <see cref="ReadEvent"/> so the returned envelopes carry the correct tenant.
     /// When <paramref name="tenantId"/> is null the single-tenant path is used.
     /// </para>
-    /// <para>
-    /// When <paramref name="transaction"/> is null a new transaction is opened and
-    /// owned by this method; otherwise the supplied transaction is used and the caller
-    /// is responsible for committing or rolling back.
-    /// </para>
     /// </summary>
     internal static async Task<IReadOnlyCollection<IEventEnvelope>> AppendCoreAsync(
         NpgsqlConnection connection,
-        NpgsqlTransaction? transaction,
         SchemaQualifier schema,
         string lockKey,
         string? tenantId,
@@ -240,35 +235,10 @@ internal static class PostgresBackendHelpers
 
         var sql = BuildAppendSql(schema, functionName, tenanted: tenantId is not null, useAllTagsFunction);
 
-        // #1 Write-skew fix: serialize appends for this (schema[, tenant]) with a
-        // transaction-scoped advisory lock so the DCB conflict-check inside the
-        // append function and the subsequent insert happen atomically. Without it,
-        // two concurrent appends can both pass the "no event after expectedPosition"
-        // check and both commit, violating the boundary. Lock is released on
-        // commit/rollback.
-        NpgsqlTransaction? ownedTransaction =
-            transaction is null ? await connection.BeginTransactionAsync(cancellationToken) : null;
-        var effectiveTransaction = transaction ?? ownedTransaction!;
-
-        try
-        {
-            await AcquireAppendLockAsync(connection, effectiveTransaction, lockKey, cancellationToken);
-
-            var results = await ExecuteAppendAsync(
-                sql, connection, effectiveTransaction, tenantId,
-                eventsList, dcbQuery, expectedPosition,
-                useAllTagsFunction, cancellationToken);
-
-            if (ownedTransaction is not null)
-                await ownedTransaction.CommitAsync(cancellationToken);
-
-            return results;
-        }
-        finally
-        {
-            if (ownedTransaction is not null)
-                await ownedTransaction.DisposeAsync();
-        }
+        return await ExecuteAppendAsync(
+            sql, connection, lockKey, tenantId,
+            eventsList, dcbQuery, expectedPosition,
+            useAllTagsFunction, cancellationToken);
     }
 
     // ---------------------------------------------------------------------------
@@ -285,7 +255,7 @@ internal static class PostgresBackendHelpers
     private static async Task<IReadOnlyCollection<IEventEnvelope>> ExecuteAppendAsync(
         string sql,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
+        string lockKey,
         string? tenantId,
         List<IEventToPersist> eventsList,
         DcbQuery? dcbQuery,
@@ -293,7 +263,26 @@ internal static class PostgresBackendHelpers
         bool useAllTagsFunction,
         CancellationToken cancellationToken)
     {
-        await using var cmd = new NpgsqlCommand(sql, connection, transaction);
+        // #1 Write-skew fix: serialize appends for this (schema[, tenant]) with a
+        // transaction-scoped advisory lock so the DCB conflict-check inside the
+        // append function and the subsequent insert happen atomically. Without it,
+        // two concurrent appends can both pass the "no event after expectedPosition"
+        // check and both commit, violating the boundary.
+        //
+        // Lock and append go out as one batch with no explicit transaction: a batch ends in a
+        // single Sync, so Postgres runs it as one implicit transaction that commits at that
+        // Sync. The lock is therefore held for server time only. With BEGIN / lock / append /
+        // COMMIT as separate round trips it was held across two network round trips, which
+        // is what capped same-store append throughput (benchmarks/README.md, Concurrency).
+        // This relies on Npgsql's default of no error barriers between batch commands.
+        await using var batch = new NpgsqlBatch(connection);
+
+        var lockCmd = new NpgsqlBatchCommand(AppendLockSql);
+        lockCmd.Parameters.AddWithValue("lock_key", lockKey);
+        batch.BatchCommands.Add(lockCmd);
+
+        var cmd = new NpgsqlBatchCommand(sql);
+        batch.BatchCommands.Add(cmd);
 
         // BuildEventsJson uses Utf8JsonWriter.WriteRawValue so the caller-supplied
         // event_data JSON is written verbatim — no JsonDocument.Parse / ArrayPool leak.
@@ -337,7 +326,10 @@ internal static class PostgresBackendHelpers
         try
         {
             var results = new List<IEventEnvelope>();
-            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+            await using var reader = await batch.ExecuteReaderAsync(cancellationToken);
+
+            // Skip the lock statement's result set; the append's rows follow it.
+            await reader.NextResultAsync(cancellationToken);
 
             // Resolve ordinals once per reader — not per row.
             // The append result set does not include a tenant_id column in either path;

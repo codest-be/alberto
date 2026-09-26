@@ -74,7 +74,7 @@ public sealed class PostgresEventStoreBackend(
 
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         return await PostgresBackendHelpers.AppendCoreAsync(
-            connection, transaction: null, _schema, _appendLockKey,
+            connection, _schema, _appendLockKey,
             tenantId: null, eventsList, dcbQuery, expectedPosition, cancellationToken);
     }
 

@@ -1020,6 +1020,7 @@ static Alberto.Subscriptions.ProjectionVersion.From(System.Func<int>! selector) 
 static Alberto.Subscriptions.ProjectionVersion.NeverRebuilt.get -> Alberto.Subscriptions.ProjectionVersion
 static Alberto.Subscriptions.ProjectionVersions.LiveVersion(System.IServiceProvider! services, object? moduleKey, string! processorId) -> Alberto.Subscriptions.ProjectionVersion
 static Alberto.Subscriptions.ReactorContext.FromEnvelope(Alberto.IEventEnvelope! envelope) -> Alberto.Subscriptions.ReactorContext!
+static Alberto.Telemetry.AlbertoMetrics.RecordHeadStalled(string! moduleKey, double stalledSeconds) -> void
 static Alberto.Telemetry.AlbertoMetrics.RecordProcessorLag(string! processorId, string! module, long lag) -> void
 static Alberto.Telemetry.AlbertoMetrics.RecordTenantOwnership(string! consumerId, string! moduleKey, int ownedCount) -> void
 static Alberto.Tenancy.EventProcessingScope.Create(Microsoft.Extensions.DependencyInjection.IServiceScopeFactory! scopeFactory, string? tenantId) -> Microsoft.Extensions.DependencyInjection.AsyncServiceScope
@@ -1039,6 +1040,7 @@ static readonly Alberto.Telemetry.AlbertoMetrics.ConcurrencyConflicts -> System.
 static readonly Alberto.Telemetry.AlbertoMetrics.DeadLetters -> System.Diagnostics.Metrics.Counter<long>!
 static readonly Alberto.Telemetry.AlbertoMetrics.EventsAppended -> System.Diagnostics.Metrics.Counter<long>!
 static readonly Alberto.Telemetry.AlbertoMetrics.EventsProcessed -> System.Diagnostics.Metrics.Counter<long>!
+static readonly Alberto.Telemetry.AlbertoMetrics.HeadStalled -> System.Diagnostics.Metrics.ObservableGauge<double>!
 static readonly Alberto.Telemetry.AlbertoMetrics.Meter -> System.Diagnostics.Metrics.Meter!
 static readonly Alberto.Telemetry.AlbertoMetrics.OwnedTenantCount -> System.Diagnostics.Metrics.ObservableGauge<int>!
 static readonly Alberto.Telemetry.AlbertoMetrics.ProcessingDuration -> System.Diagnostics.Metrics.Histogram<double>!
