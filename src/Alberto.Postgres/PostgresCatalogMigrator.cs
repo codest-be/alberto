@@ -23,14 +23,25 @@ public static class PostgresCatalogMigrator
     /// </summary>
     /// <param name="connectionString">Connection string for the control database.</param>
     /// <param name="schema">Optional schema. Null means the connection's default schema.</param>
-    public static MigrationResult Migrate(string connectionString, string? schema = null)
+    /// <param name="logger">Where migration output goes. Null falls back to the console.</param>
+    /// <param name="ensureDatabase">
+    /// Whether to connect to the <c>postgres</c> maintenance database and create the control
+    /// database if it is missing. Set false for a least-privilege role that can only connect to
+    /// its own, already-existing database.
+    /// </param>
+    public static MigrationResult Migrate(
+        string connectionString,
+        string? schema = null,
+        Microsoft.Extensions.Logging.ILogger? logger = null,
+        bool ensureDatabase = true)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
 
         if (!string.IsNullOrWhiteSpace(schema))
             SchemaQualifier.ValidateName(schema);
 
-        EnsureDatabase.For.PostgresqlDatabase(connectionString);
+        if (ensureDatabase)
+            EnsureDatabase.For.PostgresqlDatabase(connectionString);
 
         if (!string.IsNullOrWhiteSpace(schema))
             EnsureSchemaExists(connectionString, schema);
@@ -45,7 +56,9 @@ public static class PostgresCatalogMigrator
                 name => name.StartsWith(
                     $"Alberto.Postgres.{ScriptFolder}.", StringComparison.OrdinalIgnoreCase))
             .WithTransactionPerScript()
-            .LogToConsole()
+            .LogTo(logger is null
+                ? new DbUp.Engine.Output.ConsoleUpgradeLog()
+                : new UpgradeLogAdapter(logger))
             .WithVariable("schema", schemaName)
             .WithVariable("schema_prefix", schemaPrefix)
             .JournalToPostgresqlTable(schemaName, JournalTable)

@@ -37,7 +37,9 @@ internal sealed class PostgresCatalogMigrationHostedService(
         MigrationResult result;
         try
         {
-            result = PostgresCatalogMigrator.Migrate(options.ConnectionString, options.Schema);
+            result = PostgresCatalogMigrator.Migrate(
+                options.ConnectionString, options.Schema,
+                logger: logger, ensureDatabase: options.EnsureDatabase);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

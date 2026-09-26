@@ -13,6 +13,13 @@ public sealed record PostgresOptions
     /// <summary>Whether Alberto applies its DbUp migrations at startup. Default true.</summary>
     public bool AutoMigrate { get; init; } = true;
 
+    /// <summary>
+    /// Whether migrations may connect to the <c>postgres</c> maintenance database to create the
+    /// target database if it is missing. Default true. Set false for a least-privilege role that
+    /// can only connect to its own, already-existing database.
+    /// </summary>
+    public bool EnsureDatabase { get; init; } = true;
+
     /// <summary>The schema Alberto's tables live in. Null means the connection's default schema.</summary>
     public string? Schema { get; init; }
 
@@ -71,6 +78,9 @@ public sealed class PostgresOverrides : IAlbertoOverrides<PostgresOptions>
     /// <summary>Nullable mirror of <see cref="PostgresOptions.AutoMigrate"/>.</summary>
     public bool? AutoMigrate { get; set; }
 
+    /// <summary>Nullable mirror of <see cref="PostgresOptions.EnsureDatabase"/>.</summary>
+    public bool? EnsureDatabase { get; set; }
+
     /// <summary>Nullable mirror of <see cref="PostgresOptions.Schema"/>.</summary>
     public string? Schema { get; set; }
 
@@ -104,6 +114,7 @@ public sealed class PostgresOverrides : IAlbertoOverrides<PostgresOptions>
         {
             ConnectionString = ConnectionString ?? options.ConnectionString,
             AutoMigrate = AutoMigrate ?? options.AutoMigrate,
+            EnsureDatabase = EnsureDatabase ?? options.EnsureDatabase,
             Schema = Schema ?? options.Schema,
             MaxPoolSize = MaxPoolSize ?? options.MaxPoolSize,
             MinPoolSize = MinPoolSize ?? options.MinPoolSize,

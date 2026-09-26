@@ -1,1 +1,9 @@
 #nullable enable
+*REMOVED*static Alberto.Postgres.PostgresCatalogMigrator.Migrate(string! connectionString, string? schema = null) -> Alberto.Postgres.MigrationResult!
+*REMOVED*static Alberto.Postgres.PostgresMigrator.Migrate(string! connectionString, string? schema = null, bool singleTenant = false) -> Alberto.Postgres.MigrationResult!
+Alberto.Postgres.PostgresOptions.EnsureDatabase.get -> bool
+Alberto.Postgres.PostgresOptions.EnsureDatabase.init -> void
+Alberto.Postgres.PostgresOverrides.EnsureDatabase.get -> bool?
+Alberto.Postgres.PostgresOverrides.EnsureDatabase.set -> void
+static Alberto.Postgres.PostgresCatalogMigrator.Migrate(string! connectionString, string? schema = null, Microsoft.Extensions.Logging.ILogger? logger = null, bool ensureDatabase = true) -> Alberto.Postgres.MigrationResult!
+static Alberto.Postgres.PostgresMigrator.Migrate(string! connectionString, string? schema = null, bool singleTenant = false, Microsoft.Extensions.Logging.ILogger? logger = null, bool ensureDatabase = true) -> Alberto.Postgres.MigrationResult!
