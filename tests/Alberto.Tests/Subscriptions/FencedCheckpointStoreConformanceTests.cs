@@ -1,14 +1,14 @@
 using Alberto.Subscriptions;
 using Alberto.Testing.Xunit;
-using Alberto.Tests.Fencing;
+using Alberto.InMemory;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
 namespace Alberto.Tests.Subscriptions;
 
 /// <summary>
-/// Runs the <see cref="FencedCheckpointStoreSpecification"/> against the in-process test adapter
-/// pair: <see cref="TestProcessorLeaseManager"/> + <see cref="TestFencedCheckpointStore"/>.
+/// Runs the <see cref="FencedCheckpointStoreSpecification"/> against the shipped in-memory adapter
+/// pair: <see cref="InMemoryProcessorLeaseManager"/> + <see cref="InMemoryFencedCheckpointStore"/>.
 ///
 /// No Docker, no database, no integration trait — all fencing behaviour is exercised in process
 /// with time advanced by a <see cref="FakeTimeProvider"/>.
@@ -16,13 +16,13 @@ namespace Alberto.Tests.Subscriptions;
 public sealed class InMemoryFencedCheckpointStoreConformanceTests : FencedCheckpointStoreSpecification
 {
     private readonly FakeTimeProvider _clock = new();
-    private readonly TestProcessorLeaseManager _leaseManager;
-    private readonly TestFencedCheckpointStore _store;
+    private readonly InMemoryProcessorLeaseManager _leaseManager;
+    private readonly InMemoryFencedCheckpointStore _store;
 
     public InMemoryFencedCheckpointStoreConformanceTests()
     {
-        _leaseManager = new TestProcessorLeaseManager(_clock);
-        _store = new TestFencedCheckpointStore(_leaseManager);
+        _leaseManager = new InMemoryProcessorLeaseManager(_clock);
+        _store = new InMemoryFencedCheckpointStore(_leaseManager);
     }
 
     protected override Task<IProcessorLeaseManager> CreateLeaseManager() =>
@@ -44,7 +44,7 @@ public sealed class InMemoryFencedCheckpointStoreConformanceTests : FencedCheckp
 
     /// <summary>
     /// Seeds the checkpoint row directly via
-    /// <see cref="TestFencedCheckpointStore.InjectCheckpointFenceToken"/>.
+    /// <see cref="InMemoryFencedCheckpointStore.InjectCheckpointFenceToken"/>.
     /// </summary>
     protected override Task SeedCheckpointFenceTokenAsync(
         string processorId, long position, long fenceToken)
@@ -55,7 +55,7 @@ public sealed class InMemoryFencedCheckpointStoreConformanceTests : FencedCheckp
 }
 
 /// <summary>
-/// Adapter-specific test for <see cref="TestFencedCheckpointStore"/>: verifies that calling
+/// Adapter-specific test for <see cref="InMemoryFencedCheckpointStore"/>: verifies that calling
 /// <see cref="IFencedCheckpointStore.SaveIfLeaseHeldAsync"/> with
 /// <c>useProcessorLeaseFencing = false</c> throws <see cref="NotSupportedException"/>.
 ///
@@ -68,8 +68,8 @@ public sealed class InMemoryFencedCheckpointStoreAdapterTests
     [Fact]
     public async Task TenantLeaseFencing_ThrowsNotSupportedException()
     {
-        var leaseManager = new TestProcessorLeaseManager();
-        var store = new TestFencedCheckpointStore(leaseManager);
+        var leaseManager = new InMemoryProcessorLeaseManager();
+        var store = new InMemoryFencedCheckpointStore(leaseManager);
 
         await Assert.ThrowsAsync<NotSupportedException>(() =>
             store.SaveIfLeaseHeldAsync(

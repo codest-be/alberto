@@ -22,13 +22,10 @@ public class LeaseFencingRegistrationTests
     /// actually start.
     /// </summary>
     /// <remarks>
-    /// <see cref="InMemoryBackendDescriptor"/> cannot be used directly: it fails validation with
-    /// ALB0024 whenever leases are enabled, which is correct for it — it provides no
-    /// <see cref="IProcessorLeaseManager"/> — but it means every lease path is unreachable
-    /// through it. Only Postgres satisfies both conditions in production, and reaching for a
-    /// container here would make a registration test depend on Docker. This descriptor keeps the
-    /// in-memory storage and drops only that one validation, so what is under test is
-    /// <see cref="ControlLoopRegistration"/>, not the backend.
+    /// <see cref="InMemoryBackendDescriptor"/> registers its own <see cref="IProcessorLeaseManager"/>,
+    /// which these tests replace with <see cref="CapturingLeaseManager"/> to observe what
+    /// <see cref="ControlLoopRegistration"/> passes in. The fake descriptor keeps the in-memory
+    /// storage but registers no lease manager at all, so the ALB0025 backstop is also reachable.
     /// </remarks>
     private sealed class LeaseCapableBackend : IAlbertoBackendDescriptor
     {
@@ -42,7 +39,21 @@ public class LeaseFencingRegistrationTests
 
         public IEnumerable<AlbertoValidationFailure> Validate(AlbertoModuleDefinition definition) => [];
 
-        public void Register(AlbertoModuleContext context) => _storage.Register(context);
+        public void Register(AlbertoModuleContext context)
+        {
+            _storage.Register(context);
+
+            // Strip the IProcessorLeaseManager the in-memory storage registered, so this fake
+            // really is "lease-capable backend, no lease manager" and ALB0025 stays reachable.
+            // The concrete InMemoryProcessorLeaseManager registration stays: the checkpoint
+            // store resolves it directly and is not under test here.
+            var managerRegistrations = context.Services
+                .Where(d => d.ServiceType == typeof(IProcessorLeaseManager)
+                    && Equals(d.ServiceKey, context.ModuleKey))
+                .ToList();
+            foreach (var descriptor in managerRegistrations)
+                context.Services.Remove(descriptor);
+        }
     }
 
     // Minimal IProcessorLeaseManager stub. Records the replicaId received in
@@ -188,12 +199,11 @@ public class LeaseFencingRegistrationTests
     }
 
     [Fact]
-    public async Task InMemory_backend_with_leases_enabled_is_rejected_earlier_by_ALB0024()
+    public async Task InMemory_backend_with_leases_enabled_starts_with_fenced_wiring()
     {
-        // The in-memory backend never reaches the ALB0025 backstop: its own descriptor rejects
-        // leases during options validation. Asserted here so that the two diagnostics stay
-        // distinct — if ALB0024 were ever dropped, this would fail rather than silently
-        // downgrade to the later, vaguer error.
+        // Formerly rejected with ALB0024. The in-memory backend now registers an
+        // IProcessorLeaseManager and a fencable checkpoint store, so the lease path in
+        // ControlLoopRegistration is reachable through .WithInMemory() end to end.
         var builder = Host.CreateApplicationBuilder();
         builder.Services.AddAlberto(ModuleKey, module => module
             .WithInMemory()
@@ -204,11 +214,16 @@ public class LeaseFencingRegistrationTests
 
         using var host = builder.Build();
 
-        var act = async () => await host.StartAsync(TestContext.Current.CancellationToken);
+        var ct = TestContext.Current.CancellationToken;
+        await host.StartAsync(ct);
 
-        var ex = await act.Should().ThrowAsync<Microsoft.Extensions.Options.OptionsValidationException>();
-        ex.Which.Message.Should().Contain("ALB0024");
-        ex.Which.Message.Should().NotContain("ALB0025");
+        host.Services.GetRequiredKeyedService<IProcessorLeaseManager>(ModuleKey)
+            .Should().BeOfType<Alberto.InMemory.InMemoryProcessorLeaseManager>();
+        host.Services.GetRequiredKeyedService<ICheckpointStore>(ModuleKey)
+            .Should().BeAssignableTo<IFencableCheckpointStore>(
+                "the lease path fences checkpoint writes through the caching store");
+
+        await host.StopAsync(ct);
     }
 }
 

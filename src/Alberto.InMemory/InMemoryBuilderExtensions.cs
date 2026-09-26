@@ -50,7 +50,6 @@ public static class InMemoryBuilderExtensions
 
         // Create shared instances for stores (identical in single- and multi-tenant mode:
         // checkpoint and dead-letter state is not tenant-partitioned at the store level).
-        var checkpointStore = new InMemoryCheckpointStore();
         var deadLetterStore = new InMemoryDeadLetterStore();
 
         // Register append interceptor pipeline
@@ -98,7 +97,25 @@ public static class InMemoryBuilderExtensions
             });
         }
 
-        services.AddKeyedSingleton<ICheckpointStore>(moduleKey, checkpointStore);
+        // Processor lease manager — always registered, exactly as the Postgres backend does.
+        // Registration runs before configuration overrides are merged, so whether leases end
+        // up enabled cannot be decided here; an unused manager on a lease-less module is inert.
+        // The concrete type is registered separately because the checkpoint store below needs
+        // it even when a test replaces the IProcessorLeaseManager registration with a fake.
+        services.AddKeyedSingleton<InMemoryProcessorLeaseManager>(moduleKey, (sp, _) =>
+            new InMemoryProcessorLeaseManager(sp.GetService<TimeProvider>()));
+        services.AddKeyedSingleton<IProcessorLeaseManager>(moduleKey, (sp, _) =>
+            sp.GetRequiredKeyedService<InMemoryProcessorLeaseManager>(moduleKey));
+
+        // Checkpoint store with caching layer, mirroring the Postgres registration shape.
+        // The fenced inner store is what lets a lease-enabled control loop fence its
+        // checkpoint writes on the in-memory backend; without leases the caching wrapper
+        // simply never sets a fencing context and the store behaves as a plain
+        // GREATEST-semantics checkpoint store.
+        services.AddKeyedSingleton<ICheckpointStore>(moduleKey, (sp, _) =>
+            new CachingCheckpointStore(new InMemoryFencedCheckpointStore(
+                sp.GetRequiredKeyedService<InMemoryProcessorLeaseManager>(moduleKey))));
+
         services.AddKeyedSingleton<IDeadLetterStore>(moduleKey, deadLetterStore);
     }
 
