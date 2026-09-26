@@ -14,6 +14,7 @@ namespace Alberto.Tests.Subscriptions;
 /// below a committed event, until that transaction ends.
 /// </summary>
 [Trait("Category", "Integration")]
+[Collection(StableHeadBarrierCollection.Name)]
 public sealed class EventStoreHeadStablePostgresBarrierTests(SingleTenantPostgresFixture fixture)
     : IClassFixture<SingleTenantPostgresFixture>
 {
@@ -184,4 +185,13 @@ public sealed class EventStoreHeadStablePostgresBarrierTests(SingleTenantPostgre
             await drop.ExecuteNonQueryAsync(ct);
         }
     }
+}
+
+// The premise these tests prove is also what breaks them under the parallel suite: snapshot
+// xmin is server-wide, and every Postgres-backed test shares one server, so any other test's
+// open write transaction pins the stable head and fails a "released" assertion. Run alone.
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class StableHeadBarrierCollection
+{
+    public const string Name = "stable-head-barrier";
 }
