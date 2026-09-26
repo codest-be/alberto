@@ -1,5 +1,6 @@
 using System.Reflection;
 using DbUp;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 
 namespace Alberto.Postgres;
@@ -23,14 +24,39 @@ public static class PostgresCatalogMigrator
     /// </summary>
     /// <param name="connectionString">Connection string for the control database.</param>
     /// <param name="schema">Optional schema. Null means the connection's default schema.</param>
+    /// <remarks>
+    /// Writes no output. At startup the hosted service passes its <see cref="ILogger"/> and the
+    /// catalog's <see cref="PostgresOptions.EnsureDatabase"/> through the internal overload.
+    /// </remarks>
     public static MigrationResult Migrate(string connectionString, string? schema = null)
+        => Migrate(connectionString, new MigrationOptions { Schema = schema });
+
+    /// <summary>
+    /// Creates the catalog table if it is not there yet.
+    /// </summary>
+    /// <param name="connectionString">Connection string for the control database.</param>
+    /// <param name="options">
+    /// The schema, logger and whether to create the database first.
+    /// <see cref="MigrationOptions.SingleTenant"/> is ignored: the catalog has no tenancy mode.
+    /// </param>
+    /// <remarks>
+    /// Internal because a public <c>Migrate(string, MigrationOptions)</c> would make the existing
+    /// <c>Migrate(connectionString, null)</c> call ambiguous for consumers (RS0027).
+    /// </remarks>
+    internal static MigrationResult Migrate(string connectionString, MigrationOptions options)
     {
+        ArgumentNullException.ThrowIfNull(options);
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+
+        var schema = options.Schema;
 
         if (!string.IsNullOrWhiteSpace(schema))
             SchemaQualifier.ValidateName(schema);
 
-        EnsureDatabase.For.PostgresqlDatabase(connectionString);
+        var upgradeLog = PostgresMigrator.CreateUpgradeLog(options.Logger);
+
+        if (options.EnsureDatabase)
+            EnsureDatabase.For.PostgresqlDatabase(connectionString, upgradeLog);
 
         if (!string.IsNullOrWhiteSpace(schema))
             EnsureSchemaExists(connectionString, schema);
@@ -45,7 +71,7 @@ public static class PostgresCatalogMigrator
                 name => name.StartsWith(
                     $"Alberto.Postgres.{ScriptFolder}.", StringComparison.OrdinalIgnoreCase))
             .WithTransactionPerScript()
-            .LogToConsole()
+            .LogTo(upgradeLog)
             .WithVariable("schema", schemaName)
             .WithVariable("schema_prefix", schemaPrefix)
             .JournalToPostgresqlTable(schemaName, JournalTable)

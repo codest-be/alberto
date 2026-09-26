@@ -42,7 +42,8 @@ namespace Alberto.Orders.Migrations
 
                 // Run DCB schema migrations first (single process, no race condition)
                 logger.LogInformation("Starting DCB migrations for Orders module...");
-                var dcbResult = PostgresMigrator.Migrate(connectionString, schema: "orders", singleTenant: false);
+                var dcbResult = PostgresMigrator.Migrate(
+                    connectionString, new MigrationOptions { Schema = "orders", Logger = logger });
                 if (!dcbResult.Successful)
                     throw new InvalidOperationException($"DCB migration failed: {dcbResult.Error?.Message}", dcbResult.Error);
                 logger.LogInformation("DCB migrations completed ({Count} scripts applied).", dcbResult.ExecutedScripts.Count);
