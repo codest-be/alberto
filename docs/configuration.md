@@ -332,6 +332,7 @@ the position over with `alberto ops checkpoint rename` before the whole log is r
 |---|---|---|---|
 | `ConnectionString` | `string` | `""` (required) | `Postgres:ConnectionString` |
 | `AutoMigrate` | `bool` | `true` | `Postgres:AutoMigrate` |
+| `EnsureDatabase` | `bool` | `true` | `Postgres:EnsureDatabase` |
 | `Schema` | `string?` | `null` (connection default) | `Postgres:Schema` |
 | `MaxPoolSize` | `int` | `100` | `Postgres:MaxPoolSize` |
 | `MinPoolSize` | `int` | `0` | `Postgres:MinPoolSize` |
@@ -342,8 +343,16 @@ the position over with `alberto ops checkpoint rename` before the whole log is r
 `AutoMigrate = true` runs Alberto's DbUp schema migrations at host startup via an
 `IHostedService`. Setting it to `false` means you manage migrations externally (for
 example, via a separate Migrations project in an Aspire sequencing setup). You can also
-call `PostgresMigrator.Migrate(connectionString, schema, singleTenant)` directly, for
-example from a CLI tool or design-time factory, without starting a full host.
+call `PostgresMigrator.Migrate(connectionString, new MigrationOptions { Schema = ..., Logger = logger })`
+directly, for example from a CLI tool or design-time factory, without starting a full host.
+DbUp's output goes to that `ILogger` (the hosted service passes its own). Without a logger it is
+discarded: Alberto never writes to the console.
+
+`EnsureDatabase = true` has the migration create the database first if it is missing, which
+means connecting to the server's `postgres` maintenance database. A least-privilege role that
+may connect only to its own database cannot do that: set `EnsureDatabase = false` (on
+`PostgresOptions`, or on the `MigrationOptions` you pass to `Migrate`) once the database exists,
+and the migration touches nothing but the database in the connection string.
 
 Building a service provider never opens a database connection; all I/O is deferred to
 `IHostedService.StartAsync`.
