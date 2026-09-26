@@ -1,3 +1,1 @@
 #nullable enable
-static Alberto.Messaging.MessageMappingRegistryExtensions.Map<TEvent, TDep, TMessage>(this Alberto.Messaging.IMessageMappingRegistry! registry, System.Func<TDep, TEvent!, TMessage!>! mapper, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TMessage!>! messageTypeInfo) -> void
-static Alberto.Messaging.MessageMappingRegistryExtensions.Map<TEvent, TMessage>(this Alberto.Messaging.IMessageMappingRegistry! registry, System.Func<TEvent!, TMessage!>! mapper, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TMessage!>! messageTypeInfo) -> void
