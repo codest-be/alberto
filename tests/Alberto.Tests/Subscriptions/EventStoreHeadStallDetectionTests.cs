@@ -67,6 +67,26 @@ public sealed class EventStoreHeadStallDetectionTests
     }
 
     [Fact]
+    public async Task BarrierHolding_ExactlyAtThreshold_Warns()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var logger = new CapturingLogger<EventStoreHead>();
+        var backend = new FakeHeadBackend { Positions = [1, 2, 3], StableHead = 1 };
+        var head = new EventStoreHead(backend,
+            logger: logger, timeProvider: time, moduleKey: "m6", stallWarningThreshold: Threshold);
+        var ct = TestContext.Current.CancellationToken;
+
+        await head.RefreshAsync(ct); // head moves 0 -> 1
+        await head.RefreshAsync(ct); // head stays at 1 — the stall clock starts here
+
+        time.Advance(Threshold);
+        await head.RefreshAsync(ct);
+
+        Assert.Single(logger.Entries, e => e.Level == LogLevel.Warning);
+        AssertGauge("m6", g => g == Threshold.TotalSeconds);
+    }
+
+    [Fact]
     public async Task BarrierReleases_AfterWarning_LogsInformationAndGaugeReturnsToZero()
     {
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
