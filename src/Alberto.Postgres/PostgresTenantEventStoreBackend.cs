@@ -77,7 +77,7 @@ internal sealed class PostgresTenantEventStoreBackend(
         var lockKey = $"alberto-append:{_schemaName ?? ""}:{tenantId}";
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         return await PostgresBackendHelpers.AppendCoreAsync(
-            connection, transaction: null, _schema, lockKey,
+            connection, _schema, lockKey,
             tenantId, eventsList, dcbQuery, expectedPosition, cancellationToken);
     }
 
