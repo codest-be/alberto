@@ -70,6 +70,30 @@ public class PostgresDescriptorTests
     }
 
     [Fact]
+    public void EnsureDatabase_defaults_on_and_binds_from_configuration()
+    {
+        var services = new ServiceCollection();
+        services.AddAlberto("orders", module => module
+            .WithPostgres(o => o with { ConnectionString = ConnectionString }));
+
+        OptionsOf(Resolve(services)).EnsureDatabase.Should().BeTrue();
+
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Alberto:Modules:orders:Postgres:EnsureDatabase"] = "false",
+            })
+            .Build();
+
+        var configured = new ServiceCollection();
+        configured.AddSingleton<IConfiguration>(configuration);
+        configured.AddAlberto("orders", module => module
+            .WithPostgres(o => o with { ConnectionString = ConnectionString }));
+
+        OptionsOf(Resolve(configured)).EnsureDatabase.Should().BeFalse();
+    }
+
+    [Fact]
     public void A_connection_string_supplied_only_by_configuration_is_accepted()
     {
         var configuration = new ConfigurationBuilder()

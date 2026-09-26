@@ -112,7 +112,9 @@ public sealed class ControlledDbContextFactory : IDbContextFactory<EfTestDbConte
     public ControlledDbContextFactory(string connectionString)
     {
         var builder = new DbContextOptionsBuilder<EfTestDbContext>();
-        builder.UseNpgsql(connectionString);
+        builder.UseNpgsql(
+            connectionString,
+            npgsql => npgsql.EnableRetryOnFailure(5, TimeSpan.FromSeconds(3), null));
         _options = builder.Options;
     }
 
@@ -255,7 +257,9 @@ public sealed class EfProjectionTestFixture(PostgresCluster cluster)
     private EfTestDbContext NewContext()
     {
         var optionsBuilder = new DbContextOptionsBuilder<EfTestDbContext>();
-        optionsBuilder.UseNpgsql(ConnectionString);
+        optionsBuilder.UseNpgsql(
+            ConnectionString,
+            npgsql => npgsql.EnableRetryOnFailure(5, TimeSpan.FromSeconds(3), null));
         return new EfTestDbContext(optionsBuilder.Options);
     }
 }

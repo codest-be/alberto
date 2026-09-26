@@ -54,8 +54,8 @@ internal static class StoreImprint
     /// <summary>
     /// PostgreSQL <c>lock_not_available</c>, raised when a database-level <c>lock_timeout</c>
     /// expires while waiting for the lock behind <c>CREATE TABLE IF NOT EXISTS</c>. The advisory
-    /// migration lock on the <see cref="PostgresMigrator.Migrate"/> path prevents this, but
-    /// <see cref="EnsureTable"/> is also reached from <see cref="ResolveTenancy"/>, called by
+    /// migration lock on the <see cref="PostgresMigrator.Migrate(string, MigrationOptions)"/>
+    /// path prevents this, but <see cref="EnsureTable"/> is also reached from <see cref="ResolveTenancy"/>, called by
     /// <c>GetPendingMigrations</c> and <c>ValidateTenancyMode</c> outside that lock.
     /// </summary>
     /// <remarks>
