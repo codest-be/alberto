@@ -1,3 +1,4 @@
+#pragma warning disable ALB9002 // ControlLoop is the (internal-ctor) writer side of the experimental health state.
 using System.Threading.Channels;
 using Alberto.Telemetry;
 using Microsoft.Extensions.Hosting;
@@ -29,6 +30,8 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
     private readonly ProcessorExecutionOptions _executionOptions;
     private readonly TimeSpan _drainTimeout;
     private readonly ILogger<ControlLoop>? _logger;
+    private readonly TimeProvider _timeProvider;
+    private readonly ProcessorHealthState? _healthState;
     // Pre-composed middleware chains built once at construction time (PERF-6).
     private readonly Func<ConsumeEventContext, Func<Task>, Task> _composedMiddleware;
     private readonly Func<BatchConsumeContext, Func<Task>, Task> _composedBatchMiddleware;
@@ -52,7 +55,9 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
         bool hasUnpairedPerEventMiddlewares = false,
         ProcessorExecutionOptions? executionOptions = null,
         ILogger<ControlLoop>? logger = null,
-        TimeSpan? drainTimeout = null)
+        TimeSpan? drainTimeout = null,
+        TimeProvider? timeProvider = null,
+        ProcessorHealthState? healthState = null)
     {
         _processor = processor;
         _head = head;
@@ -67,6 +72,8 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
         _executionOptions = executionOptions ?? ProcessorExecutionOptions.Default;
         _drainTimeout = drainTimeout ?? Configuration.ControlLoopOptions.Default.DrainTimeout;
         _logger = logger;
+        _timeProvider = timeProvider ?? TimeProvider.System;
+        _healthState = healthState;
 
         // Pre-build the composed middleware chains once so per-event dispatch does not
         // allocate a recursive Dispatch state-machine stack (PERF-6).
@@ -222,7 +229,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
 
                 if (checkpoint >= head)
                 {
-                    AlbertoMetrics.RecordProcessorLag(ProcessorId, _moduleKey, 0L);
+                    ReportProgress(0L);
                     await Task.Delay(_pollingInterval, ct);
                     continue;
                 }
@@ -233,7 +240,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
                 {
                     // No events between checkpoint and head — skip forward safely
                     await _checkpointStore.SaveAsync(ProcessorId, head, ct);
-                    AlbertoMetrics.RecordProcessorLag(ProcessorId, _moduleKey, 0L);
+                    ReportProgress(0L);
                     await Task.Delay(_pollingInterval, ct);
                     continue;
                 }
@@ -263,7 +270,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
                 if (newCheckpoint > checkpoint)
                     await _checkpointStore.SaveAsync(ProcessorId, newCheckpoint, ct);
 
-                AlbertoMetrics.RecordProcessorLag(ProcessorId, _moduleKey, head - newCheckpoint);
+                ReportProgress(head - newCheckpoint);
 
                 // No delay after a full batch — immediately fetch more
                 if (events.Count < _batchSize)
@@ -273,6 +280,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
             catch (Exception ex)
             {
                 IsFaulted = true;
+                ReportFaulted();
                 _logger?.LogCritical(ex,
                     "ControlLoop {ProcessorId} faulted and stopped. " +
                     "Checkpoint NOT advanced. Restart the service to retry from the same position.",
@@ -326,7 +334,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
                     // workers can still be processing in-flight events; SafeCheckpoint is the
                     // last position all workers have confirmed handled, which is the true lag.
                     await SaveWatermarkCheckpointAsync(watermark, pipelineToken);
-                    AlbertoMetrics.RecordProcessorLag(ProcessorId, _moduleKey, head - watermark.SafeCheckpoint);
+                    ReportProgress(head - watermark.SafeCheckpoint);
                     await Task.Delay(_pollingInterval, pipelineToken);
                     continue;
                 }
@@ -337,7 +345,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
                 {
                     watermark.AdvanceReadPosition(head);
                     await SaveWatermarkCheckpointAsync(watermark, pipelineToken);
-                    AlbertoMetrics.RecordProcessorLag(ProcessorId, _moduleKey, head - watermark.SafeCheckpoint);
+                    ReportProgress(head - watermark.SafeCheckpoint);
                     await Task.Delay(_pollingInterval, pipelineToken);
                     continue;
                 }
@@ -361,7 +369,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
                 // Save checkpoint after each batch of reads
                 await SaveWatermarkCheckpointAsync(watermark, pipelineToken);
 
-                AlbertoMetrics.RecordProcessorLag(ProcessorId, _moduleKey, head - watermark.SafeCheckpoint);
+                ReportProgress(head - watermark.SafeCheckpoint);
 
                 if (events.Count < _batchSize)
                     await Task.Delay(_pollingInterval, pipelineToken);
@@ -415,6 +423,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
             if (pipelineFailure is not null)
             {
                 IsFaulted = true;
+                ReportFaulted();
                 _logger?.LogCritical(
                     pipelineFailure,
                     "ControlLoop {ProcessorId} pipelined execution faulted and stopped. " +
@@ -506,6 +515,16 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
     /// </remarks>
     private static bool IsShutdownCancellation(OperationCanceledException exception, CancellationToken ct)
         => ct.IsCancellationRequested && exception.CancellationToken.IsCancellationRequested;
+
+    /// <summary>Records lag telemetry and, when a health state is wired, a liveness heartbeat.</summary>
+    private void ReportProgress(long lag)
+    {
+        AlbertoMetrics.RecordProcessorLag(ProcessorId, _moduleKey, lag);
+        _healthState?.Report(ProcessorId, isFaulted: false, lag, _timeProvider.GetUtcNow());
+    }
+
+    private void ReportFaulted() =>
+        _healthState?.Report(ProcessorId, isFaulted: true, lag: 0, _timeProvider.GetUtcNow());
 
     private async Task SaveWatermarkCheckpointAsync(PositionWatermark watermark, CancellationToken ct)
     {

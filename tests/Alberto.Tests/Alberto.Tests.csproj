@@ -7,7 +7,7 @@
         <IsTestProject>true</IsTestProject>
         <!-- Suppress experimental-sharding diagnostic across all test files; the sole purpose of
              this project is testing Alberto including sharding, so per-file pragmas would be noisy. -->
-        <NoWarn>$(NoWarn);ALB9001</NoWarn>
+        <NoWarn>$(NoWarn);ALB9001;ALB9002</NoWarn>
     </PropertyGroup>
 
     <ItemGroup>
