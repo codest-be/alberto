@@ -1,3 +1,1 @@
 #nullable enable
-static Alberto.Telemetry.AlbertoMetrics.RecordHeadStalled(string! moduleKey, double stalledSeconds) -> void
-static readonly Alberto.Telemetry.AlbertoMetrics.HeadStalled -> System.Diagnostics.Metrics.ObservableGauge<double>!

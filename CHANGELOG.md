@@ -17,6 +17,14 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ---
 
+## [0.5.0] - 2026-09-26
+
+### Changed
+
+- Surface stable-head stalls and shorten the append lock hold (#187)
+
+---
+
 ## [0.4.0] - 2026-09-26
 
 Native AOT and trimming support. Alberto core, Commands, Postgres, Messaging,
@@ -755,7 +763,8 @@ Initial beta release. Core DCB event store abstractions, PostgreSQL backend, in-
 backend, command pipeline, EF Core projection support, transactional outbox, and
 OpenTelemetry instrumentation.
 
-[Unreleased]: https://github.com/codest-be/alberto/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/codest-be/alberto/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/codest-be/alberto/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/codest-be/alberto/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/codest-be/alberto/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/codest-be/alberto/compare/v0.1.4...v0.2.0
