@@ -54,4 +54,5 @@ Alberto.Commands.UnboundPipeline<TCommand, TState>
 Alberto.Commands.UnboundPipeline<TCommand, TState>.Decide(System.Func<TCommand, TState, Alberto.Decision>! decide) -> Alberto.Commands.UnboundDecision
 Alberto.Commands.UnboundPipeline<TCommand, TState>.Decide<TValue>(System.Func<TCommand, TState, Alberto.Decision<TValue>>! decide) -> Alberto.Commands.UnboundDecision<TValue>
 Alberto.Commands.UnboundPipeline<TCommand, TState>.UnboundPipeline() -> void
+static Alberto.Commands.AlbertoStoreBuilderExtensions.WithEvents(this Alberto.DcbModuleBuilder! builder, Alberto.IEventTypeRegistry! registry) -> Alberto.DcbModuleBuilder!
 static Alberto.Commands.AlbertoStoreBuilderExtensions.WithEventsFrom(this Alberto.DcbModuleBuilder! builder, System.Reflection.Assembly! eventsAssembly) -> Alberto.DcbModuleBuilder!

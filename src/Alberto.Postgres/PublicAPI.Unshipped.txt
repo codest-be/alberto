@@ -1,5 +1,4 @@
 #nullable enable
-Alberto.Postgres.PostgresStateStore<TState>.PostgresStateStore(Npgsql.NpgsqlDataSource! dataSource, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TState>! jsonTypeInfo, string? projectionType = null, string? schema = null, Alberto.Subscriptions.ProjectionVersion rebuildVersion = default(Alberto.Subscriptions.ProjectionVersion), string? tenantId = null) -> void
 Alberto.Postgres.PostgresOptions.EnsureDatabase.get -> bool
 Alberto.Postgres.PostgresOptions.EnsureDatabase.init -> void
 Alberto.Postgres.PostgresOverrides.EnsureDatabase.get -> bool?
