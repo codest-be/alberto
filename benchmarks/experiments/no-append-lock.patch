@@ -1,0 +1,31 @@
+diff --git a/src/Alberto.Postgres/PostgresBackendHelpers.cs b/src/Alberto.Postgres/PostgresBackendHelpers.cs
+index b6d2729..c831970 100644
+--- a/src/Alberto.Postgres/PostgresBackendHelpers.cs
++++ b/src/Alberto.Postgres/PostgresBackendHelpers.cs
+@@ -277,9 +277,14 @@ internal static class PostgresBackendHelpers
+         // This relies on Npgsql's default of no error barriers between batch commands.
+         await using var batch = new NpgsqlBatch(connection);
+ 
+-        var lockCmd = new NpgsqlBatchCommand(AppendLockSql);
+-        lockCmd.Parameters.AddWithValue("lock_key", lockKey);
+-        batch.BatchCommands.Add(lockCmd);
++        // EXPERIMENT ONLY (benchmarks/experiments/no-append-lock.patch): skips the append
++        // lock entirely, to measure a per-boundary lock's ceiling. This must never reach main — apply the
++        // patch to a throwaway working tree for one benchmark run, then revert it. Not an
++        // env-var branch: a flag here would be a lock-free path production code could take
++        // by accident, and a patch that has to be applied by hand cannot be.
++        // var lockCmd = new NpgsqlBatchCommand(AppendLockSql);
++        // lockCmd.Parameters.AddWithValue("lock_key", lockKey);
++        // batch.BatchCommands.Add(lockCmd);
+ 
+         var cmd = new NpgsqlBatchCommand(sql);
+         batch.BatchCommands.Add(cmd);
+@@ -329,7 +334,7 @@ internal static class PostgresBackendHelpers
+             await using var reader = await batch.ExecuteReaderAsync(cancellationToken);
+ 
+             // Skip the lock statement's result set; the append's rows follow it.
+-            await reader.NextResultAsync(cancellationToken);
++            // await reader.NextResultAsync(cancellationToken);
+ 
+             // Resolve ordinals once per reader — not per row.
+             // The append result set does not include a tenant_id column in either path;
