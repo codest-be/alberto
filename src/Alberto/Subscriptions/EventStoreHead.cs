@@ -185,7 +185,11 @@ public sealed class EventStoreHead : IHostedService
         }
         else
         {
-            if (_warnedForCurrentStall)
+            // A partial advance while still holding (headAdvanced, holding still true) clears the
+            // stall clock/gauge like a real release, but must not be logged as one: the barrier is
+            // still clamping the head, so claiming "released" here would stand an operator down
+            // mid-incident.
+            if (_warnedForCurrentStall && !holding)
             {
                 _logger?.LogInformation(
                     "EventStoreHead for module '{ModuleKey}' is no longer stalled; the stable-head " +

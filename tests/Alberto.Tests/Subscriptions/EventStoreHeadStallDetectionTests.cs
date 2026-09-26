@@ -93,6 +93,82 @@ public sealed class EventStoreHeadStallDetectionTests
     }
 
     [Fact]
+    public async Task WarnedStall_PartiallyAdvancesWhileStillHolding_DoesNotLogReleased()
+    {
+        // A blocker releasing in stages (several overlapping transactions committing one at a
+        // time) can nudge the barrier forward without actually letting it go: the head moves,
+        // but stableHead is still behind the contiguous head. That must reset the stall clock/
+        // gauge like a real release (avoids false positives under this kind of partial progress),
+        // but must NOT be logged as "released" — the barrier is still clamping the head.
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var logger = new CapturingLogger<EventStoreHead>();
+        var backend = new FakeHeadBackend { Positions = [1, 2, 3, 4, 5, 6], StableHead = 1 };
+        var head = new EventStoreHead(backend,
+            logger: logger, timeProvider: time, moduleKey: "m5", stallWarningThreshold: Threshold);
+        var ct = TestContext.Current.CancellationToken;
+
+        await head.RefreshAsync(ct); // head moves 0 -> 1
+        await head.RefreshAsync(ct); // head stays at 1 — the stall clock starts here
+
+        time.Advance(Threshold + TimeSpan.FromSeconds(1));
+        await head.RefreshAsync(ct);
+        Assert.Single(logger.Entries, e => e.Level == LogLevel.Warning);
+
+        // The blocker inches forward: stableHead moves 1 -> 2, still well short of the
+        // contiguous head (6), so the barrier is still holding.
+        backend.StableHead = 2;
+        await head.RefreshAsync(ct);
+
+        Assert.Equal(2, head.Current);
+        Assert.DoesNotContain(logger.Entries, e => e.Level == LogLevel.Information);
+        AssertGauge("m5", g => g == 0);
+
+        // Because the clock reset, it takes the full threshold again — from this new baseline —
+        // before it re-warns. One poll to (re-)start the clock, then advance past the threshold.
+        await head.RefreshAsync(ct);
+        time.Advance(Threshold + TimeSpan.FromSeconds(1));
+        await head.RefreshAsync(ct);
+        Assert.Equal(2, logger.Entries.Count(e => e.Level == LogLevel.Warning));
+    }
+
+    [Fact]
+    public async Task StallClears_ThenStallsAgain_WarnsASecondTime()
+    {
+        // Re-arming after a genuine release is the whole point of resetting _warnedForCurrentStall:
+        // a second, unrelated stall must produce its own warning, not go silent because the flag
+        // from the first incident was never cleared.
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var logger = new CapturingLogger<EventStoreHead>();
+        var backend = new FakeHeadBackend { Positions = [1, 2, 3], StableHead = 1 };
+        var head = new EventStoreHead(backend,
+            logger: logger, timeProvider: time, moduleKey: "m6", stallWarningThreshold: Threshold);
+        var ct = TestContext.Current.CancellationToken;
+
+        await head.RefreshAsync(ct); // head moves 0 -> 1
+        await head.RefreshAsync(ct); // stall clock starts
+
+        time.Advance(Threshold + TimeSpan.FromSeconds(1));
+        await head.RefreshAsync(ct);
+        Assert.Single(logger.Entries, e => e.Level == LogLevel.Warning);
+
+        // Full release.
+        backend.StableHead = long.MaxValue;
+        await head.RefreshAsync(ct);
+        Assert.Equal(3, head.Current);
+        Assert.Single(logger.Entries, e => e.Level == LogLevel.Information);
+
+        // A fresh, unrelated stall: a new event arrives and a new blocker pins the barrier again.
+        backend.Positions = [1, 2, 3, 4];
+        backend.StableHead = 3;
+        await head.RefreshAsync(ct); // head stays at 3 — second stall clock starts here
+
+        time.Advance(Threshold + TimeSpan.FromSeconds(1));
+        await head.RefreshAsync(ct);
+
+        Assert.Equal(2, logger.Entries.Count(e => e.Level == LogLevel.Warning));
+    }
+
+    [Fact]
     public async Task HeadAdvancingWithBriefHolds_NeverWarns()
     {
         // A barrier that keeps moving forward — never pinned at the same position for two
