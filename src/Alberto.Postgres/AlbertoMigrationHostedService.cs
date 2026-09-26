@@ -32,6 +32,7 @@ internal sealed class AlbertoMigrationHostedService(
 
     private readonly CancellationTokenSource _stopping = new();
     private Task? _retryLoop;
+    private volatile bool _disposed;
 
     /// <inheritdoc />
     public Task StartAsync(CancellationToken cancellationToken)
@@ -64,6 +65,11 @@ internal sealed class AlbertoMigrationHostedService(
     /// <inheritdoc />
     public async Task StopAsync(CancellationToken cancellationToken)
     {
+        // WebApplicationFactory can stop the host after disposing it; a stop after dispose
+        // must be a no-op like other IHostedService implementations, not ObjectDisposedException.
+        if (_disposed)
+            return;
+
         await _stopping.CancelAsync();
 
         if (_retryLoop is not null)
@@ -80,7 +86,11 @@ internal sealed class AlbertoMigrationHostedService(
     }
 
     /// <inheritdoc />
-    public void Dispose() => _stopping.Dispose();
+    public void Dispose()
+    {
+        _disposed = true;
+        _stopping.Dispose();
+    }
 
     /// <summary>
     /// Runs the migration and the tenancy-mode check. Returns the failure rather than throwing so
