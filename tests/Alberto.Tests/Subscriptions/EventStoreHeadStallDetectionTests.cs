@@ -69,21 +69,45 @@ public sealed class EventStoreHeadStallDetectionTests
     [Fact]
     public async Task BarrierHolding_ExactlyAtThreshold_Warns()
     {
+        // A threshold other than the 30s default, so the configured value is what is honoured.
+        var threshold = TimeSpan.FromSeconds(10);
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var logger = new CapturingLogger<EventStoreHead>();
         var backend = new FakeHeadBackend { Positions = [1, 2, 3], StableHead = 1 };
         var head = new EventStoreHead(backend,
-            logger: logger, timeProvider: time, moduleKey: "m6", stallWarningThreshold: Threshold);
+            logger: logger, timeProvider: time, moduleKey: "m6", stallWarningThreshold: threshold);
         var ct = TestContext.Current.CancellationToken;
 
         await head.RefreshAsync(ct); // head moves 0 -> 1
         await head.RefreshAsync(ct); // head stays at 1 — the stall clock starts here
 
-        time.Advance(Threshold);
+        time.Advance(threshold);
         await head.RefreshAsync(ct);
 
         Assert.Single(logger.Entries, e => e.Level == LogLevel.Warning);
-        AssertGauge("m6", g => g == Threshold.TotalSeconds);
+        AssertGauge("m6", g => g == threshold.TotalSeconds);
+    }
+
+    [Fact]
+    public async Task CaughtUpIdleStore_StableHeadEqualToHead_IsNotAStall()
+    {
+        // Nothing in flight: the barrier sits exactly at the contiguous head. An idle store is
+        // not held back by anything, however long it stays quiet.
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var logger = new CapturingLogger<EventStoreHead>();
+        var backend = new FakeHeadBackend { Positions = [1, 2], StableHead = 2 };
+        var head = new EventStoreHead(backend,
+            logger: logger, timeProvider: time, moduleKey: "m7", stallWarningThreshold: Threshold);
+        var ct = TestContext.Current.CancellationToken;
+
+        await head.RefreshAsync(ct); // head moves 0 -> 2
+        await head.RefreshAsync(ct);
+        time.Advance(Threshold + TimeSpan.FromSeconds(1));
+        await head.RefreshAsync(ct);
+
+        Assert.Equal(2, head.Current);
+        Assert.DoesNotContain(logger.Entries, e => e.Level == LogLevel.Warning);
+        AssertGauge("m7", g => g == 0);
     }
 
     [Fact]
