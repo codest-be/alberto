@@ -111,7 +111,8 @@ public sealed record AlbertoModuleDefinition
             return processor with
             {
                 Execution = AlbertoOptionsOverlay.Overlay<ProcessorExecutionOptions, ProcessorExecutionOverrides>(
-                    processorsSection, processor.ProcessorId, processor.Execution),
+                    processorsSection, processor.ProcessorId, processor.Execution,
+                    static s => s.Get<ProcessorExecutionOverrides>()),
             };
         }).ToImmutableArray();
 
@@ -124,11 +125,14 @@ public sealed record AlbertoModuleDefinition
         {
             Tenancy = TenancyConfiguration.Apply(definition.Tenancy, boundBackend, section),
             ControlLoop = AlbertoOptionsOverlay.Overlay<ControlLoopOptions, ControlLoopOverrides>(
-                section, "ControlLoop", definition.ControlLoop),
+                section, "ControlLoop", definition.ControlLoop,
+                static s => s.Get<ControlLoopOverrides>()),
             Telemetry = AlbertoOptionsOverlay.Overlay<TelemetryOptions, TelemetryOverrides>(
-                section, "Telemetry", definition.Telemetry),
+                section, "Telemetry", definition.Telemetry,
+                static s => s.Get<TelemetryOverrides>()),
             Checkpoints = AlbertoOptionsOverlay.Overlay<CheckpointOptions, CheckpointOverrides>(
-                section, "Checkpoints", definition.Checkpoints),
+                section, "Checkpoints", definition.Checkpoints,
+                static s => s.Get<CheckpointOverrides>()),
             Backend = boundBackend,
             Processors = overlaidProcessors,
             UnknownConfigurationKeys = unknownKeys,

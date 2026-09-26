@@ -131,7 +131,7 @@ public sealed class AlbertoStore(
         await eventStore.AppendAsync(
             events.Select(@event => new EventToPersist
             {
-                EventType = EventType.FromType(@event.GetType()),
+                EventType = serializer.GetEventType(@event),
                 Tags = serializer.ExtractTags(@event),
                 EventData = serializer.Serialize(@event),
                 Metadata = new Dictionary<string, string>()

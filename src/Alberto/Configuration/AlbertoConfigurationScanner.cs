@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using Alberto.Subscriptions;
 using Microsoft.Extensions.Configuration;
@@ -14,6 +15,15 @@ namespace Alberto.Configuration;
 internal static class AlbertoConfigurationScanner
 {
     private static readonly Type OverridesOpenType = typeof(IAlbertoOverrides<>);
+
+    // Every type this reflects over implements IAlbertoOverrides<>, which carries a type-level
+    // [DynamicallyAccessedMembers(PublicProperties | Interfaces)]: the trimmer keeps those members
+    // on every implementation. The statically known types below implement it, the backend's type
+    // is documented to, and recursion only follows a property whose type passes IsOverridesType.
+    // The analyzer cannot see that through a Type held in a dictionary or read from PropertyType.
+    private const string OverridesJustification =
+        "Only IAlbertoOverrides<> implementations reach here, and that interface's type-level " +
+        "DynamicallyAccessedMembers annotation preserves their public properties and interfaces.";
 
     // Top-level sections that are always valid and whose Overrides types are known statically.
     // "Processors" is omitted here because it is handled specially (dynamic child keys).
@@ -135,6 +145,7 @@ internal static class AlbertoConfigurationScanner
     // Checks every child key of <paramref name="section"/> against the properties of
     // <paramref name="overridesType"/>. When a child key is a property whose type is itself a
     // nullable IAlbertoOverrides<T>, recurses into that sub-section.
+    [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = OverridesJustification)]
     private static void ScanSection(
         IConfigurationSection section,
         Type overridesType,
@@ -164,6 +175,9 @@ internal static class AlbertoConfigurationScanner
         }
     }
 
+    // A property type that does not implement the interface may have had its interface list
+    // trimmed, but then it could not have been an overrides type either: the answer is the same.
+    [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = OverridesJustification)]
     private static bool IsOverridesType(Type type) =>
         type.GetInterfaces()
             .Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == OverridesOpenType);

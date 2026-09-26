@@ -8,7 +8,7 @@ namespace Alberto;
 /// <summary>
 /// Reflection-based dispatcher that routes events to IEvolve&lt;TState, TEvent&gt; handlers.
 /// </summary>
-internal sealed class EvolverDispatcher<TState>
+internal sealed class EvolverDispatcher<TState> where TState : new()
 {
     private readonly Dictionary<string, Handler> _handlers = new();
     private FrozenSet<string> _handledEventTypes = FrozenSet<string>.Empty;
@@ -17,9 +17,17 @@ internal sealed class EvolverDispatcher<TState>
 
     public IReadOnlySet<string> HandledEventTypes => _handledEventTypes;
 
-    public static EvolverDispatcher<TState> For(object evolver)
+    // IEvolve<,>.Apply on the open generic: statically known, so the trimmer keeps it, and
+    // resolved against each closed interface below by handle rather than by name.
+    private static readonly RuntimeMethodHandle OpenApplyHandle =
+        typeof(IEvolve<,>).GetMethod(nameof(IEvolve<TState, IEvent>.Apply))!.MethodHandle;
+
+    public static EvolverDispatcher<TState> For(Evolver<TState> evolver)
     {
         var dispatcher = new EvolverDispatcher<TState>();
+
+        // Evolver<> carries [DynamicallyAccessedMembers(Interfaces)], so the analyzer knows (and
+        // the trimmer guarantees) that the runtime type keeps every IEvolve<,> it implements.
         var evolverType = evolver.GetType();
 
         var evolveInterfaces = evolverType.GetInterfaces()
@@ -30,8 +38,8 @@ internal sealed class EvolverDispatcher<TState>
         {
             var eventType = iface.GetGenericArguments()[1];
             var eventTypeId = EventTypeAttribute.GetEventTypeId(eventType);
-            var applyMethod = iface.GetMethod(nameof(IEvolve<TState, IEvent>.Apply));
-            if (applyMethod is null) continue;
+            if (MethodBase.GetMethodFromHandle(OpenApplyHandle, iface.TypeHandle) is not MethodInfo applyMethod)
+                continue;
 
             // Compile a strongly-typed delegate once at startup so that the per-event hot path
             // avoids MethodInfo.Invoke overhead, the object[2] argument allocation, and the
@@ -148,7 +156,9 @@ internal sealed class EvolverDispatcher<TState>
                         "or use AlbertoStore.Handle(...).Load(boundary, evolver).Decide(...).Commit(...) " +
                         "with an AlbertoStore that has the serializer.");
 
-                @event = JsonSerializer.Deserialize(envelope.EventData, eventType)
+                // No registry to read a contract from: see ReflectionJson.
+                @event = JsonSerializer.Deserialize(
+                             envelope.EventData, ReflectionJson.GetFallbackTypeInfo(eventType, envelope.EventType.Id))
                     ?? throw new InvalidOperationException(
                         $"Failed to deserialize event '{envelope.EventType.Id}' to type '{eventType.Name}'");
             }

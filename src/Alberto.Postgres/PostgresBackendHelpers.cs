@@ -642,7 +642,7 @@ internal static class PostgresBackendHelpers
         // TIMESTAMPTZ maps natively to DateTimeOffset in Npgsql — no SpecifyKind fix-up needed.
         var createdAt = reader.GetFieldValue<DateTimeOffset>(ord.CreatedAt);
 
-        var metadata = JsonSerializer.Deserialize<Dictionary<string, string>>(eventMetadata) ?? [];
+        var metadata = JsonSerializer.Deserialize(eventMetadata, AlbertoPostgresJsonContext.Default.DictionaryStringString) ?? [];
 
         // Parse the schema version from the reserved _version:N tag via the shared helper.
         // Events written before versioning was introduced carry no such tag and default to v1.

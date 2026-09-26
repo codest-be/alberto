@@ -271,7 +271,7 @@ public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
                 var metadataJson = reader.GetString(17);
                 try
                 {
-                    var parsed = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(metadataJson);
+                    var parsed = System.Text.Json.JsonSerializer.Deserialize(metadataJson, AlbertoPostgresJsonContext.Default.DictionaryStringString);
                     metadata = parsed ?? new Dictionary<string, string>();
                 }
                 catch

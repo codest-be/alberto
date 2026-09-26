@@ -52,7 +52,10 @@ internal static class EventEnvelopeExtensions
                 "inject EventSerializer and call serializer.Deserialize(envelope), " +
                 "or pass the serializer through the consumer's constructor.");
 
-        return JsonSerializer.Deserialize<TEvent>(envelope.EventData)
+        // No registry to read a contract from: fall back to reflection, with the serializer's
+        // default options. See ReflectionJson for what that means under trimming and Native AOT.
+        return (TEvent?)JsonSerializer.Deserialize(
+                   envelope.EventData, ReflectionJson.GetFallbackTypeInfo(typeof(TEvent), envelope.EventType.Id))
             ?? throw new InvalidOperationException(
                 $"Failed to deserialize event '{envelope.EventType.Id}' to type '{typeof(TEvent).Name}'.");
     }
