@@ -229,22 +229,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ILC links with the platform toolchain. Checked up front so a host missing it fails with
-      # the fix in the message instead of a linker error three screens into the publish log.
-      - name: Check native toolchain
-        run: |
-          missing=()
-          command -v clang >/dev/null || missing+=(clang)
-          [ -e /usr/include/zlib.h ] || missing+=(zlib1g-dev)
-          if [ ${#missing[@]} -gt 0 ]; then
-            echo "::error::Native AOT needs ${missing[*]} on the runner host (apt-get install ${missing[*]})."
-            exit 1
-          fi
-
+      # ILC links with the platform toolchain (clang, zlib). The runner host doesn't carry it, so the
+      # publish runs in Microsoft's AOT SDK image, which does. The binary also runs in that image
+      # (below), so the host's glibc never has to match the one it was linked against.
       - name: Publish (Native AOT)
         run: |
-          dotnet publish tests/Alberto.AotSmoke/Alberto.AotSmoke.csproj \
-            -c Release -r linux-x64 -o artifacts/aot-smoke
+          docker run --rm -v "$PWD":/src -w /src \
+            -e DOTNET_NOLOGO=1 -e DOTNET_CLI_TELEMETRY_OPTOUT=1 \
+            mcr.microsoft.com/dotnet/sdk:10.0-noble-aot \
+            dotnet publish tests/Alberto.AotSmoke/Alberto.AotSmoke.csproj \
+              -c Release -r linux-x64 -o artifacts/aot-smoke
 
       # Plain docker run, not a `services:` container: the runner's daemon is rootless, and a
       # published port picked by the daemon (127.0.0.1::5432) is read back with `docker port`
@@ -270,7 +264,10 @@ jobs:
       - name: Run smoke binary
         env:
           ALBERTO_AOTSMOKE_CONNECTION: Host=127.0.0.1;Port=${{ steps.pg.outputs.port }};Username=smoke;Password=smoke;Database=smoke
-        run: ./artifacts/aot-smoke/Alberto.AotSmoke
+        run: |
+          docker run --rm --network host -v "$PWD/artifacts/aot-smoke":/app -w /app \
+            -e ALBERTO_AOTSMOKE_CONNECTION \
+            mcr.microsoft.com/dotnet/sdk:10.0-noble-aot ./Alberto.AotSmoke
 
       - name: Stop PostgreSQL
         if: always() && steps.pg.outputs.name != ''
