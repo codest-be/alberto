@@ -136,8 +136,13 @@ internal sealed class AlbertoMigrationHostedService(
             MigrationResult result;
             try
             {
-                result = PostgresMigrator.Migrate(
-                    options.ConnectionString, options.Schema, singleTenant: !definition.TenancyEnabled);
+                result = PostgresMigrator.Migrate(options.ConnectionString, new MigrationOptions
+                {
+                    Schema = options.Schema,
+                    SingleTenant = !definition.TenancyEnabled,
+                    Logger = logger,
+                    EnsureDatabase = options.EnsureDatabase,
+                });
             }
             catch (AlbertoStoreMismatchException mismatch)
             {

@@ -43,9 +43,19 @@ try
     // ---- migrate --------------------------------------------------------------------------
     Step("migrate", () =>
     {
-        var result = PostgresMigrator.Migrate(connectionString, schema, singleTenant: true);
+        // EnsureDatabase = false is the least-privilege path (#182): the database exists, and the
+        // migrator must not reach for the server's postgres maintenance database to check.
+        var migrationLog = new CountingLogger();
+        var result = PostgresMigrator.Migrate(connectionString, new MigrationOptions
+        {
+            Schema = schema,
+            SingleTenant = true,
+            Logger = migrationLog,
+            EnsureDatabase = false,
+        });
         Check(result.Successful, $"migration failed: {result.Error}");
         Check(result.ExecutedScripts.Count > 0, "no migration scripts ran on a fresh schema");
+        Check(migrationLog.Count > 0, "DbUp's output did not reach the ILogger");
     });
 
     await using var dataSource = NpgsqlDataSource.Create(connectionString);
@@ -256,4 +266,18 @@ static async Task DropSchemaAsync(string connectionString, string schema)
 namespace Alberto.AotSmoke
 {
     internal sealed class SmokeFailure(string message) : Exception(message);
+
+    /// <summary>Counts what DbUp logs, to prove migration output goes through <see cref="ILogger"/>.</summary>
+    internal sealed class CountingLogger : ILogger
+    {
+        public int Count { get; private set; }
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) => Count++;
+    }
 }

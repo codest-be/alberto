@@ -520,6 +520,11 @@ Set `AutoMigrate = false` where a running application must not issue DDL: a leas
 production role, or a deployment pipeline that gates schema changes. Then run the migrations from
 your own step; the Orders example does exactly this with `apps/Alberto.Orders/Alberto.Orders.Migrations`.
 
+A role that may run DDL on its own database but cannot connect to the server's `postgres`
+maintenance database can still migrate at startup: keep `AutoMigrate = true` and set
+`EnsureDatabase = false`, so the migrator skips creating the database and never leaves the one in
+the connection string. The database must already exist.
+
 Each module owns its schema. Two modules in one database are two schemas, migrated independently.
 
 ## A runbook, condensed

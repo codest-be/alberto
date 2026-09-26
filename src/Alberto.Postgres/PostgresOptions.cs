@@ -13,6 +13,17 @@ public sealed record PostgresOptions
     /// <summary>Whether Alberto applies its DbUp migrations at startup. Default true.</summary>
     public bool AutoMigrate { get; init; } = true;
 
+    /// <summary>
+    /// Whether migration first creates the database if it is missing. Default true.
+    /// <para>
+    /// Creating a database means connecting to the server's <c>postgres</c> maintenance database,
+    /// which a least-privilege role that may connect only to its own database cannot do. Set this
+    /// to false for such a role, once the database exists. Has no effect when
+    /// <see cref="AutoMigrate"/> is false.
+    /// </para>
+    /// </summary>
+    public bool EnsureDatabase { get; init; } = true;
+
     /// <summary>The schema Alberto's tables live in. Null means the connection's default schema.</summary>
     public string? Schema { get; init; }
 
@@ -71,6 +82,9 @@ public sealed class PostgresOverrides : IAlbertoOverrides<PostgresOptions>
     /// <summary>Nullable mirror of <see cref="PostgresOptions.AutoMigrate"/>.</summary>
     public bool? AutoMigrate { get; set; }
 
+    /// <summary>Nullable mirror of <see cref="PostgresOptions.EnsureDatabase"/>.</summary>
+    public bool? EnsureDatabase { get; set; }
+
     /// <summary>Nullable mirror of <see cref="PostgresOptions.Schema"/>.</summary>
     public string? Schema { get; set; }
 
@@ -104,6 +118,7 @@ public sealed class PostgresOverrides : IAlbertoOverrides<PostgresOptions>
         {
             ConnectionString = ConnectionString ?? options.ConnectionString,
             AutoMigrate = AutoMigrate ?? options.AutoMigrate,
+            EnsureDatabase = EnsureDatabase ?? options.EnsureDatabase,
             Schema = Schema ?? options.Schema,
             MaxPoolSize = MaxPoolSize ?? options.MaxPoolSize,
             MinPoolSize = MinPoolSize ?? options.MinPoolSize,
