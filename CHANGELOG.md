@@ -19,7 +19,44 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ## [0.4.0] - 2026-09-26
 
-_No milestone `0.4.0` exists in `codest-be/alberto`. Write this section by hand._
+Native AOT and trimming support. Alberto core, Commands, Postgres, Messaging,
+Messaging.Postgres and Telemetry now build with `IsAotCompatible` and zero IL2xxx/IL3xxx
+warnings, and an explicit event type registry lets an app use Alberto without reflection.
+No existing public signature changes; the reflection APIs keep working and are now annotated
+`[RequiresUnreferencedCode]`/`[RequiresDynamicCode]`, which only warns consumers that turn the
+trim/AOT analyzers on (#178, #179).
+
+### Added
+
+- **Event type registry.** `IEventTypeRegistry` and `EventTypeDescriptor` (id, version,
+  `UpcastingNotRequired`, CLR type, `JsonTypeInfo`, tag extractor). Build one by hand with
+  `EventTypeRegistry.CreateBuilder().Add(MyJsonContext.Default.MyEvent, tags).Build()`, or by
+  reflection with `EventTypeRegistry.FromAssemblies(...)`. Use it with
+  `EventSerializer.FromRegistry(registry)` or `WithEvents(registry)` on a module builder.
+  Serialization, the version guard, tags on append, upcasting, and reactor/projection/outbox
+  reads all go through the registry.
+- **Trim-safe overloads:** `PostgresStateStore<TState>(dataSource, JsonTypeInfo<TState>, ...)`,
+  `Map(..., JsonTypeInfo<TMessage>)` for outbox message mappings, and
+  `AlbertoOptionsOverlay.Overlay(..., bind)`.
+- **AOT smoke app** (`tests/Alberto.AotSmoke`), published natively and run against Postgres in
+  CI: migrate, tagged append, conditional-append conflict, upcast, reconstitute, async reactor
+  and outbox relay.
+
+### Changed
+
+- When no serializer is configured, the fallback in reactors, projections and
+  `Evolver.Evolve(envelope)` now reads with the serializer's default options
+  (case-insensitive) instead of System.Text.Json's defaults (case-sensitive), so both paths
+  agree. In a trimmed or AOT app that fallback throws a message pointing at
+  `WithEvents(registry)`.
+- Postgres event, dead-letter and outbox metadata is serialized through an internal
+  source-generated JSON context. The stored JSON is byte-identical.
+
+### Known gaps
+
+- The registry is hand-written; a source generator and generated evolver tables follow in
+  #183. Under AOT the reflection-path tag extractor and the evolver dispatch still use
+  `Expression.Compile`, which runs interpreted.
 
 ---
 
