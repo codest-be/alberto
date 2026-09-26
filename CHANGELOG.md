@@ -19,9 +19,32 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ## [0.5.0] - 2026-09-26
 
+Stalled subscribers are now reported instead of looking caught up, and appends on Postgres
+hold the append lock for less time. No existing public signature changes (#187).
+
+### Added
+
+- **Stable-head stall detection.** With `EnableStableHeadBarrier = true`, any write transaction
+  left open on the same Postgres server (an idle-in-transaction session, a long batch, an
+  orphaned prepared transaction, even against a different database) freezes the barrier. Every
+  processor then stops receiving events while its lag still reads as normal. `EventStoreHead` now
+  notices: once the barrier has held the head for 30 seconds without advancing, it logs one
+  warning per incident, and when the barrier releases it logs at information level. Queries
+  for finding the blocking transaction are in
+  [configuration.md](docs/configuration.md).
+- **`alberto.head.stalled` gauge**, tagged by `module`: seconds the head has been held by the
+  barrier, `0` otherwise. Alert on it; lag alone cannot tell this state apart from being caught
+  up. See [operations.md](docs/operations.md#telemetry).
+
 ### Changed
 
-- Surface stable-head stalls and shorten the append lock hold (#187)
+- **Postgres appends take one round trip instead of four.** The advisory append lock and the
+  append now go out as a single batch in one implicit transaction, instead of `BEGIN` / lock /
+  append / `COMMIT`. The lock is still transaction-scoped and still store-wide (per tenant on
+  a multi-tenant store), but it is no longer held across network round trips. Measured on
+  a laptop against Postgres in Docker: a single append went from 1.2 ms to 0.7 ms, and 32
+  concurrent writers on one store went from 770 µs to 500 µs per append. The methodology is in
+  [benchmarks/README.md](benchmarks/README.md#concurrency).
 
 ---
 
