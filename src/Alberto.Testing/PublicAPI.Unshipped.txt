@@ -1,1 +1,3 @@
 #nullable enable
+Alberto.Testing.EventTypeRegistryVerifier
+static Alberto.Testing.EventTypeRegistryVerifier.Verify(Alberto.IEventTypeRegistry! registry, params Alberto.IEvent![]! samples) -> void

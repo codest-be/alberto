@@ -14,7 +14,9 @@ Alberto.EventTypeRegistry
 Alberto.EventTypeRegistryBuilder
 Alberto.EventTypeRegistryBuilder.Add(Alberto.EventTypeDescriptor! descriptor) -> Alberto.EventTypeRegistryBuilder!
 Alberto.EventTypeRegistryBuilder.Add<TEvent>(string! id, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TEvent>! jsonTypeInfo, Alberto.EventTagExtractor? tags = null, int version = 1, bool upcastingNotRequired = false) -> Alberto.EventTypeRegistryBuilder!
+Alberto.EventTypeRegistryBuilder.Add<TEvent>(string! id, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TEvent>! jsonTypeInfo, System.Func<TEvent, System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<string!, object?>>!>? tags, int version = 1, bool upcastingNotRequired = false) -> Alberto.EventTypeRegistryBuilder!
 Alberto.EventTypeRegistryBuilder.Add<TEvent>(System.Text.Json.Serialization.Metadata.JsonTypeInfo<TEvent>! jsonTypeInfo, Alberto.EventTagExtractor? tags = null) -> Alberto.EventTypeRegistryBuilder!
+Alberto.EventTypeRegistryBuilder.Add<TEvent>(System.Text.Json.Serialization.Metadata.JsonTypeInfo<TEvent>! jsonTypeInfo, System.Func<TEvent, System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<string!, object?>>!>? tags) -> Alberto.EventTypeRegistryBuilder!
 Alberto.EventTypeRegistryBuilder.Build() -> Alberto.IEventTypeRegistry!
 Alberto.IEventTypeRegistry
 Alberto.IEventTypeRegistry.Descriptors.get -> System.Collections.Generic.IReadOnlyCollection<Alberto.EventTypeDescriptor!>!
