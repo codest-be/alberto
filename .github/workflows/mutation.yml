@@ -2,19 +2,18 @@ name: Mutation testing
 
 on:
   pull_request:
-  schedule:
-    # 05:00 UTC. The benchmark suite starts at 02:00 with a 120-minute budget, and there is one
-    # runner in the public-ci group, so anything before 04:00 queues behind its worst case
-    # rather than running beside it. This is the heaviest job in the repository; it goes last.
-    - cron: '0 5 * * *'
   workflow_dispatch:
 
-# There is deliberately no `push` trigger. The full sweep used to run on every push to main and
-# release/**, and on one public-ci runner that made it a queue for everything else: the 0.2.0
-# release pull request waited about two hours for its checks behind a sweep that then timed out
-# anyway. A commit on a maintained line still gets its own verdict, from the nightly cron rather
-# than immediately, and what actually gates a change is the `diff` job below. Dispatch this
-# workflow by hand when a specific main commit needs the whole number sooner.
+# There is deliberately no `push` trigger, and no `schedule` trigger either. The full sweep used
+# to run on every push to main and release/**, and on one public-ci runner that made it a queue
+# for everything else: the 0.2.0 release pull request waited about two hours for its checks
+# behind a sweep that then timed out anyway. Moving it to a nightly cron (05:00 UTC) didn't fix
+# that — the `public-ci` runner is a registration, not dedicated hardware, and the box it shares
+# also runs other projects' CI and long-lived non-CI workloads. Checked against 24 consecutive
+# scheduled runs from 2026-08-26 to 2026-09-17: none completed successfully — every one is either
+# a fast `failure` at setup or a `cancelled` after riding the 360-minute timeout out to the end.
+# What actually gates a change is the `diff` job below. Dispatch this workflow by hand when a
+# specific main commit needs the whole number sooner.
 
 permissions:
   contents: read
@@ -22,8 +21,8 @@ permissions:
 # Same reasoning as ci.yml, and it bites harder here: one runner in the group, and this is the
 # longest job on the PR path. Three pushes in a minute must not leave two dead mutation runs
 # squatting on the only machine everybody else's PR is waiting for.
-# The nightly and dispatched full sweeps are exempt: they are not superseded by a newer commit
-# the way a pull request's run is, and cancelling one wastes hours for nothing.
+# The dispatched full sweep is exempt: it is not superseded by a newer commit the way a pull
+# request's run is, and cancelling it wastes hours for nothing.
 concurrency:
   group: mutation-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -49,8 +48,8 @@ jobs:
     # (a shared interface, a global using) mutates most of the package and takes as long as
     # the full sweep. Without a cap that would sit on the only runner in the group until
     # GitHub's six-hour default, blocking every other PR behind it. Forty-five minutes is a
-    # stop, not a budget: the signal is "this diff is too broad to gate this way", and the
-    # nightly full run covers what this one gives up.
+    # stop, not a budget: the signal is "this diff is too broad to gate this way", and a
+    # dispatched full run covers what this one gives up.
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4

@@ -13,11 +13,13 @@ Alberto.Testing.Xunit.CheckpointStoreSpecification.Save_MultipleTimes_ShouldUpda
 Alberto.Testing.Xunit.CheckpointStoreSpecification.Save_ThenGet_ShouldReturnSavedPosition() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification
 Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.AbandonRetryAsync_AfterReMarkForRetry_EntryIsReclaimable() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.AbandonRetryAsync_WhenEntryAlreadyGone_ReturnsFalse() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.AbandonRetryAsync_WithInvalidToken_ReturnsFalse() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.AbandonRetryAsync_WithValidClaim_ReturnsTrueAndKeepsEntry() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.ClaimRetryRequestedAsync_HeldLease_IsNotReclaimable() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.ClaimRetryRequestedAsync_IgnoresEntriesNotMarkedForRetry() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.ClaimableDeadLetterStoreSpecification() -> void
+Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.CompleteRetryAsync_WhenEntryAlreadyGone_ReturnsFalse() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.CompleteRetryAsync_WithInvalidToken_ReturnsFalse() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.CompleteRetryAsync_WithValidClaim_RemovesEntry() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.MarkForRetryAsync_ThenClaimRetryRequested_ReturnsClaim() -> System.Threading.Tasks.Task!
@@ -30,9 +32,13 @@ Alberto.Testing.Xunit.DeadLetterStoreSpecification.CountAsync_DifferentProcessor
 Alberto.Testing.Xunit.DeadLetterStoreSpecification.CountAsync_EmptyStore_ReturnsZero() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.DeadLetterStoreSpecification.DeadLetterStoreSpecification() -> void
 Alberto.Testing.Xunit.DeadLetterStoreSpecification.GetAsync_DoesNotReturnEntriesForOtherProcessor() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.DeadLetterStoreSpecification.GetAsync_MultiTenantStore_TenantScopedQuery_ExcludesOtherTenantEntries() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.DeadLetterStoreSpecification.GetAsync_RespectsLimit() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.DeadLetterStoreSpecification.GetAsync_ReturnsEntriesNewestFirst() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.DeadLetterStoreSpecification.GetAsync_ReturnsStoredEntries() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.DeadLetterStoreSpecification.GetAsync_SingleTenantStore_NonNullTenantId_ReturnsEntries() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.DeadLetterStoreSpecification.ProcessorId.get -> string!
+Alberto.Testing.Xunit.DeadLetterStoreSpecification.TenancyCapabilities_MustDeclareOneMode() -> void
 Alberto.Testing.Xunit.DeadLetterStoreSpecification.TestId.get -> string!
 Alberto.Testing.Xunit.EventStoreBackendSpecification
 Alberto.Testing.Xunit.EventStoreBackendSpecification.Append_ConcurrentDcbChecks_SameBoundary_OnlyOneSucceeds() -> System.Threading.Tasks.Task!
@@ -79,6 +85,22 @@ Alberto.Testing.Xunit.EventStoreBackendSpecification.Stream_WithAfterPosition_Sh
 Alberto.Testing.Xunit.EventStoreBackendSpecification.Stream_WithLimit_ShouldLimitResults() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.EventStoreBackendSpecification.TestId.get -> string!
 Alberto.Testing.Xunit.EventStoreBackendSpecification.TimeProvider.get -> Microsoft.Extensions.Time.Testing.FakeTimeProvider!
+Alberto.Testing.Xunit.FencedCheckpointStoreSpecification
+Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.CheckpointRow_HigherToken_FencedWrite_ReturnsFalse() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.CheckpointRow_SameToken_FencedWrite_Succeeds() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.ConsumerId.get -> string!
+Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.ContendedLease_SecondReplica_CannotAcquire() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.ExpiredLease_FencedWrite_ReturnsFalseAndDoesNotWrite() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.FenceTokens_StrictlyIncreasing_AcrossAcquisitions() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.FencedCheckpointStoreSpecification() -> void
+Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.FencedWrites_ApplyGreatestSemantics_BackwardPositionDiscarded() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.HeldLease_FencedWrite_ReturnsTrueAndPersistsPosition() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.LeaseRenewal_PreservesToken_FencedWriteSucceeds() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.MultipleProcessors_FencingIsIndependent() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.ProcessorId.get -> string!
+Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.SupersededToken_FencedWrite_ReturnsFalseEvenWithActiveLease() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.UnfencedSave_DoesNotBlockSubsequentFencedWrite() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.WrongReplica_FencedWrite_ReturnsFalseAndDoesNotWrite() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.OutboxStoreSpecification
 Alberto.Testing.Xunit.OutboxStoreSpecification.ClaimPendingAsync_ExpiredLease_IsReclaimable() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.OutboxStoreSpecification.ClaimPendingAsync_HeldLease_IsNotReclaimable() -> System.Threading.Tasks.Task!
@@ -126,14 +148,20 @@ Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.Start_AfterCompletedPr
 Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.Start_FirstRebuild_MovesToRebuildingAtVersionTwo() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.Start_WhileInFlight_ThrowsRebuildStateException() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.Start_WhileReady_ThrowsRebuildStateException() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.RebuildCoordinatorFacade
+Alberto.Testing.Xunit.RebuildCoordinatorFacade.RebuildCoordinatorFacade() -> void
 Alberto.Testing.Xunit.StateStoreSpecification<TState>
 Alberto.Testing.Xunit.StateStoreSpecification<TState>.ApplyChanges_DeleteNonExistent_DoesNotThrow() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.StateStoreSpecification<TState>.ApplyChanges_Delete_RemovesDocument() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.StateStoreSpecification<TState>.ApplyChanges_EmptyBatch_DoesNotThrow() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.StateStoreSpecification<TState>.ApplyChanges_EmptyBatch_PreservesExistingDocuments() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.StateStoreSpecification<TState>.ApplyChanges_IsNotObservedPartiallyApplied() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.StateStoreSpecification<TState>.ApplyChanges_SameDocument_InUpsertsAndDeletes_DeleteWins() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.StateStoreSpecification<TState>.ApplyChanges_SecondUpsert_OverwritesPreviousValue() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.StateStoreSpecification<TState>.ApplyChanges_UpsertAndDelete_BothAppliedInOneBatch() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.StateStoreSpecification<TState>.ApplyChanges_Upsert_ThenLoadMany_ReturnsStoredState() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.StateStoreSpecification<TState>.ConcurrentApplyChanges_SameDocId_ResultsInOneWinner() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.StateStoreSpecification<TState>.ListRecent_BatchWritten_AllDocumentsAppear() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.StateStoreSpecification<TState>.ListRecent_EmptyScope_ReturnsEmpty() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.StateStoreSpecification<TState>.ListRecent_ExcludesDeletedDocuments() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.StateStoreSpecification<TState>.ListRecent_ReUpsert_MovesDocumentToFront() -> System.Threading.Tasks.Task!
@@ -146,6 +174,7 @@ Alberto.Testing.Xunit.StateStoreSpecification<TState>.LoadMany_EmptyIds_ReturnsE
 Alberto.Testing.Xunit.StateStoreSpecification<TState>.LoadMany_NonExistentIds_ReturnsEmptyDictionary() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.StateStoreSpecification<TState>.LoadMany_PartialIds_ReturnsOnlyExistingDocuments() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.StateStoreSpecification<TState>.NewProjectionType() -> string!
+Alberto.Testing.Xunit.StateStoreSpecification<TState>.NullCollections_AreRejected() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.StateStoreSpecification<TState>.ProjectionType_DeleteInOne_DoesNotAffectOther() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.StateStoreSpecification<TState>.ProjectionType_Isolates_SameDocId() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.StateStoreSpecification<TState>.RebuildVersion_DefaultsToVersionOne() -> System.Threading.Tasks.Task!
@@ -160,18 +189,30 @@ abstract Alberto.Testing.Xunit.CheckpointStoreSpecification.CreateStore() -> Sys
 abstract Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.CreateClaimableStore() -> System.Threading.Tasks.Task<Alberto.Subscriptions.IClaimableDeadLetterStore!>!
 abstract Alberto.Testing.Xunit.DeadLetterStoreSpecification.CreateStore() -> System.Threading.Tasks.Task<Alberto.Subscriptions.IDeadLetterStore!>!
 abstract Alberto.Testing.Xunit.EventStoreBackendSpecification.CreateBackend() -> System.Threading.Tasks.Task<Alberto.IEventStoreBackend!>!
+abstract Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.CreateLeaseManager() -> System.Threading.Tasks.Task<Alberto.Subscriptions.IProcessorLeaseManager!>!
+abstract Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.CreateStore() -> System.Threading.Tasks.Task<Alberto.Subscriptions.IFencedCheckpointStore!>!
+abstract Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.ExpireLeaseAsync(string! processorId) -> System.Threading.Tasks.Task!
+abstract Alberto.Testing.Xunit.FencedCheckpointStoreSpecification.SeedCheckpointFenceTokenAsync(string! processorId, long position, long fenceToken) -> System.Threading.Tasks.Task!
 abstract Alberto.Testing.Xunit.OutboxStoreSpecification.CreateStore() -> System.Threading.Tasks.Task<Alberto.Messaging.IOutboxStore!>!
 abstract Alberto.Testing.Xunit.OutboxStoreSpecification.TimeProvider.get -> System.TimeProvider!
 abstract Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.CreateStore() -> System.Threading.Tasks.Task<Alberto.Subscriptions.IProjectionRebuildStore!>!
-abstract Alberto.Testing.Xunit.StateStoreSpecification<TState>.CreateStore(string! projectionType, System.Func<int>? rebuildVersion = null) -> System.Threading.Tasks.Task<Alberto.Subscriptions.IStateStore<TState>!>!
+abstract Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.GetCoordinator(Alberto.Subscriptions.IProjectionRebuildStore! store) -> Alberto.Testing.Xunit.RebuildCoordinatorFacade!
+abstract Alberto.Testing.Xunit.RebuildCoordinatorFacade.CompleteAbortAsync(string! processorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.RebuildOutcome!>!
+abstract Alberto.Testing.Xunit.RebuildCoordinatorFacade.CompletePromotionAsync(string! processorId, bool force = false, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.RebuildOutcome!>!
+abstract Alberto.Testing.Xunit.RebuildCoordinatorFacade.DiscardStateVersionAsync(string! projectionType, int version, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+abstract Alberto.Testing.Xunit.RebuildCoordinatorFacade.MarkReadyAsync(string! processorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.ProjectionRebuildState!>!
+abstract Alberto.Testing.Xunit.StateStoreSpecification<TState>.CreateStore(string! projectionType, Alberto.Subscriptions.ProjectionVersion rebuildVersion = default(Alberto.Subscriptions.ProjectionVersion)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.IStateStore<TState>!>!
 abstract Alberto.Testing.Xunit.StateStoreSpecification<TState>.MakeState(int value) -> TState
 abstract Alberto.Testing.Xunit.StateStoreSpecification<TState>.ReadValue(TState state) -> int
 override Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.CreateStore() -> System.Threading.Tasks.Task<Alberto.Subscriptions.IDeadLetterStore!>!
 static Alberto.Testing.Xunit.DeadLetterStoreSpecification.Ct.get -> System.Threading.CancellationToken
 static Alberto.Testing.Xunit.DeadLetterStoreSpecification.NewEntry(string! processorId) -> Alberto.Subscriptions.DeadLetterEntry!
 static Alberto.Testing.Xunit.OutboxStoreSpecification.NewEntry(string! messageType = "order-placed") -> Alberto.Messaging.OutboxEntry!
+virtual Alberto.Testing.Xunit.DeadLetterStoreSpecification.SupportsMultiTenantFiltering.get -> bool
+virtual Alberto.Testing.Xunit.DeadLetterStoreSpecification.SupportsNullTenantPassthrough.get -> bool
+virtual Alberto.Testing.Xunit.EventStoreBackendSpecification.SupportsStreamAll.get -> bool
 virtual Alberto.Testing.Xunit.ProjectionRebuildStoreSpecification.SupportsCoordinatorOperations.get -> bool
-virtual Alberto.Testing.Xunit.StateStoreSpecification<TState>.CreateStoreForTenant(string! projectionType, string! tenantId, System.Func<int>? rebuildVersion = null) -> System.Threading.Tasks.Task<Alberto.Subscriptions.IStateStore<TState>!>!
+virtual Alberto.Testing.Xunit.StateStoreSpecification<TState>.CreateStoreForTenant(string! projectionType, string! tenantId, Alberto.Subscriptions.ProjectionVersion rebuildVersion = default(Alberto.Subscriptions.ProjectionVersion)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.IStateStore<TState>!>!
 virtual Alberto.Testing.Xunit.StateStoreSpecification<TState>.SupportsProjectionTypeIsolation.get -> bool
 virtual Alberto.Testing.Xunit.StateStoreSpecification<TState>.SupportsSharedBackingStore.get -> bool
 virtual Alberto.Testing.Xunit.StateStoreSpecification<TState>.SupportsTenantIsolation.get -> bool

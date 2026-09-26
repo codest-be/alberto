@@ -19,7 +19,6 @@ Alberto.Messaging.IMessageMappingRegistry.Map(string! eventType, Alberto.Messagi
 Alberto.Messaging.IMessageMappingRegistry.Map<TEvent>(Alberto.Messaging.EventToMessageMapper! mapper) -> void
 Alberto.Messaging.IMessageMappingRegistry.MappedEventTypes.get -> System.Collections.Generic.IReadOnlySet<string!>!
 Alberto.Messaging.IMessageMappingRegistry.ModuleKey.get -> string?
-Alberto.Messaging.IMessageMappingRegistry.ModuleKey.set -> void
 Alberto.Messaging.IMessageMappingRegistry.TryMapAsync(Alberto.IEventEnvelope! envelope, System.IServiceProvider! serviceProvider, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask<Alberto.Messaging.ExternalMessage?>
 Alberto.Messaging.IMessageTransport
 Alberto.Messaging.IMessageTransport.PublishAsync(Alberto.Messaging.ExternalMessage! message, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
@@ -46,9 +45,8 @@ Alberto.Messaging.MessageMappingRegistry
 Alberto.Messaging.MessageMappingRegistry.Map(string! eventType, Alberto.Messaging.EventToMessageMapper! mapper) -> void
 Alberto.Messaging.MessageMappingRegistry.Map<TEvent>(Alberto.Messaging.EventToMessageMapper! mapper) -> void
 Alberto.Messaging.MessageMappingRegistry.MappedEventTypes.get -> System.Collections.Generic.IReadOnlySet<string!>!
-Alberto.Messaging.MessageMappingRegistry.MessageMappingRegistry() -> void
+Alberto.Messaging.MessageMappingRegistry.MessageMappingRegistry(string? moduleKey) -> void
 Alberto.Messaging.MessageMappingRegistry.ModuleKey.get -> string?
-Alberto.Messaging.MessageMappingRegistry.ModuleKey.set -> void
 Alberto.Messaging.MessageMappingRegistry.TryMapAsync(Alberto.IEventEnvelope! envelope, System.IServiceProvider! serviceProvider, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask<Alberto.Messaging.ExternalMessage?>
 Alberto.Messaging.MessageMappingRegistryExtensions
 Alberto.Messaging.MessagingBuilderExtensions

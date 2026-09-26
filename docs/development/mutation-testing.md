@@ -105,7 +105,7 @@ Three numbers, enforced in two workflows.
 |---|---|---|---|---|
 | Line coverage | `ci.yml`, every PR | 93% | 95.27% | All shipped packages |
 | Mutation score, changed code | `mutation.yml`, every PR | 80% | — | The diff only |
-| Mutation score, aggregate | `mutation.yml`, nightly | 68% | 70.01% | Core packages |
+| Mutation score, aggregate | `mutation.yml`, manual (`workflow_dispatch`) | 68% | 70.01% | Core packages |
 
 A fourth number, `thresholds.break` in `stryker-config.json` (55%), is Stryker's own
 per-package floor. It is not the gate — the script deliberately keeps going when a package
@@ -136,11 +136,15 @@ purpose: a gate set above where the repo currently sits blocks every PR, includi
 trying to fix it. Raise them as the score climbs — a few points at a time, once the headroom
 is real.
 
-**The aggregate runs nightly, not on push.** It used to run on every push to `main` and
-`release/**`, which on a single `public-ci` runner meant a five-hour job standing between
-everyone else's pull request and the machine — the 0.2.0 release pull request waited about two
-hours for its checks that way. `workflow_dispatch` is there for when a particular commit needs
-the whole number sooner.
+**The aggregate runs on `workflow_dispatch`, not on push and not on a schedule.** It used to run
+on every push to `main` and `release/**`, which on a single `public-ci` runner meant a five-hour
+job standing between everyone else's pull request and the machine — the 0.2.0 release pull
+request waited about two hours for its checks that way. Moving it to a nightly cron didn't fix
+that: `public-ci` is a runner registration, not dedicated hardware, and the box it shares also
+runs other projects' CI and long-lived non-CI workloads. Across 24 consecutive scheduled runs
+(2026-08-26 to 2026-09-17), none completed successfully — every one either failed fast at setup
+or rode the 360-minute timeout to a cancellation. Dispatch this workflow by hand when a
+particular commit needs the whole number.
 
 ## The timeout window, and why it decides the score
 

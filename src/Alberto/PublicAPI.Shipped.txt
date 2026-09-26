@@ -148,6 +148,7 @@ Alberto.Configuration.ProcessorKind
 Alberto.Configuration.ProcessorKind.Projection = 0 -> Alberto.Configuration.ProcessorKind
 Alberto.Configuration.ProcessorKind.Reactor = 1 -> Alberto.Configuration.ProcessorKind
 Alberto.Configuration.ProcessorLeaseOptions
+Alberto.Configuration.ProcessorLeaseOptions.EffectiveReplicaId.get -> string!
 Alberto.Configuration.ProcessorLeaseOptions.Enabled.get -> bool
 Alberto.Configuration.ProcessorLeaseOptions.Enabled.init -> void
 Alberto.Configuration.ProcessorLeaseOptions.ReplicaId.get -> string?
@@ -222,16 +223,12 @@ Alberto.Configuration.ShardDeclaration.ShardId.init -> void
 Alberto.Configuration.TelemetryOptions
 Alberto.Configuration.TelemetryOptions.Enabled.get -> bool
 Alberto.Configuration.TelemetryOptions.Enabled.init -> void
-Alberto.Configuration.TelemetryOptions.RecordEventPayloadSize.get -> bool
-Alberto.Configuration.TelemetryOptions.RecordEventPayloadSize.init -> void
 Alberto.Configuration.TelemetryOptions.RecordEventTagValues.get -> bool
 Alberto.Configuration.TelemetryOptions.RecordEventTagValues.init -> void
 Alberto.Configuration.TelemetryOverrides
 Alberto.Configuration.TelemetryOverrides.ApplyTo(Alberto.Configuration.TelemetryOptions! options) -> Alberto.Configuration.TelemetryOptions!
 Alberto.Configuration.TelemetryOverrides.Enabled.get -> bool?
 Alberto.Configuration.TelemetryOverrides.Enabled.set -> void
-Alberto.Configuration.TelemetryOverrides.RecordEventPayloadSize.get -> bool?
-Alberto.Configuration.TelemetryOverrides.RecordEventPayloadSize.set -> void
 Alberto.Configuration.TelemetryOverrides.RecordEventTagValues.get -> bool?
 Alberto.Configuration.TelemetryOverrides.RecordEventTagValues.set -> void
 Alberto.Configuration.TelemetryOverrides.TelemetryOverrides() -> void
@@ -556,6 +553,7 @@ Alberto.Subscriptions.EventStoreHead.StopAsync(System.Threading.CancellationToke
 Alberto.Subscriptions.IBatchableProcessor
 Alberto.Subscriptions.IBatchableProcessor.ProcessBatchAsync(System.Collections.Generic.IReadOnlyList<Alberto.IEventEnvelope!>! events, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Alberto.Subscriptions.ICheckpointInventory
+Alberto.Subscriptions.ICheckpointInventory.CanEnumerate.get -> bool
 Alberto.Subscriptions.ICheckpointInventory.ListProcessorIdsAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<string!>!>!
 Alberto.Subscriptions.ICheckpointStore
 Alberto.Subscriptions.ICheckpointStore.GetAsync(string! processorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<long?>!
@@ -705,6 +703,7 @@ Alberto.Subscriptions.ProjectionDeclaration<TState>.CollectionName.get -> string
 Alberto.Subscriptions.ProjectionDeclaration<TState>.GetDocumentId(Alberto.IEventEnvelope! envelope, Alberto.EventSerializer? serializer = null) -> string?
 Alberto.Subscriptions.ProjectionDeclaration<TState>.GetDocumentId<TEvent>(TEvent event) -> string?
 Alberto.Subscriptions.ProjectionDeclaration<TState>.HandledEventTypes.get -> System.Collections.Generic.IReadOnlySet<string!>!
+Alberto.Subscriptions.ProjectionDeclaration<TState>.Handles(Alberto.IEvent! event) -> bool
 Alberto.Subscriptions.ProjectionDeclaration<TState>.InitialState.get -> System.Func<TState>!
 Alberto.Subscriptions.ProjectionDeclaration<TState>.ProcessorId.get -> string!
 Alberto.Subscriptions.ProjectionDeclarationBuilder<TState>
@@ -746,15 +745,18 @@ Alberto.Subscriptions.ProjectionResult<TState>.Unchanged
 Alberto.Subscriptions.ProjectionResults
 Alberto.Subscriptions.ProjectionStoreContext
 Alberto.Subscriptions.ProjectionStoreContext.ProjectionStoreContext() -> void
-Alberto.Subscriptions.ProjectionStoreContext.RebuildVersion.get -> System.Func<int>!
+Alberto.Subscriptions.ProjectionStoreContext.RebuildVersion.get -> Alberto.Subscriptions.ProjectionVersion
 Alberto.Subscriptions.ProjectionStoreContext.RebuildVersion.init -> void
 Alberto.Subscriptions.ProjectionStoreContext.Services.get -> System.IServiceProvider!
 Alberto.Subscriptions.ProjectionStoreContext.Services.init -> void
+Alberto.Subscriptions.ProjectionVersion
+Alberto.Subscriptions.ProjectionVersion.Current.get -> int
+Alberto.Subscriptions.ProjectionVersion.ProjectionVersion() -> void
 Alberto.Subscriptions.ProjectionVersions
 Alberto.Subscriptions.ProjectionVersions.ActiveVersion(string! processorId) -> int
 Alberto.Subscriptions.ProjectionVersions.Current(string! processorId) -> Alberto.Subscriptions.ProjectionRebuildState?
 Alberto.Subscriptions.ProjectionVersions.DisposeAsync() -> System.Threading.Tasks.ValueTask
-Alberto.Subscriptions.ProjectionVersions.ForLive(string! processorId) -> System.Func<int>!
+Alberto.Subscriptions.ProjectionVersions.ForLive(string! processorId) -> Alberto.Subscriptions.ProjectionVersion
 Alberto.Subscriptions.ProjectionVersions.ProjectionVersions(Alberto.Subscriptions.IProjectionRebuildStore! store, System.TimeSpan? refreshInterval = null) -> void
 Alberto.Subscriptions.ProjectionVersions.RebuildingVersion(string! processorId) -> int?
 Alberto.Subscriptions.ProjectionVersions.RefreshAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
@@ -988,10 +990,12 @@ static Alberto.Subscriptions.ProjectionResult<TState>.implicit operator Alberto.
 static Alberto.Subscriptions.ProjectionResults.Delete<TState>() -> Alberto.Subscriptions.ProjectionResult<TState>!
 static Alberto.Subscriptions.ProjectionResults.Set<TState>(TState state) -> Alberto.Subscriptions.ProjectionResult<TState>!
 static Alberto.Subscriptions.ProjectionResults.Unchanged<TState>() -> Alberto.Subscriptions.ProjectionResult<TState>!
-static Alberto.Subscriptions.ProjectionVersions.LiveVersion(System.IServiceProvider! services, object? moduleKey, string! processorId) -> System.Func<int>!
+static Alberto.Subscriptions.ProjectionVersion.From(System.Func<int>! selector) -> Alberto.Subscriptions.ProjectionVersion
+static Alberto.Subscriptions.ProjectionVersion.NeverRebuilt.get -> Alberto.Subscriptions.ProjectionVersion
+static Alberto.Subscriptions.ProjectionVersions.LiveVersion(System.IServiceProvider! services, object? moduleKey, string! processorId) -> Alberto.Subscriptions.ProjectionVersion
 static Alberto.Subscriptions.ReactorContext.FromEnvelope(Alberto.IEventEnvelope! envelope) -> Alberto.Subscriptions.ReactorContext!
 static Alberto.Telemetry.AlbertoMetrics.RecordProcessorLag(string! processorId, string! module, long lag) -> void
-static Alberto.Telemetry.AlbertoMetrics.RecordTenantOwnership(string! consumerId, string! moduleKey, int ownedCount, int cooldownCount) -> void
+static Alberto.Telemetry.AlbertoMetrics.RecordTenantOwnership(string! consumerId, string! moduleKey, int ownedCount) -> void
 static Alberto.Tenancy.EventProcessingScope.Create(Microsoft.Extensions.DependencyInjection.IServiceScopeFactory! scopeFactory, string? tenantId) -> Microsoft.Extensions.DependencyInjection.AsyncServiceScope
 static Alberto.Tenancy.ShardKey.Compose(string! moduleKey, string! shardId) -> string!
 static Alberto.Tenancy.ShardKey.IsValidShardId(string? shardId) -> bool
@@ -1003,7 +1007,7 @@ static Alberto.Tenancy.TenantContext.IsValidTenantId(string? tenantId) -> bool
 static Alberto.Tenancy.TenantScope.CrossTenantFor(string? consumerTenantId) -> string?
 static Alberto.Upcasting.DeclareUpcaster.For<TEvent>(string! eventTypeId) -> Alberto.Upcasting.UpcasterDeclarationBuilder<TEvent>!
 static Alberto.Upcasting.UpcasterRegistry.Create() -> Alberto.Upcasting.UpcasterRegistry.UpcasterRegistryBuilder!
-static readonly Alberto.Subscriptions.ProjectionVersions.NeverRebuilt -> System.Func<int>!
+static readonly Alberto.Subscriptions.ProjectionVersions.NeverRebuilt -> Alberto.Subscriptions.ProjectionVersion
 static readonly Alberto.Telemetry.AlbertoMetrics.AppendDuration -> System.Diagnostics.Metrics.Histogram<double>!
 static readonly Alberto.Telemetry.AlbertoMetrics.ConcurrencyConflicts -> System.Diagnostics.Metrics.Counter<long>!
 static readonly Alberto.Telemetry.AlbertoMetrics.DeadLetters -> System.Diagnostics.Metrics.Counter<long>!
@@ -1016,6 +1020,5 @@ static readonly Alberto.Telemetry.AlbertoMetrics.ProcessingErrors -> System.Diag
 static readonly Alberto.Telemetry.AlbertoMetrics.ProcessorLag -> System.Diagnostics.Metrics.ObservableGauge<long>!
 static readonly Alberto.Telemetry.AlbertoMetrics.Retries -> System.Diagnostics.Metrics.Counter<long>!
 static readonly Alberto.Telemetry.AlbertoMetrics.Source -> System.Diagnostics.ActivitySource!
-static readonly Alberto.Telemetry.AlbertoMetrics.TenantCooldownCount -> System.Diagnostics.Metrics.ObservableGauge<int>!
 static readonly Alberto.Telemetry.AlbertoMetrics.TenantLockFailures -> System.Diagnostics.Metrics.Counter<long>!
 static readonly Alberto.Telemetry.AlbertoMetrics.TenantLocksAcquired -> System.Diagnostics.Metrics.Counter<long>!
