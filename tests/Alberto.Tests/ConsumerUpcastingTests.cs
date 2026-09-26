@@ -215,7 +215,7 @@ public sealed class SyncReactorUpcastingTests
 
 /// <summary>
 /// Verifies that the upcaster chain fires when
-/// <see cref="MessageMappingRegistryExtensions.Map{TEvent,TMessage}"/> maps an event
+/// <see cref="MessageMappingRegistryExtensions.Map{TEvent,TMessage}(IMessageMappingRegistry, Func{TEvent,TMessage})"/> maps an event
 /// stored at an older schema version.
 /// This test FAILS against the pre-fix code because the mapping closures used
 /// <c>JsonSerializer.Deserialize&lt;TEvent&gt;</c> directly, bypassing

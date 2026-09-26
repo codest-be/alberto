@@ -385,6 +385,29 @@ public class OutboxHandlerTests
     }
 
     [Fact]
+    public async Task Map_WithJsonTypeInfo_SerializesWithTheSuppliedContract()
+    {
+        // The trim/AOT-safe overload (#178): same type and version from [Message], payload from
+        // the source-generated contract — here camelCase, so the contract is visibly the one used.
+        var (handler, store) = CreateHandler(r =>
+            r.Map<OrderRefunded, OrderRefundedMessage>(
+                evt => new OrderRefundedMessage(evt.OrderId, evt.Reason),
+                OutboxMessageJsonContext.Default.OrderRefundedMessage));
+
+        var orderId = Guid.NewGuid();
+        await handler.ProcessEventAsync(
+            CreateEnvelope(new OrderRefunded(orderId, "duplicate", 50m)),
+            TestContext.Current.CancellationToken);
+
+        Assert.Single(store.Entries);
+        Assert.Equal("order.refunded", store.Entries[0].MessageType);
+        Assert.Equal("2", store.Entries[0].Version);
+        var payload = JsonDocument.Parse(store.Entries[0].Payload).RootElement;
+        Assert.Equal(orderId, payload.GetProperty("orderId").GetGuid());
+        Assert.Equal("duplicate", payload.GetProperty("reason").GetString());
+    }
+
+    [Fact]
     public async Task Map_WithMessageType_OnlyProjectsSelectedFields()
     {
         var (handler, store) = CreateHandler(r =>
@@ -800,3 +823,8 @@ public class OutboxHandlerTests
 
     #endregion
 }
+
+[System.Text.Json.Serialization.JsonSourceGenerationOptions(
+    PropertyNamingPolicy = System.Text.Json.Serialization.JsonKnownNamingPolicy.CamelCase)]
+[System.Text.Json.Serialization.JsonSerializable(typeof(OutboxHandlerTests.OrderRefundedMessage))]
+internal sealed partial class OutboxMessageJsonContext : System.Text.Json.Serialization.JsonSerializerContext;

@@ -329,7 +329,7 @@ public static class DcbModuleBuilderExtensions
                         "differs in arity, not by the optional tail: no call can bind to both, and " +
                         "collapsing them would mean asking every caller that does not need " +
                         "ReactorContext to accept and ignore it.")]
-    public static DcbModuleBuilder ReactTo<TEvent, THandler>(
+    public static DcbModuleBuilder ReactTo<TEvent, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] THandler>(
         this DcbModuleBuilder builder,
         Func<THandler, Func<TEvent, CancellationToken, Task>> methodSelector,
         string? processorId = null,
@@ -426,7 +426,7 @@ public static class DcbModuleBuilderExtensions
                         "differs in arity, not by the optional tail: no call can bind to both, and " +
                         "collapsing them would mean asking every caller that does not need " +
                         "ReactorContext to accept and ignore it.")]
-    public static DcbModuleBuilder ReactTo<TEvent, THandler>(
+    public static DcbModuleBuilder ReactTo<TEvent, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] THandler>(
         this DcbModuleBuilder builder,
         Func<THandler, Func<TEvent, ReactorContext, CancellationToken, Task>> methodSelector,
         string? processorId = null,
@@ -728,7 +728,7 @@ public static class DcbModuleBuilderExtensions
     /// Replaces the error classifier with one resolved from the container, so it can take
     /// dependencies. Defaults to <see cref="DefaultErrorClassifier"/>.
     /// </summary>
-    public static DcbModuleBuilder UseErrorClassifier<TClassifier>(this DcbModuleBuilder builder)
+    public static DcbModuleBuilder UseErrorClassifier<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TClassifier>(this DcbModuleBuilder builder)
         where TClassifier : class, IErrorClassifier
     {
         ArgumentNullException.ThrowIfNull(builder);

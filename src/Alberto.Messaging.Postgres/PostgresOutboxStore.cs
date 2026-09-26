@@ -41,7 +41,7 @@ public sealed class PostgresOutboxStore(
         cmd.Parameters.AddWithValue("message_type", entry.MessageType);
         cmd.Parameters.AddWithValue("version", entry.Version);
         cmd.Parameters.AddWithValue("payload", entry.Payload);
-        cmd.Parameters.AddWithValue("metadata", JsonSerializer.Serialize(entry.Metadata));
+        cmd.Parameters.AddWithValue("metadata", JsonSerializer.Serialize(entry.Metadata, AlbertoPostgresJsonContext.Default.DictionaryStringString));
         cmd.Parameters.AddWithValue("status", entry.Status.ToString().ToLowerInvariant());
         cmd.Parameters.AddWithValue("retry_count", entry.RetryCount);
         cmd.Parameters.Add(new NpgsqlParameter("last_error", NpgsqlTypes.NpgsqlDbType.Text)
@@ -277,7 +277,7 @@ public sealed class PostgresOutboxStore(
         };
 
         var metadataJson = reader.GetString(5);
-        var metadata = JsonSerializer.Deserialize<Dictionary<string, string>>(metadataJson) ?? new();
+        var metadata = JsonSerializer.Deserialize(metadataJson, AlbertoPostgresJsonContext.Default.DictionaryStringString) ?? new();
 
         // Column layout (matches ClaimPendingAsync SELECT):
         //  0  id                   6  status       11 claim_id

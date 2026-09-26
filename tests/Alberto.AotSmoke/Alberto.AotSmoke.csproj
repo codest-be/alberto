@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        Native AOT smoke test for Alberto (#178). Published with `dotnet publish -r linux-x64` and
+        run against a real PostgreSQL; exits non-zero if any step fails. See Program.cs for how to
+        run it, and the aot-smoke job in .github/workflows/ci.yml for how CI does.
+
+        Not an xUnit project on purpose: the point is to prove the libraries survive ILC with the
+        trim and AOT analyzers as errors, and a test host would drag its own reflection in.
+    -->
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <IsPackable>false</IsPackable>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+        <PublishAot>true</PublishAot>
+        <!-- Any IL2xxx/IL3xxx that ILC finds in Alberto, or in anything Alberto pulls in, fails the
+             publish rather than scrolling past. -->
+        <IlcTreatWarningsAsErrors>true</IlcTreatWarningsAsErrors>
+        <!-- One warning per offending assembly would hide which call site broke; report each. -->
+        <TrimmerSingleWarn>false</TrimmerSingleWarn>
+        <InvariantGlobalization>true</InvariantGlobalization>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="../../src/Alberto/Alberto.csproj" />
+        <ProjectReference Include="../../src/Alberto.Commands/Alberto.Commands.csproj" />
+        <ProjectReference Include="../../src/Alberto.Postgres/Alberto.Postgres.csproj" />
+        <ProjectReference Include="../../src/Alberto.Messaging/Alberto.Messaging.csproj" />
+        <ProjectReference Include="../../src/Alberto.Messaging.Postgres/Alberto.Messaging.Postgres.csproj" />
+        <ProjectReference Include="../../src/Alberto.Telemetry/Alberto.Telemetry.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.Extensions.Hosting" />
+    </ItemGroup>
+</Project>

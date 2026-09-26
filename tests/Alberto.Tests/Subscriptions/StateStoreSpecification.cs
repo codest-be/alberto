@@ -141,6 +141,32 @@ public sealed class EfStateStoreSpecificationTests(EfProjectionTestFixture fixtu
 // ---------------------------------------------------------------------------
 
 /// <summary>
+/// The same specification over <see cref="PostgresStateStore{TState}"/> built with a
+/// source-generated <c>JsonTypeInfo</c> — the constructor a trimmed or Native AOT application
+/// uses (#178). Nothing about storage may differ between the two constructors.
+/// </summary>
+[Trait("Category", "Integration")]
+public sealed class PostgresStateStoreJsonTypeInfoSpecificationTests(SingleTenantPostgresFixture fixture)
+    : StateStoreSpecification<SimpleState>, IClassFixture<SingleTenantPostgresFixture>
+{
+    protected override Task<IStateStore<SimpleState>> CreateStore(
+        string projectionType,
+        ProjectionVersion rebuildVersion = default) =>
+        Task.FromResult<IStateStore<SimpleState>>(
+            new PostgresStateStore<SimpleState>(
+                fixture.DataSource,
+                StateStoreJsonContext.Default.SimpleState,
+                projectionType,
+                rebuildVersion: rebuildVersion));
+
+    protected override SimpleState MakeState(int value) => new() { Value = value };
+    protected override int ReadValue(SimpleState state) => state.Value;
+}
+
+[System.Text.Json.Serialization.JsonSerializable(typeof(SimpleState))]
+internal sealed partial class StateStoreJsonContext : System.Text.Json.Serialization.JsonSerializerContext;
+
+/// <summary>
 /// Runs <see cref="StateStoreSpecification{TState}"/> against
 /// <see cref="PostgresStateStore{TState}"/> on the <em>multi-tenant</em> schema
 /// — the one that includes the <c>tenant_id</c> column in

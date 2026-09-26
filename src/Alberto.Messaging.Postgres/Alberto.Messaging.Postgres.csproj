@@ -11,6 +11,12 @@
         <Description>PostgreSQL-backed transactional outbox store for Alberto DCB event store. Bridges Alberto.Postgres and Alberto.Messaging; referencing Alberto.Postgres does not pull in messaging dependencies.</Description>
         <IsPackable>true</IsPackable>
         <RootNamespace>Alberto.Messaging.Postgres</RootNamespace>
+
+        <!-- Native AOT / trimming: turns on the trim, single-file and AOT analyzers (IL2xxx/IL3xxx),
+             which TreatWarningsAsErrors makes build-breaking. The config binder generator replaces
+             reflection-based IConfiguration.Get<T>() with source-generated binding. -->
+        <IsAotCompatible>true</IsAotCompatible>
+        <EnableConfigurationBindingGenerator>true</EnableConfigurationBindingGenerator>
     </PropertyGroup>
 
     <ItemGroup>

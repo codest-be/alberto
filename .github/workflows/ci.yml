@@ -212,3 +212,66 @@ jobs:
             artifacts/coverage/report/Cobertura.xml
             artifacts/coverage/report/index.html
           if-no-files-found: error
+
+  # Native AOT smoke (#178). Publishes tests/Alberto.AotSmoke with PublishAot and
+  # IlcTreatWarningsAsErrors, so any trim or AOT warning ILC finds in Alberto — or in anything
+  # Alberto pulls in — fails here, then runs the native binary against a real PostgreSQL:
+  # migrate, append with tags, a conditional-append conflict, an upcast, reconstitution through an
+  # evolver, a reactor and the outbox relay. The binary exits non-zero on the first failed step.
+  #
+  # A job of its own rather than steps in build-test: it publishes for a runtime identifier, which
+  # is a separate restore and a separate build of every library in Release, and it should say
+  # "AOT broke" on the PR's front page rather than as a step buried under coverage.
+  aot-smoke:
+    runs-on: [self-hosted, public-ci]
+    # ILC is the slow part (about a minute); the rest is seconds. A stop, not a budget.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # ILC links with the platform toolchain. Checked up front so a host missing it fails with
+      # the fix in the message instead of a linker error three screens into the publish log.
+      - name: Check native toolchain
+        run: |
+          missing=()
+          command -v clang >/dev/null || missing+=(clang)
+          [ -e /usr/include/zlib.h ] || missing+=(zlib1g-dev)
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Native AOT needs ${missing[*]} on the runner host (apt-get install ${missing[*]})."
+            exit 1
+          fi
+
+      - name: Publish (Native AOT)
+        run: |
+          dotnet publish tests/Alberto.AotSmoke/Alberto.AotSmoke.csproj \
+            -c Release -r linux-x64 -o artifacts/aot-smoke
+
+      # Plain docker run, not a `services:` container: the runner's daemon is rootless, and a
+      # published port picked by the daemon (127.0.0.1::5432) is read back with `docker port`
+      # rather than fixed, so two jobs on the host can never collide on it. Readiness is probed
+      # over TCP: the image's first-boot init server listens on the socket only, so a socket
+      # probe can pass just before that server shuts down and the real one starts.
+      - name: Start PostgreSQL
+        id: pg
+        run: |
+          name="alberto-aot-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          docker run -d --rm --name "$name" \
+            -e POSTGRES_USER=smoke -e POSTGRES_PASSWORD=smoke -e POSTGRES_DB=smoke \
+            -p 127.0.0.1::5432 postgres:16-alpine
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          for _ in $(seq 1 60); do
+            docker exec "$name" pg_isready -h 127.0.0.1 -U smoke -d smoke >/dev/null 2>&1 && break
+            sleep 1
+          done
+          docker exec "$name" pg_isready -h 127.0.0.1 -U smoke -d smoke
+          port=$(docker port "$name" 5432/tcp | head -1 | sed 's/.*://')
+          echo "port=$port" >> "$GITHUB_OUTPUT"
+
+      - name: Run smoke binary
+        env:
+          ALBERTO_AOTSMOKE_CONNECTION: Host=127.0.0.1;Port=${{ steps.pg.outputs.port }};Username=smoke;Password=smoke;Database=smoke
+        run: ./artifacts/aot-smoke/Alberto.AotSmoke
+
+      - name: Stop PostgreSQL
+        if: always() && steps.pg.outputs.name != ''
+        run: docker rm -f "${{ steps.pg.outputs.name }}" || true

@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Alberto;
 
 /// <summary>
@@ -18,6 +20,13 @@ namespace Alberto;
 /// }
 /// </code>
 /// </example>
+/// <remarks>
+/// Handlers are discovered from the <c>IEvolve&lt;TState, TEvent&gt;</c> interfaces the concrete
+/// evolver implements. The type-level <see cref="DynamicallyAccessedMembersAttribute"/> keeps those
+/// interfaces on every derived type under trimming, so discovery works in a trimmed or Native AOT
+/// application too.
+/// </remarks>
+[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)]
 public abstract class Evolver<TState> where TState : new()
 {
     private readonly EvolverDispatcher<TState> _dispatcher;
@@ -35,6 +44,13 @@ public abstract class Evolver<TState> where TState : new()
     /// <summary>
     /// Apply a single event envelope to the state.
     /// </summary>
+    /// <remarks>
+    /// Reads the envelope with reflection-based JSON, having no registry to take a contract from.
+    /// Under trimming or Native AOT fold through the command pipeline instead, which reads through
+    /// the module's <see cref="EventSerializer"/>.
+    /// </remarks>
+    [RequiresUnreferencedCode(RawEnvelopeMessage)]
+    [RequiresDynamicCode(RawEnvelopeMessage)]
     public TState Evolve(TState state, IEventEnvelope envelope)
         => _dispatcher.Evolve(state, envelope);
 
@@ -84,8 +100,15 @@ public abstract class Evolver<TState> where TState : new()
     /// the corresponding <c>IEvolve&lt;TState, TEvent&gt;</c> handler type. A silent wrong
     /// answer is worse than a loud failure.
     /// </exception>
+    [RequiresUnreferencedCode(RawEnvelopeMessage)]
+    [RequiresDynamicCode(RawEnvelopeMessage)]
     public TState Reconstitute(IEnumerable<IEventEnvelope> events, TState? initial = default)
         => events.Aggregate(initial ?? new TState(), Evolve);
+
+    private const string RawEnvelopeMessage =
+        "Deserializes envelopes with reflection-based System.Text.Json because no event type " +
+        "registry is involved. Under trimming or Native AOT, fold through AlbertoStore " +
+        "(Handle(...).Load(boundary, evolver)), which reads through the module's EventSerializer.";
 
     /// <summary>
     /// Evolves state using a caller-supplied deserializer. Called by <c>AlbertoStore</c>

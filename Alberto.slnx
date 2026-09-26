@@ -29,6 +29,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/Alberto.Tests/Alberto.Tests.csproj" />
     <Project Path="tests/Alberto.Tests.SampleEvents/Alberto.Tests.SampleEvents.csproj" />
+    <Project Path="tests/Alberto.AotSmoke/Alberto.AotSmoke.csproj" />
     <Project Path="tests/Alberto.Examples.Tests/Alberto.Examples.Tests.csproj" />
     <Project Path="tests/Alberto.Tests.Messaging.Rebus/Alberto.Tests.Messaging.Rebus.csproj" />
   </Folder>

@@ -71,9 +71,10 @@ public sealed class UpcasterDeclaration
                 $"Upcaster for '{EventTypeId}' has no step for version {fromVersion}. " +
                 $"Registered steps cover versions {string.Join(", ", _steps.Select(s => s.FromVersion))}.");
 
-        // First step: deserialize JSON → step.FromType, then transform.
+        // First step: deserialize JSON → step.FromType, then transform. The contract comes from
+        // the event's own options, so a source-generated context has to list the old shapes too.
         var firstStep = _steps[startIndex];
-        object current = JsonSerializer.Deserialize(json, firstStep.FromType, options)
+        object current = JsonSerializer.Deserialize(json, options.GetTypeInfo(firstStep.FromType))
             ?? throw new InvalidOperationException(
                 $"Failed to deserialize '{EventTypeId}' v{fromVersion} as {firstStep.FromType.Name}.");
         current = firstStep.Transform(current);

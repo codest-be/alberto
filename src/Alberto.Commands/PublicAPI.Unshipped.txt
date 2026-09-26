@@ -1,1 +1,2 @@
 #nullable enable
+static Alberto.Commands.AlbertoStoreBuilderExtensions.WithEvents(this Alberto.DcbModuleBuilder! builder, Alberto.IEventTypeRegistry! registry) -> Alberto.DcbModuleBuilder!

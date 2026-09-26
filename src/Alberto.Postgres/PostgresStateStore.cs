@@ -1,4 +1,6 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using Alberto.Subscriptions;
 using Npgsql;
 
@@ -10,7 +12,7 @@ namespace Alberto.Postgres;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Pass <paramref name="tenantId"/> to enable multi-tenant mode: every DML statement is
+/// Pass <c>tenantId</c> to enable multi-tenant mode: every DML statement is
 /// scoped to that tenant via the <c>tenant_id</c> column on
 /// <c>alberto_projection_states</c>. Omit (or pass <see langword="null"/>) for
 /// single-tenant deployments; the column is then absent from all queries and
@@ -19,7 +21,7 @@ namespace Alberto.Postgres;
 /// <para>
 /// <strong>The mode is decided by the schema, not by the caller's intent.</strong> A module that
 /// declared <c>.WithTenancy()</c> is migrated with <c>tenant_id NOT NULL</c> and a primary key
-/// that includes it, so a store built without a <paramref name="tenantId"/> against that schema
+/// that includes it, so a store built without a <c>tenantId</c> against that schema
 /// names <c>ON CONFLICT (projection_type, document_id, rebuild_version)</c> — a constraint that
 /// does not exist — and every write fails with <c>42P10</c>. The reverse mismatch fails with
 /// <c>42703</c> on the missing column. Neither degrades quietly, but neither is caught at
@@ -29,27 +31,108 @@ namespace Alberto.Postgres;
 /// <see cref="Alberto.Tenancy.TenantScope.CrossTenantFor"/>.
 /// </para>
 /// <para>
-/// <paramref name="rebuildVersion"/> is a live handle resolved on every operation rather than
+/// <c>rebuildVersion</c> is a live handle resolved on every operation rather than
 /// captured at construction, because the version a projection reads and writes changes
 /// underneath a long-lived store when a rebuild is promoted. Omit it for the overwhelmingly
 /// common case of a projection that is never rebuilt; its <see cref="ProjectionVersion.Current"/>
 /// then returns version 1 forever at no cost.
 /// </para>
+/// <para>
+/// State is stored as JSON. The constructor that takes a <see cref="JsonTypeInfo{T}"/> uses that
+/// contract — typically from a source-generated <c>JsonSerializerContext</c> — and is the one to
+/// use under trimming or Native AOT. The other resolves the contract by reflection, with
+/// System.Text.Json's default options.
+/// </para>
 /// </remarks>
-public sealed class PostgresStateStore<TState>(
-    NpgsqlDataSource dataSource,
-    string? projectionType = null,
-    string? schema = null,
-    ProjectionVersion rebuildVersion = default,
-    string? tenantId = null)
-    : IStateStore<TState>
+public sealed class PostgresStateStore<TState> : IStateStore<TState>
 {
-    private readonly NpgsqlDataSource _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
-    private readonly string _projectionType = projectionType ?? typeof(TState).Name;
-    private readonly SchemaQualifier _schema = new(schema);
-    private readonly bool _multiTenant = tenantId is not null;
-    private readonly string? _tenantId = tenantId;
-    private readonly ProjectionVersion _rebuildVersion = rebuildVersion;
+    private const string ReflectionJsonMessage =
+        "Serializes TState with reflection-based System.Text.Json. Under trimming or Native AOT, " +
+        "use the constructor that takes a JsonTypeInfo<TState> from a JsonSerializerContext.";
+
+    private readonly NpgsqlDataSource _dataSource;
+    private readonly string _projectionType;
+    private readonly SchemaQualifier _schema;
+    private readonly bool _multiTenant;
+    private readonly string? _tenantId;
+    private readonly ProjectionVersion _rebuildVersion;
+    private readonly Lazy<JsonTypeInfo<TState>> _jsonTypeInfo;
+
+    /// <summary>
+    /// Creates a store that serializes <typeparamref name="TState"/> with reflection-based
+    /// System.Text.Json and its default options.
+    /// </summary>
+    [RequiresUnreferencedCode(ReflectionJsonMessage)]
+    [RequiresDynamicCode(ReflectionJsonMessage)]
+    [SuppressMessage("ApiDesign", "RS0026:Do not add multiple overloads with optional parameters",
+        Justification = "The overloads are separated by the required JsonTypeInfo<TState> parameter; " +
+                        "no call binds to both.")]
+    public PostgresStateStore(
+        NpgsqlDataSource dataSource,
+        string? projectionType = null,
+        string? schema = null,
+        ProjectionVersion rebuildVersion = default,
+        string? tenantId = null)
+        : this(
+            dataSource,
+            // Resolved on first use, as JsonSerializer.Serialize<TState> did before this existed,
+            // so a TState System.Text.Json cannot handle still fails on the first write rather
+            // than at construction.
+            new Lazy<JsonTypeInfo<TState>>(
+                static () => (JsonTypeInfo<TState>)JsonSerializerOptions.Default.GetTypeInfo(typeof(TState))),
+            projectionType,
+            schema,
+            rebuildVersion,
+            tenantId)
+    {
+    }
+
+    /// <summary>
+    /// Creates a store that serializes <typeparamref name="TState"/> with
+    /// <paramref name="jsonTypeInfo"/>. Safe under trimming and Native AOT.
+    /// </summary>
+    /// <param name="dataSource">The database the projection state lives in.</param>
+    /// <param name="jsonTypeInfo">The JSON contract for <typeparamref name="TState"/>, e.g. <c>MyContext.Default.OrderSummary</c>.</param>
+    /// <param name="projectionType">The projection's name in storage. Defaults to <c>typeof(TState).Name</c>.</param>
+    /// <param name="schema">The schema the Alberto tables live in. Defaults to <c>public</c>.</param>
+    /// <param name="rebuildVersion">The live rebuild version. Omit for a projection that is never rebuilt.</param>
+    /// <param name="tenantId">The tenant this store reads and writes. Omit on a single-tenant module.</param>
+    [SuppressMessage("ApiDesign", "RS0026:Do not add multiple overloads with optional parameters",
+        Justification = "The overloads are separated by the required JsonTypeInfo<TState> parameter; " +
+                        "no call binds to both.")]
+    public PostgresStateStore(
+        NpgsqlDataSource dataSource,
+        JsonTypeInfo<TState> jsonTypeInfo,
+        string? projectionType = null,
+        string? schema = null,
+        ProjectionVersion rebuildVersion = default,
+        string? tenantId = null)
+        : this(
+            dataSource,
+            new Lazy<JsonTypeInfo<TState>>(jsonTypeInfo ?? throw new ArgumentNullException(nameof(jsonTypeInfo))),
+            projectionType,
+            schema,
+            rebuildVersion,
+            tenantId)
+    {
+    }
+
+    private PostgresStateStore(
+        NpgsqlDataSource dataSource,
+        Lazy<JsonTypeInfo<TState>> jsonTypeInfo,
+        string? projectionType,
+        string? schema,
+        ProjectionVersion rebuildVersion,
+        string? tenantId)
+    {
+        _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
+        _jsonTypeInfo = jsonTypeInfo;
+        _projectionType = projectionType ?? typeof(TState).Name;
+        _schema = new SchemaQualifier(schema);
+        _multiTenant = tenantId is not null;
+        _tenantId = tenantId;
+        _rebuildVersion = rebuildVersion;
+    }
 
     /// <inheritdoc/>
     public async Task<IReadOnlyDictionary<string, TState>> LoadManyAsync(
@@ -116,7 +199,7 @@ public sealed class PostgresStateStore<TState>(
         {
             var docId = reader.GetString(0);
             var stateJson = reader.GetString(1);
-            var state = JsonSerializer.Deserialize<TState>(stateJson);
+            var state = JsonSerializer.Deserialize(stateJson, _jsonTypeInfo.Value);
             if (state is not null)
                 result[docId] = state;
         }
@@ -199,7 +282,7 @@ public sealed class PostgresStateStore<TState>(
 
             foreach (var (docId, state) in upserts)
             {
-                var stateJson = JsonSerializer.Serialize(state);
+                var stateJson = JsonSerializer.Serialize(state, _jsonTypeInfo.Value);
                 var batchCmd = new NpgsqlBatchCommand(upsertSql);
                 if (_multiTenant)
                     batchCmd.Parameters.AddWithValue("tenant_id", _tenantId!);
@@ -279,7 +362,7 @@ public sealed class PostgresStateStore<TState>(
         while (await reader.ReadAsync(ct))
         {
             var stateJson = reader.GetString(0);
-            var state = JsonSerializer.Deserialize<TState>(stateJson);
+            var state = JsonSerializer.Deserialize(stateJson, _jsonTypeInfo.Value);
             if (state is not null)
                 result.Add(state);
         }

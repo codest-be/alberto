@@ -53,7 +53,7 @@ public sealed record PostgresBackendDescriptor(PostgresOptions Options) : IAlber
         this with
         {
             Options = AlbertoOptionsOverlay.Overlay<PostgresOptions, PostgresOverrides>(
-                moduleSection, "Postgres", Options),
+                moduleSection, "Postgres", Options, static s => s.Get<PostgresOverrides>()),
         };
 
     /// <inheritdoc />
