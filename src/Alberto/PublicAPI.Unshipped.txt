@@ -25,3 +25,5 @@ static Alberto.EventSerializer.FromRegistry(Alberto.IEventTypeRegistry! registry
 static Alberto.EventTypeRegistry.CreateBuilder() -> Alberto.EventTypeRegistryBuilder!
 static Alberto.EventTypeRegistry.FromAssemblies(System.Text.Json.JsonSerializerOptions? options, params System.Reflection.Assembly![]! assemblies) -> Alberto.IEventTypeRegistry!
 static Alberto.EventTypeRegistry.FromAssembly(System.Reflection.Assembly! assembly, System.Text.Json.JsonSerializerOptions? options = null) -> Alberto.IEventTypeRegistry!
+static Alberto.Telemetry.AlbertoMetrics.RecordHeadStalled(string! moduleKey, double stalledSeconds) -> void
+static readonly Alberto.Telemetry.AlbertoMetrics.HeadStalled -> System.Diagnostics.Metrics.ObservableGauge<double>!

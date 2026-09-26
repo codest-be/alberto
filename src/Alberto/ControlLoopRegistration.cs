@@ -52,7 +52,9 @@ internal static class ControlLoopRegistration
                 options.HeadWindowSize,
                 sp.GetService<ILogger<EventStoreHead>>(),
                 signal,
-                options.DrainTimeout);
+                options.DrainTimeout,
+                sp.GetService<TimeProvider>(),
+                moduleKey);
         });
 
         services.AddSingleton<IHostedService>(sp =>

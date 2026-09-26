@@ -1,3 +1,4 @@
+using Alberto.Telemetry;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -11,15 +12,31 @@ public sealed class EventStoreHead : IHostedService
     private readonly ILogger<EventStoreHead>? _logger;
     private readonly IEventAppendedSignal? _signal;
     private readonly TimeSpan _drainTimeout;
+    private readonly TimeProvider _timeProvider;
+    private readonly string _moduleKey;
+    private readonly TimeSpan _stallWarningThreshold;
     private long _current;
     private CancellationTokenSource? _cts;
     private Task? _loop;
+
+    // Set when the barrier starts holding the head back without it advancing; cleared the
+    // moment it advances or the barrier releases. Backs both the "how long has this been
+    // stuck" warning below and the alberto.head.stalled gauge.
+    private DateTimeOffset? _stallStartedAt;
+
+    // Warn once per stall, not on every poll: the gauge above is what an alert rule watches
+    // continuously, so the log only needs to name the likely cause once per incident, not
+    // spam the log every _refreshInterval until an operator intervenes.
+    private bool _warnedForCurrentStall;
 
     internal EventStoreHead(IEventStoreHeadBackend backend,
         TimeSpan? refreshInterval = null, int windowSize = 2000,
         ILogger<EventStoreHead>? logger = null,
         IEventAppendedSignal? signal = null,
-        TimeSpan? drainTimeout = null)
+        TimeSpan? drainTimeout = null,
+        TimeProvider? timeProvider = null,
+        string moduleKey = "",
+        TimeSpan? stallWarningThreshold = null)
     {
         _backend = backend;
         _refreshInterval = refreshInterval ?? TimeSpan.FromMilliseconds(100);
@@ -27,6 +44,9 @@ public sealed class EventStoreHead : IHostedService
         _logger = logger;
         _signal = signal;
         _drainTimeout = drainTimeout ?? Configuration.ControlLoopOptions.Default.DrainTimeout;
+        _timeProvider = timeProvider ?? TimeProvider.System;
+        _moduleKey = moduleKey;
+        _stallWarningThreshold = stallWarningThreshold ?? TimeSpan.FromSeconds(30);
     }
 
     public long Current => Volatile.Read(ref _current);
@@ -102,7 +122,12 @@ public sealed class EventStoreHead : IHostedService
             ? Task.Delay(_refreshInterval, ct)
             : _signal.WaitAsync(_refreshInterval, ct);
 
-    private async Task RefreshAsync(CancellationToken ct)
+    /// <summary>
+    /// Performs one poll: advances the contiguous head, clamps it to the stable-head barrier,
+    /// and updates stall tracking. Internal (rather than private) so tests can drive individual
+    /// polls deterministically without spinning up the background loop.
+    /// </summary>
+    internal async Task RefreshAsync(CancellationToken ct)
     {
         var current = _current;
         var positions = await _backend.GetPositionsAsync(current, _windowSize, ct);
@@ -113,10 +138,65 @@ public sealed class EventStoreHead : IHostedService
         // (IEventStoreHeadBackend default) return long.MaxValue, leaving the
         // contiguous head unchanged.
         var stableHead = await _backend.GetStableHeadAsync(current, ct);
-        if (stableHead < head)
+        var holding = stableHead < head;
+        if (holding)
             head = stableHead;
 
+        TrackStall(holding, headAdvanced: head != current);
         Volatile.Write(ref _current, head);
+    }
+
+    /// <summary>
+    /// Tracks how long the barrier has held the head back without it advancing, warns once
+    /// per stall past <see cref="_stallWarningThreshold"/>, logs once when it clears, and
+    /// keeps the <c>alberto.head.stalled</c> gauge in sync either way.
+    /// </summary>
+    private void TrackStall(bool holding, bool headAdvanced)
+    {
+        if (holding && !headAdvanced)
+        {
+            _stallStartedAt ??= _timeProvider.GetUtcNow();
+            var elapsed = _timeProvider.GetUtcNow() - _stallStartedAt.Value;
+
+            if (elapsed >= _stallWarningThreshold && !_warnedForCurrentStall)
+            {
+                _warnedForCurrentStall = true;
+                _logger?.LogWarning(
+                    "EventStoreHead for module '{ModuleKey}' has been stalled for {Elapsed} — the " +
+                    "stable-head barrier is holding the head below a committed event, most likely " +
+                    "because a write transaction elsewhere on the Postgres server (this database or " +
+                    "another one on the same instance) is still open and pinning the xmin horizon. " +
+                    "Find the blocker with 'SELECT pid, xact_start, state, query FROM pg_stat_activity " +
+                    "WHERE backend_xid IS NOT NULL ORDER BY age(backend_xid) DESC' (a read-only " +
+                    "session has backend_xmin but no backend_xid and is not the cause) and end it; if " +
+                    "nothing turns up, also check 'SELECT gid, prepared, owner, database FROM " +
+                    "pg_prepared_xacts' for an orphaned prepared transaction. Setting " +
+                    "idle_in_transaction_session_timeout prevents an abandoned session from doing this " +
+                    "again, though it does not cover a long-running active transaction or an orphaned " +
+                    "prepared one.",
+                    _moduleKey, elapsed);
+            }
+
+            // Mirrors the warning: the gauge reads 0 until the hold has actually crossed the
+            // threshold, so a routine few-second hold (a normal short-lived write transaction)
+            // never shows up as "stalled" on a dashboard, only a genuine stall does.
+            AlbertoMetrics.RecordHeadStalled(
+                _moduleKey, elapsed >= _stallWarningThreshold ? elapsed.TotalSeconds : 0d);
+        }
+        else
+        {
+            if (_warnedForCurrentStall)
+            {
+                _logger?.LogInformation(
+                    "EventStoreHead for module '{ModuleKey}' is no longer stalled; the stable-head " +
+                    "barrier has released.",
+                    _moduleKey);
+            }
+
+            _stallStartedAt = null;
+            _warnedForCurrentStall = false;
+            AlbertoMetrics.RecordHeadStalled(_moduleKey, 0d);
+        }
     }
 
     /// <summary>

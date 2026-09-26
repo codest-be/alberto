@@ -120,6 +120,46 @@ public static class AlbertoMetrics
         }
     }
 
+    /// <summary>
+    /// Observable gauge for how long <see cref="Alberto.Subscriptions.EventStoreHead"/>'s
+    /// in-flight visibility barrier has held the head below committed events, in seconds.
+    /// Zero both when the barrier isn't holding the head back and while a hold is still under
+    /// the stall warning threshold, so an ordinary short-lived write transaction never shows up
+    /// here. Any non-zero value means a write transaction has been pinning Postgres's
+    /// <c>xmin</c> horizon past that threshold — see <c>idle_in_transaction_session_timeout</c>
+    /// in docs/configuration.md.
+    /// </summary>
+    public static readonly ObservableGauge<double> HeadStalled =
+        Meter.CreateObservableGauge("alberto.head.stalled", GetHeadStalledMeasurements, "s",
+            "Seconds the stable-head barrier has held the head below committed events");
+
+    // Keyed by the physical module key, same rationale as _processorLagMeasurements: one
+    // EventStoreHead per module (or per shard), so this is already the natural key.
+    private static readonly Dictionary<string, Measurement<double>> _headStalledMeasurements = new();
+    private static readonly object _headStalledLock = new();
+
+    private static IEnumerable<Measurement<double>> GetHeadStalledMeasurements()
+    {
+        lock (_headStalledLock) { return _headStalledMeasurements.Values.ToArray(); }
+    }
+
+    /// <summary>
+    /// Updates the stalled-duration measurement for the <c>alberto.head.stalled</c> gauge.
+    /// Pass <c>0</c> once the barrier releases so the series returns to baseline instead of
+    /// holding its last non-zero value forever.
+    /// </summary>
+    public static void RecordHeadStalled(string moduleKey, double stalledSeconds)
+    {
+        lock (_headStalledLock)
+        {
+            var tags = new TagList { { "module", ShardKey.ModuleOf(moduleKey) } };
+            if (ShardKey.ShardOf(moduleKey) is { } shardId)
+                tags.Add("shard", shardId);
+
+            _headStalledMeasurements[moduleKey] = new Measurement<double>(stalledSeconds, tags);
+        }
+    }
+
     #endregion
 
     #region Tenant Ownership Gauges
