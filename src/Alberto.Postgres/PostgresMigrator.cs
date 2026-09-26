@@ -1,6 +1,8 @@
 using System.Reflection;
 using DbUp;
 using DbUp.Engine;
+using DbUp.Engine.Output;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 
 namespace Alberto.Postgres;
@@ -20,13 +22,38 @@ public static class PostgresMigrator
     /// <param name="schema">Optional schema name. If provided, creates schema and qualifies all objects.</param>
     /// <param name="singleTenant">When true, runs single-tenant migrations (no tenant_id columns). Default is false (multi-tenant).</param>
     /// <returns>Migration result indicating success or failure.</returns>
+    /// <remarks>
+    /// Writes no output. Use <see cref="Migrate(string, MigrationOptions)"/> to see DbUp's
+    /// progress through an <see cref="ILogger"/>.
+    /// </remarks>
     public static MigrationResult Migrate(string connectionString, string? schema = null, bool singleTenant = false)
+        => Migrate(connectionString, new MigrationOptions { Schema = schema, SingleTenant = singleTenant });
+
+    /// <summary>
+    /// Runs all pending migrations against the specified database.
+    /// </summary>
+    /// <param name="connectionString">PostgreSQL connection string.</param>
+    /// <param name="options">
+    /// The schema, tenancy mode, logger and whether to create the database first. Null means
+    /// the defaults, so an existing <c>Migrate(connectionString, null)</c> call, which now binds
+    /// here, still migrates the default schema multi-tenant exactly as it did.
+    /// </param>
+    /// <returns>Migration result indicating success or failure.</returns>
+    public static MigrationResult Migrate(string connectionString, MigrationOptions? options)
     {
+        options ??= new MigrationOptions();
+
+        var schema = options.Schema;
+        var singleTenant = options.SingleTenant;
+
         // Validate schema name before any database interaction (P1.1: SQL injection guard).
         if (!string.IsNullOrWhiteSpace(schema))
             SchemaQualifier.ValidateName(schema);
 
-        EnsureDatabase.For.PostgresqlDatabase(connectionString);
+        var upgradeLog = CreateUpgradeLog(options.Logger);
+
+        if (options.EnsureDatabase)
+            EnsureDatabase.For.PostgresqlDatabase(connectionString, upgradeLog);
 
         // Serialize concurrent migrators. Two pods starting against a fresh store both pass
         // GuardTenancyMode (no imprint, no alberto_events yet) and both reach DbUp with an
@@ -77,6 +104,7 @@ public static class PostgresMigrator
                     connectionString,
                     schema,
                     singleTenant,
+                    upgradeLog,
                     scriptFilter: run.Contains,
                     runsOutsideTransaction: run.RunsOutsideTransaction);
 
@@ -247,7 +275,8 @@ public static class PostgresMigrator
         // set the store can never accept, and report a mismatched store as merely behind.
         GuardTenancyMode(connectionString, schema, singleTenant);
 
-        var upgrader = BuildUpgradeEngine(connectionString, schema, singleTenant);
+        // Inspection is silent: it runs no scripts, so DbUp has nothing worth reporting.
+        var upgrader = BuildUpgradeEngine(connectionString, schema, singleTenant, new NoOpUpgradeLog());
 
         return upgrader.GetScriptsToExecute()
             .Select(s => s.Name)
@@ -259,9 +288,9 @@ public static class PostgresMigrator
     /// <paramref name="singleTenant"/>, and throws if they disagree.
     /// </summary>
     /// <remarks>
-    /// <see cref="Migrate"/> already runs this gate before any script, so calling it separately
-    /// is a second opinion rather than the load-bearing check. It remains public for callers that
-    /// migrate out of band and want the check on its own.
+    /// <see cref="Migrate(string, MigrationOptions)"/> already runs this gate before any script,
+    /// so calling it separately is a second opinion rather than the load-bearing check. It remains
+    /// public for callers that migrate out of band and want the check on its own.
     /// <para>
     /// A store with no <c>alberto_events</c> table and no imprint is fresh, not mismatched: it is
     /// free to become either mode, so this returns quietly. Before the gate moved ahead of the
@@ -321,13 +350,15 @@ public static class PostgresMigrator
     /// <summary>
     /// Builds the engine that runs — or, for inspection, merely lists — migration scripts.
     /// <paramref name="scriptFilter"/> defaults to every script in the tenancy's folder, which is
-    /// what inspection wants; <see cref="Migrate"/> narrows it to a single transaction run and
-    /// sets <paramref name="runsOutsideTransaction"/> from what that run declared.
+    /// what inspection wants; <see cref="Migrate(string, MigrationOptions)"/> narrows it to a
+    /// single transaction run and sets <paramref name="runsOutsideTransaction"/> from what that
+    /// run declared.
     /// </summary>
     private static UpgradeEngine BuildUpgradeEngine(
         string connectionString,
         string? schema,
         bool singleTenant,
+        IUpgradeLog upgradeLog,
         Func<string, bool>? scriptFilter = null,
         bool runsOutsideTransaction = false)
     {
@@ -345,7 +376,7 @@ public static class PostgresMigrator
             .WithScriptsEmbeddedInAssembly(
                 Assembly.GetExecutingAssembly(),
                 scriptFilter)
-            .LogToConsole()
+            .LogTo(upgradeLog)
             .WithVariable("schema", schemaName)
             .WithVariable("schema_prefix", schemaPrefix)
             .JournalToPostgresqlTable(schemaName, "schemaversions");
@@ -356,6 +387,13 @@ public static class PostgresMigrator
 
         return builder.Build();
     }
+
+    /// <summary>
+    /// The DbUp log for a migration run. A library must not write to the console on its host's
+    /// behalf, so without a logger DbUp's output goes nowhere rather than to stdout.
+    /// </summary>
+    internal static IUpgradeLog CreateUpgradeLog(ILogger? logger)
+        => logger is null ? new NoOpUpgradeLog() : new MicrosoftUpgradeLog(logger);
 
     private static void EnsureSchemaExists(string connectionString, string schema)
     {
@@ -383,3 +421,36 @@ public sealed record MigrationResult(
     bool Successful,
     IReadOnlyCollection<string> ExecutedScripts,
     Exception? Error);
+
+/// <summary>
+/// How <see cref="PostgresMigrator.Migrate(string, MigrationOptions)"/> runs.
+/// </summary>
+public sealed record MigrationOptions
+{
+    /// <summary>
+    /// The schema to migrate. Created if it does not exist. Null means the connection's default
+    /// schema.
+    /// </summary>
+    public string? Schema { get; init; }
+
+    /// <summary>
+    /// Whether to run the single-tenant migrations (no <c>tenant_id</c> columns). Default false
+    /// (multi-tenant).
+    /// </summary>
+    public bool SingleTenant { get; init; }
+
+    /// <summary>
+    /// Receives DbUp's progress. Null, the default, discards it: Alberto never writes to the
+    /// console on its host's behalf.
+    /// </summary>
+    public ILogger? Logger { get; init; }
+
+    /// <summary>
+    /// Whether to create the database first if it is missing. Default true.
+    /// <para>
+    /// Creating a database means connecting to the server's <c>postgres</c> maintenance database.
+    /// Set this to false for a role that may connect only to its own, already existing, database.
+    /// </para>
+    /// </summary>
+    public bool EnsureDatabase { get; init; } = true;
+}

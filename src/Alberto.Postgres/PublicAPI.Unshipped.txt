@@ -1,1 +1,15 @@
 #nullable enable
+Alberto.Postgres.PostgresOptions.EnsureDatabase.get -> bool
+Alberto.Postgres.PostgresOptions.EnsureDatabase.init -> void
+Alberto.Postgres.PostgresOverrides.EnsureDatabase.get -> bool?
+Alberto.Postgres.PostgresOverrides.EnsureDatabase.set -> void
+Alberto.Postgres.MigrationOptions
+Alberto.Postgres.MigrationOptions.EnsureDatabase.get -> bool
+Alberto.Postgres.MigrationOptions.EnsureDatabase.init -> void
+Alberto.Postgres.MigrationOptions.Logger.get -> Microsoft.Extensions.Logging.ILogger?
+Alberto.Postgres.MigrationOptions.Logger.init -> void
+Alberto.Postgres.MigrationOptions.Schema.get -> string?
+Alberto.Postgres.MigrationOptions.Schema.init -> void
+Alberto.Postgres.MigrationOptions.SingleTenant.get -> bool
+Alberto.Postgres.MigrationOptions.SingleTenant.init -> void
+static Alberto.Postgres.PostgresMigrator.Migrate(string! connectionString, Alberto.Postgres.MigrationOptions? options) -> Alberto.Postgres.MigrationResult!
