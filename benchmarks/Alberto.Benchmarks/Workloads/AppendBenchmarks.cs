@@ -12,8 +12,11 @@ namespace Alberto.Benchmarks.Workloads;
 /// Shared setup for the append workloads: a cloned store, a backend, and cleanup back to the
 /// seeded head between iterations.
 ///
-/// StoreSize is deliberately absent throughout: appending does not read, so table size does
-/// not change the answer.
+/// StoreSize is deliberately absent from every class below except
+/// <see cref="AppendWithDcbCheckStoreSizeBenchmarks"/>: appending does not read, so table size
+/// should not change the answer for the two cases that provably don't — but
+/// <c>AppendWithDcbCheck</c> does read (the DCB conflict-check scan runs under the append
+/// lock), and that assumption was never tested for it. See that class for the axis.
 /// </summary>
 public abstract class AppendBenchmarkBase
 {
@@ -28,10 +31,10 @@ public abstract class AppendBenchmarkBase
     /// method, passing the method that setup targets. See <see cref="Warmup"/> for why warming
     /// this class's *other* methods is actively harmful rather than merely wasteful.
     /// </summary>
-    protected async Task InitAsync(Func<Task> measured)
+    protected async Task InitAsync(Func<Task> measured, int storeSize = StoreSizes.Medium)
     {
         var database = await BenchmarkDatabase.Instance;
-        var connectionString = await database.CloneAsync(StoreSizes.Medium, GetType().Name);
+        var connectionString = await database.CloneAsync(storeSize, GetType().Name);
 
         DataSource = NpgsqlDataSource.Create(connectionString);
         Backend = new PostgresEventStoreBackend(DataSource);
@@ -215,4 +218,51 @@ public class TagFanOutBenchmarks : AppendBenchmarkBase
     [Benchmark, BenchmarkCategory(Categories.Append)]
     public Task<IReadOnlyCollection<IEventEnvelope>> AppendWithTagFanOut()
         => Backend.AppendAsync(_fanOut);
+}
+
+/// <summary>
+/// <c>AppendWithDcbCheck</c> at 10k/100k/1M — the one append case that reads (the DCB
+/// conflict-check scan runs inside the append lock), so it is the one append case where
+/// <c>docs/benchmarks/results.md</c>'s "appends carry no store-size axis" assumption is worth
+/// actually testing. Own class so the axis doesn't triple <see cref="AppendBenchmarks"/>'s two
+/// other cases, which never read at all.
+/// </summary>
+[Config(typeof(BenchmarkConfig))]
+public class AppendWithDcbCheckStoreSizeBenchmarks : AppendBenchmarkBase
+{
+    private IEventToPersist[] _single = null!;
+    private DcbQuery _realHistoryQuery = null!;
+
+    [Params(StoreSizes.Small, StoreSizes.Medium, StoreSizes.Large)]
+    public int StoreSize { get; set; }
+
+    protected override Task OnSetupAsync()
+    {
+        _single = [.. EventPlan.Build(1, seed: 7)];
+
+        // The append function's conflict check (alberto_append_events in
+        // SingleTenant/004_StructuredConflictPosition.sql) is:
+        //   SELECT global_position FROM alberto_event_tag_positions
+        //   WHERE tag = ANY(p_dcb_tags) AND global_position > p_expected_position LIMIT 1
+        // against the (tag, global_position) primary key. expectedPosition is always
+        // SeededHead here, so this is a seek to the tail of one tag's B-tree range, not a
+        // scan over its history -- a tag with StoreSize/100 rows (e.g. "order":"1", which
+        // EventPlan.Build also gives to the single event below) costs the same index descent
+        // as a tag with none ("never":"used", the original value here). Both are O(log n) in
+        // table size, so neither answers "does the check get slower as history accumulates" --
+        // it structurally can't, because the check only ever looks past expectedPosition, and
+        // nothing has been appended past it. Kept as a real, existing tag anyway: it is the
+        // more honest input for what this class measures (append-time DCB check cost across
+        // StoreSize) even though the predicate's shape means that cost stays flat by design,
+        // which is itself the answer to whether the check slows as the store grows -- not a harness gap to work around further.
+        _realHistoryQuery = DcbQuery.ByTags(new EventTag("order", "1"));
+        return Task.CompletedTask;
+    }
+
+    [GlobalSetup(Target = nameof(AppendWithDcbCheck))]
+    public Task SetupAppendWithDcbCheck() => InitAsync(AppendWithDcbCheck, StoreSize);
+
+    [Benchmark, BenchmarkCategory(Categories.Append)]
+    public Task<IReadOnlyCollection<IEventEnvelope>> AppendWithDcbCheck()
+        => Backend.AppendAsync(_single, dcbQuery: _realHistoryQuery, expectedPosition: SeededHead);
 }

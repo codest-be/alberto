@@ -357,6 +357,25 @@ and the migration touches nothing but the database in the connection string.
 Building a service provider never opens a database connection; all I/O is deferred to
 `IHostedService.StartAsync`.
 
+`EnableStableHeadBarrier = true` clamps the subscriber head to Postgres's committed-visible
+horizon (`pg_snapshot_xmin`), so a processor never reads an event whose transaction hasn't
+committed yet. That horizon is server-wide: **any** write transaction left open on the same
+Postgres server — an idle-in-transaction session, a long-running batch, an orphaned prepared
+transaction, even one against a different database on the same server — pins it and freezes the
+barrier below any subsequently committed event until that transaction ends, stalling every
+processor on every module served by that server. Nothing else reports this, because lag is
+computed against the already-clamped head (see [Reading lag](operations.md#reading-lag)).
+`EventStoreHead` watches for it directly: once the barrier has held the head back for 30 seconds
+without it advancing, it logs one warning naming the likely blocker (found via `SELECT pid,
+xact_start, state, query FROM pg_stat_activity WHERE backend_xid IS NOT NULL ORDER BY
+age(backend_xid) DESC` — a read-only session holds a snapshot but no `backend_xid`, so it is
+never the cause; an orphaned prepared transaction won't show up there either, check `SELECT gid,
+prepared, owner, database FROM pg_prepared_xacts` for that) and drives the `alberto.head.stalled`
+gauge — see [Telemetry](operations.md#telemetry). Setting Postgres's
+`idle_in_transaction_session_timeout` closes the most common case, an abandoned session left
+idle mid-transaction, but it does not cap a long-running *active* transaction or an orphaned
+prepared one.
+
 ---
 
 ## Tenancy and shard options

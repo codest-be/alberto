@@ -186,6 +186,16 @@ the write rate; lag that is pinned at exactly the same number means it has stopp
 `alberto processor <id>`'s **Updated At** answers the "stopped entirely" question directly: a
 checkpoint that has not moved in minutes on a live system is a stalled processor.
 
+**A lag of zero does not always mean caught up.** Lag is computed against the *stable* head —
+the position the in-flight visibility barrier (`EnableStableHeadBarrier`, Postgres only) allows
+processors to see, not the log's true tail. If any write transaction is left open anywhere on
+the same Postgres server — an idle-in-transaction session, a long batch, an orphaned prepared
+transaction, even against a *different* database on that server — Postgres's `xmin` horizon
+freezes, the barrier stops advancing, and every processor's lag reads a steady, unremarkable
+number even though new events have committed and nothing is being delivered. Watch
+`alberto.head.stalled` (below) for this case; lag alone cannot distinguish it from genuinely
+being caught up.
+
 On a sharded module the subtraction is **per shard**: each database has its own `position`
 sequence, so a head from `db1` against a checkpoint from `db2` is a meaningless number. Fanned-out
 `--json` output is an array of per-shard objects, each tagged with a `shard` field, so the query
@@ -497,9 +507,18 @@ impossible to debug.
 | `alberto.tenant_locks_acquired`, `alberto.tenant_lock_failures` | Lease churn: tagged by `consumer.id`, **not** by tenant |
 | `alberto.append.duration` | Write latency, including the advisory lock wait |
 | `alberto.processing.duration` | Per-handler latency |
+| `alberto.head.stalled` | Seconds the stable-head barrier has held the head back; **any sustained non-zero value** |
 
-The three worth alerting on: **dead letters increasing**, **lag growing without bound**, and
-**`alberto.concurrency.conflicts` climbing.** The last is usually a boundary drawn wider than the
+`alberto.head.stalled` (Postgres, tagged by `module` and, for a sharded module, `shard`) reads 0
+both under normal operation and while the barrier described under [Reading lag](#reading-lag)
+has held the head for under 30 seconds — a routine short-lived write transaction never shows up
+here. Past 30 seconds it turns non-zero and keeps climbing with the stall's duration; at that
+same point Alberto logs one warning naming the likely blocker and how to find it via
+`pg_stat_activity`, and logs once more when the barrier releases. See `EnableStableHeadBarrier`
+in [configuration.md](configuration.md#postgres-options) for the remedy.
+
+The four worth alerting on: **dead letters increasing**, **lag growing without bound**,
+**`alberto.head.stalled` sustained above zero**, and **`alberto.concurrency.conflicts` climbing.** The last is usually a boundary drawn wider than the
 rule needs, and is fixed in your query, not your infrastructure.
 
 ## Migrations

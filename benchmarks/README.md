@@ -57,6 +57,102 @@ Promotion is manual and deliberate:
 
 CI appends to `history/` on every nightly run but never touches `baseline.json`.
 
+## Concurrency
+
+Everything above runs single-threaded on one connection — ops/sec there is a latency
+reciprocal, not a throughput ceiling. Three classes answer the concurrency questions instead:
+
+    dotnet run -c Release --project benchmarks/Alberto.Benchmarks -- \
+      --filter '*ConcurrentAppendBenchmarks*' '*AppendWithDcbCheckStoreSizeBenchmarks*'
+
+- **`ConcurrentAppendBenchmarks`** (`[Params] Writers` = 1/4/16/32, `Boundary` =
+  `Disjoint`/`Shared`/`NoCondition`). `Disjoint` is the one that matters: every writer owns a
+  tag no other writer touches, so nothing in DCB semantics requires serializing them — but the
+  single-tenant append lock is keyed `alberto-append:{schema}`, one key for the whole store,
+  not per boundary. If `Disjoint` throughput does not scale with `Writers`, that is the lock,
+  not genuine contention, and it is what a per-boundary locking redesign would target.
+  `Shared` is the control that should *not* scale — every writer targets the same tag, so real
+  conflicts exist regardless of locking strategy — and it also answers the conflict-rate half
+  of the question: BenchmarkDotNet has no column for a second metric, so `Shared` prints
+  `[conflict-rate] Writers=… successes=… conflicts=… rate=…` to stdout on cleanup; grep for it.
+  `NoCondition` isolates the lock+insert cost from the conflict-check `SELECT` the other two
+  also pay (no `DcbQuery` at all).
+- **`TenantConcurrentAppendBenchmarks`** — the multi-tenant control for the same question.
+  `[Params] Writers`, `DifferentTenants` (bool). The multi-tenant lock key is
+  `alberto-append:{schema}:{tenantId}`, so `DifferentTenants=true` gives every writer its own
+  lock while `false` puts them all on one, mirroring `Disjoint` above but with a lock that
+  genuinely differs per writer. No `.WithTenancy()` module/DI setup — deliberately the cheapest
+  version: it constructs `PostgresTenantEventStoreBackend` directly against a freshly migrated,
+  unseeded multi-tenant database (see `BenchmarkDatabase.CreateFreshDatabaseAsync`).
+- **`AppendWithDcbCheckStoreSizeBenchmarks`** — `AppendWithDcbCheck` at 10k/100k/1M
+  (`[Params] StoreSize`). [results.md](../docs/benchmarks/results.md#appends) flags "appends
+  carry no store-size axis" as untested for the one append case that actually reads (the DCB
+  conflict-check scan runs under the append lock); this is that axis, on its own class so it
+  doesn't triple `AppendBenchmarks`' two cases that provably don't read. Queries a tag with
+  real accumulated history (`"order":"1"`), not an absent one, but expect the mean to stay flat
+  across StoreSize regardless: `alberto_append_events`'s conflict check is `tag = ANY(...) AND
+  global_position > expected_position LIMIT 1` against the `(tag, global_position)` primary
+  key, so it is always a seek to the tail of one tag's range, never a scan over its
+  accumulated history — an O(log n) index descent in table size either way. A flat result here
+  is itself the answer to "does the check get slower as the store grows", not evidence the
+  benchmark isn't exercising real history.
+
+Every class above uses `OperationsPerInvoke` on a *fixed* total-appends constant (256), split
+evenly across `Writers` — not `Writers`-scaled — because `OperationsPerInvoke` has to be a
+compile-time constant and can't vary with a `[Params]` value. The same amount of work divided
+by the same constant at every `Writers` value is what makes the reported mean a genuine
+per-append time rather than a per-writer-round time.
+
+### What it showed (September 2026)
+
+On a laptop against Postgres in Docker Desktop, with the machine under load (so ±20%):
+
+| Case, 32 writers | Lock held across round trips | Lock + append in one batch |
+|---|---|---|
+| Single-tenant `Disjoint` | 770 µs/append | 500 µs/append |
+| Single-tenant `NoCondition` | 713 µs/append | 421 µs/append |
+| Multi-tenant, same tenant | 785 µs/append | 460 µs/append |
+| Multi-tenant, different tenants | 123 µs/append | 96 µs/append |
+
+Same-lock writers stay flat from 1 to 32 writers in both columns: the store-wide lock is the
+cap, and different lock keys scale about 5x past it. Sending the lock and the append as one
+implicit-transaction batch (instead of `BEGIN` / lock / append / `COMMIT` round trips) took
+network time out of the critical section, which is the first column to second. What is left
+under the lock is server work and the commit's WAL flush, so the remaining headroom for writers
+with disjoint boundaries on one store is only reachable with finer-grained locks.
+`AppendWithDcbCheckStoreSizeBenchmarks` was flat at 1.14 / 1.25 / 1.28 ms for 10k / 100k / 1M.
+
+### Experimental ceiling: per-boundary locking's upper bound
+
+`benchmarks/experiments/no-append-lock.patch` comments out the append lock acquisition
+entirely, to show what `Disjoint` could reach if per-boundary locking existed. It is not a
+runtime flag and must never become one — an env var in the lock-acquisition path is a
+lock-free path production code could hit by accident; a patch that has to be applied by hand to
+a throwaway tree cannot be. **Never commit it applied.**
+
+It is not a true lock-free ceiling: every append function calls `PERFORM pg_notify(...)`
+(`004_StructuredConflictPosition.sql`), and committing backends that queue a notification
+serialize against each other at commit — see the note at
+`Migrations/001_InitialSchema.sql:355` ("each NOTIFY locked the cluster-wide notification
+queue on commit"), made about the checkpoint/dead-letter notify triggers 032 went on to drop.
+The patch removes the advisory lock only — read the result as "without the advisory lock,
+commit-time NOTIFY serialization remains", not as the true unbounded ceiling. The same NOTIFY
+serialization applies to `TenantConcurrentAppendBenchmarks` too: `DifferentTenants=true` removes
+the advisory lock's contribution by giving every writer its own key, but every writer still
+commits through the same NOTIFY path, so it isolates the advisory lock and nothing else.
+
+    git apply benchmarks/experiments/no-append-lock.patch
+    dotnet build -c Release benchmarks/Alberto.Benchmarks
+    dotnet run -c Release --project benchmarks/Alberto.Benchmarks -- \
+      --filter '*ConcurrentAppendBenchmarks*Disjoint*'
+    git apply -R benchmarks/experiments/no-append-lock.patch
+
+At `Writers=32` there is also a client/VM-side ceiling to rule out before crediting the
+advisory lock: 32 concurrent writers competing for CPU on a machine with fewer logical cores,
+or Postgres running inside a Docker Desktop VM, can plateau on the client thread pool or the
+VM's network stack before the lock itself does. If `Disjoint` throughput flattens at high
+`Writers`, check host core count and Docker networking before reading that as the lock.
+
 ## Where this runs
 
 Benchmarks execute only in `.github/workflows/benchmarks.yml`: nightly at 02:00 UTC, or on

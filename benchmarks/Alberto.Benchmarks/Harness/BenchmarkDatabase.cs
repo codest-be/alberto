@@ -142,6 +142,35 @@ public sealed class BenchmarkDatabase : IAsyncDisposable
         await command.ExecuteNonQueryAsync();
     }
 
+    /// <summary>
+    /// Creates and migrates a fresh, unseeded database — for cases that need their own
+    /// isolated store but not a bulk-seeded corpus (concurrency cases write their own small
+    /// number of events per iteration), so the template-clone machinery above would be pure
+    /// overhead. <paramref name="singleTenant"/> selects the migration set; multi-tenant
+    /// concurrency cases need a tenant column to get a real per-tenant lock key.
+    /// </summary>
+    public async Task<string> CreateFreshDatabaseAsync(string label, bool singleTenant)
+    {
+        var database = NextDatabaseName(label);
+
+        await using (var connection = new NpgsqlConnection(_adminConnectionString))
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"""CREATE DATABASE "{database}" """;
+            await command.ExecuteNonQueryAsync();
+        }
+
+        var connectionString = ConnectionStringFor(database, b => b.Pooling = false);
+        var result = PostgresMigrator.Migrate(connectionString, schema: null, singleTenant);
+        if (!result.Successful)
+        {
+            throw new InvalidOperationException($"Migrating database '{database}' failed.", result.Error);
+        }
+
+        return ConnectionStringFor(database);
+    }
+
     private static string TemplateName(int storeSize) => $"bench_tmpl_st_{storeSize}";
 
     private string ConnectionStringFor(string database, Action<NpgsqlConnectionStringBuilder>? configure = null)

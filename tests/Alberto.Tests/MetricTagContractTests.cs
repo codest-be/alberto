@@ -18,7 +18,7 @@ namespace Alberto.Tests;
 /// <remarks>
 /// Coverage:
 /// <list type="bullet">
-///   <item>All 13 instruments registered on the Alberto meter (names + units)</item>
+///   <item>All 14 instruments registered on the Alberto meter (names + units)</item>
 ///   <item>Tag keys for every instrument that carries tags and can be driven in-process
 ///   (the two tenant-lock counters are pinned in <c>TenantProcessorLockTests</c>)</item>
 ///   <item>No-tag assertion for instruments that carry none</item>
@@ -70,6 +70,7 @@ public sealed class MetricTagContractTests
                 ("alberto.processing.duration",   "s"),
                 // Observable gauges
                 ("alberto.processor.lag",         "events"),
+                ("alberto.head.stalled",          "s"),
                 ("alberto.owned_tenant_count",    "tenants"),
             },
             options => options.WithoutStrictOrdering(),
@@ -228,6 +229,39 @@ public sealed class MetricTagContractTests
         match.Should().ContainSingle();
         TagKeys(match[0].Tags).Should().BeEquivalentTo(["processor", "module", "shard"],
             "alberto.processor.lag tag contract is {{processor, module, shard}} for a sharded module");
+    }
+
+    // ── 3b. Head-stall gauge: {module, [shard]} ───────────────────────────────
+    //
+    // No "processor" tag: the stall is a property of the module's (or shard's)
+    // EventStoreHead, not of any one downstream processor.
+
+    [Fact]
+    public void HeadStalled_unsharded_tag_keys_are_module_only()
+    {
+        var moduleKey = $"m-{Guid.NewGuid():N}";
+        AlbertoMetrics.RecordHeadStalled(moduleKey, stalledSeconds: 5);
+
+        var all = CollectObservableGaugeMeasurements<double>("alberto.head.stalled");
+        var match = all.Where(m => TagValue(m.Tags, "module") == moduleKey).ToList();
+
+        match.Should().ContainSingle();
+        TagKeys(match[0].Tags).Should().BeEquivalentTo(["module"],
+            "alberto.head.stalled tag contract is {{module}} for an unsharded module");
+    }
+
+    [Fact]
+    public void HeadStalled_sharded_tag_keys_are_module_and_shard()
+    {
+        var moduleKey = $"m-{Guid.NewGuid():N}";
+        AlbertoMetrics.RecordHeadStalled($"{moduleKey}#eu", stalledSeconds: 5);
+
+        var all = CollectObservableGaugeMeasurements<double>("alberto.head.stalled");
+        var match = all.Where(m => TagValue(m.Tags, "module") == moduleKey).ToList();
+
+        match.Should().ContainSingle();
+        TagKeys(match[0].Tags).Should().BeEquivalentTo(["module", "shard"],
+            "alberto.head.stalled tag contract is {{module, shard}} for a sharded module");
     }
 
     // ── 4. Telemetry-package instruments: {processor, module, [shard]} ───────
