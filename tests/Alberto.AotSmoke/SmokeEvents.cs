@@ -71,8 +71,8 @@ internal static class SmokeEvents
 {
     public static readonly IEventTypeRegistry Registry = EventTypeRegistry.CreateBuilder()
         .Add(SmokeJsonContext.Default.AccountOpened,
-            e => [new("account", ((AccountOpened)e).AccountId)])
+            e => [new("account", e.AccountId)])
         .Add(SmokeJsonContext.Default.FundsDeposited,
-            e => [new("account", ((FundsDeposited)e).AccountId)])
+            e => [new("account", e.AccountId)])
         .Build();
 }

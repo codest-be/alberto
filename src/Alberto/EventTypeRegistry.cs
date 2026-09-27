@@ -156,7 +156,7 @@ public interface IEventTypeRegistry
 ///
 /// var registry = EventTypeRegistry.CreateBuilder()
 ///     .Add(OrdersJsonContext.Default.OrderPlaced,
-///          e =&gt; [new("order", ((OrderPlaced)e).OrderId)])
+///          e =&gt; [new("order", e.OrderId)])
 ///     .Build();
 ///
 /// services.AddAlberto("orders", b =&gt; b.WithPostgres(...).WithEvents(registry));
@@ -293,6 +293,11 @@ public sealed class EventTypeRegistryBuilder
     /// extractor that disagrees writes events a consistency boundary will not match.
     /// </param>
     /// <exception cref="InvalidOperationException"><typeparamref name="TEvent"/> has no <see cref="EventTypeAttribute"/>.</exception>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("ApiDesign", "RS0027:API with optional parameter(s) should have the most parameters amongst its public overloads",
+        Justification = "The typed sibling below is not a longer form of this one: it has the " +
+                        "same arity and a required tags parameter of a different delegate shape. " +
+                        "OverloadResolutionPriority, not parameter count, is what keeps existing " +
+                        "cast-style calls bound here.")]
     [System.Diagnostics.CodeAnalysis.SuppressMessage("ApiDesign", "RS0026:Do not add multiple overloads with optional parameters",
         Justification = "The overloads differ by the leading required id; no call binds to both.")]
     public EventTypeRegistryBuilder Add<TEvent>(JsonTypeInfo<TEvent> jsonTypeInfo, EventTagExtractor? tags = null)
@@ -311,6 +316,11 @@ public sealed class EventTypeRegistryBuilder
     }
 
     /// <summary>Registers <typeparamref name="TEvent"/> under an explicit id and version.</summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("ApiDesign", "RS0027:API with optional parameter(s) should have the most parameters amongst its public overloads",
+        Justification = "The typed sibling below is not a longer form of this one: it has the " +
+                        "same arity and a required tags parameter of a different delegate shape. " +
+                        "OverloadResolutionPriority, not parameter count, is what keeps existing " +
+                        "cast-style calls bound here.")]
     [System.Diagnostics.CodeAnalysis.SuppressMessage("ApiDesign", "RS0026:Do not add multiple overloads with optional parameters",
         Justification = "The overloads differ by the leading required id; no call binds to both.")]
     public EventTypeRegistryBuilder Add<TEvent>(
@@ -324,6 +334,57 @@ public sealed class EventTypeRegistryBuilder
         ArgumentNullException.ThrowIfNull(jsonTypeInfo);
         return Add(new EventTypeDescriptor(id, version, upcastingNotRequired, jsonTypeInfo, tags ?? NoTags));
     }
+
+    /// <summary>
+    /// Registers <typeparamref name="TEvent"/> under the id, version and opt-out its
+    /// <see cref="EventTypeAttribute"/> declares, reading its tags with a typed extractor.
+    /// </summary>
+    /// <param name="jsonTypeInfo">The contract for <typeparamref name="TEvent"/>, e.g. <c>MyContext.Default.OrderPlaced</c>.</param>
+    /// <param name="tags">
+    /// Reads the event's tag values, as <c>(concept, value)</c> pairs, from the typed event:
+    /// <c>e =&gt; [new("order", e.OrderId)]</c>. It must yield exactly what the
+    /// <see cref="TagAttribute"/>s declare; <c>EventTypeRegistryVerifier</c> in Alberto.Testing
+    /// checks that in a test. <see langword="null"/> means no tags, as on the untyped overload:
+    /// a literal <c>null</c> binds here, and must keep meaning what it meant before this existed.
+    /// </param>
+    /// <remarks>
+    /// A lambda that also compiles against <see cref="IEvent"/> (the untyped
+    /// <see cref="EventTagExtractor"/> shape, which usually casts) binds here too; the
+    /// <see cref="System.Runtime.CompilerServices.OverloadResolutionPriorityAttribute"/> makes this
+    /// overload win instead of the call being ambiguous, and the cast is then merely redundant.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException"><typeparamref name="TEvent"/> has no <see cref="EventTypeAttribute"/>.</exception>
+    [System.Runtime.CompilerServices.OverloadResolutionPriority(1)]
+    public EventTypeRegistryBuilder Add<TEvent>(
+        JsonTypeInfo<TEvent> jsonTypeInfo,
+        Func<TEvent, IEnumerable<KeyValuePair<string, object?>>>? tags)
+        where TEvent : IEvent
+        => Add(jsonTypeInfo, Untyped(tags));
+
+    /// <summary>
+    /// Registers <typeparamref name="TEvent"/> under an explicit id and version, reading its tags
+    /// with a typed extractor.
+    /// </summary>
+    /// <remarks>See the attribute-driven typed overload for how it binds against the untyped one.</remarks>
+    [System.Runtime.CompilerServices.OverloadResolutionPriority(1)]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("ApiDesign", "RS0026:Do not add multiple overloads with optional parameters",
+        Justification = "Separated from the untyped overload by the delegate shape of the required tags parameter.")]
+    public EventTypeRegistryBuilder Add<TEvent>(
+        string id,
+        JsonTypeInfo<TEvent> jsonTypeInfo,
+        Func<TEvent, IEnumerable<KeyValuePair<string, object?>>>? tags,
+        int version = 1,
+        bool upcastingNotRequired = false)
+        where TEvent : IEvent
+        => Add(id, jsonTypeInfo, Untyped(tags), version, upcastingNotRequired);
+
+    // Null passes through so the untyped overload's "no tags" default applies. The registry only
+    // ever hands an extractor an event of the descriptor's own CLR type (EventSerializer looks the
+    // descriptor up by @event.GetType()), so the cast cannot fail there. Anything else calling TagExtractor with the wrong type gets an InvalidCastException,
+    // which is the same failure the hand-written cast it replaces would have produced.
+    private static EventTagExtractor? Untyped<TEvent>(Func<TEvent, IEnumerable<KeyValuePair<string, object?>>>? tags)
+        where TEvent : IEvent
+        => tags is null ? null : e => tags((TEvent)e);
 
     /// <summary>Registers a descriptor built elsewhere.</summary>
     public EventTypeRegistryBuilder Add(EventTypeDescriptor descriptor)
