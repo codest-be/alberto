@@ -274,7 +274,8 @@ public class EventRegistryGeneratorTests
         }
     }
 
-    private static (IReadOnlyList<string> Sources, IReadOnlyList<Diagnostic> Diagnostics) Run(string source)
+    internal static (IReadOnlyList<string> Sources, IReadOnlyList<Diagnostic> Diagnostics) Run(
+        string source, IIncrementalGenerator? generator = null)
     {
         var compilation = CSharpCompilation.Create(
             "GeneratorProbe",
@@ -283,7 +284,7 @@ public class EventRegistryGeneratorTests
             ReferenceSet,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
-        var result = CSharpGeneratorDriver.Create(new EventRegistryGenerator())
+        var result = CSharpGeneratorDriver.Create(generator ?? new EventRegistryGenerator())
             .RunGenerators(compilation, TestContext.Current.CancellationToken)
             .GetRunResult();
 

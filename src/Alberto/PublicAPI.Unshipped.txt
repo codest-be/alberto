@@ -4,3 +4,8 @@ Alberto.EventTypeRegistryBuilder.Add<TEvent>(System.Text.Json.Serialization.Meta
 Alberto.AlbertoEventRegistryAttribute
 Alberto.AlbertoEventRegistryAttribute.AlbertoEventRegistryAttribute(System.Type! jsonContext) -> void
 Alberto.AlbertoEventRegistryAttribute.JsonContext.get -> System.Type!
+Alberto.IGeneratedEvolver<TState>
+Alberto.IGeneratedEvolver<TState>.EvolveTable() -> System.Collections.Generic.IReadOnlyList<(System.Type! EventType, System.Func<TState, object!, TState>! Apply)>!
+Alberto.IGeneratedEvolver<TState>.GeneratedFor.get -> System.Type!
+Alberto.Upcasting.UpcasterDeclarationBuilder<TEvent>.From<TOld, TNew>(int fromVersion, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TOld!>! oldShape, System.Func<TOld!, TNew!>! transform) -> Alberto.Upcasting.UpcasterDeclarationBuilder<TEvent>!
+Alberto.Upcasting.UpcasterDeclarationBuilder<TEvent>.From<TOld>(int fromVersion, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TOld!>! oldShape, System.Func<TOld!, TEvent>! transform) -> Alberto.Upcasting.UpcasterDeclarationBuilder<TEvent>!

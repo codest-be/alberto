@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 
 namespace Alberto.Upcasting;
 
@@ -15,7 +16,9 @@ internal sealed record UpcasterStep(
     // The CLR type expected at this version (for JSON deserialization).
     Type FromType,
     // Converts an instance of FromType to the next version's object.
-    Func<object, object> Transform);
+    Func<object, object> Transform,
+    // The contract to read FromType with; null reads it with the event's own options.
+    JsonTypeInfo? FromShape = null);
 
 // ---------------------------------------------------------------------------
 // Public declaration
@@ -33,8 +36,9 @@ public sealed class UpcasterDeclaration
     {
         EventTypeId = eventTypeId;
         _steps = steps;
-        // Current version is one higher than the last step's source version.
-        CurrentVersion = steps.Count > 0 ? steps[^1].FromVersion + 1 : 1;
+        // Current version is one higher than the last step's source version. Build() refuses an
+        // empty chain, so there always is one.
+        CurrentVersion = steps[^1].FromVersion + 1;
     }
 
     /// <summary>The event type ID this upcaster applies to (e.g., "order-placed").</summary>
@@ -71,10 +75,11 @@ public sealed class UpcasterDeclaration
                 $"Upcaster for '{EventTypeId}' has no step for version {fromVersion}. " +
                 $"Registered steps cover versions {string.Join(", ", _steps.Select(s => s.FromVersion))}.");
 
-        // First step: deserialize JSON → step.FromType, then transform. The contract comes from
-        // the event's own options, so a source-generated context has to list the old shapes too.
+        // First step: deserialize JSON → step.FromType, then transform. Unless the step was given
+        // its own contract, it comes from the event's options, so a source-generated context has
+        // to list the old shapes too.
         var firstStep = _steps[startIndex];
-        object current = JsonSerializer.Deserialize(json, options.GetTypeInfo(firstStep.FromType))
+        object current = JsonSerializer.Deserialize(json, firstStep.FromShape ?? options.GetTypeInfo(firstStep.FromType))
             ?? throw new InvalidOperationException(
                 $"Failed to deserialize '{EventTypeId}' v{fromVersion} as {firstStep.FromType.Name}.");
         current = firstStep.Transform(current);

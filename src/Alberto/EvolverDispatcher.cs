@@ -1,4 +1,5 @@
 using System.Collections.Frozen;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Text.Json;
@@ -30,6 +31,26 @@ internal sealed class EvolverDispatcher<TState> where TState : new()
         // the trimmer guarantees) that the runtime type keeps every IEvolve<,> it implements.
         var evolverType = evolver.GetType();
 
+        // A partial evolver gets its table from the source generator: no GetInterfaces, no
+        // Expression.Compile. Only for the exact type it was generated for; see GeneratedFor.
+        if (evolver is IGeneratedEvolver<TState> generated && generated.GeneratedFor == evolverType)
+        {
+            foreach (var (eventType, apply) in generated.EvolveTable())
+                dispatcher._handlers[EventTypeAttribute.GetEventTypeId(eventType)] = new Handler(eventType, apply);
+        }
+        else
+        {
+            dispatcher.AddReflectedHandlers(evolver, evolverType);
+        }
+
+        dispatcher._handledEventTypes = dispatcher._handlers.Keys.ToFrozenSet(StringComparer.Ordinal);
+        return dispatcher;
+    }
+
+    private void AddReflectedHandlers(
+        Evolver<TState> evolver,
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)] Type evolverType)
+    {
         var evolveInterfaces = evolverType.GetInterfaces()
             .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IEvolve<,>))
             .Where(i => i.GetGenericArguments()[0] == typeof(TState));
@@ -60,11 +81,8 @@ internal sealed class EvolverDispatcher<TState> where TState : new()
                 .Lambda<Func<TState, object, TState>>(body, stateParam, eventParam)
                 .Compile();
 
-            dispatcher._handlers[eventTypeId] = new Handler(eventType, applyDelegate);
+            _handlers[eventTypeId] = new Handler(eventType, applyDelegate);
         }
-
-        dispatcher._handledEventTypes = dispatcher._handlers.Keys.ToFrozenSet(StringComparer.Ordinal);
-        return dispatcher;
     }
 
     public TState Evolve(TState state, IEventEnvelope envelope)
