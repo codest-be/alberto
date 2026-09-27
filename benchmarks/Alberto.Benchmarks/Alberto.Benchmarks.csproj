@@ -22,6 +22,9 @@
 
   <ItemGroup>
     <ProjectReference Include="../../src/Alberto/Alberto.csproj" />
+    <!-- For EvolveBenchmarks' partial evolver; a package consumer gets it from the Alberto nupkg. -->
+    <ProjectReference Include="../../src/Alberto.SourceGeneration/Alberto.SourceGeneration.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <ProjectReference Include="../../src/Alberto.Postgres/Alberto.Postgres.csproj" />
     <ProjectReference Include="../Alberto.Benchmarks.Core/Alberto.Benchmarks.Core.csproj" />
   </ItemGroup>

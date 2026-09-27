@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization.Metadata;
+
 namespace Alberto.Upcasting;
 
 /// <summary>
@@ -87,6 +89,43 @@ public sealed class UpcasterDeclarationBuilder<TEvent> where TEvent : IEvent
     {
         ValidateVersion(fromVersion);
         _steps.Add(new UpcasterStep(fromVersion, typeof(TOld), obj => transform((TOld)obj)));
+        return this;
+    }
+
+    /// <summary>
+    /// <see cref="From{TOld, TNew}(int, Func{TOld, TNew})"/>, reading the old payload with
+    /// <paramref name="oldShape"/> instead of the event's own options. Use it when the old shape
+    /// lives in a different <see cref="System.Text.Json.Serialization.JsonSerializerContext"/>
+    /// from the event, or to pin the contract a stored payload is read with.
+    /// </summary>
+    public UpcasterDeclarationBuilder<TEvent> From<TOld, TNew>(
+        int fromVersion,
+        JsonTypeInfo<TOld> oldShape,
+        Func<TOld, TNew> transform)
+        where TOld : class
+        where TNew : class
+    {
+        ArgumentNullException.ThrowIfNull(oldShape);
+        ValidateVersion(fromVersion);
+        _steps.Add(new UpcasterStep(fromVersion, typeof(TOld), obj => transform((TOld)obj), oldShape));
+        return this;
+    }
+
+    /// <summary>
+    /// <see cref="From{TOld}(int, Func{TOld, TEvent})"/>, reading the old payload with
+    /// <paramref name="oldShape"/> instead of the event's own options. Use it when the old shape
+    /// lives in a different <see cref="System.Text.Json.Serialization.JsonSerializerContext"/>
+    /// from the event, or to pin the contract a stored payload is read with.
+    /// </summary>
+    public UpcasterDeclarationBuilder<TEvent> From<TOld>(
+        int fromVersion,
+        JsonTypeInfo<TOld> oldShape,
+        Func<TOld, TEvent> transform)
+        where TOld : class
+    {
+        ArgumentNullException.ThrowIfNull(oldShape);
+        ValidateVersion(fromVersion);
+        _steps.Add(new UpcasterStep(fromVersion, typeof(TOld), obj => transform((TOld)obj), oldShape));
         return this;
     }
 
