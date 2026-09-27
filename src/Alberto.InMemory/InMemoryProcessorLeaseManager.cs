@@ -1,13 +1,12 @@
 using Alberto.Subscriptions;
 
-namespace Alberto.Tests.Fencing;
+namespace Alberto.InMemory;
 
 /// <summary>
-/// Test-only in-memory implementation of <see cref="IProcessorLeaseManager"/>.
-/// Stores leases in a dictionary backed by a <see cref="TimeProvider"/> for
-/// controllable expiry. Uses an atomically incrementing counter for fence tokens,
-/// mirroring the strictly-increasing guarantee of the PostgreSQL sequence in
-/// <c>alberto_fence_tokens</c>.
+/// In-process implementation of <see cref="IProcessorLeaseManager"/>. Stores leases in a
+/// dictionary backed by a <see cref="TimeProvider"/> for controllable expiry. Uses an
+/// atomically incrementing counter for fence tokens, mirroring the strictly-increasing
+/// guarantee of the PostgreSQL sequence in <c>alberto_fence_tokens</c>.
 /// </summary>
 /// <remarks>
 /// State is process-local and not shared between instances. All methods are
@@ -16,7 +15,7 @@ namespace Alberto.Tests.Fencing;
 /// token from the monotonic counter. Only <see cref="RenewLeasesAsync"/> extends
 /// an existing lease without changing its token.
 /// </remarks>
-internal sealed class TestProcessorLeaseManager : IProcessorLeaseManager
+internal sealed class InMemoryProcessorLeaseManager : IProcessorLeaseManager
 {
     private readonly TimeProvider _clock;
     private long _tokenSequence;
@@ -39,7 +38,7 @@ internal sealed class TestProcessorLeaseManager : IProcessorLeaseManager
     /// <param name="leaseDuration">
     /// How long a lease remains valid after acquisition or renewal. Defaults to 30 seconds.
     /// </param>
-    internal TestProcessorLeaseManager(
+    internal InMemoryProcessorLeaseManager(
         TimeProvider? clock = null,
         TimeSpan? leaseDuration = null)
     {
@@ -49,7 +48,7 @@ internal sealed class TestProcessorLeaseManager : IProcessorLeaseManager
 
     /// <summary>
     /// Returns the active lease record for a processor, or <see langword="null"/> if the
-    /// lease does not exist or has expired. Called by <see cref="TestFencedCheckpointStore"/>
+    /// lease does not exist or has expired. Called by <see cref="InMemoryFencedCheckpointStore"/>
     /// to check the lease before writing a checkpoint.
     /// </summary>
     internal LeaseRecord? GetActiveLease(string consumerId, string processorId)

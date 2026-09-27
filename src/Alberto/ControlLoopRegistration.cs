@@ -163,8 +163,7 @@ internal static class ControlLoopRegistration
             var replicaId = options.Leases.EffectiveReplicaId;
 
             // Backstop for a backend that permits leases but registers no manager. The built-in
-            // backends are already covered earlier: the in-memory descriptor rejects leases at
-            // validation time with ALB0024, and Postgres registers a manager. What reaches here
+            // backends are already covered: both in-memory and Postgres register one. What reaches here
             // is a custom IAlbertoBackendDescriptor whose Validate does not object — resolve with
             // GetKeyedService so that becomes a diagnostic rather than a raw DI exception.
             var leaseManager = sp.GetKeyedService<IProcessorLeaseManager>(moduleKey)

@@ -34,9 +34,9 @@ public class EventTypeRegistryTests
     /// <summary>What an AOT application writes by hand for Alberto.Tests.SampleEvents.</summary>
     private static IEventTypeRegistry HandBuilt() => EventTypeRegistry.CreateBuilder()
         .Add(SampleEventsJsonContext.Default.VersionedOrder,
-            e => [new("order", ((VersionedOrder)e).OrderId)])
+            e => [new("order", e.OrderId)])
         .Add(SampleEventsJsonContext.Default.PlainNote,
-            e => [new("note", ((PlainNote)e).NoteId)])
+            e => [new("note", e.NoteId)])
         .Build();
 
     private static IEventTypeRegistry Scanned() =>

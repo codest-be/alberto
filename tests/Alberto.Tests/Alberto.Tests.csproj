@@ -26,6 +26,7 @@
              is what lets them assert on the exact diagnostics for a given snippet. Letting Roslyn
              load it over this project instead would only tell us that this project is clean. -->
         <ProjectReference Include="../../src/Alberto.Commands.Analyzers/Alberto.Commands.Analyzers.csproj" />
+        <ProjectReference Include="../../src/Alberto.SourceGeneration/Alberto.SourceGeneration.csproj" />
         <ProjectReference Include="../../src/Alberto.InMemory/Alberto.InMemory.csproj" />
         <ProjectReference Include="../../src/Alberto.Postgres/Alberto.Postgres.csproj" />
         <!-- Referenced explicitly, not left to flow in transitively via Alberto.Cli: PostgresAdminDataAccess

@@ -88,9 +88,8 @@ public class ControlLoopConfigurationTests
     [Fact]
     public void Leases_are_declared_through_the_options_record()
     {
-        // Postgres, not in-memory: the in-memory backend provides no IProcessorLeaseManager,
-        // so enabling leases on it is rejected at startup by ALB0024. Nothing connects here —
-        // PostgresBackendDescriptor.Validate only checks the connection string is present.
+        // Postgres for variety — the in-memory backend also supports leases. Nothing connects
+        // here: PostgresBackendDescriptor.Validate only checks the connection string is present.
         var services = new ServiceCollection();
         services.AddAlberto("orders", module => module
             .WithPostgres(o => o with { ConnectionString = "Host=localhost;Database=alberto" })
@@ -151,7 +150,7 @@ public class ControlLoopConfigurationTests
     /// different results: the original gives pollingInterval * 3, the mutant gives 5s.
     /// </summary>
     [Fact]
-    public void ProjectionCatchUp_default_timeout_is_three_polling_intervals_when_that_exceeds_five_seconds()
+    public async Task ProjectionCatchUp_default_timeout_is_three_polling_intervals_when_that_exceeds_five_seconds()
     {
         // PollingInterval = 2s → defaultTimeout = Max(5s, 2s × 3) = Max(5s, 6s) = 6s.
         // The arithmetic mutant (÷ 3) gives Max(5s, 0.667s) = 5s, which fails the assertion.
@@ -162,7 +161,8 @@ public class ControlLoopConfigurationTests
             .WithInMemory()
             .WithControlLoop(o => o with { PollingInterval = pollingInterval }));
 
-        using var sp = services.BuildServiceProvider();
+        // The checkpoint store the in-memory backend registers is IAsyncDisposable-only.
+        await using var sp = services.BuildServiceProvider();
         var catchUp = sp.GetRequiredKeyedService<ProjectionCatchUp>("orders");
 
         var defaultTimeout = (TimeSpan)typeof(ProjectionCatchUp)
@@ -174,7 +174,7 @@ public class ControlLoopConfigurationTests
     }
 
     [Fact]
-    public void ProjectionCatchUp_default_timeout_floors_at_five_seconds_for_short_polling_intervals()
+    public async Task ProjectionCatchUp_default_timeout_floors_at_five_seconds_for_short_polling_intervals()
     {
         // PollingInterval = 250ms → Max(5s, 0.75s) = 5s (the floor applies).
         var services = new ServiceCollection();
@@ -182,7 +182,8 @@ public class ControlLoopConfigurationTests
             .WithInMemory()
             .WithControlLoop(o => o with { PollingInterval = TimeSpan.FromMilliseconds(250) }));
 
-        using var sp = services.BuildServiceProvider();
+        // The checkpoint store the in-memory backend registers is IAsyncDisposable-only.
+        await using var sp = services.BuildServiceProvider();
         var catchUp = sp.GetRequiredKeyedService<ProjectionCatchUp>("orders");
 
         var defaultTimeout = (TimeSpan)typeof(ProjectionCatchUp)

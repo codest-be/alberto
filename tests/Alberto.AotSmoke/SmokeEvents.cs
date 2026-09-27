@@ -46,7 +46,8 @@ public sealed record AccountState
     public string? Currency { get; init; }
 }
 
-public sealed class AccountEvolver : Evolver<AccountState>,
+// Partial, so its dispatch table is generated: no GetInterfaces, no Expression.Compile.
+public sealed partial class AccountEvolver : Evolver<AccountState>,
     IEvolve<AccountState, AccountOpened>,
     IEvolve<AccountState, FundsDeposited>
 {
@@ -57,7 +58,7 @@ public sealed class AccountEvolver : Evolver<AccountState>,
         => state with { Balance = state.Balance + e.Amount, Currency = e.Currency };
 }
 
-// ---- the AOT wiring: a JSON context and a hand-written registry ----------------------------
+// ---- the AOT wiring: a JSON context and a generated registry -------------------------------
 
 // Case-insensitive to match the options EventSerializer uses on the reflection path.
 [JsonSourceGenerationOptions(PropertyNameCaseInsensitive = true)]
@@ -67,12 +68,6 @@ public sealed class AccountEvolver : Evolver<AccountState>,
 [JsonSerializable(typeof(AccountOpenedMessage))]
 internal sealed partial class SmokeJsonContext : JsonSerializerContext;
 
-internal static class SmokeEvents
-{
-    public static readonly IEventTypeRegistry Registry = EventTypeRegistry.CreateBuilder()
-        .Add(SmokeJsonContext.Default.AccountOpened,
-            e => [new("account", ((AccountOpened)e).AccountId)])
-        .Add(SmokeJsonContext.Default.FundsDeposited,
-            e => [new("account", ((FundsDeposited)e).AccountId)])
-        .Build();
-}
+// Registry is emitted by Alberto's source generator: every [EventType] above, tags read by code.
+[AlbertoEventRegistry(typeof(SmokeJsonContext))]
+internal static partial class SmokeEvents;

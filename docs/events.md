@@ -325,3 +325,79 @@ When the control loop feeds them to a projection, `EventSerializer.Deserialize` 
 an `OrderPlaced` with `Currency = "USD"`.
 
 No migration of existing rows is needed; the upcaster runs on every read of an old event.
+
+## Native AOT and trimming
+
+`WithEventsFrom(assembly)` finds event types by reflection, and a plain evolver is dispatched
+through `GetInterfaces` and `Expression.Compile`. Both work in a JIT app. Under Native AOT the
+first is unavailable and the second only runs interpreted. The `Alberto` package ships a source
+generator that replaces both with compiled code. There is nothing extra to reference.
+
+### Generate the registry
+
+List every event on a `JsonSerializerContext`, then put `[AlbertoEventRegistry]` on a static
+partial class. The generator adds a `Registry` property to it:
+
+```csharp
+[JsonSourceGenerationOptions(PropertyNameCaseInsensitive = true)]
+[JsonSerializable(typeof(OrderPlaced))]
+[JsonSerializable(typeof(OrderPlacedV1))]      // old shapes read by upcasters, too
+internal partial class OrdersJsonContext : JsonSerializerContext;
+
+[AlbertoEventRegistry(typeof(OrdersJsonContext))]
+public static partial class OrdersEvents;      // generated: OrdersEvents.Registry
+
+services.AddAlberto("orders", builder => builder
+    .WithPostgres(o => o with { ConnectionString = cs })
+    .WithEvents(OrdersEvents.Registry)
+    .AddUpcaster(decl));
+```
+
+`Registry` holds what `WithEventsFrom` would find: every concrete `IEvent` in the assembly that
+carries `[EventType]`. Ids, versions and tag extraction are generated as code, and each event
+is read through its `JsonTypeInfo` from the context. `PropertyNameCaseInsensitive = true`
+matches the options a reflection-built serializer uses.
+
+### Make evolvers partial
+
+Declare an evolver `partial` (along with every type that contains it). The generator then
+writes its dispatch table: one entry for each `IEvolve<TState, TEvent>` it implements, the
+same set reflection would find.
+
+```csharp
+public sealed partial class OrderEvolver : Evolver<OrderState>,
+    IEvolve<OrderState, OrderPlaced>,
+    IEvolve<OrderState, OrderShipped> { ... }
+```
+
+A class that derives from a partial evolver falls back to reflection, unless it is partial too.
+Evolvers that are not partial keep working, so this is opt-in for each evolver.
+
+### Read old shapes in upcasters
+
+Pass the old shape's `JsonTypeInfo` to each upcaster step. Name the type argument explicitly:
+if you leave it to inference, the one-type and two-type overloads are ambiguous.
+
+```csharp
+DeclareUpcaster.For<OrderPlaced>("order-placed")
+    .From<OrderPlacedV1>(1, OrdersJsonContext.Default.OrderPlacedV1, v1 => new OrderPlaced(...))
+    .Build();
+```
+
+A step without a `JsonTypeInfo` resolves the old shape by reflection, which Native AOT turns
+off, so under AOT every step needs one.
+
+### Diagnostics
+
+| Id | Severity | Meaning |
+|---|---|---|
+| ALB3001 | Error | Two event types share an `[EventType]` id |
+| ALB3002 | Error | An event is not `[JsonSerializable]` on the registry's context |
+| ALB3003 | Warning | A `[Tag]` property's type does not override `ToString()`, so the tag would be the type name |
+| ALB3004 | Warning | An evolver is not `partial`, so it is dispatched by reflection. This is reported only in a compilation that declares `[AlbertoEventRegistry]` |
+
+A compilation without `[AlbertoEventRegistry]` gets no registry and none of these diagnostics.
+Its partial evolvers still get generated tables.
+
+`tests/Alberto.AotSmoke` is a complete example. CI publishes it as a native binary and runs it
+against Postgres.

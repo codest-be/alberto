@@ -68,7 +68,7 @@ try
         .WithPostgres(o => o with { ConnectionString = connectionString, Schema = schema, AutoMigrate = false })
         .WithEvents(SmokeEvents.Registry)
         .AddUpcaster(DeclareUpcaster.For<FundsDeposited>(FundsDeposited.Id)
-            .From<FundsDepositedV1>(1, v1 => new FundsDeposited(v1.AccountId, v1.Amount, "EUR"))
+            .From<FundsDepositedV1>(1, SmokeJsonContext.Default.FundsDepositedV1, v1 => new FundsDeposited(v1.AccountId, v1.Amount, "EUR"))
             .Build())
         .WithControlLoop(o => o with { PollingInterval = TimeSpan.FromMilliseconds(50) })
         .AddBatchConsumeMiddleware(_ => TelemetryBatchConsumeMiddleware.Create())
@@ -90,6 +90,9 @@ try
     var store = host.Services.CreateScope().ServiceProvider.GetRequiredKeyedService<AlbertoStore>(ModuleKey);
     var eventStore = host.Services.GetRequiredKeyedService<IEventStore>(ModuleKey);
     var evolver = new AccountEvolver();
+    // The reflection fallback also runs under AOT (interpreted), so passing proves nothing unless
+    // the generated table is what the dispatcher gets.
+    Check(evolver is IGeneratedEvolver<AccountState>, "AccountEvolver has no generated dispatch table");
 
     // ---- append with tags -----------------------------------------------------------------
     await StepAsync("append with tags", async () =>
