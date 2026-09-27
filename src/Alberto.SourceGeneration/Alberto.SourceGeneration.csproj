@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <!-- netstandard2.0 is not a choice: Roslyn loads generators into the compiler process. -->
+        <TargetFramework>netstandard2.0</TargetFramework>
+        <LangVersion>latest</LangVersion>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+        <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+
+        <!-- Not a package of its own: packed into Alberto under analyzers/dotnet/cs by that
+             project's PackSourceGenerator target, the same arrangement as Alberto.Commands.Analyzers. -->
+        <IsPackable>false</IsPackable>
+        <IncludeBuildOutput>false</IncludeBuildOutput>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <!-- The lowest Roslyn the generator needs (IIncrementalGenerator arrived in 4.0), for the
+             same forward-binding reason as the analyzer. -->
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
+    </ItemGroup>
+</Project>

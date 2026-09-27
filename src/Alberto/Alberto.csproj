@@ -52,4 +52,28 @@
         <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions"/>
         <PackageReference Include="OpenTelemetry.Api"/>
     </ItemGroup>
+
+    <ItemGroup>
+        <!-- Built before pack asks for its path; not referenced, and not run over this project. -->
+        <ProjectReference Include="..\Alberto.SourceGeneration\Alberto.SourceGeneration.csproj"
+                          ReferenceOutputAssembly="false"
+                          PrivateAssets="all"/>
+    </ItemGroup>
+
+    <!-- Ship the registry generator ([AlbertoEventRegistry], ALB3001-3003) with the package, the
+         same way Alberto.Commands ships its analyzer: NuGet treats analyzers/dotnet/cs as an
+         analyzer reference. It emits nothing for a consumer that does not use the attribute. -->
+    <Target Name="PackSourceGenerator" BeforeTargets="_GetPackageFiles">
+        <MSBuild Projects="..\Alberto.SourceGeneration\Alberto.SourceGeneration.csproj"
+                 Targets="GetTargetPath"
+                 Properties="Configuration=$(Configuration)">
+            <Output TaskParameter="TargetOutputs" ItemName="_AlbertoSourceGeneratorAssembly"/>
+        </MSBuild>
+        <ItemGroup>
+            <None Include="@(_AlbertoSourceGeneratorAssembly)"
+                  Pack="true"
+                  PackagePath="analyzers/dotnet/cs"
+                  Visible="false"/>
+        </ItemGroup>
+    </Target>
 </Project>
