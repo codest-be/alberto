@@ -36,8 +36,9 @@ public sealed class UpcasterDeclaration
     {
         EventTypeId = eventTypeId;
         _steps = steps;
-        // Current version is one higher than the last step's source version.
-        CurrentVersion = steps.Count > 0 ? steps[^1].FromVersion + 1 : 1;
+        // Current version is one higher than the last step's source version. Build() refuses an
+        // empty chain, so there always is one.
+        CurrentVersion = steps[^1].FromVersion + 1;
     }
 
     /// <summary>The event type ID this upcaster applies to (e.g., "order-placed").</summary>
