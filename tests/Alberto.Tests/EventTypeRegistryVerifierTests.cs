@@ -38,10 +38,26 @@ public sealed record CustomerRenamed(
     [property: Tag("customer")] CustomerId CustomerId,
     string Name) : IEvent;
 
+/// <summary>A get-only tag property: the probe has to fill its compiler-generated backing field.</summary>
+[EventType("verifier-ledger-closed")]
+public sealed class LedgerClosed(string ledger) : IEvent
+{
+    [Tag("ledger")] public string Ledger { get; } = ledger;
+}
+
+/// <summary>A computed tag property: nothing the probe can set.</summary>
+[EventType("verifier-computed-tag")]
+public sealed class ComputedTag : IEvent
+{
+    [Tag("kind")] public string Kind => "fixed";
+}
+
 [JsonSourceGenerationOptions(PropertyNameCaseInsensitive = true)]
 [JsonSerializable(typeof(TransferMade))]
 [JsonSerializable(typeof(ShipmentBooked))]
 [JsonSerializable(typeof(CustomerRenamed))]
+[JsonSerializable(typeof(LedgerClosed))]
+[JsonSerializable(typeof(ComputedTag))]
 internal sealed partial class VerifierJsonContext : JsonSerializerContext;
 
 public class EventTypeRegistryVerifierTests
@@ -229,5 +245,79 @@ public class EventTypeRegistryVerifierTests
         FluentActions.Invoking(() => EventTypeRegistryVerifier.Verify(registry,
                 new TransferMade("a", "b", 1m), new TransferMade("c", "d", 2m)))
             .Should().Throw<ArgumentException>().WithMessage("*More than one sample*");
+    }
+
+    [Fact]
+    public void Verify_rejects_null_arguments()
+    {
+        var registry = Correct().Build();
+
+        FluentActions.Invoking(() => EventTypeRegistryVerifier.Verify(null!))
+            .Should().Throw<ArgumentNullException>().WithParameterName("registry");
+        FluentActions.Invoking(() => EventTypeRegistryVerifier.Verify(registry, null!))
+            .Should().Throw<ArgumentNullException>().WithParameterName("samples");
+        FluentActions.Invoking(() => EventTypeRegistryVerifier.Verify(registry, [null!]))
+            .Should().Throw<ArgumentNullException>().WithParameterName("samples");
+    }
+
+    [Fact]
+    public void Verify_lists_failures_in_ordinal_id_order()
+    {
+        var registry = EventTypeRegistry.CreateBuilder()
+            .Add(Json.TransferMade, e => [new("from", e.FromAccount)])
+            .Add(Json.ShipmentBooked, e => [new("shipment", e.ShipmentId)])
+            .Build();
+
+        var act = () => EventTypeRegistryVerifier.Verify(registry);
+
+        act.Should().Throw<SpecificationException>()
+            .WithMessage("*'verifier-shipment'*'verifier-transfer'*");
+    }
+
+    [Fact]
+    public void Verify_reports_an_unprobeable_type_once_and_does_not_run_its_extractor()
+    {
+        var registry = EventTypeRegistry.CreateBuilder()
+            .Add(Json.CustomerRenamed, e => [new("customer", e.CustomerId)])
+            .Build();
+
+        var act = () => EventTypeRegistryVerifier.Verify(registry);
+
+        act.Should().Throw<SpecificationException>()
+            .Where(ex => ex.Message.Split('\n').Length == 2 && !ex.Message.Contains("threw"));
+    }
+
+    [Fact]
+    public void Verify_probes_a_get_only_tag_property_through_its_backing_field()
+    {
+        // Without the backing field set, Ledger stays null and the extractor yields "unset",
+        // which the reflection path does not.
+        var registry = EventTypeRegistry.CreateBuilder()
+            .Add(Json.LedgerClosed, e => [new("ledger", e.Ledger ?? "unset")])
+            .Build();
+
+        EventTypeRegistryVerifier.Verify(registry);
+    }
+
+    [Fact]
+    public void Verify_asks_for_a_sample_when_a_tag_property_cannot_be_set()
+    {
+        var registry = EventTypeRegistry.CreateBuilder()
+            .Add(Json.ComputedTag, e => [new("kind", e.Kind)])
+            .Build();
+
+        var act = () => EventTypeRegistryVerifier.Verify(registry);
+
+        act.Should().Throw<SpecificationException>()
+            .WithMessage("*'verifier-computed-tag'*tag property 'Kind' has no setter or compiler-generated backing field*Pass a sample*");
+    }
+
+    [Fact]
+    public void Builder_and_descriptor_reject_invalid_arguments()
+    {
+        FluentActions.Invoking(() => EventTypeRegistry.CreateBuilder().Add((EventTypeDescriptor)null!))
+            .Should().Throw<ArgumentNullException>();
+        FluentActions.Invoking(() => new EventTypeDescriptor("x", 0, false, Json.TransferMade, _ => []))
+            .Should().Throw<ArgumentOutOfRangeException>();
     }
 }
