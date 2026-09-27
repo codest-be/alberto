@@ -215,4 +215,43 @@ public sealed class InMemoryProcessorLeaseManagerTests
 
         leases.Should().BeEmpty();
     }
+
+    [Fact]
+    public void LeaseDuration_honours_a_non_default_argument()
+    {
+        new InMemoryProcessorLeaseManager(_clock, TimeSpan.FromSeconds(7)).LeaseDuration
+            .Should().Be(TimeSpan.FromSeconds(7));
+    }
+
+    [Fact]
+    public async Task GetActiveLease_ExactlyAtExpiry_ReturnsNull()
+    {
+        await _manager.TryAcquireAsync("consumer", "proc", "replica-1");
+
+        _clock.Advance(TimeSpan.FromSeconds(30) - TimeSpan.FromTicks(1));
+        _manager.GetActiveLease("consumer", "proc").Should().NotBeNull();
+
+        _clock.Advance(TimeSpan.FromTicks(1));
+        _manager.GetActiveLease("consumer", "proc").Should().BeNull();
+    }
+
+    [Fact]
+    public async Task TryAcquireAsync_BySameReplicaAfterExpiry_StartsANewHoldingPeriod()
+    {
+        await _manager.TryAcquireAsync("consumer", "proc", "replica-1");
+
+        _clock.Advance(TimeSpan.FromSeconds(31));
+        await _manager.TryAcquireAsync("consumer", "proc", "replica-1");
+
+        (await _manager.GetAllLeasesAsync("consumer")).Single().AcquiredAt.Should().Be(_clock.GetUtcNow());
+    }
+
+    [Fact]
+    public async Task RenewLeasesAsync_ExactlyAtExpiry_DoesNotRenew()
+    {
+        await _manager.TryAcquireAsync("consumer", "proc", "replica-1");
+        _clock.Advance(TimeSpan.FromSeconds(30));
+
+        (await _manager.RenewLeasesAsync("consumer", "replica-1")).Should().BeEmpty();
+    }
 }
