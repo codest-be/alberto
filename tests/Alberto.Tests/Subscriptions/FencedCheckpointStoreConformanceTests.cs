@@ -1,6 +1,7 @@
 using Alberto.Subscriptions;
 using Alberto.Testing.Xunit;
 using Alberto.InMemory;
+using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
@@ -77,4 +78,43 @@ public sealed class InMemoryFencedCheckpointStoreAdapterTests
                 consumerId: "consumer", replicaId: "replica", fenceToken: 1,
                 useProcessorLeaseFencing: false));
     }
+
+    // A stored fence token of 7 outranks the lease's token 1, so the fenced write is refused
+    // only if the unfenced operation left the token alone.
+    [Theory]
+    [InlineData("save")]
+    [InlineData("rewind")]
+    public async Task Unfenced_writes_preserve_the_stored_fence_token(string operation)
+    {
+        var leaseManager = new InMemoryProcessorLeaseManager();
+        var store = new InMemoryFencedCheckpointStore(leaseManager);
+        store.InjectCheckpointFenceToken("proc", position: 10, fenceToken: 7);
+        var lease = await leaseManager.TryAcquireAsync("consumer", "proc", "replica");
+
+        if (operation == "save") await store.SaveAsync("proc", 20);
+        else await store.RewindAsync("proc", 3);
+
+        (await store.SaveIfLeaseHeldAsync("proc", 30, "consumer", "replica", lease!.FenceToken, useProcessorLeaseFencing: true))
+            .Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ListProcessorIdsAsync_returns_every_checkpointed_processor()
+    {
+        var store = new InMemoryFencedCheckpointStore(new InMemoryProcessorLeaseManager());
+        await store.SaveAsync("a", 1);
+        await store.RewindAsync("b", 2);
+
+        (await store.ListProcessorIdsAsync()).Should().BeEquivalentTo(["a", "b"]);
+    }
+}
+
+/// <summary>
+/// The in-memory fenced store is the module's <see cref="ICheckpointStore"/> now, so it has to meet
+/// the plain checkpoint contract too: GREATEST on save, rewind, reset, inventory.
+/// </summary>
+public sealed class InMemoryFencedCheckpointStoreCheckpointTests : CheckpointStoreSpecification
+{
+    protected override Task<ICheckpointStore> CreateStore() =>
+        Task.FromResult<ICheckpointStore>(new InMemoryFencedCheckpointStore(new InMemoryProcessorLeaseManager()));
 }
