@@ -7,6 +7,7 @@
     <Project Path="src/Alberto/Alberto.csproj" />
     <Project Path="src/Alberto.Commands/Alberto.Commands.csproj" />
     <Project Path="src/Alberto.Commands.Analyzers/Alberto.Commands.Analyzers.csproj" />
+    <Project Path="src/Alberto.SourceGeneration/Alberto.SourceGeneration.csproj" />
     <Project Path="src/Alberto.InMemory/Alberto.InMemory.csproj" />
     <Project Path="src/Alberto.Postgres/Alberto.Postgres.csproj" />
     <Project Path="src/Alberto.Telemetry/Alberto.Telemetry.csproj" />
