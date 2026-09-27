@@ -307,7 +307,7 @@ application's dependency graph.
 |---|---|
 | [Getting started](https://github.com/codest-be/alberto/blob/main/docs/getting-started.md) | A complete runnable sample, built up piece by piece |
 | [Concepts](https://github.com/codest-be/alberto/blob/main/docs/concepts.md) | Events, tags, queries, boundaries, positions, checkpoints |
-| [Event schema versioning](https://github.com/codest-be/alberto/blob/main/docs/events.md) | Permanent slugs, the `_version` tag, upcasters and their limits |
+| [Event schema versioning](https://github.com/codest-be/alberto/blob/main/docs/events.md) | Permanent slugs, the `_version` tag, upcasters and their limits, Native AOT |
 | [Projections](https://github.com/codest-be/alberto/blob/main/docs/projections.md) | Declaring them, storing them, rebuilding them live |
 | [Reactors and the outbox](https://github.com/codest-be/alberto/blob/main/docs/reactors-and-outbox.md) | Side effects and publishing to the outside world |
 | [Multi-tenancy](https://github.com/codest-be/alberto/blob/main/docs/multi-tenancy.md) | Tenant isolation, leases, and what it costs |
