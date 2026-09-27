@@ -14,6 +14,7 @@ public static class Categories
 {
     public const string Append = "append";
     public const string Query = "query";
+    public const string Evolve = "evolve";
 
     /// <summary>
     /// The smallest possible subset, run on every PR with --job dry. It proves the suite

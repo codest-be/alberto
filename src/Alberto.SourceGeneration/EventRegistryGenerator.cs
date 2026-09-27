@@ -218,7 +218,7 @@ public sealed class EventRegistryGenerator : IIncrementalGenerator
         return false;
     }
 
-    private static string Keyword(INamedTypeSymbol type) => type switch
+    internal static string Keyword(INamedTypeSymbol type) => type switch
     {
         { IsRecord: true, TypeKind: TypeKind.Struct } => "record struct",
         { IsRecord: true } => "record",

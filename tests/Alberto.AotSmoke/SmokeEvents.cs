@@ -46,7 +46,8 @@ public sealed record AccountState
     public string? Currency { get; init; }
 }
 
-public sealed class AccountEvolver : Evolver<AccountState>,
+// Partial, so its dispatch table is generated: no GetInterfaces, no Expression.Compile.
+public sealed partial class AccountEvolver : Evolver<AccountState>,
     IEvolve<AccountState, AccountOpened>,
     IEvolve<AccountState, FundsDeposited>
 {
