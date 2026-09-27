@@ -1,12 +1,12 @@
 using Alberto.Subscriptions;
 
-namespace Alberto.Tests.Fencing;
+namespace Alberto.InMemory;
 
 /// <summary>
-/// Test-only in-memory implementation of <see cref="IFencedCheckpointStore"/> backed by a
-/// <see cref="TestProcessorLeaseManager"/>. Mirrors the production PostgreSQL two-layer
-/// fencing model in process so that the <see cref="Alberto.Testing.Xunit.FencedCheckpointStoreSpecification"/>
-/// can run without a database.
+/// In-process implementation of <see cref="IFencedCheckpointStore"/> backed by an
+/// <see cref="InMemoryProcessorLeaseManager"/>. Mirrors the production PostgreSQL two-layer
+/// fencing model in process, so a module declared with <c>.WithInMemory()</c> can run the
+/// same lease-enabled control-loop topology it ships with on Postgres.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -32,15 +32,15 @@ namespace Alberto.Tests.Fencing;
 /// update the stored fence token, matching the PostgreSQL implementation.
 /// </para>
 /// </remarks>
-internal sealed class TestFencedCheckpointStore : IFencedCheckpointStore, ICheckpointInventory
+internal sealed class InMemoryFencedCheckpointStore : IFencedCheckpointStore, ICheckpointInventory
 {
-    private readonly TestProcessorLeaseManager _leaseManager;
+    private readonly InMemoryProcessorLeaseManager _leaseManager;
     private readonly object _lock = new();
     private readonly Dictionary<string, CheckpointRecord> _checkpoints = new();
 
     private readonly record struct CheckpointRecord(long Position, long FenceToken);
 
-    internal TestFencedCheckpointStore(TestProcessorLeaseManager leaseManager)
+    internal InMemoryFencedCheckpointStore(InMemoryProcessorLeaseManager leaseManager)
     {
         _leaseManager = leaseManager;
     }
@@ -146,7 +146,7 @@ internal sealed class TestFencedCheckpointStore : IFencedCheckpointStore, ICheck
     {
         if (!useProcessorLeaseFencing)
             throw new NotSupportedException(
-                $"{nameof(TestFencedCheckpointStore)} does not support tenant-lease fencing " +
+                $"{nameof(InMemoryFencedCheckpointStore)} does not support tenant-lease fencing " +
                 $"(useProcessorLeaseFencing = false). Pass true, or use the PostgreSQL implementation.");
 
         lock (_lock)

@@ -54,15 +54,17 @@ public class StartupValidationTests
     }
 
     [Fact]
-    public async Task WithInMemory_and_leases_enabled_refuses_to_start()
+    public async Task WithInMemory_and_leases_enabled_starts()
     {
+        // Formerly rejected with ALB0024. The in-memory backend now ships an
+        // IProcessorLeaseManager and a fenced checkpoint store, so a lease-enabled module
+        // runs the same control-loop topology it ships with on Postgres.
         using var host = BuildHost(b =>
             b.WithInMemory()
              .WithControlLoop(o => o with { Leases = o.Leases with { Enabled = true } }));
 
-        var act = async () => await host.StartAsync(TestContext.Current.CancellationToken);
-
-        var exception = await act.Should().ThrowAsync<OptionsValidationException>();
-        exception.Which.Message.Should().Contain("ALB0024");
+        var ct = TestContext.Current.CancellationToken;
+        await host.StartAsync(ct);
+        await host.StopAsync(ct);
     }
 }

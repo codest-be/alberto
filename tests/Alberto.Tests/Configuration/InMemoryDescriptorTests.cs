@@ -138,4 +138,15 @@ public class InMemoryDescriptorTests
         await act.Should().NotThrowAsync();
         host.Services.GetRequiredKeyedService<IEventStore>("orders").Should().NotBeNull();
     }
+
+    [Fact]
+    public void WithInMemory_rejects_a_null_builder_or_a_blank_shared_module_key()
+    {
+        FluentActions.Invoking(() => InMemoryBuilderExtensions.WithInMemory(null!))
+            .Should().Throw<ArgumentNullException>().WithParameterName("builder");
+        FluentActions.Invoking(() => InMemoryBuilderExtensions.WithInMemory(null!, "orders"))
+            .Should().Throw<ArgumentNullException>().WithParameterName("builder");
+        FluentActions.Invoking(() => new DcbModuleBuilder("payments").WithInMemory(" "))
+            .Should().Throw<ArgumentException>().WithParameterName("sharedModuleKey");
+    }
 }
