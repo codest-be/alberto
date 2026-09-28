@@ -123,15 +123,14 @@ jobs:
     # Two effects cancelled. Bounding the suite's waits stopped hung tests from burning a window
     # each, which saved time; giving mutants a window long enough to be scored truthfully means a
     # survivor now runs the suite to completion instead of being cut off partway, which cost it
-    # back. The floor underneath both is that the preview MTP runner does not attribute coverage
-    # per test, so every covered mutant runs all 1890 tests. Until that is fixed upstream — 4.16.0
-    # is the current latest, so there is nothing to upgrade to — roughly five hours is what a
-    # truthful sweep of six packages costs.
+    # back. The floor underneath both was that the 4.x preview MTP runner did not attribute
+    # coverage per test, so every covered mutant ran all 1890 tests. Stryker 5.0.0 fixed that
+    # (stryker-net#3752): Alberto.Messaging alone went from ~46 minutes to under 10.
     #
-    # So this stays at 360: 4h43m measured plus about 27% headroom for a runner of unknown speed.
-    # Do not raise it. Lowering it is not a matter of trimming the margin either — it needs
-    # per-test coverage attribution, which is upstream work.
-    # See https://github.com/codest-be/alberto/issues/133.
+    # This stays at 360 until a full sweep has been measured on 5.0.0 — per-package times
+    # suggest it can come down a lot, but a timeout guessed from one package is how the 180
+    # this started at went wrong. Lower it to measured-plus-headroom after the next dispatched
+    # full run. See https://github.com/codest-be/alberto/issues/133 and #167.
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4

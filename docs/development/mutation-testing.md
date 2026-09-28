@@ -166,12 +166,20 @@ and the reported score was thirty-two points too high.
 
 Two things make the default window too tight here:
 
-- **The preview MTP runner does not attribute coverage per test.** It reports every covered
-  mutant as covered by all 1890 tests — `coveredBy` in the report takes exactly two values, 0
-  and 1890, never anything between. So a mutant no test kills has to run the entire suite
-  before it can be called a survivor. Setting `coverage-analysis` does not help: `perTest` is
-  already the default and produces an identical report. `test-runner: vstest` is worse — it
-  captures no coverage at all, marking 103 of 195 mutants `Survived` for a 1.90% score.
+- **Under Stryker 4.x the preview MTP runner did not attribute coverage per test.** It
+  reported every covered mutant as covered by all 1890 tests — `coveredBy` in the report took
+  exactly two values, 0 and 1890, never anything between. So a mutant no test killed had to
+  run the entire suite before it could be called a survivor. Setting `coverage-analysis` did
+  not help: `perTest` was already the default and produced an identical report.
+  `test-runner: vstest` was worse — it captured no coverage at all, marking 103 of 195
+  mutants `Survived` for a 1.90% score. **Stryker 5.0.0 fixed this**
+  ([stryker-net#3752](https://github.com/stryker-mutator/stryker-net/issues/3752)): measured
+  on `Alberto.Messaging`, `coveredBy` now takes 23 distinct values (max 28), and the sweep
+  dropped from ~46 to under 10 minutes. The same release fixed the flaky per-mutant verdicts
+  ([stryker-net#3696](https://github.com/stryker-mutator/stryker-net/issues/3696)) that made
+  the diff gate non-reproducible — two back-to-back runs of the same tree now agree on all
+  215 verdicts, where 4.16.0 scored hand-verified killed mutants `Survived` differently each
+  run. See [#167](https://github.com/codest-be/alberto/issues/167).
 - **Stryker runs mutants concurrently.** The suite takes about 15 seconds alone; seven copies
   of it sharing a machine take considerably longer, and the window is derived from the solo
   baseline.
@@ -235,14 +243,16 @@ without asserting on what it emitted.
 
 ## A known Stryker flake
 
-Stryker 4.16.0 has a race in its MTP runner. It throws a `NullReferenceException` out of
+Stryker 4.16.0 had a race in its MTP runner. It threw a `NullReferenceException` out of
 `MicrosoftTestPlatformRunnerPool.CaptureCoverage` before a single mutant is tested, then a
 second one out of `Dispose()`, and takes that package's report with it — so the package
 vanishes from the aggregate rather than scoring badly. It has hit a different package on each
 sweep so far (`Alberto.Telemetry`, then `Alberto.Commands`), and re-running the same package
 alone has succeeded every time with no change to anything.
 
-`build/mutation-test.sh` therefore retries a package once when Stryker exits non-zero **and**
+The race has not been seen since the 5.0.0 upgrade, but the retry it motivated stays: a
+crash that leaves no report would silently drop a package from the aggregate whatever its
+cause. `build/mutation-test.sh` retries a package once when Stryker exits non-zero **and**
 wrote no report. Those two conditions together are what distinguishes a crash from a genuine
 below-threshold score — the score case writes a report, so it is never retried. If both
 attempts crash, the script says so and exits non-zero, because an aggregate computed without
