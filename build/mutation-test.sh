@@ -115,11 +115,11 @@ cd "$TEST_PROJECT_DIR"
 #
 #   1. The package scored under `break`. That is a real result — the report exists and
 #      counts towards the aggregate. Re-running would just burn an hour for the same number.
-#   2. Stryker itself crashed. Version 4.16.0 has a race in its MTP runner that throws a
+#   2. Stryker itself crashed. Version 4.16.0 had a race in its MTP runner that threw a
 #      NullReferenceException out of MicrosoftTestPlatformRunnerPool.CaptureCoverage before
-#      any mutant is tested, then a second one out of Dispose(). It has hit a different
-#      package on each sweep so far — Alberto.Telemetry once, Alberto.Commands the next —
-#      and it takes that package's report with it, silently dropping it from the aggregate.
+#      any mutant was tested, then a second one out of Dispose(), taking that package's
+#      report with it — silently dropping it from the aggregate. Not seen since the 5.0.0
+#      upgrade, but the retry stays: a crash that writes no report must never pass silently.
 #
 # The two are told apart by whether a report was written: a crash in coverage capture happens
 # before any reporter runs, so case 2 leaves no mutation-report.json. Case 2 gets one retry;
