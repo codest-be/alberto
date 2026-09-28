@@ -27,7 +27,7 @@ internal record FencingContext(
 /// Updates are cached in-memory and periodically flushed to the underlying store.
 /// This significantly reduces database load during high-throughput scenarios.
 /// </summary>
-internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckpointStore, ICheckpointInventory, IAsyncDisposable
+internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckpointStore, ICheckpointInventory, IProcessorFaultStore, IAsyncDisposable
 {
     private readonly ICheckpointStore _inner;
     private readonly TimeSpan _flushInterval;
@@ -164,6 +164,20 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
 
         await _inner.RewindAsync(processorId, position, ct);
     }
+
+    // Fault records bypass the write buffer entirely: a fault write happens once, on the way
+    // down, and must be durable — buffering it behind the flush timer would lose it in exactly
+    // the crash it exists to explain. A no-op when the inner store has no fault support.
+    public Task RecordFaultAsync(string processorId, ProcessorFaultRecord fault, CancellationToken ct = default)
+        => _inner is IProcessorFaultStore f ? f.RecordFaultAsync(processorId, fault, ct) : Task.CompletedTask;
+
+    public Task ClearFaultAsync(string processorId, CancellationToken ct = default)
+        => _inner is IProcessorFaultStore f ? f.ClearFaultAsync(processorId, ct) : Task.CompletedTask;
+
+    public Task<ProcessorFaultRecord?> GetFaultAsync(string processorId, CancellationToken ct = default)
+        => _inner is IProcessorFaultStore f
+            ? f.GetFaultAsync(processorId, ct)
+            : Task.FromResult<ProcessorFaultRecord?>(null);
 
     /// <summary>
     /// Sets the fencing context so that periodic flushes use lease-fenced writes when the

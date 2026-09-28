@@ -1,5 +1,6 @@
 using Alberto.Admin;
 using Alberto.Postgres;
+using Alberto.Subscriptions;
 using Alberto.Tests.Infrastructure;
 using Npgsql;
 using Xunit;
@@ -100,6 +101,106 @@ public sealed class PostgresAdminDataAccessTests(PostgresAdminDataAccessFixture 
         Assert.Equal(6, rewindPosition);
         Assert.Equal(1, deletedCount);
         Assert.Equal(6, await checkpoints.GetAsync(processorId, ct));
+    }
+
+    private static ProcessorFaultRecord SampleFault() =>
+        new(
+            FaultedAt: new DateTimeOffset(2026, 9, 29, 12, 34, 56, TimeSpan.Zero),
+            Message: "Simulated fault",
+            StackTrace: "at Frame.One()",
+            Position: 42,
+            EventType: "test-event",
+            TenantId: null);
+
+    [Fact]
+    public async Task GetCheckpointsAsync_ReturnsTheFaultFields()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var processorId = $"proc-{Guid.NewGuid():N}";
+        var checkpoints = CreateCheckpointStore();
+        await checkpoints.SaveAsync(processorId, 100, ct);
+        await ((Alberto.Subscriptions.IProcessorFaultStore)checkpoints)
+            .RecordFaultAsync(processorId, SampleFault(), ct);
+
+        var row = (await CreateAdmin().GetCheckpointsAsync(ct)).Single(c => c.ProcessorId == processorId);
+
+        Assert.Equal(100, row.LastPosition);
+        Assert.Equal(SampleFault().FaultedAt, row.FaultedAt);
+        Assert.Equal("Simulated fault", row.FaultMessage);
+        Assert.Equal("at Frame.One()", row.FaultStackTrace);
+        Assert.Equal(42L, row.FaultPosition);
+        Assert.Equal("test-event", row.FaultEventType);
+        Assert.Null(row.FaultTenantId);
+    }
+
+    [Fact]
+    public async Task GetSingleCheckpointAsync_ReturnsTheFaultFields()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var processorId = $"proc-{Guid.NewGuid():N}";
+        var checkpoints = CreateCheckpointStore();
+        await checkpoints.SaveAsync(processorId, 5, ct);
+        await ((Alberto.Subscriptions.IProcessorFaultStore)checkpoints)
+            .RecordFaultAsync(processorId, SampleFault(), ct);
+
+        var row = await CreateAdmin().GetSingleCheckpointAsync(processorId, ct);
+
+        Assert.NotNull(row);
+        Assert.Equal("Simulated fault", row.FaultMessage);
+        Assert.Equal(42L, row.FaultPosition);
+    }
+
+    [Fact]
+    public async Task GetCheckpointsAsync_HealthyProcessor_HasNullFaultFields()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var processorId = $"proc-{Guid.NewGuid():N}";
+        await CreateCheckpointStore().SaveAsync(processorId, 100, ct);
+
+        var row = (await CreateAdmin().GetCheckpointsAsync(ct)).Single(c => c.ProcessorId == processorId);
+
+        Assert.Null(row.FaultedAt);
+        Assert.Null(row.FaultMessage);
+        Assert.Null(row.FaultStackTrace);
+        Assert.Null(row.FaultPosition);
+        Assert.Null(row.FaultEventType);
+        Assert.Null(row.FaultTenantId);
+    }
+
+    [Fact]
+    public async Task GetProcessorsAsync_ReturnsTheFaultSummary()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var processorId = $"proc-{Guid.NewGuid():N}";
+        var checkpoints = CreateCheckpointStore();
+        await checkpoints.SaveAsync(processorId, 100, ct);
+        await ((Alberto.Subscriptions.IProcessorFaultStore)checkpoints)
+            .RecordFaultAsync(processorId, SampleFault(), ct);
+
+        var row = (await CreateAdmin().GetProcessorsAsync(ct)).Single(p => p.ProcessorId == processorId);
+
+        Assert.Equal(SampleFault().FaultedAt, row.FaultedAt);
+        Assert.Equal("Simulated fault", row.FaultMessage);
+    }
+
+    [Fact]
+    public async Task RetryByRewindAsync_ClearsTheFault()
+    {
+        // Retry-by-rewind is the operator saying "run it again" — the stale fault record
+        // must not survive to be mistaken for a fresh failure.
+        var ct = TestContext.Current.CancellationToken;
+        var processorId = $"proc-{Guid.NewGuid():N}";
+        var checkpoints = CreateCheckpointStore();
+        await checkpoints.SaveAsync(processorId, 100, ct);
+        await ((Alberto.Subscriptions.IProcessorFaultStore)checkpoints)
+            .RecordFaultAsync(processorId, SampleFault(), ct);
+        await InsertDeadLetterAsync(processorId, 42, ct);
+
+        await CreateAdmin().RetryByRewindAsync(processorId, ct);
+
+        Assert.Null(await ((Alberto.Subscriptions.IProcessorFaultStore)checkpoints)
+            .GetFaultAsync(processorId, ct));
+        Assert.Equal(41, await checkpoints.GetAsync(processorId, ct));
     }
 
     [Fact]

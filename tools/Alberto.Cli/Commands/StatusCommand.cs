@@ -78,7 +78,9 @@ public static class StatusCommand
                     {
                         p.ProcessorId,
                         p.LastPosition,
-                        updatedAt = p.UpdatedAt?.ToString("O")
+                        updatedAt = p.UpdatedAt?.ToString("O"),
+                        faultedAt = p.FaultedAt?.ToString("O"),
+                        faultMessage = p.FaultMessage
                     })
                 })
                 .ToArray();
@@ -111,12 +113,15 @@ public static class StatusCommand
                 if (status.Processors.Count > 0)
                 {
                     output.Table(
-                        ["Processor ID", "Last Position", "Updated At"],
+                        ["Processor ID", "Last Position", "Updated At", "Fault"],
                         status.Processors.Select(p => new[]
                         {
                             p.ProcessorId,
                             p.LastPosition.ToString(),
-                            p.UpdatedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"
+                            p.UpdatedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-",
+                            p.FaultedAt is null
+                                ? "-"
+                                : $"{p.FaultedAt:yyyy-MM-dd HH:mm:ss} {p.FaultMessage}"
                         })
                     );
                 }

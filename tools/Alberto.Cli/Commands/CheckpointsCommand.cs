@@ -58,19 +58,27 @@ public static class CheckpointsCommand
             {
                 c.ProcessorId,
                 c.LastPosition,
-                updatedAt = c.UpdatedAt?.ToString("O")
+                updatedAt = c.UpdatedAt?.ToString("O"),
+                faultedAt = c.FaultedAt?.ToString("O"),
+                faultMessage = c.FaultMessage,
+                faultPosition = c.FaultPosition,
+                faultEventType = c.FaultEventType,
+                faultTenantId = c.FaultTenantId
             }));
         }
         else
         {
             ShardRun.Table(
                 output, targets, results,
-                ["Processor ID", "Last Position", "Updated At"],
+                ["Processor ID", "Last Position", "Updated At", "Fault"],
                 c =>
                 [
                     c.ProcessorId,
                     c.LastPosition.ToString(),
-                    c.UpdatedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"
+                    c.UpdatedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-",
+                    c.FaultedAt is null
+                        ? "-"
+                        : $"{c.FaultedAt:yyyy-MM-dd HH:mm:ss} {c.FaultMessage}"
                 ],
                 "No checkpoints found.");
         }

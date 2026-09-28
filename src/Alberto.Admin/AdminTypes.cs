@@ -9,12 +9,49 @@ namespace Alberto.Admin;
 /// <summary>
 /// Summary of a processor's checkpoint position as seen from the admin surface.
 /// </summary>
-public sealed record ProcessorInfo(string ProcessorId, long LastPosition, DateTimeOffset? UpdatedAt);
+/// <remarks>
+/// The fault pair is init-only rather than positional so the extension stays additive
+/// (existing positional construction and deconstruction keep compiling — a requirement for
+/// the parked admin surface on <c>feature/admin-surface</c>).
+/// </remarks>
+public sealed record ProcessorInfo(string ProcessorId, long LastPosition, DateTimeOffset? UpdatedAt)
+{
+    /// <summary>When the processor last faulted, or null while healthy.</summary>
+    public DateTimeOffset? FaultedAt { get; init; }
+
+    /// <summary>Message of the failure that faulted the processor, or null while healthy.</summary>
+    public string? FaultMessage { get; init; }
+}
 
 /// <summary>
 /// Checkpoint row for a single processor.
 /// </summary>
-public sealed record CheckpointInfo(string ProcessorId, long LastPosition, DateTimeOffset? UpdatedAt);
+/// <remarks>
+/// Fault fields are init-only for the same additive-extension reason as
+/// <see cref="ProcessorInfo"/>. All are null while the processor is healthy; the context trio
+/// (position, event type, tenant) is also null when the fault did not occur dispatching one
+/// known event.
+/// </remarks>
+public sealed record CheckpointInfo(string ProcessorId, long LastPosition, DateTimeOffset? UpdatedAt)
+{
+    /// <summary>When the processor last faulted, or null while healthy.</summary>
+    public DateTimeOffset? FaultedAt { get; init; }
+
+    /// <summary>Message of the failure that faulted the processor.</summary>
+    public string? FaultMessage { get; init; }
+
+    /// <summary>Untruncated stack trace of the failure.</summary>
+    public string? FaultStackTrace { get; init; }
+
+    /// <summary>Global position of the event whose dispatch faulted, when known.</summary>
+    public long? FaultPosition { get; init; }
+
+    /// <summary>Event type of the event whose dispatch faulted, when known.</summary>
+    public string? FaultEventType { get; init; }
+
+    /// <summary>Tenant of the event whose dispatch faulted, when known.</summary>
+    public string? FaultTenantId { get; init; }
+}
 
 /// <summary>
 /// Dead letter entry summary returned by admin inspection queries.

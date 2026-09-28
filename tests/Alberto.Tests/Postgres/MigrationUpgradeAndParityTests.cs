@@ -329,8 +329,12 @@ public sealed class MigrationUpgradeAndParityTests
                 .Where(l => !l.TrimStart().StartsWith("--", StringComparison.Ordinal))
                 .ToList();
 
+            // fault_tenant_id (005) is exempt: it is event-context metadata on the fault
+            // record, not a tenancy discriminator — the single-tenant store keeps the column
+            // (always NULL) so one checkpoint-store SQL shape serves both imprints.
             var offending = sqlLines
-                .Where(l => l.Contains("tenant_id", StringComparison.OrdinalIgnoreCase))
+                .Where(l => l.Replace("fault_tenant_id", "", StringComparison.OrdinalIgnoreCase)
+                    .Contains("tenant_id", StringComparison.OrdinalIgnoreCase))
                 .Select(l => l.Trim())
                 .ToList();
 
