@@ -13,10 +13,11 @@ namespace Alberto.InMemory;
 /// <see cref="RewindAsync"/> is the deliberate escape hatch that can move a checkpoint
 /// backwards, mirroring the operator-only rewind path in production.
 /// </remarks>
-public sealed class InMemoryCheckpointStore : ICheckpointStore, ICheckpointInventory
+public sealed class InMemoryCheckpointStore : ICheckpointStore, ICheckpointInventory, IProcessorFaultStore
 {
     private readonly object _lock = new();
     private readonly Dictionary<string, long> _checkpoints = new();
+    private readonly Dictionary<string, ProcessorFaultRecord> _faults = new();
 
     public Task<long?> GetAsync(string processorId, CancellationToken ct = default)
     {
@@ -46,6 +47,7 @@ public sealed class InMemoryCheckpointStore : ICheckpointStore, ICheckpointInven
         lock (_lock)
         {
             _checkpoints.Remove(processorId);
+            _faults.Remove(processorId);
             return Task.CompletedTask;
         }
     }
@@ -55,7 +57,38 @@ public sealed class InMemoryCheckpointStore : ICheckpointStore, ICheckpointInven
         lock (_lock)
         {
             _checkpoints[processorId] = position;
+            // A rewind is an operator's retry intent — mirror Postgres, which NULLs the
+            // fault columns in the same statement.
+            _faults.Remove(processorId);
             return Task.CompletedTask;
+        }
+    }
+
+    Task IProcessorFaultStore.RecordFaultAsync(
+        string processorId, ProcessorFaultRecord fault, CancellationToken ct)
+    {
+        lock (_lock)
+        {
+            _faults[processorId] = fault;
+            return Task.CompletedTask;
+        }
+    }
+
+    Task IProcessorFaultStore.ClearFaultAsync(string processorId, CancellationToken ct)
+    {
+        lock (_lock)
+        {
+            _faults.Remove(processorId);
+            return Task.CompletedTask;
+        }
+    }
+
+    Task<ProcessorFaultRecord?> IProcessorFaultStore.GetFaultAsync(
+        string processorId, CancellationToken ct)
+    {
+        lock (_lock)
+        {
+            return Task.FromResult(_faults.GetValueOrDefault(processorId));
         }
     }
 
@@ -67,6 +100,7 @@ public sealed class InMemoryCheckpointStore : ICheckpointStore, ICheckpointInven
         lock (_lock)
         {
             _checkpoints.Clear();
+            _faults.Clear();
         }
     }
 

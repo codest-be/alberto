@@ -7,7 +7,7 @@ namespace Alberto.Postgres;
 /// PostgreSQL implementation of <see cref="ICheckpointStore"/>.
 /// Uses the alberto_processor_checkpoints table.
 /// </summary>
-public sealed class PostgresCheckpointStore : IFencedCheckpointStore, ICheckpointInventory
+public sealed class PostgresCheckpointStore : IFencedCheckpointStore, ICheckpointInventory, IProcessorFaultStore
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly SchemaQualifier _schema;
@@ -97,7 +97,13 @@ public sealed class PostgresCheckpointStore : IFencedCheckpointStore, ICheckpoin
             VALUES (@processor_id, @last_position, now())
             ON CONFLICT (processor_id) DO UPDATE
             SET last_position = @last_position,
-                updated_at = now()
+                updated_at = now(),
+                faulted_at = NULL,
+                fault_message = NULL,
+                fault_stack_trace = NULL,
+                fault_position = NULL,
+                fault_event_type = NULL,
+                fault_tenant_id = NULL
             """,
             connection);
 
@@ -105,6 +111,92 @@ public sealed class PostgresCheckpointStore : IFencedCheckpointStore, ICheckpoin
         cmd.Parameters.AddWithValue("last_position", position);
 
         await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <remarks>
+    /// Inserts last_position 0 when no checkpoint row exists yet: <see cref="GetAsync"/>
+    /// coalesces a missing row to 0, so a fault-only row does not change where the
+    /// processor resumes. Only the fault columns are touched on conflict.
+    /// </remarks>
+    async Task IProcessorFaultStore.RecordFaultAsync(
+        string processorId, ProcessorFaultRecord fault, CancellationToken ct)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand(
+            $"""
+            INSERT INTO {_schema.Table("alberto_processor_checkpoints")}
+                (processor_id, last_position, faulted_at, fault_message, fault_stack_trace,
+                 fault_position, fault_event_type, fault_tenant_id)
+            VALUES (@processor_id, 0, @faulted_at, @fault_message, @fault_stack_trace,
+                    @fault_position, @fault_event_type, @fault_tenant_id)
+            ON CONFLICT (processor_id) DO UPDATE
+            SET faulted_at = @faulted_at,
+                fault_message = @fault_message,
+                fault_stack_trace = @fault_stack_trace,
+                fault_position = @fault_position,
+                fault_event_type = @fault_event_type,
+                fault_tenant_id = @fault_tenant_id
+            """,
+            connection);
+
+        cmd.Parameters.AddWithValue("processor_id", processorId);
+        cmd.Parameters.AddWithValue("faulted_at", fault.FaultedAt);
+        cmd.Parameters.AddWithValue("fault_message", fault.Message);
+        cmd.Parameters.AddWithValue("fault_stack_trace", (object?)fault.StackTrace ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("fault_position", (object?)fault.Position ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("fault_event_type", (object?)fault.EventType ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("fault_tenant_id", (object?)fault.TenantId ?? DBNull.Value);
+
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    async Task IProcessorFaultStore.ClearFaultAsync(string processorId, CancellationToken ct)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand(
+            $"""
+            UPDATE {_schema.Table("alberto_processor_checkpoints")}
+            SET faulted_at = NULL,
+                fault_message = NULL,
+                fault_stack_trace = NULL,
+                fault_position = NULL,
+                fault_event_type = NULL,
+                fault_tenant_id = NULL
+            WHERE processor_id = @processor_id
+            """,
+            connection);
+
+        cmd.Parameters.AddWithValue("processor_id", processorId);
+
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    async Task<ProcessorFaultRecord?> IProcessorFaultStore.GetFaultAsync(
+        string processorId, CancellationToken ct)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand(
+            $"""
+            SELECT faulted_at, fault_message, fault_stack_trace,
+                   fault_position, fault_event_type, fault_tenant_id
+            FROM {_schema.Table("alberto_processor_checkpoints")}
+            WHERE processor_id = @processor_id AND faulted_at IS NOT NULL
+            """,
+            connection);
+
+        cmd.Parameters.AddWithValue("processor_id", processorId);
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct))
+            return null;
+
+        return new ProcessorFaultRecord(
+            reader.GetFieldValue<DateTimeOffset>(0),
+            reader.GetString(1),
+            reader.IsDBNull(2) ? null : reader.GetString(2),
+            reader.IsDBNull(3) ? null : reader.GetInt64(3),
+            reader.IsDBNull(4) ? null : reader.GetString(4),
+            reader.IsDBNull(5) ? null : reader.GetString(5));
     }
 
     public async Task<bool> SaveIfLeaseHeldAsync(

@@ -35,9 +35,18 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
     // Pre-composed middleware chains built once at construction time (PERF-6).
     private readonly Func<ConsumeEventContext, Func<Task>, Task> _composedMiddleware;
     private readonly Func<BatchConsumeContext, Func<Task>, Task> _composedBatchMiddleware;
+    private readonly IProcessorFaultStore? _faultStore;
     private CancellationTokenSource? _cts;
     private Task? _loop;
     private int _disposed;
+    private bool _faultCleared;
+
+    /// <summary>
+    /// Budget for persisting a fault record. Deliberately short and separate from the loop's
+    /// tokens: the store being written to may be the very thing that failed, and a hanging
+    /// fault write must not stall shutdown.
+    /// </summary>
+    private static readonly TimeSpan FaultWriteTimeout = TimeSpan.FromSeconds(5);
 
     public bool IsFaulted { get; private set; }
     public string ProcessorId => _processor.ProcessorId;
@@ -74,6 +83,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
         _logger = logger;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _healthState = healthState;
+        _faultStore = checkpointStore as IProcessorFaultStore;
 
         // Pre-build the composed middleware chains once so per-event dispatch does not
         // allocate a recursive Dispatch state-machine stack (PERF-6).
@@ -222,6 +232,9 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
 
         while (!ct.IsCancellationRequested)
         {
+            // The event whose dispatch is in flight, for the fault record. Stays null under
+            // batch dispatch, where the failing event is unknown.
+            IEventEnvelope? dispatching = null;
             try
             {
                 var checkpoint = await _checkpointStore.GetAsync(ProcessorId, ct) ?? 0L;
@@ -240,6 +253,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
                 {
                     // No events between checkpoint and head — skip forward safely
                     await _checkpointStore.SaveAsync(ProcessorId, head, ct);
+                    await ClearFaultOnceAsync(ct);
                     ReportProgress(0L);
                     await Task.Delay(_pollingInterval, ct);
                     continue;
@@ -258,17 +272,29 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
                 }
 
                 if (ShouldUseBatchDispatch && relevantEvents.Count > 0)
+                {
                     await DispatchBatchAsync(relevantEvents, ct);
+                }
                 else
+                {
                     foreach (var evt in relevantEvents)
+                    {
+                        dispatching = evt;
                         await DispatchAsync(evt, ct);
+                    }
+
+                    dispatching = null;
+                }
 
                 var newCheckpoint = visibleEvents.Count > 0
                     ? visibleEvents[visibleEvents.Count - 1].GlobalPosition
                     : checkpoint;
 
                 if (newCheckpoint > checkpoint)
+                {
                     await _checkpointStore.SaveAsync(ProcessorId, newCheckpoint, ct);
+                    await ClearFaultOnceAsync(ct);
+                }
 
                 ReportProgress(head - newCheckpoint);
 
@@ -281,6 +307,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
             {
                 IsFaulted = true;
                 ReportFaulted();
+                await RecordFaultAsync(ex, dispatching);
                 _logger?.LogCritical(ex,
                     "ControlLoop {ProcessorId} faulted and stopped. " +
                     "Checkpoint NOT advanced. Restart the service to retry from the same position.",
@@ -306,7 +333,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
         // token, so disposal is deferred until they actually exit (see the finally block).
         var pipelineCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         var pipelineToken = pipelineCts.Token;
-        Exception? pipelineFailure = null;
+        PipelineFault? pipelineFailure = null;
 
         var channel = Channel.CreateBounded<IEventEnvelope>(
             new BoundedChannelOptions(maxConcurrency)
@@ -381,7 +408,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
         }
         catch (Exception ex)
         {
-            ReportFailure(ex);
+            ReportFailure(ex, null);
         }
         finally
         {
@@ -424,8 +451,9 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
             {
                 IsFaulted = true;
                 ReportFaulted();
+                await RecordFaultAsync(pipelineFailure.Exception, pipelineFailure.Envelope);
                 _logger?.LogCritical(
-                    pipelineFailure,
+                    pipelineFailure.Exception,
                     "ControlLoop {ProcessorId} pipelined execution faulted and stopped. " +
                     "The failed position remains in flight and will be retried after restart.",
                     ProcessorId);
@@ -434,15 +462,18 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
             _logger?.LogInformation("ControlLoop {ProcessorId} stopped", ProcessorId);
         }
 
-        void ReportFailure(Exception failure)
+        void ReportFailure(Exception failure, IEventEnvelope? envelope)
         {
-            if (Interlocked.CompareExchange(ref pipelineFailure, failure, null) is not null)
+            if (Interlocked.CompareExchange(ref pipelineFailure, new PipelineFault(failure, envelope), null) is not null)
                 return;
 
             try { pipelineCts.Cancel(); }
             catch (ObjectDisposedException) { }
         }
     }
+
+    /// <summary>The first failure that stopped a pipelined run, with the event it happened on when known.</summary>
+    private sealed record PipelineFault(Exception Exception, IEventEnvelope? Envelope);
 
     /// <summary>
     /// Disposes the pipeline's <see cref="CancellationTokenSource"/> once workers abandoned by
@@ -459,7 +490,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
     private async Task RunWorkerAsync(
         ChannelReader<IEventEnvelope> reader,
         PositionWatermark watermark,
-        Action<Exception> reportFailure,
+        Action<Exception, IEventEnvelope?> reportFailure,
         CancellationToken ct)
     {
         try
@@ -485,7 +516,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
                     _logger?.LogError(ex,
                         "ControlLoop {ProcessorId} worker: unhandled error at position {Position}",
                         ProcessorId, evt.GlobalPosition);
-                    reportFailure(ex);
+                    reportFailure(ex, evt);
                     break;
                 }
                 // Only mark completed when dispatch actually finished (success or handled
@@ -531,7 +562,58 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
         var safeCheckpoint = watermark.SafeCheckpoint;
         var current = await _checkpointStore.GetAsync(ProcessorId, ct) ?? 0L;
         if (safeCheckpoint > current)
+        {
             await _checkpointStore.SaveAsync(ProcessorId, safeCheckpoint, ct);
+            await ClearFaultOnceAsync(ct);
+        }
+    }
+
+    /// <summary>
+    /// Clears a fault record left by a previous run, once per loop lifetime, after the first
+    /// successful checkpoint save — the durable proof that the processor is making progress
+    /// again. Never called on the fault path itself: in the pipelined finally the final
+    /// watermark flush runs before the fault is recorded, so a clear there cannot erase it.
+    /// </summary>
+    private async Task ClearFaultOnceAsync(CancellationToken ct)
+    {
+        if (_faultCleared || _faultStore is null)
+            return;
+
+        _faultCleared = true;
+        await _faultStore.ClearFaultAsync(ProcessorId, ct);
+    }
+
+    /// <summary>
+    /// Best-effort durable record of the failure that faulted this loop. Runs under its own
+    /// <see cref="FaultWriteTimeout"/> rather than the loop's token — the store may be the
+    /// very thing that failed, and by the time this runs the loop's token is often already
+    /// cancelled. A failed write only logs: the Critical log that follows is the fallback.
+    /// </summary>
+    private async Task RecordFaultAsync(Exception failure, IEventEnvelope? envelope)
+    {
+        if (_faultStore is null)
+            return;
+
+        using var cts = new CancellationTokenSource(FaultWriteTimeout, _timeProvider);
+        try
+        {
+            await _faultStore.RecordFaultAsync(
+                ProcessorId,
+                new ProcessorFaultRecord(
+                    _timeProvider.GetUtcNow(),
+                    failure.Message,
+                    failure.StackTrace,
+                    envelope?.GlobalPosition,
+                    envelope?.EventType.Id,
+                    envelope?.TenantId),
+                cts.Token);
+        }
+        catch (Exception writeFailure)
+        {
+            _logger?.LogWarning(writeFailure,
+                "ControlLoop {ProcessorId}: fault record could not be persisted; the log entry below is the only record.",
+                ProcessorId);
+        }
     }
 
     private Task DispatchAsync(IEventEnvelope evt, CancellationToken ct)

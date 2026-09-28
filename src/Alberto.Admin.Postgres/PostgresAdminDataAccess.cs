@@ -65,7 +65,7 @@ public sealed class PostgresAdminDataAccess : IAdminReader
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = $"""
-            SELECT processor_id, last_position, updated_at
+            SELECT processor_id, last_position, updated_at, faulted_at, fault_message
             FROM {_schema.Table("alberto_processor_checkpoints")}
             ORDER BY processor_id
             """;
@@ -77,7 +77,11 @@ public sealed class PostgresAdminDataAccess : IAdminReader
             result.Add(new ProcessorInfo(
                 reader.GetString(0),
                 reader.GetInt64(1),
-                reader.IsDBNull(2) ? null : reader.GetFieldValue<DateTimeOffset>(2)));
+                reader.IsDBNull(2) ? null : reader.GetFieldValue<DateTimeOffset>(2))
+            {
+                FaultedAt = reader.IsDBNull(3) ? null : reader.GetFieldValue<DateTimeOffset>(3),
+                FaultMessage = reader.IsDBNull(4) ? null : reader.GetString(4),
+            });
         }
 
         return result;
@@ -91,7 +95,8 @@ public sealed class PostgresAdminDataAccess : IAdminReader
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = $"""
-            SELECT processor_id, last_position, updated_at
+            SELECT processor_id, last_position, updated_at, faulted_at, fault_message,
+                   fault_stack_trace, fault_position, fault_event_type, fault_tenant_id
             FROM {_schema.Table("alberto_processor_checkpoints")}
             ORDER BY processor_id
             """;
@@ -100,10 +105,7 @@ public sealed class PostgresAdminDataAccess : IAdminReader
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
         {
-            result.Add(new CheckpointInfo(
-                reader.GetString(0),
-                reader.GetInt64(1),
-                reader.IsDBNull(2) ? null : reader.GetFieldValue<DateTimeOffset>(2)));
+            result.Add(ReadCheckpointInfo(reader));
         }
 
         return result;
@@ -117,7 +119,8 @@ public sealed class PostgresAdminDataAccess : IAdminReader
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = $"""
-            SELECT processor_id, last_position, updated_at
+            SELECT processor_id, last_position, updated_at, faulted_at, fault_message,
+                   fault_stack_trace, fault_position, fault_event_type, fault_tenant_id
             FROM {_schema.Table("alberto_processor_checkpoints")}
             WHERE processor_id = @processorId
             """;
@@ -126,14 +129,25 @@ public sealed class PostgresAdminDataAccess : IAdminReader
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         if (await reader.ReadAsync(ct))
         {
-            return new CheckpointInfo(
-                reader.GetString(0),
-                reader.GetInt64(1),
-                reader.IsDBNull(2) ? null : reader.GetFieldValue<DateTimeOffset>(2));
+            return ReadCheckpointInfo(reader);
         }
 
         return null;
     }
+
+    private static CheckpointInfo ReadCheckpointInfo(NpgsqlDataReader reader) =>
+        new(
+            reader.GetString(0),
+            reader.GetInt64(1),
+            reader.IsDBNull(2) ? null : reader.GetFieldValue<DateTimeOffset>(2))
+        {
+            FaultedAt = reader.IsDBNull(3) ? null : reader.GetFieldValue<DateTimeOffset>(3),
+            FaultMessage = reader.IsDBNull(4) ? null : reader.GetString(4),
+            FaultStackTrace = reader.IsDBNull(5) ? null : reader.GetString(5),
+            FaultPosition = reader.IsDBNull(6) ? null : reader.GetInt64(6),
+            FaultEventType = reader.IsDBNull(7) ? null : reader.GetString(7),
+            FaultTenantId = reader.IsDBNull(8) ? null : reader.GetString(8),
+        };
 
     /// <summary>
     /// Atomically moves a checkpoint from <paramref name="fromProcessorId"/> to
@@ -718,7 +732,13 @@ public sealed class PostgresAdminDataAccess : IAdminReader
                 VALUES (@processorId, @position, now())
                 ON CONFLICT (processor_id) DO UPDATE
                 SET last_position = @position,
-                    updated_at = now()
+                    updated_at = now(),
+                    faulted_at = NULL,
+                    fault_message = NULL,
+                    fault_stack_trace = NULL,
+                    fault_position = NULL,
+                    fault_event_type = NULL,
+                    fault_tenant_id = NULL
                 """;
             cmd.Parameters.AddWithValue("processorId", processorId);
             cmd.Parameters.AddWithValue("position", rewindPosition);
