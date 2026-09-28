@@ -1,6 +1,8 @@
+#pragma warning disable ALB9002 // DI registration layer for the experimental processor health check.
 using Alberto.Configuration;
 using Alberto.Subscriptions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -60,6 +62,38 @@ internal static class ControlLoopRegistration
         services.AddSingleton<IHostedService>(sp =>
             sp.GetRequiredKeyedService<EventStoreHead>(moduleKey));
 
+        // Liveness observation board: every live loop reports its heartbeat and fault state
+        // here; the health check below reads it. Shadow rebuild loops do not report (see
+        // ProcessorHealthState remarks).
+        services.AddKeyedSingleton<ProcessorHealthState>(moduleKey);
+
+        // Adds the check to the host's health-check pipeline if it has one. Configuring the
+        // options is inert on its own — an app that never calls AddHealthChecks() has no
+        // HealthCheckService to read them, so this costs nothing and needs no opt-in.
+        services.Configure<HealthCheckServiceOptions>(options => options.Registrations.Add(
+            new HealthCheckRegistration(
+                $"alberto-processors-{moduleKey}",
+                sp =>
+                {
+                    var loopOptions = Options(sp, moduleKey);
+
+                    // 5× the polling interval with a 5-second floor: one slow poll cycle must
+                    // not read as a wedge, and slow-polling modules get proportional slack.
+                    var stalenessThreshold = Max(
+                        TimeSpan.FromSeconds(5), loopOptions.PollingInterval * 5);
+
+                    return new ProcessorHealthCheck(
+                        moduleKey,
+                        sp.GetRequiredKeyedService<ProcessorHealthState>(moduleKey),
+                        stalenessThreshold,
+                        // Lag is too noisy standalone (a restarting host catches up
+                        // legitimately), so the Degraded verdict is disabled by default.
+                        degradedLagThreshold: long.MaxValue,
+                        sp.GetService<TimeProvider>());
+                },
+                failureStatus: HealthStatus.Unhealthy,
+                tags: ["alberto", "processors"])));
+
         // Read-your-writes: wait for a processor instead of sleeping for a guess.
         services.AddKeyedSingleton<ProjectionCatchUp>(moduleKey, (sp, _) =>
         {
@@ -110,6 +144,8 @@ internal static class ControlLoopRegistration
                 sp.GetService<TimeProvider>(),
                 sp.GetService<ILoggerFactory>()?.CreateLogger($"Alberto.DeadLetter.{moduleKey}"));
 
+            var healthState = sp.GetRequiredKeyedService<ProcessorHealthState>(moduleKey);
+
             var loops = processors
                 .Select(p => assembler.Create(p, head, backend, checkpoints,
                     options.PollingInterval, options.BatchSize, moduleKey,
@@ -117,7 +153,8 @@ internal static class ControlLoopRegistration
                         p.ProcessorId,
                         ProcessorExecutionOptions.Default),
                     logger,
-                    options.DrainTimeout))
+                    options.DrainTimeout,
+                    healthState))
                 .ToList();
 
             if (!options.Leases.Enabled)

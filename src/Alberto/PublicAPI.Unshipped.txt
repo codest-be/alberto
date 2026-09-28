@@ -1,4 +1,23 @@
 #nullable enable
+Alberto.Subscriptions.ProcessorHealthCheck
+Alberto.Subscriptions.ProcessorHealthCheck.CheckHealthAsync(Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext! context, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult>!
+Alberto.Subscriptions.ProcessorHealthCheck.ProcessorHealthCheck(string! moduleKey, Alberto.Subscriptions.ProcessorHealthState! state, System.TimeSpan stalenessThreshold, long degradedLagThreshold, System.TimeProvider? timeProvider = null) -> void
+Alberto.Subscriptions.ProcessorHealthState
+Alberto.Subscriptions.ProcessorHealthState.Get(string! processorId) -> Alberto.Subscriptions.ProcessorSnapshot!
+Alberto.Subscriptions.ProcessorHealthState.ProcessorHealthState() -> void
+Alberto.Subscriptions.ProcessorHealthState.ProcessorIds.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+Alberto.Subscriptions.ProcessorSnapshot
+Alberto.Subscriptions.ProcessorSnapshot.HasReported.get -> bool
+Alberto.Subscriptions.ProcessorSnapshot.HasReported.init -> void
+Alberto.Subscriptions.ProcessorSnapshot.IsFaulted.get -> bool
+Alberto.Subscriptions.ProcessorSnapshot.IsFaulted.init -> void
+Alberto.Subscriptions.ProcessorSnapshot.Lag.get -> long
+Alberto.Subscriptions.ProcessorSnapshot.Lag.init -> void
+Alberto.Subscriptions.ProcessorSnapshot.LastHeartbeatAt.get -> System.DateTimeOffset
+Alberto.Subscriptions.ProcessorSnapshot.LastHeartbeatAt.init -> void
+Alberto.Subscriptions.ProcessorSnapshot.ProcessorId.get -> string!
+Alberto.Subscriptions.ProcessorSnapshot.ProcessorId.init -> void
+Alberto.Subscriptions.ProcessorSnapshot.ProcessorSnapshot(string! ProcessorId, bool IsFaulted, long Lag, System.DateTimeOffset LastHeartbeatAt, bool HasReported) -> void
 Alberto.EventTypeRegistryBuilder.Add<TEvent>(string! id, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TEvent>! jsonTypeInfo, System.Func<TEvent, System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<string!, object?>>!>? tags, int version = 1, bool upcastingNotRequired = false) -> Alberto.EventTypeRegistryBuilder!
 Alberto.EventTypeRegistryBuilder.Add<TEvent>(System.Text.Json.Serialization.Metadata.JsonTypeInfo<TEvent>! jsonTypeInfo, System.Func<TEvent, System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<string!, object?>>!>? tags) -> Alberto.EventTypeRegistryBuilder!
 Alberto.AlbertoEventRegistryAttribute

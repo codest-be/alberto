@@ -118,6 +118,10 @@ The Postgres backend wires `CachingCheckpointStore` over `PostgresCheckpointStor
 
 LISTENs on the `{schema}_events` channel and raises `IEventAppendedSignal` so the control loop wakes immediately instead of waiting for the next poll. The trigger that emits the notification is in `010_BatchNotifyTrigger.sql` and fires once per append batch, not once per event.
 
+### Processor health check (experimental, ALB9002)
+
+Every module registers a health check named `alberto-processors-{moduleKey}` (tags `alberto`, `processors`) into the host's health-check options; it is inert unless the host calls `AddHealthChecks()`. Each live `ControlLoop` reports a heartbeat per poll cycle and a fault flag if it stops permanently into a per-module `ProcessorHealthState`; `ProcessorHealthCheck` reads it. A faulted loop, or one whose last heartbeat is older than max(5 s, 5 × polling interval), is Unhealthy. Processors that never reported are skipped — a standby replica that did not win the lease is normal. Shadow rebuild loops do not report; rebuild progress is served by `alberto ops rebuild status`.
+
 ## Configuration
 
 For the canonical defaults reference see [configuration.md](../configuration.md#controlloop-options).

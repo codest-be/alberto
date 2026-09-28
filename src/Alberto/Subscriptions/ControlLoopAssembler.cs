@@ -1,3 +1,4 @@
+#pragma warning disable ALB9002 // Assembler threads the experimental health state into the loops it builds.
 using Alberto.Configuration;
 using Microsoft.Extensions.Logging;
 
@@ -108,7 +109,8 @@ internal sealed class ControlLoopAssembler
         string moduleKey,
         ProcessorExecutionOptions? executionOptions = null,
         ILogger<ControlLoop>? logger = null,
-        TimeSpan? drainTimeout = null)
+        TimeSpan? drainTimeout = null,
+        ProcessorHealthState? healthState = null)
     {
         var loop = new ControlLoop(
             processor, head, backend, checkpointStore,
@@ -117,7 +119,9 @@ internal sealed class ControlLoopAssembler
             _hasUnpairedPerEventMiddlewares,
             executionOptions,
             logger,
-            drainTimeout);
+            drainTimeout,
+            _timeProvider,
+            healthState);
 
         // Wire a per-loop fence-violation handler through the interface rather than
         // via a concrete-type downcast. If the store is not fencable, this block is skipped
