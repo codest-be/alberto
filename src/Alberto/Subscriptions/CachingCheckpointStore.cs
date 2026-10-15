@@ -144,13 +144,19 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
 
     public async Task ResetAsync(string processorId, CancellationToken ct = default)
     {
-        // Clear from cache and dirty set
-        _cache.TryRemove(processorId, out _);
-        _persisted.TryRemove(processorId, out _);
-        _dirty.TryRemove(processorId, out _);
+        // Under the flush lock: a flush that snapshotted the dirty entry before this reset
+        // would otherwise write the stale position after it.
+        await _flushLock.WaitAsync(ct);
+        try
+        {
+            _cache.TryRemove(processorId, out _);
+            _persisted.TryRemove(processorId, out _);
+            _dirty.TryRemove(processorId, out _);
 
-        // Reset in underlying store immediately
-        await _inner.ResetAsync(processorId, ct);
+            // Reset in underlying store immediately
+            await _inner.ResetAsync(processorId, ct);
+        }
+        finally { _flushLock.Release(); }
     }
 
     public async Task RewindAsync(string processorId, long position, CancellationToken ct = default)
@@ -158,11 +164,18 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
         // Operator rewinds bypass the write buffer and go directly to the underlying store
         // so the write is unconditional and immediately durable.
         // Update all cache layers so subsequent in-process reads reflect the new position.
-        _cache[processorId] = position;
-        _persisted[processorId] = position;
-        _dirty.TryRemove(processorId, out _);
+        // Under the flush lock, as in ResetAsync: an in-flight flush must not write the
+        // pre-rewind position over this one.
+        await _flushLock.WaitAsync(ct);
+        try
+        {
+            _cache[processorId] = position;
+            _persisted[processorId] = position;
+            _dirty.TryRemove(processorId, out _);
 
-        await _inner.RewindAsync(processorId, position, ct);
+            await _inner.RewindAsync(processorId, position, ct);
+        }
+        finally { _flushLock.Release(); }
     }
 
     // Fault records bypass the write buffer entirely: a fault write happens once, on the way
