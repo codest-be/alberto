@@ -84,6 +84,24 @@ public class ErrorPolicyTests
         Assert.Equal(TimeSpan.FromSeconds(5), delay);
     }
 
+    [Theory]
+    [InlineData(100)]          // 2^99 s: past TimeSpan.MaxValue, FromMilliseconds used to throw
+    [InlineData(2000)]         // Math.Pow overflows to +Infinity
+    [InlineData(int.MaxValue)]
+    public void CalculateDelay_HighAttemptCount_ShouldCapInsteadOfOverflowing(int attempt)
+    {
+        var retry = new RetryOptions
+        {
+            RetryDelay = TimeSpan.FromSeconds(1),
+            BackoffMultiplier = 2.0,
+            MaxRetryDelay = TimeSpan.FromSeconds(30)
+        };
+
+        var delay = retry.CalculateDelay(attempt);
+
+        Assert.Equal(TimeSpan.FromSeconds(30), delay);
+    }
+
     [Fact]
     public void CalculateDelay_WithMultiplierOne_ShouldReturnConstantDelay()
     {

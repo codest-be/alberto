@@ -48,6 +48,8 @@ Both contexts implement `IMiddlewareContext` (`ProcessorId`, `ModuleKey`, `Attem
 - **Single event.** Dead-letter it and advance.
 - **Batch.** If the batch holds more than one event, rethrow so the caller can split the batch and isolate the poison event; a single-event batch is dead-lettered directly.
 
+**Splitting re-runs work that already succeeded.** `ControlLoop` bisects a failed batch: it dispatches each half again, recursively, until the poison event is alone in a one-event batch. Each half goes back through the whole batch chain, so it runs the full retry policy, backoff included, and re-delivers every event in it, including the ones that succeeded in the failed attempt. One poison event in a batch of *n* costs about log₂(*n*) rounds of `MaxRetries` attempts before it is dead-lettered. Nothing breaks: delivery is at-least-once, and a batch processor must already tolerate replays. A projection that writes the batch in one transaction rolls the failed attempt back and loses nothing. A reactor with external side effects repeats them. If that amplification matters, use smaller batches for that processor, or disable batching for it (`ProcessorBatchingMode.Disabled`).
+
 Negative `MaxRetries` is rejected at startup by validator `ALB0007`, which guarantees the attempt loop always runs at least once and always produces an error to act on.
 
 ### Error handling

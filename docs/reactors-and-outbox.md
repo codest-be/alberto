@@ -111,6 +111,11 @@ holding the same live claim. Delivery remains at-least-once: if a publish succee
 dies before recording success, the entry is published again after its claim expires. It is also
 **unordered.** See [Ordering](#ordering-there-isnt-any) before you assume otherwise.
 
+Each claimed entry costs its own round trips: `PublishAsync`, then a separate `MarkDeliveredAsync`
+(or `MarkFailedAsync`) per message. Batching the claim does not batch the acknowledgements, so
+throughput is bounded by database latency per message, not per batch. Run more relay replicas if
+that becomes the limit.
+
 ### Wiring it
 
 Declare the external contract, the shape other systems depend on, which is *not* your event:
@@ -305,11 +310,11 @@ If it is too long, recovery after a crash waits longer.
 be delivered in the opposite one, and neither Alberto nor the table gives you a total order to fall
 back on. Three separate mechanisms cause it, and removing any one of them would not fix the others:
 
-- **The claim query orders by `created_at`, which is not unique.** `created_at` defaults to `now()`,
-  which in PostgreSQL is transaction-*start* time, so two entries written by concurrent
-  transactions can share a timestamp, and an entry written by a long transaction can carry an
-  earlier timestamp than one committed before it. There is no tiebreaker column; `id` is a v4 UUID
-  and sorts randomly.
+- **The claim query orders by `created_at`, which is not unique.** `created_at` is the writing
+  process's `DateTimeOffset.UtcNow` when `OutboxHandler` builds the entry, not a database clock,
+  so two entries can share a timestamp, clock skew between replicas can reorder them, and an entry
+  whose handler ran slowly can carry an earlier timestamp than one committed before it. There is no
+  tiebreaker column; `id` is a v4 UUID and sorts randomly.
 - **A failed delivery is re-delivered later.** `RetryFailedAsync` puts an entry back to `pending`
   long after its neighbours went out, and an expired claim is recovered the same way.
 - **Relays claim disjoint batches.** `FOR UPDATE SKIP LOCKED` is what lets several replicas run at

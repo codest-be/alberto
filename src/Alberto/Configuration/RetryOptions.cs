@@ -26,10 +26,13 @@ public sealed record RetryOptions
         if (attemptNumber <= 1)
             return RetryDelay;
 
-        var multiplier = Math.Pow(BackoffMultiplier, attemptNumber - 1);
-        var delay = TimeSpan.FromMilliseconds(RetryDelay.TotalMilliseconds * multiplier);
+        // Cap in doubles: past attempt ~40 the product exceeds TimeSpan.MaxValue (or reaches
+        // +Infinity), and FromMilliseconds throws instead of saturating.
+        var milliseconds = RetryDelay.TotalMilliseconds * Math.Pow(BackoffMultiplier, attemptNumber - 1);
 
-        return delay > MaxRetryDelay ? MaxRetryDelay : delay;
+        return double.IsFinite(milliseconds) && milliseconds < MaxRetryDelay.TotalMilliseconds
+            ? TimeSpan.FromMilliseconds(milliseconds)
+            : MaxRetryDelay;
     }
 }
 

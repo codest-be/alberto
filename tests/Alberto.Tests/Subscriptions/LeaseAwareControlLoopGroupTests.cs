@@ -528,4 +528,63 @@ public sealed class LeaseAwareControlLoopGroupTests
         group.GetFenceToken(lostProc).Should().Be(0L,
             "the non-renewed processor's fence token must be cleared to the safe-zero sentinel");
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Shutdown vs. an in-flight scan
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Holds every scan-time acquire on a gate, and tracks whether a lease is held.</summary>
+    private sealed class GatedLeaseManager : IProcessorLeaseManager
+    {
+        public TimeSpan LeaseDuration => TimeSpan.FromHours(1);
+        public TaskCompletionSource Gate { get; } = new();
+        public bool Gated { get; set; }
+        public bool Held { get; private set; }
+
+        public async Task<IProcessorLease?> TryAcquireAsync(
+            string consumerId, string processorId, string replicaId, CancellationToken ct = default)
+        {
+            if (!Gated) return null;
+            await Gate.Task;
+            Held = true;
+            return MakeLease(processorId, 1);
+        }
+
+        public Task<IReadOnlyList<string>> RenewLeasesAsync(
+            string consumerId, string replicaId, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<string>>([]);
+
+        public Task ReleaseAllLeasesAsync(
+            string consumerId, string replicaId, CancellationToken ct = default)
+        {
+            Held = false;
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<ProcessorLeaseInfo>> GetAllLeasesAsync(
+            string consumerId, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<ProcessorLeaseInfo>>([]);
+    }
+
+    [Fact]
+    public async Task StopAsync_DuringAScan_DoesNotLeaveALoopRunningOrALeaseHeld()
+    {
+        // A scan already past its cancellation checks used to finish after StopAsync had
+        // released every lease: it acquired a lease and started a loop on a stopped group.
+        const string procId = "proc-stop-race";
+        var mgr = new GatedLeaseManager();
+        await using var group = new LeaseAwareControlLoopGroup(
+            allLoops: [BuildLoop(procId)], leaseManager: mgr, consumerId: "consumer", replicaId: "replica");
+
+        await group.StartAsync(CancellationToken.None);
+        mgr.Gated = true;
+        InvokeScanTimer(group); // parks inside TryAcquireAsync
+
+        var stop = group.StopAsync(CancellationToken.None);
+        mgr.Gate.SetResult();
+        await stop;
+
+        mgr.Held.Should().BeFalse("shutdown must release the lease the in-flight scan acquired");
+        GetRunningLoops(group).Should().BeEmpty("no loop may be left running after StopAsync");
+    }
 }
