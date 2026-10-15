@@ -672,6 +672,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
             ModuleKey = _moduleKey,
             Envelope = evt,
             IsRebuild = _processor.IsRebuilding,
+            TraceParenting = _executionOptions.TraceParenting,
             CancellationToken = ct,
         };
 

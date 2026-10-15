@@ -1,26 +1,16 @@
 using System.Diagnostics;
+using Alberto.Tenancy;
 using Alberto.Append;
 
 namespace Alberto.Telemetry;
 
 /// <summary>
 /// Append interceptor that adds distributed tracing instrumentation.
-/// - Stores trace context (_traceId, _spanId) in event metadata
-/// - Creates "Alberto.Append" activity span
+/// - Creates an "append {module}" activity span
 /// - Records events being appended as Activity events (showing what was decided)
 /// </summary>
-internal sealed class TelemetryAppendInterceptor(bool recordEventTagValues = false) : IAppendInterceptor
+internal sealed class TelemetryAppendInterceptor(bool recordEventTagValues = false, string? moduleKey = null) : IAppendInterceptor
 {
-    /// <summary>
-    /// Metadata key for the trace ID.
-    /// </summary>
-    public const string TraceIdKey = "_traceId";
-
-    /// <summary>
-    /// Metadata key for the span ID.
-    /// </summary>
-    public const string SpanIdKey = "_spanId";
-
     /// <inheritdoc />
     public async Task<IReadOnlyCollection<IEventEnvelope>> OnAppendingAsync(
         AppendContext context,
@@ -28,66 +18,74 @@ internal sealed class TelemetryAppendInterceptor(bool recordEventTagValues = fal
         CancellationToken ct = default)
     {
         using var activity = AlbertoMetrics.Source.StartActivity(
-            AlbertoMetrics.AppendActivityName,
+            moduleKey is null
+                ? AlbertoMetrics.AppendActivityName
+                : $"{AlbertoMetrics.AppendActivityName} {ShardKey.ModuleOf(moduleKey)}",
             ActivityKind.Producer);
 
-        activity?.SetTag("events.count", context.Events.Count);
+        if (activity is not null && moduleKey is not null)
+        {
+            activity.SetTag("alberto.module", ShardKey.ModuleOf(moduleKey));
+            if (ShardKey.ShardOf(moduleKey) is { } shardId)
+                activity.SetTag("alberto.shard", shardId);
+        }
 
-        // Enrich events with trace context
-        var enrichedEvents = EnrichEventsWithTraceContext(context.Events, activity);
-        var enrichedContext = context.WithEvents(enrichedEvents);
+        activity?.SetTag("alberto.events.count", context.Events.Count);
 
         // Add each event being appended as an Activity event (shows "what was decided")
         foreach (var evt in context.Events)
         {
             activity?.AddEvent(new ActivityEvent(
-                "event.appending",
+                "alberto.event.appending",
                 tags: new ActivityTagsCollection
                 {
-                    { "event.id", evt.Id.ToString() },
-                    { "event.type", evt.EventType.Id },
-                    { "event.tags", DescribeTags(evt.Tags) }
+                    { "alberto.event.id", evt.Id.ToString() },
+                    { "alberto.event.type", evt.EventType.Id },
+                    { "alberto.event.tags", DescribeTags(evt.Tags) }
                 }));
         }
 
+        var tags = moduleKey is null ? new TagList() : ProcessorTags.ForModuleOnly(moduleKey);
+        var outcome = "success";
         var sw = Stopwatch.StartNew();
         try
         {
-            var result = await next(enrichedContext);
-
-            activity?.SetStatus(ActivityStatusCode.Ok);
+            var result = await next(context);
 
             // Record positions assigned
             if (result.Count > 0)
             {
-                activity?.SetTag("events.first_position", result.First().GlobalPosition);
-                activity?.SetTag("events.last_position", result.Last().GlobalPosition);
+                activity?.SetTag("alberto.events.first_position", result.First().GlobalPosition);
+                activity?.SetTag("alberto.events.last_position", result.Last().GlobalPosition);
             }
 
-            AlbertoMetrics.EventsAppended.Add(result.Count);
+            AlbertoMetrics.EventsAppended.Add(result.Count, tags);
 
             return result;
         }
         catch (DcbConflictException)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, "DCB conflict");
-            activity?.SetTag("dcb.conflict", true);
+            activity?.SetTag("error.type", typeof(DcbConflictException).FullName);
+            activity?.SetStatus(ActivityStatusCode.Error);
+            activity?.SetTag("alberto.dcb.conflict", true);
 
-            AlbertoMetrics.ConcurrencyConflicts.Add(1);
+            outcome = "conflict";
+            var conflictTags = tags;
+            conflictTags.Add("kind", "append");
+            AlbertoMetrics.ConcurrencyConflicts.Add(1, conflictTags);
 
             throw;
         }
         catch (Exception ex)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            // An exception EVENT, not span attributes. See the same call in
-            // TelemetryConsumeMiddleware for why messages must not become attributes.
-            activity?.AddException(ex);
+            outcome = "error";
+            TelemetrySpans.Fail(activity, ex);
             throw;
         }
         finally
         {
-            AlbertoMetrics.AppendDuration.Record(sw.Elapsed.TotalSeconds);
+            tags.Add("outcome", outcome);
+            AlbertoMetrics.AppendDuration.Record(sw.Elapsed.TotalSeconds, tags);
         }
     }
 
@@ -107,33 +105,4 @@ internal sealed class TelemetryAppendInterceptor(bool recordEventTagValues = fal
         recordEventTagValues
             ? string.Join(",", tags.Select(t => t.Value))
             : string.Join(",", tags.Select(t => t.Concept).Distinct(StringComparer.Ordinal));
-
-    private static IReadOnlyList<IEventToPersist> EnrichEventsWithTraceContext(
-        IReadOnlyList<IEventToPersist> events,
-        Activity? activity)
-    {
-        if (activity is null)
-            return events;
-
-        var traceId = activity.TraceId.ToString();
-        var spanId = activity.SpanId.ToString();
-
-        return events.Select(evt =>
-        {
-            var enrichedMetadata = new Dictionary<string, string>(evt.Metadata)
-            {
-                [TraceIdKey] = traceId,
-                [SpanIdKey] = spanId
-            };
-
-            return new EventToPersist
-            {
-                Id = evt.Id,
-                EventType = evt.EventType,
-                Tags = evt.Tags,
-                EventData = evt.EventData,
-                Metadata = enrichedMetadata
-            };
-        }).ToList();
-    }
 }

@@ -140,7 +140,7 @@ public sealed class AlbertoMetricsTests
         TagValue(tags, "module").Should().Be("my-module",
             "ProcessingErrors must carry a module tag to match EventsProcessed");
         TagValue(tags, "processor").Should().Be(context.ProcessorId);
-        TagValue(tags, "exception.type").Should().Be("InvalidOperationException");
+        TagValue(tags, "error.type").Should().Be(typeof(InvalidOperationException).FullName);
     }
 
     [Fact]
@@ -164,7 +164,7 @@ public sealed class AlbertoMetricsTests
         TagValue(tags, "module").Should().Be("my-module",
             "ProcessingErrors must carry a module tag even when the exception propagates");
         TagValue(tags, "processor").Should().Be(context.ProcessorId);
-        TagValue(tags, "exception.type").Should().Be("InvalidOperationException");
+        TagValue(tags, "error.type").Should().Be(typeof(InvalidOperationException).FullName);
     }
 
     [Fact]
@@ -202,7 +202,7 @@ public sealed class AlbertoMetricsTests
         TagValue(tags, "module").Should().Be("my-module",
             "ProcessingErrors must carry a module tag to match EventsProcessed");
         TagValue(tags, "processor").Should().Be(context.ProcessorId);
-        TagValue(tags, "exception.type").Should().Be("InvalidOperationException");
+        TagValue(tags, "error.type").Should().Be(typeof(InvalidOperationException).FullName);
     }
 
     [Fact]

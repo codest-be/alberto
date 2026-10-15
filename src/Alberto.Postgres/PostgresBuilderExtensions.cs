@@ -55,7 +55,7 @@ public static class PostgresBuilderExtensions
                 dataSource, timeProvider, opts.Schema, opts.EnableStableHeadBarrier);
 
             var pipeline = sp.GetRequiredKeyedService<IAppendInterceptorPipeline>(moduleKey);
-            return new InterceptingEventStoreBackend(rawBackend, pipeline);
+            return new InterceptingEventStoreBackend(rawBackend, pipeline, "postgresql");
         });
 
         services.AddKeyedSingleton<IEventStore>(moduleKey, (sp, key) =>
@@ -98,7 +98,7 @@ public static class PostgresBuilderExtensions
             var decorator = new TenantEventStoreDecorator(rawTenantBackend, tenantAccessor);
 
             var pipeline = sp.GetRequiredKeyedService<IAppendInterceptorPipeline>(moduleKey);
-            return new InterceptingEventStoreBackend(decorator, pipeline);
+            return new InterceptingEventStoreBackend(decorator, pipeline, "postgresql");
         });
 
         // Register a singleton backend for ControlLoops (streams all events, no per-request
@@ -109,7 +109,7 @@ public static class PostgresBuilderExtensions
             var rawTenantBackend = sp.GetRequiredKeyedService<PostgresTenantEventStoreBackend>(moduleKey + ":tenant-raw");
             var decorator = new TenantEventStoreDecorator(rawTenantBackend, ConsumerTenantAccessor.Instance);
             var pipeline = sp.GetRequiredKeyedService<IAppendInterceptorPipeline>(moduleKey);
-            return new InterceptingEventStoreBackend(decorator, pipeline);
+            return new InterceptingEventStoreBackend(decorator, pipeline, "postgresql");
         });
 
         services.AddKeyedScoped<IEventStore>(moduleKey, (sp, key) =>

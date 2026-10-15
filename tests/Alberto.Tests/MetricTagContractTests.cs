@@ -65,9 +65,13 @@ public sealed class MetricTagContractTests
                 ("alberto.concurrency.conflicts", "conflicts"),
                 ("alberto.tenant_locks_acquired", "locks"),
                 ("alberto.tenant_lock_failures",  "failures"),
+                ("alberto.outbox.published",       "messages"),
+                ("alberto.outbox.publish.failures", "failures"),
                 // Histograms
                 ("alberto.append.duration",       "s"),
                 ("alberto.processing.duration",   "s"),
+                ("alberto.outbox.delivery.latency", "s"),
+                ("alberto.event.age",             "s"),
                 // Observable gauges
                 ("alberto.processor.lag",         "events"),
                 ("alberto.head.stalled",          "s"),
@@ -75,38 +79,6 @@ public sealed class MetricTagContractTests
             },
             options => options.WithoutStrictOrdering(),
             "renaming an instrument or changing its unit is a breaking change for dashboards and alerts");
-    }
-
-    // ── 2. Instruments with no tags ──────────────────────────────────────────
-
-    [Fact]
-    public void EventsAppended_carries_no_tags()
-    {
-        var (_, tags) = CaptureFirstCounter<long>(
-            "alberto.events.appended",
-            () => AlbertoMetrics.EventsAppended.Add(1));
-
-        tags.Should().BeEmpty("alberto.events.appended has no tag dimensions");
-    }
-
-    [Fact]
-    public void ConcurrencyConflicts_carries_no_tags()
-    {
-        var (_, tags) = CaptureFirstCounter<long>(
-            "alberto.concurrency.conflicts",
-            () => AlbertoMetrics.ConcurrencyConflicts.Add(1));
-
-        tags.Should().BeEmpty("alberto.concurrency.conflicts has no tag dimensions");
-    }
-
-    [Fact]
-    public void AppendDuration_carries_no_tags()
-    {
-        var (_, tags) = CaptureFirstHistogram<double>(
-            "alberto.append.duration",
-            () => AlbertoMetrics.AppendDuration.Record(0.001));
-
-        tags.Should().BeEmpty("alberto.append.duration has no tag dimensions");
     }
 
     // ── 3. Core consume-path instruments: {processor, module, [shard]} ───────
@@ -267,7 +239,7 @@ public sealed class MetricTagContractTests
     // ── 4. Telemetry-package instruments: {processor, module, [shard]} ───────
     //
     // events.processed and processing.duration use TelemetryTags.ForModule, which
-    // delegates to ProcessorTags.ForModule.  processing.errors adds exception.type.
+    // delegates to ProcessorTags.ForModule.  processing.errors adds error.type.
 
     [Fact]
     public async Task EventsProcessed_unsharded_tag_keys_are_processor_and_module()
@@ -345,8 +317,8 @@ public sealed class MetricTagContractTests
                 return Task.CompletedTask;
             }));
 
-        TagKeys(tags).Should().BeEquivalentTo(["processor", "module", "exception.type"],
-            "alberto.processing.errors tag contract is {{processor, module, exception.type}} for an unsharded module");
+        TagKeys(tags).Should().BeEquivalentTo(["processor", "module", "error.type"],
+            "alberto.processing.errors tag contract is {{processor, module, error.type}} for an unsharded module");
     }
 
     [Fact]
@@ -365,8 +337,8 @@ public sealed class MetricTagContractTests
                 return Task.CompletedTask;
             }));
 
-        TagKeys(tags).Should().BeEquivalentTo(["processor", "module", "shard", "exception.type"],
-            "alberto.processing.errors tag contract is {{processor, module, shard, exception.type}} for a sharded module");
+        TagKeys(tags).Should().BeEquivalentTo(["processor", "module", "shard", "error.type"],
+            "alberto.processing.errors tag contract is {{processor, module, shard, error.type}} for a sharded module");
     }
 
     // ── 5. Tenant-ownership gauges: {consumer.id, module, [shard]} ───────────
@@ -436,9 +408,10 @@ public sealed class MetricTagContractTests
     //
     // TelemetryConsumeMiddleware and TelemetryBatchConsumeMiddleware create
     // Alberto.Consume spans.  The span attribute keys must match the metric tag
-    // keys so that users can join traces and metrics in a single query.
-    // In particular "module" (not the old "module.key") must be used — exactly
-    // as it is on every consume-path metric.
+    // keys so that users can join traces and metrics in a single query. Span
+    // attributes are namespaced (alberto.module, alberto.shard, ...) and carry the
+    // messaging.* semantic conventions; metric tag keys are a separate contract
+    // (above) and stay un-namespaced.
 
     [Fact]
     public async Task ConsumeMiddleware_unsharded_span_attribute_keys_are_processor_module_position_type_links()
@@ -449,7 +422,7 @@ public sealed class MetricTagContractTests
         var tags = await CaptureConsumeSpanTagsAsync(ctx.ProcessorId, () => mw(ctx, () => Task.CompletedTask));
 
         TagKeys(tags).Should().BeEquivalentTo(
-            ["processor.id", "module", "event.position", "event.type", "trace.links.count"],
+            ["messaging.system", "messaging.operation.type", "messaging.consumer.group.name", "messaging.destination.name", "alberto.processor.id", "alberto.module", "alberto.event.position", "alberto.event.type", "alberto.trace.links.count"],
             "Alberto.Consume span attribute contract for an unsharded module must use 'module', not 'module.key'");
     }
 
@@ -462,7 +435,7 @@ public sealed class MetricTagContractTests
         var tags = await CaptureConsumeSpanTagsAsync(ctx.ProcessorId, () => mw(ctx, () => Task.CompletedTask));
 
         TagKeys(tags).Should().BeEquivalentTo(
-            ["processor.id", "module", "shard", "event.position", "event.type", "trace.links.count"],
+            ["messaging.system", "messaging.operation.type", "messaging.consumer.group.name", "messaging.destination.name", "alberto.processor.id", "alberto.module", "alberto.shard", "alberto.event.position", "alberto.event.type", "alberto.trace.links.count"],
             "Alberto.Consume span attribute contract for a sharded module must emit 'shard', not 'module.shard'");
     }
 
@@ -475,7 +448,7 @@ public sealed class MetricTagContractTests
         var tags = await CaptureConsumeSpanTagsAsync(ctx.ProcessorId, () => mw(ctx, () => Task.CompletedTask));
 
         TagKeys(tags).Should().BeEquivalentTo(
-            ["processor.id", "module", "batch.size", "event.position.first", "event.position.last", "trace.links.count"],
+            ["messaging.system", "messaging.operation.type", "messaging.consumer.group.name", "messaging.destination.name", "alberto.processor.id", "alberto.module", "messaging.batch.message_count", "alberto.event.position.first", "alberto.event.position.last", "alberto.trace.links.count"],
             "Alberto.Consume batch span attribute contract for an unsharded module must use 'module', not 'module.key'");
     }
 
@@ -488,7 +461,7 @@ public sealed class MetricTagContractTests
         var tags = await CaptureConsumeSpanTagsAsync(ctx.ProcessorId, () => mw(ctx, () => Task.CompletedTask));
 
         TagKeys(tags).Should().BeEquivalentTo(
-            ["processor.id", "module", "shard", "batch.size", "event.position.first", "event.position.last", "trace.links.count"],
+            ["messaging.system", "messaging.operation.type", "messaging.consumer.group.name", "messaging.destination.name", "alberto.processor.id", "alberto.module", "alberto.shard", "messaging.batch.message_count", "alberto.event.position.first", "alberto.event.position.last", "alberto.trace.links.count"],
             "Alberto.Consume batch span attribute contract for a sharded module must emit 'shard', not 'module.shard'");
     }
 
@@ -515,7 +488,7 @@ public sealed class MetricTagContractTests
         });
 
         TagKeys(tags).Should().BeEquivalentTo(
-            ["processor.id", "module", "event.position", "event.type", "trace.links.count"],
+            ["messaging.system", "messaging.operation.type", "messaging.consumer.group.name", "messaging.destination.name", "alberto.processor.id", "alberto.module", "alberto.event.position", "alberto.event.type", "alberto.trace.links.count"],
             "the capture must correlate to the span this test started, not to the first Alberto.Consume span the process happens to stop");
     }
 
@@ -600,7 +573,7 @@ public sealed class MetricTagContractTests
                     return;
 
                 var tags = activity.TagObjects.ToArray();
-                if (TagValue(tags, "processor.id") == processorId)
+                if (TagValue(tags, "alberto.processor.id") == processorId)
                 {
                     lock (captured) captured.Add(tags);
                 }

@@ -84,6 +84,7 @@ public sealed class AlbertoStore(
 
         var envelopes = await eventStore.StreamAsync(query, cancellationToken: cancellationToken);
 
+        CommandTelemetry.EventsRead(envelopes.Count);
         var lastPosition = 0L;
         foreach (var envelope in envelopes)
         {
@@ -107,6 +108,7 @@ public sealed class AlbertoStore(
             query,
             cancellationToken: cancellationToken);
 
+        CommandTelemetry.EventsRead(events.Count);
         var state = initial;
         var lastPosition = 0L;
 

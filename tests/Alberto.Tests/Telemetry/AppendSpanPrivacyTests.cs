@@ -38,7 +38,7 @@ public sealed class AppendSpanPrivacyTests
         var span = await CaptureAppendSpanFor(eventId, () =>
             interceptor.OnAppendingAsync(ContextFor(eventId), _ => Task.FromResult(NoResult)));
 
-        var tags = AppendingEventTag(span, "event.tags");
+        var tags = AppendingEventTag(span, "alberto.event.tags");
 
         tags.Should().Be("order,customer",
             "the concept names identify the consistency boundary without naming the entities");
@@ -55,7 +55,7 @@ public sealed class AppendSpanPrivacyTests
         var span = await CaptureAppendSpanFor(eventId, () =>
             interceptor.OnAppendingAsync(ContextFor(eventId), _ => Task.FromResult(NoResult)));
 
-        AppendingEventTag(span, "event.tags").Should().Be("order:8f21,customer:4471");
+        AppendingEventTag(span, "alberto.event.tags").Should().Be("order:8f21,customer:4471");
     }
 
     [Fact]
@@ -70,7 +70,7 @@ public sealed class AppendSpanPrivacyTests
         var span = await CaptureAppendSpanFor(eventId, () =>
             interceptor.OnAppendingAsync(context, _ => Task.FromResult(NoResult)));
 
-        AppendingEventTag(span, "event.tags").Should().Be("order");
+        AppendingEventTag(span, "alberto.event.tags").Should().Be("order");
     }
 
     [Fact]
@@ -137,7 +137,7 @@ public sealed class AppendSpanPrivacyTests
             Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
             ActivityStopped = activity =>
             {
-                if (activity.OperationName == AlbertoMetrics.AppendActivityName)
+                if (activity.OperationName.StartsWith(AlbertoMetrics.AppendActivityName))
                     lock (captured) captured.Add(activity);
             },
         };
@@ -148,14 +148,14 @@ public sealed class AppendSpanPrivacyTests
 
         lock (captured)
             return captured.SingleOrDefault(a => a.Events.Any(e =>
-                e.Tags.Any(t => t.Key == "event.id" && (string?)t.Value == eventId.ToString())));
+                e.Tags.Any(t => t.Key == "alberto.event.id" && (string?)t.Value == eventId.ToString())));
     }
 
     private static string? AppendingEventTag(Activity? span, string tagKey)
     {
         span.Should().NotBeNull("the append span must have been recorded");
 
-        var appending = span!.Events.Single(e => e.Name == "event.appending");
+        var appending = span!.Events.Single(e => e.Name == "alberto.event.appending");
         return (string?)appending.Tags.Single(t => t.Key == tagKey).Value;
     }
 }

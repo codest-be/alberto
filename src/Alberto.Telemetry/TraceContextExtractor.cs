@@ -26,7 +26,16 @@ internal static class TraceContextExtractor
     /// Extracts trace context from the envelope metadata. May be
     /// <see langword="null"/> when no provider is registered.
     /// </param>
-    internal static ActivityLink? ExtractTraceLink(IEventEnvelope envelope, ITraceContextProvider? provider)
+    internal static ActivityLink? ExtractTraceLink(IEventEnvelope envelope, ITraceContextProvider? provider) =>
+        ExtractContext(envelope, provider) is { } context
+            ? new ActivityLink(context, new ActivityTagsCollection { { "alberto.event.position", envelope.GlobalPosition } })
+            : null;
+
+    /// <summary>
+    /// The remote <see cref="ActivityContext"/> of the trace that appended <paramref name="envelope"/>,
+    /// or <see langword="null"/> under the same conditions as <see cref="ExtractTraceLink"/>.
+    /// </summary>
+    internal static ActivityContext? ExtractContext(IEventEnvelope envelope, ITraceContextProvider? provider)
     {
         if (provider is null)
             return null;
@@ -35,16 +44,42 @@ internal static class TraceContextExtractor
         if (traceContext is null)
             return null;
 
-        // W3C traceparent format: 00-{traceId}-{spanId}-01
-        if (!ActivityContext.TryParse(
-            $"00-{traceContext.TraceId}-{traceContext.SpanId}-01",
-            null,
-            out var activityContext))
-            return null;
-
-        return new ActivityLink(activityContext, new ActivityTagsCollection
-        {
-            { "event.position", envelope.GlobalPosition }
-        });
+        return ActivityContext.TryParse(
+            traceContext.TraceParent,
+            traceContext.TraceState,
+            isRemote: true,
+            out var activityContext)
+            ? activityContext
+            : null;
     }
+
+    /// <summary>
+    /// One link per distinct upstream trace in <paramref name="envelopes"/> (first event of each
+    /// trace wins), at most <see cref="MaxBatchLinks"/>. <paramref name="dropped"/> counts the
+    /// distinct traces that did not fit.
+    /// </summary>
+    internal static ActivityLink[] ExtractBatchLinks(
+        IReadOnlyList<IEventEnvelope> envelopes, ITraceContextProvider? provider, out int dropped)
+    {
+        dropped = 0;
+        if (provider is null)
+            return [];
+
+        var links = new List<ActivityLink>();
+        var seen = new HashSet<ActivityTraceId>();
+        foreach (var envelope in envelopes)
+        {
+            if (ExtractContext(envelope, provider) is not { } context || !seen.Add(context.TraceId))
+                continue;
+            if (links.Count == MaxBatchLinks)
+                dropped++;
+            else
+                links.Add(new ActivityLink(context, new ActivityTagsCollection { { "alberto.event.position", envelope.GlobalPosition } }));
+        }
+
+        return [.. links];
+    }
+
+    /// <summary>Upper bound on links per batch span; backends truncate far above this anyway.</summary>
+    internal const int MaxBatchLinks = 32;
 }

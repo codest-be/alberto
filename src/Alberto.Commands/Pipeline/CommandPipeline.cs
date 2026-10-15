@@ -249,7 +249,7 @@ public readonly struct CommandPipeline<TCommand>
         {
             var staged = await once.Get(ct);
             return staged.HasProblems ? Decision.Fail(staged.Problems!) : decide(staged.Command);
-        });
+        }, typeof(TCommand).Name);
     }
 
     /// <inheritdoc cref="Decide(Func{TCommand, Decision})"/>
@@ -261,6 +261,6 @@ public readonly struct CommandPipeline<TCommand>
         {
             var staged = await once.Get(ct);
             return staged.HasProblems ? Decision<TValue>.Fail(staged.Problems!) : decide(staged.Command);
-        });
+        }, typeof(TCommand).Name);
     }
 }

@@ -70,7 +70,7 @@ public static class TelemetryBuilderExtensions
                 var telemetry = sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>()
                     .Get(moduleKey).Telemetry;
                 return telemetry.Enabled
-                    ? (IAppendInterceptor)new TelemetryAppendInterceptor(telemetry.RecordEventTagValues)
+                    ? (IAppendInterceptor)new TelemetryAppendInterceptor(telemetry.RecordEventTagValues, moduleKey)
                     : NoOpAppendInterceptor.Instance;
             });
 

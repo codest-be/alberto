@@ -115,7 +115,7 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
             }
             catch (Exception ex) when (IsRetryableConflict(ex))
             {
-                AlbertoMetrics.ConcurrencyConflicts.Add(1);
+                AlbertoMetrics.ConcurrencyConflicts.Add(1, new KeyValuePair<string, object?>("kind", "projection"));
 
                 if (attempt == MaxWriteAttempts)
                     throw ToConcurrencyConflict(ex, upserts.Keys, deletes);

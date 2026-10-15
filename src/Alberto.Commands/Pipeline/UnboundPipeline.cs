@@ -34,7 +34,7 @@ public readonly struct UnboundPipeline<TCommand, TState>
 
             var state = await load(staged.Command, ct);
             return decide(staged.Command, state);
-        });
+        }, typeof(TCommand).Name);
     }
 
     /// <inheritdoc cref="Decide(Func{TCommand, TState, Decision})"/>
@@ -49,7 +49,7 @@ public readonly struct UnboundPipeline<TCommand, TState>
 
             var state = await load(staged.Command, ct);
             return decide(staged.Command, state);
-        });
+        }, typeof(TCommand).Name);
     }
 
     private (

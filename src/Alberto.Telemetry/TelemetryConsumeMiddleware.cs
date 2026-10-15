@@ -18,7 +18,8 @@ public static class TelemetryConsumeMiddleware
     /// is supplied, the consumer span is linked to the trace that originally
     /// appended the event. Trace-link extraction is handled by
     /// <see cref="TraceContextExtractor.ExtractTraceLink"/>, shared with
-    /// <see cref="TelemetryBatchConsumeMiddleware"/>.
+    /// <see cref="TelemetryBatchConsumeMiddleware"/>. With <see cref="TraceParenting.Parent"/>
+    /// on the context the appending trace is the span's parent instead of a link.
     /// </summary>
     public static ConsumeMiddleware Create(ITraceContextProvider? traceContextProvider = null)
     {
@@ -28,25 +29,32 @@ public static class TelemetryConsumeMiddleware
             // ActivityLink array) when no ActivitySource listener is subscribed.
             // Metric counters and histograms are recorded unconditionally via the Meter.
             Activity? activity = null;
+            var ambient = Activity.Current;
             if (AlbertoMetrics.Source.HasListeners())
             {
-                var link = TraceContextExtractor.ExtractTraceLink(context.Envelope, traceContextProvider);
+                // Parent: the append trace becomes this span's parent, so the flow is one trace and
+                // head sampling decides it once. Link: a fresh root that points back at it.
+                var parent = context.TraceParenting == TraceParenting.Parent
+                    ? TraceContextExtractor.ExtractContext(context.Envelope, traceContextProvider)
+                    : null;
+                var link = parent is null
+                    ? TraceContextExtractor.ExtractTraceLink(context.Envelope, traceContextProvider)
+                    : null;
                 var links = link is null ? null : new[] { link.Value };
                 var activityName = $"{AlbertoMetrics.ConsumeActivityName} {context.ProcessorId}";
-                activity = AlbertoMetrics.Source.StartActivity(
-                    activityName,
-                    ActivityKind.Consumer,
-                    parentContext: default,
-                    links: links);
+                activity = TelemetrySpans.StartConsumer(activityName, parent ?? default, links);
 
-                activity?.SetTag("processor.id", context.ProcessorId);
-                activity?.SetTag("module", ShardKey.ModuleOf(context.ModuleKey));
-                if (ShardKey.ShardOf(context.ModuleKey) is { } shardId)
-                    activity?.SetTag("shard", shardId);
-                activity?.SetTag("event.position", context.Envelope.GlobalPosition);
-                activity?.SetTag("event.type", context.Envelope.EventType.Id);
-                activity?.SetTag("trace.links.count", links?.Length ?? 0);
+                TelemetrySpans.TagConsumer(activity, context.ProcessorId, context.ModuleKey);
+                activity?.SetTag("alberto.event.position", context.Envelope.GlobalPosition);
+                activity?.SetTag("alberto.event.type", context.Envelope.EventType.Id);
+                activity?.SetTag("alberto.trace.links.count", links?.Length ?? 0);
             }
+
+            // A rebuild or replay re-reads history; its ages would swamp the real delay readers see.
+            if (!context.IsRebuild)
+                AlbertoMetrics.EventAge.Record(
+                    (DateTimeOffset.UtcNow - context.Envelope.CreatedAt).TotalSeconds,
+                    TelemetryTags.ForModule(context.ProcessorId, context.ModuleKey));
 
             var sw = Stopwatch.StartNew();
             try
@@ -56,42 +64,36 @@ public static class TelemetryConsumeMiddleware
                 if (context.DeadLettered)
                 {
                     var ex = context.LastError;
-                    activity?.SetStatus(ActivityStatusCode.Error, ex?.Message ?? "Dead-lettered");
-                    if (ex is not null)
-                    {
-                        // An exception EVENT, not span attributes. Exception messages carry
-                        // whatever the thrower put in them — Npgsql's include the failing SQL —
-                        // so they belong where collectors already know to find and scrub them.
-                        activity?.AddException(ex);
-                    }
+                    // No exception message on the span: it carries whatever the thrower put in
+                    // it, and Npgsql's include the failing SQL. See TelemetrySpans.Fail.
+                    TelemetrySpans.Fail(activity, ex);
 
                     // Use the same module/shard tag set as EventsProcessed so all three
                     // per-event metrics (processed, errors, duration) share the same label
                     // dimensions and can be correlated by a single join key in dashboards.
                     var deadLetterTags = TelemetryTags.ForModule(context.ProcessorId, context.ModuleKey);
-                    deadLetterTags.Add("exception.type", ex?.GetType().Name ?? "Unknown");
+                    deadLetterTags.Add("error.type", ex?.GetType().FullName ?? "dead_lettered");
                     AlbertoMetrics.ProcessingErrors.Add(1, deadLetterTags);
                 }
                 else
                 {
-                    activity?.SetStatus(ActivityStatusCode.Ok);
                     AlbertoMetrics.EventsProcessed.Add(
                         1, TelemetryTags.ForModule(context.ProcessorId, context.ModuleKey));
                 }
             }
             catch (Exception ex)
             {
-                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-                activity?.AddException(ex);
+                TelemetrySpans.Fail(activity, ex);
 
                 var catchTags = TelemetryTags.ForModule(context.ProcessorId, context.ModuleKey);
-                catchTags.Add("exception.type", ex.GetType().Name);
+                catchTags.Add("error.type", ex.GetType().FullName);
                 AlbertoMetrics.ProcessingErrors.Add(1, catchTags);
                 throw;
             }
             finally
             {
                 activity?.Dispose();
+                Activity.Current = ambient;
                 // TotalSeconds matches the OTel semantic-convention unit "s" declared on ProcessingDuration.
                 AlbertoMetrics.ProcessingDuration.Record(sw.Elapsed.TotalSeconds,
                     TelemetryTags.ForModule(context.ProcessorId, context.ModuleKey));

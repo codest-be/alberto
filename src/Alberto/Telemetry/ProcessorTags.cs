@@ -26,6 +26,20 @@ namespace Alberto.Telemetry;
 internal static class ProcessorTags
 {
     /// <summary>
+    /// Returns <c>module</c> and, for sharded modules, <c>shard</c>, for write-side instruments
+    /// that have no processor.
+    /// </summary>
+    internal static TagList ForModuleOnly(string moduleKey)
+    {
+        var tags = new TagList { { "module", ShardKey.ModuleOf(moduleKey) } };
+
+        if (ShardKey.ShardOf(moduleKey) is { } shardId)
+            tags.Add("shard", shardId);
+
+        return tags;
+    }
+
+    /// <summary>
     /// Returns a tag list carrying <c>processor</c>, <c>module</c>, and — for sharded modules
     /// — <c>shard</c>. Pass <paramref name="moduleKey"/> as the raw physical key (which may be
     /// <c>module#shard</c>); the split happens here so callers never have to think about it.

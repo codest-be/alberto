@@ -1,3 +1,4 @@
+using Alberto.Diagnostics;
 using Alberto.Subscriptions;
 using Alberto.Tenancy;
 using Microsoft.Extensions.DependencyInjection;
@@ -32,7 +33,7 @@ internal sealed class OutboxHandler(
     {
         var message = await MapAsync(envelope, ct);
         if (message is null) return;
-        await store.InsertAsync(BuildEntry(message, envelope.Id, envelope.TenantId), ct);
+        await store.InsertAsync(BuildEntry(message, envelope), ct);
     }
 
     /// <inheritdoc/>
@@ -49,14 +50,9 @@ internal sealed class OutboxHandler(
 
         await Task.WhenAll(
             messages
-                .Select((m, i) => (
-                    Message: m,
-                    EventId: events[i].Id,
-                    TenantId: events[i].TenantId))
+                .Select((m, i) => (Message: m, Event: events[i]))
                 .Where(x => x.Message is not null)
-                .Select(x => store.InsertAsync(
-                    BuildEntry(x.Message!, x.EventId, x.TenantId),
-                    ct)));
+                .Select(x => store.InsertAsync(BuildEntry(x.Message!, x.Event), ct)));
     }
 
     private async Task<ExternalMessage?> MapAsync(IEventEnvelope envelope, CancellationToken ct)
@@ -67,21 +63,29 @@ internal sealed class OutboxHandler(
 
     private static OutboxEntry BuildEntry(
         ExternalMessage message,
-        Guid sourceEventId,
-        string? tenantId) =>
+        IEventEnvelope source) =>
         new(
             Id: Guid.NewGuid(),
-            SourceEventId: sourceEventId,
+            SourceEventId: source.Id,
             MessageType: message.MessageType,
             Version: message.Version,
             Payload: message.Payload,
-            Metadata: message.Metadata,
+            Metadata: WithTraceContext(message.Metadata, source),
             Status: OutboxEntryStatus.Pending,
             RetryCount: 0,
             LastError: null,
             CreatedAt: DateTimeOffset.UtcNow,
             DeliveredAt: null,
-            TenantId: tenantId,
+            TenantId: source.TenantId,
             Destination: message.Destination,
             RoutingHint: message.RoutingHint);
+
+    // The relay's span continues the trace of the append that produced the event.
+    private static Dictionary<string, string> WithTraceContext(
+        Dictionary<string, string> metadata, IEventEnvelope source)
+    {
+        var copy = new Dictionary<string, string>(metadata);
+        TraceContextPropagation.CarryOver(source.Metadata, copy);
+        return copy;
+    }
 }

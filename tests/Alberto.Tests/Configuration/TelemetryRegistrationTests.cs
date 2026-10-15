@@ -115,7 +115,7 @@ public class TelemetryRegistrationTests
 
         tracerProvider.ForceFlush();
 
-        exported.Should().NotContain(a => a.OperationName == AlbertoMetrics.AppendActivityName,
+        exported.Should().NotContain(a => a.OperationName.StartsWith(AlbertoMetrics.AppendActivityName),
             "Telemetry:Enabled = false must suppress Alberto append activities");
     }
 
@@ -146,7 +146,7 @@ public class TelemetryRegistrationTests
 
         tracerProvider.ForceFlush();
 
-        exported.Should().ContainSingle(a => a.OperationName == AlbertoMetrics.AppendActivityName,
+        exported.Should().ContainSingle(a => a.OperationName.StartsWith(AlbertoMetrics.AppendActivityName),
             "Telemetry:Enabled = true (default) must produce exactly one Alberto append activity");
     }
 
@@ -182,7 +182,7 @@ public class TelemetryRegistrationTests
 
         tracerProvider.ForceFlush();
 
-        exported.Count(a => a.OperationName == AlbertoMetrics.AppendActivityName)
+        exported.Count(a => a.OperationName.StartsWith(AlbertoMetrics.AppendActivityName))
             .Should().Be(1, "one append on one module must produce exactly one Alberto.Append activity, not one per WithTelemetry() call");
     }
 
@@ -284,7 +284,7 @@ public class TelemetryRegistrationTests
 
         exported.Should().ContainSingle(a => a.OperationName == "my-app-span",
             "the app's own OTel source must still be collected after AddAlberto");
-        exported.Should().ContainSingle(a => a.OperationName == AlbertoMetrics.AppendActivityName,
+        exported.Should().ContainSingle(a => a.OperationName.StartsWith(AlbertoMetrics.AppendActivityName),
             "Alberto's append activity must also be collected");
     }
 }
