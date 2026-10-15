@@ -487,6 +487,12 @@ yourself.
 | `alberto.load` | Internal | The boundary read of an attempt: `alberto.load.events`, `.position`, `.types`, `.tags` |
 | `alberto.decide` | Internal | The decision of an attempt: `alberto.decide.outcome`, `alberto.problem.codes` on rejection |
 | `alberto.read` | Client / Internal | A read from the event store: `alberto.read.after_position`, `.limit`, `.events`; `db.system.name` (and kind Client) only on Postgres |
+| `alberto.projection.inline` | Internal | One inline projection run after a commit: `alberto.projection.type`, `alberto.projection.events`. A sibling of `append` under the caller's span, not a child: the append span has already ended |
+| `alberto.poll` | Internal | One control-loop poll: `alberto.poll.after_position`, `alberto.poll.events`. The `alberto.read` it issues is its child |
+| `alberto.checkpoint.save` | Internal | One checkpoint write: `alberto.checkpoint.position` |
+| `alberto.lease.acquire` / `.renew` / `.release` | Internal | Processor-lease work of a lease-aware group: `alberto.consumer.id`, `alberto.replica.id`; acquire adds `alberto.lease.acquired` and `alberto.lease.fence_token`, renew adds `alberto.lease.renewed` and `alberto.lease.lost` |
+| `alberto.rebuild` | Internal | One projection rebuild on the replica driving it, from replay start to the sweep that reclaims the discarded version: `alberto.rebuild.version`. Events: `alberto.rebuild.replay_started` (`alberto.rebuild.shadow_id`), `.ready` (`alberto.rebuild.target_position`), `.promoted` (`alberto.rebuild.discarded_version`, `alberto.rebuild.forced`), `.aborted`, `.swept` |
+| `alberto.outbox.purge` | Internal | One outbox retention pass: `alberto.outbox.purge.before` |
 
 Attributes:
 
@@ -510,6 +516,17 @@ anywhere on a span: they can hold SQL or PII.
 
 The command spans are children of whatever activity is current when the command is committed, and
 the append span parents under the command root.
+
+Background spans (`alberto.poll`, `alberto.checkpoint.save`, `alberto.lease.*`, `alberto.rebuild`,
+`alberto.outbox.purge`) are always **roots**, whatever activity the host was started under, and
+never become the ambient activity of unrelated work: the rebuild span in particular stays open for
+the whole rebuild but parents nothing. Poll and checkpoint spans are as frequent as the polling
+interval; sample them down (or drop them in a sampler by name) if they crowd your backend. The
+outbox relay's `send` span is likewise a root when the entry carries no trace context.
+
+Background loops log under an `ILogger` scope keyed like the span attributes: `alberto.module`,
+`alberto.processor.id` and, for a sharded module, `alberto.shard`; the relay adds
+`alberto.tenant.id` per entry, and a lease-aware group `alberto.consumer.id`/`alberto.replica.id`.
 
 The append stamps the current trace context into each event's `metadata` as W3C `traceparent`
 (and `tracestate`, when non-empty), whether or not telemetry is enabled: it is the append
@@ -542,6 +559,9 @@ transport that forwards metadata as headers carries the trace to the receiver. T
 `alberto.outbox.marked_delivered` attribute says whether the delivered-mark landed; a failed mark
 is not a failed publish.
 
+Baggage does not cross the event log: only `traceparent`/`tracestate` are stored, so
+`Baggage.Current` set at append time is not present when a processor or the relay runs.
+
 **Metrics**
 
 | Instrument | Watch for |
@@ -570,8 +590,16 @@ in [configuration.md](configuration.md#postgres-options) for the remedy.
 
 Every instrument above is on the `Alberto` meter. Also present: `alberto.processor.lag` (events a
 processor is behind, tagged `processor`, `module`, `shard`) and `alberto.owned_tenant_count`
-(tenants a consumer holds). Metric tag keys (`module`, `shard`, `processor`, `outcome`, `kind`) are
-a separate contract from span attributes and are not namespaced.
+(tenants a consumer holds, tagged `consumer.id`, `module`, `shard`). Metric tag keys (`module`,
+`shard`, `processor`, `outcome`, `kind`) are a separate contract from span attributes and are not
+namespaced.
+
+The instruments are created through the host's `IMeterFactory` when the container has one (a
+generic host does), so each host's meter is scoped to its container; outside DI they fall back to
+the static `AlbertoMetrics.Meter`. Either way the meter is named `Alberto`. The three gauges drop a
+series when its source goes away: a stopped control loop removes its `alberto.processor.lag`
+series and a stopped head its `alberto.head.stalled` series, rather than reporting the last value
+forever. `alberto.owned_tenant_count` reads 0 after a consumer releases its leases.
 
 The four worth alerting on: **dead letters increasing**, **lag growing without bound**,
 **`alberto.head.stalled` sustained above zero**, and **`alberto.concurrency.conflicts` climbing.** The last is usually a boundary drawn wider than the

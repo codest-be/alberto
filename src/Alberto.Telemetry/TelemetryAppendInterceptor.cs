@@ -9,8 +9,10 @@ namespace Alberto.Telemetry;
 /// - Creates an "append {module}" activity span
 /// - Records events being appended as Activity events (showing what was decided)
 /// </summary>
-internal sealed class TelemetryAppendInterceptor(bool recordEventTagValues = false, string? moduleKey = null) : IAppendInterceptor
+internal sealed class TelemetryAppendInterceptor(bool recordEventTagValues = false, string? moduleKey = null, AlbertoInstruments? instruments = null) : IAppendInterceptor
 {
+    private readonly AlbertoInstruments _instruments = instruments ?? AlbertoMetrics.Shared;
+
     /// <inheritdoc />
     public async Task<IReadOnlyCollection<IEventEnvelope>> OnAppendingAsync(
         AppendContext context,
@@ -59,7 +61,7 @@ internal sealed class TelemetryAppendInterceptor(bool recordEventTagValues = fal
                 activity?.SetTag("alberto.events.last_position", result.Last().GlobalPosition);
             }
 
-            AlbertoMetrics.EventsAppended.Add(result.Count, tags);
+            _instruments.EventsAppended.Add(result.Count, tags);
 
             return result;
         }
@@ -72,20 +74,20 @@ internal sealed class TelemetryAppendInterceptor(bool recordEventTagValues = fal
             outcome = "conflict";
             var conflictTags = tags;
             conflictTags.Add("kind", "append");
-            AlbertoMetrics.ConcurrencyConflicts.Add(1, conflictTags);
+            _instruments.ConcurrencyConflicts.Add(1, conflictTags);
 
             throw;
         }
         catch (Exception ex)
         {
             outcome = "error";
-            TelemetrySpans.Fail(activity, ex);
+            BackgroundSpans.Fail(activity, ex);
             throw;
         }
         finally
         {
             tags.Add("outcome", outcome);
-            AlbertoMetrics.AppendDuration.Record(sw.Elapsed.TotalSeconds, tags);
+            _instruments.AppendDuration.Record(sw.Elapsed.TotalSeconds, tags);
         }
     }
 

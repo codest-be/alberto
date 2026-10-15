@@ -15,6 +15,7 @@ public sealed class EventStoreHead : IHostedService
     private readonly TimeProvider _timeProvider;
     private readonly string _moduleKey;
     private readonly TimeSpan _stallWarningThreshold;
+    private readonly AlbertoInstruments _instruments;
     private long _current;
     private CancellationTokenSource? _cts;
     private Task? _loop;
@@ -36,7 +37,8 @@ public sealed class EventStoreHead : IHostedService
         TimeSpan? drainTimeout = null,
         TimeProvider? timeProvider = null,
         string moduleKey = "",
-        TimeSpan? stallWarningThreshold = null)
+        TimeSpan? stallWarningThreshold = null,
+        AlbertoInstruments? instruments = null)
     {
         _backend = backend;
         _refreshInterval = refreshInterval ?? TimeSpan.FromMilliseconds(100);
@@ -47,6 +49,7 @@ public sealed class EventStoreHead : IHostedService
         _timeProvider = timeProvider ?? TimeProvider.System;
         _moduleKey = moduleKey;
         _stallWarningThreshold = stallWarningThreshold ?? TimeSpan.FromSeconds(30);
+        _instruments = instruments ?? AlbertoMetrics.Shared;
     }
 
     public long Current => Volatile.Read(ref _current);
@@ -100,15 +103,23 @@ public sealed class EventStoreHead : IHostedService
 
     private async Task RunAsync(CancellationToken ct)
     {
-        while (!ct.IsCancellationRequested)
+        try
         {
-            try
+            while (!ct.IsCancellationRequested)
             {
-                await WaitForNextRefreshAsync(ct);
-                await RefreshAsync(ct);
+                try
+                {
+                    await WaitForNextRefreshAsync(ct);
+                    await RefreshAsync(ct);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
+                catch (Exception ex) { _logger?.LogWarning(ex, "EventStoreHead refresh failed"); }
             }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
-            catch (Exception ex) { _logger?.LogWarning(ex, "EventStoreHead refresh failed"); }
+        }
+        finally
+        {
+            // A stopped head is not a stalled one, nor a healthy one: it has no reading at all.
+            _instruments.ForgetHeadStalled(_moduleKey);
         }
     }
 
@@ -198,7 +209,7 @@ public sealed class EventStoreHead : IHostedService
             // Mirrors the warning: the gauge reads 0 until the hold has actually crossed the
             // threshold, so a routine few-second hold (a normal short-lived write transaction)
             // never shows up as "stalled" on a dashboard, only a genuine stall does.
-            AlbertoMetrics.RecordHeadStalled(
+            _instruments.RecordHeadStalled(
                 _moduleKey, elapsed >= _stallWarningThreshold ? elapsed.TotalSeconds : 0d);
         }
         else
@@ -217,7 +228,7 @@ public sealed class EventStoreHead : IHostedService
                 _warnedForCurrentStall = false;
             }
 
-            AlbertoMetrics.RecordHeadStalled(_moduleKey, 0d);
+            _instruments.RecordHeadStalled(_moduleKey, 0d);
         }
     }
 

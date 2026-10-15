@@ -33,12 +33,22 @@ public static class ConsumeMiddlewares
         IDeadLetterStore? deadLetterStore,
         TimeProvider? timeProvider = null,
         ILogger? logger = null)
+        => RetryAndDeadLetterOn(AlbertoMetrics.Shared, retry, classifier, deadLetterStore, timeProvider, logger);
+
+    /// <summary>As the public overload, recording on the container's instruments.</summary>
+    internal static ConsumeMiddleware RetryAndDeadLetterOn(
+        AlbertoInstruments instruments,
+        RetryOptions retry,
+        IErrorClassifier classifier,
+        IDeadLetterStore? deadLetterStore,
+        TimeProvider? timeProvider,
+        ILogger? logger)
     {
         var clock = timeProvider ?? TimeProvider.System;
         return async (context, next) =>
         {
             var lastError = await RetryAndDeadLetterCore.ExecuteAsync(
-                context, retry, classifier, next, retryMetricCount: 1);
+                context, retry, classifier, next, retryMetricCount: 1, instruments);
 
             if (lastError is null)
                 return; // success
@@ -46,7 +56,7 @@ public static class ConsumeMiddlewares
             // Exhausted retries or permanent error — dead-letter this event.
             context.DeadLettered = true;
 
-            AlbertoMetrics.DeadLetters.Add(1, ProcessorTags.ForModule(context.ProcessorId, context.ModuleKey));
+            instruments.DeadLetters.Add(1, ProcessorTags.ForModule(context.ProcessorId, context.ModuleKey));
 
             if (retry.DeadLetterOnMaxRetries && deadLetterStore is not null)
             {

@@ -33,12 +33,14 @@ internal static class RetryAndDeadLetterCore
     /// <c>context.Envelopes.Count</c> for batch dispatch so the metric
     /// reflects the actual number of events retried.
     /// </param>
+    /// <param name="instruments">Where the retry counter is recorded.</param>
     internal static async Task<Exception?> ExecuteAsync(
         IMiddlewareContext context,
         RetryOptions retry,
         IErrorClassifier classifier,
         Func<Task> next,
-        int retryMetricCount)
+        int retryMetricCount,
+        AlbertoInstruments instruments)
     {
         Exception? lastError = null;
 
@@ -66,7 +68,7 @@ internal static class RetryAndDeadLetterCore
 
                 if (attempt <= retry.MaxRetries)
                 {
-                    AlbertoMetrics.Retries.Add(retryMetricCount,
+                    instruments.Retries.Add(retryMetricCount,
                         ProcessorTags.ForModule(context.ProcessorId, context.ModuleKey));
 
                     await Task.Delay(retry.CalculateDelay(attempt), context.CancellationToken);

@@ -1,5 +1,6 @@
 using Alberto.Configuration;
 using Alberto.Subscriptions;
+using Alberto.Telemetry;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -125,7 +126,8 @@ public static class MessagingBuilderExtensions
                         batchSize: relayBatchSize,
                         claimLease: relayClaimLease,
                         maxRetries: relayMaxRetries,
-                        logger: sp.GetService<ILogger<OutboxRelay>>()));
+                        logger: sp.GetService<ILogger<OutboxRelay>>(),
+                        instruments: AlbertoInstruments.For(sp)));
             }
         });
 

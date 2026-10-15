@@ -49,6 +49,8 @@ public sealed class PostgresTenantProcessorLock : ITenantProcessorLock
     /// <inheritdoc/>
     public TimeSpan LeaseDuration { get; }
 
+    internal AlbertoInstruments Instruments { get; init; } = AlbertoMetrics.Shared;
+
     // Upserts the owned-tenant snapshot for consumerId and emits the gauge.
     // No-op when _moduleKey is null (tests that don't care about the gauge
     // can skip passing moduleKey to keep their construction site simple).
@@ -60,7 +62,7 @@ public sealed class PostgresTenantProcessorLock : ITenantProcessorLock
         {
             count = _ownedByConsumer.TryGetValue(consumerId, out var set) ? set.Count : 0;
         }
-        AlbertoMetrics.RecordTenantOwnership(consumerId, _moduleKey, count);
+        Instruments.RecordTenantOwnership(consumerId, _moduleKey, count);
     }
 
     /// <inheritdoc/>
@@ -109,7 +111,7 @@ public sealed class PostgresTenantProcessorLock : ITenantProcessorLock
         // see the alberto.owned_tenant_count gauge.
         if (await reader.ReadAsync(ct))
         {
-            AlbertoMetrics.TenantLocksAcquired.Add(1, new TagList { { "consumer.id", consumerId } });
+            Instruments.TenantLocksAcquired.Add(1, new TagList { { "consumer.id", consumerId } });
             var actualExpiresAt = reader.GetDateTime(0);
 
             lock (_ownedLock)
@@ -124,7 +126,7 @@ public sealed class PostgresTenantProcessorLock : ITenantProcessorLock
         }
 
         // No rows returned means the lease is held by another replica and not expired
-        AlbertoMetrics.TenantLockFailures.Add(1, new TagList { { "consumer.id", consumerId } });
+        Instruments.TenantLockFailures.Add(1, new TagList { { "consumer.id", consumerId } });
         return null;
     }
 

@@ -124,8 +124,7 @@ internal sealed class InterceptingEventStoreBackend(
         }
         catch (Exception exception)
         {
-            activity.SetTag("error.type", exception.GetType().FullName);
-            activity.SetStatus(ActivityStatusCode.Error);
+            BackgroundSpans.Fail(activity, exception);
             throw;
         }
     }
