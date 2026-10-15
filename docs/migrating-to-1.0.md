@@ -1411,3 +1411,11 @@ The containing class was renamed to match what it now extends:
 `AlbertoStoreServiceCollectionExtensions` → `AlbertoStoreBuilderExtensions`
 (`ServiceCollectionExtensions.cs` → `AlbertoStoreBuilderExtensions.cs`). This only affects code
 that called the method non-extension style; ordinary `.WithEventsFrom(...)` chaining is unaffected.
+
+## Reactor consume spans are children of the append trace
+
+`Alberto.Consume` spans for reactors and the outbox handler are now parented to the trace that
+appended the event instead of being new roots with a link. Projections are unchanged. Set
+`TraceParenting = TraceParenting.Link` on the processor's `ProcessorExecutionOptions` (or
+`Alberto:Modules:{key}:Processors:{id}:TraceParenting`) to keep the previous shape.
+Batch spans now link every distinct upstream trace (up to 32), not only the first event's.

@@ -738,7 +738,7 @@ public static class DcbModuleBuilderExtensions
     }
 
     private static readonly ProcessorExecutionOptions SyncExecutionDefault =
-        new() { BatchingMode = ProcessorBatchingMode.Disabled };
+        new() { BatchingMode = ProcessorBatchingMode.Disabled, TraceParenting = TraceParenting.Parent };
 
     private static ProcessorExecutionOptions BuildProcessorExecutionOptions(
         ReactorMode mode,
@@ -746,7 +746,7 @@ public static class DcbModuleBuilderExtensions
     {
         var options = mode == ReactorMode.Sync
             ? SyncExecutionDefault
-            : ProcessorExecutionOptions.Default;
+            : ProcessorExecutionOptions.Default with { TraceParenting = TraceParenting.Parent };
 
         if (configure is null)
             return options;

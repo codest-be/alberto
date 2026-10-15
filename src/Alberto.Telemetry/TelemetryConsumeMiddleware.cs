@@ -18,7 +18,8 @@ public static class TelemetryConsumeMiddleware
     /// is supplied, the consumer span is linked to the trace that originally
     /// appended the event. Trace-link extraction is handled by
     /// <see cref="TraceContextExtractor.ExtractTraceLink"/>, shared with
-    /// <see cref="TelemetryBatchConsumeMiddleware"/>.
+    /// <see cref="TelemetryBatchConsumeMiddleware"/>. With <see cref="TraceParenting.Parent"/>
+    /// on the context the appending trace is the span's parent instead of a link.
     /// </summary>
     public static ConsumeMiddleware Create(ITraceContextProvider? traceContextProvider = null)
     {
@@ -30,13 +31,20 @@ public static class TelemetryConsumeMiddleware
             Activity? activity = null;
             if (AlbertoMetrics.Source.HasListeners())
             {
-                var link = TraceContextExtractor.ExtractTraceLink(context.Envelope, traceContextProvider);
+                // Parent: the append trace becomes this span's parent, so the flow is one trace and
+                // head sampling decides it once. Link: a fresh root that points back at it.
+                var parent = context.TraceParenting == TraceParenting.Parent
+                    ? TraceContextExtractor.ExtractContext(context.Envelope, traceContextProvider)
+                    : null;
+                var link = parent is null
+                    ? TraceContextExtractor.ExtractTraceLink(context.Envelope, traceContextProvider)
+                    : null;
                 var links = link is null ? null : new[] { link.Value };
                 var activityName = $"{AlbertoMetrics.ConsumeActivityName} {context.ProcessorId}";
                 activity = AlbertoMetrics.Source.StartActivity(
                     activityName,
                     ActivityKind.Consumer,
-                    parentContext: default,
+                    parentContext: parent ?? default,
                     links: links);
 
                 activity?.SetTag("processor.id", context.ProcessorId);

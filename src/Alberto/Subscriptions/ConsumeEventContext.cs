@@ -9,6 +9,10 @@ public sealed class ConsumeEventContext : IMiddlewareContext
     public required string ModuleKey { get; init; }
     public required IEventEnvelope Envelope { get; init; }
     public required bool IsRebuild { get; init; }
+
+    /// <summary>How the consume span should relate to the event's append trace.</summary>
+    public TraceParenting TraceParenting { get; init; }
+
     public int Attempt { get; set; }
     public bool DeadLettered { get; set; }
 

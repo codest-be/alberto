@@ -14,7 +14,8 @@ public static class TelemetryBatchConsumeMiddleware
     /// <summary>
     /// Creates a telemetry middleware for batch processing. When
     /// <paramref name="traceContextProvider"/> is supplied, the consumer span is
-    /// linked to the trace that originally appended the first event in the batch.
+    /// linked to each distinct trace that appended an event in the batch (capped at
+    /// <see cref="TraceContextExtractor.MaxBatchLinks"/>; <c>trace.links.dropped</c> counts the rest).
     /// Trace-link extraction is handled by
     /// <see cref="TraceContextExtractor.ExtractTraceLink"/>, shared with
     /// <see cref="TelemetryConsumeMiddleware"/>.
@@ -30,8 +31,10 @@ public static class TelemetryBatchConsumeMiddleware
             if (AlbertoMetrics.Source.HasListeners())
             {
                 var firstEnvelope = context.Envelopes[0];
-                var link = TraceContextExtractor.ExtractTraceLink(firstEnvelope, traceContextProvider);
-                var links = link is null ? null : new[] { link.Value };
+                // A batch has many upstream traces and a span only one parent, so it links to all
+                // of them whatever the processor's TraceParenting says.
+                var links = TraceContextExtractor.ExtractBatchLinks(
+                    context.Envelopes, traceContextProvider, out var droppedLinks);
                 var activityName = $"{AlbertoMetrics.ConsumeActivityName} {context.ProcessorId} batch";
                 activity = AlbertoMetrics.Source.StartActivity(
                     activityName,
@@ -46,7 +49,9 @@ public static class TelemetryBatchConsumeMiddleware
                 activity?.SetTag("batch.size", context.Envelopes.Count);
                 activity?.SetTag("event.position.first", firstEnvelope.GlobalPosition);
                 activity?.SetTag("event.position.last", context.Envelopes[^1].GlobalPosition);
-                activity?.SetTag("trace.links.count", links?.Length ?? 0);
+                activity?.SetTag("trace.links.count", links.Length);
+                if (droppedLinks > 0)
+                    activity?.SetTag("trace.links.dropped", droppedLinks);
             }
 
             var sw = Stopwatch.StartNew();

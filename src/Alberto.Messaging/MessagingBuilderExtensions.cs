@@ -86,7 +86,7 @@ public static class MessagingBuilderExtensions
         {
             ProcessorId = OutboxHandler.ProcessorIdValue,
             Kind = ProcessorKind.Reactor,
-            Execution = ProcessorExecutionOptions.Default,
+            Execution = ProcessorExecutionOptions.Default with { TraceParenting = TraceParenting.Parent },
             HandlerType = typeof(OutboxHandler),
         });
 

@@ -500,10 +500,24 @@ The append stamps the current trace context into each event's `metadata` as W3C 
 (and `tracestate`, when non-empty), whether or not telemetry is enabled: it is the `Alberto.Append`
 span's when there is one and the caller's ambient activity otherwise. Events stored by older
 versions carry `_traceId`/`_spanId` instead and are still read. The consume middleware turns the
-context back into an **`ActivityLink`** on the `Alberto.Consume` span. A link rather than a parent,
-because the consumer runs minutes later on a different loop and is not a child of the request that
-wrote the event, but the seam between the synchronous write and the asynchronous consumer is still
-navigable in the trace, which is the thing that is otherwise impossible to debug.
+context back into the `Alberto.Consume` span, either as its **parent** or as an **`ActivityLink`**,
+chosen per processor with `TraceParenting` on `ProcessorExecutionOptions` (or
+`Alberto:Modules:{key}:Processors:{id}:TraceParenting` in configuration):
+
+| `TraceParenting` | Default for | Shape |
+|---|---|---|
+| `Parent` | Reactors, the outbox handler | The consume span is a child of the append trace: one trace from request to side effect. |
+| `Link` | Projections | The consume span is a new root with a link back. |
+
+Prefer `Parent` where the flow is one logical operation, because with head sampling a link makes
+the two traces sampled independently (kept together roughly `rate²` of the time) while a parent is
+kept or dropped with the request. Projections default to `Link` because they fold many unrelated
+appends, long after the request has finished, and a trace that stays open for that long is not
+useful. With no trace context on the event, either mode yields a root span.
+
+Batch dispatch always links, whatever `TraceParenting` says: a batch has many upstream traces and a
+span has one parent. It carries one link per **distinct** upstream trace, at most 32;
+`trace.links.dropped` is set on the span with the number of traces that did not fit.
 
 The outbox continues the trace: an entry copies the source event's context, and the relay wraps
 each publish attempt in a `send {MessageType}` producer span, parented to that context, tagged

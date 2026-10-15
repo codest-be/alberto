@@ -41,3 +41,12 @@ Alberto.Diagnostics.TraceContext.TraceState.init -> void
 static readonly Alberto.Telemetry.AlbertoMetrics.OutboxDeliveryLatency -> System.Diagnostics.Metrics.Histogram<double>!
 static readonly Alberto.Telemetry.AlbertoMetrics.OutboxPublishFailures -> System.Diagnostics.Metrics.Counter<long>!
 static readonly Alberto.Telemetry.AlbertoMetrics.OutboxPublished -> System.Diagnostics.Metrics.Counter<long>!
+Alberto.Subscriptions.TraceParenting
+Alberto.Subscriptions.TraceParenting.Link = 0 -> Alberto.Subscriptions.TraceParenting
+Alberto.Subscriptions.TraceParenting.Parent = 1 -> Alberto.Subscriptions.TraceParenting
+Alberto.Subscriptions.ProcessorExecutionOptions.TraceParenting.get -> Alberto.Subscriptions.TraceParenting
+Alberto.Subscriptions.ProcessorExecutionOptions.TraceParenting.init -> void
+Alberto.Subscriptions.ProcessorExecutionOverrides.TraceParenting.get -> Alberto.Subscriptions.TraceParenting?
+Alberto.Subscriptions.ProcessorExecutionOverrides.TraceParenting.set -> void
+Alberto.Subscriptions.ConsumeEventContext.TraceParenting.get -> Alberto.Subscriptions.TraceParenting
+Alberto.Subscriptions.ConsumeEventContext.TraceParenting.init -> void
