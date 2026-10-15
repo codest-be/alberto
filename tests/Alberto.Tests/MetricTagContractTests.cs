@@ -45,7 +45,8 @@ public sealed class MetricTagContractTests
         using var listener = new MeterListener();
         listener.InstrumentPublished = (instrument, _) =>
         {
-            if (instrument.Meter.Name == AlbertoMetrics.Name)
+            // The static meter only: hosts built by other tests own same-named factory meters.
+            if (ReferenceEquals(instrument.Meter, AlbertoMetrics.Meter))
                 found.Add((instrument.Name, instrument.Unit));
         };
         listener.Start();

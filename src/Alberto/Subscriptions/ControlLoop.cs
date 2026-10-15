@@ -1,4 +1,5 @@
 #pragma warning disable ALB9002 // ControlLoop is the (internal-ctor) writer side of the experimental health state.
+using System.Diagnostics;
 using System.Threading.Channels;
 using Alberto.Telemetry;
 using Microsoft.Extensions.Hosting;
@@ -32,6 +33,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
     private readonly ILogger<ControlLoop>? _logger;
     private readonly TimeProvider _timeProvider;
     private readonly ProcessorHealthState? _healthState;
+    private readonly AlbertoInstruments _instruments;
     // Pre-composed middleware chains built once at construction time (PERF-6).
     private readonly Func<ConsumeEventContext, Func<Task>, Task> _composedMiddleware;
     private readonly Func<BatchConsumeContext, Func<Task>, Task> _composedBatchMiddleware;
@@ -68,7 +70,8 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
         ILogger<ControlLoop>? logger = null,
         TimeSpan? drainTimeout = null,
         TimeProvider? timeProvider = null,
-        ProcessorHealthState? healthState = null)
+        ProcessorHealthState? healthState = null,
+        AlbertoInstruments? instruments = null)
     {
         _processor = processor;
         _head = head;
@@ -85,6 +88,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
         _logger = logger;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _healthState = healthState;
+        _instruments = instruments ?? AlbertoMetrics.Shared;
         _faultStore = checkpointStore as IProcessorFaultStore;
 
         // Pre-build the composed middleware chains once so per-event dispatch does not
@@ -187,6 +191,10 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
         {
             abandoned = loop is not null && !loop.IsCompleted;
             cts = Interlocked.Exchange(ref _cts, null);
+
+            // Disposed means gone, faulted or not: a shadow loop's id is unique to its rebuild,
+            // so a faulted one disposed by an abort would otherwise leave its series forever.
+            _instruments.ForgetProcessorLag(ProcessorId, _moduleKey);
         }
 
         if (abandoned)
@@ -224,6 +232,26 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
 
     private async Task RunAsync(CancellationToken ct)
     {
+        // StartAsync runs this inline, so without this the loop would inherit whatever span the host
+        // started it under and parent every poll to it for the life of the process. See BackgroundSpans.
+        Activity.Current = null;
+        using var scope = _logger?.BeginScope(BackgroundSpans.Scope(ProcessorId, _moduleKey));
+        try
+        {
+            await RunLoopAsync(ct);
+        }
+        finally
+        {
+            // A stopped loop's lag gauge would otherwise report its last value forever (and a
+            // rebuild's shadow loop would leave one behind per rebuild). A faulted loop keeps its
+            // last reading: it has stopped, but its processor has not gone anywhere.
+            if (!IsFaulted)
+                _instruments.ForgetProcessorLag(ProcessorId, _moduleKey);
+        }
+    }
+
+    private async Task RunLoopAsync(CancellationToken ct)
+    {
         _logger?.LogInformation("ControlLoop {ProcessorId} starting", ProcessorId);
 
         if (_executionOptions.MaxConcurrency > 1)
@@ -254,12 +282,12 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
                     continue;
                 }
 
-                var events = await _backend.StreamAllAsync(checkpoint, _batchSize, ct);
+                var events = await PollAsync(checkpoint, ct);
 
                 if (events.Count == 0)
                 {
                     // No events between checkpoint and head — skip forward safely
-                    await _checkpointStore.SaveAsync(ProcessorId, head, ct);
+                    await SaveCheckpointAsync(head, ct);
                     await ClearFaultOnceAsync(ct);
                     ReportProgress(0L);
                     infrastructureFailures = 0;
@@ -303,7 +331,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
 
                 if (newCheckpoint > checkpoint)
                 {
-                    await _checkpointStore.SaveAsync(ProcessorId, newCheckpoint, ct);
+                    await SaveCheckpointAsync(newCheckpoint, ct);
                     await ClearFaultOnceAsync(ct);
                 }
 
@@ -387,7 +415,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
                         continue;
                     }
 
-                    var events = await _backend.StreamAllAsync(readPosition, _batchSize, pipelineToken);
+                    var events = await PollAsync(readPosition, pipelineToken);
 
                     if (events.Count == 0)
                     {
@@ -592,10 +620,49 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
     private static bool IsShutdownCancellation(OperationCanceledException exception, CancellationToken ct)
         => ct.IsCancellationRequested && exception.CancellationToken.IsCancellationRequested;
 
+    /// <summary>
+    /// Reads the next batch under an <c>alberto.poll</c> span, so the read span beneath it carries
+    /// which processor asked. Only the read: dispatch has its own consume spans, parented by
+    /// <see cref="TraceParenting"/>, and an idle poll that never reads records nothing.
+    /// </summary>
+    private async Task<IReadOnlyCollection<IEventEnvelope>> PollAsync(long afterPosition, CancellationToken ct)
+    {
+        using var activity = BackgroundSpans.StartRoot("alberto.poll");
+        BackgroundSpans.TagProcessor(activity, ProcessorId, _moduleKey);
+        activity?.SetTag("alberto.poll.after_position", afterPosition);
+        try
+        {
+            var events = await _backend.StreamAllAsync(afterPosition, _batchSize, ct);
+            activity?.SetTag("alberto.poll.events", events.Count);
+            return events;
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested)
+        {
+            BackgroundSpans.Fail(activity, ex);
+            throw;
+        }
+    }
+
+    private async Task SaveCheckpointAsync(long position, CancellationToken ct)
+    {
+        using var activity = BackgroundSpans.StartRoot("alberto.checkpoint.save");
+        BackgroundSpans.TagProcessor(activity, ProcessorId, _moduleKey);
+        activity?.SetTag("alberto.checkpoint.position", position);
+        try
+        {
+            await _checkpointStore.SaveAsync(ProcessorId, position, ct);
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested)
+        {
+            BackgroundSpans.Fail(activity, ex);
+            throw;
+        }
+    }
+
     /// <summary>Records lag telemetry and, when a health state is wired, a liveness heartbeat.</summary>
     private void ReportProgress(long lag)
     {
-        AlbertoMetrics.RecordProcessorLag(ProcessorId, _moduleKey, lag);
+        _instruments.RecordProcessorLag(ProcessorId, _moduleKey, lag);
         _healthState?.Report(ProcessorId, isFaulted: false, lag, _timeProvider.GetUtcNow());
     }
 
@@ -608,7 +675,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
         var current = await _checkpointStore.GetAsync(ProcessorId, ct) ?? 0L;
         if (safeCheckpoint > current)
         {
-            await _checkpointStore.SaveAsync(ProcessorId, safeCheckpoint, ct);
+            await SaveCheckpointAsync(safeCheckpoint, ct);
             await ClearFaultOnceAsync(ct);
         }
     }

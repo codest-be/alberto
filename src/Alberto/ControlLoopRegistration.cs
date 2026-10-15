@@ -1,6 +1,7 @@
 #pragma warning disable ALB9002 // DI registration layer for the experimental processor health check.
 using Alberto.Configuration;
 using Alberto.Subscriptions;
+using Alberto.Telemetry;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
@@ -56,7 +57,8 @@ internal static class ControlLoopRegistration
                 signal,
                 options.DrainTimeout,
                 sp.GetService<TimeProvider>(),
-                moduleKey);
+                moduleKey,
+                instruments: AlbertoInstruments.For(sp));
         });
 
         services.AddSingleton<IHostedService>(sp =>
@@ -142,7 +144,8 @@ internal static class ControlLoopRegistration
                 Classifier(sp, moduleKey),
                 sp.GetKeyedService<IDeadLetterStore>(moduleKey),
                 sp.GetService<TimeProvider>(),
-                sp.GetService<ILoggerFactory>()?.CreateLogger($"Alberto.DeadLetter.{moduleKey}"));
+                sp.GetService<ILoggerFactory>()?.CreateLogger($"Alberto.DeadLetter.{moduleKey}"),
+                AlbertoInstruments.For(sp));
 
             var healthState = sp.GetRequiredKeyedService<ProcessorHealthState>(moduleKey);
 
@@ -231,8 +234,8 @@ internal static class ControlLoopRegistration
 
             var middlewares = new List<ConsumeMiddleware>(sp.GetKeyedServices<ConsumeMiddleware>(moduleKey))
             {
-                ConsumeMiddlewares.RetryAndDeadLetter(
-                    options.Retry, classifier, deadLetterStore, timeProvider: null, logger),
+                ConsumeMiddlewares.RetryAndDeadLetterOn(
+                    AlbertoInstruments.For(sp), options.Retry, classifier, deadLetterStore, timeProvider: null, logger),
             };
 
             var replicaId = options.Leases.EffectiveReplicaId;

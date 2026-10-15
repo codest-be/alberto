@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
+using Alberto.Telemetry;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -133,6 +135,12 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
+        // Captured by both timers and by every loop started below, so their logs carry it too.
+        using var scope = _logger?.BeginScope(new Dictionary<string, object?>
+        {
+            ["alberto.consumer.id"] = _consumerId,
+            ["alberto.replica.id"] = _replicaId,
+        });
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
         // Try to acquire leases for all processors and start those we get
@@ -140,8 +148,7 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
         {
             try
             {
-                var lease = await _leaseManager.TryAcquireAsync(
-                    _consumerId, loop.ProcessorId, _replicaId, cancellationToken);
+                var lease = await AcquireAsync(loop.ProcessorId, cancellationToken);
 
                 if (lease is not null)
                 {
@@ -229,7 +236,7 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
             // Release all leases immediately for fast handoff
             try
             {
-                await _leaseManager.ReleaseAllLeasesAsync(_consumerId, _replicaId, cancellationToken);
+                await ReleaseAllAsync(cancellationToken);
                 _logger?.LogInformation(
                     "Released all processor leases for replica {ReplicaId}",
                     _replicaId);
@@ -264,11 +271,13 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
     private async void OnRenewalTimer(object? state)
     {
         if (_cts is null || _cts.IsCancellationRequested) return;
+        // The timer captured StartAsync's context: its log scope, which is wanted, and the span
+        // the host started it under, which is not. See BackgroundSpans.
+        Activity.Current = null;
 
         try
         {
-            var renewed = await _leaseManager.RenewLeasesAsync(
-                _consumerId, _replicaId, _cts.Token);
+            var renewed = await RenewAsync(_cts.Token);
 
             var renewedSet = new HashSet<string>(renewed, StringComparer.Ordinal);
 
@@ -316,6 +325,7 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
     {
         if (_cts is null || _cts.IsCancellationRequested) return;
         if (!await _scanLock.WaitAsync(0)) return; // Skip if a scan is already in progress
+        Activity.Current = null; // as in OnRenewalTimer
 
         try
         {
@@ -326,8 +336,7 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
 
                 try
                 {
-                    var lease = await _leaseManager.TryAcquireAsync(
-                        _consumerId, loop.ProcessorId, _replicaId, _cts.Token);
+                    var lease = await AcquireAsync(loop.ProcessorId, _cts.Token);
 
                     if (lease is null) continue;
 
@@ -355,6 +364,64 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
         finally
         {
             _scanLock.Release();
+        }
+    }
+
+    private Activity? StartLeaseSpan(string name)
+    {
+        var activity = BackgroundSpans.StartRoot(name);
+        activity?.SetTag("alberto.consumer.id", _consumerId);
+        activity?.SetTag("alberto.replica.id", _replicaId);
+        return activity;
+    }
+
+    private async Task<IProcessorLease?> AcquireAsync(string processorId, CancellationToken ct)
+    {
+        using var activity = StartLeaseSpan("alberto.lease.acquire");
+        activity?.SetTag("alberto.processor.id", processorId);
+        try
+        {
+            var lease = await _leaseManager.TryAcquireAsync(_consumerId, processorId, _replicaId, ct);
+            activity?.SetTag("alberto.lease.acquired", lease is not null);
+            if (lease is not null)
+                activity?.SetTag("alberto.lease.fence_token", lease.FenceToken);
+            return lease;
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested)
+        {
+            BackgroundSpans.Fail(activity, ex);
+            throw;
+        }
+    }
+
+    private async Task<IReadOnlyList<string>> RenewAsync(CancellationToken ct)
+    {
+        using var activity = StartLeaseSpan("alberto.lease.renew");
+        try
+        {
+            var renewed = await _leaseManager.RenewLeasesAsync(_consumerId, _replicaId, ct);
+            activity?.SetTag("alberto.lease.renewed", renewed.Count);
+            activity?.SetTag("alberto.lease.lost", _runningLoops.Keys.Count(id => !renewed.Contains(id)));
+            return renewed;
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested)
+        {
+            BackgroundSpans.Fail(activity, ex);
+            throw;
+        }
+    }
+
+    private async Task ReleaseAllAsync(CancellationToken ct)
+    {
+        using var activity = StartLeaseSpan("alberto.lease.release");
+        try
+        {
+            await _leaseManager.ReleaseAllLeasesAsync(_consumerId, _replicaId, ct);
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested)
+        {
+            BackgroundSpans.Fail(activity, ex);
+            throw;
         }
     }
 }

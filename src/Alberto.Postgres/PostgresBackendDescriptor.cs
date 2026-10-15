@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using Npgsql;
 using Alberto.Append;
 using Alberto.Subscriptions;
+using Alberto.Telemetry;
 using Alberto.Tenancy;
 
 namespace Alberto.Postgres;
@@ -262,7 +263,10 @@ public sealed record PostgresBackendDescriptor(PostgresOptions Options) : IAlber
         {
             var opts = runtime.Resolve(sp);
             var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
-            return new PostgresTenantProcessorLock(dataSource, opts.Schema, opts.LeaseDuration, moduleKey);
+            return new PostgresTenantProcessorLock(dataSource, opts.Schema, opts.LeaseDuration, moduleKey)
+            {
+                Instruments = AlbertoInstruments.For(sp),
+            };
         });
 
         // Processor lease manager.

@@ -44,6 +44,7 @@ they touch a persisted table.
 | TT-5 | Trace parenting | Medium | Reactor and outbox-handler consume spans are children of the append trace; batch spans link every upstream trace |
 | MX-1 | Metric dimensions | Medium | Write-side metrics gain `module`/`shard`/`outcome`/`kind` tags, histograms declare buckets, `alberto.event.age` added, `alberto.processing.errors` tag `exception.type` (short name) becomes `error.type` (full name) |
 | TC-1 | Trace context storage | Medium | Event metadata carries W3C `traceparent` instead of `_traceId`/`_spanId`; `TraceContext` changed shape |
+| TT-6 | Background spans and meter scoping | Low | New root spans for polls, checkpoints, leases, rebuilds and outbox purges; instruments come from `IMeterFactory`; gauges drop series for stopped components; tenant ownership keyed per module |
 | EX-1 | Experimental API | Medium | Sharding types marked `[Experimental("ALB9001")]`; referencing them without suppression is a compile-time diagnostic |
 | EV-1 | Evolver: runtime guard | Medium | `Evolver.Reconstitute(envelopes)` and `Evolver.Evolve(state, envelope)` now throw `InvalidOperationException` when the envelope's stored version is older than the handler's declared version |
 | PE-1 | ParseEvent&lt;T&gt; removed | **High** | `EventEnvelopeExtensions.ParseEvent<T>` is deleted and the now-empty `EventEnvelopeExtensions` class is `internal` |
@@ -1115,6 +1116,31 @@ key constants are gone with the stamping, which moved into core. Anything readin
 metadata by hand should read `traceparent`.
 
 ---
+
+### TT-6: background spans, `IMeterFactory`, gauge eviction
+
+Alberto now traces the work it does on its own schedule: `alberto.poll`, `alberto.checkpoint.save`,
+`alberto.lease.acquire`/`renew`/`release`, `alberto.rebuild` (one per rebuild, with events) and
+`alberto.outbox.purge`, plus `alberto.projection.inline` for inline projections. Background spans
+are roots. Before, a control loop or relay started under some span (a test's, or a host that starts
+hosted services inside one) parented every later poll and publish to it; now they never do. The
+relay's `send` span for an entry without trace context is a root for the same reason.
+
+The instruments are created on the meter the host's `IMeterFactory` hands out when the container
+has one; the static `AlbertoMetrics` fields remain, on `AlbertoMetrics.Meter`, for code outside DI.
+The meter name stays `Alberto`, so `AddMeter("Alberto")` and `.WithTelemetry()` see both.
+
+`alberto.processor.lag` and `alberto.head.stalled` drop a series when its loop or head stops,
+instead of reporting the last value for the life of the process. `alberto.owned_tenant_count` is now
+one series per consumer **and module**: a consumer id shared across modules used to collapse into
+one series, last module to report wins.
+
+**Symptom.** New span names appear in your backend, at the polling rate for polls and checkpoint
+saves. A dashboard summing `alberto.owned_tenant_count` by `consumer.id` alone now sums across
+modules.
+
+**Fix.** Sample or drop the background spans by name if you do not want them. Group the ownership
+gauge by `consumer.id` and `module` where you meant one module.
 
 ### OR-1: delivered outbox entries are deleted after 7 days by default; migration 034 required
 

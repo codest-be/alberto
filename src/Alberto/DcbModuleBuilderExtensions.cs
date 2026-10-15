@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using Alberto.Configuration;
 using Alberto.Subscriptions;
+using Alberto.Telemetry;
 using Alberto.Tenancy;
 using Alberto.Upcasting;
 using Microsoft.Extensions.DependencyInjection;
@@ -628,7 +629,8 @@ public static class DcbModuleBuilderExtensions
                     Classifier(sp, moduleKey),
                     sp.GetKeyedService<IDeadLetterStore>(moduleKey),
                     sp.GetService<TimeProvider>(),
-                    sp.GetService<ILoggerFactory>()?.CreateLogger($"Alberto.DeadLetter.{moduleKey}"));
+                    sp.GetService<ILoggerFactory>()?.CreateLogger($"Alberto.DeadLetter.{moduleKey}"),
+                AlbertoInstruments.For(sp));
 
                 return new ShadowControlLoopFactory(processor =>
                 {
@@ -670,7 +672,8 @@ public static class DcbModuleBuilderExtensions
                     sp.GetKeyedServices<IProjectionStateClearer>(moduleKey).ToList(),
                     coordinatorOptions,
                     sp.GetService<TimeProvider>(),
-                    sp.GetService<ILogger<RebuildCoordinator>>());
+                    sp.GetService<ILogger<RebuildCoordinator>>(),
+                    moduleKey);
             });
         });
 

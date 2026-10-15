@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using Alberto.Telemetry;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -61,7 +63,8 @@ internal sealed class RebuildCoordinator(
     IReadOnlyList<IProjectionStateClearer> clearers,
     RebuildCoordinatorOptions options,
     TimeProvider? timeProvider = null,
-    ILogger<RebuildCoordinator>? logger = null) : BackgroundService
+    ILogger<RebuildCoordinator>? logger = null,
+    string moduleKey = "") : BackgroundService
 {
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly Dictionary<string, ShadowLoop> _shadowLoops = new(StringComparer.Ordinal);
@@ -74,10 +77,20 @@ internal sealed class RebuildCoordinator(
     /// </summary>
     private readonly HashSet<string> _pendingReclaim = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// One <c>alberto.rebuild</c> span per rebuild this replica is driving, from the start of its
+    /// replay to the sweep that reclaims what it discarded. Detached: it lives across ticks, so it
+    /// is never <see cref="Activity.Current"/> and parents nothing.
+    /// </summary>
+    private readonly Dictionary<string, Activity> _rebuildSpans = new(StringComparer.Ordinal);
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (projections.Count == 0)
             return;
+
+        // ExecuteAsync inherits StartAsync's execution context, span and all. See BackgroundSpans.
+        Activity.Current = null;
 
         using var timer = new PeriodicTimer(options.PollingInterval);
 
@@ -109,6 +122,7 @@ internal sealed class RebuildCoordinator(
 
         foreach (var projection in projections)
         {
+            using var scope = logger?.BeginScope(BackgroundSpans.Scope(projection.ProcessorId, moduleKey));
             var state = versions.Current(projection.ProcessorId);
 
             if (state is null || !state.IsRebuildInFlight)
@@ -206,6 +220,24 @@ internal sealed class RebuildCoordinator(
         await loop.StartAsync(ct);
         _shadowLoops[projection.ProcessorId] = new ShadowLoop(loop, rebuildingVersion);
 
+        // A promotion that found the shadow behind restarts the same rebuild's loop: same span. A
+        // new version is a new rebuild, and a span still open for an older one is a rebuild whose
+        // sweep this replica never got to.
+        if (!_rebuildSpans.TryGetValue(projection.ProcessorId, out var open) ||
+            open.GetTagItem("alberto.rebuild.version") is not int openVersion ||
+            openVersion != rebuildingVersion)
+        {
+            EndRebuildSpan(projection.ProcessorId);
+            var span = BackgroundSpans.StartDetached("alberto.rebuild");
+            if (span is not null)
+            {
+                BackgroundSpans.TagProcessor(span, projection.ProcessorId, moduleKey);
+                span.SetTag("alberto.rebuild.version", rebuildingVersion);
+                _rebuildSpans[projection.ProcessorId] = span;
+            }
+        }
+        RebuildEvent(projection.ProcessorId, "replay_started", ("alberto.rebuild.shadow_id", shadowId));
+
         logger?.LogInformation(
             "Rebuild of projection {ProcessorId} started replaying under checkpoint {ShadowId}.",
             projection.ProcessorId, shadowId);
@@ -245,6 +277,8 @@ internal sealed class RebuildCoordinator(
 
         var ready = await rebuildStore.MarkReadyAsync(projection.ProcessorId, ct);
         await versions.RefreshAsync(ct);
+
+        RebuildEvent(projection.ProcessorId, "ready", ("alberto.rebuild.target_position", target));
 
         logger?.LogInformation(
             "Rebuild of projection {ProcessorId} reached target position {Target} and is ready to promote.",
@@ -327,6 +361,10 @@ internal sealed class RebuildCoordinator(
 
         _lastSeen[projection.ProcessorId] = outcome.State.Status;
 
+        RebuildEvent(projection.ProcessorId, "promoted",
+            ("alberto.rebuild.discarded_version", outcome.DiscardedVersion),
+            ("alberto.rebuild.forced", force));
+
         logger?.LogInformation(
             "Projection {ProcessorId} promoted to rebuild version {Version}; version {Discarded} discarded.",
             projection.ProcessorId, outcome.State.ActiveVersion, outcome.DiscardedVersion);
@@ -351,6 +389,8 @@ internal sealed class RebuildCoordinator(
         _pendingReclaim.Add(projection.ProcessorId);
 
         _lastSeen[projection.ProcessorId] = outcome.State.Status;
+
+        RebuildEvent(projection.ProcessorId, "aborted", ("alberto.rebuild.discarded_version", outcome.DiscardedVersion));
 
         logger?.LogInformation(
             "Projection {ProcessorId} rebuild aborted; version {Discarded} discarded.",
@@ -460,6 +500,8 @@ internal sealed class RebuildCoordinator(
         }
 
         _pendingReclaim.Remove(projection.ProcessorId);
+        RebuildEvent(projection.ProcessorId, "swept");
+        EndRebuildSpan(projection.ProcessorId);
         return true;
     }
 
@@ -514,5 +556,26 @@ internal sealed class RebuildCoordinator(
 
         foreach (var processorId in _shadowLoops.Keys.ToList())
             await StopShadowLoopAsync(processorId, cancellationToken);
+
+        // Ended unfinished: the next replica to pick the rebuild up opens its own.
+        foreach (var processorId in _rebuildSpans.Keys.ToList())
+            EndRebuildSpan(processorId);
+    }
+
+    private void RebuildEvent(string processorId, string name, params (string Key, object? Value)[] tags)
+    {
+        if (!_rebuildSpans.TryGetValue(processorId, out var span))
+            return;
+
+        var attributes = new ActivityTagsCollection();
+        foreach (var (key, value) in tags)
+            attributes[key] = value;
+        span.AddEvent(new ActivityEvent("alberto.rebuild." + name, tags: attributes));
+    }
+
+    private void EndRebuildSpan(string processorId)
+    {
+        if (_rebuildSpans.Remove(processorId, out var span))
+            BackgroundSpans.StopDetached(span);
     }
 }

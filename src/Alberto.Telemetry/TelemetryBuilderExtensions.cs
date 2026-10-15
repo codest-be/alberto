@@ -70,7 +70,7 @@ public static class TelemetryBuilderExtensions
                 var telemetry = sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>()
                     .Get(moduleKey).Telemetry;
                 return telemetry.Enabled
-                    ? (IAppendInterceptor)new TelemetryAppendInterceptor(telemetry.RecordEventTagValues, moduleKey)
+                    ? (IAppendInterceptor)new TelemetryAppendInterceptor(telemetry.RecordEventTagValues, moduleKey, AlbertoInstruments.For(sp))
                     : NoOpAppendInterceptor.Instance;
             });
 
@@ -83,7 +83,7 @@ public static class TelemetryBuilderExtensions
                     .Get(moduleKey).Telemetry.Enabled;
                 if (!enabled) return (_, next) => next();
                 var provider = sp.GetKeyedService<ITraceContextProvider>(moduleKey);
-                return TelemetryConsumeMiddleware.Create(provider);
+                return TelemetryConsumeMiddleware.Create(provider, AlbertoInstruments.For(sp));
             });
 
             services.AddKeyedSingleton<BatchConsumeMiddleware>(moduleKey, (sp, _) =>
@@ -92,7 +92,7 @@ public static class TelemetryBuilderExtensions
                     .Get(moduleKey).Telemetry.Enabled;
                 if (!enabled) return (_, next) => next();
                 var provider = sp.GetKeyedService<ITraceContextProvider>(moduleKey);
-                return TelemetryBatchConsumeMiddleware.Create(provider);
+                return TelemetryBatchConsumeMiddleware.Create(provider, AlbertoInstruments.For(sp));
             });
         });
     }

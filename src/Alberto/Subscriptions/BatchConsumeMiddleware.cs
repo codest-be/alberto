@@ -44,6 +44,16 @@ public static class BatchConsumeMiddlewares
         IDeadLetterStore? deadLetterStore,
         TimeProvider? timeProvider = null,
         ILogger? logger = null)
+        => RetryAndDeadLetterOn(AlbertoMetrics.Shared, retry, classifier, deadLetterStore, timeProvider, logger);
+
+    /// <summary>As the public overload, recording on the container's instruments.</summary>
+    internal static BatchConsumeMiddleware RetryAndDeadLetterOn(
+        AlbertoInstruments instruments,
+        RetryOptions retry,
+        IErrorClassifier classifier,
+        IDeadLetterStore? deadLetterStore,
+        TimeProvider? timeProvider,
+        ILogger? logger)
     {
         var clock = timeProvider ?? TimeProvider.System;
         return async (context, next) =>
@@ -51,7 +61,7 @@ public static class BatchConsumeMiddlewares
             // retryMetricCount is evaluated at dispatch time (inside the lambda)
             // so it reflects the actual batch size for the current invocation.
             var lastError = await RetryAndDeadLetterCore.ExecuteAsync(
-                context, retry, classifier, next, retryMetricCount: context.Envelopes.Count);
+                context, retry, classifier, next, retryMetricCount: context.Envelopes.Count, instruments);
 
             if (lastError is null)
                 return; // success
@@ -64,7 +74,7 @@ public static class BatchConsumeMiddlewares
             // Single-event batch — dead-letter in place.
             context.DeadLetteredCount = 1;
 
-            AlbertoMetrics.DeadLetters.Add(1, ProcessorTags.ForModule(context.ProcessorId, context.ModuleKey));
+            instruments.DeadLetters.Add(1, ProcessorTags.ForModule(context.ProcessorId, context.ModuleKey));
 
             if (!retry.DeadLetterOnMaxRetries || deadLetterStore is null)
                 return;

@@ -442,7 +442,7 @@ public sealed class ControlLoopSequentialMutationTests
 
     // Kills: 522 (AlbertoMetrics.RecordProcessorLag removed).
     [Fact]
-    public async Task Loop_records_the_processor_lag_metric()
+    public async Task Loop_records_the_processor_lag_metric_and_drops_it_on_stop()
     {
         var processorId = $"lag-metric-{Guid.NewGuid():N}";
         var backend = new InMemoryEventStoreBackend();
@@ -457,10 +457,20 @@ public sealed class ControlLoopSequentialMutationTests
         await head.StartAsync(cts.Token);
         await loop.StartAsync(cts.Token);
         await WaitForAsync(() => processor.ProcessedCount > 0, TestContext.Current.CancellationToken);
+
+        ObserveLag(processorId).Should().NotBeNull(
+            "RecordProcessorLag must have been called for this processor id at least once");
+
         await cts.CancelAsync();
         await loop.StopAsync(CancellationToken.None);
         await head.StopAsync(CancellationToken.None);
 
+        ObserveLag(processorId).Should().BeNull(
+            "a stopped processor's series is removed, not left reporting its last lag");
+    }
+
+    private static long? ObserveLag(string processorId)
+    {
         long? observedLag = null;
         using var listener = new MeterListener();
         listener.InstrumentPublished = (instrument, l) =>
@@ -478,9 +488,7 @@ public sealed class ControlLoopSequentialMutationTests
         });
         listener.Start();
         listener.RecordObservableInstruments();
-
-        observedLag.Should().NotBeNull(
-            "RecordProcessorLag must have been called for this processor id at least once");
+        return observedLag;
     }
 
     // --- Skipped survivors (documented, not tested) ---

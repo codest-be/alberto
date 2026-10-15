@@ -1,3 +1,4 @@
+using Alberto.Telemetry;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -120,7 +121,7 @@ public sealed class OutboxRetentionService : BackgroundService
         {
             try
             {
-                await _store.PurgeDeliveredAsync(_timeProvider.GetUtcNow() - _retention, ct);
+                await PurgeAsync(ct);
             }
             catch (Exception ex) when (!ct.IsCancellationRequested)
             {
@@ -128,6 +129,23 @@ public sealed class OutboxRetentionService : BackgroundService
                 // removed are inert, and the next sweep faces the same work plus a little more.
                 _logger.LogWarning(ex, "Outbox retention sweep failed. Retrying in {Interval}.", _interval);
             }
+        }
+    }
+
+    /// <summary>One sweep, under a root <c>alberto.outbox.purge</c> span.</summary>
+    private async Task PurgeAsync(CancellationToken ct)
+    {
+        var before = _timeProvider.GetUtcNow() - _retention;
+        using var activity = BackgroundSpans.StartRoot("alberto.outbox.purge");
+        activity?.SetTag("alberto.outbox.purge.before", before.ToString("O"));
+        try
+        {
+            await _store.PurgeDeliveredAsync(before, ct);
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested)
+        {
+            BackgroundSpans.Fail(activity, ex);
+            throw;
         }
     }
 

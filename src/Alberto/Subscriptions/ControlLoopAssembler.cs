@@ -1,5 +1,6 @@
 #pragma warning disable ALB9002 // Assembler threads the experimental health state into the loops it builds.
 using Alberto.Configuration;
+using Alberto.Telemetry;
 using Microsoft.Extensions.Logging;
 
 namespace Alberto.Subscriptions;
@@ -41,6 +42,7 @@ internal sealed class ControlLoopAssembler
     private readonly IReadOnlyList<BatchConsumeMiddleware> _batchMiddlewares;
     private readonly bool _hasUnpairedPerEventMiddlewares;
     private readonly TimeProvider _timeProvider;
+    private readonly AlbertoInstruments _instruments;
 
     /// <summary>
     /// Builds the shared middleware chain that every loop created by this assembler will use.
@@ -57,6 +59,10 @@ internal sealed class ControlLoopAssembler
     /// only remaining trace that it happened — without it the drop is silent. Optional so tests
     /// can construct an assembler without a logging stack, but production paths must supply one.
     /// </param>
+    /// <param name="instruments">
+    /// The container's instruments (<see cref="AlbertoInstruments.For"/>). Defaults to
+    /// <see cref="AlbertoMetrics.Shared"/>, for tests.
+    /// </param>
     public ControlLoopAssembler(
         IReadOnlyList<ConsumeMiddleware> diMiddlewares,
         IReadOnlyList<BatchConsumeMiddleware> diBatchMiddlewares,
@@ -64,9 +70,11 @@ internal sealed class ControlLoopAssembler
         IErrorClassifier classifier,
         IDeadLetterStore? deadLetterStore,
         TimeProvider? timeProvider = null,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        AlbertoInstruments? instruments = null)
     {
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _instruments = instruments ?? AlbertoMetrics.Shared;
 
         // Middleware order (outermost first):
         //   [keyed ConsumeMiddleware...]   ← WithTelemetry(), AddConsumeMiddleware(...)
@@ -74,11 +82,11 @@ internal sealed class ControlLoopAssembler
         //   processor.ProcessEventAsync    ← terminal
         var middlewares = new List<ConsumeMiddleware>(diMiddlewares)
         {
-            ConsumeMiddlewares.RetryAndDeadLetter(retryOptions, classifier, deadLetterStore, _timeProvider, logger),
+            ConsumeMiddlewares.RetryAndDeadLetterOn(_instruments, retryOptions, classifier, deadLetterStore, _timeProvider, logger),
         };
         var batchMiddlewares = new List<BatchConsumeMiddleware>(diBatchMiddlewares)
         {
-            BatchConsumeMiddlewares.RetryAndDeadLetter(retryOptions, classifier, deadLetterStore, _timeProvider, logger),
+            BatchConsumeMiddlewares.RetryAndDeadLetterOn(_instruments, retryOptions, classifier, deadLetterStore, _timeProvider, logger),
         };
 
         // A per-event middleware with no batch counterpart cannot be honoured on the batch
@@ -121,7 +129,8 @@ internal sealed class ControlLoopAssembler
             logger,
             drainTimeout,
             _timeProvider,
-            healthState);
+            healthState,
+            _instruments);
 
         // Wire a per-loop fence-violation handler through the interface rather than
         // via a concrete-type downcast. If the store is not fencable, this block is skipped

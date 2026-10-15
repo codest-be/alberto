@@ -14,6 +14,7 @@ namespace Alberto.Messaging;
 /// </summary>
 public sealed class OutboxRelay : BackgroundService
 {
+    private readonly AlbertoInstruments _instruments;
     private readonly IOutboxStore _store;
     private readonly OutboxTransportLease _transport;
     private readonly TimeSpan _pollingInterval;
@@ -116,9 +117,11 @@ public sealed class OutboxRelay : BackgroundService
         TimeSpan? claimLease = null,
         string? claimedBy = null,
         int maxRetries = DefaultMaxRetries,
-        ILogger<OutboxRelay>? logger = null)
+        ILogger<OutboxRelay>? logger = null,
+        AlbertoInstruments? instruments = null)
     {
         ArgumentNullException.ThrowIfNull(store);
+        _instruments = instruments ?? AlbertoMetrics.Shared;
         ArgumentNullException.ThrowIfNull(transport);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(batchSize);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxRetries);
@@ -142,6 +145,9 @@ public sealed class OutboxRelay : BackgroundService
     /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
+        // A send span with no recorded parent must be a root, and StartActivity would otherwise
+        // adopt whatever span the host was started under. See BackgroundSpans.
+        Activity.Current = null;
         Exception? executionFailure = null;
         ExceptionDispatchInfo? hostCancellation = null;
         try
@@ -175,6 +181,9 @@ public sealed class OutboxRelay : BackgroundService
                 foreach (var claim in pending)
                 {
                     var entry = claim.Entry;
+                    using var scope = entry.TenantId is null
+                        ? null
+                        : _logger.BeginScope(new Dictionary<string, object?> { ["alberto.tenant.id"] = entry.TenantId });
                     using var activity = StartSendActivity(entry);
                     try
                     {
@@ -184,15 +193,14 @@ public sealed class OutboxRelay : BackgroundService
                     {
                         anyPublishFailed = true;
                         var errorType = ex.GetType().FullName ?? ex.GetType().Name;
-                        activity?.SetStatus(ActivityStatusCode.Error);
-                        activity?.SetTag("error.type", errorType);
-                        AlbertoMetrics.OutboxPublishFailures.Add(1, new KeyValuePair<string, object?>("error.type", errorType));
+                        BackgroundSpans.Fail(activity, ex);
+                        _instruments.OutboxPublishFailures.Add(1, new KeyValuePair<string, object?>("error.type", errorType));
                         await MarkFailedSafelyAsync(claim, ex, ct);
                         continue;
                     }
 
-                    AlbertoMetrics.OutboxPublished.Add(1);
-                    AlbertoMetrics.OutboxDeliveryLatency.Record((DateTimeOffset.UtcNow - entry.CreatedAt).TotalSeconds);
+                    _instruments.OutboxPublished.Add(1);
+                    _instruments.OutboxDeliveryLatency.Record((DateTimeOffset.UtcNow - entry.CreatedAt).TotalSeconds);
                     // Published either way: a failed mark leaves the span Ok and the metrics alone,
                     // and surfaces here so the redelivery it will cause can be explained.
                     var marked = await MarkDeliveredSafelyAsync(claim);

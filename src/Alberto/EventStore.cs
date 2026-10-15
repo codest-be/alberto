@@ -1,4 +1,5 @@
 using Alberto.Subscriptions;
+using Alberto.Telemetry;
 
 namespace Alberto;
 
@@ -94,7 +95,7 @@ public sealed class EventStore : IEventStore, IEventStoreConfigurator
                 .ToList();
 
             if (relevant.Count > 0)
-                await projection.ProcessAsync(relevant, cancellationToken);
+                await ProjectInlineAsync(projection, relevant, cancellationToken);
         }
 
         foreach (var handler in _postAppendHandlers)
@@ -108,6 +109,28 @@ public sealed class EventStore : IEventStore, IEventStoreConfigurator
         }
 
         return appended;
+    }
+
+    /// <summary>
+    /// Runs one inline projection under an <c>alberto.projection.inline</c> span. Not a root: it is
+    /// part of the caller's own work and fails it if it throws, so it nests under whatever span
+    /// the caller has (a command's, typically), beside the <c>append</c> span that has already ended.
+    /// </summary>
+    private static async Task ProjectInlineAsync(
+        IInlineProjection projection, List<IEventEnvelope> events, CancellationToken ct)
+    {
+        using var activity = AlbertoMetrics.Source.StartActivity("alberto.projection.inline");
+        activity?.SetTag("alberto.projection.type", projection.GetType().FullName);
+        activity?.SetTag("alberto.projection.events", events.Count);
+        try
+        {
+            await projection.ProcessAsync(events, ct);
+        }
+        catch (Exception ex)
+        {
+            BackgroundSpans.Fail(activity, ex);
+            throw;
+        }
     }
 
     /// <inheritdoc/>

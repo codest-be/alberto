@@ -22,6 +22,9 @@ public static class TelemetryConsumeMiddleware
     /// on the context the appending trace is the span's parent instead of a link.
     /// </summary>
     public static ConsumeMiddleware Create(ITraceContextProvider? traceContextProvider = null)
+        => Create(traceContextProvider, AlbertoMetrics.Shared);
+
+    internal static ConsumeMiddleware Create(ITraceContextProvider? traceContextProvider, AlbertoInstruments instruments)
     {
         return async (context, next) =>
         {
@@ -52,7 +55,7 @@ public static class TelemetryConsumeMiddleware
 
             // A rebuild or replay re-reads history; its ages would swamp the real delay readers see.
             if (!context.IsRebuild)
-                AlbertoMetrics.EventAge.Record(
+                instruments.EventAge.Record(
                     (DateTimeOffset.UtcNow - context.Envelope.CreatedAt).TotalSeconds,
                     TelemetryTags.ForModule(context.ProcessorId, context.ModuleKey));
 
@@ -65,29 +68,29 @@ public static class TelemetryConsumeMiddleware
                 {
                     var ex = context.LastError;
                     // No exception message on the span: it carries whatever the thrower put in
-                    // it, and Npgsql's include the failing SQL. See TelemetrySpans.Fail.
-                    TelemetrySpans.Fail(activity, ex);
+                    // it, and Npgsql's include the failing SQL. See BackgroundSpans.Fail.
+                    BackgroundSpans.Fail(activity, ex);
 
                     // Use the same module/shard tag set as EventsProcessed so all three
                     // per-event metrics (processed, errors, duration) share the same label
                     // dimensions and can be correlated by a single join key in dashboards.
                     var deadLetterTags = TelemetryTags.ForModule(context.ProcessorId, context.ModuleKey);
                     deadLetterTags.Add("error.type", ex?.GetType().FullName ?? "dead_lettered");
-                    AlbertoMetrics.ProcessingErrors.Add(1, deadLetterTags);
+                    instruments.ProcessingErrors.Add(1, deadLetterTags);
                 }
                 else
                 {
-                    AlbertoMetrics.EventsProcessed.Add(
+                    instruments.EventsProcessed.Add(
                         1, TelemetryTags.ForModule(context.ProcessorId, context.ModuleKey));
                 }
             }
             catch (Exception ex)
             {
-                TelemetrySpans.Fail(activity, ex);
+                BackgroundSpans.Fail(activity, ex);
 
                 var catchTags = TelemetryTags.ForModule(context.ProcessorId, context.ModuleKey);
                 catchTags.Add("error.type", ex.GetType().FullName);
-                AlbertoMetrics.ProcessingErrors.Add(1, catchTags);
+                instruments.ProcessingErrors.Add(1, catchTags);
                 throw;
             }
             finally
@@ -95,7 +98,7 @@ public static class TelemetryConsumeMiddleware
                 activity?.Dispose();
                 Activity.Current = ambient;
                 // TotalSeconds matches the OTel semantic-convention unit "s" declared on ProcessingDuration.
-                AlbertoMetrics.ProcessingDuration.Record(sw.Elapsed.TotalSeconds,
+                instruments.ProcessingDuration.Record(sw.Elapsed.TotalSeconds,
                     TelemetryTags.ForModule(context.ProcessorId, context.ModuleKey));
             }
         };

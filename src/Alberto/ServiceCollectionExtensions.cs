@@ -59,6 +59,7 @@ public static class ServiceCollectionExtensions
                 nameof(moduleKey));
 
         ArgumentNullException.ThrowIfNull(configure);
+        Telemetry.AlbertoInstruments.Register(services);
 
         // A module key is an identity, not a name that can be reused. Registering the same one
         // twice is silently destructive rather than additive: the second call adds a second
