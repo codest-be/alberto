@@ -33,7 +33,10 @@ public static class MessageMappingRegistryExtensions
         Func<TEvent, TMessage> mapper)
         where TEvent : class, IEvent
         where TMessage : class
-        => MapCore<TEvent, TMessage>(registry, (_, evt) => mapper(evt), static m => JsonSerializer.Serialize(m));
+    {
+        ArgumentNullException.ThrowIfNull(mapper);
+        MapCore<TEvent, TMessage>(registry, (_, evt) => mapper(evt), static m => JsonSerializer.Serialize(m));
+    }
 
     /// <summary>
     /// Registers a mapper that projects <typeparamref name="TEvent"/> to <typeparamref name="TMessage"/>
@@ -47,6 +50,7 @@ public static class MessageMappingRegistryExtensions
         where TEvent : class, IEvent
         where TMessage : class
     {
+        ArgumentNullException.ThrowIfNull(mapper);
         ArgumentNullException.ThrowIfNull(messageTypeInfo);
         MapCore<TEvent, TMessage>(registry, (_, evt) => mapper(evt), m => JsonSerializer.Serialize(m, messageTypeInfo));
     }
@@ -64,10 +68,13 @@ public static class MessageMappingRegistryExtensions
         where TEvent : class, IEvent
         where TDep : notnull
         where TMessage : class
-        => MapCore<TEvent, TMessage>(
+    {
+        ArgumentNullException.ThrowIfNull(mapper);
+        MapCore<TEvent, TMessage>(
             registry,
             (sp, evt) => mapper(sp.GetRequiredService<TDep>(), evt),
             static m => JsonSerializer.Serialize(m));
+    }
 
     /// <summary>
     /// Registers a mapper that projects <typeparamref name="TEvent"/> to <typeparamref name="TMessage"/>
@@ -83,6 +90,7 @@ public static class MessageMappingRegistryExtensions
         where TDep : notnull
         where TMessage : class
     {
+        ArgumentNullException.ThrowIfNull(mapper);
         ArgumentNullException.ThrowIfNull(messageTypeInfo);
         MapCore<TEvent, TMessage>(
             registry,
@@ -98,7 +106,6 @@ public static class MessageMappingRegistryExtensions
         where TMessage : class
     {
         ArgumentNullException.ThrowIfNull(registry);
-        ArgumentNullException.ThrowIfNull(mapper);
 
         var attr = typeof(TMessage).GetCustomAttribute<MessageAttribute>()
             ?? throw new InvalidOperationException(

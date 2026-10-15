@@ -162,7 +162,7 @@ public sealed class OutboxRelay : BackgroundService
                     // A store outage is transient from the relay's point of view: unclaimed
                     // entries stay pending, so back off and poll again instead of stopping the host.
                     failureStreak++;
-                    var delay = Backoff(failureStreak);
+                    var delay = Backoff(_pollingInterval, failureStreak);
                     _logger.LogWarning(ex, "Outbox claim failed. Retrying in {Delay}.", delay);
                     await Task.Delay(delay, ct);
                     continue;
@@ -202,7 +202,7 @@ public sealed class OutboxRelay : BackgroundService
                 failureStreak = anyPublishFailed ? failureStreak + 1 : 0;
 
                 if (anyPublishFailed)
-                    await Task.Delay(Backoff(failureStreak), ct);
+                    await Task.Delay(Backoff(_pollingInterval, failureStreak), ct);
                 // Back off when there are no more pending entries
                 else if (pending.Count < _batchSize)
                     await Task.Delay(_pollingInterval, ct);
@@ -229,11 +229,11 @@ public sealed class OutboxRelay : BackgroundService
         hostCancellation?.Throw();
     }
 
-    private TimeSpan Backoff(int failureStreak)
+    internal static TimeSpan Backoff(TimeSpan pollingInterval, int failureStreak)
     {
-        var cap = _pollingInterval > MaxBackoff ? _pollingInterval : MaxBackoff;
+        var cap = pollingInterval > MaxBackoff ? pollingInterval : MaxBackoff;
         var factor = Math.Pow(2, Math.Min(failureStreak - 1, 16));
-        return TimeSpan.FromTicks((long)Math.Min(_pollingInterval.Ticks * factor, cap.Ticks));
+        return TimeSpan.FromTicks((long)Math.Min(pollingInterval.Ticks * factor, cap.Ticks));
     }
 
     private async Task MarkFailedSafelyAsync(OutboxClaim claim, Exception failure, CancellationToken ct)
