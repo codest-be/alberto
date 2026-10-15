@@ -63,6 +63,20 @@ public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
         // In multi-tenant mode include tenant_id so the column (added by the multi-tenant
         // migration) is populated.  In single-tenant mode the column does not exist, so
         // keep the original column list unchanged.
+        //
+        // One row per (processor_id, event_id), enforced by migration 006. A repeat failure
+        // refreshes the failure columns and leaves id, retry_requested and the claim columns
+        // alone, so a retry worker that re-dead-letters the event it claimed still owns the row.
+        const string refresh = """
+            ON CONFLICT (processor_id, event_id) DO UPDATE SET
+                event_type      = EXCLUDED.event_type,
+                event_data      = EXCLUDED.event_data,
+                error_message   = EXCLUDED.error_message,
+                stack_trace     = EXCLUDED.stack_trace,
+                attempt_count   = EXCLUDED.attempt_count,
+                failed_at       = EXCLUDED.failed_at,
+                global_position = EXCLUDED.global_position
+            """;
         string sql;
         if (multiTenant)
         {
@@ -70,6 +84,8 @@ public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
                 INSERT INTO {_schema.Table("alberto_dead_letter_events")}
                     (id, processor_id, event_id, event_type, event_data, error_message, stack_trace, attempt_count, failed_at, global_position, retry_requested, tenant_id)
                 VALUES (@id, @processorId, @eventId, @eventType, @eventData::jsonb, @errorMessage, @stackTrace, @attemptCount, @failedAt, @globalPosition, FALSE, @tenantId)
+                {refresh},
+                    tenant_id   = EXCLUDED.tenant_id
                 """;
         }
         else
@@ -78,6 +94,7 @@ public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
                 INSERT INTO {_schema.Table("alberto_dead_letter_events")}
                     (id, processor_id, event_id, event_type, event_data, error_message, stack_trace, attempt_count, failed_at, global_position, retry_requested)
                 VALUES (@id, @processorId, @eventId, @eventType, @eventData::jsonb, @errorMessage, @stackTrace, @attemptCount, @failedAt, @globalPosition, FALSE)
+                {refresh}
                 """;
         }
 

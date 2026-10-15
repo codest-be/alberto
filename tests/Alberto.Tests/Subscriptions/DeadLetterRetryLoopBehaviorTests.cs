@@ -618,6 +618,7 @@ public sealed class DeadLetterRetryLoopBehaviorTests
 
         public bool FailWrites { get; set; }
         public Task WhenSettled => _settled.Task;
+        public string? Settlement { get; private set; }
 
         public Task StoreAsync(DeadLetterEntry entry, CancellationToken ct = default)
             => FailWrites ? throw new InvalidOperationException("db down") : _inner.StoreAsync(entry, ct);
@@ -632,6 +633,7 @@ public sealed class DeadLetterRetryLoopBehaviorTests
         public async Task<bool> CompleteRetryAsync(DeadLetterClaim claim, CancellationToken ct = default)
         {
             var r = await _inner.CompleteRetryAsync(claim, ct);
+            Settlement = $"complete:{r}";
             _settled.TrySetResult();
             return r;
         }
@@ -650,6 +652,7 @@ public sealed class DeadLetterRetryLoopBehaviorTests
         public async Task<bool> AbandonRetryAsync(DeadLetterClaim claim, CancellationToken ct = default)
         {
             var r = await _inner.AbandonRetryAsync(claim, ct);
+            Settlement = $"abandon:{r}";
             _settled.TrySetResult();
             return r;
         }
@@ -691,7 +694,7 @@ public sealed class DeadLetterRetryLoopBehaviorTests
     }
 
     [Fact]
-    public async Task FailedRetry_WhenReplacementDeadLetterIsStored_CompletesOriginal()
+    public async Task FailedRetry_WhenNewFailureIsStored_ReleasesRefreshedEntry()
     {
         var store = new FlakyWriteDeadLetterStore();
         var entry = MakeEntry("proc-replaced");
@@ -706,7 +709,13 @@ public sealed class DeadLetterRetryLoopBehaviorTests
         await store.WhenSettled.WaitAsync(TimeSpan.FromSeconds(10));
         await loop.DisposeAsync();
 
+        // The new failure refreshed the same entry in place. Completing the claim would delete
+        // it; releasing it keeps the event dead-lettered with the latest error, unclaimed.
+        Assert.Equal("abandon:True", store.Settlement);
         var survivor = Assert.Single(await store.GetAsync("proc-replaced"));
-        Assert.NotEqual(entry.Id, survivor.Id);
+        Assert.Equal(entry.Id, survivor.Id);
+        Assert.NotEqual("previous failure", survivor.ErrorMessage);
+        Assert.False(survivor.RetryRequested);
+        Assert.Null(survivor.ClaimId);
     }
 }

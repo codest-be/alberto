@@ -156,6 +156,7 @@ internal sealed class DeadLetterRetryLoop(
                 {
                     var entry = claim.Entry;
                     var dispatchSucceeded = false;
+                    var failedAgain = false;
                     try
                     {
                         // Reconstruct the event envelope from dead letter data
@@ -163,9 +164,8 @@ internal sealed class DeadLetterRetryLoop(
 
                         // Dispatch through full middleware chain (retry policy applies). The
                         // built-in RetryAndDeadLetter middleware swallows non-cancellation failures
-                        // and writes a fresh dead-letter row on exhaustion, so a normal return here
-                        // covers both "handler succeeded" and "handler failed but is now in a new
-                        // dead-letter row". In both cases the claimed entry is no longer needed.
+                        // and dead-letters the event again on exhaustion, so a normal return here
+                        // covers both "handler succeeded" and "handler failed again".
                         var context = await DispatchWithTenantScopeAsync(envelope, entry, ct);
 
                         if (context is not { DeadLettered: true })
@@ -178,12 +178,13 @@ internal sealed class DeadLetterRetryLoop(
                         }
                         else if (context.DeadLetterStored)
                         {
-                            // Failed again, but the replacement row is the durable record, so the
-                            // claimed original can go.
-                            dispatchSucceeded = true;
+                            // Failed again. The store keeps one row per (processor, event), so the
+                            // new failure was written onto the claimed row itself, claim intact.
+                            // Completing would delete it; release it instead, unscheduled.
+                            failedAgain = true;
                             _logger?.LogWarning(context.LastError,
                                 "DeadLetterRetryLoop retry of event {EventId} for processor '{ProcessorId}' failed again; " +
-                                "it was dead-lettered as a new entry.",
+                                "its dead-letter entry was updated with the new failure.",
                                 entry.EventId,
                                 _processor.ProcessorId);
                         }
@@ -230,6 +231,30 @@ internal sealed class DeadLetterRetryLoop(
                             _logger?.LogWarning(abandonEx,
                                 "DeadLetterRetryLoop failed to abandon retry on entry {EntryId}; " +
                                 "lease will expire and entry may be re-dispatched.",
+                                entry.Id);
+                        }
+                    }
+
+                    if (failedAgain)
+                    {
+                        try
+                        {
+                            if (!await _deadLetterStore.AbandonRetryAsync(claim, ct))
+                            {
+                                _logger?.LogWarning(
+                                    "DeadLetterRetryLoop no longer owns claim {ClaimId} for entry {EntryId}; " +
+                                    "a newer worker has reclaimed it.",
+                                    claim.Token,
+                                    entry.Id);
+                            }
+                        }
+                        catch (Exception releaseEx) when (!ct.IsCancellationRequested)
+                        {
+                            // The new failure is already on the row; only the release was lost.
+                            // Once the lease expires the row is re-dispatched.
+                            _logger?.LogWarning(releaseEx,
+                                "DeadLetterRetryLoop failed to release entry {EntryId} after a failed retry; " +
+                                "lease will expire and the entry will be re-dispatched.",
                                 entry.Id);
                         }
                     }

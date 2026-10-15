@@ -10,13 +10,29 @@ namespace Alberto.InMemory;
 /// <param name="timeProvider">Clock used to stamp <see cref="DeadLetterEntry.CreatedAt"/> when not supplied by the caller, and to drive claim-lease expiry. Defaults to <see cref="TimeProvider.System"/>.</param>
 public sealed class InMemoryDeadLetterStore(TimeProvider? timeProvider = null) : IClaimableDeadLetterStore
 {
-    private readonly ConcurrentDictionary<Guid, DeadLetterEntry> _entries = new();
+    // Keyed by (processor, event): the store holds one entry per event a processor failed.
+    private readonly ConcurrentDictionary<(string ProcessorId, Guid EventId), DeadLetterEntry> _entries = new();
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
     /// <inheritdoc />
     public Task StoreAsync(DeadLetterEntry entry, CancellationToken ct = default)
     {
-        _entries[entry.Id] = entry with { CreatedAt = entry.CreatedAt ?? _timeProvider.GetUtcNow().UtcDateTime };
+        var stamped = entry with { CreatedAt = entry.CreatedAt ?? _timeProvider.GetUtcNow().UtcDateTime };
+
+        // A repeat failure refreshes the existing entry but keeps its id, retry flag and claim,
+        // so a worker retrying it still owns the row it claimed.
+        _entries.AddOrUpdate(
+            Key(entry),
+            stamped,
+            (_, existing) => stamped with
+            {
+                Id = existing.Id,
+                RetryRequested = existing.RetryRequested,
+                ClaimedAt = existing.ClaimedAt,
+                ClaimExpiresAt = existing.ClaimExpiresAt,
+                ClaimedBy = existing.ClaimedBy,
+                ClaimId = existing.ClaimId,
+            });
         return Task.CompletedTask;
     }
 
@@ -54,12 +70,13 @@ public sealed class InMemoryDeadLetterStore(TimeProvider? timeProvider = null) :
     {
         ArgumentNullException.ThrowIfNull(claim);
 
-        while (_entries.TryGetValue(claim.Entry.Id, out var existing))
+        var key = Key(claim.Entry);
+        while (_entries.TryGetValue(key, out var existing))
         {
             if (!OwnsClaim(existing, claim))
                 return Task.FromResult(false);
 
-            if (_entries.TryRemove(new KeyValuePair<Guid, DeadLetterEntry>(existing.Id, existing)))
+            if (_entries.TryRemove(new KeyValuePair<(string, Guid), DeadLetterEntry>(key, existing)))
                 return Task.FromResult(true);
         }
 
@@ -69,7 +86,7 @@ public sealed class InMemoryDeadLetterStore(TimeProvider? timeProvider = null) :
     /// <inheritdoc />
     public Task ClearAsync(string processorId, CancellationToken ct = default)
     {
-        var toRemove = _entries.Where(e => e.Value.ProcessorId == processorId).Select(e => e.Key).ToList();
+        var toRemove = _entries.Keys.Where(k => k.ProcessorId == processorId).ToList();
         foreach (var id in toRemove)
         {
             _entries.TryRemove(id, out _);
@@ -80,8 +97,14 @@ public sealed class InMemoryDeadLetterStore(TimeProvider? timeProvider = null) :
     /// <inheritdoc />
     public Task MarkForRetryAsync(string processorId, CancellationToken ct = default)
     {
-        foreach (var entry in _entries.Values.Where(e => e.ProcessorId == processorId))
-            _entries[entry.Id] = entry with { RetryRequested = true };
+        foreach (var key in _entries.Keys.Where(k => k.ProcessorId == processorId))
+        {
+            // CAS so a concurrent refresh or claim is not overwritten with a stale copy.
+            while (_entries.TryGetValue(key, out var entry)
+                   && !_entries.TryUpdate(key, entry with { RetryRequested = true }, entry))
+            {
+            }
+        }
 
         return Task.CompletedTask;
     }
@@ -123,7 +146,7 @@ public sealed class InMemoryDeadLetterStore(TimeProvider? timeProvider = null) :
                 ClaimedBy = claimedBy,
                 ClaimId = claimId,
             };
-            if (_entries.TryUpdate(original.Id, updated, original))
+            if (_entries.TryUpdate(Key(original), updated, original))
                 claimed.Add(new DeadLetterClaim(updated, claimId, lease));
         }
 
@@ -135,7 +158,8 @@ public sealed class InMemoryDeadLetterStore(TimeProvider? timeProvider = null) :
     {
         ArgumentNullException.ThrowIfNull(claim);
 
-        while (_entries.TryGetValue(claim.Entry.Id, out var existing))
+        var key = Key(claim.Entry);
+        while (_entries.TryGetValue(key, out var existing))
         {
             if (!OwnsClaim(existing, claim))
                 return Task.FromResult(false);
@@ -149,7 +173,7 @@ public sealed class InMemoryDeadLetterStore(TimeProvider? timeProvider = null) :
                 ClaimId = null,
             };
 
-            if (_entries.TryUpdate(existing.Id, abandoned, existing))
+            if (_entries.TryUpdate(key, abandoned, existing))
                 return Task.FromResult(true);
         }
 
@@ -157,5 +181,7 @@ public sealed class InMemoryDeadLetterStore(TimeProvider? timeProvider = null) :
     }
 
     private static bool OwnsClaim(DeadLetterEntry existing, DeadLetterClaim claim) =>
-        existing.ClaimId == claim.Token;
+        existing.Id == claim.Entry.Id && existing.ClaimId == claim.Token;
+
+    private static (string, Guid) Key(DeadLetterEntry entry) => (entry.ProcessorId, entry.EventId);
 }
