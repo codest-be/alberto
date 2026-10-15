@@ -17,6 +17,17 @@ public interface IDeadLetterStore
     /// <summary>
     /// Stores a failed event in dead letter storage.
     /// </summary>
+    /// <remarks>
+    /// A store holds at most one entry per processor and event (<see cref="DeadLetterEntry.ProcessorId"/>,
+    /// <see cref="DeadLetterEntry.EventId"/>; the event fixes the tenant). The same event can fail
+    /// twice for one processor, for example when it is redelivered before the checkpoint is saved
+    /// or a batch bisect re-runs it. A repeat must refresh the existing entry's failure details
+    /// rather than add a second one, which a retry would dispatch a second time. The refreshed
+    /// entry keeps its original <see cref="DeadLetterEntry.Id"/>, its retry flag and any claim
+    /// on it, so <paramref name="entry"/>'s own <see cref="DeadLetterEntry.Id"/> is discarded on
+    /// a repeat. Keeping the claim is what lets a retry worker that re-dead-letters the event it
+    /// claimed release the row with <see cref="IClaimableDeadLetterStore.AbandonRetryAsync"/>.
+    /// </remarks>
     Task StoreAsync(DeadLetterEntry entry, CancellationToken ct = default);
 
     /// <summary>

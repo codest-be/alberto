@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Alberto.InMemory;
 using Alberto.Messaging;
 using Alberto.Testing;
@@ -100,6 +101,9 @@ public class OutboxRelayTests
 
         public Task<bool> MarkFailedAsync(OutboxClaim claim, string error, CancellationToken ct = default)
             => _inner.MarkFailedAsync(claim, error, ct);
+
+        public Task<bool> MarkAttemptFailedAsync(OutboxClaim claim, string error, int maxRetries, CancellationToken ct)
+            => _inner.MarkAttemptFailedAsync(claim, error, maxRetries, ct);
 
         public Task RetryFailedAsync(string? messageType = null, CancellationToken ct = default)
             => _inner.RetryFailedAsync(messageType, ct);
@@ -207,6 +211,155 @@ public class OutboxRelayTests
         }
     }
 
+    private sealed class ControlledClaimOutboxStore : IOutboxStore
+    {
+        private readonly TaskCompletionSource<IReadOnlyList<OutboxClaim>> _claim =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _whenClaimed =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task WhenClaimed => _whenClaimed.Task;
+
+        public void FailClaim(Exception exception) => _claim.TrySetException(exception);
+
+        public Task InsertAsync(OutboxEntry entry, CancellationToken ct = default) =>
+            Task.CompletedTask;
+
+        public async Task<IReadOnlyList<OutboxClaim>> ClaimPendingAsync(
+            int limit,
+            TimeSpan claimLease,
+            string claimedBy,
+            CancellationToken ct = default)
+        {
+            _whenClaimed.TrySetResult();
+            return await _claim.Task.WaitAsync(ct);
+        }
+
+        public Task<bool> MarkDeliveredAsync(OutboxClaim claim, CancellationToken ct = default) =>
+            Task.FromResult(true);
+
+        public Task<bool> MarkFailedAsync(
+            OutboxClaim claim,
+            string error,
+            CancellationToken ct = default) =>
+            Task.FromResult(true);
+
+        public Task<bool> MarkAttemptFailedAsync(
+            OutboxClaim claim,
+            string error,
+            int maxRetries,
+            CancellationToken ct) =>
+            Task.FromResult(true);
+
+        public Task RetryFailedAsync(string? messageType = null, CancellationToken ct = default) =>
+            Task.CompletedTask;
+
+        public Task PurgeDeliveredAsync(DateTimeOffset before, CancellationToken ct = default) =>
+            Task.CompletedTask;
+    }
+
+    private sealed class CapturingLogger : ILogger<OutboxRelay>
+    {
+        private readonly TaskCompletionSource _first =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public ConcurrentQueue<string> Messages { get; } = new();
+        public Task WhenLogged => _first.Task;
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            Messages.Enqueue(formatter(state, exception));
+            _first.TrySetResult();
+        }
+    }
+
+    /// <summary>Forwards to an inner store, with hooks to observe or break the mark calls.</summary>
+    private sealed class HookedOutboxStore(IOutboxStore inner) : IOutboxStore
+    {
+        public Func<OutboxClaim, CancellationToken, Task<bool>>? OnMarkDelivered { get; set; }
+        public int ClaimCalls;
+        public Func<int, Exception?>? ClaimFault { get; set; }
+        public int MarkFailedCalls;
+
+        public Task InsertAsync(OutboxEntry entry, CancellationToken ct = default)
+            => inner.InsertAsync(entry, ct);
+
+        public Task<IReadOnlyList<OutboxClaim>> ClaimPendingAsync(
+            int limit, TimeSpan claimLease, string claimedBy, CancellationToken ct = default)
+        {
+            var fault = ClaimFault?.Invoke(Interlocked.Increment(ref ClaimCalls));
+            if (fault is not null)
+                throw fault;
+            return inner.ClaimPendingAsync(limit, claimLease, claimedBy, ct);
+        }
+
+        public Task<bool> MarkDeliveredAsync(OutboxClaim claim, CancellationToken ct = default)
+            => OnMarkDelivered?.Invoke(claim, ct) ?? inner.MarkDeliveredAsync(claim, ct);
+
+        public Task<bool> MarkFailedAsync(OutboxClaim claim, string error, CancellationToken ct = default)
+            => MarkAttemptFailedAsync(claim, error, 1, ct);
+
+        public Func<OutboxClaim, Task<bool>>? OnMarkFailed { get; set; }
+
+        public Task<bool> MarkAttemptFailedAsync(
+            OutboxClaim claim, string error, int maxRetries, CancellationToken ct)
+        {
+            Interlocked.Increment(ref MarkFailedCalls);
+            return OnMarkFailed?.Invoke(claim) ?? inner.MarkAttemptFailedAsync(claim, error, maxRetries, ct);
+        }
+
+        public Task RetryFailedAsync(string? messageType = null, CancellationToken ct = default)
+            => inner.RetryFailedAsync(messageType, ct);
+
+        public Task PurgeDeliveredAsync(DateTimeOffset before, CancellationToken ct = default)
+            => inner.PurgeDeliveredAsync(before, ct);
+    }
+
+    private sealed class FlakyTransport(int failures, Action<ExternalMessage>? onPublish = null) : IMessageTransport
+    {
+        private int _attempts;
+        public int Attempts => Volatile.Read(ref _attempts);
+        public List<ExternalMessage> Delivered { get; } = [];
+
+        public Task PublishAsync(ExternalMessage message, CancellationToken ct)
+        {
+            var attempt = Interlocked.Increment(ref _attempts);
+            onPublish?.Invoke(message);
+            if (attempt <= failures)
+                throw new InvalidOperationException("Transport failure");
+            lock (Delivered)
+                Delivered.Add(message);
+            return Task.CompletedTask;
+        }
+
+        public Task StartAsync(CancellationToken ct) => Task.CompletedTask;
+        public Task StopAsync(CancellationToken ct) => Task.CompletedTask;
+    }
+
+    private static async Task<bool> WaitUntilAsync(Func<bool> condition)
+    {
+        var deadline = DateTime.UtcNow + Patience;
+        while (DateTime.UtcNow < deadline)
+        {
+            if (condition())
+                return true;
+            await Task.Delay(5, TestContext.Current.CancellationToken);
+        }
+        return condition();
+    }
+
+    private static async Task StopAsync(OutboxRelay relay)
+    {
+        await relay.StopAsync(TestContext.Current.CancellationToken);
+        try { await relay.ExecuteTask!; }
+        catch (OperationCanceledException) { }
+        relay.Dispose();
+    }
+
     #endregion
 
     #region Helpers
@@ -233,11 +386,12 @@ public class OutboxRelayTests
         IOutboxStore store,
         IMessageTransport transport,
         int batchSize = 100,
-        Action? onClaim = null)
+        Action? onClaim = null,
+        int maxRetries = OutboxRelay.DefaultMaxRetries)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         var signal = new PollSignalingOutboxStore(store, onClaim);
-        var relay = new OutboxRelay(signal, transport, pollingInterval: TimeSpan.FromMilliseconds(10), batchSize: batchSize);
+        var relay = new OutboxRelay(signal, transport, pollingInterval: TimeSpan.FromMilliseconds(10), batchSize: batchSize, maxRetries: maxRetries);
 
         // Start relay and wait until it begins its second poll. By that time the first
         // batch — ClaimPendingAsync → PublishAsync → MarkDeliveredAsync/MarkFailedAsync
@@ -300,7 +454,7 @@ public class OutboxRelayTests
 
         await store.InsertAsync(MakePendingEntry());
 
-        await RunRelayCycleAsync(store, transport);
+        await RunRelayCycleAsync(store, transport, maxRetries: 1);
 
         Assert.Single(store.Entries);
         Assert.Equal(OutboxEntryStatus.Failed, store.Entries[0].Status);
@@ -344,6 +498,214 @@ public class OutboxRelayTests
     }
 
     [Fact]
+    public async Task Relay_CarriesMessageIdentityAndTenantToTransport()
+    {
+        var store = new InMemoryOutboxStore();
+        var transport = new InMemoryTransport();
+        var entry = MakePendingEntry() with { TenantId = "acme" };
+        await store.InsertAsync(entry);
+
+        await RunRelayCycleAsync(store, transport);
+
+        var msg = Assert.Single(transport.Published);
+        Assert.Equal(entry.Id, msg.MessageId);
+        Assert.Equal(entry.SourceEventId, msg.SourceEventId);
+        Assert.Equal("acme", msg.TenantId);
+    }
+
+    [Fact]
+    public async Task Relay_RetriesAFailedPublish_UntilItSucceeds()
+    {
+        var store = new InMemoryOutboxStore();
+        var transport = new FlakyTransport(failures: 2);
+        var entry = MakePendingEntry();
+        await store.InsertAsync(entry);
+        var relay = new OutboxRelay(
+            store, transport, pollingInterval: TimeSpan.FromMilliseconds(5), maxRetries: 5);
+
+        await relay.StartAsync(TestContext.Current.CancellationToken);
+        Assert.True(await WaitUntilAsync(() => store.Entries[0].Status == OutboxEntryStatus.Delivered));
+        await StopAsync(relay);
+
+        Assert.Equal(3, transport.Attempts);
+        Assert.Equal(2, store.Entries[0].RetryCount);
+        // The same message id on every attempt is what lets a consumer deduplicate.
+        Assert.Equal(entry.Id, Assert.Single(transport.Delivered).MessageId);
+    }
+
+    [Fact]
+    public async Task Relay_ParksEntryAsFailed_AfterMaxRetries()
+    {
+        var store = new InMemoryOutboxStore();
+        var transport = new FlakyTransport(failures: int.MaxValue);
+        await store.InsertAsync(MakePendingEntry());
+        var relay = new OutboxRelay(
+            store, transport, pollingInterval: TimeSpan.FromMilliseconds(5), maxRetries: 3);
+
+        await relay.StartAsync(TestContext.Current.CancellationToken);
+        Assert.True(await WaitUntilAsync(() => store.Entries[0].Status == OutboxEntryStatus.Failed));
+        await StopAsync(relay);
+
+        Assert.Equal(3, transport.Attempts);
+        Assert.Equal(3, store.Entries[0].RetryCount);
+    }
+
+    [Fact]
+    public async Task Relay_BacksOff_AfterABatchWithAPublishFailure()
+    {
+        var store = new InMemoryOutboxStore();
+        var transport = new FlakyTransport(failures: int.MaxValue);
+        await store.InsertAsync(MakePendingEntry());
+        var relay = new OutboxRelay(
+            store, transport, pollingInterval: TimeSpan.FromSeconds(30), maxRetries: 5);
+
+        await relay.StartAsync(TestContext.Current.CancellationToken);
+        Assert.True(await WaitUntilAsync(() => transport.Attempts >= 1));
+        await Task.Delay(200, TestContext.Current.CancellationToken);
+        await StopAsync(relay);
+
+        // Without a back-off the entry would be retried in a hot loop and drained to failed.
+        Assert.Equal(1, transport.Attempts);
+        Assert.Equal(OutboxEntryStatus.Pending, store.Entries[0].Status);
+    }
+
+    [Fact]
+    public async Task Relay_ClaimFailure_BacksOffAndRecovers()
+    {
+        var inner = new InMemoryOutboxStore();
+        var store = new HookedOutboxStore(inner)
+        {
+            ClaimFault = call => call <= 2 ? new InvalidOperationException("db down") : null
+        };
+        var transport = new InMemoryTransport();
+        await inner.InsertAsync(MakePendingEntry());
+        var relay = new OutboxRelay(store, transport, pollingInterval: TimeSpan.FromMilliseconds(5));
+
+        await relay.StartAsync(TestContext.Current.CancellationToken);
+        Assert.True(await WaitUntilAsync(() => inner.Entries[0].Status == OutboxEntryStatus.Delivered));
+        Assert.False(relay.ExecuteTask!.IsFaulted);
+        await StopAsync(relay);
+    }
+
+    [Fact]
+    public async Task Relay_MarksDelivered_EvenWhenHostStopsDuringPublish()
+    {
+        var inner = new InMemoryOutboxStore();
+        var store = new HookedOutboxStore(inner)
+        {
+            OnMarkDelivered = (claim, ct) =>
+            {
+                ct.ThrowIfCancellationRequested();
+                return inner.MarkDeliveredAsync(claim, ct);
+            }
+        };
+        OutboxRelay? relay = null;
+        var transport = new FlakyTransport(0, m => { _ = relay!.StopAsync(CancellationToken.None); });
+        await inner.InsertAsync(MakePendingEntry());
+        relay = new OutboxRelay(store, transport, pollingInterval: TimeSpan.FromMilliseconds(5));
+
+        await relay.StartAsync(TestContext.Current.CancellationToken);
+        Assert.True(await WaitUntilAsync(() => inner.Entries[0].Status == OutboxEntryStatus.Delivered));
+        await StopAsync(relay);
+    }
+
+    [Fact]
+    public async Task Relay_DoesNotMarkAPublishedMessageFailed_WhenMarkDeliveredThrows()
+    {
+        var inner = new InMemoryOutboxStore();
+        var store = new HookedOutboxStore(inner)
+        {
+            OnMarkDelivered = (_, _) => throw new InvalidOperationException("db down")
+        };
+        var transport = new FlakyTransport(0);
+        var logger = new CapturingLogger();
+        await inner.InsertAsync(MakePendingEntry());
+        var relay = new OutboxRelay(
+            store, transport, pollingInterval: TimeSpan.FromMilliseconds(5), logger: logger);
+
+        await relay.StartAsync(TestContext.Current.CancellationToken);
+        await logger.WhenLogged.WaitAsync(Patience, TestContext.Current.CancellationToken);
+        await StopAsync(relay);
+
+        Assert.Equal(0, store.MarkFailedCalls);
+        // Left for the claim lease to expire and redeliver.
+        Assert.Equal(OutboxEntryStatus.Processing, inner.Entries[0].Status);
+    }
+
+    [Fact]
+    public async Task Relay_LogsALostClaim_WhenMarkDeliveredReturnsFalse()
+    {
+        var inner = new InMemoryOutboxStore();
+        var store = new HookedOutboxStore(inner)
+        {
+            OnMarkDelivered = (_, _) => Task.FromResult(false)
+        };
+        var logger = new CapturingLogger();
+        await inner.InsertAsync(MakePendingEntry());
+        var relay = new OutboxRelay(
+            store, new FlakyTransport(0), pollingInterval: TimeSpan.FromMilliseconds(5), logger: logger);
+
+        await relay.StartAsync(TestContext.Current.CancellationToken);
+        await logger.WhenLogged.WaitAsync(Patience, TestContext.Current.CancellationToken);
+        await StopAsync(relay);
+
+        Assert.Contains(logger.Messages, m => m.Contains("claim was lost"));
+    }
+
+    [Fact]
+    public async Task Relay_LogsALostClaim_WhenMarkFailedReturnsFalse()
+    {
+        var inner = new InMemoryOutboxStore();
+        var store = new HookedOutboxStore(inner) { OnMarkFailed = _ => Task.FromResult(false) };
+        var logger = new CapturingLogger();
+        await inner.InsertAsync(MakePendingEntry());
+        var relay = new OutboxRelay(
+            store, new FlakyTransport(int.MaxValue), pollingInterval: TimeSpan.FromMilliseconds(5), logger: logger);
+
+        await relay.StartAsync(TestContext.Current.CancellationToken);
+        await logger.WhenLogged.WaitAsync(Patience, TestContext.Current.CancellationToken);
+        await StopAsync(relay);
+
+        Assert.Contains(logger.Messages, m => m.Contains("failed delivery but its claim was lost"));
+    }
+
+    [Fact]
+    public async Task Relay_LogsAndSurvives_WhenRecordingADeliveryFailureThrows()
+    {
+        var inner = new InMemoryOutboxStore();
+        var store = new HookedOutboxStore(inner)
+        {
+            OnMarkFailed = _ => throw new InvalidOperationException("db down")
+        };
+        var logger = new CapturingLogger();
+        await inner.InsertAsync(MakePendingEntry());
+        var relay = new OutboxRelay(
+            store, new FlakyTransport(int.MaxValue), pollingInterval: TimeSpan.FromMilliseconds(5), logger: logger);
+
+        await relay.StartAsync(TestContext.Current.CancellationToken);
+        await logger.WhenLogged.WaitAsync(Patience, TestContext.Current.CancellationToken);
+        Assert.False(relay.ExecuteTask!.IsCompleted);
+        await StopAsync(relay);
+
+        Assert.Contains(logger.Messages, m => m.Contains("Could not record the delivery failure"));
+    }
+
+    [Theory]
+    [InlineData(100, 1, 100)]
+    [InlineData(100, 2, 200)]
+    [InlineData(100, 4, 800)]
+    [InlineData(100, 1_000, 30_000)]
+    [InlineData(60_000, 1, 60_000)]
+    [InlineData(60_000, 3, 60_000)]
+    public void Backoff_DoublesPerFailure_CappedAt30sOrThePollingInterval(
+        int pollingMs, int failureStreak, int expectedMs)
+    {
+        Assert.Equal(
+            TimeSpan.FromMilliseconds(expectedMs),
+            OutboxRelay.Backoff(TimeSpan.FromMilliseconds(pollingMs), failureStreak));
+    }
+
+    [Fact]
     public async Task Relay_Starts_And_Stops_Transport_Exactly_Once()
     {
         var store = new InMemoryOutboxStore();
@@ -378,6 +740,29 @@ public class OutboxRelayTests
     }
 
     [Fact]
+    public async Task Relay_ClaimFailure_IsLoggedAndDoesNotStopTheRelay()
+    {
+        var store = new ControlledClaimOutboxStore();
+        var transport = new LifecycleTransport();
+        var logger = new CapturingLogger();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var relay = new OutboxRelay(
+            store, transport, pollingInterval: TimeSpan.FromMilliseconds(5), logger: logger);
+
+        await relay.StartAsync(timeout.Token);
+        await store.WhenClaimed.WaitAsync(timeout.Token);
+        store.FailClaim(new InvalidOperationException("store failure"));
+        await logger.WhenLogged.WaitAsync(timeout.Token);
+
+        Assert.False(relay.ExecuteTask!.IsCompleted);
+        Assert.Equal(0, transport.Stops);
+
+        await relay.StopAsync(timeout.Token);
+        Assert.Equal(1, transport.Stops);
+        relay.Dispose();
+    }
+
+    [Fact]
     public void Constructor_RejectsInvalidArguments()
     {
         var store = new InMemoryOutboxStore();
@@ -389,6 +774,7 @@ public class OutboxRelayTests
         Assert.Throws<ArgumentNullException>("store", () => new OutboxRelay(null!, Lease()));
         Assert.Throws<ArgumentNullException>("transport", () => new OutboxRelay(store, (OutboxTransportLease)null!));
         Assert.Throws<ArgumentOutOfRangeException>("batchSize", () => new OutboxRelay(store, Lease(), batchSize: 0));
+        Assert.Throws<ArgumentOutOfRangeException>("maxRetries", () => new OutboxRelay(store, Lease(), maxRetries: 0));
         Assert.Throws<ArgumentOutOfRangeException>("claimLease", () => new OutboxRelay(store, Lease(), claimLease: TimeSpan.Zero));
         Assert.Throws<ArgumentOutOfRangeException>("claimLease", () => new OutboxRelay(store, Lease(), claimLease: TimeSpan.FromSeconds(-1)));
     }

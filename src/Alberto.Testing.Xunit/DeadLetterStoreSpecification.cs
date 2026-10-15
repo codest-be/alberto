@@ -167,6 +167,57 @@ public abstract class DeadLetterStoreSpecification
         Assert.Equal(0, await store.CountAsync(procB, Ct));
     }
 
+    // ── StoreAsync: one entry per (processor, event) ─────────────────────────
+
+    /// <summary>
+    /// Storing a second failure for an event the processor has already dead-lettered must
+    /// refresh the existing entry, not add another. The same event reaches the dead-letter
+    /// store twice when it is redelivered before the checkpoint is saved or when a batch
+    /// bisect re-runs it; two rows would make an operator retry run the handler twice. The
+    /// surviving entry keeps its original <see cref="DeadLetterEntry.Id"/> (so a claim taken
+    /// on it stays valid) and carries the latest failure.
+    /// </summary>
+    [Fact]
+    public async Task StoreAsync_SameEventTwice_KeepsOneEntryWithLatestFailure()
+    {
+        var store = await CreateStore();
+        var first = NewEntry(ProcessorId) with { FailedAt = DateTimeOffset.UtcNow.AddSeconds(-10) };
+        var second = first with
+        {
+            Id = Guid.NewGuid(),
+            ErrorMessage = "Failed again",
+            AttemptCount = 4,
+            FailedAt = DateTimeOffset.UtcNow,
+        };
+
+        await store.StoreAsync(first, Ct);
+        await store.StoreAsync(second, Ct);
+
+        Assert.Equal(1, await store.CountAsync(ProcessorId, Ct));
+        var stored = Assert.Single(await store.GetAsync(ProcessorId, null, 100, Ct));
+        Assert.Equal(first.Id, stored.Id);
+        Assert.Equal("Failed again", stored.ErrorMessage);
+        Assert.Equal(4, stored.AttemptCount);
+    }
+
+    /// <summary>
+    /// Uniqueness is per processor: the same event failing in two processors is two
+    /// independent failures and must be two entries.
+    /// </summary>
+    [Fact]
+    public async Task StoreAsync_SameEventForDifferentProcessors_KeepsBoth()
+    {
+        var store = await CreateStore();
+        var other = $"other-{TestId}";
+        var entry = NewEntry(ProcessorId);
+
+        await store.StoreAsync(entry, Ct);
+        await store.StoreAsync(entry with { Id = Guid.NewGuid(), ProcessorId = other }, Ct);
+
+        Assert.Equal(1, await store.CountAsync(ProcessorId, Ct));
+        Assert.Equal(1, await store.CountAsync(other, Ct));
+    }
+
     // ── GetAsync ──────────────────────────────────────────────────────────────
 
     /// <summary>Entries stored under a processor must be returned by <c>GetAsync</c> for that processor.</summary>

@@ -633,6 +633,65 @@ public sealed class MigrationUpgradeAndParityTests
         }
     }
 
+    /// <summary>
+    /// 006 makes dead-letter entries unique per (processor_id, event_id). A store upgraded from
+    /// 005 can already hold duplicates, so the script must collapse them before it builds the
+    /// index: the latest failure survives (highest id on a tie), carrying the retry flag of any
+    /// row it replaces, and entries for other processors are left alone.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DeadLetterUniqueEvent_CollapsesExistingDuplicates_OnUpgrade(bool singleTenant)
+    {
+        await using var container = await ContainerStartup.StartNewAsync(
+            () => new PostgreSqlBuilder("postgres:16-alpine").Build());
+        var connectionString = container.GetConnectionString();
+        await ApplyScriptsAndPopulateJournalAsync(connectionString, singleTenant, upToScriptNumber: 5);
+
+        var eventA = Guid.NewGuid();
+        var eventB = Guid.NewGuid();
+        await using var conn = new NpgsqlConnection(connectionString);
+        await conn.OpenAsync();
+        await using (var seed = conn.CreateCommand())
+        {
+            seed.CommandText = $"""
+                INSERT INTO alberto_dead_letter_events
+                    (id, processor_id, event_id, event_type, event_data, error_message,
+                     attempt_count, failed_at, retry_requested)
+                VALUES
+                    ('00000000-0000-0000-0000-000000000001', 'proc-a', '{eventA}', 't', '{"{}"}', 'older', 1, '2026-01-01T00:00:00Z', TRUE),
+                    ('00000000-0000-0000-0000-000000000002', 'proc-a', '{eventA}', 't', '{"{}"}', 'latest', 2, '2026-01-02T00:00:00Z', FALSE),
+                    ('00000000-0000-0000-0000-000000000003', 'proc-b', '{eventA}', 't', '{"{}"}', 'other processor', 1, '2026-01-01T00:00:00Z', FALSE),
+                    ('00000000-0000-0000-0000-000000000004', 'proc-a', '{eventB}', 't', '{"{}"}', 'tie, lower id', 1, '2026-01-01T00:00:00Z', FALSE),
+                    ('00000000-0000-0000-0000-000000000005', 'proc-a', '{eventB}', 't', '{"{}"}', 'tie, higher id', 1, '2026-01-01T00:00:00Z', FALSE)
+                """;
+            await seed.ExecuteNonQueryAsync();
+        }
+
+        var result = PostgresMigrator.Migrate(connectionString, singleTenant: singleTenant);
+        result.Successful.Should().BeTrue(because: result.Error?.Message ?? "migration failed");
+
+        var rows = new List<(string Id, string Message, bool RetryRequested)>();
+        await using (var read = conn.CreateCommand())
+        {
+            read.CommandText = """
+                SELECT id::text, error_message, retry_requested
+                FROM alberto_dead_letter_events ORDER BY id
+                """;
+            await using var reader = await read.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+                rows.Add((reader.GetString(0), reader.GetString(1), reader.GetBoolean(2)));
+        }
+
+        rows.Should().Equal(
+            ("00000000-0000-0000-0000-000000000002", "latest", true),
+            ("00000000-0000-0000-0000-000000000003", "other processor", false),
+            ("00000000-0000-0000-0000-000000000005", "tie, higher id", false));
+        (await IndexExistsAsync(conn, "ux_alberto_dead_letter_processor_event"))
+            .Should().BeTrue(because: "migration 006 adds the unique (processor_id, event_id) index");
+    }
+
     // =====================================================================
     // Schema-shape query helpers
     // =====================================================================

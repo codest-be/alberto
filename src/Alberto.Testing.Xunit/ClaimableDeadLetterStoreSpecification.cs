@@ -88,6 +88,63 @@ public abstract class ClaimableDeadLetterStoreSpecification : DeadLetterStoreSpe
         Assert.Empty(second);
     }
 
+    /// <summary>
+    /// An event dead-lettered twice before an operator retry must be claimed, and so
+    /// dispatched, once.
+    /// </summary>
+    [Fact]
+    public async Task ClaimRetryRequestedAsync_EventStoredTwice_ClaimsItOnce()
+    {
+        var store = await CreateClaimableStore();
+        var entry = NewEntry(ProcessorId);
+        await store.StoreAsync(entry, Ct);
+        await store.StoreAsync(entry with { Id = Guid.NewGuid(), FailedAt = DateTimeOffset.UtcNow }, Ct);
+        await store.MarkForRetryAsync(ProcessorId, Ct);
+
+        var claims = await store.ClaimRetryRequestedAsync(
+            ProcessorId, batchSize: 10, leaseDuration: TimeSpan.FromMinutes(5),
+            claimedBy: "worker", ct: Ct);
+
+        Assert.Single(claims);
+    }
+
+    /// <summary>
+    /// A retry that fails again re-dead-letters the event it was retrying. That write lands
+    /// on the claimed entry and must leave the claim in place, so the worker still owns the
+    /// row: no other worker can claim it, and <c>AbandonRetryAsync</c> with the worker's
+    /// token succeeds and leaves the refreshed failure behind, no longer scheduled for retry.
+    /// A store that dropped the claim would make every failed retry look like a lost claim;
+    /// one that inserted a new row would leave a duplicate.
+    /// </summary>
+    [Fact]
+    public async Task StoreAsync_SameEventWhileClaimed_KeepsClaimAndRecordsNewFailure()
+    {
+        var store = await CreateClaimableStore();
+        var entry = NewEntry(ProcessorId);
+        await store.StoreAsync(entry, Ct);
+        await store.MarkForRetryAsync(ProcessorId, Ct);
+        var claim = Assert.Single(await store.ClaimRetryRequestedAsync(
+            ProcessorId, batchSize: 10, leaseDuration: TimeSpan.FromHours(1),
+            claimedBy: "worker-1", ct: Ct));
+
+        await store.StoreAsync(entry with
+        {
+            Id = Guid.NewGuid(),
+            ErrorMessage = "Retry failed",
+            FailedAt = DateTimeOffset.UtcNow,
+        }, Ct);
+
+        Assert.Empty(await store.ClaimRetryRequestedAsync(
+            ProcessorId, batchSize: 10, leaseDuration: TimeSpan.FromHours(1),
+            claimedBy: "worker-2", ct: Ct));
+        Assert.True(await store.AbandonRetryAsync(claim, Ct));
+
+        var stored = Assert.Single(await store.GetAsync(ProcessorId, null, 100, Ct));
+        Assert.Equal(entry.Id, stored.Id);
+        Assert.Equal("Retry failed", stored.ErrorMessage);
+        Assert.False(stored.RetryRequested);
+    }
+
     // ── CompleteRetryAsync ────────────────────────────────────────────────────
 
     /// <summary>

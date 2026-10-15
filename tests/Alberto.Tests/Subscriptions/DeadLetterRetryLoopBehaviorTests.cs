@@ -603,4 +603,119 @@ public sealed class DeadLetterRetryLoopBehaviorTests
         Assert.Equal(entry.Id, survivor.Id);
         Assert.False(survivor.RetryRequested);
     }
+
+    // ── dead-letter middleware swallows the failure: the loop must not call it success ──
+
+    /// <summary>
+    /// In-memory store whose <see cref="StoreAsync"/> can be made to fail, to model the
+    /// replacement dead-letter write failing after a retried event fails again.
+    /// </summary>
+    private sealed class FlakyWriteDeadLetterStore : IClaimableDeadLetterStore
+    {
+        private readonly InMemoryDeadLetterStore _inner = new();
+        private readonly TaskCompletionSource _settled =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public bool FailWrites { get; set; }
+        public Task WhenSettled => _settled.Task;
+        public string? Settlement { get; private set; }
+
+        public Task StoreAsync(DeadLetterEntry entry, CancellationToken ct = default)
+            => FailWrites ? throw new InvalidOperationException("db down") : _inner.StoreAsync(entry, ct);
+
+        public Task<IReadOnlyList<DeadLetterEntry>> GetAsync(
+            string processorId, string? tenantId = null, int limit = 100, CancellationToken ct = default)
+            => _inner.GetAsync(processorId, tenantId, limit, ct);
+
+        public Task<int> CountAsync(string processorId, CancellationToken ct = default)
+            => _inner.CountAsync(processorId, ct);
+
+        public async Task<bool> CompleteRetryAsync(DeadLetterClaim claim, CancellationToken ct = default)
+        {
+            var r = await _inner.CompleteRetryAsync(claim, ct);
+            Settlement = $"complete:{r}";
+            _settled.TrySetResult();
+            return r;
+        }
+
+        public Task ClearAsync(string processorId, CancellationToken ct = default)
+            => _inner.ClearAsync(processorId, ct);
+
+        public Task MarkForRetryAsync(string processorId, CancellationToken ct = default)
+            => _inner.MarkForRetryAsync(processorId, ct);
+
+        public Task<IReadOnlyList<DeadLetterClaim>> ClaimRetryRequestedAsync(
+            string processorId, int batchSize, TimeSpan leaseDuration,
+            string claimedBy, CancellationToken ct = default)
+            => _inner.ClaimRetryRequestedAsync(processorId, batchSize, leaseDuration, claimedBy, ct);
+
+        public async Task<bool> AbandonRetryAsync(DeadLetterClaim claim, CancellationToken ct = default)
+        {
+            var r = await _inner.AbandonRetryAsync(claim, ct);
+            Settlement = $"abandon:{r}";
+            _settled.TrySetResult();
+            return r;
+        }
+    }
+
+    private sealed class PermanentClassifier : IErrorClassifier
+    {
+        public ErrorClassification Classify(Exception exception)
+            => ErrorClassification.Permanent;
+    }
+
+    private static ConsumeMiddleware DeadLetterMiddleware(IDeadLetterStore store) =>
+        ConsumeMiddlewares.RetryAndDeadLetter(
+            new Alberto.Configuration.RetryOptions { MaxRetries = 0 },
+            new PermanentClassifier(),
+            store);
+
+    [Fact]
+    public async Task FailedRetry_WhenReplacementDeadLetterWriteFails_KeepsOriginalEntry()
+    {
+        var store = new FlakyWriteDeadLetterStore();
+        var entry = MakeEntry("proc-lost");
+        await store.StoreAsync(entry, TestContext.Current.CancellationToken);
+        store.FailWrites = true;
+
+        var loop = new DeadLetterRetryLoop(
+            new FailingProcessor("proc-lost"), store,
+            pollingInterval: TimeSpan.FromMinutes(1),
+            middlewares: [DeadLetterMiddleware(store)]);
+
+        await loop.StartAsync(TestContext.Current.CancellationToken);
+        await store.WhenSettled.WaitAsync(TimeSpan.FromSeconds(10));
+        await loop.DisposeAsync();
+
+        // The replacement was never stored, so the original is the only record of the event.
+        var survivor = Assert.Single(await store.GetAsync("proc-lost"));
+        Assert.Equal(entry.Id, survivor.Id);
+        Assert.False(survivor.RetryRequested);
+    }
+
+    [Fact]
+    public async Task FailedRetry_WhenNewFailureIsStored_ReleasesRefreshedEntry()
+    {
+        var store = new FlakyWriteDeadLetterStore();
+        var entry = MakeEntry("proc-replaced");
+        await store.StoreAsync(entry, TestContext.Current.CancellationToken);
+
+        var loop = new DeadLetterRetryLoop(
+            new FailingProcessor("proc-replaced"), store,
+            pollingInterval: TimeSpan.FromMinutes(1),
+            middlewares: [DeadLetterMiddleware(store)]);
+
+        await loop.StartAsync(TestContext.Current.CancellationToken);
+        await store.WhenSettled.WaitAsync(TimeSpan.FromSeconds(10));
+        await loop.DisposeAsync();
+
+        // The new failure refreshed the same entry in place. Completing the claim would delete
+        // it; releasing it keeps the event dead-lettered with the latest error, unclaimed.
+        Assert.Equal("abandon:True", store.Settlement);
+        var survivor = Assert.Single(await store.GetAsync("proc-replaced"));
+        Assert.Equal(entry.Id, survivor.Id);
+        Assert.NotEqual("previous failure", survivor.ErrorMessage);
+        Assert.False(survivor.RetryRequested);
+        Assert.Null(survivor.ClaimId);
+    }
 }

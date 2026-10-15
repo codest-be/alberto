@@ -344,6 +344,9 @@ public sealed class RebusTransportAdapterTests : IAsyncLifetime
         public Task<bool> MarkFailedAsync(OutboxClaim claim, string error, CancellationToken ct = default)
             => inner.MarkFailedAsync(claim, error, ct);
 
+        public Task<bool> MarkAttemptFailedAsync(OutboxClaim claim, string error, int maxRetries, CancellationToken ct)
+            => inner.MarkAttemptFailedAsync(claim, error, maxRetries, ct);
+
         public Task RetryFailedAsync(string? messageType = null, CancellationToken ct = default)
             => inner.RetryFailedAsync(messageType, ct);
 

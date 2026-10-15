@@ -102,7 +102,7 @@ row in alberto_outbox_entries, status = pending
 claimed FOR UPDATE SKIP LOCKED, status = processing
 claim token + claim expiry stored on the row
     ↓  IMessageTransport.PublishAsync
-status = delivered   (or failed, only if the claim token still matches)
+status = delivered   (or back to pending, then failed after maxRetries; only if the claim token still matches)
 ```
 
 Because the handler is a processor, an entry only ever exists for an event that is already durable.
@@ -110,6 +110,11 @@ Because the relay claims with `FOR UPDATE SKIP LOCKED`, several relay replicas c
 holding the same live claim. Delivery remains at-least-once: if a publish succeeds but the relay
 dies before recording success, the entry is published again after its claim expires. It is also
 **unordered.** See [Ordering](#ordering-there-isnt-any) before you assume otherwise.
+
+Each claimed entry costs its own round trips: `PublishAsync`, then a separate `MarkDeliveredAsync`
+(or `MarkFailedAsync`) per message. Batching the claim does not batch the acknowledgements, so
+throughput is bounded by database latency per message, not per batch. Run more relay replicas if
+that becomes the limit.
 
 ### Wiring it
 
@@ -150,9 +155,10 @@ Then map events to it:
   after the last relay. The application that constructed the transport remains responsible for
   `IDisposable` or `IAsyncDisposable`. A shared transport must support concurrent `PublishAsync`
   calls; use a separate instance per registration if its broker client is single-threaded.
-- A polling-store failure faults the relay and closes the transport. Configure the host's
-  background-service failure/restart policy for recovery, and put transient database retry in the
-  store or database client rather than around the relay lifecycle.
+- A failure to claim (the store or database is unreachable) does not stop the relay. It logs a
+  warning, backs off with a capped exponential delay (base: the polling interval, capped at 30
+  seconds) and polls again; unclaimed entries stay `pending`. Host cancellation still exits
+  cleanly. A failing transport `StartAsync` does fault the relay and closes the transport.
 
 Keep the message record separate from the event even when they look identical today. The event is
 your internal history and you will want to change it; the message is a published contract, which is
@@ -169,9 +175,21 @@ public interface IMessageTransport
 }
 ```
 
-`ExternalMessage` is `(MessageType, Version, Payload, Metadata)`: a JSON string and headers. Throw
-from `PublishAsync` and the entry is marked `failed` with the exception message recorded;
-`RetryFailedAsync` (optionally filtered by message type) puts them back to `pending`.
+`ExternalMessage` is `(MessageType, Version, Payload, Metadata)`, a JSON string and headers, plus
+optional routing and identity fields. The relay fills `MessageId` (the outbox entry's id, stable
+across redeliveries, so it is the field to deduplicate on), `SourceEventId` (the event it was
+derived from) and `TenantId`.
+
+Throw from `PublishAsync` and the failure is recorded (`retry_count` incremented, exception message
+in `last_error`). The entry goes back to `pending` and the relay backs off before its next batch,
+until `retry_count` reaches the relay's `maxRetries` (default 5, `relayMaxRetries` on
+`WithOutbox`); that failure parks it as `failed`. `RetryFailedAsync` (optionally filtered by
+message type) puts `failed` entries back to `pending` with a fresh retry count.
+
+The relay marks an entry `delivered` with its own short timeout, not the host's cancellation
+token, and a failure to write that mark is logged, never turned into a delivery failure: the claim
+lease expires and the entry is delivered again, which is the at-least-once contract. A
+`MarkDeliveredAsync` that returns `false` (the claim was lost) is logged too.
 
 `StartAsync` completes before the relay makes its first claim or publish call. Once Alberto invokes
 it, Alberto makes exactly one `StopAsync` call after the last relay exits, including when startup
@@ -305,13 +323,14 @@ If it is too long, recovery after a crash waits longer.
 be delivered in the opposite one, and neither Alberto nor the table gives you a total order to fall
 back on. Three separate mechanisms cause it, and removing any one of them would not fix the others:
 
-- **The claim query orders by `created_at`, which is not unique.** `created_at` defaults to `now()`,
-  which in PostgreSQL is transaction-*start* time, so two entries written by concurrent
-  transactions can share a timestamp, and an entry written by a long transaction can carry an
-  earlier timestamp than one committed before it. There is no tiebreaker column; `id` is a v4 UUID
-  and sorts randomly.
-- **A failed delivery is re-delivered later.** `RetryFailedAsync` puts an entry back to `pending`
-  long after its neighbours went out, and an expired claim is recovered the same way.
+- **The claim query orders by `created_at`, which is not unique.** `created_at` is the writing
+  process's `DateTimeOffset.UtcNow` when `OutboxHandler` builds the entry, not a database clock,
+  so two entries can share a timestamp, clock skew between replicas can reorder them, and an entry
+  whose handler ran slowly can carry an earlier timestamp than one committed before it. There is no
+  tiebreaker column; `id` is a v4 UUID and sorts randomly.
+- **A failed delivery is re-delivered later.** A failed publish returns to `pending` and is retried
+  after the relay's back-off, `RetryFailedAsync` puts a parked entry back long after its neighbours
+  went out, and an expired claim is recovered the same way.
 - **Relays claim disjoint batches.** `FOR UPDATE SKIP LOCKED` is what lets several replicas run at
   once; it also means replica B can publish entry 2 while replica A is still publishing entry 1.
 
@@ -351,8 +370,8 @@ The outbox was append-only in practice, and the partial indexes the relay depend
 ```
 
 - **Only `delivered` entries are eligible.** `pending`, `processing` and `failed` are work, not
-  history, and are never removed by age: a `failed` entry sits there until you `RetryFailedAsync`
-  it or delete it yourself.
+  history, and are never removed by age: a `failed` entry (one that exhausted its retries) sits
+  there until you `RetryFailedAsync` it or delete it yourself.
 - Pass `Timeout.InfiniteTimeSpan` as `deliveredRetention` to keep delivered entries forever. Do that
   if the table is your integration audit trail, and plan to archive it elsewhere.
 - Retention is registered whether or not you supply a `transport`: entries reach `delivered` by

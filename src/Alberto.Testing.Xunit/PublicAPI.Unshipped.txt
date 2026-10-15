@@ -1,1 +1,7 @@
 #nullable enable
+Alberto.Testing.Xunit.OutboxStoreSpecification.MarkFailedAsync_BelowMaxRetries_ReturnsEntryToPending() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.OutboxStoreSpecification.MarkFailedAsync_AtMaxRetries_ParksEntryAsFailed() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.ClaimRetryRequestedAsync_EventStoredTwice_ClaimsItOnce() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.StoreAsync_SameEventWhileClaimed_KeepsClaimAndRecordsNewFailure() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.DeadLetterStoreSpecification.StoreAsync_SameEventForDifferentProcessors_KeepsBoth() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.DeadLetterStoreSpecification.StoreAsync_SameEventTwice_KeepsOneEntryWithLatestFailure() -> System.Threading.Tasks.Task!

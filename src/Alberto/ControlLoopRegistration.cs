@@ -197,16 +197,18 @@ internal static class ControlLoopRegistration
 
                 // Subscribed BEFORE the group is constructed so the variable is captured by
                 // reference and is assigned by the time the lambda first runs.
-                // Fire-and-forget: cancel the group so the fenced-out replica stops
-                // dispatching duplicate side effects. The callback is synchronous;
-                // discarding the Task is intentional.
+                // Fire-and-forget: stop only the fenced-out processor so it stops dispatching
+                // duplicate side effects; its siblings keep their leases and a later scan can
+                // take this one back. The callback is synchronous; discarding the Task is
+                // intentional.
                 fencable.SubscribeFenceViolation(violatingProcessorId =>
-                    _ = leaseGroup?.StopAsync(CancellationToken.None));
+                    _ = leaseGroup?.StopProcessorAsync(violatingProcessorId));
             }
 
             leaseGroup = new LeaseAwareControlLoopGroup(
                 loops, leaseManager, moduleKey, replicaId,
-                sp.GetService<ILogger<LeaseAwareControlLoopGroup>>());
+                sp.GetService<ILogger<LeaseAwareControlLoopGroup>>(),
+                checkpoints is CachingCheckpointStore caching ? caching.FlushAsync : null);
 
             return leaseGroup;
         });

@@ -115,29 +115,6 @@ public sealed class ControlLoopPipelinedMutationTests
     }
 
     /// <summary>
-    /// A backend whose <see cref="StreamAllAsync"/> always throws, used to trigger the pipelined
-    /// producer's own outer catch (line 382 in ControlLoop.cs) — as opposed to a worker's catch.
-    /// </summary>
-    private sealed class ThrowingStreamBackend : IEventStoreBackend
-    {
-        public Task<IReadOnlyCollection<IEventEnvelope>> StreamAllAsync(
-            long afterPosition = 0, int? limit = null, CancellationToken cancellationToken = default)
-            => throw new InvalidOperationException("Simulated producer-side backend failure");
-
-        public Task<IReadOnlyCollection<IEventEnvelope>> StreamAsync(
-            DcbQuery query, long afterPosition = 0, int? limit = null, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
-            IEnumerable<IEventToPersist> events, DcbQuery? dcbQuery = null, long? expectedPosition = null,
-            CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-    }
-
-    /// <summary>
     /// Reports a fixed contiguous head (via <see cref="IEventStoreHeadBackend"/>) — one further
     /// ahead than <paramref name="inner"/> actually has events for — while delegating and
     /// counting <see cref="StreamAllAsync"/> calls against <paramref name="inner"/>. This is what
@@ -576,7 +553,7 @@ public sealed class ControlLoopPipelinedMutationTests
     // ── 384 (ReportFailure removed) + 426 (ReportFaulted removed) ──────────────────
 
     /// <summary>
-    /// A failure in the pipelined producer itself (not a worker) must fault the loop, report the
+    /// A worker failure in the pipelined loop must fault the loop, report the
     /// fault into <see cref="ProcessorHealthState"/>, and log Critical. All three only happen
     /// inside the <c>if (pipelineFailure is not null)</c> block, which only runs if
     /// <c>ReportFailure</c> actually recorded the exception — so asserting all three together
@@ -584,23 +561,21 @@ public sealed class ControlLoopPipelinedMutationTests
     /// call in one scenario.
     /// </summary>
     [Fact]
-    public async Task Pipelined_ProducerFailure_FaultsLoop_ReportsHealth_AndLogsCritical()
+    public async Task Pipelined_WorkerFailure_FaultsLoop_ReportsHealth_AndLogsCritical()
     {
         const string processorId = "producer-failure";
         var eventBackend = new InMemoryEventStoreBackend();
         await eventBackend.AppendAsync([CreateEvent("triggers-head")],
             cancellationToken: TestContext.Current.CancellationToken);
 
-        var throwingBackend = new ThrowingStreamBackend();
         var checkpoints = new InMemoryCheckpointStore();
         var healthState = new ProcessorHealthState();
         var logger = new CapturingLogger<ControlLoop>();
-        var processor = new DelegatingProcessor(processorId, (_, _) => Task.CompletedTask);
+        var processor = new DelegatingProcessor(processorId,
+            (_, _) => throw new InvalidOperationException("Simulated worker failure"));
 
-        // The head is driven by a real backend so it advances past 0 and the loop actually
-        // attempts a read (which is where throwingBackend.StreamAllAsync blows up).
         var head = new EventStoreHead(eventBackend, refreshInterval: TimeSpan.FromMilliseconds(10));
-        var loop = new ControlLoop(processor, head, throwingBackend, checkpoints,
+        var loop = new ControlLoop(processor, head, eventBackend, checkpoints,
             pollingInterval: TimeSpan.FromMilliseconds(10), batchSize: 50,
             executionOptions: Pipelined2, logger: logger, healthState: healthState);
 

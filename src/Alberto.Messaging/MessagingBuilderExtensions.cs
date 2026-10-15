@@ -13,6 +13,23 @@ namespace Alberto.Messaging;
 public static class MessagingBuilderExtensions
 {
     /// <summary>
+    /// Binary-compatible overload of
+    /// <see cref="WithOutbox(DcbModuleBuilder, Action{IMessageMappingRegistry}, IOutboxStore, IMessageTransport?, int, TimeSpan?, TimeSpan?, TimeSpan?, int)"/>
+    /// with <see cref="OutboxRelay.DefaultMaxRetries"/>.
+    /// </summary>
+    public static DcbModuleBuilder WithOutbox(
+        this DcbModuleBuilder builder,
+        Action<IMessageMappingRegistry> configureMappings,
+        IOutboxStore outboxStore,
+        IMessageTransport? transport,
+        int relayBatchSize,
+        TimeSpan? relayClaimLease,
+        TimeSpan? deliveredRetention,
+        TimeSpan? retentionSweepInterval) =>
+        builder.WithOutbox(configureMappings, outboxStore, transport, relayBatchSize, relayClaimLease,
+            deliveredRetention, retentionSweepInterval, OutboxRelay.DefaultMaxRetries);
+
+    /// <summary>
     /// Registers an <see cref="OutboxHandler"/> as an event processor on the module.
     /// The handler maps events to outbox entries using <paramref name="configureMappings"/>.
     /// </summary>
@@ -31,6 +48,10 @@ public static class MessagingBuilderExtensions
     /// <param name="relayClaimLease">
     /// How long the relay owns a claimed entry before another relay may recover it.
     /// Defaults to <see cref="OutboxRelay.DefaultClaimLease"/>.
+    /// </param>
+    /// <param name="relayMaxRetries">
+    /// How many failed delivery attempts an entry gets before it is parked as <c>failed</c>.
+    /// Defaults to <see cref="OutboxRelay.DefaultMaxRetries"/>.
     /// </param>
     /// <param name="deliveredRetention">
     /// How long a delivered entry is kept before an <see cref="OutboxRetentionService"/> removes
@@ -55,7 +76,8 @@ public static class MessagingBuilderExtensions
         int relayBatchSize = 1,
         TimeSpan? relayClaimLease = null,
         TimeSpan? deliveredRetention = null,
-        TimeSpan? retentionSweepInterval = null)
+        TimeSpan? retentionSweepInterval = null,
+        int relayMaxRetries = OutboxRelay.DefaultMaxRetries)
     {
         ArgumentNullException.ThrowIfNull(configureMappings);
         ArgumentNullException.ThrowIfNull(outboxStore);
@@ -102,6 +124,7 @@ public static class MessagingBuilderExtensions
                             .CreateLease(transport),
                         batchSize: relayBatchSize,
                         claimLease: relayClaimLease,
+                        maxRetries: relayMaxRetries,
                         logger: sp.GetService<ILogger<OutboxRelay>>()));
             }
         });

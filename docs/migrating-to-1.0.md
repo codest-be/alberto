@@ -76,8 +76,8 @@ These four types were never intended for application use:
 
 - `FencingContext` wraps the token thread-local used by checkpoint fencing. Applications work
   with `IFencedCheckpointStore`.
-- `ConsistentHashRing<T>` is the internal shard-routing helper. Applications declare shards with
-  `WithTenancy(t => t.AcrossPostgresDatabases(...))`.
+- `ConsistentHashRing<T>` was an internal shard-routing helper that nothing called; it has since
+  been deleted. Applications declare shards with `WithTenancy(t => t.AcrossPostgresDatabases(...))`.
 - `FunctionalReactor<TEvent>` is the internal wrapper the module builder creates when you call
   `ReactTo<TEvent>(...)`. Use that builder method; do not construct the wrapper yourself.
 - `DeadLetterRetryLoop` is the internal hosted service that drives dead-letter retries.

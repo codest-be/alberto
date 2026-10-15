@@ -184,6 +184,17 @@ public abstract class ProcessorFaultStoreSpecification
     }
 }
 
+/// <summary>
+/// The in-memory store used when processor leases are enabled. It is what the control loop gets
+/// in that mode, so it has to keep fault records too, as the Postgres store does in both modes.
+/// </summary>
+public sealed class InMemoryFencedProcessorFaultStoreTests : ProcessorFaultStoreSpecification
+{
+    protected override Task<ICheckpointStore> CreateStore() =>
+        Task.FromResult<ICheckpointStore>(
+            new InMemoryFencedCheckpointStore(new InMemoryProcessorLeaseManager()));
+}
+
 public sealed class InMemoryProcessorFaultStoreTests : ProcessorFaultStoreSpecification
 {
     private readonly InMemoryCheckpointStore _store = new();

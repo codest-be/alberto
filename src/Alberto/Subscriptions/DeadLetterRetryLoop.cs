@@ -156,6 +156,7 @@ internal sealed class DeadLetterRetryLoop(
                 {
                     var entry = claim.Entry;
                     var dispatchSucceeded = false;
+                    var failedAgain = false;
                     try
                     {
                         // Reconstruct the event envelope from dead letter data
@@ -163,16 +164,38 @@ internal sealed class DeadLetterRetryLoop(
 
                         // Dispatch through full middleware chain (retry policy applies). The
                         // built-in RetryAndDeadLetter middleware swallows non-cancellation failures
-                        // and writes a fresh dead-letter row on exhaustion, so a normal return here
-                        // covers both "handler succeeded" and "handler failed but is now in a new
-                        // dead-letter row". In both cases the claimed entry is no longer needed.
-                        await DispatchWithTenantScopeAsync(envelope, entry, ct);
-                        dispatchSucceeded = true;
+                        // and dead-letters the event again on exhaustion, so a normal return here
+                        // covers both "handler succeeded" and "handler failed again".
+                        var context = await DispatchWithTenantScopeAsync(envelope, entry, ct);
 
-                        _logger?.LogInformation(
-                            "DeadLetterRetryLoop successfully reprocessed event {EventId} for processor '{ProcessorId}'",
-                            entry.EventId,
-                            _processor.ProcessorId);
+                        if (context is not { DeadLettered: true })
+                        {
+                            dispatchSucceeded = true;
+                            _logger?.LogInformation(
+                                "DeadLetterRetryLoop successfully reprocessed event {EventId} for processor '{ProcessorId}'",
+                                entry.EventId,
+                                _processor.ProcessorId);
+                        }
+                        else if (context.DeadLetterStored)
+                        {
+                            // Failed again. The store keeps one row per (processor, event), so the
+                            // new failure was written onto the claimed row itself, claim intact.
+                            // Completing would delete it; release it instead, unscheduled.
+                            failedAgain = true;
+                            _logger?.LogWarning(context.LastError,
+                                "DeadLetterRetryLoop retry of event {EventId} for processor '{ProcessorId}' failed again; " +
+                                "its dead-letter entry was updated with the new failure.",
+                                entry.EventId,
+                                _processor.ProcessorId);
+                        }
+                        else
+                        {
+                            // Failed and no replacement row exists: the claimed original is the
+                            // only record of the event, so it must survive (abandon below).
+                            throw new InvalidOperationException(
+                                "Retry failed and the replacement dead-letter entry was not stored.",
+                                context.LastError);
+                        }
                     }
                     catch (OperationCanceledException) when (ct.IsCancellationRequested)
                     {
@@ -208,6 +231,30 @@ internal sealed class DeadLetterRetryLoop(
                             _logger?.LogWarning(abandonEx,
                                 "DeadLetterRetryLoop failed to abandon retry on entry {EntryId}; " +
                                 "lease will expire and entry may be re-dispatched.",
+                                entry.Id);
+                        }
+                    }
+
+                    if (failedAgain)
+                    {
+                        try
+                        {
+                            if (!await _deadLetterStore.AbandonRetryAsync(claim, ct))
+                            {
+                                _logger?.LogWarning(
+                                    "DeadLetterRetryLoop no longer owns claim {ClaimId} for entry {EntryId}; " +
+                                    "a newer worker has reclaimed it.",
+                                    claim.Token,
+                                    entry.Id);
+                            }
+                        }
+                        catch (Exception releaseEx) when (!ct.IsCancellationRequested)
+                        {
+                            // The new failure is already on the row; only the release was lost.
+                            // Once the lease expires the row is re-dispatched.
+                            _logger?.LogWarning(releaseEx,
+                                "DeadLetterRetryLoop failed to release entry {EntryId} after a failed retry; " +
+                                "lease will expire and the entry will be re-dispatched.",
                                 entry.Id);
                         }
                     }
@@ -265,23 +312,24 @@ internal sealed class DeadLetterRetryLoop(
     // reactor handler classes wired via ReactTo<TEvent, THandler>). A complete fix would resolve
     // the processor itself from the scope using the module key — that requires DeadLetterRetryLoop
     // to know the module key, tracked as a follow-up in the breaking-changes phase.
-    private async Task DispatchWithTenantScopeAsync(IEventEnvelope envelope, DeadLetterEntry entry, CancellationToken ct)
+    private async Task<ConsumeEventContext?> DispatchWithTenantScopeAsync(IEventEnvelope envelope, DeadLetterEntry entry, CancellationToken ct)
     {
         if (scopeFactory is not null && !string.IsNullOrEmpty(entry.TenantId))
         {
             await using var scope = EventProcessingScope.Create(scopeFactory, entry.TenantId);
-            await DispatchAsync(envelope, ct);
+            return await DispatchAsync(envelope, ct);
         }
-        else
-        {
-            await DispatchAsync(envelope, ct);
-        }
+
+        return await DispatchAsync(envelope, ct);
     }
 
-    private Task DispatchAsync(IEventEnvelope evt, CancellationToken ct)
+    private async Task<ConsumeEventContext?> DispatchAsync(IEventEnvelope evt, CancellationToken ct)
     {
         if (_middlewares.Count == 0)
-            return _processor.ProcessEventAsync(evt, ct);
+        {
+            await _processor.ProcessEventAsync(evt, ct);
+            return null;
+        }
 
         var context = new ConsumeEventContext
         {
@@ -292,10 +340,11 @@ internal sealed class DeadLetterRetryLoop(
             CancellationToken = ct,
         };
 
-        return MiddlewareRunner.RunAsync(
+        await MiddlewareRunner.RunAsync(
             context,
             _middlewares,
             () => _processor.ProcessEventAsync(evt, ct));
+        return context;
     }
 }
 

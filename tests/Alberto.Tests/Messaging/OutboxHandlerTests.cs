@@ -544,6 +544,51 @@ public class OutboxHandlerTests
     }
 
     [Fact]
+    public async Task Map_WithDependencyAndJsonTypeInfo_ResolvesServiceAndSerializesWithTheSuppliedContract()
+    {
+        var sp = new ServiceCollection()
+            .AddSingleton<IOrderEnricher>(new FakeOrderEnricher("vip"))
+            .BuildServiceProvider();
+
+        var (handler, store) = CreateHandler(
+            r => r.Map<OrderRefunded, IOrderEnricher, OrderRefundedMessage>(
+                (enricher, evt) => new OrderRefundedMessage(evt.OrderId, enricher.GetLabel(evt.OrderId)),
+                OutboxMessageJsonContext.Default.OrderRefundedMessage),
+            sp);
+
+        await handler.ProcessEventAsync(
+            CreateEnvelope(new OrderRefunded(Guid.NewGuid(), "duplicate", 50m)),
+            TestContext.Current.CancellationToken);
+
+        Assert.Single(store.Entries);
+        Assert.Equal("order.refunded", store.Entries[0].MessageType);
+        Assert.Equal("2", store.Entries[0].Version);
+        var payload = JsonDocument.Parse(store.Entries[0].Payload).RootElement;
+        Assert.Equal("vip", payload.GetProperty("reason").GetString());
+    }
+
+    [Fact]
+    public void Map_RejectsNullArguments()
+    {
+        var registry = new MessageMappingRegistry(null);
+
+        Assert.Throws<ArgumentNullException>(() =>
+            registry.Map<OrderRefunded, OrderRefundedMessage>(
+                evt => new OrderRefundedMessage(evt.OrderId, evt.Reason), null!));
+        Assert.Throws<ArgumentNullException>(() =>
+            registry.Map<OrderRefunded, IOrderEnricher, OrderRefundedMessage>(
+                (_, evt) => new OrderRefundedMessage(evt.OrderId, evt.Reason), null!));
+        Assert.Throws<ArgumentNullException>(() =>
+            ((IMessageMappingRegistry)null!).Map<OrderRefunded, OrderRefundedMessage>(
+                evt => new OrderRefundedMessage(evt.OrderId, evt.Reason)));
+        Assert.Throws<ArgumentNullException>(() =>
+            registry.Map<OrderRefunded, OrderRefundedMessage>((Func<OrderRefunded, OrderRefundedMessage>)null!));
+        Assert.Throws<ArgumentNullException>(() =>
+            registry.Map<OrderRefunded, IOrderEnricher, OrderRefundedMessage>(
+                null!, OutboxMessageJsonContext.Default.OrderRefundedMessage));
+    }
+
+    [Fact]
     public async Task Map_WithScopedDependency_CreatesAndDisposesOneScopePerEvent()
     {
         var tracker = new MappingScopeTracker();

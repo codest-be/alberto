@@ -21,4 +21,17 @@ public sealed record ExternalMessage(
     string Payload,
     Dictionary<string, string> Metadata,
     string? Destination = null,
-    string? RoutingHint = null);
+    string? RoutingHint = null)
+{
+    /// <summary>
+    /// Stable identity of the outbox entry this message was relayed from. Unchanged across redeliveries,
+    /// so a consumer can deduplicate on it. Null when the message did not come through the outbox relay.
+    /// </summary>
+    public Guid? MessageId { get; init; }
+
+    /// <summary>Tenant the source event belongs to; null for single-tenant stores.</summary>
+    public string? TenantId { get; init; }
+
+    /// <summary>Id of the domain event this message was derived from, if known.</summary>
+    public Guid? SourceEventId { get; init; }
+}

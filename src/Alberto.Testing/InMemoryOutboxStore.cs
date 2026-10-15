@@ -154,8 +154,14 @@ public sealed class InMemoryOutboxStore : IOutboxStore
 
     /// <inheritdoc/>
     public Task<bool> MarkFailedAsync(OutboxClaim claim, string error, CancellationToken ct = default)
+        => MarkAttemptFailedAsync(claim, error, 1, ct);
+
+    /// <inheritdoc/>
+    public Task<bool> MarkAttemptFailedAsync(OutboxClaim claim, string error, int maxRetries,
+        CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(claim);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxRetries);
         ArgumentNullException.ThrowIfNull(error);
         var now = _timeProvider.GetUtcNow();
 
@@ -168,10 +174,11 @@ public sealed class InMemoryOutboxStore : IOutboxStore
             if (state.ClaimToken != claim.Token || state.ClaimedUntil <= now)
                 return Task.FromResult(false);
 
+            var retryCount = state.Entry.RetryCount + 1;
             state.Entry = state.Entry with
             {
-                Status = OutboxEntryStatus.Failed,
-                RetryCount = state.Entry.RetryCount + 1,
+                Status = retryCount >= maxRetries ? OutboxEntryStatus.Failed : OutboxEntryStatus.Pending,
+                RetryCount = retryCount,
                 LastError = error
             };
             state.ClaimToken = Guid.Empty;

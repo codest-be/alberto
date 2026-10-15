@@ -13,7 +13,9 @@ namespace Alberto;
 public interface IEventStoreHeadBackend
 {
     /// <summary>
-    /// Returns global_position values of committed events in (afterPosition, afterPosition + windowSize].
+    /// Returns the global_position values of the next <paramref name="windowSize"/> committed events
+    /// after <paramref name="afterPosition"/>, in ascending order. The window is bounded by row count,
+    /// not by position range, so a gap in the sequence wider than the window does not yield an empty one.
     /// Lightweight — no event data. Used by <see cref="Subscriptions.EventStoreHead"/> for gap detection.
     /// </summary>
     Task<IReadOnlyList<long>> GetPositionsAsync(

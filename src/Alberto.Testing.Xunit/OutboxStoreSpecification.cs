@@ -307,6 +307,49 @@ public abstract class OutboxStoreSpecification
         Assert.False(result);
     }
 
+    /// <summary>
+    /// A failure below <c>maxRetries</c> must return the entry to <c>pending</c> with the retry
+    /// count incremented and the error recorded, so the relay claims it again.
+    /// </summary>
+    [Fact]
+    public async Task MarkFailedAsync_BelowMaxRetries_ReturnsEntryToPending()
+    {
+        var store = await CreateStore();
+        var entry = NewEntry();
+        await store.InsertAsync(entry, Ct);
+        var claims = await store.ClaimPendingAsync(10, TimeSpan.FromMinutes(5), "worker", Ct);
+        var claim = Assert.Single(claims.Where(c => c.Entry.Id == entry.Id));
+
+        Assert.True(await store.MarkAttemptFailedAsync(claim, "transient", 3, Ct));
+
+        var again = await store.ClaimPendingAsync(10, TimeSpan.FromMinutes(5), "worker", Ct);
+        var reclaimed = Assert.Single(again.Where(c => c.Entry.Id == entry.Id));
+        Assert.Equal(1, reclaimed.Entry.RetryCount);
+        Assert.Equal("transient", reclaimed.Entry.LastError);
+    }
+
+    /// <summary>
+    /// The failure that brings the retry count to <c>maxRetries</c> must park the entry as
+    /// <c>failed</c>: it is no longer claimable until <c>RetryFailedAsync</c>.
+    /// </summary>
+    [Fact]
+    public async Task MarkFailedAsync_AtMaxRetries_ParksEntryAsFailed()
+    {
+        var store = await CreateStore();
+        var entry = NewEntry();
+        await store.InsertAsync(entry, Ct);
+
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var claims = await store.ClaimPendingAsync(10, TimeSpan.FromMinutes(5), "worker", Ct);
+            var claim = Assert.Single(claims.Where(c => c.Entry.Id == entry.Id));
+            Assert.True(await store.MarkAttemptFailedAsync(claim, "boom", 2, Ct));
+        }
+
+        var after = await store.ClaimPendingAsync(10, TimeSpan.FromMinutes(5), "worker", Ct);
+        Assert.DoesNotContain(after, c => c.Entry.Id == entry.Id);
+    }
+
     // ── RetryFailedAsync ──────────────────────────────────────────────────────
 
     /// <summary>

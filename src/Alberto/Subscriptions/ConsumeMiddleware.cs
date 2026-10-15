@@ -62,7 +62,7 @@ public static class ConsumeMiddlewares
                 // out would fault the processor and hold the checkpoint back, re-delivering
                 // every healthy event in the window. See
                 // RetryAndDeadLetterCore.StoreDeadLetterAsync.
-                await RetryAndDeadLetterCore.StoreDeadLetterAsync(
+                context.DeadLetterStored = await RetryAndDeadLetterCore.StoreDeadLetterAsync(
                     deadLetterStore, entry, logger, context.CancellationToken);
             }
         };

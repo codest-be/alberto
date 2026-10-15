@@ -280,8 +280,9 @@ alberto ops dead-letters dismiss --all                            # --all is req
 **`retry` re-dispatches the stored events.** It marks the entries `retry_requested`; the
 application's dead-letter retry loop claims them on its next poll, under a time-bounded lease, and
 runs them through the handler again. Succeed and the entry is deleted; throw and it is *abandoned*
-(left in the table, no longer scheduled) so a still-broken handler does not busy-loop. Fix the
-handler, deploy, then `retry` again.
+(left in the table with the new error, no longer scheduled) so a still-broken handler does not
+busy-loop. Fix the handler, deploy, then `retry` again. There is at most one entry per processor and
+event: an event that fails again updates its entry rather than adding a second one.
 
 The retry loop runs in **your application**, not in the CLI. A `retry` against a module that is not
 running leaves entries marked and waiting.
