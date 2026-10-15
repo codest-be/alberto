@@ -95,7 +95,7 @@ public sealed class CommandSpanTests
     private static int Folded(int state, IEvent _) => state + 1;
 
     private static Activity Single(List<Activity> trace, string name) =>
-        trace.Single(a => a.OperationName == name);
+        trace.Single(a => a.OperationName.StartsWith(name));
 
     [Fact]
     public async Task A_committed_command_is_a_root_with_load_decide_and_append_beneath_it()
@@ -133,6 +133,7 @@ public sealed class CommandSpanTests
         Assert.Equal("accepted", decide.GetTagItem("alberto.decide.outcome"));
         Assert.Equal(1, read.GetTagItem("alberto.read.events"));
         Assert.Equal("test-db", read.GetTagItem("db.system.name"));
+        Assert.Equal("test-db", append.GetTagItem("db.system.name"));
         Assert.Equal(ActivityKind.Client, read.Kind);
     }
 
@@ -156,7 +157,7 @@ public sealed class CommandSpanTests
         Assert.Equal(ActivityStatusCode.Unset, root.Status);
         Assert.Equal("rejected", decide.GetTagItem("alberto.decide.outcome"));
         Assert.Equal(new[] { "order.already_shipped" }, (string[])decide.GetTagItem("alberto.problem.codes")!);
-        Assert.DoesNotContain(trace, a => a.OperationName == AlbertoMetrics.AppendActivityName);
+        Assert.DoesNotContain(trace, a => a.OperationName.StartsWith(AlbertoMetrics.AppendActivityName));
     }
 
     [Fact]
@@ -189,7 +190,7 @@ public sealed class CommandSpanTests
         Assert.Equal([1, 2], loads.Select(l => l.GetTagItem("alberto.command.attempt")));
         Assert.All(loads, l => Assert.Equal(root.SpanId, l.ParentSpanId));
         // The conflicting append failed, so it is a failed span under the same root.
-        Assert.Contains(trace, a => a.OperationName == AlbertoMetrics.AppendActivityName
+        Assert.Contains(trace, a => a.OperationName.StartsWith(AlbertoMetrics.AppendActivityName)
                                     && a.Status == ActivityStatusCode.Error);
     }
 

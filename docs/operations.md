@@ -463,18 +463,14 @@ alberto ops tenants release --processor-id worker-3    # just that consumer's le
 services.AddAlberto("orders", builder => builder
     .WithTelemetry()
     …);
-
-services.AddOpenTelemetry()
-    .WithTracing(t => t.AddSource("Alberto"))
-    .WithMetrics(m => m.AddMeter("Alberto"));
 ```
 
-`.WithTelemetry()` registers Alberto's activity source and meter with the OpenTelemetry hosting
-integration automatically; no separate `AddAlbertoInstrumentation()` call is needed (that
-extension is retained for standalone `TracerProvider` / `MeterProvider` wiring outside the generic
-host, and is a harmless no-op duplicate when called alongside `.WithTelemetry()`).
-Call `AddOpenTelemetry()` to configure your
-exporters and subscribe to the Alberto source and meter. The meter is `Alberto`. See
+`.WithTelemetry()` calls `services.AddOpenTelemetry()` and adds Alberto's activity source and meter
+(both named `Alberto`) to it, so no `AddSource("Alberto")` / `AddMeter("Alberto")` is needed. This
+is additive: when your application also calls `AddOpenTelemetry()` the two merge into one builder.
+When it does not, the SDK is installed with **no exporters**, which emits nothing until you add
+one (`.UseOtlpExporter()`, or `WithTracing`/`WithMetrics` with your own). `AddAlbertoInstrumentation()`
+is for standalone `TracerProvider` / `MeterProvider` wiring outside the generic host. See
 [configuration.md](configuration.md#telemetry-options) for all telemetry options.
 
 `AddOpenTelemetry()` itself comes from `OpenTelemetry.Extensions.Hosting`, which you reference
@@ -482,24 +478,44 @@ yourself.
 
 **Activities**
 
-| Name | Covers |
-|---|---|
-| `Alberto.Append` | A write, from boundary check to commit |
-| `Alberto.Consume` | One event through the middleware chain |
-| `alberto.command {CommandType}` | One command's `Commit`/`TryCommit`; `alberto.command.outcome` is `committed`, `rejected`, `conflict` (retries used up) or `error`; `alberto.command.attempt` is the attempt reached |
-| `alberto.load` | The boundary read of an attempt: `alberto.load.events`, `.position`, `.types`, `.tags` |
-| `alberto.decide` | The decision of an attempt: `alberto.decide.outcome`, `alberto.problem.codes` on rejection |
-| `alberto.read` | A read from the event store, with `alberto.read.events`; `db.system.name` only on Postgres |
+| Name | Kind | Covers |
+|---|---|---|
+| `append {module}` | Producer | A write, from boundary check to commit. `alberto.events.count`, `alberto.events.first_position`/`last_position`, `alberto.dcb.conflict` on a conflict, `db.system.name` on Postgres only. One `alberto.event.appending` event per event: `alberto.event.id`, `alberto.event.type`, `alberto.event.tags` |
+| `process {processorId}` | Consumer | One event, or one batch, through the middleware chain |
+| `send {MessageType}` | Producer | One outbox publish attempt |
+| `alberto.command {CommandType}` | Internal | One command's `Commit`/`TryCommit`; `alberto.command.outcome` is `committed`, `rejected`, `conflict` (retries used up) or `error`; `alberto.command.attempt` is the attempt reached |
+| `alberto.load` | Internal | The boundary read of an attempt: `alberto.load.events`, `.position`, `.types`, `.tags` |
+| `alberto.decide` | Internal | The decision of an attempt: `alberto.decide.outcome`, `alberto.problem.codes` on rejection |
+| `alberto.read` | Client / Internal | A read from the event store: `alberto.read.after_position`, `.limit`, `.events`; `db.system.name` (and kind Client) only on Postgres |
+
+Attributes:
+
+| Attribute | On | Meaning |
+|---|---|---|
+| `messaging.system` = `alberto`, `messaging.operation.type` = `process` / `send` | consume, send | Messaging semantic conventions |
+| `messaging.consumer.group.name`, `messaging.destination.name` | consume | The processor id, the module |
+| `messaging.batch.message_count` | batch consume | Events in the batch |
+| `messaging.message.id` | send | Outbox entry id |
+| `alberto.processor.id`, `alberto.module`, `alberto.shard` | consume (`alberto.module`/`shard` also append) | `shard` only for sharded modules |
+| `alberto.event.position`, `alberto.event.type` | consume | |
+| `alberto.event.position.first`, `.last` | batch consume | |
+| `alberto.trace.links.count`, `alberto.trace.links.dropped` | consume | Links added; batch traces that did not fit |
+| `alberto.event.position` | span links | Position of the linked event |
+| `alberto.tenant.id`, `alberto.outbox.attempt`, `alberto.outbox.marked_delivered` | send | Spans only; tenant ids never go on metrics |
+| `error.type` | any failed span | The exception's full type name |
+
+Spans are never marked `Ok`; a failure sets status `Error` with **no description**, `error.type`,
+and an `exception` event carrying only `exception.type`. Exception messages are not recorded
+anywhere on a span: they can hold SQL or PII.
 
 The command spans are children of whatever activity is current when the command is committed, and
-`Alberto.Append` parents under the command root. Spans never carry exception messages, only
-`error.type`.
+the append span parents under the command root.
 
 The append stamps the current trace context into each event's `metadata` as W3C `traceparent`
-(and `tracestate`, when non-empty), whether or not telemetry is enabled: it is the `Alberto.Append`
+(and `tracestate`, when non-empty), whether or not telemetry is enabled: it is the append
 span's when there is one and the caller's ambient activity otherwise. Events stored by older
 versions carry `_traceId`/`_spanId` instead and are still read. The consume middleware turns the
-context back into the `Alberto.Consume` span, either as its **parent** or as an **`ActivityLink`**,
+context back into the `process` span, either as its **parent** or as an **`ActivityLink`**,
 chosen per processor with `TraceParenting` on `ProcessorExecutionOptions` (or
 `Alberto:Modules:{key}:Processors:{id}:TraceParenting` in configuration):
 
@@ -516,7 +532,7 @@ useful. With no trace context on the event, either mode yields a root span.
 
 Batch dispatch always links, whatever `TraceParenting` says: a batch has many upstream traces and a
 span has one parent. It carries one link per **distinct** upstream trace, at most 32;
-`trace.links.dropped` is set on the span with the number of traces that did not fit.
+`alberto.trace.links.dropped` is set on the span with the number of traces that did not fit.
 
 The outbox continues the trace: an entry copies the source event's context, and the relay wraps
 each publish attempt in a `send {MessageType}` producer span, parented to that context, tagged
@@ -551,6 +567,11 @@ here. Past 30 seconds it turns non-zero and keeps climbing with the stall's dura
 same point Alberto logs one warning naming the likely blocker and how to find it via
 `pg_stat_activity`, and logs once more when the barrier releases. See `EnableStableHeadBarrier`
 in [configuration.md](configuration.md#postgres-options) for the remedy.
+
+Every instrument above is on the `Alberto` meter. Also present: `alberto.processor.lag` (events a
+processor is behind, tagged `processor`, `module`, `shard`) and `alberto.owned_tenant_count`
+(tenants a consumer holds). Metric tag keys (`module`, `shard`, `processor`, `outcome`, `kind`) are
+a separate contract from span attributes and are not namespaced.
 
 The four worth alerting on: **dead letters increasing**, **lag growing without bound**,
 **`alberto.head.stalled` sustained above zero**, and **`alberto.concurrency.conflicts` climbing.** The last is usually a boundary drawn wider than the

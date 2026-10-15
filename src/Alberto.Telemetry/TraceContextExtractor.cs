@@ -28,7 +28,7 @@ internal static class TraceContextExtractor
     /// </param>
     internal static ActivityLink? ExtractTraceLink(IEventEnvelope envelope, ITraceContextProvider? provider) =>
         ExtractContext(envelope, provider) is { } context
-            ? new ActivityLink(context, new ActivityTagsCollection { { "event.position", envelope.GlobalPosition } })
+            ? new ActivityLink(context, new ActivityTagsCollection { { "alberto.event.position", envelope.GlobalPosition } })
             : null;
 
     /// <summary>
@@ -74,7 +74,7 @@ internal static class TraceContextExtractor
             if (links.Count == MaxBatchLinks)
                 dropped++;
             else
-                links.Add(new ActivityLink(context, new ActivityTagsCollection { { "event.position", envelope.GlobalPosition } }));
+                links.Add(new ActivityLink(context, new ActivityTagsCollection { { "alberto.event.position", envelope.GlobalPosition } }));
         }
 
         return [.. links];

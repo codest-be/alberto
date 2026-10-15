@@ -1,11 +1,12 @@
 using System.Diagnostics;
+using Alberto.Tenancy;
 using Alberto.Append;
 
 namespace Alberto.Telemetry;
 
 /// <summary>
 /// Append interceptor that adds distributed tracing instrumentation.
-/// - Creates "Alberto.Append" activity span
+/// - Creates an "append {module}" activity span
 /// - Records events being appended as Activity events (showing what was decided)
 /// </summary>
 internal sealed class TelemetryAppendInterceptor(bool recordEventTagValues = false, string? moduleKey = null) : IAppendInterceptor
@@ -17,21 +18,30 @@ internal sealed class TelemetryAppendInterceptor(bool recordEventTagValues = fal
         CancellationToken ct = default)
     {
         using var activity = AlbertoMetrics.Source.StartActivity(
-            AlbertoMetrics.AppendActivityName,
+            moduleKey is null
+                ? AlbertoMetrics.AppendActivityName
+                : $"{AlbertoMetrics.AppendActivityName} {ShardKey.ModuleOf(moduleKey)}",
             ActivityKind.Producer);
 
-        activity?.SetTag("events.count", context.Events.Count);
+        if (activity is not null && moduleKey is not null)
+        {
+            activity.SetTag("alberto.module", ShardKey.ModuleOf(moduleKey));
+            if (ShardKey.ShardOf(moduleKey) is { } shardId)
+                activity.SetTag("alberto.shard", shardId);
+        }
+
+        activity?.SetTag("alberto.events.count", context.Events.Count);
 
         // Add each event being appended as an Activity event (shows "what was decided")
         foreach (var evt in context.Events)
         {
             activity?.AddEvent(new ActivityEvent(
-                "event.appending",
+                "alberto.event.appending",
                 tags: new ActivityTagsCollection
                 {
-                    { "event.id", evt.Id.ToString() },
-                    { "event.type", evt.EventType.Id },
-                    { "event.tags", DescribeTags(evt.Tags) }
+                    { "alberto.event.id", evt.Id.ToString() },
+                    { "alberto.event.type", evt.EventType.Id },
+                    { "alberto.event.tags", DescribeTags(evt.Tags) }
                 }));
         }
 
@@ -42,13 +52,11 @@ internal sealed class TelemetryAppendInterceptor(bool recordEventTagValues = fal
         {
             var result = await next(context);
 
-            activity?.SetStatus(ActivityStatusCode.Ok);
-
             // Record positions assigned
             if (result.Count > 0)
             {
-                activity?.SetTag("events.first_position", result.First().GlobalPosition);
-                activity?.SetTag("events.last_position", result.Last().GlobalPosition);
+                activity?.SetTag("alberto.events.first_position", result.First().GlobalPosition);
+                activity?.SetTag("alberto.events.last_position", result.Last().GlobalPosition);
             }
 
             AlbertoMetrics.EventsAppended.Add(result.Count, tags);
@@ -57,8 +65,9 @@ internal sealed class TelemetryAppendInterceptor(bool recordEventTagValues = fal
         }
         catch (DcbConflictException)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, "DCB conflict");
-            activity?.SetTag("dcb.conflict", true);
+            activity?.SetTag("error.type", typeof(DcbConflictException).FullName);
+            activity?.SetStatus(ActivityStatusCode.Error);
+            activity?.SetTag("alberto.dcb.conflict", true);
 
             outcome = "conflict";
             var conflictTags = tags;
@@ -70,10 +79,7 @@ internal sealed class TelemetryAppendInterceptor(bool recordEventTagValues = fal
         catch (Exception ex)
         {
             outcome = "error";
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            // An exception EVENT, not span attributes. See the same call in
-            // TelemetryConsumeMiddleware for why messages must not become attributes.
-            activity?.AddException(ex);
+            TelemetrySpans.Fail(activity, ex);
             throw;
         }
         finally

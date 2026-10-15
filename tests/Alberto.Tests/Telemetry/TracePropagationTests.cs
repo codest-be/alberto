@@ -190,7 +190,9 @@ public sealed class TracePropagationTests
         Assert.Equal("t1", span.GetTagItem("alberto.tenant.id"));
         Assert.Equal(1, span.GetTagItem("alberto.outbox.attempt"));
         Assert.Equal(true, span.GetTagItem("alberto.outbox.marked_delivered"));
-        Assert.Equal(ActivityStatusCode.Ok, span.Status);
+        Assert.Equal(ActivityStatusCode.Unset, span.Status);
+        Assert.Equal("send", span.GetTagItem("messaging.operation.type"));
+        Assert.Equal("alberto", span.GetTagItem("messaging.system"));
 
         var sent = transport.Published.Single(m => m.MessageId == entry.Id);
         Assert.Equal($"00-{span.TraceId}-{span.SpanId}-01", sent.Metadata["traceparent"]);

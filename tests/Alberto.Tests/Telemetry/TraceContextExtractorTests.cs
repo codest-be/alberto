@@ -77,7 +77,7 @@ public sealed class TraceContextExtractorTests
         Assert.NotNull(link.Value.Tags);
         Assert.Contains(
             link.Value.Tags!,
-            tag => tag.Key == "event.position" && Equals(tag.Value, 4242L));
+            tag => tag.Key == "alberto.event.position" && Equals(tag.Value, 4242L));
     }
 
     [Fact]

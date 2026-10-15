@@ -47,13 +47,10 @@ public static class TelemetryConsumeMiddleware
                     parentContext: parent ?? default,
                     links: links);
 
-                activity?.SetTag("processor.id", context.ProcessorId);
-                activity?.SetTag("module", ShardKey.ModuleOf(context.ModuleKey));
-                if (ShardKey.ShardOf(context.ModuleKey) is { } shardId)
-                    activity?.SetTag("shard", shardId);
-                activity?.SetTag("event.position", context.Envelope.GlobalPosition);
-                activity?.SetTag("event.type", context.Envelope.EventType.Id);
-                activity?.SetTag("trace.links.count", links?.Length ?? 0);
+                TelemetrySpans.TagConsumer(activity, context.ProcessorId, context.ModuleKey);
+                activity?.SetTag("alberto.event.position", context.Envelope.GlobalPosition);
+                activity?.SetTag("alberto.event.type", context.Envelope.EventType.Id);
+                activity?.SetTag("alberto.trace.links.count", links?.Length ?? 0);
             }
 
             AlbertoMetrics.EventAge.Record(
@@ -68,14 +65,9 @@ public static class TelemetryConsumeMiddleware
                 if (context.DeadLettered)
                 {
                     var ex = context.LastError;
-                    activity?.SetStatus(ActivityStatusCode.Error, ex?.Message ?? "Dead-lettered");
-                    if (ex is not null)
-                    {
-                        // An exception EVENT, not span attributes. Exception messages carry
-                        // whatever the thrower put in them — Npgsql's include the failing SQL —
-                        // so they belong where collectors already know to find and scrub them.
-                        activity?.AddException(ex);
-                    }
+                    // No exception message on the span: it carries whatever the thrower put in
+                    // it, and Npgsql's include the failing SQL. See TelemetrySpans.Fail.
+                    TelemetrySpans.Fail(activity, ex);
 
                     // Use the same module/shard tag set as EventsProcessed so all three
                     // per-event metrics (processed, errors, duration) share the same label
@@ -86,15 +78,13 @@ public static class TelemetryConsumeMiddleware
                 }
                 else
                 {
-                    activity?.SetStatus(ActivityStatusCode.Ok);
                     AlbertoMetrics.EventsProcessed.Add(
                         1, TelemetryTags.ForModule(context.ProcessorId, context.ModuleKey));
                 }
             }
             catch (Exception ex)
             {
-                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-                activity?.AddException(ex);
+                TelemetrySpans.Fail(activity, ex);
 
                 var catchTags = TelemetryTags.ForModule(context.ProcessorId, context.ModuleKey);
                 catchTags.Add("exception.type", ex.GetType().Name);

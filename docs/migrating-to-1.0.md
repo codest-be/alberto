@@ -40,6 +40,7 @@ they touch a persisted table.
 | MT-6 | Metric units | Low | `alberto.append.duration` and `alberto.processing.duration` units changed from `"ms"` to `"s"` |
 | MT-7 | Metric dimensions | Medium | `alberto.tenant_locks_acquired` and `alberto.tenant_lock_failures` no longer carry a `tenant.id` tag |
 | TT-1 | Trace span attributes | Medium | Consume-path span attributes renamed: `"module.key"` → `"module"`, `"module.shard"` → `"shard"` |
+| TT-3 | Trace span names and attributes | **High** | Spans renamed (`Alberto.Append` → `append {module}`, `Alberto.Consume` → `process {processorId}`), Alberto attributes namespaced under `alberto.*`, `messaging.*` added, span status no longer `Ok` and never carries a message |
 | EX-1 | Experimental API | Medium | Sharding types marked `[Experimental("ALB9001")]`; referencing them without suppression is a compile-time diagnostic |
 | EV-1 | Evolver: runtime guard | Medium | `Evolver.Reconstitute(envelopes)` and `Evolver.Evolve(state, envelope)` now throw `InvalidOperationException` when the envelope's stored version is older than the handler's declared version |
 | PE-1 | ParseEvent&lt;T&gt; removed | **High** | `EventEnvelopeExtensions.ParseEvent<T>` is deleted and the now-empty `EventEnvelopeExtensions` class is `internal` |
@@ -1435,3 +1436,44 @@ appended the event instead of being new roots with a link. Projections are uncha
 `TraceParenting = TraceParenting.Link` on the processor's `ProcessorExecutionOptions` (or
 `Alberto:Modules:{key}:Processors:{id}:TraceParenting`) to keep the previous shape.
 Batch spans now link every distinct upstream trace (up to 32), not only the first event's.
+
+## TT-3: Span names and attributes follow OpenTelemetry semantic conventions
+
+**Span names** (low cardinality, `{operation} {destination}`):
+
+| Before | After |
+|---|---|
+| `Alberto.Append` | `append {module}` (`append` when the interceptor has no module) |
+| `Alberto.Consume {processorId}` | `process {processorId}` |
+| `Alberto.Consume {processorId} batch` | `process {processorId}` (see `messaging.batch.message_count`) |
+
+`AlbertoMetrics.AppendActivityName` is now `"append"` and `ConsumeActivityName` `"process"`; they are
+prefixes of the names above. Match with `StartsWith`, not equality.
+
+**Attributes** renamed:
+
+| Before | After |
+|---|---|
+| `processor.id`, `module`, `shard` | `alberto.processor.id`, `alberto.module`, `alberto.shard` |
+| `event.position`, `event.type` (consume span) | `alberto.event.position`, `alberto.event.type` |
+| `event.position` (span link) | `alberto.event.position` |
+| `event.position.first`, `.last` | `alberto.event.position.first`, `.last` |
+| `batch.size` | `messaging.batch.message_count` |
+| `trace.links.count`, `trace.links.dropped` | `alberto.trace.links.count`, `alberto.trace.links.dropped` |
+| `events.count`, `events.first_position`, `events.last_position` (append) | `alberto.events.count`, `alberto.events.first_position`, `alberto.events.last_position` |
+| `dcb.conflict` (append) | `alberto.dcb.conflict`, plus `error.type` |
+| append event `event.appending` with `event.id`, `event.type`, `event.tags` | `alberto.event.appending` with `alberto.event.id`, `alberto.event.type`, `alberto.event.tags` |
+
+**Added:** `messaging.system`, `messaging.operation.type` (`process`, `send`),
+`messaging.consumer.group.name`, `messaging.destination.name` on consume spans;
+`messaging.system` and `messaging.operation.type` on the relay `send` span; `alberto.module`/`alberto.shard`
+on append spans; `db.system.name` on append spans, on Postgres only.
+
+**Errors:** spans are no longer set to `Ok` (status stays `Unset`), a failed span's status has no
+description (it used to be `ex.Message`), and `error.type` carries the exception's full type name.
+The `exception` event holds only `exception.type`, no `exception.message` or stacktrace.
+
+**Unchanged:** metric tag keys (`module`, `shard`, `processor`, ...). They are a separate contract
+(MT-1..3) and were not namespaced.
+
+**Fix.** Update trace queries, sampling rules and span-name matchers to the names and keys above.

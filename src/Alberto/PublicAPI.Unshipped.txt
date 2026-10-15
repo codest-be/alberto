@@ -54,3 +54,7 @@ Alberto.Subscriptions.ConsumeEventContext.TraceParenting.init -> void
 *REMOVED*const Alberto.Telemetry.AlbertoMetrics.Version = "1.0.0" -> string!
 static readonly Alberto.Telemetry.AlbertoMetrics.Version -> string!
 static readonly Alberto.Telemetry.AlbertoMetrics.EventAge -> System.Diagnostics.Metrics.Histogram<double>!
+*REMOVED*const Alberto.Telemetry.AlbertoMetrics.AppendActivityName = "Alberto.Append" -> string!
+*REMOVED*const Alberto.Telemetry.AlbertoMetrics.ConsumeActivityName = "Alberto.Consume" -> string!
+const Alberto.Telemetry.AlbertoMetrics.AppendActivityName = "append" -> string!
+const Alberto.Telemetry.AlbertoMetrics.ConsumeActivityName = "process" -> string!

@@ -193,7 +193,6 @@ public sealed class OutboxRelay : BackgroundService
 
                     AlbertoMetrics.OutboxPublished.Add(1);
                     AlbertoMetrics.OutboxDeliveryLatency.Record((DateTimeOffset.UtcNow - entry.CreatedAt).TotalSeconds);
-                    activity?.SetStatus(ActivityStatusCode.Ok);
                     // Published either way: a failed mark leaves the span Ok and the metrics alone,
                     // and surfaces here so the redelivery it will cause can be explained.
                     var marked = await MarkDeliveredSafelyAsync(claim);
@@ -266,6 +265,8 @@ public sealed class OutboxRelay : BackgroundService
         if (activity is null)
             return null;
 
+        activity.SetTag("messaging.system", "alberto");
+        activity.SetTag("messaging.operation.type", "send");
         activity.SetTag("messaging.message.id", entry.Id.ToString());
         activity.SetTag("alberto.outbox.attempt", entry.RetryCount + 1);
         if (entry.TenantId is not null)

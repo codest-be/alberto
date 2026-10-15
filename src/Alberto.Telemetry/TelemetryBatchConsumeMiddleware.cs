@@ -15,7 +15,7 @@ public static class TelemetryBatchConsumeMiddleware
     /// Creates a telemetry middleware for batch processing. When
     /// <paramref name="traceContextProvider"/> is supplied, the consumer span is
     /// linked to each distinct trace that appended an event in the batch (capped at
-    /// <see cref="TraceContextExtractor.MaxBatchLinks"/>; <c>trace.links.dropped</c> counts the rest).
+    /// <see cref="TraceContextExtractor.MaxBatchLinks"/>; <c>alberto.trace.links.dropped</c> counts the rest).
     /// Trace-link extraction is handled by
     /// <see cref="TraceContextExtractor.ExtractTraceLink"/>, shared with
     /// <see cref="TelemetryConsumeMiddleware"/>.
@@ -35,23 +35,20 @@ public static class TelemetryBatchConsumeMiddleware
                 // of them whatever the processor's TraceParenting says.
                 var links = TraceContextExtractor.ExtractBatchLinks(
                     context.Envelopes, traceContextProvider, out var droppedLinks);
-                var activityName = $"{AlbertoMetrics.ConsumeActivityName} {context.ProcessorId} batch";
+                var activityName = $"{AlbertoMetrics.ConsumeActivityName} {context.ProcessorId}";
                 activity = AlbertoMetrics.Source.StartActivity(
                     activityName,
                     ActivityKind.Consumer,
                     parentContext: default,
                     links: links);
 
-                activity?.SetTag("processor.id", context.ProcessorId);
-                activity?.SetTag("module", ShardKey.ModuleOf(context.ModuleKey));
-                if (ShardKey.ShardOf(context.ModuleKey) is { } shardId)
-                    activity?.SetTag("shard", shardId);
-                activity?.SetTag("batch.size", context.Envelopes.Count);
-                activity?.SetTag("event.position.first", firstEnvelope.GlobalPosition);
-                activity?.SetTag("event.position.last", context.Envelopes[^1].GlobalPosition);
-                activity?.SetTag("trace.links.count", links.Length);
+                TelemetrySpans.TagConsumer(activity, context.ProcessorId, context.ModuleKey);
+                activity?.SetTag("messaging.batch.message_count", context.Envelopes.Count);
+                activity?.SetTag("alberto.event.position.first", firstEnvelope.GlobalPosition);
+                activity?.SetTag("alberto.event.position.last", context.Envelopes[^1].GlobalPosition);
+                activity?.SetTag("alberto.trace.links.count", links.Length);
                 if (droppedLinks > 0)
-                    activity?.SetTag("trace.links.dropped", droppedLinks);
+                    activity?.SetTag("alberto.trace.links.dropped", droppedLinks);
             }
 
             var ageTags = TelemetryTags.ForModule(context.ProcessorId, context.ModuleKey);
@@ -67,13 +64,7 @@ public static class TelemetryBatchConsumeMiddleware
                 if (context.DeadLetteredCount > 0)
                 {
                     var ex = context.LastError;
-                    activity?.SetStatus(ActivityStatusCode.Error, ex?.Message ?? "Dead-lettered");
-                    if (ex is not null)
-                    {
-                        // An exception EVENT, not span attributes. See the same call in
-                        // TelemetryConsumeMiddleware for why messages must not become attributes.
-                        activity?.AddException(ex);
-                    }
+                    TelemetrySpans.Fail(activity, ex);
 
                     // Use the same module/shard tag set as EventsProcessed so all three
                     // per-event metrics (processed, errors, duration) share the same label
@@ -84,7 +75,6 @@ public static class TelemetryBatchConsumeMiddleware
                 }
                 else
                 {
-                    activity?.SetStatus(ActivityStatusCode.Ok);
                     AlbertoMetrics.EventsProcessed.Add(
                         context.Envelopes.Count,
                         TelemetryTags.ForModule(context.ProcessorId, context.ModuleKey));
@@ -92,8 +82,7 @@ public static class TelemetryBatchConsumeMiddleware
             }
             catch (Exception ex)
             {
-                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-                activity?.AddException(ex);
+                TelemetrySpans.Fail(activity, ex);
 
                 var catchTags = TelemetryTags.ForModule(context.ProcessorId, context.ModuleKey);
                 catchTags.Add("exception.type", ex.GetType().Name);

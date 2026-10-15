@@ -54,8 +54,13 @@ internal sealed class InterceptingEventStoreBackend(
     /// pipeline and independent of telemetry being enabled, so the context is the Alberto.Append
     /// span's when there is one and the caller's ambient activity otherwise.
     /// </summary>
-    private static IReadOnlyList<IEventToPersist> StampTraceContext(IReadOnlyList<IEventToPersist> events)
+    private IReadOnlyList<IEventToPersist> StampTraceContext(IReadOnlyList<IEventToPersist> events)
     {
+        // The append span is current here; it cannot know the backend, so the backend tags it.
+        // Only our own span: with telemetry off, Current is the caller's.
+        if (dbSystem is not null && Activity.Current is { } append && ReferenceEquals(append.Source, AlbertoMetrics.Source))
+            append.SetTag("db.system.name", dbSystem);
+
         if (Activity.Current is not { } activity)
             return events;
 

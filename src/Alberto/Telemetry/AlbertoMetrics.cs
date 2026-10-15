@@ -304,12 +304,12 @@ public static class AlbertoMetrics
     /// <summary>
     /// Activity name for append operations.
     /// </summary>
-    public const string AppendActivityName = "Alberto.Append";
+    public const string AppendActivityName = "append";
 
     /// <summary>
     /// Activity name for consume operations.
     /// </summary>
-    public const string ConsumeActivityName = "Alberto.Consume";
+    public const string ConsumeActivityName = "process";
 
     #endregion
 }

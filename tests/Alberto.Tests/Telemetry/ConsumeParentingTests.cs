@@ -70,7 +70,7 @@ public sealed class ConsumeParentingTests
         Assert.Equal(ActivityTraceId.CreateFromString(TraceParent(0xabc).AsSpan(3, 32)), activity.TraceId);
         Assert.Equal(ActivitySpanId.CreateFromString(TraceParent(0xabc).AsSpan(36, 16)), activity.ParentSpanId);
         Assert.Empty(activity.Links);
-        Assert.Equal(0, activity.GetTagItem("trace.links.count"));
+        Assert.Equal(0, activity.GetTagItem("alberto.trace.links.count"));
     }
 
     [Fact]
@@ -130,8 +130,8 @@ public sealed class ConsumeParentingTests
         var activity = await ConsumeBatchAsync(TraceParent(1), null, TraceParent(1), TraceParent(2));
 
         Assert.Equal(2, activity.Links.Count());
-        Assert.Equal(2, activity.GetTagItem("trace.links.count"));
-        Assert.Null(activity.GetTagItem("trace.links.dropped"));
+        Assert.Equal(2, activity.GetTagItem("alberto.trace.links.count"));
+        Assert.Null(activity.GetTagItem("alberto.trace.links.dropped"));
         Assert.Equal(default, activity.ParentSpanId);
     }
 
@@ -143,7 +143,7 @@ public sealed class ConsumeParentingTests
             Enumerable.Range(1, max + 5).Select(n => (string?)TraceParent(n)).ToArray());
 
         Assert.Equal(max, activity.Links.Count());
-        Assert.Equal(max, activity.GetTagItem("trace.links.count"));
-        Assert.Equal(5, activity.GetTagItem("trace.links.dropped"));
+        Assert.Equal(max, activity.GetTagItem("alberto.trace.links.count"));
+        Assert.Equal(5, activity.GetTagItem("alberto.trace.links.dropped"));
     }
 }
