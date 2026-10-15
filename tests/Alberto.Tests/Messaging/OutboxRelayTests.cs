@@ -182,46 +182,6 @@ public class OutboxRelayTests
         }
     }
 
-    private sealed class ControlledClaimOutboxStore : IOutboxStore
-    {
-        private readonly TaskCompletionSource<IReadOnlyList<OutboxClaim>> _claim =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private readonly TaskCompletionSource _whenClaimed =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        public Task WhenClaimed => _whenClaimed.Task;
-
-        public void FailClaim(Exception exception) => _claim.TrySetException(exception);
-
-        public Task InsertAsync(OutboxEntry entry, CancellationToken ct = default) =>
-            Task.CompletedTask;
-
-        public async Task<IReadOnlyList<OutboxClaim>> ClaimPendingAsync(
-            int limit,
-            TimeSpan claimLease,
-            string claimedBy,
-            CancellationToken ct = default)
-        {
-            _whenClaimed.TrySetResult();
-            return await _claim.Task.WaitAsync(ct);
-        }
-
-        public Task<bool> MarkDeliveredAsync(OutboxClaim claim, CancellationToken ct = default) =>
-            Task.FromResult(true);
-
-        public Task<bool> MarkFailedAsync(
-            OutboxClaim claim,
-            string error,
-            CancellationToken ct = default) =>
-            Task.FromResult(true);
-
-        public Task RetryFailedAsync(string? messageType = null, CancellationToken ct = default) =>
-            Task.CompletedTask;
-
-        public Task PurgeDeliveredAsync(DateTimeOffset before, CancellationToken ct = default) =>
-            Task.CompletedTask;
-    }
-
     #endregion
 
     #region Helpers
@@ -393,22 +353,30 @@ public class OutboxRelayTests
     }
 
     [Fact]
-    public async Task Relay_StopsTransport_WhenThePollingLoopFails()
+    public async Task Relay_KeepsPolling_AfterTheStoreFails()
     {
-        var store = new ControlledClaimOutboxStore();
-        var loopFailure = new InvalidOperationException("store failure");
-        var transport = new LifecycleTransport();
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        var relay = new OutboxRelay(store, transport);
+        // A store outage (e.g. Postgres 53300, too many clients) used to fault ExecuteTask,
+        // which stops the whole host under BackgroundServiceExceptionBehavior.StopHost.
+        var store = new InMemoryOutboxStore();
+        await store.InsertAsync(MakePendingEntry());
+        var failures = 0;
+        var signal = new PollSignalingOutboxStore(store, onClaim: () =>
+        {
+            if (Interlocked.Increment(ref failures) == 1)
+                throw new InvalidOperationException("store failure");
+        });
+        var transport = new LifecycleTransport(new InMemoryTransport());
+        using var timeout = new CancellationTokenSource(Patience);
+        var relay = new OutboxRelay(signal, transport, pollingInterval: TimeSpan.FromMilliseconds(10));
 
         await relay.StartAsync(timeout.Token);
-        await store.WhenClaimed.WaitAsync(timeout.Token);
-        store.FailClaim(loopFailure);
+        await signal.WhenPolled.WaitAsync(timeout.Token);
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => relay.ExecuteTask!.WaitAsync(timeout.Token));
+        Assert.False(relay.ExecuteTask!.IsCompleted);
+        Assert.Equal(0, transport.Stops);
+        Assert.All(store.Entries, e => Assert.Equal(OutboxEntryStatus.Delivered, e.Status));
 
-        Assert.Same(loopFailure, exception);
+        await relay.StopAsync(timeout.Token);
         Assert.Equal(1, transport.Stops);
         relay.Dispose();
     }
@@ -494,32 +462,6 @@ public class OutboxRelayTests
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
             () => relay.ExecuteTask!);
         Assert.Same(cleanupFailure, exception);
-        Assert.Equal(1, transport.Stops);
-        relay.Dispose();
-    }
-
-    [Fact]
-    public async Task LoopAndCleanupFailure_PreservesLoopFailureAndAttachesCleanupFailure()
-    {
-        var store = new ControlledClaimOutboxStore();
-        var loopFailure = new InvalidOperationException("store failure");
-        var cleanupFailure = new InvalidOperationException("cleanup failure");
-        var transport = new LifecycleTransport(
-            stop: _ => Task.FromException(cleanupFailure));
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        var relay = new OutboxRelay(store, transport);
-
-        await relay.StartAsync(timeout.Token);
-        await store.WhenClaimed.WaitAsync(timeout.Token);
-        store.FailClaim(loopFailure);
-
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => relay.ExecuteTask!.WaitAsync(timeout.Token));
-
-        Assert.Same(loopFailure, exception);
-        Assert.Same(
-            cleanupFailure,
-            exception.Data[OutboxTransportLifecycle.CleanupFailureDataKey]);
         Assert.Equal(1, transport.Stops);
         relay.Dispose();
     }

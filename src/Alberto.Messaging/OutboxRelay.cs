@@ -1,11 +1,14 @@
 using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Alberto.Messaging;
 
 /// <summary>
 /// Background service that polls the outbox store for pending entries and delivers them
-/// via the configured <see cref="IMessageTransport"/>.
+/// via the configured <see cref="IMessageTransport"/>. A poll that fails (the store is unreachable,
+/// out of connections) is logged and retried with exponential backoff; it never stops the host.
 /// </summary>
 public sealed class OutboxRelay : BackgroundService
 {
@@ -15,6 +18,11 @@ public sealed class OutboxRelay : BackgroundService
     private readonly int _batchSize;
     private readonly TimeSpan _claimLease;
     private readonly string _claimedBy;
+    private readonly ILogger _logger;
+
+    private static readonly TimeSpan MinFailureBackoff = TimeSpan.FromMilliseconds(100);
+
+    private static readonly TimeSpan MaxFailureBackoff = TimeSpan.FromSeconds(30);
 
     /// <summary>
     /// Default time for one relay to own a claimed entry before another relay may recover it.
@@ -37,20 +45,23 @@ public sealed class OutboxRelay : BackgroundService
     /// Defaults to 5 minutes.
     /// </param>
     /// <param name="claimedBy">Diagnostic relay identity persisted with each claim.</param>
+    /// <param name="logger">Receives one line per failed poll.</param>
     public OutboxRelay(
         IOutboxStore store,
         IMessageTransport transport,
         TimeSpan? pollingInterval = null,
         int batchSize = 100,
         TimeSpan? claimLease = null,
-        string? claimedBy = null)
+        string? claimedBy = null,
+        ILogger<OutboxRelay>? logger = null)
         : this(
             store,
             CreateExclusiveTransportLease(store, transport),
             pollingInterval,
             batchSize,
             claimLease,
-            claimedBy)
+            claimedBy,
+            logger)
     {
     }
 
@@ -60,7 +71,8 @@ public sealed class OutboxRelay : BackgroundService
         TimeSpan? pollingInterval = null,
         int batchSize = 100,
         TimeSpan? claimLease = null,
-        string? claimedBy = null)
+        string? claimedBy = null,
+        ILogger<OutboxRelay>? logger = null)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(transport);
@@ -78,6 +90,7 @@ public sealed class OutboxRelay : BackgroundService
         _claimedBy = string.IsNullOrWhiteSpace(claimedBy)
             ? $"{Environment.MachineName}:{Environment.ProcessId}:{Guid.NewGuid():N}"
             : claimedBy;
+        _logger = logger ?? NullLogger<OutboxRelay>.Instance;
     }
 
     /// <inheritdoc/>
@@ -89,38 +102,27 @@ public sealed class OutboxRelay : BackgroundService
         {
             await _transport.StartAsync(ct);
 
+            var failureBackoff = MinFailureBackoff;
             while (!ct.IsCancellationRequested)
             {
-                var pending = await _store.ClaimPendingAsync(
-                    _batchSize,
-                    _claimLease,
-                    _claimedBy,
-                    ct);
-
-                foreach (var claim in pending)
+                int claimed;
+                try
                 {
-                    var entry = claim.Entry;
-                    try
-                    {
-                        await _transport.PublishAsync(
-                            new ExternalMessage(
-                                entry.MessageType,
-                                entry.Version,
-                                entry.Payload,
-                                entry.Metadata,
-                                Destination: entry.Destination,
-                                RoutingHint: entry.RoutingHint),
-                            ct);
-                        await _store.MarkDeliveredAsync(claim, ct);
-                    }
-                    catch (Exception ex) when (!ct.IsCancellationRequested)
-                    {
-                        await _store.MarkFailedAsync(claim, ex.Message, ct);
-                    }
+                    claimed = await PollOnceAsync(ct);
+                    failureBackoff = MinFailureBackoff;
+                }
+                catch (Exception ex) when (!ct.IsCancellationRequested)
+                {
+                    // A store outage must not end the relay: the host would stop with it.
+                    // Claims left behind expire after the lease and are picked up again.
+                    _logger.LogWarning(ex, "Outbox poll failed. Retrying in {Backoff}.", failureBackoff);
+                    await Task.Delay(failureBackoff, ct);
+                    failureBackoff = TimeSpan.FromTicks(Math.Min(failureBackoff.Ticks * 2, MaxFailureBackoff.Ticks));
+                    continue;
                 }
 
                 // Back off when there are no more pending entries
-                if (pending.Count < _batchSize)
+                if (claimed < _batchSize)
                     await Task.Delay(_pollingInterval, ct);
             }
         }
@@ -143,6 +145,39 @@ public sealed class OutboxRelay : BackgroundService
         // Preserve BackgroundService's established cancelled ExecuteTask on an ordinary host
         // stop. A cleanup failure thrown from finally above still takes precedence.
         hostCancellation?.Throw();
+    }
+
+    private async Task<int> PollOnceAsync(CancellationToken ct)
+    {
+        var pending = await _store.ClaimPendingAsync(
+            _batchSize,
+            _claimLease,
+            _claimedBy,
+            ct);
+
+        foreach (var claim in pending)
+        {
+            var entry = claim.Entry;
+            try
+            {
+                await _transport.PublishAsync(
+                    new ExternalMessage(
+                        entry.MessageType,
+                        entry.Version,
+                        entry.Payload,
+                        entry.Metadata,
+                        Destination: entry.Destination,
+                        RoutingHint: entry.RoutingHint),
+                    ct);
+                await _store.MarkDeliveredAsync(claim, ct);
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                await _store.MarkFailedAsync(claim, ex.Message, ct);
+            }
+        }
+
+        return pending.Count;
     }
 
     private static OutboxTransportLease CreateExclusiveTransportLease(

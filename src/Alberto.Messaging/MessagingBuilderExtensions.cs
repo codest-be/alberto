@@ -101,7 +101,8 @@ public static class MessagingBuilderExtensions
                         sp.GetRequiredService<OutboxTransportLifecycleRegistry>()
                             .CreateLease(transport),
                         batchSize: relayBatchSize,
-                        claimLease: relayClaimLease));
+                        claimLease: relayClaimLease,
+                        logger: sp.GetService<ILogger<OutboxRelay>>()));
             }
         });
 
