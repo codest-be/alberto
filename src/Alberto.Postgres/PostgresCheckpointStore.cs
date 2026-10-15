@@ -114,9 +114,11 @@ public sealed class PostgresCheckpointStore : IFencedCheckpointStore, ICheckpoin
     }
 
     /// <remarks>
-    /// Inserts last_position 0 when no checkpoint row exists yet: <see cref="GetAsync"/>
-    /// coalesces a missing row to 0, so a fault-only row does not change where the
-    /// processor resumes. Only the fault columns are touched on conflict.
+    /// Inserts last_position 0 when no checkpoint row exists yet. <see cref="GetAsync"/> then
+    /// returns 0 rather than null, which does not change where the processor resumes, because
+    /// the control loop already reads a missing checkpoint as 0. The row does make the
+    /// processor appear in <see cref="ListProcessorIdsAsync"/>. Only the fault columns are
+    /// touched on conflict.
     /// </remarks>
     async Task IProcessorFaultStore.RecordFaultAsync(
         string processorId, ProcessorFaultRecord fault, CancellationToken ct)

@@ -32,11 +32,12 @@ namespace Alberto.InMemory;
 /// update the stored fence token, matching the PostgreSQL implementation.
 /// </para>
 /// </remarks>
-internal sealed class InMemoryFencedCheckpointStore : IFencedCheckpointStore, ICheckpointInventory
+internal sealed class InMemoryFencedCheckpointStore : IFencedCheckpointStore, ICheckpointInventory, IProcessorFaultStore
 {
     private readonly InMemoryProcessorLeaseManager _leaseManager;
     private readonly object _lock = new();
     private readonly Dictionary<string, CheckpointRecord> _checkpoints = new();
+    private readonly Dictionary<string, ProcessorFaultRecord> _faults = new();
 
     private readonly record struct CheckpointRecord(long Position, long FenceToken);
 
@@ -104,7 +105,10 @@ internal sealed class InMemoryFencedCheckpointStore : IFencedCheckpointStore, IC
     public Task ResetAsync(string processorId, CancellationToken ct = default)
     {
         lock (_lock)
+        {
             _checkpoints.Remove(processorId);
+            _faults.Remove(processorId);
+        }
 
         return Task.CompletedTask;
     }
@@ -122,6 +126,8 @@ internal sealed class InMemoryFencedCheckpointStore : IFencedCheckpointStore, IC
                 : 0L;
 
             _checkpoints[processorId] = new CheckpointRecord(position, fenceToken);
+            // A rewind is an operator's retry intent: Postgres NULLs the fault in the same statement.
+            _faults.Remove(processorId);
         }
 
         return Task.CompletedTask;
@@ -167,6 +173,34 @@ internal sealed class InMemoryFencedCheckpointStore : IFencedCheckpointStore, IC
             _checkpoints[processorId] = new CheckpointRecord(newPosition, fenceToken);
             return Task.FromResult(true);
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // IProcessorFaultStore — same semantics as InMemoryCheckpointStore
+    // -------------------------------------------------------------------------
+
+    Task IProcessorFaultStore.RecordFaultAsync(
+        string processorId, ProcessorFaultRecord fault, CancellationToken ct)
+    {
+        lock (_lock)
+            _faults[processorId] = fault;
+
+        return Task.CompletedTask;
+    }
+
+    Task IProcessorFaultStore.ClearFaultAsync(string processorId, CancellationToken ct)
+    {
+        lock (_lock)
+            _faults.Remove(processorId);
+
+        return Task.CompletedTask;
+    }
+
+    Task<ProcessorFaultRecord?> IProcessorFaultStore.GetFaultAsync(
+        string processorId, CancellationToken ct)
+    {
+        lock (_lock)
+            return Task.FromResult(_faults.GetValueOrDefault(processorId));
     }
 
     // -------------------------------------------------------------------------

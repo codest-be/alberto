@@ -188,47 +188,62 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
         _renewalTimer = null;
         _scanTimer = null;
 
-        // Stop all running loops in parallel
-        var stopTasks = _runningLoops.Values
-            .Select(l => l.StopAsync(cancellationToken))
-            .ToArray();
-        await Task.WhenAll(stopTasks);
-
-        // Flush buffered checkpoints while the leases and fence tokens are still ours: a fenced
-        // write presents the token, so after the clear and release below it would be refused
-        // and the final positions lost.
-        if (_flushCheckpoints is not null)
-        {
-            try { await _flushCheckpoints(cancellationToken); }
-            catch (Exception ex)
-            {
-                _logger?.LogWarning(ex,
-                    "Failed to flush checkpoints on shutdown for replica {ReplicaId}", _replicaId);
-            }
-        }
-
-        _runningLoops.Clear();
-        _fenceTokens.Clear();
-
-        // Release all leases immediately for fast handoff
-        try
-        {
-            await _leaseManager.ReleaseAllLeasesAsync(_consumerId, _replicaId, cancellationToken);
-            _logger?.LogInformation(
-                "Released all processor leases for replica {ReplicaId}",
-                _replicaId);
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogWarning(ex,
-                "Failed to release processor leases for replica {ReplicaId} — they will expire naturally",
-                _replicaId);
-        }
-
         if (_cts is not null)
         {
             try { await _cts.CancelAsync(); }
             catch (ObjectDisposedException) { }
+        }
+
+        // A scan already past its cancellation checks would otherwise acquire a lease and start
+        // a loop after the cleanup below. Bounded, because a rebuild suspension holds the same
+        // lock and shutdown must not wait on it indefinitely; past the bound, clean up anyway.
+        var scanLocked = false;
+        try { scanLocked = await _scanLock.WaitAsync(_leaseManager.LeaseDuration, cancellationToken); }
+        catch (OperationCanceledException) { }
+        catch (ObjectDisposedException) { } // second dispose
+
+        try
+        {
+            // Stop all running loops in parallel
+            var stopTasks = _runningLoops.Values
+                .Select(l => l.StopAsync(cancellationToken))
+                .ToArray();
+            await Task.WhenAll(stopTasks);
+
+            // Flush buffered checkpoints while the leases and fence tokens are still ours: a fenced
+            // write presents the token, so after the clear and release below it would be refused
+            // and the final positions lost.
+            if (_flushCheckpoints is not null)
+            {
+                try { await _flushCheckpoints(cancellationToken); }
+                catch (Exception ex)
+                {
+                    _logger?.LogWarning(ex,
+                        "Failed to flush checkpoints on shutdown for replica {ReplicaId}", _replicaId);
+                }
+            }
+
+            _runningLoops.Clear();
+            _fenceTokens.Clear();
+
+            // Release all leases immediately for fast handoff
+            try
+            {
+                await _leaseManager.ReleaseAllLeasesAsync(_consumerId, _replicaId, cancellationToken);
+                _logger?.LogInformation(
+                    "Released all processor leases for replica {ReplicaId}",
+                    _replicaId);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex,
+                    "Failed to release processor leases for replica {ReplicaId} — they will expire naturally",
+                    _replicaId);
+            }
+        }
+        finally
+        {
+            if (scanLocked) _scanLock.Release();
         }
     }
 
