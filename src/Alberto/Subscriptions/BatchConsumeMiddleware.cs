@@ -81,7 +81,7 @@ public static class BatchConsumeMiddlewares
             // the pre-batch position and every event that already committed side-effects
             // (A, B, C in a bisected [A, B, C, D]) would be re-delivered on restart. See
             // RetryAndDeadLetterCore.StoreDeadLetterAsync for the full reasoning.
-            await RetryAndDeadLetterCore.StoreDeadLetterAsync(
+            _ = await RetryAndDeadLetterCore.StoreDeadLetterAsync(
                 deadLetterStore, entry, logger, context.CancellationToken);
         };
     }

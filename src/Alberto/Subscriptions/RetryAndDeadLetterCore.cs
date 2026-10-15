@@ -85,7 +85,7 @@ internal static class RetryAndDeadLetterCore
 
     /// <summary>
     /// Writes a dead-letter entry with a bounded retry, and swallows a still-failing write
-    /// after logging it.
+    /// after logging it. Returns whether the entry was stored.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -109,7 +109,7 @@ internal static class RetryAndDeadLetterCore
     /// how this became a defect on the other.
     /// </para>
     /// </remarks>
-    internal static async Task StoreDeadLetterAsync(
+    internal static async Task<bool> StoreDeadLetterAsync(
         IDeadLetterStore store,
         DeadLetterEntry entry,
         ILogger? logger,
@@ -122,7 +122,7 @@ internal static class RetryAndDeadLetterCore
             try
             {
                 await store.StoreAsync(entry, cancellationToken);
-                return;
+                return true;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -145,5 +145,6 @@ internal static class RetryAndDeadLetterCore
             DeadLetterWriteMaxAttempts,
             entry.EventId,
             entry.ProcessorId);
+        return false;
     }
 }
