@@ -512,7 +512,9 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
         _logger?.LogWarning(failure,
             "ControlLoop {ProcessorId} hit an infrastructure error ({Failures} in a row); retrying in {Delay}.",
             ProcessorId, consecutiveFailures, delay);
-        await Task.Delay(delay, ct);
+        // Shutdown during the wait is not a failure: the caller's loop condition exits cleanly.
+        try { await Task.Delay(delay, ct); }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
     }
 
     /// <summary>The first failure that stopped a pipelined run, with the event it happened on when known.</summary>
