@@ -17,6 +17,100 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ---
 
+## [0.6.0] - 2026-10-15
+
+One request is now one trace, from the command through the append, the reactors and the outbox
+to the message on the transport. The outbox and the control loop survive failures they used to
+die on, and the event registry can be source-generated for Native AOT. Two migrations (005, 006)
+run on startup.
+
+**Breaking, for telemetry consumers:** span names, span attributes, metric tags and the stored
+trace-context keys changed. Dashboards, alerts, sampling rules and anything reading `_traceId`
+from event metadata need updating. **Breaking, for code:** `TraceContext` changed shape, and a
+custom `IDeadLetterStore` must keep one entry per processor and event. Each change is described,
+with its fix, in [migrating-to-1.0.md](docs/migrating-to-1.0.md) under the IDs given below.
+
+### Added
+
+- **End-to-end tracing** (#211). Appends stamp W3C `traceparent`/`tracestate` into event metadata
+  whenever an activity is current, even with Alberto's telemetry off. Outbox entries carry it, and
+  `OutboxRelay` opens a `send {MessageType}` producer span and injects its context into the
+  transported message, so the broker consumer joins the trace. Reactor and outbox-handler spans
+  are children of the append trace; batch spans link every upstream trace (up to 32).
+- **Command spans** (#211). `alberto.command {CommandType}` with `alberto.load`, `alberto.decide`
+  and append children; the root carries the outcome (`committed`, `rejected`, `conflict`,
+  `error`), the retry attempt and the problem codes. Event store reads get an `alberto.read` span.
+- **Background spans** (#211). `alberto.poll`, `alberto.checkpoint.save`,
+  `alberto.lease.acquire`/`renew`/`release`, `alberto.rebuild`, `alberto.outbox.purge` and
+  `alberto.projection.inline`, all roots. Drop them by name in your sampler if you don't want
+  them; polls and checkpoint saves arrive at the polling rate.
+- **Metrics** (#211). Write-side metrics are tagged by `module`/`shard`, append duration by
+  `outcome`, conflicts by `kind`; histograms declare 1 ms–10 s buckets; `alberto.event.age` is
+  new. Instruments come from the host's `IMeterFactory` when there is one. The meter is still
+  named `Alberto`.
+- **Processor liveness health check** (#74). Each module registers
+  `alberto-processors-{moduleKey}`: a faulted processor, or one with no heartbeat within
+  max(5 s, 5× polling interval), reports Unhealthy. It is active once the host calls
+  `AddHealthChecks()`. Experimental (`ALB9002`).
+- **Why a processor stopped survives a restart** (#73). A faulted control loop writes the fault
+  (when, what, and the event it failed on) to its checkpoint row (migration 005). `alberto status`
+  and `alberto checkpoints` show it. A healthy run, a reset or a rewind clears it.
+- **Source-generated event registry for Native AOT** (#197, #198, #200). Put
+  `[AlbertoEventRegistry(typeof(YourJsonContext))]` on a `partial` class to get a generated
+  `Registry` to pass to `WithEvents`; mark evolvers `partial` to get generated dispatch tables
+  (ALB3004 warns when one isn't). Opt-in: without the attribute nothing changes. Upcasters gain
+  `From<TOld>(int, JsonTypeInfo<TOld>, …)`. See the Native AOT section of the docs.
+- **Typed tag extractors** (#180). `EventTypeRegistryBuilder.Add(typeInfo, e => [new("order",
+  e.OrderId)])` needs no cast. `EventTypeRegistryVerifier.Verify` in `Alberto.Testing` checks a
+  hand-written registry against the `[EventType]`/`[Tag]` attributes.
+- **`PostgresOptions.EnsureDatabase`** (#182, default `true`, `Postgres:EnsureDatabase`). Set it to
+  `false` to migrate with a role that can only reach its own, existing database. Migrations log
+  through `ILogger` instead of the console, and `PostgresMigrator.Migrate(cs, MigrationOptions?)`
+  is new for migrating outside the host.
+- **Processor leases on the in-memory backend** (#159). `.WithInMemory()` with
+  `Leases.Enabled = true` now starts instead of failing with ALB0024.
+
+### Changed
+
+- **Span and attribute names follow OpenTelemetry semantic conventions** (#211, TT-4).
+  `Alberto.Append` → `append {module}`, `Alberto.Consume {id}` → `process {id}`; Alberto
+  attributes move under `alberto.*`; `messaging.*` and `db.system.name` are added. Spans are no
+  longer set to `Ok`, a failed span's status carries no message, and its `exception` event holds
+  only `exception.type`. Update trace queries and span-name matchers.
+- **Trace context is stored as `traceparent`** (#211, TC-1). `TraceContext` is now
+  `(string TraceParent, string? TraceState = null)`; a custom `ITraceContextProvider` must return
+  the full W3C value. Old `_traceId`/`_spanId` metadata is still read.
+- **Reactors are parented, not linked** (#211, TT-5). Set `TraceParenting = TraceParenting.Link`
+  on a processor to keep the old shape.
+- **Metric tags** (#211, MX-1). `alberto.processing.errors` tags `error.type` (full type name)
+  instead of `exception.type`; `alberto.concurrency.conflicts` now also counts projection
+  conflicts, so filter `kind="append"` for the old meaning; `alberto.owned_tenant_count` is one
+  series per consumer and module (TT-6). `AlbertoMetrics.Version` is no longer a `const`, and
+  `AlbertoMetrics.ProcessActivityName` is gone.
+- **Dead letters are unique per processor and event** (#206). Migration 006 removes existing
+  duplicates. A custom `IDeadLetterStore` must merge a repeat into the existing entry.
+- **A failed outbox publish retries** (#206) up to `maxRetries` (default 5, `relayMaxRetries` on
+  `WithOutbox`) before it is parked as `failed`, instead of parking at once. `RetryFailedAsync`
+  resets the attempt count. `ExternalMessage` carries `MessageId`, `TenantId` and
+  `SourceEventId`.
+- `OutboxRelay`'s constructor gains optional `maxRetries` and `logger` parameters (#204, #206).
+  Source-compatible; binaries that call it directly need a recompile.
+
+### Fixed
+
+- **`OutboxRelay` no longer stops the host on one store error** (#204). A failed poll is logged
+  and retried with backoff from 100 ms to 30 s.
+- **Messaging and eventing defects** (#206): checkpoint, lease, head, outbox and dead-letter
+  issues found in review, including a `RetryOptions` delay overflow and `Map(...)` accepting a
+  null mapper. One known gap: a single event trailing a position gap is picked up on the next
+  append rather than on its own.
+- `AlbertoMigrationHostedService.StopAsync` no longer throws `ObjectDisposedException` after
+  `Dispose` (#181), which `WebApplicationFactory` triggers.
+- Flaky EF integration tests on transient Npgsql failures (#190), and a mutation gate that scored
+  the same tree differently between runs (#167).
+
+---
+
 ## [0.5.0] - 2026-09-26
 
 Stalled subscribers are now reported instead of looking caught up, and appends on Postgres
@@ -786,7 +880,8 @@ Initial beta release. Core DCB event store abstractions, PostgreSQL backend, in-
 backend, command pipeline, EF Core projection support, transactional outbox, and
 OpenTelemetry instrumentation.
 
-[Unreleased]: https://github.com/codest-be/alberto/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/codest-be/alberto/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/codest-be/alberto/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/codest-be/alberto/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/codest-be/alberto/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/codest-be/alberto/compare/v0.2.0...v0.3.0

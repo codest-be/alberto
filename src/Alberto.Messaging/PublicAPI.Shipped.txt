@@ -4,6 +4,8 @@ Alberto.Messaging.ExternalMessage
 Alberto.Messaging.ExternalMessage.Destination.get -> string?
 Alberto.Messaging.ExternalMessage.Destination.init -> void
 Alberto.Messaging.ExternalMessage.ExternalMessage(string! MessageType, string! Version, string! Payload, System.Collections.Generic.Dictionary<string!, string!>! Metadata, string? Destination = null, string? RoutingHint = null) -> void
+Alberto.Messaging.ExternalMessage.MessageId.get -> System.Guid?
+Alberto.Messaging.ExternalMessage.MessageId.init -> void
 Alberto.Messaging.ExternalMessage.MessageType.get -> string!
 Alberto.Messaging.ExternalMessage.MessageType.init -> void
 Alberto.Messaging.ExternalMessage.Metadata.get -> System.Collections.Generic.Dictionary<string!, string!>!
@@ -12,6 +14,10 @@ Alberto.Messaging.ExternalMessage.Payload.get -> string!
 Alberto.Messaging.ExternalMessage.Payload.init -> void
 Alberto.Messaging.ExternalMessage.RoutingHint.get -> string?
 Alberto.Messaging.ExternalMessage.RoutingHint.init -> void
+Alberto.Messaging.ExternalMessage.SourceEventId.get -> System.Guid?
+Alberto.Messaging.ExternalMessage.SourceEventId.init -> void
+Alberto.Messaging.ExternalMessage.TenantId.get -> string?
+Alberto.Messaging.ExternalMessage.TenantId.init -> void
 Alberto.Messaging.ExternalMessage.Version.get -> string!
 Alberto.Messaging.ExternalMessage.Version.init -> void
 Alberto.Messaging.IMessageMappingRegistry
@@ -27,6 +33,7 @@ Alberto.Messaging.IMessageTransport.StopAsync(System.Threading.CancellationToken
 Alberto.Messaging.IOutboxStore
 Alberto.Messaging.IOutboxStore.ClaimPendingAsync(int limit, System.TimeSpan claimLease, string! claimedBy, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Alberto.Messaging.OutboxClaim!>!>!
 Alberto.Messaging.IOutboxStore.InsertAsync(Alberto.Messaging.OutboxEntry! entry, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Messaging.IOutboxStore.MarkAttemptFailedAsync(Alberto.Messaging.OutboxClaim! claim, string! error, int maxRetries, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<bool>!
 Alberto.Messaging.IOutboxStore.MarkDeliveredAsync(Alberto.Messaging.OutboxClaim! claim, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
 Alberto.Messaging.IOutboxStore.MarkFailedAsync(Alberto.Messaging.OutboxClaim! claim, string! error, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
 Alberto.Messaging.IOutboxStore.PurgeDeliveredAsync(System.DateTimeOffset before, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
@@ -94,15 +101,18 @@ Alberto.Messaging.OutboxEntryStatus.Failed = 3 -> Alberto.Messaging.OutboxEntryS
 Alberto.Messaging.OutboxEntryStatus.Pending = 0 -> Alberto.Messaging.OutboxEntryStatus
 Alberto.Messaging.OutboxEntryStatus.Processing = 1 -> Alberto.Messaging.OutboxEntryStatus
 Alberto.Messaging.OutboxRelay
-Alberto.Messaging.OutboxRelay.OutboxRelay(Alberto.Messaging.IOutboxStore! store, Alberto.Messaging.IMessageTransport! transport, System.TimeSpan? pollingInterval = null, int batchSize = 100, System.TimeSpan? claimLease = null, string? claimedBy = null) -> void
+Alberto.Messaging.OutboxRelay.OutboxRelay(Alberto.Messaging.IOutboxStore! store, Alberto.Messaging.IMessageTransport! transport, System.TimeSpan? pollingInterval = null, int batchSize = 100, System.TimeSpan? claimLease = null, string? claimedBy = null, int maxRetries = 5, Microsoft.Extensions.Logging.ILogger<Alberto.Messaging.OutboxRelay!>? logger = null) -> void
+Alberto.Messaging.OutboxRelay.OutboxRelay(Alberto.Messaging.IOutboxStore! store, Alberto.Messaging.IMessageTransport! transport, System.TimeSpan? pollingInterval, int batchSize, System.TimeSpan? claimLease, string? claimedBy) -> void
 Alberto.Messaging.OutboxRetentionService
 Alberto.Messaging.OutboxRetentionService.IsEnabled.get -> bool
 Alberto.Messaging.OutboxRetentionService.OutboxRetentionService(Alberto.Messaging.IOutboxStore! store, System.TimeSpan? retention = null, System.TimeSpan? sweepInterval = null, System.TimeProvider? timeProvider = null, Microsoft.Extensions.Logging.ILogger<Alberto.Messaging.OutboxRetentionService!>? logger = null) -> void
+const Alberto.Messaging.OutboxRelay.DefaultMaxRetries = 5 -> int
 static Alberto.Messaging.MessageMappingRegistryExtensions.Map<TEvent, TDep, TMessage>(this Alberto.Messaging.IMessageMappingRegistry! registry, System.Func<TDep, TEvent!, TMessage!>! mapper) -> void
 static Alberto.Messaging.MessageMappingRegistryExtensions.Map<TEvent, TDep, TMessage>(this Alberto.Messaging.IMessageMappingRegistry! registry, System.Func<TDep, TEvent!, TMessage!>! mapper, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TMessage!>! messageTypeInfo) -> void
 static Alberto.Messaging.MessageMappingRegistryExtensions.Map<TEvent, TMessage>(this Alberto.Messaging.IMessageMappingRegistry! registry, System.Func<TEvent!, TMessage!>! mapper) -> void
 static Alberto.Messaging.MessageMappingRegistryExtensions.Map<TEvent, TMessage>(this Alberto.Messaging.IMessageMappingRegistry! registry, System.Func<TEvent!, TMessage!>! mapper, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TMessage!>! messageTypeInfo) -> void
-static Alberto.Messaging.MessagingBuilderExtensions.WithOutbox(this Alberto.DcbModuleBuilder! builder, System.Action<Alberto.Messaging.IMessageMappingRegistry!>! configureMappings, Alberto.Messaging.IOutboxStore! outboxStore, Alberto.Messaging.IMessageTransport? transport = null, int relayBatchSize = 1, System.TimeSpan? relayClaimLease = null, System.TimeSpan? deliveredRetention = null, System.TimeSpan? retentionSweepInterval = null) -> Alberto.DcbModuleBuilder!
+static Alberto.Messaging.MessagingBuilderExtensions.WithOutbox(this Alberto.DcbModuleBuilder! builder, System.Action<Alberto.Messaging.IMessageMappingRegistry!>! configureMappings, Alberto.Messaging.IOutboxStore! outboxStore, Alberto.Messaging.IMessageTransport? transport = null, int relayBatchSize = 1, System.TimeSpan? relayClaimLease = null, System.TimeSpan? deliveredRetention = null, System.TimeSpan? retentionSweepInterval = null, int relayMaxRetries = 5) -> Alberto.DcbModuleBuilder!
+static Alberto.Messaging.MessagingBuilderExtensions.WithOutbox(this Alberto.DcbModuleBuilder! builder, System.Action<Alberto.Messaging.IMessageMappingRegistry!>! configureMappings, Alberto.Messaging.IOutboxStore! outboxStore, Alberto.Messaging.IMessageTransport? transport, int relayBatchSize, System.TimeSpan? relayClaimLease, System.TimeSpan? deliveredRetention, System.TimeSpan? retentionSweepInterval) -> Alberto.DcbModuleBuilder!
 static readonly Alberto.Messaging.OutboxRelay.DefaultClaimLease -> System.TimeSpan
 static readonly Alberto.Messaging.OutboxRetentionService.DefaultRetention -> System.TimeSpan
 static readonly Alberto.Messaging.OutboxRetentionService.DefaultSweepInterval -> System.TimeSpan

@@ -1,2 +1,1 @@
 #nullable enable
-Alberto.Messaging.Postgres.PostgresOutboxStore.MarkAttemptFailedAsync(Alberto.Messaging.OutboxClaim! claim, string! error, int maxRetries, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<bool>!
