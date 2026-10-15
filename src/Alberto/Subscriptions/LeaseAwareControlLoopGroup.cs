@@ -16,6 +16,7 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
     private readonly string _consumerId;
     private readonly string _replicaId;
     private readonly ILogger? _logger;
+    private readonly Func<CancellationToken, Task>? _flushCheckpoints;
     private readonly ConcurrentDictionary<string, ControlLoop> _runningLoops = new();
 
     /// <summary>
@@ -35,8 +36,10 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
         IProcessorLeaseManager leaseManager,
         string consumerId,
         string replicaId,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        Func<CancellationToken, Task>? flushCheckpoints = null)
     {
+        _flushCheckpoints = flushCheckpoints;
         _allLoops = allLoops;
         _leaseManager = leaseManager;
         _consumerId = consumerId;
@@ -104,6 +107,27 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
         }
     }
 
+    /// <summary>
+    /// Stops one processor's loop after its fenced checkpoint write was rejected and forgets
+    /// the lease bookkeeping, so the next scan can re-acquire it if the lease is available.
+    /// The other processors keep running.
+    /// </summary>
+    public async Task StopProcessorAsync(string processorId)
+    {
+        if (!_runningLoops.TryGetValue(processorId, out var loop)) return;
+
+        try { await loop.StopAsync(CancellationToken.None); }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex,
+                "Error stopping loop for processor {ProcessorId} after fence violation", processorId);
+        }
+
+        // Token before loop entry, for the same reason as in OnRenewalTimer.
+        _fenceTokens.TryRemove(processorId, out _);
+        _runningLoops.TryRemove(processorId, out _);
+    }
+
     public long GetFenceToken(string processorId) =>
         _fenceTokens.TryGetValue(processorId, out var token) ? token : 0;
 
@@ -169,6 +193,20 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
             .Select(l => l.StopAsync(cancellationToken))
             .ToArray();
         await Task.WhenAll(stopTasks);
+
+        // Flush buffered checkpoints while the leases and fence tokens are still ours: a fenced
+        // write presents the token, so after the clear and release below it would be refused
+        // and the final positions lost.
+        if (_flushCheckpoints is not null)
+        {
+            try { await _flushCheckpoints(cancellationToken); }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex,
+                    "Failed to flush checkpoints on shutdown for replica {ReplicaId}", _replicaId);
+            }
+        }
+
         _runningLoops.Clear();
         _fenceTokens.Clear();
 
