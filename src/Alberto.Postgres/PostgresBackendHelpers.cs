@@ -491,8 +491,8 @@ internal static class PostgresBackendHelpers
     // ---------------------------------------------------------------------------
 
     /// <summary>
-    /// Returns the global positions of all events in the window
-    /// <c>(afterPosition, afterPosition + windowSize]</c>.
+    /// Returns the global positions of the next <paramref name="windowSize"/> events after
+    /// <paramref name="afterPosition"/>.
     /// This query targets the raw <c>alberto_events</c> table and is not tenant-scoped;
     /// the same implementation serves both the single-tenant and multi-tenant paths.
     /// </summary>
@@ -503,10 +503,10 @@ internal static class PostgresBackendHelpers
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
             $"SELECT global_position FROM {schema.Table("alberto_events")} " +
-            "WHERE global_position > @after AND global_position <= @ceiling ORDER BY global_position",
+            "WHERE global_position > @after ORDER BY global_position LIMIT @limit",
             connection);
         cmd.Parameters.AddWithValue("after", afterPosition);
-        cmd.Parameters.AddWithValue("ceiling", afterPosition + windowSize);
+        cmd.Parameters.AddWithValue("limit", windowSize);
         var positions = new List<long>();
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))

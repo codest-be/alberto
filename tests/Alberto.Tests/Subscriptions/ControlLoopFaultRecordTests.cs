@@ -136,26 +136,6 @@ public sealed class ControlLoopFaultRecordTests
             => _innerFaults.GetFaultAsync(processorId, ct);
     }
 
-    /// <summary>Producer-side failure: streaming from the backend always throws.</summary>
-    private sealed class ThrowingStreamBackend : IEventStoreBackend
-    {
-        public Task<IReadOnlyCollection<IEventEnvelope>> StreamAllAsync(
-            long afterPosition = 0, int? limit = null, CancellationToken cancellationToken = default)
-            => throw new InvalidOperationException("Simulated producer-side backend failure");
-
-        public Task<IReadOnlyCollection<IEventEnvelope>> StreamAsync(
-            DcbQuery query, long afterPosition = 0, int? limit = null, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
-            IEnumerable<IEventToPersist> events, DcbQuery? dcbQuery = null, long? expectedPosition = null,
-            CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-    }
-
     // ── harness ───────────────────────────────────────────────────────────────────
 
     private static async Task RunUntilFaultedAsync(
@@ -244,26 +224,6 @@ public sealed class ControlLoopFaultRecordTests
         Assert.Equal("Simulated fault", fault.Message);
         Assert.Equal(1L, fault.Position);
         Assert.Equal(EventTypeId, fault.EventType);
-    }
-
-    [Fact]
-    public async Task PipelinedProducerFault_RecordsNullEventContext()
-    {
-        // The head is driven by a real backend so the producer actually attempts the read
-        // that blows up; the failure happened between events, so there is no envelope.
-        var headBackend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
-        await headBackend.AppendAsync([CreateEvent("advances-head")], cancellationToken: TestContext.Current.CancellationToken);
-
-        await RunUntilFaultedAsync(new HealthyProcessor("pipelined-producer"),
-            new ThrowingStreamBackend(), headBackend, checkpoints, Pipelined2);
-
-        var fault = await ((IProcessorFaultStore)checkpoints)
-            .GetFaultAsync("pipelined-producer", TestContext.Current.CancellationToken);
-        Assert.NotNull(fault);
-        Assert.Equal("Simulated producer-side backend failure", fault.Message);
-        Assert.Null(fault.Position);
-        Assert.Null(fault.EventType);
     }
 
     // ── clearing ──────────────────────────────────────────────────────────────────

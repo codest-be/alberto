@@ -48,6 +48,8 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
     /// </summary>
     private static readonly TimeSpan FaultWriteTimeout = TimeSpan.FromSeconds(5);
 
+    private static readonly TimeSpan MaxInfrastructureBackoff = TimeSpan.FromSeconds(30);
+
     public bool IsFaulted { get; private set; }
     public string ProcessorId => _processor.ProcessorId;
 
@@ -230,11 +232,15 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
             return;
         }
 
+        var infrastructureFailures = 0;
         while (!ct.IsCancellationRequested)
         {
             // The event whose dispatch is in flight, for the fault record. Stays null under
             // batch dispatch, where the failing event is unknown.
             IEventEnvelope? dispatching = null;
+            // Handler errors fault the loop; errors outside a handler (reading the checkpoint or
+            // the log, saving a checkpoint) are infrastructure and are retried.
+            var inHandler = false;
             try
             {
                 var checkpoint = await _checkpointStore.GetAsync(ProcessorId, ct) ?? 0L;
@@ -243,6 +249,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
                 if (checkpoint >= head)
                 {
                     ReportProgress(0L);
+                    infrastructureFailures = 0;
                     await Task.Delay(_pollingInterval, ct);
                     continue;
                 }
@@ -255,6 +262,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
                     await _checkpointStore.SaveAsync(ProcessorId, head, ct);
                     await ClearFaultOnceAsync(ct);
                     ReportProgress(0L);
+                    infrastructureFailures = 0;
                     await Task.Delay(_pollingInterval, ct);
                     continue;
                 }
@@ -271,6 +279,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
                         relevantEvents.Add(e);
                 }
 
+                inHandler = true;
                 if (ShouldUseBatchDispatch && relevantEvents.Count > 0)
                 {
                     await DispatchBatchAsync(relevantEvents, ct);
@@ -286,6 +295,8 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
                     dispatching = null;
                 }
 
+                inHandler = false;
+
                 var newCheckpoint = visibleEvents.Count > 0
                     ? visibleEvents[visibleEvents.Count - 1].GlobalPosition
                     : checkpoint;
@@ -298,11 +309,18 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
 
                 ReportProgress(head - newCheckpoint);
 
-                // No delay after a full batch — immediately fetch more
-                if (events.Count < _batchSize)
+                infrastructureFailures = 0;
+
+                // No delay after a full batch that made progress — immediately fetch more. A full
+                // batch with nothing at or below the head made none, and would spin.
+                if (events.Count < _batchSize || visibleEvents.Count == 0)
                     await Task.Delay(_pollingInterval, ct);
             }
             catch (OperationCanceledException ex) when (IsShutdownCancellation(ex, ct)) { break; }
+            catch (Exception ex) when (!inHandler && !ct.IsCancellationRequested)
+            {
+                await BackOffAsync(ex, ++infrastructureFailures, ct);
+            }
             catch (Exception ex)
             {
                 IsFaulted = true;
@@ -347,59 +365,69 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
         for (var i = 0; i < maxConcurrency; i++)
             workers[i] = RunWorkerAsync(channel.Reader, watermark, ReportFailure, pipelineToken);
 
+        var infrastructureFailures = 0;
         try
         {
             while (!pipelineToken.IsCancellationRequested)
             {
-                var head = _head.Current;
-                var readPosition = watermark.ReadPosition;
-
-                if (readPosition >= head)
+                try
                 {
-                    // Caught up — flush and wait.
-                    // Use SafeCheckpoint, not 0L: the producer may have finished reading, but
-                    // workers can still be processing in-flight events; SafeCheckpoint is the
-                    // last position all workers have confirmed handled, which is the true lag.
-                    await SaveWatermarkCheckpointAsync(watermark, pipelineToken);
-                    ReportProgress(head - watermark.SafeCheckpoint);
-                    await Task.Delay(_pollingInterval, pipelineToken);
-                    continue;
-                }
+                    var head = _head.Current;
+                    var readPosition = watermark.ReadPosition;
 
-                var events = await _backend.StreamAllAsync(readPosition, _batchSize, pipelineToken);
-
-                if (events.Count == 0)
-                {
-                    watermark.AdvanceReadPosition(head);
-                    await SaveWatermarkCheckpointAsync(watermark, pipelineToken);
-                    ReportProgress(head - watermark.SafeCheckpoint);
-                    await Task.Delay(_pollingInterval, pipelineToken);
-                    continue;
-                }
-
-                var visibleEvents = events
-                    .Where(e => e.GlobalPosition <= head)
-                    .ToList();
-
-                foreach (var evt in visibleEvents)
-                {
-                    watermark.AdvanceReadPosition(evt.GlobalPosition);
-
-                    if (_processor.HandledEventTypes.Contains(evt.EventType.Id))
+                    if (readPosition >= head)
                     {
-                        watermark.MarkDispatched(evt.GlobalPosition);
-                        // Blocks when all worker slots are busy (backpressure)
-                        await channel.Writer.WriteAsync(evt, pipelineToken);
+                        // Caught up — flush and wait.
+                        // Use SafeCheckpoint, not 0L: the producer may have finished reading, but
+                        // workers can still be processing in-flight events; SafeCheckpoint is the
+                        // last position all workers have confirmed handled, which is the true lag.
+                        await SaveWatermarkCheckpointAsync(watermark, pipelineToken);
+                        ReportProgress(head - watermark.SafeCheckpoint);
+                        await Task.Delay(_pollingInterval, pipelineToken);
+                        continue;
                     }
+
+                    var events = await _backend.StreamAllAsync(readPosition, _batchSize, pipelineToken);
+
+                    if (events.Count == 0)
+                    {
+                        watermark.AdvanceReadPosition(head);
+                        await SaveWatermarkCheckpointAsync(watermark, pipelineToken);
+                        ReportProgress(head - watermark.SafeCheckpoint);
+                        await Task.Delay(_pollingInterval, pipelineToken);
+                        continue;
+                    }
+
+                    var visibleEvents = events
+                        .Where(e => e.GlobalPosition <= head)
+                        .ToList();
+
+                    foreach (var evt in visibleEvents)
+                    {
+                        watermark.AdvanceReadPosition(evt.GlobalPosition);
+
+                        if (_processor.HandledEventTypes.Contains(evt.EventType.Id))
+                        {
+                            watermark.MarkDispatched(evt.GlobalPosition);
+                            // Blocks when all worker slots are busy (backpressure)
+                            await channel.Writer.WriteAsync(evt, pipelineToken);
+                        }
+                    }
+
+                    // Save checkpoint after each batch of reads
+                    await SaveWatermarkCheckpointAsync(watermark, pipelineToken);
+
+                    ReportProgress(head - watermark.SafeCheckpoint);
+                    infrastructureFailures = 0;
+
+                    // A full batch with nothing at or below the head made no progress; don't spin.
+                    if (events.Count < _batchSize || visibleEvents.Count == 0)
+                        await Task.Delay(_pollingInterval, pipelineToken);
                 }
-
-                // Save checkpoint after each batch of reads
-                await SaveWatermarkCheckpointAsync(watermark, pipelineToken);
-
-                ReportProgress(head - watermark.SafeCheckpoint);
-
-                if (events.Count < _batchSize)
-                    await Task.Delay(_pollingInterval, pipelineToken);
+                catch (Exception ex) when (!pipelineToken.IsCancellationRequested)
+                {
+                    await BackOffAsync(ex, ++infrastructureFailures, pipelineToken);
+                }
             }
         }
         catch (OperationCanceledException ex) when (IsShutdownCancellation(ex, pipelineToken))
@@ -470,6 +498,21 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
             try { pipelineCts.Cancel(); }
             catch (ObjectDisposedException) { }
         }
+    }
+
+    /// <summary>
+    /// Waits out a transient infrastructure failure (checkpoint store or event log unreachable)
+    /// with exponential back-off from the polling interval, capped at <see cref="MaxInfrastructureBackoff"/>.
+    /// The loop keeps its place and tries again rather than faulting until restart.
+    /// </summary>
+    private async Task BackOffAsync(Exception failure, int consecutiveFailures, CancellationToken ct)
+    {
+        var ticks = _pollingInterval.Ticks * (1L << Math.Min(consecutiveFailures - 1, 10));
+        var delay = TimeSpan.FromTicks(Math.Min(ticks, MaxInfrastructureBackoff.Ticks));
+        _logger?.LogWarning(failure,
+            "ControlLoop {ProcessorId} hit an infrastructure error ({Failures} in a row); retrying in {Delay}.",
+            ProcessorId, consecutiveFailures, delay);
+        await Task.Delay(delay, ct);
     }
 
     /// <summary>The first failure that stopped a pipelined run, with the event it happened on when known.</summary>
