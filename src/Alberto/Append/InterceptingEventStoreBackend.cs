@@ -57,8 +57,11 @@ internal sealed class InterceptingEventStoreBackend(
     private IReadOnlyList<IEventToPersist> StampTraceContext(IReadOnlyList<IEventToPersist> events)
     {
         // The append span is current here; it cannot know the backend, so the backend tags it.
-        // Only our own span: with telemetry off, Current is the caller's.
-        if (dbSystem is not null && Activity.Current is { } append && ReferenceEquals(append.Source, AlbertoMetrics.Source))
+        // Only our own append span: with telemetry off, Current is the caller's or the command root.
+        if (dbSystem is not null && Activity.Current is { } append
+            && ReferenceEquals(append.Source, AlbertoMetrics.Source)
+            && append.Kind == ActivityKind.Producer
+            && append.OperationName.StartsWith(AlbertoMetrics.AppendActivityName, StringComparison.Ordinal))
             append.SetTag("db.system.name", dbSystem);
 
         if (Activity.Current is not { } activity)

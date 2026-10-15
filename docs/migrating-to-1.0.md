@@ -40,7 +40,10 @@ they touch a persisted table.
 | MT-6 | Metric units | Low | `alberto.append.duration` and `alberto.processing.duration` units changed from `"ms"` to `"s"` |
 | MT-7 | Metric dimensions | Medium | `alberto.tenant_locks_acquired` and `alberto.tenant_lock_failures` no longer carry a `tenant.id` tag |
 | TT-1 | Trace span attributes | Medium | Consume-path span attributes renamed: `"module.key"` → `"module"`, `"module.shard"` → `"shard"` |
-| TT-3 | Trace span names and attributes | **High** | Spans renamed (`Alberto.Append` → `append {module}`, `Alberto.Consume` → `process {processorId}`), Alberto attributes namespaced under `alberto.*`, `messaging.*` added, span status no longer `Ok` and never carries a message |
+| TT-4 | Trace span names and attributes | **High** | Spans renamed (`Alberto.Append` → `append {module}`, `Alberto.Consume` → `process {processorId}`), Alberto attributes namespaced under `alberto.*`, `messaging.*` added, span status no longer `Ok` and never carries a message |
+| TT-5 | Trace parenting | Medium | Reactor and outbox-handler consume spans are children of the append trace; batch spans link every upstream trace |
+| MX-1 | Metric dimensions | Medium | Write-side metrics gain `module`/`shard`/`outcome`/`kind` tags, histograms declare buckets, `alberto.event.age` added, `alberto.processing.errors` tag `exception.type` (short name) becomes `error.type` (full name) |
+| TC-1 | Trace context storage | Medium | Event metadata carries W3C `traceparent` instead of `_traceId`/`_spanId`; `TraceContext` changed shape |
 | EX-1 | Experimental API | Medium | Sharding types marked `[Experimental("ALB9001")]`; referencing them without suppression is a compile-time diagnostic |
 | EV-1 | Evolver: runtime guard | Medium | `Evolver.Reconstitute(envelopes)` and `Evolver.Evolve(state, envelope)` now throw `InvalidOperationException` when the envelope's stored version is older than the handler's declared version |
 | PE-1 | ParseEvent&lt;T&gt; removed | **High** | `EventEnvelopeExtensions.ParseEvent<T>` is deleted and the now-empty `EventEnvelopeExtensions` class is `internal` |
@@ -529,6 +532,9 @@ shard  = "eu"          # only for sharded modules
 
 ### TT-2: `event.tags` on the append span event lists concepts, not `concept:value` pairs
 
+> Superseded by TT-4: the span event is now `alberto.event.appending` and the attribute
+> `alberto.event.tags`; the concepts-only behaviour described here still holds.
+
 `TelemetryAppendInterceptor` adds one `event.appended` span event per appended event. Its
 `event.tags` field was the whole tag, value included:
 
@@ -569,6 +575,10 @@ from the event store.
 ---
 
 ### TT-3: exception details move from span attributes to an exception span event
+
+> Superseded in part by TT-4: the span status no longer carries `ex.Message` either, and the
+> `exception` event holds only `exception.type` (the full name). `alberto.processing.errors` now
+> tags `error.type` (MX-1).
 
 Both consume middlewares and the append interceptor set the exception as span attributes:
 
@@ -1082,6 +1092,10 @@ the old untagged series should sum over all tags, or filter `kind="append"` to g
 meaning back. The duration histograms declare seconds-scale bucket boundaries (1 ms to 10 s), and
 `alberto.event.age` is new.
 
+`alberto.processing.errors` renames its `exception.type` tag (short name, e.g. `InvalidOperationException`)
+to `error.type` carrying the full type name, matching spans and `alberto.outbox.publish.failures`.
+`alberto.event.age` is not recorded while a projection is rebuilding.
+
 `AlbertoMetrics.Version` is now a `static readonly` derived from the assembly version rather than
 the constant `"1.0.0"`, so it cannot be used in a constant expression, and the unused
 `AlbertoMetrics.ProcessActivityName` is removed.
@@ -1429,7 +1443,7 @@ The containing class was renamed to match what it now extends:
 (`ServiceCollectionExtensions.cs` → `AlbertoStoreBuilderExtensions.cs`). This only affects code
 that called the method non-extension style; ordinary `.WithEventsFrom(...)` chaining is unaffected.
 
-## Reactor consume spans are children of the append trace
+### TT-5: Reactor consume spans are children of the append trace
 
 `Alberto.Consume` spans for reactors and the outbox handler are now parented to the trace that
 appended the event instead of being new roots with a link. Projections are unchanged. Set
@@ -1437,7 +1451,7 @@ appended the event instead of being new roots with a link. Projections are uncha
 `Alberto:Modules:{key}:Processors:{id}:TraceParenting`) to keep the previous shape.
 Batch spans now link every distinct upstream trace (up to 32), not only the first event's.
 
-## TT-3: Span names and attributes follow OpenTelemetry semantic conventions
+### TT-4: Span names and attributes follow OpenTelemetry semantic conventions
 
 **Span names** (low cardinality, `{operation} {destination}`):
 

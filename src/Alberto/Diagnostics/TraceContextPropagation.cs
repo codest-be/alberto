@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using OpenTelemetry;
 using OpenTelemetry.Context.Propagation;
 
 namespace Alberto.Diagnostics;
@@ -10,8 +9,7 @@ namespace Alberto.Diagnostics;
 /// </summary>
 /// <remarks>
 /// Goes through <see cref="Propagators.DefaultTextMapPropagator"/> rather than formatting
-/// <c>traceparent</c> by hand, so the sampled flag, <c>tracestate</c> and (when configured)
-/// baggage are carried exactly as the application's propagator defines them. That propagator is a
+/// <c>traceparent</c> by hand, so the sampled flag and <c>tracestate</c> are carried exactly as the application's propagator defines them. That propagator is a
 /// no-op until the OpenTelemetry SDK is initialised, so the W3C keys are read and written directly
 /// as well: context must flow whether or not an exporter is configured.
 /// </remarks>
@@ -19,17 +17,16 @@ internal static class TraceContextPropagation
 {
     internal const string TraceParentKey = "traceparent";
     internal const string TraceStateKey = "tracestate";
-    internal const string BaggageKey = "baggage";
 
     // Events stored before W3C keys were adopted carry these instead.
     internal const string LegacyTraceIdKey = "_traceId";
     internal const string LegacySpanIdKey = "_spanId";
 
-    /// <summary>Writes <paramref name="activity"/>'s context (and current baggage) into <paramref name="carrier"/>.</summary>
+    /// <summary>Writes <paramref name="activity"/>'s context into <paramref name="carrier"/>.</summary>
     internal static void Inject(Activity activity, IDictionary<string, string> carrier)
     {
         Propagators.DefaultTextMapPropagator.Inject(
-            new PropagationContext(activity.Context, Baggage.Current),
+            new PropagationContext(activity.Context, default),
             carrier,
             static (c, key, value) => c[key] = value);
 
@@ -82,7 +79,7 @@ internal static class TraceContextPropagation
     {
         if (source.ContainsKey(TraceParentKey))
         {
-            foreach (var key in (ReadOnlySpan<string>)[TraceParentKey, TraceStateKey, BaggageKey])
+            foreach (var key in (ReadOnlySpan<string>)[TraceParentKey, TraceStateKey])
                 if (source.TryGetValue(key, out var value))
                     target.TryAdd(key, value);
         }

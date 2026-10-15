@@ -29,6 +29,19 @@ internal static class TelemetrySpans
     }
 
     /// <summary>
+    /// Starts a consumer span. With no <paramref name="parent"/> it is a true root: the ambient
+    /// activity is cleared first, because <c>StartActivity</c> would otherwise adopt it as the parent
+    /// (a sync reactor runs inside the command's append path). The caller restores the ambient
+    /// activity once the span is disposed.
+    /// </summary>
+    internal static Activity? StartConsumer(string name, ActivityContext parent, IEnumerable<ActivityLink>? links)
+    {
+        if (parent == default)
+            Activity.Current = null;
+        return AlbertoMetrics.Source.StartActivity(name, ActivityKind.Consumer, parent, links: links);
+    }
+
+    /// <summary>
     /// Marks the span failed without the exception's message, which can carry SQL or PII (Npgsql's
     /// do): <c>error.type</c> and an <c>exception</c> event holding only the type. Status stays
     /// description-less, and successful spans stay <c>Unset</c>.

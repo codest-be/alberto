@@ -239,7 +239,7 @@ public sealed class MetricTagContractTests
     // ── 4. Telemetry-package instruments: {processor, module, [shard]} ───────
     //
     // events.processed and processing.duration use TelemetryTags.ForModule, which
-    // delegates to ProcessorTags.ForModule.  processing.errors adds exception.type.
+    // delegates to ProcessorTags.ForModule.  processing.errors adds error.type.
 
     [Fact]
     public async Task EventsProcessed_unsharded_tag_keys_are_processor_and_module()
@@ -317,8 +317,8 @@ public sealed class MetricTagContractTests
                 return Task.CompletedTask;
             }));
 
-        TagKeys(tags).Should().BeEquivalentTo(["processor", "module", "exception.type"],
-            "alberto.processing.errors tag contract is {{processor, module, exception.type}} for an unsharded module");
+        TagKeys(tags).Should().BeEquivalentTo(["processor", "module", "error.type"],
+            "alberto.processing.errors tag contract is {{processor, module, error.type}} for an unsharded module");
     }
 
     [Fact]
@@ -337,8 +337,8 @@ public sealed class MetricTagContractTests
                 return Task.CompletedTask;
             }));
 
-        TagKeys(tags).Should().BeEquivalentTo(["processor", "module", "shard", "exception.type"],
-            "alberto.processing.errors tag contract is {{processor, module, shard, exception.type}} for a sharded module");
+        TagKeys(tags).Should().BeEquivalentTo(["processor", "module", "shard", "error.type"],
+            "alberto.processing.errors tag contract is {{processor, module, shard, error.type}} for a sharded module");
     }
 
     // ── 5. Tenant-ownership gauges: {consumer.id, module, [shard]} ───────────

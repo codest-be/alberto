@@ -92,6 +92,76 @@ public sealed class ConsumeParentingTests
         Assert.Empty(activity.Links);
     }
 
+    private static readonly ActivitySource Foreign = new("Alberto.Tests.Ambient");
+
+    [Fact]
+    public async Task Link_and_batch_are_true_roots_even_under_an_ambient_activity()
+    {
+        using var ambientListener = new ActivityListener
+        {
+            ShouldListenTo = s => s.Name == "Alberto.Tests.Ambient",
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+        };
+        ActivitySource.AddActivityListener(ambientListener);
+        using var ambient = Foreign.StartActivity("append-path")!;
+
+        var link = await ConsumeAsync(TraceParenting.Link, TraceParent(0xabc));
+        var noContext = await ConsumeAsync(TraceParenting.Parent, traceParent: null);
+        var batch = await ConsumeBatchAsync(TraceParent(1));
+
+        foreach (var span in new[] { link, noContext, batch })
+        {
+            Assert.NotEqual(ambient.TraceId, span.TraceId);
+            Assert.Equal(default, span.ParentSpanId);
+        }
+        Assert.Same(ambient, Activity.Current);
+    }
+
+    [Fact]
+    public async Task Event_age_is_not_recorded_while_rebuilding()
+    {
+        var ages = new List<string?>();
+        using var meter = new System.Diagnostics.Metrics.MeterListener();
+        meter.InstrumentPublished = (i, l) =>
+        {
+            if (i.Name == "alberto.event.age") l.EnableMeasurementEvents(i);
+        };
+        meter.SetMeasurementEventCallback<double>((_, _, tags, _) =>
+        {
+            foreach (var t in tags)
+                if (t.Key == "processor") lock (ages) ages.Add((string?)t.Value);
+        });
+        meter.Start();
+
+        foreach (var rebuild in new[] { true, false })
+        {
+            await TelemetryConsumeMiddleware.Create()(
+                new ConsumeEventContext
+                {
+                    ProcessorId = rebuild ? "age-rebuild" : "age-live",
+                    ModuleKey = "orders",
+                    Envelope = Envelope(1, null),
+                    IsRebuild = rebuild,
+                },
+                () => Task.CompletedTask);
+            await TelemetryBatchConsumeMiddleware.Create()(
+                new BatchConsumeContext
+                {
+                    ProcessorId = rebuild ? "age-rebuild" : "age-live",
+                    ModuleKey = "orders",
+                    Envelopes = [Envelope(1, null)],
+                    IsRebuild = rebuild,
+                },
+                () => Task.CompletedTask);
+        }
+
+        lock (ages)
+        {
+            Assert.DoesNotContain("age-rebuild", ages);
+            Assert.Equal(2, ages.Count(a => a == "age-live"));
+        }
+    }
+
     [Fact]
     public void Defaults_reactors_and_outbox_parent_projections_link()
     {

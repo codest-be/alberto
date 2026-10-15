@@ -29,6 +29,7 @@ public static class TelemetryConsumeMiddleware
             // ActivityLink array) when no ActivitySource listener is subscribed.
             // Metric counters and histograms are recorded unconditionally via the Meter.
             Activity? activity = null;
+            var ambient = Activity.Current;
             if (AlbertoMetrics.Source.HasListeners())
             {
                 // Parent: the append trace becomes this span's parent, so the flow is one trace and
@@ -41,11 +42,7 @@ public static class TelemetryConsumeMiddleware
                     : null;
                 var links = link is null ? null : new[] { link.Value };
                 var activityName = $"{AlbertoMetrics.ConsumeActivityName} {context.ProcessorId}";
-                activity = AlbertoMetrics.Source.StartActivity(
-                    activityName,
-                    ActivityKind.Consumer,
-                    parentContext: parent ?? default,
-                    links: links);
+                activity = TelemetrySpans.StartConsumer(activityName, parent ?? default, links);
 
                 TelemetrySpans.TagConsumer(activity, context.ProcessorId, context.ModuleKey);
                 activity?.SetTag("alberto.event.position", context.Envelope.GlobalPosition);
@@ -53,9 +50,11 @@ public static class TelemetryConsumeMiddleware
                 activity?.SetTag("alberto.trace.links.count", links?.Length ?? 0);
             }
 
-            AlbertoMetrics.EventAge.Record(
-                (DateTimeOffset.UtcNow - context.Envelope.CreatedAt).TotalSeconds,
-                TelemetryTags.ForModule(context.ProcessorId, context.ModuleKey));
+            // A rebuild or replay re-reads history; its ages would swamp the real delay readers see.
+            if (!context.IsRebuild)
+                AlbertoMetrics.EventAge.Record(
+                    (DateTimeOffset.UtcNow - context.Envelope.CreatedAt).TotalSeconds,
+                    TelemetryTags.ForModule(context.ProcessorId, context.ModuleKey));
 
             var sw = Stopwatch.StartNew();
             try
@@ -73,7 +72,7 @@ public static class TelemetryConsumeMiddleware
                     // per-event metrics (processed, errors, duration) share the same label
                     // dimensions and can be correlated by a single join key in dashboards.
                     var deadLetterTags = TelemetryTags.ForModule(context.ProcessorId, context.ModuleKey);
-                    deadLetterTags.Add("exception.type", ex?.GetType().Name ?? "Unknown");
+                    deadLetterTags.Add("error.type", ex?.GetType().FullName ?? "dead_lettered");
                     AlbertoMetrics.ProcessingErrors.Add(1, deadLetterTags);
                 }
                 else
@@ -87,13 +86,14 @@ public static class TelemetryConsumeMiddleware
                 TelemetrySpans.Fail(activity, ex);
 
                 var catchTags = TelemetryTags.ForModule(context.ProcessorId, context.ModuleKey);
-                catchTags.Add("exception.type", ex.GetType().Name);
+                catchTags.Add("error.type", ex.GetType().FullName);
                 AlbertoMetrics.ProcessingErrors.Add(1, catchTags);
                 throw;
             }
             finally
             {
                 activity?.Dispose();
+                Activity.Current = ambient;
                 // TotalSeconds matches the OTel semantic-convention unit "s" declared on ProcessingDuration.
                 AlbertoMetrics.ProcessingDuration.Record(sw.Elapsed.TotalSeconds,
                     TelemetryTags.ForModule(context.ProcessorId, context.ModuleKey));

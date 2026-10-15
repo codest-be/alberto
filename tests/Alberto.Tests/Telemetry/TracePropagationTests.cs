@@ -69,6 +69,39 @@ public sealed class TracePropagationTests
     }
 
     [Fact]
+    public async Task Append_does_not_persist_baggage()
+    {
+        using var listener = Listen(ActivitySamplingResult.AllDataAndRecorded, Foreign.Name);
+        using var ambient = Foreign.StartActivity("request");
+        var previous = OpenTelemetry.Baggage.Current;
+        OpenTelemetry.Baggage.Current = previous.SetBaggage("user.id", "42");
+        try
+        {
+            var metadata = await AppendAndReadMetadataAsync();
+
+            Assert.True(metadata.ContainsKey("traceparent"));
+            Assert.False(metadata.ContainsKey("baggage"));
+        }
+        finally { OpenTelemetry.Baggage.Current = previous; }
+    }
+
+    [Fact]
+    public async Task Append_does_not_tag_a_non_append_span_with_db_system()
+    {
+        using var listener = Listen(ActivitySamplingResult.AllDataAndRecorded, "Alberto");
+        using var root = AlbertoMetrics.Source.StartActivity("command Foo", ActivityKind.Internal)!;
+        var intercepting = new InterceptingEventStoreBackend(
+            new InMemoryEventStoreBackend(), new AppendInterceptorPipeline([]), dbSystem: "postgresql");
+
+        await intercepting.AppendAsync(
+        [
+            new EventToPersist { Id = Guid.NewGuid(), EventType = OrderPlaced, Tags = [], EventData = "{}", Metadata = new Dictionary<string, string>() },
+        ]);
+
+        Assert.Null(root.GetTagItem("db.system.name"));
+    }
+
+    [Fact]
     public async Task Append_does_not_stamp_when_there_is_no_activity()
     {
         var metadata = await AppendAndReadMetadataAsync(new() { ["keep"] = "me" });
