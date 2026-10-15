@@ -13,6 +13,23 @@ namespace Alberto.Messaging;
 public static class MessagingBuilderExtensions
 {
     /// <summary>
+    /// Binary-compatible overload of
+    /// <see cref="WithOutbox(DcbModuleBuilder, Action{IMessageMappingRegistry}, IOutboxStore, IMessageTransport?, int, TimeSpan?, TimeSpan?, TimeSpan?, int)"/>
+    /// with <see cref="OutboxRelay.DefaultMaxRetries"/>.
+    /// </summary>
+    public static DcbModuleBuilder WithOutbox(
+        this DcbModuleBuilder builder,
+        Action<IMessageMappingRegistry> configureMappings,
+        IOutboxStore outboxStore,
+        IMessageTransport? transport,
+        int relayBatchSize,
+        TimeSpan? relayClaimLease,
+        TimeSpan? deliveredRetention,
+        TimeSpan? retentionSweepInterval) =>
+        builder.WithOutbox(configureMappings, outboxStore, transport, relayBatchSize, relayClaimLease,
+            deliveredRetention, retentionSweepInterval, OutboxRelay.DefaultMaxRetries);
+
+    /// <summary>
     /// Registers an <see cref="OutboxHandler"/> as an event processor on the module.
     /// The handler maps events to outbox entries using <paramref name="configureMappings"/>.
     /// </summary>

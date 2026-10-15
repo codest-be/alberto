@@ -15,19 +15,23 @@ namespace Alberto.Messaging;
 /// Optional hint for the transport layer — e.g. a partition key, a routing key, or a
 /// message-group id. Interpretation is transport-specific and ignored when null.
 /// </param>
-/// <param name="MessageId">
-/// Stable identity of the outbox entry this message was relayed from. Unchanged across redeliveries,
-/// so a consumer can deduplicate on it. Null when the message did not come through the outbox relay.
-/// </param>
-/// <param name="TenantId">Tenant the source event belongs to; null for single-tenant stores.</param>
-/// <param name="SourceEventId">Id of the domain event this message was derived from, if known.</param>
 public sealed record ExternalMessage(
     string MessageType,
     string Version,
     string Payload,
     Dictionary<string, string> Metadata,
     string? Destination = null,
-    string? RoutingHint = null,
-    Guid? MessageId = null,
-    string? TenantId = null,
-    Guid? SourceEventId = null);
+    string? RoutingHint = null)
+{
+    /// <summary>
+    /// Stable identity of the outbox entry this message was relayed from. Unchanged across redeliveries,
+    /// so a consumer can deduplicate on it. Null when the message did not come through the outbox relay.
+    /// </summary>
+    public Guid? MessageId { get; init; }
+
+    /// <summary>Tenant the source event belongs to; null for single-tenant stores.</summary>
+    public string? TenantId { get; init; }
+
+    /// <summary>Id of the domain event this message was derived from, if known.</summary>
+    public Guid? SourceEventId { get; init; }
+}

@@ -53,6 +53,32 @@ public sealed class OutboxRelay : BackgroundService
     /// Defaults to 5 minutes.
     /// </param>
     /// <param name="claimedBy">Diagnostic relay identity persisted with each claim.</param>
+    public OutboxRelay(
+        IOutboxStore store,
+        IMessageTransport transport,
+        TimeSpan? pollingInterval,
+        int batchSize,
+        TimeSpan? claimLease,
+        string? claimedBy)
+        : this(store, transport, pollingInterval, batchSize, claimLease, claimedBy, DefaultMaxRetries)
+    {
+    }
+
+    /// <summary>
+    /// Creates a new <see cref="OutboxRelay"/>.
+    /// </summary>
+    /// <param name="store">The outbox store to poll.</param>
+    /// <param name="transport">
+    /// The transport to deliver messages through. This relay exclusively owns its start/stop
+    /// lifecycle but does not dispose the caller-owned instance.
+    /// </param>
+    /// <param name="pollingInterval">How often to poll when the outbox is empty. Defaults to 1 second.</param>
+    /// <param name="batchSize">Maximum number of entries to process per poll cycle. Defaults to 100.</param>
+    /// <param name="claimLease">
+    /// How long a claimed entry remains owned by this relay before another relay can recover it.
+    /// Defaults to 5 minutes.
+    /// </param>
+    /// <param name="claimedBy">Diagnostic relay identity persisted with each claim.</param>
     /// <param name="maxRetries">
     /// How many failed delivery attempts an entry gets before it is parked as <c>failed</c>.
     /// Defaults to <see cref="DefaultMaxRetries"/>. Between attempts the relay backs off.
@@ -155,10 +181,12 @@ public sealed class OutboxRelay : BackgroundService
                                 entry.Payload,
                                 entry.Metadata,
                                 Destination: entry.Destination,
-                                RoutingHint: entry.RoutingHint,
-                                MessageId: entry.Id,
-                                TenantId: entry.TenantId,
-                                SourceEventId: entry.SourceEventId),
+                                RoutingHint: entry.RoutingHint)
+                            {
+                                MessageId = entry.Id,
+                                TenantId = entry.TenantId,
+                                SourceEventId = entry.SourceEventId,
+                            },
                             ct);
                     }
                     catch (Exception ex) when (!ct.IsCancellationRequested)
