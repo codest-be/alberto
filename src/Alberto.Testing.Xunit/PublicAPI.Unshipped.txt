@@ -1,1 +1,3 @@
 #nullable enable
+Alberto.Testing.Xunit.OutboxStoreSpecification.MarkFailedAsync_BelowMaxRetries_ReturnsEntryToPending() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.OutboxStoreSpecification.MarkFailedAsync_AtMaxRetries_ParksEntryAsFailed() -> System.Threading.Tasks.Task!

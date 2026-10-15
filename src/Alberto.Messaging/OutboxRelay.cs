@@ -1,5 +1,7 @@
 using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Alberto.Messaging;
 
@@ -15,12 +17,26 @@ public sealed class OutboxRelay : BackgroundService
     private readonly int _batchSize;
     private readonly TimeSpan _claimLease;
     private readonly string _claimedBy;
+    private readonly int _maxRetries;
+    private readonly ILogger _logger;
 
     /// <summary>
     /// Default time for one relay to own a claimed entry before another relay may recover it.
     /// Configure a longer lease when the transport's worst-case publish time can exceed this.
     /// </summary>
     public static readonly TimeSpan DefaultClaimLease = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// Default number of failed delivery attempts after which an entry is parked as <c>failed</c>.
+    /// </summary>
+    public const int DefaultMaxRetries = 5;
+
+    // Upper bound for the exponential back-off after failures, unless the polling interval is longer.
+    private static readonly TimeSpan MaxBackoff = TimeSpan.FromSeconds(30);
+
+    // Bounds the mark-delivered write that follows a publish, so a shutdown does not skip it
+    // (the message would be delivered twice) yet cannot hang on a stuck store either.
+    private static readonly TimeSpan MarkDeliveredTimeout = TimeSpan.FromSeconds(5);
 
     /// <summary>
     /// Creates a new <see cref="OutboxRelay"/>.
@@ -37,20 +53,29 @@ public sealed class OutboxRelay : BackgroundService
     /// Defaults to 5 minutes.
     /// </param>
     /// <param name="claimedBy">Diagnostic relay identity persisted with each claim.</param>
+    /// <param name="maxRetries">
+    /// How many failed delivery attempts an entry gets before it is parked as <c>failed</c>.
+    /// Defaults to <see cref="DefaultMaxRetries"/>. Between attempts the relay backs off.
+    /// </param>
+    /// <param name="logger">Receives claim, delivery and bookkeeping failures.</param>
     public OutboxRelay(
         IOutboxStore store,
         IMessageTransport transport,
         TimeSpan? pollingInterval = null,
         int batchSize = 100,
         TimeSpan? claimLease = null,
-        string? claimedBy = null)
+        string? claimedBy = null,
+        int maxRetries = DefaultMaxRetries,
+        ILogger<OutboxRelay>? logger = null)
         : this(
             store,
             CreateExclusiveTransportLease(store, transport),
             pollingInterval,
             batchSize,
             claimLease,
-            claimedBy)
+            claimedBy,
+            maxRetries,
+            logger)
     {
     }
 
@@ -60,11 +85,14 @@ public sealed class OutboxRelay : BackgroundService
         TimeSpan? pollingInterval = null,
         int batchSize = 100,
         TimeSpan? claimLease = null,
-        string? claimedBy = null)
+        string? claimedBy = null,
+        int maxRetries = DefaultMaxRetries,
+        ILogger<OutboxRelay>? logger = null)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(transport);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(batchSize);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxRetries);
 
         var resolvedClaimLease = claimLease ?? DefaultClaimLease;
         if (resolvedClaimLease <= TimeSpan.Zero)
@@ -75,6 +103,8 @@ public sealed class OutboxRelay : BackgroundService
         _pollingInterval = pollingInterval ?? TimeSpan.FromSeconds(1);
         _batchSize = batchSize;
         _claimLease = resolvedClaimLease;
+        _maxRetries = maxRetries;
+        _logger = logger ?? NullLogger<OutboxRelay>.Instance;
         _claimedBy = string.IsNullOrWhiteSpace(claimedBy)
             ? $"{Environment.MachineName}:{Environment.ProcessId}:{Guid.NewGuid():N}"
             : claimedBy;
@@ -89,14 +119,30 @@ public sealed class OutboxRelay : BackgroundService
         {
             await _transport.StartAsync(ct);
 
+            var failureStreak = 0;
             while (!ct.IsCancellationRequested)
             {
-                var pending = await _store.ClaimPendingAsync(
-                    _batchSize,
-                    _claimLease,
-                    _claimedBy,
-                    ct);
+                IReadOnlyList<OutboxClaim> pending;
+                try
+                {
+                    pending = await _store.ClaimPendingAsync(
+                        _batchSize,
+                        _claimLease,
+                        _claimedBy,
+                        ct);
+                }
+                catch (Exception ex) when (!ct.IsCancellationRequested)
+                {
+                    // A store outage is transient from the relay's point of view: unclaimed
+                    // entries stay pending, so back off and poll again instead of stopping the host.
+                    failureStreak++;
+                    var delay = Backoff(failureStreak);
+                    _logger.LogWarning(ex, "Outbox claim failed. Retrying in {Delay}.", delay);
+                    await Task.Delay(delay, ct);
+                    continue;
+                }
 
+                var anyPublishFailed = false;
                 foreach (var claim in pending)
                 {
                     var entry = claim.Entry;
@@ -109,18 +155,28 @@ public sealed class OutboxRelay : BackgroundService
                                 entry.Payload,
                                 entry.Metadata,
                                 Destination: entry.Destination,
-                                RoutingHint: entry.RoutingHint),
+                                RoutingHint: entry.RoutingHint,
+                                MessageId: entry.Id,
+                                TenantId: entry.TenantId,
+                                SourceEventId: entry.SourceEventId),
                             ct);
-                        await _store.MarkDeliveredAsync(claim, ct);
                     }
                     catch (Exception ex) when (!ct.IsCancellationRequested)
                     {
-                        await _store.MarkFailedAsync(claim, ex.Message, ct);
+                        anyPublishFailed = true;
+                        await MarkFailedSafelyAsync(claim, ex, ct);
+                        continue;
                     }
+
+                    await MarkDeliveredSafelyAsync(claim);
                 }
 
+                failureStreak = anyPublishFailed ? failureStreak + 1 : 0;
+
+                if (anyPublishFailed)
+                    await Task.Delay(Backoff(failureStreak), ct);
                 // Back off when there are no more pending entries
-                if (pending.Count < _batchSize)
+                else if (pending.Count < _batchSize)
                     await Task.Delay(_pollingInterval, ct);
             }
         }
@@ -143,6 +199,49 @@ public sealed class OutboxRelay : BackgroundService
         // Preserve BackgroundService's established cancelled ExecuteTask on an ordinary host
         // stop. A cleanup failure thrown from finally above still takes precedence.
         hostCancellation?.Throw();
+    }
+
+    private TimeSpan Backoff(int failureStreak)
+    {
+        var cap = _pollingInterval > MaxBackoff ? _pollingInterval : MaxBackoff;
+        var factor = Math.Pow(2, Math.Min(failureStreak - 1, 16));
+        return TimeSpan.FromTicks((long)Math.Min(_pollingInterval.Ticks * factor, cap.Ticks));
+    }
+
+    private async Task MarkFailedSafelyAsync(OutboxClaim claim, Exception failure, CancellationToken ct)
+    {
+        try
+        {
+            if (!await _store.MarkAttemptFailedAsync(claim, failure.Message, _maxRetries, ct))
+                _logger.LogWarning(
+                    "Outbox entry {EntryId} failed delivery but its claim was lost; another relay owns it now.",
+                    claim.Entry.Id);
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested)
+        {
+            // The claim lease expires and the entry is redelivered.
+            _logger.LogWarning(ex, "Could not record the delivery failure of outbox entry {EntryId}.", claim.Entry.Id);
+        }
+    }
+
+    private async Task MarkDeliveredSafelyAsync(OutboxClaim claim)
+    {
+        // Deliberately not the host's token: the message is already published, so a token
+        // cancelled by shutdown would leave it to be delivered a second time.
+        using var timeout = new CancellationTokenSource(MarkDeliveredTimeout);
+        try
+        {
+            if (!await _store.MarkDeliveredAsync(claim, timeout.Token))
+                _logger.LogWarning(
+                    "Outbox entry {EntryId} was published but its claim was lost; it may be delivered again.",
+                    claim.Entry.Id);
+        }
+        catch (Exception ex)
+        {
+            // Published, so it must not be marked failed. The claim lease expires and the entry is
+            // redelivered, which is the at-least-once contract.
+            _logger.LogWarning(ex, "Outbox entry {EntryId} was published but could not be marked delivered.", claim.Entry.Id);
+        }
     }
 
     private static OutboxTransportLease CreateExclusiveTransportLease(

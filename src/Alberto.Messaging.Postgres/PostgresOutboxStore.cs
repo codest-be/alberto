@@ -175,19 +175,28 @@ public sealed class PostgresOutboxStore(
     }
 
     /// <inheritdoc/>
-    public async Task<bool> MarkFailedAsync(
+    public Task<bool> MarkFailedAsync(
         OutboxClaim claim,
         string error,
         CancellationToken ct = default)
+        => MarkAttemptFailedAsync(claim, error, 1, ct);
+
+    /// <inheritdoc/>
+    public async Task<bool> MarkAttemptFailedAsync(
+        OutboxClaim claim,
+        string error,
+        int maxRetries,
+        CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(claim);
         ArgumentNullException.ThrowIfNull(error);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxRetries);
 
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand(
             $"""
             UPDATE {_schema.Table("alberto_outbox_entries")}
-            SET status = 'failed',
+            SET status = CASE WHEN retry_count + 1 >= @max_retries THEN 'failed' ELSE 'pending' END,
                 retry_count = retry_count + 1,
                 last_error = @error,
                 claim_id = NULL,
@@ -203,6 +212,7 @@ public sealed class PostgresOutboxStore(
         cmd.Parameters.AddWithValue("id", claim.Entry.Id);
         cmd.Parameters.AddWithValue("claim_id", claim.Token);
         cmd.Parameters.AddWithValue("error", error);
+        cmd.Parameters.AddWithValue("max_retries", maxRetries);
         return await cmd.ExecuteNonQueryAsync(ct) == 1;
     }
 

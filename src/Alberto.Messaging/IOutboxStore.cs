@@ -27,9 +27,19 @@ public interface IOutboxStore
 
     /// <summary>
     /// Marks a claimed entry as failed, incrementing the retry counter and recording the error.
+    /// The entry is parked as <c>failed</c> immediately (equivalent to <c>maxRetries</c> of 1).
     /// Returns <see langword="false"/> when the claim expired or was superseded.
     /// </summary>
     Task<bool> MarkFailedAsync(OutboxClaim claim, string error, CancellationToken ct = default);
+
+    /// <summary>
+    /// Records a failed delivery attempt: increments the retry counter and records the error.
+    /// The entry returns to <c>pending</c> for another attempt until the incremented counter
+    /// reaches <paramref name="maxRetries"/>; that failure parks it as <c>failed</c>.
+    /// Returns <see langword="false"/> when the claim expired or was superseded.
+    /// </summary>
+    Task<bool> MarkAttemptFailedAsync(OutboxClaim claim, string error, int maxRetries,
+        CancellationToken ct);
 
     /// <summary>
     /// Resets failed entries back to pending so the relay will attempt delivery again.

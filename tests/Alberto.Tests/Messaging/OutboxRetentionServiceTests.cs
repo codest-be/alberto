@@ -58,6 +58,9 @@ public class OutboxRetentionServiceTests
         public Task<bool> MarkFailedAsync(OutboxClaim claim, string error, CancellationToken ct = default) =>
             throw new InvalidOperationException("The retention sweep must not fail entries.");
 
+        public Task<bool> MarkAttemptFailedAsync(OutboxClaim claim, string error, int maxRetries, CancellationToken ct) =>
+            throw new InvalidOperationException("The retention sweep must not fail entries.");
+
         public Task RetryFailedAsync(string? messageType = null, CancellationToken ct = default) =>
             throw new InvalidOperationException("The retention sweep must not retry entries.");
     }
