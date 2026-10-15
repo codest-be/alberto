@@ -3,6 +3,7 @@ using Alberto.Messaging;
 using Alberto.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
@@ -77,12 +78,16 @@ public class OutboxRelayTests
         /// </summary>
         public int ClaimCalls => Volatile.Read(ref _pollCount);
 
+        /// <summary>The lease and relay identity the relay passed on its latest claim.</summary>
+        public (TimeSpan Lease, string ClaimedBy) LastClaim { get; private set; }
+
         public Task InsertAsync(OutboxEntry entry, CancellationToken ct = default)
             => _inner.InsertAsync(entry, ct);
 
         public Task<IReadOnlyList<OutboxClaim>> ClaimPendingAsync(
             int limit, TimeSpan claimLease, string claimedBy, CancellationToken ct = default)
         {
+            LastClaim = (claimLease, claimedBy);
             _firstPoll.TrySetResult();
             _onClaim?.Invoke();
             if (Interlocked.Increment(ref _pollCount) >= 2)
@@ -104,6 +109,26 @@ public class OutboxRelayTests
     }
 
     #endregion
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        private readonly List<(LogLevel Level, Exception? Exception)> _entries = [];
+
+        public IReadOnlyList<(LogLevel Level, Exception? Exception)> Entries
+        {
+            get { lock (_entries) return [.. _entries]; }
+        }
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            lock (_entries) _entries.Add((logLevel, exception));
+        }
+    }
 
     #region Lifecycle Test Doubles
 
@@ -353,6 +378,59 @@ public class OutboxRelayTests
     }
 
     [Fact]
+    public void Constructor_RejectsInvalidArguments()
+    {
+        var store = new InMemoryOutboxStore();
+        var transport = new InMemoryTransport();
+        OutboxTransportLease Lease() => new OutboxTransportLifecycle(transport).CreateLease();
+
+        Assert.Throws<ArgumentNullException>("store", () => new OutboxRelay(null!, transport));
+        Assert.Throws<ArgumentNullException>("transport", () => new OutboxRelay(store, (IMessageTransport)null!));
+        Assert.Throws<ArgumentNullException>("store", () => new OutboxRelay(null!, Lease()));
+        Assert.Throws<ArgumentNullException>("transport", () => new OutboxRelay(store, (OutboxTransportLease)null!));
+        Assert.Throws<ArgumentOutOfRangeException>("batchSize", () => new OutboxRelay(store, Lease(), batchSize: 0));
+        Assert.Throws<ArgumentOutOfRangeException>("claimLease", () => new OutboxRelay(store, Lease(), claimLease: TimeSpan.Zero));
+        Assert.Throws<ArgumentOutOfRangeException>("claimLease", () => new OutboxRelay(store, Lease(), claimLease: TimeSpan.FromSeconds(-1)));
+    }
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData(60, "relay-a")]
+    public async Task Relay_ClaimsWithTheConfiguredLeaseAndIdentity(int? leaseSeconds, string? claimedBy)
+    {
+        var signal = new PollSignalingOutboxStore(new InMemoryOutboxStore());
+        using var timeout = new CancellationTokenSource(Patience);
+        using var relay = new OutboxRelay(
+            signal, new InMemoryTransport(),
+            claimLease: leaseSeconds is { } s ? TimeSpan.FromSeconds(s) : null,
+            claimedBy: claimedBy);
+
+        await relay.StartAsync(timeout.Token);
+        await signal.WhenFirstPolled.WaitAsync(timeout.Token);
+        await relay.StopAsync(timeout.Token);
+
+        var (lease, by) = signal.LastClaim;
+        Assert.Equal(leaseSeconds is { } l ? TimeSpan.FromSeconds(l) : OutboxRelay.DefaultClaimLease, lease);
+        if (claimedBy is null)
+            Assert.StartsWith($"{Environment.MachineName}:{Environment.ProcessId}:", by);
+        else
+            Assert.Equal(claimedBy, by);
+    }
+
+    [Fact]
+    public async Task Relay_PollsAtTheConfiguredInterval()
+    {
+        // The default interval is 1 s; a configured 10 ms one reaches a second poll well before that.
+        var signal = new PollSignalingOutboxStore(new InMemoryOutboxStore());
+        using var timeout = new CancellationTokenSource(Patience);
+        using var relay = new OutboxRelay(signal, new InMemoryTransport(), pollingInterval: TimeSpan.FromMilliseconds(10));
+
+        await relay.StartAsync(timeout.Token);
+        await signal.WhenPolled.WaitAsync(TimeSpan.FromMilliseconds(900), timeout.Token);
+        await relay.StopAsync(timeout.Token);
+    }
+
+    [Fact]
     public async Task Relay_KeepsPolling_AfterTheStoreFails()
     {
         // A store outage (e.g. Postgres 53300, too many clients) used to fault ExecuteTask,
@@ -367,12 +445,14 @@ public class OutboxRelayTests
         });
         var transport = new LifecycleTransport(new InMemoryTransport());
         using var timeout = new CancellationTokenSource(Patience);
-        var relay = new OutboxRelay(signal, transport, pollingInterval: TimeSpan.FromMilliseconds(10));
+        var logger = new CapturingLogger<OutboxRelay>();
+        var relay = new OutboxRelay(signal, transport, pollingInterval: TimeSpan.FromMilliseconds(10), logger: logger);
 
         await relay.StartAsync(timeout.Token);
         await signal.WhenPolled.WaitAsync(timeout.Token);
 
         Assert.False(relay.ExecuteTask!.IsCompleted);
+        Assert.Contains(logger.Entries, e => e.Level == LogLevel.Warning && e.Exception?.Message == "store failure");
         Assert.Equal(0, transport.Stops);
         Assert.All(store.Entries, e => Assert.Equal(OutboxEntryStatus.Delivered, e.Status));
 
