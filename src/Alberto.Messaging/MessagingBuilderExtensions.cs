@@ -32,6 +32,10 @@ public static class MessagingBuilderExtensions
     /// How long the relay owns a claimed entry before another relay may recover it.
     /// Defaults to <see cref="OutboxRelay.DefaultClaimLease"/>.
     /// </param>
+    /// <param name="relayMaxRetries">
+    /// How many failed delivery attempts an entry gets before it is parked as <c>failed</c>.
+    /// Defaults to <see cref="OutboxRelay.DefaultMaxRetries"/>.
+    /// </param>
     /// <param name="deliveredRetention">
     /// How long a delivered entry is kept before an <see cref="OutboxRetentionService"/> removes
     /// it. Defaults to <see cref="OutboxRetentionService.DefaultRetention"/>. Pass
@@ -55,7 +59,8 @@ public static class MessagingBuilderExtensions
         int relayBatchSize = 1,
         TimeSpan? relayClaimLease = null,
         TimeSpan? deliveredRetention = null,
-        TimeSpan? retentionSweepInterval = null)
+        TimeSpan? retentionSweepInterval = null,
+        int relayMaxRetries = OutboxRelay.DefaultMaxRetries)
     {
         ArgumentNullException.ThrowIfNull(configureMappings);
         ArgumentNullException.ThrowIfNull(outboxStore);
@@ -101,7 +106,9 @@ public static class MessagingBuilderExtensions
                         sp.GetRequiredService<OutboxTransportLifecycleRegistry>()
                             .CreateLease(transport),
                         batchSize: relayBatchSize,
-                        claimLease: relayClaimLease));
+                        claimLease: relayClaimLease,
+                        maxRetries: relayMaxRetries,
+                        logger: sp.GetService<ILogger<OutboxRelay>>()));
             }
         });
 

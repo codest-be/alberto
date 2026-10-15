@@ -103,7 +103,9 @@ that turns a message into an Alberto command will eventually see a duplicate. Ap
 events a second time is not a retry, it is corruption, and no amount of care in the transport
 prevents it. DCB consistency boundaries help, because a boundary that already contains the effect
 of the first delivery will reject the second, but they only help if you write the boundary with
-that in mind. Carrying the message id into the decision is the usual way.
+that in mind. Carrying the message id into the decision is the usual way. The id is
+`ExternalMessage.MessageId`, the outbox entry's id, which stays the same across every redelivery of
+that entry; `SourceEventId` and `TenantId` ride along with it.
 
 **Delivery is still unordered.** The outbox has never promised ordering, for
 [three separate reasons](../reactors-and-outbox.md#ordering-there-isnt-any). A SQL-backed transport
