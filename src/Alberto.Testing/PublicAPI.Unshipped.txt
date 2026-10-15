@@ -1,4 +1,1 @@
 #nullable enable
-Alberto.Testing.EventTypeRegistryVerifier
-static Alberto.Testing.EventTypeRegistryVerifier.Verify(Alberto.IEventTypeRegistry! registry, params Alberto.IEvent![]! samples) -> void
-Alberto.Testing.InMemoryOutboxStore.MarkAttemptFailedAsync(Alberto.Messaging.OutboxClaim! claim, string! error, int maxRetries, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<bool>!

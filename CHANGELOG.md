@@ -17,6 +17,33 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ---
 
+## [0.6.0] - 2026-10-15
+
+### Added
+
+- AOT step 5: document the generated registry, partial evolvers and ALB3001-3004 (#200)
+- AOT step 4: generated evolver tables and JsonTypeInfo upcasters (#198)
+- Source generator for the event type registry (#183 step 3) (#197)
+- Migrations: log through ILogger and don't require the postgres master database (#182)
+- Typed tag extractor for the AOT event type registry (#180)
+- Add processor-liveness health check: faulted and stale control loops reported as Unhealthy (#74)
+- Persist processor stop-with-reason durably on alberto_processor_checkpoints (#73)
+
+### Fixed
+
+- OutboxRelay stops the host on one transient store error (#204)
+- Flaky EF integration tests: transient Npgsql failures in EF projection/rebuild suites (#190)
+- AlbertoMigrationHostedService.StopAsync throws ObjectDisposedException after Dispose (#181)
+
+### Changed
+
+- OpenTelemetry: a request is not one trace across append, consume and outbox (#211)
+- Messaging/eventing review: checkpoint, lease, head, outbox and dead-letter defects (#206)
+- The mutation gate returns a different score for the same tree (#167)
+- The in-memory backend cannot run processor leases (ALB0024) (#159)
+
+---
+
 ## [0.5.0] - 2026-09-26
 
 Stalled subscribers are now reported instead of looking caught up, and appends on Postgres
@@ -786,7 +813,8 @@ Initial beta release. Core DCB event store abstractions, PostgreSQL backend, in-
 backend, command pipeline, EF Core projection support, transactional outbox, and
 OpenTelemetry instrumentation.
 
-[Unreleased]: https://github.com/codest-be/alberto/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/codest-be/alberto/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/codest-be/alberto/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/codest-be/alberto/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/codest-be/alberto/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/codest-be/alberto/compare/v0.2.0...v0.3.0

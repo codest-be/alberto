@@ -1,15 +1,1 @@
 #nullable enable
-Alberto.Messaging.ExternalMessage.MessageId.get -> System.Guid?
-Alberto.Messaging.ExternalMessage.MessageId.init -> void
-Alberto.Messaging.ExternalMessage.TenantId.get -> string?
-Alberto.Messaging.ExternalMessage.TenantId.init -> void
-Alberto.Messaging.ExternalMessage.SourceEventId.get -> System.Guid?
-Alberto.Messaging.ExternalMessage.SourceEventId.init -> void
-Alberto.Messaging.IOutboxStore.MarkAttemptFailedAsync(Alberto.Messaging.OutboxClaim! claim, string! error, int maxRetries, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<bool>!
-Alberto.Messaging.OutboxRelay.OutboxRelay(Alberto.Messaging.IOutboxStore! store, Alberto.Messaging.IMessageTransport! transport, System.TimeSpan? pollingInterval = null, int batchSize = 100, System.TimeSpan? claimLease = null, string? claimedBy = null, int maxRetries = 5, Microsoft.Extensions.Logging.ILogger<Alberto.Messaging.OutboxRelay!>? logger = null) -> void
-const Alberto.Messaging.OutboxRelay.DefaultMaxRetries = 5 -> int
-static Alberto.Messaging.MessagingBuilderExtensions.WithOutbox(this Alberto.DcbModuleBuilder! builder, System.Action<Alberto.Messaging.IMessageMappingRegistry!>! configureMappings, Alberto.Messaging.IOutboxStore! outboxStore, Alberto.Messaging.IMessageTransport? transport = null, int relayBatchSize = 1, System.TimeSpan? relayClaimLease = null, System.TimeSpan? deliveredRetention = null, System.TimeSpan? retentionSweepInterval = null, int relayMaxRetries = 5) -> Alberto.DcbModuleBuilder!
-Alberto.Messaging.OutboxRelay.OutboxRelay(Alberto.Messaging.IOutboxStore! store, Alberto.Messaging.IMessageTransport! transport, System.TimeSpan? pollingInterval, int batchSize, System.TimeSpan? claimLease, string? claimedBy) -> void
-static Alberto.Messaging.MessagingBuilderExtensions.WithOutbox(this Alberto.DcbModuleBuilder! builder, System.Action<Alberto.Messaging.IMessageMappingRegistry!>! configureMappings, Alberto.Messaging.IOutboxStore! outboxStore, Alberto.Messaging.IMessageTransport? transport, int relayBatchSize, System.TimeSpan? relayClaimLease, System.TimeSpan? deliveredRetention, System.TimeSpan? retentionSweepInterval) -> Alberto.DcbModuleBuilder!
-*REMOVED*Alberto.Messaging.OutboxRelay.OutboxRelay(Alberto.Messaging.IOutboxStore! store, Alberto.Messaging.IMessageTransport! transport, System.TimeSpan? pollingInterval = null, int batchSize = 100, System.TimeSpan? claimLease = null, string? claimedBy = null) -> void
-*REMOVED*static Alberto.Messaging.MessagingBuilderExtensions.WithOutbox(this Alberto.DcbModuleBuilder! builder, System.Action<Alberto.Messaging.IMessageMappingRegistry!>! configureMappings, Alberto.Messaging.IOutboxStore! outboxStore, Alberto.Messaging.IMessageTransport? transport = null, int relayBatchSize = 1, System.TimeSpan? relayClaimLease = null, System.TimeSpan? deliveredRetention = null, System.TimeSpan? retentionSweepInterval = null) -> Alberto.DcbModuleBuilder!

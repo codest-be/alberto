@@ -25,6 +25,7 @@ Alberto.Testing.EventCollector.OnProjected(string! processorId, Alberto.IEventEn
 Alberto.Testing.EventCollector.Projected.get -> System.Collections.Generic.IReadOnlyList<(string! ProcessorId, Alberto.IEventEnvelope! Envelope)>!
 Alberto.Testing.EventCollector.WaitForProjectedAsync(System.Func<string!, Alberto.IEventEnvelope!, bool>! predicate, System.TimeSpan? timeout = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.IEventEnvelope!>!
 Alberto.Testing.EventCollector.WaitForProjectedAsync(string! processorId, string! eventType, System.TimeSpan? timeout = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.IEventEnvelope!>!
+Alberto.Testing.EventTypeRegistryVerifier
 Alberto.Testing.HistorySpecification<TState>
 Alberto.Testing.HistorySpecification<TState>.Given(params Alberto.IEvent![]! events) -> Alberto.Testing.HistorySpecification<TState>!
 Alberto.Testing.HistorySpecification<TState>.ThenState(System.Action<TState>! assert) -> Alberto.Testing.HistorySpecification<TState>!
@@ -35,6 +36,7 @@ Alberto.Testing.InMemoryOutboxStore.ClaimPendingAsync(int limit, System.TimeSpan
 Alberto.Testing.InMemoryOutboxStore.Entries.get -> System.Collections.Generic.IReadOnlyList<Alberto.Messaging.OutboxEntry!>!
 Alberto.Testing.InMemoryOutboxStore.InMemoryOutboxStore(System.TimeProvider? timeProvider = null) -> void
 Alberto.Testing.InMemoryOutboxStore.InsertAsync(Alberto.Messaging.OutboxEntry! entry, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Testing.InMemoryOutboxStore.MarkAttemptFailedAsync(Alberto.Messaging.OutboxClaim! claim, string! error, int maxRetries, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<bool>!
 Alberto.Testing.InMemoryOutboxStore.MarkDeliveredAsync(Alberto.Messaging.OutboxClaim! claim, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
 Alberto.Testing.InMemoryOutboxStore.MarkFailedAsync(Alberto.Messaging.OutboxClaim! claim, string! error, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
 Alberto.Testing.InMemoryOutboxStore.PurgeDeliveredAsync(System.DateTimeOffset before, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
@@ -85,6 +87,7 @@ Alberto.Testing.StatelessSpecification.When(System.Func<Alberto.Decision>! decid
 Alberto.Testing.StatelessSpecification.When<TResult>(System.Func<Alberto.Decision<TResult>>! decide) -> Alberto.Testing.StatelessDecisionResultSpecification<TResult>!
 Alberto.Testing.TestEvents
 static Alberto.Testing.AlbertoTestHarness.StartAsync(string! moduleKey, System.Action<Alberto.DcbModuleBuilder!>! configure, System.Action<Microsoft.Extensions.DependencyInjection.IServiceCollection!>? configureServices = null, System.TimeProvider? timeProvider = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Testing.AlbertoTestHarness!>!
+static Alberto.Testing.EventTypeRegistryVerifier.Verify(Alberto.IEventTypeRegistry! registry, params Alberto.IEvent![]! samples) -> void
 static Alberto.Testing.Poll.UntilAsync(System.Func<System.Threading.Tasks.ValueTask<bool>>! condition, string! what, System.TimeSpan? timeout = null, System.TimeSpan? interval = null, System.TimeProvider? timeProvider = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 static Alberto.Testing.Poll.UntilAsync(System.Func<bool>! condition, string! what, System.TimeSpan? timeout = null, System.TimeSpan? interval = null, System.TimeProvider? timeProvider = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 static Alberto.Testing.ProjectionSpec.For<TState>(Alberto.Subscriptions.ProjectionDeclaration<TState>! declaration) -> Alberto.Testing.ProjectionSpecification<TState>!

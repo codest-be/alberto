@@ -1,4 +1,7 @@
 #nullable enable
+Alberto.AlbertoEventRegistryAttribute
+Alberto.AlbertoEventRegistryAttribute.AlbertoEventRegistryAttribute(System.Type! jsonContext) -> void
+Alberto.AlbertoEventRegistryAttribute.JsonContext.get -> System.Type!
 Alberto.Append.AppendContext
 Alberto.Append.AppendContext.DcbQuery.get -> Alberto.DcbQuery?
 Alberto.Append.AppendContext.DcbQuery.init -> void
@@ -311,11 +314,11 @@ Alberto.Decision<T>.Value.get -> T
 Alberto.Diagnostics.ITraceContextProvider
 Alberto.Diagnostics.ITraceContextProvider.ExtractTraceContext(System.Collections.Generic.IReadOnlyDictionary<string!, string!>! metadata) -> Alberto.Diagnostics.TraceContext?
 Alberto.Diagnostics.TraceContext
-Alberto.Diagnostics.TraceContext.SpanId.get -> string!
-Alberto.Diagnostics.TraceContext.SpanId.init -> void
-Alberto.Diagnostics.TraceContext.TraceContext(string! TraceId, string! SpanId) -> void
-Alberto.Diagnostics.TraceContext.TraceId.get -> string!
-Alberto.Diagnostics.TraceContext.TraceId.init -> void
+Alberto.Diagnostics.TraceContext.TraceContext(string! TraceParent, string? TraceState = null) -> void
+Alberto.Diagnostics.TraceContext.TraceParent.get -> string!
+Alberto.Diagnostics.TraceContext.TraceParent.init -> void
+Alberto.Diagnostics.TraceContext.TraceState.get -> string?
+Alberto.Diagnostics.TraceContext.TraceState.init -> void
 Alberto.EventEnvelope
 Alberto.EventEnvelope.CreatedAt.get -> System.DateTimeOffset
 Alberto.EventEnvelope.CreatedAt.init -> void
@@ -394,7 +397,9 @@ Alberto.EventTypeRegistry
 Alberto.EventTypeRegistryBuilder
 Alberto.EventTypeRegistryBuilder.Add(Alberto.EventTypeDescriptor! descriptor) -> Alberto.EventTypeRegistryBuilder!
 Alberto.EventTypeRegistryBuilder.Add<TEvent>(System.Text.Json.Serialization.Metadata.JsonTypeInfo<TEvent>! jsonTypeInfo, Alberto.EventTagExtractor? tags = null) -> Alberto.EventTypeRegistryBuilder!
+Alberto.EventTypeRegistryBuilder.Add<TEvent>(System.Text.Json.Serialization.Metadata.JsonTypeInfo<TEvent>! jsonTypeInfo, System.Func<TEvent, System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<string!, object?>>!>? tags) -> Alberto.EventTypeRegistryBuilder!
 Alberto.EventTypeRegistryBuilder.Add<TEvent>(string! id, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TEvent>! jsonTypeInfo, Alberto.EventTagExtractor? tags = null, int version = 1, bool upcastingNotRequired = false) -> Alberto.EventTypeRegistryBuilder!
+Alberto.EventTypeRegistryBuilder.Add<TEvent>(string! id, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TEvent>! jsonTypeInfo, System.Func<TEvent, System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<string!, object?>>!>? tags, int version = 1, bool upcastingNotRequired = false) -> Alberto.EventTypeRegistryBuilder!
 Alberto.EventTypeRegistryBuilder.Build() -> Alberto.IEventTypeRegistry!
 Alberto.Evolver<TState>
 Alberto.Evolver<TState>.Evolve(TState state, Alberto.IEvent! event) -> TState
@@ -439,6 +444,9 @@ Alberto.IEventTypeRegistry.TryGetById(string! id, out Alberto.EventTypeDescripto
 Alberto.IEventTypeRegistry.TryGetByType(System.Type! clrType, out Alberto.EventTypeDescriptor? descriptor) -> bool
 Alberto.IEvolve<TState, TEvent>
 Alberto.IEvolve<TState, TEvent>.Apply(TState state, TEvent event) -> TState
+Alberto.IGeneratedEvolver<TState>
+Alberto.IGeneratedEvolver<TState>.EvolveTable() -> System.Collections.Generic.IReadOnlyList<(System.Type! EventType, System.Func<TState, object!, TState>! Apply)>!
+Alberto.IGeneratedEvolver<TState>.GeneratedFor.get -> System.Type!
 Alberto.Problem
 Alberto.Problem.Code.get -> string!
 Alberto.Problem.Code.init -> void
@@ -503,6 +511,8 @@ Alberto.Subscriptions.ConsumeEventContext.ModuleKey.get -> string!
 Alberto.Subscriptions.ConsumeEventContext.ModuleKey.init -> void
 Alberto.Subscriptions.ConsumeEventContext.ProcessorId.get -> string!
 Alberto.Subscriptions.ConsumeEventContext.ProcessorId.init -> void
+Alberto.Subscriptions.ConsumeEventContext.TraceParenting.get -> Alberto.Subscriptions.TraceParenting
+Alberto.Subscriptions.ConsumeEventContext.TraceParenting.init -> void
 Alberto.Subscriptions.ConsumeMiddleware
 Alberto.Subscriptions.ConsumeMiddlewares
 Alberto.Subscriptions.ControlLoop
@@ -676,6 +686,8 @@ Alberto.Subscriptions.ProcessorExecutionOptions.BatchingMode.get -> Alberto.Subs
 Alberto.Subscriptions.ProcessorExecutionOptions.BatchingMode.init -> void
 Alberto.Subscriptions.ProcessorExecutionOptions.MaxConcurrency.get -> int
 Alberto.Subscriptions.ProcessorExecutionOptions.MaxConcurrency.init -> void
+Alberto.Subscriptions.ProcessorExecutionOptions.TraceParenting.get -> Alberto.Subscriptions.TraceParenting
+Alberto.Subscriptions.ProcessorExecutionOptions.TraceParenting.init -> void
 Alberto.Subscriptions.ProcessorExecutionOverrides
 Alberto.Subscriptions.ProcessorExecutionOverrides.ApplyTo(Alberto.Subscriptions.ProcessorExecutionOptions! options) -> Alberto.Subscriptions.ProcessorExecutionOptions!
 Alberto.Subscriptions.ProcessorExecutionOverrides.BatchingMode.get -> Alberto.Subscriptions.ProcessorBatchingMode?
@@ -683,6 +695,15 @@ Alberto.Subscriptions.ProcessorExecutionOverrides.BatchingMode.set -> void
 Alberto.Subscriptions.ProcessorExecutionOverrides.MaxConcurrency.get -> int?
 Alberto.Subscriptions.ProcessorExecutionOverrides.MaxConcurrency.set -> void
 Alberto.Subscriptions.ProcessorExecutionOverrides.ProcessorExecutionOverrides() -> void
+Alberto.Subscriptions.ProcessorExecutionOverrides.TraceParenting.get -> Alberto.Subscriptions.TraceParenting?
+Alberto.Subscriptions.ProcessorExecutionOverrides.TraceParenting.set -> void
+Alberto.Subscriptions.ProcessorHealthCheck
+Alberto.Subscriptions.ProcessorHealthCheck.CheckHealthAsync(Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext! context, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult>!
+Alberto.Subscriptions.ProcessorHealthCheck.ProcessorHealthCheck(string! moduleKey, Alberto.Subscriptions.ProcessorHealthState! state, System.TimeSpan stalenessThreshold, long degradedLagThreshold, System.TimeProvider? timeProvider = null) -> void
+Alberto.Subscriptions.ProcessorHealthState
+Alberto.Subscriptions.ProcessorHealthState.Get(string! processorId) -> Alberto.Subscriptions.ProcessorSnapshot!
+Alberto.Subscriptions.ProcessorHealthState.ProcessorHealthState() -> void
+Alberto.Subscriptions.ProcessorHealthState.ProcessorIds.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
 Alberto.Subscriptions.ProcessorLease
 Alberto.Subscriptions.ProcessorLease.ExpiresAt.get -> System.DateTimeOffset
 Alberto.Subscriptions.ProcessorLease.ExpiresAt.init -> void
@@ -701,6 +722,18 @@ Alberto.Subscriptions.ProcessorLeaseInfo.ProcessorId.init -> void
 Alberto.Subscriptions.ProcessorLeaseInfo.ProcessorLeaseInfo(string! ProcessorId, string! ReplicaId, System.DateTimeOffset AcquiredAt, System.DateTimeOffset ExpiresAt) -> void
 Alberto.Subscriptions.ProcessorLeaseInfo.ReplicaId.get -> string!
 Alberto.Subscriptions.ProcessorLeaseInfo.ReplicaId.init -> void
+Alberto.Subscriptions.ProcessorSnapshot
+Alberto.Subscriptions.ProcessorSnapshot.HasReported.get -> bool
+Alberto.Subscriptions.ProcessorSnapshot.HasReported.init -> void
+Alberto.Subscriptions.ProcessorSnapshot.IsFaulted.get -> bool
+Alberto.Subscriptions.ProcessorSnapshot.IsFaulted.init -> void
+Alberto.Subscriptions.ProcessorSnapshot.Lag.get -> long
+Alberto.Subscriptions.ProcessorSnapshot.Lag.init -> void
+Alberto.Subscriptions.ProcessorSnapshot.LastHeartbeatAt.get -> System.DateTimeOffset
+Alberto.Subscriptions.ProcessorSnapshot.LastHeartbeatAt.init -> void
+Alberto.Subscriptions.ProcessorSnapshot.ProcessorId.get -> string!
+Alberto.Subscriptions.ProcessorSnapshot.ProcessorId.init -> void
+Alberto.Subscriptions.ProcessorSnapshot.ProcessorSnapshot(string! ProcessorId, bool IsFaulted, long Lag, System.DateTimeOffset LastHeartbeatAt, bool HasReported) -> void
 Alberto.Subscriptions.ProjectionCatchUp
 Alberto.Subscriptions.ProjectionCatchUp.ProjectionCatchUp(Alberto.IEventStoreBackend! eventStore, Alberto.Subscriptions.ICheckpointStore! checkpoints, System.TimeSpan? defaultTimeout = null, System.TimeSpan? pollInterval = null) -> void
 Alberto.Subscriptions.ProjectionCatchUp.WaitForProjectionAsync(string! processorId, System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
@@ -828,6 +861,9 @@ Alberto.Subscriptions.TenantLeaseInfo.ReplicaId.init -> void
 Alberto.Subscriptions.TenantLeaseInfo.TenantId.get -> string!
 Alberto.Subscriptions.TenantLeaseInfo.TenantId.init -> void
 Alberto.Subscriptions.TenantLeaseInfo.TenantLeaseInfo(string! TenantId, string! ReplicaId, System.DateTimeOffset AcquiredAt, System.DateTimeOffset ExpiresAt) -> void
+Alberto.Subscriptions.TraceParenting
+Alberto.Subscriptions.TraceParenting.Link = 0 -> Alberto.Subscriptions.TraceParenting
+Alberto.Subscriptions.TraceParenting.Parent = 1 -> Alberto.Subscriptions.TraceParenting
 Alberto.TagAttribute
 Alberto.TagAttribute.Concept.get -> string!
 Alberto.TagAttribute.TagAttribute(string! concept) -> void
@@ -906,7 +942,9 @@ Alberto.Upcasting.UpcasterDeclaration.EventTypeId.get -> string!
 Alberto.Upcasting.UpcasterDeclarationBuilder<TEvent>
 Alberto.Upcasting.UpcasterDeclarationBuilder<TEvent>.Build() -> Alberto.Upcasting.UpcasterDeclaration!
 Alberto.Upcasting.UpcasterDeclarationBuilder<TEvent>.From<TOld, TNew>(int fromVersion, System.Func<TOld!, TNew!>! transform) -> Alberto.Upcasting.UpcasterDeclarationBuilder<TEvent>!
+Alberto.Upcasting.UpcasterDeclarationBuilder<TEvent>.From<TOld, TNew>(int fromVersion, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TOld!>! oldShape, System.Func<TOld!, TNew!>! transform) -> Alberto.Upcasting.UpcasterDeclarationBuilder<TEvent>!
 Alberto.Upcasting.UpcasterDeclarationBuilder<TEvent>.From<TOld>(int fromVersion, System.Func<TOld!, TEvent>! transform) -> Alberto.Upcasting.UpcasterDeclarationBuilder<TEvent>!
+Alberto.Upcasting.UpcasterDeclarationBuilder<TEvent>.From<TOld>(int fromVersion, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TOld!>! oldShape, System.Func<TOld!, TEvent>! transform) -> Alberto.Upcasting.UpcasterDeclarationBuilder<TEvent>!
 Alberto.Upcasting.UpcasterRegistry
 Alberto.Upcasting.UpcasterRegistry.UpcasterRegistryBuilder
 Alberto.Upcasting.UpcasterRegistry.UpcasterRegistryBuilder.Add(Alberto.Upcasting.UpcasterDeclaration! declaration) -> Alberto.Upcasting.UpcasterRegistry.UpcasterRegistryBuilder!
@@ -916,11 +954,9 @@ const Alberto.DcbConflictException.ProblemCode = "dcb.conflict" -> string!
 const Alberto.EventTag.ReservedConceptPrefix = "_" -> string!
 const Alberto.EventTag.SchemaVersionConcept = "_version" -> string!
 const Alberto.Subscriptions.ProjectionVersions.Initial = 1 -> int
-const Alberto.Telemetry.AlbertoMetrics.AppendActivityName = "Alberto.Append" -> string!
-const Alberto.Telemetry.AlbertoMetrics.ConsumeActivityName = "Alberto.Consume" -> string!
+const Alberto.Telemetry.AlbertoMetrics.AppendActivityName = "append" -> string!
+const Alberto.Telemetry.AlbertoMetrics.ConsumeActivityName = "process" -> string!
 const Alberto.Telemetry.AlbertoMetrics.Name = "Alberto" -> string!
-const Alberto.Telemetry.AlbertoMetrics.ProcessActivityName = "Alberto.Process" -> string!
-const Alberto.Telemetry.AlbertoMetrics.Version = "1.0.0" -> string!
 const Alberto.Tenancy.ShardKey.Separator = '#' -> char
 const Alberto.Tenancy.TenantContext.TenantIdRule = "Identifiers must start with a lowercase letter and contain only lowercase letters, digits, and underscores, with a maximum length of 63 characters." -> string!
 const Alberto.Tenancy.TenantScope.CrossTenant = "*" -> string!
@@ -1038,10 +1074,14 @@ static readonly Alberto.Subscriptions.ProjectionVersions.NeverRebuilt -> Alberto
 static readonly Alberto.Telemetry.AlbertoMetrics.AppendDuration -> System.Diagnostics.Metrics.Histogram<double>!
 static readonly Alberto.Telemetry.AlbertoMetrics.ConcurrencyConflicts -> System.Diagnostics.Metrics.Counter<long>!
 static readonly Alberto.Telemetry.AlbertoMetrics.DeadLetters -> System.Diagnostics.Metrics.Counter<long>!
+static readonly Alberto.Telemetry.AlbertoMetrics.EventAge -> System.Diagnostics.Metrics.Histogram<double>!
 static readonly Alberto.Telemetry.AlbertoMetrics.EventsAppended -> System.Diagnostics.Metrics.Counter<long>!
 static readonly Alberto.Telemetry.AlbertoMetrics.EventsProcessed -> System.Diagnostics.Metrics.Counter<long>!
 static readonly Alberto.Telemetry.AlbertoMetrics.HeadStalled -> System.Diagnostics.Metrics.ObservableGauge<double>!
 static readonly Alberto.Telemetry.AlbertoMetrics.Meter -> System.Diagnostics.Metrics.Meter!
+static readonly Alberto.Telemetry.AlbertoMetrics.OutboxDeliveryLatency -> System.Diagnostics.Metrics.Histogram<double>!
+static readonly Alberto.Telemetry.AlbertoMetrics.OutboxPublishFailures -> System.Diagnostics.Metrics.Counter<long>!
+static readonly Alberto.Telemetry.AlbertoMetrics.OutboxPublished -> System.Diagnostics.Metrics.Counter<long>!
 static readonly Alberto.Telemetry.AlbertoMetrics.OwnedTenantCount -> System.Diagnostics.Metrics.ObservableGauge<int>!
 static readonly Alberto.Telemetry.AlbertoMetrics.ProcessingDuration -> System.Diagnostics.Metrics.Histogram<double>!
 static readonly Alberto.Telemetry.AlbertoMetrics.ProcessingErrors -> System.Diagnostics.Metrics.Counter<long>!
@@ -1050,3 +1090,4 @@ static readonly Alberto.Telemetry.AlbertoMetrics.Retries -> System.Diagnostics.M
 static readonly Alberto.Telemetry.AlbertoMetrics.Source -> System.Diagnostics.ActivitySource!
 static readonly Alberto.Telemetry.AlbertoMetrics.TenantLockFailures -> System.Diagnostics.Metrics.Counter<long>!
 static readonly Alberto.Telemetry.AlbertoMetrics.TenantLocksAcquired -> System.Diagnostics.Metrics.Counter<long>!
+static readonly Alberto.Telemetry.AlbertoMetrics.Version -> string!

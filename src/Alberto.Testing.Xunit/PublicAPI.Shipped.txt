@@ -16,6 +16,7 @@ Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.AbandonRetryAsync_Af
 Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.AbandonRetryAsync_WhenEntryAlreadyGone_ReturnsFalse() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.AbandonRetryAsync_WithInvalidToken_ReturnsFalse() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.AbandonRetryAsync_WithValidClaim_ReturnsTrueAndKeepsEntry() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.ClaimRetryRequestedAsync_EventStoredTwice_ClaimsItOnce() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.ClaimRetryRequestedAsync_HeldLease_IsNotReclaimable() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.ClaimRetryRequestedAsync_IgnoresEntriesNotMarkedForRetry() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.ClaimableDeadLetterStoreSpecification() -> void
@@ -23,6 +24,7 @@ Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.CompleteRetryAsync_W
 Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.CompleteRetryAsync_WithInvalidToken_ReturnsFalse() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.CompleteRetryAsync_WithValidClaim_RemovesEntry() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.MarkForRetryAsync_ThenClaimRetryRequested_ReturnsClaim() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.StoreAsync_SameEventWhileClaimed_KeepsClaimAndRecordsNewFailure() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.DeadLetterStoreSpecification
 Alberto.Testing.Xunit.DeadLetterStoreSpecification.ClearAsync_DoesNotAffectOtherProcessors() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.DeadLetterStoreSpecification.ClearAsync_OnEmptyProcessor_DoesNotThrow() -> System.Threading.Tasks.Task!
@@ -38,6 +40,8 @@ Alberto.Testing.Xunit.DeadLetterStoreSpecification.GetAsync_ReturnsEntriesNewest
 Alberto.Testing.Xunit.DeadLetterStoreSpecification.GetAsync_ReturnsStoredEntries() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.DeadLetterStoreSpecification.GetAsync_SingleTenantStore_NonNullTenantId_ReturnsEntries() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.DeadLetterStoreSpecification.ProcessorId.get -> string!
+Alberto.Testing.Xunit.DeadLetterStoreSpecification.StoreAsync_SameEventForDifferentProcessors_KeepsBoth() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.DeadLetterStoreSpecification.StoreAsync_SameEventTwice_KeepsOneEntryWithLatestFailure() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.DeadLetterStoreSpecification.TenancyCapabilities_MustDeclareOneMode() -> void
 Alberto.Testing.Xunit.DeadLetterStoreSpecification.TestId.get -> string!
 Alberto.Testing.Xunit.EventStoreBackendSpecification
@@ -112,6 +116,8 @@ Alberto.Testing.Xunit.OutboxStoreSpecification.MarkDeliveredAsync_ExpiredLease_R
 Alberto.Testing.Xunit.OutboxStoreSpecification.MarkDeliveredAsync_WithInvalidToken_ReturnsFalse() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.OutboxStoreSpecification.MarkDeliveredAsync_WithValidClaim_EntryNotReclaimable() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.OutboxStoreSpecification.MarkDeliveredAsync_WithValidClaim_ReturnsTrue() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.OutboxStoreSpecification.MarkFailedAsync_AtMaxRetries_ParksEntryAsFailed() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.OutboxStoreSpecification.MarkFailedAsync_BelowMaxRetries_ReturnsEntryToPending() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.OutboxStoreSpecification.MarkFailedAsync_WithInvalidToken_ReturnsFalse() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.OutboxStoreSpecification.MarkFailedAsync_WithValidClaim_ReturnsTrue() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.OutboxStoreSpecification.OutboxStoreSpecification() -> void
