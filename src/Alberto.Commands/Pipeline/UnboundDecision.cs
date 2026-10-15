@@ -10,19 +10,24 @@ public readonly struct UnboundDecision
 {
     private readonly AlbertoStore? _store;
     private readonly Func<CancellationToken, Task<Decision>>? _decide;
+    private readonly string _commandType;
 
-    internal UnboundDecision(AlbertoStore store, Func<CancellationToken, Task<Decision>> decide)
+    internal UnboundDecision(AlbertoStore store, Func<CancellationToken, Task<Decision>> decide, string commandType)
     {
         _store = store;
         _decide = decide;
+        _commandType = commandType;
     }
 
     /// <summary>Appends against a query and position the caller observed itself.</summary>
     public async Task<Result> Commit(DcbQuery query, long expectedPosition, CancellationToken cancellationToken)
     {
         var store = PipelineInternals.Require(_store);
-        var decision = await _decide!(cancellationToken);
-        return await store.Persist(decision, query, expectedPosition, cancellationToken);
+        var decide = _decide!;
+        return await CommandTelemetry.Run(
+            _commandType,
+            async _ => await store.Persist(await decide(cancellationToken), query, expectedPosition, cancellationToken),
+            result => result.IsSuccess ? null : result.Problems);
     }
 
     /// <inheritdoc cref="BoundDecision.TryCommit"/>
@@ -45,8 +50,11 @@ public readonly struct UnboundDecision
     public async Task<Result> CommitUnconditionally(CancellationToken cancellationToken)
     {
         var store = PipelineInternals.Require(_store);
-        var decision = await _decide!(cancellationToken);
-        return await store.Persist(decision, DcbQuery.Empty, null, cancellationToken);
+        var decide = _decide!;
+        return await CommandTelemetry.Run(
+            _commandType,
+            async _ => await store.Persist(await decide(cancellationToken), DcbQuery.Empty, null, cancellationToken),
+            result => result.IsSuccess ? null : result.Problems);
     }
 }
 
@@ -55,11 +63,13 @@ public readonly struct UnboundDecision<TValue>
 {
     private readonly AlbertoStore? _store;
     private readonly Func<CancellationToken, Task<Decision<TValue>>>? _decide;
+    private readonly string _commandType;
 
-    internal UnboundDecision(AlbertoStore store, Func<CancellationToken, Task<Decision<TValue>>> decide)
+    internal UnboundDecision(AlbertoStore store, Func<CancellationToken, Task<Decision<TValue>>> decide, string commandType)
     {
         _store = store;
         _decide = decide;
+        _commandType = commandType;
     }
 
     /// <inheritdoc cref="BoundDecision{TValue}.Map{TNew}"/>
@@ -67,7 +77,7 @@ public readonly struct UnboundDecision<TValue>
     {
         var store = PipelineInternals.Require(_store);
         var decide = _decide!;
-        return new UnboundDecision<TNew>(store, async ct => (await decide(ct)).Map(map));
+        return new UnboundDecision<TNew>(store, async ct => (await decide(ct)).Map(map), _commandType);
     }
 
     /// <inheritdoc cref="UnboundDecision.Commit"/>
@@ -75,8 +85,11 @@ public readonly struct UnboundDecision<TValue>
         DcbQuery query, long expectedPosition, CancellationToken cancellationToken)
     {
         var store = PipelineInternals.Require(_store);
-        var decision = await _decide!(cancellationToken);
-        return await store.Persist(decision, query, expectedPosition, cancellationToken);
+        var decide = _decide!;
+        return await CommandTelemetry.Run(
+            _commandType,
+            async _ => await store.Persist(await decide(cancellationToken), query, expectedPosition, cancellationToken),
+            result => result.IsSuccess ? null : result.Problems);
     }
 
     /// <inheritdoc cref="UnboundDecision.TryCommit"/>
@@ -97,7 +110,10 @@ public readonly struct UnboundDecision<TValue>
     public async Task<Result<TValue>> CommitUnconditionally(CancellationToken cancellationToken)
     {
         var store = PipelineInternals.Require(_store);
-        var decision = await _decide!(cancellationToken);
-        return await store.Persist(decision, DcbQuery.Empty, null, cancellationToken);
+        var decide = _decide!;
+        return await CommandTelemetry.Run(
+            _commandType,
+            async _ => await store.Persist(await decide(cancellationToken), DcbQuery.Empty, null, cancellationToken),
+            result => result.IsSuccess ? null : result.Problems);
     }
 }

@@ -1,13 +1,22 @@
 using System.Diagnostics;
 using Alberto.Diagnostics;
+using Alberto.Telemetry;
 
 namespace Alberto.Append;
 
 /// <summary>
 /// Decorator that executes the append interceptor pipeline around backend operations.
-/// All read operations are passed through to the inner backend.
+/// Reads pass through to the inner backend, under a span when someone is listening.
 /// </summary>
-internal sealed class InterceptingEventStoreBackend(IEventStoreBackend inner, IAppendInterceptorPipeline pipeline)
+/// <param name="inner">The backend whose operations are wrapped.</param>
+/// <param name="pipeline">The append interceptors run around each append.</param>
+/// <param name="dbSystem">
+/// The <c>db.system.name</c> to put on read spans, or null when the backend is not a database.
+/// </param>
+internal sealed class InterceptingEventStoreBackend(
+    IEventStoreBackend inner,
+    IAppendInterceptorPipeline pipeline,
+    string? dbSystem = null)
     : IEventStoreBackend, IEventStoreHeadBackend
 {
     private readonly IEventStoreBackend _inner = inner ?? throw new ArgumentNullException(nameof(inner));
@@ -76,14 +85,42 @@ internal sealed class InterceptingEventStoreBackend(IEventStoreBackend inner, IA
         long afterPosition = 0,
         int? limit = null,
         CancellationToken cancellationToken = default)
-        => _inner.StreamAsync(query, afterPosition, limit, cancellationToken);
+        => TracedRead(afterPosition, limit, () => _inner.StreamAsync(query, afterPosition, limit, cancellationToken));
 
     /// <inheritdoc />
     public Task<IReadOnlyCollection<IEventEnvelope>> StreamAllAsync(
         long afterPosition = 0,
         int? limit = null,
         CancellationToken cancellationToken = default)
-        => _inner.StreamAllAsync(afterPosition, limit, cancellationToken);
+        => TracedRead(afterPosition, limit, () => _inner.StreamAllAsync(afterPosition, limit, cancellationToken));
+
+    private async Task<IReadOnlyCollection<IEventEnvelope>> TracedRead(
+        long afterPosition,
+        int? limit,
+        Func<Task<IReadOnlyCollection<IEventEnvelope>>> read)
+    {
+        using var activity = AlbertoMetrics.Source.StartActivity(
+            "alberto.read",
+            dbSystem is null ? ActivityKind.Internal : ActivityKind.Client);
+        if (activity is null)
+            return await read();
+
+        activity.SetTag("db.system.name", dbSystem);
+        activity.SetTag("alberto.read.after_position", afterPosition);
+        activity.SetTag("alberto.read.limit", limit);
+        try
+        {
+            var events = await read();
+            activity.SetTag("alberto.read.events", events.Count);
+            return events;
+        }
+        catch (Exception exception)
+        {
+            activity.SetTag("error.type", exception.GetType().FullName);
+            activity.SetStatus(ActivityStatusCode.Error);
+            throw;
+        }
+    }
 
     /// <inheritdoc />
     public Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default)

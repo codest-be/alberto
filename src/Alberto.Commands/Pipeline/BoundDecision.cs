@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Alberto;
 namespace Alberto.Commands;
 
@@ -9,22 +10,26 @@ public readonly struct BoundDecision
 {
     private readonly AlbertoStore? _store;
     private readonly Func<CancellationToken, Task<(Decision Decision, DcbBoundary Boundary)>>? _attempt;
+    private readonly string _commandType;
     private readonly int _attempts;
 
     internal BoundDecision(
         AlbertoStore store,
-        Func<CancellationToken, Task<(Decision Decision, DcbBoundary Boundary)>> attempt)
-        : this(store, attempt, 1)
+        Func<CancellationToken, Task<(Decision Decision, DcbBoundary Boundary)>> attempt,
+        string commandType)
+        : this(store, attempt, commandType, 1)
     {
     }
 
     private BoundDecision(
         AlbertoStore store,
         Func<CancellationToken, Task<(Decision Decision, DcbBoundary Boundary)>> attempt,
+        string commandType,
         int attempts)
     {
         _store = store;
         _attempt = attempt;
+        _commandType = commandType;
         _attempts = attempts;
     }
 
@@ -36,7 +41,7 @@ public readonly struct BoundDecision
     public BoundDecision RetryOnConflict(int attempts)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(attempts, 1);
-        return new BoundDecision(PipelineInternals.Require(_store), _attempt!, attempts);
+        return new BoundDecision(PipelineInternals.Require(_store), _attempt!, _commandType, attempts);
     }
 
     /// <summary>
@@ -47,12 +52,17 @@ public readonly struct BoundDecision
     {
         var store = PipelineInternals.Require(_store);
         var attempt = _attempt!;
-        return await ConflictRetryLoop.Run(
-            _attempts,
-            attempt,
-            async (bd, ct) => await store.Persist(
-                bd.Decision, bd.Boundary.Query, bd.Boundary.ExpectedPosition, ct),
-            cancellationToken);
+        var attempts = _attempts;
+        return await CommandTelemetry.Run(
+            _commandType,
+            command => ConflictRetryLoop.Run(
+                attempts,
+                attempt,
+                async (bd, ct) => await store.Persist(
+                    bd.Decision, bd.Boundary.Query, bd.Boundary.ExpectedPosition, ct),
+                cancellationToken,
+                command),
+            result => result.IsSuccess ? null : result.Problems);
     }
 
     /// <summary>
@@ -77,22 +87,26 @@ public readonly struct BoundDecision<TValue>
 {
     private readonly AlbertoStore? _store;
     private readonly Func<CancellationToken, Task<(Decision<TValue> Decision, DcbBoundary Boundary)>>? _attempt;
+    private readonly string _commandType;
     private readonly int _attempts;
 
     internal BoundDecision(
         AlbertoStore store,
-        Func<CancellationToken, Task<(Decision<TValue> Decision, DcbBoundary Boundary)>> attempt)
-        : this(store, attempt, 1)
+        Func<CancellationToken, Task<(Decision<TValue> Decision, DcbBoundary Boundary)>> attempt,
+        string commandType)
+        : this(store, attempt, commandType, 1)
     {
     }
 
     private BoundDecision(
         AlbertoStore store,
         Func<CancellationToken, Task<(Decision<TValue> Decision, DcbBoundary Boundary)>> attempt,
+        string commandType,
         int attempts)
     {
         _store = store;
         _attempt = attempt;
+        _commandType = commandType;
         _attempts = attempts;
     }
 
@@ -109,6 +123,7 @@ public readonly struct BoundDecision<TValue>
                 var (decision, boundary) = await attempt(ct);
                 return (decision.Map(map), boundary);
             },
+            _commandType,
             attempts);
     }
 
@@ -116,7 +131,7 @@ public readonly struct BoundDecision<TValue>
     public BoundDecision<TValue> RetryOnConflict(int attempts)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(attempts, 1);
-        return new BoundDecision<TValue>(PipelineInternals.Require(_store), _attempt!, attempts);
+        return new BoundDecision<TValue>(PipelineInternals.Require(_store), _attempt!, _commandType, attempts);
     }
 
     /// <inheritdoc cref="BoundDecision.Commit"/>
@@ -124,12 +139,17 @@ public readonly struct BoundDecision<TValue>
     {
         var store = PipelineInternals.Require(_store);
         var attempt = _attempt!;
-        return await ConflictRetryLoop.Run(
-            _attempts,
-            attempt,
-            async (bd, ct) => await store.Persist(
-                bd.Decision, bd.Boundary.Query, bd.Boundary.ExpectedPosition, ct),
-            cancellationToken);
+        var attempts = _attempts;
+        return await CommandTelemetry.Run(
+            _commandType,
+            command => ConflictRetryLoop.Run(
+                attempts,
+                attempt,
+                async (bd, ct) => await store.Persist(
+                    bd.Decision, bd.Boundary.Query, bd.Boundary.ExpectedPosition, ct),
+                cancellationToken,
+                command),
+            result => result.IsSuccess ? null : result.Problems);
     }
 
     /// <inheritdoc cref="BoundDecision.TryCommit"/>
@@ -180,11 +200,13 @@ internal static class ConflictRetryLoop
         int attempts,
         Func<CancellationToken, Task<TState>> prepare,
         Func<TState, CancellationToken, Task<TResult>> commit,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Activity? command = null)
     {
         var remaining = attempts;
         while (true)
         {
+            command?.SetTag(CommandTelemetry.AttemptTag, attempts - remaining + 1);
             var state = await prepare(cancellationToken);
             try
             {

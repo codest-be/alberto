@@ -487,6 +487,14 @@ yourself.
 | `Alberto.Append` | A write, from boundary check to commit |
 | `Alberto.Consume` | One event through the middleware chain |
 | `Alberto.Process` | One handler's work |
+| `alberto.command {CommandType}` | One command's `Commit`/`TryCommit`; `alberto.command.outcome` is `committed`, `rejected`, `conflict` (retries used up) or `error`; `alberto.command.attempt` is the attempt reached |
+| `alberto.load` | The boundary read of an attempt: `alberto.load.events`, `.position`, `.types`, `.tags` |
+| `alberto.decide` | The decision of an attempt: `alberto.decide.outcome`, `alberto.problem.codes` on rejection |
+| `alberto.read` | A read from the event store, with `alberto.read.events`; `db.system.name` only on Postgres |
+
+The command spans are children of whatever activity is current when the command is committed, and
+`Alberto.Append` parents under the command root. Spans never carry exception messages, only
+`error.type`.
 
 The append stamps the current trace context into each event's `metadata` as W3C `traceparent`
 (and `tracestate`, when non-empty), whether or not telemetry is enabled: it is the `Alberto.Append`

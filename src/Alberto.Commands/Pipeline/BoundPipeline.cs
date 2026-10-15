@@ -39,9 +39,12 @@ public readonly struct BoundPipeline<TCommand, TState>
             if (staged.HasProblems)
                 return (Decision.Fail(staged.Problems!), default);
 
-            var (state, boundary) = await load(staged.Command, ct);
-            return (decide(staged.Command, state), boundary);
-        });
+            var (state, boundary) = await CommandTelemetry.Load(load, staged.Command, ct);
+            var decision = CommandTelemetry.Decide(
+                () => decide(staged.Command, state),
+                d => d.IsError ? d.Problems : null);
+            return (decision, boundary);
+        }, typeof(TCommand).Name);
     }
 
     /// <inheritdoc cref="Decide(Func{TCommand, TState, Decision})"/>
@@ -61,9 +64,12 @@ public readonly struct BoundPipeline<TCommand, TState>
             if (staged.HasProblems)
                 return (Decision<TValue>.Fail(staged.Problems!), default);
 
-            var (state, boundary) = await load(staged.Command, ct);
-            return (decide(staged.Command, state), boundary);
-        });
+            var (state, boundary) = await CommandTelemetry.Load(load, staged.Command, ct);
+            var decision = CommandTelemetry.Decide(
+                () => decide(staged.Command, state),
+                d => d.IsError ? d.Problems : null);
+            return (decision, boundary);
+        }, typeof(TCommand).Name);
     }
 
     /// <inheritdoc cref="Decide(Func{TCommand, TState, Decision})"/>
