@@ -56,6 +56,10 @@ public static class TelemetryConsumeMiddleware
                 activity?.SetTag("trace.links.count", links?.Length ?? 0);
             }
 
+            AlbertoMetrics.EventAge.Record(
+                (DateTimeOffset.UtcNow - context.Envelope.CreatedAt).TotalSeconds,
+                TelemetryTags.ForModule(context.ProcessorId, context.ModuleKey));
+
             var sw = Stopwatch.StartNew();
             try
             {

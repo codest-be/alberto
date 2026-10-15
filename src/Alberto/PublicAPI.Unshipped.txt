@@ -50,3 +50,7 @@ Alberto.Subscriptions.ProcessorExecutionOverrides.TraceParenting.get -> Alberto.
 Alberto.Subscriptions.ProcessorExecutionOverrides.TraceParenting.set -> void
 Alberto.Subscriptions.ConsumeEventContext.TraceParenting.get -> Alberto.Subscriptions.TraceParenting
 Alberto.Subscriptions.ConsumeEventContext.TraceParenting.init -> void
+*REMOVED*const Alberto.Telemetry.AlbertoMetrics.ProcessActivityName = "Alberto.Process" -> string!
+*REMOVED*const Alberto.Telemetry.AlbertoMetrics.Version = "1.0.0" -> string!
+static readonly Alberto.Telemetry.AlbertoMetrics.Version -> string!
+static readonly Alberto.Telemetry.AlbertoMetrics.EventAge -> System.Diagnostics.Metrics.Histogram<double>!

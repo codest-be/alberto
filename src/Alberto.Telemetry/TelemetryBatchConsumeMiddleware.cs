@@ -54,6 +54,11 @@ public static class TelemetryBatchConsumeMiddleware
                     activity?.SetTag("trace.links.dropped", droppedLinks);
             }
 
+            var ageTags = TelemetryTags.ForModule(context.ProcessorId, context.ModuleKey);
+            var now = DateTimeOffset.UtcNow;
+            foreach (var envelope in context.Envelopes)
+                AlbertoMetrics.EventAge.Record((now - envelope.CreatedAt).TotalSeconds, ageTags);
+
             var sw = Stopwatch.StartNew();
             try
             {

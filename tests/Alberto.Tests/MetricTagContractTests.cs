@@ -71,6 +71,7 @@ public sealed class MetricTagContractTests
                 ("alberto.append.duration",       "s"),
                 ("alberto.processing.duration",   "s"),
                 ("alberto.outbox.delivery.latency", "s"),
+                ("alberto.event.age",             "s"),
                 // Observable gauges
                 ("alberto.processor.lag",         "events"),
                 ("alberto.head.stalled",          "s"),
@@ -78,38 +79,6 @@ public sealed class MetricTagContractTests
             },
             options => options.WithoutStrictOrdering(),
             "renaming an instrument or changing its unit is a breaking change for dashboards and alerts");
-    }
-
-    // ── 2. Instruments with no tags ──────────────────────────────────────────
-
-    [Fact]
-    public void EventsAppended_carries_no_tags()
-    {
-        var (_, tags) = CaptureFirstCounter<long>(
-            "alberto.events.appended",
-            () => AlbertoMetrics.EventsAppended.Add(1));
-
-        tags.Should().BeEmpty("alberto.events.appended has no tag dimensions");
-    }
-
-    [Fact]
-    public void ConcurrencyConflicts_carries_no_tags()
-    {
-        var (_, tags) = CaptureFirstCounter<long>(
-            "alberto.concurrency.conflicts",
-            () => AlbertoMetrics.ConcurrencyConflicts.Add(1));
-
-        tags.Should().BeEmpty("alberto.concurrency.conflicts has no tag dimensions");
-    }
-
-    [Fact]
-    public void AppendDuration_carries_no_tags()
-    {
-        var (_, tags) = CaptureFirstHistogram<double>(
-            "alberto.append.duration",
-            () => AlbertoMetrics.AppendDuration.Record(0.001));
-
-        tags.Should().BeEmpty("alberto.append.duration has no tag dimensions");
     }
 
     // ── 3. Core consume-path instruments: {processor, module, [shard]} ───────

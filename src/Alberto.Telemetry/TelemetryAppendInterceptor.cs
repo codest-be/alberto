@@ -8,7 +8,7 @@ namespace Alberto.Telemetry;
 /// - Creates "Alberto.Append" activity span
 /// - Records events being appended as Activity events (showing what was decided)
 /// </summary>
-internal sealed class TelemetryAppendInterceptor(bool recordEventTagValues = false) : IAppendInterceptor
+internal sealed class TelemetryAppendInterceptor(bool recordEventTagValues = false, string? moduleKey = null) : IAppendInterceptor
 {
     /// <inheritdoc />
     public async Task<IReadOnlyCollection<IEventEnvelope>> OnAppendingAsync(
@@ -35,6 +35,8 @@ internal sealed class TelemetryAppendInterceptor(bool recordEventTagValues = fal
                 }));
         }
 
+        var tags = moduleKey is null ? new TagList() : ProcessorTags.ForModuleOnly(moduleKey);
+        var outcome = "success";
         var sw = Stopwatch.StartNew();
         try
         {
@@ -49,7 +51,7 @@ internal sealed class TelemetryAppendInterceptor(bool recordEventTagValues = fal
                 activity?.SetTag("events.last_position", result.Last().GlobalPosition);
             }
 
-            AlbertoMetrics.EventsAppended.Add(result.Count);
+            AlbertoMetrics.EventsAppended.Add(result.Count, tags);
 
             return result;
         }
@@ -58,12 +60,16 @@ internal sealed class TelemetryAppendInterceptor(bool recordEventTagValues = fal
             activity?.SetStatus(ActivityStatusCode.Error, "DCB conflict");
             activity?.SetTag("dcb.conflict", true);
 
-            AlbertoMetrics.ConcurrencyConflicts.Add(1);
+            outcome = "conflict";
+            var conflictTags = tags;
+            conflictTags.Add("kind", "append");
+            AlbertoMetrics.ConcurrencyConflicts.Add(1, conflictTags);
 
             throw;
         }
         catch (Exception ex)
         {
+            outcome = "error";
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             // An exception EVENT, not span attributes. See the same call in
             // TelemetryConsumeMiddleware for why messages must not become attributes.
@@ -72,7 +78,8 @@ internal sealed class TelemetryAppendInterceptor(bool recordEventTagValues = fal
         }
         finally
         {
-            AlbertoMetrics.AppendDuration.Record(sw.Elapsed.TotalSeconds);
+            tags.Add("outcome", outcome);
+            AlbertoMetrics.AppendDuration.Record(sw.Elapsed.TotalSeconds, tags);
         }
     }
 

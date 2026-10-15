@@ -486,7 +486,6 @@ yourself.
 |---|---|
 | `Alberto.Append` | A write, from boundary check to commit |
 | `Alberto.Consume` | One event through the middleware chain |
-| `Alberto.Process` | One handler's work |
 | `alberto.command {CommandType}` | One command's `Commit`/`TryCommit`; `alberto.command.outcome` is `committed`, `rejected`, `conflict` (retries used up) or `error`; `alberto.command.attempt` is the attempt reached |
 | `alberto.load` | The boundary read of an attempt: `alberto.load.events`, `.position`, `.types`, `.tags` |
 | `alberto.decide` | The decision of an attempt: `alberto.decide.outcome`, `alberto.problem.codes` on rejection |
@@ -531,14 +530,15 @@ is not a failed publish.
 
 | Instrument | Watch for |
 |---|---|
-| `alberto.events.appended` | Write throughput |
+| `alberto.events.appended` | Write throughput, tagged `module` (and `shard`) |
 | `alberto.events.processed` | Consumer throughput: compare with the above |
 | `alberto.processing.errors` | Any sustained non-zero rate |
 | `alberto.dead_letters` | **Alert on any increase** |
 | `alberto.retries` | A rising rate means a flaky dependency |
-| `alberto.concurrency.conflicts` | `DcbConflictException`s: a rising rate means a boundary is too wide |
+| `alberto.concurrency.conflicts` | Tagged `kind`: `append` is a `DcbConflictException` (a rising rate means a boundary is too wide, `module` tagged); `projection` is a state-store write conflict |
 | `alberto.tenant_locks_acquired`, `alberto.tenant_lock_failures` | Lease churn: tagged by `consumer.id`, **not** by tenant |
-| `alberto.append.duration` | Write latency, including the advisory lock wait |
+| `alberto.append.duration` | Write latency, including the advisory lock wait; tagged `module` and `outcome` (`success`, `conflict`, `error`) |
+| `alberto.event.age` | Seconds between an event's `CreatedAt` and a processor starting on it: the staleness readers see, where lag counts events |
 | `alberto.processing.duration` | Per-handler latency |
 | `alberto.outbox.published`, `alberto.outbox.publish.failures` | Outbox relay throughput and failed attempts (failures tagged `error.type`) |
 | `alberto.outbox.delivery.latency` | Seconds from outbox entry creation to successful publish; includes retries |

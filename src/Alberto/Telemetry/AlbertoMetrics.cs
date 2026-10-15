@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using System.Reflection;
 using Alberto.Tenancy;
 
 namespace Alberto.Telemetry;
@@ -18,7 +19,14 @@ public static class AlbertoMetrics
     /// <summary>
     /// The version of the telemetry instrumentation.
     /// </summary>
-    public const string Version = "1.0.0";
+    /// <remarks>
+    /// The assembly's informational version with SourceLink's <c>+commit</c> suffix dropped, so a
+    /// rebuild of the same release does not mint a new instrumentation scope.
+    /// </remarks>
+    public static readonly string Version =
+        typeof(AlbertoMetrics).Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+            .Split('+')[0] ?? "0.0.0";
 
     /// <summary>
     /// ActivitySource for distributed tracing.
@@ -30,10 +38,18 @@ public static class AlbertoMetrics
     /// </summary>
     public static readonly Meter Meter = new(Name, Version);
 
+    // Seconds-scale boundaries for latency histograms; the SDK default (0..10000) is built for
+    // milliseconds and puts every sub-second observation in its first bucket.
+    private static readonly double[] LatencyBuckets = [0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10];
+
+    // Event age spans a healthy sub-second tail up to a stalled processor, so it runs to an hour.
+    private static readonly double[] AgeBuckets = [.. LatencyBuckets, 30, 60, 300, 900, 3600];
+
     #region Counters
 
     /// <summary>
-    /// Counter for events successfully appended to the store.
+    /// Counter for events successfully appended to the store, tagged with <c>module</c> (and
+    /// <c>shard</c> when sharded) where the module is known.
     /// </summary>
     public static readonly Counter<long> EventsAppended =
         Meter.CreateCounter<long>("alberto.events.appended", "events", "Number of events appended to the store");
@@ -77,7 +93,9 @@ public static class AlbertoMetrics
         Meter.CreateCounter<long>("alberto.retries", "attempts", "Number of retry attempts");
 
     /// <summary>
-    /// Counter for optimistic concurrency conflicts.
+    /// Counter for optimistic concurrency conflicts, tagged with <c>kind</c>: <c>append</c> for a
+    /// <see cref="DcbConflictException"/> (plus <c>module</c>) or <c>projection</c> for a state-store
+    /// write conflict.
     /// </summary>
     public static readonly Counter<long> ConcurrencyConflicts =
         Meter.CreateCounter<long>("alberto.concurrency.conflicts", "conflicts", "Number of optimistic concurrency conflicts");
@@ -238,7 +256,8 @@ public static class AlbertoMetrics
     #region Histograms
 
     /// <summary>
-    /// Histogram for event append duration.
+    /// Histogram for event append duration, tagged with <c>outcome</c>
+    /// (<c>success</c>, <c>conflict</c> or <c>error</c>) and <c>module</c>.
     /// </summary>
     /// <remarks>
     /// OpenTelemetry semantic conventions require durations in seconds (UCUM unit "s").
@@ -246,7 +265,8 @@ public static class AlbertoMetrics
     /// The instrument name does not encode the unit; use the declared unit metadata instead.
     /// </remarks>
     public static readonly Histogram<double> AppendDuration =
-        Meter.CreateHistogram<double>("alberto.append.duration", "s", "Duration of event append operations");
+        Meter.CreateHistogram<double>("alberto.append.duration", "s", "Duration of event append operations",
+            advice: new InstrumentAdvice<double> { HistogramBucketBoundaries = LatencyBuckets });
 
     /// <summary>
     /// Histogram for event processing duration.
@@ -257,14 +277,25 @@ public static class AlbertoMetrics
     /// The instrument name does not encode the unit; use the declared unit metadata instead.
     /// </remarks>
     public static readonly Histogram<double> ProcessingDuration =
-        Meter.CreateHistogram<double>("alberto.processing.duration", "s", "Duration of event processing operations");
+        Meter.CreateHistogram<double>("alberto.processing.duration", "s", "Duration of event processing operations",
+            advice: new InstrumentAdvice<double> { HistogramBucketBoundaries = LatencyBuckets });
 
     /// <summary>
     /// Histogram for the time from an outbox entry being written to its message being handed
     /// to the transport. Measured on the publish that succeeded, so retries show up as latency.
     /// </summary>
     public static readonly Histogram<double> OutboxDeliveryLatency =
-        Meter.CreateHistogram<double>("alberto.outbox.delivery.latency", "s", "Time from outbox entry creation to successful publish");
+        Meter.CreateHistogram<double>("alberto.outbox.delivery.latency", "s", "Time from outbox entry creation to successful publish",
+            advice: new InstrumentAdvice<double> { HistogramBucketBoundaries = LatencyBuckets });
+
+    /// <summary>
+    /// Histogram for how old an event is, measured from its <c>CreatedAt</c>, when a processor
+    /// starts handling it. Unlike lag, which counts events, this is the delay a reader of the
+    /// projection actually experiences.
+    /// </summary>
+    public static readonly Histogram<double> EventAge =
+        Meter.CreateHistogram<double>("alberto.event.age", "s", "Age of an event when a processor starts handling it",
+            advice: new InstrumentAdvice<double> { HistogramBucketBoundaries = AgeBuckets });
 
     #endregion
 
@@ -279,11 +310,6 @@ public static class AlbertoMetrics
     /// Activity name for consume operations.
     /// </summary>
     public const string ConsumeActivityName = "Alberto.Consume";
-
-    /// <summary>
-    /// Activity name for process operations.
-    /// </summary>
-    public const string ProcessActivityName = "Alberto.Process";
 
     #endregion
 }

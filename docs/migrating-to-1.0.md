@@ -1071,6 +1071,22 @@ Unparking after 1.0 is `IsPackable=true` on both projects plus capturing their
 
 ---
 
+### MX-1: metric dimensions, bucket boundaries and `AlbertoMetrics` constants
+
+`alberto.events.appended`, `alberto.append.duration` and `alberto.concurrency.conflicts` now carry
+`module` (and `shard`); `alberto.append.duration` also carries `outcome` (`success`, `conflict`,
+`error`). `alberto.concurrency.conflicts` carries `kind`: `append` for DCB conflicts, `projection`
+for state-store write conflicts, which used to be counted into the same series. Queries that summed
+the old untagged series should sum over all tags, or filter `kind="append"` to get the old
+meaning back. The duration histograms declare seconds-scale bucket boundaries (1 ms to 10 s), and
+`alberto.event.age` is new.
+
+`AlbertoMetrics.Version` is now a `static readonly` derived from the assembly version rather than
+the constant `"1.0.0"`, so it cannot be used in a constant expression, and the unused
+`AlbertoMetrics.ProcessActivityName` is removed.
+
+---
+
 ### TC-1: trace context is stored as W3C `traceparent`; `TraceContext` changed shape
 
 Appends now stamp `traceparent` (and `tracestate`) into event metadata instead of `_traceId` and
