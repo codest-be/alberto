@@ -335,11 +335,11 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
     {
         lock (_lock)
         {
-            var ceiling = afterPosition + windowSize;
             var result = _events
-                .Where(e => e.GlobalPosition > afterPosition && e.GlobalPosition <= ceiling)
+                .Where(e => e.GlobalPosition > afterPosition)
                 .Select(e => e.GlobalPosition)
                 .OrderBy(p => p)
+                .Take(windowSize)
                 .ToList();
             return Task.FromResult<IReadOnlyList<long>>(result);
         }

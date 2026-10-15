@@ -129,22 +129,40 @@ public sealed class EventStoreHead : IHostedService
     /// </summary>
     internal async Task RefreshAsync(CancellationToken ct)
     {
-        var current = _current;
-        var positions = await _backend.GetPositionsAsync(current, _windowSize, ct);
-        var head = FindContiguousHead(current, positions);
+        var start = _current;
+        var current = start;
+        var holding = false;
 
-        // Clamp to the in-flight visibility barrier: never advance past an append
-        // whose transaction has not committed yet. Backends without a barrier
-        // (IEventStoreHeadBackend default) return long.MaxValue, leaving the
-        // contiguous head unchanged.
-        var stableHead = await _backend.GetStableHeadAsync(current, ct);
-        var holding = stableHead < head;
-        if (holding)
-            head = stableHead;
+        // A window holds at most _windowSize positions, so catching up on a large log takes many
+        // of them: keep going while each one comes back full instead of one window per poll.
+        // Bounded so a log that keeps growing under us cannot pin this refresh forever.
+        for (var window = 0; window < MaxWindowsPerRefresh; window++)
+        {
+            ct.ThrowIfCancellationRequested();
+            var positions = await _backend.GetPositionsAsync(current, _windowSize, ct);
+            var head = FindContiguousHead(current, positions);
 
-        TrackStall(holding, headAdvanced: head != current);
-        Volatile.Write(ref _current, head);
+            // Clamp to the in-flight visibility barrier: never advance past an append
+            // whose transaction has not committed yet. Backends without a barrier
+            // (IEventStoreHeadBackend default) return long.MaxValue, leaving the
+            // contiguous head unchanged.
+            var stableHead = await _backend.GetStableHeadAsync(current, ct);
+            holding = stableHead < head;
+            if (holding)
+                head = stableHead;
+
+            var advanced = head > current;
+            current = head;
+            Volatile.Write(ref _current, current);
+
+            if (holding || !advanced || positions.Count < _windowSize)
+                break;
+        }
+
+        TrackStall(holding, headAdvanced: current != start);
     }
+
+    private const int MaxWindowsPerRefresh = 1000;
 
     /// <summary>
     /// Tracks how long the barrier has held the head back without it advancing, warns once
@@ -209,7 +227,8 @@ public sealed class EventStoreHead : IHostedService
     /// an in-flight transaction that hasn't committed yet.
     ///
     /// A gap is considered permanent if there are more committed events after it
-    /// within the window. A gap at the very end of the window is treated as a
+    /// within the window. The window is the next <c>windowSize</c> committed positions, not
+    /// a position range, so a gap wider than the window does not hide what follows it. A gap at the very end of the window is treated as a
     /// potential concurrency boundary — we stop before it.
     ///
     /// (5, [6,7,8,10]) → 8   — gap at tail, could be in-flight
