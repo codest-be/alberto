@@ -1,4 +1,7 @@
+using System.Diagnostics;
 using System.Runtime.ExceptionServices;
+using Alberto.Diagnostics;
+using Alberto.Telemetry;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -172,31 +175,29 @@ public sealed class OutboxRelay : BackgroundService
                 foreach (var claim in pending)
                 {
                     var entry = claim.Entry;
+                    using var activity = StartSendActivity(entry);
                     try
                     {
-                        await _transport.PublishAsync(
-                            new ExternalMessage(
-                                entry.MessageType,
-                                entry.Version,
-                                entry.Payload,
-                                entry.Metadata,
-                                Destination: entry.Destination,
-                                RoutingHint: entry.RoutingHint)
-                            {
-                                MessageId = entry.Id,
-                                TenantId = entry.TenantId,
-                                SourceEventId = entry.SourceEventId,
-                            },
-                            ct);
+                        await _transport.PublishAsync(BuildMessage(entry, activity), ct);
                     }
                     catch (Exception ex) when (!ct.IsCancellationRequested)
                     {
                         anyPublishFailed = true;
+                        var errorType = ex.GetType().FullName ?? ex.GetType().Name;
+                        activity?.SetStatus(ActivityStatusCode.Error);
+                        activity?.SetTag("error.type", errorType);
+                        AlbertoMetrics.OutboxPublishFailures.Add(1, new KeyValuePair<string, object?>("error.type", errorType));
                         await MarkFailedSafelyAsync(claim, ex, ct);
                         continue;
                     }
 
-                    await MarkDeliveredSafelyAsync(claim);
+                    AlbertoMetrics.OutboxPublished.Add(1);
+                    AlbertoMetrics.OutboxDeliveryLatency.Record((DateTimeOffset.UtcNow - entry.CreatedAt).TotalSeconds);
+                    activity?.SetStatus(ActivityStatusCode.Ok);
+                    // Published either way: a failed mark leaves the span Ok and the metrics alone,
+                    // and surfaces here so the redelivery it will cause can be explained.
+                    var marked = await MarkDeliveredSafelyAsync(claim);
+                    activity?.SetTag("alberto.outbox.marked_delivered", marked);
                 }
 
                 failureStreak = anyPublishFailed ? failureStreak + 1 : 0;
@@ -252,17 +253,63 @@ public sealed class OutboxRelay : BackgroundService
         }
     }
 
-    private async Task MarkDeliveredSafelyAsync(OutboxClaim claim)
+    // Parented to the append that produced the entry's event; a plain root when there is none.
+    private static Activity? StartSendActivity(OutboxEntry entry)
+    {
+        if (!AlbertoMetrics.Source.HasListeners())
+            return null;
+
+        var activity = AlbertoMetrics.Source.StartActivity(
+            $"send {entry.MessageType}",
+            ActivityKind.Producer,
+            TraceContextPropagation.Extract(entry.Metadata));
+        if (activity is null)
+            return null;
+
+        activity.SetTag("messaging.message.id", entry.Id.ToString());
+        activity.SetTag("alberto.outbox.attempt", entry.RetryCount + 1);
+        if (entry.TenantId is not null)
+            activity.SetTag("alberto.tenant.id", entry.TenantId);
+        return activity;
+    }
+
+    private static ExternalMessage BuildMessage(OutboxEntry entry, Activity? activity)
+    {
+        var metadata = entry.Metadata;
+        if (activity is not null)
+        {
+            // The transport carries the send span, not the append it descends from.
+            metadata = new Dictionary<string, string>(metadata);
+            TraceContextPropagation.Inject(activity, metadata);
+        }
+
+        return new ExternalMessage(
+            entry.MessageType,
+            entry.Version,
+            entry.Payload,
+            metadata,
+            Destination: entry.Destination,
+            RoutingHint: entry.RoutingHint)
+        {
+            MessageId = entry.Id,
+            TenantId = entry.TenantId,
+            SourceEventId = entry.SourceEventId,
+        };
+    }
+
+    private async Task<bool> MarkDeliveredSafelyAsync(OutboxClaim claim)
     {
         // Deliberately not the host's token: the message is already published, so a token
         // cancelled by shutdown would leave it to be delivered a second time.
         using var timeout = new CancellationTokenSource(MarkDeliveredTimeout);
         try
         {
-            if (!await _store.MarkDeliveredAsync(claim, timeout.Token))
-                _logger.LogWarning(
-                    "Outbox entry {EntryId} was published but its claim was lost; it may be delivered again.",
-                    claim.Entry.Id);
+            if (await _store.MarkDeliveredAsync(claim, timeout.Token))
+                return true;
+
+            _logger.LogWarning(
+                "Outbox entry {EntryId} was published but its claim was lost; it may be delivered again.",
+                claim.Entry.Id);
         }
         catch (Exception ex)
         {
@@ -270,6 +317,8 @@ public sealed class OutboxRelay : BackgroundService
             // redelivered, which is the at-least-once contract.
             _logger.LogWarning(ex, "Outbox entry {EntryId} was published but could not be marked delivered.", claim.Entry.Id);
         }
+
+        return false;
     }
 
     private static OutboxTransportLease CreateExclusiveTransportLease(

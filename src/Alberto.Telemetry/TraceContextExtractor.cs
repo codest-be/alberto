@@ -35,10 +35,10 @@ internal static class TraceContextExtractor
         if (traceContext is null)
             return null;
 
-        // W3C traceparent format: 00-{traceId}-{spanId}-01
         if (!ActivityContext.TryParse(
-            $"00-{traceContext.TraceId}-{traceContext.SpanId}-01",
-            null,
+            traceContext.TraceParent,
+            traceContext.TraceState,
+            isRemote: true,
             out var activityContext))
             return null;
 

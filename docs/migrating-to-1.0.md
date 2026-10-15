@@ -1071,6 +1071,20 @@ Unparking after 1.0 is `IsPackable=true` on both projects plus capturing their
 
 ---
 
+### TC-1: trace context is stored as W3C `traceparent`; `TraceContext` changed shape
+
+Appends now stamp `traceparent` (and `tracestate`) into event metadata instead of `_traceId` and
+`_spanId`, and they do so whenever an activity is current, even with telemetry disabled. Stored
+events with the old keys are still read.
+
+`Alberto.Diagnostics.TraceContext` changed from `(string TraceId, string SpanId)` to
+`(string TraceParent, string? TraceState = null)`, so a custom `ITraceContextProvider` must return
+the full W3C value, sampled flag included. The `Alberto.Telemetry.TelemetryAppendInterceptor`
+key constants are gone with the stamping, which moved into core. Anything reading `_traceId` from
+metadata by hand should read `traceparent`.
+
+---
+
 ### OR-1: delivered outbox entries are deleted after 7 days by default; migration 034 required
 
 `WithOutbox` now registers an `OutboxRetentionService` alongside the relay. Every hour it deletes

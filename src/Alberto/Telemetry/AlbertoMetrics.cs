@@ -57,6 +57,20 @@ public static class AlbertoMetrics
         Meter.CreateCounter<long>("alberto.dead_letters", "events", "Number of events moved to dead letter");
 
     /// <summary>
+    /// Counter for outbox messages handed to the transport. Carries no tags: tenant and message
+    /// type are unbounded as metric dimensions.
+    /// </summary>
+    public static readonly Counter<long> OutboxPublished =
+        Meter.CreateCounter<long>("alberto.outbox.published", "messages", "Number of outbox messages published to the transport");
+
+    /// <summary>
+    /// Counter for failed outbox publish attempts, tagged with <c>error.type</c>. A published
+    /// message whose delivered-mark could not be written is not a failed publish.
+    /// </summary>
+    public static readonly Counter<long> OutboxPublishFailures =
+        Meter.CreateCounter<long>("alberto.outbox.publish.failures", "failures", "Number of failed outbox publish attempts");
+
+    /// <summary>
     /// Counter for retry attempts.
     /// </summary>
     public static readonly Counter<long> Retries =
@@ -244,6 +258,13 @@ public static class AlbertoMetrics
     /// </remarks>
     public static readonly Histogram<double> ProcessingDuration =
         Meter.CreateHistogram<double>("alberto.processing.duration", "s", "Duration of event processing operations");
+
+    /// <summary>
+    /// Histogram for the time from an outbox entry being written to its message being handed
+    /// to the transport. Measured on the publish that succeeded, so retries show up as latency.
+    /// </summary>
+    public static readonly Histogram<double> OutboxDeliveryLatency =
+        Meter.CreateHistogram<double>("alberto.outbox.delivery.latency", "s", "Time from outbox entry creation to successful publish");
 
     #endregion
 

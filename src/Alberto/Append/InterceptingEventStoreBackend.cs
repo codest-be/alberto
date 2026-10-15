@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using Alberto.Diagnostics;
+
 namespace Alberto.Append;
 
 /// <summary>
@@ -30,11 +33,41 @@ internal sealed class InterceptingEventStoreBackend(IEventStoreBackend inner, IA
         return _pipeline.ExecuteAsync(
             context,
             ctx => _inner.AppendAsync(
-                ctx.Events,
+                StampTraceContext(ctx.Events),
                 ctx.DcbQuery,
                 ctx.ExpectedPosition,
                 cancellationToken),
             cancellationToken);
+    }
+
+    /// <summary>
+    /// Stamps the current trace context into each event's metadata. Done here, innermost in the
+    /// pipeline and independent of telemetry being enabled, so the context is the Alberto.Append
+    /// span's when there is one and the caller's ambient activity otherwise.
+    /// </summary>
+    private static IReadOnlyList<IEventToPersist> StampTraceContext(IReadOnlyList<IEventToPersist> events)
+    {
+        if (Activity.Current is not { } activity)
+            return events;
+
+        var context = new Dictionary<string, string>();
+        TraceContextPropagation.Inject(activity, context);
+
+        return events.Select(evt =>
+        {
+            var metadata = new Dictionary<string, string>(evt.Metadata);
+            foreach (var (key, value) in context)
+                metadata[key] = value;
+
+            return (IEventToPersist)new EventToPersist
+            {
+                Id = evt.Id,
+                EventType = evt.EventType,
+                Tags = evt.Tags,
+                EventData = evt.EventData,
+                Metadata = metadata
+            };
+        }).ToList();
     }
 
     /// <inheritdoc />

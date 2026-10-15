@@ -488,12 +488,22 @@ yourself.
 | `Alberto.Consume` | One event through the middleware chain |
 | `Alberto.Process` | One handler's work |
 
-The append writes its trace and span ids into the event's `metadata` (as `_traceId` and `_spanId`),
-and the consume middleware turns them back into an **`ActivityLink`** on the `Alberto.Consume`
-span. A link rather than a parent, because the consumer runs minutes later on a different loop and
-is not a child of the request that wrote the event, but the seam between the synchronous write and
-the asynchronous consumer is still navigable in the trace, which is the thing that is otherwise
-impossible to debug.
+The append stamps the current trace context into each event's `metadata` as W3C `traceparent`
+(and `tracestate`, when non-empty), whether or not telemetry is enabled: it is the `Alberto.Append`
+span's when there is one and the caller's ambient activity otherwise. Events stored by older
+versions carry `_traceId`/`_spanId` instead and are still read. The consume middleware turns the
+context back into an **`ActivityLink`** on the `Alberto.Consume` span. A link rather than a parent,
+because the consumer runs minutes later on a different loop and is not a child of the request that
+wrote the event, but the seam between the synchronous write and the asynchronous consumer is still
+navigable in the trace, which is the thing that is otherwise impossible to debug.
+
+The outbox continues the trace: an entry copies the source event's context, and the relay wraps
+each publish attempt in a `send {MessageType}` producer span, parented to that context, tagged
+`messaging.message.id`, `alberto.tenant.id` and `alberto.outbox.attempt`, with `error.type` on
+failure. It writes that span's `traceparent`/`tracestate` into `ExternalMessage.Metadata`, so a
+transport that forwards metadata as headers carries the trace to the receiver. The span's
+`alberto.outbox.marked_delivered` attribute says whether the delivered-mark landed; a failed mark
+is not a failed publish.
 
 **Metrics**
 
@@ -508,6 +518,8 @@ impossible to debug.
 | `alberto.tenant_locks_acquired`, `alberto.tenant_lock_failures` | Lease churn: tagged by `consumer.id`, **not** by tenant |
 | `alberto.append.duration` | Write latency, including the advisory lock wait |
 | `alberto.processing.duration` | Per-handler latency |
+| `alberto.outbox.published`, `alberto.outbox.publish.failures` | Outbox relay throughput and failed attempts (failures tagged `error.type`) |
+| `alberto.outbox.delivery.latency` | Seconds from outbox entry creation to successful publish; includes retries |
 | `alberto.head.stalled` | Seconds the stable-head barrier has held the head back; **any sustained non-zero value** |
 
 `alberto.head.stalled` (Postgres, tagged by `module` and, for a sharded module, `shard`) reads 0

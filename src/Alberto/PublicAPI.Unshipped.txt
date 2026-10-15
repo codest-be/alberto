@@ -28,3 +28,16 @@ Alberto.IGeneratedEvolver<TState>.EvolveTable() -> System.Collections.Generic.IR
 Alberto.IGeneratedEvolver<TState>.GeneratedFor.get -> System.Type!
 Alberto.Upcasting.UpcasterDeclarationBuilder<TEvent>.From<TOld, TNew>(int fromVersion, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TOld!>! oldShape, System.Func<TOld!, TNew!>! transform) -> Alberto.Upcasting.UpcasterDeclarationBuilder<TEvent>!
 Alberto.Upcasting.UpcasterDeclarationBuilder<TEvent>.From<TOld>(int fromVersion, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TOld!>! oldShape, System.Func<TOld!, TEvent>! transform) -> Alberto.Upcasting.UpcasterDeclarationBuilder<TEvent>!
+*REMOVED*Alberto.Diagnostics.TraceContext.SpanId.get -> string!
+*REMOVED*Alberto.Diagnostics.TraceContext.SpanId.init -> void
+*REMOVED*Alberto.Diagnostics.TraceContext.TraceContext(string! TraceId, string! SpanId) -> void
+*REMOVED*Alberto.Diagnostics.TraceContext.TraceId.get -> string!
+*REMOVED*Alberto.Diagnostics.TraceContext.TraceId.init -> void
+Alberto.Diagnostics.TraceContext.TraceContext(string! TraceParent, string? TraceState = null) -> void
+Alberto.Diagnostics.TraceContext.TraceParent.get -> string!
+Alberto.Diagnostics.TraceContext.TraceParent.init -> void
+Alberto.Diagnostics.TraceContext.TraceState.get -> string?
+Alberto.Diagnostics.TraceContext.TraceState.init -> void
+static readonly Alberto.Telemetry.AlbertoMetrics.OutboxDeliveryLatency -> System.Diagnostics.Metrics.Histogram<double>!
+static readonly Alberto.Telemetry.AlbertoMetrics.OutboxPublishFailures -> System.Diagnostics.Metrics.Counter<long>!
+static readonly Alberto.Telemetry.AlbertoMetrics.OutboxPublished -> System.Diagnostics.Metrics.Counter<long>!

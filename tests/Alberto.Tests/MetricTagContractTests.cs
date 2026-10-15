@@ -65,9 +65,12 @@ public sealed class MetricTagContractTests
                 ("alberto.concurrency.conflicts", "conflicts"),
                 ("alberto.tenant_locks_acquired", "locks"),
                 ("alberto.tenant_lock_failures",  "failures"),
+                ("alberto.outbox.published",       "messages"),
+                ("alberto.outbox.publish.failures", "failures"),
                 // Histograms
                 ("alberto.append.duration",       "s"),
                 ("alberto.processing.duration",   "s"),
+                ("alberto.outbox.delivery.latency", "s"),
                 // Observable gauges
                 ("alberto.processor.lag",         "events"),
                 ("alberto.head.stalled",          "s"),

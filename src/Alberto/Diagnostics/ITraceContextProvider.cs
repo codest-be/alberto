@@ -16,6 +16,6 @@ public interface ITraceContextProvider
 /// <summary>
 /// Represents W3C trace context extracted from event metadata.
 /// </summary>
-/// <param name="TraceId">The trace ID (32 hex characters).</param>
-/// <param name="SpanId">The span ID (16 hex characters).</param>
-public sealed record TraceContext(string TraceId, string SpanId);
+/// <param name="TraceParent">The W3C <c>traceparent</c> value, including the sampled flag.</param>
+/// <param name="TraceState">The W3C <c>tracestate</c> value, or <see langword="null"/> when there is none.</param>
+public sealed record TraceContext(string TraceParent, string? TraceState = null);

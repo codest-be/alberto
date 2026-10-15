@@ -5,22 +5,11 @@ namespace Alberto.Telemetry;
 
 /// <summary>
 /// Append interceptor that adds distributed tracing instrumentation.
-/// - Stores trace context (_traceId, _spanId) in event metadata
 /// - Creates "Alberto.Append" activity span
 /// - Records events being appended as Activity events (showing what was decided)
 /// </summary>
 internal sealed class TelemetryAppendInterceptor(bool recordEventTagValues = false) : IAppendInterceptor
 {
-    /// <summary>
-    /// Metadata key for the trace ID.
-    /// </summary>
-    public const string TraceIdKey = "_traceId";
-
-    /// <summary>
-    /// Metadata key for the span ID.
-    /// </summary>
-    public const string SpanIdKey = "_spanId";
-
     /// <inheritdoc />
     public async Task<IReadOnlyCollection<IEventEnvelope>> OnAppendingAsync(
         AppendContext context,
@@ -32,10 +21,6 @@ internal sealed class TelemetryAppendInterceptor(bool recordEventTagValues = fal
             ActivityKind.Producer);
 
         activity?.SetTag("events.count", context.Events.Count);
-
-        // Enrich events with trace context
-        var enrichedEvents = EnrichEventsWithTraceContext(context.Events, activity);
-        var enrichedContext = context.WithEvents(enrichedEvents);
 
         // Add each event being appended as an Activity event (shows "what was decided")
         foreach (var evt in context.Events)
@@ -53,7 +38,7 @@ internal sealed class TelemetryAppendInterceptor(bool recordEventTagValues = fal
         var sw = Stopwatch.StartNew();
         try
         {
-            var result = await next(enrichedContext);
+            var result = await next(context);
 
             activity?.SetStatus(ActivityStatusCode.Ok);
 
@@ -107,33 +92,4 @@ internal sealed class TelemetryAppendInterceptor(bool recordEventTagValues = fal
         recordEventTagValues
             ? string.Join(",", tags.Select(t => t.Value))
             : string.Join(",", tags.Select(t => t.Concept).Distinct(StringComparer.Ordinal));
-
-    private static IReadOnlyList<IEventToPersist> EnrichEventsWithTraceContext(
-        IReadOnlyList<IEventToPersist> events,
-        Activity? activity)
-    {
-        if (activity is null)
-            return events;
-
-        var traceId = activity.TraceId.ToString();
-        var spanId = activity.SpanId.ToString();
-
-        return events.Select(evt =>
-        {
-            var enrichedMetadata = new Dictionary<string, string>(evt.Metadata)
-            {
-                [TraceIdKey] = traceId,
-                [SpanIdKey] = spanId
-            };
-
-            return new EventToPersist
-            {
-                Id = evt.Id,
-                EventType = evt.EventType,
-                Tags = evt.Tags,
-                EventData = evt.EventData,
-                Metadata = enrichedMetadata
-            };
-        }).ToList();
-    }
 }

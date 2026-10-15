@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Alberto.Diagnostics;
 using Alberto.InMemory;
 using Alberto.Telemetry;
@@ -51,7 +52,7 @@ public sealed class TraceContextExtractorTests
     [Fact]
     public void ExtractTraceLink_ReturnsActivityLink_WhenTraceContextIsValid()
     {
-        var provider = new FixedTraceContextProvider(ValidTraceId, ValidSpanId);
+        var provider = new FixedTraceContextProvider($"00-{ValidTraceId}-{ValidSpanId}-01");
 
         var link = TraceContextExtractor.ExtractTraceLink(MakeEnvelope(), provider);
 
@@ -67,7 +68,7 @@ public sealed class TraceContextExtractorTests
         // Without this assertion the whole ActivityTagsCollection can be emptied and every
         // other test here still passes — the link is still returned and its context is
         // still correct, it just no longer says which event it came from.
-        var provider = new FixedTraceContextProvider(ValidTraceId, ValidSpanId);
+        var provider = new FixedTraceContextProvider($"00-{ValidTraceId}-{ValidSpanId}-01");
 
         var link = TraceContextExtractor.ExtractTraceLink(
             MakeEnvelope(globalPosition: 4242), provider);
@@ -80,12 +81,21 @@ public sealed class TraceContextExtractorTests
     }
 
     [Fact]
+    public void ExtractTraceLink_PreservesSampledFlagAndTraceState()
+    {
+        var provider = new FixedTraceContextProvider($"00-{ValidTraceId}-{ValidSpanId}-00", "vendor=x");
+
+        var context = TraceContextExtractor.ExtractTraceLink(MakeEnvelope(), provider)!.Value.Context;
+
+        Assert.Equal(ActivityTraceFlags.None, context.TraceFlags);
+        Assert.Equal("vendor=x", context.TraceState);
+    }
+
+    [Fact]
     public void ExtractTraceLink_ReturnsNull_WhenTraceIdsAreMalformed()
     {
         // Too short — ActivityContext.TryParse will reject these.
-        var provider = new FixedTraceContextProvider(
-            traceId: "not-a-hex-trace-id",
-            spanId: "bad");
+        var provider = new FixedTraceContextProvider("not-a-traceparent");
 
         var link = TraceContextExtractor.ExtractTraceLink(MakeEnvelope(), provider);
 
@@ -102,10 +112,10 @@ public sealed class TraceContextExtractorTests
             => null;
     }
 
-    private sealed class FixedTraceContextProvider(string traceId, string spanId)
+    private sealed class FixedTraceContextProvider(string traceParent, string? traceState = null)
         : ITraceContextProvider
     {
         public TraceContext? ExtractTraceContext(IReadOnlyDictionary<string, string> metadata)
-            => new TraceContext(traceId, spanId);
+            => new TraceContext(traceParent, traceState);
     }
 }
