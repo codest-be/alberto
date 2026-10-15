@@ -1,1 +1,3 @@
 #nullable enable
+*REMOVED*Alberto.Messaging.OutboxRelay.OutboxRelay(Alberto.Messaging.IOutboxStore! store, Alberto.Messaging.IMessageTransport! transport, System.TimeSpan? pollingInterval = null, int batchSize = 100, System.TimeSpan? claimLease = null, string? claimedBy = null) -> void
+Alberto.Messaging.OutboxRelay.OutboxRelay(Alberto.Messaging.IOutboxStore! store, Alberto.Messaging.IMessageTransport! transport, System.TimeSpan? pollingInterval = null, int batchSize = 100, System.TimeSpan? claimLease = null, string? claimedBy = null, Microsoft.Extensions.Logging.ILogger<Alberto.Messaging.OutboxRelay!>? logger = null) -> void
