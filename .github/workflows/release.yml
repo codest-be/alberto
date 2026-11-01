@@ -80,11 +80,13 @@ jobs:
         id: version
         env:
           GH_TOKEN: ${{ github.token }}
+          MILESTONE: ${{ inputs.milestone }}
+          VERSION_INPUT: ${{ inputs.version }}
         run: |
           VERSION=$(.github/scripts/resolve-version.sh \
             "${{ github.repository }}" \
-            "${{ inputs.milestone }}" \
-            "${{ inputs.version }}")
+            "$MILESTONE" \
+            "$VERSION_INPUT")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Version: $VERSION"
 
@@ -107,11 +109,12 @@ jobs:
       - name: Summary
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
           {
             echo "## Release ${VERSION}"
             echo
-            if [ "${{ inputs.dry_run }}" = "true" ]; then
+            if [ "$DRY_RUN" = "true" ]; then
               echo "> Dry run — nothing was written and no pull request was opened."
               echo
             fi
