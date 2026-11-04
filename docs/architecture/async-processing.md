@@ -73,7 +73,23 @@ Attempts exhausted ────────────────────�
                              └─ no  → skip event
 ```
 
-A separate retry loop picks up dead letters that an operator has marked for retry (`IDeadLetterStore.MarkForRetryAsync`, exposed as `alberto ops dead-letters retry`).
+A separate retry loop picks up dead letters that an operator has marked for retry (`IDeadLetterStore.MarkForRetryAsync`, exposed as `alberto ops dead-letters retry`) and dead letters that are due for automatic redelivery.
+
+**Reactors redeliver; projections halt.** The tail above depends on the processor's kind.
+
+- A **reactor** (and a message subscription) dead-letters, and the dead letter gets a
+  `next_retry_at` when its error is redeliverable (transient, or unknown with the default
+  `RedeliverWhen`; never permanent). The retry loop claims rows that are `retry_requested` **or**
+  `next_retry_at <= now`, with `now` from the application's `TimeProvider`. A repeat failure
+  updates the same row (`redelivery_count` + 1, a longer `next_retry_at`, claim released). After
+  `MaxRedeliveries` the row keeps `next_retry_at = NULL`: parked, still retryable by hand.
+- A **projection** never dead-letters. It stays on the failing event, never advances the
+  checkpoint past it, and retries it in place on the halt backoff (`HaltOptions`) until it works,
+  waiting on the injected `TimeProvider`. Each processor has its own loop, so one halted projection
+  does not hold the others. While halted, `IsFaulted` and the processor's health are true, the
+  error log names the processor and position, and `alberto.processor.halted` is above zero.
+- The **outbox handler** is a reactor that halts: redelivering a failed mapping would publish
+  out of order, and the failure is a local database write.
 
 ## Key Components
 
@@ -137,6 +153,12 @@ The table below shows how each knob is set in code and in configuration:
 | Max retries | `.WithControlLoop(o => o with { Retry = o.Retry with { MaxRetries = ... } })` | 3 | `ControlLoop:Retry:MaxRetries` |
 | Retry delay | `.WithControlLoop(o => o with { Retry = o.Retry with { RetryDelay = ... } })` | 1 s, doubling to 30 s | `ControlLoop:Retry:RetryDelay` |
 | Dead-letter on exhaustion | `.WithControlLoop(o => o with { Retry = o.Retry with { DeadLetterOnMaxRetries = ... } })` | `true` | `ControlLoop:Retry:DeadLetterOnMaxRetries` |
+| Redelivery on/off | `.WithControlLoop(o => o with { Redelivery = o.Redelivery with { Enabled = ... } })` | `true` | `ControlLoop:Redelivery:Enabled` |
+| Max redeliveries | `Redelivery = o.Redelivery with { MaxRedeliveries = ... }` | 10 | `ControlLoop:Redelivery:MaxRedeliveries` |
+| Redelivery waits | `FirstDelay`, `BackoffMultiplier`, `MaxDelay` | 1 min, x4, 12 h | `ControlLoop:Redelivery:FirstDelay` etc. |
+| Which errors redeliver | `RedeliverWhen` (`Transient` or `TransientOrUnknown`) | `TransientOrUnknown` | `ControlLoop:Redelivery:RedeliverWhen` |
+| Projection halt waits | `Halt = o.Halt with { InitialDelay, BackoffMultiplier, MaxDelay }` | 1 s, x2, 1 min | `ControlLoop:Halt:InitialDelay` etc. |
+| Per processor | `ProcessorExecutionOptions { Retry, Halt, Redelivery }` | module value | `Processors:<id>:Redelivery:...`, `:Halt:...`, `:Retry:...` |
 
 ## Module Configuration Example
 

@@ -95,6 +95,19 @@ A complete example covering all sections:
             "MaxRetryDelay": "00:00:30",
             "DeadLetterOnMaxRetries": true
           },
+          "Redelivery": {
+            "Enabled": true,
+            "MaxRedeliveries": 10,
+            "FirstDelay": "00:01:00",
+            "BackoffMultiplier": 4.0,
+            "MaxDelay": "12:00:00",
+            "RedeliverWhen": "TransientOrUnknown"
+          },
+          "Halt": {
+            "InitialDelay": "00:00:01",
+            "BackoffMultiplier": 2.0,
+            "MaxDelay": "00:01:00"
+          },
           "DeadLetterRetry": {
             "PollingInterval": "00:01:00",
             "BatchSize": 10,
@@ -466,6 +479,7 @@ surfacing them in one error message.
 | `ALB0024` | Retired. The in-memory backend now provides an `IProcessorLeaseManager` and a fenced checkpoint store, so `Leases.Enabled = true` works with `.WithInMemory()` | — |
 | `ALB0025` | `Leases.Enabled = true` but no `IProcessorLeaseManager` is registered under the module key, so leases can never be acquired, renewed or fenced. Only reachable through a custom `IAlbertoBackendDescriptor`. The built-in backends both register a manager, so neither can reach this | Register an `IProcessorLeaseManager` for the module, switch to `.WithPostgres(...)`, or disable leases |
 | `ALB0026` | `AddAlberto` was called twice with the same module key | Give each module its own key. To extend a module declared elsewhere, hold onto the `DcbModuleBuilder` rather than calling `AddAlberto` again |
+| `ALB0028` | A processor that halts on failure (a projection, or the outbox handler) has `Redelivery` or `Retry:DeadLetterOnMaxRetries` set under `Processors:<id>`. A halting processor never dead-letters | Remove them. Tune its waits with `Processors:<id>:Halt` |
 | `ALB0027` | `AddEfProjection` on a module that declared `.WithTenancy()`. `IProjectionEntity` has no tenant column, so the EF state store and the inline projection both load and write by `(DocumentId, RebuildVersion)` alone, so two tenants producing the same document id share one row | If this declaration's ids are already unique across every tenant (a GUID aggregate id, say), state it: `AddEfProjection<TEntity, TDbContext>(declaration, documentIds: EfDocumentIdUniqueness.AcrossTenants)`. If they are not, prefix a tenant discriminator the event itself carries, give each tenant its own database with `.WithTenancy(t => t.AcrossPostgresDatabases(...))`, or use the JSONB store via `AddProjection`, whose tenancy is part of the migrated schema |
 
 Three of these are raised outside `AlbertoModuleValidator`, because they are about
