@@ -112,7 +112,7 @@ internal sealed class DefaultErrorClassifier : IErrorClassifier
         // Check inner exception if we haven't classified yet
         if (ex.InnerException is not null)
         {
-            var innerClassification = ClassifyCore(ex.InnerException);
+            var innerClassification = Instance.Classify(ex.InnerException);
             if (innerClassification != ErrorClassification.Unknown)
                 return innerClassification;
         }

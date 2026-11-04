@@ -115,6 +115,26 @@ public sealed class CommandHandlerTests
     }
 
     [Fact]
+    public void DeadLetters_HumanMode_ShowsNextRetryOrParked()
+    {
+        var output = new TestOutput();
+        var target = new ShardTarget(null, "Host=localhost", "public");
+        var due = new DateTimeOffset(2030, 1, 2, 3, 4, 5, TimeSpan.Zero);
+        var results = Success(target, (IReadOnlyList<DeadLetterInfo>)
+        [
+            new DeadLetterInfo(Guid.NewGuid(), "a", "OrderPlaced", 1, "boom", null, null) { NextRetryAt = due },
+            new DeadLetterInfo(Guid.NewGuid(), "b", "OrderPlaced", 2, "boom", null, null),
+        ]);
+
+        DeadLettersCommand.Render(output, [target], results, json: false);
+
+        var (headers, rows) = output.TableCalls.Single();
+        var column = Array.IndexOf(headers, "Next Retry");
+        column.Should().BeGreaterThanOrEqualTo(0);
+        rows.Select(r => r[column]).Should().Equal("2030-01-02 03:04:05", "parked");
+    }
+
+    [Fact]
     public void DeadLetters_ShardFailure_ReturnsExitCode1()
     {
         var output = new TestOutput();

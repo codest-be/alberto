@@ -77,14 +77,15 @@ public static class DeadLettersCommand
                 d.GlobalPosition,
                 d.ErrorMessage,
                 d.TenantId,
-                failedAt = d.FailedAt?.ToString("O")
+                failedAt = d.FailedAt?.ToString("O"),
+                nextRetryAt = d.NextRetryAt?.ToString("O")
             }));
         }
         else
         {
             ShardRun.Table(
                 output, targets, results,
-                ["ID", "Processor ID", "Event Type", "Position", "Tenant ID", "Error", "Failed At"],
+                ["ID", "Processor ID", "Event Type", "Position", "Tenant ID", "Error", "Failed At", "Next Retry"],
                 d =>
                 [
                     d.Id.ToString(),
@@ -93,7 +94,8 @@ public static class DeadLettersCommand
                     d.GlobalPosition?.ToString() ?? "-",
                     d.TenantId ?? "-",
                     TruncateError(d.ErrorMessage),
-                    d.FailedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"
+                    d.FailedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-",
+                    d.NextRetryAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "parked"
                 ],
                 "No dead letters found.");
         }

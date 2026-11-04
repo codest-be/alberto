@@ -63,7 +63,14 @@ public sealed record DeadLetterInfo(
     long? GlobalPosition,
     string? ErrorMessage,
     DateTimeOffset? FailedAt,
-    string? TenantId);
+    string? TenantId)
+{
+    /// <summary>
+    /// When automatic redelivery will dispatch this dead letter again. Null when it is parked
+    /// for a manual retry.
+    /// </summary>
+    public DateTimeOffset? NextRetryAt { get; init; }
+}
 
 /// <summary>
 /// Event summary returned by admin inspection queries.

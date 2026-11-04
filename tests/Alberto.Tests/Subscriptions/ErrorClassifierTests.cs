@@ -10,6 +10,29 @@ public class ErrorClassifierTests
 {
     private readonly IErrorClassifier _classifier = DefaultErrorClassifier.Instance;
 
+    #region Wrapped Errors
+
+    [Fact]
+    public void Classify_SocketExceptionBehindWrappers_ShouldReturnTransient()
+    {
+        // A handler wrapping a failure in its own exception, an aggregate in between.
+        var ex = new InvalidOperationException(
+            "Sending failed",
+            new AggregateException(new HttpRequestException("no route", new SocketException((int)SocketError.HostUnreachable))));
+
+        Assert.Equal(ErrorClassification.Transient, _classifier.Classify(ex));
+    }
+
+    [Fact]
+    public void Classify_WrappedWithNothingRecognisable_ShouldReturnUnknown()
+    {
+        var ex = new InvalidOperationException("outer", new InvalidOperationException("inner"));
+
+        Assert.Equal(ErrorClassification.Unknown, _classifier.Classify(ex));
+    }
+
+    #endregion
+
     #region Transient Errors
 
     [Fact]

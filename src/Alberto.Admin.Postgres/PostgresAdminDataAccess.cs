@@ -277,7 +277,7 @@ public sealed class PostgresAdminDataAccess : IAdminReader
 
         cmd.CommandText = $"""
             SELECT id, processor_id, event_type, global_position, error_message, failed_at,
-                   {tenantSelection}
+                   {tenantSelection}, next_retry_at
             FROM {_schema.Table("alberto_dead_letter_events")}
             {whereClause}
             ORDER BY failed_at DESC
@@ -295,7 +295,10 @@ public sealed class PostgresAdminDataAccess : IAdminReader
                 reader.IsDBNull(3) ? null : reader.GetInt64(3),
                 reader.IsDBNull(4) ? null : reader.GetString(4),
                 reader.IsDBNull(5) ? null : reader.GetFieldValue<DateTimeOffset>(5),
-                reader.IsDBNull(6) ? null : reader.GetString(6)));
+                reader.IsDBNull(6) ? null : reader.GetString(6))
+            {
+                NextRetryAt = reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7),
+            });
         }
 
         return result;
