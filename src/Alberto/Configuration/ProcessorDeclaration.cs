@@ -28,6 +28,14 @@ public sealed record ProcessorDeclaration
     public ProcessorExecutionOptions Execution { get; init; } = ProcessorExecutionOptions.Default;
 
     /// <summary>
+    /// Whether a failing event halts the processor instead of being dead-lettered. Always true
+    /// for a <see cref="ProcessorKind.Projection"/>. A reactor sets it when the order of its
+    /// effects matters more than moving on, as the outbox handler does. Halted processors have
+    /// no dead letters and no redelivery; see <see cref="HaltOptions"/>.
+    /// </summary>
+    public bool HaltsOnFailure { get; init; }
+
+    /// <summary>
     /// The handler type the processor id was derived from, when there is one.
     /// Null for processors registered from a bare lambda.
     /// </summary>

@@ -1,1 +1,32 @@
 #nullable enable
+Alberto.Configuration.HaltOptions
+Alberto.Configuration.HaltOptions.BackoffMultiplier.get -> double
+Alberto.Configuration.HaltOptions.BackoffMultiplier.init -> void
+Alberto.Configuration.HaltOptions.CalculateDelay(int attemptNumber) -> System.TimeSpan
+Alberto.Configuration.HaltOptions.InitialDelay.get -> System.TimeSpan
+Alberto.Configuration.HaltOptions.InitialDelay.init -> void
+Alberto.Configuration.HaltOptions.MaxDelay.get -> System.TimeSpan
+Alberto.Configuration.HaltOptions.MaxDelay.init -> void
+Alberto.Configuration.HaltOverrides
+Alberto.Configuration.HaltOverrides.ApplyTo(Alberto.Configuration.HaltOptions! options) -> Alberto.Configuration.HaltOptions!
+Alberto.Configuration.HaltOverrides.BackoffMultiplier.get -> double?
+Alberto.Configuration.HaltOverrides.BackoffMultiplier.set -> void
+Alberto.Configuration.HaltOverrides.HaltOverrides() -> void
+Alberto.Configuration.HaltOverrides.InitialDelay.get -> System.TimeSpan?
+Alberto.Configuration.HaltOverrides.InitialDelay.set -> void
+Alberto.Configuration.HaltOverrides.MaxDelay.get -> System.TimeSpan?
+Alberto.Configuration.HaltOverrides.MaxDelay.set -> void
+Alberto.Configuration.ControlLoopOptions.Halt.get -> Alberto.Configuration.HaltOptions!
+Alberto.Configuration.ControlLoopOptions.Halt.init -> void
+Alberto.Configuration.ControlLoopOverrides.Halt.get -> Alberto.Configuration.HaltOverrides?
+Alberto.Configuration.ControlLoopOverrides.Halt.set -> void
+Alberto.Configuration.ProcessorDeclaration.HaltsOnFailure.get -> bool
+Alberto.Configuration.ProcessorDeclaration.HaltsOnFailure.init -> void
+Alberto.Subscriptions.ProcessorExecutionOptions.Halt.get -> Alberto.Configuration.HaltOverrides?
+Alberto.Subscriptions.ProcessorExecutionOptions.Halt.init -> void
+Alberto.Subscriptions.ProcessorExecutionOptions.Retry.get -> Alberto.Configuration.RetryOverrides?
+Alberto.Subscriptions.ProcessorExecutionOptions.Retry.init -> void
+Alberto.Subscriptions.ProcessorExecutionOverrides.Halt.get -> Alberto.Configuration.HaltOverrides?
+Alberto.Subscriptions.ProcessorExecutionOverrides.Halt.set -> void
+Alberto.Subscriptions.ProcessorExecutionOverrides.Retry.get -> Alberto.Configuration.RetryOverrides?
+Alberto.Subscriptions.ProcessorExecutionOverrides.Retry.set -> void

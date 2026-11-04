@@ -87,6 +87,9 @@ public static class MessagingBuilderExtensions
         {
             ProcessorId = OutboxHandler.ProcessorIdValue,
             Kind = ProcessorKind.Reactor,
+            // Redelivering a failed mapping later would publish messages out of order, and the
+            // failure is a local database write: halt in place like a projection.
+            HaltsOnFailure = true,
             Execution = ProcessorExecutionOptions.Default with { TraceParenting = TraceParenting.Parent },
             HandlerType = typeof(OutboxHandler),
         });

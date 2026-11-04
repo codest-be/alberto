@@ -54,6 +54,16 @@ public sealed class RetryOverrides : IAlbertoOverrides<RetryOptions>
     /// <summary>Mirror of <see cref="RetryOptions.DeadLetterOnMaxRetries"/>.</summary>
     public bool? DeadLetterOnMaxRetries { get; set; }
 
+    /// <summary>Fields set here win; the rest come from <paramref name="baseline"/>.</summary>
+    internal RetryOverrides MergeOver(RetryOverrides? baseline) => new()
+    {
+        MaxRetries = MaxRetries ?? baseline?.MaxRetries,
+        RetryDelay = RetryDelay ?? baseline?.RetryDelay,
+        BackoffMultiplier = BackoffMultiplier ?? baseline?.BackoffMultiplier,
+        MaxRetryDelay = MaxRetryDelay ?? baseline?.MaxRetryDelay,
+        DeadLetterOnMaxRetries = DeadLetterOnMaxRetries ?? baseline?.DeadLetterOnMaxRetries,
+    };
+
     /// <inheritdoc />
     public RetryOptions ApplyTo(RetryOptions options)
     {

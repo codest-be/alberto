@@ -16,7 +16,7 @@ namespace Alberto.Subscriptions;
 /// On unrecoverable failures (errors that escape the middleware chain): stops,
 /// logs Critical, preserves checkpoint for retry on restart.
 /// </summary>
-public sealed class ControlLoop : IHostedService, IAsyncDisposable
+public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserver
 {
     private readonly IEventProcessor _processor;
     private readonly EventStoreHead _head;
@@ -52,7 +52,30 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
 
     private static readonly TimeSpan MaxInfrastructureBackoff = TimeSpan.FromSeconds(30);
 
-    public bool IsFaulted { get; private set; }
+    private bool _isFaulted;
+    private int _haltedCount;
+
+    /// <summary>
+    /// True when the loop has stopped on an unrecoverable error, or while a projection event is
+    /// halting it (see <see cref="Configuration.HaltOptions"/>). A halt clears when the event succeeds.
+    /// </summary>
+    public bool IsFaulted
+    {
+        get => _isFaulted || Volatile.Read(ref _haltedCount) > 0;
+        private set => _isFaulted = value;
+    }
+
+    void IHaltObserver.Halted(long globalPosition)
+    {
+        Interlocked.Increment(ref _haltedCount);
+        ReportFaulted();
+    }
+
+    void IHaltObserver.Resumed()
+    {
+        if (Interlocked.Decrement(ref _haltedCount) == 0 && !_isFaulted)
+            _healthState?.Report(ProcessorId, isFaulted: false, lag: 0, _timeProvider.GetUtcNow());
+    }
     public string ProcessorId => _processor.ProcessorId;
 
     internal ControlLoop(
@@ -740,6 +763,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
             Envelope = evt,
             IsRebuild = _processor.IsRebuilding,
             TraceParenting = _executionOptions.TraceParenting,
+            HaltObserver = this,
             CancellationToken = ct,
         };
 
@@ -766,6 +790,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable
             ModuleKey = _moduleKey,
             Envelopes = events,
             IsRebuild = _processor.IsRebuilding,
+            HaltObserver = this,
             CancellationToken = ct,
         };
 

@@ -22,6 +22,9 @@ public sealed class ConsumeEventContext : IMiddlewareContext
     /// </summary>
     internal bool DeadLetterStored { get; set; }
 
+    /// <summary>Told when this event starts and stops halting its processor. Null outside a control loop.</summary>
+    internal IHaltObserver? HaltObserver { get; init; }
+
     public Exception? LastError { get; set; }
     public CancellationToken CancellationToken { get; init; }
 }

@@ -59,6 +59,10 @@ internal sealed class ControlLoopAssembler
     /// only remaining trace that it happened — without it the drop is silent. Optional so tests
     /// can construct an assembler without a logging stack, but production paths must supply one.
     /// </param>
+    /// <param name="policies">
+    /// Per-processor failure policy (halt or dead-letter, retry and halt options). Null treats
+    /// every processor as a dead-lettering one using <paramref name="retryOptions"/>.
+    /// </param>
     /// <param name="instruments">
     /// The container's instruments (<see cref="AlbertoInstruments.For"/>). Defaults to
     /// <see cref="AlbertoMetrics.Shared"/>, for tests.
@@ -71,7 +75,8 @@ internal sealed class ControlLoopAssembler
         IDeadLetterStore? deadLetterStore,
         TimeProvider? timeProvider = null,
         ILogger? logger = null,
-        AlbertoInstruments? instruments = null)
+        AlbertoInstruments? instruments = null,
+        ProcessorPolicies? policies = null)
     {
         _timeProvider = timeProvider ?? TimeProvider.System;
         _instruments = instruments ?? AlbertoMetrics.Shared;
@@ -82,11 +87,11 @@ internal sealed class ControlLoopAssembler
         //   processor.ProcessEventAsync    ← terminal
         var middlewares = new List<ConsumeMiddleware>(diMiddlewares)
         {
-            ConsumeMiddlewares.RetryAndDeadLetterOn(_instruments, retryOptions, classifier, deadLetterStore, _timeProvider, logger),
+            ConsumeMiddlewares.RetryAndDeadLetterOn(_instruments, retryOptions, classifier, deadLetterStore, _timeProvider, logger, policies),
         };
         var batchMiddlewares = new List<BatchConsumeMiddleware>(diBatchMiddlewares)
         {
-            BatchConsumeMiddlewares.RetryAndDeadLetterOn(_instruments, retryOptions, classifier, deadLetterStore, _timeProvider, logger),
+            BatchConsumeMiddlewares.RetryAndDeadLetterOn(_instruments, retryOptions, classifier, deadLetterStore, _timeProvider, logger, policies),
         };
 
         // A per-event middleware with no batch counterpart cannot be honoured on the batch

@@ -63,6 +63,8 @@ public sealed class MetricTagContractTests
                 ("alberto.processing.errors",     "errors"),
                 ("alberto.dead_letters",          "events"),
                 ("alberto.retries",               "attempts"),
+                ("alberto.processor.halts",       "halts"),
+                ("alberto.processor.halted",      "processors"),
                 ("alberto.concurrency.conflicts", "conflicts"),
                 ("alberto.tenant_locks_acquired", "locks"),
                 ("alberto.tenant_lock_failures",  "failures"),

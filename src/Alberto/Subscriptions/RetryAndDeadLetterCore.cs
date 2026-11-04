@@ -34,13 +34,15 @@ internal static class RetryAndDeadLetterCore
     /// reflects the actual number of events retried.
     /// </param>
     /// <param name="instruments">Where the retry counter is recorded.</param>
+    /// <param name="clock">Clock the backoff waits on. Defaults to <see cref="TimeProvider.System"/>.</param>
     internal static async Task<Exception?> ExecuteAsync(
         IMiddlewareContext context,
         RetryOptions retry,
         IErrorClassifier classifier,
         Func<Task> next,
         int retryMetricCount,
-        AlbertoInstruments instruments)
+        AlbertoInstruments instruments,
+        TimeProvider? clock = null)
     {
         Exception? lastError = null;
 
@@ -71,12 +73,87 @@ internal static class RetryAndDeadLetterCore
                     instruments.Retries.Add(retryMetricCount,
                         ProcessorTags.ForModule(context.ProcessorId, context.ModuleKey));
 
-                    await Task.Delay(retry.CalculateDelay(attempt), context.CancellationToken);
+                    await Task.Delay(retry.CalculateDelay(attempt), clock ?? TimeProvider.System, context.CancellationToken);
                 }
             }
         }
 
         return lastError; // exhausted or permanent — caller handles tail
+    }
+
+    /// <summary>
+    /// The projection tail: never dead-letter, never move on. Retries the failing event in
+    /// place on the halt backoff until it succeeds, reporting the processor as halted meanwhile.
+    /// Only cancellation ends it early.
+    /// </summary>
+    /// <remarks>
+    /// The log names the processor and the global position, never the event data. The loop
+    /// waits on the injected clock, so a test advances it instead of sleeping.
+    /// </remarks>
+    internal static async Task HaltAsync(
+        IMiddlewareContext context,
+        IHaltObserver? observer,
+        long globalPosition,
+        Exception firstError,
+        HaltOptions halt,
+        Func<Task> next,
+        TimeProvider clock,
+        ILogger? logger,
+        AlbertoInstruments instruments)
+    {
+        var tags = ProcessorTags.ForModule(context.ProcessorId, context.ModuleKey);
+
+        instruments.ProcessorHalts.Add(1, tags);
+        instruments.ProcessorsHalted.Add(1, tags);
+        observer?.Halted(globalPosition);
+
+        logger?.LogError(
+            firstError,
+            "Processor {ProcessorId} halted at event position {GlobalPosition}: the event cannot be " +
+            "processed, so the processor stays on it and retries in place without dead-lettering or " +
+            "skipping it. Later events wait until it succeeds.",
+            context.ProcessorId,
+            globalPosition);
+
+        try
+        {
+            for (var attempt = 1; ; attempt++)
+            {
+                await Task.Delay(halt.CalculateDelay(attempt), clock, context.CancellationToken);
+
+                context.Attempt++;
+                try
+                {
+                    await next();
+                    context.LastError = null;
+                    logger?.LogInformation(
+                        "Processor {ProcessorId} resumed after {Attempts} in-place retries at event position {GlobalPosition}.",
+                        context.ProcessorId,
+                        attempt,
+                        globalPosition);
+                    return;
+                }
+                catch (OperationCanceledException) when (context.CancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    context.LastError = ex;
+                    logger?.LogDebug(
+                        ex,
+                        "Processor {ProcessorId} is still halted at event position {GlobalPosition} (in-place retry {Attempt}).",
+                        context.ProcessorId,
+                        globalPosition,
+                        attempt);
+                }
+            }
+        }
+        finally
+        {
+            instruments.ProcessorsHalted.Add(-1, tags);
+            observer?.Resumed();
+        }
     }
 
     /// <summary>
