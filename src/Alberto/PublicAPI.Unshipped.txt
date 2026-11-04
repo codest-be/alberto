@@ -35,3 +35,43 @@ Alberto.Subscriptions.DeadLetterEntry.NextRetryAt.init -> void
 Alberto.Subscriptions.DeadLetterEntry.RedeliveryCount.get -> int
 Alberto.Subscriptions.DeadLetterEntry.RedeliveryCount.init -> void
 Alberto.Subscriptions.IClaimableDeadLetterStore.ClaimDueAsync(string! processorId, int batchSize, System.TimeSpan leaseDuration, string! claimedBy, System.DateTimeOffset now, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Alberto.Subscriptions.DeadLetterClaim!>!>!
+Alberto.Configuration.RedeliverWhen
+Alberto.Configuration.RedeliverWhen.Transient = 0 -> Alberto.Configuration.RedeliverWhen
+Alberto.Configuration.RedeliverWhen.TransientOrUnknown = 1 -> Alberto.Configuration.RedeliverWhen
+Alberto.Configuration.RedeliveryOptions
+Alberto.Configuration.RedeliveryOptions.Enabled.get -> bool
+Alberto.Configuration.RedeliveryOptions.Enabled.init -> void
+Alberto.Configuration.RedeliveryOptions.MaxRedeliveries.get -> int
+Alberto.Configuration.RedeliveryOptions.MaxRedeliveries.init -> void
+Alberto.Configuration.RedeliveryOptions.FirstDelay.get -> System.TimeSpan
+Alberto.Configuration.RedeliveryOptions.FirstDelay.init -> void
+Alberto.Configuration.RedeliveryOptions.BackoffMultiplier.get -> double
+Alberto.Configuration.RedeliveryOptions.BackoffMultiplier.init -> void
+Alberto.Configuration.RedeliveryOptions.MaxDelay.get -> System.TimeSpan
+Alberto.Configuration.RedeliveryOptions.MaxDelay.init -> void
+Alberto.Configuration.RedeliveryOptions.RedeliverWhen.get -> Alberto.Configuration.RedeliverWhen
+Alberto.Configuration.RedeliveryOptions.RedeliverWhen.init -> void
+Alberto.Configuration.RedeliveryOptions.CalculateDelay(int redeliveryNumber) -> System.TimeSpan
+Alberto.Configuration.RedeliveryOverrides
+Alberto.Configuration.RedeliveryOverrides.RedeliveryOverrides() -> void
+Alberto.Configuration.RedeliveryOverrides.Enabled.get -> bool?
+Alberto.Configuration.RedeliveryOverrides.Enabled.set -> void
+Alberto.Configuration.RedeliveryOverrides.MaxRedeliveries.get -> int?
+Alberto.Configuration.RedeliveryOverrides.MaxRedeliveries.set -> void
+Alberto.Configuration.RedeliveryOverrides.FirstDelay.get -> System.TimeSpan?
+Alberto.Configuration.RedeliveryOverrides.FirstDelay.set -> void
+Alberto.Configuration.RedeliveryOverrides.BackoffMultiplier.get -> double?
+Alberto.Configuration.RedeliveryOverrides.BackoffMultiplier.set -> void
+Alberto.Configuration.RedeliveryOverrides.MaxDelay.get -> System.TimeSpan?
+Alberto.Configuration.RedeliveryOverrides.MaxDelay.set -> void
+Alberto.Configuration.RedeliveryOverrides.RedeliverWhen.get -> Alberto.Configuration.RedeliverWhen?
+Alberto.Configuration.RedeliveryOverrides.RedeliverWhen.set -> void
+Alberto.Configuration.RedeliveryOverrides.ApplyTo(Alberto.Configuration.RedeliveryOptions! options) -> Alberto.Configuration.RedeliveryOptions!
+Alberto.Configuration.ControlLoopOptions.Redelivery.get -> Alberto.Configuration.RedeliveryOptions!
+Alberto.Configuration.ControlLoopOptions.Redelivery.init -> void
+Alberto.Configuration.ControlLoopOverrides.Redelivery.get -> Alberto.Configuration.RedeliveryOverrides?
+Alberto.Configuration.ControlLoopOverrides.Redelivery.set -> void
+Alberto.Subscriptions.ProcessorExecutionOptions.Redelivery.get -> Alberto.Configuration.RedeliveryOverrides?
+Alberto.Subscriptions.ProcessorExecutionOptions.Redelivery.init -> void
+Alberto.Subscriptions.ProcessorExecutionOverrides.Redelivery.get -> Alberto.Configuration.RedeliveryOverrides?
+Alberto.Subscriptions.ProcessorExecutionOverrides.Redelivery.set -> void

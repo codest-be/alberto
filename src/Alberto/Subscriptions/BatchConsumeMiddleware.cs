@@ -94,12 +94,17 @@ public static class BatchConsumeMiddlewares
                 return;
 
             var envelope = context.Envelopes[0];
+            var now = clock.GetUtcNow();
+            var (nextRetryAt, redeliveryCount) = RetryAndDeadLetterCore.PlanRedelivery(
+                policy, classifier, lastError, priorRedeliveries: null, now);
             var entry = DeadLetterEntryFactory.Create(
                 context.ProcessorId,
                 envelope,
                 lastError,
                 context.Attempt,
-                clock.GetUtcNow());
+                now,
+                nextRetryAt,
+                redeliveryCount);
 
             // A transient DB error on this write must not escape: the checkpoint would stay at
             // the pre-batch position and every event that already committed side-effects

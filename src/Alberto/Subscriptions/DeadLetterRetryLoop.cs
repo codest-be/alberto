@@ -145,11 +145,14 @@ internal sealed class DeadLetterRetryLoop(
             {
                 // Atomically claim a batch with a time-bounded lease. Until the lease expires
                 // (or we explicitly delete/release the row) no other worker will pick it up.
-                var retries = await _deadLetterStore.ClaimRetryRequestedAsync(
+                // Rows come back when an operator asked for them or their next_retry_at has
+                // arrived on the application clock (never the database's, so tests can drive it).
+                var retries = await _deadLetterStore.ClaimDueAsync(
                     _processor.ProcessorId,
                     _batchSize,
                     _claimLeaseDuration,
                     _claimedBy,
+                    _timeProvider.GetUtcNow(),
                     ct);
 
                 foreach (var claim in retries)
@@ -317,13 +320,13 @@ internal sealed class DeadLetterRetryLoop(
         if (scopeFactory is not null && !string.IsNullOrEmpty(entry.TenantId))
         {
             await using var scope = EventProcessingScope.Create(scopeFactory, entry.TenantId);
-            return await DispatchAsync(envelope, ct);
+            return await DispatchAsync(envelope, entry, ct);
         }
 
-        return await DispatchAsync(envelope, ct);
+        return await DispatchAsync(envelope, entry, ct);
     }
 
-    private async Task<ConsumeEventContext?> DispatchAsync(IEventEnvelope evt, CancellationToken ct)
+    private async Task<ConsumeEventContext?> DispatchAsync(IEventEnvelope evt, DeadLetterEntry entry, CancellationToken ct)
     {
         if (_middlewares.Count == 0)
         {
@@ -337,6 +340,7 @@ internal sealed class DeadLetterRetryLoop(
             ModuleKey = "",
             Envelope = evt,
             IsRebuild = _processor.IsRebuilding,
+            PriorRedeliveries = entry.RedeliveryCount,
             CancellationToken = ct,
         };
 

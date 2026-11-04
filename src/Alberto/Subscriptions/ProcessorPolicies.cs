@@ -8,7 +8,8 @@ namespace Alberto.Subscriptions;
 internal sealed record ProcessorPolicy(
     bool HaltsOnFailure,
     RetryOptions Retry,
-    HaltOptions Halt);
+    HaltOptions Halt,
+    RedeliveryOptions Redelivery);
 
 /// <summary>
 /// Resolves the failure policy of a processor from the module's validated definition: the
@@ -25,8 +26,17 @@ internal sealed class ProcessorPolicies
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, ProcessorPolicy> _resolved =
         new(StringComparer.Ordinal);
 
-    internal ProcessorPolicies(ControlLoopOptions module, IEnumerable<ProcessorDeclaration> declarations)
+    private readonly bool _retryLoop;
+
+    /// <param name="module">Module-wide options.</param>
+    /// <param name="declarations">The module's declared processors.</param>
+    /// <param name="retryLoop">
+    /// True for the dead-letter retry loop: a row there is already a dead letter (a reactor's,
+    /// or a projection's from before halting), so a failure is rescheduled, never halted on.
+    /// </param>
+    internal ProcessorPolicies(ControlLoopOptions module, IEnumerable<ProcessorDeclaration> declarations, bool retryLoop = false)
     {
+        _retryLoop = retryLoop;
         _module = module;
         _declarations = new Dictionary<string, ProcessorDeclaration>(StringComparer.Ordinal);
         foreach (var declaration in declarations)
@@ -34,13 +44,13 @@ internal sealed class ProcessorPolicies
     }
 
     /// <summary>The policies of a module, read from its validated definition.</summary>
-    internal static ProcessorPolicies For(IServiceProvider services, string moduleKey)
+    internal static ProcessorPolicies For(IServiceProvider services, string moduleKey, bool retryLoop = false)
     {
         var definition = services
             .GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>()
             .Get(moduleKey);
 
-        return new ProcessorPolicies(definition.ControlLoop, definition.Processors);
+        return new ProcessorPolicies(definition.ControlLoop, definition.Processors, retryLoop);
     }
 
     internal ProcessorPolicy For(string processorId) =>
@@ -55,13 +65,15 @@ internal sealed class ProcessorPolicies
 
         // A processor with no declaration is custom wiring: keep the dead-letter behaviour.
         if (!_declarations.TryGetValue(declaredId, out var declaration))
-            return new ProcessorPolicy(false, _module.Retry, _module.Halt);
+            return new ProcessorPolicy(false, _module.Retry, _module.Halt, _module.Redelivery);
 
         var execution = declaration.Execution;
         return new ProcessorPolicy(
-            declaration.Kind == ProcessorKind.Projection || declaration.HaltsOnFailure,
+            !_retryLoop && (declaration.Kind == ProcessorKind.Projection || declaration.HaltsOnFailure),
             execution.Retry?.ApplyTo(_module.Retry) ?? _module.Retry,
-            execution.Halt?.ApplyTo(_module.Halt) ?? _module.Halt);
+            execution.Halt?.ApplyTo(_module.Halt) ?? _module.Halt,
+            // A halting processor never dead-letters, so it never redelivers.
+            execution.Redelivery?.ApplyTo(_module.Redelivery) ?? _module.Redelivery);
     }
 }
 

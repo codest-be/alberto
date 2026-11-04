@@ -82,6 +82,38 @@ internal static class RetryAndDeadLetterCore
     }
 
     /// <summary>
+    /// When a freshly dead-lettered event should come back, and how many redeliveries it has had.
+    /// The wait is null (parked for manual retry) when redelivery is off, the budget is spent, or
+    /// the error is not one the policy redelivers.
+    /// </summary>
+    /// <param name="policy">The processor's policy. Null (legacy wiring) never redelivers.</param>
+    /// <param name="classifier">Judges whether the error is transient, permanent or unknown.</param>
+    /// <param name="error">The failure being dead-lettered.</param>
+    /// <param name="priorRedeliveries">Redeliveries the row had before this failure; null on the first dead-lettering.</param>
+    /// <param name="now">The application clock.</param>
+    internal static (DateTimeOffset? NextRetryAt, int RedeliveryCount) PlanRedelivery(
+        ProcessorPolicy? policy,
+        IErrorClassifier classifier,
+        Exception error,
+        int? priorRedeliveries,
+        DateTimeOffset now)
+    {
+        var count = priorRedeliveries is { } prior ? prior + 1 : 0;
+
+        if (policy?.Redelivery is not { Enabled: true } redelivery || count >= redelivery.MaxRedeliveries)
+            return (null, count);
+
+        var classification = classifier.Classify(error);
+        var redeliverable = classification == ErrorClassification.Transient
+            || (classification == ErrorClassification.Unknown
+                && redelivery.RedeliverWhen == RedeliverWhen.TransientOrUnknown);
+
+        return redeliverable
+            ? (now + redelivery.CalculateDelay(count + 1), count)
+            : (null, count);
+    }
+
+    /// <summary>
     /// The projection tail: never dead-letter, never move on. Retries the failing event in
     /// place on the halt backoff until it succeeds, reporting the processor as halted meanwhile.
     /// Only cancellation ends it early.
