@@ -58,6 +58,8 @@ jobs:
       # that disagrees is a mistake worth failing on, not a version worth guessing at.
       - name: Determine version
         id: version
+        env:
+          INPUT_VERSION_SUFFIX: ${{ inputs.version_suffix }}
         run: |
           PREFIX=$(sed -n 's:.*<VersionPrefix>\(.*\)</VersionPrefix>.*:\1:p' Directory.Build.props | head -1)
           if [ -z "$PREFIX" ]; then
@@ -75,7 +77,7 @@ jobs:
             echo "suffix=" >> "$GITHUB_OUTPUT"
             echo "Release version: $PREFIX"
           else
-            SUFFIX="${{ inputs.version_suffix }}"
+            SUFFIX="$INPUT_VERSION_SUFFIX"
             if [ -z "$SUFFIX" ]; then
               SUFFIX="beta.${{ github.run_number }}"
             fi
