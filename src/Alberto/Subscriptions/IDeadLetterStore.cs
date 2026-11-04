@@ -146,4 +146,23 @@ public interface IClaimableDeadLetterStore : IDeadLetterStore
     /// </summary>
     /// <returns><see langword="true"/> when the active claim was abandoned.</returns>
     Task<bool> AbandonRetryAsync(DeadLetterClaim claim, CancellationToken ct = default);
+
+    /// <summary>
+    /// As <see cref="ClaimRetryRequestedAsync"/>, and also claims entries whose
+    /// <see cref="DeadLetterEntry.NextRetryAt"/> is at or before <paramref name="now"/>, so
+    /// automatic redelivery needs no operator. <paramref name="now"/> is the application's
+    /// clock rather than the database's, so a test or a development clock drives it.
+    /// </summary>
+    /// <remarks>
+    /// The default claims only entries flagged for retry, which keeps a store written before
+    /// automatic redelivery working: its dead letters just stay parked until someone marks them.
+    /// </remarks>
+    Task<IReadOnlyList<DeadLetterClaim>> ClaimDueAsync(
+        string processorId,
+        int batchSize,
+        TimeSpan leaseDuration,
+        string claimedBy,
+        DateTimeOffset now,
+        CancellationToken ct = default)
+        => ClaimRetryRequestedAsync(processorId, batchSize, leaseDuration, claimedBy, ct);
 }

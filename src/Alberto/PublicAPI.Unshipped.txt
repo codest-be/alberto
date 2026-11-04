@@ -30,3 +30,8 @@ Alberto.Subscriptions.ProcessorExecutionOverrides.Halt.get -> Alberto.Configurat
 Alberto.Subscriptions.ProcessorExecutionOverrides.Halt.set -> void
 Alberto.Subscriptions.ProcessorExecutionOverrides.Retry.get -> Alberto.Configuration.RetryOverrides?
 Alberto.Subscriptions.ProcessorExecutionOverrides.Retry.set -> void
+Alberto.Subscriptions.DeadLetterEntry.NextRetryAt.get -> System.DateTimeOffset?
+Alberto.Subscriptions.DeadLetterEntry.NextRetryAt.init -> void
+Alberto.Subscriptions.DeadLetterEntry.RedeliveryCount.get -> int
+Alberto.Subscriptions.DeadLetterEntry.RedeliveryCount.init -> void
+Alberto.Subscriptions.IClaimableDeadLetterStore.ClaimDueAsync(string! processorId, int batchSize, System.TimeSpan leaseDuration, string! claimedBy, System.DateTimeOffset now, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Alberto.Subscriptions.DeadLetterClaim!>!>!

@@ -116,6 +116,24 @@ public sealed class InMemoryDeadLetterStore(TimeProvider? timeProvider = null) :
         TimeSpan leaseDuration,
         string claimedBy,
         CancellationToken ct = default)
+        => ClaimCore(processorId, batchSize, leaseDuration, claimedBy, dueAt: null);
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<DeadLetterClaim>> ClaimDueAsync(
+        string processorId,
+        int batchSize,
+        TimeSpan leaseDuration,
+        string claimedBy,
+        DateTimeOffset now,
+        CancellationToken ct = default)
+        => ClaimCore(processorId, batchSize, leaseDuration, claimedBy, dueAt: now);
+
+    private Task<IReadOnlyList<DeadLetterClaim>> ClaimCore(
+        string processorId,
+        int batchSize,
+        TimeSpan leaseDuration,
+        string claimedBy,
+        DateTimeOffset? dueAt)
     {
         if (leaseDuration <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(leaseDuration), "Lease duration must be positive.");
@@ -129,7 +147,7 @@ public sealed class InMemoryDeadLetterStore(TimeProvider? timeProvider = null) :
         // make the claim CAS-style.
         var candidates = _entries.Values
             .Where(e => e.ProcessorId == processorId
-                        && e.RetryRequested
+                        && (e.RetryRequested || (dueAt is { } due && e.NextRetryAt <= due))
                         && (e.ClaimExpiresAt is null || e.ClaimExpiresAt < now))
             .OrderBy(e => e.FailedAt)
             .Take(batchSize)

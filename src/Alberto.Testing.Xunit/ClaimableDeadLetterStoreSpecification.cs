@@ -145,6 +145,70 @@ public abstract class ClaimableDeadLetterStoreSpecification : DeadLetterStoreSpe
         Assert.False(stored.RetryRequested);
     }
 
+    // ── ClaimDueAsync (automatic redelivery) ──────────────────────────────────
+
+    /// <summary>
+    /// <c>ClaimDueAsync</c> claims rows whose <c>NextRetryAt</c> is at or before the supplied
+    /// <c>now</c> (inclusive boundary) and ignores later and unscheduled (NULL) rows.
+    /// </summary>
+    [Fact]
+    public async Task ClaimDueAsync_ClaimsOnlyRowsDueAtNow()
+    {
+        var store = await CreateClaimableStore();
+        var now = new DateTimeOffset(2030, 1, 1, 12, 0, 0, TimeSpan.Zero);
+        var due = NewEntry(ProcessorId) with { NextRetryAt = now };
+        await store.StoreAsync(due, Ct);
+        await store.StoreAsync(NewEntry(ProcessorId) with { NextRetryAt = now.AddSeconds(1) }, Ct);
+        await store.StoreAsync(NewEntry(ProcessorId), Ct);
+
+        var claims = await store.ClaimDueAsync(
+            ProcessorId, batchSize: 10, leaseDuration: TimeSpan.FromHours(1),
+            claimedBy: "worker-1", now: now, ct: Ct);
+
+        Assert.Equal(due.EventId, Assert.Single(claims).Entry.EventId);
+    }
+
+    /// <summary>A manual retry still claims an exhausted row (NULL <c>NextRetryAt</c>).</summary>
+    [Fact]
+    public async Task ClaimDueAsync_ManualRetryClaimsExhaustedRow()
+    {
+        var store = await CreateClaimableStore();
+        await store.StoreAsync(NewEntry(ProcessorId), Ct);
+        await store.MarkForRetryAsync(ProcessorId, Ct);
+
+        var claims = await store.ClaimDueAsync(
+            ProcessorId, batchSize: 10, leaseDuration: TimeSpan.FromHours(1),
+            claimedBy: "worker-1", now: DateTimeOffset.UtcNow, ct: Ct);
+
+        Assert.Single(claims);
+    }
+
+    /// <summary>A repeat failure of the same event overwrites the schedule on the same row.</summary>
+    [Fact]
+    public async Task StoreAsync_SameEvent_OverwritesScheduleOnSameRow()
+    {
+        var store = await CreateClaimableStore();
+        var first = DateTimeOffset.UtcNow.AddMinutes(1);
+        var second = first.AddMinutes(4);
+        var entry = NewEntry(ProcessorId) with { NextRetryAt = first, RedeliveryCount = 0 };
+        await store.StoreAsync(entry, Ct);
+
+        await store.StoreAsync(entry with
+        {
+            Id = Guid.NewGuid(), NextRetryAt = second, RedeliveryCount = 1,
+        }, Ct);
+
+        var stored = Assert.Single(await store.GetAsync(ProcessorId, null, 100, Ct));
+        Assert.Equal(entry.Id, stored.Id);
+        Assert.Equal(1, stored.RedeliveryCount);
+        Assert.Equal(second, stored.NextRetryAt!.Value, TimeSpan.FromMilliseconds(1));
+
+        await store.StoreAsync(entry with { Id = Guid.NewGuid(), NextRetryAt = null, RedeliveryCount = 2 }, Ct);
+        stored = Assert.Single(await store.GetAsync(ProcessorId, null, 100, Ct));
+        Assert.Null(stored.NextRetryAt);
+        Assert.Equal(2, stored.RedeliveryCount);
+    }
+
     // ── CompleteRetryAsync ────────────────────────────────────────────────────
 
     /// <summary>
