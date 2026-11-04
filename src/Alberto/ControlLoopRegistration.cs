@@ -145,7 +145,8 @@ internal static class ControlLoopRegistration
                 sp.GetKeyedService<IDeadLetterStore>(moduleKey),
                 sp.GetService<TimeProvider>(),
                 sp.GetService<ILoggerFactory>()?.CreateLogger($"Alberto.DeadLetter.{moduleKey}"),
-                AlbertoInstruments.For(sp));
+                AlbertoInstruments.For(sp),
+                ProcessorPolicies.For(sp, moduleKey));
 
             var healthState = sp.GetRequiredKeyedService<ProcessorHealthState>(moduleKey);
 
@@ -231,11 +232,13 @@ internal static class ControlLoopRegistration
 
             var classifier = Classifier(sp, moduleKey);
             var logger = sp.GetService<ILogger<DeadLetterRetryLoop>>();
+            var timeProvider = sp.GetService<TimeProvider>() ?? TimeProvider.System;
 
             var middlewares = new List<ConsumeMiddleware>(sp.GetKeyedServices<ConsumeMiddleware>(moduleKey))
             {
                 ConsumeMiddlewares.RetryAndDeadLetterOn(
-                    AlbertoInstruments.For(sp), options.Retry, classifier, deadLetterStore, timeProvider: null, logger),
+                    AlbertoInstruments.For(sp), options.Retry, classifier, deadLetterStore, timeProvider, logger,
+                    ProcessorPolicies.For(sp, moduleKey, retryLoop: true)),
             };
 
             var replicaId = options.Leases.EffectiveReplicaId;
@@ -267,6 +270,7 @@ internal static class ControlLoopRegistration
                     logger,
                     options.DeadLetterRetry.ClaimLease,
                     replicaId,
+                    timeProvider: timeProvider,
                     drainTimeout: options.DrainTimeout))
                 .ToList();
 

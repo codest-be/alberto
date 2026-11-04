@@ -325,3 +325,5 @@ const Alberto.Admin.AdminTags.DeadLetter = "admin-dl" -> string!
 const Alberto.Admin.AdminTags.Outbox = "admin-outbox" -> string!
 const Alberto.Admin.AdminTags.Rebuild = "admin-rebuild" -> string!
 const Alberto.Admin.AdminTags.TenantLease = "admin-tenant-lease" -> string!
+Alberto.Admin.DeadLetterInfo.NextRetryAt.get -> System.DateTimeOffset?
+Alberto.Admin.DeadLetterInfo.NextRetryAt.init -> void

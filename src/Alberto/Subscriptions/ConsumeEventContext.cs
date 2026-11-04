@@ -22,6 +22,15 @@ public sealed class ConsumeEventContext : IMiddlewareContext
     /// </summary>
     internal bool DeadLetterStored { get; set; }
 
+    /// <summary>
+    /// Set by the dead-letter retry loop to the redeliveries the row has had so far. Null on the
+    /// first delivery of an event.
+    /// </summary>
+    internal int? PriorRedeliveries { get; init; }
+
+    /// <summary>Told when this event starts and stops halting its processor. Null outside a control loop.</summary>
+    internal IHaltObserver? HaltObserver { get; init; }
+
     public Exception? LastError { get; set; }
     public CancellationToken CancellationToken { get; init; }
 }

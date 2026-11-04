@@ -1,1 +1,4 @@
 #nullable enable
+Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.ClaimDueAsync_ClaimsOnlyRowsDueAtNow() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.ClaimDueAsync_ManualRetryClaimsExhaustedRow() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.StoreAsync_SameEvent_OverwritesScheduleOnSameRow() -> System.Threading.Tasks.Task!

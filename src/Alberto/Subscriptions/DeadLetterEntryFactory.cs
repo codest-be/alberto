@@ -13,7 +13,9 @@ internal static class DeadLetterEntryFactory
         IEventEnvelope envelope,
         Exception error,
         int attemptCount,
-        DateTimeOffset failedAt) =>
+        DateTimeOffset failedAt,
+        DateTimeOffset? nextRetryAt = null,
+        int redeliveryCount = 0) =>
         new()
         {
             Id = Guid.NewGuid(),
@@ -25,6 +27,8 @@ internal static class DeadLetterEntryFactory
             StackTrace = error.StackTrace,
             AttemptCount = attemptCount,
             FailedAt = failedAt,
+            NextRetryAt = nextRetryAt,
+            RedeliveryCount = redeliveryCount,
             GlobalPosition = envelope.GlobalPosition,
             TenantId = envelope.TenantId,
             Tags = envelope.Tags.Select(tag => tag.Value).ToImmutableArray(),

@@ -32,6 +32,9 @@ internal sealed class AlbertoInstruments
         EventsProcessed = meter.CreateCounter<long>("alberto.events.processed", "events", "Number of events processed by consumers");
         ProcessingErrors = meter.CreateCounter<long>("alberto.processing.errors", "errors", "Number of event processing errors");
         DeadLetters = meter.CreateCounter<long>("alberto.dead_letters", "events", "Number of events moved to dead letter");
+        Redeliveries = meter.CreateCounter<long>("alberto.dead_letter.redeliveries", "events", "Number of dead-lettered events dispatched again, automatically or by an operator retry");
+        ProcessorHalts = meter.CreateCounter<long>("alberto.processor.halts", "halts", "Number of times a projection halted on an event it could not process");
+        ProcessorsHalted = meter.CreateUpDownCounter<long>("alberto.processor.halted", "processors", "Number of events currently halting a processor; above zero means a read model is stuck on one event");
         OutboxPublished = meter.CreateCounter<long>("alberto.outbox.published", "messages", "Number of outbox messages published to the transport");
         OutboxPublishFailures = meter.CreateCounter<long>("alberto.outbox.publish.failures", "failures", "Number of failed outbox publish attempts");
         Retries = meter.CreateCounter<long>("alberto.retries", "attempts", "Number of retry attempts");
@@ -77,6 +80,9 @@ internal sealed class AlbertoInstruments
     internal Counter<long> EventsProcessed { get; }
     internal Counter<long> ProcessingErrors { get; }
     internal Counter<long> DeadLetters { get; }
+    internal Counter<long> Redeliveries { get; }
+    internal Counter<long> ProcessorHalts { get; }
+    internal UpDownCounter<long> ProcessorsHalted { get; }
     internal Counter<long> OutboxPublished { get; }
     internal Counter<long> OutboxPublishFailures { get; }
     internal Counter<long> Retries { get; }

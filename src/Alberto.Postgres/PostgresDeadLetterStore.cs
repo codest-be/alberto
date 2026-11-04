@@ -65,8 +65,8 @@ public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
         // keep the original column list unchanged.
         //
         // One row per (processor_id, event_id), enforced by migration 006. A repeat failure
-        // refreshes the failure columns and leaves id, retry_requested and the claim columns
-        // alone, so a retry worker that re-dead-letters the event it claimed still owns the row.
+        // refreshes the failure and redelivery schedule columns and leaves id, retry_requested
+        // and the claim columns alone, so a retry worker that re-dead-letters the event it claimed still owns the row.
         const string refresh = """
             ON CONFLICT (processor_id, event_id) DO UPDATE SET
                 event_type      = EXCLUDED.event_type,
@@ -75,15 +75,17 @@ public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
                 stack_trace     = EXCLUDED.stack_trace,
                 attempt_count   = EXCLUDED.attempt_count,
                 failed_at       = EXCLUDED.failed_at,
-                global_position = EXCLUDED.global_position
+                global_position = EXCLUDED.global_position,
+                next_retry_at   = EXCLUDED.next_retry_at,
+                redelivery_count = EXCLUDED.redelivery_count
             """;
         string sql;
         if (multiTenant)
         {
             sql = $"""
                 INSERT INTO {_schema.Table("alberto_dead_letter_events")}
-                    (id, processor_id, event_id, event_type, event_data, error_message, stack_trace, attempt_count, failed_at, global_position, retry_requested, tenant_id)
-                VALUES (@id, @processorId, @eventId, @eventType, @eventData::jsonb, @errorMessage, @stackTrace, @attemptCount, @failedAt, @globalPosition, FALSE, @tenantId)
+                    (id, processor_id, event_id, event_type, event_data, error_message, stack_trace, attempt_count, failed_at, global_position, retry_requested, next_retry_at, redelivery_count, tenant_id)
+                VALUES (@id, @processorId, @eventId, @eventType, @eventData::jsonb, @errorMessage, @stackTrace, @attemptCount, @failedAt, @globalPosition, FALSE, @nextRetryAt, @redeliveryCount, @tenantId)
                 {refresh},
                     tenant_id   = EXCLUDED.tenant_id
                 """;
@@ -92,8 +94,8 @@ public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
         {
             sql = $"""
                 INSERT INTO {_schema.Table("alberto_dead_letter_events")}
-                    (id, processor_id, event_id, event_type, event_data, error_message, stack_trace, attempt_count, failed_at, global_position, retry_requested)
-                VALUES (@id, @processorId, @eventId, @eventType, @eventData::jsonb, @errorMessage, @stackTrace, @attemptCount, @failedAt, @globalPosition, FALSE)
+                    (id, processor_id, event_id, event_type, event_data, error_message, stack_trace, attempt_count, failed_at, global_position, retry_requested, next_retry_at, redelivery_count)
+                VALUES (@id, @processorId, @eventId, @eventType, @eventData::jsonb, @errorMessage, @stackTrace, @attemptCount, @failedAt, @globalPosition, FALSE, @nextRetryAt, @redeliveryCount)
                 {refresh}
                 """;
         }
@@ -110,6 +112,11 @@ public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
         cmd.Parameters.AddWithValue("attemptCount", entry.AttemptCount);
         cmd.Parameters.AddWithValue("failedAt", entry.FailedAt);
         cmd.Parameters.AddWithValue("globalPosition", entry.GlobalPosition);
+        cmd.Parameters.Add(new NpgsqlParameter("nextRetryAt", NpgsqlTypes.NpgsqlDbType.TimestampTz)
+        {
+            Value = entry.NextRetryAt is { } next ? next.ToUniversalTime() : DBNull.Value
+        });
+        cmd.Parameters.AddWithValue("redeliveryCount", entry.RedeliveryCount);
         if (multiTenant)
             cmd.Parameters.Add(new NpgsqlParameter("tenantId", NpgsqlTypes.NpgsqlDbType.Text)
             {
@@ -137,7 +144,7 @@ public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
             : string.Empty;
 
         var sql = $"""
-            SELECT id, processor_id, event_id, event_type, event_data, error_message, stack_trace, attempt_count, failed_at, global_position, retry_requested, {tenantSelect}
+            SELECT id, processor_id, event_id, event_type, event_data, error_message, stack_trace, attempt_count, failed_at, global_position, retry_requested, {tenantSelect}, next_retry_at, redelivery_count
             FROM {_schema.Table("alberto_dead_letter_events")}
             WHERE processor_id = @processorId
             {tenantFilter}
@@ -171,6 +178,8 @@ public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
                 GlobalPosition = reader.GetInt64(9),
                 RetryRequested = reader.GetBoolean(10),
                 TenantId = reader.IsDBNull(11) ? null : reader.GetString(11),
+                NextRetryAt = reader.IsDBNull(12) ? null : reader.GetFieldValue<DateTimeOffset>(12),
+                RedeliveryCount = reader.GetInt32(13),
             });
         }
 
@@ -248,12 +257,31 @@ public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<DeadLetterClaim>> ClaimRetryRequestedAsync(
+    public Task<IReadOnlyList<DeadLetterClaim>> ClaimRetryRequestedAsync(
         string processorId,
         int batchSize,
         TimeSpan leaseDuration,
         string claimedBy,
         CancellationToken ct = default)
+        => ClaimCoreAsync(processorId, batchSize, leaseDuration, claimedBy, dueAt: null, ct);
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<DeadLetterClaim>> ClaimDueAsync(
+        string processorId,
+        int batchSize,
+        TimeSpan leaseDuration,
+        string claimedBy,
+        DateTimeOffset now,
+        CancellationToken ct = default)
+        => ClaimCoreAsync(processorId, batchSize, leaseDuration, claimedBy, dueAt: now, ct);
+
+    private async Task<IReadOnlyList<DeadLetterClaim>> ClaimCoreAsync(
+        string processorId,
+        int batchSize,
+        TimeSpan leaseDuration,
+        string claimedBy,
+        DateTimeOffset? dueAt,
+        CancellationToken ct)
     {
         if (leaseDuration <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(leaseDuration), "Lease duration must be positive.");
@@ -267,6 +295,11 @@ public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
         cmd.Parameters.AddWithValue("leaseSeconds", leaseDuration.TotalSeconds);
         cmd.Parameters.AddWithValue("claimedBy", claimedBy);
         cmd.Parameters.AddWithValue("claimId", Guid.NewGuid());
+        // The application's clock, not the database's: a null now only claims flagged rows.
+        cmd.Parameters.Add(new NpgsqlParameter("now", NpgsqlTypes.NpgsqlDbType.TimestampTz)
+        {
+            Value = dueAt is { } due ? due.ToUniversalTime() : DBNull.Value
+        });
 
         var claims = new List<DeadLetterClaim>();
         await using var reader = await cmd.ExecuteReaderAsync(ct);
@@ -320,6 +353,8 @@ public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
                 ClaimExpiresAt = expiresAt,
                 ClaimedBy = reader.IsDBNull(13) ? null : reader.GetString(13),
                 ClaimId = claimId,
+                NextRetryAt = reader.IsDBNull(19) ? null : reader.GetFieldValue<DateTimeOffset>(19),
+                RedeliveryCount = reader.GetInt32(20),
             };
 
             claims.Add(new DeadLetterClaim(entry, claimId, expiresAt));
@@ -358,7 +393,8 @@ public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
 
     // Atomically:
     //  1. picks up to @batchSize rows for the processor that are flagged for
-    //     retry AND not currently claimed (or the existing claim has expired),
+    //     retry, or whose next_retry_at is due at @now (the application's clock; a NULL
+    //     @now compares as unknown and matches nothing), AND not currently claimed (or the existing claim has expired),
     //     using FOR UPDATE SKIP LOCKED so concurrent workers don't fight,
     //  2. stamps them with claimed_at / claim_expires_at / claimed_by,
     //  3. returns the claimed rows joined with the original event for tags/metadata.
@@ -375,7 +411,7 @@ public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
             WITH candidates AS (
                 SELECT id
                 FROM {_schema.Table("alberto_dead_letter_events")}
-                WHERE retry_requested = TRUE
+                WHERE (retry_requested = TRUE OR next_retry_at <= @now)
                   AND processor_id = @processorId
                   AND (claim_expires_at IS NULL OR claim_expires_at < now())
                 ORDER BY failed_at ASC
@@ -393,14 +429,16 @@ public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
                 RETURNING dl.id, dl.processor_id, dl.event_id, dl.event_type, dl.event_data,
                           dl.error_message, dl.stack_trace, dl.attempt_count, dl.failed_at,
                           dl.global_position, dl.retry_requested,
-                          dl.claimed_at, dl.claim_expires_at, dl.claimed_by, dl.claim_id
+                          dl.claimed_at, dl.claim_expires_at, dl.claimed_by, dl.claim_id,
+                          dl.next_retry_at, dl.redelivery_count
             )
             SELECT
                 cl.id, cl.processor_id, cl.event_id, cl.event_type, cl.event_data,
                 cl.error_message, cl.stack_trace, cl.attempt_count, cl.failed_at,
                 cl.global_position, cl.retry_requested,
                 cl.claimed_at, cl.claim_expires_at, cl.claimed_by,
-                cl.claim_id, {tenantSelect}, e.event_tags, e.event_metadata, e.created_at
+                cl.claim_id, {tenantSelect}, e.event_tags, e.event_metadata, e.created_at,
+                cl.next_retry_at, cl.redelivery_count
             FROM claimed cl
             LEFT JOIN {_schema.Table("alberto_events")} e ON cl.event_id = e.event_id
             ORDER BY cl.failed_at ASC

@@ -221,9 +221,43 @@ transient?  ──yes──▶ retry with exponential backoff, up to MaxRetries
 permanent ──────────▶ dead letter immediately, no retries
 ```
 
-Retries are exhausted → the event is written to `alberto_dead_letter_events` with its error
-message, stack trace and attempt count, and **the checkpoint advances past it**. A poison event
-does not block the ones behind it.
+Retries are exhausted → for a reactor, the event is written to `alberto_dead_letter_events` with
+its error message, stack trace and attempt count, and **the checkpoint advances past it**. A poison
+event does not block the ones behind it.
+
+A **projection is different: it never dead-letters.** A read model with a skipped event is wrong
+for good, so the projection stops at the failing event, retries it in place (1 s doubling to 1 min)
+and carries on in order once it works. While it waits it is *halted*: `alberto.processor.halted`
+is above zero, `alberto.processor.halts` counts it, the processor reports unhealthy, and an error
+log names the processor and global position (never the payload). Fix the cause; no operator action
+is needed to resume.
+
+### Automatic redelivery
+
+A reactor's dead letter with a transient (or unknown) error comes back by itself. Each repeat
+failure updates the same row and waits longer; with the defaults the waits are 1 min, 4 min, 16 min,
+about 1 h 4 min, about 4 h 16 min and then 12 h for the last five: ten redeliveries over about 2.7
+days. After the last one the row stays parked (`alberto dead-letters` shows `parked` under Next
+Retry) until you run `ops dead-letters retry`. A permanent error parks at once.
+
+```csharp
+.WithControlLoop(o => o with
+{
+    Redelivery = o.Redelivery with
+    {
+        Enabled = true,                           // default
+        MaxRedeliveries = 10,                     // default; 0 parks at once
+        FirstDelay = TimeSpan.FromMinutes(1),     // default
+        BackoffMultiplier = 4.0,                  // default
+        MaxDelay = TimeSpan.FromHours(12),        // default
+        RedeliverWhen = RedeliverWhen.TransientOrUnknown, // or Transient
+    }
+})
+```
+
+One processor can differ: `Processors:<id>:Redelivery:MaxRedeliveries` in configuration, or
+`ProcessorExecutionOptions.Redelivery` in code. Rows that existed before upgrading to 0.7 are
+parked. The handler runs again on its own, so it must be idempotent.
 
 ### Tuning the policy
 

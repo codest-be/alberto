@@ -42,30 +42,52 @@ public static class ConsumeMiddlewares
         IErrorClassifier classifier,
         IDeadLetterStore? deadLetterStore,
         TimeProvider? timeProvider,
-        ILogger? logger)
+        ILogger? logger,
+        ProcessorPolicies? policies = null)
     {
         var clock = timeProvider ?? TimeProvider.System;
         return async (context, next) =>
         {
+            var policy = policies?.For(context.ProcessorId);
+            var effectiveRetry = policy?.Retry ?? retry;
+
+            if (context.PriorRedeliveries is not null)
+                instruments.Redeliveries.Add(1, ProcessorTags.ForModule(context.ProcessorId, context.ModuleKey));
+
             var lastError = await RetryAndDeadLetterCore.ExecuteAsync(
-                context, retry, classifier, next, retryMetricCount: 1, instruments);
+                context, effectiveRetry, classifier, next, retryMetricCount: 1, instruments, clock);
 
             if (lastError is null)
                 return; // success
+
+            // A projection never dead-letters or skips: it stays on this event until it works.
+            if (policy is { HaltsOnFailure: true })
+            {
+                await RetryAndDeadLetterCore.HaltAsync(
+                    context, context.HaltObserver, context.Envelope.GlobalPosition,
+                    lastError, policy.Halt, next, clock, logger, instruments);
+                return;
+            }
+
 
             // Exhausted retries or permanent error — dead-letter this event.
             context.DeadLettered = true;
 
             instruments.DeadLetters.Add(1, ProcessorTags.ForModule(context.ProcessorId, context.ModuleKey));
 
-            if (retry.DeadLetterOnMaxRetries && deadLetterStore is not null)
+            if (effectiveRetry.DeadLetterOnMaxRetries && deadLetterStore is not null)
             {
+                var now = clock.GetUtcNow();
+                var (nextRetryAt, redeliveryCount) = RetryAndDeadLetterCore.PlanRedelivery(
+                    policy, classifier, lastError, context.PriorRedeliveries, now);
                 var entry = DeadLetterEntryFactory.Create(
                     context.ProcessorId,
                     context.Envelope,
                     lastError,
                     context.Attempt,
-                    clock.GetUtcNow());
+                    now,
+                    nextRetryAt,
+                    redeliveryCount);
 
                 // A failed write here must not escape. The event that failed is already
                 // dead-lettered as far as the loop is concerned; letting the store's error

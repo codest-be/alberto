@@ -238,6 +238,9 @@ public sealed class AlbertoModuleValidator : IValidateOptions<AlbertoModuleDefin
                 $"Use 1.0 for a constant delay, or a larger value to back off, via '{path}:ControlLoop:Retry:BackoffMultiplier'."));
         }
 
+        ValidateRedelivery(loop.Redelivery, "ControlLoop.Redelivery", $"{path}:ControlLoop:Redelivery", failures);
+        ValidateHalt(loop.Halt, "ControlLoop.Halt", $"{path}:ControlLoop:Halt", failures);
+
         if (loop.Rebuilds.Enabled)
         {
             if (loop.Rebuilds.PollingInterval <= TimeSpan.Zero)
@@ -256,6 +259,42 @@ public sealed class AlbertoModuleValidator : IValidateOptions<AlbertoModuleDefin
                     $"Set a positive interval via .WithRebuilds(pollingInterval: ...) or '{path}:ControlLoop:Rebuilds:VersionRefreshInterval'."));
             }
         }
+    }
+
+    private static void ValidateRedelivery(
+        RedeliveryOptions r, string label, string configPath, List<AlbertoValidationFailure> failures)
+    {
+        void Fail(string problem, string key, string hint) =>
+            failures.Add(new AlbertoValidationFailure("ALB0007", $"{label}.{key} {problem}", $"{hint} via '{configPath}:{key}'."));
+
+        if (r.MaxRedeliveries < 0)
+            Fail($"is {r.MaxRedeliveries}. Use 0 to park every dead letter for manual retry", nameof(r.MaxRedeliveries), "Set a non-negative count");
+        if (r.BackoffMultiplier < 1.0 || double.IsNaN(r.BackoffMultiplier))
+            Fail($"is {r.BackoffMultiplier}, which would shrink the wait on each redelivery", nameof(r.BackoffMultiplier), "Use 1.0 for a constant wait, or a larger value");
+        if (r.FirstDelay <= TimeSpan.Zero)
+            Fail($"is {r.FirstDelay}, which is not a positive duration", nameof(r.FirstDelay), "Set a positive duration");
+        if (r.MaxDelay <= TimeSpan.Zero)
+            Fail($"is {r.MaxDelay}, which is not a positive duration", nameof(r.MaxDelay), "Set a positive duration");
+        else if (r.FirstDelay > r.MaxDelay)
+            Fail($"is {r.MaxDelay}, shorter than FirstDelay ({r.FirstDelay})", nameof(r.MaxDelay), "Set it at least as long as FirstDelay");
+        if (!Enum.IsDefined(r.RedeliverWhen))
+            Fail($"is {(int)r.RedeliverWhen}, which is not a known value", nameof(r.RedeliverWhen), "Use Transient or TransientOrUnknown");
+    }
+
+    private static void ValidateHalt(
+        HaltOptions h, string label, string configPath, List<AlbertoValidationFailure> failures)
+    {
+        void Fail(string problem, string key, string hint) =>
+            failures.Add(new AlbertoValidationFailure("ALB0007", $"{label}.{key} {problem}", $"{hint} via '{configPath}:{key}'."));
+
+        if (h.BackoffMultiplier < 1.0 || double.IsNaN(h.BackoffMultiplier))
+            Fail($"is {h.BackoffMultiplier}, which would shrink the wait on each retry", nameof(h.BackoffMultiplier), "Use 1.0 for a constant wait, or a larger value");
+        if (h.InitialDelay <= TimeSpan.Zero)
+            Fail($"is {h.InitialDelay}, which is not a positive duration", nameof(h.InitialDelay), "Set a positive duration");
+        if (h.MaxDelay <= TimeSpan.Zero)
+            Fail($"is {h.MaxDelay}, which is not a positive duration", nameof(h.MaxDelay), "Set a positive duration");
+        else if (h.InitialDelay > h.MaxDelay)
+            Fail($"is {h.MaxDelay}, shorter than InitialDelay ({h.InitialDelay})", nameof(h.MaxDelay), "Set it at least as long as InitialDelay");
     }
 
     private static void ValidateUnknownKeys(AlbertoModuleDefinition definition, List<AlbertoValidationFailure> failures)
@@ -385,6 +424,33 @@ public sealed class AlbertoModuleValidator : IValidateOptions<AlbertoModuleDefin
                     $"The processor id '{processor.ProcessorId}' is empty or contains whitespace.",
                     "Processor ids are used as checkpoint keys. Use a non-empty identifier without whitespace."));
             }
+
+            var processorPath = $"{definition.ConfigurationPath}:Processors:{processor.ProcessorId}";
+            var execution = processor.Execution;
+
+            if (processor.Kind == ProcessorKind.Projection || processor.HaltsOnFailure)
+            {
+                // A halting processor never dead-letters, so there is nothing to redeliver and
+                // nothing for DeadLetterOnMaxRetries to decide. Say so rather than ignore it.
+                if (execution.Redelivery is not null || execution.Retry?.DeadLetterOnMaxRetries is not null)
+                {
+                    failures.Add(new AlbertoValidationFailure(
+                        "ALB0028",
+                        $"Processor '{processor.ProcessorId}' halts on a failing event instead of dead-lettering it, " +
+                        "so it takes no Redelivery settings and no Retry.DeadLetterOnMaxRetries.",
+                        $"Remove them from '{processorPath}'. To tune how it waits on a failing event, set '{processorPath}:Halt' and '{processorPath}:Retry'."));
+                }
+            }
+
+            if (execution.Redelivery is not null)
+                ValidateRedelivery(
+                    execution.Redelivery.ApplyTo(definition.ControlLoop.Redelivery),
+                    $"Processor '{processor.ProcessorId}' Redelivery", $"{processorPath}:Redelivery", failures);
+
+            if (execution.Halt is not null)
+                ValidateHalt(
+                    execution.Halt.ApplyTo(definition.ControlLoop.Halt),
+                    $"Processor '{processor.ProcessorId}' Halt", $"{processorPath}:Halt", failures);
 
             if (processor.Execution is { MaxConcurrency: > 1, BatchingMode: ProcessorBatchingMode.Disabled })
             {

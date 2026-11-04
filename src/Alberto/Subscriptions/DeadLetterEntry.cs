@@ -60,6 +60,20 @@ public sealed record DeadLetterEntry
     public DateTime? CreatedAt { get; init; } = null;
 
     /// <summary>
+    /// When the dead letter is next redelivered automatically, or null when it is parked and
+    /// waits for a manual retry. Set when the entry is dead-lettered and moved on after every
+    /// failed redelivery; null once the last redelivery is used up, for a permanent error, and
+    /// when redelivery is off for the processor.
+    /// </summary>
+    public DateTimeOffset? NextRetryAt { get; init; } = null;
+
+    /// <summary>
+    /// How many automatic redeliveries of this event have already failed. Separate from
+    /// <see cref="AttemptCount"/>, which counts the in-process attempts of the latest failure.
+    /// </summary>
+    public int RedeliveryCount { get; init; } = 0;
+
+    /// <summary>
     /// When a retry loop most recently claimed this entry for dispatch,
     /// or null if never claimed / already released.
     /// </summary>

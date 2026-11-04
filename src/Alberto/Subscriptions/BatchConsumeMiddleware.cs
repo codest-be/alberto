@@ -53,15 +53,19 @@ public static class BatchConsumeMiddlewares
         IErrorClassifier classifier,
         IDeadLetterStore? deadLetterStore,
         TimeProvider? timeProvider,
-        ILogger? logger)
+        ILogger? logger,
+        ProcessorPolicies? policies = null)
     {
         var clock = timeProvider ?? TimeProvider.System;
         return async (context, next) =>
         {
+            var policy = policies?.For(context.ProcessorId);
+            var effectiveRetry = policy?.Retry ?? retry;
+
             // retryMetricCount is evaluated at dispatch time (inside the lambda)
             // so it reflects the actual batch size for the current invocation.
             var lastError = await RetryAndDeadLetterCore.ExecuteAsync(
-                context, retry, classifier, next, retryMetricCount: context.Envelopes.Count, instruments);
+                context, effectiveRetry, classifier, next, retryMetricCount: context.Envelopes.Count, instruments, clock);
 
             if (lastError is null)
                 return; // success
@@ -71,21 +75,36 @@ public static class BatchConsumeMiddlewares
             // For single-event batches this is a no-op and we continue to dead-letter.
             BatchSplittingRethrow(context, lastError);
 
+            // A projection never dead-letters or skips: it stays on this event until it works.
+            if (policy is { HaltsOnFailure: true })
+            {
+                await RetryAndDeadLetterCore.HaltAsync(
+                    context, context.HaltObserver, context.Envelopes[0].GlobalPosition,
+                    lastError, policy.Halt, next, clock, logger, instruments);
+                return;
+            }
+
+
             // Single-event batch — dead-letter in place.
             context.DeadLetteredCount = 1;
 
             instruments.DeadLetters.Add(1, ProcessorTags.ForModule(context.ProcessorId, context.ModuleKey));
 
-            if (!retry.DeadLetterOnMaxRetries || deadLetterStore is null)
+            if (!effectiveRetry.DeadLetterOnMaxRetries || deadLetterStore is null)
                 return;
 
             var envelope = context.Envelopes[0];
+            var now = clock.GetUtcNow();
+            var (nextRetryAt, redeliveryCount) = RetryAndDeadLetterCore.PlanRedelivery(
+                policy, classifier, lastError, priorRedeliveries: null, now);
             var entry = DeadLetterEntryFactory.Create(
                 context.ProcessorId,
                 envelope,
                 lastError,
                 context.Attempt,
-                clock.GetUtcNow());
+                now,
+                nextRetryAt,
+                redeliveryCount);
 
             // A transient DB error on this write must not escape: the checkpoint would stay at
             // the pre-batch position and every event that already committed side-effects

@@ -11,6 +11,9 @@ public sealed class BatchConsumeContext : IMiddlewareContext
     public required bool IsRebuild { get; init; }
     public int Attempt { get; set; }
     public int DeadLetteredCount { get; set; }
+
+    /// <summary>Told when a single-event batch starts and stops halting its processor.</summary>
+    internal IHaltObserver? HaltObserver { get; init; }
     public Exception? LastError { get; set; }
     public CancellationToken CancellationToken { get; init; }
 }

@@ -63,6 +63,24 @@ public sealed record ProcessorExecutionOptions
     /// </summary>
     public TraceParenting TraceParenting { get; init; } = TraceParenting.Link;
 
+    /// <summary>
+    /// Per-processor overrides of the module's <see cref="ControlLoopOptions.Retry"/>. Fields left
+    /// null follow the module value. Null (the default) overrides nothing.
+    /// </summary>
+    public RetryOverrides? Retry { get; init; }
+
+    /// <summary>
+    /// Per-processor overrides of the module's <see cref="ControlLoopOptions.Halt"/>, for
+    /// projections. Fields left null follow the module value. Null (the default) overrides nothing.
+    /// </summary>
+    public HaltOverrides? Halt { get; init; }
+
+    /// <summary>
+    /// Per-processor overrides of the module's <see cref="ControlLoopOptions.Redelivery"/>, for
+    /// reactors and message subscriptions. Fields left null follow the module value.
+    /// </summary>
+    public RedeliveryOverrides? Redelivery { get; init; }
+
     /// <summary>Default execution settings used when no explicit settings are declared.</summary>
     public static ProcessorExecutionOptions Default { get; } =
         new() { BatchingMode = ProcessorBatchingMode.Required };
@@ -90,6 +108,21 @@ public sealed class ProcessorExecutionOverrides : IAlbertoOverrides<ProcessorExe
     /// </summary>
     public TraceParenting? TraceParenting { get; set; }
 
+    /// <summary>
+    /// Overrides the module's retry settings for this processor only, field by field.
+    /// </summary>
+    public RetryOverrides? Retry { get; set; }
+
+    /// <summary>
+    /// Overrides the module's projection halt backoff for this processor only, field by field.
+    /// </summary>
+    public HaltOverrides? Halt { get; set; }
+
+    /// <summary>
+    /// Overrides the module's automatic redelivery of dead letters for this processor only, field by field.
+    /// </summary>
+    public RedeliveryOverrides? Redelivery { get; set; }
+
     /// <inheritdoc />
     public ProcessorExecutionOptions ApplyTo(ProcessorExecutionOptions options) =>
         options with
@@ -97,6 +130,9 @@ public sealed class ProcessorExecutionOverrides : IAlbertoOverrides<ProcessorExe
             BatchingMode = BatchingMode ?? options.BatchingMode,
             MaxConcurrency = MaxConcurrency ?? options.MaxConcurrency,
             TraceParenting = TraceParenting ?? options.TraceParenting,
+            Retry = Retry?.MergeOver(options.Retry) ?? options.Retry,
+            Halt = Halt?.MergeOver(options.Halt) ?? options.Halt,
+            Redelivery = Redelivery?.MergeOver(options.Redelivery) ?? options.Redelivery,
         };
 }
 

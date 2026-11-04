@@ -630,7 +630,8 @@ public static class DcbModuleBuilderExtensions
                     sp.GetKeyedService<IDeadLetterStore>(moduleKey),
                     sp.GetService<TimeProvider>(),
                     sp.GetService<ILoggerFactory>()?.CreateLogger($"Alberto.DeadLetter.{moduleKey}"),
-                AlbertoInstruments.For(sp));
+                AlbertoInstruments.For(sp),
+                ProcessorPolicies.For(sp, moduleKey));
 
                 return new ShadowControlLoopFactory(processor =>
                 {

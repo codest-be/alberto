@@ -32,6 +32,18 @@ public sealed record ControlLoopOptions
     /// <summary>Retry behaviour for failing handlers.</summary>
     public RetryOptions Retry { get; init; } = new();
 
+    /// <summary>
+    /// How projections wait on an event they cannot process. They never dead-letter or skip it.
+    /// A processor can override this under its own key. See <see cref="HaltOptions"/>.
+    /// </summary>
+    public HaltOptions Halt { get; init; } = new();
+
+    /// <summary>
+    /// Automatic redelivery of dead-lettered events for reactors and message subscriptions.
+    /// A processor can override this under its own key. See <see cref="RedeliveryOptions"/>.
+    /// </summary>
+    public RedeliveryOptions Redelivery { get; init; } = new();
+
     /// <summary>Behaviour of the dead-letter retry loop.</summary>
     public DeadLetterRetryOptions DeadLetterRetry { get; init; } = new();
 
@@ -66,6 +78,12 @@ public sealed class ControlLoopOverrides : IAlbertoOverrides<ControlLoopOptions>
     /// <summary>Mirror of <see cref="ControlLoopOptions.Retry"/>.</summary>
     public RetryOverrides? Retry { get; set; }
 
+    /// <summary>Mirror of <see cref="ControlLoopOptions.Halt"/>.</summary>
+    public HaltOverrides? Halt { get; set; }
+
+    /// <summary>Mirror of <see cref="ControlLoopOptions.Redelivery"/>.</summary>
+    public RedeliveryOverrides? Redelivery { get; set; }
+
     /// <summary>Mirror of <see cref="ControlLoopOptions.DeadLetterRetry"/>.</summary>
     public DeadLetterRetryOverrides? DeadLetterRetry { get; set; }
 
@@ -88,6 +106,8 @@ public sealed class ControlLoopOverrides : IAlbertoOverrides<ControlLoopOptions>
             HeadWindowSize = HeadWindowSize ?? options.HeadWindowSize,
             DrainTimeout = DrainTimeout ?? options.DrainTimeout,
             Retry = Retry?.ApplyTo(options.Retry) ?? options.Retry,
+            Halt = Halt?.ApplyTo(options.Halt) ?? options.Halt,
+            Redelivery = Redelivery?.ApplyTo(options.Redelivery) ?? options.Redelivery,
             DeadLetterRetry = DeadLetterRetry?.ApplyTo(options.DeadLetterRetry) ?? options.DeadLetterRetry,
             Leases = Leases?.ApplyTo(options.Leases) ?? options.Leases,
             Rebuilds = Rebuilds?.ApplyTo(options.Rebuilds) ?? options.Rebuilds,
