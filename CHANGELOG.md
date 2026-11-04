@@ -19,9 +19,41 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ## [0.7.0] - 2026-11-04
 
+A reactor that fails because something outside is down now comes back by itself, and a projection
+that cannot apply an event stops there instead of skipping it. One migration (007) runs on startup.
+
+**Behaviour change, no code change:** a failing projection no longer dead-letters the event and
+moves on; it halts until the event applies, so alert on `alberto.processor.halted > 0`. Reactor
+dead letters are redelivered automatically by default, so handlers run again on their own (they
+already had to be idempotent for the fast retries). [UPGRADING.md](UPGRADING.md) has the details.
+
 ### Added
 
-- Redeliver failed reactors automatically; halt projections instead of dead-lettering (#216)
+- **Automatic redelivery** (#216). A reactor or message-subscription dead letter whose error is
+  transient or unknown gets a `next_retry_at`, and the dead-letter retry loop picks it up when it
+  is due: 1 min, 4 min, 16 min, about 1 h, about 4 h, then 12 h, ten times in all (about 2.7
+  days). A failure updates the same row (`redelivery_count`); after the last try, or on a
+  permanent error, it stays parked for a manual retry as before. Set it per module
+  (`ControlLoop:Redelivery`, `WithControlLoop`) or per processor (`Processors:<id>:Redelivery`,
+  `:Retry`, or `ProcessorExecutionOptions`); `Enabled: false` switches it off. Migration 007 adds
+  the two columns and a partial index; existing dead letters are not redelivered.
+- **`alberto dead-letters` shows the next retry** (#216), or `parked`.
+- **Metrics** (#216): `alberto.dead_letter.redeliveries`, `alberto.processor.halts` and the
+  `alberto.processor.halted` gauge.
+
+### Changed
+
+- **Projections halt instead of dead-lettering** (#216). After the fast retries a projection stays
+  on the failing event and retries it in place (`Halt`: 1 s doubling to 1 min) until it applies,
+  reporting itself faulted and unhealthy meanwhile. Each processor has its own loop, so one halted
+  projection holds up no other. The outbox handler halts too, so messages keep their order.
+  Redelivery or `DeadLetterOnMaxRetries` set on a projection is rejected at startup (`ALB0028`).
+- **Fast retries wait on the injected `TimeProvider`** (#216).
+- **`DefaultErrorClassifier` unwraps an `AggregateException` inside an exception chain** (#216),
+  so a wrapped socket error or timeout counts as transient.
+- **`IClaimableDeadLetterStore.ClaimDueAsync`** (#216) has a default body that claims only rows
+  marked for retry: a custom store keeps compiling, and redelivers automatically once it
+  implements the due-time claim.
 
 ---
 
