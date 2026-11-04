@@ -1,2 +1,1 @@
 #nullable enable
-Alberto.InMemory.InMemoryDeadLetterStore.ClaimDueAsync(string! processorId, int batchSize, System.TimeSpan leaseDuration, string! claimedBy, System.DateTimeOffset now, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Alberto.Subscriptions.DeadLetterClaim!>!>!

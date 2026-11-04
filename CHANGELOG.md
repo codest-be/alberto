@@ -17,6 +17,14 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ---
 
+## [0.7.0] - 2026-11-04
+
+### Added
+
+- Redeliver failed reactors automatically; halt projections instead of dead-lettering (#216)
+
+---
+
 ## [0.6.0] - 2026-10-15
 
 One request is now one trace, from the command through the append, the reactors and the outbox
@@ -880,7 +888,8 @@ Initial beta release. Core DCB event store abstractions, PostgreSQL backend, in-
 backend, command pipeline, EF Core projection support, transactional outbox, and
 OpenTelemetry instrumentation.
 
-[Unreleased]: https://github.com/codest-be/alberto/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/codest-be/alberto/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/codest-be/alberto/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/codest-be/alberto/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/codest-be/alberto/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/codest-be/alberto/compare/v0.3.0...v0.4.0
