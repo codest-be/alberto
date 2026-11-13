@@ -11,14 +11,7 @@
     "resolveJsonModule": true,
     "declaration": false,
     "outDir": "./dist",
-    "rootDir": "./src",
-    "baseUrl": "./src",
-    "paths": {
-      "@config/*": ["config/*"],
-      "@graphql/*": ["graphql/*"],
-      "@lib/*": ["lib/*"],
-      "@scenarios/*": ["scenarios/*"]
-    }
+    "rootDir": "./src"
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist"]

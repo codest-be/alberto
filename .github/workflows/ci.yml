@@ -40,7 +40,7 @@ jobs:
     # The job takes under two minutes, so this is a stop, not a budget.
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # No actions/setup-dotnet: the runner already carries the 10.0 SDK at /usr/share/dotnet,
       # which is root-owned while jobs run unprivileged. setup-dotnet resolves '10.0.x' to the
@@ -205,7 +205,7 @@ jobs:
 
       - name: Upload coverage
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage
           path: |
@@ -227,7 +227,7 @@ jobs:
     # ILC is the slow part (about a minute); the rest is seconds. A stop, not a budget.
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # ILC links with the platform toolchain (clang, zlib). The runner host doesn't carry it, so the
       # publish runs in Microsoft's AOT SDK image, which does. The binary also runs in that image
