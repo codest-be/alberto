@@ -241,7 +241,7 @@ jobs:
         run: |
           docker run --rm -v "$PWD":/src -w /src \
             -e DOTNET_NOLOGO=1 -e DOTNET_CLI_TELEMETRY_OPTOUT=1 \
-            mcr.microsoft.com/dotnet/sdk:10.0-noble-aot \
+            mcr.microsoft.com/dotnet/sdk:11.0-noble-aot \
             dotnet publish tests/Alberto.AotSmoke/Alberto.AotSmoke.csproj \
               -c Release -r linux-x64 -o artifacts/aot-smoke
 
@@ -272,7 +272,7 @@ jobs:
         run: |
           docker run --rm --network host -v "$PWD/artifacts/aot-smoke":/app -w /app \
             -e ALBERTO_AOTSMOKE_CONNECTION \
-            mcr.microsoft.com/dotnet/sdk:10.0-noble-aot ./Alberto.AotSmoke
+            mcr.microsoft.com/dotnet/sdk:11.0-noble-aot ./Alberto.AotSmoke
 
       - name: Stop PostgreSQL
         if: always() && steps.pg.outputs.name != ''
