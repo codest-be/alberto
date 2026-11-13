@@ -18,9 +18,15 @@ updates:
       # Pinned to the oldest Roslyn exposing the APIs the analyzer uses. See the comment on it in
       # Directory.Packages.props: a newer reference only narrows which SDKs can load it.
       - dependency-name: Microsoft.CodeAnalysis.CSharp
-      # Versioned with the runtime. Directory.Packages.props declares them once per target
-      # framework, net10 on 10.x and net11 on 11.x; a major bump would move the net10 entry onto
-      # a runtime it does not ship for. A new .NET major is added by hand as a new target.
+      # 5.1.0 rejects test-case-filter "Category!=Integration" under the MTP runner ("not
+      # supported for test applications without the MTP '--filter' option"), which is every
+      # mutation run. Lift once a 5.1+ accepts the xunit v3 trait filter again.
+      - dependency-name: dotnet-stryker
+        versions: [">= 5.1.0"]
+      # Versioned with the runtime. Directory.Packages.props declares Microsoft.Extensions.* and
+      # System.Text.Json once per target framework (net10 on 10.x, net11 on 11.x); a major bump
+      # would move the net10 entry onto a runtime it does not ship for. EF Core and Npgsql stay
+      # on 10.x for both until the Npgsql EF provider ships 11.0.0 GA. Majors here are by hand.
       - dependency-name: Microsoft.Extensions.*
         update-types: [version-update:semver-major]
       - dependency-name: Microsoft.EntityFrameworkCore*

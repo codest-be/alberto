@@ -24,8 +24,12 @@ mkdir -p "$OUT"
 # carried to the end instead: the report is rendered from whatever was collected, and
 # the script still exits non-zero.
 status=0
+# net10.0 only: coverage measures which lines the suite reaches, which does not change with the
+# runtime, and two targets would write two trx files under one LogFileName. CI runs the suite
+# on net11.0 as a separate step.
 dotnet test tests/Alberto.Tests/Alberto.Tests.csproj \
   -c Release \
+  --framework net10.0 \
   "$@" \
   --settings build/coverlet.runsettings \
   --collect:"XPlat Code Coverage" \
