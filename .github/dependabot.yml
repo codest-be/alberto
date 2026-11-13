@@ -1,0 +1,105 @@
+version: 2
+
+# One PR per family, not per package: packages that release together are bumped together, so a
+# HotChocolate or OpenTelemetry release lands as one reviewable change. Major versions are left
+# out of the groups and arrive as their own PRs, because a major is a migration, not a bump.
+#
+# Dependabot PRs are exempt from the PR policy (.github/scripts/check-pr-policy.sh) and their
+# reviewer is CODEOWNERS.
+
+updates:
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    ignore:
+      # Pinned to the oldest Roslyn exposing the APIs the analyzer uses. See the comment on it in
+      # Directory.Packages.props: a newer reference only narrows which SDKs can load it.
+      - dependency-name: Microsoft.CodeAnalysis.CSharp
+      # Versioned with the runtime. Directory.Packages.props declares them once per target
+      # framework, net10 on 10.x and net11 on 11.x; a major bump would move the net10 entry onto
+      # a runtime it does not ship for. A new .NET major is added by hand as a new target.
+      - dependency-name: Microsoft.Extensions.*
+        update-types: [version-update:semver-major]
+      - dependency-name: Microsoft.EntityFrameworkCore*
+        update-types: [version-update:semver-major]
+      - dependency-name: System.Text.Json
+        update-types: [version-update:semver-major]
+      - dependency-name: Npgsql*
+        update-types: [version-update:semver-major]
+    groups:
+      dotnet-runtime:
+        patterns:
+          - Microsoft.Extensions.*
+          - Microsoft.EntityFrameworkCore*
+          - System.Text.Json
+        update-types: [minor, patch]
+      postgres:
+        patterns:
+          - Npgsql*
+          - DbUp*
+        update-types: [minor, patch]
+      opentelemetry:
+        patterns:
+          - OpenTelemetry*
+        update-types: [minor, patch]
+      aspire:
+        patterns:
+          - Aspire.*
+        update-types: [minor, patch]
+      hotchocolate:
+        patterns:
+          - HotChocolate*
+        update-types: [minor, patch]
+      testing:
+        patterns:
+          - xunit*
+          - Microsoft.NET.Test.Sdk
+          - coverlet*
+          - FluentAssertions
+          - Testcontainers*
+        update-types: [minor, patch]
+      cli:
+        patterns:
+          - Spectre.Console*
+          - System.CommandLine
+        update-types: [minor, patch]
+      rebus:
+        patterns:
+          - Rebus*
+        update-types: [minor, patch]
+      admin-surface:
+        # Unreferenced on main; kept current for the parked feature/admin-surface branch.
+        patterns:
+          - ModelContextProtocol*
+          - Yarp.*
+        update-types: [minor, patch]
+      build-tooling:
+        patterns:
+          - Microsoft.SourceLink.*
+          - Microsoft.CodeAnalysis.PublicApiAnalyzers
+          - BenchmarkDotNet*
+          - dotnet-stryker
+          - dotnet-reportgenerator-globaltool
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /tests/Alberto.Orders.LoadTests
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      load-tests:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns: ["*"]
