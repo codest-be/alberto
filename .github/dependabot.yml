@@ -61,6 +61,12 @@ updates:
           - FluentAssertions
           - Testcontainers*
         update-types: [minor, patch]
+      xunit-major:
+        # xunit v4 requires Microsoft.Testing.Platform (dotnet test mode, filters, coverage
+        # collector, Stryker), so its major lands as one migration PR, not four broken ones.
+        patterns:
+          - xunit*
+        update-types: [major]
       cli:
         patterns:
           - Spectre.Console*
