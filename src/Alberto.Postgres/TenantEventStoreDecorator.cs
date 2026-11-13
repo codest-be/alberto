@@ -52,6 +52,16 @@ internal sealed class TenantEventStoreDecorator : IEventStoreBackend, IEventStor
         return _inner.StreamAllTenants(afterPosition, limit, cancellationToken);
     }
 
+    // Same guard as StreamAllAsync, which it falls back to when a tenant is active.
+    public Task<IReadOnlyCollection<IEventEnvelope>> StreamAllOfTypesAsync(
+        IReadOnlySet<string> eventTypes,
+        long afterPosition,
+        int? limit,
+        CancellationToken cancellationToken = default)
+        => _tenantAccessor.HasTenant
+            ? StreamAllAsync(afterPosition, limit, cancellationToken)
+            : _inner.StreamAllTenantsOfTypes(eventTypes, afterPosition, limit, cancellationToken);
+
     public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
         IEnumerable<IEventToPersist> events,
         DcbQuery? dcbQuery = null,
