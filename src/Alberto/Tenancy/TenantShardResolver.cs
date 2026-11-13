@@ -107,8 +107,15 @@ public sealed class TenantShardResolver
         finally
         {
             gate.Release();
+            // The gate only exists to single-flight concurrent first lookups. Dropping it afterwards
+            // keeps _gates bounded by in-flight lookups rather than every tenant id ever asked for
+            // (unknown ids arrive from request headers). A late waiter on the dropped gate still
+            // re-checks the snapshot; the worst case is one redundant catalog read.
+            _gates.TryRemove(new KeyValuePair<string, SemaphoreSlim>(tenantId, gate));
         }
     }
+
+    internal int GateCount => _gates.Count;
 
     /// <summary>
     /// Re-reads the whole catalog and replaces the snapshot, so an operator's reassignment takes
@@ -122,9 +129,16 @@ public sealed class TenantShardResolver
 
     private void Remember(string tenantId, string shardId)
     {
-        // Replaces the whole reference; a concurrent refresh may win, and losing one entry only
-        // costs the next request for that tenant a catalog read.
-        _snapshot = _snapshot.SetItem(tenantId, shardId);
+        // Gates are per tenant, so Remembers for different tenants run concurrently: swap with CAS
+        // so neither loses its entry. A concurrent refresh may still replace the snapshot wholesale;
+        // that costs the next request for the tenant one catalog read.
+        ImmutableDictionary<string, string> seen, updated;
+        do
+        {
+            seen = _snapshot;
+            updated = seen.SetItem(tenantId, shardId);
+        }
+        while (Interlocked.CompareExchange(ref _snapshot, updated, seen) != seen);
     }
 
     private string Verify(string tenantId, string shardId)

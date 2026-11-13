@@ -138,7 +138,9 @@ public interface IClaimableDeadLetterStore : IDeadLetterStore
 
     /// <summary>
     /// Abandons a retry attempt, if <paramref name="claim"/> still owns it: clears
-    /// <c>retry_requested</c> and the claim columns so the entry
+    /// <c>retry_requested</c>, the claim columns, and <c>next_retry_at</c> when it is still the
+    /// schedule the claim was made on (a failure re-recorded during the retry wrote a new one,
+    /// which is kept), so the entry
     /// stays in the dead letter table but is no longer scheduled for automatic retry. Used when a
     /// dispatch throws — the handler is still failing, so re-running it on the next poll would just
     /// busy-loop. The entry must be explicitly re-marked via <see cref="IDeadLetterStore.MarkForRetryAsync"/> to

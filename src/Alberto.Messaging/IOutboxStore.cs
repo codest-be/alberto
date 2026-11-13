@@ -26,6 +26,22 @@ public interface IOutboxStore
     Task<bool> MarkDeliveredAsync(OutboxClaim claim, CancellationToken ct = default);
 
     /// <summary>
+    /// Marks several claimed entries as delivered and returns the ids of those it marked; an
+    /// entry whose claim expired or was superseded is left out. The default implementation calls
+    /// <see cref="MarkDeliveredAsync"/> once per claim, so a store that predates this method keeps
+    /// working; override it to mark the batch in one round trip.
+    /// </summary>
+    async Task<IReadOnlySet<Guid>> MarkDeliveredBatchAsync(
+        IReadOnlyList<OutboxClaim> claims, CancellationToken ct)
+    {
+        var marked = new HashSet<Guid>();
+        foreach (var claim in claims)
+            if (await MarkDeliveredAsync(claim, ct))
+                marked.Add(claim.Entry.Id);
+        return marked;
+    }
+
+    /// <summary>
     /// Marks a claimed entry as failed, incrementing the retry counter and recording the error.
     /// The entry is parked as <c>failed</c> immediately (equivalent to <c>maxRetries</c> of 1).
     /// Returns <see langword="false"/> when the claim expired or was superseded.

@@ -111,7 +111,7 @@ public static class BatchConsumeMiddlewares
             // (A, B, C in a bisected [A, B, C, D]) would be re-delivered on restart. See
             // RetryAndDeadLetterCore.StoreDeadLetterAsync for the full reasoning.
             _ = await RetryAndDeadLetterCore.StoreDeadLetterAsync(
-                deadLetterStore, entry, logger, context.CancellationToken);
+                deadLetterStore, entry, logger, context.CancellationToken, clock);
         };
     }
 

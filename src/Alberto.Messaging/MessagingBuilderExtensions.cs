@@ -44,7 +44,11 @@ public static class MessagingBuilderExtensions
     /// within the resulting service provider. Alberto does not dispose the caller-owned instance.
     /// </param>
     /// <param name="relayBatchSize">
-    /// Maximum number of outbox entries the relay processes per poll cycle. Defaults to 1.
+    /// Maximum number of outbox entries the relay claims per poll cycle, publishes in order, and
+    /// then marks delivered in one round trip. Defaults to <see cref="OutboxRelay.DefaultBatchSize"/>.
+    /// A relay that dies part-way through a batch redelivers the entries it had published but
+    /// not yet marked, so the batch size is also the ceiling on duplicates from one crash; the
+    /// claim lease must outlast publishing the whole batch.
     /// </param>
     /// <param name="relayClaimLease">
     /// How long the relay owns a claimed entry before another relay may recover it.
@@ -74,7 +78,7 @@ public static class MessagingBuilderExtensions
         Action<IMessageMappingRegistry> configureMappings,
         IOutboxStore outboxStore,
         IMessageTransport? transport = null,
-        int relayBatchSize = 1,
+        int relayBatchSize = OutboxRelay.DefaultBatchSize,
         TimeSpan? relayClaimLease = null,
         TimeSpan? deliveredRetention = null,
         TimeSpan? retentionSweepInterval = null,

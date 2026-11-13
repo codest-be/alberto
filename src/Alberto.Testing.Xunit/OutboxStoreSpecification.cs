@@ -228,6 +228,32 @@ public abstract class OutboxStoreSpecification
     }
 
     /// <summary>
+    /// <c>MarkDeliveredBatchAsync</c> marks every entry whose claim is still held and reports
+    /// exactly those; a fabricated token in the same batch is left out and stops nothing.
+    /// </summary>
+    [Fact]
+    public async Task MarkDeliveredBatchAsync_MarksHeldClaims_AndReportsOnlyThose()
+    {
+        var store = await CreateStore();
+        var a = NewEntry();
+        var b = NewEntry();
+        var c = NewEntry();
+        foreach (var entry in new[] { a, b, c })
+            await store.InsertAsync(entry, Ct);
+        var claims = await store.ClaimPendingAsync(10, TimeSpan.FromMinutes(5), "worker", Ct);
+        var held = claims.Where(x => x.Entry.Id == a.Id || x.Entry.Id == b.Id).ToList();
+        var stale = claims.Single(x => x.Entry.Id == c.Id) with { Token = Guid.NewGuid() };
+
+        var marked = await store.MarkDeliveredBatchAsync([.. held, stale], Ct);
+
+        Assert.Equal(new HashSet<Guid> { a.Id, b.Id }, marked);
+        Assert.Empty(await store.MarkDeliveredBatchAsync([], Ct));
+        // Delivered entries are gone for good; the one with the bad token is still claimed.
+        Assert.False(await store.MarkDeliveredAsync(held[0], Ct));
+        Assert.True(await store.MarkDeliveredAsync(claims.Single(x => x.Entry.Id == c.Id), Ct));
+    }
+
+    /// <summary>
     /// <c>MarkDeliveredAsync</c> with a fabricated token must return <see langword="false"/>.
     /// </summary>
     [Fact]

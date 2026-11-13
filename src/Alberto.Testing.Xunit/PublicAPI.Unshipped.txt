@@ -1,1 +1,3 @@
 #nullable enable
+Alberto.Testing.Xunit.ClaimableDeadLetterStoreSpecification.AbandonRetryAsync_UnschedulesADueEntry_ButKeepsANewSchedule() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.OutboxStoreSpecification.MarkDeliveredBatchAsync_MarksHeldClaims_AndReportsOnlyThose() -> System.Threading.Tasks.Task!

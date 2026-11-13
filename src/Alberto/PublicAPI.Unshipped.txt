@@ -1,1 +1,2 @@
 #nullable enable
+Alberto.IEventStoreHeadBackend.GetStableHeadUpToAsync(long afterPosition, long upToPosition, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<long>!

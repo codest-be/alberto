@@ -95,5 +95,9 @@ public sealed class PostgresEventStoreBackend(
 
     public Task<long> GetStableHeadAsync(
         long afterPosition, CancellationToken cancellationToken = default)
-        => PostgresBackendHelpers.GetStableHeadAsync(_schema, _dataSource, _enableStableHeadBarrier, afterPosition, cancellationToken);
+        => GetStableHeadUpToAsync(afterPosition, long.MaxValue, cancellationToken);
+
+    public Task<long> GetStableHeadUpToAsync(
+        long afterPosition, long upToPosition, CancellationToken cancellationToken = default)
+        => PostgresBackendHelpers.GetStableHeadAsync(_schema, _dataSource, _enableStableHeadBarrier, afterPosition, upToPosition, cancellationToken);
 }

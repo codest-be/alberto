@@ -157,7 +157,11 @@ public sealed class EventStoreHead : IHostedService
             // whose transaction has not committed yet. Backends without a barrier
             // (IEventStoreHeadBackend default) return long.MaxValue, leaving the
             // contiguous head unchanged.
-            var stableHead = await _backend.GetStableHeadAsync(current, ct);
+            // Only the window just read can be clamped, so the backend is asked about that range
+            // and nothing past it; and an empty or gapped-at-the-start window has nothing to clamp.
+            var stableHead = head > current
+                ? await _backend.GetStableHeadUpToAsync(current, head, ct)
+                : long.MaxValue;
             holding = stableHead < head;
             if (holding)
                 head = stableHead;

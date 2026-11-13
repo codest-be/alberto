@@ -142,4 +142,9 @@ internal sealed class InterceptingEventStoreBackend(
     public Task<long> GetStableHeadAsync(
         long afterPosition, CancellationToken cancellationToken = default)
         => _innerHead.GetStableHeadAsync(afterPosition, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<long> GetStableHeadUpToAsync(
+        long afterPosition, long upToPosition, CancellationToken cancellationToken = default)
+        => _innerHead.GetStableHeadUpToAsync(afterPosition, upToPosition, cancellationToken);
 }

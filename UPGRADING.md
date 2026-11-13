@@ -3,6 +3,23 @@
 Notes for moving between Alberto releases. Breaking changes of a release are also listed in its
 section of [CHANGELOG.md](CHANGELOG.md).
 
+## To the next release
+
+### Run the migration
+
+`008_DropRedundantIndexes` drops `ix_alberto_events_inflight` and two indexes on
+`alberto_projection_states` that duplicated a surviving one. The in-flight index was meant to
+hold only uncommitted rows, but `pg_xact_id` is never cleared, so it was a second copy of the
+primary key written on every append. It runs on startup; `DROP INDEX` takes a brief
+`ACCESS EXCLUSIVE` lock on the table and returns the disk space at once.
+
+### Custom event store backends
+
+`IEventStoreHeadBackend.GetStableHeadUpToAsync(afterPosition, upToPosition, ct)` is new and has a
+default implementation that calls `GetStableHeadAsync`, so nothing breaks. A backend whose
+barrier query scans forward from `afterPosition` should override it and stop at `upToPosition`:
+the head only asks about the window it just read.
+
 ## To 0.7.0
 
 ### Run the migration

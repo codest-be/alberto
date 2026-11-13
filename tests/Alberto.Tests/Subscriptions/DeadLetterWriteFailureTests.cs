@@ -176,6 +176,32 @@ public sealed class DeadLetterWriteFailureTests
         context.DeadLetteredCount.Should().Be(1);
     }
 
+    [Fact]
+    public async Task DeadLetterStoreWrite_RetryBackoff_WaitsOnTheInjectedClock()
+    {
+        var store = new ThrowingDeadLetterStore();
+        var clock = new Microsoft.Extensions.Time.Testing.FakeTimeProvider();
+        var middleware = BatchConsumeMiddlewares.RetryAndDeadLetter(
+            new RetryOptions { MaxRetries = 0, DeadLetterOnMaxRetries = true },
+            new AlwaysPermanentClassifier(),
+            store,
+            timeProvider: clock,
+            logger: null);
+        var context = MakeContext(ct: TestContext.Current.CancellationToken);
+
+        var run = MiddlewareRunner.RunAsync(
+            context, [middleware], () => throw new InvalidOperationException("processor failure"));
+
+        store.StoreCallCount.Should().Be(1);
+        run.IsCompleted.Should().BeFalse("the 100 ms backoff must wait on the fake clock, not wall time");
+
+        clock.Advance(TimeSpan.FromMilliseconds(100));
+        clock.Advance(TimeSpan.FromMilliseconds(200));
+        await run;
+
+        store.StoreCallCount.Should().Be(RetryAndDeadLetterCore.DeadLetterWriteMaxAttempts);
+    }
+
     /// <summary>
     /// Verifies that when the dead-letter store write fails, the failure is surfaced
     /// at <see cref="LogLevel.Error"/> with the event ID and processor ID in the message,

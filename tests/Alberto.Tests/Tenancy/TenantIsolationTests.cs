@@ -562,7 +562,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
 
         // The append has committed, so nothing is in flight: the barrier must not throw
         // "cannot cast type xid8 to bigint" and must return a non-negative head.
-        var stableHead = await backend.GetStableHeadGlobalAsync(0, ct);
+        var stableHead = await backend.GetStableHeadGlobalAsync(0, long.MaxValue, ct);
 
         Assert.True(stableHead >= 0, $"expected non-negative stable head, got {stableHead}");
     }

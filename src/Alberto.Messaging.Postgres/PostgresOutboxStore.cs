@@ -13,6 +13,8 @@ public sealed class PostgresOutboxStore(
     string? schema = null,
     bool? multiTenant = null) : IOutboxStore
 {
+    private const int PurgeBatchSize = 5000;
+
     private readonly NpgsqlDataSource _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
     private readonly SchemaQualifier _schema = new(schema);
     private readonly PostgresStoreTopology _topology =
@@ -93,16 +95,37 @@ public sealed class PostgresOutboxStore(
         var tenantColumn = hasTenantId ? ", e.tenant_id" : "";
         var tenantSelect = hasTenantId ? ", tenant_id" : "";
 
+        var table = _schema.Table("alberto_outbox_entries");
+
         await using var cmd = new NpgsqlCommand(
             $"""
             WITH candidates AS (
+                -- Each branch is a bounded, index-ordered probe of one partial index
+                -- (idx_alberto_outbox_pending / idx_alberto_outbox_expired_claims), so a poll
+                -- costs O(limit), not O(backlog). A single OR predicate cannot use an ordered
+                -- index and sorts the whole backlog. The outer query re-applies the predicate
+                -- so a row another relay claimed after the probe is re-checked when locked.
                 SELECT id
-                FROM {_schema.Table("alberto_outbox_entries")}
-                WHERE status = 'pending'
-                   OR (
-                       status = 'processing'
-                       AND (claim_expires_at IS NULL OR claim_expires_at <= now())
-                   )
+                FROM {table}
+                WHERE id IN (
+                    SELECT id FROM (
+                        (SELECT id, created_at FROM {table}
+                         WHERE status = 'pending' ORDER BY created_at LIMIT @limit)
+                        UNION ALL
+                        (SELECT id, created_at FROM {table}
+                         WHERE status = 'processing' AND claim_expires_at <= now()
+                         ORDER BY claim_expires_at LIMIT @limit)
+                        UNION ALL
+                        (SELECT id, created_at FROM {table}
+                         WHERE status = 'processing' AND claim_expires_at IS NULL
+                         ORDER BY created_at LIMIT @limit)
+                    ) probe
+                    ORDER BY created_at
+                    LIMIT @limit
+                )
+                  AND (status = 'pending'
+                       OR (status = 'processing'
+                           AND (claim_expires_at IS NULL OR claim_expires_at <= now())))
                 ORDER BY created_at
                 LIMIT @limit
                 FOR UPDATE SKIP LOCKED
@@ -172,6 +195,42 @@ public sealed class PostgresOutboxStore(
         cmd.Parameters.AddWithValue("id", claim.Entry.Id);
         cmd.Parameters.AddWithValue("claim_id", claim.Token);
         return await cmd.ExecuteNonQueryAsync(ct) == 1;
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlySet<Guid>> MarkDeliveredBatchAsync(
+        IReadOnlyList<OutboxClaim> claims, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(claims);
+
+        var marked = new HashSet<Guid>();
+        if (claims.Count == 0)
+            return marked;
+
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand(
+            $"""
+            UPDATE {_schema.Table("alberto_outbox_entries")} AS o
+            SET status = 'delivered',
+                delivered_at = now(),
+                claim_id = NULL,
+                claimed_by = NULL,
+                claim_expires_at = NULL
+            FROM unnest(@ids, @claim_ids) AS c(id, claim_id)
+            WHERE o.id = c.id
+              AND o.status = 'processing'
+              AND o.claim_id = c.claim_id
+              AND o.claim_expires_at > now()
+            RETURNING o.id
+            """,
+            connection);
+
+        cmd.Parameters.AddWithValue("ids", claims.Select(c => c.Entry.Id).ToArray());
+        cmd.Parameters.AddWithValue("claim_ids", claims.Select(c => c.Token).ToArray());
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            marked.Add(reader.GetGuid(0));
+        return marked;
     }
 
     /// <inheritdoc/>
@@ -262,15 +321,20 @@ public sealed class PostgresOutboxStore(
     public async Task PurgeDeliveredAsync(DateTimeOffset before, CancellationToken ct = default)
     {
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        // Bounded batches keep each statement well inside the command timeout and its locks short;
+        // an unbounded DELETE over a large delivered backlog could time out on every sweep.
         await using var cmd = new NpgsqlCommand(
             $"""
             DELETE FROM {_schema.Table("alberto_outbox_entries")}
-            WHERE status = 'delivered' AND delivered_at < @before
+            WHERE id IN (
+                SELECT id FROM {_schema.Table("alberto_outbox_entries")}
+                WHERE status = 'delivered' AND delivered_at < @before
+                LIMIT {PurgeBatchSize})
             """,
             connection);
 
         cmd.Parameters.AddWithValue("before", before);
-        await cmd.ExecuteNonQueryAsync(ct);
+        while (await cmd.ExecuteNonQueryAsync(ct) == PurgeBatchSize) { }
     }
 
     private static OutboxEntry ReadEntry(NpgsqlDataReader reader, bool hasTenantId)
