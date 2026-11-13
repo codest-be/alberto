@@ -30,6 +30,9 @@ public sealed class OutboxRelay : BackgroundService
     /// </summary>
     public static readonly TimeSpan DefaultClaimLease = TimeSpan.FromMinutes(5);
 
+    /// <summary>Default number of entries claimed, published and marked per poll cycle.</summary>
+    public const int DefaultBatchSize = 100;
+
     /// <summary>
     /// Default number of failed delivery attempts after which an entry is parked as <c>failed</c>.
     /// </summary>
@@ -92,7 +95,7 @@ public sealed class OutboxRelay : BackgroundService
         IOutboxStore store,
         IMessageTransport transport,
         TimeSpan? pollingInterval = null,
-        int batchSize = 100,
+        int batchSize = DefaultBatchSize,
         TimeSpan? claimLease = null,
         string? claimedBy = null,
         int maxRetries = DefaultMaxRetries,
@@ -113,7 +116,7 @@ public sealed class OutboxRelay : BackgroundService
         IOutboxStore store,
         OutboxTransportLease transport,
         TimeSpan? pollingInterval = null,
-        int batchSize = 100,
+        int batchSize = DefaultBatchSize,
         TimeSpan? claimLease = null,
         string? claimedBy = null,
         int maxRetries = DefaultMaxRetries,
@@ -178,33 +181,50 @@ public sealed class OutboxRelay : BackgroundService
                 }
 
                 var anyPublishFailed = false;
-                foreach (var claim in pending)
+                // Marked in one round trip once the batch is published. A send span stays open
+                // until then so it can carry the outcome of its mark, with its end time already
+                // fixed at the publish.
+                var published = new List<(OutboxClaim Claim, Activity? Activity)>(pending.Count);
+                try
                 {
-                    var entry = claim.Entry;
-                    using var scope = entry.TenantId is null
-                        ? null
-                        : _logger.BeginScope(new Dictionary<string, object?> { ["alberto.tenant.id"] = entry.TenantId });
-                    using var activity = StartSendActivity(entry);
-                    try
+                    foreach (var claim in pending)
                     {
-                        await _transport.PublishAsync(BuildMessage(entry, activity), ct);
-                    }
-                    catch (Exception ex) when (!ct.IsCancellationRequested)
-                    {
-                        anyPublishFailed = true;
-                        var errorType = ex.GetType().FullName ?? ex.GetType().Name;
-                        BackgroundSpans.Fail(activity, ex);
-                        _instruments.OutboxPublishFailures.Add(1, new KeyValuePair<string, object?>("error.type", errorType));
-                        await MarkFailedSafelyAsync(claim, ex, ct);
-                        continue;
-                    }
+                        var entry = claim.Entry;
+                        using var scope = entry.TenantId is null
+                            ? null
+                            : _logger.BeginScope(new Dictionary<string, object?> { ["alberto.tenant.id"] = entry.TenantId });
+                        var activity = StartSendActivity(entry);
+                        try
+                        {
+                            await _transport.PublishAsync(BuildMessage(entry, activity), ct);
+                        }
+                        catch (Exception ex) when (!ct.IsCancellationRequested)
+                        {
+                            anyPublishFailed = true;
+                            var errorType = ex.GetType().FullName ?? ex.GetType().Name;
+                            BackgroundSpans.Fail(activity, ex);
+                            activity?.Dispose();
+                            _instruments.OutboxPublishFailures.Add(1, new KeyValuePair<string, object?>("error.type", errorType));
+                            await MarkFailedSafelyAsync(claim, ex, ct);
+                            continue;
+                        }
+                        catch
+                        {
+                            activity?.Dispose();
+                            throw;
+                        }
 
-                    _instruments.OutboxPublished.Add(1);
-                    _instruments.OutboxDeliveryLatency.Record((DateTimeOffset.UtcNow - entry.CreatedAt).TotalSeconds);
-                    // Published either way: a failed mark leaves the span Ok and the metrics alone,
-                    // and surfaces here so the redelivery it will cause can be explained.
-                    var marked = await MarkDeliveredSafelyAsync(claim);
-                    activity?.SetTag("alberto.outbox.marked_delivered", marked);
+                        _instruments.OutboxPublished.Add(1);
+                        _instruments.OutboxDeliveryLatency.Record((DateTimeOffset.UtcNow - entry.CreatedAt).TotalSeconds);
+                        activity?.SetEndTime(DateTime.UtcNow);
+                        Activity.Current = null; // the next send span is not a child of this one
+                        published.Add((claim, activity));
+                    }
+                }
+                finally
+                {
+                    // Also on shutdown part-way through: what was published must still be marked.
+                    await MarkDeliveredSafelyAsync(published);
                 }
 
                 failureStreak = anyPublishFailed ? failureStreak + 1 : 0;
@@ -306,28 +326,47 @@ public sealed class OutboxRelay : BackgroundService
         };
     }
 
-    private async Task<bool> MarkDeliveredSafelyAsync(OutboxClaim claim)
+    // Published either way: a failed mark leaves the span Ok and the metrics alone, and is
+    // tagged on the span so the redelivery it will cause can be explained.
+    private async Task MarkDeliveredSafelyAsync(List<(OutboxClaim Claim, Activity? Activity)> published)
     {
-        // Deliberately not the host's token: the message is already published, so a token
-        // cancelled by shutdown would leave it to be delivered a second time.
+        if (published.Count == 0)
+            return;
+
+        IReadOnlySet<Guid> marked = new HashSet<Guid>();
+        // Deliberately not the host's token: the messages are already published, so a token
+        // cancelled by shutdown would leave them to be delivered a second time.
         using var timeout = new CancellationTokenSource(MarkDeliveredTimeout);
         try
         {
-            if (await _store.MarkDeliveredAsync(claim, timeout.Token))
-                return true;
-
-            _logger.LogWarning(
-                "Outbox entry {EntryId} was published but its claim was lost; it may be delivered again.",
-                claim.Entry.Id);
+            marked = await _store.MarkDeliveredBatchAsync(
+                published.ConvertAll(p => p.Claim), timeout.Token);
         }
         catch (Exception ex)
         {
-            // Published, so it must not be marked failed. The claim lease expires and the entry is
-            // redelivered, which is the at-least-once contract.
-            _logger.LogWarning(ex, "Outbox entry {EntryId} was published but could not be marked delivered.", claim.Entry.Id);
+            // Published, so they must not be marked failed. The claim lease expires and the
+            // entries are redelivered, which is the at-least-once contract.
+            _logger.LogWarning(ex,
+                "{Count} outbox entries were published but could not be marked delivered.", published.Count);
+            foreach (var (_, activity) in published)
+            {
+                activity?.SetTag("alberto.outbox.marked_delivered", false);
+                activity?.Dispose();
+            }
+
+            return;
         }
 
-        return false;
+        foreach (var (claim, activity) in published)
+        {
+            var ok = marked.Contains(claim.Entry.Id);
+            if (!ok)
+                _logger.LogWarning(
+                    "Outbox entry {EntryId} was published but its claim was lost; it may be delivered again.",
+                    claim.Entry.Id);
+            activity?.SetTag("alberto.outbox.marked_delivered", ok);
+            activity?.Dispose();
+        }
     }
 
     private static OutboxTransportLease CreateExclusiveTransportLease(

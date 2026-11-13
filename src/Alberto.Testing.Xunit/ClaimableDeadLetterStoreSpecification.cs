@@ -307,6 +307,35 @@ public abstract class ClaimableDeadLetterStoreSpecification : DeadLetterStoreSpe
     }
 
     /// <summary>
+    /// Abandoning a claim made on a due <c>NextRetryAt</c> must unschedule the entry, or the next
+    /// poll claims it again and the abandon achieved nothing. A schedule written while the claim
+    /// was held (the retry failed and was re-recorded) is a new decision and must survive.
+    /// </summary>
+    [Fact]
+    public async Task AbandonRetryAsync_UnschedulesADueEntry_ButKeepsANewSchedule()
+    {
+        var store = await CreateClaimableStore();
+        var now = new DateTimeOffset(2030, 1, 1, 12, 0, 0, TimeSpan.Zero);
+        var entry = NewEntry(ProcessorId) with { NextRetryAt = now };
+        await store.StoreAsync(entry, Ct);
+
+        var claim = Assert.Single(await store.ClaimDueAsync(
+            ProcessorId, 10, TimeSpan.FromMinutes(5), "worker", now, Ct));
+        Assert.True(await store.AbandonRetryAsync(claim, Ct));
+        Assert.Empty(await store.ClaimDueAsync(
+            ProcessorId, 10, TimeSpan.FromMinutes(5), "worker", now.AddHours(1), Ct));
+
+        // Rescheduled while claimed: the new schedule outlives the abandon.
+        await store.StoreAsync(entry with { Id = Guid.NewGuid(), NextRetryAt = now.AddMinutes(1) }, Ct);
+        claim = Assert.Single(await store.ClaimDueAsync(
+            ProcessorId, 10, TimeSpan.FromMinutes(5), "worker", now.AddMinutes(1), Ct));
+        await store.StoreAsync(entry with { Id = Guid.NewGuid(), NextRetryAt = now.AddMinutes(2) }, Ct);
+        Assert.True(await store.AbandonRetryAsync(claim, Ct));
+        Assert.Single(await store.ClaimDueAsync(
+            ProcessorId, 10, TimeSpan.FromMinutes(5), "worker", now.AddMinutes(2), Ct));
+    }
+
+    /// <summary>
     /// After <c>AbandonRetryAsync</c>, the entry is unclaimed but is no longer marked for
     /// retry. A subsequent <c>MarkForRetryAsync</c> must be able to re-mark it, after which
     /// a new claim must succeed.

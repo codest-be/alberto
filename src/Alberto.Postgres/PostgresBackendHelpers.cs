@@ -533,6 +533,14 @@ internal static class PostgresBackendHelpers
     /// so it stays cheap even when a long-running transaction pins xmin.
     /// </para>
     /// <para>
+    /// <paramref name="upToPosition"/> is what keeps it cheap in the opposite, healthy case.
+    /// With no non-stable row to stop at, an unbounded scan reads every event after
+    /// <paramref name="afterPosition"/>; a head catching up from position 0 asks once per
+    /// window, which made start-up quadratic in the size of the log (about 170 ms per call
+    /// at two million events). Bounded to the window the head just read, it is a primary-key
+    /// range scan of at most one window.
+    /// </para>
+    /// <para>
     /// The <c>::TEXT::BIGINT</c> double-cast is REQUIRED and must not be "simplified"
     /// to <c>::BIGINT</c>: <c>pg_snapshot_xmin</c> returns <c>xid8</c>, and PostgreSQL
     /// has no direct <c>xid8→bigint</c> cast (fails at runtime with "cannot cast type
@@ -547,7 +555,7 @@ internal static class PostgresBackendHelpers
     /// </summary>
     internal static async Task<long> GetStableHeadAsync(
         SchemaQualifier schema, NpgsqlDataSource dataSource,
-        bool enabled, long afterPosition, CancellationToken cancellationToken)
+        bool enabled, long afterPosition, long upToPosition, CancellationToken cancellationToken)
     {
         if (!enabled)
             return long.MaxValue;
@@ -555,12 +563,13 @@ internal static class PostgresBackendHelpers
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
             $"SELECT global_position FROM {schema.Table("alberto_events")} " +
-            "WHERE global_position > @after " +
+            "WHERE global_position > @after AND global_position <= @upTo " +
             "AND pg_xact_id IS NOT NULL " +
             "AND pg_xact_id >= pg_snapshot_xmin(pg_current_snapshot())::TEXT::BIGINT " +
             "ORDER BY global_position ASC LIMIT 1",
             connection);
         cmd.Parameters.AddWithValue("after", afterPosition);
+        cmd.Parameters.AddWithValue("upTo", upToPosition);
         var result = await cmd.ExecuteScalarAsync(cancellationToken);
         return result is long firstNonStable ? firstNonStable - 1 : long.MaxValue;
     }
@@ -704,7 +713,7 @@ internal static class PostgresBackendHelpers
     /// occurred when <c>JsonDocument.Parse(…).RootElement</c> was embedded in an
     /// anonymous-object graph and passed to <see cref="System.Text.Json.JsonSerializer"/>.
     /// </remarks>
-    internal static string BuildEventsJson(List<IEventToPersist> events)
+    internal static byte[] BuildEventsJson(List<IEventToPersist> events)
     {
         using var stream = new MemoryStream();
         using var writer = new Utf8JsonWriter(stream);
@@ -736,6 +745,8 @@ internal static class PostgresBackendHelpers
         writer.WriteEndArray();
 
         writer.Flush();
-        return Encoding.UTF8.GetString(stream.ToArray());
+        // UTF-8 bytes straight to the jsonb parameter: decoding to a string here only has
+        // Npgsql encode it back.
+        return stream.ToArray();
     }
 }

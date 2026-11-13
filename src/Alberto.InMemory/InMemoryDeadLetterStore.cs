@@ -185,6 +185,9 @@ public sealed class InMemoryDeadLetterStore(TimeProvider? timeProvider = null) :
             var abandoned = existing with
             {
                 RetryRequested = false,
+                // Unchanged since the claim means nothing rescheduled it; left due it would be
+                // re-claimed on the next poll. A re-recorded failure's new schedule is kept.
+                NextRetryAt = existing.NextRetryAt == claim.Entry.NextRetryAt ? null : existing.NextRetryAt,
                 ClaimedAt = null,
                 ClaimExpiresAt = null,
                 ClaimedBy = null,

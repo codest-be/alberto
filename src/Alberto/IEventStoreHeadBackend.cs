@@ -40,4 +40,21 @@ public interface IEventStoreHeadBackend
         long afterPosition,
         CancellationToken cancellationToken = default)
         => Task.FromResult(long.MaxValue);
+
+    /// <summary>
+    /// <see cref="GetStableHeadAsync(long, CancellationToken)"/> restricted to positions in
+    /// (<paramref name="afterPosition"/>, <paramref name="upToPosition"/>]. The head only ever
+    /// asks about the window it has just read, and a backend that knows the upper bound can stop
+    /// there rather than search the rest of the log for a barrier that, in a healthy store, does
+    /// not exist. A barrier above <paramref name="upToPosition"/> may be reported or not: the
+    /// caller treats any result at or above it as "no barrier".
+    ///
+    /// The default ignores the bound, which is correct for every backend and merely slower.
+    /// Decorators must forward to their inner backend.
+    /// </summary>
+    Task<long> GetStableHeadUpToAsync(
+        long afterPosition,
+        long upToPosition,
+        CancellationToken cancellationToken = default)
+        => GetStableHeadAsync(afterPosition, cancellationToken);
 }

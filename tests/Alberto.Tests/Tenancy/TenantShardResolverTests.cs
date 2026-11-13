@@ -56,6 +56,35 @@ public class TenantShardResolverTests
     }
 
     [Fact]
+    public async Task Gates_are_not_retained_after_a_lookup_so_unknown_tenant_ids_cannot_grow_them()
+    {
+        var map = new FakeTenantShardMap().Assign("acme", "db1");
+        var resolver = Resolver(map);
+
+        await resolver.ResolveAsync("acme");
+        foreach (var id in Enumerable.Range(0, 50))
+            await resolver.ResolveAsync($"ghost-{id}").AsTask().ContinueWith(_ => { });
+
+        resolver.GateCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Concurrent_lookups_of_different_tenants_each_end_up_cached()
+    {
+        var map = new FakeTenantShardMap();
+        foreach (var id in Enumerable.Range(0, 200))
+            map.Assign($"t{id}", "db1");
+        var resolver = Resolver(map);
+
+        await Task.WhenAll(Enumerable.Range(0, 200)
+            .Select(id => Task.Run(async () => await resolver.ResolveAsync($"t{id}"))));
+        foreach (var id in Enumerable.Range(0, 200))
+            await resolver.ResolveAsync($"t{id}");
+
+        map.ResolveCalls.Should().Be(200, "a Remember that loses a race would force a second catalog read");
+    }
+
+    [Fact]
     public async Task An_unknown_tenant_is_placed_on_the_default_shard()
     {
         var map = new FakeTenantShardMap();

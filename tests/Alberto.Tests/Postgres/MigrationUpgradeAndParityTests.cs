@@ -165,7 +165,7 @@ public sealed class MigrationUpgradeAndParityTests
         await AssertCheckConstraintsAreValidatedAsync(conn);
 
         // 018: the partial index that keeps the stable-head query off a sequential scan.
-        await AssertInFlightVisibilityIndexAsync(conn);
+        await AssertRedundantIndexesDroppedAsync(conn);
 
         // 024: the wildcard tag boundary and everything 022/023 built to serve it are gone.
         await AssertWildcardBoundaryObjectsAreGoneAsync(conn);
@@ -229,7 +229,7 @@ public sealed class MigrationUpgradeAndParityTests
         await AssertCheckConstraintsAreValidatedAsync(conn);
 
         // 018: the partial index that keeps the stable-head query off a sequential scan.
-        await AssertInFlightVisibilityIndexAsync(conn);
+        await AssertRedundantIndexesDroppedAsync(conn);
 
         // 024: the wildcard tag boundary and everything 022/023 built to serve it are gone.
         await AssertWildcardBoundaryObjectsAreGoneAsync(conn);
@@ -949,56 +949,47 @@ public sealed class MigrationUpgradeAndParityTests
     }
 
     /// <summary>
-    /// Asserts the partial index that keeps <c>GetStableHeadAsync</c> off a sequential scan is
-    /// present, valid, and shaped the way that query needs it.
+    /// Asserts migration 008 removed the indexes that duplicated another one, and that the
+    /// stable-head query is served by the primary key.
     /// </summary>
     /// <remarks>
-    /// The stable-head query looks for the first position above the head whose inserting
-    /// transaction is not yet older than every in-flight transaction. Migration 008 added
-    /// <c>pg_xact_id</c> without backfilling it, so on any upgraded database almost every row
-    /// has it NULL and the <c>pg_xact_id IS NOT NULL</c> predicate matches only the recent tail.
-    /// Without a partial index the planner sees a near-zero selectivity filter over the whole
-    /// table and picks a parallel sequential scan. Indexing only the rows that can match turns
-    /// that into a scan of the tail.
-    /// <para>
-    /// <c>indisvalid</c> is checked explicitly rather than assumed: the index is built with
-    /// <c>CREATE INDEX CONCURRENTLY</c>, and an interrupted concurrent build leaves behind an
-    /// index that exists in the catalog but that the planner will never use.
-    /// </para>
+    /// <c>ix_alberto_events_inflight</c> was meant to hold only the in-flight tail, but
+    /// <c>pg_xact_id</c> is never cleared after commit, so it held every row written since the
+    /// column existed: a second copy of the primary key, maintained on every append.
+    /// <c>GetStableHeadAsync</c> is bounded to the window the head just read, so the plan that
+    /// matters is a primary-key range scan — asserted here rather than assumed.
     /// </remarks>
-    private static async Task AssertInFlightVisibilityIndexAsync(NpgsqlConnection conn)
+    private static async Task AssertRedundantIndexesDroppedAsync(NpgsqlConnection conn)
     {
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = """
-            SELECT pg_get_indexdef(i.indexrelid), i.indisvalid
-            FROM pg_index i
-            INNER JOIN pg_class c ON c.oid = i.indexrelid
-            INNER JOIN pg_namespace n ON n.oid = c.relnamespace
-            WHERE c.relname = 'ix_alberto_events_inflight'
-              AND n.nspname = 'public'
+        await using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = """
+                SELECT count(*) FROM pg_indexes
+                WHERE schemaname = 'public'
+                  AND indexname IN ('ix_alberto_events_inflight',
+                                    'idx_alberto_projection_states_type',
+                                    'idx_alberto_projection_states_tenant_type',
+                                    'idx_alberto_projection_states_type_version_cleanup')
+                """;
+            Convert.ToInt64(await cmd.ExecuteScalarAsync()).Should().Be(0,
+                because: "migration 008 drops the indexes that duplicate a surviving one");
+        }
+
+        await using var explain = conn.CreateCommand();
+        explain.CommandText = """
+            EXPLAIN SELECT global_position FROM alberto_events
+            WHERE global_position > 0 AND global_position <= 2000
+              AND pg_xact_id IS NOT NULL
+              AND pg_xact_id >= pg_snapshot_xmin(pg_current_snapshot())::TEXT::BIGINT
+            ORDER BY global_position ASC LIMIT 1
             """;
+        var plan = new System.Text.StringBuilder();
+        await using var reader = await explain.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            plan.AppendLine(reader.GetString(0));
 
-        await using var reader = await cmd.ExecuteReaderAsync();
-        (await reader.ReadAsync()).Should().BeTrue(
-            because: "migration 020 must create ix_alberto_events_inflight so that " +
-                     "GetStableHeadAsync does not fall back to a sequential scan of alberto_events");
-
-        var definition = reader.GetString(0);
-        var isValid = reader.GetBoolean(1);
-
-        isValid.Should().BeTrue(
-            because: "an interrupted CREATE INDEX CONCURRENTLY leaves an invalid index behind — " +
-                     "it satisfies an existence check but the planner never uses it");
-
-        definition.Should().Contain("alberto_events",
-            because: "the index must be on the event log itself");
-        definition.Should().Contain("global_position",
-            because: "the stable-head query scans ascending by global_position and takes LIMIT 1, " +
-                     "so the index has to supply that ordering");
-        definition.Should().Contain("pg_xact_id IS NOT NULL",
-            because: "the index must be partial — indexing every row would not shrink the scan, " +
-                     "since it is precisely the NULL rows (everything predating migration 008) " +
-                     "that make the predicate so unselective");
+        plan.ToString().Should().Contain("alberto_events_pkey",
+            because: "the bounded stable-head query must be a primary-key range scan, not a scan of the log");
     }
 
     /// <summary>

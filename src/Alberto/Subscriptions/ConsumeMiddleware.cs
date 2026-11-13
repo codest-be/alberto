@@ -95,7 +95,7 @@ public static class ConsumeMiddlewares
                 // every healthy event in the window. See
                 // RetryAndDeadLetterCore.StoreDeadLetterAsync.
                 context.DeadLetterStored = await RetryAndDeadLetterCore.StoreDeadLetterAsync(
-                    deadLetterStore, entry, logger, context.CancellationToken);
+                    deadLetterStore, entry, logger, context.CancellationToken, clock);
             }
         };
     }

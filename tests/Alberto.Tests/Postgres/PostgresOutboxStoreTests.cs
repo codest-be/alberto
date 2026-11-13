@@ -308,6 +308,59 @@ public sealed class PostgresOutboxStoreTests(PostgresOutboxStoreFixture fixture)
             "Non-delivered entry was incorrectly purged.");
     }
 
+    [Fact]
+    public async Task PurgeDeliveredAsync_ShouldRemoveMoreThanOneBatch()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        const string marker = "purge-multi-batch";
+        await using (var conn = await fixture.DataSource.OpenConnectionAsync(ct))
+        await using (var cmd = new NpgsqlCommand(
+            """
+            INSERT INTO alberto_outbox_entries (source_event_id, message_type, payload, status, delivered_at)
+            SELECT gen_random_uuid(), @marker, '{}', 'delivered', now() - interval '2 hours'
+            FROM generate_series(1, 12000)
+            """,
+            conn))
+        {
+            cmd.Parameters.AddWithValue("marker", marker);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        await CreateStore().PurgeDeliveredAsync(DateTimeOffset.UtcNow.AddHours(-1), ct);
+
+        await using var check = await fixture.DataSource.OpenConnectionAsync(ct);
+        await using var count = new NpgsqlCommand(
+            "SELECT count(*) FROM alberto_outbox_entries WHERE message_type = @marker", check);
+        count.Parameters.AddWithValue("marker", marker);
+        Assert.Equal(0L, (long)(await count.ExecuteScalarAsync(ct))!);
+    }
+
+    [Fact]
+    public async Task ClaimPendingAsync_MixesPendingAndExpiredClaims_OldestFirstWithinLimit()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var store = CreateStore();
+        var t0 = new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var a = MakeEntry() with { CreatedAt = t0.AddSeconds(1) };
+        var b = MakeEntry() with { CreatedAt = t0.AddSeconds(2) };
+        var c = MakeEntry() with { CreatedAt = t0.AddSeconds(3) };
+        var d = MakeEntry() with { CreatedAt = t0.AddSeconds(4) };
+        var e = MakeEntry() with { CreatedAt = t0.AddSeconds(5) };
+
+        // b and d become expired claims; a, c and e are plain pending entries.
+        await store.InsertAsync(b, ct);
+        await store.InsertAsync(d, ct);
+        await ClaimAsync(store, 100, ct);
+        await ExpireClaimAsync(b.Id, ct);
+        await ExpireClaimAsync(d.Id, ct);
+        foreach (var entry in new[] { a, c, e })
+            await store.InsertAsync(entry, ct);
+
+        var claimed = await ClaimAsync(CreateStore(), 3, ct);
+
+        Assert.Equal([a.Id, b.Id, c.Id], claimed.Select(x => x.Entry.Id).ToArray());
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // Claim leases and fencing
     // ──────────────────────────────────────────────────────────────────────────

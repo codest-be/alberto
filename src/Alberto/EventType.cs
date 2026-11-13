@@ -106,13 +106,15 @@ public sealed partial class EventTypeAttribute : Attribute
     /// </summary>
     public static EventTypeAttribute? GetEventType(Type type)
     {
-        var attribute = type
+        // Reflection over attributes allocates on every call, and this is asked once per event
+        // on the serialise and fold paths. A type's attributes never change, so cache them.
+        return Cache.GetOrAdd(type, static t => t
             .GetCustomAttributes(typeof(EventTypeAttribute), false)
             .Cast<EventTypeAttribute>()
-            .FirstOrDefault();
-
-        return attribute;
+            .FirstOrDefault());
     }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, EventTypeAttribute?> Cache = new();
 
     /// <summary>
     /// Gets the event type ID from a type, throwing if not found.

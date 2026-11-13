@@ -224,7 +224,8 @@ internal static class RetryAndDeadLetterCore
         IDeadLetterStore store,
         DeadLetterEntry entry,
         ILogger? logger,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        TimeProvider? clock = null)
     {
         Exception? storeError = null;
 
@@ -244,7 +245,7 @@ internal static class RetryAndDeadLetterCore
             {
                 storeError = ex;
                 if (attempt < DeadLetterWriteMaxAttempts)
-                    await Task.Delay(TimeSpan.FromMilliseconds(100 * attempt), cancellationToken);
+                    await Task.Delay(TimeSpan.FromMilliseconds(100 * attempt), clock ?? TimeProvider.System, cancellationToken);
             }
         }
 

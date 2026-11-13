@@ -84,7 +84,7 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
 
         if (query.IsEmpty)
         {
-            result = _events.Where(e => e.GlobalPosition > afterPosition);
+            result = EventsAfter(afterPosition);
         }
         else
         {
@@ -108,7 +108,7 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
                 matchingPositions = typeMatches ?? tagMatches!;
             }
 
-            result = _events.Where(e => matchingPositions.Contains(e.GlobalPosition));
+            result = matchingPositions.Order().Select(EventAt);
         }
 
         // In multi-tenant mode the caller supplies a tenant filter; in single-tenant mode
@@ -116,10 +116,23 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
         if (tenantId is not null)
             result = result.Where(e => e.TenantId == tenantId);
 
-        var ordered = result.OrderBy(e => e.GlobalPosition);
-        var limited = limit.HasValue ? ordered.Take(limit.Value) : ordered;
+        var limited = limit.HasValue ? result.Take(limit.Value) : result;
         return limited.ToList();
     }
+
+    // Positions are dense and start at 1 (appends are all-or-nothing and nothing is ever
+    // removed short of Clear), so the event at position p is _events[p - 1]. Every read below
+    // leans on that instead of scanning or sorting the whole log.
+    private EventEnvelope EventAt(long position) => _events[(int)(position - 1)];
+
+    private IEnumerable<EventEnvelope> EventsAfter(long afterPosition)
+    {
+        for (var i = (int)Math.Clamp(afterPosition, 0, _events.Count); i < _events.Count; i++)
+            yield return _events[i];
+    }
+
+    private static IEnumerable<long> After(SortedSet<long> positions, long afterPosition)
+        => afterPosition == long.MaxValue ? [] : positions.GetViewBetween(afterPosition + 1, long.MaxValue);
 
     private HashSet<long> CollectTypeMatches(DcbQuery query, long afterPosition)
     {
@@ -128,7 +141,7 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
         {
             if (_typeIndex.TryGetValue(type.Id, out var positions))
             {
-                foreach (var pos in positions.Where(p => p > afterPosition))
+                foreach (var pos in After(positions, afterPosition))
                     matches.Add(pos);
             }
         }
@@ -150,7 +163,7 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
                     break;
                 }
 
-                var filtered = positions.Where(p => p > afterPosition);
+                var filtered = After(positions, afterPosition);
                 intersected = intersected is null
                     ? filtered.ToArray()
                     : intersected.Intersect(filtered).ToArray();
@@ -169,7 +182,7 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
         {
             if (_tagIndex.TryGetValue(tag.Value, out var positions))
             {
-                foreach (var pos in positions.Where(p => p > afterPosition))
+                foreach (var pos in After(positions, afterPosition))
                     matches.Add(pos);
             }
         }
@@ -191,9 +204,7 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
     {
         lock (_lock)
         {
-            var result = _events
-                .Where(e => e.GlobalPosition > afterPosition)
-                .OrderBy(e => e.GlobalPosition);
+            var result = EventsAfter(afterPosition);
 
             var limited = limit.HasValue ? result.Take(limit.Value) : result;
 
@@ -250,13 +261,15 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
             }
         }
 
-        // Append events
+        // Build every envelope before storing any. Validation (NUL rejection, JSON
+        // normalisation) can throw part-way through the batch, and an append is all-or-nothing:
+        // Postgres rolls the whole batch back, so nothing may be stored or indexed here either.
         var appended = new List<EventEnvelope>();
         var now = timeProvider.GetUtcNow();
 
         foreach (var evt in events)
         {
-            var position = _nextPosition++;
+            var position = _nextPosition + appended.Count;
 
             // Derive the schema version from the stored _version:N tag rather than trusting
             // EventType.Version on the input object.  This mirrors what the Postgres
@@ -289,11 +302,16 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
                 CreatedAt = now
             };
 
-            _events.Add(envelope);
             appended.Add(envelope);
+        }
+
+        foreach (var envelope in appended)
+        {
+            var position = envelope.GlobalPosition;
+            _events.Add(envelope);
 
             // Update type index
-            var typeKey = evt.EventType.Id;
+            var typeKey = envelope.EventType.Id;
             if (!_typeIndex.TryGetValue(typeKey, out var typePositions))
             {
                 typePositions = [];
@@ -302,7 +320,7 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
             typePositions.Add(position);
 
             // Update tag index
-            foreach (var tag in evt.Tags)
+            foreach (var tag in envelope.Tags)
             {
                 var tagKey = tag.Value;
                 if (!_tagIndex.TryGetValue(tagKey, out var tagPositions))
@@ -314,6 +332,7 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
             }
         }
 
+        _nextPosition += appended.Count;
         return appended;
     }
 
@@ -321,12 +340,7 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
     {
         lock (_lock)
         {
-            var lastPosition = _events
-                .Select(e => e.GlobalPosition)
-                .DefaultIfEmpty(0)
-                .Max();
-
-            return Task.FromResult(lastPosition);
+            return Task.FromResult(_nextPosition - 1);
         }
     }
 
@@ -335,11 +349,9 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
     {
         lock (_lock)
         {
-            var result = _events
-                .Where(e => e.GlobalPosition > afterPosition)
-                .Select(e => e.GlobalPosition)
-                .OrderBy(p => p)
+            var result = EventsAfter(afterPosition)
                 .Take(windowSize)
+                .Select(e => e.GlobalPosition)
                 .ToList();
             return Task.FromResult<IReadOnlyList<long>>(result);
         }
@@ -395,13 +407,7 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
         // never interfere with each other — the same isolation the Postgres schema
         // achieves by partitioning the events table on tenant_id.
         if (tenantId is not null)
-        {
-            var tenantPositions = _events
-                .Where(e => e.TenantId == tenantId)
-                .Select(e => e.GlobalPosition)
-                .ToHashSet();
-            matches = matches.Where(tenantPositions.Contains);
-        }
+            matches = matches.Where(p => EventAt(p).TenantId == tenantId);
 
         long? conflict = null;
         foreach (var pos in matches)

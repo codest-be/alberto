@@ -373,6 +373,11 @@ public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
         var sql = $"""
             UPDATE {_schema.Table("alberto_dead_letter_events")}
             SET retry_requested = FALSE,
+                -- Still the schedule the claim was made on: nothing rescheduled the row, so
+                -- leaving it due would hand it straight back to the next poll. A failure
+                -- re-recorded during the retry wrote a new schedule, which is kept.
+                next_retry_at = CASE WHEN next_retry_at IS NOT DISTINCT FROM @claimed_next_retry_at
+                                     THEN NULL ELSE next_retry_at END,
                 claimed_at = NULL,
                 claim_expires_at = NULL,
                 claimed_by = NULL,
@@ -387,6 +392,11 @@ public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
         cmd.CommandText = sql;
         cmd.Parameters.AddWithValue("id", claim.Entry.Id);
         cmd.Parameters.AddWithValue("claim_id", claim.Token);
+
+        cmd.Parameters.Add(new NpgsqlParameter("claimed_next_retry_at", NpgsqlTypes.NpgsqlDbType.TimestampTz)
+        {
+            Value = claim.Entry.NextRetryAt is { } next ? next.ToUniversalTime() : DBNull.Value
+        });
 
         return await cmd.ExecuteNonQueryAsync(ct) == 1;
     }

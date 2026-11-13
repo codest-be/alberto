@@ -15,6 +15,7 @@ internal sealed class OutboxHandler(
     IServiceScopeFactory scopeFactory) : IEventProcessor, IBatchableProcessor, IProcessorLifecycle
 {
     internal const string ProcessorIdValue = "outbox";
+    private const int MaxConcurrentInserts = 8;
 
     /// <inheritdoc/>
     public string ProcessorId => ProcessorIdValue;
@@ -40,7 +41,7 @@ internal sealed class OutboxHandler(
     /// <remarks>
     /// Maps all events concurrently — mapper calls are independent I/O (e.g. DB enrichment
     /// queries) so there is no ordering constraint between them. Non-null results are then
-    /// inserted concurrently; each insert targets a distinct row identified by its source
+    /// inserted with bounded concurrency; each insert targets a distinct row identified by its source
     /// event ID, so there are no write conflicts.
     /// </remarks>
     public async Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct)
@@ -48,11 +49,18 @@ internal sealed class OutboxHandler(
         var messages = await Task.WhenAll(
             events.Select(e => MapAsync(e, ct)));
 
-        await Task.WhenAll(
-            messages
-                .Select((m, i) => (Message: m, Event: events[i]))
-                .Where(x => x.Message is not null)
-                .Select(x => store.InsertAsync(BuildEntry(x.Message!, x.Event), ct)));
+        // Built up front so created_at follows event order whatever the insert interleaving.
+        var entries = messages
+            .Select((m, i) => (Message: m, Event: events[i]))
+            .Where(x => x.Message is not null)
+            .Select(x => BuildEntry(x.Message!, x.Event))
+            .ToList();
+
+        // Bounded so a large batch cannot hold that many pooled connections at once.
+        await Parallel.ForEachAsync(
+            entries,
+            new ParallelOptions { MaxDegreeOfParallelism = MaxConcurrentInserts, CancellationToken = ct },
+            (entry, token) => new ValueTask(store.InsertAsync(entry, token)));
     }
 
     private async Task<ExternalMessage?> MapAsync(IEventEnvelope envelope, CancellationToken ct)

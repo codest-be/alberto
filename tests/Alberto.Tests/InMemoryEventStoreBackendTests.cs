@@ -243,6 +243,31 @@ public class InMemoryTenantBackendTests
             .WithMessage("*StreamAllAsync*");
     }
 
+    [Fact]
+    public async Task Append_ThatFailsValidationPartWay_StoresNothing()
+    {
+        // An append is all-or-nothing, as it is on Postgres. The second event is rejected, so
+        // the first must not be stored, indexed, or leave a hole in the position sequence.
+        var ct = TestContext.Current.CancellationToken;
+        var tag = $"d-order:{TestId}";
+        var invalid = new EventToPersist
+        {
+            EventType = new EventType("order-placed"),
+            EventData = "not json",
+            Tags = [EventTag.Parse(tag)]
+        };
+
+        var act = async () => await _backend.AppendAsync([Event("order-placed", tag), invalid], cancellationToken: ct);
+        await act.Should().ThrowAsync<Exception>();
+
+        (await _backend.GetLastPositionAsync(ct)).Should().Be(0);
+        (await _backend.StreamAllAsync(cancellationToken: ct)).Should().BeEmpty();
+        (await _backend.StreamAsync(DcbQuery.ByTags(tag), cancellationToken: ct)).Should().BeEmpty();
+
+        var appended = await _backend.AppendAsync([Event("order-placed", tag)], cancellationToken: ct);
+        appended.Should().ContainSingle().Which.GlobalPosition.Should().Be(1);
+    }
+
     private sealed class FakeTenantAccessor(string tenantId) : ITenantAccessor
     {
         public string TenantId { get; } = tenantId;
