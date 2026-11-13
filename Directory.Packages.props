@@ -4,10 +4,8 @@
     <CentralPackageTransitivePinningEnabled>false</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
   <!-- Versioned with the runtime, so declared once per target framework: a net10 consumer stays on
-       10.x and a net11 consumer gets 11.x. EF Core 11 ships for net11.0 alone, so one version for
-       both targets is not an option for it, and the rest follow the same rule rather than mixing
-       runtime trains inside one build. Anything not net11.0 (net10.0, netstandard2.0) takes 10.x.
-       Dependabot ignores majors here; a new .NET major is added by hand as a new group. -->
+       10.x and a net11 consumer gets 11.x. Anything not net11.0 (net10.0, netstandard2.0) takes
+       10.x. Dependabot ignores majors here; a new .NET major is added by hand as a new group. -->
   <ItemGroup Condition="'$(TargetFramework)' != 'net11.0'">
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.15" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.15" />
@@ -16,9 +14,6 @@
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.15" />
     <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.15" />
     <PackageVersion Include="System.Text.Json" Version="10.0.15" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.15" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.15" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.15" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.15" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.15" />
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.15" />
@@ -32,9 +27,6 @@
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="11.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Options" Version="11.0.0" />
     <PackageVersion Include="System.Text.Json" Version="11.0.0" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="11.0.0" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="11.0.0" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="11.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="11.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="11.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="11.0.0" />
@@ -59,7 +51,14 @@
     <PackageVersion Include="Npgsql.OpenTelemetry" Version="10.0.3" />
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
     <PackageVersion Include="DbUp-PostgreSQL" Version="7.0.1" />
-    <!-- Entity Framework -->
+    <!-- Entity Framework. One version for both targets, deliberately 10.x on net11 too: Alberto's
+         EF projections run on PostgreSQL, and the Npgsql provider for EF 11 is not GA yet (its
+         RCs pin an exact EF RC build). Declaring EF 11 would force net11 consumers onto a
+         prerelease provider; EF 10 runs on net11. Move EF into the per-TFM groups above once
+         Npgsql.EntityFrameworkCore.PostgreSQL 11.0.0 ships. -->
+    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.15" />
     <!-- Aspire -->
     <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.6.5" />
     <PackageVersion Include="Aspire.Hosting.PostgreSQL" Version="13.6.5" />

@@ -86,6 +86,11 @@ jobs:
       - name: Test with coverage
         run: build/coverage.sh --no-build
 
+      # The libraries ship for net10.0 and net11.0; coverage above runs net10.0 only. This is
+      # the same suite, integration included, on the net11.0 runtime.
+      - name: Test on net11.0
+        run: dotnet test tests/Alberto.Tests/Alberto.Tests.csproj -c Release --no-build --framework net11.0
+
       # Before this step a failing suite named the failing test only in the raw job log,
       # which on ~2000 tests is a scroll to find one line — and every step after the
       # failure was skipped, so the run's front page said nothing at all. The summary is
@@ -187,7 +192,7 @@ jobs:
           SMOKEDIR=$(mktemp -d "${RUNNER_TEMP:-/tmp}/alberto-smoke.XXXXXX")
           cat > "$SMOKEDIR/PackCheck.csproj" <<CSPROJ
           <Project Sdk="Microsoft.NET.Sdk">
-            <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+            <PropertyGroup><TargetFrameworks>net10.0;net11.0</TargetFrameworks></PropertyGroup>
             <ItemGroup><PackageReference Include="Alberto.Postgres" Version="$PREFIX-ci" /></ItemGroup>
           </Project>
           CSPROJ

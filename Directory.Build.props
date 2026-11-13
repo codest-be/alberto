@@ -21,6 +21,10 @@
 
         <!-- Build Configuration -->
 
+        <!-- Every library under /src ships for both. Apps, the CLI, benchmarks and tests run on
+             net10.0 only: they are consumers of one runtime, not the thing being shipped. -->
+        <AlbertoLibraryTargetFrameworks>net10.0;net11.0</AlbertoLibraryTargetFrameworks>
+
         <!-- Nothing ships to NuGet unless it says so. The SDK default is the other way round, which
              quietly handed the package metadata, SourceLink and the public-API gate below to every
              app, test, tool and benchmark project in the repo. Each package under /src sets
