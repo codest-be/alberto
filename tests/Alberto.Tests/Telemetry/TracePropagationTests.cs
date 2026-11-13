@@ -64,7 +64,10 @@ public sealed class TracePropagationTests
 
         var metadata = await AppendAndReadMetadataAsync();
 
-        Assert.Equal($"00-{ambient.TraceId}-{ambient.SpanId}-01", metadata["traceparent"]);
+        // Only the sampled bit is asserted: OpenTelemetry >= 1.21 also sets the W3C Level 2
+        // random-trace-id bit (0x02), and the flags are carried as the propagator writes them.
+        Assert.StartsWith($"00-{ambient.TraceId}-{ambient.SpanId}-", metadata["traceparent"]);
+        Assert.True(SampledBitSet(metadata["traceparent"]));
         Assert.Equal("vendor=x", metadata["tracestate"]);
     }
 
@@ -120,10 +123,10 @@ public sealed class TracePropagationTests
         var metadata = await AppendAndReadMetadataAsync();
         var read = TraceContextPropagation.Extract(metadata);
 
-        Assert.EndsWith("-00", metadata["traceparent"]);
+        Assert.False(SampledBitSet(metadata["traceparent"]));
         Assert.Equal(ambient.TraceId, read.TraceId);
         Assert.Equal(ambient.SpanId, read.SpanId);
-        Assert.Equal(ActivityTraceFlags.None, read.TraceFlags);
+        Assert.Equal(ActivityTraceFlags.None, read.TraceFlags & ActivityTraceFlags.Recorded);
         Assert.Equal("vendor=x", read.TraceState);
         Assert.True(read.IsRemote);
     }
@@ -288,4 +291,7 @@ public sealed class TracePropagationTests
         Metadata = metadata,
         CreatedAt = DateTime.UtcNow,
     };
+
+    private static bool SampledBitSet(string traceparent) =>
+        (Convert.ToByte(traceparent[^2..], 16) & 0x01) != 0;
 }
