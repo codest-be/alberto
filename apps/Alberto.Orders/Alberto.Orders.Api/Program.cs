@@ -38,12 +38,7 @@ builder.Services.AddPaymentsModule(builder.Configuration);
 builder.Services
     .AddGraphQLServer()
     .AddHttpRequestInterceptor<TenantHttpRequestInterceptor>()
-    .AddInstrumentation(o =>
-    {
-        o.RequestDetails = RequestDetails.Operation;
-        o.Scopes = ActivityScopes.ExecuteHttpRequest;
-        o.RenameRootActivity = true;
-    })
+    .AddInstrumentation(o => o.Scopes = ActivityScopes.ExecuteHttpRequest)
     .AddOrdersTypes()
     .AddPaymentsTypes();
 

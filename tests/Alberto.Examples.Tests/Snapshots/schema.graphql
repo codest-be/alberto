@@ -3,6 +3,61 @@ schema {
   mutation: Mutation
 }
 
+type Query {
+  "Gets an order by ID, rebuilt from events for consistency."
+  order(orderId: UUID!): Order @cost(weight: "10")
+  "Gets aggregated order statistics from the async projection."
+  ordersOverview: OrdersOverview @cost(weight: "10")
+  "Gets orders with optional filtering by status, customer, and date range."
+  orders(
+    status: OrderStatus
+    customerId: UUID
+    createdAfter: DateTime
+    createdBefore: DateTime
+    skip: Int! = 0
+    take: Int! = 20
+  ): OrdersConnection! @cost(weight: "10")
+  "Gets recent orders, ordered by creation date."
+  recentOrders(limit: Int! = 20): [Order!]! @cost(weight: "10")
+  "Gets a payment by ID, rebuilt from events for consistency."
+  payment(paymentId: UUID!): Payment @cost(weight: "10")
+  "Gets aggregated payment statistics from the async projection."
+  paymentsOverview: PaymentsOverview @cost(weight: "10")
+  "Gets the calling tenant's recent payments, ordered by last update."
+  recentPayments(limit: Int! = 20): [Payment!]! @cost(weight: "10")
+}
+
+type Mutation {
+  "Adds a line item to an existing draft order."
+  addOrderItem(input: AddOrderItemInput!): MutationResult! @cost(weight: "10")
+  "Cancels a draft or confirmed order."
+  cancelOrder(input: CancelOrderInput!): MutationResult! @cost(weight: "10")
+  "Confirms a draft order, making it ready for shipment."
+  confirmOrder(orderId: UUID!): MutationResult! @cost(weight: "10")
+  "Creates a new order with the specified line items."
+  createOrder(input: CreateOrderInput!): CreateOrderResult! @cost(weight: "10")
+  "Marks a shipped order as delivered."
+  deliverOrder(orderId: UUID!): MutationResult! @cost(weight: "10")
+  "Removes a line item from a draft order."
+  removeOrderItem(orderId: UUID!, productId: UUID!): MutationResult!
+    @cost(weight: "10")
+  "Ships a confirmed order with tracking information."
+  shipOrder(input: ShipOrderInput!): MutationResult! @cost(weight: "10")
+  "Authorizes a payment with an authorization code."
+  authorizePayment(paymentId: UUID!, authorizationCode: String!): MutationResult!
+    @cost(weight: "10")
+  "Captures a previously authorized payment."
+  capturePayment(input: CapturePaymentInput!): MutationResult!
+    @cost(weight: "10")
+  "Marks a payment as failed."
+  failPayment(input: FailPaymentInput!): MutationResult! @cost(weight: "10")
+  "Initiates a new payment for an order."
+  initiatePayment(input: InitiatePaymentInput!): InitiatePaymentResult!
+    @cost(weight: "10")
+  "Refunds a previously captured payment."
+  refundPayment(input: RefundPaymentInput!): MutationResult! @cost(weight: "10")
+}
+
 "Result of a create mutation."
 type CreateOrderResult {
   orderId: UUID!
@@ -11,33 +66,6 @@ type CreateOrderResult {
 "Result of initiating a payment."
 type InitiatePaymentResult {
   paymentId: UUID!
-}
-
-type Mutation {
-  "Creates a new order with the specified line items."
-  createOrder(input: CreateOrderInput!): CreateOrderResult! @cost(weight: "10")
-  "Adds a line item to an existing draft order."
-  addOrderItem(input: AddOrderItemInput!): MutationResult! @cost(weight: "10")
-  "Removes a line item from a draft order."
-  removeOrderItem(orderId: UUID! productId: UUID!): MutationResult! @cost(weight: "10")
-  "Confirms a draft order, making it ready for shipment."
-  confirmOrder(orderId: UUID!): MutationResult! @cost(weight: "10")
-  "Ships a confirmed order with tracking information."
-  shipOrder(input: ShipOrderInput!): MutationResult! @cost(weight: "10")
-  "Marks a shipped order as delivered."
-  deliverOrder(orderId: UUID!): MutationResult! @cost(weight: "10")
-  "Cancels a draft or confirmed order."
-  cancelOrder(input: CancelOrderInput!): MutationResult! @cost(weight: "10")
-  "Initiates a new payment for an order."
-  initiatePayment(input: InitiatePaymentInput!): InitiatePaymentResult! @cost(weight: "10")
-  "Authorizes a payment with an authorization code."
-  authorizePayment(paymentId: UUID! authorizationCode: String!): MutationResult! @cost(weight: "10")
-  "Captures a previously authorized payment."
-  capturePayment(input: CapturePaymentInput!): MutationResult! @cost(weight: "10")
-  "Marks a payment as failed."
-  failPayment(input: FailPaymentInput!): MutationResult! @cost(weight: "10")
-  "Refunds a previously captured payment."
-  refundPayment(input: RefundPaymentInput!): MutationResult! @cost(weight: "10")
 }
 
 "Result of a mutation that doesn't return data."
@@ -118,7 +146,7 @@ type Payment {
   refundedAt: DateTime
 }
 
-"Overview\/aggregate read model for payments."
+"Overview/aggregate read model for payments."
 type PaymentsOverview {
   totalPayments: Int!
   authorizedPayments: Int!
@@ -127,23 +155,6 @@ type PaymentsOverview {
   refundedPayments: Int!
   totalCapturedAmount: Decimal!
   totalRefundedAmount: Decimal!
-}
-
-type Query {
-  "Gets an order by ID, rebuilt from events for consistency."
-  order(orderId: UUID!): Order @cost(weight: "10")
-  "Gets aggregated order statistics from the async projection."
-  ordersOverview: OrdersOverview @cost(weight: "10")
-  "Gets orders with optional filtering by status, customer, and date range."
-  orders(status: OrderStatus customerId: UUID createdAfter: DateTime createdBefore: DateTime skip: Int! = 0 take: Int! = 20): OrdersConnection! @cost(weight: "10")
-  "Gets recent orders, ordered by creation date."
-  recentOrders(limit: Int! = 20): [Order!]! @cost(weight: "10")
-  "Gets a payment by ID, rebuilt from events for consistency."
-  payment(paymentId: UUID!): Payment @cost(weight: "10")
-  "Gets aggregated payment statistics from the async projection."
-  paymentsOverview: PaymentsOverview @cost(weight: "10")
-  "Gets the calling tenant's recent payments, ordered by last update."
-  recentPayments(limit: Int! = 20): [Payment!]! @cost(weight: "10")
 }
 
 "Input for adding an item to an order."
@@ -231,16 +242,26 @@ enum PaymentStatus {
   REFUNDED
 }
 
-"The purpose of the `cost` directive is to define a `weight` for GraphQL types, fields, and arguments. Static analysis can use these weights when calculating the overall cost of a query or response."
-directive @cost("The `weight` argument defines what value to add to the overall cost for every appearance, or possible appearance, of a type, field, argument, etc." weight: String!) on SCALAR | OBJECT | FIELD_DEFINITION | ARGUMENT_DEFINITION | ENUM | INPUT_FIELD_DEFINITION
+"The `DateTime` scalar type represents a date and time with time zone offset information."
+scalar DateTime
+  @specifiedBy(url: "https://scalars.graphql.org/chillicream/date-time.html")
 
-"The `@specifiedBy` directive is used within the type system definition language to provide a URL for specifying the behavior of custom scalar definitions."
-directive @specifiedBy("The specifiedBy URL points to a human-readable specification. This field will only read a result for scalar types." url: String!) on SCALAR
-
-"The `DateTime` scalar represents an ISO-8601 compliant date time type."
-scalar DateTime @specifiedBy(url: "https:\/\/www.graphql-scalars.com\/date-time")
-
-"The `Decimal` scalar type represents a decimal floating-point number."
+"The `Decimal` scalar type represents a decimal floating-point number with high precision."
 scalar Decimal
+  @specifiedBy(url: "https://scalars.graphql.org/chillicream/decimal.html")
 
-scalar UUID @specifiedBy(url: "https:\/\/tools.ietf.org\/html\/rfc4122")
+"The `UUID` scalar type represents a Universally Unique Identifier (UUID) as defined by RFC 9562."
+scalar UUID
+  @specifiedBy(url: "https://scalars.graphql.org/chillicream/uuid.html")
+
+"The purpose of the `cost` directive is to define a `weight` for GraphQL types, fields, and arguments. Static analysis can use these weights when calculating the overall cost of a query or response."
+directive @cost(
+  "The `weight` argument defines what value to add to the overall cost for every appearance, or possible appearance, of a type, field, argument, etc."
+  weight: String!
+) on
+  | SCALAR
+  | OBJECT
+  | FIELD_DEFINITION
+  | ARGUMENT_DEFINITION
+  | ENUM
+  | INPUT_FIELD_DEFINITION
