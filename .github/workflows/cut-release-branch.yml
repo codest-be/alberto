@@ -29,7 +29,7 @@ jobs:
       # RELEASE_TOKEN, not GITHUB_TOKEN: the release-branch ruleset forbids creating `release/**`
       # to everyone but org admins, and a ruleset cannot exempt the GitHub Actions app. The token
       # is the maintainer's, so the push is theirs. See docs/releasing.md.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           token: ${{ secrets.RELEASE_TOKEN }}

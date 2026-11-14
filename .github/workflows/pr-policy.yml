@@ -37,7 +37,7 @@ jobs:
     # single-runner group means a wedged job would block every PR until someone noticed.
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # A milestone assigned during triage does not raise a pull_request event, so a PR that
       # failed for a missing milestone stays red until something re-runs this. Re-running the
