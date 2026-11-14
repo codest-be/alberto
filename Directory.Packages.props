@@ -38,9 +38,6 @@
     <PackageVersion Include="OpenTelemetry.Api" Version="1.21.0" />
     <PackageVersion Include="OpenTelemetry.Exporter.InMemory" Version="1.21.0" />
     <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.21.0" />
-    <!-- CLI Tool -->
-    <PackageVersion Include="System.CommandLine" Version="3.0.0" />
-    <PackageVersion Include="Spectre.Console" Version="0.57.2" />
     <!-- PostgreSQL -->
     <PackageVersion Include="Npgsql" Version="10.0.3" />
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
@@ -52,12 +49,6 @@
          Npgsql.EntityFrameworkCore.PostgreSQL 11.0.0 ships. -->
     <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.15" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.15" />
-    <!-- MCP -->
-    <PackageVersion Include="ModelContextProtocol" Version="2.4.0" />
-    <PackageVersion Include="ModelContextProtocol.AspNetCore" Version="2.4.0" />
-    <!-- BFF -->
-    <PackageVersion Include="Yarp.ReverseProxy" Version="2.3.0" />
-    <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery.Yarp" Version="10.11.0" />
     <!-- Rebus (test-only; not shipped in any packable project) -->
     <PackageVersion Include="Rebus" Version="8.10.0" />
     <PackageVersion Include="Rebus.PostgreSql" Version="9.1.1" />

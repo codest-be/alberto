@@ -106,8 +106,7 @@ fi
 # mistake that could reach a release unremarked. The analyzer fails the build on an undeclared
 # public symbol, which is what makes a non-empty Unshipped trustworthy rather than merely stale.
 #
-# Only packable projects count. Alberto.Admin is parked with a large Unshipped file that is
-# deliberately never promoted; letting it vote here would block every patch release.
+# Only packable projects count, read from .github/packages.txt rather than a src/* glob.
 additive=""
 while read -r pkg; do
     [ -n "$pkg" ] || continue

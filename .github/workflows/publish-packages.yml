@@ -87,10 +87,7 @@ jobs:
           fi
 
       # The packable set is read from .github/packages.txt so it cannot drift from what Pack
-      # below actually packs. The three projects named after the loop are built but never
-      # packed: the admin surface is IsPackable=false until the front doors on
-      # feature/admin-surface ship, and the CLI is a tool rather than a package. Building them
-      # here still catches a Release compile break, which the pack loop would not.
+      # below actually packs.
       - name: Build libraries
         run: |
           PROJECTS=()
@@ -100,9 +97,6 @@ jobs:
           for proj in "${PROJECTS[@]}"; do
             dotnet build "src/$proj/$proj.csproj" -c Release
           done
-          dotnet build src/Alberto.Admin/Alberto.Admin.csproj -c Release
-          dotnet build src/Alberto.Admin.Postgres/Alberto.Admin.Postgres.csproj -c Release
-          dotnet build tools/Alberto.Cli/Alberto.Cli.csproj -c Release
 
       # Includes the Testcontainers-backed PostgreSQL tests, so this runner needs a Docker daemon
       # of its own — a rootless one owned by the runner user, with DOCKER_HOST exported by the

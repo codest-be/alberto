@@ -65,20 +65,9 @@ updates:
         patterns:
           - xunit*
         update-types: [major]
-      cli:
-        patterns:
-          - Spectre.Console*
-          - System.CommandLine
-        update-types: [minor, patch]
       rebus:
         patterns:
           - Rebus*
-        update-types: [minor, patch]
-      admin-surface:
-        # Unreferenced on main; kept current for the parked feature/admin-surface branch.
-        patterns:
-          - ModelContextProtocol*
-          - Yarp.*
         update-types: [minor, patch]
       build-tooling:
         patterns:

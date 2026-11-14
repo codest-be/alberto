@@ -144,8 +144,8 @@ jobs:
             echo "::error::Could not read <VersionPrefix> from Directory.Build.props"
             exit 1
           fi
-          # The packable set comes from .github/packages.txt, never a src/* glob: Alberto.Admin
-          # and Alberto.Admin.Postgres build but are deliberately IsPackable=false. The list is
+          # The packable set comes from .github/packages.txt, never a src/* glob: not every
+          # project under src/ is IsPackable=true. The list is
           # collected into an array before any dotnet runs, since dotnet in a `while read` body
           # would inherit the loop's stdin and eat the rest of the list.
           PROJECTS=()

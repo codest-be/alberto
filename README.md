@@ -112,8 +112,7 @@ dotnet add package Alberto.Postgres
 | `Alberto.Testing` | Test helpers: an in-memory module harness, quiescence polling, an in-memory outbox |
 | `Alberto.Testing.Xunit` | The conformance suite Alberto runs against its own backends, for you to run against yours |
 
-All libraries target **net10.0** and **net11.0**. The operator CLI (`alberto`) is not a NuGet tool package; run
-it from the repo with `dotnet run --project tools/Alberto.Cli`.
+All libraries target **net10.0** and **net11.0**.
 
 ## Sixty seconds
 
@@ -351,11 +350,6 @@ nuget.org.
 The multi-database tenant sharding feature is marked **experimental** (`[Experimental("ALB9001")]`
 on all public sharding types), a step beyond the general pre-1.0 caveat: it ships and its tests
 pass, but the API may change more sharply than the rest of the library.
-
-The admin surface is deliberately **not published**. `Alberto.Admin` and `Alberto.Admin.Postgres`
-build and are tested, but they stay off nuget.org until the GraphQL API, MCP server and console
-that consume them ship. Releasing the abstraction at 1.0 would freeze it under semver before its
-consumers exist.
 
 Outbox claims are time-bounded and token-fenced: a relay crash leaves a recoverable `processing`
 row, and a stale relay cannot overwrite a newer claim. Delivery remains at-least-once; see

@@ -25,7 +25,6 @@
         <!-- The admin implementation was split out of this assembly so that this one can ship
              while the admin surface stays parked. It still needs the internals it used when the
              files lived here (SchemaQualifier and friends). -->
-        <InternalsVisibleTo Include="Alberto.Admin.Postgres"/>
         <!-- The tenant-scoped concurrency benchmarks construct PostgresTenantEventStoreBackend
              directly — its real per-tenant lock key with none of the DI/module-builder wiring
              a full .WithTenancy() module would need. See

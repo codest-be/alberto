@@ -78,9 +78,6 @@ cannot be quietly stale, which is what makes it usable as a signal.
   milestone, but nothing else reads the analyzer.
 - `Shipped` is only ever written by the release workflow. Do not promote entries by hand.
 
-`Alberto.Admin` and `Alberto.Admin.Postgres` are parked and excluded. See `.github/packages.txt`
-and the admin-surface note in `CLAUDE.md`.
-
 ### Adding a package
 
 Two edits, and the second one is not redundant. Add the ID to `.github/packages.txt` (which the
