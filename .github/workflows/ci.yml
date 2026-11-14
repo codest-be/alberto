@@ -30,8 +30,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      # No actions/setup-dotnet: the host's root-owned 10.0 SDK is used as-is; asking setup-dotnet
-      # for it fails the job. There is no global.json.
+      # No actions/setup-dotnet: the host's root-owned SDK is used as-is; asking setup-dotnet
+      # for it fails the job. global.json pins the feature band.
 
       # Whole solution, so a break in any project (benchmarks, apps, tools) fails the PR.
       - name: Build
