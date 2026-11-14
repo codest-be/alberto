@@ -1,1 +1,4 @@
 #nullable enable
+Alberto.EntityFramework.ProjectionQueryFilters
+const Alberto.EntityFramework.ProjectionQueryFilters.ActiveVersion = "alberto-active-version" -> string!
+static Alberto.EntityFramework.EfProjectionModelBuilderExtensions.ProjectionEntity<TEntity>(this Microsoft.EntityFrameworkCore.ModelBuilder! modelBuilder, string! processorId, System.Action<Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<TEntity!>!>? configure = null, string? rebuildMetaSchema = null) -> Microsoft.EntityFrameworkCore.ModelBuilder!

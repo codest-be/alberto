@@ -34,6 +34,24 @@ public class CounterEntity : IProjectionEntity
     public int Counter { get; set; }
 }
 
+/// <summary>
+/// Same shape as <see cref="CounterEntity"/>, but configured through the processor-aware
+/// <c>ProjectionEntity</c> overload, so plain reads carry the active-version query filter.
+/// Its own type because that filter binds one processor id per entity, while the
+/// <see cref="CounterEntity"/> tests use several.
+/// </summary>
+public class ActiveCounterEntity : IProjectionEntity
+{
+    public const string ProcessorId = "active-counter";
+
+    public string DocumentId { get; set; } = string.Empty;
+    public DateTimeOffset UpdatedAt { get; set; }
+    public long LastProcessedPosition { get; set; }
+    public uint Version { get; set; }
+    public int RebuildVersion { get; set; } = 1;
+    public int Counter { get; set; }
+}
+
 // ---------------------------------------------------------------------------
 // Test DbContext with injectable save interception
 // ---------------------------------------------------------------------------
@@ -63,6 +81,8 @@ public sealed class EfTestDbContext : DbContext
 
     public DbSet<CounterEntity> Counters => Set<CounterEntity>();
 
+    public DbSet<ActiveCounterEntity> ActiveCounters => Set<ActiveCounterEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // ProjectionEntity applies the (DocumentId, RebuildVersion) key that EfStateStore's
@@ -76,6 +96,15 @@ public sealed class EfTestDbContext : DbContext
             entity.Property(e => e.LastProcessedPosition);
             entity.Property(e => e.UpdatedAt);
             // Omit xmin-based Version for simplicity; tests inject concurrency exceptions.
+        });
+
+        // Reads of this one are filtered to the active rebuild version, which is resolved from
+        // alberto_projection_rebuild_meta, so only databases carrying the event store schema can
+        // query it. The table itself is created everywhere by EnsureCreated.
+        modelBuilder.ProjectionEntity<ActiveCounterEntity>(ActiveCounterEntity.ProcessorId, entity =>
+        {
+            entity.ToTable("ef_test_active_counters");
+            entity.Property(e => e.DocumentId).HasMaxLength(256);
         });
     }
 
@@ -238,6 +267,7 @@ public sealed class EfProjectionTestFixture(PostgresCluster cluster)
     {
         await using var context = NewContext();
         return await context.Counters
+            .IgnoreQueryFilters([ProjectionQueryFilters.ActiveVersion])
             .AsNoTracking()
             .Where(e => e.DocumentId == entityId)
             .ToDictionaryAsync(e => e.RebuildVersion);

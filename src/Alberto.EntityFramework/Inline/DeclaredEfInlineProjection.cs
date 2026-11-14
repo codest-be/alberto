@@ -165,6 +165,7 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : IInlineP
         // The version predicate is what keeps this a one-row-per-document query while a
         // shadow rebuild of the same entity is in flight.
         var existing = await context.Set<TEntity>()
+            .IgnoreQueryFilters([ProjectionQueryFilters.ActiveVersion])
             .AsNoTracking()
             .Where(e => documentKeys.Contains(e.DocumentId) && e.RebuildVersion == version)
             .ToDictionaryAsync(e => e.DocumentId, ct);

@@ -207,6 +207,14 @@ shadow rebuild's rows collide with the live rows on insert and the rebuild overw
 projection it was shadowing. Adding it to an existing model is a schema change: generate a
 migration.
 
+**Filtering application reads to the active version.** Pass the processor id,
+`modelBuilder.ProjectionEntity<T>(processorId, ...)`, and plain `Set<T>()` reads only return rows of
+the processor's active rebuild version, resolved in SQL per query from
+`alberto_projection_rebuild_meta`. That table must be in the same database as the `DbContext`
+(Postgres event store; set `rebuildMetaSchema` if it is not the model's default schema). Opt out per
+query with `.IgnoreQueryFilters([ProjectionQueryFilters.ActiveVersion])`; your own filters still
+apply. The overload without a processor id adds no filter.
+
 Then wire the module and the projection:
 
 ```csharp
