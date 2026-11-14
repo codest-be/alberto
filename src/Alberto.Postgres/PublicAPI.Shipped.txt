@@ -114,7 +114,6 @@ Alberto.Postgres.PostgresOverrides.PostgresOverrides() -> void
 Alberto.Postgres.PostgresOverrides.Schema.get -> string?
 Alberto.Postgres.PostgresOverrides.Schema.set -> void
 Alberto.Postgres.PostgresProcessorLeaseManager
-Alberto.Postgres.PostgresProcessorLeaseManager.GetAllLeasesAsync(string! consumerId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Alberto.Subscriptions.ProcessorLeaseInfo!>!>!
 Alberto.Postgres.PostgresProcessorLeaseManager.LeaseDuration.get -> System.TimeSpan
 Alberto.Postgres.PostgresProcessorLeaseManager.PostgresProcessorLeaseManager(Npgsql.NpgsqlDataSource! dataSource, string? schema = null, System.TimeSpan? leaseDuration = null) -> void
 Alberto.Postgres.PostgresProcessorLeaseManager.ReleaseAllLeasesAsync(string! consumerId, string! replicaId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
@@ -138,16 +137,6 @@ Alberto.Postgres.PostgresStateStore<TState>.ListRecentAsync(int limit = 20, Syst
 Alberto.Postgres.PostgresStateStore<TState>.LoadManyAsync(System.Collections.Generic.IEnumerable<string!>! documentIds, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyDictionary<string!, TState>!>!
 Alberto.Postgres.PostgresStateStore<TState>.PostgresStateStore(Npgsql.NpgsqlDataSource! dataSource, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TState>! jsonTypeInfo, string? projectionType = null, string? schema = null, Alberto.Subscriptions.ProjectionVersion rebuildVersion = default(Alberto.Subscriptions.ProjectionVersion), string? tenantId = null) -> void
 Alberto.Postgres.PostgresStateStore<TState>.PostgresStateStore(Npgsql.NpgsqlDataSource! dataSource, string? projectionType = null, string? schema = null, Alberto.Subscriptions.ProjectionVersion rebuildVersion = default(Alberto.Subscriptions.ProjectionVersion), string? tenantId = null) -> void
-Alberto.Postgres.PostgresTenantProcessorLock
-Alberto.Postgres.PostgresTenantProcessorLock.GetAllLeasesAsync(string! consumerId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Alberto.Subscriptions.TenantLeaseInfo!>!>!
-Alberto.Postgres.PostgresTenantProcessorLock.GetKnownTenantsAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<string!>!>!
-Alberto.Postgres.PostgresTenantProcessorLock.LeaseDuration.get -> System.TimeSpan
-Alberto.Postgres.PostgresTenantProcessorLock.PostgresTenantProcessorLock(Npgsql.NpgsqlDataSource! dataSource, string? schema = null, System.TimeSpan? leaseDuration = null, string? moduleKey = null) -> void
-Alberto.Postgres.PostgresTenantProcessorLock.ReleaseAllLeasesAsync(string! consumerId, string! replicaId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Alberto.Postgres.PostgresTenantProcessorLock.ReleaseLeaseAsync(string! consumerId, string! tenantId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Alberto.Postgres.PostgresTenantProcessorLock.ReleaseTenantLeaseAsync(string! consumerId, string! tenantId, string! replicaId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Alberto.Postgres.PostgresTenantProcessorLock.RenewLeasesAsync(string! consumerId, string! replicaId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<string!>!>!
-Alberto.Postgres.PostgresTenantProcessorLock.TryAcquireForTenantAsync(string! consumerId, string! tenantId, string! replicaId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.ITenantLease?>!
 Alberto.Postgres.PostgresTenantShardMap
 Alberto.Postgres.PostgresTenantShardMap.AssignAsync(string! tenantId, string! shardId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<string!>
 Alberto.Postgres.PostgresTenantShardMap.GetAllAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<System.Collections.Generic.IReadOnlyDictionary<string!, string!>!>

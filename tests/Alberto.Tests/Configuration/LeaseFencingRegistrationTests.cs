@@ -84,9 +84,6 @@ public class LeaseFencingRegistrationTests
             return Task.CompletedTask;
         }
 
-        public Task<IReadOnlyList<ProcessorLeaseInfo>> GetAllLeasesAsync(
-            string consumerId, CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<ProcessorLeaseInfo>>([]);
     }
 
     private const string ModuleKey = "orders";
@@ -288,8 +285,6 @@ public class FencingContextRegistrationTests
             Task.FromResult<IReadOnlyList<string>>([]);
         public Task ReleaseAllLeasesAsync(string consumerId, string replicaId, CancellationToken ct = default) =>
             Task.CompletedTask;
-        public Task<IReadOnlyList<ProcessorLeaseInfo>> GetAllLeasesAsync(string consumerId, CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<ProcessorLeaseInfo>>([]);
     }
 
     private static async Task<CapturingFencableCheckpointStore> StartAndStopHostAsync(string? replicaId)

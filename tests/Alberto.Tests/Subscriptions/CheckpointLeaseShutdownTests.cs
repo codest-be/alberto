@@ -29,9 +29,6 @@ public sealed class CheckpointLeaseShutdownTests
         public Task ReleaseAllLeasesAsync(
             string consumerId, string replicaId, CancellationToken ct = default) => Task.CompletedTask;
 
-        public Task<IReadOnlyList<ProcessorLeaseInfo>> GetAllLeasesAsync(
-            string consumerId, CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<ProcessorLeaseInfo>>([]);
     }
 
     /// <summary>Fenced store that accepts a write only while the presented token is non-zero.</summary>

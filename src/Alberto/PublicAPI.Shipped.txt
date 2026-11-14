@@ -699,7 +699,6 @@ Alberto.Subscriptions.IProcessorLease.ExpiresAt.get -> System.DateTimeOffset
 Alberto.Subscriptions.IProcessorLease.FenceToken.get -> long
 Alberto.Subscriptions.IProcessorLease.ProcessorId.get -> string!
 Alberto.Subscriptions.IProcessorLeaseManager
-Alberto.Subscriptions.IProcessorLeaseManager.GetAllLeasesAsync(string! consumerId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Alberto.Subscriptions.ProcessorLeaseInfo!>!>!
 Alberto.Subscriptions.IProcessorLeaseManager.LeaseDuration.get -> System.TimeSpan
 Alberto.Subscriptions.IProcessorLeaseManager.ReleaseAllLeasesAsync(string! consumerId, string! replicaId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Alberto.Subscriptions.IProcessorLeaseManager.RenewLeasesAsync(string! consumerId, string! replicaId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<string!>!>!
@@ -728,21 +727,6 @@ Alberto.Subscriptions.IStateStore<TState>
 Alberto.Subscriptions.IStateStore<TState>.ApplyChangesAsync(System.Collections.Generic.IReadOnlyDictionary<string!, TState>! upserts, System.Collections.Generic.IReadOnlyCollection<string!>! deletes, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Alberto.Subscriptions.IStateStore<TState>.ListRecentAsync(int limit = 20, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<TState>!>!
 Alberto.Subscriptions.IStateStore<TState>.LoadManyAsync(System.Collections.Generic.IEnumerable<string!>! documentIds, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyDictionary<string!, TState>!>!
-Alberto.Subscriptions.ITenantLease
-Alberto.Subscriptions.ITenantLease.ExpiresAt.get -> System.DateTimeOffset
-Alberto.Subscriptions.ITenantLease.TenantId.get -> string!
-Alberto.Subscriptions.ITenantProcessorLock
-Alberto.Subscriptions.ITenantProcessorLock.GetAllLeasesAsync(string! consumerId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Alberto.Subscriptions.TenantLeaseInfo!>!>!
-Alberto.Subscriptions.ITenantProcessorLock.GetKnownTenantsAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<string!>!>!
-Alberto.Subscriptions.ITenantProcessorLock.LeaseDuration.get -> System.TimeSpan
-Alberto.Subscriptions.ITenantProcessorLock.ReleaseAllLeasesAsync(string! consumerId, string! replicaId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Alberto.Subscriptions.ITenantProcessorLock.ReleaseLeaseAsync(string! consumerId, string! tenantId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Alberto.Subscriptions.ITenantProcessorLock.ReleaseTenantLeaseAsync(string! consumerId, string! tenantId, string! replicaId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Alberto.Subscriptions.ITenantProcessorLock.RenewLeasesAsync(string! consumerId, string! replicaId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<string!>!>!
-Alberto.Subscriptions.ITenantProcessorLock.TryAcquireForTenantAsync(string! consumerId, string! tenantId, string! replicaId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.ITenantLease?>!
-Alberto.Subscriptions.ProcessingResult
-Alberto.Subscriptions.ProcessingResult.Continue = 0 -> Alberto.Subscriptions.ProcessingResult
-Alberto.Subscriptions.ProcessingResult.Stop = 1 -> Alberto.Subscriptions.ProcessingResult
 Alberto.Subscriptions.ProcessorBatchingMode
 Alberto.Subscriptions.ProcessorBatchingMode.Disabled = 0 -> Alberto.Subscriptions.ProcessorBatchingMode
 Alberto.Subscriptions.ProcessorBatchingMode.IfSupported = 1 -> Alberto.Subscriptions.ProcessorBatchingMode
@@ -790,16 +774,6 @@ Alberto.Subscriptions.ProcessorLease.FenceToken.init -> void
 Alberto.Subscriptions.ProcessorLease.ProcessorId.get -> string!
 Alberto.Subscriptions.ProcessorLease.ProcessorId.init -> void
 Alberto.Subscriptions.ProcessorLease.ProcessorLease(string! ProcessorId, System.DateTimeOffset ExpiresAt, long FenceToken) -> void
-Alberto.Subscriptions.ProcessorLeaseInfo
-Alberto.Subscriptions.ProcessorLeaseInfo.AcquiredAt.get -> System.DateTimeOffset
-Alberto.Subscriptions.ProcessorLeaseInfo.AcquiredAt.init -> void
-Alberto.Subscriptions.ProcessorLeaseInfo.ExpiresAt.get -> System.DateTimeOffset
-Alberto.Subscriptions.ProcessorLeaseInfo.ExpiresAt.init -> void
-Alberto.Subscriptions.ProcessorLeaseInfo.ProcessorId.get -> string!
-Alberto.Subscriptions.ProcessorLeaseInfo.ProcessorId.init -> void
-Alberto.Subscriptions.ProcessorLeaseInfo.ProcessorLeaseInfo(string! ProcessorId, string! ReplicaId, System.DateTimeOffset AcquiredAt, System.DateTimeOffset ExpiresAt) -> void
-Alberto.Subscriptions.ProcessorLeaseInfo.ReplicaId.get -> string!
-Alberto.Subscriptions.ProcessorLeaseInfo.ReplicaId.init -> void
 Alberto.Subscriptions.ProcessorSnapshot
 Alberto.Subscriptions.ProcessorSnapshot.HasReported.get -> bool
 Alberto.Subscriptions.ProcessorSnapshot.HasReported.init -> void
@@ -923,22 +897,6 @@ Alberto.Subscriptions.RebuildStatus.Completed = 3 -> Alberto.Subscriptions.Rebui
 Alberto.Subscriptions.RebuildStatus.Idle = 0 -> Alberto.Subscriptions.RebuildStatus
 Alberto.Subscriptions.RebuildStatus.Ready = 2 -> Alberto.Subscriptions.RebuildStatus
 Alberto.Subscriptions.RebuildStatus.Rebuilding = 1 -> Alberto.Subscriptions.RebuildStatus
-Alberto.Subscriptions.TenantLease
-Alberto.Subscriptions.TenantLease.ExpiresAt.get -> System.DateTimeOffset
-Alberto.Subscriptions.TenantLease.ExpiresAt.init -> void
-Alberto.Subscriptions.TenantLease.TenantId.get -> string!
-Alberto.Subscriptions.TenantLease.TenantId.init -> void
-Alberto.Subscriptions.TenantLease.TenantLease(string! TenantId, System.DateTimeOffset ExpiresAt) -> void
-Alberto.Subscriptions.TenantLeaseInfo
-Alberto.Subscriptions.TenantLeaseInfo.AcquiredAt.get -> System.DateTimeOffset
-Alberto.Subscriptions.TenantLeaseInfo.AcquiredAt.init -> void
-Alberto.Subscriptions.TenantLeaseInfo.ExpiresAt.get -> System.DateTimeOffset
-Alberto.Subscriptions.TenantLeaseInfo.ExpiresAt.init -> void
-Alberto.Subscriptions.TenantLeaseInfo.ReplicaId.get -> string!
-Alberto.Subscriptions.TenantLeaseInfo.ReplicaId.init -> void
-Alberto.Subscriptions.TenantLeaseInfo.TenantId.get -> string!
-Alberto.Subscriptions.TenantLeaseInfo.TenantId.init -> void
-Alberto.Subscriptions.TenantLeaseInfo.TenantLeaseInfo(string! TenantId, string! ReplicaId, System.DateTimeOffset AcquiredAt, System.DateTimeOffset ExpiresAt) -> void
 Alberto.Subscriptions.TraceParenting
 Alberto.Subscriptions.TraceParenting.Link = 0 -> Alberto.Subscriptions.TraceParenting
 Alberto.Subscriptions.TraceParenting.Parent = 1 -> Alberto.Subscriptions.TraceParenting

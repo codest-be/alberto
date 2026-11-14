@@ -108,9 +108,6 @@ public sealed class LeaseAwareControlLoopGroupTests
             string consumerId, string replicaId, CancellationToken ct = default) =>
             Task.CompletedTask;
 
-        public Task<IReadOnlyList<ProcessorLeaseInfo>> GetAllLeasesAsync(
-            string consumerId, CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<ProcessorLeaseInfo>>(Array.Empty<ProcessorLeaseInfo>());
     }
 
     private static ProcessorLease MakeLease(string processorId, long fenceToken) =>
@@ -561,9 +558,6 @@ public sealed class LeaseAwareControlLoopGroupTests
             return Task.CompletedTask;
         }
 
-        public Task<IReadOnlyList<ProcessorLeaseInfo>> GetAllLeasesAsync(
-            string consumerId, CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<ProcessorLeaseInfo>>([]);
     }
 
     [Fact]

@@ -258,17 +258,6 @@ public sealed record PostgresBackendDescriptor(PostgresOptions Options) : IAlber
         services.AddKeyedSingleton<IProjectionRebuildCoordinatorStore>(moduleKey, (sp, _) =>
             sp.GetRequiredKeyedService<PostgresProjectionRebuildStore>(moduleKey));
 
-        // Tenant processor lock (used for tenant-distributed mode).
-        services.AddKeyedSingleton<ITenantProcessorLock>(moduleKey, (sp, _) =>
-        {
-            var opts = runtime.Resolve(sp);
-            var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
-            return new PostgresTenantProcessorLock(dataSource, opts.Schema, opts.LeaseDuration, moduleKey)
-            {
-                Instruments = AlbertoInstruments.For(sp),
-            };
-        });
-
         // Processor lease manager.
         services.AddKeyedSingleton<IProcessorLeaseManager>(moduleKey, (sp, _) =>
         {
