@@ -166,6 +166,10 @@ repository has actually hit.
 
 ## Patching an older line
 
+Not used before 1.0: only the latest `0.x` release is supported (see
+[SECURITY.md](../SECURITY.md#supported-versions)), so fixes ship forward. The machinery below is
+for 1.0 onwards.
+
 ### Cut the branch
 
 Run **Cut release branch** with the line, e.g. `1.0`, to create `release/1.0` from `main`. Cut it
