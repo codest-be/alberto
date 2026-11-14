@@ -52,13 +52,6 @@ public static class InMemoryBuilderExtensions
         // checkpoint and dead-letter state is not tenant-partitioned at the store level).
         var deadLetterStore = new InMemoryDeadLetterStore();
 
-        // Register append interceptor pipeline
-        services.AddKeyedSingleton<IAppendInterceptorPipeline>(moduleKey, (sp, _) =>
-        {
-            var interceptors = sp.GetKeyedServices<IAppendInterceptor>(moduleKey);
-            return new AppendInterceptorPipeline(interceptors);
-        });
-
         if (sharedModuleKey is not null)
         {
             // Resolve the shared backend from the other module.
@@ -66,20 +59,16 @@ public static class InMemoryBuilderExtensions
             // single-tenant. Combining a shared backend with .WithTenancy() is rejected
             // by the validator (ALB0017) before this code is ever reached, so no tenancy
             // branching is needed here.
-            services.AddKeyedSingleton<IEventStoreBackend>(moduleKey, (sp, _) =>
-            {
-                var sharedBackend = sp.GetRequiredKeyedService<IEventStoreBackend>(sharedModuleKey);
-                var pipeline = sp.GetRequiredKeyedService<IAppendInterceptorPipeline>(moduleKey);
-                return new InterceptingEventStoreBackend(sharedBackend, pipeline);
-            });
+            context.AddEventStoreBackend(ServiceLifetime.Singleton,
+                sp => sp.GetRequiredKeyedService<IEventStoreBackend>(sharedModuleKey));
         }
         else if (context.TenancyEnabled)
         {
-            RegisterTenantBackend(services, moduleKey);
+            RegisterTenantBackend(context);
         }
         else
         {
-            RegisterSingleTenantBackend(services, moduleKey);
+            RegisterSingleTenantBackend(context);
         }
 
         // IEventStore is registered as singleton in the single-tenant path and as scoped in
@@ -119,16 +108,13 @@ public static class InMemoryBuilderExtensions
         services.AddKeyedSingleton<IDeadLetterStore>(moduleKey, deadLetterStore);
     }
 
-    private static void RegisterSingleTenantBackend(IServiceCollection services, string moduleKey)
+    private static void RegisterSingleTenantBackend(AlbertoModuleContext context)
     {
+        var services = context.Services;
+        var moduleKey = context.ModuleKey;
         // Singleton raw backend + singleton event store — no per-request scoping needed.
-        services.AddKeyedSingleton<IEventStoreBackend>(moduleKey, (sp, _) =>
-        {
-            var timeProvider = sp.GetService<TimeProvider>() ?? TimeProvider.System;
-            var rawBackend = new InMemoryEventStoreBackend(timeProvider);
-            var pipeline = sp.GetRequiredKeyedService<IAppendInterceptorPipeline>(moduleKey);
-            return new InterceptingEventStoreBackend(rawBackend, pipeline);
-        });
+        context.AddEventStoreBackend(ServiceLifetime.Singleton, sp =>
+            new InMemoryEventStoreBackend(sp.GetService<TimeProvider>() ?? TimeProvider.System));
 
         services.AddKeyedSingleton<IEventStore>(moduleKey, (sp, key) =>
         {
@@ -140,8 +126,10 @@ public static class InMemoryBuilderExtensions
         });
     }
 
-    private static void RegisterTenantBackend(IServiceCollection services, string moduleKey)
+    private static void RegisterTenantBackend(AlbertoModuleContext context)
     {
+        var services = context.Services;
+        var moduleKey = context.ModuleKey;
         // Register tenancy services (idempotent — AddScoped does not throw if already registered
         // by another module in the same application).
         services.AddScoped<TenantContext>();
@@ -157,24 +145,17 @@ public static class InMemoryBuilderExtensions
 
         // IEventStoreBackend (keyed, scoped) — decorator chain for the request path:
         //   InterceptingBackend → InMemoryTenantEventStoreDecorator → InMemoryEventStoreBackend
-        services.AddKeyedScoped<IEventStoreBackend>(moduleKey, (sp, _) =>
-        {
-            var rawBackend = sp.GetRequiredKeyedService<InMemoryEventStoreBackend>(moduleKey + ":tenant-raw");
-            var tenantAccessor = sp.GetRequiredService<ITenantAccessor>();
-            var decorator = new InMemoryTenantEventStoreDecorator(rawBackend, tenantAccessor);
-            var pipeline = sp.GetRequiredKeyedService<IAppendInterceptorPipeline>(moduleKey);
-            return new InterceptingEventStoreBackend(decorator, pipeline);
-        });
+        context.AddEventStoreBackend(ServiceLifetime.Scoped, sp =>
+            new InMemoryTenantEventStoreDecorator(
+                sp.GetRequiredKeyedService<InMemoryEventStoreBackend>(moduleKey + ":tenant-raw"),
+                sp.GetRequiredService<ITenantAccessor>()));
 
         // ControlLoop consumer backend (singleton) — streams across all tenants without
         // per-request tenant scoping. Mirrors the ':consumer' key used by the Postgres backend.
-        services.AddKeyedSingleton<IEventStoreBackend>(moduleKey + ":consumer", (sp, _) =>
-        {
-            var rawBackend = sp.GetRequiredKeyedService<InMemoryEventStoreBackend>(moduleKey + ":tenant-raw");
-            var decorator = new InMemoryTenantEventStoreDecorator(rawBackend, ConsumerInMemoryTenantAccessor.Instance);
-            var pipeline = sp.GetRequiredKeyedService<IAppendInterceptorPipeline>(moduleKey);
-            return new InterceptingEventStoreBackend(decorator, pipeline);
-        });
+        context.AddEventStoreBackend(ServiceLifetime.Singleton, sp =>
+            new InMemoryTenantEventStoreDecorator(
+                sp.GetRequiredKeyedService<InMemoryEventStoreBackend>(moduleKey + ":tenant-raw"),
+                ConsumerInMemoryTenantAccessor.Instance), ":consumer");
 
         // IEventStore is scoped because the backend it wraps is scoped.
         services.AddKeyedScoped<IEventStore>(moduleKey, (sp, key) =>
