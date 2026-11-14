@@ -31,8 +31,8 @@ One package only, which is what you usually want while iterating:
 build/mutation-test.sh Alberto.Commands.csproj
 ```
 
-Only what your branch changed — this is what CI runs on a PR, and it takes minutes rather
-than hours:
+Only what your branch changed, on demand (CI does not run it on PRs); it takes minutes
+rather than hours:
 
 ```bash
 build/mutation-test.sh --since main
@@ -98,41 +98,26 @@ booleans, LINQ, block removal — is on.
 
 ## The gates
 
-Three numbers, enforced in two workflows.
+Coverage gates PRs; mutation testing is manual only.
 
 | Gate | Where | Threshold | Achieved | Scope |
 |---|---|---|---|---|
 | Line coverage | `ci.yml`, every PR | 93% | 95.27% | All shipped packages |
-| Mutation score, changed code | `mutation.yml`, every PR | 80% | — | The diff only |
 | Mutation score, aggregate | `mutation.yml`, manual (`workflow_dispatch`) | 68% | 70.01% | Core packages |
 
-A fourth number, `thresholds.break` in `stryker-config.json` (55%), is Stryker's own
+A second number, `thresholds.break` in `stryker-config.json` (55%), is Stryker's own
 per-package floor. It is not the gate — the script deliberately keeps going when a package
 trips it, because one low package must not hide every score after it — but it makes a
 single-package run exit non-zero, which is what you want while iterating on one package.
 
-**Both mutation thresholds moved down sharply, and no test got worse.** They were calibrated
+**The mutation threshold moved down sharply, and no test got worse.** It was calibrated
 against an aggregate of 92.59% that counted false timeouts as kills. The same suite, measured
 with a window long enough to tell a slow mutant from a hanging one, scores 70.01%. Nothing
 regressed; the old number was wrong. See the next section for the measurement.
 
-**The PR gate that matters is the middle one.** `--since` mutates only what the branch
-touched, so it holds new code to a standard without asking anyone to fix the whole back
-catalogue first. Fixing your own diff is a bounded job in a way that fixing the back
-catalogue is not.
-
-It sits *above* the repo aggregate rather than below it, which is the opposite of how this
-pair used to be set. When the aggregate read 92.59% the diff gate sat a couple of points under
-it, because a diff is a small sample and a small sample makes the percentage jumpy — ten
-mutants with two missed reads as 80%. Against a real back catalogue of 70% that reasoning
-inverts: the whole point of gating the diff is that new code should be better than what is
-already there, and 80% does that while leaving room for one awkward mutant in a small change.
-Setting it back to 90 would fail honest pull requests, and a gate people learn to re-run until
-it passes is worse than no gate.
-
-The two whole-repo thresholds trail the achieved score rather than lead it. That is on
+The thresholds trail the achieved score rather than lead it. That is on
 purpose: a gate set above where the repo currently sits blocks every PR, including the ones
-trying to fix it. Raise them as the score climbs — a few points at a time, once the headroom
+trying to fix it. Raise it as the score climbs — a few points at a time, once the headroom
 is real.
 
 **The aggregate runs on `workflow_dispatch`, not on push and not on a schedule.** It used to run
@@ -257,7 +242,7 @@ below-threshold score — the score case writes a report, so it is never retried
 attempts crash, the script says so and exits non-zero, because an aggregate computed without
 a package reads higher than the truth and must not pass for a clean run.
 
-A PR that touches no mutated package produces no mutants at all. That is a pass, not a 0%,
+A `--since` run that touches no mutated package produces no mutants at all. That is a pass, not a 0%,
 which is what `--allow-empty` on the summary script is for.
 
 ## Reading a surviving mutant

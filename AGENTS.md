@@ -33,7 +33,7 @@ load. A bare `container.StartAsync()` is the bug. See
 ```bash
 build/coverage.sh                       # Line/branch coverage, whole suite
 build/mutation-test.sh                  # Stryker over the core packages
-build/mutation-test.sh --since main     # Only what the branch changed (what PR CI gates on)
+build/mutation-test.sh --since main     # Only what the branch changed (on demand; CI does not run it on PRs)
 ```
 
 Coverage runs the whole suite; mutation testing runs `Category!=Integration` only, because it

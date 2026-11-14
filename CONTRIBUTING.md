@@ -30,14 +30,11 @@ thousands of them.
 
 ## Test quality gates
 
-Two numbers gate a PR, and both have a floor CI enforces:
+Line coverage over the shipped packages gates a PR; CI enforces the floor. Mutation testing
+(Stryker) is an on-demand local tool, not a PR gate: use it when a line may be covered by a test
+that asserts nothing about it.
 
-- **Line coverage** over the shipped packages, from the whole suite.
-- **Mutation score on the code your branch changed**, from Stryker. This is the one that
-  usually needs attention, because a line can be covered by a test that asserts nothing about
-  it.
-
-Check either locally before pushing:
+Check either locally:
 
 ```bash
 build/coverage.sh
