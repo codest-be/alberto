@@ -153,8 +153,13 @@ public sealed class ReactorRedeliveryTests
 
         return new Rig
         {
-            Backend = backend, DeadLetters = deadLetters, Head = head, Clock = clock,
-            Reactor = reactor, Loop = loop, RetryLoop = retryLoop,
+            Backend = backend,
+            DeadLetters = deadLetters,
+            Head = head,
+            Clock = clock,
+            Reactor = reactor,
+            Loop = loop,
+            RetryLoop = retryLoop,
         };
     }
 

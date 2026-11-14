@@ -77,7 +77,10 @@ public sealed class EndToEndTraceTests
 
         ConsumeEventContext Context(string processor, TraceParenting parenting) => new()
         {
-            ProcessorId = processor, ModuleKey = "orders", Envelope = envelope, IsRebuild = false,
+            ProcessorId = processor,
+            ModuleKey = "orders",
+            Envelope = envelope,
+            IsRebuild = false,
             TraceParenting = parenting,
         };
         await TelemetryConsumeMiddleware.Create(provider)(

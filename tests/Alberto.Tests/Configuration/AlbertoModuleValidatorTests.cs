@@ -20,11 +20,11 @@ public class AlbertoModuleValidatorTests
     private static ProcessorDeclaration Processor(
         string id,
         ProcessorExecutionOptions? execution = null) => new()
-    {
-        ProcessorId = id,
-        Kind = ProcessorKind.Reactor,
-        Execution = execution ?? ProcessorExecutionOptions.Default,
-    };
+        {
+            ProcessorId = id,
+            Kind = ProcessorKind.Reactor,
+            Execution = execution ?? ProcessorExecutionOptions.Default,
+        };
 
     private static IReadOnlyList<AlbertoValidationFailure> Run(AlbertoModuleDefinition definition) =>
         new AlbertoModuleValidator().Collect(definition);

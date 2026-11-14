@@ -1098,7 +1098,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
         return new EventToPersist
         {
             EventType = new EventType(eventTypeId),
-            Tags = [..tags],
+            Tags = [.. tags],
             EventData = JsonSerializer.Serialize(@event)
         };
     }

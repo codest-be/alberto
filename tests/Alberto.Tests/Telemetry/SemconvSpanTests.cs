@@ -29,8 +29,13 @@ public sealed class SemconvSpanTests
             ModuleKey = "orders#eu",
             Envelope = new EventEnvelope
             {
-                Id = Guid.NewGuid(), GlobalPosition = 3, EventType = new EventType("e"), Tags = [],
-                EventData = "{}", Metadata = new Dictionary<string, string>(), CreatedAt = DateTime.UtcNow,
+                Id = Guid.NewGuid(),
+                GlobalPosition = 3,
+                EventType = new EventType("e"),
+                Tags = [],
+                EventData = "{}",
+                Metadata = new Dictionary<string, string>(),
+                CreatedAt = DateTime.UtcNow,
             },
             IsRebuild = false,
         };

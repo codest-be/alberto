@@ -89,7 +89,7 @@ public sealed class ControlLoopSequentialMutationTests
 
         public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllOfTypesAsync(
             IReadOnlySet<string> eventTypes, long afterPosition, int limit, CancellationToken cancellationToken = default)
-            {
+        {
             Interlocked.Increment(ref _callCount);
             lock (CallTimestamps) CallTimestamps.Add(_stopwatch.Elapsed);
             return Task.FromResult(Reader(afterPosition, limit));

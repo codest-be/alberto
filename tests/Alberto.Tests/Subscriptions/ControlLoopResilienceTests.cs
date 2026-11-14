@@ -44,7 +44,7 @@ public sealed class ControlLoopResilienceTests
 
         public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllOfTypesAsync(
             IReadOnlySet<string> eventTypes, long afterPosition, int limit, CancellationToken cancellationToken = default)
-            {
+        {
             // Yield so a spinning loop shows up as a high call count rather than blocking StartAsync.
             return Core();
             async Task<IReadOnlyCollection<IEventEnvelope>> Core()

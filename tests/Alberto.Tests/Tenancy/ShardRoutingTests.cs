@@ -165,21 +165,21 @@ public class ShardRoutingTests
 
         public Task<IReadOnlyCollection<IEventEnvelope>> ReadAsync(
             DcbQuery query, long afterPosition, int limit, CancellationToken cancellationToken = default)
-            {
+        {
             Calls.Add("Read");
             return Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
         }
 
         public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllAsync(
             long afterPosition, int limit, CancellationToken cancellationToken = default)
-            {
+        {
             Calls.Add("ReadAll");
             return Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
         }
 
         public IAsyncEnumerable<IEventEnvelope> StreamAsync(
             DcbQuery query, long afterPosition = 0, CancellationToken cancellationToken = default)
-            {
+        {
             Calls.Add("Stream");
             return AsyncEnumerable.Empty<IEventEnvelope>();
         }
@@ -193,7 +193,7 @@ public class ShardRoutingTests
 
         public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllOfTypesAsync(
             IReadOnlySet<string> eventTypes, long afterPosition, int limit, CancellationToken cancellationToken = default)
-            {
+        {
             Calls.Add("ReadAllOfTypes");
             return Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
         }

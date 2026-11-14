@@ -161,8 +161,14 @@ public sealed class ProjectionHaltTests
 
         return new Rig
         {
-            Backend = backend, Checkpoints = checkpoints, DeadLetters = deadLetters, Head = head,
-            Health = health, Clock = clock, Processor = processor, Loop = loop,
+            Backend = backend,
+            Checkpoints = checkpoints,
+            DeadLetters = deadLetters,
+            Head = head,
+            Health = health,
+            Clock = clock,
+            Processor = processor,
+            Loop = loop,
         };
     }
 

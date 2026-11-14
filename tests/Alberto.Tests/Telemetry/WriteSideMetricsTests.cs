@@ -90,8 +90,12 @@ public sealed class WriteSideMetricsTests
             ModuleKey = "orders",
             Envelope = new EventEnvelope
             {
-                Id = Guid.NewGuid(), GlobalPosition = 1, EventType = new EventType("e"), Tags = [],
-                EventData = "{}", Metadata = new Dictionary<string, string>(),
+                Id = Guid.NewGuid(),
+                GlobalPosition = 1,
+                EventType = new EventType("e"),
+                Tags = [],
+                EventData = "{}",
+                Metadata = new Dictionary<string, string>(),
                 CreatedAt = DateTimeOffset.UtcNow.AddSeconds(-30),
             },
             IsRebuild = false,

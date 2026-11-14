@@ -195,7 +195,9 @@ public abstract class ClaimableDeadLetterStoreSpecification : DeadLetterStoreSpe
 
         await store.StoreAsync(entry with
         {
-            Id = Guid.NewGuid(), NextRetryAt = second, RedeliveryCount = 1,
+            Id = Guid.NewGuid(),
+            NextRetryAt = second,
+            RedeliveryCount = 1,
         }, Ct);
 
         var stored = Assert.Single(await store.GetAsync(ProcessorId, null, 100, Ct));

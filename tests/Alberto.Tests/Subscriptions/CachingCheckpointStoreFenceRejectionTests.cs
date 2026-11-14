@@ -36,7 +36,7 @@ public class CachingCheckpointStoreFenceRejectionTests
     {
         const string processorId = "proc-1";
         const long persistedPosition = 100L;
-        const long cachedPosition   = 200L;
+        const long cachedPosition = 200L;
 
         // Arrange: inner store holds the last truly persisted position.
         var inner = new FencedCheckpointStore(leaseHeld: false);
@@ -83,7 +83,7 @@ public class CachingCheckpointStoreFenceRejectionTests
     {
         const string processorId = "proc-1";
         const long persistedPosition = 50L;
-        const long cachedPosition   = 150L;
+        const long cachedPosition = 150L;
 
         var inner = new FencedCheckpointStore(leaseHeld: false);
         await inner.SaveAsync(processorId, persistedPosition, TestContext.Current.CancellationToken);
@@ -122,7 +122,7 @@ public class CachingCheckpointStoreFenceRejectionTests
     {
         const string processorId = "proc-1";
         const long persistedPosition = 10L;
-        const long cachedPosition   = 99L;
+        const long cachedPosition = 99L;
 
         var inner = new FencedCheckpointStore(leaseHeld: false);
         await inner.SaveAsync(processorId, persistedPosition, TestContext.Current.CancellationToken);

@@ -31,7 +31,7 @@ internal static class AlbertoConfigurationScanner
         new Dictionary<string, Type>(StringComparer.OrdinalIgnoreCase)
         {
             ["ControlLoop"] = typeof(ControlLoopOverrides),
-            ["Telemetry"]   = typeof(TelemetryOverrides),
+            ["Telemetry"] = typeof(TelemetryOverrides),
             ["Checkpoints"] = typeof(CheckpointOverrides),
         };
 
@@ -168,7 +168,7 @@ internal static class AlbertoConfigurationScanner
             }
 
             // If the property type is a nullable IAlbertoOverrides<T>, recurse.
-            var propType  = prop.PropertyType;
+            var propType = prop.PropertyType;
             var underlying = Nullable.GetUnderlyingType(propType) ?? propType;
             if (IsOverridesType(underlying) && child.GetChildren().Any())
                 ScanSection(child, underlying, findings);
@@ -216,7 +216,7 @@ internal static class AlbertoConfigurationScanner
 
         // Use two rows to reduce memory allocation.
         var previous = new int[tLen + 1];
-        var current  = new int[tLen + 1];
+        var current = new int[tLen + 1];
 
         for (var j = 0; j <= tLen; j++)
             previous[j] = j;

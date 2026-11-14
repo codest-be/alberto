@@ -74,7 +74,7 @@ public sealed class ControlLoopPipelinedMutationTests
 
         public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllOfTypesAsync(
             IReadOnlySet<string> eventTypes, long afterPosition, int limit, CancellationToken cancellationToken = default)
-            {
+        {
             Interlocked.Increment(ref _streamAllCount);
             return inner.ReadAllOfTypesAsync(eventTypes, afterPosition, limit, cancellationToken);
         }
@@ -163,7 +163,7 @@ public sealed class ControlLoopPipelinedMutationTests
 
         public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllOfTypesAsync(
             IReadOnlySet<string> eventTypes, long afterPosition, int limit, CancellationToken cancellationToken = default)
-            {
+        {
             lock (_lock) _streamAllCallTimestamps.Add(DateTime.UtcNow);
             return inner.ReadAllOfTypesAsync(eventTypes, afterPosition, limit, cancellationToken);
         }

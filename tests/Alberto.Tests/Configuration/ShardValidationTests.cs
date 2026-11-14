@@ -39,20 +39,20 @@ public class ShardValidationTests
         TenancyDefinition? tenancy = null,
         bool tenancyEnabled = true,
         IAlbertoBackendDescriptor? backend = null) => new()
-    {
-        ModuleKey = "orders",
-        Backend = backend ?? Postgres(Db1),
-        TenancyEnabled = tenancyEnabled,
-        Tenancy = tenancy ?? new TenancyDefinition
         {
-            Shards =
+            ModuleKey = "orders",
+            Backend = backend ?? Postgres(Db1),
+            TenancyEnabled = tenancyEnabled,
+            Tenancy = tenancy ?? new TenancyDefinition
+            {
+                Shards =
             [
                 new ShardDeclaration("db1", Postgres(Db1)),
                 new ShardDeclaration("db2", Postgres(Db2)),
             ],
-            Catalog = Postgres(Catalog),
-        },
-    };
+                Catalog = Postgres(Catalog),
+            },
+        };
 
     private static IReadOnlyList<string> Codes(AlbertoModuleDefinition definition) =>
         new AlbertoModuleValidator().Collect(definition).Select(f => f.Code).ToArray();

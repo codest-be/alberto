@@ -38,10 +38,10 @@ public class OrphanCheckpointTests
     private static AlbertoModuleDefinition Definition(
         OrphanCheckpointPolicy policy,
         params string[] declaredProcessorIds) => new()
-    {
-        ModuleKey = "orders",
-        Checkpoints = new CheckpointOptions { OrphanPolicy = policy },
-        Processors =
+        {
+            ModuleKey = "orders",
+            Checkpoints = new CheckpointOptions { OrphanPolicy = policy },
+            Processors =
         [
             .. declaredProcessorIds.Select(id => new ProcessorDeclaration
             {
@@ -49,7 +49,7 @@ public class OrphanCheckpointTests
                 Kind = ProcessorKind.Reactor,
             }),
         ],
-    };
+        };
 
     private static Task RunAsync(
         AlbertoModuleDefinition definition,

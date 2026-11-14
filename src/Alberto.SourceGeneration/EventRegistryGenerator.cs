@@ -92,9 +92,9 @@ public sealed class EventRegistryGenerator : IIncrementalGenerator
             }
 
             foreach (var e in all)
-            foreach (var tag in e.Tags.Where(t => t.UnsupportedTypeName is not null))
-                spc.ReportDiagnostic(Diagnostic.Create(
-                    UnsupportedTagType, tag.Location.ToLocation(), e.TypeName, tag.Property, tag.UnsupportedTypeName));
+                foreach (var tag in e.Tags.Where(t => t.UnsupportedTypeName is not null))
+                    spc.ReportDiagnostic(Diagnostic.Create(
+                        UnsupportedTagType, tag.Location.ToLocation(), e.TypeName, tag.Property, tag.UnsupportedTypeName));
 
             foreach (var registry in input.Left.Distinct())
             {
@@ -178,22 +178,22 @@ public sealed class EventRegistryGenerator : IIncrementalGenerator
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
         for (var current = type; current is not null; current = current.BaseType)
-        foreach (var property in current.GetMembers().OfType<IPropertySymbol>())
-        {
-            if (property.IsStatic || property.IsIndexer || property.DeclaredAccessibility != Accessibility.Public
-                || property.GetMethod is null || !seen.Add(property.Name))
-                continue;
+            foreach (var property in current.GetMembers().OfType<IPropertySymbol>())
+            {
+                if (property.IsStatic || property.IsIndexer || property.DeclaredAccessibility != Accessibility.Public
+                    || property.GetMethod is null || !seen.Add(property.Name))
+                    continue;
 
-            var tag = property.GetAttributes().FirstOrDefault(a => a.AttributeClass?.ToDisplayString() == TagAttribute);
-            if (tag is null || tag.ConstructorArguments.Length != 1 || tag.ConstructorArguments[0].Value is not string concept)
-                continue;
+                var tag = property.GetAttributes().FirstOrDefault(a => a.AttributeClass?.ToDisplayString() == TagAttribute);
+                if (tag is null || tag.ConstructorArguments.Length != 1 || tag.ConstructorArguments[0].Value is not string concept)
+                    continue;
 
-            yield return new TagModel(
-                concept,
-                property.Name,
-                HasMeaningfulToString(property.Type) ? null : property.Type.ToDisplayString(),
-                LocationInfo.From(tag.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? property.Locations.FirstOrDefault()));
-        }
+                yield return new TagModel(
+                    concept,
+                    property.Name,
+                    HasMeaningfulToString(property.Type) ? null : property.Type.ToDisplayString(),
+                    LocationInfo.From(tag.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? property.Locations.FirstOrDefault()));
+            }
     }
 
     private static bool HasMeaningfulToString(ITypeSymbol type)

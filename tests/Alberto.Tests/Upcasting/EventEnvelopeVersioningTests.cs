@@ -472,9 +472,12 @@ public sealed class UpcasterChainTests
         var v2Json = """{"OrderId":"00000000-0000-0000-0000-000000000001","Amount":10,"Region":"eu-north"}""";
         var envelope = new EventEnvelope
         {
-            Id = Guid.NewGuid(), GlobalPosition = 1,
-            EventType = new EventType("upcast-order", 2), Tags = [],
-            EventData = v2Json, Metadata = new Dictionary<string, string>(),
+            Id = Guid.NewGuid(),
+            GlobalPosition = 1,
+            EventType = new EventType("upcast-order", 2),
+            Tags = [],
+            EventData = v2Json,
+            Metadata = new Dictionary<string, string>(),
             CreatedAt = DateTimeOffset.UtcNow
         };
 
@@ -501,9 +504,12 @@ public sealed class UpcasterChainTests
         var v3Json = """{"OrderId":"00000000-0000-0000-0000-000000000001","Amount":5,"Region":"live","Currency":"JPY"}""";
         var envelope = new EventEnvelope
         {
-            Id = Guid.NewGuid(), GlobalPosition = 1,
-            EventType = new EventType("upcast-order", 3), Tags = [],
-            EventData = v3Json, Metadata = new Dictionary<string, string>(),
+            Id = Guid.NewGuid(),
+            GlobalPosition = 1,
+            EventType = new EventType("upcast-order", 3),
+            Tags = [],
+            EventData = v3Json,
+            Metadata = new Dictionary<string, string>(),
             CreatedAt = DateTimeOffset.UtcNow
         };
 
@@ -567,9 +573,11 @@ public sealed class UpcasterChainTests
         var s = Serializer(registry);
         var envelope = new EventEnvelope
         {
-            Id = Guid.NewGuid(), GlobalPosition = 1,
+            Id = Guid.NewGuid(),
+            GlobalPosition = 1,
             EventType = new EventType("upcast-order", 5),   // no step for 5
-            Tags = [], EventData = "{}",
+            Tags = [],
+            EventData = "{}",
             Metadata = new Dictionary<string, string>(),
             CreatedAt = DateTimeOffset.UtcNow
         };
@@ -598,9 +606,12 @@ public sealed class UpcasterChainTests
     private static EventEnvelope V1Envelope(string eventTypeId, string json) =>
         new()
         {
-            Id = Guid.NewGuid(), GlobalPosition = 1,
-            EventType = new EventType(eventTypeId, 1), Tags = [],
-            EventData = json, Metadata = new Dictionary<string, string>(),
+            Id = Guid.NewGuid(),
+            GlobalPosition = 1,
+            EventType = new EventType(eventTypeId, 1),
+            Tags = [],
+            EventData = json,
+            Metadata = new Dictionary<string, string>(),
             CreatedAt = DateTimeOffset.UtcNow
         };
 }
@@ -631,8 +642,10 @@ public sealed class UpcasterSerializerDeserializeTests
 
         var oldEnvelope = new EventEnvelope
         {
-            Id = Guid.NewGuid(), GlobalPosition = 1,
-            EventType = new EventType("upcast-order", 1), Tags = [],
+            Id = Guid.NewGuid(),
+            GlobalPosition = 1,
+            EventType = new EventType("upcast-order", 1),
+            Tags = [],
             EventData = """{"OrderId":"00000000-0000-0000-0000-000000000001","Amount":1}""",
             Metadata = new Dictionary<string, string>(),
             CreatedAt = DateTimeOffset.UtcNow

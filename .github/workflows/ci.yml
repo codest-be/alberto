@@ -37,6 +37,9 @@ jobs:
       - name: Build
         run: dotnet build Alberto.slnx -c Release
 
+      - name: Check formatting
+        run: dotnet format whitespace Alberto.slnx --verify-no-changes --no-restore
+
       # reportgenerator (.config/dotnet-tools.json), used by build/coverage.sh.
       - name: Restore tools
         run: dotnet tool restore

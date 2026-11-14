@@ -67,7 +67,8 @@ public abstract class EventStoreBackendSpecification
 
         Assert.Single(result);
         Assert.Equal(eventToPersist.Id, result.First().Id);
-        Assert.Equal(eventToPersist.EventType.Id, result.First().EventType.Id);    }
+        Assert.Equal(eventToPersist.EventType.Id, result.First().EventType.Id);
+    }
 
     /// <summary>Multiple events in one batch must receive strictly increasing global positions.</summary>
     [Fact]
@@ -85,7 +86,8 @@ public abstract class EventStoreBackendSpecification
 
         var positions = result.Select(e => e.GlobalPosition).ToList();
         Assert.Equal(3, positions.Count);
-        Assert.True(positions[0] < positions[1] && positions[1] < positions[2]);    }
+        Assert.True(positions[0] < positions[1] && positions[1] < positions[2]);
+    }
 
     /// <summary>The event payload and tags stored must match those supplied to <c>AppendAsync</c>.</summary>
     /// <remarks>
@@ -110,7 +112,8 @@ public abstract class EventStoreBackendSpecification
         Assert.True(
             JsonNode.DeepEquals(JsonNode.Parse(payload), JsonNode.Parse(appended.EventData)),
             $"EventData must round-trip as semantically equal JSON. Sent {payload}, got {appended.EventData}.");
-        Assert.Equal(eventToPersist.Tags.Count, appended.Tags.Count);    }
+        Assert.Equal(eventToPersist.Tags.Count, appended.Tags.Count);
+    }
 
     /// <summary>
     /// A payload that is not well-formed JSON must be refused, rather than stored and left to fail
@@ -162,7 +165,8 @@ public abstract class EventStoreBackendSpecification
 
         var appended = result.First();
         Assert.Equal("corr-123", appended.Metadata["correlation-id"]);
-        Assert.Equal("user-456", appended.Metadata["user-id"]);    }
+        Assert.Equal("user-456", appended.Metadata["user-id"]);
+    }
 
     #endregion
 
@@ -177,7 +181,8 @@ public abstract class EventStoreBackendSpecification
 
         var result = await backend.StreamAsync(query, cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
-        Assert.Empty(result);    }
+        Assert.Empty(result);
+    }
 
     /// <summary>A tag query must return only events whose tag set contains that tag value.</summary>
     [Fact]
@@ -193,7 +198,8 @@ public abstract class EventStoreBackendSpecification
         var result = await backend.StreamAsync(DcbQuery.ByTags($"order:{TestId}"), cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
         Assert.Equal(2, result.Count);
-        Assert.All(result, e => Assert.Contains(e.Tags, t => t.Value == $"order:{TestId}"));    }
+        Assert.All(result, e => Assert.Contains(e.Tags, t => t.Value == $"order:{TestId}"));
+    }
 
     /// <summary>An event-type query must return only events whose type matches the specified value.</summary>
     [Fact]
@@ -209,7 +215,8 @@ public abstract class EventStoreBackendSpecification
         var result = await backend.StreamAsync(DcbQuery.ByTypes($"order-placed-{TestId}"), cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
         Assert.Equal(2, result.Count);
-        Assert.All(result, e => Assert.Equal($"order-placed-{TestId}", e.EventType.Id));    }
+        Assert.All(result, e => Assert.Equal($"order-placed-{TestId}", e.EventType.Id));
+    }
 
     /// <summary>A union query must return events matching either the type axis or the tag axis.</summary>
     [Fact]
@@ -229,7 +236,8 @@ public abstract class EventStoreBackendSpecification
 
         var result = await backend.StreamAsync(query, cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
-        Assert.Equal(2, result.Count);    }
+        Assert.Equal(2, result.Count);
+    }
 
     /// <summary>An intersect (default) query must return only events matching both the type and tag axes.</summary>
     [Fact]
@@ -404,7 +412,8 @@ public abstract class EventStoreBackendSpecification
         var result = await backend.StreamAsync(DcbQuery.ByTags($"order:{TestId}"), afterPosition, cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
         Assert.Single(result);
-        Assert.Equal("event-c", result.First().EventType.Id);    }
+        Assert.Equal("event-c", result.First().EventType.Id);
+    }
 
     /// <summary>When a <c>limit</c> is supplied the result must contain at most that many events.</summary>
     [Fact]
@@ -421,7 +430,8 @@ public abstract class EventStoreBackendSpecification
 
         var result = await backend.ReadAsync(DcbQuery.ByTags($"order:{TestId}"), afterPosition: 0, limit: 3, cancellationToken: TestContext.Current.CancellationToken);
 
-        Assert.Equal(3, result.Count);    }
+        Assert.Equal(3, result.Count);
+    }
 
     /// <summary>Events must be returned in ascending global-position order regardless of insertion order.</summary>
     [Fact]
@@ -437,7 +447,8 @@ public abstract class EventStoreBackendSpecification
         var result = await backend.StreamAsync(DcbQuery.ByTags($"order:{TestId}"), cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
         var positions = result.Select(e => e.GlobalPosition).ToList();
-        Assert.True(positions.SequenceEqual(positions.OrderBy(p => p)));    }
+        Assert.True(positions.SequenceEqual(positions.OrderBy(p => p)));
+    }
 
     #endregion
 
@@ -578,7 +589,8 @@ public abstract class EventStoreBackendSpecification
         var dcbQuery = DcbQuery.ByTags($"order:{TestId}");
         var result = await backend.AppendAsync([CreateEvent("order-confirmed", $"order:{TestId}")], dcbQuery, lastPosition, TestContext.Current.CancellationToken);
 
-        Assert.Single(result);    }
+        Assert.Single(result);
+    }
 
     /// <summary>
     /// An append with a DCB boundary check must throw <see cref="DcbConflictException"/> when a
@@ -596,7 +608,8 @@ public abstract class EventStoreBackendSpecification
         var dcbQuery = DcbQuery.ByTags($"order:{TestId}");
 
         await Assert.ThrowsAsync<DcbConflictException>(() =>
-            backend.AppendAsync([CreateEvent("order-shipped", $"order:{TestId}")], dcbQuery, firstPosition, TestContext.Current.CancellationToken));    }
+            backend.AppendAsync([CreateEvent("order-shipped", $"order:{TestId}")], dcbQuery, firstPosition, TestContext.Current.CancellationToken));
+    }
 
     /// <summary>
     /// When multiple writers race to be first to append to an empty boundary (position 0),
@@ -652,7 +665,8 @@ public abstract class EventStoreBackendSpecification
         var dcbQuery = DcbQuery.ByTags($"order:{TestId}");
 
         await Assert.ThrowsAsync<DcbConflictException>(() =>
-            backend.AppendAsync([CreateEvent("order-created", $"order:{TestId}")], dcbQuery, 0, TestContext.Current.CancellationToken));    }
+            backend.AppendAsync([CreateEvent("order-created", $"order:{TestId}")], dcbQuery, 0, TestContext.Current.CancellationToken));
+    }
 
     /// <summary>
     /// A DCB check expecting an empty boundary (position 0) must succeed when no matching events exist.
@@ -666,7 +680,8 @@ public abstract class EventStoreBackendSpecification
 
         var result = await backend.AppendAsync([CreateEvent("order-created", $"order:{TestId}")], dcbQuery, 0, TestContext.Current.CancellationToken);
 
-        Assert.Single(result);    }
+        Assert.Single(result);
+    }
 
     /// <summary>
     /// A boundary scoped to one tag must not be affected by events tagged with a different tag.
@@ -683,7 +698,8 @@ public abstract class EventStoreBackendSpecification
 
         var result = await backend.AppendAsync([CreateEvent("customer-verified", $"customer:{TestId}")], dcbQuery, lastCustomerPosition, TestContext.Current.CancellationToken);
 
-        Assert.Single(result);    }
+        Assert.Single(result);
+    }
 
     /// <summary>
     /// An all-tags boundary must ignore events that match only a subset of the required tags.
@@ -751,7 +767,8 @@ public abstract class EventStoreBackendSpecification
         // Use a fresh backend that has no events (in-memory only; for Postgres use starting position)
         var position = await backend.GetLastPositionAsync(TestContext.Current.CancellationToken);
 
-        Assert.True(position >= 0);    }
+        Assert.True(position >= 0);
+    }
 
     /// <summary>
     /// After an append <c>GetLastPositionAsync</c> must return a value at least as large as
@@ -768,7 +785,8 @@ public abstract class EventStoreBackendSpecification
 
         var position = await backend.GetLastPositionAsync(TestContext.Current.CancellationToken);
 
-        Assert.True(position >= appended.Last().GlobalPosition);    }
+        Assert.True(position >= appended.Last().GlobalPosition);
+    }
 
     #endregion
 

@@ -56,12 +56,12 @@ public sealed class EventSerializerTagExtractionTests
     private static readonly EventSerializer Serializer = EventSerializer.FromRegistry(
         new Dictionary<string, Type>
         {
-            ["tag-extract-nullable"]         = typeof(NullableTagEvent),
-            ["tag-extract-guid"]             = typeof(GuidTagEvent),
-            ["tag-extract-string"]           = typeof(StringTagEvent),
-            ["tag-extract-transform"]        = typeof(TransformTagEvent),
-            ["tag-extract-no-tags"]          = typeof(NoTagsEvent),
-            ["tag-extract-default-version"]  = typeof(DefaultVersionEvent),
+            ["tag-extract-nullable"] = typeof(NullableTagEvent),
+            ["tag-extract-guid"] = typeof(GuidTagEvent),
+            ["tag-extract-string"] = typeof(StringTagEvent),
+            ["tag-extract-transform"] = typeof(TransformTagEvent),
+            ["tag-extract-no-tags"] = typeof(NoTagsEvent),
+            ["tag-extract-default-version"] = typeof(DefaultVersionEvent),
             ["tag-extract-explicit-version"] = typeof(ExplicitVersionEvent),
         });
 
