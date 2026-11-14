@@ -91,7 +91,7 @@ public sealed record ProcessorExecutionOptions
 /// configuration binder. Non-null properties are applied on top of the code-declared defaults.
 /// Set keys under <c>Alberto:Modules:{moduleKey}:Processors:{processorId}</c>.
 /// </summary>
-public sealed class ProcessorExecutionOverrides : IAlbertoOverrides<ProcessorExecutionOptions>
+internal sealed class ProcessorExecutionOverrides : IAlbertoOverrides<ProcessorExecutionOptions>
 {
     /// <summary>
     /// Overrides <see cref="ProcessorExecutionOptions.BatchingMode"/>. Null leaves the default unchanged.

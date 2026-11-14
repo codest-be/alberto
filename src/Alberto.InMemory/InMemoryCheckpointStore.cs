@@ -13,7 +13,7 @@ namespace Alberto.InMemory;
 /// <see cref="RewindAsync"/> is the deliberate escape hatch that can move a checkpoint
 /// backwards, mirroring the operator-only rewind path in production.
 /// </remarks>
-public sealed class InMemoryCheckpointStore : ICheckpointStore, ICheckpointInventory, IProcessorFaultStore
+internal sealed class InMemoryCheckpointStore : ICheckpointStore, ICheckpointInventory, IProcessorFaultStore
 {
     private readonly object _lock = new();
     private readonly Dictionary<string, long> _checkpoints = new();

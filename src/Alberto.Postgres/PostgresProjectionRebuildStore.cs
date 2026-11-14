@@ -16,7 +16,7 @@ namespace Alberto.Postgres;
 /// <see cref="IProjectionRebuildCoordinatorStore.DiscardStateVersionAsync"/>'s job and the
 /// coordinator's timing.
 /// </remarks>
-public sealed class PostgresProjectionRebuildStore :
+internal sealed class PostgresProjectionRebuildStore :
     IProjectionRebuildStore,
     IProjectionRebuildCoordinatorStore
 {
