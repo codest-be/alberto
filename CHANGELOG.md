@@ -19,9 +19,61 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ## [0.10.0] - 2026-11-14
 
-### Changed
+A breaking cleanup of the public surface before 1.0 freezes it. No migrations and no behaviour
+changes: an application that compiles against 0.10.0 runs as it did on 0.9.0. Almost all of the
+work is adding `using` lines the compiler asks for; [UPGRADING.md](UPGRADING.md) has the tables.
 
-- Pre-1.0 cleanup: shrink and straighten the public surface, tighten build and CI (#230)
+**All ten packages must now be on the same version.** They share internals, so each depends on the
+others at exactly `[0.10.0]`. Mixing versions fails at restore instead of at runtime.
+
+### Changed (breaking)
+
+- **Event store reads are split into batch `Read*` and lazy `Stream*`** (#230). The old
+  `StreamAsync` and `StreamAllAsync` returned a materialised collection. They are now `ReadAsync`
+  and `ReadAllAsync`, with a required `limit`. `StreamAsync` and `StreamAllAsync` return
+  `IAsyncEnumerable<IEventEnvelope>` and read as they are enumerated. `await store.StreamAsync(q)`
+  becomes `await store.StreamAsync(q).ToListAsync()`, or an `await foreach`.
+- **`IEventStoreBackend` extends `IEventStore`** and adds only `ReadAllOfTypesAsync`, which
+  replaces `StreamAllOfTypesAsync` and has no default implementation: a custom backend must
+  filter. `ShardRoutingEventStoreBackend` is gone; sharding routes at `IEventStore`.
+- **`Alberto.Subscriptions` is split by concern** (#230): `Alberto.Checkpoints`, `Alberto.Leases`,
+  `Alberto.DeadLetters` and `Alberto.Projections`. The control loop, processors, reactors and
+  middleware stay where they were. No type changed shape.
+- **`Result`, `Result<T>`, `Problem`, `Decision` and `Decision<T>` moved to `Alberto.Results`**, so
+  `using Alberto;` no longer puts a type called `Result` into code that has its own.
+- **`DcbModuleBuilder` is `AlbertoModuleBuilder`** (and its `Extensions` class likewise). `DcbQuery`
+  and `DcbConflictException` keep their names. The two `ServiceCollectionExtensions` classes are
+  `AlbertoServiceCollectionExtensions` and `AlbertoTelemetryServiceCollectionExtensions`; call
+  sites are unaffected.
+- **Every `CancellationToken` parameter is named `cancellationToken`.** Some were `ct`. Only named
+  arguments break.
+- **Backend classes are internal**: the Postgres event store backend, lease manager, rebuild
+  store, tenant shard map and dead-letter store, and every in-memory class except
+  `InMemoryStateStore<T>`. Resolve the interface from the module's keyed services.
+  `PostgresStateStore<T>`, `PostgresOutboxStore` and `PostgresCheckpointStore` stay public.
+- **The `*Overrides` configuration mirrors are internal**, apart from `RetryOverrides`,
+  `HaltOverrides` and `RedeliveryOverrides`. Configuration keys are unchanged.
+- **`IProjectionEntity` is getter-only**; the framework stamps an entity through its own setter,
+  which may now be private. `Attempt`, `LastError`, `DeadLettered` and `DeadLetteredCount` on the
+  middleware contexts have no public setter.
+
+### Added
+
+- **`AddEventStoreBackend` on the module context** (#230). A third-party backend registers itself
+  through public API, with append interceptors applied, where it previously needed
+  `InternalsVisibleTo`.
+- Five streaming-read facts in `EventStoreBackendSpecification` (43 in total). A backend that
+  inherits the specification picks them up.
+
+### Removed
+
+- **API nothing in the library used** (#230): `ProcessingResult`; `ITenantProcessorLock`,
+  `ITenantLease`, `TenantLease`, `TenantLeaseInfo` and `PostgresTenantProcessorLock`;
+  `IProcessorLeaseManager.GetAllLeasesAsync` and `ProcessorLeaseInfo`; the metrics
+  `alberto.tenant_locks_acquired` and `alberto.tenant_lock_failures`. The `alberto_tenant_leases`
+  table stays in the schema, unused.
+- **`Alberto.Testing.Xunit` no longer needs FluentAssertions at runtime.** The specifications
+  assert with xUnit.
 
 ---
 

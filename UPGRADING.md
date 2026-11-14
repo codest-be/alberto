@@ -5,7 +5,7 @@ section of [CHANGELOG.md](CHANGELOG.md).
 
 This file covers 0.x release-to-release steps; [docs/migrating-to-1.0.md](docs/migrating-to-1.0.md) covers the older `0.1.0-beta` to 1.0 breaking changes.
 
-## To the next release (pre-1.0, breaking)
+## To 0.10.0
 
 ### Three naming fixes
 
