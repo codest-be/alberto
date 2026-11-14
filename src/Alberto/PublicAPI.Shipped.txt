@@ -22,6 +22,7 @@ Alberto.Configuration.AlbertoModuleContext.ModuleKey.get -> string!
 Alberto.Configuration.AlbertoModuleContext.Services.get -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 Alberto.Configuration.AlbertoModuleContext.ShardId.get -> string?
 Alberto.Configuration.AlbertoModuleContext.TenancyEnabled.get -> bool
+Alberto.Configuration.AlbertoModuleContextExtensions
 Alberto.Configuration.AlbertoModuleDefinition
 Alberto.Configuration.AlbertoModuleDefinition.Backend.get -> Alberto.Configuration.IAlbertoBackendDescriptor?
 Alberto.Configuration.AlbertoModuleDefinition.Checkpoints.get -> Alberto.Configuration.CheckpointOptions!
@@ -925,6 +926,7 @@ override Alberto.EventTag.ToString() -> string!
 override Alberto.EventType.Equals(object? obj) -> bool
 override Alberto.EventType.GetHashCode() -> int
 override Alberto.EventType.ToString() -> string!
+static Alberto.Configuration.AlbertoModuleContextExtensions.AddEventStoreBackend(this Alberto.Configuration.AlbertoModuleContext! context, Microsoft.Extensions.DependencyInjection.ServiceLifetime lifetime, System.Func<System.IServiceProvider!, Alberto.IEventStoreBackend!>! factory, string? keySuffix = null, string? dbSystem = null) -> void
 static Alberto.Configuration.AlbertoModuleDefinition.ApplyConfiguration(Alberto.Configuration.AlbertoModuleDefinition! definition, Microsoft.Extensions.Configuration.IConfiguration! configuration) -> Alberto.Configuration.AlbertoModuleDefinition!
 static Alberto.Configuration.AlbertoOptionsOverlay.Overlay<TOptions, TOverrides>(Microsoft.Extensions.Configuration.IConfiguration! parent, string! key, TOptions! current) -> TOptions!
 static Alberto.Configuration.AlbertoOptionsOverlay.Overlay<TOptions, TOverrides>(Microsoft.Extensions.Configuration.IConfiguration! parent, string! key, TOptions! current, System.Func<Microsoft.Extensions.Configuration.IConfigurationSection!, TOverrides?>! bind) -> TOptions!

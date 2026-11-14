@@ -212,13 +212,6 @@ public sealed record PostgresBackendDescriptor(PostgresOptions Options) : IAlber
             return builder.Build();
         });
 
-        // Register append interceptor pipeline.
-        services.AddKeyedSingleton<IAppendInterceptorPipeline>(moduleKey, (sp, _) =>
-        {
-            var interceptors = sp.GetKeyedServices<IAppendInterceptor>(moduleKey);
-            return new AppendInterceptorPipeline(interceptors);
-        });
-
         if (context.TenancyEnabled)
             PostgresBuilderExtensions.RegisterTenantBackend(context, runtime);
         else
