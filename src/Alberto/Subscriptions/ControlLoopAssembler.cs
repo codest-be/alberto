@@ -4,6 +4,7 @@ using Alberto.Telemetry;
 using Microsoft.Extensions.Logging;
 using Alberto.Checkpoints;
 using Alberto.DeadLetters;
+using Alberto.Projections;
 
 namespace Alberto.Subscriptions;
 
@@ -45,6 +46,7 @@ internal sealed class ControlLoopAssembler
     private readonly bool _hasUnpairedPerEventMiddlewares;
     private readonly TimeProvider _timeProvider;
     private readonly AlbertoInstruments _instruments;
+    private readonly ProcessorPolicies? _policies;
 
     /// <summary>
     /// Builds the shared middleware chain that every loop created by this assembler will use.
@@ -64,6 +66,7 @@ internal sealed class ControlLoopAssembler
     /// <param name="policies">
     /// Per-processor failure policy (halt or dead-letter, retry and halt options). Null treats
     /// every processor as a dead-lettering one using <paramref name="retryOptions"/>.
+    /// Also the source of each loop's execution options when <see cref="Create"/> is given none.
     /// </param>
     /// <param name="instruments">
     /// The container's instruments (<see cref="AlbertoInstruments.For"/>). Defaults to
@@ -82,6 +85,7 @@ internal sealed class ControlLoopAssembler
     {
         _timeProvider = timeProvider ?? TimeProvider.System;
         _instruments = instruments ?? AlbertoMetrics.Shared;
+        _policies = policies;
 
         // Middleware order (outermost first):
         //   [keyed ConsumeMiddleware...]   ← WithTelemetry(), AddConsumeMiddleware(...)
@@ -132,7 +136,7 @@ internal sealed class ControlLoopAssembler
             pollingInterval, batchSize, moduleKey,
             _middlewares, _batchMiddlewares,
             _hasUnpairedPerEventMiddlewares,
-            executionOptions,
+            executionOptions ?? _policies?.ExecutionFor(processor.ProcessorId),
             logger,
             drainTimeout,
             _timeProvider,
@@ -142,7 +146,10 @@ internal sealed class ControlLoopAssembler
         // Wire a per-loop fence-violation handler through the interface rather than
         // via a concrete-type downcast. If the store is not fencable, this block is skipped
         // and fence handling is simply absent (visible to the integrator, not silent).
-        if (checkpointStore is IFencableCheckpointStore fencable)
+        // A shadow rebuild checkpoint is never fenced, and its loop is created per rebuild:
+        // subscribing would only pile up handlers that cannot fire.
+        if (checkpointStore is IFencableCheckpointStore fencable &&
+            !RebuildableProjection.IsShadowProcessorId(processor.ProcessorId))
         {
             fencable.SubscribeFenceViolation(violatingProcessorId =>
             {

@@ -129,10 +129,6 @@ internal static class ControlLoopRegistration
             var options = Options(sp, moduleKey);
             var processors = sp.GetKeyedServices<IEventProcessor>(moduleKey).ToList();
 
-            var executionOptionsByProcessorId = sp
-                .GetKeyedServices<ProcessorExecutionRegistration>(moduleKey)
-                .ToDictionary(r => r.ProcessorId, r => r.Options, StringComparer.Ordinal);
-
             var head = sp.GetRequiredKeyedService<EventStoreHead>(moduleKey);
             var backend = Backend(sp, moduleKey);
             var checkpoints = sp.GetRequiredKeyedService<ICheckpointStore>(moduleKey);
@@ -157,12 +153,9 @@ internal static class ControlLoopRegistration
             var loops = processors
                 .Select(p => assembler.Create(p, head, backend, checkpoints,
                     options.PollingInterval, options.BatchSize, moduleKey,
-                    executionOptionsByProcessorId.GetValueOrDefault(
-                        p.ProcessorId,
-                        ProcessorExecutionOptions.Default),
-                    logger,
-                    options.DrainTimeout,
-                    healthState))
+                    logger: logger,
+                    drainTimeout: options.DrainTimeout,
+                    healthState: healthState))
                 .ToList();
 
             if (!options.Leases.Enabled)
