@@ -126,15 +126,25 @@ public sealed class ProjectionCatchUpTests
         public Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(Interlocked.Increment(ref _reads) * FirstHead);
 
-        public Task<IReadOnlyCollection<IEventEnvelope>> StreamAsync(
-            DcbQuery query, long afterPosition = 0, int? limit = null,
-            CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
+        public Task<IReadOnlyCollection<IEventEnvelope>> ReadAsync(
+            DcbQuery query, long afterPosition, int limit, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
 
-        public Task<IReadOnlyCollection<IEventEnvelope>> StreamAllAsync(
-            long afterPosition = 0, int? limit = null,
-            CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
+        public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllAsync(
+            long afterPosition, int limit, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public IAsyncEnumerable<IEventEnvelope> StreamAsync(
+            DcbQuery query, long afterPosition = 0, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public IAsyncEnumerable<IEventEnvelope> StreamAllAsync(
+            long afterPosition = 0, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllOfTypesAsync(
+            IReadOnlySet<string> eventTypes, long afterPosition, int limit, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
 
         public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
             IEnumerable<IEventToPersist> events, DcbQuery? dcbQuery = null,

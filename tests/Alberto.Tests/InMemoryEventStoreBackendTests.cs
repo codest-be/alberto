@@ -35,7 +35,7 @@ public class InMemoryEventStoreBackendTests : EventStoreBackendSpecification
             CreateEvent(wanted, $"tag:5{TestId}")
         ], cancellationToken: ct);
 
-        var result = await backend.StreamAllOfTypesAsync(new HashSet<string> { wanted }, start, limit: 2, ct);
+        var result = await backend.ReadAllOfTypesAsync(new HashSet<string> { wanted }, start, limit: 2, ct);
 
         Assert.Equal(2, result.Count);
         Assert.All(result, e => Assert.Equal(wanted, e.EventType.Id));
@@ -161,9 +161,10 @@ public class InMemoryTenantBackendTests
         await _backend.AppendForTenant("acme", [Event("evt-c", $"tag:{TestId}")],
             cancellationToken: TestContext.Current.CancellationToken);
 
-        var acmeEvents = await _backend.StreamForTenant(
+        var acmeEvents = await _backend.ReadForTenant(
             "acme",
             DcbQuery.ByTags($"tag:{TestId}"),
+            afterPosition: 0, limit: int.MaxValue,
             cancellationToken: TestContext.Current.CancellationToken);
 
         acmeEvents.Should().HaveCount(2).And
@@ -176,9 +177,10 @@ public class InMemoryTenantBackendTests
         await _backend.AppendForTenant("globex", [Event("evt", $"exclusive:{TestId}")],
             cancellationToken: TestContext.Current.CancellationToken);
 
-        var result = await _backend.StreamForTenant(
+        var result = await _backend.ReadForTenant(
             "acme",
             DcbQuery.ByTags($"exclusive:{TestId}"),
+            afterPosition: 0, limit: int.MaxValue,
             cancellationToken: TestContext.Current.CancellationToken);
 
         result.Should().BeEmpty();
@@ -259,7 +261,7 @@ public class InMemoryTenantBackendTests
         var decorator = new InMemoryTenantEventStoreDecorator(_backend, fakeAccessor);
 
         var act = async () => await decorator.StreamAllAsync(
-            cancellationToken: TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*StreamAllAsync*");
@@ -283,8 +285,8 @@ public class InMemoryTenantBackendTests
         await act.Should().ThrowAsync<Exception>();
 
         (await _backend.GetLastPositionAsync(ct)).Should().Be(0);
-        (await _backend.StreamAllAsync(cancellationToken: ct)).Should().BeEmpty();
-        (await _backend.StreamAsync(DcbQuery.ByTags(tag), cancellationToken: ct)).Should().BeEmpty();
+        (await _backend.StreamAllAsync(cancellationToken: ct).ToListAsync()).Should().BeEmpty();
+        (await _backend.StreamAsync(DcbQuery.ByTags(tag), cancellationToken: ct).ToListAsync()).Should().BeEmpty();
 
         var appended = await _backend.AppendAsync([Event("order-placed", tag)], cancellationToken: ct);
         appended.Should().ContainSingle().Which.GlobalPosition.Should().Be(1);

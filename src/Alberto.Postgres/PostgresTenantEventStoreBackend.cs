@@ -27,11 +27,11 @@ internal sealed class PostgresTenantEventStoreBackend(
     // Raw schema string used to build the per-tenant advisory-lock key.
     private readonly string? _schemaName = schema;
 
-    public async Task<IReadOnlyCollection<IEventEnvelope>> StreamForTenant(
+    public async Task<IReadOnlyCollection<IEventEnvelope>> ReadForTenant(
         string tenantId,
         DcbQuery query,
-        long afterPosition = 0,
-        int? limit = null,
+        long afterPosition,
+        int limit,
         CancellationToken cancellationToken = default)
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
@@ -44,26 +44,50 @@ internal sealed class PostgresTenantEventStoreBackend(
         return await PostgresBackendHelpers.ReadEventsAsync(cmd, includeTenantId: true, tenantId: null, cancellationToken);
     }
 
-    public async Task<IReadOnlyCollection<IEventEnvelope>> StreamAllTenants(
+    public IAsyncEnumerable<IEventEnvelope> StreamForTenant(
+        string tenantId,
+        DcbQuery query,
         long afterPosition = 0,
-        int? limit = null,
+        CancellationToken cancellationToken = default)
+        => PostgresBackendHelpers.StreamEventsAsync(
+            _dataSource,
+            PostgresBackendHelpers.BuildStreamQuery(_schema, query, tenanted: true),
+            cmd => PostgresBackendHelpers.AddStreamParameters(cmd, query, tenantId, afterPosition, limit: null),
+            includeTenantId: true,
+            cancellationToken);
+
+    public async Task<IReadOnlyCollection<IEventEnvelope>> ReadAllTenants(
+        long afterPosition,
+        int limit,
         CancellationToken cancellationToken = default)
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
-        await using var cmd = new NpgsqlCommand(
-            $"SELECT * FROM {_schema.Function("alberto_read_all_global")}(@p_after_position, @p_limit)",
-            connection);
-
-        cmd.Parameters.AddWithValue("p_after_position", afterPosition);
-        cmd.Parameters.AddWithValue("p_limit", limit.HasValue ? limit.Value : DBNull.Value);
+        await using var cmd = new NpgsqlCommand(ReadAllGlobalSql, connection);
+        BindReadAll(cmd, afterPosition, limit);
 
         return await PostgresBackendHelpers.ReadEventsAsync(cmd, includeTenantId: true, tenantId: null, cancellationToken);
     }
 
-    public Task<IReadOnlyCollection<IEventEnvelope>> StreamAllTenantsOfTypes(
+    public IAsyncEnumerable<IEventEnvelope> StreamAllTenants(
+        long afterPosition = 0,
+        CancellationToken cancellationToken = default)
+        => PostgresBackendHelpers.StreamEventsAsync(
+            _dataSource, ReadAllGlobalSql, cmd => BindReadAll(cmd, afterPosition, limit: null),
+            includeTenantId: true, cancellationToken);
+
+    private string ReadAllGlobalSql =>
+        $"SELECT * FROM {_schema.Function("alberto_read_all_global")}(@p_after_position, @p_limit)";
+
+    private static void BindReadAll(NpgsqlCommand cmd, long afterPosition, int? limit)
+    {
+        cmd.Parameters.AddWithValue("p_after_position", afterPosition);
+        cmd.Parameters.AddWithValue("p_limit", limit.HasValue ? limit.Value : DBNull.Value);
+    }
+
+    public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllTenantsOfTypes(
         IReadOnlySet<string> eventTypes,
         long afterPosition,
-        int? limit,
+        int limit,
         CancellationToken cancellationToken = default)
         => PostgresBackendHelpers.ReadAllOfTypesAsync(
             _schema, _dataSource, tenanted: true, eventTypes, afterPosition, limit, cancellationToken);

@@ -619,18 +619,21 @@ public sealed class CommandPipelineTests
             return Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
         }
 
-        public Task<IReadOnlyCollection<IEventEnvelope>> StreamAsync(
-            DcbQuery query,
-            long afterPosition = 0,
-            int? limit = null,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
+        public Task<IReadOnlyCollection<IEventEnvelope>> ReadAsync(
+            DcbQuery query, long afterPosition, int limit, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
 
-        public Task<IReadOnlyCollection<IEventEnvelope>> StreamAllAsync(
-            long afterPosition = 0,
-            int? limit = null,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
+        public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllAsync(
+            long afterPosition, int limit, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
+
+        public IAsyncEnumerable<IEventEnvelope> StreamAsync(
+            DcbQuery query, long afterPosition = 0, CancellationToken cancellationToken = default)
+            => AsyncEnumerable.Empty<IEventEnvelope>();
+
+        public IAsyncEnumerable<IEventEnvelope> StreamAllAsync(
+            long afterPosition = 0, CancellationToken cancellationToken = default)
+            => AsyncEnumerable.Empty<IEventEnvelope>();
 
         public Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(0L);

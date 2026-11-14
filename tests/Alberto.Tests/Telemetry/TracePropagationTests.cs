@@ -52,7 +52,7 @@ public sealed class TracePropagationTests
                 Metadata = eventMetadata ?? [],
             },
         ]);
-        return (await backend.StreamAllAsync()).Single().Metadata;
+        return (await backend.StreamAllAsync().ToListAsync()).Single().Metadata;
     }
 
     [Fact]

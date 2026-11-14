@@ -37,16 +37,32 @@ public sealed class ControlLoopResilienceTests
         private int _calls;
         public int Calls => Volatile.Read(ref _calls);
 
-        public async Task<IReadOnlyCollection<IEventEnvelope>> StreamAllAsync(
-            long afterPosition = 0, int? limit = null, CancellationToken cancellationToken = default)
-        {
+        public IAsyncEnumerable<IEventEnvelope> StreamAllAsync(
+            long afterPosition = 0, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllOfTypesAsync(
+            IReadOnlySet<string> eventTypes, long afterPosition, int limit, CancellationToken cancellationToken = default)
+            {
             // Yield so a spinning loop shows up as a high call count rather than blocking StartAsync.
-            await Task.Yield();
-            return reader(Interlocked.Increment(ref _calls), afterPosition);
+            return Core();
+            async Task<IReadOnlyCollection<IEventEnvelope>> Core()
+            {
+                await Task.Yield();
+                return reader(Interlocked.Increment(ref _calls), afterPosition);
+            }
         }
 
-        public Task<IReadOnlyCollection<IEventEnvelope>> StreamAsync(
-            DcbQuery query, long afterPosition = 0, int? limit = null, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyCollection<IEventEnvelope>> ReadAsync(
+            DcbQuery query, long afterPosition, int limit, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllAsync(
+            long afterPosition, int limit, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public IAsyncEnumerable<IEventEnvelope> StreamAsync(
+            DcbQuery query, long afterPosition = 0, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
         public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(

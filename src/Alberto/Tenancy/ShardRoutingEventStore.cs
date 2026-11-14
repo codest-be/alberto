@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 
 namespace Alberto.Tenancy;
 
@@ -49,14 +50,14 @@ public sealed class ShardRoutingEventStore(
     /// Positions are per-database sequences; passing a value obtained from a different shard
     /// produces silently wrong results — events may be skipped or repeated.
     /// </remarks>
-    public async Task<IReadOnlyCollection<IEventEnvelope>> StreamAsync(
+    public async Task<IReadOnlyCollection<IEventEnvelope>> ReadAsync(
         DcbQuery query,
-        long afterPosition = 0,
-        int? limit = null,
+        long afterPosition,
+        int limit,
         CancellationToken cancellationToken = default)
     {
         var store = await _router.ForCurrentTenantAsync(cancellationToken).ConfigureAwait(false);
-        return await store.StreamAsync(query, afterPosition, limit, cancellationToken)
+        return await store.ReadAsync(query, afterPosition, limit, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -67,14 +68,37 @@ public sealed class ShardRoutingEventStore(
     /// events on the next page. Reading every shard is a fan-out the caller has to write, with
     /// its own per-shard cursors.
     /// </remarks>
-    public async Task<IReadOnlyCollection<IEventEnvelope>> StreamAllAsync(
-        long afterPosition = 0,
-        int? limit = null,
+    public async Task<IReadOnlyCollection<IEventEnvelope>> ReadAllAsync(
+        long afterPosition,
+        int limit,
         CancellationToken cancellationToken = default)
     {
         var store = await _router.ForCurrentTenantAsync(cancellationToken).ConfigureAwait(false);
-        return await store.StreamAllAsync(afterPosition, limit, cancellationToken)
+        return await store.ReadAllAsync(afterPosition, limit, cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    /// <remarks>Per-shard position caveat: see <see cref="ReadAsync"/>.</remarks>
+    public async IAsyncEnumerable<IEventEnvelope> StreamAsync(
+        DcbQuery query,
+        long afterPosition = 0,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var store = await _router.ForCurrentTenantAsync(cancellationToken).ConfigureAwait(false);
+        await foreach (var e in store.StreamAsync(query, afterPosition, cancellationToken).ConfigureAwait(false))
+            yield return e;
+    }
+
+    /// <inheritdoc />
+    /// <remarks>One shard's worth of events: see <see cref="ReadAllAsync"/>.</remarks>
+    public async IAsyncEnumerable<IEventEnvelope> StreamAllAsync(
+        long afterPosition = 0,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var store = await _router.ForCurrentTenantAsync(cancellationToken).ConfigureAwait(false);
+        await foreach (var e in store.StreamAllAsync(afterPosition, cancellationToken).ConfigureAwait(false))
+            yield return e;
     }
 
     /// <inheritdoc />

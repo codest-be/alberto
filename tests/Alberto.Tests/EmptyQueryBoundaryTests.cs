@@ -222,7 +222,7 @@ public class EmptyQueryBoundaryTests
 
         var events = await store.StreamAsync(
             DcbQuery.All,
-            cancellationToken: TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
         events.Should().HaveCount(2, "All remains a valid way to read the entire log");
     }

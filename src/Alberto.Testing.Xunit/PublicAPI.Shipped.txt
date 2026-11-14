@@ -92,6 +92,11 @@ Alberto.Testing.Xunit.EventStoreBackendSpecification.Stream_EmptyStore_ShouldRet
 Alberto.Testing.Xunit.EventStoreBackendSpecification.Stream_ShouldOrderByPosition() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.EventStoreBackendSpecification.Stream_WithAfterPosition_ShouldFilterByPosition() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.EventStoreBackendSpecification.Stream_WithLimit_ShouldLimitResults() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.EventStoreBackendSpecification.StreamingRead_All_YieldsEveryEventAfterPosition() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.EventStoreBackendSpecification.StreamingRead_ByQuery_YieldsSameEventsAsBatchRead() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.EventStoreBackendSpecification.StreamingRead_StoppedEarly_YieldsLeadingEventsAndLeavesBackendUsable() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.EventStoreBackendSpecification.StreamingRead_WithAfterPosition_SkipsEarlierEvents() -> System.Threading.Tasks.Task!
+Alberto.Testing.Xunit.EventStoreBackendSpecification.StreamingRead_WithCancelledToken_Throws() -> System.Threading.Tasks.Task!
 Alberto.Testing.Xunit.EventStoreBackendSpecification.TestId.get -> string!
 Alberto.Testing.Xunit.EventStoreBackendSpecification.TimeProvider.get -> Microsoft.Extensions.Time.Testing.FakeTimeProvider!
 Alberto.Testing.Xunit.FencedCheckpointStoreSpecification

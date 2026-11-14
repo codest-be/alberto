@@ -31,31 +31,60 @@ public interface IEventStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Reads events matching the specified query.
+    /// Reads one materialised batch of events matching the query, in position order.
     /// In multi-tenant mode, automatically scoped to the current tenant.
     /// </summary>
+    /// <remarks>
+    /// Fewer than <paramref name="limit"/> events means nothing further matched after
+    /// <paramref name="afterPosition"/>. To read everything without holding it all in memory, use
+    /// <see cref="StreamAsync"/>.
+    /// </remarks>
     /// <param name="query">The query criteria.</param>
     /// <param name="afterPosition">Only return events with position greater than this value.</param>
     /// <param name="limit">Maximum number of events to return.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Collection of matching events ordered by global position.</returns>
-    Task<IReadOnlyCollection<IEventEnvelope>> StreamAsync(
+    Task<IReadOnlyCollection<IEventEnvelope>> ReadAsync(
         DcbQuery query,
-        long afterPosition = 0,
-        int? limit = null,
+        long afterPosition,
+        int limit,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Reads all events (for system-wide queries).
+    /// Reads one materialised batch of all events (for system-wide queries), in position order.
     /// In multi-tenant mode, returns events across all tenants.
     /// </summary>
     /// <param name="afterPosition">Only return events with position greater than this value.</param>
     /// <param name="limit">Maximum number of events to return.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Collection of all events ordered by global position.</returns>
-    Task<IReadOnlyCollection<IEventEnvelope>> StreamAllAsync(
+    Task<IReadOnlyCollection<IEventEnvelope>> ReadAllAsync(
+        long afterPosition,
+        int limit,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Streams every event matching the query, in position order, without materialising the
+    /// result. In multi-tenant mode, automatically scoped to the current tenant.
+    /// </summary>
+    /// <remarks>
+    /// The backend keeps its read open until enumeration ends, so enumerate promptly and dispose
+    /// the enumerator (<c>await foreach</c> does).
+    /// </remarks>
+    /// <param name="query">The query criteria.</param>
+    /// <param name="afterPosition">Only return events with position greater than this value.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    IAsyncEnumerable<IEventEnvelope> StreamAsync(
+        DcbQuery query,
         long afterPosition = 0,
-        int? limit = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Streams every event, in position order, without materialising the result.
+    /// In multi-tenant mode, returns events across all tenants.
+    /// </summary>
+    /// <param name="afterPosition">Only return events with position greater than this value.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    IAsyncEnumerable<IEventEnvelope> StreamAllAsync(
+        long afterPosition = 0,
         CancellationToken cancellationToken = default);
 
     /// <summary>

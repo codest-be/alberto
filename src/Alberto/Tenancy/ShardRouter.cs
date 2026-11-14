@@ -6,8 +6,7 @@ namespace Alberto.Tenancy;
 /// Resolves the current tenant's shard and returns the keyed service for it.
 /// </summary>
 /// <remarks>
-/// Shared by <see cref="ShardRoutingEventStore"/> and <see cref="ShardRoutingEventStoreBackend"/>
-/// so the tenant→shard lookup lives in exactly one place.
+/// Used by <see cref="ShardRoutingEventStore"/>, so the tenant→shard lookup lives in exactly one place.
 /// </remarks>
 [Experimental("ALB9001")]
 internal sealed class ShardRouter<T>(

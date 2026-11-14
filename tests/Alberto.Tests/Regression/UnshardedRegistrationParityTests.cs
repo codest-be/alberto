@@ -39,8 +39,6 @@ public class UnshardedRegistrationParityTests
 
         scope.ServiceProvider.GetRequiredKeyedService<IEventStore>("orders")
             .Should().NotBeOfType<ShardRoutingEventStore>();
-        scope.ServiceProvider.GetRequiredKeyedService<IEventStoreBackend>("orders")
-            .Should().NotBeOfType<ShardRoutingEventStoreBackend>();
     }
 
     [Fact]

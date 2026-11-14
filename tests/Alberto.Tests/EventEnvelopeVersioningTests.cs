@@ -304,7 +304,7 @@ public sealed class VersionTagBoundaryTests
 
         // Query uses ONLY the user-domain tag — version tag must not interfere.
         var query = DcbQuery.ByAllTags(EventTag.FromStorage("order", orderId));
-        var results = await backend.StreamAsync(query, cancellationToken: TestContext.Current.CancellationToken);
+        var results = await backend.StreamAsync(query, cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
         results.Should().HaveCount(2,
             "ByAllTags is containment-based: the extra _v tag must not break matching");
@@ -326,7 +326,7 @@ public sealed class VersionTagBoundaryTests
 
         // ByTypes filters by event_type column (Id only, no version).
         var query = DcbQuery.ByTypes(new EventType("order-placed"));
-        var results = await backend.StreamAsync(query, cancellationToken: TestContext.Current.CancellationToken);
+        var results = await backend.StreamAsync(query, cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
         results.Should().HaveCount(2,
             "ByTypes must match v1 and v2 of the same event type — version must not affect the filter key");
@@ -349,7 +349,7 @@ public sealed class VersionTagBoundaryTests
             cancellationToken: TestContext.Current.CancellationToken);
 
         var query = DcbQuery.ByTypes(new EventType("order-placed", 2));
-        var results = await backend.StreamAsync(query, cancellationToken: TestContext.Current.CancellationToken);
+        var results = await backend.StreamAsync(query, cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
         results.Should().HaveCount(2,
             "a versioned EventType used as a query filter must match all versions because Version is excluded from equality");

@@ -76,9 +76,9 @@ Do not weaken the pattern.
 
 With tenancy on:
 
-- **Reads are filtered in SQL.** `StreamAsync` becomes `StreamForTenant`, and the tenant predicate
+- **Reads are filtered in SQL.** `ReadAsync` and `StreamAsync` become `ReadForTenant` and `StreamForTenant`, and the tenant predicate
   is part of the query, not a `.Where` you could forget.
-- **`StreamAllAsync` throws inside a request.** It legitimately crosses tenants, so it is allowed
+- **`ReadAllAsync` and `StreamAllAsync` throw inside a request.** It legitimately crosses tenants, so it is allowed
   only for the background consumer feed (which runs with no tenant set). Calling it from a
   request-scoped context (where a tenant *is* set) throws `InvalidOperationException` rather than
   quietly returning everyone's events. This guard exists because it is the exact shape of a

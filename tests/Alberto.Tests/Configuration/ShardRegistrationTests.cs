@@ -118,8 +118,6 @@ public class ShardRegistrationTests
 
         scope.ServiceProvider.GetRequiredKeyedService<IEventStore>("orders")
             .Should().BeOfType<ShardRoutingEventStore>();
-        scope.ServiceProvider.GetRequiredKeyedService<IEventStoreBackend>("orders")
-            .Should().BeOfType<ShardRoutingEventStoreBackend>();
 
         scope.ServiceProvider.GetRequiredKeyedService<IEventStore>("orders#db1")
             .Should().NotBeOfType<ShardRoutingEventStore>();
