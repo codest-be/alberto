@@ -24,25 +24,29 @@ internal sealed class TenantShardCacheRefresher(
     {
         using var timer = new PeriodicTimer(interval);
 
-        do
+        // A host disposed before it is stopped cancels this mid-wait, and the host reports a
+        // cancellation it did not ask for as a failure, so neither await may let it escape.
+        try
         {
-            try
+            do
             {
-                await resolver.RefreshAsync(stoppingToken).ConfigureAwait(false);
+                try
+                {
+                    await resolver.RefreshAsync(stoppingToken).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
+                {
+                    logger?.LogWarning(
+                        ex,
+                        "Could not refresh the tenant shard catalog for module {ModuleKey}. " +
+                        "Serving from the previous snapshot; retrying in {Interval}.",
+                        moduleKey, interval);
+                }
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception ex)
-            {
-                logger?.LogWarning(
-                    ex,
-                    "Could not refresh the tenant shard catalog for module {ModuleKey}. " +
-                    "Serving from the previous snapshot; retrying in {Interval}.",
-                    moduleKey, interval);
-            }
+            while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false));
         }
-        while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false));
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+        }
     }
 }

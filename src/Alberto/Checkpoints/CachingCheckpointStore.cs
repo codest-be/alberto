@@ -364,7 +364,11 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
                 if (await ApplyExternalResetIfDetectedAsync(processorId, cancellationToken))
                     continue;
 
-                if (fenced is not null)
+                // A shadow rebuild loop is not in the lease group, so no lease exists for its
+                // id and a fenced write would be rejected forever.
+                // ponytail: shadow loops are unleased, so two replicas can replay one rebuild
+                // (idempotent, checkpoint is GREATEST); lease the shadow id if that ever costs.
+                if (fenced is not null && !RebuildableProjection.IsShadowProcessorId(processorId))
                 {
                     var leaseHeld = await fenced.SaveIfLeaseHeldAsync(
                         processorId, position,

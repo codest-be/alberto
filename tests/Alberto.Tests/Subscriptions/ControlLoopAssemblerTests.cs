@@ -310,4 +310,39 @@ public sealed class ControlLoopAssemblerTests
             return Task.CompletedTask;
         }
     }
+
+    /// <summary>
+    /// A loop created with no explicit options runs under its processor's declared ones, and a
+    /// shadow rebuild ("{id}::rebuild::{version}") under those of the projection it replays.
+    /// </summary>
+    [Theory]
+    [InlineData("declared")]
+    [InlineData("declared::rebuild::2")]
+    public void Create_WithoutExplicitOptions_UsesTheDeclaredExecutionOptions(string processorId)
+    {
+        var backend = new InMemoryEventStoreBackend();
+        var assembler = new ControlLoopAssembler(
+            diMiddlewares: [],
+            diBatchMiddlewares: [],
+            retryOptions: new RetryOptions { MaxRetries = 0 },
+            classifier: DefaultErrorClassifier.Instance,
+            deadLetterStore: null,
+            policies: new ProcessorPolicies(new ControlLoopOptions(),
+            [
+                new ProcessorDeclaration
+                {
+                    ProcessorId = "declared",
+                    Kind = ProcessorKind.Projection,
+                    Execution = new ProcessorExecutionOptions { BatchingMode = ProcessorBatchingMode.Disabled },
+                },
+            ]));
+
+        // RecordingProcessor is per-event only: under the Required default, ControlLoop throws.
+        var create = () => assembler.Create(
+            new RecordingProcessor(processorId),
+            new EventStoreHead(backend, TimeSpan.FromMilliseconds(20)), backend, new InMemoryCheckpointStore(),
+            pollingInterval: TimeSpan.FromMilliseconds(10), batchSize: 100, moduleKey: "test");
+
+        create.Should().NotThrow();
+    }
 }

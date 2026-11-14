@@ -219,8 +219,6 @@ public static class AlbertoModuleBuilderExtensions
         {
             RegisterAsyncProcessor(
                 builder,
-                processorId,
-                executionOptions,
                 (sp, mKey) => new FunctionalReactor<TEvent>(
                     processorId,
                     (e, _, cancellationToken) => handlerFactory(sp)(e, cancellationToken),
@@ -296,8 +294,6 @@ public static class AlbertoModuleBuilderExtensions
         {
             RegisterAsyncProcessor(
                 builder,
-                processorId,
-                executionOptions,
                 (sp, mKey) => new FunctionalReactor<TEvent>(
                     processorId,
                     handlerFactory(sp),
@@ -389,7 +385,7 @@ public static class AlbertoModuleBuilderExtensions
         }
         else
         {
-            RegisterAsyncProcessor(builder, resolvedProcessorId, executionOptions, (sp, mKey) =>
+            RegisterAsyncProcessor(builder, (sp, mKey) =>
             {
                 var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
                 return new FunctionalReactor<TEvent>(resolvedProcessorId, async (e, reactorContext, cancellationToken) =>
@@ -486,7 +482,7 @@ public static class AlbertoModuleBuilderExtensions
         }
         else
         {
-            RegisterAsyncProcessor(builder, resolvedProcessorId, executionOptions, (sp, mKey) =>
+            RegisterAsyncProcessor(builder, (sp, mKey) =>
             {
                 var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
                 return new FunctionalReactor<TEvent>(resolvedProcessorId, async (e, reactorContext, cancellationToken) =>
@@ -644,9 +640,8 @@ public static class AlbertoModuleBuilderExtensions
                     return assembler.Create(
                         processor, head, backend, checkpoints,
                         opts.PollingInterval, opts.BatchSize, moduleKey,
-                        ProcessorExecutionOptions.Default,
-                        sp.GetService<ILogger<ControlLoop>>(),
-                        opts.DrainTimeout);
+                        logger: sp.GetService<ILogger<ControlLoop>>(),
+                        drainTimeout: opts.DrainTimeout);
                 });
             });
 
@@ -763,8 +758,6 @@ public static class AlbertoModuleBuilderExtensions
 
     private static void RegisterAsyncProcessor(
         AlbertoModuleBuilder builder,
-        string processorId,
-        ProcessorExecutionOptions executionOptions,
         Func<IServiceProvider, string, IEventProcessor> processorFactory)
     {
         builder.Register(context =>
@@ -773,9 +766,6 @@ public static class AlbertoModuleBuilderExtensions
             context.Services.AddKeyedSingleton<IEventProcessor>(
                 mKey,
                 (sp, _) => processorFactory(sp, mKey));
-            context.Services.AddKeyedSingleton<ProcessorExecutionRegistration>(
-                mKey,
-                (_, _) => new ProcessorExecutionRegistration(processorId, executionOptions));
         });
     }
 

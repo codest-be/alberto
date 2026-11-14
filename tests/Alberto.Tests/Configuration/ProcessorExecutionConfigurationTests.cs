@@ -1,7 +1,9 @@
 using Alberto.Configuration;
+using Alberto.InMemory;
 using Alberto.Subscriptions;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace Alberto.Tests.Configuration;
@@ -121,5 +123,36 @@ public class ProcessorExecutionConfigurationTests
             .Collect(after)
             .Should().ContainSingle(f => f.Code == "ALB0005",
                 "MaxConcurrency=4 + BatchingMode=Disabled introduced via config is still invalid");
+    }
+
+    // ── I1.4: the overlay reaches the loop, not only the definition ─────────
+
+    private sealed class PerEventOnly : IEventProcessor
+    {
+        public string ProcessorId => "per-event";
+        public bool IsActive => true;
+        public bool IsRebuilding => false;
+        public IReadOnlySet<string> HandledEventTypes { get; } = new HashSet<string>();
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default) => Task.CompletedTask;
+    }
+
+    [Fact]
+    public async Task Configured_BatchingMode_reaches_the_live_loop()
+    {
+        // Declared Required, which a per-event-only processor cannot honour: ControlLoop refuses
+        // to construct. Configuration says Disabled, so the loop must build.
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(Configuration(
+            ("Alberto:Modules:orders:Processors:per-event:BatchingMode", "Disabled")));
+        services.AddAlberto("orders", module => module
+            .WithInMemory()
+            .DeclareProcessor(new ProcessorDeclaration { ProcessorId = "per-event", Kind = ProcessorKind.Reactor })
+            .Register(ctx => ctx.Services.AddKeyedSingleton<IEventProcessor>(ctx.ModuleKey, new PerEventOnly())));
+
+        await using var provider = services.BuildServiceProvider();
+
+        var build = () => provider.GetRequiredKeyedService<ILiveLoopSuspender>("orders");
+
+        build.Should().NotThrow();
     }
 }

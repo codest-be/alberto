@@ -1,7 +1,10 @@
 using System.Text.Json;
+using Alberto.Configuration;
+using Alberto.InMemory;
 using Alberto.Subscriptions;
 using Alberto.Tenancy;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace Alberto.Tests.Subscriptions;
@@ -181,6 +184,7 @@ public class ReactToScopedHandlerTests
         var services = new ServiceCollection();
 
         services.AddAlberto("test", builder => builder
+            .WithInMemory()
             .ReactTo<ItemProcessed>(
                 _ => (_, _) => Task.CompletedTask,
                 "batched-reactor",
@@ -188,13 +192,13 @@ public class ReactToScopedHandlerTests
 
         var provider = services.BuildServiceProvider(validateScopes: true);
         var processor = provider.GetKeyedServices<IEventProcessor>("test").Single();
-        var registration = provider
-            .GetKeyedServices<ProcessorExecutionRegistration>("test")
-            .Single();
+        var declaration = provider
+            .GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>()
+            .Get("test").Processors.Single();
 
         Assert.IsAssignableFrom<IBatchableProcessor>(processor);
-        Assert.Equal("batched-reactor", registration.ProcessorId);
-        Assert.Equal(ProcessorBatchingMode.Required, registration.Options.BatchingMode);
+        Assert.Equal("batched-reactor", declaration.ProcessorId);
+        Assert.Equal(ProcessorBatchingMode.Required, declaration.Execution.BatchingMode);
     }
 
     [Fact]

@@ -135,7 +135,3 @@ internal sealed class ProcessorExecutionOverrides : IAlbertoOverrides<ProcessorE
             Redelivery = Redelivery?.MergeOver(options.Redelivery) ?? options.Redelivery,
         };
 }
-
-internal sealed record ProcessorExecutionRegistration(
-    string ProcessorId,
-    ProcessorExecutionOptions Options);

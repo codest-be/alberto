@@ -306,6 +306,35 @@ public class CachingCheckpointStoreFenceRejectionTests
 
     #endregion
 
+    #region Shadow rebuild checkpoints
+
+    /// <summary>
+    /// A shadow rebuild loop checkpoints under "{id}::rebuild::{version}", an id no lease is
+    /// ever taken for. Fencing it would reject every flush, so the rebuild could never advance
+    /// on a module with leases enabled.
+    /// </summary>
+    [Fact]
+    public async Task FlushAsync_ShadowRebuildCheckpoint_IsWrittenWithoutALease()
+    {
+        const string shadowId = "orders::rebuild::2";
+
+        var inner = new FencedCheckpointStore(leaseHeld: false);
+        await using var cache = new CachingCheckpointStore(
+            inner, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
+        cache.SetFencingContext(new FencingContext("consumer-1", "replica-1", UseProcessorLeaseFencing: true));
+
+        var violationFired = false;
+        cache.SubscribeFenceViolation(_ => violationFired = true);
+
+        await cache.SaveAsync(shadowId, 200L, TestContext.Current.CancellationToken);
+        await cache.FlushAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(200L, await inner.GetAsync(shadowId, TestContext.Current.CancellationToken));
+        Assert.False(violationFired, "A shadow rebuild checkpoint was treated as a fence violation");
+    }
+
+    #endregion
+
     #region Test helpers
 
     /// <summary>

@@ -56,15 +56,25 @@ internal sealed class ProcessorPolicies
     internal ProcessorPolicy For(string processorId) =>
         _resolved.GetOrAdd(processorId, Resolve);
 
-    private ProcessorPolicy Resolve(string processorId)
-    {
-        // A shadow rebuild replays a projection under "{id}::rebuild::{version}" and halts like it.
-        var declaredId = processorId.Contains(RebuildMarker, StringComparison.Ordinal)
+    /// <summary>
+    /// How a processor's loop dispatches: its declared options with configuration applied, or
+    /// the default for custom wiring that declared nothing.
+    /// </summary>
+    internal ProcessorExecutionOptions ExecutionFor(string processorId) =>
+        _declarations.TryGetValue(DeclaredId(processorId), out var declaration)
+            ? declaration.Execution
+            : ProcessorExecutionOptions.Default;
+
+    // A shadow rebuild replays a projection under "{id}::rebuild::{version}", and runs like it.
+    private static string DeclaredId(string processorId) =>
+        processorId.Contains(RebuildMarker, StringComparison.Ordinal)
             ? processorId[..processorId.IndexOf(RebuildMarker, StringComparison.Ordinal)]
             : processorId;
 
+    private ProcessorPolicy Resolve(string processorId)
+    {
         // A processor with no declaration is custom wiring: keep the dead-letter behaviour.
-        if (!_declarations.TryGetValue(declaredId, out var declaration))
+        if (!_declarations.TryGetValue(DeclaredId(processorId), out var declaration))
             return new ProcessorPolicy(false, _module.Retry, _module.Halt, _module.Redelivery);
 
         var execution = declaration.Execution;
