@@ -150,9 +150,6 @@ public sealed class LeaseAwareControlLoopGroupCleanupOrderingTests
             string consumerId, string replicaId, CancellationToken ct = default)
             => Task.CompletedTask;
 
-        public Task<IReadOnlyList<ProcessorLeaseInfo>> GetAllLeasesAsync(
-            string consumerId, CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<ProcessorLeaseInfo>>(Array.Empty<ProcessorLeaseInfo>());
     }
 
     /// <summary>

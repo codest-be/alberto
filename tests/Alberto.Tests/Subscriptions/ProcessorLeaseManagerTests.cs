@@ -12,8 +12,7 @@ namespace Alberto.Tests.Subscriptions;
 ///
 /// Uses SingleTenantPostgresFixture deliberately: alberto_processor_leases is created only by
 /// the single-tenant migration set (Migrations/SingleTenant/001_InitialSchema.sql:124). The
-/// multi-tenant set creates alberto_tenant_leases instead, which PostgresTenantProcessorLock
-/// owns. The two lease tables never coexist in one schema.
+/// multi-tenant set creates alberto_tenant_leases instead, which no code uses.
 /// </summary>
 [Trait("Category", "Integration")]
 public sealed class ProcessorLeaseManagerTests(SingleTenantPostgresFixture fixture)
@@ -54,35 +53,6 @@ public sealed class ProcessorLeaseManagerTests(SingleTenantPostgresFixture fixtu
         Assert.Null(contended);
 
         await leases.ReleaseAllLeasesAsync(consumerId, replica1, TestContext.Current.CancellationToken);
-    }
-
-    [Fact]
-    public async Task TryAcquire_BySameReplica_ShouldExtendWithoutResettingAcquiredAt()
-    {
-        var leases = new PostgresProcessorLeaseManager(fixture.DataSource);
-        var consumerId = $"consumer-{Guid.NewGuid():N}";
-        var processorId = $"processor-{Guid.NewGuid():N}";
-        var replicaId = $"replica-{Guid.NewGuid():N}";
-
-        var first = await leases.TryAcquireAsync(
-            consumerId, processorId, replicaId, TestContext.Current.CancellationToken);
-        Assert.NotNull(first);
-
-        var acquiredAtAfterFirst = (await leases.GetAllLeasesAsync(
-            consumerId, TestContext.Current.CancellationToken)).Single().AcquiredAt;
-
-        var second = await leases.TryAcquireAsync(
-            consumerId, processorId, replicaId, TestContext.Current.CancellationToken);
-        Assert.NotNull(second);
-
-        var info = (await leases.GetAllLeasesAsync(
-            consumerId, TestContext.Current.CancellationToken)).Single();
-
-        // Re-acquiring your own lease extends it but does not restart the holding period.
-        Assert.Equal(acquiredAtAfterFirst, info.AcquiredAt);
-        Assert.Equal(replicaId, info.ReplicaId);
-
-        await leases.ReleaseAllLeasesAsync(consumerId, replicaId, TestContext.Current.CancellationToken);
     }
 
     [Fact]

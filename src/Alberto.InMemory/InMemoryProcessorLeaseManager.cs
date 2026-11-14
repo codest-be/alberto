@@ -150,23 +150,4 @@ internal sealed class InMemoryProcessorLeaseManager : IProcessorLeaseManager
             return Task.CompletedTask;
         }
     }
-
-    /// <inheritdoc/>
-    public Task<IReadOnlyList<ProcessorLeaseInfo>> GetAllLeasesAsync(
-        string consumerId, CancellationToken ct = default)
-    {
-        lock (_lock)
-        {
-            IReadOnlyList<ProcessorLeaseInfo> result = _leases
-                .Where(kv => kv.Key.ConsumerId == consumerId)
-                .Select(kv => new ProcessorLeaseInfo(
-                    kv.Key.ProcessorId,
-                    kv.Value.ReplicaId,
-                    kv.Value.AcquiredAt,
-                    kv.Value.ExpiresAt))
-                .ToArray();
-
-            return Task.FromResult(result);
-        }
-    }
 }

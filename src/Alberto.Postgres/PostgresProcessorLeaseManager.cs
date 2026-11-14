@@ -121,31 +121,4 @@ public sealed class PostgresProcessorLeaseManager : IProcessorLeaseManager
 
         await cmd.ExecuteNonQueryAsync(ct);
     }
-
-    /// <inheritdoc/>
-    public async Task<IReadOnlyList<ProcessorLeaseInfo>> GetAllLeasesAsync(
-        string consumerId, CancellationToken ct = default)
-    {
-        await using var connection = await _dataSource.OpenConnectionAsync(ct);
-        await using var cmd = new NpgsqlCommand($@"
-            SELECT processor_id, replica_id, acquired_at, expires_at
-            FROM {_schema.Table("alberto_processor_leases")}
-            WHERE consumer_id = @consumer_id
-            ORDER BY processor_id", connection);
-
-        cmd.Parameters.AddWithValue("consumer_id", consumerId);
-
-        var leases = new List<ProcessorLeaseInfo>();
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
-        {
-            leases.Add(new ProcessorLeaseInfo(
-                reader.GetString(0),
-                reader.GetString(1),
-                new DateTimeOffset(reader.GetDateTime(2), TimeSpan.Zero),
-                new DateTimeOffset(reader.GetDateTime(3), TimeSpan.Zero)));
-        }
-
-        return leases;
-    }
 }

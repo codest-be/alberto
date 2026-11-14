@@ -42,15 +42,6 @@ public interface IProcessorLeaseManager
         string consumerId, string replicaId, CancellationToken ct = default);
 
     /// <summary>
-    /// Gets all active leases for a consumer group. Used for monitoring.
-    /// </summary>
-    /// <param name="consumerId">Unique identifier for the consumer group.</param>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>All active leases for the consumer group.</returns>
-    Task<IReadOnlyList<ProcessorLeaseInfo>> GetAllLeasesAsync(
-        string consumerId, CancellationToken ct = default);
-
-    /// <summary>
     /// Gets the lease duration configured for this manager.
     /// Used by the consumer to determine renewal interval.
     /// </summary>
@@ -84,16 +75,3 @@ public interface IProcessorLease
 /// </summary>
 public sealed record ProcessorLease(string ProcessorId, DateTimeOffset ExpiresAt, long FenceToken)
     : IProcessorLease;
-
-/// <summary>
-/// Information about an active processor lease, used for monitoring.
-/// </summary>
-/// <param name="ProcessorId">The processor this lease is for.</param>
-/// <param name="ReplicaId">The replica instance holding this lease.</param>
-/// <param name="AcquiredAt">When the lease was originally acquired.</param>
-/// <param name="ExpiresAt">When the lease will expire if not renewed.</param>
-public sealed record ProcessorLeaseInfo(
-    string ProcessorId,
-    string ReplicaId,
-    DateTimeOffset AcquiredAt,
-    DateTimeOffset ExpiresAt);
