@@ -12,13 +12,26 @@ public sealed class CountingBackend : IEventStoreBackend, IEventStoreHeadBackend
 {
     public int Appends { get; private set; }
 
-    public Task<IReadOnlyCollection<IEventEnvelope>> StreamAsync(
-        DcbQuery query, long afterPosition = 0, int? limit = null, CancellationToken cancellationToken = default) =>
-        StreamAllAsync(afterPosition, limit, cancellationToken);
-
-    public Task<IReadOnlyCollection<IEventEnvelope>> StreamAllAsync(
-        long afterPosition = 0, int? limit = null, CancellationToken cancellationToken = default) =>
+    private static readonly Task<IReadOnlyCollection<IEventEnvelope>> None =
         Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
+
+    public Task<IReadOnlyCollection<IEventEnvelope>> ReadAsync(
+        DcbQuery query, long afterPosition, int limit, CancellationToken cancellationToken = default) => None;
+
+    public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllAsync(
+        long afterPosition, int limit, CancellationToken cancellationToken = default) => None;
+
+    public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllOfTypesAsync(
+        IReadOnlySet<string> eventTypes, long afterPosition, int limit,
+        CancellationToken cancellationToken = default) => None;
+
+    public IAsyncEnumerable<IEventEnvelope> StreamAsync(
+        DcbQuery query, long afterPosition = 0, CancellationToken cancellationToken = default) =>
+        StreamAllAsync(afterPosition, cancellationToken);
+
+    public IAsyncEnumerable<IEventEnvelope> StreamAllAsync(
+        long afterPosition = 0, CancellationToken cancellationToken = default) =>
+        AsyncEnumerable.Empty<IEventEnvelope>();
 
     public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
         IEnumerable<IEventToPersist> events, DcbQuery? dcbQuery = null, long? expectedPosition = null,
