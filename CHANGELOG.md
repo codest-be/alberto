@@ -19,10 +19,51 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ## [0.8.0] - 2026-11-14
 
+A performance release: processors stop reading events they do not handle, and the append, head,
+outbox and dead-letter paths drop work they did not need. One migration (008) runs on startup.
+
+**Behaviour change, no code change:** a relay registered through `WithOutbox` without
+`relayBatchSize` now claims up to 100 entries per poll, where it claimed 1. A relay that dies
+mid-batch redelivers what it had published but not yet marked, so the batch size is the ceiling
+on duplicates from one crash. Pass `relayBatchSize: 1` for the old behaviour.
+[UPGRADING.md](UPGRADING.md) has the details.
+
+### Added
+
+- **`IEventStoreBackend.StreamAllOfTypesAsync`** (#221). Reads the log for a set of event types.
+  It defaults to `StreamAllAsync`, so a custom backend keeps working; the Postgres and in-memory
+  backends filter in the store.
+- **`IEventStoreHeadBackend.GetStableHeadUpToAsync`** (#219). Bounds the barrier query to the
+  window the head just read. It defaults to `GetStableHeadAsync`.
+- **`IOutboxStore.MarkDeliveredBatchAsync`** (#219). Marks a batch of claims in one round trip.
+  The default loops the single mark.
+- **Conformance specifications** (#219, #221) for the three above and for abandoning a due dead
+  letter, in `Alberto.Testing.Xunit`.
+
 ### Changed
 
-- Control loops read and deserialize every event, then discard the types they do not handle (#221)
-- Append, head refresh, outbox and dead-letter paths do avoidable work (#219)
+- **Control loops read only the event types they handle** (#221). A processor used to read and
+  deserialize every event and discard the ones it had no handler for. The filter now runs in the
+  store, and after a short batch the checkpoint moves to the stable head rather than to the last
+  event the processor was given.
+- **Migration 008 drops three redundant indexes** (#219): `ix_alberto_events_inflight`, which was
+  a second copy of the primary key written on every append, and two on
+  `alberto_projection_states` that duplicated a surviving one.
+- **The outbox relay publishes a batch in order and marks it in one round trip** (#219), and
+  `WithOutbox(relayBatchSize:)` defaults to 100, matching `OutboxRelay`. Claiming walks its
+  indexes instead of sorting the backlog, and delivered entries are purged in batches of 5,000.
+- **The head skips the barrier round trip** when the window it read advanced nothing (#219).
+- `[EventType]` lookups and mapped event types are cached, and the append payload reaches its
+  `jsonb` parameter as UTF-8 bytes rather than through a string (#219).
+
+### Fixed
+
+- **An abandoned dead-letter retry was claimed again on the next poll** (#219).
+  `AbandonRetryAsync` now clears `next_retry_at` when it is still the schedule the claim was made
+  on; a schedule written during the retry is kept.
+- **In-memory backend: an append that failed validation part-way stored its first events** (#219).
+  It now stores nothing.
+- Dead-letter writes use the injected `TimeProvider` (#219).
 
 ---
 
