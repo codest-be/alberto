@@ -324,16 +324,12 @@ application's dependency graph.
 
 ```
 /src        Packable core libraries
-/apps       Examples: Orders (run by .NET Aspire) and Payments (a library the Orders API reads from)
 /tools      The alberto operator CLI
 /tests      xUnit v3 unit + Testcontainers integration tests, and K6 load tests
 ```
 
-Run the whole example stack (Postgres, migrations, and the Orders GraphQL API) with:
-
-```bash
-dotnet run --project apps/Alberto.AppHost
-```
+The example applications (Orders and Payments, a GraphQL API on Postgres run by .NET Aspire) live
+in their own repository, [codest-be/alberto-examples](https://github.com/codest-be/alberto-examples), and consume Alberto from nuget.org.
 
 ## Project status
 

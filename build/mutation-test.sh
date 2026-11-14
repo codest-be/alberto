@@ -104,10 +104,9 @@ fi
 
 # Stryker runs from the test project's own directory, which is its documented layout and the
 # only one that reliably pins the test project down. Run from the repo root instead and it
-# auto-discovers every test project that references the target — which drags in
-# Alberto.Examples.Tests, since that references Alberto.Testing and (through Orders) Alberto.
-# The `test-projects` config key does NOT prevent this. The symptom is not a wrong number but
-# a hang: eight Examples test hosts sit at 0% CPU forever, and the run never finishes.
+# auto-discovers every test project that references the target. The `test-projects` config key
+# does NOT prevent this. When the examples still lived here the symptom was not a wrong number
+# but a hang: eight Examples test hosts sat at 0% CPU forever, and the run never finished.
 TEST_PROJECT_DIR="$REPO_ROOT/tests/Alberto.Tests"
 cd "$TEST_PROJECT_DIR"
 

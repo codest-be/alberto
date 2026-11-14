@@ -1,8 +1,4 @@
 <Solution>
-  <Folder Name="/apps/Alberto.Orders/" />
-  <Folder Name="/apps/Alberto.Payments/">
-    <Project Path="apps/Alberto.Payments/Alberto.Payments/Alberto.Payments.csproj" />
-  </Folder>
   <Folder Name="/src/">
     <Project Path="src/Alberto/Alberto.csproj" />
     <Project Path="src/Alberto.Commands/Alberto.Commands.csproj" />
@@ -19,19 +15,10 @@
     <Project Path="src/Alberto.Admin/Alberto.Admin.csproj" />
     <Project Path="src/Alberto.Admin.Postgres/Alberto.Admin.Postgres.csproj" />
   </Folder>
-  <Folder Name="/apps/">
-    <Project Path="apps/Alberto.AppHost/Alberto.AppHost.csproj" />
-    <Project Path="apps/Alberto.Orders/Alberto.Orders/Alberto.Orders.csproj" />
-    <Project Path="apps/Alberto.Examples.Shared/Alberto.Examples.Shared.csproj" />
-    <Project Path="apps/Alberto.Orders/Alberto.Orders.Api/Alberto.Orders.Api.csproj" />
-    <Project Path="apps/Alberto.Orders/Alberto.Orders.Migrations/Alberto.Orders.Migrations.csproj" />
-    <Project Path="apps/ServiceDefaults/ServiceDefaults.csproj" />
-  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Alberto.Tests/Alberto.Tests.csproj" />
     <Project Path="tests/Alberto.Tests.SampleEvents/Alberto.Tests.SampleEvents.csproj" />
     <Project Path="tests/Alberto.AotSmoke/Alberto.AotSmoke.csproj" />
-    <Project Path="tests/Alberto.Examples.Tests/Alberto.Examples.Tests.csproj" />
     <Project Path="tests/Alberto.Tests.Messaging.Rebus/Alberto.Tests.Messaging.Rebus.csproj" />
   </Folder>
   <Folder Name="/tools/">

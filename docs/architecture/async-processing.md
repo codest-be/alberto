@@ -162,9 +162,10 @@ The table below shows how each knob is set in code and in configuration:
 
 ## Module Configuration Example
 
-Taken from `apps/Alberto.Orders/Alberto.Orders/Platform/OrdersModule.cs`. The state store is built
-by the projection's own slice (`OrdersOverviewProjection.StateStore`) so the writer and every query
-over it share one definition. See [vertical-slices.md](vertical-slices.md):
+Taken from `apps/Alberto.Orders/Alberto.Orders/Platform/OrdersModule.cs` in
+[alberto-examples](https://github.com/codest-be/alberto-examples). The state store is built by the projection's own slice
+(`OrdersOverviewProjection.StateStore`) so the writer and every query over it share one
+definition. See [vertical-slices.md](https://github.com/codest-be/alberto-examples/blob/main/docs/vertical-slices.md):
 
 ```csharp
 services.AddAlberto(ModuleKey, builder => builder

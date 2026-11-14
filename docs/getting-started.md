@@ -333,6 +333,6 @@ all, EF projections can run [inline](projections.md#inline-vs-async) instead.
   downtime.
 - **[Reactors and the outbox](reactors-and-outbox.md).** Doing things to the outside world.
 - **[Operations](operations.md).** The `alberto` CLI, dead letters, retries and telemetry.
-- **A real application.** `apps/Alberto.Orders` is a GraphQL API on Postgres with tenancy,
-  EF projections and an outbox. Run the lot with
-  `dotnet run --project apps/Alberto.AppHost`.
+- **A real application.** [alberto-examples](https://github.com/codest-be/alberto-examples) holds an Orders GraphQL API on Postgres
+  with tenancy, EF projections and an outbox. Run the lot with
+  `dotnet run --project apps/Alberto.AppHost` from that repository.

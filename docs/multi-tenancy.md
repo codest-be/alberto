@@ -195,8 +195,9 @@ need leases enabled (`.WithControlLoop(o => o with { Leases = o.Leases with { En
 
 ## The example
 
-`apps/Alberto.Orders` is multi-tenant end to end: an `X-Tenant-Id` header interceptor, tenant
-propagation into HotChocolate's resolver context, tenant-scoped projections and leases. Run it with:
+The Orders example in [alberto-examples](https://github.com/codest-be/alberto-examples) is multi-tenant end to end: an `X-Tenant-Id`
+header interceptor, tenant propagation into HotChocolate's resolver context, tenant-scoped
+projections and leases. Run it from that repository with:
 
 ```bash
 dotnet run --project apps/Alberto.AppHost

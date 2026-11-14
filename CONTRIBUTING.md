@@ -8,7 +8,6 @@ Clone the repository and make sure you have the prerequisites installed:
 
 - **.NET 10 SDK.** The solution targets `net10.0`
 - **Docker.** Testcontainers-backed integration tests spin up a PostgreSQL container
-- **Node.js 20+.** Required only for the K6 load tests under `tests/Alberto.Orders.LoadTests/`
 
 Run the full test suite:
 
