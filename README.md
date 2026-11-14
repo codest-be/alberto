@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/codest-be/alberto/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/codest-be/alberto/actions/workflows/ci.yml)
 [![NuGet](https://img.shields.io/nuget/v/Alberto?logo=nuget&label=NuGet)](https://www.nuget.org/packages/Alberto)
-[![.NET](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/download/dotnet/10.0)
+[![.NET](https://img.shields.io/badge/.NET-10.0%20%7C%2011.0-512BD4)](https://dotnet.microsoft.com/download)
 [![Licence](https://img.shields.io/badge/licence-MIT-blue)](https://github.com/codest-be/alberto/blob/main/LICENSE)
 
 > **Early release, under active testing.** Alberto is in its first public `0.x` versions. The
@@ -112,7 +112,7 @@ dotnet add package Alberto.Postgres
 | `Alberto.Testing` | Test helpers: an in-memory module harness, quiescence polling, an in-memory outbox |
 | `Alberto.Testing.Xunit` | The conformance suite Alberto runs against its own backends, for you to run against yours |
 
-All libraries target **net10.0**. The operator CLI (`alberto`) is not a NuGet tool package; run
+All libraries target **net10.0** and **net11.0**. The operator CLI (`alberto`) is not a NuGet tool package; run
 it from the repo with `dotnet run --project tools/Alberto.Cli`.
 
 ## Sixty seconds

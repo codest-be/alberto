@@ -141,7 +141,10 @@ public sealed class BackgroundSpanTests
         using (var span = BackgroundSpans.StartRoot("alberto.test"))
             BackgroundSpans.Fail(span, new TimeoutException(secret));
 
-        var failed = Assert.Single(stopped, a => a.OperationName == "alberto.test");
+        // The listener sees every "Alberto" span in the process, stopped on other threads too.
+        Activity[] snapshot;
+        lock (stopped) snapshot = [.. stopped];
+        var failed = Assert.Single(snapshot, a => a.OperationName == "alberto.test");
         Assert.Equal(ActivityStatusCode.Error, failed.Status);
         Assert.Null(failed.StatusDescription);
         Assert.Equal(typeof(TimeoutException).FullName, failed.GetTagItem("error.type"));

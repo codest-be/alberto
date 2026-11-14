@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Alberto is a DCB (Dynamic Consistency Boundary) Event Store for .NET 10.0. The repository is a monorepo containing packable core libraries (`/src`), example applications (`/apps`), an operator CLI (`/tools`), and tests (`/tests`).
+Alberto is a DCB (Dynamic Consistency Boundary) Event Store for .NET 10 and 11 (the libraries under `/src` multi-target `net10.0;net11.0` via `AlbertoLibraryTargetFrameworks` in `Directory.Build.props`; apps, the CLI, benchmarks and the other test projects are net10.0 only, and `Alberto.Tests` runs on both). The repository is a monorepo containing packable core libraries (`/src`), example applications (`/apps`), an operator CLI (`/tools`), and tests (`/tests`).
 
 There is no frontend in this repository. The event store is a library plus a terminal CLI.
 
@@ -151,18 +151,19 @@ Do not rebuild the front doors on main. Extend that branch. Keep `IAdminReader`/
 
 | Layer | Technology |
 |-------|------------|
-| Framework | .NET 10.0, ASP.NET Core |
-| GraphQL (Orders example) | HotChocolate 15.1.15 |
-| Database | PostgreSQL (Npgsql 10.0.2) |
-| Migrations | DbUp-PostgreSQL 7.0.1 (event store), EF Core 10.0.7 (Orders) |
-| Observability | OpenTelemetry 1.15.3 |
-| Testing | xUnit v3 3.2.2, FluentAssertions 8.9.0, Testcontainers 4.11.0 |
-| CLI | Spectre.Console 0.55.2, System.CommandLine 2.0.7 |
+| Framework | .NET 10.0 and 11.0 (libraries), ASP.NET Core |
+| GraphQL (Orders example) | HotChocolate 16.7.5 |
+| Database | PostgreSQL (Npgsql 10.0.3) |
+| Migrations | DbUp-PostgreSQL 7.0.1 (event store), EF Core 10.0.15 on both targets (Orders); stays 10.x until the Npgsql EF provider ships 11.0.0 GA |
+| Observability | OpenTelemetry 1.21.0 |
+| Testing | xUnit v3 3.2.2, FluentAssertions 8.11.0, Testcontainers 4.16.0 |
+| CLI | Spectre.Console 0.57.2, System.CommandLine 3.0.0 |
 | Load Testing | K6 with TypeScript |
 
 ## Package Management
 
-- **NuGet**: Centralized versions in `Directory.Packages.props`
+- **NuGet**: Centralized versions in `Directory.Packages.props`. Runtime-tied packages (Microsoft.Extensions.*, System.Text.Json) are declared once per target framework there
+- **Dependabot**: `.github/dependabot.yml` groups updates by package family; majors arrive as their own PRs
 - **npm**: Per-project `package.json` files
 
 ## Configuration

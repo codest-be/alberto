@@ -19,10 +19,10 @@
     "test:throughput:quick-seed": "npm run build && k6 run --env SEED_ITERATIONS=1000 --env SEED_MAX_DURATION=5m dist/throughput.test.js"
   },
   "devDependencies": {
-    "@types/k6": "^0.54.0",
-    "typescript": "~5.7.0",
-    "webpack": "^5.97.0",
-    "webpack-cli": "^6.0.0",
-    "ts-loader": "^9.5.0"
+    "@types/k6": "^2.3.1",
+    "ts-loader": "^9.6.2",
+    "typescript": "^6.0.3",
+    "webpack": "^5.112.2",
+    "webpack-cli": "^7.3.1"
   }
 }

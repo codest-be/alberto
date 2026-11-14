@@ -1,0 +1,121 @@
+version: 2
+
+# One PR per family, not per package: packages that release together are bumped together, so a
+# HotChocolate or OpenTelemetry release lands as one reviewable change. Major versions are left
+# out of the groups and arrive as their own PRs, because a major is a migration, not a bump.
+#
+# Dependabot PRs are exempt from the PR policy (.github/scripts/check-pr-policy.sh) and their
+# reviewer is CODEOWNERS.
+
+updates:
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    ignore:
+      # Pinned to the oldest Roslyn exposing the APIs the analyzer uses. See the comment on it in
+      # Directory.Packages.props: a newer reference only narrows which SDKs can load it.
+      - dependency-name: Microsoft.CodeAnalysis.CSharp
+      # 5.1.0 rejects test-case-filter "Category!=Integration" under the MTP runner ("not
+      # supported for test applications without the MTP '--filter' option"), which is every
+      # mutation run. Lift once a 5.1+ accepts the xunit v3 trait filter again.
+      - dependency-name: dotnet-stryker
+        versions: [">= 5.1.0"]
+      # Versioned with the runtime. Directory.Packages.props declares Microsoft.Extensions.* and
+      # System.Text.Json once per target framework (net10 on 10.x, net11 on 11.x); a major bump
+      # would move the net10 entry onto a runtime it does not ship for. EF Core and Npgsql stay
+      # on 10.x for both until the Npgsql EF provider ships 11.0.0 GA. Majors here are by hand.
+      - dependency-name: Microsoft.Extensions.*
+        update-types: [version-update:semver-major]
+      - dependency-name: Microsoft.EntityFrameworkCore*
+        update-types: [version-update:semver-major]
+      - dependency-name: System.Text.Json
+        update-types: [version-update:semver-major]
+      - dependency-name: Npgsql*
+        update-types: [version-update:semver-major]
+    groups:
+      dotnet-runtime:
+        patterns:
+          - Microsoft.Extensions.*
+          - Microsoft.EntityFrameworkCore*
+          - System.Text.Json
+        update-types: [minor, patch]
+      postgres:
+        patterns:
+          - Npgsql*
+          - DbUp*
+        update-types: [minor, patch]
+      opentelemetry:
+        patterns:
+          - OpenTelemetry*
+        update-types: [minor, patch]
+      aspire:
+        patterns:
+          - Aspire.*
+        update-types: [minor, patch]
+      hotchocolate:
+        patterns:
+          - HotChocolate*
+        update-types: [minor, patch]
+      testing:
+        patterns:
+          - xunit*
+          - Microsoft.NET.Test.Sdk
+          - coverlet*
+          - FluentAssertions
+          - Testcontainers*
+        update-types: [minor, patch]
+      xunit-major:
+        # xunit v4 requires Microsoft.Testing.Platform (dotnet test mode, filters, coverage
+        # collector, Stryker), so its major lands as one migration PR, not four broken ones.
+        patterns:
+          - xunit*
+        update-types: [major]
+      cli:
+        patterns:
+          - Spectre.Console*
+          - System.CommandLine
+        update-types: [minor, patch]
+      rebus:
+        patterns:
+          - Rebus*
+        update-types: [minor, patch]
+      admin-surface:
+        # Unreferenced on main; kept current for the parked feature/admin-surface branch.
+        patterns:
+          - ModelContextProtocol*
+          - Yarp.*
+        update-types: [minor, patch]
+      build-tooling:
+        patterns:
+          - Microsoft.SourceLink.*
+          - Microsoft.CodeAnalysis.PublicApiAnalyzers
+          - BenchmarkDotNet*
+          - dotnet-stryker
+          - dotnet-reportgenerator-globaltool
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /tests/Alberto.Orders.LoadTests
+    schedule:
+      interval: weekly
+      day: monday
+    ignore:
+      # TypeScript 7 is the native compiler and has no JS API, so ts-loader cannot drive it.
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
+    groups:
+      load-tests:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns: ["*"]

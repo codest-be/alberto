@@ -58,7 +58,7 @@ public sealed class ConsumeParentingTests
                 TraceParenting = parenting,
             };
             await TelemetryConsumeMiddleware.Create(Provider)(context, () => Task.CompletedTask);
-            return stopped.Single(a => a.OperationName.Contains("parenting-proc"));
+            lock (stopped) return stopped.Single(a => a.OperationName.Contains("parenting-proc"));
         }
     }
 
@@ -189,7 +189,7 @@ public sealed class ConsumeParentingTests
                 IsRebuild = false,
             };
             await TelemetryBatchConsumeMiddleware.Create(Provider)(context, () => Task.CompletedTask);
-            return stopped.Single(a => a.OperationName.Contains("parenting-batch"));
+            lock (stopped) return stopped.Single(a => a.OperationName.Contains("parenting-batch"));
         }
     }
 

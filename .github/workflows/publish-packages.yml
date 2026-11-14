@@ -45,7 +45,7 @@ jobs:
       id-token: write   # required by NuGet/login for trusted publishing
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # No actions/setup-dotnet — same reason as ci.yml: the host carries the 10.0 SDK at
       # /usr/share/dotnet, which is root-owned while jobs run unprivileged, so setup-dotnet fails

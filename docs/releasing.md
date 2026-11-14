@@ -166,6 +166,10 @@ repository has actually hit.
 
 ## Patching an older line
 
+Not used before 1.0: only the latest `0.x` release is supported (see
+[SECURITY.md](../SECURITY.md#supported-versions)), so fixes ship forward. The machinery below is
+for 1.0 onwards.
+
 ### Cut the branch
 
 Run **Cut release branch** with the line, e.g. `1.0`, to create `release/1.0` from `main`. Cut it
@@ -174,6 +178,10 @@ while `main` is still on that line. The workflow refuses otherwise, because a br
 
 Cut a line when you intend to keep patching it: normally right after its first release, or just
 before merging something that would break it.
+
+Creating a `release/**` branch is reserved for org admins by the release-branch ruleset, so the
+workflow pushes with `RELEASE_TOKEN` and fails without it. `git push origin main:release/1.0` by
+a maintainer works too.
 
 ### Fix on `main` first, then backport
 
@@ -217,22 +225,21 @@ makes `backport.yml` able to cherry-pick a merged pull request onto a release li
 that is now a readability convention rather than something a script parses, since the release
 tooling reads milestones and `backport.yml` resolves the commit through the API.
 
-**`main` and `release/**`.** Both require a pull request with resolved review threads. Direct
-pushes, force-pushes and deletion are blocked. `main` additionally requires branches to be up to
-date before merging, and requires both the `build-test` and `pr-policy` checks.
+**`main` and `release/**`.** Both require a pull request with one approving review and resolved
+review threads. Direct pushes, force-pushes and deletion are blocked, and creating a `release/**`
+branch is too. `main` additionally requires branches to be up to date before merging, and
+requires both the `build-test` and `pr-policy` checks. Org admins bypass both rulesets.
 
-Neither requires an approving review, which is a deliberate choice for a single-maintainer
-repository rather than an oversight. GitHub does not let anyone approve their own pull request, so
-a required approval would be unsatisfiable on the maintainer's own work, and since a ruleset
-bypass is all-or-nothing, working around it would also skip `build-test` and `pr-policy`. A
-requirement that has to be bypassed to merge anything protects nothing and costs the two checks
-that do. Nobody without write access can merge regardless, so the gate that matters is still
-there.
+The approval is what keeps anyone but the maintainer, a GitHub App with write access included,
+from merging. The cost is that GitHub does not let anyone approve their own pull request, so the
+maintainer merges their own work with the admin bypass (`gh pr merge --admin`). A bypass is
+all-or-nothing: it skips `build-test` and `pr-policy` as well, so wait for both to go green
+before using it. When a second maintainer joins, approve each other's pull requests instead and
+set `require_code_owner_review` and `require_last_push_approval` to `true` on both rulesets.
+`.github/CODEOWNERS` is already written for it.
 
-**Add the review requirement back the day a second maintainer joins**: set
-`required_approving_review_count` to `1` and `require_code_owner_review` and
-`require_last_push_approval` to `true` on both rulesets. `.github/CODEOWNERS` is already written
-for it and, in the meantime, still auto-requests review on the paths it names.
+**Security.** Secret scanning with push protection, Dependabot alerts and security updates,
+private vulnerability reporting (see `SECURITY.md`) and CodeQL default setup are on.
 
 **Actions.** Only GitHub-owned, verified-creator, and `NuGet/login@*` actions may run. The default
 `GITHUB_TOKEN` is read-only; each workflow requests the writes it needs and nothing more. Workflow
@@ -245,7 +252,7 @@ for it, and pinning would have to be weighed against the upgrade churn.
 | Secret | Used by | Required? |
 |---|---|---|
 | `NUGET_USER` | `publish-packages.yml` | Yes, to publish. The nuget.org profile name, not an email |
-| `RELEASE_TOKEN` | `release.yml`, `backport.yml` | Optional, but see below |
+| `RELEASE_TOKEN` | `release.yml`, `backport.yml`, `cut-release-branch.yml` | Required to cut a release branch; optional otherwise, but see below |
 
 There is no nuget.org API key anywhere. Publishing uses trusted publishing (OIDC): the workflow
 mints a token that nuget.org exchanges for a key valid for one hour. The policy on nuget.org is
@@ -263,7 +270,7 @@ which would carry write access to every repository the owner can reach:
 
 | Permission | Access | Needed for |
 |---|---|---|
-| Contents | Read and write | Pushing `release-prep/**` and `backport/**` branches |
+| Contents | Read and write | Pushing `release-prep/**`, `backport/**` and `release/**` branches |
 | Pull requests | Read and write | Opening the pull request, labelling it, commenting on a failed backport |
 | Metadata | Read | Mandatory on every fine-grained token |
 

@@ -38,14 +38,14 @@ builder.Services.AddPaymentsModule(builder.Configuration);
 builder.Services
     .AddGraphQLServer()
     .AddHttpRequestInterceptor<TenantHttpRequestInterceptor>()
-    .AddInstrumentation(o =>
-    {
-        o.RequestDetails = RequestDetails.Operation;
-        o.Scopes = ActivityScopes.ExecuteHttpRequest;
-        o.RenameRootActivity = true;
-    })
+    .AddInstrumentation(o => o.Scopes = ActivityScopes.ExecuteHttpRequest)
     .AddOrdersTypes()
-    .AddPaymentsTypes();
+    .AddPaymentsTypes()
+    // Resolvers read the tenant from the scoped TenantContext the interceptor fills in on the
+    // request's services. HotChocolate 16 runs query resolvers in a scope of their own by
+    // default, where that TenantContext is a fresh, empty instance: every query failed with "No
+    // tenant context available" while mutations, already request-scoped, worked.
+    .ModifyOptions(o => o.DefaultQueryDependencyInjectionScope = DependencyInjectionScope.Request);
 
 var app = builder.Build();
 

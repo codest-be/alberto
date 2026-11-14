@@ -52,7 +52,7 @@ jobs:
     # dispatched full run covers what this one gives up.
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # --since diffs against the merge base, so the history has to be there.
           fetch-depth: 0
@@ -93,7 +93,7 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: mutation-report-diff
@@ -133,7 +133,7 @@ jobs:
     # full run. See https://github.com/codest-be/alberto/issues/133 and #167.
     timeout-minutes: 360
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # No actions/setup-dotnet — see the comment in the diff job above, and in ci.yml.
 
@@ -166,7 +166,7 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: mutation-report-full

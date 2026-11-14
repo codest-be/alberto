@@ -43,7 +43,7 @@ jobs:
       profile: ${{ steps.profile.outputs.id }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # No actions/setup-dotnet — same reason as ci.yml: the host carries the 10.0 SDK under a
       # root-owned path, and asking setup-dotnet for it is what fails. See the comment there.
@@ -118,7 +118,7 @@ jobs:
       # artifact rather than as a commit made from here.
       - name: Upload raw reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: benchmark-reports
           path: |
@@ -159,10 +159,10 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Download the run's results
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: benchmark-reports
           path: incoming

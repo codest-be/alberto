@@ -25,7 +25,7 @@ internal static class ShardingRegistration
         services.TryAddScoped<TenantContext>();
         services.TryAddScoped<ITenantAccessor, TenantAccessor>();
 
-        services.AddKeyedSingleton(moduleKey, (IServiceProvider _, object? _) => new ShardHealth());
+        services.AddKeyedSingleton(moduleKey, (_, _) => new ShardHealth());
 
         // Adds the check to the host's health-check pipeline if it has one. Configuring the
         // options is inert on its own — an app that never calls AddHealthChecks() has no
@@ -46,7 +46,7 @@ internal static class ShardingRegistration
         declared.Tenancy.Catalog?.RegisterShardCatalog(
             new AlbertoModuleContext(services, declared));
 
-        services.AddKeyedSingleton(moduleKey, (IServiceProvider sp, object? key) =>
+        services.AddKeyedSingleton(moduleKey, (sp, key) =>
         {
             var definition = sp.GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>()
                 .Get((string)key!);

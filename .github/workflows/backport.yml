@@ -55,7 +55,7 @@ jobs:
     steps:
       # RELEASE_TOKEN: see release.yml. A pull request opened with the built-in GITHUB_TOKEN
       # does not trigger workflow runs, so the backport would arrive with no CI on it.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           token: ${{ secrets.RELEASE_TOKEN || github.token }}

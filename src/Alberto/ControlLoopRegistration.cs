@@ -206,7 +206,10 @@ internal static class ControlLoopRegistration
                 // take this one back. The callback is synchronous; discarding the Task is
                 // intentional.
                 fencable.SubscribeFenceViolation(violatingProcessorId =>
-                    _ = leaseGroup?.StopProcessorAsync(violatingProcessorId));
+                {
+                    if (leaseGroup is { } group)
+                        _ = group.StopProcessorAsync(violatingProcessorId);
+                });
             }
 
             leaseGroup = new LeaseAwareControlLoopGroup(

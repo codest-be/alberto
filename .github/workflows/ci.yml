@@ -40,7 +40,7 @@ jobs:
     # The job takes under two minutes, so this is a stop, not a budget.
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # No actions/setup-dotnet: the runner already carries the 10.0 SDK at /usr/share/dotnet,
       # which is root-owned while jobs run unprivileged. setup-dotnet resolves '10.0.x' to the
@@ -85,6 +85,11 @@ jobs:
       # the figure is not diluted by the test and example assemblies.
       - name: Test with coverage
         run: build/coverage.sh --no-build
+
+      # The libraries ship for net10.0 and net11.0; coverage above runs net10.0 only. This is
+      # the same suite, integration included, on the net11.0 runtime.
+      - name: Test on net11.0
+        run: dotnet test tests/Alberto.Tests/Alberto.Tests.csproj -c Release --no-build --framework net11.0
 
       # Before this step a failing suite named the failing test only in the raw job log,
       # which on ~2000 tests is a scroll to find one line — and every step after the
@@ -187,7 +192,7 @@ jobs:
           SMOKEDIR=$(mktemp -d "${RUNNER_TEMP:-/tmp}/alberto-smoke.XXXXXX")
           cat > "$SMOKEDIR/PackCheck.csproj" <<CSPROJ
           <Project Sdk="Microsoft.NET.Sdk">
-            <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+            <PropertyGroup><TargetFrameworks>net10.0;net11.0</TargetFrameworks></PropertyGroup>
             <ItemGroup><PackageReference Include="Alberto.Postgres" Version="$PREFIX-ci" /></ItemGroup>
           </Project>
           CSPROJ
@@ -205,7 +210,7 @@ jobs:
 
       - name: Upload coverage
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage
           path: |
@@ -227,7 +232,7 @@ jobs:
     # ILC is the slow part (about a minute); the rest is seconds. A stop, not a budget.
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # ILC links with the platform toolchain (clang, zlib). The runner host doesn't carry it, so the
       # publish runs in Microsoft's AOT SDK image, which does. The binary also runs in that image
@@ -236,7 +241,7 @@ jobs:
         run: |
           docker run --rm -v "$PWD":/src -w /src \
             -e DOTNET_NOLOGO=1 -e DOTNET_CLI_TELEMETRY_OPTOUT=1 \
-            mcr.microsoft.com/dotnet/sdk:10.0-noble-aot \
+            mcr.microsoft.com/dotnet/sdk:11.0-resolute-aot \
             dotnet publish tests/Alberto.AotSmoke/Alberto.AotSmoke.csproj \
               -c Release -r linux-x64 -o artifacts/aot-smoke
 
@@ -267,7 +272,7 @@ jobs:
         run: |
           docker run --rm --network host -v "$PWD/artifacts/aot-smoke":/app -w /app \
             -e ALBERTO_AOTSMOKE_CONNECTION \
-            mcr.microsoft.com/dotnet/sdk:10.0-noble-aot ./Alberto.AotSmoke
+            mcr.microsoft.com/dotnet/sdk:11.0-resolute-aot ./Alberto.AotSmoke
 
       - name: Stop PostgreSQL
         if: always() && steps.pg.outputs.name != ''

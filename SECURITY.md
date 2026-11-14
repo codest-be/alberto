@@ -2,7 +2,18 @@
 
 ## Supported versions
 
-Only the most recent published version of each package receives security fixes.
+Before 1.0, only the latest `0.x` release receives fixes, security or otherwise. Under semver's
+`0.y.z` rule any minor may break, so a fix ships in the next release and upgrading is the
+remedy. Older minors are not patched.
+
+From 1.0, the latest minor of each supported major receives fixes, backported through
+`release/X.Y` branches (see [docs/releasing.md](docs/releasing.md#patching-an-older-line)).
+
+| Version | Supported |
+|---|---|
+| Latest `0.x` | Yes |
+| Older `0.x` | No, upgrade |
+
 Pre-release (`-beta`, `-alpha`, `-rc`) versions are not covered.
 
 ## Reporting a vulnerability

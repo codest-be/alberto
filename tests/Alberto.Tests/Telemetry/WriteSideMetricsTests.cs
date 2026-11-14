@@ -106,6 +106,10 @@ public sealed class WriteSideMetricsTests
     [Fact]
     public void Latency_histograms_declare_second_scale_bucket_boundaries()
     {
+        // AlbertoMetrics has no static constructor, so its fields are initialised on first access,
+        // not on first mention of the type. Without this the test passed only when an earlier test
+        // in the run had already touched it (net11.0 runs reach it first more often).
+        _ = AlbertoMetrics.Shared;
         var advice = new Dictionary<string, IReadOnlyList<double>?>();
         using var listener = new MeterListener();
         listener.InstrumentPublished = (i, _) =>

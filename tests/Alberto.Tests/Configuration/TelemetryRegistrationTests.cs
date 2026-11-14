@@ -171,6 +171,11 @@ public class TelemetryRegistrationTests
         provider.GetRequiredService<IEnumerable<IHostedService>>();
 
         var eventStore = provider.GetRequiredKeyedService<IEventStore>("mod_a");
+
+        // The listener is process-wide, so appends from tests running in parallel are exported
+        // too. Counting only this trace makes the assertion about this append alone.
+        using var root = new Activity("test-root").Start();
+        root.ActivityTraceFlags = ActivityTraceFlags.Recorded; // ParentBased sampling drops children of an unrecorded root
         await eventStore.AppendAsync(
             [new EventToPersist
             {
@@ -182,7 +187,7 @@ public class TelemetryRegistrationTests
 
         tracerProvider.ForceFlush();
 
-        exported.Count(a => a.OperationName.StartsWith(AlbertoMetrics.AppendActivityName))
+        exported.Count(a => a.TraceId == root.TraceId && a.OperationName.StartsWith(AlbertoMetrics.AppendActivityName))
             .Should().Be(1, "one append on one module must produce exactly one Alberto.Append activity, not one per WithTelemetry() call");
     }
 

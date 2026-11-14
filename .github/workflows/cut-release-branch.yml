@@ -26,9 +26,13 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      # RELEASE_TOKEN, not GITHUB_TOKEN: the release-branch ruleset forbids creating `release/**`
+      # to everyone but org admins, and a ruleset cannot exempt the GitHub Actions app. The token
+      # is the maintainer's, so the push is theirs. See docs/releasing.md.
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Cut
         env:

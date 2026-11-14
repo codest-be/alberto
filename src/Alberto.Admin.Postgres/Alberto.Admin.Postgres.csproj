@@ -18,7 +18,7 @@
         surface to freeze. Nothing about this assembly is under semver until it is unparked.
     -->
     <PropertyGroup>
-        <TargetFramework>net10.0</TargetFramework>
+        <TargetFrameworks>$(AlbertoLibraryTargetFrameworks)</TargetFrameworks>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
