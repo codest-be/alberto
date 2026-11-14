@@ -434,7 +434,6 @@ Baggage does not cross the event log: only `traceparent`/`tracestate` are stored
 | `alberto.dead_letters` | **Alert on any increase** |
 | `alberto.retries` | A rising rate means a flaky dependency |
 | `alberto.concurrency.conflicts` | Tagged `kind`: `append` is a `DcbConflictException` (a rising rate means a boundary is too wide, `module` tagged); `projection` is a state-store write conflict |
-| `alberto.tenant_locks_acquired`, `alberto.tenant_lock_failures` | Lease churn: tagged by `consumer.id`, **not** by tenant |
 | `alberto.append.duration` | Write latency, including the advisory lock wait; tagged `module` and `outcome` (`success`, `conflict`, `error`) |
 | `alberto.event.age` | Seconds between an event's `CreatedAt` and a processor starting on it: the staleness readers see, where lag counts events |
 | `alberto.processing.duration` | Per-handler latency |

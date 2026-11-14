@@ -3,9 +3,7 @@ name: Mutation testing
 on:
   workflow_dispatch:
 
-# Manual only: no push, schedule or pull_request trigger. The sweep takes hours on the single
-# public-ci runner and would queue behind (or starve) everything else. Dispatch it when a
-# commit needs the whole number.
+# Manual only: the sweep takes hours on the single public-ci runner.
 
 permissions:
   contents: read
@@ -23,8 +21,7 @@ jobs:
   full:
     name: All core packages
     runs-on: [self-hosted, public-ci]
-    # Measured on 4.x: ~5h for six packages (4h43m local). Stryker 5.0.0 is much faster per
-    # package (stryker-net#3752); lower this after a full 5.0.0 sweep is measured (#133, #167).
+    # ~5h measured on Stryker 4.x; lower after a full 5.0.0 sweep (#133, #167).
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

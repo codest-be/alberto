@@ -1030,6 +1030,4 @@ static readonly Alberto.Telemetry.AlbertoMetrics.ProcessingErrors -> System.Diag
 static readonly Alberto.Telemetry.AlbertoMetrics.ProcessorLag -> System.Diagnostics.Metrics.ObservableGauge<long>!
 static readonly Alberto.Telemetry.AlbertoMetrics.Retries -> System.Diagnostics.Metrics.Counter<long>!
 static readonly Alberto.Telemetry.AlbertoMetrics.Source -> System.Diagnostics.ActivitySource!
-static readonly Alberto.Telemetry.AlbertoMetrics.TenantLockFailures -> System.Diagnostics.Metrics.Counter<long>!
-static readonly Alberto.Telemetry.AlbertoMetrics.TenantLocksAcquired -> System.Diagnostics.Metrics.Counter<long>!
 static readonly Alberto.Telemetry.AlbertoMetrics.Version -> string!

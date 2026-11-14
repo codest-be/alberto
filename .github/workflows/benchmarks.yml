@@ -18,26 +18,14 @@ env:
   ALBERTO_BENCH_PROFILE_LABEL: ci
 
 jobs:
-  # Measuring on self-hosted is the point: consecutive runs land on the same hardware instead of
-  # a differently rented instance each time, which is what the hardware-hashed profile is
-  # compensating for. Two caveats worth knowing before reading a delta.
-  #
-  # First, this is a weaker claim than "a dedicated machine". Other runner services share the
-  # same host, so its CPU, disk and page cache are contended. A build running next door during a
-  # benchmark will skew the numbers, and the hardware hash cannot see it because the hardware
-  # genuinely is identical. A surprising delta is worth re-running before it is worth believing.
-  #
-  # Second, there is one runner in the public-ci group, so a run here occupies it for its whole
-  # duration and PR CI queues behind it. At 02:00 UTC that is cheap. If it stops being cheap, the
-  # remedy is a second runner in the group, not a shorter suite.
+  # Self-hosted so runs share hardware, but other runner services share the host: re-run a surprising
+  # delta before believing it. The single public-ci runner is occupied for the whole run (PR CI queues).
   benchmark:
     runs-on: [self-hosted, public-ci]
-    # This job measures; it does not publish. The write token lives in publish-history below, on
-    # a hosted runner, so no credential capable of changing the repository is ever present on the
-    # box that also builds pull requests.
+    # Measures only; the write token lives in publish-history so none sits on the PR-building box.
     permissions:
       contents: read
-    # Seeding 1M events plus ~80 cases; the default 6h cap is far too generous to rely on.
+    # Seeding 1M events plus ~80 cases.
     timeout-minutes: 120
     outputs:
       profile: ${{ steps.profile.outputs.id }}
@@ -45,21 +33,15 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      # No actions/setup-dotnet — same reason as ci.yml: the host carries the 10.0 SDK under a
-      # root-owned path, and asking setup-dotnet for it is what fails. See the comment there.
+      # No actions/setup-dotnet: see ci.yml.
 
       - name: Run benchmarks
         env:
-          # Read through the environment rather than interpolated into the script, so a
-          # dispatch input is data and never shell syntax.
+          # Via env so a dispatch input is data, never shell syntax.
           CATEGORIES: ${{ github.event.inputs.categories }}
         run: |
-          # BenchmarkSwitcher prompts interactively when given no filter at all, so a
-          # scheduled run with no category input would sit at a menu instead of
-          # benchmarking. '--filter *' is how you say "everything" non-interactively.
-          # The glob has to stay quoted and the arguments have to travel as an array:
-          # unquoted, the shell expands '*' against the repo root and BenchmarkDotNet
-          # receives 'AGENTS.md', 'apps', 'src', ... which matches no benchmark at all.
+          # BenchmarkSwitcher prompts without a filter, so default to '--filter *'. Keep the glob quoted
+          # and the args an array, or the shell expands it against the repo root.
           if [ -n "$CATEGORIES" ]; then
             FILTER=(--anyCategories="$CATEGORIES")
           else
@@ -67,9 +49,7 @@ jobs:
           fi
           dotnet run -c Release --project benchmarks/Alberto.Benchmarks -- "${FILTER[@]}"
 
-          # A filter that matches nothing is not an error to BenchmarkSwitcher — it prints
-          # suggestions and exits 0. Without this check the run reports success and the
-          # failure only surfaces two steps later as an unexplained missing directory.
+          # A filter matching nothing exits 0 in BenchmarkSwitcher; catch it here.
           if [ ! -d BenchmarkDotNet.Artifacts/results ]; then
             echo "The benchmark run produced no results directory. See the output above:" >&2
             echo "the filter most likely matched no benchmarks." >&2
@@ -101,8 +81,7 @@ jobs:
             --candidate candidate.json \
             --markdown delta.md
 
-      # On the very first run for a profile there is no baseline to diff against, so the
-      # compare tool seeds one and writes no delta. That is a success, not a missing file.
+      # First run for a profile seeds a baseline and writes no delta; that is success.
       - name: Publish delta to the job summary
         if: always()
         run: |
@@ -114,8 +93,7 @@ jobs:
             echo "No delta: the compare tool failed before writing one. See the step log." >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      # Also the hand-off to publish-history: candidate.json reaches the hosted job as an
-      # artifact rather than as a commit made from here.
+      # Also the hand-off to publish-history.
       - name: Upload raw reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -125,9 +103,7 @@ jobs:
             BenchmarkDotNet.Artifacts/results/
             candidate.json
 
-      # The compare step fails on a regression (exit 1) and on its own errors (exit 2).
-      # Both must fail the job, but saying "regression" for a crashed tool sends whoever
-      # reads this at 2am hunting a slowdown that never happened.
+      # Compare exits 1 on regression and 2 on its own errors; both fail the job, with distinct messages.
       - name: Fail if a regression was detected
         if: steps.compare.outcome == 'failure'
         run: |
@@ -138,20 +114,11 @@ jobs:
           fi
           exit 1
 
-  # Split out for one reason: to keep the repository-write token off the runner that builds pull
-  # requests. A contents:write token on a persistent box that also runs contributor code would let
-  # anything a PR job left behind be picked up later by a job that can push to main.
-  #
-  # That is a statement about *which* runner, not about self-hosted in general, which is why this
-  # sits on release-ci rather than on a hosted runner: release-ci is a separate group on a
-  # separate unprivileged user that runs no contributor code, and holding write credentials is
-  # what it is for. The hand-off stays an artifact rather than a shared directory — the two
-  # runners cannot read each other's home, and that is deliberate.
+  # Separate job on release-ci (no contributor code) so the repository-write token never shares a box
+  # with PR builds. The hand-off is an artifact because the two runners cannot read each other's home.
   publish-history:
     needs: benchmark
-    # always(), because history is recorded even when the run regressed — a regression is a
-    # result worth keeping, and the benchmark job deliberately fails on one. Guarded on the
-    # profile id so a run that died before producing candidate.json never gets here.
+    # always(): a regression is a result worth recording. The profile guard skips runs that died before candidate.json.
     if: always() && github.event_name == 'schedule' && needs.benchmark.outputs.profile != ''
     runs-on: [self-hosted, release-ci]
     timeout-minutes: 15
@@ -167,13 +134,10 @@ jobs:
           name: benchmark-reports
           path: incoming
 
-      # History accumulates automatically; baseline.json is only ever moved by a human
-      # running `--accept`. An auto-promoting baseline ratchets silently and stops being a gate.
+      # baseline.json is only ever moved by a human running `--accept`; auto-promotion would ratchet silently.
       - name: Append to history
         run: |
-          # upload-artifact only warns about a missing path, so the artifact can exist without
-          # candidate.json inside it. Committing nothing is the right outcome; failing here would
-          # report a publishing problem for what is really a failed benchmark run.
+          # upload-artifact only warns on a missing path; commit nothing rather than report a publish failure.
           if [ ! -f incoming/candidate.json ]; then
             echo "No candidate.json in the artifact — the benchmark run produced no result." >&2
             exit 0

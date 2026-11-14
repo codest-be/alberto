@@ -36,9 +36,8 @@ they touch a persisted table.
 | TV-1..3 | Tag reservation | Low | `EventTag` and `[Tag]` reject any concept starting with `_` |
 | MT-1..2 | Metric dimensions | Medium | Sharded-module metric tags split from one combined string into two dimensions |
 | MT-3 | Metric dimensions | Medium | Tenant-ownership gauges rename tag `module.key` → `module`; sharded composite key values are now split into `module` + `shard` |
-| MT-4..5 | Metric removal | Medium | `alberto.events_filtered_by_tenant` and `alberto.tenant_leases_lost` counters removed |
+| MT-4..5 | Metric removal | Medium | `alberto.events_filtered_by_tenant`, `alberto.tenant_leases_lost`, `alberto.tenant_locks_acquired` and `alberto.tenant_lock_failures` counters removed |
 | MT-6 | Metric units | Low | `alberto.append.duration` and `alberto.processing.duration` units changed from `"ms"` to `"s"` |
-| MT-7 | Metric dimensions | Medium | `alberto.tenant_locks_acquired` and `alberto.tenant_lock_failures` no longer carry a `tenant.id` tag |
 | TT-1 | Trace span attributes | Medium | Consume-path span attributes renamed: `"module.key"` → `"module"`, `"module.shard"` → `"shard"` |
 | TT-4 | Trace span names and attributes | **High** | Spans renamed (`Alberto.Append` → `append {module}`, `Alberto.Consume` → `process {processorId}`), Alberto attributes namespaced under `alberto.*`, `messaging.*` added, span status no longer `Ok` and never carries a message |
 | TT-5 | Trace parenting | Medium | Reactor and outbox-handler consume spans are children of the append trace; batch spans link every upstream trace |
@@ -482,30 +481,6 @@ The unit strings on both duration histograms were corrected to match the OTel se
 **Symptom.** Prometheus histogram bucket thresholds and alerts that assumed millisecond values will fire incorrectly. All durations appear 1000× smaller than expected.
 
 **Fix.** Multiply all threshold values in histogram queries, recording rules, and alert expressions for these two instruments by `0.001`. Verify that any explicit bucket boundaries configured in your OTel SDK exporter also use second-scale values.
-
----
-
-### MT-7: `tenant.id` removed from `alberto.tenant_locks_acquired` and `alberto.tenant_lock_failures`
-
-Both counters were tagged `{consumer.id, tenant.id}`. The tag set is now `{consumer.id}` only.
-
-A tenant id is unbounded. It grows with the customer base, and nothing bounds it above. Every
-distinct tag combination is an independent time series that the .NET `Meter` SDK allocates on first
-use, holds for the life of the process, never evicts, and exports on every collection cycle. So a
-store with 50 000 tenants held 50 000 series per counter per replica, and a store with 500 000 held
-ten times that. At roughly 1–3 KB of Prometheus head-block memory per series, these two counters
-were most expensive exactly when the product was doing best, and the failure mode is a cliff: the
-collector OOMs or starts dropping, not a gradual slowdown.
-
-**Symptom.** Any query that groups, filters, or joins these two counters by `tenant.id` stops
-returning a per-tenant breakdown after upgrade. A `sum by (tenant_id)` collapses to a single
-series; a `{tenant_id="acme"}` selector matches nothing.
-
-**Fix.** Aggregate by `consumer.id` instead. That is the question a counter answers well ("is
-this consumer's lease failure rate rising?"). For the per-tenant question ("did tenant `acme` get
-its lease?"), use traces and logs: it is a question about one event at one moment, not a rate over
-time, and the lease acquisition is already on the consume-path span. For tenant fan-out without
-the cardinality, `alberto.owned_tenant_count` reports how many tenants a consumer currently holds.
 
 ---
 

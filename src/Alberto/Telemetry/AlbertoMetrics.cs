@@ -91,16 +91,6 @@ public static class AlbertoMetrics
     /// </summary>
     public static readonly Counter<long> ConcurrencyConflicts = Shared.ConcurrencyConflicts;
 
-    /// <summary>
-    /// Counter for tenant locks successfully acquired.
-    /// </summary>
-    public static readonly Counter<long> TenantLocksAcquired = Shared.TenantLocksAcquired;
-
-    /// <summary>
-    /// Counter for failed tenant lock acquisition attempts.
-    /// </summary>
-    public static readonly Counter<long> TenantLockFailures = Shared.TenantLockFailures;
-
     #endregion
 
     #region Gauges

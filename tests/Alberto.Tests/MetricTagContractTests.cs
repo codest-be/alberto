@@ -67,8 +67,6 @@ public sealed class MetricTagContractTests
                 ("alberto.processor.halts",       "halts"),
                 ("alberto.processor.halted",      "processors"),
                 ("alberto.concurrency.conflicts", "conflicts"),
-                ("alberto.tenant_locks_acquired", "locks"),
-                ("alberto.tenant_lock_failures",  "failures"),
                 ("alberto.outbox.published",       "messages"),
                 ("alberto.outbox.publish.failures", "failures"),
                 // Histograms
@@ -379,17 +377,6 @@ public sealed class MetricTagContractTests
         TagKeys(match[0].Tags).Should().BeEquivalentTo(["consumer.id", "module", "shard"],
             "alberto.owned_tenant_count tag contract is {{consumer.id, module, shard}} for a sharded module");
     }
-
-    // ── 5b. Tenant-lock counters: {consumer.id} ──────────────────────────────
-    //
-    // alberto.tenant_locks_acquired and alberto.tenant_lock_failures have their
-    // names and units pinned above, but their tag keys are pinned in
-    // Subscriptions/TenantProcessorLockTests — they are emitted only from
-    // PostgresTenantProcessorLock and cannot be driven in-process.
-    //
-    // Their contract is {consumer.id} and nothing more. They carried tenant.id
-    // until v1; it was removed because a tenant id is unbounded, and every distinct
-    // tag combination is a time series the SDK keeps for the life of the process.
 
     // ── 6. Ownership gauge module tag value is the logical name (not raw key) ─
 

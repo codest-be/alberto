@@ -1,14 +1,9 @@
 name: Release
 
-# Prepares a release. It does NOT publish one.
-#
-# The workflow opens a pull request that bumps <VersionPrefix>, cuts the CHANGELOG section and
-# promotes the public API surface. Publishing happens when a maintainer tags the merge commit,
-# which is the trigger publish-packages.yml watches. That separation is deliberate: a push to
-# nuget.org can be unlisted but never deleted, so the last step before it is a human one.
-#
-# Run it from `main` for a normal release, or from a `release/**` branch for a patch on an older
-# line. The version is computed from the branch it runs on, so the branch decides the line.
+# Prepares a release; does NOT publish. It opens a PR bumping <VersionPrefix>, cutting the CHANGELOG
+# section and promoting the public API. A human then tags the merge commit (publish-packages.yml's
+# trigger): nuget.org pushes cannot be undone. Run from `main`, or a `release/**` branch for a patch;
+# the branch decides the line.
 
 on:
   workflow_dispatch:
@@ -34,14 +29,8 @@ concurrency:
 
 jobs:
   prepare:
-    # release-ci: a self-hosted group whose runner user runs no contributor code. workflow_dispatch
-    # from a protected branch is the only way in, so nothing here is attacker-supplied.
-    #
-    # The steps below hand files between each other through $RUNNER_TEMP rather than a fixed /tmp
-    # path. That is not cosmetic on a persistent runner: /tmp is shared by every run of every
-    # workflow on the box, so a stale notes.md from a cancelled run could end up in a release pull
-    # request. RUNNER_TEMP is per job and cleared between them, and it is an environment variable
-    # rather than a shell variable precisely because these files cross step boundaries.
+    # release-ci: runs no contributor code; only workflow_dispatch from a protected branch gets in.
+    # Files cross steps via $RUNNER_TEMP, not /tmp, which is shared on this persistent runner.
     runs-on: [self-hosted, release-ci]
     # Scripts and gh calls; no build.
     timeout-minutes: 30
@@ -51,16 +40,8 @@ jobs:
       issues: read           # read milestones for the drafted notes
 
     steps:
-      # fetch-depth: 0 — apply-release.py cross-checks the newest changelog section against the
-      # newest reachable tag, and a shallow clone has no tags to check against.
-      #
-      # RELEASE_TOKEN, if set, is a fine-grained token scoped to this repository with Contents
-      # and Pull requests write — see docs/releasing.md for the exact permissions. It exists
-      # because a pull request opened with the built-in GITHUB_TOKEN does not trigger workflow
-      # runs: GitHub suppresses them to stop workflows recursing. The release pull request would
-      # then have no CI and could never satisfy a required status check. Without the secret the
-      # workflow still works and says so on the pull request it opens — close and reopen it to
-      # start the checks.
+      # fetch-depth 0: apply-release.py checks against the newest tag. RELEASE_TOKEN (see docs/releasing.md)
+      # is needed because PRs opened with GITHUB_TOKEN do not trigger CI; without it the PR says so.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
@@ -174,9 +155,7 @@ jobs:
             echo '```'
           } > "$RUNNER_TEMP/pr-body.md"
 
-          # The `release` label is what exempts this pull request from the issue-link policy —
-          # see the bypass list in check-pr-policy.sh. It is applied here rather than by hand so
-          # the exemption cannot be borrowed by a pull request a person opened.
+          # The `release` label exempts this PR from the issue-link policy (check-pr-policy.sh); apply it here only.
           gh pr create \
             --base "${GITHUB_REF_NAME}" \
             --head "$BRANCH" \
