@@ -4,7 +4,7 @@
         <Authors>Bjorn Vandenbussche</Authors>
         <Company>Codest</Company>
         <Product>Alberto DCB Event Store</Product>
-        <Copyright>Copyright © 2025 Alberto</Copyright>
+        <Copyright>Copyright © $([System.DateTime]::UtcNow.Year) Alberto</Copyright>
 
         <!-- Version -->
         <VersionPrefix>0.9.0</VersionPrefix>
@@ -20,6 +20,9 @@
         <PackageTags>DCB;events;eventsourcing;dotnet;postgresql;dynamic-consistency-boundary</PackageTags>
 
         <!-- Build Configuration -->
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
 
         <!-- Every library under /src ships for both. Benchmarks and tests run on
              net10.0 only: they are consumers of one runtime, not the thing being shipped. -->

@@ -43,6 +43,19 @@
              accepts only PNG and JPEG. Regenerate with:
                rsvg-convert -w 256 -h 256 icon.svg -o icon.png -->
         <PackageIcon>icon.png</PackageIcon>
+
+        <!-- No PackageValidationBaselineVersion: 0.9.0 is the first public line, so there is
+             nothing to compare against yet. Set it to the previous release once one exists. -->
+        <EnablePackageValidation>true</EnablePackageValidation>
     </PropertyGroup>
+
+    <!-- The packages ship lockstep and use InternalsVisibleTo between each other, so a packed
+         reference to another Alberto.* package must be exact ([x.y.z]), not >= x.y.z. Pack collects
+         the referenced projects' versions in _ProjectReferencesWithVersions; rewrite them as ranges. -->
+    <Target Name="PinProjectVersionExact" AfterTargets="_GetProjectReferenceVersions" Condition="'$(IsPackable)' == 'true'">
+        <ItemGroup>
+            <_ProjectReferencesWithVersions ProjectVersion="[%(ProjectVersion)]" />
+        </ItemGroup>
+    </Target>
 
 </Project>
