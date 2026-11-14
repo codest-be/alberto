@@ -1,9 +1,1 @@
 #nullable enable
-Alberto.Telemetry.AlbertoTelemetryServiceCollectionExtensions
-static Alberto.Telemetry.AlbertoTelemetryServiceCollectionExtensions.AddAlbertoInstrumentation(this OpenTelemetry.Metrics.MeterProviderBuilder! builder) -> OpenTelemetry.Metrics.MeterProviderBuilder!
-static Alberto.Telemetry.AlbertoTelemetryServiceCollectionExtensions.AddAlbertoInstrumentation(this OpenTelemetry.Trace.TracerProviderBuilder! builder) -> OpenTelemetry.Trace.TracerProviderBuilder!
-static Alberto.Telemetry.TelemetryBuilderExtensions.WithTelemetry(this Alberto.AlbertoModuleBuilder! builder, System.Func<Alberto.Configuration.TelemetryOptions!, Alberto.Configuration.TelemetryOptions!>? configure = null) -> Alberto.AlbertoModuleBuilder!
-*REMOVED*Alberto.Telemetry.ServiceCollectionExtensions
-*REMOVED*static Alberto.Telemetry.ServiceCollectionExtensions.AddAlbertoInstrumentation(this OpenTelemetry.Metrics.MeterProviderBuilder! builder) -> OpenTelemetry.Metrics.MeterProviderBuilder!
-*REMOVED*static Alberto.Telemetry.ServiceCollectionExtensions.AddAlbertoInstrumentation(this OpenTelemetry.Trace.TracerProviderBuilder! builder) -> OpenTelemetry.Trace.TracerProviderBuilder!
-*REMOVED*static Alberto.Telemetry.TelemetryBuilderExtensions.WithTelemetry(this Alberto.DcbModuleBuilder! builder, System.Func<Alberto.Configuration.TelemetryOptions!, Alberto.Configuration.TelemetryOptions!>? configure = null) -> Alberto.DcbModuleBuilder!
