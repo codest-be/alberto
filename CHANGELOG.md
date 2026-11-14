@@ -17,6 +17,15 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ---
 
+## [0.9.0] - 2026-11-14
+
+### Changed
+
+- Filter EF projection reads to the active rebuild version by default (#228)
+- Target .NET 11 and group dependency updates with Dependabot (#225)
+
+---
+
 ## [0.8.0] - 2026-11-14
 
 A performance release: processors stop reading events they do not handle, and the append, head,
@@ -970,7 +979,8 @@ Initial beta release. Core DCB event store abstractions, PostgreSQL backend, in-
 backend, command pipeline, EF Core projection support, transactional outbox, and
 OpenTelemetry instrumentation.
 
-[Unreleased]: https://github.com/codest-be/alberto/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/codest-be/alberto/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/codest-be/alberto/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/codest-be/alberto/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/codest-be/alberto/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/codest-be/alberto/compare/v0.5.0...v0.6.0
