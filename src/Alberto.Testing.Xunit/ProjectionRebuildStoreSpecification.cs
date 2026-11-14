@@ -1,5 +1,4 @@
 using Alberto.Subscriptions;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Testing.Xunit;
@@ -82,10 +81,10 @@ public abstract class ProjectionRebuildStoreSpecification
 
         var state = await store.GetAsync(ProcessorId, ProjectionType, Ct);
 
-        state.Status.Should().Be(RebuildStatus.Idle);
-        state.ActiveVersion.Should().Be(1);
-        state.RebuildingVersion.Should().BeNull();
-        state.IsRebuildInFlight.Should().BeFalse();
+        Assert.Equal(RebuildStatus.Idle, state.Status);
+        Assert.Equal(1, state.ActiveVersion);
+        Assert.Null(state.RebuildingVersion);
+        Assert.False(state.IsRebuildInFlight);
     }
 
     // ── ListAsync ─────────────────────────────────────────────────────────────
@@ -101,7 +100,7 @@ public abstract class ProjectionRebuildStoreSpecification
 
         var list = await store.ListAsync(Ct);
 
-        list.Should().NotContain(s => s.ProcessorId == ProcessorId);
+        Assert.DoesNotContain(list, s => s.ProcessorId == ProcessorId);
     }
 
     /// <summary>
@@ -115,7 +114,7 @@ public abstract class ProjectionRebuildStoreSpecification
 
         var list = await store.ListAsync(Ct);
 
-        list.Should().ContainSingle(s => s.ProcessorId == ProcessorId);
+        Assert.Single(list, s => s.ProcessorId == ProcessorId);
     }
 
     // ── StartAsync ────────────────────────────────────────────────────────────
@@ -132,11 +131,11 @@ public abstract class ProjectionRebuildStoreSpecification
 
         var state = await store.StartAsync(ProcessorId, ProjectionType, targetPosition: 42, Ct);
 
-        state.Status.Should().Be(RebuildStatus.Rebuilding);
-        state.RebuildingVersion.Should().Be(2);
-        state.ActiveVersion.Should().Be(1);
-        state.TargetPosition.Should().Be(42);
-        state.IsRebuildInFlight.Should().BeTrue();
+        Assert.Equal(RebuildStatus.Rebuilding, state.Status);
+        Assert.Equal(2, state.RebuildingVersion);
+        Assert.Equal(1, state.ActiveVersion);
+        Assert.Equal(42, state.TargetPosition);
+        Assert.True(state.IsRebuildInFlight);
     }
 
     /// <summary>
@@ -151,7 +150,7 @@ public abstract class ProjectionRebuildStoreSpecification
 
         var act = () => store.StartAsync(ProcessorId, ProjectionType, targetPosition: 200, Ct);
 
-        await act.Should().ThrowAsync<RebuildStateException>();
+        await Assert.ThrowsAnyAsync<RebuildStateException>(act);
     }
 
     /// <summary>
@@ -172,8 +171,7 @@ public abstract class ProjectionRebuildStoreSpecification
 
         var act = () => store.StartAsync(ProcessorId, ProjectionType, targetPosition: 200, Ct);
 
-        await act.Should().ThrowAsync<RebuildStateException>(
-            "a rebuilt-but-unpromoted version is still in flight");
+        await Assert.ThrowsAnyAsync<RebuildStateException>(act);
     }
 
     /// <summary>
@@ -198,10 +196,10 @@ public abstract class ProjectionRebuildStoreSpecification
         var second = await store.StartAsync(ProcessorId, ProjectionType, targetPosition: 200, Ct);
 
         // The aborted rebuild used version 2. The next must be 3, not 2.
-        second.RebuildingVersion.Should().Be(3);
-        second.LastAllocatedVersion.Should().Be(3);
-        second.ActiveVersion.Should().Be(1, "an abort leaves the version readers see alone");
-        second.Status.Should().Be(RebuildStatus.Rebuilding);
+        Assert.Equal(3, second.RebuildingVersion);
+        Assert.Equal(3, second.LastAllocatedVersion);
+        Assert.Equal(1, second.ActiveVersion);
+        Assert.Equal(RebuildStatus.Rebuilding, second.Status);
     }
 
     // ── RequestPromotion / RequestAbort ───────────────────────────────────────
@@ -218,7 +216,7 @@ public abstract class ProjectionRebuildStoreSpecification
 
         var state = await store.RequestPromotionAsync(ProcessorId, force: false, Ct);
 
-        state.RequestedAction.Should().Be(RebuildOperatorAction.Promote);
+        Assert.Equal(RebuildOperatorAction.Promote, state.RequestedAction);
     }
 
     /// <summary>
@@ -233,7 +231,7 @@ public abstract class ProjectionRebuildStoreSpecification
 
         var state = await store.RequestPromotionAsync(ProcessorId, force: true, Ct);
 
-        state.RequestedAction.Should().Be(RebuildOperatorAction.ForcePromote);
+        Assert.Equal(RebuildOperatorAction.ForcePromote, state.RequestedAction);
     }
 
     /// <summary>
@@ -248,7 +246,7 @@ public abstract class ProjectionRebuildStoreSpecification
 
         var state = await store.RequestAbortAsync(ProcessorId, Ct);
 
-        state.RequestedAction.Should().Be(RebuildOperatorAction.Abort);
+        Assert.Equal(RebuildOperatorAction.Abort, state.RequestedAction);
     }
 
     /// <summary>
@@ -262,7 +260,7 @@ public abstract class ProjectionRebuildStoreSpecification
 
         var act = () => store.RequestPromotionAsync(ProcessorId, ct: Ct);
 
-        await act.Should().ThrowAsync<RebuildStateException>();
+        await Assert.ThrowsAnyAsync<RebuildStateException>(act);
     }
 
     /// <summary>
@@ -276,7 +274,7 @@ public abstract class ProjectionRebuildStoreSpecification
 
         var act = () => store.RequestAbortAsync(ProcessorId, Ct);
 
-        await act.Should().ThrowAsync<RebuildStateException>();
+        await Assert.ThrowsAnyAsync<RebuildStateException>(act);
     }
 
     // ── Coordinator: MarkReady ────────────────────────────────────────────────
@@ -297,10 +295,10 @@ public abstract class ProjectionRebuildStoreSpecification
 
         var state = await GetCoordinator(store).MarkReadyAsync(ProcessorId, Ct);
 
-        state.Status.Should().Be(RebuildStatus.Ready);
-        state.ActiveVersion.Should().Be(started.ActiveVersion);
-        state.RebuildingVersion.Should().Be(started.RebuildingVersion);
-        state.IsRebuildInFlight.Should().BeTrue();
+        Assert.Equal(RebuildStatus.Ready, state.Status);
+        Assert.Equal(started.ActiveVersion, state.ActiveVersion);
+        Assert.Equal(started.RebuildingVersion, state.RebuildingVersion);
+        Assert.True(state.IsRebuildInFlight);
     }
 
     /// <summary>
@@ -317,7 +315,7 @@ public abstract class ProjectionRebuildStoreSpecification
 
         var act = () => GetCoordinator(store).MarkReadyAsync(ProcessorId, Ct);
 
-        await act.Should().ThrowAsync<RebuildStateException>();
+        await Assert.ThrowsAnyAsync<RebuildStateException>(act);
     }
 
     /// <summary>
@@ -339,7 +337,7 @@ public abstract class ProjectionRebuildStoreSpecification
 
         var act = () => coordinator.MarkReadyAsync(ProcessorId, Ct);
 
-        await act.Should().ThrowAsync<RebuildStateException>();
+        await Assert.ThrowsAnyAsync<RebuildStateException>(act);
     }
 
     /// <summary>
@@ -360,7 +358,7 @@ public abstract class ProjectionRebuildStoreSpecification
 
         var act = () => coordinator.MarkReadyAsync(ProcessorId, Ct);
 
-        await act.Should().ThrowAsync<RebuildStateException>();
+        await Assert.ThrowsAnyAsync<RebuildStateException>(act);
     }
 
     // ── Coordinator: CompletePromotion ────────────────────────────────────────
@@ -383,11 +381,11 @@ public abstract class ProjectionRebuildStoreSpecification
 
         var outcome = await coordinator.CompletePromotionAsync(ProcessorId, force: false, Ct);
 
-        outcome.State.Status.Should().Be(RebuildStatus.Completed);
-        outcome.State.ActiveVersion.Should().Be(started.RebuildingVersion!.Value);
-        outcome.State.RebuildingVersion.Should().BeNull();
-        outcome.State.IsRebuildInFlight.Should().BeFalse();
-        outcome.DiscardedVersion.Should().Be(started.ActiveVersion);
+        Assert.Equal(RebuildStatus.Completed, outcome.State.Status);
+        Assert.Equal(started.RebuildingVersion!.Value, outcome.State.ActiveVersion);
+        Assert.Null(outcome.State.RebuildingVersion);
+        Assert.False(outcome.State.IsRebuildInFlight);
+        Assert.Equal(started.ActiveVersion, outcome.DiscardedVersion);
     }
 
     /// <summary>
@@ -406,7 +404,7 @@ public abstract class ProjectionRebuildStoreSpecification
 
         var act = () => GetCoordinator(store).CompletePromotionAsync(ProcessorId, force: false, Ct);
 
-        await act.Should().ThrowAsync<RebuildStateException>();
+        await Assert.ThrowsAnyAsync<RebuildStateException>(act);
     }
 
     /// <summary>
@@ -425,9 +423,9 @@ public abstract class ProjectionRebuildStoreSpecification
 
         var outcome = await coordinator.CompletePromotionAsync(ProcessorId, force: true, Ct);
 
-        outcome.State.Status.Should().Be(RebuildStatus.Completed);
-        outcome.State.ActiveVersion.Should().Be(started.RebuildingVersion!.Value);
-        outcome.DiscardedVersion.Should().Be(started.ActiveVersion);
+        Assert.Equal(RebuildStatus.Completed, outcome.State.Status);
+        Assert.Equal(started.RebuildingVersion!.Value, outcome.State.ActiveVersion);
+        Assert.Equal(started.ActiveVersion, outcome.DiscardedVersion);
     }
 
     /// <summary>
@@ -445,8 +443,7 @@ public abstract class ProjectionRebuildStoreSpecification
 
         var act = () => GetCoordinator(store).CompletePromotionAsync(ProcessorId, force: true, Ct);
 
-        await act.Should().ThrowAsync<RebuildStateException>(
-            "force overrides an unfinished rebuild, not the absence of one");
+        await Assert.ThrowsAnyAsync<RebuildStateException>(act);
     }
 
     // ── Coordinator: CompleteAbort ─────────────────────────────────────────────
@@ -469,11 +466,11 @@ public abstract class ProjectionRebuildStoreSpecification
 
         var outcome = await coordinator.CompleteAbortAsync(ProcessorId, Ct);
 
-        outcome.State.Status.Should().Be(RebuildStatus.Aborted);
-        outcome.State.ActiveVersion.Should().Be(started.ActiveVersion);
-        outcome.State.RebuildingVersion.Should().BeNull();
-        outcome.State.IsRebuildInFlight.Should().BeFalse();
-        outcome.DiscardedVersion.Should().Be(started.RebuildingVersion!.Value);
+        Assert.Equal(RebuildStatus.Aborted, outcome.State.Status);
+        Assert.Equal(started.ActiveVersion, outcome.State.ActiveVersion);
+        Assert.Null(outcome.State.RebuildingVersion);
+        Assert.False(outcome.State.IsRebuildInFlight);
+        Assert.Equal(started.RebuildingVersion!.Value, outcome.DiscardedVersion);
     }
 
     /// <summary>
@@ -490,7 +487,7 @@ public abstract class ProjectionRebuildStoreSpecification
 
         var act = () => GetCoordinator(store).CompleteAbortAsync(ProcessorId, Ct);
 
-        await act.Should().ThrowAsync<RebuildStateException>();
+        await Assert.ThrowsAnyAsync<RebuildStateException>(act);
     }
 
     // ── Coordinator: DiscardStateVersionAsync ─────────────────────────────────
@@ -519,7 +516,7 @@ public abstract class ProjectionRebuildStoreSpecification
         var act = () => coordinator.DiscardStateVersionAsync(
             ProjectionType, outcome.DiscardedVersion, Ct);
 
-        await act.Should().NotThrowAsync();
+        await act();
     }
 
     /// <summary>
@@ -543,7 +540,7 @@ public abstract class ProjectionRebuildStoreSpecification
         var act = () => coordinator.DiscardStateVersionAsync(
             ProjectionType, outcome.DiscardedVersion, Ct);
 
-        await act.Should().NotThrowAsync();
+        await act();
     }
 
     // ── Lifecycle round-trip ──────────────────────────────────────────────────
@@ -569,12 +566,8 @@ public abstract class ProjectionRebuildStoreSpecification
 
         // After the first promotion: active_version = 2, last_allocated_version = 2.
         // The second rebuild must get version 3.
-        second.ActiveVersion.Should().Be(
-            first.RebuildingVersion!.Value,
-            "promotion makes the rebuilt version the active one");
-        second.RebuildingVersion.Should().Be(
-            first.LastAllocatedVersion + 1,
-            "versions are allocated from the high-water mark, so they never collide with live rows");
-        second.CompletedAt.Should().BeNull("the previous rebuild's completion must not linger");
+        Assert.Equal(first.RebuildingVersion!.Value, second.ActiveVersion);
+        Assert.Equal(first.LastAllocatedVersion + 1, second.RebuildingVersion);
+        Assert.Null(second.CompletedAt);
     }
 }

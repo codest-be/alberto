@@ -24,16 +24,11 @@
 
     <ItemGroup>
         <!-- These packages are test-only infrastructure. PrivateAssets="all" prevents them from
-             flowing transitively to consumers of this conformance package. FluentAssertions 8.x in
-             particular is under the Xceed Community License (paid for commercial use) and must not
-             leak into the dependency graph of application packages. -->
+             flowing transitively to consumers of this conformance package. -->
         <PackageReference Include="xunit.v3.extensibility.core">
             <PrivateAssets>all</PrivateAssets>
         </PackageReference>
         <PackageReference Include="xunit.v3.assert">
-            <PrivateAssets>all</PrivateAssets>
-        </PackageReference>
-        <PackageReference Include="FluentAssertions">
             <PrivateAssets>all</PrivateAssets>
         </PackageReference>
         <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing">
