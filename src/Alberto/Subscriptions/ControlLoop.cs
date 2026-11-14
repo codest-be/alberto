@@ -348,9 +348,15 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
 
                 inHandler = false;
 
-                var newCheckpoint = visibleEvents.Count > 0
-                    ? visibleEvents[visibleEvents.Count - 1].GlobalPosition
-                    : checkpoint;
+                // The read is filtered to the handled types, so the last event returned says
+                // nothing about the events skipped after it. A short batch means the read ran
+                // out of matches, and the head is stable, so everything up to it is accounted
+                // for. A full batch only vouches for what lies before its last event.
+                var newCheckpoint = events.Count < _batchSize
+                    ? head
+                    : visibleEvents.Count > 0
+                        ? visibleEvents[visibleEvents.Count - 1].GlobalPosition
+                        : checkpoint;
 
                 if (newCheckpoint > checkpoint)
                 {
@@ -362,9 +368,10 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
 
                 infrastructureFailures = 0;
 
-                // No delay after a full batch that made progress — immediately fetch more. A full
-                // batch with nothing at or below the head made none, and would spin.
-                if (events.Count < _batchSize || visibleEvents.Count == 0)
+                // No delay after a batch that made progress: a full one has more to fetch, and a
+                // short one left the checkpoint at the head, where the next pass waits anyway. A
+                // full batch with nothing at or below the head made none, and would spin.
+                if (events.Count == _batchSize && visibleEvents.Count == 0)
                     await Task.Delay(_pollingInterval, ct);
             }
             catch (OperationCanceledException ex) when (IsShutdownCancellation(ex, ct)) { break; }
@@ -465,6 +472,10 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
                         }
                     }
 
+                    // A short batch ran out of matches: everything up to the head is read.
+                    if (events.Count < _batchSize)
+                        watermark.AdvanceReadPosition(head);
+
                     // Save checkpoint after each batch of reads
                     await SaveWatermarkCheckpointAsync(watermark, pipelineToken);
 
@@ -472,7 +483,8 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
                     infrastructureFailures = 0;
 
                     // A full batch with nothing at or below the head made no progress; don't spin.
-                    if (events.Count < _batchSize || visibleEvents.Count == 0)
+                    // A short one left the read position at the head, where the next pass waits.
+                    if (events.Count == _batchSize && visibleEvents.Count == 0)
                         await Task.Delay(_pollingInterval, pipelineToken);
                 }
                 catch (Exception ex) when (!pipelineToken.IsCancellationRequested)
@@ -655,7 +667,8 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
         activity?.SetTag("alberto.poll.after_position", afterPosition);
         try
         {
-            var events = await _backend.StreamAllAsync(afterPosition, _batchSize, ct);
+            var events = await _backend.StreamAllOfTypesAsync(
+                _processor.HandledEventTypes, afterPosition, _batchSize, ct);
             activity?.SetTag("alberto.poll.events", events.Count);
             return events;
         }

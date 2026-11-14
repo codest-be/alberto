@@ -212,6 +212,21 @@ public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEven
         }
     }
 
+    public Task<IReadOnlyCollection<IEventEnvelope>> StreamAllOfTypesAsync(
+        IReadOnlySet<string> eventTypes,
+        long afterPosition,
+        int? limit,
+        CancellationToken cancellationToken = default)
+    {
+        lock (_lock)
+        {
+            var result = EventsAfter(afterPosition).Where(e => eventTypes.Contains(e.EventType.Id));
+
+            return Task.FromResult<IReadOnlyCollection<IEventEnvelope>>(
+                (limit.HasValue ? result.Take(limit.Value) : result).ToList());
+        }
+    }
+
     public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
         IEnumerable<IEventToPersist> events,
         DcbQuery? dcbQuery = null,

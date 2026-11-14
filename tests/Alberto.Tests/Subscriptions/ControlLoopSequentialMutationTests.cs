@@ -249,8 +249,9 @@ public sealed class ControlLoopSequentialMutationTests
         var checkpoints = new SpyCheckpointStore(innerCheckpoints);
         var processor = new CountingProcessor("beyond-head");
 
+        // A full batch: a short one would vouch for everything up to the head and move there.
         var loop = new ControlLoop(processor, head, backend, checkpoints,
-            TimeSpan.FromMilliseconds(15), 100);
+            TimeSpan.FromMilliseconds(15), 2);
 
         using var cts = new CancellationTokenSource();
         await loop.StartAsync(cts.Token);
@@ -264,13 +265,49 @@ public sealed class ControlLoopSequentialMutationTests
         checkpoints.SaveCalls.Should().BeEmpty("checkpoint must not move when nothing became visible (270)");
     }
 
+    // The read is filtered to the handled types, so a short batch must vouch for everything up
+    // to the head: stopping at the last event returned would re-read the skipped tail.
+    [Fact]
+    public async Task Loop_advances_to_head_after_a_short_batch_without_reading_again()
+    {
+        var reads = 0;
+        var backend = new ScriptedBackend
+        {
+            Reader = (after, _) =>
+            {
+                Interlocked.Increment(ref reads);
+                return after < 2 ? [MakeEvent(2)] : [];
+            },
+        };
+        var head = new EventStoreHead(new FixedPositionsHeadBackend([1, 2, 3, 4, 5]));
+        await head.RefreshAsync(TestContext.Current.CancellationToken); // head.Current == 5
+        var checkpoints = new InMemoryCheckpointStore();
+        var processor = new CountingProcessor("short-batch");
+
+        var loop = new ControlLoop(processor, head, backend, checkpoints, TimeSpan.FromMilliseconds(15), 100);
+
+        using var cts = new CancellationTokenSource();
+        await loop.StartAsync(cts.Token);
+        await WaitForAsync(() => checkpoints.GetAsync("short-batch", TestContext.Current.CancellationToken)
+            .GetAwaiter().GetResult() == 5, TestContext.Current.CancellationToken);
+        await Task.Delay(100, TestContext.Current.CancellationToken);
+        await cts.CancelAsync();
+        await loop.StopAsync(CancellationToken.None);
+
+        processor.ProcessedCount.Should().Be(1);
+        Volatile.Read(ref reads).Should().Be(1, "the events skipped by the filter must not be read a second time");
+    }
+
     // Kills: 273 (ReportProgress(head - newCheckpoint) removed, or => head + newCheckpoint).
     [Fact]
     public async Task Loop_reports_lag_as_head_minus_new_checkpoint()
     {
         var backend = new ScriptedBackend
         {
-            Reader = (after, _) => after == 0 ? [MakeEvent(1), MakeEvent(2), MakeEvent(3)] : [],
+            // Two full batches, the second wholly beyond the head, so the checkpoint rests at 3.
+            Reader = (after, _) => after == 0
+                ? [MakeEvent(1), MakeEvent(2), MakeEvent(3)]
+                : [MakeEvent(9), MakeEvent(10), MakeEvent(11)],
         };
         var head = new EventStoreHead(new FixedPositionsHeadBackend([1, 2, 3, 4, 5]));
         await head.RefreshAsync(TestContext.Current.CancellationToken); // head.Current == 5
@@ -279,7 +316,7 @@ public sealed class ControlLoopSequentialMutationTests
         var processor = new CountingProcessor("lag-report");
 
         var loop = new ControlLoop(processor, head, backend, checkpoints,
-            TimeSpan.FromMilliseconds(15), 100, healthState: state);
+            TimeSpan.FromMilliseconds(15), 3, healthState: state);
 
         using var cts = new CancellationTokenSource();
         await loop.StartAsync(cts.Token);
@@ -294,7 +331,7 @@ public sealed class ControlLoopSequentialMutationTests
 
     // Kills: 276 (events.Count < _batchSize => <=/negated), 277 (Delay removed).
     [Fact]
-    public async Task Loop_only_delays_after_a_partial_batch_not_after_a_full_one()
+    public async Task Loop_only_delays_after_a_batch_that_made_no_progress()
     {
         const int batchSize = 3;
         var pollingInterval = TimeSpan.FromMilliseconds(300);
@@ -307,7 +344,7 @@ public sealed class ControlLoopSequentialMutationTests
                 return i switch
                 {
                     1 => [MakeEvent(1), MakeEvent(2), MakeEvent(3)], // full batch — no delay expected next
-                    2 => [MakeEvent(4)],                              // partial batch — delay expected next
+                    2 => [MakeEvent(60), MakeEvent(61), MakeEvent(62)], // full, all beyond head — delay expected next
                     _ => [],
                 };
             },
@@ -328,12 +365,12 @@ public sealed class ControlLoopSequentialMutationTests
         var timestamps = backend.CallTimestamps;
         timestamps.Count.Should().BeGreaterThanOrEqualTo(3);
         var gapAfterFullBatch = timestamps[1] - timestamps[0];
-        var gapAfterPartialBatch = timestamps[2] - timestamps[1];
+        var gapAfterStalledBatch = timestamps[2] - timestamps[1];
 
         gapAfterFullBatch.Should().BeLessThan(TimeSpan.FromMilliseconds(150),
             "a full batch (events.Count == batchSize) must not delay before the next read");
-        gapAfterPartialBatch.Should().BeGreaterThanOrEqualTo(TimeSpan.FromMilliseconds(200),
-            "a partial batch (events.Count < batchSize) must delay before the next read");
+        gapAfterStalledBatch.Should().BeGreaterThanOrEqualTo(TimeSpan.FromMilliseconds(200),
+            "a full batch with nothing at or below the head must delay before the next read");
     }
 
     // Kills: 284 (LogCritical on fault removed).

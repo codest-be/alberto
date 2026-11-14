@@ -60,6 +60,14 @@ internal sealed class PostgresTenantEventStoreBackend(
         return await PostgresBackendHelpers.ReadEventsAsync(cmd, includeTenantId: true, tenantId: null, cancellationToken);
     }
 
+    public Task<IReadOnlyCollection<IEventEnvelope>> StreamAllTenantsOfTypes(
+        IReadOnlySet<string> eventTypes,
+        long afterPosition,
+        int? limit,
+        CancellationToken cancellationToken = default)
+        => PostgresBackendHelpers.ReadAllOfTypesAsync(
+            _schema, _dataSource, tenanted: true, eventTypes, afterPosition, limit, cancellationToken);
+
     public async Task<IReadOnlyCollection<IEventEnvelope>> AppendForTenant(
         string tenantId,
         IEnumerable<IEventToPersist> events,

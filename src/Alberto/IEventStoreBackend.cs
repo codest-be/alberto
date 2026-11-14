@@ -28,6 +28,23 @@ public interface IEventStoreBackend
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// As <see cref="StreamAllAsync"/>, for a reader that only wants <paramref name="eventTypes"/>,
+    /// so a backend can leave the other events on the server.
+    /// </summary>
+    /// <remarks>
+    /// The filter is a hint, not a guarantee: the default returns every event, so a caller must
+    /// still ignore types it did not ask for. What a backend must guarantee is the order and the
+    /// limit: events come back in position order, and fewer than <paramref name="limit"/> means
+    /// no further event of these types was visible after <paramref name="afterPosition"/>.
+    /// </remarks>
+    Task<IReadOnlyCollection<IEventEnvelope>> StreamAllOfTypesAsync(
+        IReadOnlySet<string> eventTypes,
+        long afterPosition,
+        int? limit,
+        CancellationToken cancellationToken = default)
+        => StreamAllAsync(afterPosition, limit, cancellationToken);
+
+    /// <summary>
     /// Appends events with optional DCB consistency check.
     /// In multi-tenant mode, automatically tagged with current tenant via TenantAccessor.
     /// </summary>

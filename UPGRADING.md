@@ -3,7 +3,7 @@
 Notes for moving between Alberto releases. Breaking changes of a release are also listed in its
 section of [CHANGELOG.md](CHANGELOG.md).
 
-## To the next release
+## To 0.8.0
 
 ### Run the migration
 
@@ -19,6 +19,23 @@ primary key written on every append. It runs on startup; `DROP INDEX` takes a br
 default implementation that calls `GetStableHeadAsync`, so nothing breaks. A backend whose
 barrier query scans forward from `afterPosition` should override it and stop at `upToPosition`:
 the head only asks about the window it just read.
+
+`IEventStoreBackend.StreamAllOfTypesAsync(eventTypes, afterPosition, limit, ct)` is new too, and
+defaults to `StreamAllAsync`. The control loop now reads through it, passing the processor's
+handled types, so a backend that overrides it sends only the events the processor will handle.
+Two things must hold whether it filters or not: events come back in position order, and fewer
+than `limit` means no further event of those types was visible. The loop relies on the second
+to checkpoint at the head after a short batch, rather than at the last event it was given.
+
+### The outbox relay claims 100 entries per poll
+
+`WithOutbox(relayBatchSize:)` defaults to 100; it was 1. The relay publishes the batch in order
+and marks it delivered in one round trip. A relay that dies mid-batch redelivers what it had
+published but not yet marked, so the batch size is the most duplicates one crash can cause.
+Consumers already had to be idempotent; pass `relayBatchSize: 1` to keep the old ceiling.
+
+A custom `IOutboxStore` keeps working: `MarkDeliveredBatchAsync` has a default that loops
+`MarkDeliveredAsync`. Override it to mark the batch in one statement.
 
 ## To 0.7.0
 

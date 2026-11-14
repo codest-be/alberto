@@ -102,6 +102,14 @@ internal sealed class InterceptingEventStoreBackend(
         CancellationToken cancellationToken = default)
         => TracedRead(afterPosition, limit, () => _inner.StreamAllAsync(afterPosition, limit, cancellationToken));
 
+    /// <inheritdoc />
+    public Task<IReadOnlyCollection<IEventEnvelope>> StreamAllOfTypesAsync(
+        IReadOnlySet<string> eventTypes,
+        long afterPosition,
+        int? limit,
+        CancellationToken cancellationToken = default)
+        => TracedRead(afterPosition, limit, () => _inner.StreamAllOfTypesAsync(eventTypes, afterPosition, limit, cancellationToken));
+
     private async Task<IReadOnlyCollection<IEventEnvelope>> TracedRead(
         long afterPosition,
         int? limit,
