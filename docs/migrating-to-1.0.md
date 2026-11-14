@@ -846,8 +846,8 @@ public sealed class MyDeadLetterStore : IClaimableDeadLetterStore { ... }  // wa
 If your store threw `NotSupportedException` from them, delete them and implement
 `IDeadLetterStore` alone. It still records, counts, reads and clears dead letters; what it loses
 is the automatic retry loop. Alberto logs a warning naming the store type at startup.
-`alberto ops deadletter retry` will still flag entries and nothing will dispatch them, so the
-warning is there rather than leaving an operator watching a flag that never clears.
+`IDeadLetterStore.MarkForRetryAsync` will still flag entries and nothing will dispatch them, so
+the warning is there rather than leaving an operator watching a flag that never clears.
 
 **Fix: calling the methods.** Type-test:
 
@@ -1000,7 +1000,7 @@ can both pass a boundary check that should have rejected one of them.
   database is the safe rollout.
 - A rolling deploy with both versions live and appending is **not** safe. If your platform will
   not let you stop writes, scale the old deployment to zero replicas first, then deploy.
-- Readers, projections, the outbox relay and the CLI are unaffected: none of them take the
+- Readers, projections, the outbox relay are unaffected: none of them take the
   append lock.
 - Nothing is corrupted by a *past* collision, so there is nothing to repair afterwards.
 
@@ -1057,29 +1057,16 @@ moved out of the `Alberto.Postgres` package into a new, also-unpublished
 - `PostgresAdminOperator`
 - `PostgresAdminServiceCollectionExtensions` (`AddAlbertoPostgresAdmin`)
 
-`IAdminReader`/`IAdminOperator` are the contract the parked admin front doors (a GraphQL API, an
-MCP server, a React console and a BFF on `feature/admin-surface`) are built on. Publishing them at
-1.0 would freeze the abstraction under semver before anything that consumes it exists, which is the
-same reason those front doors are parked. Both projects still build, sit in the solution, and are
-covered by tests; they just do not become packages.
-
-**Not affected.** The `Alberto.Cli` tool still ships, and it is the supported operator surface.
-`dotnet tool install --global Alberto.Cli` and every `alberto` command behave exactly as before.
-Nothing in `Alberto`, `Alberto.Postgres` or any other published package lost a member that
-you could reach without already depending on the admin abstraction.
+**Update.** `Alberto.Admin`, `Alberto.Admin.Postgres` and the `Alberto.Cli` tool have since been
+removed from the repository altogether; they remain in git history. Operators call the core
+interfaces (`ICheckpointStore`, `IDeadLetterStore`, `IOutboxStore`, `IProjectionRebuildStore`)
+directly. See [operations.md](operations.md).
 
 **Symptom.** A project referencing the `Alberto.Admin` package fails to restore (`NU1101`), or
 one referencing `Alberto.Postgres` stops compiling against `PostgresAdminDataAccess`,
-`PostgresAdminOperator` or `AddAlbertoPostgresAdmin` (`CS0246` / `CS1061`). Namespaces are
-unchanged (the types are still `Alberto.Postgres.*`), so no `using` needs editing; the
-assembly they live in is simply not one you can get from a feed.
+`PostgresAdminOperator` or `AddAlbertoPostgresAdmin` (`CS0246` / `CS1061`).
 
-**Fix.** If you were driving admin operations from your own code, either build the two projects
-from source and reference them as projects, or shell out to the `alberto` CLI, which does the same
-work through the same interfaces. If you only ever used the CLI, there is nothing to do.
-
-Unparking after 1.0 is `IsPackable=true` on both projects plus capturing their
-`PublicAPI.Shipped.txt` baselines.
+**Fix.** Call the core interfaces directly, and use plain SQL for inspection.
 
 ---
 
@@ -1164,9 +1151,8 @@ ever held, not one window's worth.
    entries are kept forever and the service does nothing. Do this if the table is your integration
    audit trail, and plan to archive it somewhere, because the growth problem does not go away.
 2. **Take the default, but drain the backlog first.** Run
-   `alberto ops outbox purge --before <timestamp>` during a quiet window, walking the cutoff back
-   in steps if the table is large, then deploy. The CLI command does the same delete and records an
-   `admin-outbox-purged` audit event.
+   `IOutboxStore.PurgeDeliveredAsync` during a quiet window, walking the cutoff back
+   in steps if the table is large, then deploy.
 3. **Start wide and narrow it.** Deploy with `deliveredRetention: TimeSpan.FromDays(90)`, then
    lower it over subsequent releases until you reach the window you want.
 

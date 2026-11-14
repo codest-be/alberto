@@ -6,7 +6,7 @@ Thank you for taking the time to contribute.
 
 Clone the repository and make sure you have the prerequisites installed:
 
-- **.NET 10 SDK.** The solution targets `net10.0`
+- **.NET 10 SDK.** Libraries target `net10.0` and `net11.0`; tests and benchmarks target `net10.0`
 - **Docker.** Testcontainers-backed integration tests spin up a PostgreSQL container
 
 Run the full test suite:

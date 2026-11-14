@@ -8,7 +8,7 @@
         <!-- Package Metadata -->
         <PackageId>Alberto.Messaging.Postgres</PackageId>
         <Title>Alberto DCB Event Store - PostgreSQL Outbox</Title>
-        <Description>PostgreSQL-backed transactional outbox store for Alberto DCB event store. Bridges Alberto.Postgres and Alberto.Messaging; referencing Alberto.Postgres does not pull in messaging dependencies.</Description>
+        <Description>PostgreSQL-backed transactional outbox store for Alberto DCB event store. Implements the Alberto.Messaging outbox store on Alberto.Postgres.</Description>
         <IsPackable>true</IsPackable>
         <RootNamespace>Alberto.Messaging.Postgres</RootNamespace>
 

@@ -483,7 +483,7 @@ startup:
 
 Set `AutoMigrate = false` where a running application must not issue DDL: a least-privilege
 production role, or a deployment pipeline that gates schema changes. Then run the migrations from
-your own step; the [Orders example](https://github.com/codest-be/alberto-examples) does exactly this with `apps/Alberto.Orders/Alberto.Orders.Migrations`.
+your own step; the [Orders example](https://github.com/codest-be/alberto-examples) does exactly this with a small migrations runner project.
 
 A role that may run DDL on its own database but cannot connect to the server's `postgres`
 maintenance database can still migrate at startup: keep `AutoMigrate = true` and set

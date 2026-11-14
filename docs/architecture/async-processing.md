@@ -162,7 +162,7 @@ The table below shows how each knob is set in code and in configuration:
 
 ## Module Configuration Example
 
-Taken from `apps/Alberto.Orders/Alberto.Orders/Platform/OrdersModule.cs` in
+Taken from the Orders module (`Platform/OrdersModule.cs`) in
 [alberto-examples](https://github.com/codest-be/alberto-examples). The state store is built by the projection's own slice
 (`OrdersOverviewProjection.StateStore`) so the writer and every query over it share one
 definition. See [vertical-slices.md](https://github.com/codest-be/alberto-examples/blob/main/docs/vertical-slices.md):
@@ -276,7 +276,7 @@ Because aborts consume numbers without moving the active one, the startup sweep 
 The following appear in the schema or the type system but have no orchestration behind them. Do not rely on them.
 
 - **Rebuild-mode processor tuning.** `IEventProcessor.IsRebuilding` is set for shadow loops, but there is no lag threshold and no separate rebuild batch size: a shadow loop runs on the module's configured batch size.
-- **Real-time admin push.** There is no admin HTTP API, no GraphQL admin subscriptions, and no admin dashboard on this branch. The `{schema}_events` NOTIFY channel exists to refresh `EventStoreHead`, not to feed a UI. There is no operator tool either: operators call the core interfaces (see [operations.md](../operations.md)).
+- **Real-time admin push.** There is no admin HTTP API and no admin dashboard. The `{schema}_events` NOTIFY channel exists to refresh `EventStoreHead`, not to feed a UI. There is no operator tool either: operators call the core interfaces (see [operations.md](../operations.md)).
 
 ## Event deserialization invariant
 
