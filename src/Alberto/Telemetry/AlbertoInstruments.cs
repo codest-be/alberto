@@ -39,8 +39,6 @@ internal sealed class AlbertoInstruments
         OutboxPublishFailures = meter.CreateCounter<long>("alberto.outbox.publish.failures", "failures", "Number of failed outbox publish attempts");
         Retries = meter.CreateCounter<long>("alberto.retries", "attempts", "Number of retry attempts");
         ConcurrencyConflicts = meter.CreateCounter<long>("alberto.concurrency.conflicts", "conflicts", "Number of optimistic concurrency conflicts");
-        TenantLocksAcquired = meter.CreateCounter<long>("alberto.tenant_locks_acquired", "locks", "Number of tenant locks successfully acquired");
-        TenantLockFailures = meter.CreateCounter<long>("alberto.tenant_lock_failures", "failures", "Number of failed tenant lock acquisition attempts");
 
         ProcessorLag = meter.CreateObservableGauge("alberto.processor.lag", () => Snapshot(_processorLag), "events",
             "Number of events a processor is behind the global position");
@@ -87,8 +85,6 @@ internal sealed class AlbertoInstruments
     internal Counter<long> OutboxPublishFailures { get; }
     internal Counter<long> Retries { get; }
     internal Counter<long> ConcurrencyConflicts { get; }
-    internal Counter<long> TenantLocksAcquired { get; }
-    internal Counter<long> TenantLockFailures { get; }
     internal ObservableGauge<long> ProcessorLag { get; }
     internal ObservableGauge<double> HeadStalled { get; }
     internal ObservableGauge<int> OwnedTenantCount { get; }

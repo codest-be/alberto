@@ -2,9 +2,7 @@ name: Publish NuGet Packages
 
 on:
   push:
-    # A push to either branch publishes a prerelease to GitHub Packages only; the nuget.org
-    # steps are gated on the ref being a tag. Release branches are included so a backport can
-    # be smoke-tested from a real feed before it is tagged.
+    # Branch pushes publish a prerelease to GitHub Packages only; nuget.org steps need a tag.
     branches: [main, 'release/**']
     tags: ['v*']
 
@@ -15,9 +13,7 @@ on:
         required: false
         type: string
 
-# No `paths` filter: GitHub applies path filters to tag pushes too, so a release tag on a
-# commit that happened not to touch src/** would be skipped without a word. A few extra
-# prerelease builds are cheaper than a release that silently does not happen.
+# No `paths` filter: it would also apply to tag pushes and silently skip a release tag.
 concurrency:
   group: publish-${{ github.ref }}
   cancel-in-progress: false
@@ -28,16 +24,10 @@ env:
 
 jobs:
   publish:
-    # release-ci, not public-ci. Both are self-hosted runner groups on the same host serving only
-    # this repository, but they exist as two groups on two unprivileged users precisely so this
-    # job never shares a machine account with one that builds pull requests. This job holds a
-    # GitHub Packages token and mints a nuget.org publishing key; the public-ci runner executes
-    # whatever a contributor pushed. A persistent runner lets one job leave state behind for the
-    # next, so those two must not meet. Nothing here ever checks out a pull request: the triggers
-    # are pushes to protected branches and tags.
+    # release-ci, not public-ci: this job holds publishing credentials and must never share a machine
+    # account with the runner that builds contributor code. Nothing here checks out a pull request.
     runs-on: [self-hosted, release-ci]
-    # Runs the Testcontainers suite and pushes to two feeds; ~6 minutes in practice. The cap is a
-    # stop for a wedged job on a single-runner group, not a budget.
+    # A stop for a wedged job, not a budget (~6 min in practice).
     timeout-minutes: 60
     permissions:
       packages: write
@@ -47,15 +37,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      # No actions/setup-dotnet — same reason as ci.yml: the host carries the 10.0 SDK at
-      # /usr/share/dotnet, which is root-owned while jobs run unprivileged, so setup-dotnet fails
-      # copying into that tree. Worth stating here because this is the job that decides what
-      # ships: the SDK that builds these packages is the host's newest, there is no global.json
-      # pinning it, and `dotnet --list-sdks` on the runner host is where that changes.
+      # No actions/setup-dotnet (as in ci.yml): the host SDK is root-owned; there is no global.json.
 
-      # A tag publishes the release version verbatim; anything else publishes a prerelease.
-      # The tag must agree with VersionPrefix, which is the single source of truth — a tag
-      # that disagrees is a mistake worth failing on, not a version worth guessing at.
+      # A tag must equal VersionPrefix (the single source of truth); anything else is a prerelease.
       - name: Determine version
         id: version
         env:
@@ -98,28 +82,19 @@ jobs:
             dotnet build "src/$proj/$proj.csproj" -c Release
           done
 
-      # Includes the Testcontainers-backed PostgreSQL tests, so this runner needs a Docker daemon
-      # of its own — a rootless one owned by the runner user, with DOCKER_HOST exported by the
-      # runner service. It is not the same daemon the public-ci runner uses.
+      # Includes Testcontainers tests: this runner needs its own rootless Docker daemon.
       - name: Test
         run: dotnet test tests/Alberto.Tests/Alberto.Tests.csproj -c Release
 
       - name: Pack
         run: |
-          # Start from an empty output directory. actions/checkout already cleans the workspace,
-          # and the runner wipes it after every job, but "Verify packed set" below decides what
-          # gets published by listing this directory — so it is worth not depending on either.
-          # A leftover .nupkg for a project that just stopped being packed would otherwise be
-          # published and would satisfy the allowlist while doing it.
+          # Empty output dir: "Verify packed set" lists it, so a stale .nupkg must not satisfy the allowlist.
           rm -rf artifacts
           SUFFIX_ARG=""
           if [ -n "${{ steps.version.outputs.suffix }}" ]; then
             SUFFIX_ARG="--version-suffix ${{ steps.version.outputs.suffix }}"
           fi
-          # The list is collected into an array before any dotnet runs. Calling dotnet directly
-          # in a `while read` body would let it inherit the loop's stdin and eat the rest of the
-          # list. `mapfile` would say this in one line but does not exist in bash 3.2, which is
-          # what macOS ships — this form lets a maintainer run the loop locally.
+          # Collect into an array first: dotnet inside `while read` eats stdin. No mapfile: bash 3.2.
           PROJECTS=()
           while IFS= read -r proj; do PROJECTS+=("$proj"); done \
             < <(grep -vE '^\s*(#|$)' .github/packages.txt)
@@ -128,35 +103,12 @@ jobs:
             dotnet pack "src/$proj/$proj.csproj" -c Release --no-build $SUFFIX_ARG -o artifacts
           done
 
-      # The only thing standing between an accidental IsPackable=true and a permanent
-      # nuget.org listing. Compares packed IDs against a literal allowlist and fails on any
-      # difference in either direction: an unexpected package, or one that stopped building.
-      # The comparison is whole-ID, not prefix: `Alberto.Messaging` is a prefix of
-      # `Alberto.Messaging.Postgres`, so a substring test would admit an unexpected
-      # `Alberto.Messaging.Something`. Sorted `diff` cannot.
-      # `artifacts/*.nupkg` does not match `.snupkg` — that suffix has no dot before "nupkg".
-      #
-      # This list is written out by hand ON PURPOSE. Every other enumeration of the packable
-      # set — Build libraries and Pack above, Pack smoke in ci.yml — now reads
-      # .github/packages.txt; this one does not, and must not. Its value is that it is an
-      # *independent* second statement of what ships. Sourcing it from packages.txt would make
-      # the step ask "did dotnet pack produce what the loop just asked for?", which is a
-      # tautology: one line added to one file would then both pack a new package and bless it.
-      #
-      # CODEOWNERS is not an alternative. /.github/ is already owned, and the rulesets require
-      # zero approvals because GitHub will not let this repository's sole maintainer approve
-      # their own pull request (see .github/CODEOWNERS). Ownership requests review here; it does
-      # not gate. Swapping a hard gate for an advisory one is the wrong trade when the failure
-      # mode is a nuget.org ID that can be unlisted but never deleted or reclaimed.
-      #
-      # Nothing drifts quietly regardless: an entry added to packages.txt but not here makes
-      # Pack produce an extra .nupkg, which lands as a `+` line in the diff below and fails the
-      # job before any push. So publishing a new package costs two edits in two files. That is
-      # the intended speed bump on an irreversible action, not an oversight — please leave it.
+      # Hand-written allowlist, deliberately NOT read from .github/packages.txt: it must be an independent
+      # second statement of what ships (nuget.org IDs can be unlisted, never deleted). Adding a package
+      # costs two edits on purpose. Whole-ID diff, not prefix match.
       - name: Verify packed set
         run: |
-          # RUNNER_TEMP rather than a fixed /tmp path: the runner is persistent and clears this
-          # directory per job, so two runs can never read each other's list.
+          # RUNNER_TEMP: the runner is persistent; a fixed /tmp path could leak between runs.
           TMP="${RUNNER_TEMP:-/tmp}"
           cat > "$TMP/expected-packages.txt" <<'IDS'
           Alberto
@@ -172,8 +124,7 @@ jobs:
           IDS
           LC_ALL=C sort -o "$TMP/expected-packages.txt" "$TMP/expected-packages.txt"
 
-          # Strip a trailing semver and the extension to recover the package ID. No Alberto
-          # package ID ends in a numeric segment, so this is unambiguous.
+          # Strip semver and extension to recover the ID (no Alberto ID ends in a number).
           ls artifacts/*.nupkg \
             | xargs -n1 basename \
             | sed -E 's/\.[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?\.nupkg$//' \
@@ -186,19 +137,8 @@ jobs:
             exit 1
           fi
 
-      # Two things about this step are specific to running on a persistent runner.
-      #
-      # `dotnet nuget add source` writes to the *user-level* NuGet.config, which on a hosted
-      # runner died with the machine. Here it survives the job, and `add source` fails outright
-      # on a name that already exists — so without the remove below, this workflow would work
-      # exactly once and then fail every run afterwards with "The name github already exists".
-      #
-      # The token also lands on disk in cleartext, which is what --store-password-in-clear-text
-      # says and is required because the Linux credential store is not available. The removal
-      # step after the pushes takes it back off; the runner additionally deletes this file after
-      # every job, so a cancelled run cannot leave one behind either. GITHUB_TOKEN expires when
-      # the job ends regardless — this is about not leaving a credential-shaped file lying in a
-      # home directory, not about the token still being useful.
+      # Persistent runner: the user-level NuGet.config outlives the job, so remove any stale `github`
+      # source first (add fails on an existing name); the token is stored in clear text and removed below.
       - name: Add GitHub Packages source
         run: |
           dotnet nuget remove source github >/dev/null 2>&1 || true
@@ -211,26 +151,18 @@ jobs:
       - name: Push libraries to GitHub Packages
         run: dotnet nuget push "artifacts/Alberto*.nupkg" --source github --skip-duplicate --timeout 600
 
-      # Symbols are best-effort: a failed .snupkg push must not fail a run whose packages
-      # already landed. `if: always()` keeps this reachable after an earlier step fails, and
-      # `|| true` keeps the step itself green.
+      # Best-effort: a failed .snupkg push must not fail a run whose packages already landed.
       - name: Push symbols to GitHub Packages
         if: always()
         run: dotnet nuget push "artifacts/*.snupkg" --source github --skip-duplicate --timeout 600 || true
 
-      # if: always() so a failed push still takes the stored token back off disk. Placed before
-      # the nuget.org steps rather than at the end of the job because nothing after this point
-      # uses the github source — the trusted-publishing key is minted fresh and never written to
-      # a config file.
+      # always(): a failed push must still remove the stored token.
       - name: Remove GitHub Packages source
         if: always()
         run: dotnet nuget remove source github >/dev/null 2>&1 || true
 
-      # Trusted publishing: the OIDC token this job is allowed to mint is exchanged for a
-      # nuget.org API key valid for one hour. No long-lived key is stored anywhere. The
-      # policy on nuget.org is bound to this repository AND this workflow filename — renaming
-      # this file breaks publishing until the policy is edited to match.
-      # NUGET_USER is the nuget.org profile name, not an email address.
+      # Trusted publishing: the policy on nuget.org is bound to this workflow's filename, so renaming it breaks publishing.
+      # NUGET_USER is the nuget.org profile name, not an email.
       - name: Log in to nuget.org
         id: nuget-login
         if: steps.version.outputs.release == 'true'
