@@ -1,1 +1,43 @@
 #nullable enable
+Alberto.Commands.BoundDecision.Commit(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Results.Result>!
+Alberto.Commands.BoundDecision.TryCommit(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Results.Result>!
+Alberto.Commands.BoundDecision<TValue>.Commit(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Results.Result<TValue>>!
+Alberto.Commands.BoundDecision<TValue>.TryCommit(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Results.Result<TValue>>!
+Alberto.Commands.BoundPipeline<TCommand, TState>.Decide(System.Func<TCommand, TState, Alberto.Results.Decision>! decide) -> Alberto.Commands.BoundDecision
+Alberto.Commands.BoundPipeline<TCommand, TState>.Decide(System.Func<TState, Alberto.Results.Decision>! decide) -> Alberto.Commands.BoundDecision
+Alberto.Commands.BoundPipeline<TCommand, TState>.Decide<TValue>(System.Func<TCommand, TState, Alberto.Results.Decision<TValue>>! decide) -> Alberto.Commands.BoundDecision<TValue>
+Alberto.Commands.BoundPipeline<TCommand, TState>.Decide<TValue>(System.Func<TState, Alberto.Results.Decision<TValue>>! decide) -> Alberto.Commands.BoundDecision<TValue>
+Alberto.Commands.CommandPipeline<TCommand>.Decide(System.Func<TCommand, Alberto.Results.Decision>! decide) -> Alberto.Commands.UnboundDecision
+Alberto.Commands.CommandPipeline<TCommand>.Decide<TValue>(System.Func<TCommand, Alberto.Results.Decision<TValue>>! decide) -> Alberto.Commands.UnboundDecision<TValue>
+Alberto.Commands.CommandPipeline<TCommand>.Validate(System.Func<TCommand, Alberto.Results.Result>! validate) -> Alberto.Commands.CommandPipeline<TCommand>
+Alberto.Commands.UnboundDecision.Commit(Alberto.DcbQuery! query, long expectedPosition, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Results.Result>!
+Alberto.Commands.UnboundDecision.CommitUnconditionally(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Results.Result>!
+Alberto.Commands.UnboundDecision.TryCommit(Alberto.DcbQuery! query, long expectedPosition, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Results.Result>!
+Alberto.Commands.UnboundDecision<TValue>.Commit(Alberto.DcbQuery! query, long expectedPosition, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Results.Result<TValue>>!
+Alberto.Commands.UnboundDecision<TValue>.CommitUnconditionally(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Results.Result<TValue>>!
+Alberto.Commands.UnboundDecision<TValue>.TryCommit(Alberto.DcbQuery! query, long expectedPosition, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Results.Result<TValue>>!
+Alberto.Commands.UnboundPipeline<TCommand, TState>.Decide(System.Func<TCommand, TState, Alberto.Results.Decision>! decide) -> Alberto.Commands.UnboundDecision
+Alberto.Commands.UnboundPipeline<TCommand, TState>.Decide<TValue>(System.Func<TCommand, TState, Alberto.Results.Decision<TValue>>! decide) -> Alberto.Commands.UnboundDecision<TValue>
+static Alberto.Commands.AlbertoStoreBuilderExtensions.WithEvents(this Alberto.AlbertoModuleBuilder! builder, Alberto.IEventTypeRegistry! registry) -> Alberto.AlbertoModuleBuilder!
+static Alberto.Commands.AlbertoStoreBuilderExtensions.WithEventsFrom(this Alberto.AlbertoModuleBuilder! builder, System.Reflection.Assembly! eventsAssembly) -> Alberto.AlbertoModuleBuilder!
+*REMOVED*Alberto.Commands.BoundDecision.Commit(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Result>!
+*REMOVED*Alberto.Commands.BoundDecision.TryCommit(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Result>!
+*REMOVED*Alberto.Commands.BoundDecision<TValue>.Commit(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Result<TValue>>!
+*REMOVED*Alberto.Commands.BoundDecision<TValue>.TryCommit(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Result<TValue>>!
+*REMOVED*Alberto.Commands.BoundPipeline<TCommand, TState>.Decide(System.Func<TCommand, TState, Alberto.Decision>! decide) -> Alberto.Commands.BoundDecision
+*REMOVED*Alberto.Commands.BoundPipeline<TCommand, TState>.Decide(System.Func<TState, Alberto.Decision>! decide) -> Alberto.Commands.BoundDecision
+*REMOVED*Alberto.Commands.BoundPipeline<TCommand, TState>.Decide<TValue>(System.Func<TCommand, TState, Alberto.Decision<TValue>>! decide) -> Alberto.Commands.BoundDecision<TValue>
+*REMOVED*Alberto.Commands.BoundPipeline<TCommand, TState>.Decide<TValue>(System.Func<TState, Alberto.Decision<TValue>>! decide) -> Alberto.Commands.BoundDecision<TValue>
+*REMOVED*Alberto.Commands.CommandPipeline<TCommand>.Decide(System.Func<TCommand, Alberto.Decision>! decide) -> Alberto.Commands.UnboundDecision
+*REMOVED*Alberto.Commands.CommandPipeline<TCommand>.Decide<TValue>(System.Func<TCommand, Alberto.Decision<TValue>>! decide) -> Alberto.Commands.UnboundDecision<TValue>
+*REMOVED*Alberto.Commands.CommandPipeline<TCommand>.Validate(System.Func<TCommand, Alberto.Result>! validate) -> Alberto.Commands.CommandPipeline<TCommand>
+*REMOVED*Alberto.Commands.UnboundDecision.Commit(Alberto.DcbQuery! query, long expectedPosition, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Result>!
+*REMOVED*Alberto.Commands.UnboundDecision.CommitUnconditionally(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Result>!
+*REMOVED*Alberto.Commands.UnboundDecision.TryCommit(Alberto.DcbQuery! query, long expectedPosition, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Result>!
+*REMOVED*Alberto.Commands.UnboundDecision<TValue>.Commit(Alberto.DcbQuery! query, long expectedPosition, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Result<TValue>>!
+*REMOVED*Alberto.Commands.UnboundDecision<TValue>.CommitUnconditionally(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Result<TValue>>!
+*REMOVED*Alberto.Commands.UnboundDecision<TValue>.TryCommit(Alberto.DcbQuery! query, long expectedPosition, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Alberto.Result<TValue>>!
+*REMOVED*Alberto.Commands.UnboundPipeline<TCommand, TState>.Decide(System.Func<TCommand, TState, Alberto.Decision>! decide) -> Alberto.Commands.UnboundDecision
+*REMOVED*Alberto.Commands.UnboundPipeline<TCommand, TState>.Decide<TValue>(System.Func<TCommand, TState, Alberto.Decision<TValue>>! decide) -> Alberto.Commands.UnboundDecision<TValue>
+*REMOVED*static Alberto.Commands.AlbertoStoreBuilderExtensions.WithEvents(this Alberto.DcbModuleBuilder! builder, Alberto.IEventTypeRegistry! registry) -> Alberto.DcbModuleBuilder!
+*REMOVED*static Alberto.Commands.AlbertoStoreBuilderExtensions.WithEventsFrom(this Alberto.DcbModuleBuilder! builder, System.Reflection.Assembly! eventsAssembly) -> Alberto.DcbModuleBuilder!
