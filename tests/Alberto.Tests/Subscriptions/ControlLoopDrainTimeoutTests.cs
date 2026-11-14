@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using Alberto.Configuration;
 using Alberto.InMemory;
+using Alberto.DeadLetters;
 using Alberto.Subscriptions;
 using Xunit;
 

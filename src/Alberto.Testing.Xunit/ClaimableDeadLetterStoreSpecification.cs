@@ -1,4 +1,4 @@
-using Alberto.Subscriptions;
+using Alberto.DeadLetters;
 using Xunit;
 
 namespace Alberto.Testing.Xunit;

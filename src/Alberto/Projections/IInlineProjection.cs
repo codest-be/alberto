@@ -1,4 +1,4 @@
-namespace Alberto.Subscriptions;
+namespace Alberto.Projections;
 
 /// <summary>
 /// Inline projection that runs immediately after event append, before <see cref="IEventStore.AppendAsync"/>

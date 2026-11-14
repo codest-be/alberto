@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
+using Alberto.Subscriptions;
 
-namespace Alberto.Subscriptions;
+namespace Alberto.Projections;
 
 /// <summary>
 /// Internal processor that executes a <see cref="ProjectionDeclaration{TState}"/> asynchronously.

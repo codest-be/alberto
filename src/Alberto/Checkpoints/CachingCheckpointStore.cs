@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
+using Alberto.Projections;
+using Alberto.Subscriptions;
 
-namespace Alberto.Subscriptions;
+namespace Alberto.Checkpoints;
 
 /// <summary>
 /// Context used by <see cref="CachingCheckpointStore"/> when the underlying store supports

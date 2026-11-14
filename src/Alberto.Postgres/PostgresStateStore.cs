@@ -1,7 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
-using Alberto.Subscriptions;
+using Alberto.Projections;
 using Npgsql;
 
 namespace Alberto.Postgres;

@@ -1,5 +1,7 @@
 using System.Reflection;
-using Alberto.Subscriptions;
+using Alberto.Checkpoints;
+using Alberto.DeadLetters;
+using Alberto.Projections;
 using FluentAssertions;
 using Xunit;
 

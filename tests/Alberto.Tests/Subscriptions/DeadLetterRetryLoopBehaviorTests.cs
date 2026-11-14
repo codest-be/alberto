@@ -1,4 +1,5 @@
 using Alberto.InMemory;
+using Alberto.DeadLetters;
 using Alberto.Subscriptions;
 using Alberto.Tenancy;
 using Microsoft.Extensions.DependencyInjection;

@@ -1,6 +1,6 @@
 using System.Collections.Frozen;
 
-namespace Alberto.Subscriptions;
+namespace Alberto.Projections;
 
 /// <summary>
 /// Internal handler contract for a single event type within a projection.

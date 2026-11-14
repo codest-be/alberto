@@ -1,6 +1,6 @@
 using Alberto.EntityFramework;
 using Alberto.Postgres;
-using Alberto.Subscriptions;
+using Alberto.Projections;
 using Alberto.Tests.EntityFramework;
 using Alberto.Tests.Infrastructure;
 using FluentAssertions;

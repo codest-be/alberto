@@ -1,4 +1,4 @@
-namespace Alberto.Subscriptions;
+namespace Alberto.Projections;
 
 /// <summary>
 /// Exception thrown when an optimistic concurrency conflict is detected.

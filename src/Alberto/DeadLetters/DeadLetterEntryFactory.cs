@@ -1,6 +1,6 @@
 using System.Collections.Immutable;
 
-namespace Alberto.Subscriptions;
+namespace Alberto.DeadLetters;
 
 /// <summary>
 /// Captures a failed event as a complete dead-letter entry. Both single-event and batch

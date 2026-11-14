@@ -1,4 +1,4 @@
-namespace Alberto.Subscriptions;
+namespace Alberto.Projections;
 
 /// <summary>
 /// Context passed to projection handlers with envelope metadata.

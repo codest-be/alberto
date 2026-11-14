@@ -1,4 +1,4 @@
-namespace Alberto.Subscriptions;
+namespace Alberto.Projections;
 
 /// <summary>
 /// Result of a projection operation. Expresses intent without knowing storage details.

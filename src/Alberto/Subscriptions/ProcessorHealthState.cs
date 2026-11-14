@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
+using Alberto.Projections;
 
 namespace Alberto.Subscriptions;
 

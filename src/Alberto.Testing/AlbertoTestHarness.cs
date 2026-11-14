@@ -1,6 +1,6 @@
 using Alberto;
 using Alberto.Configuration;
-using Alberto.Subscriptions;
+using Alberto.Checkpoints;
 using Alberto.Tenancy;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;

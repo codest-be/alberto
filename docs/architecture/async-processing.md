@@ -97,7 +97,7 @@ A separate retry loop picks up dead letters that an operator has marked for retr
 
 Transforms events into read-model state using pure functions.
 
-**Location:** `src/Alberto/Subscriptions/DeclaredAsyncProjection.cs`
+**Location:** `src/Alberto/Projections/DeclaredAsyncProjection.cs`
 
 1. Extract document ID from the event
 2. Get the tenant-scoped state store (one store per tenant, built lazily from the factory)
@@ -303,14 +303,14 @@ rule" for how to add a file to the allow-list when non-event JSON deserializatio
 | Batch middleware | `src/Alberto/Subscriptions/BatchConsumeMiddleware.cs` |
 | RetryOptions | `src/Alberto/Configuration/RetryOptions.cs` |
 | IErrorClassifier | `src/Alberto/Subscriptions/IErrorClassifier.cs` |
-| DeclaredAsyncProjection | `src/Alberto/Subscriptions/DeclaredAsyncProjection.cs` |
+| DeclaredAsyncProjection | `src/Alberto/Projections/DeclaredAsyncProjection.cs` |
 | FunctionalReactor | `src/Alberto/Subscriptions/FunctionalReactor.cs` |
-| CachingCheckpointStore | `src/Alberto/Subscriptions/CachingCheckpointStore.cs` |
+| CachingCheckpointStore | `src/Alberto/Checkpoints/CachingCheckpointStore.cs` |
 | PostgresCheckpointStore | `src/Alberto.Postgres/PostgresCheckpointStore.cs` |
 | PostgresEventListener | `src/Alberto.Postgres/PostgresEventListener.cs` |
 | EfStateStore | `src/Alberto.EntityFramework/EfStateStore.cs` |
-| RebuildCoordinator | `src/Alberto/Subscriptions/RebuildCoordinator.cs` |
-| ProjectionVersions | `src/Alberto/Subscriptions/ProjectionVersions.cs` |
-| IProjectionRebuildStore | `src/Alberto/Subscriptions/IProjectionRebuildStore.cs` |
+| RebuildCoordinator | `src/Alberto/Projections/RebuildCoordinator.cs` |
+| ProjectionVersions | `src/Alberto/Projections/ProjectionVersions.cs` |
+| IProjectionRebuildStore | `src/Alberto/Projections/IProjectionRebuildStore.cs` |
 | PostgresProjectionRebuildStore | `src/Alberto.Postgres/PostgresProjectionRebuildStore.cs` |
 | NOTIFY trigger | `src/Alberto.Postgres/Migrations/SingleTenant/002_QueryFunctions.sql` (“Migration 010”) |

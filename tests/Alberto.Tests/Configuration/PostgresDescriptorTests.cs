@@ -1,7 +1,7 @@
 using Alberto;
 using Alberto.Configuration;
 using Alberto.Postgres;
-using Alberto.Subscriptions;
+using Alberto.Leases;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

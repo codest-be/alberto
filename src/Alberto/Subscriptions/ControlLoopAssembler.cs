@@ -2,6 +2,8 @@
 using Alberto.Configuration;
 using Alberto.Telemetry;
 using Microsoft.Extensions.Logging;
+using Alberto.Checkpoints;
+using Alberto.DeadLetters;
 
 namespace Alberto.Subscriptions;
 

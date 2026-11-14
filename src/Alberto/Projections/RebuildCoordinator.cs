@@ -2,8 +2,10 @@ using System.Diagnostics;
 using Alberto.Telemetry;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Alberto.Checkpoints;
+using Alberto.Subscriptions;
 
-namespace Alberto.Subscriptions;
+namespace Alberto.Projections;
 
 /// <summary>
 /// Builds a control loop for a shadow rebuild processor using the module's configured

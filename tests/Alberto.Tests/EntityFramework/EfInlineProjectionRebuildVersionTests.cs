@@ -1,5 +1,5 @@
 using Alberto.EntityFramework.Inline;
-using Alberto.Subscriptions;
+using Alberto.Projections;
 using FluentAssertions;
 using Xunit;
 

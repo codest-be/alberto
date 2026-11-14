@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using Alberto.Configuration;
 using Alberto.InMemory;
+using Alberto.DeadLetters;
 using Alberto.Subscriptions;
 using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;

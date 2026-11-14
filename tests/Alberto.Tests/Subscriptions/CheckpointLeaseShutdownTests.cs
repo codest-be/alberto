@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using System.Reflection;
 using Alberto.InMemory;
+using Alberto.Checkpoints;
+using Alberto.Leases;
 using Alberto.Subscriptions;
 using FluentAssertions;
 using Xunit;

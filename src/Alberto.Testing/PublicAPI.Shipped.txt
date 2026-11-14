@@ -90,7 +90,7 @@ static Alberto.Testing.AlbertoTestHarness.StartAsync(string! moduleKey, System.A
 static Alberto.Testing.EventTypeRegistryVerifier.Verify(Alberto.IEventTypeRegistry! registry, params Alberto.IEvent![]! samples) -> void
 static Alberto.Testing.Poll.UntilAsync(System.Func<System.Threading.Tasks.ValueTask<bool>>! condition, string! what, System.TimeSpan? timeout = null, System.TimeSpan? interval = null, System.TimeProvider? timeProvider = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 static Alberto.Testing.Poll.UntilAsync(System.Func<bool>! condition, string! what, System.TimeSpan? timeout = null, System.TimeSpan? interval = null, System.TimeProvider? timeProvider = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-static Alberto.Testing.ProjectionSpec.For<TState>(Alberto.Subscriptions.ProjectionDeclaration<TState>! declaration) -> Alberto.Testing.ProjectionSpecification<TState>!
+static Alberto.Testing.ProjectionSpec.For<TState>(Alberto.Projections.ProjectionDeclaration<TState>! declaration) -> Alberto.Testing.ProjectionSpecification<TState>!
 static Alberto.Testing.Spec.For<TState>(Alberto.Evolver<TState>! evolver) -> Alberto.Testing.Specification<TState>!
 static Alberto.Testing.Spec.Stateless() -> Alberto.Testing.StatelessSpecification!
 static Alberto.Testing.TestEvents.NewEvent<TEvent>(TEvent payload, System.Collections.Generic.IEnumerable<Alberto.EventTag>? tags = null, System.Collections.Generic.IReadOnlyDictionary<string!, string!>? metadata = null) -> Alberto.EventToPersist!

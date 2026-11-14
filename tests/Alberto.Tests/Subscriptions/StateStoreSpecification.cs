@@ -1,7 +1,7 @@
 using Alberto.EntityFramework;
 using Alberto.InMemory;
 using Alberto.Postgres;
-using Alberto.Subscriptions;
+using Alberto.Projections;
 using Alberto.Testing.Xunit;
 using Alberto.Tests.EntityFramework;
 using Alberto.Tests.Infrastructure;

@@ -1,5 +1,5 @@
 using Alberto.InMemory;
-using Alberto.Subscriptions;
+using Alberto.Projections;
 using Alberto.Testing.Xunit;
 
 namespace Alberto.Tests.Subscriptions;
@@ -14,7 +14,7 @@ namespace Alberto.Tests.Subscriptions;
 // internal interface and threw InvalidCastException at runtime:
 //
 //   System.InvalidCastException: Unable to cast object of type 'MinimalRebuildStore'
-//   to type 'Alberto.Subscriptions.IProjectionRebuildCoordinatorStore'.
+//   to type 'Alberto.Projections.IProjectionRebuildCoordinatorStore'.
 //
 // The failure is a runtime cast, not a visibility issue.  Alberto.Tests has
 // InternalsVisibleTo access to Alberto (it can reference the internal interface),

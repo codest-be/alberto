@@ -1,4 +1,4 @@
-namespace Alberto.Subscriptions;
+namespace Alberto.Projections;
 
 /// <summary>
 /// State storage used by projection processors.

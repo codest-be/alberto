@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Alberto.Configuration;
 using Alberto.InMemory;
+using Alberto.DeadLetters;
 using Alberto.Subscriptions;
 using Alberto.Telemetry;
 using FluentAssertions;

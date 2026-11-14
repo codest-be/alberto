@@ -1,4 +1,5 @@
-using Alberto.Subscriptions;
+using Alberto.Checkpoints;
+using Alberto.Leases;
 using Xunit;
 
 namespace Alberto.Testing.Xunit;

@@ -1,4 +1,5 @@
 using Alberto.Configuration;
+using Alberto.Checkpoints;
 using Alberto.Subscriptions;
 using Alberto.Tenancy;
 using Microsoft.Extensions.Configuration;

@@ -1,7 +1,7 @@
 using Alberto.EntityFramework;
 using Alberto.EntityFramework.Inline;
 using Alberto.Postgres;
-using Alberto.Subscriptions;
+using Alberto.Projections;
 using Alberto.Tests.Subscriptions;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;

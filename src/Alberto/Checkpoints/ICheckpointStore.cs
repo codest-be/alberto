@@ -1,4 +1,4 @@
-namespace Alberto.Subscriptions;
+namespace Alberto.Checkpoints;
 
 /// <summary>
 /// Storage abstraction for processor checkpoints.

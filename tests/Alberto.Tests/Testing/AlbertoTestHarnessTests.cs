@@ -1,5 +1,5 @@
 using Alberto.InMemory;
-using Alberto.Subscriptions;
+using Alberto.Projections;
 using Alberto.Testing;
 using Xunit;
 

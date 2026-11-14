@@ -1,4 +1,4 @@
-namespace Alberto.Subscriptions;
+namespace Alberto.DeadLetters;
 
 /// <summary>
 /// Represents an event that failed processing and was moved to dead letter storage.

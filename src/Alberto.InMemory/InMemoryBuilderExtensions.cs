@@ -1,5 +1,9 @@
 using Alberto.Append;
 using Alberto.Configuration;
+using Alberto.Checkpoints;
+using Alberto.DeadLetters;
+using Alberto.Leases;
+using Alberto.Projections;
 using Alberto.Subscriptions;
 using Alberto.Tenancy;
 using Microsoft.Extensions.DependencyInjection;

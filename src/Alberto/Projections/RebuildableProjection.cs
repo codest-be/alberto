@@ -1,4 +1,7 @@
-namespace Alberto.Subscriptions;
+using Alberto.Checkpoints;
+using Alberto.Subscriptions;
+
+namespace Alberto.Projections;
 
 /// <summary>
 /// Everything the rebuild coordinator needs to stand a projection up a second time, writing

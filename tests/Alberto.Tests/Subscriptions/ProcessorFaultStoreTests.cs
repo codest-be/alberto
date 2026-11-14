@@ -1,5 +1,6 @@
 using Alberto.InMemory;
 using Alberto.Postgres;
+using Alberto.Checkpoints;
 using Alberto.Subscriptions;
 using Xunit;
 

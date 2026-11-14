@@ -7,8 +7,8 @@ namespace Alberto.EntityFramework;
 /// <remarks>
 /// <para>
 /// An EF projection stores its state in a table Alberto does not own, keyed by
-/// <see cref="Subscriptions.IProjectionEntity.DocumentId"/> and
-/// <see cref="Subscriptions.IProjectionEntity.RebuildVersion"/> — the only two columns the
+/// <see cref="Projections.IProjectionEntity.DocumentId"/> and
+/// <see cref="Projections.IProjectionEntity.RebuildVersion"/> — the only two columns the
 /// interface has. Both the async store and the inline projection therefore load and write by
 /// those two columns alone, with no tenant predicate available to them. Adding a
 /// <c>TenantId</c> column to the entity does not change that: the store still cannot see it.

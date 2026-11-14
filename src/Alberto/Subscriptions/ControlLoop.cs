@@ -4,6 +4,7 @@ using System.Threading.Channels;
 using Alberto.Telemetry;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Alberto.Checkpoints;
 
 namespace Alberto.Subscriptions;
 

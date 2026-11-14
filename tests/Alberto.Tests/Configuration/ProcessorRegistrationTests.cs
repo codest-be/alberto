@@ -1,6 +1,7 @@
 using Alberto;
 using Alberto.Configuration;
 using Alberto.InMemory;
+using Alberto.Projections;
 using Alberto.Subscriptions;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;

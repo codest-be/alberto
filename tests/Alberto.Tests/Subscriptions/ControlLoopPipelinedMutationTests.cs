@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Alberto.InMemory;
+using Alberto.Checkpoints;
 using Alberto.Subscriptions;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;

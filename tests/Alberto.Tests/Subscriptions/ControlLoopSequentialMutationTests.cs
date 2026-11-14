@@ -1,6 +1,7 @@
 using System.Diagnostics.Metrics;
 using Alberto.Configuration;
 using Alberto.InMemory;
+using Alberto.Checkpoints;
 using Alberto.Subscriptions;
 using Alberto.Telemetry;
 using FluentAssertions;

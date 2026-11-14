@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Alberto.EntityFramework;
+using Alberto.Projections;
 using Alberto.Subscriptions;
 using Alberto.Tests.Infrastructure;
 using Alberto.Upcasting;

@@ -1,7 +1,7 @@
 using System.Data.Common;
 using System.Text.Json;
 using Alberto.EntityFramework;
-using Alberto.Subscriptions;
+using Alberto.Projections;
 using Alberto.Tests.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;

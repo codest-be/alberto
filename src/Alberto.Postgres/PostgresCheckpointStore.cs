@@ -1,3 +1,4 @@
+using Alberto.Checkpoints;
 using Alberto.Subscriptions;
 using Npgsql;
 

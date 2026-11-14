@@ -1,3 +1,5 @@
+using Alberto.Projections;
+
 namespace Alberto.Subscriptions;
 
 /// <summary>

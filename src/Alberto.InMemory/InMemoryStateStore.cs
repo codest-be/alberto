@@ -1,5 +1,5 @@
 using System.Collections.Concurrent;
-using Alberto.Subscriptions;
+using Alberto.Projections;
 
 namespace Alberto.InMemory;
 

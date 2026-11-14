@@ -1,5 +1,9 @@
 #pragma warning disable ALB9002 // DI registration layer for the experimental processor health check.
 using Alberto.Configuration;
+using Alberto.Checkpoints;
+using Alberto.DeadLetters;
+using Alberto.Leases;
+using Alberto.Projections;
 using Alberto.Subscriptions;
 using Alberto.Telemetry;
 using Microsoft.Extensions.DependencyInjection;

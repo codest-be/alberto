@@ -4,6 +4,7 @@ using System.Text.Json;
 using Alberto;
 using Alberto.Configuration;
 using Alberto.InMemory;
+using Alberto.Projections;
 using Alberto.Subscriptions;
 using Alberto.Upcasting;
 using FluentAssertions;

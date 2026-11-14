@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Alberto.InMemory;
 using Alberto.Messaging;
+using Alberto.Projections;
 using Alberto.Subscriptions;
 using Alberto.Upcasting;
 using FluentAssertions;

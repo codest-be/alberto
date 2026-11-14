@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Alberto.InMemory;
+using Alberto.Projections;
 using Alberto.Subscriptions;
 using Xunit;
 

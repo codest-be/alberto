@@ -1,4 +1,5 @@
 using Alberto.Configuration;
+using Alberto.DeadLetters;
 using Alberto.Subscriptions;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;

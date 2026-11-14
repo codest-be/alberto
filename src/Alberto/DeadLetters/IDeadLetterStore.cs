@@ -1,4 +1,4 @@
-namespace Alberto.Subscriptions;
+namespace Alberto.DeadLetters;
 
 /// <summary>
 /// Storage for events that failed processing.

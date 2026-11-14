@@ -1,4 +1,5 @@
-using Alberto.Subscriptions;
+using Alberto.Checkpoints;
+using Alberto.DeadLetters;
 using Alberto.Tenancy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;

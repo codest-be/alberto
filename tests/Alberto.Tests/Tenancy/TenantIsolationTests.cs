@@ -2,7 +2,7 @@ using System.Text.Json;
 using Alberto.Messaging;
 using Alberto.Postgres;
 using Alberto.Messaging.Postgres;
-using Alberto.Subscriptions;
+using Alberto.DeadLetters;
 using Alberto.Tenancy;
 using Alberto.Tests.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;

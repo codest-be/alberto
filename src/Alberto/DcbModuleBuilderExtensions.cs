@@ -1,5 +1,8 @@
 using System.Diagnostics.CodeAnalysis;
 using Alberto.Configuration;
+using Alberto.Checkpoints;
+using Alberto.DeadLetters;
+using Alberto.Projections;
 using Alberto.Subscriptions;
 using Alberto.Telemetry;
 using Alberto.Tenancy;
@@ -70,7 +73,7 @@ public static class DcbModuleBuilderExtensions
     /// <c>Func&lt;string?, IStateStore&lt;TState&gt;&gt;</c> the writer uses, keyed by
     /// <c>"{moduleKey}:{declaration.ProcessorId}"</c>. Read-side code — GraphQL
     /// resolvers, REST controllers, background jobs — should resolve this factory from DI
-    /// rather than constructing a <see cref="Alberto.Subscriptions.IStateStore{TState}"/>
+    /// rather than constructing a <see cref="Alberto.Projections.IStateStore{TState}"/>
     /// directly. It is literally the writer's factory, so the reader cannot disagree with the
     /// writer about tenancy, schema, or projection type; the reader chooses only which tenant
     /// to read, by passing one. Constructing a store independently is what produced the

@@ -1,6 +1,6 @@
 using Alberto.Configuration;
 using Alberto.Postgres;
-using Alberto.Subscriptions;
+using Alberto.Checkpoints;
 using Alberto.Tenancy;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;

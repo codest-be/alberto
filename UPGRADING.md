@@ -7,6 +7,20 @@ This file covers 0.x release-to-release steps; [docs/migrating-to-1.0.md](docs/m
 
 ## To the next release (pre-1.0, breaking)
 
+### `Alberto.Subscriptions` split by concern
+
+The namespace mixed the control loop with checkpoints, leases, dead letters and projection state.
+Types moved; none changed shape. Add the `using` the compiler asks for.
+
+| Types | Was | Is |
+|---|---|---|
+| `ICheckpointStore`, `IFencedCheckpointStore`, `IFencableCheckpointStore`, `ICheckpointInventory`, `CachingCheckpointStore` | `Alberto.Subscriptions` | `Alberto.Checkpoints` |
+| `IProcessorLeaseManager`, `IProcessorLease`, `ProcessorLease` | `Alberto.Subscriptions` | `Alberto.Leases` |
+| `IDeadLetterStore`, `IClaimableDeadLetterStore`, `DeadLetterEntry`, `DeadLetterClaim`, `DeadLetterEntryFactory`, `DeadLetterRetryLoop`, `DeadLetterRetryLoopGroup`, `DeadLetterRetryLoopOptions` | `Alberto.Subscriptions` | `Alberto.DeadLetters` |
+| `IStateStore<T>`, `IProjectionEntity`, `ProjectionEntityStamp`, `ProjectionDeclaration<T>`, `DeclareProjection`, `ProjectionContext`, `ProjectionStoreContext`, `ProjectionResult<T>`, `ProjectionResults`, `IInlineProjection`, `DeclaredAsyncProjection<T>`, `ProjectionCatchUp`, `IProjectionStateClearer`, `ConcurrencyConflictException` | `Alberto.Subscriptions` | `Alberto.Projections` |
+| `IProjectionRebuildStore`, `IProjectionRebuildCoordinatorStore`, `ProjectionVersion`, `ProjectionVersions`, `RebuildCoordinator`, `RebuildableProjection`, rebuild status/outcome types | `Alberto.Subscriptions` | `Alberto.Projections` |
+| `ControlLoop*`, `IEventProcessor`, `IBatchableProcessor`, `ConsumeEventContext`, `BatchConsumeContext`, middleware, error classifiers, reactors, `ProcessorExecutionOptions`, processor health, `EventStoreHead` | `Alberto.Subscriptions` | unchanged |
+
 ### Event store reads: batch `Read*`, lazy `Stream*`
 
 One interface answers "what do I depend on": `IEventStore`. `IEventStoreBackend` now extends it and

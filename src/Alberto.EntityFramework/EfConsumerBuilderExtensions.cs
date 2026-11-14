@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using Alberto.Configuration;
 using Alberto.EntityFramework.Inline;
+using Alberto.Projections;
 using Alberto.Subscriptions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;

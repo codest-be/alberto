@@ -1,6 +1,6 @@
 using System.Reflection;
 using Alberto.Postgres;
-using Alberto.Subscriptions;
+using Alberto.DeadLetters;
 using Alberto.TestInfrastructure;
 using FluentAssertions;
 using Npgsql;

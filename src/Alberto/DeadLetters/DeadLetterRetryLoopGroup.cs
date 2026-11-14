@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Hosting;
 
-namespace Alberto.Subscriptions;
+namespace Alberto.DeadLetters;
 
 /// <summary>Fan-out IHostedService wrapper for multiple DeadLetterRetryLoops.</summary>
 internal sealed class DeadLetterRetryLoopGroup(IReadOnlyList<DeadLetterRetryLoop> loops)

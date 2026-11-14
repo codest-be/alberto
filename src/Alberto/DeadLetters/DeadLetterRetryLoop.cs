@@ -2,8 +2,9 @@ using Alberto.Tenancy;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Alberto.Subscriptions;
 
-namespace Alberto.Subscriptions;
+namespace Alberto.DeadLetters;
 
 /// <summary>
 /// Runs a dedicated loop for reprocessing dead-lettered events marked for retry by an operator.

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Alberto.Configuration;
 using Alberto.InMemory;
+using Alberto.Checkpoints;
 using Alberto.Subscriptions;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;

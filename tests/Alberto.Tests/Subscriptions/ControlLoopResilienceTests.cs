@@ -1,4 +1,5 @@
 using Alberto.InMemory;
+using Alberto.Checkpoints;
 using Alberto.Subscriptions;
 using FluentAssertions;
 using Xunit;

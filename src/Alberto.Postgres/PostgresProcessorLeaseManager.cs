@@ -1,4 +1,4 @@
-using Alberto.Subscriptions;
+using Alberto.Leases;
 using Npgsql;
 
 namespace Alberto.Postgres;

@@ -1,6 +1,6 @@
 using System.Text.Json;
 using Alberto.Postgres;
-using Alberto.Subscriptions;
+using Alberto.DeadLetters;
 using Xunit;
 
 namespace Alberto.Tests;

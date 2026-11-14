@@ -1,4 +1,6 @@
-namespace Alberto.Subscriptions;
+using Alberto.Checkpoints;
+
+namespace Alberto.Leases;
 
 /// <summary>
 /// Distributed lease management for processor-level leadership.

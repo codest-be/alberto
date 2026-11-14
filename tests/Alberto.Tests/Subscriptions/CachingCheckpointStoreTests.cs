@@ -1,4 +1,4 @@
-using Alberto.Subscriptions;
+using Alberto.Checkpoints;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
 

@@ -1,6 +1,5 @@
 using System.Text.Json;
 using Alberto.Postgres;
-using Alberto.Subscriptions;
 using Alberto.Tests.Infrastructure;
 using Npgsql;
 using Xunit;

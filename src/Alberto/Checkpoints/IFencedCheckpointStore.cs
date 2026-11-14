@@ -1,4 +1,7 @@
-namespace Alberto.Subscriptions;
+using Alberto.Leases;
+using Alberto.Subscriptions;
+
+namespace Alberto.Checkpoints;
 
 /// <summary>
 /// Extends <see cref="ICheckpointStore"/> with lease-fenced writes.

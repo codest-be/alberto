@@ -1,4 +1,4 @@
-namespace Alberto.Subscriptions;
+namespace Alberto.Checkpoints;
 
 /// <summary>
 /// An optional capability on an <see cref="ICheckpointStore"/>: enumerating the processor ids
