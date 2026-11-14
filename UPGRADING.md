@@ -51,6 +51,32 @@ A custom `IEventStoreBackend` must now implement `ReadAsync`, `ReadAllAsync`, `S
 `ShardRoutingEventStoreBackend` is gone; sharding routes at `IEventStore` only. A streamed read is
 spanned (`alberto.read`) for as long as it is enumerated.
 
+### Removed, internal and read-only
+
+**`CancellationToken` parameters are all named `cancellationToken`.** Some were `ct`. Only named
+arguments break: `store.GetAsync(id, ct: token)` becomes `cancellationToken: token`.
+
+**Removed, because nothing in the library used them:** `ProcessingResult`; `ITenantProcessorLock`,
+`ITenantLease`, `TenantLease`, `TenantLeaseInfo` and `PostgresTenantProcessorLock`;
+`IProcessorLeaseManager.GetAllLeasesAsync` and `ProcessorLeaseInfo`; the metrics
+`alberto.tenant_locks_acquired` and `alberto.tenant_lock_failures`. The `alberto_tenant_leases`
+table stays in the schema, unused. There is no migration to run.
+
+**Backend classes are internal.** Resolve the interface from the module's keyed services instead of
+constructing the class: `sp.GetRequiredKeyedService<IDeadLetterStore>(moduleKey)`. Four stay public
+because applications construct them: `PostgresStateStore<T>`, `InMemoryStateStore<T>`,
+`PostgresOutboxStore`, and `PostgresCheckpointStore` (the keyed `ICheckpointStore` is a cache in
+front of the table; construct this one to read what is actually stored).
+
+**The `*Overrides` configuration mirrors are internal**, apart from `RetryOverrides`,
+`HaltOverrides` and `RedeliveryOverrides`. Configuration keys are unchanged.
+
+**`IProjectionEntity` is getter-only.** The framework stamps `LastProcessedPosition` and friends
+through the entity's own setter, which may now be `private`. Existing entities compile unchanged.
+
+**Middleware context state is read-only.** `Attempt`, `LastError`, `DeadLettered` and
+`DeadLetteredCount` have no public setter; only the built-in retry middleware writes them.
+
 ## To 0.8.0
 
 ### Run the migration

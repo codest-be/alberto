@@ -8,7 +8,7 @@ namespace Alberto.Postgres;
 /// PostgreSQL implementation of <see cref="ICheckpointStore"/>.
 /// Uses the alberto_processor_checkpoints table.
 /// </summary>
-internal sealed class PostgresCheckpointStore : IFencedCheckpointStore, ICheckpointInventory, IProcessorFaultStore
+public sealed class PostgresCheckpointStore : IFencedCheckpointStore, ICheckpointInventory, IProcessorFaultStore
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly SchemaQualifier _schema;
