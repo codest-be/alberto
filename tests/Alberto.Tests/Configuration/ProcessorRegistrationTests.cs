@@ -18,13 +18,13 @@ internal sealed class ShipmentSummary { }
 
 internal sealed class ShipmentNotifier
 {
-    public Task HandleAsync(ShipmentDispatched e, CancellationToken ct) => Task.CompletedTask;
+    public Task HandleAsync(ShipmentDispatched e, CancellationToken cancellationToken) => Task.CompletedTask;
 }
 
 [ProcessorId("shipments.legacy")]
 internal sealed class RenamedShipmentNotifier
 {
-    public Task HandleAsync(ShipmentDispatched e, CancellationToken ct) => Task.CompletedTask;
+    public Task HandleAsync(ShipmentDispatched e, CancellationToken cancellationToken) => Task.CompletedTask;
 }
 
 public class ProcessorRegistrationTests

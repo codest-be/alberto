@@ -25,26 +25,26 @@ Alberto.Messaging.IMessageMappingRegistry.Map(string! eventType, Alberto.Messagi
 Alberto.Messaging.IMessageMappingRegistry.Map<TEvent>(Alberto.Messaging.EventToMessageMapper! mapper) -> void
 Alberto.Messaging.IMessageMappingRegistry.MappedEventTypes.get -> System.Collections.Generic.IReadOnlySet<string!>!
 Alberto.Messaging.IMessageMappingRegistry.ModuleKey.get -> string?
-Alberto.Messaging.IMessageMappingRegistry.TryMapAsync(Alberto.IEventEnvelope! envelope, System.IServiceProvider! serviceProvider, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask<Alberto.Messaging.ExternalMessage?>
+Alberto.Messaging.IMessageMappingRegistry.TryMapAsync(Alberto.IEventEnvelope! envelope, System.IServiceProvider! serviceProvider, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<Alberto.Messaging.ExternalMessage?>
 Alberto.Messaging.IMessageTransport
-Alberto.Messaging.IMessageTransport.PublishAsync(Alberto.Messaging.ExternalMessage! message, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Alberto.Messaging.IMessageTransport.StartAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Alberto.Messaging.IMessageTransport.StopAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Messaging.IMessageTransport.PublishAsync(Alberto.Messaging.ExternalMessage! message, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Messaging.IMessageTransport.StartAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Messaging.IMessageTransport.StopAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Alberto.Messaging.IOutboxStore
-Alberto.Messaging.IOutboxStore.ClaimPendingAsync(int limit, System.TimeSpan claimLease, string! claimedBy, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Alberto.Messaging.OutboxClaim!>!>!
-Alberto.Messaging.IOutboxStore.InsertAsync(Alberto.Messaging.OutboxEntry! entry, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Alberto.Messaging.IOutboxStore.MarkAttemptFailedAsync(Alberto.Messaging.OutboxClaim! claim, string! error, int maxRetries, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<bool>!
-Alberto.Messaging.IOutboxStore.MarkDeliveredAsync(Alberto.Messaging.OutboxClaim! claim, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
-Alberto.Messaging.IOutboxStore.MarkDeliveredBatchAsync(System.Collections.Generic.IReadOnlyList<Alberto.Messaging.OutboxClaim!>! claims, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlySet<System.Guid>!>!
-Alberto.Messaging.IOutboxStore.MarkFailedAsync(Alberto.Messaging.OutboxClaim! claim, string! error, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
-Alberto.Messaging.IOutboxStore.PurgeDeliveredAsync(System.DateTimeOffset before, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Alberto.Messaging.IOutboxStore.RetryFailedAsync(string? messageType = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Messaging.IOutboxStore.ClaimPendingAsync(int limit, System.TimeSpan claimLease, string! claimedBy, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Alberto.Messaging.OutboxClaim!>!>!
+Alberto.Messaging.IOutboxStore.InsertAsync(Alberto.Messaging.OutboxEntry! entry, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Messaging.IOutboxStore.MarkAttemptFailedAsync(Alberto.Messaging.OutboxClaim! claim, string! error, int maxRetries, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<bool>!
+Alberto.Messaging.IOutboxStore.MarkDeliveredAsync(Alberto.Messaging.OutboxClaim! claim, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+Alberto.Messaging.IOutboxStore.MarkDeliveredBatchAsync(System.Collections.Generic.IReadOnlyList<Alberto.Messaging.OutboxClaim!>! claims, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlySet<System.Guid>!>!
+Alberto.Messaging.IOutboxStore.MarkFailedAsync(Alberto.Messaging.OutboxClaim! claim, string! error, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+Alberto.Messaging.IOutboxStore.PurgeDeliveredAsync(System.DateTimeOffset before, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Messaging.IOutboxStore.RetryFailedAsync(string? messageType = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Alberto.Messaging.InMemoryTransport
 Alberto.Messaging.InMemoryTransport.InMemoryTransport() -> void
-Alberto.Messaging.InMemoryTransport.PublishAsync(Alberto.Messaging.ExternalMessage! message, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
+Alberto.Messaging.InMemoryTransport.PublishAsync(Alberto.Messaging.ExternalMessage! message, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
 Alberto.Messaging.InMemoryTransport.Published.get -> System.Collections.Generic.IReadOnlyCollection<Alberto.Messaging.ExternalMessage!>!
-Alberto.Messaging.InMemoryTransport.StartAsync(System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
-Alberto.Messaging.InMemoryTransport.StopAsync(System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
+Alberto.Messaging.InMemoryTransport.StartAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+Alberto.Messaging.InMemoryTransport.StopAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
 Alberto.Messaging.MessageAttribute
 Alberto.Messaging.MessageAttribute.MessageAttribute(string! messageType, int version) -> void
 Alberto.Messaging.MessageAttribute.MessageType.get -> string!
@@ -55,7 +55,7 @@ Alberto.Messaging.MessageMappingRegistry.Map<TEvent>(Alberto.Messaging.EventToMe
 Alberto.Messaging.MessageMappingRegistry.MappedEventTypes.get -> System.Collections.Generic.IReadOnlySet<string!>!
 Alberto.Messaging.MessageMappingRegistry.MessageMappingRegistry(string? moduleKey) -> void
 Alberto.Messaging.MessageMappingRegistry.ModuleKey.get -> string?
-Alberto.Messaging.MessageMappingRegistry.TryMapAsync(Alberto.IEventEnvelope! envelope, System.IServiceProvider! serviceProvider, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask<Alberto.Messaging.ExternalMessage?>
+Alberto.Messaging.MessageMappingRegistry.TryMapAsync(Alberto.IEventEnvelope! envelope, System.IServiceProvider! serviceProvider, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<Alberto.Messaging.ExternalMessage?>
 Alberto.Messaging.MessageMappingRegistryExtensions
 Alberto.Messaging.MessagingBuilderExtensions
 Alberto.Messaging.OutboxClaim

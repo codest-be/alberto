@@ -15,7 +15,7 @@ public class PollTests
             "the third call",
             timeout: TimeSpan.FromSeconds(5),
             interval: TimeSpan.FromMilliseconds(1),
-            ct: TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(3, calls);
     }
@@ -28,7 +28,7 @@ public class PollTests
             "a condition that never holds",
             timeout: TimeSpan.FromMilliseconds(50),
             interval: TimeSpan.FromMilliseconds(1),
-            ct: TestContext.Current.CancellationToken));
+            cancellationToken: TestContext.Current.CancellationToken));
 
         // Assertion-library-neutral by contract: the package must not reference xunit,
         // so a timeout is an exception, never an Assert.Fail.
@@ -45,7 +45,7 @@ public class PollTests
             "an already-true condition",
             timeout: TimeSpan.FromMilliseconds(1),
             interval: TimeSpan.FromMinutes(1),
-            ct: TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -59,6 +59,6 @@ public class PollTests
             "anything",
             timeout: TimeSpan.FromSeconds(5),
             interval: TimeSpan.FromMilliseconds(1),
-            ct: cts.Token));
+            cancellationToken: cts.Token));
     }
 }

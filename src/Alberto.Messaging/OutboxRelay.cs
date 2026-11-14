@@ -146,7 +146,7 @@ public sealed class OutboxRelay : BackgroundService
     }
 
     /// <inheritdoc/>
-    protected override async Task ExecuteAsync(CancellationToken ct)
+    protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
         // A send span with no recorded parent must be a root, and StartActivity would otherwise
         // adopt whatever span the host was started under. See BackgroundSpans.
@@ -155,10 +155,10 @@ public sealed class OutboxRelay : BackgroundService
         ExceptionDispatchInfo? hostCancellation = null;
         try
         {
-            await _transport.StartAsync(ct);
+            await _transport.StartAsync(cancellationToken);
 
             var failureStreak = 0;
-            while (!ct.IsCancellationRequested)
+            while (!cancellationToken.IsCancellationRequested)
             {
                 IReadOnlyList<OutboxClaim> pending;
                 try
@@ -167,16 +167,16 @@ public sealed class OutboxRelay : BackgroundService
                         _batchSize,
                         _claimLease,
                         _claimedBy,
-                        ct);
+                        cancellationToken);
                 }
-                catch (Exception ex) when (!ct.IsCancellationRequested)
+                catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
                 {
                     // A store outage is transient from the relay's point of view: unclaimed
                     // entries stay pending, so back off and poll again instead of stopping the host.
                     failureStreak++;
                     var delay = Backoff(_pollingInterval, failureStreak);
                     _logger.LogWarning(ex, "Outbox claim failed. Retrying in {Delay}.", delay);
-                    await Task.Delay(delay, ct);
+                    await Task.Delay(delay, cancellationToken);
                     continue;
                 }
 
@@ -196,16 +196,16 @@ public sealed class OutboxRelay : BackgroundService
                         var activity = StartSendActivity(entry);
                         try
                         {
-                            await _transport.PublishAsync(BuildMessage(entry, activity), ct);
+                            await _transport.PublishAsync(BuildMessage(entry, activity), cancellationToken);
                         }
-                        catch (Exception ex) when (!ct.IsCancellationRequested)
+                        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
                         {
                             anyPublishFailed = true;
                             var errorType = ex.GetType().FullName ?? ex.GetType().Name;
                             BackgroundSpans.Fail(activity, ex);
                             activity?.Dispose();
                             _instruments.OutboxPublishFailures.Add(1, new KeyValuePair<string, object?>("error.type", errorType));
-                            await MarkFailedSafelyAsync(claim, ex, ct);
+                            await MarkFailedSafelyAsync(claim, ex, cancellationToken);
                             continue;
                         }
                         catch
@@ -230,13 +230,13 @@ public sealed class OutboxRelay : BackgroundService
                 failureStreak = anyPublishFailed ? failureStreak + 1 : 0;
 
                 if (anyPublishFailed)
-                    await Task.Delay(Backoff(_pollingInterval, failureStreak), ct);
+                    await Task.Delay(Backoff(_pollingInterval, failureStreak), cancellationToken);
                 // Back off when there are no more pending entries
                 else if (pending.Count < _batchSize)
-                    await Task.Delay(_pollingInterval, ct);
+                    await Task.Delay(_pollingInterval, cancellationToken);
             }
         }
-        catch (OperationCanceledException exception) when (ct.IsCancellationRequested)
+        catch (OperationCanceledException exception) when (cancellationToken.IsCancellationRequested)
         {
             // Host cancellation is normal completion. If transport cleanup then fails, that
             // cleanup failure remains observable on ExecuteTask.
@@ -264,16 +264,16 @@ public sealed class OutboxRelay : BackgroundService
         return TimeSpan.FromTicks((long)Math.Min(pollingInterval.Ticks * factor, cap.Ticks));
     }
 
-    private async Task MarkFailedSafelyAsync(OutboxClaim claim, Exception failure, CancellationToken ct)
+    private async Task MarkFailedSafelyAsync(OutboxClaim claim, Exception failure, CancellationToken cancellationToken)
     {
         try
         {
-            if (!await _store.MarkAttemptFailedAsync(claim, failure.Message, _maxRetries, ct))
+            if (!await _store.MarkAttemptFailedAsync(claim, failure.Message, _maxRetries, cancellationToken))
                 _logger.LogWarning(
                     "Outbox entry {EntryId} failed delivery but its claim was lost; another relay owns it now.",
                     claim.Entry.Id);
         }
-        catch (Exception ex) when (!ct.IsCancellationRequested)
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             // The claim lease expires and the entry is redelivered.
             _logger.LogWarning(ex, "Could not record the delivery failure of outbox entry {EntryId}.", claim.Entry.Id);

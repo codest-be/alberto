@@ -44,18 +44,18 @@ internal sealed class PostgresProjectionRebuildStore :
 
     /// <inheritdoc/>
     public async Task<ProjectionRebuildState> GetAsync(
-        string processorId, string projectionType, CancellationToken ct = default)
+        string processorId, string projectionType, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
         ArgumentException.ThrowIfNullOrWhiteSpace(projectionType);
 
-        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
             $"SELECT {Columns} FROM {MetaTable} WHERE processor_id = @processor_id", conn);
         cmd.Parameters.AddWithValue("processor_id", processorId);
 
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        if (await reader.ReadAsync(ct))
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        if (await reader.ReadAsync(cancellationToken))
             return Map(reader);
 
         // A processor that has never been rebuilt has no row. Report it as idle at version 1
@@ -66,15 +66,15 @@ internal sealed class PostgresProjectionRebuildStore :
     }
 
     /// <inheritdoc/>
-    public async Task<IReadOnlyList<ProjectionRebuildState>> ListAsync(CancellationToken ct = default)
+    public async Task<IReadOnlyList<ProjectionRebuildState>> ListAsync(CancellationToken cancellationToken = default)
     {
-        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
             $"SELECT {Columns} FROM {MetaTable} ORDER BY processor_id", conn);
 
         var results = new List<ProjectionRebuildState>();
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
             results.Add(Map(reader));
 
         return results;
@@ -82,13 +82,13 @@ internal sealed class PostgresProjectionRebuildStore :
 
     /// <inheritdoc/>
     public async Task<ProjectionRebuildState> StartAsync(
-        string processorId, string projectionType, long targetPosition, CancellationToken ct = default)
+        string processorId, string projectionType, long targetPosition, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
         ArgumentException.ThrowIfNullOrWhiteSpace(projectionType);
         ArgumentOutOfRangeException.ThrowIfNegative(targetPosition);
 
-        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
 
         // The WHERE on the DO UPDATE branch is what makes this safe under a race: a row
         // already in 'rebuilding' or 'ready' matches nothing, so the second caller gets no
@@ -127,8 +127,8 @@ internal sealed class PostgresProjectionRebuildStore :
         cmd.Parameters.AddWithValue("projection_type", projectionType);
         cmd.Parameters.AddWithValue("target_position", targetPosition);
 
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        if (await reader.ReadAsync(ct))
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        if (await reader.ReadAsync(cancellationToken))
             return Map(reader);
 
         throw new RebuildStateException(
@@ -140,26 +140,26 @@ internal sealed class PostgresProjectionRebuildStore :
     public Task<ProjectionRebuildState> RequestPromotionAsync(
         string processorId,
         bool force = false,
-        CancellationToken ct = default) =>
+        CancellationToken cancellationToken = default) =>
         RequestActionAsync(
             processorId,
             force ? RebuildOperatorAction.ForcePromote : RebuildOperatorAction.Promote,
-            ct);
+            cancellationToken);
 
     /// <inheritdoc/>
     public Task<ProjectionRebuildState> RequestAbortAsync(
         string processorId,
-        CancellationToken ct = default) =>
-        RequestActionAsync(processorId, RebuildOperatorAction.Abort, ct);
+        CancellationToken cancellationToken = default) =>
+        RequestActionAsync(processorId, RebuildOperatorAction.Abort, cancellationToken);
 
     private async Task<ProjectionRebuildState> RequestActionAsync(
         string processorId,
         RebuildOperatorAction action,
-        CancellationToken ct)
+        CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
 
-        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
             $"""
             UPDATE {MetaTable}
@@ -171,8 +171,8 @@ internal sealed class PostgresProjectionRebuildStore :
         cmd.Parameters.AddWithValue("processor_id", processorId);
         cmd.Parameters.AddWithValue("requested_action", FormatAction(action));
 
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        if (await reader.ReadAsync(ct))
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        if (await reader.ReadAsync(cancellationToken))
             return Map(reader);
 
         throw new RebuildStateException(
@@ -182,11 +182,11 @@ internal sealed class PostgresProjectionRebuildStore :
 
     /// <inheritdoc/>
     async Task<ProjectionRebuildState> IProjectionRebuildCoordinatorStore.MarkReadyAsync(
-        string processorId, CancellationToken ct)
+        string processorId, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
 
-        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
             $"""
             UPDATE {MetaTable}
@@ -196,8 +196,8 @@ internal sealed class PostgresProjectionRebuildStore :
             """, conn);
         cmd.Parameters.AddWithValue("processor_id", processorId);
 
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        if (await reader.ReadAsync(ct))
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        if (await reader.ReadAsync(cancellationToken))
             return Map(reader);
 
         throw new RebuildStateException(
@@ -206,18 +206,18 @@ internal sealed class PostgresProjectionRebuildStore :
 
     /// <inheritdoc/>
     async Task<RebuildOutcome> IProjectionRebuildCoordinatorStore.CompletePromotionAsync(
-        string processorId, bool force, CancellationToken ct)
+        string processorId, bool force, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
 
-        await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        await using var tx = await conn.BeginTransactionAsync(ct);
+        await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var tx = await conn.BeginTransactionAsync(cancellationToken);
 
         // Lock and read first. The version being superseded is the *current* active version,
         // and it has to be captured before the flip overwrites it — a subquery in the UPDATE's
         // RETURNING clause would be reading the same row the statement is modifying, which is
         // exactly the case where PostgreSQL's snapshot rules are easy to get wrong.
-        var current = await ReadForUpdateAsync(conn, tx, processorId, ct)
+        var current = await ReadForUpdateAsync(conn, tx, processorId, cancellationToken)
             ?? throw new RebuildStateException(
                 $"Cannot promote processor '{processorId}': no rebuild has ever been started for it.");
 
@@ -245,31 +245,31 @@ internal sealed class PostgresProjectionRebuildStore :
             """, conn, tx))
         {
             flipCmd.Parameters.AddWithValue("processor_id", processorId);
-            await flipCmd.ExecuteNonQueryAsync(ct);
+            await flipCmd.ExecuteNonQueryAsync(cancellationToken);
         }
 
         // The superseded version's rows stay. Dropping them here would make the swap invisible
         // only to a reader that resolves its version after this commit; one that resolved a
         // moment earlier would query a version whose rows this transaction had just deleted and
         // find nothing. The coordinator reclaims them once every reader has had time to refresh.
-        await tx.CommitAsync(ct);
+        await tx.CommitAsync(cancellationToken);
 
         return new RebuildOutcome(
-            await GetAsync(processorId, current.ProjectionType, ct), current.ActiveVersion);
+            await GetAsync(processorId, current.ProjectionType, cancellationToken), current.ActiveVersion);
     }
 
     /// <inheritdoc/>
     async Task<RebuildOutcome> IProjectionRebuildCoordinatorStore.CompleteAbortAsync(
-        string processorId, CancellationToken ct)
+        string processorId, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
 
-        await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        await using var tx = await conn.BeginTransactionAsync(ct);
+        await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var tx = await conn.BeginTransactionAsync(cancellationToken);
 
         // Same reason as PromoteAsync: the version being discarded has to be read before the
         // UPDATE nulls it out.
-        var current = await ReadForUpdateAsync(conn, tx, processorId, ct);
+        var current = await ReadForUpdateAsync(conn, tx, processorId, cancellationToken);
 
         if (current is null || !current.IsRebuildInFlight)
             throw new RebuildStateException(
@@ -290,17 +290,17 @@ internal sealed class PostgresProjectionRebuildStore :
             """, conn, tx))
         {
             cmd.Parameters.AddWithValue("processor_id", processorId);
-            await cmd.ExecuteNonQueryAsync(ct);
+            await cmd.ExecuteNonQueryAsync(cancellationToken);
         }
 
         // The abandoned version's rows stay, and for a second reason on top of the one in
         // CompletePromotionAsync: the shadow loop that fills them only learns of the abort on
         // its next poll, so deleting here races its final writes and leaves them behind anyway.
         // Reclaiming after a grace period sweeps those up instead of stranding them.
-        await tx.CommitAsync(ct);
+        await tx.CommitAsync(cancellationToken);
 
         return new RebuildOutcome(
-            await GetAsync(processorId, current.ProjectionType, ct), abandonedVersion);
+            await GetAsync(processorId, current.ProjectionType, cancellationToken), abandonedVersion);
     }
 
     /// <summary>
@@ -309,24 +309,24 @@ internal sealed class PostgresProjectionRebuildStore :
     /// or abort from moving the version numbers between the validation and the write.
     /// </summary>
     private async Task<ProjectionRebuildState?> ReadForUpdateAsync(
-        NpgsqlConnection conn, NpgsqlTransaction tx, string processorId, CancellationToken ct)
+        NpgsqlConnection conn, NpgsqlTransaction tx, string processorId, CancellationToken cancellationToken)
     {
         await using var cmd = new NpgsqlCommand(
             $"SELECT {Columns} FROM {MetaTable} WHERE processor_id = @processor_id FOR UPDATE",
             conn, tx);
         cmd.Parameters.AddWithValue("processor_id", processorId);
 
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        return await reader.ReadAsync(ct) ? Map(reader) : null;
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? Map(reader) : null;
     }
 
     /// <inheritdoc/>
     async Task IProjectionRebuildCoordinatorStore.DiscardStateVersionAsync(
-        string projectionType, int version, CancellationToken ct)
+        string projectionType, int version, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(projectionType);
 
-        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
 
         // Its own transaction, and deliberately not the one that flipped the version: a delete
         // is all this is, and nothing reads the rows it removes. Spans all tenants — a rebuild
@@ -340,7 +340,7 @@ internal sealed class PostgresProjectionRebuildStore :
         cmd.Parameters.AddWithValue("projection_type", projectionType);
         cmd.Parameters.AddWithValue("version", version);
 
-        await cmd.ExecuteNonQueryAsync(ct);
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static ProjectionRebuildState Map(NpgsqlDataReader reader) => new(

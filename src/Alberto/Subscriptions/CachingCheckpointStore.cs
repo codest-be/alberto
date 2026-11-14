@@ -95,7 +95,7 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
         _resyncTimer = time.CreateTimer(OnResyncTimer, null, _resyncInterval, _resyncInterval);
     }
 
-    public async Task<long?> GetAsync(string processorId, CancellationToken ct = default)
+    public async Task<long?> GetAsync(string processorId, CancellationToken cancellationToken = default)
     {
         // Return cached value if we have it
         if (_cache.TryGetValue(processorId, out var cached))
@@ -109,7 +109,7 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
         // its checkpoint every pass, so it would deliver that whole batch a second time. Neither
         // map moves backwards here; the two paths that *do* lower a checkpoint (an operator
         // rewind, and external-reset detection) are deliberate and say so.
-        var position = await _inner.GetAsync(processorId, ct);
+        var position = await _inner.GetAsync(processorId, cancellationToken);
 
         _persisted.AddOrUpdate(processorId, position, (_, concurrent) => Ahead(concurrent, position));
         return _cache.AddOrUpdate(processorId, position, (_, concurrent) => Ahead(concurrent, position));
@@ -123,7 +123,7 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
         : right is null ? left
         : Math.Max(left.Value, right.Value);
 
-    public Task SaveAsync(string processorId, long position, CancellationToken ct = default)
+    public Task SaveAsync(string processorId, long position, CancellationToken cancellationToken = default)
     {
         // Update cache immediately, monotonically. PostgresCheckpointStore's write is a
         // GREATEST, so a cache that let a position go backwards would disagree with the store
@@ -142,11 +142,11 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
         return Task.CompletedTask;
     }
 
-    public async Task ResetAsync(string processorId, CancellationToken ct = default)
+    public async Task ResetAsync(string processorId, CancellationToken cancellationToken = default)
     {
         // Under the flush lock: a flush that snapshotted the dirty entry before this reset
         // would otherwise write the stale position after it.
-        await _flushLock.WaitAsync(ct);
+        await _flushLock.WaitAsync(cancellationToken);
         try
         {
             _cache.TryRemove(processorId, out _);
@@ -154,26 +154,26 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
             _dirty.TryRemove(processorId, out _);
 
             // Reset in underlying store immediately
-            await _inner.ResetAsync(processorId, ct);
+            await _inner.ResetAsync(processorId, cancellationToken);
         }
         finally { _flushLock.Release(); }
     }
 
-    public async Task RewindAsync(string processorId, long position, CancellationToken ct = default)
+    public async Task RewindAsync(string processorId, long position, CancellationToken cancellationToken = default)
     {
         // Operator rewinds bypass the write buffer and go directly to the underlying store
         // so the write is unconditional and immediately durable.
         // Update all cache layers so subsequent in-process reads reflect the new position.
         // Under the flush lock, as in ResetAsync: an in-flight flush must not write the
         // pre-rewind position over this one.
-        await _flushLock.WaitAsync(ct);
+        await _flushLock.WaitAsync(cancellationToken);
         try
         {
             _cache[processorId] = position;
             _persisted[processorId] = position;
             _dirty.TryRemove(processorId, out _);
 
-            await _inner.RewindAsync(processorId, position, ct);
+            await _inner.RewindAsync(processorId, position, cancellationToken);
         }
         finally { _flushLock.Release(); }
     }
@@ -181,15 +181,15 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
     // Fault records bypass the write buffer entirely: a fault write happens once, on the way
     // down, and must be durable — buffering it behind the flush timer would lose it in exactly
     // the crash it exists to explain. A no-op when the inner store has no fault support.
-    public Task RecordFaultAsync(string processorId, ProcessorFaultRecord fault, CancellationToken ct = default)
-        => _inner is IProcessorFaultStore f ? f.RecordFaultAsync(processorId, fault, ct) : Task.CompletedTask;
+    public Task RecordFaultAsync(string processorId, ProcessorFaultRecord fault, CancellationToken cancellationToken = default)
+        => _inner is IProcessorFaultStore f ? f.RecordFaultAsync(processorId, fault, cancellationToken) : Task.CompletedTask;
 
-    public Task ClearFaultAsync(string processorId, CancellationToken ct = default)
-        => _inner is IProcessorFaultStore f ? f.ClearFaultAsync(processorId, ct) : Task.CompletedTask;
+    public Task ClearFaultAsync(string processorId, CancellationToken cancellationToken = default)
+        => _inner is IProcessorFaultStore f ? f.ClearFaultAsync(processorId, cancellationToken) : Task.CompletedTask;
 
-    public Task<ProcessorFaultRecord?> GetFaultAsync(string processorId, CancellationToken ct = default)
+    public Task<ProcessorFaultRecord?> GetFaultAsync(string processorId, CancellationToken cancellationToken = default)
         => _inner is IProcessorFaultStore f
-            ? f.GetFaultAsync(processorId, ct)
+            ? f.GetFaultAsync(processorId, cancellationToken)
             : Task.FromResult<ProcessorFaultRecord?>(null);
 
     /// <summary>
@@ -234,7 +234,7 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
     /// exception is a backstop for code that bypasses that check.
     /// </para>
     /// </remarks>
-    public async Task<IReadOnlyList<string>> ListProcessorIdsAsync(CancellationToken ct = default)
+    public async Task<IReadOnlyList<string>> ListProcessorIdsAsync(CancellationToken cancellationToken = default)
     {
         // Guard first: returning an empty list when the inner store cannot enumerate would
         // be a false all-clear under a Strict orphan policy — indistinguishable from "all
@@ -250,9 +250,9 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
         // whose checkpoint was SaveAsync'd but not yet timer-flushed would be absent from the
         // inner store's snapshot — making a live, actively-writing processor look like it has
         // no row, and causing the orphan check to miss a rename that only affected that processor.
-        await FlushAsync(ct);
+        await FlushAsync(cancellationToken);
 
-        var fromStore = await innerInventory.ListProcessorIdsAsync(ct);
+        var fromStore = await innerInventory.ListProcessorIdsAsync(cancellationToken);
 
         // Narrow race window: a SaveAsync that arrived after FlushAsync's internal snapshot
         // was taken is still in _dirty and has not yet reached the inner store. Union those
@@ -299,7 +299,7 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
     /// If the database value is lower than the cached value (and the entry is not dirty),
     /// the cache is updated to the database value so the control loop replays from there.
     /// </summary>
-    internal async Task ResyncFromStoreAsync(CancellationToken ct)
+    internal async Task ResyncFromStoreAsync(CancellationToken cancellationToken)
     {
         var cachedEntries = _cache.ToArray();
 
@@ -309,7 +309,7 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
             if (_dirty.ContainsKey(processorId))
                 continue;
 
-            var storePosition = await _inner.GetAsync(processorId, ct);
+            var storePosition = await _inner.GetAsync(processorId, cancellationToken);
 
             // Detect external reset: DB value is lower than (or deleted vs) our cached value.
             // Swapped against the value this pass read rather than assigned: a SaveAsync that
@@ -334,11 +334,11 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
     /// If a fenced write is rejected, <see cref="OnFenceViolation"/> is invoked for that
     /// processor ID and the checkpoint entry is removed from the dirty set without writing.
     /// </summary>
-    public async Task FlushAsync(CancellationToken ct = default)
+    public async Task FlushAsync(CancellationToken cancellationToken = default)
     {
         if (_dirty.IsEmpty) return;
 
-        await _flushLock.WaitAsync(ct);
+        await _flushLock.WaitAsync(cancellationToken);
         try
         {
             // Capture the current generation inside the lock, before snapshotting dirty.
@@ -359,7 +359,7 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
                     continue;
                 }
 
-                if (await ApplyExternalResetIfDetectedAsync(processorId, ct))
+                if (await ApplyExternalResetIfDetectedAsync(processorId, cancellationToken))
                     continue;
 
                 if (fenced is not null)
@@ -368,7 +368,7 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
                         processorId, position,
                         _fencingContext!.ConsumerId, _fencingContext.ReplicaId,
                         _fencingContext.FenceTokenProvider?.Invoke(processorId) ?? 0,
-                        _fencingContext.UseProcessorLeaseFencing, ct);
+                        _fencingContext.UseProcessorLeaseFencing, cancellationToken);
 
                     if (!leaseHeld)
                     {
@@ -397,7 +397,7 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
                 }
                 else
                 {
-                    await _inner.SaveAsync(processorId, position, ct);
+                    await _inner.SaveAsync(processorId, position, cancellationToken);
                 }
 
                 _persisted[processorId] = position;
@@ -412,14 +412,14 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
         }
     }
 
-    private async Task<bool> ApplyExternalResetIfDetectedAsync(string processorId, CancellationToken ct)
+    private async Task<bool> ApplyExternalResetIfDetectedAsync(string processorId, CancellationToken cancellationToken)
     {
         if (!_persisted.TryGetValue(processorId, out var persistedPosition) || persistedPosition is null)
             return false;
 
         _cache.TryGetValue(processorId, out var cachedBefore);
 
-        var storePosition = await _inner.GetAsync(processorId, ct);
+        var storePosition = await _inner.GetAsync(processorId, cancellationToken);
         if (storePosition is not null && storePosition >= persistedPosition)
             return false;
 

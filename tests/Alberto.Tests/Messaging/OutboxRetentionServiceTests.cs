@@ -31,7 +31,7 @@ public class OutboxRetentionServiceTests
         /// <summary>Waits for one more sweep than has already been observed, or gives up.</summary>
         public Task<bool> WaitForSweepAsync() => _swept.WaitAsync(Patience);
 
-        public Task PurgeDeliveredAsync(DateTimeOffset before, CancellationToken ct = default)
+        public Task PurgeDeliveredAsync(DateTimeOffset before, CancellationToken cancellationToken = default)
         {
             int attempt;
             lock (_gate)
@@ -45,23 +45,23 @@ public class OutboxRetentionServiceTests
             return failure is null ? Task.CompletedTask : Task.FromException(failure);
         }
 
-        public Task InsertAsync(OutboxEntry entry, CancellationToken ct = default) =>
+        public Task InsertAsync(OutboxEntry entry, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("The retention sweep must not write entries.");
 
         public Task<IReadOnlyList<OutboxClaim>> ClaimPendingAsync(
-            int limit, TimeSpan claimLease, string claimedBy, CancellationToken ct = default) =>
+            int limit, TimeSpan claimLease, string claimedBy, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("The retention sweep must not claim entries.");
 
-        public Task<bool> MarkDeliveredAsync(OutboxClaim claim, CancellationToken ct = default) =>
+        public Task<bool> MarkDeliveredAsync(OutboxClaim claim, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("The retention sweep must not deliver entries.");
 
-        public Task<bool> MarkFailedAsync(OutboxClaim claim, string error, CancellationToken ct = default) =>
+        public Task<bool> MarkFailedAsync(OutboxClaim claim, string error, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("The retention sweep must not fail entries.");
 
-        public Task<bool> MarkAttemptFailedAsync(OutboxClaim claim, string error, int maxRetries, CancellationToken ct) =>
+        public Task<bool> MarkAttemptFailedAsync(OutboxClaim claim, string error, int maxRetries, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("The retention sweep must not fail entries.");
 
-        public Task RetryFailedAsync(string? messageType = null, CancellationToken ct = default) =>
+        public Task RetryFailedAsync(string? messageType = null, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("The retention sweep must not retry entries.");
     }
 

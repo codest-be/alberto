@@ -23,22 +23,22 @@ internal sealed class PostgresCheckpointStore : IFencedCheckpointStore, ICheckpo
         _schema = new SchemaQualifier(schema);
     }
 
-    public async Task<long?> GetAsync(string processorId, CancellationToken ct = default)
+    public async Task<long?> GetAsync(string processorId, CancellationToken cancellationToken = default)
     {
-        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
             $"SELECT last_position FROM {_schema.Table("alberto_processor_checkpoints")} WHERE processor_id = @processor_id",
             connection);
 
         cmd.Parameters.AddWithValue("processor_id", processorId);
 
-        var result = await cmd.ExecuteScalarAsync(ct);
+        var result = await cmd.ExecuteScalarAsync(cancellationToken);
         return result is long position ? position : null;
     }
 
-    public async Task SaveAsync(string processorId, long position, CancellationToken ct = default)
+    public async Task SaveAsync(string processorId, long position, CancellationToken cancellationToken = default)
     {
-        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
             $"""
             INSERT INTO {_schema.Table("alberto_processor_checkpoints")} (processor_id, last_position, updated_at)
@@ -52,32 +52,32 @@ internal sealed class PostgresCheckpointStore : IFencedCheckpointStore, ICheckpo
         cmd.Parameters.AddWithValue("processor_id", processorId);
         cmd.Parameters.AddWithValue("last_position", position);
 
-        await cmd.ExecuteNonQueryAsync(ct);
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    public async Task ResetAsync(string processorId, CancellationToken ct = default)
+    public async Task ResetAsync(string processorId, CancellationToken cancellationToken = default)
     {
-        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
             $"DELETE FROM {_schema.Table("alberto_processor_checkpoints")} WHERE processor_id = @processor_id",
             connection);
 
         cmd.Parameters.AddWithValue("processor_id", processorId);
 
-        await cmd.ExecuteNonQueryAsync(ct);
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<string>> ListProcessorIdsAsync(CancellationToken ct = default)
+    public async Task<IReadOnlyList<string>> ListProcessorIdsAsync(CancellationToken cancellationToken = default)
     {
-        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand(
             $"SELECT processor_id FROM {_schema.Table("alberto_processor_checkpoints")}",
             connection);
 
         var ids = new List<string>();
-        await using var reader = await command.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
             ids.Add(reader.GetString(0));
 
         return ids;
@@ -88,9 +88,9 @@ internal sealed class PostgresCheckpointStore : IFencedCheckpointStore, ICheckpo
     /// bypassing the <c>GREATEST</c> guard that normally prevents moving a checkpoint backward.
     /// Use for operator-initiated rewinds.
     /// </summary>
-    public async Task RewindAsync(string processorId, long position, CancellationToken ct = default)
+    public async Task RewindAsync(string processorId, long position, CancellationToken cancellationToken = default)
     {
-        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
             $"""
             INSERT INTO {_schema.Table("alberto_processor_checkpoints")} (processor_id, last_position, updated_at)
@@ -110,7 +110,7 @@ internal sealed class PostgresCheckpointStore : IFencedCheckpointStore, ICheckpo
         cmd.Parameters.AddWithValue("processor_id", processorId);
         cmd.Parameters.AddWithValue("last_position", position);
 
-        await cmd.ExecuteNonQueryAsync(ct);
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
     /// <remarks>
@@ -121,9 +121,9 @@ internal sealed class PostgresCheckpointStore : IFencedCheckpointStore, ICheckpo
     /// touched on conflict.
     /// </remarks>
     async Task IProcessorFaultStore.RecordFaultAsync(
-        string processorId, ProcessorFaultRecord fault, CancellationToken ct)
+        string processorId, ProcessorFaultRecord fault, CancellationToken cancellationToken)
     {
-        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
             $"""
             INSERT INTO {_schema.Table("alberto_processor_checkpoints")}
@@ -149,12 +149,12 @@ internal sealed class PostgresCheckpointStore : IFencedCheckpointStore, ICheckpo
         cmd.Parameters.AddWithValue("fault_event_type", (object?)fault.EventType ?? DBNull.Value);
         cmd.Parameters.AddWithValue("fault_tenant_id", (object?)fault.TenantId ?? DBNull.Value);
 
-        await cmd.ExecuteNonQueryAsync(ct);
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    async Task IProcessorFaultStore.ClearFaultAsync(string processorId, CancellationToken ct)
+    async Task IProcessorFaultStore.ClearFaultAsync(string processorId, CancellationToken cancellationToken)
     {
-        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
             $"""
             UPDATE {_schema.Table("alberto_processor_checkpoints")}
@@ -170,13 +170,13 @@ internal sealed class PostgresCheckpointStore : IFencedCheckpointStore, ICheckpo
 
         cmd.Parameters.AddWithValue("processor_id", processorId);
 
-        await cmd.ExecuteNonQueryAsync(ct);
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
     async Task<ProcessorFaultRecord?> IProcessorFaultStore.GetFaultAsync(
-        string processorId, CancellationToken ct)
+        string processorId, CancellationToken cancellationToken)
     {
-        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
             $"""
             SELECT faulted_at, fault_message, fault_stack_trace,
@@ -188,8 +188,8 @@ internal sealed class PostgresCheckpointStore : IFencedCheckpointStore, ICheckpo
 
         cmd.Parameters.AddWithValue("processor_id", processorId);
 
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        if (!await reader.ReadAsync(ct))
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
             return null;
 
         return new ProcessorFaultRecord(
@@ -203,7 +203,7 @@ internal sealed class PostgresCheckpointStore : IFencedCheckpointStore, ICheckpo
 
     public async Task<bool> SaveIfLeaseHeldAsync(
         string processorId, long position, string consumerId, string replicaId,
-        long fenceToken, bool useProcessorLeaseFencing = false, CancellationToken ct = default)
+        long fenceToken, bool useProcessorLeaseFencing = false, CancellationToken cancellationToken = default)
     {
         await using var cmd = _dataSource.CreateCommand();
 
@@ -224,7 +224,7 @@ internal sealed class PostgresCheckpointStore : IFencedCheckpointStore, ICheckpo
         if (useProcessorLeaseFencing)
             cmd.Parameters.AddWithValue("fenceToken", fenceToken);
 
-        var result = await cmd.ExecuteScalarAsync(ct);
+        var result = await cmd.ExecuteScalarAsync(cancellationToken);
         return result is true;
     }
 }

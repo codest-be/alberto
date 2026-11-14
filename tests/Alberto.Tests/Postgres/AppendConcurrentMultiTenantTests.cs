@@ -34,7 +34,7 @@ public sealed class AppendConcurrentMultiTenantTests(MultiTenantDbFixture fixtur
     [Fact]
     public async Task ConcurrentTenantAppends_EachReturnExactlyOwnEvents()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         const string TenantA = "conc-tenant-a";
         const string TenantB = "conc-tenant-b";
         const int Rounds = 20;
@@ -68,8 +68,8 @@ public sealed class AppendConcurrentMultiTenantTests(MultiTenantDbFixture fixtur
             }).ToArray();
 
             // Fire both appends concurrently so the shared sequence interleaves.
-            var aTask = backend.AppendForTenant(TenantA, aEvents, cancellationToken: ct);
-            var bTask = backend.AppendForTenant(TenantB, bEvents, cancellationToken: ct);
+            var aTask = backend.AppendForTenant(TenantA, aEvents, cancellationToken: cancellationToken);
+            var bTask = backend.AppendForTenant(TenantB, bEvents, cancellationToken: cancellationToken);
             var aResults = await aTask;
             var bResults = await bTask;
 

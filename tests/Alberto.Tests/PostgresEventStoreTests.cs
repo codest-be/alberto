@@ -93,8 +93,8 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
 
         public IReadOnlySet<string> HandledEventTypes { get; }
 
-        public Task ProcessAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct = default)
-            => _inner.ProcessBatchAsync(events, ct);
+        public Task ProcessAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken cancellationToken = default)
+            => _inner.ProcessBatchAsync(events, cancellationToken);
     }
 
     #endregion
@@ -171,7 +171,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
 
         var loaded = await stateStore.LoadManyAsync(
             [orderId.ToString()],
-            ct: TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Single(loaded);
         Assert.Equal(orderId, loaded[orderId.ToString()].OrderId);
@@ -201,7 +201,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
 
         var loaded = await stateStore.LoadManyAsync(
             [orderId.ToString()],
-            ct: TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal("Confirmed", loaded[orderId.ToString()].Status);
         Assert.Equal(100m, loaded[orderId.ToString()].Amount);
@@ -228,7 +228,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
 
         var loaded = await stateStore.LoadManyAsync(
             [orderId.ToString()],
-            ct: TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Single(loaded);
         Assert.Equal("Confirmed", loaded[orderId.ToString()].Status);
@@ -251,7 +251,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
 
         var loaded = await stateStore.LoadManyAsync(
             ["any-id"],
-            ct: TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Empty(loaded);
     }
@@ -398,7 +398,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
     [Fact]
     public async Task StreamAsync_ByOneTypeAndOneTag_ReturnsEachMatchOnceInPositionOrder()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
 
         var orderId = Guid.NewGuid();
@@ -412,13 +412,13 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
                 CreateEvent(new OrderCreated(orderId, 250m), tag),   // match
                 CreateEvent(new OrderCreated(orderId, 999m), otherTag), // right type, wrong tag
             ],
-            cancellationToken: ct);
+            cancellationToken: cancellationToken);
 
         var query = DcbQuery.Empty
             .WithTypes("order-created")
             .WithTags(tag);
 
-        var events = await eventStore.StreamAsync(query, cancellationToken: ct).ToListAsync();
+        var events = await eventStore.StreamAsync(query, cancellationToken: cancellationToken).ToListAsync();
 
         var positions = events.Select(e => e.GlobalPosition).ToArray();
         Assert.Equal(2, positions.Length);
@@ -426,7 +426,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
         Assert.All(events, e => Assert.Equal("order-created", e.EventType.Id));
 
         // afterPosition must page the fast path, not restart it.
-        var second = await eventStore.StreamAsync(query, afterPosition: positions[0], cancellationToken: ct).ToListAsync();
+        var second = await eventStore.StreamAsync(query, afterPosition: positions[0], cancellationToken: cancellationToken).ToListAsync();
         Assert.Equal([positions[1]], second.Select(e => e.GlobalPosition));
 
         Assert.Equal(4, appended.Count);
@@ -442,7 +442,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
     [Fact]
     public async Task StreamAsync_ByThreeTypesAndOneTag_ReturnsEachMatchOnceInPositionOrder()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
 
         var orderId = Guid.NewGuid();
@@ -457,7 +457,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
                 CreateEvent(new OrderCreated(orderId, 250m), tag),        // match
                 CreateEvent(new OrderConfirmed(orderId), otherTag),       // named type, wrong tag
             ],
-            cancellationToken: ct);
+            cancellationToken: cancellationToken);
 
         // Three named types, one of which matches nothing here: the array must filter, not
         // just widen. A fourth name that no event carries also keeps the test honest about
@@ -466,7 +466,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
             .WithTypes("order-created", "order-confirmed", "order-shipped")
             .WithTags(tag);
 
-        var events = await eventStore.StreamAsync(query, cancellationToken: ct).ToListAsync();
+        var events = await eventStore.StreamAsync(query, cancellationToken: cancellationToken).ToListAsync();
 
         var positions = events.Select(e => e.GlobalPosition).ToArray();
         Assert.Equal(3, positions.Length);
@@ -474,7 +474,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
         Assert.All(events, e => Assert.Contains(e.EventType.Id, new[] { "order-created", "order-confirmed" }));
 
         // Paging must resume inside the fast path rather than restart it.
-        var second = await eventStore.StreamAsync(query, afterPosition: positions[0], cancellationToken: ct).ToListAsync();
+        var second = await eventStore.StreamAsync(query, afterPosition: positions[0], cancellationToken: cancellationToken).ToListAsync();
         Assert.Equal(positions[1..], second.Select(e => e.GlobalPosition));
     }
 
@@ -496,11 +496,11 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
     [Fact]
     public async Task StreamAsync_ByOneType_ReturnsEachMatchOnceInPositionOrder()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
         var orderId = Guid.NewGuid();
 
-        var anchor = await eventStore.GetLastPositionAsync(ct);
+        var anchor = await eventStore.GetLastPositionAsync(cancellationToken);
         await eventStore.AppendAsync(
             [
                 CreateEvent(new ProbeAlpha(orderId)),   // match
@@ -509,11 +509,11 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
                 CreateEvent(new ProbeGamma(orderId)),   // unnamed type
                 CreateEvent(new ProbeAlpha(orderId)),   // match
             ],
-            cancellationToken: ct);
+            cancellationToken: cancellationToken);
 
         var query = DcbQuery.ByTypes("probe-alpha");
 
-        var events = await eventStore.StreamAsync(query, afterPosition: anchor, cancellationToken: ct).ToListAsync();
+        var events = await eventStore.StreamAsync(query, afterPosition: anchor, cancellationToken: cancellationToken).ToListAsync();
 
         var positions = events.Select(e => e.GlobalPosition).ToArray();
         Assert.Equal(3, positions.Length);
@@ -523,11 +523,11 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
 
         // The probe's own LIMIT must page from afterPosition rather than restart at the type's
         // first position.
-        var second = await eventStore.StreamAsync(query, afterPosition: positions[0], cancellationToken: ct).ToListAsync();
+        var second = await eventStore.StreamAsync(query, afterPosition: positions[0], cancellationToken: cancellationToken).ToListAsync();
         Assert.Equal(positions[1..], second.Select(e => e.GlobalPosition));
 
         // The limit applies to the merged result, not per probe.
-        var limited = await eventStore.ReadAsync(query, afterPosition: anchor, limit: 2, cancellationToken: ct);
+        var limited = await eventStore.ReadAsync(query, afterPosition: anchor, limit: 2, cancellationToken: cancellationToken);
         Assert.Equal(positions[..2], limited.Select(e => e.GlobalPosition));
     }
 
@@ -541,11 +541,11 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
     [Fact]
     public async Task StreamAsync_BySeveralTypes_ReturnsTheUnionOnceInPositionOrder()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
         var orderId = Guid.NewGuid();
 
-        var anchor = await eventStore.GetLastPositionAsync(ct);
+        var anchor = await eventStore.GetLastPositionAsync(cancellationToken);
         var appended = await eventStore.AppendAsync(
             [
                 CreateEvent(new ProbeAlpha(orderId)),   // match
@@ -554,7 +554,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
                 CreateEvent(new ProbeAlpha(orderId)),   // match
                 CreateEvent(new ProbeGamma(orderId)),   // match
             ],
-            cancellationToken: ct);
+            cancellationToken: cancellationToken);
 
         // The types of the appended events, in append order — index 1 is the beta that must not
         // come back.
@@ -566,7 +566,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
         // "probe-delta" is carried by no event: the array must filter, not merely widen.
         var query = DcbQuery.ByTypes("probe-alpha", "probe-gamma", "probe-delta");
 
-        var events = await eventStore.StreamAsync(query, afterPosition: anchor, cancellationToken: ct).ToListAsync();
+        var events = await eventStore.StreamAsync(query, afterPosition: anchor, cancellationToken: cancellationToken).ToListAsync();
 
         var positions = events.Select(e => e.GlobalPosition).ToArray();
         Assert.Equal(expected, positions);
@@ -574,11 +574,11 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
 
         // A limit smaller than either probe's own yield: the answer is the merged prefix, which
         // here alternates between the two types.
-        var limited = await eventStore.ReadAsync(query, afterPosition: anchor, limit: 3, cancellationToken: ct);
+        var limited = await eventStore.ReadAsync(query, afterPosition: anchor, limit: 3, cancellationToken: cancellationToken);
         Assert.Equal(expected[..3], limited.Select(e => e.GlobalPosition));
 
         // Paging resumes inside the merge.
-        var second = await eventStore.StreamAsync(query, afterPosition: expected[1], cancellationToken: ct).ToListAsync();
+        var second = await eventStore.StreamAsync(query, afterPosition: expected[1], cancellationToken: cancellationToken).ToListAsync();
         Assert.Equal(expected[2..], second.Select(e => e.GlobalPosition));
     }
 
@@ -594,11 +594,11 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
     [Fact]
     public async Task StreamAsync_ByTheSameTypeTwice_ReturnsEachMatchOnce()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
         var orderId = Guid.NewGuid();
 
-        var anchor = await eventStore.GetLastPositionAsync(ct);
+        var anchor = await eventStore.GetLastPositionAsync(cancellationToken);
         await eventStore.AppendAsync(
             [
                 CreateEvent(new ProbeAlpha(orderId)),
@@ -606,12 +606,12 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
                 CreateEvent(new ProbeAlpha(orderId)),
                 CreateEvent(new ProbeAlpha(orderId)),
             ],
-            cancellationToken: ct);
+            cancellationToken: cancellationToken);
 
         var once = await eventStore.StreamAsync(
-            DcbQuery.ByTypes("probe-alpha"), afterPosition: anchor, cancellationToken: ct).ToListAsync();
+            DcbQuery.ByTypes("probe-alpha"), afterPosition: anchor, cancellationToken: cancellationToken).ToListAsync();
         var twice = await eventStore.StreamAsync(
-            DcbQuery.ByTypes("probe-alpha").WithTypes("probe-alpha"), afterPosition: anchor, cancellationToken: ct).ToListAsync();
+            DcbQuery.ByTypes("probe-alpha").WithTypes("probe-alpha"), afterPosition: anchor, cancellationToken: cancellationToken).ToListAsync();
 
         Assert.Equal(
             once.Select(e => e.GlobalPosition),
@@ -622,7 +622,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
             DcbQuery.ByTypes("probe-alpha").WithTypes("probe-alpha"),
             afterPosition: anchor,
             limit: 2,
-            cancellationToken: ct);
+            cancellationToken: cancellationToken);
         var positions = limited.Select(e => e.GlobalPosition).ToArray();
         Assert.Equal(2, positions.Length);
         Assert.Equal(positions.Distinct(), positions);
@@ -636,15 +636,15 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
     [Fact]
     public async Task StreamAsync_ByAbsentType_ReturnsNothing()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
 
         await eventStore.AppendAsync(
             [CreateEvent(new ProbeAlpha(Guid.NewGuid()))],
-            cancellationToken: ct);
+            cancellationToken: cancellationToken);
 
         var events = await eventStore.StreamAsync(
-            DcbQuery.ByTypes("probe-no-such-type"), cancellationToken: ct).ToListAsync();
+            DcbQuery.ByTypes("probe-no-such-type"), cancellationToken: cancellationToken).ToListAsync();
 
         Assert.Empty(events);
     }
@@ -664,7 +664,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
     [Fact]
     public async Task StreamAsync_ByAllOfSeveralTags_ReturnsOnlyEventsCarryingEveryTag()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
 
         var order = new EventTag("alltags-order", Guid.NewGuid().ToString());
@@ -672,7 +672,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
         var channel = new EventTag("alltags-channel", Guid.NewGuid().ToString());
         var orderId = Guid.NewGuid();
 
-        var anchor = await eventStore.GetLastPositionAsync(ct);
+        var anchor = await eventStore.GetLastPositionAsync(cancellationToken);
         var appended = await eventStore.AppendAsync(
             [
                 CreateTagged(new OrderCreated(orderId, 100m), order, region),           // match
@@ -681,7 +681,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
                 CreateTagged(new OrderCreated(orderId, 300m), region),                  // missing order
                 CreateTagged(new OrderCancelled(orderId), order, region),               // match
             ],
-            cancellationToken: ct);
+            cancellationToken: cancellationToken);
 
         var expected = appended
             .Where((_, i) => i is 0 or 2 or 4)
@@ -690,7 +690,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
 
         var query = DcbQuery.ByAllTags(order, region);
 
-        var events = await eventStore.StreamAsync(query, afterPosition: anchor, cancellationToken: ct).ToListAsync();
+        var events = await eventStore.StreamAsync(query, afterPosition: anchor, cancellationToken: cancellationToken).ToListAsync();
 
         var positions = events.Select(e => e.GlobalPosition).ToArray();
         Assert.Equal(expected, positions);
@@ -698,11 +698,11 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
 
         // The limit cuts the matched order, not the driving tag's raw run — the driving scan sees
         // five candidates here and must stop after two that survive the EXISTS tests.
-        var limited = await eventStore.ReadAsync(query, afterPosition: anchor, limit: 2, cancellationToken: ct);
+        var limited = await eventStore.ReadAsync(query, afterPosition: anchor, limit: 2, cancellationToken: cancellationToken);
         Assert.Equal(expected[..2], limited.Select(e => e.GlobalPosition));
 
         // Paging resumes inside the driving scan rather than restarting it.
-        var second = await eventStore.StreamAsync(query, afterPosition: expected[0], cancellationToken: ct).ToListAsync();
+        var second = await eventStore.StreamAsync(query, afterPosition: expected[0], cancellationToken: cancellationToken).ToListAsync();
         Assert.Equal(expected[1..], second.Select(e => e.GlobalPosition));
     }
 
@@ -716,7 +716,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
     [Fact]
     public async Task StreamAsync_ByAllTags_IsIndependentOfTheOrderTheTagsAreNamedIn()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
 
         // Deliberately lopsided: "broad" is carried by every event appended here, "narrow" by two
@@ -725,7 +725,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
         var narrow = new EventTag("driver-narrow", Guid.NewGuid().ToString());
         var orderId = Guid.NewGuid();
 
-        var anchor = await eventStore.GetLastPositionAsync(ct);
+        var anchor = await eventStore.GetLastPositionAsync(cancellationToken);
         var appended = await eventStore.AppendAsync(
             [
                 CreateTagged(new OrderCreated(orderId, 100m), broad),
@@ -734,7 +734,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
                 CreateTagged(new OrderCancelled(orderId), broad, narrow),       // match
                 CreateTagged(new OrderCreated(orderId, 300m), broad),
             ],
-            cancellationToken: ct);
+            cancellationToken: cancellationToken);
 
         var expected = appended
             .Where((_, i) => i is 1 or 3)
@@ -742,18 +742,18 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
             .ToArray();
 
         var broadFirst = await eventStore.StreamAsync(
-            DcbQuery.ByAllTags(broad, narrow), afterPosition: anchor, cancellationToken: ct).ToListAsync();
+            DcbQuery.ByAllTags(broad, narrow), afterPosition: anchor, cancellationToken: cancellationToken).ToListAsync();
         var narrowFirst = await eventStore.StreamAsync(
-            DcbQuery.ByAllTags(narrow, broad), afterPosition: anchor, cancellationToken: ct).ToListAsync();
+            DcbQuery.ByAllTags(narrow, broad), afterPosition: anchor, cancellationToken: cancellationToken).ToListAsync();
 
         Assert.Equal(expected, broadFirst.Select(e => e.GlobalPosition));
         Assert.Equal(expected, narrowFirst.Select(e => e.GlobalPosition));
 
         // A limit small enough to stop the driving scan early must also be order-independent.
         var broadLimited = await eventStore.ReadAsync(
-            DcbQuery.ByAllTags(broad, narrow), afterPosition: anchor, limit: 1, cancellationToken: ct);
+            DcbQuery.ByAllTags(broad, narrow), afterPosition: anchor, limit: 1, cancellationToken: cancellationToken);
         var narrowLimited = await eventStore.ReadAsync(
-            DcbQuery.ByAllTags(narrow, broad), afterPosition: anchor, limit: 1, cancellationToken: ct);
+            DcbQuery.ByAllTags(narrow, broad), afterPosition: anchor, limit: 1, cancellationToken: cancellationToken);
 
         Assert.Equal(expected[..1], broadLimited.Select(e => e.GlobalPosition));
         Assert.Equal(expected[..1], narrowLimited.Select(e => e.GlobalPosition));
@@ -771,26 +771,26 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
     [Fact]
     public async Task StreamAsync_ByTheSameTagTwice_MatchesEventsCarryingItRatherThanNothing()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
 
         var order = new EventTag("dup-tag-order", Guid.NewGuid().ToString());
         var other = new EventTag("dup-tag-other", Guid.NewGuid().ToString());
         var orderId = Guid.NewGuid();
 
-        var anchor = await eventStore.GetLastPositionAsync(ct);
+        var anchor = await eventStore.GetLastPositionAsync(cancellationToken);
         await eventStore.AppendAsync(
             [
                 CreateTagged(new OrderCreated(orderId, 100m), order),
                 CreateTagged(new OrderConfirmed(orderId), other),
                 CreateTagged(new OrderCancelled(orderId), order, other),
             ],
-            cancellationToken: ct);
+            cancellationToken: cancellationToken);
 
         var once = await eventStore.StreamAsync(
-            DcbQuery.ByAllTags(order), afterPosition: anchor, cancellationToken: ct).ToListAsync();
+            DcbQuery.ByAllTags(order), afterPosition: anchor, cancellationToken: cancellationToken).ToListAsync();
         var twice = await eventStore.StreamAsync(
-            DcbQuery.ByAllTags(order).WithTags(order), afterPosition: anchor, cancellationToken: ct).ToListAsync();
+            DcbQuery.ByAllTags(order).WithTags(order), afterPosition: anchor, cancellationToken: cancellationToken).ToListAsync();
 
         Assert.Equal(2, once.Count);
         Assert.Equal(
@@ -799,9 +799,9 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
 
         // Repeating one of two distinct tags must not change the conjunction either.
         var bothOnce = await eventStore.StreamAsync(
-            DcbQuery.ByAllTags(order, other), afterPosition: anchor, cancellationToken: ct).ToListAsync();
+            DcbQuery.ByAllTags(order, other), afterPosition: anchor, cancellationToken: cancellationToken).ToListAsync();
         var bothWithDuplicate = await eventStore.StreamAsync(
-            DcbQuery.ByAllTags(order, other).WithTags(order), afterPosition: anchor, cancellationToken: ct).ToListAsync();
+            DcbQuery.ByAllTags(order, other).WithTags(order), afterPosition: anchor, cancellationToken: cancellationToken).ToListAsync();
 
         Assert.Single(bothOnce);
         Assert.Equal(
@@ -818,7 +818,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
     [Fact]
     public async Task StreamAsync_ByAllTagsIncludingAnAbsentTag_ReturnsNothing()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
 
         var order = new EventTag("absent-tag-order", Guid.NewGuid().ToString());
@@ -826,12 +826,12 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
 
         await eventStore.AppendAsync(
             [CreateTagged(new OrderCreated(Guid.NewGuid(), 100m), order)],
-            cancellationToken: ct);
+            cancellationToken: cancellationToken);
 
         Assert.Empty(await eventStore.StreamAsync(
-            DcbQuery.ByAllTags(order, absent), cancellationToken: ct).ToListAsync());
+            DcbQuery.ByAllTags(order, absent), cancellationToken: cancellationToken).ToListAsync());
         Assert.Empty(await eventStore.StreamAsync(
-            DcbQuery.ByAllTags(absent, order), cancellationToken: ct).ToListAsync());
+            DcbQuery.ByAllTags(absent, order), cancellationToken: cancellationToken).ToListAsync());
     }
 
     /// <summary>
@@ -843,14 +843,14 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
     [Fact]
     public async Task StreamAsync_ByOneTypeAndAllTags_ReturnsOnlyEventsMatchingBothAxes()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
 
         var order = new EventTag("tat-one-order", Guid.NewGuid().ToString());
         var region = new EventTag("tat-one-region", Guid.NewGuid().ToString());
         var orderId = Guid.NewGuid();
 
-        var anchor = await eventStore.GetLastPositionAsync(ct);
+        var anchor = await eventStore.GetLastPositionAsync(cancellationToken);
         var appended = await eventStore.AppendAsync(
             [
                 CreateTagged(new OrderCreated(orderId, 100m), order, region),   // match
@@ -858,7 +858,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
                 CreateTagged(new OrderCreated(orderId, 200m), order),           // right type, missing region
                 CreateTagged(new OrderCreated(orderId, 300m), order, region),   // match
             ],
-            cancellationToken: ct);
+            cancellationToken: cancellationToken);
 
         var expected = appended
             .Where((_, i) => i is 0 or 3)
@@ -867,15 +867,15 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
 
         var query = DcbQuery.ByAllTags(order, region).WithTypes("order-created");
 
-        var events = await eventStore.StreamAsync(query, afterPosition: anchor, cancellationToken: ct).ToListAsync();
+        var events = await eventStore.StreamAsync(query, afterPosition: anchor, cancellationToken: cancellationToken).ToListAsync();
 
         Assert.Equal(expected, events.Select(e => e.GlobalPosition));
         Assert.All(events, e => Assert.Equal("order-created", e.EventType.Id));
 
-        var limited = await eventStore.ReadAsync(query, afterPosition: anchor, limit: 1, cancellationToken: ct);
+        var limited = await eventStore.ReadAsync(query, afterPosition: anchor, limit: 1, cancellationToken: cancellationToken);
         Assert.Equal(expected[..1], limited.Select(e => e.GlobalPosition));
 
-        var second = await eventStore.StreamAsync(query, afterPosition: expected[0], cancellationToken: ct).ToListAsync();
+        var second = await eventStore.StreamAsync(query, afterPosition: expected[0], cancellationToken: cancellationToken).ToListAsync();
         Assert.Equal(expected[1..], second.Select(e => e.GlobalPosition));
     }
 
@@ -888,14 +888,14 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
     [Fact]
     public async Task StreamAsync_BySeveralTypesAndAllTags_ReturnsOnlyEventsMatchingBothAxes()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
 
         var order = new EventTag("tat-many-order", Guid.NewGuid().ToString());
         var region = new EventTag("tat-many-region", Guid.NewGuid().ToString());
         var orderId = Guid.NewGuid();
 
-        var anchor = await eventStore.GetLastPositionAsync(ct);
+        var anchor = await eventStore.GetLastPositionAsync(cancellationToken);
         var appended = await eventStore.AppendAsync(
             [
                 CreateTagged(new OrderCreated(orderId, 100m), order, region),   // match
@@ -904,7 +904,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
                 CreateTagged(new OrderConfirmed(orderId), order),               // named type, missing region
                 CreateTagged(new OrderCreated(orderId, 200m), order, region),   // match
             ],
-            cancellationToken: ct);
+            cancellationToken: cancellationToken);
 
         var expected = appended
             .Where((_, i) => i is 0 or 2 or 4)
@@ -915,15 +915,15 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
         var query = DcbQuery.ByAllTags(order, region)
             .WithTypes("order-created", "order-confirmed", "order-shipped");
 
-        var events = await eventStore.StreamAsync(query, afterPosition: anchor, cancellationToken: ct).ToListAsync();
+        var events = await eventStore.StreamAsync(query, afterPosition: anchor, cancellationToken: cancellationToken).ToListAsync();
 
         Assert.Equal(expected, events.Select(e => e.GlobalPosition));
         Assert.All(events, e => Assert.Contains(e.EventType.Id, new[] { "order-created", "order-confirmed" }));
 
-        var limited = await eventStore.ReadAsync(query, afterPosition: anchor, limit: 2, cancellationToken: ct);
+        var limited = await eventStore.ReadAsync(query, afterPosition: anchor, limit: 2, cancellationToken: cancellationToken);
         Assert.Equal(expected[..2], limited.Select(e => e.GlobalPosition));
 
-        var second = await eventStore.StreamAsync(query, afterPosition: expected[1], cancellationToken: ct).ToListAsync();
+        var second = await eventStore.StreamAsync(query, afterPosition: expected[1], cancellationToken: cancellationToken).ToListAsync();
         Assert.Equal(expected[2..], second.Select(e => e.GlobalPosition));
     }
 
@@ -939,14 +939,14 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
     [Fact]
     public async Task StreamAsync_ByTypesOrTags_ReturnsTheUnionOnceInPositionOrder()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
 
         var order = new EventTag("or-tags-order", Guid.NewGuid().ToString());
         var other = new EventTag("or-tags-other", Guid.NewGuid().ToString());
         var orderId = Guid.NewGuid();
 
-        var anchor = await eventStore.GetLastPositionAsync(ct);
+        var anchor = await eventStore.GetLastPositionAsync(cancellationToken);
         var appended = await eventStore.AppendAsync(
             [
                 CreateTagged(new UnionAlpha(orderId)),                  // type arm
@@ -955,7 +955,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
                 CreateTagged(new UnionAlpha(orderId), order),           // both arms — must appear once
                 CreateTagged(new OrderConfirmed(orderId), other),       // neither
             ],
-            cancellationToken: ct);
+            cancellationToken: cancellationToken);
 
         var expected = appended
             .Where((_, i) => i is 0 or 1 or 3)
@@ -964,7 +964,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
 
         var query = DcbQuery.ByTags(order).WithTypes("union-alpha").AsUnion();
 
-        var events = await eventStore.StreamAsync(query, afterPosition: anchor, cancellationToken: ct).ToListAsync();
+        var events = await eventStore.StreamAsync(query, afterPosition: anchor, cancellationToken: cancellationToken).ToListAsync();
 
         var positions = events.Select(e => e.GlobalPosition).ToArray();
         Assert.Equal(expected, positions);
@@ -972,10 +972,10 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
 
         // Both arms yield rows before this limit; the answer is the merged prefix, which
         // interleaves them.
-        var limited = await eventStore.ReadAsync(query, afterPosition: anchor, limit: 2, cancellationToken: ct);
+        var limited = await eventStore.ReadAsync(query, afterPosition: anchor, limit: 2, cancellationToken: cancellationToken);
         Assert.Equal(expected[..2], limited.Select(e => e.GlobalPosition));
 
-        var second = await eventStore.StreamAsync(query, afterPosition: expected[0], cancellationToken: ct).ToListAsync();
+        var second = await eventStore.StreamAsync(query, afterPosition: expected[0], cancellationToken: cancellationToken).ToListAsync();
         Assert.Equal(expected[1..], second.Select(e => e.GlobalPosition));
     }
 
@@ -988,14 +988,14 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
     [Fact]
     public async Task StreamAsync_ByTypesOrAllTags_ReturnsTheUnionOnceInPositionOrder()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
 
         var order = new EventTag("or-all-order", Guid.NewGuid().ToString());
         var region = new EventTag("or-all-region", Guid.NewGuid().ToString());
         var orderId = Guid.NewGuid();
 
-        var anchor = await eventStore.GetLastPositionAsync(ct);
+        var anchor = await eventStore.GetLastPositionAsync(cancellationToken);
         var appended = await eventStore.AppendAsync(
             [
                 CreateTagged(new UnionGamma(orderId)),                          // type arm
@@ -1004,7 +1004,7 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
                 CreateTagged(new UnionGamma(orderId), order, region),           // both arms — once
                 CreateTagged(new OrderCancelled(orderId), region),              // one tag short of the arm
             ],
-            cancellationToken: ct);
+            cancellationToken: cancellationToken);
 
         var expected = appended
             .Where((_, i) => i is 0 or 1 or 3)
@@ -1013,16 +1013,16 @@ public sealed class PostgresEventStoreTests(SingleTenantPostgresFixture fixture)
 
         var query = DcbQuery.ByAllTags(order, region).WithTypes("union-gamma").AsUnion();
 
-        var events = await eventStore.StreamAsync(query, afterPosition: anchor, cancellationToken: ct).ToListAsync();
+        var events = await eventStore.StreamAsync(query, afterPosition: anchor, cancellationToken: cancellationToken).ToListAsync();
 
         var positions = events.Select(e => e.GlobalPosition).ToArray();
         Assert.Equal(expected, positions);
         Assert.Equal(positions.Distinct(), positions);
 
-        var limited = await eventStore.ReadAsync(query, afterPosition: anchor, limit: 2, cancellationToken: ct);
+        var limited = await eventStore.ReadAsync(query, afterPosition: anchor, limit: 2, cancellationToken: cancellationToken);
         Assert.Equal(expected[..2], limited.Select(e => e.GlobalPosition));
 
-        var second = await eventStore.StreamAsync(query, afterPosition: expected[0], cancellationToken: ct).ToListAsync();
+        var second = await eventStore.StreamAsync(query, afterPosition: expected[0], cancellationToken: cancellationToken).ToListAsync();
         Assert.Equal(expected[1..], second.Select(e => e.GlobalPosition));
     }
 

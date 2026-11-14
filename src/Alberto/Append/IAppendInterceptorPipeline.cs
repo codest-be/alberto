@@ -10,10 +10,10 @@ internal interface IAppendInterceptorPipeline
     /// </summary>
     /// <param name="context">The append context.</param>
     /// <param name="appendAction">The actual append action to execute.</param>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The appended events with assigned global positions.</returns>
     Task<IReadOnlyCollection<IEventEnvelope>> ExecuteAsync(
         AppendContext context,
         Func<AppendContext, Task<IReadOnlyCollection<IEventEnvelope>>> appendAction,
-        CancellationToken ct = default);
+        CancellationToken cancellationToken = default);
 }

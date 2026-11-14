@@ -186,14 +186,14 @@ public class ProcessorHealthTests
         new ProcessorHealthCheck("orders", state, Staleness, degradedLagThreshold, time)
             .CheckHealthAsync(new HealthCheckContext(), TestContext.Current.CancellationToken);
 
-    private static async Task WaitForAsync(Func<bool> condition, CancellationToken ct)
+    private static async Task WaitForAsync(Func<bool> condition, CancellationToken cancellationToken)
     {
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
         while (!condition())
         {
             if (DateTime.UtcNow > deadline)
                 throw new TimeoutException("Condition not met within 10s.");
-            await Task.Delay(10, ct);
+            await Task.Delay(10, cancellationToken);
         }
     }
 
@@ -215,10 +215,10 @@ public class ProcessorHealthTests
         public IReadOnlySet<string> HandledEventTypes { get; } =
             new HashSet<string> { "processor-health-test-event" };
 
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default) =>
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
 
-        public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct = default) =>
+        public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
     }
 
@@ -230,10 +230,10 @@ public class ProcessorHealthTests
         public IReadOnlySet<string> HandledEventTypes { get; } =
             new HashSet<string> { "processor-health-test-event" };
 
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default) =>
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("Simulated fault");
 
-        public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct = default) =>
+        public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("Simulated fault");
     }
 }

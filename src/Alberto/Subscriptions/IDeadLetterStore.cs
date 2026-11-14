@@ -28,7 +28,7 @@ public interface IDeadLetterStore
     /// a repeat. Keeping the claim is what lets a retry worker that re-dead-letters the event it
     /// claimed release the row with <see cref="IClaimableDeadLetterStore.AbandonRetryAsync"/>.
     /// </remarks>
-    Task StoreAsync(DeadLetterEntry entry, CancellationToken ct = default);
+    Task StoreAsync(DeadLetterEntry entry, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets dead letter entries for a processor.
@@ -60,22 +60,22 @@ public interface IDeadLetterStore
     /// </para>
     /// </remarks>
     /// <param name="limit">Maximum entries to return.</param>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     Task<IReadOnlyList<DeadLetterEntry>> GetAsync(
         string processorId,
         string? tenantId = null,
         int limit = 100,
-        CancellationToken ct = default);
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets the count of dead letter entries for a processor.
     /// </summary>
-    Task<int> CountAsync(string processorId, CancellationToken ct = default);
+    Task<int> CountAsync(string processorId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Removes all dead letter entries for a processor.
     /// </summary>
-    Task ClearAsync(string processorId, CancellationToken ct = default);
+    Task ClearAsync(string processorId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Marks dead letter entries for retry. Sets retry_requested flag for reprocessing.
@@ -86,7 +86,7 @@ public interface IDeadLetterStore
     /// <see cref="IClaimableDeadLetterStore"/>. On a store that does not, the flag is
     /// recorded and nothing acts on it — the operator must drive the retry themselves.
     /// </remarks>
-    Task MarkForRetryAsync(string processorId, CancellationToken ct = default);
+    Task MarkForRetryAsync(string processorId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -115,7 +115,7 @@ public interface IClaimableDeadLetterStore : IDeadLetterStore
     /// another worker fences it by reclaiming the row.
     /// </summary>
     /// <returns><see langword="true"/> when the claimed row was removed.</returns>
-    Task<bool> CompleteRetryAsync(DeadLetterClaim claim, CancellationToken ct = default);
+    Task<bool> CompleteRetryAsync(DeadLetterClaim claim, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Atomically claims dead letter entries marked for retry, holding them with a time-bounded lease.
@@ -128,13 +128,13 @@ public interface IClaimableDeadLetterStore : IDeadLetterStore
     /// <param name="batchSize">Maximum entries to claim.</param>
     /// <param name="leaseDuration">How long the claim is valid; should exceed the longest expected handler runtime.</param>
     /// <param name="claimedBy">Identifier of the claiming worker (e.g. replica id), recorded for diagnostics.</param>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     Task<IReadOnlyList<DeadLetterClaim>> ClaimRetryRequestedAsync(
         string processorId,
         int batchSize,
         TimeSpan leaseDuration,
         string claimedBy,
-        CancellationToken ct = default);
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Abandons a retry attempt, if <paramref name="claim"/> still owns it: clears
@@ -147,7 +147,7 @@ public interface IClaimableDeadLetterStore : IDeadLetterStore
     /// retry again. Worker crashes are handled by lease expiry, not this method.
     /// </summary>
     /// <returns><see langword="true"/> when the active claim was abandoned.</returns>
-    Task<bool> AbandonRetryAsync(DeadLetterClaim claim, CancellationToken ct = default);
+    Task<bool> AbandonRetryAsync(DeadLetterClaim claim, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// As <see cref="ClaimRetryRequestedAsync"/>, and also claims entries whose
@@ -165,6 +165,6 @@ public interface IClaimableDeadLetterStore : IDeadLetterStore
         TimeSpan leaseDuration,
         string claimedBy,
         DateTimeOffset now,
-        CancellationToken ct = default)
-        => ClaimRetryRequestedAsync(processorId, batchSize, leaseDuration, claimedBy, ct);
+        CancellationToken cancellationToken = default)
+        => ClaimRetryRequestedAsync(processorId, batchSize, leaseDuration, claimedBy, cancellationToken);
 }

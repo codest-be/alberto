@@ -71,7 +71,7 @@ public sealed class UpcastEfDbContextFactory : IDbContextFactory<UpcastEfDbConte
     }
 
     public UpcastEfDbContext CreateDbContext() => new(_options);
-    public Task<UpcastEfDbContext> CreateDbContextAsync(CancellationToken ct = default)
+    public Task<UpcastEfDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
         => Task.FromResult(CreateDbContext());
 }
 

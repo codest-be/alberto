@@ -104,10 +104,10 @@ command: a window through which conflicting writes could slip undetected.
 
 ```csharp
 // before
-var (state, position) = await store.FoldWithPosition(query, State.Initial, Apply, ct);
+var (state, position) = await store.FoldWithPosition(query, State.Initial, Apply, cancellationToken);
 
 // after: use the single-return overload; the command pipeline handles position capture internally
-var state = await store.Fold(query, State.Initial, Apply, ct);
+var state = await store.Fold(query, State.Initial, Apply, cancellationToken);
 ```
 
 If you genuinely need the position for a reason outside the command pipeline (for example
@@ -126,13 +126,13 @@ reachable through any current registration path.
 // before: required implementing IReact<TEvent>
 public class NotificationReactor : IReact<OrderConfirmed>
 {
-    public Task ReactAsync(OrderConfirmed @event, CancellationToken ct) => ...;
+    public Task ReactAsync(OrderConfirmed @event, CancellationToken cancellationToken) => ...;
 }
 
 // after: a plain method; the module builder wires it
 public class NotificationReactor
 {
-    public Task OnOrderConfirmed(OrderConfirmed @event, CancellationToken ct) => ...;
+    public Task OnOrderConfirmed(OrderConfirmed @event, CancellationToken cancellationToken) => ...;
 }
 
 // registration
@@ -174,7 +174,7 @@ public sealed class OrderSummaryBatchHandler : IEfBatchHandler<OrdersDbContext>
     public IReadOnlySet<string> HandledEventTypes { get; } =
         new HashSet<string> { "order-created", "order-shipped" };
 
-    public async Task ApplyAsync(OrdersDbContext db, IEventEnvelope e, CancellationToken ct)
+    public async Task ApplyAsync(OrdersDbContext db, IEventEnvelope e, CancellationToken cancellationToken)
     {
         // hand-written dispatch on e.EventType.Id, hand-written load of the entity
     }
@@ -212,12 +212,12 @@ It now returns `Task<IReadOnlyDictionary<TKey, TState?>>`.
 
 ```csharp
 // before
-Dictionary<Guid, OrderState?> states = await store.LoadManyAsync(ids, ct);
+Dictionary<Guid, OrderState?> states = await store.LoadManyAsync(ids, cancellationToken);
 
 // after
-IReadOnlyDictionary<Guid, OrderState?> states = await store.LoadManyAsync(ids, ct);
+IReadOnlyDictionary<Guid, OrderState?> states = await store.LoadManyAsync(ids, cancellationToken);
 // or, if you need mutation:
-var states = (await store.LoadManyAsync(ids, ct)).ToDictionary(...);
+var states = (await store.LoadManyAsync(ids, cancellationToken)).ToDictionary(...);
 ```
 
 ---
@@ -305,18 +305,18 @@ A transport that rejected cleanup unless startup completed will now mask neither
 
 ```csharp
 // before (no longer valid): partial startup could allocate _client and then throw
-public Task StopAsync(CancellationToken ct) =>
+public Task StopAsync(CancellationToken cancellationToken) =>
     _started
-        ? _client!.CloseAsync(ct)
+        ? _client!.CloseAsync(cancellationToken)
         : throw new InvalidOperationException("Transport was not started");
 
 // after: cleanup is safe after successful or partial startup
-public async Task StopAsync(CancellationToken ct)
+public async Task StopAsync(CancellationToken cancellationToken)
 {
     if (_client is null)
         return;
 
-    await _client.CloseAsync(ct);
+    await _client.CloseAsync(cancellationToken);
     _client = null;
 }
 ```
@@ -681,7 +681,7 @@ var state = evolver.Reconstitute(envelopes);
 await store.Handle(command)
     .Load(boundary, evolver)
     .Decide((cmd, state) => …)
-    .Commit(ct);
+    .Commit(cancellationToken);
 ```
 
 The pipeline threads `EventSerializer.Deserialize` automatically. Call sites already using it
@@ -817,9 +817,9 @@ Three members left `IDeadLetterStore`:
 
 ```csharp
 Task<IReadOnlyList<DeadLetterClaim>> ClaimRetryRequestedAsync(
-    string processorId, int batchSize, TimeSpan leaseDuration, string claimedBy, CancellationToken ct = default);
-Task<bool> CompleteRetryAsync(DeadLetterClaim claim, CancellationToken ct = default);
-Task<bool> AbandonRetryAsync(DeadLetterClaim claim, CancellationToken ct = default);
+    string processorId, int batchSize, TimeSpan leaseDuration, string claimedBy, CancellationToken cancellationToken = default);
+Task<bool> CompleteRetryAsync(DeadLetterClaim claim, CancellationToken cancellationToken = default);
+Task<bool> AbandonRetryAsync(DeadLetterClaim claim, CancellationToken cancellationToken = default);
 ```
 
 They now sit on `IClaimableDeadLetterStore`, which extends `IDeadLetterStore` and is type-tested
@@ -853,7 +853,7 @@ the warning is there rather than leaving an operator watching a flag that never 
 
 ```csharp
 if (store is IClaimableDeadLetterStore claimable)
-    await claimable.ClaimRetryRequestedAsync(processorId, 10, TimeSpan.FromMinutes(1), "me", ct);
+    await claimable.ClaimRetryRequestedAsync(processorId, 10, TimeSpan.FromMinutes(1), "me", cancellationToken);
 ```
 
 **Fix: the conformance suite.** `DeadLetterStoreSpecification` keeps the core requirements and
@@ -1170,8 +1170,8 @@ retention window an entry can survive, not how long it is kept.
 ## The command pipeline is reshaped; `Persist` is now `Commit`
 
 The fluent pipeline in `Alberto.Commands` was rebuilt around one idea: **the boundary should
-decide which terminal you get.** Previously every pipeline exposed `Persist(query, position, ct)`,
-`PersistUnconditionally(ct)` and a `Persist(ct)` that threw at runtime when no boundary had been
+decide which terminal you get.** Previously every pipeline exposed `Persist(query, position, cancellationToken)`,
+`PersistUnconditionally(cancellationToken)` and a `Persist(cancellationToken)` that threw at runtime when no boundary had been
 established. Now the type you are holding tells you which of those is legal.
 
 | Change | Severity | What broke |
@@ -1190,21 +1190,21 @@ await store.Handle(command)
     .NoValidation()
     .Load(boundary, initial, apply)
     .Decide((cmd, state) => …)
-    .Persist(ct);
+    .Persist(cancellationToken);
 
 // after
 await store.Handle(command)
     .Load(boundary, initial, apply)
     .Decide((cmd, state) => …)
-    .Commit(ct);
+    .Commit(cancellationToken);
 ```
 
 `Validate` is now genuinely optional. Drop `NoValidation()` and nothing replaces it. It is also
 chainable, and short-circuits on the first failure without reading the log.
 
-`Load` returns a **bound** pipeline, and only a bound pipeline has `Commit(ct)`. Skipping `Load`,
+`Load` returns a **bound** pipeline, and only a bound pipeline has `Commit(cancellationToken)`. Skipping `Load`,
 or using the new `LoadUnbound` for state that does not come from the log, gives you an **unbound**
-pipeline whose terminals are `Commit(query, expectedPosition, ct)` and `CommitUnconditionally(ct)`.
+pipeline whose terminals are `Commit(query, expectedPosition, cancellationToken)` and `CommitUnconditionally(cancellationToken)`.
 The runtime "no boundary was observed" exception is gone because that state is now unrepresentable.
 
 Two terminals are new. `TryCommit` returns a failed `Result` carrying a `dcb.conflict` problem
@@ -1241,11 +1241,11 @@ Work that needs to be awaited moves to `Enrich`, which runs before `Load`:
 
 ```csharp
 await store.Handle(command)
-    .Enrich(async (cmd, ct) => cmd with { Rate = await rates.GetAsync(cmd.Currency, ct) })
+    .Enrich(async (cmd, cancellationToken) => cmd with { Rate = await rates.GetAsync(cmd.Currency, cancellationToken) })
     .Load(cmd => Boundary(cmd.OrderId), evolver)
     .Decide((cmd, state) => Actions.Convert(state, cmd.Rate))
     .RetryOnConflict(3)
-    .Commit(ct);
+    .Commit(cancellationToken);
 ```
 
 `Enrich` may change the command's type, and it runs once even when `RetryOnConflict` re-reads.
@@ -1256,26 +1256,26 @@ The old three-lambda overload let an async loader declare the boundary it had ob
 
 ```csharp
 // before
-.Load(cmd => LoadAsync(store, cmd, ct), loaded => loaded.Query, loaded => loaded.Position)
+.Load(cmd => LoadAsync(store, cmd, cancellationToken), loaded => loaded.Query, loaded => loaded.Position)
 .Decide((cmd, loaded) => Decide(loaded.State, …))
-.Persist(ct);
+.Persist(cancellationToken);
 ```
 
 That shape does not survive the bound/unbound split. The unbound terminal's arguments are
 evaluated *before* the deferred chain runs, so a loader cannot supply them. `LoadUnder` restores
 the capability with the type-state guarantee intact: the loader returns its state, its boundary
-and the position it read at, and the pipeline it produces is **bound**, so `Commit(ct)` checks
+and the position it read at, and the pipeline it produces is **bound**, so `Commit(cancellationToken)` checks
 against exactly that.
 
 ```csharp
 // after
-.LoadUnder(async (cmd, ct) =>
+.LoadUnder(async (cmd, cancellationToken) =>
 {
     var boundary = BuildBoundary(cmd);
     // Use IEventStore.StreamAsync directly: fold state and track the max position in one pass.
     var state = State.Initial;
     var position = 0L;
-    await foreach (var e in eventStore.StreamAsync(boundary, cancellationToken: ct))
+    await foreach (var e in eventStore.StreamAsync(boundary, cancellationToken: cancellationToken))
     {
         state = Apply(state, serializer.Deserialize(e));
         position = Math.Max(position, e.GlobalPosition);
@@ -1283,7 +1283,7 @@ against exactly that.
     return (state, boundary, position);
 })
 .Decide((cmd, state) => Decide(state, …))
-.Commit(ct);
+.Commit(cancellationToken);
 ```
 
 Most call sites do not need it. If the boundary is merely *derived from the command*, prefer

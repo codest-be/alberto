@@ -34,13 +34,13 @@ public sealed class ControlLoopFaultRecordTests
     private static readonly ProcessorExecutionOptions Pipelined2 =
         new() { BatchingMode = ProcessorBatchingMode.Disabled, MaxConcurrency = 2 };
 
-    private static async Task WaitForAsync(Func<bool> condition, CancellationToken ct = default)
+    private static async Task WaitForAsync(Func<bool> condition, CancellationToken cancellationToken = default)
     {
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
         while (DateTime.UtcNow < deadline)
         {
             if (condition()) return;
-            await Task.Delay(15, ct);
+            await Task.Delay(15, cancellationToken);
         }
         Assert.Fail("Condition not met within 10s");
     }
@@ -54,10 +54,10 @@ public sealed class ControlLoopFaultRecordTests
         public bool IsRebuilding { get; set; }
         public IReadOnlySet<string> HandledEventTypes { get; } = new HashSet<string> { EventTypeId };
 
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("Simulated fault");
 
-        public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct = default)
+        public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("Simulated fault");
     }
 
@@ -71,13 +71,13 @@ public sealed class ControlLoopFaultRecordTests
         public bool IsRebuilding { get; set; }
         public IReadOnlySet<string> HandledEventTypes { get; } = new HashSet<string> { EventTypeId };
 
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _processedCount);
             return Task.CompletedTask;
         }
 
-        public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct = default)
+        public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken cancellationToken = default)
         {
             Interlocked.Add(ref _processedCount, events.Count);
             return Task.CompletedTask;
@@ -103,37 +103,37 @@ public sealed class ControlLoopFaultRecordTests
         /// <summary>When set, replaces the inner record write entirely.</summary>
         public Func<ProcessorFaultRecord, CancellationToken, Task>? RecordBehavior { get; set; }
 
-        public Task<long?> GetAsync(string processorId, CancellationToken ct = default)
-            => inner.GetAsync(processorId, ct);
+        public Task<long?> GetAsync(string processorId, CancellationToken cancellationToken = default)
+            => inner.GetAsync(processorId, cancellationToken);
 
-        public Task SaveAsync(string processorId, long position, CancellationToken ct = default)
+        public Task SaveAsync(string processorId, long position, CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _saveCount);
-            return inner.SaveAsync(processorId, position, ct);
+            return inner.SaveAsync(processorId, position, cancellationToken);
         }
 
-        public Task ResetAsync(string processorId, CancellationToken ct = default)
-            => inner.ResetAsync(processorId, ct);
+        public Task ResetAsync(string processorId, CancellationToken cancellationToken = default)
+            => inner.ResetAsync(processorId, cancellationToken);
 
-        public Task RewindAsync(string processorId, long position, CancellationToken ct = default)
-            => inner.RewindAsync(processorId, position, ct);
+        public Task RewindAsync(string processorId, long position, CancellationToken cancellationToken = default)
+            => inner.RewindAsync(processorId, position, cancellationToken);
 
-        public Task RecordFaultAsync(string processorId, ProcessorFaultRecord fault, CancellationToken ct = default)
+        public Task RecordFaultAsync(string processorId, ProcessorFaultRecord fault, CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _recordCount);
             return RecordBehavior is { } behavior
-                ? behavior(fault, ct)
-                : _innerFaults.RecordFaultAsync(processorId, fault, ct);
+                ? behavior(fault, cancellationToken)
+                : _innerFaults.RecordFaultAsync(processorId, fault, cancellationToken);
         }
 
-        public Task ClearFaultAsync(string processorId, CancellationToken ct = default)
+        public Task ClearFaultAsync(string processorId, CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _clearCount);
-            return _innerFaults.ClearFaultAsync(processorId, ct);
+            return _innerFaults.ClearFaultAsync(processorId, cancellationToken);
         }
 
-        public Task<ProcessorFaultRecord?> GetFaultAsync(string processorId, CancellationToken ct = default)
-            => _innerFaults.GetFaultAsync(processorId, ct);
+        public Task<ProcessorFaultRecord?> GetFaultAsync(string processorId, CancellationToken cancellationToken = default)
+            => _innerFaults.GetFaultAsync(processorId, cancellationToken);
     }
 
     // ── harness ───────────────────────────────────────────────────────────────────
@@ -321,12 +321,12 @@ public sealed class ControlLoopFaultRecordTests
         var backend = new InMemoryEventStoreBackend();
         var store = new InstrumentedFaultStore(new InMemoryCheckpointStore())
         {
-            RecordBehavior = async (_, ct) =>
+            RecordBehavior = async (_, cancellationToken) =>
             {
                 recordStarted.TrySetResult();
                 try
                 {
-                    await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                    await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
                 }
                 finally
                 {

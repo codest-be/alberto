@@ -22,7 +22,7 @@ public sealed class PostgresDeadLetterStoreTests(SingleTenantPostgresFixture fix
             batchSize: 10,
             leaseDuration: TimeSpan.FromMinutes(5),
             claimedBy: "test-worker",
-            ct: TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
 
         var retry = Assert.Single(retries);
         Assert.Null(retry.Entry.TenantId);
@@ -43,7 +43,7 @@ public sealed class PostgresDeadLetterStoreTests(SingleTenantPostgresFixture fix
             batchSize: 10,
             leaseDuration: TimeSpan.FromMinutes(5),
             claimedBy: "worker-1",
-            ct: TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
         Assert.Single(first);
 
         // Second call before the lease expires should return nothing.
@@ -52,7 +52,7 @@ public sealed class PostgresDeadLetterStoreTests(SingleTenantPostgresFixture fix
             batchSize: 10,
             leaseDuration: TimeSpan.FromMinutes(5),
             claimedBy: "worker-2",
-            ct: TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
         Assert.Empty(second);
     }
 
@@ -67,7 +67,7 @@ public sealed class PostgresDeadLetterStoreTests(SingleTenantPostgresFixture fix
             batchSize: 10,
             leaseDuration: TimeSpan.FromMilliseconds(1),
             claimedBy: "worker-1",
-            ct: TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
         Assert.Single(first);
 
         // Wall-clock, deliberately: the claim expiry is evaluated by PostgreSQL's now(),
@@ -81,7 +81,7 @@ public sealed class PostgresDeadLetterStoreTests(SingleTenantPostgresFixture fix
             batchSize: 10,
             leaseDuration: TimeSpan.FromMinutes(5),
             claimedBy: "worker-2",
-            ct: TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
         var reclaimed = Assert.Single(second);
         Assert.Equal("worker-2", reclaimed.Entry.ClaimedBy);
     }
@@ -96,7 +96,7 @@ public sealed class PostgresDeadLetterStoreTests(SingleTenantPostgresFixture fix
             batchSize: 10,
             leaseDuration: TimeSpan.FromMinutes(5),
             claimedBy: "worker-1",
-            ct: TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
         var claimed = Assert.Single(first);
 
         Assert.True(await deadLetterStore.AbandonRetryAsync(claimed, TestContext.Current.CancellationToken));
@@ -107,7 +107,7 @@ public sealed class PostgresDeadLetterStoreTests(SingleTenantPostgresFixture fix
             batchSize: 10,
             leaseDuration: TimeSpan.FromMinutes(5),
             claimedBy: "worker-2",
-            ct: TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
         Assert.Empty(second);
 
         // Re-marking puts it back in the retry pool.
@@ -117,7 +117,7 @@ public sealed class PostgresDeadLetterStoreTests(SingleTenantPostgresFixture fix
             batchSize: 10,
             leaseDuration: TimeSpan.FromMinutes(5),
             claimedBy: "worker-2",
-            ct: TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
         var reclaimed = Assert.Single(third);
         Assert.Equal("worker-2", reclaimed.Entry.ClaimedBy);
     }
@@ -126,34 +126,34 @@ public sealed class PostgresDeadLetterStoreTests(SingleTenantPostgresFixture fix
     public async Task StaleClaim_CannotCompleteOrAbandonANewerClaim()
     {
         var (deadLetterStore, entry, _) = await SeedRetryRequestedEntryAsync();
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
 
         var first = Assert.Single(await deadLetterStore.ClaimRetryRequestedAsync(
             entry.ProcessorId,
             batchSize: 1,
             leaseDuration: TimeSpan.FromMilliseconds(1),
             claimedBy: "stale-worker",
-            ct: ct));
+            cancellationToken: cancellationToken));
 
         // Wall-clock, deliberately: the claim expiry is evaluated by PostgreSQL's now(),
         // which no client-side TimeProvider can move. Advancing a fake clock here would
         // read as determinism that is not there.
-        await Task.Delay(50, ct);
+        await Task.Delay(50, cancellationToken);
 
         var current = Assert.Single(await deadLetterStore.ClaimRetryRequestedAsync(
             entry.ProcessorId,
             batchSize: 1,
             leaseDuration: TimeSpan.FromMinutes(5),
             claimedBy: "current-worker",
-            ct: ct));
+            cancellationToken: cancellationToken));
 
         Assert.NotEqual(first.Token, current.Token);
-        Assert.False(await deadLetterStore.CompleteRetryAsync(first, ct));
-        Assert.False(await deadLetterStore.AbandonRetryAsync(first, ct));
-        Assert.Equal(1, await deadLetterStore.CountAsync(entry.ProcessorId, ct));
+        Assert.False(await deadLetterStore.CompleteRetryAsync(first, cancellationToken));
+        Assert.False(await deadLetterStore.AbandonRetryAsync(first, cancellationToken));
+        Assert.Equal(1, await deadLetterStore.CountAsync(entry.ProcessorId, cancellationToken));
 
-        Assert.True(await deadLetterStore.CompleteRetryAsync(current, ct));
-        Assert.Equal(0, await deadLetterStore.CountAsync(entry.ProcessorId, ct));
+        Assert.True(await deadLetterStore.CompleteRetryAsync(current, cancellationToken));
+        Assert.Equal(0, await deadLetterStore.CountAsync(entry.ProcessorId, cancellationToken));
     }
 
     [Fact]

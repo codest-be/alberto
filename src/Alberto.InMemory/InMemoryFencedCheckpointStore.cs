@@ -68,7 +68,7 @@ internal sealed class InMemoryFencedCheckpointStore : IFencedCheckpointStore, IC
     // ICheckpointStore
     // -------------------------------------------------------------------------
 
-    public Task<long?> GetAsync(string processorId, CancellationToken ct = default)
+    public Task<long?> GetAsync(string processorId, CancellationToken cancellationToken = default)
     {
         lock (_lock)
         {
@@ -84,7 +84,7 @@ internal sealed class InMemoryFencedCheckpointStore : IFencedCheckpointStore, IC
     /// Applies GREATEST semantics: a position lower than the stored value is silently
     /// discarded. The stored fence token is not changed by this unfenced path.
     /// </remarks>
-    public Task SaveAsync(string processorId, long position, CancellationToken ct = default)
+    public Task SaveAsync(string processorId, long position, CancellationToken cancellationToken = default)
     {
         lock (_lock)
         {
@@ -102,7 +102,7 @@ internal sealed class InMemoryFencedCheckpointStore : IFencedCheckpointStore, IC
         }
     }
 
-    public Task ResetAsync(string processorId, CancellationToken ct = default)
+    public Task ResetAsync(string processorId, CancellationToken cancellationToken = default)
     {
         lock (_lock)
         {
@@ -117,7 +117,7 @@ internal sealed class InMemoryFencedCheckpointStore : IFencedCheckpointStore, IC
     /// Overwrites the position unconditionally — backward moves are permitted.
     /// The existing fence token is preserved.
     /// </remarks>
-    public Task RewindAsync(string processorId, long position, CancellationToken ct = default)
+    public Task RewindAsync(string processorId, long position, CancellationToken cancellationToken = default)
     {
         lock (_lock)
         {
@@ -148,7 +148,7 @@ internal sealed class InMemoryFencedCheckpointStore : IFencedCheckpointStore, IC
         string replicaId,
         long fenceToken,
         bool useProcessorLeaseFencing = false,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         if (!useProcessorLeaseFencing)
             throw new NotSupportedException(
@@ -180,7 +180,7 @@ internal sealed class InMemoryFencedCheckpointStore : IFencedCheckpointStore, IC
     // -------------------------------------------------------------------------
 
     Task IProcessorFaultStore.RecordFaultAsync(
-        string processorId, ProcessorFaultRecord fault, CancellationToken ct)
+        string processorId, ProcessorFaultRecord fault, CancellationToken cancellationToken)
     {
         lock (_lock)
             _faults[processorId] = fault;
@@ -188,7 +188,7 @@ internal sealed class InMemoryFencedCheckpointStore : IFencedCheckpointStore, IC
         return Task.CompletedTask;
     }
 
-    Task IProcessorFaultStore.ClearFaultAsync(string processorId, CancellationToken ct)
+    Task IProcessorFaultStore.ClearFaultAsync(string processorId, CancellationToken cancellationToken)
     {
         lock (_lock)
             _faults.Remove(processorId);
@@ -197,7 +197,7 @@ internal sealed class InMemoryFencedCheckpointStore : IFencedCheckpointStore, IC
     }
 
     Task<ProcessorFaultRecord?> IProcessorFaultStore.GetFaultAsync(
-        string processorId, CancellationToken ct)
+        string processorId, CancellationToken cancellationToken)
     {
         lock (_lock)
             return Task.FromResult(_faults.GetValueOrDefault(processorId));
@@ -207,7 +207,7 @@ internal sealed class InMemoryFencedCheckpointStore : IFencedCheckpointStore, IC
     // ICheckpointInventory
     // -------------------------------------------------------------------------
 
-    public Task<IReadOnlyList<string>> ListProcessorIdsAsync(CancellationToken ct = default)
+    public Task<IReadOnlyList<string>> ListProcessorIdsAsync(CancellationToken cancellationToken = default)
     {
         lock (_lock)
             return Task.FromResult<IReadOnlyList<string>>(_checkpoints.Keys.ToList());

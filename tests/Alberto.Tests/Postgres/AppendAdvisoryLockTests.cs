@@ -73,18 +73,18 @@ public sealed class AppendAdvisoryLockTests(PostgresCluster cluster)
     [Fact]
     public async Task Colliding_hashtext_keys_do_not_collide_in_the_64_bit_space()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
 
-        await using var conn = await OpenAsync(await FreshDatabaseAsync(ct), ct);
-        var (key1, key2) = await FindHashtextCollisionAsync(conn, ct);
+        await using var conn = await OpenAsync(await FreshDatabaseAsync(cancellationToken), cancellationToken);
+        var (key1, key2) = await FindHashtextCollisionAsync(conn, cancellationToken);
 
         await using var cmd = new NpgsqlCommand(
             "SELECT hashtextextended(@k1, 0), hashtextextended(@k2, 0)", conn);
         cmd.Parameters.AddWithValue("k1", key1);
         cmd.Parameters.AddWithValue("k2", key2);
 
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        await reader.ReadAsync(ct);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        await reader.ReadAsync(cancellationToken);
 
         reader.GetInt64(0).Should().NotBe(reader.GetInt64(1),
             because: $"'{key1}' and '{key2}' share a hashtext value, so under the old " +
@@ -112,24 +112,24 @@ public sealed class AppendAdvisoryLockTests(PostgresCluster cluster)
     [Fact]
     public async Task Two_hashtext_colliding_tenants_can_hold_the_append_lock_concurrently()
     {
-        var ct = TestContext.Current.CancellationToken;
-        var connectionString = await FreshDatabaseAsync(ct);
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var connectionString = await FreshDatabaseAsync(cancellationToken);
 
-        await using var first = await OpenAsync(connectionString, ct);
-        await using var second = await OpenAsync(connectionString, ct);
+        await using var first = await OpenAsync(connectionString, cancellationToken);
+        await using var second = await OpenAsync(connectionString, cancellationToken);
 
-        var (key1, key2) = await FindHashtextCollisionAsync(first, ct);
+        var (key1, key2) = await FindHashtextCollisionAsync(first, cancellationToken);
 
-        await using var tx1 = await first.BeginTransactionAsync(ct);
-        await using var tx2 = await second.BeginTransactionAsync(ct);
+        await using var tx1 = await first.BeginTransactionAsync(cancellationToken);
+        await using var tx2 = await second.BeginTransactionAsync(cancellationToken);
 
         // Without this, a regression to the 32-bit key blocks the test run indefinitely
         // instead of reporting a failure.
-        await ExecuteAsync(second, tx2, "SET LOCAL lock_timeout = '5s'", ct);
+        await ExecuteAsync(second, tx2, "SET LOCAL lock_timeout = '5s'", cancellationToken);
 
-        await AcquireAppendLockAsync(first, tx1, key1, ct);
+        await AcquireAppendLockAsync(first, tx1, key1, cancellationToken);
 
-        var acquireSecond = async () => await AcquireAppendLockAsync(second, tx2, key2, ct);
+        var acquireSecond = async () => await AcquireAppendLockAsync(second, tx2, key2, cancellationToken);
 
         await acquireSecond.Should().NotThrowAsync(
             because: $"'{key1}' and '{key2}' are different tenants — they collide only under " +
@@ -148,23 +148,23 @@ public sealed class AppendAdvisoryLockTests(PostgresCluster cluster)
     [Fact]
     public async Task The_same_tenant_key_still_serializes()
     {
-        var ct = TestContext.Current.CancellationToken;
-        var connectionString = await FreshDatabaseAsync(ct);
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var connectionString = await FreshDatabaseAsync(cancellationToken);
 
         const string sharedKey = "alberto-append:public:tenant-acme";
 
-        await using var first = await OpenAsync(connectionString, ct);
-        await using var second = await OpenAsync(connectionString, ct);
+        await using var first = await OpenAsync(connectionString, cancellationToken);
+        await using var second = await OpenAsync(connectionString, cancellationToken);
 
-        await using var tx1 = await first.BeginTransactionAsync(ct);
-        await using var tx2 = await second.BeginTransactionAsync(ct);
+        await using var tx1 = await first.BeginTransactionAsync(cancellationToken);
+        await using var tx2 = await second.BeginTransactionAsync(cancellationToken);
 
         // Short, because the expected outcome is the timeout firing.
-        await ExecuteAsync(second, tx2, "SET LOCAL lock_timeout = '2s'", ct);
+        await ExecuteAsync(second, tx2, "SET LOCAL lock_timeout = '2s'", cancellationToken);
 
-        await AcquireAppendLockAsync(first, tx1, sharedKey, ct);
+        await AcquireAppendLockAsync(first, tx1, sharedKey, cancellationToken);
 
-        var acquireSecond = async () => await AcquireAppendLockAsync(second, tx2, sharedKey, ct);
+        var acquireSecond = async () => await AcquireAppendLockAsync(second, tx2, sharedKey, cancellationToken);
 
         (await acquireSecond.Should().ThrowAsync<PostgresException>(
                 because: "two appends under the same key must not evaluate the DCB conflict " +
@@ -180,18 +180,18 @@ public sealed class AppendAdvisoryLockTests(PostgresCluster cluster)
     /// copy. Reached through <c>InternalsVisibleTo</c>.
     /// </summary>
     private static Task AcquireAppendLockAsync(
-        NpgsqlConnection conn, NpgsqlTransaction tx, string lockKey, CancellationToken ct) =>
-        PostgresBackendHelpers.AcquireAppendLockAsync(conn, tx, lockKey, ct);
+        NpgsqlConnection conn, NpgsqlTransaction tx, string lockKey, CancellationToken cancellationToken) =>
+        PostgresBackendHelpers.AcquireAppendLockAsync(conn, tx, lockKey, cancellationToken);
 
     private static async Task<(string Key1, string Key2)> FindHashtextCollisionAsync(
-        NpgsqlConnection conn, CancellationToken ct)
+        NpgsqlConnection conn, CancellationToken cancellationToken)
     {
         await using var cmd = new NpgsqlCommand(FindCollisionSql, conn);
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
 
         // No collision among 500k keys in a 32-bit space would mean the search is broken, not
         // that the risk is absent — so this is a failure rather than a skip.
-        (await reader.ReadAsync(ct)).Should().BeTrue(
+        (await reader.ReadAsync(cancellationToken)).Should().BeTrue(
             because: $"{CandidateKeys:N0} keys in hashtext's 32-bit space collide with " +
                      "overwhelming probability");
 
@@ -199,19 +199,19 @@ public sealed class AppendAdvisoryLockTests(PostgresCluster cluster)
     }
 
     private static async Task ExecuteAsync(
-        NpgsqlConnection conn, NpgsqlTransaction tx, string sql, CancellationToken ct)
+        NpgsqlConnection conn, NpgsqlTransaction tx, string sql, CancellationToken cancellationToken)
     {
         await using var cmd = new NpgsqlCommand(sql, conn, tx);
-        await cmd.ExecuteNonQueryAsync(ct);
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private Task<string> FreshDatabaseAsync(CancellationToken ct) =>
-        cluster.CloneAsync(PostgresTemplates.Empty, nameof(AppendAdvisoryLockTests), ct);
+    private Task<string> FreshDatabaseAsync(CancellationToken cancellationToken) =>
+        cluster.CloneAsync(PostgresTemplates.Empty, nameof(AppendAdvisoryLockTests), cancellationToken);
 
-    private static async Task<NpgsqlConnection> OpenAsync(string connectionString, CancellationToken ct)
+    private static async Task<NpgsqlConnection> OpenAsync(string connectionString, CancellationToken cancellationToken)
     {
         var conn = new NpgsqlConnection(connectionString);
-        await conn.OpenAsync(ct);
+        await conn.OpenAsync(cancellationToken);
         return conn;
     }
 }

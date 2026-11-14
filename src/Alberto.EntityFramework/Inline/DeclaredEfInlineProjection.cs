@@ -88,7 +88,7 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : IInlineP
     /// <inheritdoc/>
     public async Task ProcessAsync(
         IReadOnlyList<IEventEnvelope> events,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         // Build doc-id map up front so we can load all affected rows in one query.
         var docIdMap = new Dictionary<IEventEnvelope, string>(ReferenceEqualityComparer.Instance);
@@ -112,7 +112,7 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : IInlineP
         {
             try
             {
-                await ProcessOnceAsync(events, docIdMap, documentKeys, ct);
+                await ProcessOnceAsync(events, docIdMap, documentKeys, cancellationToken);
                 return;
             }
             catch (Exception ex) when (IsRetryableConflict(ex))
@@ -142,7 +142,7 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : IInlineP
                 // Exponential backoff with mild jitter to scatter concurrent retriers.
                 var delayMs = (int)(InitialRetryDelay.TotalMilliseconds * Math.Pow(2, attempt - 1));
                 var jitter = Random.Shared.Next(0, delayMs);
-                await Task.Delay(delayMs + jitter, ct);
+                await Task.Delay(delayMs + jitter, cancellationToken);
             }
         }
     }
@@ -151,9 +151,9 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : IInlineP
         IReadOnlyList<IEventEnvelope> events,
         Dictionary<IEventEnvelope, string> docIdMap,
         List<string> documentKeys,
-        CancellationToken ct)
+        CancellationToken cancellationToken)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync(ct);
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
 
         // Resolved once for the whole attempt, so a promotion landing mid-write cannot split
         // the load, the upserts and the deletes across two versions.
@@ -168,7 +168,7 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : IInlineP
             .IgnoreQueryFilters([ProjectionQueryFilters.ActiveVersion])
             .AsNoTracking()
             .Where(e => documentKeys.Contains(e.DocumentId) && e.RebuildVersion == version)
-            .ToDictionaryAsync(e => e.DocumentId, ct);
+            .ToDictionaryAsync(e => e.DocumentId, cancellationToken);
 
         var pending = new Dictionary<string, TEntity>();
         var deletes = new HashSet<string>();
@@ -235,7 +235,7 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : IInlineP
                 context.Set<TEntity>().Add(entity);
         }
 
-        await context.SaveChangesAsync(ct);
+        await context.SaveChangesAsync(cancellationToken);
     }
 
     private static bool IsRetryableConflict(Exception ex) => ex switch

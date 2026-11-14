@@ -19,7 +19,7 @@ internal sealed class InMemoryCheckpointStore : ICheckpointStore, ICheckpointInv
     private readonly Dictionary<string, long> _checkpoints = new();
     private readonly Dictionary<string, ProcessorFaultRecord> _faults = new();
 
-    public Task<long?> GetAsync(string processorId, CancellationToken ct = default)
+    public Task<long?> GetAsync(string processorId, CancellationToken cancellationToken = default)
     {
         lock (_lock)
         {
@@ -29,7 +29,7 @@ internal sealed class InMemoryCheckpointStore : ICheckpointStore, ICheckpointInv
         }
     }
 
-    public Task SaveAsync(string processorId, long position, CancellationToken ct = default)
+    public Task SaveAsync(string processorId, long position, CancellationToken cancellationToken = default)
     {
         lock (_lock)
         {
@@ -42,7 +42,7 @@ internal sealed class InMemoryCheckpointStore : ICheckpointStore, ICheckpointInv
         }
     }
 
-    public Task ResetAsync(string processorId, CancellationToken ct = default)
+    public Task ResetAsync(string processorId, CancellationToken cancellationToken = default)
     {
         lock (_lock)
         {
@@ -52,7 +52,7 @@ internal sealed class InMemoryCheckpointStore : ICheckpointStore, ICheckpointInv
         }
     }
 
-    public Task RewindAsync(string processorId, long position, CancellationToken ct = default)
+    public Task RewindAsync(string processorId, long position, CancellationToken cancellationToken = default)
     {
         lock (_lock)
         {
@@ -65,7 +65,7 @@ internal sealed class InMemoryCheckpointStore : ICheckpointStore, ICheckpointInv
     }
 
     Task IProcessorFaultStore.RecordFaultAsync(
-        string processorId, ProcessorFaultRecord fault, CancellationToken ct)
+        string processorId, ProcessorFaultRecord fault, CancellationToken cancellationToken)
     {
         lock (_lock)
         {
@@ -74,7 +74,7 @@ internal sealed class InMemoryCheckpointStore : ICheckpointStore, ICheckpointInv
         }
     }
 
-    Task IProcessorFaultStore.ClearFaultAsync(string processorId, CancellationToken ct)
+    Task IProcessorFaultStore.ClearFaultAsync(string processorId, CancellationToken cancellationToken)
     {
         lock (_lock)
         {
@@ -84,7 +84,7 @@ internal sealed class InMemoryCheckpointStore : ICheckpointStore, ICheckpointInv
     }
 
     Task<ProcessorFaultRecord?> IProcessorFaultStore.GetFaultAsync(
-        string processorId, CancellationToken ct)
+        string processorId, CancellationToken cancellationToken)
     {
         lock (_lock)
         {
@@ -105,7 +105,7 @@ internal sealed class InMemoryCheckpointStore : ICheckpointStore, ICheckpointInv
     }
 
     /// <inheritdoc />
-    public Task<IReadOnlyList<string>> ListProcessorIdsAsync(CancellationToken ct = default)
+    public Task<IReadOnlyList<string>> ListProcessorIdsAsync(CancellationToken cancellationToken = default)
     {
         lock (_lock)
         {

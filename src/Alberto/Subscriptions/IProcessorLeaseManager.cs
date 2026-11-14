@@ -16,10 +16,10 @@ public interface IProcessorLeaseManager
     /// <param name="consumerId">Unique identifier for the consumer group (typically the module key).</param>
     /// <param name="processorId">The processor ID to acquire the lease for.</param>
     /// <param name="replicaId">Unique identifier for this replica instance.</param>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A lease if acquired, null if another instance owns the processor.</returns>
     Task<IProcessorLease?> TryAcquireAsync(
-        string consumerId, string processorId, string replicaId, CancellationToken ct = default);
+        string consumerId, string processorId, string replicaId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Renews all leases owned by the specified replica.
@@ -27,19 +27,19 @@ public interface IProcessorLeaseManager
     /// </summary>
     /// <param name="consumerId">Unique identifier for the consumer group.</param>
     /// <param name="replicaId">Unique identifier for this replica instance.</param>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The processor IDs whose leases were renewed.</returns>
     Task<IReadOnlyList<string>> RenewLeasesAsync(
-        string consumerId, string replicaId, CancellationToken ct = default);
+        string consumerId, string replicaId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Releases all leases owned by the specified replica. Called during graceful shutdown.
     /// </summary>
     /// <param name="consumerId">Unique identifier for the consumer group.</param>
     /// <param name="replicaId">Unique identifier for this replica instance.</param>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     Task ReleaseAllLeasesAsync(
-        string consumerId, string replicaId, CancellationToken ct = default);
+        string consumerId, string replicaId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets the lease duration configured for this manager.

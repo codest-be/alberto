@@ -40,14 +40,14 @@ public sealed class ControlLoopTests
         public bool IsRebuilding { get; set; }
         public IReadOnlySet<string> HandledEventTypes { get; } = handledTypes;
 
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default)
         {
             lock (_lock) ProcessedEvents.Add(@event);
             Interlocked.Increment(ref _processedCount);
             return Task.CompletedTask;
         }
 
-        public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct = default)
+        public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken cancellationToken = default)
         {
             lock (_lock) ProcessedEvents.AddRange(events);
             Interlocked.Add(ref _processedCount, events.Count);
@@ -62,10 +62,10 @@ public sealed class ControlLoopTests
         public bool IsRebuilding { get; set; }
         public IReadOnlySet<string> HandledEventTypes { get; } = handledTypes;
 
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("Simulated fault");
 
-        public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct = default)
+        public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("Simulated fault");
     }
 
@@ -76,7 +76,7 @@ public sealed class ControlLoopTests
         public bool IsRebuilding { get; set; }
         public IReadOnlySet<string> HandledEventTypes { get; } = handledTypes;
 
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
     }
 
@@ -99,14 +99,14 @@ public sealed class ControlLoopTests
         public bool IsRebuilding { get; set; }
         public IReadOnlySet<string> HandledEventTypes { get; } = handledTypes;
 
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default)
         {
             ProcessedEvents.Add(@event);
             Interlocked.Increment(ref _processedCount);
             return Task.CompletedTask;
         }
 
-        public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct = default)
+        public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken cancellationToken = default)
         {
             ProcessedBatches.Add(events.ToList());
             Interlocked.Add(ref _processedCount, events.Count);
@@ -632,7 +632,7 @@ public sealed class ControlLoopTests
 
         var reactor = new FunctionalReactor<TestEventA>(
             "parallel-test",
-            async (_, _, ct) =>
+            async (_, _, cancellationToken) =>
             {
                 int current;
                 lock (syncLock)
@@ -645,7 +645,7 @@ public sealed class ControlLoopTests
                 // Wall-clock, deliberately: this delay simulates real processing work that holds
                 // the concurrency slot open. Replacing it with a fake-clock advance would not
                 // create genuine concurrent execution, defeating the maxConcurrent assertion.
-                await Task.Delay(50, ct);
+                await Task.Delay(50, cancellationToken);
                 lock (syncLock) { concurrentCount--; }
             },
             maxConcurrency: 5);
@@ -668,7 +668,7 @@ public sealed class ControlLoopTests
 
         var reactor = new FunctionalReactor<TestEventA>(
             "sequential-test",
-            async (_, _, ct) =>
+            async (_, _, cancellationToken) =>
             {
                 lock (syncLock)
                 {
@@ -679,7 +679,7 @@ public sealed class ControlLoopTests
                 // Wall-clock, deliberately: this delay simulates real processing work that holds
                 // the concurrency slot open. Replacing it with a fake-clock advance would not
                 // create genuine sequential execution, defeating the maxConcurrent assertion.
-                await Task.Delay(10, ct);
+                await Task.Delay(10, cancellationToken);
                 lock (syncLock) { concurrentCount--; }
             },
             maxConcurrency: 1);
@@ -782,7 +782,7 @@ public sealed class ControlLoopTests
 
         var processor = new DelegatingProcessor("pipelined-concurrent",
             new HashSet<string> { "test-event-a" },
-            async (_, ct) =>
+            async (_, cancellationToken) =>
             {
                 lock (syncLock)
                 {
@@ -792,7 +792,7 @@ public sealed class ControlLoopTests
                 // Wall-clock, deliberately: this delay simulates real processing work that holds
                 // the concurrency slot open. Replacing it with a fake-clock advance would not
                 // create genuine concurrent execution, defeating the maxConcurrent assertion.
-                await Task.Delay(50, ct);
+                await Task.Delay(50, cancellationToken);
                 lock (syncLock) { concurrentCount--; }
                 Interlocked.Increment(ref processedCount);
             });
@@ -836,13 +836,13 @@ public sealed class ControlLoopTests
 
         var processor = new DelegatingProcessor("watermark-test",
             new HashSet<string> { "test-event-a" },
-            async (evt, ct) =>
+            async (evt, cancellationToken) =>
             {
                 if (evt.GlobalPosition == 2) // the slow event
                 {
                     // Signal that the slow handler is verifiably in-flight.
                     handlerEnteredForPos2.TrySetResult();
-                    await gate.Task.WaitAsync(ct);
+                    await gate.Task.WaitAsync(cancellationToken);
                 }
             });
 
@@ -923,8 +923,8 @@ public sealed class ControlLoopTests
         public bool IsRebuilding { get; set; }
         public IReadOnlySet<string> HandledEventTypes { get; } = handledTypes;
 
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
-            => handler(@event, ct);
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default)
+            => handler(@event, cancellationToken);
     }
 
     #endregion
@@ -998,13 +998,13 @@ public sealed class ControlLoopTests
     /// or <paramref name="timeout"/> elapses, then calls <see cref="Assert.Fail"/>.
     /// Replaces wall-clock <c>Task.Delay</c> waits with deterministic condition-based synchronization.
     /// </summary>
-    private static async Task WaitForAsync(Func<bool> condition, TimeSpan timeout, CancellationToken ct = default)
+    private static async Task WaitForAsync(Func<bool> condition, TimeSpan timeout, CancellationToken cancellationToken = default)
     {
         var deadline = DateTime.UtcNow + timeout;
         while (DateTime.UtcNow < deadline)
         {
             if (condition()) return;
-            await Task.Delay(15, ct);
+            await Task.Delay(15, cancellationToken);
         }
         Assert.Fail($"Condition not met within {timeout}");
     }

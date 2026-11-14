@@ -430,7 +430,7 @@ public sealed class CommandPipelineRetryTests
 
     // -----------------------------------------------------------------------
     // UnboundDecision.TryCommit — kills L32 (try body) and L36 (catch body).
-    // These are both NoCoverage because TryCommit(query, pos, ct) is never
+    // These are both NoCoverage because TryCommit(query, pos, cancellationToken) is never
     // called anywhere in the existing suite.
     // -----------------------------------------------------------------------
 

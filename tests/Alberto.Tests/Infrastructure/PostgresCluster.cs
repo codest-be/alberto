@@ -161,11 +161,11 @@ public sealed class PostgresCluster : IAsyncLifetime
     /// </summary>
     /// <param name="template">The schema the clone starts from; built on first use, then reused.</param>
     /// <param name="label">Names the database in server-side views; typically the fixture type.</param>
-    /// <param name="ct">Cancels the clone; the template build itself is not cancellable.</param>
+    /// <param name="cancellationToken">Cancels the clone; the template build itself is not cancellable.</param>
     public async Task<string> CloneAsync(
         PostgresTemplate template,
         string label,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         await _start.Value;
         await EnsureTemplateAsync(template);
@@ -174,7 +174,7 @@ public sealed class PostgresCluster : IAsyncLifetime
         await ExecuteAsync(
             _adminConnectionString,
             $"""CREATE DATABASE "{database}" TEMPLATE "{template.Name}";""",
-            ct);
+            cancellationToken);
 
         return ConnectionStringFor(database, b => b.MaxPoolSize = MaxPoolSizePerFixture);
     }
@@ -234,12 +234,12 @@ public sealed class PostgresCluster : IAsyncLifetime
     private static async Task ExecuteAsync(
         string connectionString,
         string sql,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand(sql, connection);
-        await command.ExecuteNonQueryAsync(ct);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     // The cloned databases are not dropped: the container is torn down at the end of the run

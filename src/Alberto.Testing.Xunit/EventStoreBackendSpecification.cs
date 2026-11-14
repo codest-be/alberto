@@ -337,18 +337,18 @@ public abstract class EventStoreBackendSpecification
         if (!SupportsStreamAll)
             return;
 
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var backend = await CreateBackend();
-        var start = await backend.GetLastPositionAsync(ct);
+        var start = await backend.GetLastPositionAsync(cancellationToken);
         var (wanted, other) = ($"wanted-{TestId}", $"other-{TestId}");
 
         var appended = await backend.AppendAsync([
             CreateEvent(wanted, $"tag:1{TestId}"),
             CreateEvent(other, $"tag:2{TestId}"),
             CreateEvent(wanted, $"tag:3{TestId}")
-        ], cancellationToken: ct);
+        ], cancellationToken: cancellationToken);
 
-        var result = await backend.ReadAllOfTypesAsync(new HashSet<string> { wanted }, start, limit: int.MaxValue, ct);
+        var result = await backend.ReadAllOfTypesAsync(new HashSet<string> { wanted }, start, limit: int.MaxValue, cancellationToken);
 
         Assert.Equal(
             appended.Where(e => e.EventType.Id == wanted).Select(e => e.GlobalPosition),
@@ -956,20 +956,20 @@ public abstract class EventStoreBackendSpecification
     [Fact]
     public async Task StreamingRead_ByQuery_YieldsSameEventsAsBatchRead()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var backend = await CreateBackend();
         await backend.AppendAsync([
             CreateEvent("stream-a", $"stream:{TestId}"),
             CreateEvent("stream-b", $"stream:{TestId}"),
             CreateEvent("stream-a", $"other:{TestId}"),
             CreateEvent("stream-c", $"stream:{TestId}")
-        ], cancellationToken: ct);
+        ], cancellationToken: cancellationToken);
 
         var query = DcbQuery.ByTags($"stream:{TestId}");
-        var batch = await backend.ReadAsync(query, afterPosition: 0, limit: int.MaxValue, cancellationToken: ct);
+        var batch = await backend.ReadAsync(query, afterPosition: 0, limit: int.MaxValue, cancellationToken: cancellationToken);
 
         var streamed = new List<IEventEnvelope>();
-        await foreach (var e in backend.StreamAsync(query, cancellationToken: ct))
+        await foreach (var e in backend.StreamAsync(query, cancellationToken: cancellationToken))
             streamed.Add(e);
 
         Assert.Equal(3, streamed.Count);
@@ -982,13 +982,13 @@ public abstract class EventStoreBackendSpecification
     [Fact]
     public async Task StreamingRead_WithAfterPosition_SkipsEarlierEvents()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var backend = await CreateBackend();
-        var first = await backend.AppendAsync([CreateEvent("after-1", $"after:{TestId}")], cancellationToken: ct);
-        await backend.AppendAsync([CreateEvent("after-2", $"after:{TestId}"), CreateEvent("after-3", $"after:{TestId}")], cancellationToken: ct);
+        var first = await backend.AppendAsync([CreateEvent("after-1", $"after:{TestId}")], cancellationToken: cancellationToken);
+        await backend.AppendAsync([CreateEvent("after-2", $"after:{TestId}"), CreateEvent("after-3", $"after:{TestId}")], cancellationToken: cancellationToken);
 
         var streamed = new List<IEventEnvelope>();
-        await foreach (var e in backend.StreamAsync(DcbQuery.ByTags($"after:{TestId}"), first.Single().GlobalPosition, ct))
+        await foreach (var e in backend.StreamAsync(DcbQuery.ByTags($"after:{TestId}"), first.Single().GlobalPosition, cancellationToken))
             streamed.Add(e);
 
         Assert.Equal(["after-2", "after-3"], streamed.Select(e => e.EventType.Id));
@@ -998,14 +998,14 @@ public abstract class EventStoreBackendSpecification
     [Fact]
     public async Task StreamingRead_StoppedEarly_YieldsLeadingEventsAndLeavesBackendUsable()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var backend = await CreateBackend();
         await backend.AppendAsync(
             Enumerable.Range(0, 5).Select(i => CreateEvent($"early-{i}", $"early:{TestId}")).ToList(),
-            cancellationToken: ct);
+            cancellationToken: cancellationToken);
 
         var seen = new List<string>();
-        await foreach (var e in backend.StreamAsync(DcbQuery.ByTags($"early:{TestId}"), cancellationToken: ct))
+        await foreach (var e in backend.StreamAsync(DcbQuery.ByTags($"early:{TestId}"), cancellationToken: cancellationToken))
         {
             seen.Add(e.EventType.Id);
             if (seen.Count == 2)
@@ -1013,7 +1013,7 @@ public abstract class EventStoreBackendSpecification
         }
 
         Assert.Equal(["early-0", "early-1"], seen);
-        Assert.True(await backend.GetLastPositionAsync(ct) > 0);
+        Assert.True(await backend.GetLastPositionAsync(cancellationToken) > 0);
     }
 
     /// <summary>A cancelled token must stop a streamed read with <see cref="OperationCanceledException"/>.</summary>
@@ -1041,28 +1041,28 @@ public abstract class EventStoreBackendSpecification
     [Fact]
     public async Task StreamingRead_All_YieldsEveryEventAfterPosition()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var backend = await CreateBackend();
 
         if (!SupportsStreamAll)
         {
             await Assert.ThrowsAsync<InvalidOperationException>(async () =>
             {
-                await foreach (var _ in backend.StreamAllAsync(cancellationToken: ct))
+                await foreach (var _ in backend.StreamAllAsync(cancellationToken: cancellationToken))
                 {
                 }
             });
             return;
         }
 
-        var start = await backend.GetLastPositionAsync(ct);
+        var start = await backend.GetLastPositionAsync(cancellationToken);
         var appended = await backend.AppendAsync([
             CreateEvent("all-a", $"all:1{TestId}"),
             CreateEvent("all-b", $"all:2{TestId}")
-        ], cancellationToken: ct);
+        ], cancellationToken: cancellationToken);
 
         var streamed = new List<IEventEnvelope>();
-        await foreach (var e in backend.StreamAllAsync(start, ct))
+        await foreach (var e in backend.StreamAllAsync(start, cancellationToken))
             streamed.Add(e);
 
         Assert.Equal(appended.Select(e => e.GlobalPosition), streamed.Select(e => e.GlobalPosition));

@@ -38,5 +38,5 @@ public interface ICheckpointInventory
     bool CanEnumerate => true;
 
     /// <summary>Returns every processor id with a stored checkpoint, in no particular order.</summary>
-    Task<IReadOnlyList<string>> ListProcessorIdsAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<string>> ListProcessorIdsAsync(CancellationToken cancellationToken = default);
 }

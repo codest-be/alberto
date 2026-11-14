@@ -60,7 +60,7 @@ public sealed class CrossTenantProjectionContractTests(SingleTenantPostgresFixtu
     [Fact]
     public async Task CrossTenantProjection_ReaderWithoutTenantId_SeesWhatWriterWrote()
     {
-        var projectionType = $"ct-contract-{_id}";
+        var projectionType = $"cancellationToken-contract-{_id}";
         var docId = "overview";
 
         // Writer path: no tenantId — the only mode this schema supports, and the one a
@@ -98,7 +98,7 @@ public sealed class CrossTenantProjectionContractTests(SingleTenantPostgresFixtu
     [Fact]
     public async Task CrossTenantProjection_MultiTenantReaderOnSingleTenantSchema_Throws()
     {
-        var projectionType = $"ct-mismatch-{_id}";
+        var projectionType = $"cancellationToken-mismatch-{_id}";
         var docId = "overview";
 
         var writer = new PostgresStateStore<SimpleState>(fixture.DataSource, projectionType);

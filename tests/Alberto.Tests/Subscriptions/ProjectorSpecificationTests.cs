@@ -72,21 +72,21 @@ public class ProjectorSpecificationTests
         public List<string> DeletedIds { get; } = new();
 
         public Task<IReadOnlyDictionary<string, OrderSummary>> LoadManyAsync(
-            IEnumerable<string> documentIds, CancellationToken ct = default)
-            => _inner.LoadManyAsync(documentIds, ct);
+            IEnumerable<string> documentIds, CancellationToken cancellationToken = default)
+            => _inner.LoadManyAsync(documentIds, cancellationToken);
 
         public Task ApplyChangesAsync(
             IReadOnlyDictionary<string, OrderSummary> upserts,
             IReadOnlyCollection<string> deletes,
-            CancellationToken ct = default)
+            CancellationToken cancellationToken = default)
         {
             DeletedIds.AddRange(deletes);
-            return _inner.ApplyChangesAsync(upserts, deletes, ct);
+            return _inner.ApplyChangesAsync(upserts, deletes, cancellationToken);
         }
 
         public Task<IReadOnlyList<OrderSummary>> ListRecentAsync(
-            int limit = 20, CancellationToken ct = default)
-            => _inner.ListRecentAsync(limit, ct);
+            int limit = 20, CancellationToken cancellationToken = default)
+            => _inner.ListRecentAsync(limit, cancellationToken);
     }
 
     #endregion
@@ -431,18 +431,18 @@ public class ProjectorSpecificationTests
     {
         public Task<IReadOnlyDictionary<string, OrderSummary>> LoadManyAsync(
             IEnumerable<string> documentIds,
-            CancellationToken ct = default)
+            CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyDictionary<string, OrderSummary>>(new Dictionary<string, OrderSummary>());
 
         public Task ApplyChangesAsync(
             IReadOnlyDictionary<string, OrderSummary> upserts,
             IReadOnlyCollection<string> deletes,
-            CancellationToken ct = default)
+            CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("Simulated batch failure");
 
         public Task<IReadOnlyList<OrderSummary>> ListRecentAsync(
             int limit = 20,
-            CancellationToken ct = default)
+            CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<OrderSummary>>([]);
     }
 

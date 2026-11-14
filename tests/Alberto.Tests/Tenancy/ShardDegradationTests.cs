@@ -46,9 +46,9 @@ public sealed class ShardDegradationTests(PostgresCluster cluster)
     [Fact]
     public async Task A_shard_that_is_unreachable_at_startup_degrades_the_module_instead_of_stopping_it()
     {
-        var ct = TestContext.Current.CancellationToken;
-        var db1 = await cluster.CloneAsync(PostgresTemplates.MultiTenant, "degradeddb1", ct);
-        var catalog = await cluster.CloneAsync(PostgresTemplates.Empty, "degradedcatalog", ct);
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var db1 = await cluster.CloneAsync(PostgresTemplates.MultiTenant, "degradeddb1", cancellationToken);
+        var catalog = await cluster.CloneAsync(PostgresTemplates.Empty, "degradedcatalog", cancellationToken);
 
         // Starting at all is half the assertion: an unsharded module whose only database is
         // unreachable fails startup, and that is still the right behaviour for it.
@@ -61,7 +61,7 @@ public sealed class ShardDegradationTests(PostgresCluster cluster)
 
         // The tenants of the healthy database are unaffected.
         var map = host.Services.GetRequiredKeyedService<ITenantShardMap>(ModuleKey);
-        await map.AssignAsync("acme", "db1", ct);
+        await map.AssignAsync("acme", "db1", cancellationToken);
 
         await using var scope = host.Services.CreateAsyncScope();
         scope.ServiceProvider.GetRequiredService<TenantContext>().SetTenant("acme");
@@ -74,30 +74,30 @@ public sealed class ShardDegradationTests(PostgresCluster cluster)
                 Tags = [EventTag.Parse($"degraded:{Guid.NewGuid():N}")],
                 EventData = """{"test": true}""",
             }],
-            cancellationToken: ct);
+            cancellationToken: cancellationToken);
 
         appended.Should().ContainSingle();
 
-        await host.StopAsync(ct);
+        await host.StopAsync(cancellationToken);
     }
 
     [Fact]
     public async Task The_health_check_reports_degraded_and_names_the_missing_shard()
     {
-        var ct = TestContext.Current.CancellationToken;
-        var db1 = await cluster.CloneAsync(PostgresTemplates.MultiTenant, "degradedcheckdb1", ct);
-        var catalog = await cluster.CloneAsync(PostgresTemplates.Empty, "degradedcheckcatalog", ct);
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var db1 = await cluster.CloneAsync(PostgresTemplates.MultiTenant, "degradedcheckdb1", cancellationToken);
+        var catalog = await cluster.CloneAsync(PostgresTemplates.Empty, "degradedcheckcatalog", cancellationToken);
 
         using var host = await StartHostAsync(db1, catalog, withHealthChecks: true);
 
         var report = await host.Services.GetRequiredService<HealthCheckService>()
-            .CheckHealthAsync(r => r.Name == $"alberto-shards-{ModuleKey}", ct);
+            .CheckHealthAsync(r => r.Name == $"alberto-shards-{ModuleKey}", cancellationToken);
 
         var entry = report.Entries.Should().ContainSingle().Subject.Value;
         entry.Status.Should().Be(HealthStatus.Degraded);
         entry.Data["db1"].Should().Be("healthy");
         entry.Data["db2"].Should().NotBe("healthy");
 
-        await host.StopAsync(ct);
+        await host.StopAsync(cancellationToken);
     }
 }

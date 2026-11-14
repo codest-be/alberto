@@ -140,12 +140,12 @@ public interface IProjectionRebuildStore
     /// than as a missing value, so callers have one shape to handle.
     /// </summary>
     Task<ProjectionRebuildState> GetAsync(
-        string processorId, string projectionType, CancellationToken ct = default);
+        string processorId, string projectionType, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Returns the rebuild state of every processor that has one recorded.
     /// </summary>
-    Task<IReadOnlyList<ProjectionRebuildState>> ListAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<ProjectionRebuildState>> ListAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Starts a rebuild: allocates the next version, records the target position, and moves
@@ -153,7 +153,7 @@ public interface IProjectionRebuildStore
     /// </summary>
     /// <exception cref="RebuildStateException">A rebuild is already in flight for this processor.</exception>
     Task<ProjectionRebuildState> StartAsync(
-        string processorId, string projectionType, long targetPosition, CancellationToken ct = default);
+        string processorId, string projectionType, long targetPosition, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Records an operator request to promote. The running coordinator performs the safe
@@ -164,10 +164,10 @@ public interface IProjectionRebuildStore
     /// Permit promotion before the original target is reached. The coordinator still refuses
     /// to publish a shadow copy behind the live processor.
     /// </param>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <exception cref="RebuildStateException">No rebuild is in flight.</exception>
     Task<ProjectionRebuildState> RequestPromotionAsync(
-        string processorId, bool force = false, CancellationToken ct = default);
+        string processorId, bool force = false, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Records an operator request to abort. The running coordinator stops the shadow loop
@@ -175,7 +175,7 @@ public interface IProjectionRebuildStore
     /// </summary>
     /// <exception cref="RebuildStateException">No rebuild is in flight for this processor.</exception>
     Task<ProjectionRebuildState> RequestAbortAsync(
-        string processorId, CancellationToken ct = default);
+        string processorId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -189,7 +189,7 @@ internal interface IProjectionRebuildCoordinatorStore
 {
     /// <summary>Marks a historical replay ready after its checkpoint reaches the target.</summary>
     Task<ProjectionRebuildState> MarkReadyAsync(
-        string processorId, CancellationToken ct = default);
+        string processorId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Atomically flips the rebuilt version to active. The caller must already have stopped the
@@ -200,7 +200,7 @@ internal interface IProjectionRebuildCoordinatorStore
     /// <see cref="DiscardStateVersionAsync"/> for why, and for who reclaims them.
     /// </remarks>
     Task<RebuildOutcome> CompletePromotionAsync(
-        string processorId, bool force = false, CancellationToken ct = default);
+        string processorId, bool force = false, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Atomically marks an abort complete. The caller must already have stopped the shadow loop.
@@ -210,7 +210,7 @@ internal interface IProjectionRebuildCoordinatorStore
     /// transition and are reclaimed later by <see cref="DiscardStateVersionAsync"/>.
     /// </remarks>
     Task<RebuildOutcome> CompleteAbortAsync(
-        string processorId, CancellationToken ct = default);
+        string processorId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Deletes every state row a projection holds at one version, across all tenants.
@@ -237,7 +237,7 @@ internal interface IProjectionRebuildCoordinatorStore
     /// </remarks>
     /// <param name="projectionType">The key the projection's state rows are stored under.</param>
     /// <param name="version">The rebuild version to reclaim.</param>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     Task DiscardStateVersionAsync(
-        string projectionType, int version, CancellationToken ct = default);
+        string projectionType, int version, CancellationToken cancellationToken = default);
 }

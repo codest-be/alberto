@@ -107,10 +107,10 @@ public abstract class FencedCheckpointStoreSpecification
         string consumerId,
         string replicaId,
         long fenceToken,
-        CancellationToken ct = default) =>
+        CancellationToken cancellationToken = default) =>
         store.SaveIfLeaseHeldAsync(
             processorId, position, consumerId, replicaId, fenceToken,
-            useProcessorLeaseFencing: true, ct);
+            useProcessorLeaseFencing: true, cancellationToken);
 
     // =========================================================================
     // Processor-lease fencing facts

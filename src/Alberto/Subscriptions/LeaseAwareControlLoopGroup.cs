@@ -67,9 +67,9 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
     /// throughout — the scan skips what is listed there, and this replica does still own the
     /// processor; it is only parked.
     /// </remarks>
-    public async ValueTask<IAsyncDisposable> SuspendAsync(string processorId, CancellationToken ct)
+    public async ValueTask<IAsyncDisposable> SuspendAsync(string processorId, CancellationToken cancellationToken)
     {
-        await _scanLock.WaitAsync(ct);
+        await _scanLock.WaitAsync(cancellationToken);
 
         try
         {
@@ -79,7 +79,7 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
             if (!_runningLoops.TryGetValue(processorId, out var loop))
                 return new Suspension(this, loop: null, processorId);
 
-            await loop.StopAsync(ct);
+            await loop.StopAsync(cancellationToken);
             return new Suspension(this, loop, processorId);
         }
         catch
@@ -375,50 +375,50 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
         return activity;
     }
 
-    private async Task<IProcessorLease?> AcquireAsync(string processorId, CancellationToken ct)
+    private async Task<IProcessorLease?> AcquireAsync(string processorId, CancellationToken cancellationToken)
     {
         using var activity = StartLeaseSpan("alberto.lease.acquire");
         activity?.SetTag("alberto.processor.id", processorId);
         try
         {
-            var lease = await _leaseManager.TryAcquireAsync(_consumerId, processorId, _replicaId, ct);
+            var lease = await _leaseManager.TryAcquireAsync(_consumerId, processorId, _replicaId, cancellationToken);
             activity?.SetTag("alberto.lease.acquired", lease is not null);
             if (lease is not null)
                 activity?.SetTag("alberto.lease.fence_token", lease.FenceToken);
             return lease;
         }
-        catch (Exception ex) when (!ct.IsCancellationRequested)
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             BackgroundSpans.Fail(activity, ex);
             throw;
         }
     }
 
-    private async Task<IReadOnlyList<string>> RenewAsync(CancellationToken ct)
+    private async Task<IReadOnlyList<string>> RenewAsync(CancellationToken cancellationToken)
     {
         using var activity = StartLeaseSpan("alberto.lease.renew");
         try
         {
-            var renewed = await _leaseManager.RenewLeasesAsync(_consumerId, _replicaId, ct);
+            var renewed = await _leaseManager.RenewLeasesAsync(_consumerId, _replicaId, cancellationToken);
             activity?.SetTag("alberto.lease.renewed", renewed.Count);
             activity?.SetTag("alberto.lease.lost", _runningLoops.Keys.Count(id => !renewed.Contains(id)));
             return renewed;
         }
-        catch (Exception ex) when (!ct.IsCancellationRequested)
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             BackgroundSpans.Fail(activity, ex);
             throw;
         }
     }
 
-    private async Task ReleaseAllAsync(CancellationToken ct)
+    private async Task ReleaseAllAsync(CancellationToken cancellationToken)
     {
         using var activity = StartLeaseSpan("alberto.lease.release");
         try
         {
-            await _leaseManager.ReleaseAllLeasesAsync(_consumerId, _replicaId, ct);
+            await _leaseManager.ReleaseAllLeasesAsync(_consumerId, _replicaId, cancellationToken);
         }
-        catch (Exception ex) when (!ct.IsCancellationRequested)
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             BackgroundSpans.Fail(activity, ex);
             throw;

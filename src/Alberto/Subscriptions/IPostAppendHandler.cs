@@ -16,6 +16,6 @@ public interface IPostAppendHandler
     /// Processes events after they have been appended.
     /// </summary>
     /// <param name="events">The appended events to process.</param>
-    /// <param name="ct">Cancellation token.</param>
-    Task ProcessAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct);
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task ProcessAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken cancellationToken);
 }

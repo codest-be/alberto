@@ -244,9 +244,9 @@ public class CachingCheckpointStoreTests
     [Fact]
     public async Task RewindAsync_WritesPositionToInnerStore_NotOnlyToCache()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var inner = new InMemoryCheckpointStore();
-        await inner.SaveAsync("proc", 500L, ct);
+        await inner.SaveAsync("proc", 500L, cancellationToken);
 
         // Long intervals so no timer fires during the test.
         await using var cache = new CachingCheckpointStore(
@@ -254,13 +254,13 @@ public class CachingCheckpointStoreTests
 
         // Warm the cache so an in-process read returns 500 — the bug is invisible through
         // the cache because RewindAsync also updates the in-process layers.
-        await cache.GetAsync("proc", ct);
+        await cache.GetAsync("proc", cancellationToken);
 
-        await cache.RewindAsync("proc", 100L, ct);
+        await cache.RewindAsync("proc", 100L, cancellationToken);
 
         // Assert against the inner store directly to verify the write reached durable
         // storage, not just the in-memory cache layers.
-        var innerPosition = await inner.GetAsync("proc", ct);
+        var innerPosition = await inner.GetAsync("proc", cancellationToken);
         Assert.Equal(100L, innerPosition);
     }
 
@@ -494,25 +494,25 @@ public class CachingCheckpointStoreTests
     {
         private readonly Dictionary<string, long?> _checkpoints = new();
 
-        public Task<long?> GetAsync(string processorId, CancellationToken ct = default)
+        public Task<long?> GetAsync(string processorId, CancellationToken cancellationToken = default)
         {
             _checkpoints.TryGetValue(processorId, out var value);
             return Task.FromResult(value);
         }
 
-        public Task SaveAsync(string processorId, long position, CancellationToken ct = default)
+        public Task SaveAsync(string processorId, long position, CancellationToken cancellationToken = default)
         {
             _checkpoints[processorId] = position;
             return Task.CompletedTask;
         }
 
-        public Task ResetAsync(string processorId, CancellationToken ct = default)
+        public Task ResetAsync(string processorId, CancellationToken cancellationToken = default)
         {
             _checkpoints.Remove(processorId);
             return Task.CompletedTask;
         }
 
-        public Task RewindAsync(string processorId, long position, CancellationToken ct = default)
+        public Task RewindAsync(string processorId, long position, CancellationToken cancellationToken = default)
         {
             _checkpoints[processorId] = position;
             return Task.CompletedTask;
@@ -525,26 +525,26 @@ public class CachingCheckpointStoreTests
 
         public int SaveCount { get; private set; }
 
-        public Task<long?> GetAsync(string processorId, CancellationToken ct = default)
+        public Task<long?> GetAsync(string processorId, CancellationToken cancellationToken = default)
         {
             _checkpoints.TryGetValue(processorId, out var value);
             return Task.FromResult(value);
         }
 
-        public Task SaveAsync(string processorId, long position, CancellationToken ct = default)
+        public Task SaveAsync(string processorId, long position, CancellationToken cancellationToken = default)
         {
             _checkpoints[processorId] = position;
             SaveCount++;
             return Task.CompletedTask;
         }
 
-        public Task ResetAsync(string processorId, CancellationToken ct = default)
+        public Task ResetAsync(string processorId, CancellationToken cancellationToken = default)
         {
             _checkpoints.Remove(processorId);
             return Task.CompletedTask;
         }
 
-        public Task RewindAsync(string processorId, long position, CancellationToken ct = default)
+        public Task RewindAsync(string processorId, long position, CancellationToken cancellationToken = default)
         {
             _checkpoints[processorId] = position;
             return Task.CompletedTask;
@@ -566,21 +566,21 @@ public class CachingCheckpointStoreTests
         public TaskCompletionSource ReadStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource ReleaseRead { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public async Task<long?> GetAsync(string processorId, CancellationToken ct = default)
+        public async Task<long?> GetAsync(string processorId, CancellationToken cancellationToken = default)
         {
             ReadStarted.TrySetResult();
             await ReleaseRead.Task;
-            return await _inner.GetAsync(processorId, ct);
+            return await _inner.GetAsync(processorId, cancellationToken);
         }
 
-        public Task SaveAsync(string processorId, long position, CancellationToken ct = default)
-            => _inner.SaveAsync(processorId, position, ct);
+        public Task SaveAsync(string processorId, long position, CancellationToken cancellationToken = default)
+            => _inner.SaveAsync(processorId, position, cancellationToken);
 
-        public Task ResetAsync(string processorId, CancellationToken ct = default)
-            => _inner.ResetAsync(processorId, ct);
+        public Task ResetAsync(string processorId, CancellationToken cancellationToken = default)
+            => _inner.ResetAsync(processorId, cancellationToken);
 
-        public Task RewindAsync(string processorId, long position, CancellationToken ct = default)
-            => _inner.RewindAsync(processorId, position, ct);
+        public Task RewindAsync(string processorId, long position, CancellationToken cancellationToken = default)
+            => _inner.RewindAsync(processorId, position, cancellationToken);
     }
 
     /// <summary>
@@ -593,21 +593,21 @@ public class CachingCheckpointStoreTests
     [Fact]
     public async Task GetAsync_WhenASaveLandsMidRead_DoesNotRollTheCheckpointBack()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var inner = new GatedCheckpointStore();
         await using var cache = new CachingCheckpointStore(inner, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
 
         // A reader misses the cache and goes to the database, which has no row for this processor.
-        var read = cache.GetAsync("processor-1", ct);
-        await inner.ReadStarted.Task.WaitAsync(Patience, ct);
+        var read = cache.GetAsync("processor-1", cancellationToken);
+        await inner.ReadStarted.Task.WaitAsync(Patience, cancellationToken);
 
         // While that read is in flight, the loop processes a batch and records position 4.
-        await cache.SaveAsync("processor-1", 4, ct);
+        await cache.SaveAsync("processor-1", 4, cancellationToken);
 
         inner.ReleaseRead.TrySetResult();
         await read;
 
-        Assert.Equal(4, await cache.GetAsync("processor-1", ct));
+        Assert.Equal(4, await cache.GetAsync("processor-1", cancellationToken));
     }
 
     #endregion

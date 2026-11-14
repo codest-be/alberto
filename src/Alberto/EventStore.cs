@@ -117,14 +117,14 @@ public sealed class EventStore : IEventStore, IEventStoreConfigurator
     /// the caller has (a command's, typically), beside the <c>append</c> span that has already ended.
     /// </summary>
     private static async Task ProjectInlineAsync(
-        IInlineProjection projection, List<IEventEnvelope> events, CancellationToken ct)
+        IInlineProjection projection, List<IEventEnvelope> events, CancellationToken cancellationToken)
     {
         using var activity = AlbertoMetrics.Source.StartActivity("alberto.projection.inline");
         activity?.SetTag("alberto.projection.type", projection.GetType().FullName);
         activity?.SetTag("alberto.projection.events", events.Count);
         try
         {
-            await projection.ProcessAsync(events, ct);
+            await projection.ProcessAsync(events, cancellationToken);
         }
         catch (Exception ex)
         {

@@ -70,15 +70,15 @@ public class LeaseFencingRegistrationTests
         public TimeSpan LeaseDuration => TimeSpan.FromMinutes(1);
 
         public Task<IProcessorLease?> TryAcquireAsync(
-            string consumerId, string processorId, string replicaId, CancellationToken ct = default) =>
+            string consumerId, string processorId, string replicaId, CancellationToken cancellationToken = default) =>
             Task.FromResult<IProcessorLease?>(null); // not the acquisition; capture is on stop
 
         public Task<IReadOnlyList<string>> RenewLeasesAsync(
-            string consumerId, string replicaId, CancellationToken ct = default) =>
+            string consumerId, string replicaId, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<string>>([]);
 
         public Task ReleaseAllLeasesAsync(
-            string consumerId, string replicaId, CancellationToken ct = default)
+            string consumerId, string replicaId, CancellationToken cancellationToken = default)
         {
             _capturedStopReplicaId = replicaId;
             return Task.CompletedTask;
@@ -211,8 +211,8 @@ public class LeaseFencingRegistrationTests
 
         using var host = builder.Build();
 
-        var ct = TestContext.Current.CancellationToken;
-        await host.StartAsync(ct);
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await host.StartAsync(cancellationToken);
 
         host.Services.GetRequiredKeyedService<IProcessorLeaseManager>(ModuleKey)
             .Should().BeOfType<Alberto.InMemory.InMemoryProcessorLeaseManager>();
@@ -220,7 +220,7 @@ public class LeaseFencingRegistrationTests
             .Should().BeAssignableTo<IFencableCheckpointStore>(
                 "the lease path fences checkpoint writes through the caching store");
 
-        await host.StopAsync(ct);
+        await host.StopAsync(cancellationToken);
     }
 }
 
@@ -246,17 +246,17 @@ public class FencingContextRegistrationTests
         public FencingContext? CapturedContext { get; private set; }
         public bool SubscribeFenceViolationWasCalled { get; private set; }
 
-        public Task<long?> GetAsync(string processorId, CancellationToken ct = default) =>
-            _inner.GetAsync(processorId, ct);
+        public Task<long?> GetAsync(string processorId, CancellationToken cancellationToken = default) =>
+            _inner.GetAsync(processorId, cancellationToken);
 
-        public Task SaveAsync(string processorId, long position, CancellationToken ct = default) =>
-            _inner.SaveAsync(processorId, position, ct);
+        public Task SaveAsync(string processorId, long position, CancellationToken cancellationToken = default) =>
+            _inner.SaveAsync(processorId, position, cancellationToken);
 
-        public Task ResetAsync(string processorId, CancellationToken ct = default) =>
-            _inner.ResetAsync(processorId, ct);
+        public Task ResetAsync(string processorId, CancellationToken cancellationToken = default) =>
+            _inner.ResetAsync(processorId, cancellationToken);
 
-        public Task RewindAsync(string processorId, long position, CancellationToken ct = default) =>
-            _inner.RewindAsync(processorId, position, ct);
+        public Task RewindAsync(string processorId, long position, CancellationToken cancellationToken = default) =>
+            _inner.RewindAsync(processorId, position, cancellationToken);
 
         public void SetFencingContext(FencingContext ctx) => CapturedContext = ctx;
 
@@ -279,11 +279,11 @@ public class FencingContextRegistrationTests
     private sealed class CapturingLeaseManager : IProcessorLeaseManager
     {
         public TimeSpan LeaseDuration => TimeSpan.FromMinutes(1);
-        public Task<IProcessorLease?> TryAcquireAsync(string consumerId, string processorId, string replicaId, CancellationToken ct = default) =>
+        public Task<IProcessorLease?> TryAcquireAsync(string consumerId, string processorId, string replicaId, CancellationToken cancellationToken = default) =>
             Task.FromResult<IProcessorLease?>(null);
-        public Task<IReadOnlyList<string>> RenewLeasesAsync(string consumerId, string replicaId, CancellationToken ct = default) =>
+        public Task<IReadOnlyList<string>> RenewLeasesAsync(string consumerId, string replicaId, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<string>>([]);
-        public Task ReleaseAllLeasesAsync(string consumerId, string replicaId, CancellationToken ct = default) =>
+        public Task ReleaseAllLeasesAsync(string consumerId, string replicaId, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
     }
 
@@ -385,12 +385,12 @@ public class NonClaimableDeadLetterStoreRegistrationTests
 
     private sealed class NonClaimableDeadLetterStore : IDeadLetterStore
     {
-        public Task StoreAsync(DeadLetterEntry entry, CancellationToken ct = default) => Task.CompletedTask;
-        public Task<IReadOnlyList<DeadLetterEntry>> GetAsync(string processorId, string? tenantId = null, int limit = 100, CancellationToken ct = default) =>
+        public Task StoreAsync(DeadLetterEntry entry, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<IReadOnlyList<DeadLetterEntry>> GetAsync(string processorId, string? tenantId = null, int limit = 100, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<DeadLetterEntry>>([]);
-        public Task<int> CountAsync(string processorId, CancellationToken ct = default) => Task.FromResult(0);
-        public Task ClearAsync(string processorId, CancellationToken ct = default) => Task.CompletedTask;
-        public Task MarkForRetryAsync(string processorId, CancellationToken ct = default) => Task.CompletedTask;
+        public Task<int> CountAsync(string processorId, CancellationToken cancellationToken = default) => Task.FromResult(0);
+        public Task ClearAsync(string processorId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task MarkForRetryAsync(string processorId, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     private sealed class CapturingLoggerProvider : ILoggerProvider

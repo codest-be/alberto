@@ -30,11 +30,11 @@ internal sealed class OutboxHandler(
     public IReadOnlySet<string> HandledEventTypes => registry.MappedEventTypes;
 
     /// <inheritdoc/>
-    public async Task ProcessEventAsync(IEventEnvelope envelope, CancellationToken ct)
+    public async Task ProcessEventAsync(IEventEnvelope envelope, CancellationToken cancellationToken)
     {
-        var message = await MapAsync(envelope, ct);
+        var message = await MapAsync(envelope, cancellationToken);
         if (message is null) return;
-        await store.InsertAsync(BuildEntry(message, envelope), ct);
+        await store.InsertAsync(BuildEntry(message, envelope), cancellationToken);
     }
 
     /// <inheritdoc/>
@@ -44,10 +44,10 @@ internal sealed class OutboxHandler(
     /// inserted with bounded concurrency; each insert targets a distinct row identified by its source
     /// event ID, so there are no write conflicts.
     /// </remarks>
-    public async Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct)
+    public async Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken cancellationToken)
     {
         var messages = await Task.WhenAll(
-            events.Select(e => MapAsync(e, ct)));
+            events.Select(e => MapAsync(e, cancellationToken)));
 
         // Built up front so created_at follows event order whatever the insert interleaving.
         var entries = messages
@@ -59,14 +59,14 @@ internal sealed class OutboxHandler(
         // Bounded so a large batch cannot hold that many pooled connections at once.
         await Parallel.ForEachAsync(
             entries,
-            new ParallelOptions { MaxDegreeOfParallelism = MaxConcurrentInserts, CancellationToken = ct },
+            new ParallelOptions { MaxDegreeOfParallelism = MaxConcurrentInserts, CancellationToken = cancellationToken },
             (entry, token) => new ValueTask(store.InsertAsync(entry, token)));
     }
 
-    private async Task<ExternalMessage?> MapAsync(IEventEnvelope envelope, CancellationToken ct)
+    private async Task<ExternalMessage?> MapAsync(IEventEnvelope envelope, CancellationToken cancellationToken)
     {
         await using var scope = EventProcessingScope.Create(scopeFactory, envelope.TenantId);
-        return await registry.TryMapAsync(envelope, scope.ServiceProvider, ct);
+        return await registry.TryMapAsync(envelope, scope.ServiceProvider, cancellationToken);
     }
 
     private static OutboxEntry BuildEntry(

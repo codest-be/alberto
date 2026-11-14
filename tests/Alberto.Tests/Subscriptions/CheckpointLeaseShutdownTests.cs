@@ -18,16 +18,16 @@ public sealed class CheckpointLeaseShutdownTests
         public TimeSpan LeaseDuration => TimeSpan.FromHours(1);
 
         public Task<IProcessorLease?> TryAcquireAsync(
-            string consumerId, string processorId, string replicaId, CancellationToken ct = default) =>
+            string consumerId, string processorId, string replicaId, CancellationToken cancellationToken = default) =>
             Task.FromResult<IProcessorLease?>(
                 new ProcessorLease(processorId, DateTimeOffset.UtcNow.AddHours(1), token));
 
         public Task<IReadOnlyList<string>> RenewLeasesAsync(
-            string consumerId, string replicaId, CancellationToken ct = default) =>
+            string consumerId, string replicaId, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<string>>([]);
 
         public Task ReleaseAllLeasesAsync(
-            string consumerId, string replicaId, CancellationToken ct = default) => Task.CompletedTask;
+            string consumerId, string replicaId, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
     }
 
@@ -36,27 +36,27 @@ public sealed class CheckpointLeaseShutdownTests
     {
         public ConcurrentDictionary<string, long?> Data { get; } = new();
 
-        public Task<long?> GetAsync(string processorId, CancellationToken ct = default) =>
+        public Task<long?> GetAsync(string processorId, CancellationToken cancellationToken = default) =>
             Task.FromResult(Data.GetValueOrDefault(processorId));
 
-        public Task SaveAsync(string processorId, long position, CancellationToken ct = default)
+        public Task SaveAsync(string processorId, long position, CancellationToken cancellationToken = default)
         {
             Data[processorId] = position;
             return Task.CompletedTask;
         }
 
-        public Task ResetAsync(string processorId, CancellationToken ct = default)
+        public Task ResetAsync(string processorId, CancellationToken cancellationToken = default)
         {
             Data.TryRemove(processorId, out _);
             return Task.CompletedTask;
         }
 
-        public Task RewindAsync(string processorId, long position, CancellationToken ct = default) =>
-            SaveAsync(processorId, position, ct);
+        public Task RewindAsync(string processorId, long position, CancellationToken cancellationToken = default) =>
+            SaveAsync(processorId, position, cancellationToken);
 
         public Task<bool> SaveIfLeaseHeldAsync(
             string processorId, long position, string consumerId, string replicaId, long fenceToken,
-            bool useProcessorLeaseFencing = false, CancellationToken ct = default)
+            bool useProcessorLeaseFencing = false, CancellationToken cancellationToken = default)
         {
             if (fenceToken == 0) return Task.FromResult(false);
             Data[processorId] = position;
@@ -70,7 +70,7 @@ public sealed class CheckpointLeaseShutdownTests
         public bool IsActive => true;
         public bool IsRebuilding => false;
         public IReadOnlySet<string> HandledEventTypes { get; } = new HashSet<string>();
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default) => Task.CompletedTask;
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     private static ControlLoop BuildLoop(string processorId)
@@ -87,7 +87,7 @@ public sealed class CheckpointLeaseShutdownTests
     [Fact]
     public async Task StopAsync_FlushesFencedCheckpointsBeforeTokensAndLeasesAreDropped()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var inner = new TokenFencedStore();
         await using var cache = new CachingCheckpointStore(inner, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
         LeaseAwareControlLoopGroup? group = null;
@@ -95,10 +95,10 @@ public sealed class CheckpointLeaseShutdownTests
 
         group = new LeaseAwareControlLoopGroup(
             [BuildLoop("p1")], new Lease(7), "c", "r", flushCheckpoints: cache.FlushAsync);
-        await group.StartAsync(ct);
-        await cache.SaveAsync("p1", 42, ct);
+        await group.StartAsync(cancellationToken);
+        await cache.SaveAsync("p1", 42, cancellationToken);
 
-        await group.StopAsync(ct);
+        await group.StopAsync(cancellationToken);
 
         inner.Data["p1"].Should().Be(42, "the final flush has to run while the fence token is still held");
         await group.DisposeAsync();
@@ -107,12 +107,12 @@ public sealed class CheckpointLeaseShutdownTests
     [Fact]
     public async Task StopProcessorAsync_StopsOnlyThatProcessorAndLetsScanReacquireIt()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var group = new LeaseAwareControlLoopGroup(
             [BuildLoop("p1"), BuildLoop("p2")], new Lease(7), "c", "r");
         try
         {
-            await group.StartAsync(ct);
+            await group.StartAsync(cancellationToken);
 
             await group.StopProcessorAsync("p1");
 
@@ -122,7 +122,7 @@ public sealed class CheckpointLeaseShutdownTests
             typeof(LeaseAwareControlLoopGroup)
                 .GetMethod("OnScanTimer", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .Invoke(group, [null]);
-            await Task.Delay(200, ct);
+            await Task.Delay(200, cancellationToken);
 
             group.GetFenceToken("p1").Should().Be(7, "a later scan re-acquires the processor");
         }
@@ -137,21 +137,21 @@ public sealed class CheckpointLeaseShutdownTests
         public long? Value { get; private set; }
         private int _first = 1;
 
-        public Task<long?> GetAsync(string processorId, CancellationToken ct = default) => Task.FromResult(Value);
+        public Task<long?> GetAsync(string processorId, CancellationToken cancellationToken = default) => Task.FromResult(Value);
 
-        public Task SaveAsync(string processorId, long position, CancellationToken ct = default)
+        public Task SaveAsync(string processorId, long position, CancellationToken cancellationToken = default)
         {
             Value = position;
             return Task.CompletedTask;
         }
 
-        public Task ResetAsync(string processorId, CancellationToken ct = default)
+        public Task ResetAsync(string processorId, CancellationToken cancellationToken = default)
         {
             Value = null;
             return Task.CompletedTask;
         }
 
-        public Task RewindAsync(string processorId, long position, CancellationToken ct = default)
+        public Task RewindAsync(string processorId, long position, CancellationToken cancellationToken = default)
         {
             Value = position;
             return Task.CompletedTask;
@@ -159,7 +159,7 @@ public sealed class CheckpointLeaseShutdownTests
 
         public async Task<bool> SaveIfLeaseHeldAsync(
             string processorId, long position, string consumerId, string replicaId, long fenceToken,
-            bool useProcessorLeaseFencing = false, CancellationToken ct = default)
+            bool useProcessorLeaseFencing = false, CancellationToken cancellationToken = default)
         {
             if (Interlocked.Exchange(ref _first, 0) == 1)
             {
@@ -175,15 +175,15 @@ public sealed class CheckpointLeaseShutdownTests
     [Fact]
     public async Task RewindAsync_WaitsForInFlightFlush_SoRewoundPositionWins()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var inner = new GatedStore();
         await using var cache = new CachingCheckpointStore(inner, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
         cache.SetFencingContext(new FencingContext("c", "r", true, _ => 1));
-        await cache.SaveAsync("p", 100, ct);
+        await cache.SaveAsync("p", 100, cancellationToken);
 
-        var flush = cache.FlushAsync(ct);
+        var flush = cache.FlushAsync(cancellationToken);
         await inner.Entered.Task;
-        var rewind = cache.RewindAsync("p", 10, ct);
+        var rewind = cache.RewindAsync("p", 10, cancellationToken);
         inner.Gate.SetResult();
         await Task.WhenAll(flush, rewind);
 
@@ -193,15 +193,15 @@ public sealed class CheckpointLeaseShutdownTests
     [Fact]
     public async Task ResetAsync_WaitsForInFlightFlush_SoResetWins()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var inner = new GatedStore();
         await using var cache = new CachingCheckpointStore(inner, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
         cache.SetFencingContext(new FencingContext("c", "r", true, _ => 1));
-        await cache.SaveAsync("p", 100, ct);
+        await cache.SaveAsync("p", 100, cancellationToken);
 
-        var flush = cache.FlushAsync(ct);
+        var flush = cache.FlushAsync(cancellationToken);
         await inner.Entered.Task;
-        var reset = cache.ResetAsync("p", ct);
+        var reset = cache.ResetAsync("p", cancellationToken);
         inner.Gate.SetResult();
         await Task.WhenAll(flush, reset);
 

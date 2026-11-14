@@ -13,12 +13,12 @@ public interface IStateStore<TState>
     /// Loads multiple states by their document IDs.
     /// </summary>
     /// <param name="documentIds">The document IDs to load.</param>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Dictionary of document ID to state for found documents.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="documentIds"/> is null.</exception>
     Task<IReadOnlyDictionary<string, TState>> LoadManyAsync(
         IEnumerable<string> documentIds,
-        CancellationToken ct = default);
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Applies upserts and deletes to the state store in one atomic batch.
@@ -53,14 +53,14 @@ public interface IStateStore<TState>
     /// </remarks>
     /// <param name="upserts">States to insert or update, keyed by document ID.</param>
     /// <param name="deletes">Document IDs to delete.</param>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="upserts"/> or <paramref name="deletes"/> is null.
     /// </exception>
     Task ApplyChangesAsync(
         IReadOnlyDictionary<string, TState> upserts,
         IReadOnlyCollection<string> deletes,
-        CancellationToken ct = default);
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Lists the most recently updated states this store can see, newest first.
@@ -88,8 +88,8 @@ public interface IStateStore<TState>
     /// </para>
     /// </remarks>
     /// <param name="limit">Maximum number of states to return.</param>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     Task<IReadOnlyList<TState>> ListRecentAsync(
         int limit = 20,
-        CancellationToken ct = default);
+        CancellationToken cancellationToken = default);
 }

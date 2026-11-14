@@ -33,12 +33,12 @@ public sealed class PostgresOutboxStoreTests(PostgresOutboxStoreFixture fixture)
     private static Task<IReadOnlyList<OutboxClaim>> ClaimAsync(
         PostgresOutboxStore store,
         int limit,
-        CancellationToken ct) =>
+        CancellationToken cancellationToken) =>
         store.ClaimPendingAsync(
             limit,
             TimeSpan.FromMinutes(5),
             $"test-relay-{Guid.NewGuid():N}",
-            ct);
+            cancellationToken);
 
     private static OutboxEntry MakeEntry(string? messageType = null) => new(
         Id: Guid.NewGuid(),
@@ -53,23 +53,23 @@ public sealed class PostgresOutboxStoreTests(PostgresOutboxStoreFixture fixture)
         CreatedAt: DateTimeOffset.UtcNow,
         DeliveredAt: null);
 
-    private async Task<string> ReadStatusAsync(Guid entryId, CancellationToken ct)
+    private async Task<string> ReadStatusAsync(Guid entryId, CancellationToken cancellationToken)
     {
-        await using var conn = await fixture.DataSource.OpenConnectionAsync(ct);
+        await using var conn = await fixture.DataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
             "SELECT status FROM alberto_outbox_entries WHERE id = @id", conn);
         cmd.Parameters.AddWithValue("id", entryId);
-        var result = await cmd.ExecuteScalarAsync(ct);
+        var result = await cmd.ExecuteScalarAsync(cancellationToken);
         return result as string ?? throw new InvalidOperationException($"Entry {entryId} not found.");
     }
 
-    private async Task<bool> ExistsAsync(Guid entryId, CancellationToken ct)
+    private async Task<bool> ExistsAsync(Guid entryId, CancellationToken cancellationToken)
     {
-        await using var conn = await fixture.DataSource.OpenConnectionAsync(ct);
+        await using var conn = await fixture.DataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
             "SELECT EXISTS(SELECT 1 FROM alberto_outbox_entries WHERE id = @id)", conn);
         cmd.Parameters.AddWithValue("id", entryId);
-        return (bool)(await cmd.ExecuteScalarAsync(ct))!;
+        return (bool)(await cmd.ExecuteScalarAsync(cancellationToken))!;
     }
 
     /// <summary>
@@ -77,14 +77,14 @@ public sealed class PostgresOutboxStoreTests(PostgresOutboxStoreFixture fixture)
     /// database clock, so ageing a row is the only way a test can put it on the far
     /// side of a purge threshold.
     /// </summary>
-    private async Task BackdateDeliveredAtAsync(Guid entryId, DateTimeOffset deliveredAt, CancellationToken ct)
+    private async Task BackdateDeliveredAtAsync(Guid entryId, DateTimeOffset deliveredAt, CancellationToken cancellationToken)
     {
-        await using var conn = await fixture.DataSource.OpenConnectionAsync(ct);
+        await using var conn = await fixture.DataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
             "UPDATE alberto_outbox_entries SET delivered_at = @deliveredAt WHERE id = @id", conn);
         cmd.Parameters.AddWithValue("deliveredAt", deliveredAt);
         cmd.Parameters.AddWithValue("id", entryId);
-        Assert.Equal(1, await cmd.ExecuteNonQueryAsync(ct));
+        Assert.Equal(1, await cmd.ExecuteNonQueryAsync(cancellationToken));
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -231,7 +231,7 @@ public sealed class PostgresOutboxStoreTests(PostgresOutboxStoreFixture fixture)
         var claim = claimed.First(e => e.Entry.Id == entry.Id);
         Assert.True(await store.MarkFailedAsync(claim, "boom", TestContext.Current.CancellationToken));
 
-        await store.RetryFailedAsync(ct: TestContext.Current.CancellationToken);
+        await store.RetryFailedAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal("pending", await ReadStatusAsync(claim.Entry.Id, TestContext.Current.CancellationToken));
     }
@@ -254,7 +254,7 @@ public sealed class PostgresOutboxStoreTests(PostgresOutboxStoreFixture fixture)
         Assert.True(await store.MarkFailedAsync(claimedMatch, "err", TestContext.Current.CancellationToken));
         Assert.True(await store.MarkFailedAsync(claimedOther, "err", TestContext.Current.CancellationToken));
 
-        await store.RetryFailedAsync(messageType: "order-cancelled", ct: TestContext.Current.CancellationToken);
+        await store.RetryFailedAsync(messageType: "order-cancelled", cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal("pending", await ReadStatusAsync(matchEntry.Id, TestContext.Current.CancellationToken));
         Assert.Equal("failed", await ReadStatusAsync(otherEntry.Id, TestContext.Current.CancellationToken));
@@ -311,9 +311,9 @@ public sealed class PostgresOutboxStoreTests(PostgresOutboxStoreFixture fixture)
     [Fact]
     public async Task PurgeDeliveredAsync_ShouldRemoveMoreThanOneBatch()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         const string marker = "purge-multi-batch";
-        await using (var conn = await fixture.DataSource.OpenConnectionAsync(ct))
+        await using (var conn = await fixture.DataSource.OpenConnectionAsync(cancellationToken))
         await using (var cmd = new NpgsqlCommand(
             """
             INSERT INTO alberto_outbox_entries (source_event_id, message_type, payload, status, delivered_at)
@@ -323,22 +323,22 @@ public sealed class PostgresOutboxStoreTests(PostgresOutboxStoreFixture fixture)
             conn))
         {
             cmd.Parameters.AddWithValue("marker", marker);
-            await cmd.ExecuteNonQueryAsync(ct);
+            await cmd.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        await CreateStore().PurgeDeliveredAsync(DateTimeOffset.UtcNow.AddHours(-1), ct);
+        await CreateStore().PurgeDeliveredAsync(DateTimeOffset.UtcNow.AddHours(-1), cancellationToken);
 
-        await using var check = await fixture.DataSource.OpenConnectionAsync(ct);
+        await using var check = await fixture.DataSource.OpenConnectionAsync(cancellationToken);
         await using var count = new NpgsqlCommand(
             "SELECT count(*) FROM alberto_outbox_entries WHERE message_type = @marker", check);
         count.Parameters.AddWithValue("marker", marker);
-        Assert.Equal(0L, (long)(await count.ExecuteScalarAsync(ct))!);
+        Assert.Equal(0L, (long)(await count.ExecuteScalarAsync(cancellationToken))!);
     }
 
     [Fact]
     public async Task ClaimPendingAsync_MixesPendingAndExpiredClaims_OldestFirstWithinLimit()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var store = CreateStore();
         var t0 = new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero);
         var a = MakeEntry() with { CreatedAt = t0.AddSeconds(1) };
@@ -348,15 +348,15 @@ public sealed class PostgresOutboxStoreTests(PostgresOutboxStoreFixture fixture)
         var e = MakeEntry() with { CreatedAt = t0.AddSeconds(5) };
 
         // b and d become expired claims; a, c and e are plain pending entries.
-        await store.InsertAsync(b, ct);
-        await store.InsertAsync(d, ct);
-        await ClaimAsync(store, 100, ct);
-        await ExpireClaimAsync(b.Id, ct);
-        await ExpireClaimAsync(d.Id, ct);
+        await store.InsertAsync(b, cancellationToken);
+        await store.InsertAsync(d, cancellationToken);
+        await ClaimAsync(store, 100, cancellationToken);
+        await ExpireClaimAsync(b.Id, cancellationToken);
+        await ExpireClaimAsync(d.Id, cancellationToken);
         foreach (var entry in new[] { a, c, e })
-            await store.InsertAsync(entry, ct);
+            await store.InsertAsync(entry, cancellationToken);
 
-        var claimed = await ClaimAsync(CreateStore(), 3, ct);
+        var claimed = await ClaimAsync(CreateStore(), 3, cancellationToken);
 
         Assert.Equal([a.Id, b.Id, c.Id], claimed.Select(x => x.Entry.Id).ToArray());
     }
@@ -368,15 +368,15 @@ public sealed class PostgresOutboxStoreTests(PostgresOutboxStoreFixture fixture)
     [Fact]
     public async Task ClaimPendingAsync_LiveClaim_IsInvisibleToAnotherRelay()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var store = CreateStore();
         var entry = MakeEntry();
-        await store.InsertAsync(entry, ct);
+        await store.InsertAsync(entry, cancellationToken);
 
-        var firstClaim = (await ClaimAsync(store, 100, ct))
+        var firstClaim = (await ClaimAsync(store, 100, cancellationToken))
             .Single(c => c.Entry.Id == entry.Id);
 
-        var secondRelayClaims = await ClaimAsync(CreateStore(), 100, ct);
+        var secondRelayClaims = await ClaimAsync(CreateStore(), 100, cancellationToken);
 
         Assert.Equal(OutboxEntryStatus.Processing, firstClaim.Entry.Status);
         Assert.True(firstClaim.ExpiresAt > DateTimeOffset.UtcNow);
@@ -386,17 +386,17 @@ public sealed class PostgresOutboxStoreTests(PostgresOutboxStoreFixture fixture)
     [Fact]
     public async Task ClaimPendingAsync_ExpiredClaim_IsRecoveredWithNewToken()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var store = CreateStore();
         var entry = MakeEntry();
-        await store.InsertAsync(entry, ct);
+        await store.InsertAsync(entry, cancellationToken);
 
-        var original = (await ClaimAsync(store, 100, ct))
+        var original = (await ClaimAsync(store, 100, cancellationToken))
             .Single(c => c.Entry.Id == entry.Id);
 
-        await ExpireClaimAsync(entry.Id, ct);
+        await ExpireClaimAsync(entry.Id, cancellationToken);
 
-        var recovered = (await ClaimAsync(CreateStore(), 100, ct))
+        var recovered = (await ClaimAsync(CreateStore(), 100, cancellationToken))
             .Single(c => c.Entry.Id == entry.Id);
 
         Assert.NotEqual(original.Token, recovered.Token);
@@ -406,38 +406,38 @@ public sealed class PostgresOutboxStoreTests(PostgresOutboxStoreFixture fixture)
     [Fact]
     public async Task Completion_WithExpiredOrSupersededToken_CannotOverwriteClaim()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var store = CreateStore();
         var entry = MakeEntry();
-        await store.InsertAsync(entry, ct);
+        await store.InsertAsync(entry, cancellationToken);
 
-        var stale = (await ClaimAsync(store, 100, ct))
+        var stale = (await ClaimAsync(store, 100, cancellationToken))
             .Single(c => c.Entry.Id == entry.Id);
-        await ExpireClaimAsync(entry.Id, ct);
+        await ExpireClaimAsync(entry.Id, cancellationToken);
 
-        Assert.False(await store.MarkDeliveredAsync(stale, ct));
-        Assert.False(await store.MarkFailedAsync(stale, "expired relay", ct));
+        Assert.False(await store.MarkDeliveredAsync(stale, cancellationToken));
+        Assert.False(await store.MarkFailedAsync(stale, "expired relay", cancellationToken));
 
-        var current = (await ClaimAsync(CreateStore(), 100, ct))
+        var current = (await ClaimAsync(CreateStore(), 100, cancellationToken))
             .Single(c => c.Entry.Id == entry.Id);
 
-        Assert.False(await store.MarkDeliveredAsync(stale, ct));
-        Assert.False(await store.MarkFailedAsync(stale, "stale relay", ct));
-        Assert.Equal("processing", await ReadStatusAsync(entry.Id, ct));
+        Assert.False(await store.MarkDeliveredAsync(stale, cancellationToken));
+        Assert.False(await store.MarkFailedAsync(stale, "stale relay", cancellationToken));
+        Assert.Equal("processing", await ReadStatusAsync(entry.Id, cancellationToken));
 
-        Assert.True(await store.MarkDeliveredAsync(current, ct));
-        Assert.Equal("delivered", await ReadStatusAsync(entry.Id, ct));
+        Assert.True(await store.MarkDeliveredAsync(current, cancellationToken));
+        Assert.Equal("delivered", await ReadStatusAsync(entry.Id, cancellationToken));
     }
 
     [Fact]
     public async Task ClaimPendingAsync_LegacyProcessingRowWithoutLease_IsRecovered()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var store = CreateStore();
         var entry = MakeEntry();
-        await store.InsertAsync(entry, ct);
+        await store.InsertAsync(entry, cancellationToken);
 
-        await using (var conn = await fixture.DataSource.OpenConnectionAsync(ct))
+        await using (var conn = await fixture.DataSource.OpenConnectionAsync(cancellationToken))
         await using (var cmd = new NpgsqlCommand(
             """
             UPDATE alberto_outbox_entries
@@ -450,10 +450,10 @@ public sealed class PostgresOutboxStoreTests(PostgresOutboxStoreFixture fixture)
             conn))
         {
             cmd.Parameters.AddWithValue("id", entry.Id);
-            await cmd.ExecuteNonQueryAsync(ct);
+            await cmd.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        var recovered = await ClaimAsync(CreateStore(), 100, ct);
+        var recovered = await ClaimAsync(CreateStore(), 100, cancellationToken);
 
         Assert.Contains(recovered, c => c.Entry.Id == entry.Id);
     }
@@ -461,17 +461,17 @@ public sealed class PostgresOutboxStoreTests(PostgresOutboxStoreFixture fixture)
     [Fact]
     public async Task Completion_ClearsClaimMetadata_AndDeliveredEntryCannotBeFailed()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var store = CreateStore();
         var entry = MakeEntry();
-        await store.InsertAsync(entry, ct);
-        var claim = (await ClaimAsync(store, 100, ct))
+        await store.InsertAsync(entry, cancellationToken);
+        var claim = (await ClaimAsync(store, 100, cancellationToken))
             .Single(c => c.Entry.Id == entry.Id);
 
-        Assert.True(await store.MarkDeliveredAsync(claim, ct));
-        Assert.False(await store.MarkFailedAsync(claim, "late failure", ct));
+        Assert.True(await store.MarkDeliveredAsync(claim, cancellationToken));
+        Assert.False(await store.MarkFailedAsync(claim, "late failure", cancellationToken));
 
-        await using var conn = await fixture.DataSource.OpenConnectionAsync(ct);
+        await using var conn = await fixture.DataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
             """
             SELECT status, claim_id, claimed_by, claim_expires_at
@@ -480,17 +480,17 @@ public sealed class PostgresOutboxStoreTests(PostgresOutboxStoreFixture fixture)
             """,
             conn);
         cmd.Parameters.AddWithValue("id", entry.Id);
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        Assert.True(await reader.ReadAsync(ct));
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        Assert.True(await reader.ReadAsync(cancellationToken));
         Assert.Equal("delivered", reader.GetString(0));
         Assert.True(reader.IsDBNull(1));
         Assert.True(reader.IsDBNull(2));
         Assert.True(reader.IsDBNull(3));
     }
 
-    private async Task ExpireClaimAsync(Guid entryId, CancellationToken ct)
+    private async Task ExpireClaimAsync(Guid entryId, CancellationToken cancellationToken)
     {
-        await using var conn = await fixture.DataSource.OpenConnectionAsync(ct);
+        await using var conn = await fixture.DataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
             """
             UPDATE alberto_outbox_entries
@@ -499,6 +499,6 @@ public sealed class PostgresOutboxStoreTests(PostgresOutboxStoreFixture fixture)
             """,
             conn);
         cmd.Parameters.AddWithValue("id", entryId);
-        await cmd.ExecuteNonQueryAsync(ct);
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 }

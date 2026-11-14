@@ -24,19 +24,19 @@ internal sealed class PostgresStoreTopology
         _expectedMultiTenant = expectedMultiTenant;
     }
 
-    public async ValueTask<bool> IsMultiTenantAsync(CancellationToken ct = default)
+    public async ValueTask<bool> IsMultiTenantAsync(CancellationToken cancellationToken = default)
     {
         var cached = Volatile.Read(ref _resolvedMode);
         if (cached >= 0)
             return cached == 1;
 
-        await using var connection = await _dataSource.OpenConnectionAsync(ct);
-        return await IsMultiTenantAsync(connection, ct);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        return await IsMultiTenantAsync(connection, cancellationToken);
     }
 
     public async ValueTask<bool> IsMultiTenantAsync(
         NpgsqlConnection connection,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         var cached = Volatile.Read(ref _resolvedMode);
         if (cached >= 0)
@@ -54,7 +54,7 @@ internal sealed class PostgresStoreTopology
             """;
         command.Parameters.AddWithValue("schema", _schema.Name);
 
-        var detected = await command.ExecuteScalarAsync(ct) is true;
+        var detected = await command.ExecuteScalarAsync(cancellationToken) is true;
         if (_expectedMultiTenant is { } expected && expected != detected)
         {
             var expectedName = expected ? "multi-tenant" : "single-tenant";

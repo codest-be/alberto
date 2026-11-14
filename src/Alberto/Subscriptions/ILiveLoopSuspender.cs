@@ -29,7 +29,7 @@ internal interface ILiveLoopSuspender
     /// A processor with no live loop on this replica — unknown here, or held by another replica
     /// under a lease — yields a handle that does nothing, since there is no local writer to race.
     /// </remarks>
-    ValueTask<IAsyncDisposable> SuspendAsync(string processorId, CancellationToken ct);
+    ValueTask<IAsyncDisposable> SuspendAsync(string processorId, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -42,7 +42,7 @@ internal sealed class NoLiveLoops : ILiveLoopSuspender
 
     private NoLiveLoops() { }
 
-    public ValueTask<IAsyncDisposable> SuspendAsync(string processorId, CancellationToken ct) =>
+    public ValueTask<IAsyncDisposable> SuspendAsync(string processorId, CancellationToken cancellationToken) =>
         new((IAsyncDisposable)NullLoopSuspension.Instance);
 }
 

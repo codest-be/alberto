@@ -123,9 +123,9 @@ public sealed class ProjectionVersions : IAsyncDisposable
     /// aborting so the local state stores do not spend a refresh interval writing to a
     /// version that has just been deleted.
     /// </summary>
-    public async Task RefreshAsync(CancellationToken ct = default)
+    public async Task RefreshAsync(CancellationToken cancellationToken = default)
     {
-        var states = await _store.ListAsync(ct);
+        var states = await _store.ListAsync(cancellationToken);
 
         foreach (var state in states)
             _cache[state.ProcessorId] = state;

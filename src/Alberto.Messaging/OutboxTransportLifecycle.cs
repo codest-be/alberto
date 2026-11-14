@@ -44,7 +44,7 @@ internal sealed class OutboxTransportLifecycle
 
     internal OutboxTransportLease CreateLease() => new(this);
 
-    internal async Task StartAsync(CancellationToken ct)
+    internal async Task StartAsync(CancellationToken cancellationToken)
     {
         await _transition.WaitAsync(CancellationToken.None);
         try
@@ -67,7 +67,7 @@ internal sealed class OutboxTransportLifecycle
             _state = LifecycleState.Starting;
             try
             {
-                await _transport.StartAsync(ct);
+                await _transport.StartAsync(cancellationToken);
                 _activeRelays = 1;
                 _state = LifecycleState.Running;
             }
@@ -99,8 +99,8 @@ internal sealed class OutboxTransportLifecycle
         }
     }
 
-    internal Task PublishAsync(ExternalMessage message, CancellationToken ct) =>
-        _transport.PublishAsync(message, ct);
+    internal Task PublishAsync(ExternalMessage message, CancellationToken cancellationToken) =>
+        _transport.PublishAsync(message, cancellationToken);
 
     internal async Task StopAsync(Exception? executionFailure)
     {
@@ -206,14 +206,14 @@ internal sealed class OutboxTransportLease
 
     internal OutboxTransportLease(OutboxTransportLifecycle owner) => _owner = owner;
 
-    internal async Task StartAsync(CancellationToken ct)
+    internal async Task StartAsync(CancellationToken cancellationToken)
     {
         if (Interlocked.CompareExchange(ref _state, 1, 0) != 0)
             throw new InvalidOperationException("This outbox transport lease has already started.");
 
         try
         {
-            await _owner.StartAsync(ct);
+            await _owner.StartAsync(cancellationToken);
             Volatile.Write(ref _state, 2);
         }
         catch
@@ -223,7 +223,7 @@ internal sealed class OutboxTransportLease
         }
     }
 
-    internal Task PublishAsync(ExternalMessage message, CancellationToken ct)
+    internal Task PublishAsync(ExternalMessage message, CancellationToken cancellationToken)
     {
         if (Volatile.Read(ref _state) != 2)
         {
@@ -231,7 +231,7 @@ internal sealed class OutboxTransportLease
                 "The outbox transport is not available for publishing.");
         }
 
-        return _owner.PublishAsync(message, ct);
+        return _owner.PublishAsync(message, cancellationToken);
     }
 
     internal Task StopAsync(Exception? executionFailure)

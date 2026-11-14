@@ -12,14 +12,14 @@ public class InMemoryOutboxStoreTests
     {
         var time = new FakeTimeProvider();
         var store = new InMemoryOutboxStore(time);
-        var ct = TestContext.Current.CancellationToken;
-        await store.InsertAsync(NewEntry(), ct);
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await store.InsertAsync(NewEntry(), cancellationToken);
 
-        var first = await store.ClaimPendingAsync(10, TimeSpan.FromMinutes(1), "relay-a", ct);
+        var first = await store.ClaimPendingAsync(10, TimeSpan.FromMinutes(1), "relay-a", cancellationToken);
         Assert.Single(first);
 
         time.Advance(TimeSpan.FromSeconds(30));
-        var second = await store.ClaimPendingAsync(10, TimeSpan.FromMinutes(1), "relay-b", ct);
+        var second = await store.ClaimPendingAsync(10, TimeSpan.FromMinutes(1), "relay-b", cancellationToken);
 
         Assert.Empty(second);
     }
@@ -29,16 +29,16 @@ public class InMemoryOutboxStoreTests
     {
         var time = new FakeTimeProvider();
         var store = new InMemoryOutboxStore(time);
-        var ct = TestContext.Current.CancellationToken;
-        await store.InsertAsync(NewEntry(), ct);
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await store.InsertAsync(NewEntry(), cancellationToken);
 
-        await store.ClaimPendingAsync(10, TimeSpan.FromMinutes(1), "relay-a", ct);
+        await store.ClaimPendingAsync(10, TimeSpan.FromMinutes(1), "relay-a", cancellationToken);
         time.Advance(TimeSpan.FromMinutes(2));
 
         // This is the whole point of the lease, and it is what strands rows when it is
         // missing: a relay that dies between claiming and marking leaves the entry claimed
         // forever otherwise.
-        Assert.Single(await store.ClaimPendingAsync(10, TimeSpan.FromMinutes(1), "relay-b", ct));
+        Assert.Single(await store.ClaimPendingAsync(10, TimeSpan.FromMinutes(1), "relay-b", cancellationToken));
     }
 
     [Fact]
@@ -46,14 +46,14 @@ public class InMemoryOutboxStoreTests
     {
         var time = new FakeTimeProvider();
         var store = new InMemoryOutboxStore(time);
-        var ct = TestContext.Current.CancellationToken;
-        await store.InsertAsync(NewEntry(), ct);
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await store.InsertAsync(NewEntry(), cancellationToken);
 
-        var stale = (await store.ClaimPendingAsync(10, TimeSpan.FromMinutes(1), "relay-a", ct))[0];
+        var stale = (await store.ClaimPendingAsync(10, TimeSpan.FromMinutes(1), "relay-a", cancellationToken))[0];
         time.Advance(TimeSpan.FromMinutes(2));
-        await store.ClaimPendingAsync(10, TimeSpan.FromMinutes(1), "relay-b", ct);
+        await store.ClaimPendingAsync(10, TimeSpan.FromMinutes(1), "relay-b", cancellationToken);
 
-        Assert.False(await store.MarkDeliveredAsync(stale, ct));
+        Assert.False(await store.MarkDeliveredAsync(stale, cancellationToken));
     }
 
     private static OutboxEntry NewEntry() =>

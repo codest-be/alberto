@@ -25,7 +25,7 @@ public class FencedCheckpointTests
             consumerId: "consumer-x",
             replicaId: "replica-x",
             fenceToken: 1,
-            ct: TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.True(saved);
         var position = await store.GetAsync("proc-2", TestContext.Current.CancellationToken);
@@ -46,27 +46,27 @@ public class FencedCheckpointTests
 
         public int RegularSaveCount { get; private set; }
 
-        public Task<long?> GetAsync(string processorId, CancellationToken ct = default)
+        public Task<long?> GetAsync(string processorId, CancellationToken cancellationToken = default)
         {
             _checkpoints.TryGetValue(processorId, out var value);
             long? result = _checkpoints.ContainsKey(processorId) ? value : null;
             return Task.FromResult(result);
         }
 
-        public Task SaveAsync(string processorId, long position, CancellationToken ct = default)
+        public Task SaveAsync(string processorId, long position, CancellationToken cancellationToken = default)
         {
             _checkpoints[processorId] = position;
             RegularSaveCount++;
             return Task.CompletedTask;
         }
 
-        public Task ResetAsync(string processorId, CancellationToken ct = default)
+        public Task ResetAsync(string processorId, CancellationToken cancellationToken = default)
         {
             _checkpoints.Remove(processorId);
             return Task.CompletedTask;
         }
 
-        public Task RewindAsync(string processorId, long position, CancellationToken ct = default)
+        public Task RewindAsync(string processorId, long position, CancellationToken cancellationToken = default)
         {
             _checkpoints[processorId] = position;
             return Task.CompletedTask;
@@ -74,9 +74,9 @@ public class FencedCheckpointTests
 
         public async Task<bool> SaveIfLeaseHeldAsync(
             string processorId, long position, string consumerId, string replicaId,
-            long fenceToken, bool useProcessorLeaseFencing = false, CancellationToken ct = default)
+            long fenceToken, bool useProcessorLeaseFencing = false, CancellationToken cancellationToken = default)
         {
-            await SaveAsync(processorId, position, ct);
+            await SaveAsync(processorId, position, cancellationToken);
             return true;
         }
     }

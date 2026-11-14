@@ -82,34 +82,34 @@ public class OutboxRelayTests
         /// <summary>The lease and relay identity the relay passed on its latest claim.</summary>
         public (TimeSpan Lease, string ClaimedBy) LastClaim { get; private set; }
 
-        public Task InsertAsync(OutboxEntry entry, CancellationToken ct = default)
-            => _inner.InsertAsync(entry, ct);
+        public Task InsertAsync(OutboxEntry entry, CancellationToken cancellationToken = default)
+            => _inner.InsertAsync(entry, cancellationToken);
 
         public Task<IReadOnlyList<OutboxClaim>> ClaimPendingAsync(
-            int limit, TimeSpan claimLease, string claimedBy, CancellationToken ct = default)
+            int limit, TimeSpan claimLease, string claimedBy, CancellationToken cancellationToken = default)
         {
             LastClaim = (claimLease, claimedBy);
             _firstPoll.TrySetResult();
             _onClaim?.Invoke();
             if (Interlocked.Increment(ref _pollCount) >= 2)
                 _tcs.TrySetResult();
-            return _inner.ClaimPendingAsync(limit, claimLease, claimedBy, ct);
+            return _inner.ClaimPendingAsync(limit, claimLease, claimedBy, cancellationToken);
         }
 
-        public Task<bool> MarkDeliveredAsync(OutboxClaim claim, CancellationToken ct = default)
-            => _inner.MarkDeliveredAsync(claim, ct);
+        public Task<bool> MarkDeliveredAsync(OutboxClaim claim, CancellationToken cancellationToken = default)
+            => _inner.MarkDeliveredAsync(claim, cancellationToken);
 
-        public Task<bool> MarkFailedAsync(OutboxClaim claim, string error, CancellationToken ct = default)
-            => _inner.MarkFailedAsync(claim, error, ct);
+        public Task<bool> MarkFailedAsync(OutboxClaim claim, string error, CancellationToken cancellationToken = default)
+            => _inner.MarkFailedAsync(claim, error, cancellationToken);
 
-        public Task<bool> MarkAttemptFailedAsync(OutboxClaim claim, string error, int maxRetries, CancellationToken ct)
-            => _inner.MarkAttemptFailedAsync(claim, error, maxRetries, ct);
+        public Task<bool> MarkAttemptFailedAsync(OutboxClaim claim, string error, int maxRetries, CancellationToken cancellationToken)
+            => _inner.MarkAttemptFailedAsync(claim, error, maxRetries, cancellationToken);
 
-        public Task RetryFailedAsync(string? messageType = null, CancellationToken ct = default)
-            => _inner.RetryFailedAsync(messageType, ct);
+        public Task RetryFailedAsync(string? messageType = null, CancellationToken cancellationToken = default)
+            => _inner.RetryFailedAsync(messageType, cancellationToken);
 
-        public Task PurgeDeliveredAsync(DateTimeOffset before, CancellationToken ct = default)
-            => _inner.PurgeDeliveredAsync(before, ct);
+        public Task PurgeDeliveredAsync(DateTimeOffset before, CancellationToken cancellationToken = default)
+            => _inner.PurgeDeliveredAsync(before, cancellationToken);
     }
 
     #endregion
@@ -138,11 +138,11 @@ public class OutboxRelayTests
 
     private sealed class FailingTransport : IMessageTransport
     {
-        public Task PublishAsync(ExternalMessage message, CancellationToken ct)
+        public Task PublishAsync(ExternalMessage message, CancellationToken cancellationToken)
             => throw new InvalidOperationException("Transport failure");
 
-        public Task StartAsync(CancellationToken ct) => Task.CompletedTask;
-        public Task StopAsync(CancellationToken ct) => Task.CompletedTask;
+        public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private sealed class LifecycleTransport : IMessageTransport, IDisposable, IAsyncDisposable
@@ -173,33 +173,33 @@ public class OutboxRelayTests
         public int Publishes => Volatile.Read(ref _publishes);
         public int Disposals => Volatile.Read(ref _disposals);
 
-        public Task PublishAsync(ExternalMessage message, CancellationToken ct)
+        public Task PublishAsync(ExternalMessage message, CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref _publishes);
             _record?.Invoke("publish");
-            return _inner.PublishAsync(message, ct);
+            return _inner.PublishAsync(message, cancellationToken);
         }
 
-        public async Task StartAsync(CancellationToken ct)
+        public async Task StartAsync(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref _starts);
             _record?.Invoke("start");
 
             if (_start is not null)
-                await _start(ct);
+                await _start(cancellationToken);
             else
-                await _inner.StartAsync(ct);
+                await _inner.StartAsync(cancellationToken);
         }
 
-        public async Task StopAsync(CancellationToken ct)
+        public async Task StopAsync(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref _stops);
             _record?.Invoke("stop");
 
             if (_stop is not null)
-                await _stop(ct);
+                await _stop(cancellationToken);
             else
-                await _inner.StopAsync(ct);
+                await _inner.StopAsync(cancellationToken);
         }
 
         public void Dispose() => Interlocked.Increment(ref _disposals);
@@ -222,39 +222,39 @@ public class OutboxRelayTests
 
         public void FailClaim(Exception exception) => _claim.TrySetException(exception);
 
-        public Task InsertAsync(OutboxEntry entry, CancellationToken ct = default) =>
+        public Task InsertAsync(OutboxEntry entry, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
 
         public async Task<IReadOnlyList<OutboxClaim>> ClaimPendingAsync(
             int limit,
             TimeSpan claimLease,
             string claimedBy,
-            CancellationToken ct = default)
+            CancellationToken cancellationToken = default)
         {
             _whenClaimed.TrySetResult();
-            return await _claim.Task.WaitAsync(ct);
+            return await _claim.Task.WaitAsync(cancellationToken);
         }
 
-        public Task<bool> MarkDeliveredAsync(OutboxClaim claim, CancellationToken ct = default) =>
+        public Task<bool> MarkDeliveredAsync(OutboxClaim claim, CancellationToken cancellationToken = default) =>
             Task.FromResult(true);
 
         public Task<bool> MarkFailedAsync(
             OutboxClaim claim,
             string error,
-            CancellationToken ct = default) =>
+            CancellationToken cancellationToken = default) =>
             Task.FromResult(true);
 
         public Task<bool> MarkAttemptFailedAsync(
             OutboxClaim claim,
             string error,
             int maxRetries,
-            CancellationToken ct) =>
+            CancellationToken cancellationToken) =>
             Task.FromResult(true);
 
-        public Task RetryFailedAsync(string? messageType = null, CancellationToken ct = default) =>
+        public Task RetryFailedAsync(string? messageType = null, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
 
-        public Task PurgeDeliveredAsync(DateTimeOffset before, CancellationToken ct = default) =>
+        public Task PurgeDeliveredAsync(DateTimeOffset before, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
     }
 
@@ -285,38 +285,38 @@ public class OutboxRelayTests
         public Func<int, Exception?>? ClaimFault { get; set; }
         public int MarkFailedCalls;
 
-        public Task InsertAsync(OutboxEntry entry, CancellationToken ct = default)
-            => inner.InsertAsync(entry, ct);
+        public Task InsertAsync(OutboxEntry entry, CancellationToken cancellationToken = default)
+            => inner.InsertAsync(entry, cancellationToken);
 
         public Task<IReadOnlyList<OutboxClaim>> ClaimPendingAsync(
-            int limit, TimeSpan claimLease, string claimedBy, CancellationToken ct = default)
+            int limit, TimeSpan claimLease, string claimedBy, CancellationToken cancellationToken = default)
         {
             var fault = ClaimFault?.Invoke(Interlocked.Increment(ref ClaimCalls));
             if (fault is not null)
                 throw fault;
-            return inner.ClaimPendingAsync(limit, claimLease, claimedBy, ct);
+            return inner.ClaimPendingAsync(limit, claimLease, claimedBy, cancellationToken);
         }
 
-        public Task<bool> MarkDeliveredAsync(OutboxClaim claim, CancellationToken ct = default)
-            => OnMarkDelivered?.Invoke(claim, ct) ?? inner.MarkDeliveredAsync(claim, ct);
+        public Task<bool> MarkDeliveredAsync(OutboxClaim claim, CancellationToken cancellationToken = default)
+            => OnMarkDelivered?.Invoke(claim, cancellationToken) ?? inner.MarkDeliveredAsync(claim, cancellationToken);
 
-        public Task<bool> MarkFailedAsync(OutboxClaim claim, string error, CancellationToken ct = default)
-            => MarkAttemptFailedAsync(claim, error, 1, ct);
+        public Task<bool> MarkFailedAsync(OutboxClaim claim, string error, CancellationToken cancellationToken = default)
+            => MarkAttemptFailedAsync(claim, error, 1, cancellationToken);
 
         public Func<OutboxClaim, Task<bool>>? OnMarkFailed { get; set; }
 
         public Task<bool> MarkAttemptFailedAsync(
-            OutboxClaim claim, string error, int maxRetries, CancellationToken ct)
+            OutboxClaim claim, string error, int maxRetries, CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref MarkFailedCalls);
-            return OnMarkFailed?.Invoke(claim) ?? inner.MarkAttemptFailedAsync(claim, error, maxRetries, ct);
+            return OnMarkFailed?.Invoke(claim) ?? inner.MarkAttemptFailedAsync(claim, error, maxRetries, cancellationToken);
         }
 
-        public Task RetryFailedAsync(string? messageType = null, CancellationToken ct = default)
-            => inner.RetryFailedAsync(messageType, ct);
+        public Task RetryFailedAsync(string? messageType = null, CancellationToken cancellationToken = default)
+            => inner.RetryFailedAsync(messageType, cancellationToken);
 
-        public Task PurgeDeliveredAsync(DateTimeOffset before, CancellationToken ct = default)
-            => inner.PurgeDeliveredAsync(before, ct);
+        public Task PurgeDeliveredAsync(DateTimeOffset before, CancellationToken cancellationToken = default)
+            => inner.PurgeDeliveredAsync(before, cancellationToken);
     }
 
     private sealed class FlakyTransport(int failures, Action<ExternalMessage>? onPublish = null) : IMessageTransport
@@ -325,7 +325,7 @@ public class OutboxRelayTests
         public int Attempts => Volatile.Read(ref _attempts);
         public List<ExternalMessage> Delivered { get; } = [];
 
-        public Task PublishAsync(ExternalMessage message, CancellationToken ct)
+        public Task PublishAsync(ExternalMessage message, CancellationToken cancellationToken)
         {
             var attempt = Interlocked.Increment(ref _attempts);
             onPublish?.Invoke(message);
@@ -336,8 +336,8 @@ public class OutboxRelayTests
             return Task.CompletedTask;
         }
 
-        public Task StartAsync(CancellationToken ct) => Task.CompletedTask;
-        public Task StopAsync(CancellationToken ct) => Task.CompletedTask;
+        public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private static async Task<bool> WaitUntilAsync(Func<bool> condition)
@@ -593,10 +593,10 @@ public class OutboxRelayTests
         var inner = new InMemoryOutboxStore();
         var store = new HookedOutboxStore(inner)
         {
-            OnMarkDelivered = (claim, ct) =>
+            OnMarkDelivered = (claim, cancellationToken) =>
             {
-                ct.ThrowIfCancellationRequested();
-                return inner.MarkDeliveredAsync(claim, ct);
+                cancellationToken.ThrowIfCancellationRequested();
+                return inner.MarkDeliveredAsync(claim, cancellationToken);
             }
         };
         OutboxRelay? relay = null;
@@ -981,7 +981,7 @@ public class OutboxRelayTests
             TaskCreationOptions.RunContinuationsAsynchronously);
         var cleanupNeverCompletes = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
-        var transport = new LifecycleTransport(stop: ct =>
+        var transport = new LifecycleTransport(stop: cancellationToken =>
         {
             cleanupStarted.TrySetResult();
             return cleanupNeverCompletes.Task;

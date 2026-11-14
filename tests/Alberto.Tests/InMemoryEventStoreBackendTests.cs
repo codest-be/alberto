@@ -22,9 +22,9 @@ public class InMemoryEventStoreBackendTests : EventStoreBackendSpecification
     [Fact]
     public async Task StreamAllOfTypes_leaves_other_types_on_the_server_and_limits_the_matches()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var backend = await CreateBackend();
-        var start = await backend.GetLastPositionAsync(ct);
+        var start = await backend.GetLastPositionAsync(cancellationToken);
         var (wanted, other) = ($"kept-{TestId}", $"dropped-{TestId}");
 
         await backend.AppendAsync([
@@ -33,9 +33,9 @@ public class InMemoryEventStoreBackendTests : EventStoreBackendSpecification
             CreateEvent(other, $"tag:3{TestId}"),
             CreateEvent(wanted, $"tag:4{TestId}"),
             CreateEvent(wanted, $"tag:5{TestId}")
-        ], cancellationToken: ct);
+        ], cancellationToken: cancellationToken);
 
-        var result = await backend.ReadAllOfTypesAsync(new HashSet<string> { wanted }, start, limit: 2, ct);
+        var result = await backend.ReadAllOfTypesAsync(new HashSet<string> { wanted }, start, limit: 2, cancellationToken);
 
         Assert.Equal(2, result.Count);
         Assert.All(result, e => Assert.Equal(wanted, e.EventType.Id));
@@ -272,7 +272,7 @@ public class InMemoryTenantBackendTests
     {
         // An append is all-or-nothing, as it is on Postgres. The second event is rejected, so
         // the first must not be stored, indexed, or leave a hole in the position sequence.
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var tag = $"d-order:{TestId}";
         var invalid = new EventToPersist
         {
@@ -281,14 +281,14 @@ public class InMemoryTenantBackendTests
             Tags = [EventTag.Parse(tag)]
         };
 
-        var act = async () => await _backend.AppendAsync([Event("order-placed", tag), invalid], cancellationToken: ct);
+        var act = async () => await _backend.AppendAsync([Event("order-placed", tag), invalid], cancellationToken: cancellationToken);
         await act.Should().ThrowAsync<Exception>();
 
-        (await _backend.GetLastPositionAsync(ct)).Should().Be(0);
-        (await _backend.StreamAllAsync(cancellationToken: ct).ToListAsync()).Should().BeEmpty();
-        (await _backend.StreamAsync(DcbQuery.ByTags(tag), cancellationToken: ct).ToListAsync()).Should().BeEmpty();
+        (await _backend.GetLastPositionAsync(cancellationToken)).Should().Be(0);
+        (await _backend.StreamAllAsync(cancellationToken: cancellationToken).ToListAsync()).Should().BeEmpty();
+        (await _backend.StreamAsync(DcbQuery.ByTags(tag), cancellationToken: cancellationToken).ToListAsync()).Should().BeEmpty();
 
-        var appended = await _backend.AppendAsync([Event("order-placed", tag)], cancellationToken: ct);
+        var appended = await _backend.AppendAsync([Event("order-placed", tag)], cancellationToken: cancellationToken);
         appended.Should().ContainSingle().Which.GlobalPosition.Should().Be(1);
     }
 

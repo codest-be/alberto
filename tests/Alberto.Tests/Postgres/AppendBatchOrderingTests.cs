@@ -49,7 +49,7 @@ public sealed class AppendBatchOrderingTests(SingleTenantPostgresFixture fixture
     [Fact]
     public async Task Append_TwentyEvents_ReturnsStrictlyAscendingPositionsInInputOrder()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var tag = $"batch-order-{Guid.NewGuid()}";
 
         var events = Enumerable.Range(0, 20)
@@ -62,7 +62,7 @@ public sealed class AppendBatchOrderingTests(SingleTenantPostgresFixture fixture
             .ToArray<IEventToPersist>();
 
         var backend = CreateBackend();
-        var results = await backend.AppendAsync(events, cancellationToken: ct);
+        var results = await backend.AppendAsync(events, cancellationToken: cancellationToken);
 
         results.Should().HaveCount(20, because: "one result row per input event is required");
 
@@ -90,17 +90,17 @@ public sealed class AppendBatchOrderingTests(SingleTenantPostgresFixture fixture
     [Fact]
     public async Task Append_NonEmpty_EmitsExactlyOneNotifyCarryingLastPosition()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var tag = $"notify-test-{Guid.NewGuid()}";
 
         // Open a dedicated connection for LISTEN before the append so the
         // notification is not missed.  Npgsql fires the Notification event
         // whenever WaitAsync delivers data from the server.
         await using var listenConn = new NpgsqlConnection(fixture.ConnectionString);
-        await listenConn.OpenAsync(ct);
+        await listenConn.OpenAsync(cancellationToken);
         await using (var listenCmd = new NpgsqlCommand($"LISTEN {NotifyChannel}", listenConn))
         {
-            await listenCmd.ExecuteNonQueryAsync(ct);
+            await listenCmd.ExecuteNonQueryAsync(cancellationToken);
         }
 
         var receivedPayloads = new List<string>();
@@ -117,11 +117,11 @@ public sealed class AppendBatchOrderingTests(SingleTenantPostgresFixture fixture
             .ToArray<IEventToPersist>();
 
         var backend = CreateBackend();
-        var results = await backend.AppendAsync(events, cancellationToken: ct);
+        var results = await backend.AppendAsync(events, cancellationToken: cancellationToken);
         var lastPosition = results.Last().GlobalPosition;
 
         // WaitAsync delivers buffered notifications from the server.
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCts.CancelAfter(TimeSpan.FromSeconds(5));
         await listenConn.WaitAsync(timeoutCts.Token);
 
@@ -145,25 +145,25 @@ public sealed class AppendBatchOrderingTests(SingleTenantPostgresFixture fixture
     [Fact]
     public async Task Append_EmptyEvents_ReturnsNoRowsAndEmitsNoNotify()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
 
         await using var listenConn = new NpgsqlConnection(fixture.ConnectionString);
-        await listenConn.OpenAsync(ct);
+        await listenConn.OpenAsync(cancellationToken);
         await using (var listenCmd = new NpgsqlCommand($"LISTEN {NotifyChannel}", listenConn))
         {
-            await listenCmd.ExecuteNonQueryAsync(ct);
+            await listenCmd.ExecuteNonQueryAsync(cancellationToken);
         }
 
         var receivedPayloads = new List<string>();
         listenConn.Notification += (_, args) => receivedPayloads.Add(args.Payload);
 
         var backend = CreateBackend();
-        var results = await backend.AppendAsync([], cancellationToken: ct);
+        var results = await backend.AppendAsync([], cancellationToken: cancellationToken);
 
         results.Should().BeEmpty(because: "appending zero events must return zero result rows");
 
         // Give the server a brief window to deliver any spurious notifications.
-        using var shortTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        using var shortTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         shortTimeout.CancelAfter(TimeSpan.FromMilliseconds(200));
         try
         {
@@ -194,7 +194,7 @@ public sealed class AppendBatchOrderingTests(SingleTenantPostgresFixture fixture
     [Fact]
     public async Task Append_MinimalEvent_AppliesColumnDefaults()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
 
         // Construct an event with no explicit ID, no data beyond the minimum,
         // no metadata, and no tags.
@@ -208,7 +208,7 @@ public sealed class AppendBatchOrderingTests(SingleTenantPostgresFixture fixture
         };
 
         var backend = CreateBackend();
-        var results = await backend.AppendAsync([minimal], cancellationToken: ct);
+        var results = await backend.AppendAsync([minimal], cancellationToken: cancellationToken);
 
         results.Should().HaveCount(1);
         var stored = results.Single();
@@ -231,7 +231,7 @@ public sealed class AppendBatchOrderingTests(SingleTenantPostgresFixture fixture
             EventData = "{}",
         };
 
-        var results2 = await backend.AppendAsync([noId], cancellationToken: ct);
+        var results2 = await backend.AppendAsync([noId], cancellationToken: cancellationToken);
         results2.Should().HaveCount(1);
         results2.Single().Id.Should().NotBe(Guid.Empty,
             because: "a missing event_id must be replaced by gen_random_uuid(), not stored as null/empty");

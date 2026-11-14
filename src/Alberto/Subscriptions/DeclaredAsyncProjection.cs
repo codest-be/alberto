@@ -97,7 +97,7 @@ internal sealed class DeclaredAsyncProjection<TState> : IBatchableProcessor, IPr
         _stateStores.GetOrAdd(tenantId ?? NoTenant, _ => _stateStoreFactory(tenantId));
 
     /// <inheritdoc/>
-    public async Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
+    public async Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default)
     {
         if (!_declaration.HandledEventTypes.Contains(@event.EventType.Id)) return;
 
@@ -110,7 +110,7 @@ internal sealed class DeclaredAsyncProjection<TState> : IBatchableProcessor, IPr
         if (docId is null) return;
 
         var stateStore = GetStore(@event.TenantId);
-        var states = await stateStore.LoadManyAsync([docId], ct);
+        var states = await stateStore.LoadManyAsync([docId], cancellationToken);
         var state = states.GetValueOrDefault(docId) ?? _declaration.InitialState();
 
         if (state is IProjectionEntity entity && entity.LastProcessedPosition >= @event.GlobalPosition)
@@ -126,18 +126,18 @@ internal sealed class DeclaredAsyncProjection<TState> : IBatchableProcessor, IPr
                 await stateStore.ApplyChangesAsync(
                     new Dictionary<string, TState> { [docId] = s.State },
                     [],
-                    ct);
+                    cancellationToken);
                 if (_afterCommit is not null)
-                    await _afterCommit([@event], ct);
+                    await _afterCommit([@event], cancellationToken);
                 break;
 
             case ProjectionResult<TState>.Delete:
                 await stateStore.ApplyChangesAsync(
                     new Dictionary<string, TState>(),
                     [docId],
-                    ct);
+                    cancellationToken);
                 if (_afterCommit is not null)
-                    await _afterCommit([@event], ct);
+                    await _afterCommit([@event], cancellationToken);
                 break;
         }
     }
@@ -148,7 +148,7 @@ internal sealed class DeclaredAsyncProjection<TState> : IBatchableProcessor, IPr
     /// that tenant's store. A batch that carries one tenant — the common case — is one run and
     /// behaves exactly as it did before stores became per-tenant.
     /// </remarks>
-    public async Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct = default)
+    public async Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken cancellationToken = default)
     {
         var start = 0;
         while (start < events.Count)
@@ -168,7 +168,7 @@ internal sealed class DeclaredAsyncProjection<TState> : IBatchableProcessor, IPr
                 ? events
                 : events.Skip(start).Take(end - start).ToList();
 
-            await ProcessTenantRunAsync(tenantId, run, ct);
+            await ProcessTenantRunAsync(tenantId, run, cancellationToken);
             start = end;
         }
     }
@@ -176,7 +176,7 @@ internal sealed class DeclaredAsyncProjection<TState> : IBatchableProcessor, IPr
     private async Task ProcessTenantRunAsync(
         string? tenantId,
         IReadOnlyList<IEventEnvelope> events,
-        CancellationToken ct)
+        CancellationToken cancellationToken)
     {
         // Single pass: collect relevant events (matching HandledEventTypes) and build
         // docId + parsed-event maps. Parsing each event once here eliminates the second
@@ -207,7 +207,7 @@ internal sealed class DeclaredAsyncProjection<TState> : IBatchableProcessor, IPr
         if (docIdMap.Count == 0) return;
 
         var stateStore = GetStore(tenantId);
-        var states = await stateStore.LoadManyAsync(docIdMap.Values.Distinct(), ct);
+        var states = await stateStore.LoadManyAsync(docIdMap.Values.Distinct(), cancellationToken);
 
         var upserts = new Dictionary<string, TState>();
         var deletes = new HashSet<string>();
@@ -248,9 +248,9 @@ internal sealed class DeclaredAsyncProjection<TState> : IBatchableProcessor, IPr
 
         if (upserts.Count > 0 || deletes.Count > 0)
         {
-            await stateStore.ApplyChangesAsync(upserts, deletes.ToList(), ct);
+            await stateStore.ApplyChangesAsync(upserts, deletes.ToList(), cancellationToken);
             if (_afterCommit is not null)
-                await _afterCommit(relevant, ct);
+                await _afterCommit(relevant, cancellationToken);
         }
     }
 

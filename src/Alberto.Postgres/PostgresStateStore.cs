@@ -137,7 +137,7 @@ public sealed class PostgresStateStore<TState> : IStateStore<TState>
     /// <inheritdoc/>
     public async Task<IReadOnlyDictionary<string, TState>> LoadManyAsync(
         IEnumerable<string> documentIds,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(documentIds);
 
@@ -147,8 +147,8 @@ public sealed class PostgresStateStore<TState> : IStateStore<TState>
 
         var result = new Dictionary<string, TState>();
 
-        await using var connection = await _dataSource.OpenConnectionAsync(ct);
-        await LoadWithConnectionAsync(connection, ids, result, ct);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await LoadWithConnectionAsync(connection, ids, result, cancellationToken);
 
         return result;
     }
@@ -157,7 +157,7 @@ public sealed class PostgresStateStore<TState> : IStateStore<TState>
         NpgsqlConnection connection,
         List<string> documentIds,
         Dictionary<string, TState> result,
-        CancellationToken ct)
+        CancellationToken cancellationToken)
     {
         // = ANY(@document_ids) with a typed array parameter allows the query plan to be
         // cached regardless of how many document IDs are requested, unlike a variable-length
@@ -194,8 +194,8 @@ public sealed class PostgresStateStore<TState> : IStateStore<TState>
         cmd.Parameters.AddWithValue("rebuild_version", _rebuildVersion.Current);
         cmd.Parameters.Add(new NpgsqlParameter<string[]>("document_ids", documentIds.ToArray()));
 
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
         {
             var docId = reader.GetString(0);
             var stateJson = reader.GetString(1);
@@ -209,7 +209,7 @@ public sealed class PostgresStateStore<TState> : IStateStore<TState>
     public async Task ApplyChangesAsync(
         IReadOnlyDictionary<string, TState> upserts,
         IReadOnlyCollection<string> deletes,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(upserts);
         ArgumentNullException.ThrowIfNull(deletes);
@@ -217,18 +217,18 @@ public sealed class PostgresStateStore<TState> : IStateStore<TState>
         if (upserts.Count == 0 && deletes.Count == 0)
             return;
 
-        await using var connection = await _dataSource.OpenConnectionAsync(ct);
-        await ApplyWithConnectionAsync(connection, upserts, deletes, ct);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await ApplyWithConnectionAsync(connection, upserts, deletes, cancellationToken);
     }
 
     private async Task ApplyWithConnectionAsync(
         NpgsqlConnection connection,
         IReadOnlyDictionary<string, TState> upserts,
         IReadOnlyCollection<string> deletes,
-        CancellationToken ct)
+        CancellationToken cancellationToken)
     {
         // The adapter owns the transaction so the upserts + deletes land atomically.
-        await using var transaction = await connection.BeginTransactionAsync(ct);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         // Resolved once for the whole batch. Resolving per statement would let a promotion
         // landing mid-batch split the upserts and deletes across two versions.
@@ -305,13 +305,13 @@ public sealed class PostgresStateStore<TState> : IStateStore<TState>
             }
 
             if (batch.BatchCommands.Count > 0)
-                await batch.ExecuteNonQueryAsync(ct);
+                await batch.ExecuteNonQueryAsync(cancellationToken);
 
-            await transaction.CommitAsync(ct);
+            await transaction.CommitAsync(cancellationToken);
         }
         catch
         {
-            await transaction.RollbackAsync(ct);
+            await transaction.RollbackAsync(cancellationToken);
             throw;
         }
     }
@@ -319,7 +319,7 @@ public sealed class PostgresStateStore<TState> : IStateStore<TState>
     /// <inheritdoc/>
     public async Task<IReadOnlyList<TState>> ListRecentAsync(
         int limit = 20,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         var result = new List<TState>();
 
@@ -348,7 +348,7 @@ public sealed class PostgresStateStore<TState> : IStateStore<TState>
                 """;
         }
 
-        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(sql, connection);
 
         if (_multiTenant)
@@ -358,8 +358,8 @@ public sealed class PostgresStateStore<TState> : IStateStore<TState>
         cmd.Parameters.AddWithValue("rebuild_version", _rebuildVersion.Current);
         cmd.Parameters.AddWithValue("limit", limit);
 
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
         {
             var stateJson = reader.GetString(0);
             var state = JsonSerializer.Deserialize(stateJson, _jsonTypeInfo.Value);

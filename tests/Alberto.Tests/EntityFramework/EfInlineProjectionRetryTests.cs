@@ -40,7 +40,7 @@ public sealed class EfInlineProjectionRetryTests(EfProjectionTestFixture fixture
         var entityId = Guid.NewGuid().ToString();
         var events = new[] { EfTestEnvelopes.ForCounterIncremented(entityId, amount: 7, position: 1) };
 
-        await projection.ProcessAsync(events, ct: TestContext.Current.CancellationToken);
+        await projection.ProcessAsync(events, cancellationToken: TestContext.Current.CancellationToken);
 
         var entity = await fixture.ReadEntityAsync(entityId);
         entity.Should().NotBeNull();
@@ -69,7 +69,7 @@ public sealed class EfInlineProjectionRetryTests(EfProjectionTestFixture fixture
         var entityId = Guid.NewGuid().ToString();
         var events = new[] { EfTestEnvelopes.ForCounterIncremented(entityId, amount: 3, position: 1) };
 
-        await projection.ProcessAsync(events, ct: TestContext.Current.CancellationToken);
+        await projection.ProcessAsync(events, cancellationToken: TestContext.Current.CancellationToken);
 
         var entity = await fixture.ReadEntityAsync(entityId);
         entity.Should().NotBeNull("the projection should have committed on the third attempt");
@@ -100,7 +100,7 @@ public sealed class EfInlineProjectionRetryTests(EfProjectionTestFixture fixture
         var entityId = Guid.NewGuid().ToString();
         var events = new[] { EfTestEnvelopes.ForCounterIncremented(entityId, amount: 5, position: 1) };
 
-        await projection.ProcessAsync(events, ct: TestContext.Current.CancellationToken);
+        await projection.ProcessAsync(events, cancellationToken: TestContext.Current.CancellationToken);
 
         var entity = await fixture.ReadEntityAsync(entityId);
         entity.Should().NotBeNull("the projection should have committed on the second attempt");
@@ -129,7 +129,7 @@ public sealed class EfInlineProjectionRetryTests(EfProjectionTestFixture fixture
         var events = new[] { EfTestEnvelopes.ForCounterIncremented(entityId, amount: 1, position: 1) };
 
         var act = async () => await projection.ProcessAsync(
-            events, ct: TestContext.Current.CancellationToken);
+            events, cancellationToken: TestContext.Current.CancellationToken);
 
         var thrown = await act.Should().ThrowAsync<InlineProjectionExhaustedException>();
         thrown.Which.ProcessorId.Should().Be(processorId);
@@ -155,7 +155,7 @@ public sealed class EfInlineProjectionRetryTests(EfProjectionTestFixture fixture
 
         try
         {
-            await projection.ProcessAsync(events, ct: TestContext.Current.CancellationToken);
+            await projection.ProcessAsync(events, cancellationToken: TestContext.Current.CancellationToken);
         }
         catch (InlineProjectionExhaustedException)
         {
@@ -186,7 +186,7 @@ public sealed class EfInlineProjectionRetryTests(EfProjectionTestFixture fixture
         var events = new[] { EfTestEnvelopes.ForCounterIncremented(entityId, amount: 1, position: 1) };
 
         var act = async () => await projection.ProcessAsync(
-            events, ct: TestContext.Current.CancellationToken);
+            events, cancellationToken: TestContext.Current.CancellationToken);
 
         // Should throw the original exception, not InlineProjectionExhaustedException.
         await act.Should().ThrowAsync<InvalidOperationException>()
@@ -212,10 +212,10 @@ public sealed class EfInlineProjectionRetryTests(EfProjectionTestFixture fixture
         var evt = EfTestEnvelopes.ForCounterIncremented(entityId, amount: 10, position: 42);
 
         // First processing: entity is persisted with Counter=10, LastProcessedPosition=42.
-        await projection.ProcessAsync([evt], ct: TestContext.Current.CancellationToken);
+        await projection.ProcessAsync([evt], cancellationToken: TestContext.Current.CancellationToken);
 
         // Second processing of the same event: position 42 <= stored 42, so it is skipped.
-        await projection.ProcessAsync([evt], ct: TestContext.Current.CancellationToken);
+        await projection.ProcessAsync([evt], cancellationToken: TestContext.Current.CancellationToken);
 
         var entity = await fixture.ReadEntityAsync(entityId);
         entity!.Counter.Should().Be(10, "the event should have been applied exactly once");
@@ -239,7 +239,7 @@ public sealed class EfInlineProjectionRetryTests(EfProjectionTestFixture fixture
 
         // Empty batch: no events handled by this projection.
         var act = async () => await projection.ProcessAsync(
-            [], ct: TestContext.Current.CancellationToken);
+            [], cancellationToken: TestContext.Current.CancellationToken);
 
         await act.Should().NotThrowAsync();
     }
@@ -265,7 +265,7 @@ public sealed class EfInlineProjectionRetryTests(EfProjectionTestFixture fixture
             EfTestEnvelopes.ForCounterIncremented(id1, amount: 1, position: 3), // fold with first for id1
         };
 
-        await projection.ProcessAsync(events, ct: TestContext.Current.CancellationToken);
+        await projection.ProcessAsync(events, cancellationToken: TestContext.Current.CancellationToken);
 
         var entity1 = await fixture.ReadEntityAsync(id1);
         var entity2 = await fixture.ReadEntityAsync(id2);

@@ -33,7 +33,7 @@ public sealed class BackgroundSpanTests
         public bool IsActive { get; set; } = true;
         public bool IsRebuilding { get; set; }
         public IReadOnlySet<string> HandledEventTypes { get; } = new HashSet<string> { EventTypeId };
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default) => Task.CompletedTask;
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     private static ActivityListener Listen(List<Activity> stopped)
@@ -227,12 +227,12 @@ public sealed class BackgroundSpanTests
 
     private sealed class PurgeOnlyStore : IOutboxStore
     {
-        public Task PurgeDeliveredAsync(DateTimeOffset before, CancellationToken ct = default) => Task.CompletedTask;
-        public Task InsertAsync(OutboxEntry entry, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<IReadOnlyList<OutboxClaim>> ClaimPendingAsync(int limit, TimeSpan claimLease, string claimedBy, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<bool> MarkDeliveredAsync(OutboxClaim claim, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<bool> MarkFailedAsync(OutboxClaim claim, string error, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<bool> MarkAttemptFailedAsync(OutboxClaim claim, string error, int maxRetries, CancellationToken ct) => throw new NotSupportedException();
-        public Task RetryFailedAsync(string? messageType = null, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task PurgeDeliveredAsync(DateTimeOffset before, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task InsertAsync(OutboxEntry entry, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<OutboxClaim>> ClaimPendingAsync(int limit, TimeSpan claimLease, string claimedBy, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<bool> MarkDeliveredAsync(OutboxClaim claim, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<bool> MarkFailedAsync(OutboxClaim claim, string error, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<bool> MarkAttemptFailedAsync(OutboxClaim claim, string error, int maxRetries, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task RetryFailedAsync(string? messageType = null, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 }

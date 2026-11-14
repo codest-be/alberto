@@ -22,8 +22,8 @@ public interface IInlineProjection
     /// Processes events after they have been appended.
     /// </summary>
     /// <param name="events">The events to process.</param>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     Task ProcessAsync(
         IReadOnlyList<IEventEnvelope> events,
-        CancellationToken ct = default);
+        CancellationToken cancellationToken = default);
 }

@@ -81,7 +81,7 @@ public sealed class EventStoreTests
 
         public Task ProcessAsync(
             IReadOnlyList<IEventEnvelope> events,
-            CancellationToken ct = default)
+            CancellationToken cancellationToken = default)
         {
             calls.Add("projection");
             Received.AddRange(events);
@@ -98,7 +98,7 @@ public sealed class EventStoreTests
 
         public Task ProcessAsync(
             IReadOnlyList<IEventEnvelope> events,
-            CancellationToken ct)
+            CancellationToken cancellationToken)
         {
             calls.Add("handler");
             Received.AddRange(events);
@@ -113,7 +113,7 @@ public sealed class EventStoreTests
 
         public Task ProcessAsync(
             IReadOnlyList<IEventEnvelope> events,
-            CancellationToken ct = default) =>
+            CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("projection failed");
     }
 
@@ -163,8 +163,8 @@ public sealed class EventStoreTests
 
         public IReadOnlySet<string> HandledEventTypes { get; }
 
-        public Task ProcessAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct = default)
-            => _inner.ProcessBatchAsync(events, ct);
+        public Task ProcessAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken cancellationToken = default)
+            => _inner.ProcessBatchAsync(events, cancellationToken);
     }
 
     #endregion

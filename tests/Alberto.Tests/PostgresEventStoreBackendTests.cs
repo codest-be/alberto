@@ -17,9 +17,9 @@ public sealed class PostgresEventStoreBackendTests(SingleTenantPostgresFixture f
     [Fact]
     public async Task StreamAllOfTypes_leaves_other_types_on_the_server_and_limits_the_matches()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var backend = await CreateBackend();
-        var start = await backend.GetLastPositionAsync(ct);
+        var start = await backend.GetLastPositionAsync(cancellationToken);
         var (wanted, other) = ($"kept-{TestId}", $"dropped-{TestId}");
 
         await backend.AppendAsync([
@@ -28,9 +28,9 @@ public sealed class PostgresEventStoreBackendTests(SingleTenantPostgresFixture f
             CreateEvent(other, $"tag:3{TestId}"),
             CreateEvent(wanted, $"tag:4{TestId}"),
             CreateEvent(wanted, $"tag:5{TestId}")
-        ], cancellationToken: ct);
+        ], cancellationToken: cancellationToken);
 
-        var result = await backend.ReadAllOfTypesAsync(new HashSet<string> { wanted }, start, limit: 2, ct);
+        var result = await backend.ReadAllOfTypesAsync(new HashSet<string> { wanted }, start, limit: 2, cancellationToken);
 
         Assert.Equal(2, result.Count);
         Assert.All(result, e => Assert.Equal(wanted, e.EventType.Id));

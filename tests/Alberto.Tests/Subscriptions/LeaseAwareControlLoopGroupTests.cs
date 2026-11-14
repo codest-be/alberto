@@ -90,7 +90,7 @@ public sealed class LeaseAwareControlLoopGroupTests
         }
 
         public Task<IProcessorLease?> TryAcquireAsync(
-            string consumerId, string processorId, string replicaId, CancellationToken ct = default)
+            string consumerId, string processorId, string replicaId, CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _tryAcquireCallCount);
             _leases.TryGetValue(processorId, out var lease);
@@ -98,14 +98,14 @@ public sealed class LeaseAwareControlLoopGroupTests
         }
 
         public Task<IReadOnlyList<string>> RenewLeasesAsync(
-            string consumerId, string replicaId, CancellationToken ct = default)
+            string consumerId, string replicaId, CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _renewCallCount);
             return Task.FromResult<IReadOnlyList<string>>(_renewedIds.ToArray());
         }
 
         public Task ReleaseAllLeasesAsync(
-            string consumerId, string replicaId, CancellationToken ct = default) =>
+            string consumerId, string replicaId, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
 
     }
@@ -168,7 +168,7 @@ public sealed class LeaseAwareControlLoopGroupTests
         public bool IsRebuilding => false;
         public IReadOnlySet<string> HandledEventTypes { get; } = new HashSet<string>();
 
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default) =>
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
     }
 
@@ -539,7 +539,7 @@ public sealed class LeaseAwareControlLoopGroupTests
         public bool Held { get; private set; }
 
         public async Task<IProcessorLease?> TryAcquireAsync(
-            string consumerId, string processorId, string replicaId, CancellationToken ct = default)
+            string consumerId, string processorId, string replicaId, CancellationToken cancellationToken = default)
         {
             if (!Gated) return null;
             await Gate.Task;
@@ -548,11 +548,11 @@ public sealed class LeaseAwareControlLoopGroupTests
         }
 
         public Task<IReadOnlyList<string>> RenewLeasesAsync(
-            string consumerId, string replicaId, CancellationToken ct = default) =>
+            string consumerId, string replicaId, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<string>>([]);
 
         public Task ReleaseAllLeasesAsync(
-            string consumerId, string replicaId, CancellationToken ct = default)
+            string consumerId, string replicaId, CancellationToken cancellationToken = default)
         {
             Held = false;
             return Task.CompletedTask;

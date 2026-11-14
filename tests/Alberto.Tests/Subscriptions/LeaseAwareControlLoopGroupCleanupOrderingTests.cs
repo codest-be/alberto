@@ -130,7 +130,7 @@ public sealed class LeaseAwareControlLoopGroupCleanupOrderingTests
         public bool IsRebuilding => false;
         public IReadOnlySet<string> HandledEventTypes { get; } = new HashSet<string>();
 
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
     }
 
@@ -139,15 +139,15 @@ public sealed class LeaseAwareControlLoopGroupCleanupOrderingTests
         public TimeSpan LeaseDuration { get; } = TimeSpan.FromSeconds(30);
 
         public Task<IProcessorLease?> TryAcquireAsync(
-            string consumerId, string processorId, string replicaId, CancellationToken ct = default)
+            string consumerId, string processorId, string replicaId, CancellationToken cancellationToken = default)
             => Task.FromResult<IProcessorLease?>(null);
 
         public Task<IReadOnlyList<string>> RenewLeasesAsync(
-            string consumerId, string replicaId, CancellationToken ct = default)
+            string consumerId, string replicaId, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
 
         public Task ReleaseAllLeasesAsync(
-            string consumerId, string replicaId, CancellationToken ct = default)
+            string consumerId, string replicaId, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
     }

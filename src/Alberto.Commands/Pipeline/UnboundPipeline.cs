@@ -26,13 +26,13 @@ public readonly struct UnboundPipeline<TCommand, TState>
     public UnboundDecision Decide(Func<TCommand, TState, Decision> decide)
     {
         var (store, load, once) = Unwrap();
-        return new UnboundDecision(store, async ct =>
+        return new UnboundDecision(store, async cancellationToken =>
         {
-            var staged = await once.Get(ct);
+            var staged = await once.Get(cancellationToken);
             if (staged.HasProblems)
                 return Decision.Fail(staged.Problems!);
 
-            var state = await load(staged.Command, ct);
+            var state = await load(staged.Command, cancellationToken);
             return decide(staged.Command, state);
         }, typeof(TCommand).Name);
     }
@@ -41,13 +41,13 @@ public readonly struct UnboundPipeline<TCommand, TState>
     public UnboundDecision<TValue> Decide<TValue>(Func<TCommand, TState, Decision<TValue>> decide)
     {
         var (store, load, once) = Unwrap();
-        return new UnboundDecision<TValue>(store, async ct =>
+        return new UnboundDecision<TValue>(store, async cancellationToken =>
         {
-            var staged = await once.Get(ct);
+            var staged = await once.Get(cancellationToken);
             if (staged.HasProblems)
                 return Decision<TValue>.Fail(staged.Problems!);
 
-            var state = await load(staged.Command, ct);
+            var state = await load(staged.Command, cancellationToken);
             return decide(staged.Command, state);
         }, typeof(TCommand).Name);
     }

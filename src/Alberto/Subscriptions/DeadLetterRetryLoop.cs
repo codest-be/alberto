@@ -137,9 +137,9 @@ internal sealed class DeadLetterRetryLoop(
         cts.Dispose();
     }
 
-    private async Task RunAsync(CancellationToken ct)
+    private async Task RunAsync(CancellationToken cancellationToken)
     {
-        while (!ct.IsCancellationRequested)
+        while (!cancellationToken.IsCancellationRequested)
         {
             try
             {
@@ -153,7 +153,7 @@ internal sealed class DeadLetterRetryLoop(
                     _claimLeaseDuration,
                     _claimedBy,
                     _timeProvider.GetUtcNow(),
-                    ct);
+                    cancellationToken);
 
                 foreach (var claim in retries)
                 {
@@ -169,7 +169,7 @@ internal sealed class DeadLetterRetryLoop(
                         // built-in RetryAndDeadLetter middleware swallows non-cancellation failures
                         // and dead-letters the event again on exhaustion, so a normal return here
                         // covers both "handler succeeded" and "handler failed again".
-                        var context = await DispatchWithTenantScopeAsync(envelope, entry, ct);
+                        var context = await DispatchWithTenantScopeAsync(envelope, entry, cancellationToken);
 
                         if (context is not { DeadLettered: true })
                         {
@@ -200,7 +200,7 @@ internal sealed class DeadLetterRetryLoop(
                                 context.LastError);
                         }
                     }
-                    catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                     {
                         // Shutdown: leave the claim in place. The lease will expire and another
                         // worker (or this one on restart) will re-claim and dispatch.
@@ -220,7 +220,7 @@ internal sealed class DeadLetterRetryLoop(
                             _processor.ProcessorId);
                         try
                         {
-                            if (!await _deadLetterStore.AbandonRetryAsync(claim, ct))
+                            if (!await _deadLetterStore.AbandonRetryAsync(claim, cancellationToken))
                             {
                                 _logger?.LogWarning(
                                     "DeadLetterRetryLoop no longer owns claim {ClaimId} for entry {EntryId}; " +
@@ -242,7 +242,7 @@ internal sealed class DeadLetterRetryLoop(
                     {
                         try
                         {
-                            if (!await _deadLetterStore.AbandonRetryAsync(claim, ct))
+                            if (!await _deadLetterStore.AbandonRetryAsync(claim, cancellationToken))
                             {
                                 _logger?.LogWarning(
                                     "DeadLetterRetryLoop no longer owns claim {ClaimId} for entry {EntryId}; " +
@@ -251,7 +251,7 @@ internal sealed class DeadLetterRetryLoop(
                                     entry.Id);
                             }
                         }
-                        catch (Exception releaseEx) when (!ct.IsCancellationRequested)
+                        catch (Exception releaseEx) when (!cancellationToken.IsCancellationRequested)
                         {
                             // The new failure is already on the row; only the release was lost.
                             // Once the lease expires the row is re-dispatched.
@@ -266,7 +266,7 @@ internal sealed class DeadLetterRetryLoop(
                     {
                         try
                         {
-                            if (!await _deadLetterStore.CompleteRetryAsync(claim, ct))
+                            if (!await _deadLetterStore.CompleteRetryAsync(claim, cancellationToken))
                             {
                                 _logger?.LogWarning(
                                     "DeadLetterRetryLoop no longer owns claim {ClaimId} for completed entry " +
@@ -275,7 +275,7 @@ internal sealed class DeadLetterRetryLoop(
                                     entry.Id);
                             }
                         }
-                        catch (Exception removeEx) when (!ct.IsCancellationRequested)
+                        catch (Exception removeEx) when (!cancellationToken.IsCancellationRequested)
                         {
                             // The dispatch itself succeeded; a transient delete failure isn't
                             // catastrophic. The lease prevents anyone else from picking the row up,
@@ -291,16 +291,16 @@ internal sealed class DeadLetterRetryLoop(
 
                 // Delay before next poll if no entries were processed
                 if (retries.Count == 0)
-                    await Task.Delay(_pollingInterval, _timeProvider, ct);
+                    await Task.Delay(_pollingInterval, _timeProvider, cancellationToken);
             }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { break; }
             catch (Exception ex)
             {
                 _logger?.LogError(ex,
                     "DeadLetterRetryLoop for processor '{ProcessorId}' encountered an unexpected error. " +
                     "Will retry after delay.",
                     _processor.ProcessorId);
-                await Task.Delay(_pollingInterval, _timeProvider, ct);
+                await Task.Delay(_pollingInterval, _timeProvider, cancellationToken);
             }
         }
     }
@@ -315,22 +315,22 @@ internal sealed class DeadLetterRetryLoop(
     // reactor handler classes wired via ReactTo<TEvent, THandler>). A complete fix would resolve
     // the processor itself from the scope using the module key — that requires DeadLetterRetryLoop
     // to know the module key, tracked as a follow-up in the breaking-changes phase.
-    private async Task<ConsumeEventContext?> DispatchWithTenantScopeAsync(IEventEnvelope envelope, DeadLetterEntry entry, CancellationToken ct)
+    private async Task<ConsumeEventContext?> DispatchWithTenantScopeAsync(IEventEnvelope envelope, DeadLetterEntry entry, CancellationToken cancellationToken)
     {
         if (scopeFactory is not null && !string.IsNullOrEmpty(entry.TenantId))
         {
             await using var scope = EventProcessingScope.Create(scopeFactory, entry.TenantId);
-            return await DispatchAsync(envelope, entry, ct);
+            return await DispatchAsync(envelope, entry, cancellationToken);
         }
 
-        return await DispatchAsync(envelope, entry, ct);
+        return await DispatchAsync(envelope, entry, cancellationToken);
     }
 
-    private async Task<ConsumeEventContext?> DispatchAsync(IEventEnvelope evt, DeadLetterEntry entry, CancellationToken ct)
+    private async Task<ConsumeEventContext?> DispatchAsync(IEventEnvelope evt, DeadLetterEntry entry, CancellationToken cancellationToken)
     {
         if (_middlewares.Count == 0)
         {
-            await _processor.ProcessEventAsync(evt, ct);
+            await _processor.ProcessEventAsync(evt, cancellationToken);
             return null;
         }
 
@@ -341,13 +341,13 @@ internal sealed class DeadLetterRetryLoop(
             Envelope = evt,
             IsRebuild = _processor.IsRebuilding,
             PriorRedeliveries = entry.RedeliveryCount,
-            CancellationToken = ct,
+            CancellationToken = cancellationToken,
         };
 
         await MiddlewareRunner.RunAsync(
             context,
             _middlewares,
-            () => _processor.ProcessEventAsync(evt, ct));
+            () => _processor.ProcessEventAsync(evt, cancellationToken));
         return context;
     }
 }

@@ -6,7 +6,7 @@ namespace Alberto.Messaging;
 /// Return <c>null</c> to suppress publishing for this event.
 /// </summary>
 public delegate ValueTask<ExternalMessage?> EventToMessageMapper(
-    IEventEnvelope envelope, IServiceProvider serviceProvider, CancellationToken ct);
+    IEventEnvelope envelope, IServiceProvider serviceProvider, CancellationToken cancellationToken);
 
 /// <summary>
 /// Registry that maps event types to their corresponding external message shapes.
@@ -20,7 +20,7 @@ public interface IMessageMappingRegistry
     void Map<TEvent>(EventToMessageMapper mapper) where TEvent : IEvent;
 
     /// <summary>Attempts to map an event envelope to an external message. Returns <c>null</c> if no mapping is registered.</summary>
-    ValueTask<ExternalMessage?> TryMapAsync(IEventEnvelope envelope, IServiceProvider serviceProvider, CancellationToken ct);
+    ValueTask<ExternalMessage?> TryMapAsync(IEventEnvelope envelope, IServiceProvider serviceProvider, CancellationToken cancellationToken);
 
     /// <summary>The set of event type identifiers that have registered mappers.</summary>
     IReadOnlySet<string> MappedEventTypes { get; }

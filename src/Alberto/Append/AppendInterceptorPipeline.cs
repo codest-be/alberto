@@ -9,7 +9,7 @@ namespace Alberto.Append;
 internal sealed class AppendInterceptorPipeline : IAppendInterceptorPipeline
 {
     // Null when no interceptors are registered (fast-path: invoke appendAction directly).
-    // When non-null: given (appendAction, ct), returns the fully composed pipeline delegate.
+    // When non-null: given (appendAction, cancellationToken), returns the fully composed pipeline delegate.
     private readonly Func<
         Func<AppendContext, Task<IReadOnlyCollection<IEventEnvelope>>>,
         CancellationToken,
@@ -47,7 +47,7 @@ internal sealed class AppendInterceptorPipeline : IAppendInterceptorPipeline
             var interceptor = interceptors[i]; // capture the current interceptor by value
             var inner = composed;              // capture the current composition by value
 
-            composed = (action, ct) => ctx => interceptor.OnAppendingAsync(ctx, inner(action, ct), ct);
+            composed = (action, cancellationToken) => ctx => interceptor.OnAppendingAsync(ctx, inner(action, cancellationToken), cancellationToken);
         }
 
         return composed;
@@ -57,11 +57,11 @@ internal sealed class AppendInterceptorPipeline : IAppendInterceptorPipeline
     public Task<IReadOnlyCollection<IEventEnvelope>> ExecuteAsync(
         AppendContext context,
         Func<AppendContext, Task<IReadOnlyCollection<IEventEnvelope>>> appendAction,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         if (_composed is null)
             return appendAction(context);
 
-        return _composed(appendAction, ct)(context);
+        return _composed(appendAction, cancellationToken)(context);
     }
 }

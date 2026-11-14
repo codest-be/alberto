@@ -26,7 +26,7 @@ public class OutboxTransportLifecycleStateTests
         public TrackingTransport(Exception? startFailure = null) =>
             _startFailure = startFailure;
 
-        public Task StartAsync(CancellationToken ct)
+        public Task StartAsync(CancellationToken cancellationToken)
         {
             Starts++;
             return _startFailure is not null
@@ -34,13 +34,13 @@ public class OutboxTransportLifecycleStateTests
                 : Task.CompletedTask;
         }
 
-        public Task StopAsync(CancellationToken ct)
+        public Task StopAsync(CancellationToken cancellationToken)
         {
             Stops++;
             return Task.CompletedTask;
         }
 
-        public Task PublishAsync(ExternalMessage message, CancellationToken ct)
+        public Task PublishAsync(ExternalMessage message, CancellationToken cancellationToken)
         {
             Publishes++;
             return Task.CompletedTask;

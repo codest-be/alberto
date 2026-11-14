@@ -37,7 +37,7 @@ public sealed class ProjectionCatchUpEndToEndTests
     [Fact]
     public async Task WaitForProjection_LetsAReadImmediatelyAfterAWriteSeeIt()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var occupancy = new InMemoryStateStore<CatchUpOccupancy>();
 
         var services = new ServiceCollection();
@@ -51,20 +51,20 @@ public sealed class ProjectionCatchUpEndToEndTests
         await using var provider = services.BuildServiceProvider();
         var hosted = provider.GetServices<IHostedService>().ToList();
         foreach (var service in hosted)
-            await service.StartAsync(ct);
+            await service.StartAsync(cancellationToken);
 
         try
         {
             var showId = Guid.NewGuid().ToString();
             var eventStore = provider.GetRequiredKeyedService<IEventStore>(ModuleKey);
 
-            await AppendAsync(eventStore, showId, ct);
-            await AppendAsync(eventStore, showId, ct);
+            await AppendAsync(eventStore, showId, cancellationToken);
+            await AppendAsync(eventStore, showId, cancellationToken);
 
             var catchUp = provider.GetRequiredKeyedService<ProjectionCatchUp>(ModuleKey);
-            await catchUp.WaitForProjectionAsync(ProcessorId, cancellationToken: ct);
+            await catchUp.WaitForProjectionAsync(ProcessorId, cancellationToken: cancellationToken);
 
-            var states = await occupancy.LoadManyAsync([showId], ct);
+            var states = await occupancy.LoadManyAsync([showId], cancellationToken);
             states[showId].SeatsTaken.Should().Be(2,
                 because: "the wait returns only once the loop has consumed everything appended before it");
         }
@@ -75,7 +75,7 @@ public sealed class ProjectionCatchUpEndToEndTests
         }
     }
 
-    private static Task AppendAsync(IEventStore eventStore, string showId, CancellationToken ct) =>
+    private static Task AppendAsync(IEventStore eventStore, string showId, CancellationToken cancellationToken) =>
         eventStore.AppendAsync(
             [
                 new EventToPersist
@@ -85,5 +85,5 @@ public sealed class ProjectionCatchUpEndToEndTests
                     EventData = JsonSerializer.Serialize(new SeatReservedForCatchUp(showId)),
                 }
             ],
-            cancellationToken: ct);
+            cancellationToken: cancellationToken);
 }

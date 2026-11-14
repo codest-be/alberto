@@ -12,11 +12,11 @@ namespace Alberto.Commands;
 /// <code>
 /// await store.Handle(command)
 ///     .Validate(Rules.Confirm)                 // optional, chainable
-///     .Enrich((cmd, ct) =&gt; LookupAsync(cmd, ct))  // optional, async, runs once
+///     .Enrich((cmd, cancellationToken) =&gt; LookupAsync(cmd, cancellationToken))  // optional, async, runs once
 ///     .Load(boundary, evolver)                 // folds state AND captures the position
 ///     .Decide(Actions.Confirm)                 // synchronous and pure
 ///     .RetryOnConflict(3)                      // optional
-///     .Commit(ct);
+///     .Commit(cancellationToken);
 /// </code>
 /// <para>
 /// Everything is deferred: nothing touches the event store until a terminal
@@ -49,9 +49,9 @@ public readonly struct CommandPipeline<TCommand>
     public CommandPipeline<TCommand> Validate(Func<TCommand, Result> validate)
     {
         var (store, prepare) = Unwrap();
-        return new CommandPipeline<TCommand>(store, async ct =>
+        return new CommandPipeline<TCommand>(store, async cancellationToken =>
         {
-            var staged = await prepare(ct);
+            var staged = await prepare(cancellationToken);
             if (staged.HasProblems)
                 return staged;
 
@@ -64,9 +64,9 @@ public readonly struct CommandPipeline<TCommand>
     public CommandPipeline<TNew> Map<TNew>(Func<TCommand, TNew> map)
     {
         var (store, prepare) = Unwrap();
-        return new CommandPipeline<TNew>(store, async ct =>
+        return new CommandPipeline<TNew>(store, async cancellationToken =>
         {
-            var staged = await prepare(ct);
+            var staged = await prepare(cancellationToken);
             return staged.HasProblems
                 ? Staged<TNew>.Failed(staged.Problems!)
                 : Staged<TNew>.Ok(map(staged.Command));
@@ -86,12 +86,12 @@ public readonly struct CommandPipeline<TCommand>
     public CommandPipeline<TNew> Enrich<TNew>(Func<TCommand, CancellationToken, Task<TNew>> enrich)
     {
         var (store, prepare) = Unwrap();
-        return new CommandPipeline<TNew>(store, async ct =>
+        return new CommandPipeline<TNew>(store, async cancellationToken =>
         {
-            var staged = await prepare(ct);
+            var staged = await prepare(cancellationToken);
             return staged.HasProblems
                 ? Staged<TNew>.Failed(staged.Problems!)
-                : Staged<TNew>.Ok(await enrich(staged.Command, ct));
+                : Staged<TNew>.Ok(await enrich(staged.Command, cancellationToken));
         });
     }
 
@@ -104,7 +104,7 @@ public readonly struct CommandPipeline<TCommand>
 
     /// <summary>
     /// Reads the boundary, folding it into state with <paramref name="apply"/>, and captures
-    /// the position it was read at. The resulting pipeline can <c>Commit(ct)</c>.
+    /// the position it was read at. The resulting pipeline can <c>Commit(cancellationToken)</c>.
     /// </summary>
     public BoundPipeline<TCommand, TState> Load<TState>(
         DcbQuery boundary,
@@ -122,10 +122,10 @@ public readonly struct CommandPipeline<TCommand>
         Func<TState, IEvent, TState> apply)
     {
         var (store, prepare) = Unwrap();
-        return new BoundPipeline<TCommand, TState>(store, prepare, async (command, ct) =>
+        return new BoundPipeline<TCommand, TState>(store, prepare, async (command, cancellationToken) =>
         {
             var query = boundary(command);
-            var (state, position) = await store.FoldWithPosition(query, initial, apply, ct);
+            var (state, position) = await store.FoldWithPosition(query, initial, apply, cancellationToken);
             return (state, new DcbBoundary(query, position));
         });
     }
@@ -147,10 +147,10 @@ public readonly struct CommandPipeline<TCommand>
         ArgumentNullException.ThrowIfNull(evolver);
 
         var (store, prepare) = Unwrap();
-        return new BoundPipeline<TCommand, TState>(store, prepare, async (command, ct) =>
+        return new BoundPipeline<TCommand, TState>(store, prepare, async (command, cancellationToken) =>
         {
             var query = boundary(command);
-            var (state, position) = await store.ReconstituteWithPosition(query, evolver, ct);
+            var (state, position) = await store.ReconstituteWithPosition(query, evolver, cancellationToken);
             return (state, new DcbBoundary(query, position));
         });
     }
@@ -168,18 +168,18 @@ public readonly struct CommandPipeline<TCommand>
         where TState : new()
     {
         var (store, prepare) = Unwrap();
-        return new BoundPipeline<TCommand, TState>(store, prepare, async (command, ct) =>
+        return new BoundPipeline<TCommand, TState>(store, prepare, async (command, cancellationToken) =>
         {
             var evolver = store.ResolveEvolver<TState>();
             var query = boundary(command);
-            var (state, position) = await store.ReconstituteWithPosition(query, evolver, ct);
+            var (state, position) = await store.ReconstituteWithPosition(query, evolver, cancellationToken);
             return (state, new DcbBoundary(query, position));
         });
     }
 
     /// <summary>
     /// Reads state with your own loader, which reports the boundary it observed and the
-    /// position it observed it at. The resulting pipeline can <c>Commit(ct)</c> under that
+    /// position it observed it at. The resulting pipeline can <c>Commit(cancellationToken)</c> under that
     /// boundary, exactly as if the loader had been one of the <c>Load</c> overloads.
     /// </summary>
     /// <remarks>
@@ -204,9 +204,9 @@ public readonly struct CommandPipeline<TCommand>
         ArgumentNullException.ThrowIfNull(load);
 
         var (store, prepare) = Unwrap();
-        return new BoundPipeline<TCommand, TState>(store, prepare, async (command, ct) =>
+        return new BoundPipeline<TCommand, TState>(store, prepare, async (command, cancellationToken) =>
         {
-            var (state, boundary, position) = await load(command, ct);
+            var (state, boundary, position) = await load(command, cancellationToken);
             return (state, new DcbBoundary(boundary, position));
         });
     }
@@ -245,9 +245,9 @@ public readonly struct CommandPipeline<TCommand>
     {
         var (store, prepare) = Unwrap();
         var once = new Once<Staged<TCommand>>(prepare);
-        return new UnboundDecision(store, async ct =>
+        return new UnboundDecision(store, async cancellationToken =>
         {
-            var staged = await once.Get(ct);
+            var staged = await once.Get(cancellationToken);
             return staged.HasProblems ? Decision.Fail(staged.Problems!) : decide(staged.Command);
         }, typeof(TCommand).Name);
     }
@@ -257,9 +257,9 @@ public readonly struct CommandPipeline<TCommand>
     {
         var (store, prepare) = Unwrap();
         var once = new Once<Staged<TCommand>>(prepare);
-        return new UnboundDecision<TValue>(store, async ct =>
+        return new UnboundDecision<TValue>(store, async cancellationToken =>
         {
-            var staged = await once.Get(ct);
+            var staged = await once.Get(cancellationToken);
             return staged.HasProblems ? Decision<TValue>.Fail(staged.Problems!) : decide(staged.Command);
         }, typeof(TCommand).Name);
     }

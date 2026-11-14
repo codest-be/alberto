@@ -63,8 +63,8 @@ public class StartupValidationTests
             b.WithInMemory()
              .WithControlLoop(o => o with { Leases = o.Leases with { Enabled = true } }));
 
-        var ct = TestContext.Current.CancellationToken;
-        await host.StartAsync(ct);
-        await host.StopAsync(ct);
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await host.StartAsync(cancellationToken);
+        await host.StopAsync(cancellationToken);
     }
 }

@@ -60,7 +60,7 @@ public interface IFencedCheckpointStore : ICheckpointStore
     /// When <see langword="false"/>, validates against the tenant-lease table
     /// (<c>alberto_tenant_leases</c>); <paramref name="fenceToken"/> is ignored.
     /// </param>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>
     /// <see langword="true"/> if both guards passed and the write was accepted (position may
     /// still have been discarded by GREATEST); <see langword="false"/> if either guard rejected
@@ -73,7 +73,7 @@ public interface IFencedCheckpointStore : ICheckpointStore
         string replicaId,
         long fenceToken,
         bool useProcessorLeaseFencing = false,
-        CancellationToken ct = default);
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>

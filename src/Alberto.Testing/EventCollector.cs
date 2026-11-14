@@ -50,7 +50,7 @@ public sealed class EventCollector : IDisposable
     /// </summary>
     /// <param name="predicate">Called for each collected event. Return <see langword="true"/> to match.</param>
     /// <param name="timeout">How long to wait. Defaults to five seconds.</param>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <exception cref="TimeoutException">No matching event arrived within <paramref name="timeout"/>.</exception>
     [SuppressMessage("ApiDesign", "RS0026:Do not add multiple overloads with optional parameters",
         Justification = "The overloads are separated by their leading parameters — a predicate against " +
@@ -59,7 +59,7 @@ public sealed class EventCollector : IDisposable
     public async Task<IEventEnvelope> WaitForProjectedAsync(
         Func<string, IEventEnvelope, bool> predicate,
         TimeSpan? timeout = null,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         var deadline = _timeProvider.GetUtcNow() + (timeout ?? TimeSpan.FromSeconds(5));
 
@@ -76,8 +76,8 @@ public sealed class EventCollector : IDisposable
 
             // Bounded by the poll interval rather than by `remaining`, so a fake clock that
             // jumps past the deadline is noticed instead of being slept through.
-            try { await _signal.WaitAsync(TimeSpan.FromMilliseconds(25), ct); }
-            catch (OperationCanceledException) { ct.ThrowIfCancellationRequested(); break; }
+            try { await _signal.WaitAsync(TimeSpan.FromMilliseconds(25), cancellationToken); }
+            catch (OperationCanceledException) { cancellationToken.ThrowIfCancellationRequested(); break; }
         }
 
         throw new TimeoutException("Timed out waiting for projected event.");
@@ -89,7 +89,7 @@ public sealed class EventCollector : IDisposable
     /// <param name="processorId">The processor ID to match.</param>
     /// <param name="eventType">The event type ID to match (e.g. <c>"order-placed"</c>).</param>
     /// <param name="timeout">How long to wait. Defaults to five seconds.</param>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <exception cref="TimeoutException">No matching event arrived within <paramref name="timeout"/>.</exception>
     [SuppressMessage("ApiDesign", "RS0026:Do not add multiple overloads with optional parameters",
         Justification = "The overloads are separated by their leading parameters — a predicate against " +
@@ -97,10 +97,10 @@ public sealed class EventCollector : IDisposable
                         "converts to the predicate delegate, so no call can bind to both.")]
     public Task<IEventEnvelope> WaitForProjectedAsync(
         string processorId, string eventType,
-        TimeSpan? timeout = null, CancellationToken ct = default)
+        TimeSpan? timeout = null, CancellationToken cancellationToken = default)
         => WaitForProjectedAsync(
             (pid, env) => pid == processorId && env.EventType.Id == eventType,
-            timeout, ct);
+            timeout, cancellationToken);
 
     /// <summary>
     /// All projected events collected so far, in arrival order.

@@ -50,7 +50,7 @@ public sealed class CommandPipelineTests
     }
 
     // ---------------------------------------------------------------------
-    // Bound commits: the boundary comes from Load, so Commit(ct) needs nothing else.
+    // Bound commits: the boundary comes from Load, so Commit(cancellationToken) needs nothing else.
     // ---------------------------------------------------------------------
 
     [Fact]
@@ -379,13 +379,13 @@ public sealed class CommandPipelineTests
 
         var result = await fixture.Store
             .Handle(new ConfirmOrder(orderId))
-            .LoadUnder(async (command, ct) =>
+            .LoadUnder(async (command, cancellationToken) =>
             {
                 // A boundary only discoverable during the load: the loader picks it,
                 // reads under it, and reports the position it read at.
                 var boundary = Boundary(command.OrderId);
                 var (state, position) = await fixture.Store.FoldWithPosition(
-                    boundary, OrderState.Initial, Fold, ct);
+                    boundary, OrderState.Initial, Fold, cancellationToken);
                 return (state, boundary, position);
             })
             .Decide((command, state) => Decision<int>.Succeed(
@@ -405,11 +405,11 @@ public sealed class CommandPipelineTests
 
         var decision = fixture.Store
             .Handle(new ConfirmOrder(orderId))
-            .LoadUnder(async (command, ct) =>
+            .LoadUnder(async (command, cancellationToken) =>
             {
                 var boundary = Boundary(command.OrderId);
                 var (state, position) = await fixture.Store.FoldWithPosition(
-                    boundary, OrderState.Initial, Fold, ct);
+                    boundary, OrderState.Initial, Fold, cancellationToken);
 
                 // Raced: something lands under the same boundary between the loader's
                 // read and the append. The reported position must still be the promise.

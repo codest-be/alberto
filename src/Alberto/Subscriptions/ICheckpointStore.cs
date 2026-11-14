@@ -10,7 +10,7 @@ public interface ICheckpointStore
     /// Gets the last processed position for a processor.
     /// Returns null if the processor has never processed any events.
     /// </summary>
-    Task<long?> GetAsync(string processorId, CancellationToken ct = default);
+    Task<long?> GetAsync(string processorId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Saves the last processed position for a processor.
@@ -28,17 +28,17 @@ public interface ICheckpointStore
     /// offers no way to demand it.
     /// </para>
     /// </remarks>
-    Task SaveAsync(string processorId, long position, CancellationToken ct = default);
+    Task SaveAsync(string processorId, long position, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Resets the checkpoint for a processor, allowing it to reprocess from the beginning.
     /// </summary>
-    Task ResetAsync(string processorId, CancellationToken ct = default);
+    Task ResetAsync(string processorId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Unconditionally sets the checkpoint to the given position, bypassing monotonicity guards.
     /// Unlike <see cref="SaveAsync"/>, this allows moving the position backwards. Intended exclusively
     /// for operator-initiated rewinds; normal processors must use <see cref="SaveAsync"/>.
     /// </summary>
-    Task RewindAsync(string processorId, long position, CancellationToken ct = default);
+    Task RewindAsync(string processorId, long position, CancellationToken cancellationToken = default);
 }

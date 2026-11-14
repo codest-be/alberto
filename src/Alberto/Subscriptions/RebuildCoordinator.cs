@@ -112,13 +112,13 @@ internal sealed class RebuildCoordinator(
     /// Brings the running shadow loops in line with what the state machine says should be
     /// running, and advances any rebuild that has finished replaying.
     /// </summary>
-    private async Task ReconcileAsync(CancellationToken ct)
+    private async Task ReconcileAsync(CancellationToken cancellationToken)
     {
         // Read the state machine through ProjectionVersions rather than directly, so the
         // coordinator and the live stores it configures are looking at the same snapshot. A
         // coordinator deciding from a fresher read than the version cache has would promote a
         // version the live stores are not yet serving from.
-        await versions.RefreshAsync(ct);
+        await versions.RefreshAsync(cancellationToken);
 
         foreach (var projection in projections)
         {
@@ -127,8 +127,8 @@ internal sealed class RebuildCoordinator(
 
             if (state is null || !state.IsRebuildInFlight)
             {
-                await StopShadowLoopAsync(projection.ProcessorId, ct);
-                await OnSettledAsync(projection, state, ct);
+                await StopShadowLoopAsync(projection.ProcessorId, cancellationToken);
+                await OnSettledAsync(projection, state, cancellationToken);
                 continue;
             }
 
@@ -139,7 +139,7 @@ internal sealed class RebuildCoordinator(
             // checkpoint, and clearing external state remain one coordinator-owned protocol.
             if (state.RequestedAction is RebuildOperatorAction.Abort)
             {
-                await AbortAsync(projection, ct);
+                await AbortAsync(projection, cancellationToken);
                 continue;
             }
 
@@ -148,17 +148,17 @@ internal sealed class RebuildCoordinator(
             // publishes is stale by however long an operator took to promote it — and a replica
             // that restarted while one was already Ready would otherwise have no loop at all,
             // leaving a promotion that waits for it to catch up waiting forever.
-            await EnsureShadowLoopAsync(projection, state, ct);
+            await EnsureShadowLoopAsync(projection, state, cancellationToken);
 
             if (state.Status is RebuildStatus.Rebuilding)
             {
                 if (state.RequestedAction is RebuildOperatorAction.ForcePromote)
                 {
-                    await PromoteAsync(projection, state, force: true, ct: ct);
+                    await PromoteAsync(projection, state, force: true, cancellationToken: cancellationToken);
                     continue;
                 }
 
-                var ready = await CheckForCatchUpAsync(projection, state, ct);
+                var ready = await CheckForCatchUpAsync(projection, state, cancellationToken);
                 if (ready is null)
                     continue;
 
@@ -174,7 +174,7 @@ internal sealed class RebuildCoordinator(
                     projection,
                     state,
                     force: state.RequestedAction is RebuildOperatorAction.ForcePromote,
-                    ct);
+                    cancellationToken);
             }
         }
     }
@@ -192,7 +192,7 @@ internal sealed class RebuildCoordinator(
     /// live projection, racing the live loop for the same rows.
     /// </remarks>
     private async Task EnsureShadowLoopAsync(
-        RebuildableProjection projection, ProjectionRebuildState state, CancellationToken ct)
+        RebuildableProjection projection, ProjectionRebuildState state, CancellationToken cancellationToken)
     {
         if (state.RebuildingVersion is not { } rebuildingVersion)
             return;
@@ -202,7 +202,7 @@ internal sealed class RebuildCoordinator(
             if (running.Version == rebuildingVersion)
                 return;
 
-            await StopShadowLoopAsync(projection.ProcessorId, ct);
+            await StopShadowLoopAsync(projection.ProcessorId, cancellationToken);
         }
 
         var shadowId = RebuildableProjection.ShadowProcessorId(
@@ -217,7 +217,7 @@ internal sealed class RebuildCoordinator(
             projection.CreateProcessor(ProjectionVersion.From(() => rebuildingVersion)), shadowId);
 
         var loop = loopFactory.Create(processor);
-        await loop.StartAsync(ct);
+        await loop.StartAsync(cancellationToken);
         _shadowLoops[projection.ProcessorId] = new ShadowLoop(loop, rebuildingVersion);
 
         // A promotion that found the shadow behind restarts the same rebuild's loop: same span. A
@@ -243,12 +243,12 @@ internal sealed class RebuildCoordinator(
             projection.ProcessorId, shadowId);
     }
 
-    private async Task StopShadowLoopAsync(string processorId, CancellationToken ct)
+    private async Task StopShadowLoopAsync(string processorId, CancellationToken cancellationToken)
     {
         if (!_shadowLoops.Remove(processorId, out var shadow))
             return;
 
-        await shadow.Loop.StopAsync(ct);
+        await shadow.Loop.StopAsync(cancellationToken);
         await shadow.Loop.DisposeAsync();
     }
 
@@ -260,7 +260,7 @@ internal sealed class RebuildCoordinator(
     /// reached the position captured when the rebuild started.
     /// </summary>
     private async Task<ProjectionRebuildState?> CheckForCatchUpAsync(
-        RebuildableProjection projection, ProjectionRebuildState state, CancellationToken ct)
+        RebuildableProjection projection, ProjectionRebuildState state, CancellationToken cancellationToken)
     {
         if (state.TargetPosition is not { } target ||
             state.RebuildingVersion is not { } rebuildingVersion)
@@ -270,13 +270,13 @@ internal sealed class RebuildCoordinator(
 
         var shadowId = RebuildableProjection.ShadowProcessorId(
             projection.ProcessorId, rebuildingVersion);
-        var position = await checkpoints.GetAsync(shadowId, ct);
+        var position = await checkpoints.GetAsync(shadowId, cancellationToken);
 
         if (position is null || position < target)
             return null;
 
-        var ready = await rebuildStore.MarkReadyAsync(projection.ProcessorId, ct);
-        await versions.RefreshAsync(ct);
+        var ready = await rebuildStore.MarkReadyAsync(projection.ProcessorId, cancellationToken);
+        await versions.RefreshAsync(cancellationToken);
 
         RebuildEvent(projection.ProcessorId, "ready", ("alberto.rebuild.target_position", target));
 
@@ -297,7 +297,7 @@ internal sealed class RebuildCoordinator(
         RebuildableProjection projection,
         ProjectionRebuildState state,
         bool force,
-        CancellationToken ct)
+        CancellationToken cancellationToken)
     {
         if (state.RebuildingVersion is not { } rebuildingVersion)
             return;
@@ -315,13 +315,13 @@ internal sealed class RebuildCoordinator(
         //
         // Read once here only to avoid parking the live loop on a promotion that is not going to
         // happen. The comparison that decides is the one below, taken with both writers stopped.
-        if (await checkpoints.GetAsync(shadowId, ct) < await checkpoints.GetAsync(projection.ProcessorId, ct))
+        if (await checkpoints.GetAsync(shadowId, cancellationToken) < await checkpoints.GetAsync(projection.ProcessorId, cancellationToken))
             return;
 
         // Stop the shadow loop first. Its version selector would follow the promotion and keep
         // writing into the newly-active version under the shadow checkpoint, racing the live
         // loop for the same rows.
-        await StopShadowLoopAsync(projection.ProcessorId, ct);
+        await StopShadowLoopAsync(projection.ProcessorId, cancellationToken);
 
         // Then the live loop, for the length of the flip. A promotion is not an instant: the
         // three awaits below each give a running live loop time to consume more events into the
@@ -330,10 +330,10 @@ internal sealed class RebuildCoordinator(
         // monotonic, so a checkpoint that has drifted forward stays there, and the events behind
         // it are never applied to the version that now serves reads. Stopping both writers is
         // what makes the positions read below true for as long as it takes to act on them.
-        await using var suspension = await liveLoops.SuspendAsync(projection.ProcessorId, ct);
+        await using var suspension = await liveLoops.SuspendAsync(projection.ProcessorId, cancellationToken);
 
-        var shadowPosition = await checkpoints.GetAsync(shadowId, ct) ?? 0L;
-        var livePosition = await checkpoints.GetAsync(projection.ProcessorId, ct) ?? 0L;
+        var shadowPosition = await checkpoints.GetAsync(shadowId, cancellationToken) ?? 0L;
+        var livePosition = await checkpoints.GetAsync(projection.ProcessorId, cancellationToken) ?? 0L;
 
         // The live loop may have drawn ahead between the pre-check and the stop. Nothing is lost
         // by leaving: both loops restart and the next tick tries again from a level start.
@@ -343,16 +343,16 @@ internal sealed class RebuildCoordinator(
         var outcome = await rebuildStore.CompletePromotionAsync(
             projection.ProcessorId,
             force,
-            ct);
+            cancellationToken);
 
         // Before anything else: the local state stores must stop writing to the version that is
         // about to be deleted.
-        await versions.RefreshAsync(ct);
+        await versions.RefreshAsync(cancellationToken);
 
         // Hand the live loop the position the shadow reached. Left where it was, it would apply
         // everything between the two positions a second time — the shadow has already written
         // those events into the version that now serves reads.
-        await checkpoints.SaveAsync(projection.ProcessorId, shadowPosition, ct);
+        await checkpoints.SaveAsync(projection.ProcessorId, shadowPosition, cancellationToken);
 
         // Deliberately no clear here. The superseded version is unreachable now, but readers
         // that resolved it a moment ago are still holding its number; a later sweep reclaims it
@@ -375,12 +375,12 @@ internal sealed class RebuildCoordinator(
     /// </summary>
     private async Task AbortAsync(
         RebuildableProjection projection,
-        CancellationToken ct)
+        CancellationToken cancellationToken)
     {
-        await StopShadowLoopAsync(projection.ProcessorId, ct);
+        await StopShadowLoopAsync(projection.ProcessorId, cancellationToken);
 
-        var outcome = await rebuildStore.CompleteAbortAsync(projection.ProcessorId, ct);
-        await versions.RefreshAsync(ct);
+        var outcome = await rebuildStore.CompleteAbortAsync(projection.ProcessorId, cancellationToken);
+        await versions.RefreshAsync(cancellationToken);
 
         // As with a promotion, the abandoned version waits for the sweep. Here the wait buys
         // something extra: a shadow loop on another replica has not necessarily noticed the
@@ -404,7 +404,7 @@ internal sealed class RebuildCoordinator(
     /// is not.
     /// </summary>
     private async Task OnSettledAsync(
-        RebuildableProjection projection, ProjectionRebuildState? state, CancellationToken ct)
+        RebuildableProjection projection, ProjectionRebuildState? state, CancellationToken cancellationToken)
     {
         if (state is null)
             return;
@@ -425,13 +425,13 @@ internal sealed class RebuildCoordinator(
         if (state.Status is RebuildStatus.Idle)
             return;
 
-        await versions.RefreshAsync(ct);
-        await SweepAsync(projection, state, ct);
+        await versions.RefreshAsync(cancellationToken);
+        await SweepAsync(projection, state, cancellationToken);
     }
 
-    private async Task SweepAllAsync(CancellationToken ct)
+    private async Task SweepAllAsync(CancellationToken cancellationToken)
     {
-        await versions.RefreshAsync(ct);
+        await versions.RefreshAsync(cancellationToken);
 
         foreach (var projection in projections)
         {
@@ -441,7 +441,7 @@ internal sealed class RebuildCoordinator(
             _lastSeen[projection.ProcessorId] = state.Status;
 
             if (!state.IsRebuildInFlight)
-                await SweepAsync(projection, state, ct);
+                await SweepAsync(projection, state, cancellationToken);
         }
     }
 
@@ -477,7 +477,7 @@ internal sealed class RebuildCoordinator(
     /// retried on a later tick.
     /// </returns>
     private async Task<bool> SweepAsync(
-        RebuildableProjection projection, ProjectionRebuildState state, CancellationToken ct)
+        RebuildableProjection projection, ProjectionRebuildState state, CancellationToken cancellationToken)
     {
         if (state.CompletedAt is { } completedAt &&
             _timeProvider.GetUtcNow() - completedAt < options.ReclaimGracePeriod)
@@ -496,7 +496,7 @@ internal sealed class RebuildCoordinator(
             if (version == state.ActiveVersion || version == state.RebuildingVersion)
                 continue;
 
-            await ClearAsync(projection, version, ct);
+            await ClearAsync(projection, version, cancellationToken);
         }
 
         _pendingReclaim.Remove(projection.ProcessorId);
@@ -511,19 +511,19 @@ internal sealed class RebuildCoordinator(
     /// that the rebuild loop for that version left behind.
     /// </summary>
     private async Task ClearAsync(
-        RebuildableProjection projection, int version, CancellationToken ct)
+        RebuildableProjection projection, int version, CancellationToken cancellationToken)
     {
-        await rebuildStore.DiscardStateVersionAsync(projection.ProjectionType, version, ct);
+        await rebuildStore.DiscardStateVersionAsync(projection.ProjectionType, version, cancellationToken);
 
         foreach (var clearer in clearers.Where(c => c.ProcessorId == projection.ProcessorId))
-            await clearer.ClearVersionAsync(version, ct);
+            await clearer.ClearVersionAsync(version, cancellationToken);
 
         // The shadow loop advanced the checkpoint under this key while it was replaying.
         // Without this reset the row lives forever in alberto_processor_checkpoints: the live
         // processor never claims it, the orphan check's declared-processor set never contains
         // it, and a Strict policy throws on the next restart.
         await checkpoints.ResetAsync(
-            RebuildableProjection.ShadowProcessorId(projection.ProcessorId, version), ct);
+            RebuildableProjection.ShadowProcessorId(projection.ProcessorId, version), cancellationToken);
     }
 
     /// <summary>

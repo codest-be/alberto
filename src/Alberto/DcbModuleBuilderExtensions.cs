@@ -208,7 +208,7 @@ public static class DcbModuleBuilderExtensions
                 var mKey = context.ModuleKey;
                 context.Services.AddKeyedSingleton<IPostAppendHandler>(mKey, (sp, _) =>
                     new SyncReactor<TEvent>(
-                        (e, _, ct) => handlerFactory(sp)(e, ct),
+                        (e, _, cancellationToken) => handlerFactory(sp)(e, cancellationToken),
                         sp.GetKeyedService<EventSerializer>(mKey)));
             });
         }
@@ -220,7 +220,7 @@ public static class DcbModuleBuilderExtensions
                 executionOptions,
                 (sp, mKey) => new FunctionalReactor<TEvent>(
                     processorId,
-                    (e, _, ct) => handlerFactory(sp)(e, ct),
+                    (e, _, cancellationToken) => handlerFactory(sp)(e, cancellationToken),
                     executionOptions.MaxConcurrency,
                     sp.GetKeyedService<EventSerializer>(mKey)));
         }
@@ -373,13 +373,13 @@ public static class DcbModuleBuilderExtensions
                 context.Services.AddKeyedSingleton<IPostAppendHandler>(mKey, (sp, _) =>
                 {
                     var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
-                    return new SyncReactor<TEvent>(async (e, reactorContext, ct) =>
+                    return new SyncReactor<TEvent>(async (e, reactorContext, cancellationToken) =>
                     {
                         await using var scope = EventProcessingScope.Create(
                             scopeFactory,
                             reactorContext.TenantId);
                         var handler = scope.ServiceProvider.GetRequiredService<THandler>();
-                        await methodSelector(handler)(e, ct);
+                        await methodSelector(handler)(e, cancellationToken);
                     }, sp.GetKeyedService<EventSerializer>(mKey));
                 });
             });
@@ -389,13 +389,13 @@ public static class DcbModuleBuilderExtensions
             RegisterAsyncProcessor(builder, resolvedProcessorId, executionOptions, (sp, mKey) =>
             {
                 var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
-                return new FunctionalReactor<TEvent>(resolvedProcessorId, async (e, reactorContext, ct) =>
+                return new FunctionalReactor<TEvent>(resolvedProcessorId, async (e, reactorContext, cancellationToken) =>
                 {
                     await using var scope = EventProcessingScope.Create(
                         scopeFactory,
                         reactorContext.TenantId);
                     var handler = scope.ServiceProvider.GetRequiredService<THandler>();
-                    await methodSelector(handler)(e, ct);
+                    await methodSelector(handler)(e, cancellationToken);
                 }, executionOptions.MaxConcurrency, sp.GetKeyedService<EventSerializer>(mKey));
             });
         }
@@ -470,13 +470,13 @@ public static class DcbModuleBuilderExtensions
                 context.Services.AddKeyedSingleton<IPostAppendHandler>(mKey, (sp, _) =>
                 {
                     var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
-                    return new SyncReactor<TEvent>(async (e, reactorContext, ct) =>
+                    return new SyncReactor<TEvent>(async (e, reactorContext, cancellationToken) =>
                     {
                         await using var scope = EventProcessingScope.Create(
                             scopeFactory,
                             reactorContext.TenantId);
                         var handler = scope.ServiceProvider.GetRequiredService<THandler>();
-                        await methodSelector(handler)(e, reactorContext, ct);
+                        await methodSelector(handler)(e, reactorContext, cancellationToken);
                     }, sp.GetKeyedService<EventSerializer>(mKey));
                 });
             });
@@ -486,13 +486,13 @@ public static class DcbModuleBuilderExtensions
             RegisterAsyncProcessor(builder, resolvedProcessorId, executionOptions, (sp, mKey) =>
             {
                 var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
-                return new FunctionalReactor<TEvent>(resolvedProcessorId, async (e, reactorContext, ct) =>
+                return new FunctionalReactor<TEvent>(resolvedProcessorId, async (e, reactorContext, cancellationToken) =>
                 {
                     await using var scope = EventProcessingScope.Create(
                         scopeFactory,
                         reactorContext.TenantId);
                     var handler = scope.ServiceProvider.GetRequiredService<THandler>();
-                    await methodSelector(handler)(e, reactorContext, ct);
+                    await methodSelector(handler)(e, reactorContext, cancellationToken);
                 }, executionOptions.MaxConcurrency, sp.GetKeyedService<EventSerializer>(mKey));
             });
         }

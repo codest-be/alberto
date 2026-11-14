@@ -15,7 +15,7 @@ public class ThirdPartyBackendTests
         public Task<IReadOnlyCollection<IEventEnvelope>> OnAppendingAsync(
             AppendContext context,
             Func<AppendContext, Task<IReadOnlyCollection<IEventEnvelope>>> next,
-            CancellationToken ct = default)
+            CancellationToken cancellationToken = default)
         {
             Calls++;
             return next(context);

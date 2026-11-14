@@ -11,7 +11,7 @@ Alberto.Append.AppendContext.ExpectedPosition.get -> long?
 Alberto.Append.AppendContext.ExpectedPosition.init -> void
 Alberto.Append.AppendContext.WithEvents(System.Collections.Generic.IReadOnlyList<Alberto.IEventToPersist!>! events) -> Alberto.Append.AppendContext!
 Alberto.Append.IAppendInterceptor
-Alberto.Append.IAppendInterceptor.OnAppendingAsync(Alberto.Append.AppendContext! context, System.Func<Alberto.Append.AppendContext!, System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!>! next, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!
+Alberto.Append.IAppendInterceptor.OnAppendingAsync(Alberto.Append.AppendContext! context, System.Func<Alberto.Append.AppendContext!, System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!>! next, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!
 Alberto.CompositionMode
 Alberto.CompositionMode.Intersect = 0 -> Alberto.CompositionMode
 Alberto.CompositionMode.Union = 1 -> Alberto.CompositionMode
@@ -578,26 +578,26 @@ Alberto.Subscriptions.EventStoreHead.Current.get -> long
 Alberto.Subscriptions.EventStoreHead.StartAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
 Alberto.Subscriptions.EventStoreHead.StopAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
 Alberto.Subscriptions.IBatchableProcessor
-Alberto.Subscriptions.IBatchableProcessor.ProcessBatchAsync(System.Collections.Generic.IReadOnlyList<Alberto.IEventEnvelope!>! events, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Subscriptions.IBatchableProcessor.ProcessBatchAsync(System.Collections.Generic.IReadOnlyList<Alberto.IEventEnvelope!>! events, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Alberto.Subscriptions.ICheckpointInventory
 Alberto.Subscriptions.ICheckpointInventory.CanEnumerate.get -> bool
-Alberto.Subscriptions.ICheckpointInventory.ListProcessorIdsAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<string!>!>!
+Alberto.Subscriptions.ICheckpointInventory.ListProcessorIdsAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<string!>!>!
 Alberto.Subscriptions.ICheckpointStore
-Alberto.Subscriptions.ICheckpointStore.GetAsync(string! processorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<long?>!
-Alberto.Subscriptions.ICheckpointStore.ResetAsync(string! processorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Alberto.Subscriptions.ICheckpointStore.RewindAsync(string! processorId, long position, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Alberto.Subscriptions.ICheckpointStore.SaveAsync(string! processorId, long position, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Subscriptions.ICheckpointStore.GetAsync(string! processorId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<long?>!
+Alberto.Subscriptions.ICheckpointStore.ResetAsync(string! processorId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Subscriptions.ICheckpointStore.RewindAsync(string! processorId, long position, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Subscriptions.ICheckpointStore.SaveAsync(string! processorId, long position, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Alberto.Subscriptions.IClaimableDeadLetterStore
-Alberto.Subscriptions.IClaimableDeadLetterStore.AbandonRetryAsync(Alberto.Subscriptions.DeadLetterClaim! claim, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
-Alberto.Subscriptions.IClaimableDeadLetterStore.ClaimDueAsync(string! processorId, int batchSize, System.TimeSpan leaseDuration, string! claimedBy, System.DateTimeOffset now, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Alberto.Subscriptions.DeadLetterClaim!>!>!
-Alberto.Subscriptions.IClaimableDeadLetterStore.ClaimRetryRequestedAsync(string! processorId, int batchSize, System.TimeSpan leaseDuration, string! claimedBy, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Alberto.Subscriptions.DeadLetterClaim!>!>!
-Alberto.Subscriptions.IClaimableDeadLetterStore.CompleteRetryAsync(Alberto.Subscriptions.DeadLetterClaim! claim, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+Alberto.Subscriptions.IClaimableDeadLetterStore.AbandonRetryAsync(Alberto.Subscriptions.DeadLetterClaim! claim, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+Alberto.Subscriptions.IClaimableDeadLetterStore.ClaimDueAsync(string! processorId, int batchSize, System.TimeSpan leaseDuration, string! claimedBy, System.DateTimeOffset now, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Alberto.Subscriptions.DeadLetterClaim!>!>!
+Alberto.Subscriptions.IClaimableDeadLetterStore.ClaimRetryRequestedAsync(string! processorId, int batchSize, System.TimeSpan leaseDuration, string! claimedBy, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Alberto.Subscriptions.DeadLetterClaim!>!>!
+Alberto.Subscriptions.IClaimableDeadLetterStore.CompleteRetryAsync(Alberto.Subscriptions.DeadLetterClaim! claim, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
 Alberto.Subscriptions.IDeadLetterStore
-Alberto.Subscriptions.IDeadLetterStore.ClearAsync(string! processorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Alberto.Subscriptions.IDeadLetterStore.CountAsync(string! processorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
-Alberto.Subscriptions.IDeadLetterStore.GetAsync(string! processorId, string? tenantId = null, int limit = 100, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Alberto.Subscriptions.DeadLetterEntry!>!>!
-Alberto.Subscriptions.IDeadLetterStore.MarkForRetryAsync(string! processorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Alberto.Subscriptions.IDeadLetterStore.StoreAsync(Alberto.Subscriptions.DeadLetterEntry! entry, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Subscriptions.IDeadLetterStore.ClearAsync(string! processorId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Subscriptions.IDeadLetterStore.CountAsync(string! processorId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
+Alberto.Subscriptions.IDeadLetterStore.GetAsync(string! processorId, string? tenantId = null, int limit = 100, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Alberto.Subscriptions.DeadLetterEntry!>!>!
+Alberto.Subscriptions.IDeadLetterStore.MarkForRetryAsync(string! processorId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Subscriptions.IDeadLetterStore.StoreAsync(Alberto.Subscriptions.DeadLetterEntry! entry, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Alberto.Subscriptions.IErrorClassifier
 Alberto.Subscriptions.IErrorClassifier.Classify(System.Exception! exception) -> Alberto.Subscriptions.ErrorClassification
 Alberto.Subscriptions.IEventAppendedSignal
@@ -607,13 +607,13 @@ Alberto.Subscriptions.IEventProcessor
 Alberto.Subscriptions.IEventProcessor.HandledEventTypes.get -> System.Collections.Generic.IReadOnlySet<string!>!
 Alberto.Subscriptions.IEventProcessor.IsActive.get -> bool
 Alberto.Subscriptions.IEventProcessor.IsRebuilding.get -> bool
-Alberto.Subscriptions.IEventProcessor.ProcessEventAsync(Alberto.IEventEnvelope! event, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Subscriptions.IEventProcessor.ProcessEventAsync(Alberto.IEventEnvelope! event, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Alberto.Subscriptions.IEventProcessor.ProcessorId.get -> string!
 Alberto.Subscriptions.IFencedCheckpointStore
-Alberto.Subscriptions.IFencedCheckpointStore.SaveIfLeaseHeldAsync(string! processorId, long position, string! consumerId, string! replicaId, long fenceToken, bool useProcessorLeaseFencing = false, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+Alberto.Subscriptions.IFencedCheckpointStore.SaveIfLeaseHeldAsync(string! processorId, long position, string! consumerId, string! replicaId, long fenceToken, bool useProcessorLeaseFencing = false, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
 Alberto.Subscriptions.IInlineProjection
 Alberto.Subscriptions.IInlineProjection.HandledEventTypes.get -> System.Collections.Generic.IReadOnlySet<string!>!
-Alberto.Subscriptions.IInlineProjection.ProcessAsync(System.Collections.Generic.IReadOnlyList<Alberto.IEventEnvelope!>! events, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Subscriptions.IInlineProjection.ProcessAsync(System.Collections.Generic.IReadOnlyList<Alberto.IEventEnvelope!>! events, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Alberto.Subscriptions.IMiddlewareContext
 Alberto.Subscriptions.IMiddlewareContext.Attempt.get -> int
 Alberto.Subscriptions.IMiddlewareContext.CancellationToken.get -> System.Threading.CancellationToken
@@ -622,16 +622,16 @@ Alberto.Subscriptions.IMiddlewareContext.ModuleKey.get -> string!
 Alberto.Subscriptions.IMiddlewareContext.ProcessorId.get -> string!
 Alberto.Subscriptions.IPostAppendHandler
 Alberto.Subscriptions.IPostAppendHandler.HandledEventTypes.get -> System.Collections.Generic.IReadOnlySet<string!>!
-Alberto.Subscriptions.IPostAppendHandler.ProcessAsync(System.Collections.Generic.IReadOnlyList<Alberto.IEventEnvelope!>! events, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
+Alberto.Subscriptions.IPostAppendHandler.ProcessAsync(System.Collections.Generic.IReadOnlyList<Alberto.IEventEnvelope!>! events, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
 Alberto.Subscriptions.IProcessorLease
 Alberto.Subscriptions.IProcessorLease.ExpiresAt.get -> System.DateTimeOffset
 Alberto.Subscriptions.IProcessorLease.FenceToken.get -> long
 Alberto.Subscriptions.IProcessorLease.ProcessorId.get -> string!
 Alberto.Subscriptions.IProcessorLeaseManager
 Alberto.Subscriptions.IProcessorLeaseManager.LeaseDuration.get -> System.TimeSpan
-Alberto.Subscriptions.IProcessorLeaseManager.ReleaseAllLeasesAsync(string! consumerId, string! replicaId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Alberto.Subscriptions.IProcessorLeaseManager.RenewLeasesAsync(string! consumerId, string! replicaId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<string!>!>!
-Alberto.Subscriptions.IProcessorLeaseManager.TryAcquireAsync(string! consumerId, string! processorId, string! replicaId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.IProcessorLease?>!
+Alberto.Subscriptions.IProcessorLeaseManager.ReleaseAllLeasesAsync(string! consumerId, string! replicaId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Subscriptions.IProcessorLeaseManager.RenewLeasesAsync(string! consumerId, string! replicaId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<string!>!>!
+Alberto.Subscriptions.IProcessorLeaseManager.TryAcquireAsync(string! consumerId, string! processorId, string! replicaId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.IProcessorLease?>!
 Alberto.Subscriptions.IProjectionEntity
 Alberto.Subscriptions.IProjectionEntity.DocumentId.get -> string!
 Alberto.Subscriptions.IProjectionEntity.LastProcessedPosition.get -> long
@@ -639,18 +639,18 @@ Alberto.Subscriptions.IProjectionEntity.RebuildVersion.get -> int
 Alberto.Subscriptions.IProjectionEntity.UpdatedAt.get -> System.DateTimeOffset
 Alberto.Subscriptions.IProjectionEntity.Version.get -> uint
 Alberto.Subscriptions.IProjectionRebuildStore
-Alberto.Subscriptions.IProjectionRebuildStore.GetAsync(string! processorId, string! projectionType, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.ProjectionRebuildState!>!
-Alberto.Subscriptions.IProjectionRebuildStore.ListAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Alberto.Subscriptions.ProjectionRebuildState!>!>!
-Alberto.Subscriptions.IProjectionRebuildStore.RequestAbortAsync(string! processorId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.ProjectionRebuildState!>!
-Alberto.Subscriptions.IProjectionRebuildStore.RequestPromotionAsync(string! processorId, bool force = false, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.ProjectionRebuildState!>!
-Alberto.Subscriptions.IProjectionRebuildStore.StartAsync(string! processorId, string! projectionType, long targetPosition, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.ProjectionRebuildState!>!
+Alberto.Subscriptions.IProjectionRebuildStore.GetAsync(string! processorId, string! projectionType, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.ProjectionRebuildState!>!
+Alberto.Subscriptions.IProjectionRebuildStore.ListAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Alberto.Subscriptions.ProjectionRebuildState!>!>!
+Alberto.Subscriptions.IProjectionRebuildStore.RequestAbortAsync(string! processorId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.ProjectionRebuildState!>!
+Alberto.Subscriptions.IProjectionRebuildStore.RequestPromotionAsync(string! processorId, bool force = false, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.ProjectionRebuildState!>!
+Alberto.Subscriptions.IProjectionRebuildStore.StartAsync(string! processorId, string! projectionType, long targetPosition, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.ProjectionRebuildState!>!
 Alberto.Subscriptions.IProjectionStateClearer
-Alberto.Subscriptions.IProjectionStateClearer.ClearVersionAsync(int rebuildVersion, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Subscriptions.IProjectionStateClearer.ClearVersionAsync(int rebuildVersion, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Alberto.Subscriptions.IProjectionStateClearer.ProcessorId.get -> string!
 Alberto.Subscriptions.IStateStore<TState>
-Alberto.Subscriptions.IStateStore<TState>.ApplyChangesAsync(System.Collections.Generic.IReadOnlyDictionary<string!, TState>! upserts, System.Collections.Generic.IReadOnlyCollection<string!>! deletes, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Alberto.Subscriptions.IStateStore<TState>.ListRecentAsync(int limit = 20, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<TState>!>!
-Alberto.Subscriptions.IStateStore<TState>.LoadManyAsync(System.Collections.Generic.IEnumerable<string!>! documentIds, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyDictionary<string!, TState>!>!
+Alberto.Subscriptions.IStateStore<TState>.ApplyChangesAsync(System.Collections.Generic.IReadOnlyDictionary<string!, TState>! upserts, System.Collections.Generic.IReadOnlyCollection<string!>! deletes, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Subscriptions.IStateStore<TState>.ListRecentAsync(int limit = 20, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<TState>!>!
+Alberto.Subscriptions.IStateStore<TState>.LoadManyAsync(System.Collections.Generic.IEnumerable<string!>! documentIds, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyDictionary<string!, TState>!>!
 Alberto.Subscriptions.ProcessorBatchingMode
 Alberto.Subscriptions.ProcessorBatchingMode.Disabled = 0 -> Alberto.Subscriptions.ProcessorBatchingMode
 Alberto.Subscriptions.ProcessorBatchingMode.IfSupported = 1 -> Alberto.Subscriptions.ProcessorBatchingMode
@@ -774,7 +774,7 @@ Alberto.Subscriptions.ProjectionVersions.DisposeAsync() -> System.Threading.Task
 Alberto.Subscriptions.ProjectionVersions.ForLive(string! processorId) -> Alberto.Subscriptions.ProjectionVersion
 Alberto.Subscriptions.ProjectionVersions.ProjectionVersions(Alberto.Subscriptions.IProjectionRebuildStore! store, System.TimeSpan? refreshInterval = null) -> void
 Alberto.Subscriptions.ProjectionVersions.RebuildingVersion(string! processorId) -> int?
-Alberto.Subscriptions.ProjectionVersions.RefreshAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Alberto.Subscriptions.ProjectionVersions.RefreshAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Alberto.Subscriptions.ProjectionVersions.RefreshInterval.get -> System.TimeSpan
 Alberto.Subscriptions.ReactorContext
 Alberto.Subscriptions.ReactorContext.EventId.get -> System.Guid

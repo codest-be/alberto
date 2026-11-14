@@ -21,10 +21,10 @@ public sealed class PostgresOutboxStore(
         new(dataSource, schema, expectedMultiTenant: multiTenant);
 
     /// <inheritdoc/>
-    public async Task InsertAsync(OutboxEntry entry, CancellationToken ct = default)
+    public async Task InsertAsync(OutboxEntry entry, CancellationToken cancellationToken = default)
     {
-        await using var connection = await _dataSource.OpenConnectionAsync(ct);
-        var hasTenantId = await ResolveHasTenantIdAsync(connection, ct);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        var hasTenantId = await ResolveHasTenantIdAsync(connection, cancellationToken);
         var tenantColumn = hasTenantId ? ", tenant_id" : "";
         var tenantValue = hasTenantId ? ", @tenant_id" : "";
 
@@ -71,7 +71,7 @@ public sealed class PostgresOutboxStore(
             });
         }
 
-        await cmd.ExecuteNonQueryAsync(ct);
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
     /// <inheritdoc/>
@@ -79,7 +79,7 @@ public sealed class PostgresOutboxStore(
         int limit,
         TimeSpan claimLease,
         string claimedBy,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
         if (claimLease <= TimeSpan.Zero)
@@ -88,8 +88,8 @@ public sealed class PostgresOutboxStore(
 
         var claimToken = Guid.NewGuid();
 
-        await using var connection = await _dataSource.OpenConnectionAsync(ct);
-        var hasTenantId = await ResolveHasTenantIdAsync(connection, ct);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        var hasTenantId = await ResolveHasTenantIdAsync(connection, cancellationToken);
         // destination(13), routing_hint(14) are always present (migration 025).
         // tenant_id is optional at column 15 when hasTenantId.
         var tenantColumn = hasTenantId ? ", e.tenant_id" : "";
@@ -156,10 +156,10 @@ public sealed class PostgresOutboxStore(
         cmd.Parameters.AddWithValue("claimed_by", claimedBy);
         cmd.Parameters.AddWithValue("claim_lease", claimLease);
 
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         var results = new List<OutboxClaim>();
 
-        while (await reader.ReadAsync(ct))
+        while (await reader.ReadAsync(cancellationToken))
         {
             var entry = ReadEntry(reader, hasTenantId);
             results.Add(new OutboxClaim(
@@ -172,11 +172,11 @@ public sealed class PostgresOutboxStore(
     }
 
     /// <inheritdoc/>
-    public async Task<bool> MarkDeliveredAsync(OutboxClaim claim, CancellationToken ct = default)
+    public async Task<bool> MarkDeliveredAsync(OutboxClaim claim, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(claim);
 
-        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
             $"""
             UPDATE {_schema.Table("alberto_outbox_entries")}
@@ -194,12 +194,12 @@ public sealed class PostgresOutboxStore(
 
         cmd.Parameters.AddWithValue("id", claim.Entry.Id);
         cmd.Parameters.AddWithValue("claim_id", claim.Token);
-        return await cmd.ExecuteNonQueryAsync(ct) == 1;
+        return await cmd.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
 
     /// <inheritdoc/>
     public async Task<IReadOnlySet<Guid>> MarkDeliveredBatchAsync(
-        IReadOnlyList<OutboxClaim> claims, CancellationToken ct)
+        IReadOnlyList<OutboxClaim> claims, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(claims);
 
@@ -207,7 +207,7 @@ public sealed class PostgresOutboxStore(
         if (claims.Count == 0)
             return marked;
 
-        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
             $"""
             UPDATE {_schema.Table("alberto_outbox_entries")} AS o
@@ -227,8 +227,8 @@ public sealed class PostgresOutboxStore(
 
         cmd.Parameters.AddWithValue("ids", claims.Select(c => c.Entry.Id).ToArray());
         cmd.Parameters.AddWithValue("claim_ids", claims.Select(c => c.Token).ToArray());
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
             marked.Add(reader.GetGuid(0));
         return marked;
     }
@@ -237,21 +237,21 @@ public sealed class PostgresOutboxStore(
     public Task<bool> MarkFailedAsync(
         OutboxClaim claim,
         string error,
-        CancellationToken ct = default)
-        => MarkAttemptFailedAsync(claim, error, 1, ct);
+        CancellationToken cancellationToken = default)
+        => MarkAttemptFailedAsync(claim, error, 1, cancellationToken);
 
     /// <inheritdoc/>
     public async Task<bool> MarkAttemptFailedAsync(
         OutboxClaim claim,
         string error,
         int maxRetries,
-        CancellationToken ct)
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(claim);
         ArgumentNullException.ThrowIfNull(error);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxRetries);
 
-        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
             $"""
             UPDATE {_schema.Table("alberto_outbox_entries")}
@@ -272,13 +272,13 @@ public sealed class PostgresOutboxStore(
         cmd.Parameters.AddWithValue("claim_id", claim.Token);
         cmd.Parameters.AddWithValue("error", error);
         cmd.Parameters.AddWithValue("max_retries", maxRetries);
-        return await cmd.ExecuteNonQueryAsync(ct) == 1;
+        return await cmd.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
 
     /// <inheritdoc/>
-    public async Task RetryFailedAsync(string? messageType = null, CancellationToken ct = default)
+    public async Task RetryFailedAsync(string? messageType = null, CancellationToken cancellationToken = default)
     {
-        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
 
         string sql;
         NpgsqlCommand cmd;
@@ -314,13 +314,13 @@ public sealed class PostgresOutboxStore(
         }
 
         await using var _ = cmd;
-        await cmd.ExecuteNonQueryAsync(ct);
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
     /// <inheritdoc/>
-    public async Task PurgeDeliveredAsync(DateTimeOffset before, CancellationToken ct = default)
+    public async Task PurgeDeliveredAsync(DateTimeOffset before, CancellationToken cancellationToken = default)
     {
-        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         // Bounded batches keep each statement well inside the command timeout and its locks short;
         // an unbounded DELETE over a large delivered backlog could time out on every sweep.
         await using var cmd = new NpgsqlCommand(
@@ -334,7 +334,7 @@ public sealed class PostgresOutboxStore(
             connection);
 
         cmd.Parameters.AddWithValue("before", before);
-        while (await cmd.ExecuteNonQueryAsync(ct) == PurgeBatchSize) { }
+        while (await cmd.ExecuteNonQueryAsync(cancellationToken) == PurgeBatchSize) { }
     }
 
     private static OutboxEntry ReadEntry(NpgsqlDataReader reader, bool hasTenantId)
@@ -379,6 +379,6 @@ public sealed class PostgresOutboxStore(
 
     private async ValueTask<bool> ResolveHasTenantIdAsync(
         NpgsqlConnection connection,
-        CancellationToken ct) =>
-        await _topology.IsMultiTenantAsync(connection, ct);
+        CancellationToken cancellationToken) =>
+        await _topology.IsMultiTenantAsync(connection, cancellationToken);
 }

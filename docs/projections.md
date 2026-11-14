@@ -138,10 +138,10 @@ var overview = new InMemoryStateStore<OrdersOverview>();
 
 ```csharp
 Task<IReadOnlyDictionary<string, TState>> LoadManyAsync(IEnumerable<string> documentIds,
-                                               CancellationToken ct = default);
+                                               CancellationToken cancellationToken = default);
 Task ApplyChangesAsync(IReadOnlyDictionary<string, TState> upserts,
                        IReadOnlyCollection<string> deletes,
-                       CancellationToken ct = default);
+                       CancellationToken cancellationToken = default);
 ```
 
 Each adapter owns the transaction it applies a change set under; the interface does not hand one
@@ -241,7 +241,7 @@ projection actually handled:
     afterCommit: sp =>
     {
         var notifier = sp.GetRequiredService<IOrderNotifier>();
-        return (events, ct) => notifier.PublishAsync(events, ct);
+        return (events, cancellationToken) => notifier.PublishAsync(events, cancellationToken);
     })
 ```
 

@@ -7,7 +7,7 @@ namespace Alberto.Messaging;
 public interface IOutboxStore
 {
     /// <summary>Inserts a new outbox entry. Duplicate source events are ignored.</summary>
-    Task InsertAsync(OutboxEntry entry, CancellationToken ct = default);
+    Task InsertAsync(OutboxEntry entry, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Atomically claims up to <paramref name="limit"/> deliverable entries, ordered by creation time.
@@ -17,13 +17,13 @@ public interface IOutboxStore
         int limit,
         TimeSpan claimLease,
         string claimedBy,
-        CancellationToken ct = default);
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Marks a claimed entry as successfully delivered.
     /// Returns <see langword="false"/> when the claim expired or was superseded.
     /// </summary>
-    Task<bool> MarkDeliveredAsync(OutboxClaim claim, CancellationToken ct = default);
+    Task<bool> MarkDeliveredAsync(OutboxClaim claim, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Marks several claimed entries as delivered and returns the ids of those it marked; an
@@ -32,11 +32,11 @@ public interface IOutboxStore
     /// working; override it to mark the batch in one round trip.
     /// </summary>
     async Task<IReadOnlySet<Guid>> MarkDeliveredBatchAsync(
-        IReadOnlyList<OutboxClaim> claims, CancellationToken ct)
+        IReadOnlyList<OutboxClaim> claims, CancellationToken cancellationToken)
     {
         var marked = new HashSet<Guid>();
         foreach (var claim in claims)
-            if (await MarkDeliveredAsync(claim, ct))
+            if (await MarkDeliveredAsync(claim, cancellationToken))
                 marked.Add(claim.Entry.Id);
         return marked;
     }
@@ -46,7 +46,7 @@ public interface IOutboxStore
     /// The entry is parked as <c>failed</c> immediately (equivalent to <c>maxRetries</c> of 1).
     /// Returns <see langword="false"/> when the claim expired or was superseded.
     /// </summary>
-    Task<bool> MarkFailedAsync(OutboxClaim claim, string error, CancellationToken ct = default);
+    Task<bool> MarkFailedAsync(OutboxClaim claim, string error, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Records a failed delivery attempt: increments the retry counter and records the error.
@@ -57,14 +57,14 @@ public interface IOutboxStore
     /// does, so a store that predates retries keeps working; override it to get retries.
     /// </summary>
     Task<bool> MarkAttemptFailedAsync(OutboxClaim claim, string error, int maxRetries,
-        CancellationToken ct) => MarkFailedAsync(claim, error, ct);
+        CancellationToken cancellationToken) => MarkFailedAsync(claim, error, cancellationToken);
 
     /// <summary>
     /// Resets failed entries back to pending so the relay will attempt delivery again.
     /// When <paramref name="messageType"/> is provided, only entries of that type are reset.
     /// </summary>
-    Task RetryFailedAsync(string? messageType = null, CancellationToken ct = default);
+    Task RetryFailedAsync(string? messageType = null, CancellationToken cancellationToken = default);
 
     /// <summary>Permanently removes delivered entries older than <paramref name="before"/>.</summary>
-    Task PurgeDeliveredAsync(DateTimeOffset before, CancellationToken ct = default);
+    Task PurgeDeliveredAsync(DateTimeOffset before, CancellationToken cancellationToken = default);
 }

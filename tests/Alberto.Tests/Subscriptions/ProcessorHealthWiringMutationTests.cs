@@ -285,10 +285,10 @@ public class ProcessorHealthWiringMutationTests
         public IReadOnlySet<string> HandledEventTypes { get; } =
             new HashSet<string> { "processor-health-wiring-mutation-event" };
 
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default) =>
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
 
-        public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct = default) =>
+        public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
     }
 
@@ -399,17 +399,17 @@ public class ProcessorHealthWiringMutationTests
 
         public Action<string>? Handler { get; private set; }
 
-        public Task<long?> GetAsync(string processorId, CancellationToken ct = default) =>
-            _inner.GetAsync(processorId, ct);
+        public Task<long?> GetAsync(string processorId, CancellationToken cancellationToken = default) =>
+            _inner.GetAsync(processorId, cancellationToken);
 
-        public Task SaveAsync(string processorId, long position, CancellationToken ct = default) =>
-            _inner.SaveAsync(processorId, position, ct);
+        public Task SaveAsync(string processorId, long position, CancellationToken cancellationToken = default) =>
+            _inner.SaveAsync(processorId, position, cancellationToken);
 
-        public Task ResetAsync(string processorId, CancellationToken ct = default) =>
-            _inner.ResetAsync(processorId, ct);
+        public Task ResetAsync(string processorId, CancellationToken cancellationToken = default) =>
+            _inner.ResetAsync(processorId, cancellationToken);
 
-        public Task RewindAsync(string processorId, long position, CancellationToken ct = default) =>
-            _inner.RewindAsync(processorId, position, ct);
+        public Task RewindAsync(string processorId, long position, CancellationToken cancellationToken = default) =>
+            _inner.RewindAsync(processorId, position, cancellationToken);
 
         public void SetFencingContext(FencingContext ctx)
         {
@@ -423,14 +423,14 @@ public class ProcessorHealthWiringMutationTests
 
     #region Helpers
 
-    private static async Task WaitForAsync(Func<bool> condition, CancellationToken ct)
+    private static async Task WaitForAsync(Func<bool> condition, CancellationToken cancellationToken)
     {
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
         while (!condition())
         {
             if (DateTime.UtcNow > deadline)
                 throw new TimeoutException("Condition not met within 10s.");
-            await Task.Delay(10, ct);
+            await Task.Delay(10, cancellationToken);
         }
     }
 

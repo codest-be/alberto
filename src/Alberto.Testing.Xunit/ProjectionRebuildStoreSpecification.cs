@@ -258,7 +258,7 @@ public abstract class ProjectionRebuildStoreSpecification
     {
         var store = await CreateStore();
 
-        var act = () => store.RequestPromotionAsync(ProcessorId, ct: Ct);
+        var act = () => store.RequestPromotionAsync(ProcessorId, cancellationToken: Ct);
 
         await Assert.ThrowsAnyAsync<RebuildStateException>(act);
     }

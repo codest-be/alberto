@@ -15,7 +15,7 @@ internal sealed class SyncReactor<TEvent>(
         EventTypeAttribute.GetEventTypeId(typeof(TEvent))
     };
 
-    public async Task ProcessAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct)
+    public async Task ProcessAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken cancellationToken)
     {
         foreach (var @event in events)
         {
@@ -23,7 +23,7 @@ internal sealed class SyncReactor<TEvent>(
                 continue;
 
             var payload = EventEnvelopeExtensions.DeserializeEvent<TEvent>(@event, serializer);
-            await handler(payload, ReactorContext.FromEnvelope(@event), ct);
+            await handler(payload, ReactorContext.FromEnvelope(@event), cancellationToken);
         }
     }
 }

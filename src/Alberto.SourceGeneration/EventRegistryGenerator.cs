@@ -61,14 +61,14 @@ public sealed class EventRegistryGenerator : IIncrementalGenerator
     {
         var registries = context.SyntaxProvider.CreateSyntaxProvider(
                 static (node, _) => node is ClassDeclarationSyntax { AttributeLists.Count: > 0 },
-                static (ctx, ct) => ReadRegistry(ctx, ct))
+                static (ctx, cancellationToken) => ReadRegistry(ctx, cancellationToken))
             .Where(static r => r is not null)
             .Collect();
 
         var events = context.SyntaxProvider.CreateSyntaxProvider(
                 static (node, _) => node is TypeDeclarationSyntax { AttributeLists.Count: > 0 }
                     and not InterfaceDeclarationSyntax,
-                static (ctx, ct) => ReadEvent(ctx, ct))
+                static (ctx, cancellationToken) => ReadEvent(ctx, cancellationToken))
             .Where(static e => e is not null)
             .Collect();
 
@@ -111,9 +111,9 @@ public sealed class EventRegistryGenerator : IIncrementalGenerator
         });
     }
 
-    private static RegistryModel? ReadRegistry(GeneratorSyntaxContext ctx, CancellationToken ct)
+    private static RegistryModel? ReadRegistry(GeneratorSyntaxContext ctx, CancellationToken cancellationToken)
     {
-        if (ctx.SemanticModel.GetDeclaredSymbol(ctx.Node, ct) is not INamedTypeSymbol type) return null;
+        if (ctx.SemanticModel.GetDeclaredSymbol(ctx.Node, cancellationToken) is not INamedTypeSymbol type) return null;
 
         var attribute = type.GetAttributes().FirstOrDefault(a => a.AttributeClass?.ToDisplayString() == RegistryAttribute);
         if (attribute is null
@@ -143,11 +143,11 @@ public sealed class EventRegistryGenerator : IIncrementalGenerator
             new EquatableArray<string>([.. contextTypes]));
     }
 
-    private static EventModel? ReadEvent(GeneratorSyntaxContext ctx, CancellationToken ct)
+    private static EventModel? ReadEvent(GeneratorSyntaxContext ctx, CancellationToken cancellationToken)
     {
         // The same filter EventTypeRegistry.FromAssemblies applies: a concrete IEvent that carries
         // [EventType] itself (the attribute is Inherited = false, and read that way).
-        if (ctx.SemanticModel.GetDeclaredSymbol(ctx.Node, ct) is not INamedTypeSymbol type
+        if (ctx.SemanticModel.GetDeclaredSymbol(ctx.Node, cancellationToken) is not INamedTypeSymbol type
             || type.IsAbstract
             || !type.AllInterfaces.Any(i => i.ToDisplayString() == EventInterface))
             return null;
@@ -169,7 +169,7 @@ public sealed class EventRegistryGenerator : IIncrementalGenerator
             type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
             id, version, upcastingNotRequired,
             new EquatableArray<TagModel>([.. ReadTags(type)]),
-            LocationInfo.From(attribute.ApplicationSyntaxReference?.GetSyntax(ct).GetLocation() ?? ctx.Node.GetLocation()));
+            LocationInfo.From(attribute.ApplicationSyntaxReference?.GetSyntax(cancellationToken).GetLocation() ?? ctx.Node.GetLocation()));
     }
 
     // Mirrors ReflectionTagExtractor: public instance properties carrying [Tag], the type's own

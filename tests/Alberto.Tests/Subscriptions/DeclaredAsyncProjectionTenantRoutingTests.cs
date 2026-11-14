@@ -74,7 +74,7 @@ public class DeclaredAsyncProjectionTenantRoutingTests
 
         public Task<IReadOnlyDictionary<string, OrderSummary>> LoadManyAsync(
             IEnumerable<string> documentIds,
-            CancellationToken ct = default)
+            CancellationToken cancellationToken = default)
         {
             var result = new Dictionary<string, OrderSummary>();
             foreach (var id in documentIds)
@@ -88,7 +88,7 @@ public class DeclaredAsyncProjectionTenantRoutingTests
         public Task ApplyChangesAsync(
             IReadOnlyDictionary<string, OrderSummary> upserts,
             IReadOnlyCollection<string> deletes,
-            CancellationToken ct = default)
+            CancellationToken cancellationToken = default)
         {
             foreach (var (id, state) in upserts)
             {
@@ -104,7 +104,7 @@ public class DeclaredAsyncProjectionTenantRoutingTests
 
         public Task<IReadOnlyList<OrderSummary>> ListRecentAsync(
             int limit = 20,
-            CancellationToken ct = default)
+            CancellationToken cancellationToken = default)
         {
             IReadOnlyList<OrderSummary> result = _store.Values.Reverse().Take(limit).ToList();
             return Task.FromResult(result);

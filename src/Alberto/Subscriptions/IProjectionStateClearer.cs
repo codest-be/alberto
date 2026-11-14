@@ -32,5 +32,5 @@ public interface IProjectionStateClearer
     /// Must be idempotent. It runs outside the promotion transaction, so a coordinator that
     /// crashes mid-cleanup will call it again for the same version on restart.
     /// </remarks>
-    Task ClearVersionAsync(int rebuildVersion, CancellationToken ct = default);
+    Task ClearVersionAsync(int rebuildVersion, CancellationToken cancellationToken = default);
 }

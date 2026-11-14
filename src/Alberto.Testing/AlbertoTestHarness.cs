@@ -40,13 +40,13 @@ public sealed class AlbertoTestHarness : IAsyncDisposable
     /// <param name="configure">Configures the module exactly as production code would.</param>
     /// <param name="configureServices">Additional registrations, applied before the module.</param>
     /// <param name="timeProvider">Clock used for quiescence waits. Defaults to <see cref="TimeProvider.System"/>.</param>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public static async Task<AlbertoTestHarness> StartAsync(
         string moduleKey,
         Action<DcbModuleBuilder> configure,
         Action<IServiceCollection>? configureServices = null,
         TimeProvider? timeProvider = null,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(moduleKey);
         ArgumentNullException.ThrowIfNull(configure);
@@ -56,7 +56,7 @@ public sealed class AlbertoTestHarness : IAsyncDisposable
         builder.Services.AddAlberto(moduleKey, configure);
 
         var host = builder.Build();
-        await host.StartAsync(ct).ConfigureAwait(false);
+        await host.StartAsync(cancellationToken).ConfigureAwait(false);
 
         return new AlbertoTestHarness(host, moduleKey, timeProvider ?? TimeProvider.System);
     }
@@ -74,12 +74,12 @@ public sealed class AlbertoTestHarness : IAsyncDisposable
     /// the DI container and a non-<see langword="null"/> value is silently ignored.
     /// </para>
     /// </param>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public async Task AppendAsync<TEvent>(
         TEvent payload,
         IEnumerable<EventTag>? tags = null,
         string? tenantId = null,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
         where TEvent : IEvent
     {
         await using var scope = Services.CreateAsyncScope();
@@ -88,7 +88,7 @@ public sealed class AlbertoTestHarness : IAsyncDisposable
 
         var store = scope.ServiceProvider.GetRequiredKeyedService<IEventStore>(_moduleKey);
         await store.AppendAsync(
-            [TestEvents.NewEvent(payload, tags)], cancellationToken: ct)
+            [TestEvents.NewEvent(payload, tags)], cancellationToken: cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -96,18 +96,18 @@ public sealed class AlbertoTestHarness : IAsyncDisposable
     /// Waits until every processor's checkpoint has reached the store head.
     /// </summary>
     /// <param name="timeout">How long to wait. Defaults to <see cref="Poll.DefaultTimeout"/>.</param>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <exception cref="TimeoutException">
     /// Processing did not catch up. Deliberately loud: returning quietly would push the failure
     /// into an unrelated assertion later.
     /// </exception>
-    public Task WaitForQuiescenceAsync(TimeSpan? timeout = null, CancellationToken ct = default)
+    public Task WaitForQuiescenceAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default)
         => Poll.UntilAsync(
             IsQuiescentAsync,
             $"module '{_moduleKey}' to finish processing",
             timeout,
             timeProvider: _timeProvider,
-            ct: ct);
+            cancellationToken: cancellationToken);
 
     private async ValueTask<bool> IsQuiescentAsync()
     {

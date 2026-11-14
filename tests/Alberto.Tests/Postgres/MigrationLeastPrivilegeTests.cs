@@ -26,8 +26,8 @@ public sealed class MigrationLeastPrivilegeTests(PostgresCluster cluster)
     [Fact]
     public async Task Migrate_reports_through_the_logger_it_is_given()
     {
-        var ct = TestContext.Current.CancellationToken;
-        var database = await cluster.CloneAsync(PostgresTemplates.Empty, "migratelogger", ct);
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var database = await cluster.CloneAsync(PostgresTemplates.Empty, "migratelogger", cancellationToken);
         var logger = new CapturingLogger();
 
         var result = PostgresMigrator.Migrate(
@@ -41,8 +41,8 @@ public sealed class MigrationLeastPrivilegeTests(PostgresCluster cluster)
     [Fact]
     public async Task The_catalog_migration_reports_through_the_logger_it_is_given()
     {
-        var ct = TestContext.Current.CancellationToken;
-        var database = await cluster.CloneAsync(PostgresTemplates.Empty, "catalogmigratelogger", ct);
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var database = await cluster.CloneAsync(PostgresTemplates.Empty, "catalogmigratelogger", cancellationToken);
         var logger = new CapturingLogger();
 
         var result = PostgresCatalogMigrator.Migrate(
@@ -55,8 +55,8 @@ public sealed class MigrationLeastPrivilegeTests(PostgresCluster cluster)
     [Fact]
     public async Task A_role_that_cannot_reach_the_postgres_database_needs_EnsureDatabase_off()
     {
-        var ct = TestContext.Current.CancellationToken;
-        var restricted = await RestrictedDatabaseAsync(ct);
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var restricted = await RestrictedDatabaseAsync(cancellationToken);
 
         var withEnsure = () => PostgresMigrator.Migrate(
             restricted, new MigrationOptions { Schema = "least_privilege", SingleTenant = true });
@@ -76,8 +76,8 @@ public sealed class MigrationLeastPrivilegeTests(PostgresCluster cluster)
     [Fact]
     public async Task A_host_migrates_at_startup_as_a_least_privilege_role_and_logs_through_ILogger()
     {
-        var ct = TestContext.Current.CancellationToken;
-        var restricted = await RestrictedDatabaseAsync(ct);
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var restricted = await RestrictedDatabaseAsync(cancellationToken);
         var logs = new CapturingLoggerProvider();
 
         var builder = Host.CreateApplicationBuilder();
@@ -94,8 +94,8 @@ public sealed class MigrationLeastPrivilegeTests(PostgresCluster cluster)
             }));
 
         using var host = builder.Build();
-        await host.StartAsync(ct);
-        await host.StopAsync(ct);
+        await host.StartAsync(cancellationToken);
+        await host.StopAsync(cancellationToken);
 
         logs.Messages.Should().Contain(m => m.Contains("Executing Database Server script"));
     }
@@ -104,15 +104,15 @@ public sealed class MigrationLeastPrivilegeTests(PostgresCluster cluster)
     /// Creates a login role and a database it owns, and returns a connection string for that role
     /// on that database. The role cannot connect to the server's <c>postgres</c> database.
     /// </summary>
-    private async Task<string> RestrictedDatabaseAsync(CancellationToken ct)
+    private async Task<string> RestrictedDatabaseAsync(CancellationToken cancellationToken)
     {
-        var admin = await cluster.CloneAsync(PostgresTemplates.Empty, "leastprivilegeadmin", ct);
+        var admin = await cluster.CloneAsync(PostgresTemplates.Empty, "leastprivilegeadmin", cancellationToken);
         var name = $"alb_lp_{Guid.NewGuid():N}"[..20];
         const string password = "least-privilege";
 
         await using (var connection = new NpgsqlConnection(admin))
         {
-            await connection.OpenAsync(ct);
+            await connection.OpenAsync(cancellationToken);
             foreach (var sql in new[]
             {
                 $"""CREATE ROLE "{name}" LOGIN PASSWORD '{password}'""",
@@ -121,7 +121,7 @@ public sealed class MigrationLeastPrivilegeTests(PostgresCluster cluster)
             })
             {
                 await using var command = new NpgsqlCommand(sql, connection);
-                await command.ExecuteNonQueryAsync(ct);
+                await command.ExecuteNonQueryAsync(cancellationToken);
             }
         }
 

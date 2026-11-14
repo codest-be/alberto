@@ -25,7 +25,7 @@ public sealed class ControlLoopResilienceTests
         public bool IsRebuilding { get; set; }
         public IReadOnlySet<string> HandledEventTypes { get; } = new HashSet<string> { TypeId };
 
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _processed);
             return Task.CompletedTask;
@@ -93,13 +93,13 @@ public sealed class ControlLoopResilienceTests
         CreatedAt = DateTimeOffset.UtcNow,
     };
 
-    private static async Task WaitForAsync(Func<bool> condition, CancellationToken ct)
+    private static async Task WaitForAsync(Func<bool> condition, CancellationToken cancellationToken)
     {
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
         while (!condition())
         {
             if (DateTime.UtcNow > deadline) throw new TimeoutException("Condition not met within 10s.");
-            await Task.Delay(10, ct);
+            await Task.Delay(10, cancellationToken);
         }
     }
 

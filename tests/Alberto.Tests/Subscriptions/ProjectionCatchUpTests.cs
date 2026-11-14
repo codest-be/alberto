@@ -16,18 +16,18 @@ public sealed class ProjectionCatchUpTests
     [Fact]
     public async Task WaitForProjection_ReturnsOnceTheProcessorReachesThePosition()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var checkpoints = new InMemoryCheckpointStore();
         var catchUp = new ProjectionCatchUp(new InMemoryEventStoreBackend(), checkpoints);
 
         var waiting = catchUp.WaitForProjectionAsync(
-            Processor, position: 7, TimeSpan.FromSeconds(10), ct);
+            Processor, position: 7, TimeSpan.FromSeconds(10), cancellationToken);
 
         // Nothing has consumed anything yet, so the wait cannot have finished.
         waiting.IsCompleted.Should().BeFalse(
             because: "the processor has not reached position 7");
 
-        await checkpoints.SaveAsync(Processor, 7, ct);
+        await checkpoints.SaveAsync(Processor, 7, cancellationToken);
 
         await waiting;
     }
@@ -35,30 +35,30 @@ public sealed class ProjectionCatchUpTests
     [Fact]
     public async Task WaitForProjection_ReturnsWhenTheProcessorIsAlreadyPastThePosition()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var checkpoints = new InMemoryCheckpointStore();
-        await checkpoints.SaveAsync(Processor, 12, ct);
+        await checkpoints.SaveAsync(Processor, 12, cancellationToken);
 
         var catchUp = new ProjectionCatchUp(new InMemoryEventStoreBackend(), checkpoints);
 
         // A timeout of zero leaves no room to poll: this can only pass by returning on the
         // first look, which is what a caller reading a projection it already caught up with
         // should pay.
-        await catchUp.WaitForProjectionAsync(Processor, position: 7, TimeSpan.Zero, ct);
+        await catchUp.WaitForProjectionAsync(Processor, position: 7, TimeSpan.Zero, cancellationToken);
     }
 
     [Fact]
     public async Task WaitForProjection_ThrowsNamingTheProcessorWhenItDoesNotCatchUpInTime()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var checkpoints = new InMemoryCheckpointStore();
-        await checkpoints.SaveAsync(Processor, 3, ct);
+        await checkpoints.SaveAsync(Processor, 3, cancellationToken);
 
         var catchUp = new ProjectionCatchUp(new InMemoryEventStoreBackend(), checkpoints);
 
         var thrown = await Assert.ThrowsAsync<TimeoutException>(() =>
             catchUp.WaitForProjectionAsync(
-                Processor, position: 9, TimeSpan.FromMilliseconds(100), ct));
+                Processor, position: 9, TimeSpan.FromMilliseconds(100), cancellationToken));
 
         // Whoever hits this in production has a stopped, faulted or out-of-process loop, and
         // needs to know which processor and how far behind it was without attaching a debugger.
@@ -68,7 +68,7 @@ public sealed class ProjectionCatchUpTests
     [Fact]
     public async Task WaitForProjection_WithoutAPosition_WaitsForTheHeadAsOfTheCall()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var checkpoints = new InMemoryCheckpointStore();
 
         // A store somebody else keeps writing to. Read the head twice and it is already higher,
@@ -77,7 +77,7 @@ public sealed class ProjectionCatchUpTests
         var backend = new GrowingHeadBackend();
         var catchUp = new ProjectionCatchUp(backend, checkpoints);
 
-        var waiting = catchUp.WaitForProjectionAsync(Processor, TimeSpan.FromSeconds(10), ct);
+        var waiting = catchUp.WaitForProjectionAsync(Processor, TimeSpan.FromSeconds(10), cancellationToken);
 
         // Timing guard: WaitForProjectionAsync must have called GetLastPositionAsync
         // (HeadReads → 1) and entered its poll loop before the checkpoint is saved.
@@ -85,8 +85,8 @@ public sealed class ProjectionCatchUpTests
         // instead of capturing it once upfront would see FirstHead already set on its
         // first look, return with HeadReads == 1, and pass the assertion vacuously
         // rather than verifying the snapshot-on-entry behaviour this test covers.
-        await Task.Delay(50, ct);
-        await checkpoints.SaveAsync(Processor, GrowingHeadBackend.FirstHead, ct);
+        await Task.Delay(50, cancellationToken);
+        await checkpoints.SaveAsync(Processor, GrowingHeadBackend.FirstHead, cancellationToken);
 
         await waiting;
 
@@ -97,11 +97,11 @@ public sealed class ProjectionCatchUpTests
     [Fact]
     public async Task WaitForProjection_ObservesCancellationRatherThanRunningOutTheTimeout()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var checkpoints = new InMemoryCheckpointStore();
         var catchUp = new ProjectionCatchUp(new InMemoryEventStoreBackend(), checkpoints);
 
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var waiting = catchUp.WaitForProjectionAsync(
             Processor, position: 1, TimeSpan.FromSeconds(30), cts.Token);
 

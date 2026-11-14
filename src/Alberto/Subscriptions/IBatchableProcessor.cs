@@ -13,5 +13,5 @@ public interface IBatchableProcessor : IEventProcessor
     /// 2. Apply events in memory
     /// 3. ApplyChanges once for all documents
     /// </summary>
-    Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct = default);
+    Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken cancellationToken = default);
 }

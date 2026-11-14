@@ -132,8 +132,8 @@ internal sealed class ShadowProcessor(IEventProcessor inner, string processorId)
 
     public IReadOnlySet<string> HandledEventTypes => inner.HandledEventTypes;
 
-    public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
-        => inner.ProcessEventAsync(@event, ct);
+    public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default)
+        => inner.ProcessEventAsync(@event, cancellationToken);
 
     /// <summary>
     /// A rebuild replays the whole log, so it takes the batch path whenever the projection
@@ -141,16 +141,16 @@ internal sealed class ShadowProcessor(IEventProcessor inner, string processorId)
     /// alternative would be refusing to rebuild them.
     /// </summary>
     public async Task ProcessBatchAsync(
-        IReadOnlyList<IEventEnvelope> events, CancellationToken ct = default)
+        IReadOnlyList<IEventEnvelope> events, CancellationToken cancellationToken = default)
     {
         if (inner is IBatchableProcessor batchable)
         {
-            await batchable.ProcessBatchAsync(events, ct);
+            await batchable.ProcessBatchAsync(events, cancellationToken);
             return;
         }
 
         foreach (var e in events)
-            await inner.ProcessEventAsync(e, ct);
+            await inner.ProcessEventAsync(e, cancellationToken);
     }
 
     public ValueTask DisposeAsync()

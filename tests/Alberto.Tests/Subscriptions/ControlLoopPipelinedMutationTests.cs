@@ -57,8 +57,8 @@ public sealed class ControlLoopPipelinedMutationTests
 
         public IReadOnlySet<string> HandledEventTypes { get; } = new HashSet<string> { EventTypeId };
 
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
-            => handler(@event, ct);
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default)
+            => handler(@event, cancellationToken);
     }
 
     /// <summary>Wraps an <see cref="IEventStoreBackend"/>, counting <see cref="StreamAllAsync"/> calls.</summary>
@@ -107,23 +107,23 @@ public sealed class ControlLoopPipelinedMutationTests
         public int GetCount => Volatile.Read(ref _getCount);
         public int SaveCount => Volatile.Read(ref _saveCount);
 
-        public Task<long?> GetAsync(string processorId, CancellationToken ct = default)
+        public Task<long?> GetAsync(string processorId, CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _getCount);
-            return inner.GetAsync(processorId, ct);
+            return inner.GetAsync(processorId, cancellationToken);
         }
 
-        public Task SaveAsync(string processorId, long position, CancellationToken ct = default)
+        public Task SaveAsync(string processorId, long position, CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _saveCount);
-            return inner.SaveAsync(processorId, position, ct);
+            return inner.SaveAsync(processorId, position, cancellationToken);
         }
 
-        public Task ResetAsync(string processorId, CancellationToken ct = default)
-            => inner.ResetAsync(processorId, ct);
+        public Task ResetAsync(string processorId, CancellationToken cancellationToken = default)
+            => inner.ResetAsync(processorId, cancellationToken);
 
-        public Task RewindAsync(string processorId, long position, CancellationToken ct = default)
-            => inner.RewindAsync(processorId, position, ct);
+        public Task RewindAsync(string processorId, long position, CancellationToken cancellationToken = default)
+            => inner.RewindAsync(processorId, position, cancellationToken);
     }
 
     /// <summary>
@@ -264,22 +264,22 @@ public sealed class ControlLoopPipelinedMutationTests
 
     // ── helpers ───────────────────────────────────────────────────────────────────
 
-    private static async Task WaitForAsync(Func<bool> condition, CancellationToken ct, TimeSpan? timeout = null)
+    private static async Task WaitForAsync(Func<bool> condition, CancellationToken cancellationToken, TimeSpan? timeout = null)
     {
         var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(10));
         while (!condition())
         {
             if (DateTime.UtcNow > deadline)
                 throw new TimeoutException("Condition not met within the deadline.");
-            await Task.Delay(10, ct);
+            await Task.Delay(10, cancellationToken);
         }
     }
 
     private static async Task WaitForCheckpointAsync(
-        ICheckpointStore checkpoints, string processorId, long expected, CancellationToken ct)
+        ICheckpointStore checkpoints, string processorId, long expected, CancellationToken cancellationToken)
     {
         await WaitForAsync(
-            () => checkpoints.GetAsync(processorId, ct).GetAwaiter().GetResult() >= expected, ct);
+            () => checkpoints.GetAsync(processorId, cancellationToken).GetAwaiter().GetResult() >= expected, cancellationToken);
     }
 
     // ── 303: initialCheckpoint = GetAsync ?? 0L => 0L ──────────────────────────────

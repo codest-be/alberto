@@ -817,7 +817,7 @@ public abstract class StateStoreSpecification<TState>
 
         // Capture the cancellation token before entering Task.Run — TestContext.Current is
         // thread-local and not available on the thread pool threads.
-        var ct = Ct;
+        var cancellationToken = Ct;
 
         // The reader runs until the writer stops rather than for a fixed count: against a
         // remote adapter the two loops advance at very different rates, and a reader that
@@ -834,8 +834,8 @@ public abstract class StateStoreSpecification<TState>
                     // An unsynchronised implementation exposes a window between the upsert loop
                     // (which adds the "after" set) and the delete loop (which removes the
                     // "before" set) where a reader observes both sets simultaneously.
-                    await store.ApplyChangesAsync(afterUpserts, beforeIds, ct);
-                    await store.ApplyChangesAsync(beforeUpserts, afterIds, ct);
+                    await store.ApplyChangesAsync(afterUpserts, beforeIds, cancellationToken);
+                    await store.ApplyChangesAsync(beforeUpserts, afterIds, cancellationToken);
                 }
             }
             finally
@@ -848,7 +848,7 @@ public abstract class StateStoreSpecification<TState>
         {
             while (!writerDone.IsCancellationRequested && Volatile.Read(ref partial) == 0)
             {
-                var result = await store.LoadManyAsync(allIds, ct);
+                var result = await store.LoadManyAsync(allIds, cancellationToken);
                 var hasBefore = beforeIds.Any(result.ContainsKey);
                 var hasAfter = afterIds.Any(result.ContainsKey);
 

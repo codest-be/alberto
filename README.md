@@ -25,7 +25,7 @@ await store.Handle(new ReserveSeat(showId, "A12", customerId))
     .Decide((cmd, state) => state.IsTaken
         ? Problem.Create("seat.taken", $"Seat {cmd.Seat} is already reserved.")
         : Decision.Succeed(new SeatReserved(cmd.ShowId, cmd.Seat, cmd.CustomerId)))
-    .Commit(ct);
+    .Commit(cancellationToken);
 ```
 
 That block loads exactly the events the decision depends on, folds them into state, decides, and

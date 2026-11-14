@@ -14,10 +14,10 @@ adds only `ReadAllOfTypesAsync`, so `EventStore` and the tenant and shard router
 
 | Was | Is |
 |---|---|
-| `StreamAsync(query, afterPosition, limit?, ct)` returning a collection | `ReadAsync(query, afterPosition, limit, ct)` |
-| `StreamAllAsync(afterPosition, limit?, ct)` returning a collection | `ReadAllAsync(afterPosition, limit, ct)` |
-| `IEventStoreBackend.StreamAllOfTypesAsync(...)`, defaulted | `ReadAllOfTypesAsync(eventTypes, afterPosition, limit, ct)`, abstract, filtering mandatory |
-| (none) | `StreamAsync(query, afterPosition = 0, ct)` and `StreamAllAsync(afterPosition = 0, ct)` returning `IAsyncEnumerable<IEventEnvelope>` |
+| `StreamAsync(query, afterPosition, limit?, cancellationToken)` returning a collection | `ReadAsync(query, afterPosition, limit, cancellationToken)` |
+| `StreamAllAsync(afterPosition, limit?, cancellationToken)` returning a collection | `ReadAllAsync(afterPosition, limit, cancellationToken)` |
+| `IEventStoreBackend.StreamAllOfTypesAsync(...)`, defaulted | `ReadAllOfTypesAsync(eventTypes, afterPosition, limit, cancellationToken)`, abstract, filtering mandatory |
+| (none) | `StreamAsync(query, afterPosition = 0, cancellationToken)` and `StreamAllAsync(afterPosition = 0, cancellationToken)` returning `IAsyncEnumerable<IEventEnvelope>` |
 
 `limit` is required: no caller in `src` read unbounded. Pass `int.MaxValue` for the old `null`.
 `await store.StreamAsync(q)` becomes `await store.StreamAsync(q).ToListAsync()`, or better an
@@ -40,12 +40,12 @@ primary key written on every append. It runs on startup; `DROP INDEX` takes a br
 
 ### Custom event store backends
 
-`IEventStoreHeadBackend.GetStableHeadUpToAsync(afterPosition, upToPosition, ct)` is new and has a
+`IEventStoreHeadBackend.GetStableHeadUpToAsync(afterPosition, upToPosition, cancellationToken)` is new and has a
 default implementation that calls `GetStableHeadAsync`, so nothing breaks. A backend whose
 barrier query scans forward from `afterPosition` should override it and stop at `upToPosition`:
 the head only asks about the window it just read.
 
-`IEventStoreBackend.StreamAllOfTypesAsync(eventTypes, afterPosition, limit, ct)` is new too, and
+`IEventStoreBackend.StreamAllOfTypesAsync(eventTypes, afterPosition, limit, cancellationToken)` is new too, and
 defaults to `StreamAllAsync`. The control loop now reads through it, passing the processor's
 handled types, so a backend that overrides it sends only the events the processor will handle.
 Two things must hold whether it filters or not: events come back in position order, and fewer
