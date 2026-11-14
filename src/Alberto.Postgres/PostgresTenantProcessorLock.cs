@@ -10,7 +10,7 @@ namespace Alberto.Postgres;
 /// Leases expire and must be periodically renewed, enabling fair distribution
 /// and automatic recovery when replicas crash.
 /// </summary>
-public sealed class PostgresTenantProcessorLock : ITenantProcessorLock
+internal sealed class PostgresTenantProcessorLock : ITenantProcessorLock
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly SchemaQualifier _schema;

@@ -8,7 +8,7 @@ namespace Alberto.InMemory;
 /// Useful for testing and development.
 /// </summary>
 /// <param name="timeProvider">Clock used to stamp <see cref="DeadLetterEntry.CreatedAt"/> when not supplied by the caller, and to drive claim-lease expiry. Defaults to <see cref="TimeProvider.System"/>.</param>
-public sealed class InMemoryDeadLetterStore(TimeProvider? timeProvider = null) : IClaimableDeadLetterStore
+internal sealed class InMemoryDeadLetterStore(TimeProvider? timeProvider = null) : IClaimableDeadLetterStore
 {
     // Keyed by (processor, event): the store holds one entry per event a processor failed.
     private readonly ConcurrentDictionary<(string ProcessorId, Guid EventId), DeadLetterEntry> _entries = new();

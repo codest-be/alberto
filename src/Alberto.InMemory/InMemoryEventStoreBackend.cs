@@ -19,7 +19,7 @@ namespace Alberto.InMemory;
 /// <c>TenantEventStoreDecorator</c> wraps the Postgres tenant backend.
 /// </para>
 /// </remarks>
-public sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEventStoreBackend, IEventStoreHeadBackend
+internal sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEventStoreBackend, IEventStoreHeadBackend
 {
     private readonly object _lock = new();
 

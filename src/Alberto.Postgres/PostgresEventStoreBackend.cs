@@ -14,7 +14,7 @@ namespace Alberto.Postgres;
 /// parameterised on tenancy. This class is a thin adapter that supplies the
 /// constructor context (data source, schema, lock key) and delegates.
 /// </remarks>
-public sealed class PostgresEventStoreBackend(
+internal sealed class PostgresEventStoreBackend(
     NpgsqlDataSource dataSource,
     TimeProvider? timeProvider = null,
     string? schema = null,

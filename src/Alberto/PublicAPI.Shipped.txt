@@ -57,11 +57,6 @@ Alberto.Configuration.AlbertoValidationReport
 Alberto.Configuration.CheckpointOptions
 Alberto.Configuration.CheckpointOptions.OrphanPolicy.get -> Alberto.Configuration.OrphanCheckpointPolicy
 Alberto.Configuration.CheckpointOptions.OrphanPolicy.init -> void
-Alberto.Configuration.CheckpointOverrides
-Alberto.Configuration.CheckpointOverrides.ApplyTo(Alberto.Configuration.CheckpointOptions! options) -> Alberto.Configuration.CheckpointOptions!
-Alberto.Configuration.CheckpointOverrides.CheckpointOverrides() -> void
-Alberto.Configuration.CheckpointOverrides.OrphanPolicy.get -> Alberto.Configuration.OrphanCheckpointPolicy?
-Alberto.Configuration.CheckpointOverrides.OrphanPolicy.set -> void
 Alberto.Configuration.ControlLoopOptions
 Alberto.Configuration.ControlLoopOptions.BatchSize.get -> int
 Alberto.Configuration.ControlLoopOptions.BatchSize.init -> void
@@ -85,31 +80,6 @@ Alberto.Configuration.ControlLoopOptions.Redelivery.get -> Alberto.Configuration
 Alberto.Configuration.ControlLoopOptions.Redelivery.init -> void
 Alberto.Configuration.ControlLoopOptions.Retry.get -> Alberto.Configuration.RetryOptions!
 Alberto.Configuration.ControlLoopOptions.Retry.init -> void
-Alberto.Configuration.ControlLoopOverrides
-Alberto.Configuration.ControlLoopOverrides.ApplyTo(Alberto.Configuration.ControlLoopOptions! options) -> Alberto.Configuration.ControlLoopOptions!
-Alberto.Configuration.ControlLoopOverrides.BatchSize.get -> int?
-Alberto.Configuration.ControlLoopOverrides.BatchSize.set -> void
-Alberto.Configuration.ControlLoopOverrides.ControlLoopOverrides() -> void
-Alberto.Configuration.ControlLoopOverrides.DeadLetterRetry.get -> Alberto.Configuration.DeadLetterRetryOverrides?
-Alberto.Configuration.ControlLoopOverrides.DeadLetterRetry.set -> void
-Alberto.Configuration.ControlLoopOverrides.DrainTimeout.get -> System.TimeSpan?
-Alberto.Configuration.ControlLoopOverrides.DrainTimeout.set -> void
-Alberto.Configuration.ControlLoopOverrides.Halt.get -> Alberto.Configuration.HaltOverrides?
-Alberto.Configuration.ControlLoopOverrides.Halt.set -> void
-Alberto.Configuration.ControlLoopOverrides.HeadRefreshInterval.get -> System.TimeSpan?
-Alberto.Configuration.ControlLoopOverrides.HeadRefreshInterval.set -> void
-Alberto.Configuration.ControlLoopOverrides.HeadWindowSize.get -> int?
-Alberto.Configuration.ControlLoopOverrides.HeadWindowSize.set -> void
-Alberto.Configuration.ControlLoopOverrides.Leases.get -> Alberto.Configuration.ProcessorLeaseOverrides?
-Alberto.Configuration.ControlLoopOverrides.Leases.set -> void
-Alberto.Configuration.ControlLoopOverrides.PollingInterval.get -> System.TimeSpan?
-Alberto.Configuration.ControlLoopOverrides.PollingInterval.set -> void
-Alberto.Configuration.ControlLoopOverrides.Rebuilds.get -> Alberto.Configuration.RebuildOverrides?
-Alberto.Configuration.ControlLoopOverrides.Rebuilds.set -> void
-Alberto.Configuration.ControlLoopOverrides.Redelivery.get -> Alberto.Configuration.RedeliveryOverrides?
-Alberto.Configuration.ControlLoopOverrides.Redelivery.set -> void
-Alberto.Configuration.ControlLoopOverrides.Retry.get -> Alberto.Configuration.RetryOverrides?
-Alberto.Configuration.ControlLoopOverrides.Retry.set -> void
 Alberto.Configuration.DeadLetterRetryOptions
 Alberto.Configuration.DeadLetterRetryOptions.BatchSize.get -> int
 Alberto.Configuration.DeadLetterRetryOptions.BatchSize.init -> void
@@ -117,15 +87,6 @@ Alberto.Configuration.DeadLetterRetryOptions.ClaimLease.get -> System.TimeSpan
 Alberto.Configuration.DeadLetterRetryOptions.ClaimLease.init -> void
 Alberto.Configuration.DeadLetterRetryOptions.PollingInterval.get -> System.TimeSpan
 Alberto.Configuration.DeadLetterRetryOptions.PollingInterval.init -> void
-Alberto.Configuration.DeadLetterRetryOverrides
-Alberto.Configuration.DeadLetterRetryOverrides.ApplyTo(Alberto.Configuration.DeadLetterRetryOptions! options) -> Alberto.Configuration.DeadLetterRetryOptions!
-Alberto.Configuration.DeadLetterRetryOverrides.BatchSize.get -> int?
-Alberto.Configuration.DeadLetterRetryOverrides.BatchSize.set -> void
-Alberto.Configuration.DeadLetterRetryOverrides.ClaimLease.get -> System.TimeSpan?
-Alberto.Configuration.DeadLetterRetryOverrides.ClaimLease.set -> void
-Alberto.Configuration.DeadLetterRetryOverrides.DeadLetterRetryOverrides() -> void
-Alberto.Configuration.DeadLetterRetryOverrides.PollingInterval.get -> System.TimeSpan?
-Alberto.Configuration.DeadLetterRetryOverrides.PollingInterval.set -> void
 Alberto.Configuration.HaltOptions
 Alberto.Configuration.HaltOptions.BackoffMultiplier.get -> double
 Alberto.Configuration.HaltOptions.BackoffMultiplier.init -> void
@@ -183,13 +144,6 @@ Alberto.Configuration.ProcessorLeaseOptions.Enabled.get -> bool
 Alberto.Configuration.ProcessorLeaseOptions.Enabled.init -> void
 Alberto.Configuration.ProcessorLeaseOptions.ReplicaId.get -> string?
 Alberto.Configuration.ProcessorLeaseOptions.ReplicaId.init -> void
-Alberto.Configuration.ProcessorLeaseOverrides
-Alberto.Configuration.ProcessorLeaseOverrides.ApplyTo(Alberto.Configuration.ProcessorLeaseOptions! options) -> Alberto.Configuration.ProcessorLeaseOptions!
-Alberto.Configuration.ProcessorLeaseOverrides.Enabled.get -> bool?
-Alberto.Configuration.ProcessorLeaseOverrides.Enabled.set -> void
-Alberto.Configuration.ProcessorLeaseOverrides.ProcessorLeaseOverrides() -> void
-Alberto.Configuration.ProcessorLeaseOverrides.ReplicaId.get -> string?
-Alberto.Configuration.ProcessorLeaseOverrides.ReplicaId.set -> void
 Alberto.Configuration.RebuildOptions
 Alberto.Configuration.RebuildOptions.AutoPromote.get -> bool
 Alberto.Configuration.RebuildOptions.AutoPromote.init -> void
@@ -199,17 +153,6 @@ Alberto.Configuration.RebuildOptions.PollingInterval.get -> System.TimeSpan
 Alberto.Configuration.RebuildOptions.PollingInterval.init -> void
 Alberto.Configuration.RebuildOptions.VersionRefreshInterval.get -> System.TimeSpan
 Alberto.Configuration.RebuildOptions.VersionRefreshInterval.init -> void
-Alberto.Configuration.RebuildOverrides
-Alberto.Configuration.RebuildOverrides.ApplyTo(Alberto.Configuration.RebuildOptions! options) -> Alberto.Configuration.RebuildOptions!
-Alberto.Configuration.RebuildOverrides.AutoPromote.get -> bool?
-Alberto.Configuration.RebuildOverrides.AutoPromote.set -> void
-Alberto.Configuration.RebuildOverrides.Enabled.get -> bool?
-Alberto.Configuration.RebuildOverrides.Enabled.set -> void
-Alberto.Configuration.RebuildOverrides.PollingInterval.get -> System.TimeSpan?
-Alberto.Configuration.RebuildOverrides.PollingInterval.set -> void
-Alberto.Configuration.RebuildOverrides.RebuildOverrides() -> void
-Alberto.Configuration.RebuildOverrides.VersionRefreshInterval.get -> System.TimeSpan?
-Alberto.Configuration.RebuildOverrides.VersionRefreshInterval.set -> void
 Alberto.Configuration.RedeliverWhen
 Alberto.Configuration.RedeliverWhen.Transient = 0 -> Alberto.Configuration.RedeliverWhen
 Alberto.Configuration.RedeliverWhen.TransientOrUnknown = 1 -> Alberto.Configuration.RedeliverWhen
@@ -287,13 +230,6 @@ Alberto.Configuration.TelemetryOptions.Enabled.get -> bool
 Alberto.Configuration.TelemetryOptions.Enabled.init -> void
 Alberto.Configuration.TelemetryOptions.RecordEventTagValues.get -> bool
 Alberto.Configuration.TelemetryOptions.RecordEventTagValues.init -> void
-Alberto.Configuration.TelemetryOverrides
-Alberto.Configuration.TelemetryOverrides.ApplyTo(Alberto.Configuration.TelemetryOptions! options) -> Alberto.Configuration.TelemetryOptions!
-Alberto.Configuration.TelemetryOverrides.Enabled.get -> bool?
-Alberto.Configuration.TelemetryOverrides.Enabled.set -> void
-Alberto.Configuration.TelemetryOverrides.RecordEventTagValues.get -> bool?
-Alberto.Configuration.TelemetryOverrides.RecordEventTagValues.set -> void
-Alberto.Configuration.TelemetryOverrides.TelemetryOverrides() -> void
 Alberto.Configuration.TenancyBuilder
 Alberto.Configuration.TenancyBuilder.Configure(System.Func<Alberto.Configuration.TenancyDefinition!, Alberto.Configuration.TenancyDefinition!>! configure) -> Alberto.Configuration.TenancyBuilder!
 Alberto.Configuration.TenancyBuilder.ModuleBackend.get -> Alberto.Configuration.IAlbertoBackendDescriptor?
@@ -760,21 +696,6 @@ Alberto.Subscriptions.ProcessorExecutionOptions.Retry.get -> Alberto.Configurati
 Alberto.Subscriptions.ProcessorExecutionOptions.Retry.init -> void
 Alberto.Subscriptions.ProcessorExecutionOptions.TraceParenting.get -> Alberto.Subscriptions.TraceParenting
 Alberto.Subscriptions.ProcessorExecutionOptions.TraceParenting.init -> void
-Alberto.Subscriptions.ProcessorExecutionOverrides
-Alberto.Subscriptions.ProcessorExecutionOverrides.ApplyTo(Alberto.Subscriptions.ProcessorExecutionOptions! options) -> Alberto.Subscriptions.ProcessorExecutionOptions!
-Alberto.Subscriptions.ProcessorExecutionOverrides.BatchingMode.get -> Alberto.Subscriptions.ProcessorBatchingMode?
-Alberto.Subscriptions.ProcessorExecutionOverrides.BatchingMode.set -> void
-Alberto.Subscriptions.ProcessorExecutionOverrides.Halt.get -> Alberto.Configuration.HaltOverrides?
-Alberto.Subscriptions.ProcessorExecutionOverrides.Halt.set -> void
-Alberto.Subscriptions.ProcessorExecutionOverrides.MaxConcurrency.get -> int?
-Alberto.Subscriptions.ProcessorExecutionOverrides.MaxConcurrency.set -> void
-Alberto.Subscriptions.ProcessorExecutionOverrides.ProcessorExecutionOverrides() -> void
-Alberto.Subscriptions.ProcessorExecutionOverrides.Redelivery.get -> Alberto.Configuration.RedeliveryOverrides?
-Alberto.Subscriptions.ProcessorExecutionOverrides.Redelivery.set -> void
-Alberto.Subscriptions.ProcessorExecutionOverrides.Retry.get -> Alberto.Configuration.RetryOverrides?
-Alberto.Subscriptions.ProcessorExecutionOverrides.Retry.set -> void
-Alberto.Subscriptions.ProcessorExecutionOverrides.TraceParenting.get -> Alberto.Subscriptions.TraceParenting?
-Alberto.Subscriptions.ProcessorExecutionOverrides.TraceParenting.set -> void
 Alberto.Subscriptions.ProcessorHealthCheck
 Alberto.Subscriptions.ProcessorHealthCheck.CheckHealthAsync(Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext! context, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult>!
 Alberto.Subscriptions.ProcessorHealthCheck.ProcessorHealthCheck(string! moduleKey, Alberto.Subscriptions.ProcessorHealthState! state, System.TimeSpan stalenessThreshold, long degradedLagThreshold, System.TimeProvider? timeProvider = null) -> void

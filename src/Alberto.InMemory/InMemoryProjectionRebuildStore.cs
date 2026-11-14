@@ -23,7 +23,7 @@ namespace Alberto.InMemory;
 /// no rows is safe.
 /// </para>
 /// </remarks>
-public sealed class InMemoryProjectionRebuildStore :
+internal sealed class InMemoryProjectionRebuildStore :
     IProjectionRebuildStore,
     IProjectionRebuildCoordinatorStore
 {

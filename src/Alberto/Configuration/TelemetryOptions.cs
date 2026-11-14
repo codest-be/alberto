@@ -23,7 +23,7 @@ public sealed record TelemetryOptions
 }
 
 /// <summary>Configuration mirror for <see cref="TelemetryOptions"/>.</summary>
-public sealed class TelemetryOverrides : IAlbertoOverrides<TelemetryOptions>
+internal sealed class TelemetryOverrides : IAlbertoOverrides<TelemetryOptions>
 {
     /// <summary>Mirror of <see cref="TelemetryOptions.Enabled"/>.</summary>
     public bool? Enabled { get; set; }

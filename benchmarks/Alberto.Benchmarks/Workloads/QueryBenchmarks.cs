@@ -21,7 +21,7 @@ public abstract class QueryBenchmarkBase
     protected const int PageSize = 500;
 
     protected NpgsqlDataSource DataSource = null!;
-    protected PostgresEventStoreBackend Backend = null!;
+    internal PostgresEventStoreBackend Backend = null!;
     protected long Head;
 
     [Params(StoreSizes.Small, StoreSizes.Medium, StoreSizes.Large)]

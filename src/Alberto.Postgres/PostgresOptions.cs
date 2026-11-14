@@ -74,7 +74,7 @@ public sealed record PostgresOptions
 }
 
 /// <summary>Configuration mirror for <see cref="PostgresOptions"/>.</summary>
-public sealed class PostgresOverrides : IAlbertoOverrides<PostgresOptions>
+internal sealed class PostgresOverrides : IAlbertoOverrides<PostgresOptions>
 {
     /// <summary>Nullable mirror of <see cref="PostgresOptions.ConnectionString"/>.</summary>
     public string? ConnectionString { get; set; }

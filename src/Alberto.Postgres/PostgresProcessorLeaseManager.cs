@@ -8,7 +8,7 @@ namespace Alberto.Postgres;
 /// Leases expire and must be periodically renewed, enabling single-leader processing
 /// per processor and automatic recovery when replicas crash.
 /// </summary>
-public sealed class PostgresProcessorLeaseManager : IProcessorLeaseManager
+internal sealed class PostgresProcessorLeaseManager : IProcessorLeaseManager
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly SchemaQualifier _schema;

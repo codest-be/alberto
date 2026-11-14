@@ -21,7 +21,7 @@ namespace Alberto.Benchmarks.Workloads;
 public abstract class AppendBenchmarkBase
 {
     protected NpgsqlDataSource DataSource = null!;
-    protected PostgresEventStoreBackend Backend = null!;
+    internal PostgresEventStoreBackend Backend = null!;
     protected long SeededHead;
 
     /// <summary>
