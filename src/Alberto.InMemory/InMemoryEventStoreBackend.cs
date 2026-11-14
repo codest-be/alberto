@@ -8,7 +8,7 @@ namespace Alberto.InMemory;
 /// <remarks>
 /// <para>
 /// <strong>Single-tenant mode</strong> (default, via <c>.WithInMemory()</c> without <c>.WithTenancy()</c>):
-/// <see cref="IEventStoreBackend.AppendAsync"/> records every event with <c>TenantId = null</c>,
+/// <see cref="IEventStore.AppendAsync"/> records every event with <c>TenantId = null</c>,
 /// matching the Postgres schema that has no <c>tenant_id</c> column.
 /// </para>
 /// <para>
@@ -38,86 +38,123 @@ internal sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEv
     {
     }
 
-    public Task<IReadOnlyCollection<IEventEnvelope>> StreamAsync(
+    public Task<IReadOnlyCollection<IEventEnvelope>> ReadAsync(
         DcbQuery query,
-        long afterPosition = 0,
-        int? limit = null,
+        long afterPosition,
+        int limit,
         CancellationToken cancellationToken = default)
     {
         lock (_lock)
-            return Task.FromResult(StreamCore(query, tenantId: null, afterPosition, limit));
+            return Task.FromResult(ReadCore(query, tenantId: null, afterPosition, limit));
     }
 
+    public IAsyncEnumerable<IEventEnvelope> StreamAsync(
+        DcbQuery query,
+        long afterPosition = 0,
+        CancellationToken cancellationToken = default)
+        => StreamCore(query, tenantId: null, afterPosition, cancellationToken).ToAsyncEnumerable();
+
     /// <summary>
-    /// Streams events for a specific tenant. Used by <see cref="InMemoryTenantEventStoreDecorator"/>
-    /// in multi-tenant mode; mirrors <c>PostgresTenantEventStoreBackend.StreamForTenant</c>.
+    /// Reads a batch for a specific tenant. Used by <see cref="InMemoryTenantEventStoreDecorator"/>
+    /// in multi-tenant mode; mirrors <c>PostgresTenantEventStoreBackend.ReadForTenant</c>.
     /// </summary>
-    internal Task<IReadOnlyCollection<IEventEnvelope>> StreamForTenant(
+    internal Task<IReadOnlyCollection<IEventEnvelope>> ReadForTenant(
         string tenantId,
         DcbQuery query,
-        long afterPosition = 0,
-        int? limit = null,
+        long afterPosition,
+        int limit,
         CancellationToken cancellationToken = default)
     {
         lock (_lock)
-            return Task.FromResult(StreamCore(query, tenantId, afterPosition, limit));
+            return Task.FromResult(ReadCore(query, tenantId, afterPosition, limit));
     }
 
-    /// <summary>
-    /// Streams all events across all tenants. Used by <see cref="InMemoryTenantEventStoreDecorator"/>
-    /// for the ControlLoop consumer path; mirrors <c>PostgresTenantEventStoreBackend.StreamAllTenants</c>.
-    /// </summary>
-    internal Task<IReadOnlyCollection<IEventEnvelope>> StreamAllTenants(
-        long afterPosition = 0,
-        int? limit = null,
+    /// <summary>Streams one tenant's events; the lazy counterpart of <see cref="ReadForTenant"/>.</summary>
+    internal IAsyncEnumerable<IEventEnvelope> StreamForTenant(
+        string tenantId,
+        DcbQuery query,
+        long afterPosition,
         CancellationToken cancellationToken = default)
-        => StreamAllAsync(afterPosition, limit, cancellationToken);
+        => StreamCore(query, tenantId, afterPosition, cancellationToken).ToAsyncEnumerable();
 
     /// <summary>
-    /// Shared implementation for <see cref="StreamAsync"/> and <see cref="StreamForTenant"/>.
+    /// Reads a batch across all tenants. Used by <see cref="InMemoryTenantEventStoreDecorator"/>
+    /// for the ControlLoop consumer path; mirrors <c>PostgresTenantEventStoreBackend.ReadAllTenants</c>.
+    /// </summary>
+    internal Task<IReadOnlyCollection<IEventEnvelope>> ReadAllTenants(
+        long afterPosition,
+        int limit,
+        CancellationToken cancellationToken = default)
+        => ReadAllAsync(afterPosition, limit, cancellationToken);
+
+    /// <summary>
+    /// Shared implementation for <see cref="ReadAsync"/> and <see cref="ReadForTenant"/>.
     /// Must be called under <see cref="_lock"/>.
     /// When <paramref name="tenantId"/> is non-null the result is filtered to that tenant only.
     /// </summary>
-    private IReadOnlyCollection<IEventEnvelope> StreamCore(DcbQuery query, string? tenantId, long afterPosition, int? limit)
+    private IReadOnlyCollection<IEventEnvelope> ReadCore(DcbQuery query, string? tenantId, long afterPosition, int limit)
     {
-        IEnumerable<EventEnvelope> result;
-
-        if (query.IsEmpty)
-        {
-            result = EventsAfter(afterPosition);
-        }
-        else
-        {
-            var typeMatches = query.Types.Count > 0
-                ? CollectTypeMatches(query, afterPosition)
-                : null;
-
-            var tagMatches = query.Tags.Count > 0
-                ? CollectTagMatches(query, afterPosition)
-                : null;
-
-            HashSet<long> matchingPositions;
-            if (typeMatches is not null && tagMatches is not null)
-            {
-                matchingPositions = query.IntersectsTypesAndTags
-                    ? new HashSet<long>(typeMatches.Where(tagMatches.Contains))
-                    : Union(typeMatches, tagMatches);
-            }
-            else
-            {
-                matchingPositions = typeMatches ?? tagMatches!;
-            }
-
-            result = matchingPositions.Order().Select(EventAt);
-        }
+        IEnumerable<EventEnvelope> result = query.IsEmpty
+            ? EventsAfter(afterPosition)
+            : MatchingPositions(query, afterPosition).Order().Select(EventAt);
 
         // In multi-tenant mode the caller supplies a tenant filter; in single-tenant mode
         // (tenantId == null) all events are returned regardless of their stored TenantId.
         if (tenantId is not null)
             result = result.Where(e => e.TenantId == tenantId);
 
-        var limited = limit.HasValue ? result.Take(limit.Value) : result;
-        return limited.ToList();
+        return result.Take(limit).ToList<IEventEnvelope>();
+    }
+
+    /// <summary>
+    /// Lazy read: the lock is held only while one event is fetched, never across a yield, so a
+    /// slow consumer cannot block appends. Positions are dense and appends only add at the end,
+    /// so a cursor over them stays valid while the log grows; for a non-empty query the matching
+    /// positions (longs, not events) are snapshotted on the first read.
+    /// </summary>
+    private IEnumerable<IEventEnvelope> StreamCore(
+        DcbQuery query, string? tenantId, long afterPosition, CancellationToken cancellationToken)
+    {
+        long[]? matches = null;
+        if (!query.IsEmpty)
+            lock (_lock)
+                matches = MatchingPositions(query, afterPosition).Order().ToArray();
+
+        for (var i = 0; ; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            EventEnvelope next;
+            lock (_lock)
+            {
+                var position = matches is null ? Math.Max(afterPosition, 0) + 1 + i : i < matches.Length ? matches[i] : 0;
+                if (position < 1 || position > _events.Count)
+                    yield break;
+                next = EventAt(position);
+            }
+
+            if (tenantId is null || next.TenantId == tenantId)
+                yield return next;
+        }
+    }
+
+    private HashSet<long> MatchingPositions(DcbQuery query, long afterPosition)
+    {
+        var typeMatches = query.Types.Count > 0
+            ? CollectTypeMatches(query, afterPosition)
+            : null;
+
+        var tagMatches = query.Tags.Count > 0
+            ? CollectTagMatches(query, afterPosition)
+            : null;
+
+        if (typeMatches is not null && tagMatches is not null)
+        {
+            return query.IntersectsTypesAndTags
+                ? new HashSet<long>(typeMatches.Where(tagMatches.Contains))
+                : Union(typeMatches, tagMatches);
+        }
+
+        return typeMatches ?? tagMatches!;
     }
 
     // Positions are dense and start at 1 (appends are all-or-nothing and nothing is ever
@@ -197,34 +234,30 @@ internal sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEv
         return result;
     }
 
-    public Task<IReadOnlyCollection<IEventEnvelope>> StreamAllAsync(
-        long afterPosition = 0,
-        int? limit = null,
+    public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllAsync(
+        long afterPosition,
+        int limit,
         CancellationToken cancellationToken = default)
     {
         lock (_lock)
-        {
-            var result = EventsAfter(afterPosition);
-
-            var limited = limit.HasValue ? result.Take(limit.Value) : result;
-
-            return Task.FromResult<IReadOnlyCollection<IEventEnvelope>>(limited.ToList());
-        }
+            return Task.FromResult<IReadOnlyCollection<IEventEnvelope>>(
+                EventsAfter(afterPosition).Take(limit).ToList<IEventEnvelope>());
     }
 
-    public Task<IReadOnlyCollection<IEventEnvelope>> StreamAllOfTypesAsync(
+    public IAsyncEnumerable<IEventEnvelope> StreamAllAsync(
+        long afterPosition = 0,
+        CancellationToken cancellationToken = default)
+        => StreamAsync(DcbQuery.All, afterPosition, cancellationToken);
+
+    public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllOfTypesAsync(
         IReadOnlySet<string> eventTypes,
         long afterPosition,
-        int? limit,
+        int limit,
         CancellationToken cancellationToken = default)
     {
         lock (_lock)
-        {
-            var result = EventsAfter(afterPosition).Where(e => eventTypes.Contains(e.EventType.Id));
-
             return Task.FromResult<IReadOnlyCollection<IEventEnvelope>>(
-                (limit.HasValue ? result.Take(limit.Value) : result).ToList());
-        }
+                EventsAfter(afterPosition).Where(e => eventTypes.Contains(e.EventType.Id)).Take(limit).ToList<IEventEnvelope>());
     }
 
     public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(

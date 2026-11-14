@@ -127,7 +127,7 @@ the old interface. There is no way to walk that back short of a major version.
 So the rule is: **after 1.0, new members on these interfaces ship with a default implementation.**
 
 `ExtensionPointContractTests` in `tests/Alberto.Tests` enforces it by pinning today's abstract
-member set on `IEventStoreBackend`, `IDeadLetterStore`, `IClaimableDeadLetterStore` and
+member set on `IEventStore`, `IEventStoreBackend`, `IDeadLetterStore`, `IClaimableDeadLetterStore` and
 `IProjectionRebuildStore`. A member added with a default body does not appear in the reflected
 abstract set and the test stays green.
 

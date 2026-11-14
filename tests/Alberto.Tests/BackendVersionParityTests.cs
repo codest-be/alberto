@@ -101,7 +101,7 @@ public sealed class InMemoryVersionParityTests
 
         await backend.AppendAsync([evt], cancellationToken: TestContext.Current.CancellationToken);
 
-        var streamed = await backend.StreamAllAsync(cancellationToken: TestContext.Current.CancellationToken);
+        var streamed = await backend.StreamAllAsync(cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
         streamed.Single().EventType.Version.Should().Be(2,
             "the stream path must return the same version as the append result");
@@ -149,7 +149,7 @@ public sealed class InMemoryVersionParityTests
             [VersionParityHelpers.MakeLegacyEvent()],
             cancellationToken: TestContext.Current.CancellationToken);
 
-        var streamed = await backend.StreamAllAsync(cancellationToken: TestContext.Current.CancellationToken);
+        var streamed = await backend.StreamAllAsync(cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
         streamed.Single().EventType.Version.Should().Be(1);
     }
@@ -197,7 +197,7 @@ public sealed class PostgresVersionParityTests(SingleTenantPostgresFixture fixtu
 
         await backend.AppendAsync([evt], cancellationToken: TestContext.Current.CancellationToken);
 
-        var streamed = await backend.StreamAllAsync(cancellationToken: TestContext.Current.CancellationToken);
+        var streamed = await backend.StreamAllAsync(cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
         // Use the last appended event (other tests may have populated the store).
         streamed.Should().Contain(e =>

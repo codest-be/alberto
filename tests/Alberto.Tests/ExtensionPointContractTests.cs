@@ -50,12 +50,19 @@ public sealed class ExtensionPointContractTests
     private static readonly IReadOnlyDictionary<Type, string[]> FrozenAbstractMembers =
         new Dictionary<Type, string[]>
         {
-            [typeof(IEventStoreBackend)] =
+            [typeof(IEventStore)] =
             [
+                "IAsyncEnumerable<IEventEnvelope> StreamAllAsync(Int64, CancellationToken)",
+                "IAsyncEnumerable<IEventEnvelope> StreamAsync(DcbQuery, Int64, CancellationToken)",
                 "Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(IEnumerable<IEventToPersist>, DcbQuery, Nullable<Int64>, CancellationToken)",
                 "Task<Int64> GetLastPositionAsync(CancellationToken)",
-                "Task<IReadOnlyCollection<IEventEnvelope>> StreamAllAsync(Int64, Nullable<Int32>, CancellationToken)",
-                "Task<IReadOnlyCollection<IEventEnvelope>> StreamAsync(DcbQuery, Int64, Nullable<Int32>, CancellationToken)",
+                "Task<IReadOnlyCollection<IEventEnvelope>> ReadAllAsync(Int64, Int32, CancellationToken)",
+                "Task<IReadOnlyCollection<IEventEnvelope>> ReadAsync(DcbQuery, Int64, Int32, CancellationToken)",
+            ],
+
+            [typeof(IEventStoreBackend)] =
+            [
+                "Task<IReadOnlyCollection<IEventEnvelope>> ReadAllOfTypesAsync(IReadOnlySet<String>, Int64, Int32, CancellationToken)",
             ],
 
             [typeof(IDeadLetterStore)] =
@@ -133,7 +140,7 @@ public sealed class ExtensionPointContractTests
             "every pinned extension point must still be a public interface");
 
         FrozenAbstractMembers.Should().HaveCount(
-            4, "removing an interface from the baseline removes it from the freeze without a diff that says so");
+            5, "removing an interface from the baseline removes it from the freeze without a diff that says so");
     }
 
     /// <summary>Theory data: one case per pinned interface.</summary>

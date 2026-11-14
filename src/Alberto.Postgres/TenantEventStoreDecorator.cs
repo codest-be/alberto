@@ -20,47 +20,65 @@ internal sealed class TenantEventStoreDecorator : IEventStoreBackend, IEventStor
         _tenantAccessor = tenantAccessor ?? throw new ArgumentNullException(nameof(tenantAccessor));
     }
 
-    public Task<IReadOnlyCollection<IEventEnvelope>> StreamAsync(
+    public Task<IReadOnlyCollection<IEventEnvelope>> ReadAsync(
         DcbQuery query,
-        long afterPosition = 0,
-        int? limit = null,
+        long afterPosition,
+        int limit,
         CancellationToken cancellationToken = default)
     {
         var tenantId = _tenantAccessor.TenantId;
-        return _inner.StreamForTenant(tenantId, query, afterPosition, limit, cancellationToken);
+        return _inner.ReadForTenant(tenantId, query, afterPosition, limit, cancellationToken);
     }
+
+    public IAsyncEnumerable<IEventEnvelope> StreamAsync(
+        DcbQuery query,
+        long afterPosition = 0,
+        CancellationToken cancellationToken = default)
+        => _inner.StreamForTenant(_tenantAccessor.TenantId, query, afterPosition, cancellationToken);
 
     // NOTE: P1.3 interim guard — full interface split (tenant-scoped store vs consumer feed)
     // is planned for the breaking-changes phase. Until then, guard the request-scoped path:
-    // if a caller has an active tenant (i.e. this is a request-scoped context), StreamAllAsync would
+    // if a caller has an active tenant (i.e. this is a request-scoped context), ReadAllAsync would
     // silently return every tenant's events, bypassing isolation — throw instead.
     // The consumer-feed backend uses ConsumerTenantAccessor (HasTenant=false) and is allowed
-    // to call StreamAllAsync; it legitimately streams across all tenants for background loops.
-    public Task<IReadOnlyCollection<IEventEnvelope>> StreamAllAsync(
-        long afterPosition = 0,
-        int? limit = null,
+    // to read all tenants; it legitimately does so for background loops.
+    public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllAsync(
+        long afterPosition,
+        int limit,
         CancellationToken cancellationToken = default)
+    {
+        GuardAllTenants(nameof(ReadAllAsync));
+        return _inner.ReadAllTenants(afterPosition, limit, cancellationToken);
+    }
+
+    public IAsyncEnumerable<IEventEnvelope> StreamAllAsync(
+        long afterPosition = 0,
+        CancellationToken cancellationToken = default)
+    {
+        GuardAllTenants(nameof(StreamAllAsync));
+        return _inner.StreamAllTenants(afterPosition, cancellationToken);
+    }
+
+    // Same guard as ReadAllAsync, which it falls back to when a tenant is active.
+    public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllOfTypesAsync(
+        IReadOnlySet<string> eventTypes,
+        long afterPosition,
+        int limit,
+        CancellationToken cancellationToken = default)
+        => _tenantAccessor.HasTenant
+            ? ReadAllAsync(afterPosition, limit, cancellationToken)
+            : _inner.ReadAllTenantsOfTypes(eventTypes, afterPosition, limit, cancellationToken);
+
+    private void GuardAllTenants(string method)
     {
         if (_tenantAccessor.HasTenant)
             throw new InvalidOperationException(
-                "StreamAllAsync() is not permitted on the request-scoped tenant event store: it would " +
+                $"{method}() is not permitted on the request-scoped tenant event store: it would " +
                 "return events for all tenants, bypassing tenant isolation. " +
                 "Use the consumer-feed backend (registered under the ':consumer' key) for " +
-                "cross-tenant streaming from ControlLoops, or await the interface split that " +
+                "cross-tenant reading from ControlLoops, or await the interface split that " +
                 "will formally separate the two concerns.");
-
-        return _inner.StreamAllTenants(afterPosition, limit, cancellationToken);
     }
-
-    // Same guard as StreamAllAsync, which it falls back to when a tenant is active.
-    public Task<IReadOnlyCollection<IEventEnvelope>> StreamAllOfTypesAsync(
-        IReadOnlySet<string> eventTypes,
-        long afterPosition,
-        int? limit,
-        CancellationToken cancellationToken = default)
-        => _tenantAccessor.HasTenant
-            ? StreamAllAsync(afterPosition, limit, cancellationToken)
-            : _inner.StreamAllTenantsOfTypes(eventTypes, afterPosition, limit, cancellationToken);
 
     public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
         IEnumerable<IEventToPersist> events,

@@ -30,7 +30,7 @@ public sealed class PostgresEventStoreBackendTests(SingleTenantPostgresFixture f
             CreateEvent(wanted, $"tag:5{TestId}")
         ], cancellationToken: ct);
 
-        var result = await backend.StreamAllOfTypesAsync(new HashSet<string> { wanted }, start, limit: 2, ct);
+        var result = await backend.ReadAllOfTypesAsync(new HashSet<string> { wanted }, start, limit: 2, ct);
 
         Assert.Equal(2, result.Count);
         Assert.All(result, e => Assert.Equal(wanted, e.EventType.Id));

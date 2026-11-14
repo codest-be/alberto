@@ -65,7 +65,7 @@ public sealed class EndToEndTraceTests
         }
 
         // Consumers: a reactor (Parent) that feeds the outbox handler, and a projection (Link).
-        var envelope = (await backend.StreamAllAsync()).Single();
+        var envelope = (await backend.StreamAllAsync().ToListAsync()).Single();
         var registry = new MessageMappingRegistry(null);
         registry.Map<Placed>((_, _, _) => ValueTask.FromResult<ExternalMessage?>(
             new ExternalMessage("order.placed", id.ToString(), "{}", new Dictionary<string, string>())));

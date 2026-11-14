@@ -112,7 +112,7 @@ public class QueryBenchmarks : QueryBenchmarkBase
     /// <summary>Full catch-up from the beginning of the log.</summary>
     [Benchmark(Baseline = true), BenchmarkCategory(Categories.Query, Categories.Smoke)]
     public Task<IReadOnlyCollection<IEventEnvelope>> StreamAllFromZero()
-        => Backend.StreamAllAsync(afterPosition: 0, limit: PageSize);
+        => Backend.ReadAllAsync(afterPosition: 0, limit: PageSize);
 
     /// <summary>
     /// The polling steady state — reading the page just behind the head. Alberto's most
@@ -121,19 +121,19 @@ public class QueryBenchmarks : QueryBenchmarkBase
     /// </summary>
     [Benchmark, BenchmarkCategory(Categories.Query)]
     public Task<IReadOnlyCollection<IEventEnvelope>> TailRead()
-        => Backend.StreamAllAsync(afterPosition: Math.Max(0, Head - PageSize), limit: PageSize);
+        => Backend.ReadAllAsync(afterPosition: Math.Max(0, Head - PageSize), limit: PageSize);
 
     [Benchmark, BenchmarkCategory(Categories.Query)]
     public Task<IReadOnlyCollection<IEventEnvelope>> StreamByType()
-        => Backend.StreamAsync(_byType, afterPosition: 0, limit: PageSize);
+        => Backend.ReadAsync(_byType, afterPosition: 0, limit: PageSize);
 
     [Benchmark, BenchmarkCategory(Categories.Query)]
     public Task<IReadOnlyCollection<IEventEnvelope>> StreamByTag()
-        => Backend.StreamAsync(_byTag, afterPosition: 0, limit: PageSize);
+        => Backend.ReadAsync(_byTag, afterPosition: 0, limit: PageSize);
 
     [Benchmark, BenchmarkCategory(Categories.Query)]
     public Task<IReadOnlyCollection<IEventEnvelope>> StreamByTypeAndTag()
-        => Backend.StreamAsync(_byTypeAndTag, afterPosition: 0, limit: PageSize);
+        => Backend.ReadAsync(_byTypeAndTag, afterPosition: 0, limit: PageSize);
 
     /// <summary>
     /// One tag intersected with three of the twenty seeded types — the shape a real boundary
@@ -145,7 +145,7 @@ public class QueryBenchmarks : QueryBenchmarkBase
     /// </summary>
     [Benchmark, BenchmarkCategory(Categories.Query)]
     public Task<IReadOnlyCollection<IEventEnvelope>> StreamByTypesAndTag()
-        => Backend.StreamAsync(_byTypesAndTag, afterPosition: 0, limit: PageSize);
+        => Backend.ReadAsync(_byTypesAndTag, afterPosition: 0, limit: PageSize);
 
     /// <summary>
     /// A small selective read before a decision — the latency a user actually feels.
@@ -153,7 +153,7 @@ public class QueryBenchmarks : QueryBenchmarkBase
     /// </summary>
     [Benchmark, BenchmarkCategory(Categories.Query)]
     public Task<IReadOnlyCollection<IEventEnvelope>> BoundaryRead()
-        => Backend.StreamAsync(_boundary, afterPosition: 0, limit: 50);
+        => Backend.ReadAsync(_boundary, afterPosition: 0, limit: 50);
 
     [Benchmark, BenchmarkCategory(Categories.Query)]
     public Task<long> GetLastPosition()
@@ -191,5 +191,5 @@ public class MultiTagQueryBenchmarks : QueryBenchmarkBase
 
     [Benchmark, BenchmarkCategory(Categories.Query)]
     public Task<IReadOnlyCollection<IEventEnvelope>> StreamByMultiTag()
-        => Backend.StreamAsync(_byMultiTag, afterPosition: 0, limit: PageSize);
+        => Backend.ReadAsync(_byMultiTag, afterPosition: 0, limit: PageSize);
 }

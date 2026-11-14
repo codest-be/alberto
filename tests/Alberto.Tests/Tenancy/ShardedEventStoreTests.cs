@@ -71,14 +71,14 @@ public sealed class ShardedEventStoreTests(ShardedPostgresFixture fixture)
         await using (var scope = ScopeFor(ShardedPostgresFixture.TenantOnDb2))
         {
             // Same tag, other database: not merely filtered out by tenant_id — it is not there.
-            (await StoreOf(scope).StreamAsync(query, cancellationToken: ct)).Should().BeEmpty();
+            (await StoreOf(scope).StreamAsync(query, cancellationToken: ct).ToListAsync()).Should().BeEmpty();
 
             await StoreOf(scope).AppendAsync([Event(id)], cancellationToken: ct);
-            (await StoreOf(scope).StreamAsync(query, cancellationToken: ct)).Should().ContainSingle();
+            (await StoreOf(scope).StreamAsync(query, cancellationToken: ct).ToListAsync()).Should().ContainSingle();
         }
 
         await using (var scope = ScopeFor(ShardedPostgresFixture.TenantOnDb1))
-            (await StoreOf(scope).StreamAsync(query, cancellationToken: ct)).Should().ContainSingle();
+            (await StoreOf(scope).StreamAsync(query, cancellationToken: ct).ToListAsync()).Should().ContainSingle();
     }
 
     [Fact]
@@ -94,7 +94,7 @@ public sealed class ShardedEventStoreTests(ShardedPostgresFixture fixture)
             await StoreOf(scope).AppendAsync([Event(id)], cancellationToken: ct);
 
         await using (var scope = ScopeFor(ShardedPostgresFixture.TenantAlsoOnDb1))
-            (await StoreOf(scope).StreamAsync(query, cancellationToken: ct)).Should().BeEmpty();
+            (await StoreOf(scope).StreamAsync(query, cancellationToken: ct).ToListAsync()).Should().BeEmpty();
     }
 
     [Fact]

@@ -667,7 +667,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
         activity?.SetTag("alberto.poll.after_position", afterPosition);
         try
         {
-            var events = await _backend.StreamAllOfTypesAsync(
+            var events = await _backend.ReadAllOfTypesAsync(
                 _processor.HandledEventTypes, afterPosition, _batchSize, ct);
             activity?.SetTag("alberto.poll.events", events.Count);
             return events;

@@ -111,7 +111,7 @@ var state = await store.Fold(query, State.Initial, Apply, ct);
 ```
 
 If you genuinely need the position for a reason outside the command pipeline (for example
-to pass it to a downstream service as a fence), read it from `IEventStoreBackend.GetLastPositionAsync`
+to pass it to a downstream service as a fence), read it from `IEventStore.GetLastPositionAsync`
 rather than from a fold.
 
 ---
@@ -1273,9 +1273,13 @@ against exactly that.
 {
     var boundary = BuildBoundary(cmd);
     // Use IEventStore.StreamAsync directly: fold state and track the max position in one pass.
-    var envelopes = await eventStore.StreamAsync(boundary, cancellationToken: ct);
-    var state = envelopes.Aggregate(State.Initial, (s, e) => Apply(s, serializer.Deserialize(e)));
-    var position = envelopes.Count > 0 ? envelopes.Max(e => e.GlobalPosition) : 0L;
+    var state = State.Initial;
+    var position = 0L;
+    await foreach (var e in eventStore.StreamAsync(boundary, cancellationToken: ct))
+    {
+        state = Apply(state, serializer.Deserialize(e));
+        position = Math.Max(position, e.GlobalPosition);
+    }
     return (state, boundary, position);
 })
 .Decide((cmd, state) => Decide(state, …))

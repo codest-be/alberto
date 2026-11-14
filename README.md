@@ -291,7 +291,7 @@ public sealed class MyStoreTests : EventStoreBackendSpecification
 }
 ```
 
-That inherits 38 facts for an event store backend, 26 for a state store, 15 for an outbox, 9 each
+That inherits 43 facts for an event store backend, 26 for a state store, 15 for an outbox, 9 each
 for a checkpoint or dead-letter store, and 8 more for a claimable dead-letter store. It asserts with plain xUnit v3
 `Assert.*`, and its xUnit references are `PrivateAssets="all"`, so nothing test-only reaches your
 application's dependency graph.

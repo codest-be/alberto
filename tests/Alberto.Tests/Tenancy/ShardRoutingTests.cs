@@ -24,8 +24,8 @@ public class ShardRoutingTests
         var (store, shards) = Store(map: new FakeTenantShardMap().Assign("acme", "db2"), tenantId: "acme");
 
         await store.AppendAsync(OneEvent);
-        await store.StreamAsync(DcbQuery.Empty);
-        await store.StreamAllAsync();
+        await store.StreamAsync(DcbQuery.Empty).ToListAsync();
+        await store.StreamAllAsync().ToListAsync();
         await store.GetLastPositionAsync();
 
         shards["orders#db2"].Calls.Should().Equal("Append", "Stream", "StreamAll", "LastPosition");
@@ -114,27 +114,9 @@ public class ShardRoutingTests
         // The type system provides no guard: the same long value is accepted as a cursor into
         // a different shard's store without error, even though position 42 on globex's shard
         // refers to a completely different event than position 42 on acme's shard.
-        await globexStore.StreamAsync(DcbQuery.Empty, afterPosition: positionFromAcmeShard);
+        await globexStore.StreamAsync(DcbQuery.Empty, afterPosition: positionFromAcmeShard).ToListAsync();
 
         shards["orders#db2"].LastStreamAfterPosition.Should().Be(42L);
-    }
-
-    [Fact]
-    public async Task The_backend_router_routes_the_same_way_as_the_store()
-    {
-        var map = new FakeTenantShardMap().Assign("acme", "db2");
-        var shards = Shards();
-        var backend = new ShardRoutingEventStoreBackend(
-            "orders",
-            new StubTenantAccessor("acme"),
-            new TenantShardResolver("orders", map, TwoShards, null),
-            key => shards[key]);
-
-        await backend.AppendAsync(OneEvent);
-        await backend.StreamAllAsync();
-
-        shards["orders#db2"].Calls.Should().Equal("Append", "StreamAll");
-        shards["orders#db1"].Calls.Should().BeEmpty();
     }
 
     private static Dictionary<string, RecordingEventStore> Shards() => new(StringComparer.Ordinal)
@@ -181,22 +163,38 @@ public class ShardRoutingTests
             return Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
         }
 
-        public Task<IReadOnlyCollection<IEventEnvelope>> StreamAsync(
-            DcbQuery query,
-            long afterPosition = 0,
-            int? limit = null,
-            CancellationToken cancellationToken = default)
-        {
-            Calls.Add("Stream");
+        public Task<IReadOnlyCollection<IEventEnvelope>> ReadAsync(
+            DcbQuery query, long afterPosition, int limit, CancellationToken cancellationToken = default)
+            {
+            Calls.Add("Read");
             return Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
         }
 
-        public Task<IReadOnlyCollection<IEventEnvelope>> StreamAllAsync(
-            long afterPosition = 0,
-            int? limit = null,
-            CancellationToken cancellationToken = default)
+        public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllAsync(
+            long afterPosition, int limit, CancellationToken cancellationToken = default)
+            {
+            Calls.Add("ReadAll");
+            return Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
+        }
+
+        public IAsyncEnumerable<IEventEnvelope> StreamAsync(
+            DcbQuery query, long afterPosition = 0, CancellationToken cancellationToken = default)
+            {
+            Calls.Add("Stream");
+            return AsyncEnumerable.Empty<IEventEnvelope>();
+        }
+
+        public IAsyncEnumerable<IEventEnvelope> StreamAllAsync(
+            long afterPosition = 0, CancellationToken cancellationToken = default)
         {
             Calls.Add("StreamAll");
+            return AsyncEnumerable.Empty<IEventEnvelope>();
+        }
+
+        public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllOfTypesAsync(
+            IReadOnlySet<string> eventTypes, long afterPosition, int limit, CancellationToken cancellationToken = default)
+            {
+            Calls.Add("ReadAllOfTypes");
             return Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
         }
 
@@ -218,21 +216,24 @@ public class ShardRoutingTests
             CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
 
-        public Task<IReadOnlyCollection<IEventEnvelope>> StreamAsync(
-            DcbQuery query,
-            long afterPosition = 0,
-            int? limit = null,
-            CancellationToken cancellationToken = default)
+        public Task<IReadOnlyCollection<IEventEnvelope>> ReadAsync(
+            DcbQuery query, long afterPosition, int limit, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
+
+        public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllAsync(
+            long afterPosition, int limit, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
+
+        public IAsyncEnumerable<IEventEnvelope> StreamAsync(
+            DcbQuery query, long afterPosition = 0, CancellationToken cancellationToken = default)
         {
             LastStreamAfterPosition = afterPosition;
-            return Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
+            return AsyncEnumerable.Empty<IEventEnvelope>();
         }
 
-        public Task<IReadOnlyCollection<IEventEnvelope>> StreamAllAsync(
-            long afterPosition = 0,
-            int? limit = null,
-            CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
+        public IAsyncEnumerable<IEventEnvelope> StreamAllAsync(
+            long afterPosition = 0, CancellationToken cancellationToken = default)
+            => AsyncEnumerable.Empty<IEventEnvelope>();
 
         public Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(lastPosition);

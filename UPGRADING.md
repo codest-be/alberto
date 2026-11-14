@@ -5,6 +5,29 @@ section of [CHANGELOG.md](CHANGELOG.md).
 
 This file covers 0.x release-to-release steps; [docs/migrating-to-1.0.md](docs/migrating-to-1.0.md) covers the older `0.1.0-beta` to 1.0 breaking changes.
 
+## To the next release (pre-1.0, breaking)
+
+### Event store reads: batch `Read*`, lazy `Stream*`
+
+One interface answers "what do I depend on": `IEventStore`. `IEventStoreBackend` now extends it and
+adds only `ReadAllOfTypesAsync`, so `EventStore` and the tenant and shard routers are written once.
+
+| Was | Is |
+|---|---|
+| `StreamAsync(query, afterPosition, limit?, ct)` returning a collection | `ReadAsync(query, afterPosition, limit, ct)` |
+| `StreamAllAsync(afterPosition, limit?, ct)` returning a collection | `ReadAllAsync(afterPosition, limit, ct)` |
+| `IEventStoreBackend.StreamAllOfTypesAsync(...)`, defaulted | `ReadAllOfTypesAsync(eventTypes, afterPosition, limit, ct)`, abstract, filtering mandatory |
+| (none) | `StreamAsync(query, afterPosition = 0, ct)` and `StreamAllAsync(afterPosition = 0, ct)` returning `IAsyncEnumerable<IEventEnvelope>` |
+
+`limit` is required: no caller in `src` read unbounded. Pass `int.MaxValue` for the old `null`.
+`await store.StreamAsync(q)` becomes `await store.StreamAsync(q).ToListAsync()`, or better an
+`await foreach`.
+
+A custom `IEventStoreBackend` must now implement `ReadAsync`, `ReadAllAsync`, `StreamAsync`,
+`StreamAllAsync` and `ReadAllOfTypesAsync` (the old default silently returned unfiltered events).
+`ShardRoutingEventStoreBackend` is gone; sharding routes at `IEventStore` only. A streamed read is
+spanned (`alberto.read`) for as long as it is enumerated.
+
 ## To 0.8.0
 
 ### Run the migration

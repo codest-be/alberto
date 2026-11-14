@@ -163,7 +163,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
         await using (var scopeB = CreateScopeForTenant(TenantB))
         {
             var storeB = scopeB.ServiceProvider.GetRequiredKeyedService<IEventStore>(ModuleKey);
-            var events = await storeB.StreamAsync(DcbQuery.ByTags(tag.Value), cancellationToken: ct);
+            var events = await storeB.StreamAsync(DcbQuery.ByTags(tag.Value), cancellationToken: ct).ToListAsync();
 
             Assert.Empty(events);
         }
@@ -204,7 +204,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
         await using (var scopeA2 = CreateScopeForTenant(TenantA))
         {
             var storeA2 = scopeA2.ServiceProvider.GetRequiredKeyedService<IEventStore>(ModuleKey);
-            var events = await storeA2.StreamAsync(DcbQuery.ByTags(tag.Value), cancellationToken: ct);
+            var events = await storeA2.StreamAsync(DcbQuery.ByTags(tag.Value), cancellationToken: ct).ToListAsync();
 
             var ev = Assert.Single(events);
             Assert.Equal(TenantA, ev.TenantId);
@@ -227,7 +227,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
         var storeA = scopeA.ServiceProvider.GetRequiredKeyedService<IEventStore>(ModuleKey);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => storeA.StreamAllAsync(cancellationToken: ct));
+            async () => await storeA.StreamAllAsync(cancellationToken: ct).ToListAsync());
     }
 
     // ─── Regression: multi-tenant types-and-tags read SQL ───────────────────
@@ -290,7 +290,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
                 .WithTypes("ti-order-created")
                 .WithTags(orderTag.Value, customerTag.Value);
 
-            var events = await storeA2.StreamAsync(query, cancellationToken: ct);
+            var events = await storeA2.StreamAsync(query, cancellationToken: ct).ToListAsync();
 
             var ev = Assert.Single(events);
             Assert.Equal(TenantA, ev.TenantId);
@@ -355,7 +355,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
                 .WithTypes("ti-order-created")
                 .WithTags(orderTag.Value);
 
-            var events = await storeA2.StreamAsync(query, cancellationToken: ct);
+            var events = await storeA2.StreamAsync(query, cancellationToken: ct).ToListAsync();
 
             var ev = Assert.Single(events);
             Assert.Equal(TenantA, ev.TenantId);
@@ -367,7 +367,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
                 .WithTypes("ti-order-created", "ti-order-shipped")
                 .WithTags(orderTag.Value);
 
-            var multiTypeEvents = await storeA2.StreamAsync(multiTypeQuery, cancellationToken: ct);
+            var multiTypeEvents = await storeA2.StreamAsync(multiTypeQuery, cancellationToken: ct).ToListAsync();
 
             Assert.Equal(2, multiTypeEvents.Count);
             Assert.All(multiTypeEvents, e => Assert.Equal(TenantA, e.TenantId));
@@ -425,7 +425,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
 
             // One named type: a single probe, the shape a leaked tenant predicate would widen
             // from two rows to three.
-            var single = await storeA2.StreamAsync(DcbQuery.ByTypes("ti-probe-alpha"), cancellationToken: ct);
+            var single = await storeA2.StreamAsync(DcbQuery.ByTypes("ti-probe-alpha"), cancellationToken: ct).ToListAsync();
 
             Assert.Equal(2, single.Count);
             Assert.All(single, e => Assert.Equal(TenantA, e.TenantId));
@@ -433,7 +433,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
 
             // Several named types: one probe each, every one of which must be scoped.
             var several = await storeA2.StreamAsync(
-                DcbQuery.ByTypes("ti-probe-alpha", "ti-probe-beta"), cancellationToken: ct);
+                DcbQuery.ByTypes("ti-probe-alpha", "ti-probe-beta"), cancellationToken: ct).ToListAsync();
 
             Assert.Equal(3, several.Count);
             Assert.All(several, e => Assert.Equal(TenantA, e.TenantId));
@@ -444,7 +444,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
             // The same type twice, which is what DcbQuery produces from ByTypes(x).WithTypes(x):
             // deduplicated to one probe, so still tenant A's two events and not four rows.
             var repeated = await storeA2.StreamAsync(
-                DcbQuery.ByTypes("ti-probe-alpha").WithTypes("ti-probe-alpha"), cancellationToken: ct);
+                DcbQuery.ByTypes("ti-probe-alpha").WithTypes("ti-probe-alpha"), cancellationToken: ct).ToListAsync();
 
             Assert.Equal(single.Select(e => e.GlobalPosition), repeated.Select(e => e.GlobalPosition));
         }
@@ -493,30 +493,30 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
         var storeA = scopeA.ServiceProvider.GetRequiredKeyedService<IEventStore>(ModuleKey);
 
         // alberto_read_by_all_tags: driver probe, driving scan, one EXISTS probe.
-        var allTags = await storeA.StreamAsync(DcbQuery.ByAllTags(order, region), cancellationToken: ct);
+        var allTags = await storeA.StreamAsync(DcbQuery.ByAllTags(order, region), cancellationToken: ct).ToListAsync();
         Assert.Equal(2, allTags.Count);
         Assert.All(allTags, e => Assert.Equal(TenantA, e.TenantId));
 
         // Reversing the tags changes which one drives — and must change nothing else.
-        var reversed = await storeA.StreamAsync(DcbQuery.ByAllTags(region, order), cancellationToken: ct);
+        var reversed = await storeA.StreamAsync(DcbQuery.ByAllTags(region, order), cancellationToken: ct).ToListAsync();
         Assert.Equal(allTags.Select(e => e.GlobalPosition), reversed.Select(e => e.GlobalPosition));
 
         // alberto_read_by_types_and_all_tags, one named type: the scalar type-position probe.
         var oneType = await storeA.StreamAsync(
-            DcbQuery.ByAllTags(order, region).WithTypes("ti-order-created"), cancellationToken: ct);
+            DcbQuery.ByAllTags(order, region).WithTypes("ti-order-created"), cancellationToken: ct).ToListAsync();
         Assert.Equal(TenantA, Assert.Single(oneType).TenantId);
 
         // The same function, several named types: here the type is tested on the events row,
         // which carries no tenant predicate of its own and relies on the driving scan's.
         var severalTypes = await storeA.StreamAsync(
             DcbQuery.ByAllTags(order, region).WithTypes("ti-order-created", "ti-order-shipped"),
-            cancellationToken: ct);
+            cancellationToken: ct).ToListAsync();
         Assert.Equal(2, severalTypes.Count);
         Assert.All(severalTypes, e => Assert.Equal(TenantA, e.TenantId));
 
         // alberto_read_by_types_or_tags: a bounded probe per type and per tag, unioned.
         var orTags = await storeA.StreamAsync(
-            DcbQuery.ByTags(order).WithTypes("ti-union-alpha").AsUnion(), cancellationToken: ct);
+            DcbQuery.ByTags(order).WithTypes("ti-union-alpha").AsUnion(), cancellationToken: ct).ToListAsync();
         Assert.Equal(4, orTags.Count);
         Assert.All(orTags, e => Assert.Equal(TenantA, e.TenantId));
         Assert.Equal(
@@ -525,7 +525,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
 
         // alberto_read_by_types_or_all_tags: the type probes unioned with the all-tags scan.
         var orAllTags = await storeA.StreamAsync(
-            DcbQuery.ByAllTags(order, region).WithTypes("ti-union-alpha").AsUnion(), cancellationToken: ct);
+            DcbQuery.ByAllTags(order, region).WithTypes("ti-union-alpha").AsUnion(), cancellationToken: ct).ToListAsync();
         Assert.Equal(3, orAllTags.Count);
         Assert.All(orAllTags, e => Assert.Equal(TenantA, e.TenantId));
     }

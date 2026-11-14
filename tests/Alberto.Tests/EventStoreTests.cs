@@ -68,7 +68,7 @@ public sealed class EventStoreTests
 
         Assert.Empty(handler.Received);
         var persisted = await eventStore.StreamAllAsync(
-            cancellationToken: TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
         Assert.Single(persisted);
     }
 
@@ -270,7 +270,7 @@ public sealed class EventStoreTests
 
         await eventStore.AppendAsync([CreateEvent(new OrderCreated(orderId, 100m))], cancellationToken: TestContext.Current.CancellationToken);
 
-        var events = await eventStore.StreamAsync(DcbQuery.Empty, cancellationToken: TestContext.Current.CancellationToken);
+        var events = await eventStore.StreamAsync(DcbQuery.Empty, cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
         Assert.Single(events);
         Assert.Equal("order-created", events.First().EventType.Id);
@@ -284,7 +284,7 @@ public sealed class EventStoreTests
         await eventStore.AppendAsync([CreateEvent(new OrderCreated(Guid.NewGuid(), 100m))], cancellationToken: TestContext.Current.CancellationToken);
         await eventStore.AppendAsync([CreateEvent(new OrderCreated(Guid.NewGuid(), 200m))], cancellationToken: TestContext.Current.CancellationToken);
 
-        var events = await eventStore.StreamAllAsync(cancellationToken: TestContext.Current.CancellationToken);
+        var events = await eventStore.StreamAllAsync(cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
         Assert.Equal(2, events.Count);
     }

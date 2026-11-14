@@ -232,15 +232,23 @@ store.
 
 | Interface | For | Gives you |
 |---|---|---|
-| `IEventStore` | Application code | Appends with boundary conditions, tenancy applied |
-| `IEventStoreBackend` | Infrastructure | The raw log. `StreamAsync`, `StreamAllAsync`, `GetLastPositionAsync` |
+| `IEventStore` | Application code, and what a backend author implements | Appends with boundary conditions, `ReadAsync`/`ReadAllAsync` (batches), `StreamAsync`/`StreamAllAsync` (lazy), `GetLastPositionAsync` |
+| `IEventStoreBackend` | Backend authors | `IEventStore` plus `ReadAllOfTypesAsync`, the filtered feed the control loop reads |
+
+Depend on `IEventStore`. Implement `IEventStoreBackend`; `EventStore` wraps it and adds argument
+validation, inline projections and post-append handlers.
 
 ```csharp
 Task<...> AppendAsync(IEnumerable<IEventToPersist> events, DcbQuery? condition = null,
                       long? expectedPosition = null, CancellationToken ct = default);
-Task<...> StreamAsync(DcbQuery query, long afterPosition = 0, int? limit = null,
-                      CancellationToken ct = default);
+IAsyncEnumerable<IEventEnvelope> StreamAsync(DcbQuery query, long afterPosition = 0,
+                                             CancellationToken ct = default);
+Task<IReadOnlyCollection<IEventEnvelope>> ReadAsync(DcbQuery query, long afterPosition, int limit,
+                                                    CancellationToken ct = default);
 ```
+
+`Stream*` never materialises the result: Postgres yields rows from the data reader and the
+in-memory backend yields lazily. `Read*` returns one bounded batch, so `limit` is required.
 
 Read models and queries should go through a projection, not `StreamAsync`: folding a large
 boundary on every request is exactly the cost projections exist to avoid. `StreamAsync` on the
