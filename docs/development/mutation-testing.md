@@ -67,7 +67,6 @@ scope of everything below.
 | `Alberto.Postgres` | **no** | Behaviour lives behind Testcontainers. |
 | `Alberto.Messaging.Postgres` | **no** | Same. |
 | `Alberto.EntityFramework` | **no** | Same. |
-| `Alberto.Admin*` | no | Parked, `IsPackable=false`. |
 | `Alberto.Commands.Analyzers` | no | Roslyn analyzer; tested by compiling snippets. |
 | `Alberto.Testing.Xunit` | no | Conformance specs — it *is* test code. |
 

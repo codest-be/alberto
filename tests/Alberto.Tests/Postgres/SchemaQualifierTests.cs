@@ -56,7 +56,7 @@ public sealed class SchemaQualifierTests
         using var dataSource = NpgsqlDataSource.Create(
             "Host=127.0.0.1;Port=1;Database=unused;Username=unused;Password=unused");
 
-        var act = () => new PostgresAdminDataAccess(dataSource, schema);
+        var act = () => new PostgresCheckpointStore(dataSource, schema);
 
         act.Should().Throw<ArgumentException>()
             .WithParameterName("schema");

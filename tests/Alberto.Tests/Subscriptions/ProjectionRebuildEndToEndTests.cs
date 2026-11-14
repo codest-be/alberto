@@ -538,12 +538,14 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
     }
 
     /// <summary>
-    /// Starts a rebuild the way the CLI does: capture the head as the target, then hand the
+    /// Starts a rebuild the way an operator does: capture the head as the target, then hand the
     /// state machine the transition and let the coordinator notice.
     /// </summary>
     private async Task<ProjectionRebuildState> StartRebuildAsync(CancellationToken ct)
     {
-        var head = await new PostgresAdminDataAccess(fixture.DataSource).GetGlobalPositionAsync(ct) ?? 0;
+        await using var cmd = fixture.DataSource.CreateCommand(
+            "SELECT COALESCE(MAX(global_position), 0) FROM alberto_events");
+        var head = Convert.ToInt64(await cmd.ExecuteScalarAsync(ct));
         return await RebuildStore.StartAsync(
             ProcessorId, ProjectionType, head, ct);
     }

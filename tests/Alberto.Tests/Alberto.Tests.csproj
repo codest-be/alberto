@@ -29,19 +29,12 @@
         <ProjectReference Include="../../src/Alberto.SourceGeneration/Alberto.SourceGeneration.csproj" />
         <ProjectReference Include="../../src/Alberto.InMemory/Alberto.InMemory.csproj" />
         <ProjectReference Include="../../src/Alberto.Postgres/Alberto.Postgres.csproj" />
-        <!-- Referenced explicitly, not left to flow in transitively via Alberto.Cli: PostgresAdminDataAccess
-             and PostgresAdminOperator have their own test classes here, and those must not stop compiling
-             the day the CLI's reference changes. -->
-        <ProjectReference Include="../../src/Alberto.Admin.Postgres/Alberto.Admin.Postgres.csproj" />
         <ProjectReference Include="../../src/Alberto.Messaging/Alberto.Messaging.csproj" />
         <ProjectReference Include="../../src/Alberto.Messaging.Postgres/Alberto.Messaging.Postgres.csproj" />
         <ProjectReference Include="../../src/Alberto.EntityFramework/Alberto.EntityFramework.csproj" />
         <ProjectReference Include="../../src/Alberto.Telemetry/Alberto.Telemetry.csproj" />
         <ProjectReference Include="../../src/Alberto.Testing/Alberto.Testing.csproj" />
         <ProjectReference Include="../../src/Alberto.Testing.Xunit/Alberto.Testing.Xunit.csproj" />
-        <!-- The operator CLI decides, from config alone, which databases a destructive command
-             lands in. That decision is worth testing, so its assembly is referenced here. -->
-        <ProjectReference Include="../../tools/Alberto.Cli/Alberto.Cli.csproj" />
         <ProjectReference Include="../../benchmarks/Alberto.Benchmarks.Core/Alberto.Benchmarks.Core.csproj" />
         <ProjectReference Include="../../benchmarks/Alberto.Benchmarks.Compare/Alberto.Benchmarks.Compare.csproj" />
         <!-- A slug-collision-free events assembly, so tests can exercise the real

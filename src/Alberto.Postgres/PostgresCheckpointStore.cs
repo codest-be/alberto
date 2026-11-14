@@ -86,7 +86,7 @@ public sealed class PostgresCheckpointStore : IFencedCheckpointStore, ICheckpoin
     /// <summary>
     /// Sets the checkpoint for <paramref name="processorId"/> to exactly <paramref name="position"/>,
     /// bypassing the <c>GREATEST</c> guard that normally prevents moving a checkpoint backward.
-    /// Use for operator-initiated rewinds (e.g. <c>alberto ops rebuild start</c>).
+    /// Use for operator-initiated rewinds.
     /// </summary>
     public async Task RewindAsync(string processorId, long position, CancellationToken ct = default)
     {

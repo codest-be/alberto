@@ -31,7 +31,7 @@ Ten tenants in `db1` and three in `db2` is the shape this is for. So is one tena
 database of its own. That is just a shard with one row pointing at it.
 
 This is opt-in and it is not the default. A module that never calls `AcrossPostgresDatabases`
-behaves exactly as it did before sharding existed, down to the CLI's output.
+behaves exactly as it did before sharding existed.
 
 ## When it earns its keep
 
@@ -170,8 +170,7 @@ One table, `alberto_tenant_shards`, in a control database:
 
 **It holds shard ids and nothing else.** What an id resolves to lives in your application
 configuration, so a dump of this table leaks no credentials, and a shard can move to another host
-without a row changing. The same holds for the CLI, which reads shard connection strings from
-`.alberto/config.json` and never from the database.
+without a row changing.
 
 The catalog is deliberately a separate database from any shard. Every request to a sharded module
 resolves through it, and putting it inside a shard would make that shard load-bearing for routing
@@ -228,26 +227,11 @@ and a new one can break down by database. Unsharded modules emit no `shard` tag 
 
 ## Operating it
 
-The CLI's rules follow from positions being per-database:
-
-- **A read with no `--shard` fans out over every configured database** and labels each section with
-  its shard id. Seeing all of them is what an operator wants from `checkpoints` or `dead-letters`.
-- **A mutation with no selection refuses**, and the error names the databases it would have
-  touched. Rewinding a checkpoint across every tenant's database because a flag was forgotten is
-  not something you can undo. Pass `--shard <id>` or `--all-shards`.
-- **`ops checkpoint set` takes no `--all-shards` at all.** A position is a per-database sequence,
-  so one number cannot apply to several.
-- **A failing shard does not stop a run once writes begin.** Each database's state is its own, and
-  an operator promoting across a fleet needs to know which of them moved, not only where the run
-  stopped. The exit code is still non-zero. `ops rebuild start` is the deliberate exception: it
-  probes every selected shard and aborts before allocating any shadow version when that complete
-  plan cannot be built. The operator can retry a consistent start after the unavailable shard
-  recovers, or explicitly select one shard.
-- **`--url` beats the configured shards.** Naming a database explicitly and then fanning out over
-  the config's shards anyway would be a surprise, and a destructive one for a mutation.
-
-Full command reference, including the `alberto shards` group and the `.alberto/config.json`
-layout, is in [operations.md](../operations.md#sharded-modules).
+Positions are per-database, and that is the one rule for operating a sharded module: every
+operator interface (`ICheckpointStore`, `IDeadLetterStore`, `IProjectionRebuildStore`) is
+registered once per shard under `ShardKey.Compose(moduleKey, shardId)`, and a call to one of them
+touches that database only. Read across shards by iterating them; never apply one shard's position
+to another. See [operations.md](../operations.md#the-operator-interfaces).
 
 ## Validation
 
@@ -304,7 +288,7 @@ events, its checkpoints, its projection state and its leases into another databa
 being written to, and then reconciling two per-database position sequences: a migration you write
 and verify against your own data, not a button.
 
-Assign deliberately: `alberto shards assign` is first-writer-wins precisely so an assignment is a
+Assign deliberately: `ITenantShardMap.AssignAsync` is first-writer-wins precisely so an assignment is a
 one-time decision rather than something a race can silently redo. Use `WithDefaultShard` when
 tenant onboarding is automatic and you accept everyone landing in one place until you intervene;
 omit it when placement is a deliberate act.

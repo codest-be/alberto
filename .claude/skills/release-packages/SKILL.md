@@ -24,10 +24,8 @@ Alberto  Alberto.Commands  Alberto.EntityFramework  Alberto.InMemory  Alberto.Me
 Alberto.Messaging.Postgres  Alberto.Postgres  Alberto.Telemetry  Alberto.Testing  Alberto.Testing.Xunit
 ```
 
-**`Alberto.Admin`, `Alberto.Admin.Postgres` and `Alberto.Cli` must never reach nuget.org.** The
-admin projects are `IsPackable=false` on purpose: shipping `IAdminReader`/`IAdminOperator` at 1.0
-would freeze the abstraction under semver before the things that consume it exist (see CLAUDE.md,
-"Admin surface"). The workflow's *Verify packed set* step is the enforcement — it diffs the packed
+**Only the IDs in `.github/packages.txt` may reach nuget.org.** The workflow's *Verify packed set*
+step is the enforcement — it diffs the packed
 IDs against a literal allowlist and fails on a difference in **either** direction, so a package
 that appears unexpectedly and one that silently stops building are both caught.
 

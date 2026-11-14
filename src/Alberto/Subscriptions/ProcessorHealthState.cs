@@ -34,7 +34,7 @@ public sealed record ProcessorSnapshot(
 /// after every poll cycle and when it faults; <see cref="ProcessorHealthCheck"/> reads them.
 /// Shadow rebuild loops do not report: their processor ids are transient
 /// (<c>{processorId}::rebuild::{version}</c>) and a rebuild's progress is an operator concern
-/// served by <c>alberto ops rebuild status</c>, not a liveness signal for the host.
+/// read from <see cref="IProjectionRebuildStore"/>, not a liveness signal for the host.
 /// </remarks>
 [Experimental("ALB9002")]
 public sealed class ProcessorHealthState

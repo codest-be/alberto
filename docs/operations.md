@@ -5,186 +5,75 @@ Running Alberto in production comes down to four questions:
 1. **Is anything falling behind?** Checkpoint lag.
 2. **Is anything stuck?** Dead letters.
 3. **Who is doing the work?** Processor and tenant leases.
-4. **How do I intervene?** The `alberto` CLI.
+4. **How do I intervene?** The operator interfaces.
 
-The operator surface is the CLI, which talks straight to Postgres. That is the point of it: the
-CLI still works when the application is the thing that is broken.
+Alberto ships no operator tool and no admin API. Every intervention is a call on an interface
+the module already registers, and every question is answered by the module's own tables or its
+metrics. Where those calls are exposed (an endpoint behind your own authorization, a background
+job, a one-off console app) is the application's decision, and so is recording who made them:
+Alberto writes no audit trail for operator calls.
 
-There is no admin HTTP API here. `Alberto.Admin` is the `IAdminReader`/`IAdminOperator`
-abstraction the CLI is built on. It serves no endpoint, and it **does not ship as a NuGet package
-in 1.0**. Neither does its PostgreSQL implementation, `Alberto.Admin.Postgres`. Both build and
-are referenced by the CLI as projects; holding them back is what keeps 1.0 from freezing the
-abstraction under semver before the things that consume it exist. An in-process GraphQL admin API,
-an MCP server, a React console and a BFF were built and are parked on the `feature/admin-surface`
-branch, deliberately held out of 1.0 until their shape is settled. Check that branch before
-building any of it again.
+## The operator interfaces
 
-The CLI does not ship as a NuGet package either: 1.0 publishes libraries only. Run it from the
-repository.
+Each module registers them in DI under its module key:
 
-## The CLI
-
-```bash
-dotnet run --project tools/Alberto.Cli -- status
+```csharp
+var checkpoints = sp.GetRequiredKeyedService<ICheckpointStore>("orders");
+var deadLetters = sp.GetRequiredKeyedService<IDeadLetterStore>("orders");
+var rebuilds    = sp.GetRequiredKeyedService<IProjectionRebuildStore>("orders");
 ```
 
-### Connecting
-
-Every command resolves its connection in this order, first hit wins:
-
-| # | Source |
+| Interface | Does |
 |---|---|
-| 1 | `--url "Host=…;Database=…"` |
-| 2 | `ALBERTO_URL` |
-| 3 | `.alberto/config.json`, searched upwards from the working directory |
-| 4 | `DATABASE_URL` |
-| 5 | `Host=localhost;Database=postgres` |
+| `ICheckpointStore` | `GetAsync`, `ResetAsync` (back to 0), `RewindAsync` (to an exact position) |
+| `IDeadLetterStore` | `GetAsync`, `CountAsync`, `MarkForRetryAsync`, `ClearAsync` |
+| `IProjectionRebuildStore` | `ListAsync`, `GetAsync`, `StartAsync`, `RequestPromotionAsync`, `RequestAbortAsync` |
+| `ITenantShardMap` | `ResolveAsync`, `AssignAsync`, `GetAllAsync`: the tenant → shard catalog |
 
-The schema comes from `--schema`, then the config file, then `public`. **A module with a custom
-schema needs `--schema` on every call.** Pointing the CLI at `public` on a store that lives in
-`orders` reports an empty, healthy-looking system.
+On a [sharded module](architecture/tenant-sharding.md) each shard is a complete module registered
+under `ShardKey.Compose(moduleKey, shardId)`, so resolve the stores per shard. **Positions are per
+database**: never apply one shard's position to another's checkpoint.
 
-Schema names must be blank (meaning `public`) or contain only lowercase letters, digits and
-underscores, beginning with a letter or underscore. The CLI rejects unsafe identifiers before
-opening a connection.
-
-Put it in the config file once instead:
-
-```json
-{
-  "connection": { "url": "Host=localhost;Database=alberto;Username=postgres;Password=postgres" },
-  "schema": "orders"
-}
-```
-
-The file also accepts an `"operator"` key. It is read by `ConnectionResolver.ResolveOperator` but no
-command currently uses the value. It is reserved for attributing mutations and does nothing today.
-
-### Global options
-
-| Option | Applies to | Does |
-|---|---|---|
-| `--url`, `--schema` | Everything | Connection and schema |
-| `--json` | Everything that reports | Machine-readable output: pipe it to `jq` |
-| `--dry-run` | Most mutating commands | Prints what would change, changes nothing |
-| `--yes` | Every mutating command | Skips the confirmation prompt: for scripts |
-
-`--dry-run` is on `ops checkpoint reset`/`set`, all three `ops dead-letters` verbs, and
-`ops rebuild start`. It is **not** on `ops rebuild promote`, `ops rebuild abort` or
-`ops tenants release`: for those, read `ops rebuild status` or `alberto tenants` first.
-
-`--json` is on 22 of the 25 commands, and that near-uniformity is deliberate: the same binary you
-use interactively is the one your runbook scripts and alerting checks call. The three that omit it
-produce no report worth parsing. `ops checkpoint rename`, `ops tenants release` and
-`ops outbox purge` each print a human-readable confirmation of what they changed and nothing more.
-
-### Sharded modules
-
-A module whose tenants are spread over several databases ([tenant
-sharding](architecture/tenant-sharding.md)) needs the CLI to know about all of them. Declare them
-in the config file, alongside the control database holding the tenant → shard catalog:
-
-```json
-{
-  "schema": "orders",
-  "module": "orders",
-  "catalog": { "url": "Host=control;Database=alberto_catalog" },
-  "shards": {
-    "db1": { "url": "Host=one;Database=orders" },
-    "db2": { "url": "Host=two;Database=orders", "schema": "orders_legacy" }
-  }
-}
-```
-
-`schema` per shard falls back to the top-level one. `module` must match the key the application
-passes to `AddAlberto`, because it is part of the catalog's primary key: a wrong one reads an
-empty table and reports no tenants, which looks like an answer rather than a misconfiguration.
-
-**Connection strings live here and never in the database.** The catalog table stores shard *ids*
-only, so a dump of it leaks no credentials and a shard can move host without a row changing.
-
-With shards configured, two extra options appear and the rules change:
-
-| Option | Applies to | Does |
-|---|---|---|
-| `--shard <id>` | Every command | Run against that one database |
-| `--all-shards` | Mutating commands | Run against every one, in id order |
-
-- **Reads fan out by default.** `status`, `system`, `processor`, `checkpoints`, `dead-letters`,
-  `events`, `projections`, `tenants`, `ops checkpoint get` and `ops rebuild status`: with no
-  `--shard` they cover every database and label each section with its shard id.
-- **Mutations refuse by default.** Without `--shard` or `--all-shards` they stop and name the
-  databases they would have touched. Rewinding a checkpoint across every tenant's database because
-  a flag was forgotten is not undoable.
-- **`ops checkpoint set` takes no `--all-shards`.** A position is a per-database sequence, so one
-  number cannot apply to several. Name the shard.
-- **A failing shard does not stop the run.** The remaining databases are still processed and the
-  exit code is non-zero, so you can see which of them moved rather than only where the run stopped.
-- **`--url` overrides all of it** and targets exactly that database, unlabelled.
-
-Config with no `shards` key behaves exactly as it always has: one database, no shard labels, no
-refusals. Nothing about the single-database case changed.
-
-#### The catalog
-
-```bash
-alberto shards list                          # each shard, its tenant count, and whether config declares it
-alberto shards where acme                    # which database a tenant's events are in
-alberto shards assign acme --shard db2       # place a tenant: permanent
-```
-
-These read and write the control database, so they take `--url`/`--schema` pointing at *it*, plus
-`--module` to override the configured module key.
-
-`list` unions the shards your config declares with the ones the catalog actually references, and
-warns about any id in the catalog that config does not declare. That shard's tenants cannot be
-served by this deployment.
-
-`where` exits non-zero for a tenant with no assignment, so a script can branch on it without
-parsing the message.
-
-**`assign` is permanent.** It is first-writer-wins: assigning a tenant that already has a shard
-fails and tells you which one it is in, rather than moving it. There is no relocation command:
+**`ITenantShardMap.AssignAsync` is permanent.** It is first-writer-wins: assigning a tenant that
+already has a shard returns the shard it is in rather than moving it. There is no relocation:
 moving a tenant between databases means migrating its events, checkpoints, projection state and
 leases across two unrelated position sequences, which is a migration you write and verify against
 your own data.
 
 ## Inspecting
 
-```bash
-alberto status                       # global position, processor count, dead letters, per-processor positions
-alberto system                       # the same header plus the last event's timestamp
-alberto processor <id>               # one processor's checkpoint and when it last moved
-alberto checkpoints                  # every checkpoint
-alberto events --type order-placed --tag "order:$ID" --tenant acme --after 1000 --limit 20
-alberto dead-letters --processor OrderSummaryProjection --tenant acme --limit 20
-alberto projections types            # which projections have state
-alberto projections list OrderSummary --tenant acme --search "ord-" --limit 50
-alberto tenants                      # tenant leases: who holds what, until when
+The tables are the source of truth, and reading them still works when the application is the
+thing that is broken. Qualify each with the module's schema (`orders` below):
+
+```sql
+-- The head, and every processor's position, lag and fault
+SELECT c.processor_id, h.head - c.last_position AS lag, c.updated_at, c.faulted_at, c.fault_message
+FROM orders.alberto_processor_checkpoints c,
+     (SELECT MAX(global_position) AS head FROM orders.alberto_events) h
+ORDER BY lag DESC;
+
+-- Dead letters per processor; next_retry_at NULL means parked
+SELECT processor_id, count(*), min(global_position), min(next_retry_at)
+FROM orders.alberto_dead_letter_events
+GROUP BY processor_id;
+
+-- Tenant leases: who holds what, until when
+SELECT tenant_id, consumer_id, replica_id, expires_at
+FROM orders.alberto_tenant_leases
+ORDER BY tenant_id;
 ```
 
-The inspection commands discover whether the migrated schema is single-tenant or multi-tenant.
-Tenant identity appears in event, dead-letter and projection output for multi-tenant stores.
-Passing `--tenant` to a single-tenant store is an error rather than a silently ignored filter, and
-`alberto tenants` identifies the store as single-tenant instead of presenting an ambiguous empty
-lease table.
+**A module with a custom schema is queried in that schema.** Pointing the queries at `public` on a
+store that lives in `orders` reports an empty, healthy-looking system.
 
 ### Reading lag
 
-`alberto status` prints the log's **global position** in the header and each processor's **last
-position** in the table. Lag is the subtraction:
-
-```bash
-alberto status --json | jq '.globalPosition as $head | .processors[] | {id: .processorId, lag: ($head - .lastPosition)}'
-```
-
-This is the number to alert on. A few hundred events of lag on a busy module is normal. The
-control loop polls. Lag that only grows means the processor is failing, blocked, or slower than
-the write rate; lag that is pinned at exactly the same number means it has stopped entirely
-(check dead letters and whether the application is running at all).
-
-`alberto processor <id>`'s **Updated At** answers the "stopped entirely" question directly: a
-checkpoint that has not moved in minutes on a live system is a stalled processor.
+For alerting, use the `alberto.processor.lag` gauge (events a processor is behind, tagged
+`processor`, `module`, `shard`) rather than polling SQL. A few hundred events of lag on a busy
+module is normal: the control loop polls. Lag that only grows means the processor is failing,
+blocked, or slower than the write rate; lag that is pinned at exactly the same number means it has
+stopped entirely (check dead letters and whether the application is running at all). A
+checkpoint whose `updated_at` has not moved in minutes on a live system is a stalled processor.
 
 **A lag of zero does not always mean caught up.** Lag is computed against the *stable* head —
 the position the in-flight visibility barrier (`EnableStableHeadBarrier`, Postgres only) allows
@@ -196,16 +85,8 @@ number even though new events have committed and nothing is being delivered. Wat
 `alberto.head.stalled` (below) for this case; lag alone cannot distinguish it from genuinely
 being caught up.
 
-On a sharded module the subtraction is **per shard**: each database has its own `position`
-sequence, so a head from `db1` against a checkpoint from `db2` is a meaningless number. Fanned-out
-`--json` output is an array of per-shard objects, each tagged with a `shard` field, so the query
-above becomes:
-
-```bash
-alberto status --json | jq '.[] | .globalPosition as $head | {shard, lag: [.processors[] | {id: .processorId, lag: ($head - .lastPosition)}]}'
-```
-
-Unsharded output is unchanged: still the single object, with no `shard` field.
+On a sharded module lag is **per shard**: each database has its own `position` sequence, so a
+head from `db1` against a checkpoint from `db2` is a meaningless number.
 
 ## Errors, retries and dead letters
 
@@ -237,8 +118,8 @@ is needed to resume.
 A reactor's dead letter with a transient (or unknown) error comes back by itself. Each repeat
 failure updates the same row and waits longer; with the defaults the waits are 1 min, 4 min, 16 min,
 about 1 h 4 min, about 4 h 16 min and then 12 h for the last five: ten redeliveries over about 2.7
-days. After the last one the row stays parked (`alberto dead-letters` shows `parked` under Next
-Retry) until you run `ops dead-letters retry`. A permanent error parks at once.
+days. After the last one the row stays parked (`next_retry_at` is `NULL`) until
+`IDeadLetterStore.MarkForRetryAsync` is called for it. A permanent error parks at once.
 
 ```csharp
 .WithControlLoop(o => o with
@@ -303,23 +184,21 @@ idea of "try again later": a provider that signals throttling with a 400 and a b
 
 ### Clearing dead letters
 
-```bash
-alberto dead-letters --processor OrderSummaryProjection           # look first
-alberto ops dead-letters retry OrderSummaryProjection             # re-dispatch them
-alberto ops dead-letters retry-rewind OrderSummaryProjection      # rewind to the earliest and replay
-alberto ops dead-letters dismiss --processor OrderSummaryProjection
-alberto ops dead-letters dismiss --all                            # --all is required if --processor is omitted
+```csharp
+var entries = await deadLetters.GetAsync("OrderSummaryProjection");   // look first
+await deadLetters.MarkForRetryAsync("OrderSummaryProjection");        // re-dispatch them
+await deadLetters.ClearAsync("OrderSummaryProjection");               // throw them away
 ```
 
-**`retry` re-dispatches the stored events.** It marks the entries `retry_requested`; the
-application's dead-letter retry loop claims them on its next poll, under a time-bounded lease, and
-runs them through the handler again. Succeed and the entry is deleted; throw and it is *abandoned*
-(left in the table with the new error, no longer scheduled) so a still-broken handler does not
-busy-loop. Fix the handler, deploy, then `retry` again. There is at most one entry per processor and
-event: an event that fails again updates its entry rather than adding a second one.
+**`MarkForRetryAsync` re-dispatches the stored events.** It marks the entries `retry_requested`;
+the application's dead-letter retry loop claims them on its next poll, under a time-bounded lease,
+and runs them through the handler again. Succeed and the entry is deleted; throw and it is
+*abandoned* (left in the table with the new error, no longer scheduled) so a still-broken handler
+does not busy-loop. Fix the handler, deploy, then mark them again. There is at most one entry per
+processor and event: an event that fails again updates its entry rather than adding a second one.
 
-The retry loop runs in **your application**, not in the CLI. A `retry` against a module that is not
-running leaves entries marked and waiting.
+The retry loop runs in **the module's control loop**, not in the caller. Marking entries against a
+module that is not running leaves them marked and waiting.
 
 ```csharp
 .WithControlLoop(o => o with
@@ -337,27 +216,28 @@ Set `ClaimLease` longer than your slowest handler. Too short and a healthy worke
 loses its claim mid-dispatch and the event runs twice; too long and a crashed worker's entries wait
 that long before another replica can pick them up.
 
-**`retry-rewind` is the bigger hammer.** It rewinds the processor's checkpoint to just before the
-earliest dead letter and clears them, so the whole tail is reprocessed from the log rather than from
-the dead-letter copies. Use it when the bug affected more events than the ones that actually
-failed: a projection that silently mis-folded ten events before one of them threw. It is
-transactional across both tables, which is why it lives in `PostgresAdminDataAccess` rather than
-being composed from two calls.
+**Rewinding past the dead letters is the bigger hammer.** Rewind the checkpoint to just before
+the earliest dead letter and clear them, so the whole tail is reprocessed from the log rather than
+from the dead-letter copies. Use it when the bug affected more events than the ones that actually
+failed: a projection that silently mis-folded ten events before one of them threw. Read the
+earliest `GlobalPosition` from `GetAsync`, call `RewindAsync` with one less, then `ClearAsync`.
+**Rewind first**: the two calls are not one transaction, and a crash between them should leave
+dead letters for events that will be reprocessed anyway, never cleared entries with no replay.
 
-**`dismiss` throws the entries away.** No replay, no recovery. The events stay in the log but
+**`ClearAsync` throws the entries away.** No replay, no recovery. The events stay in the log but
 nothing will reprocess them for that processor. Look at them first.
 
 ## Moving a checkpoint
 
-```bash
-alberto ops checkpoint get <processor-id>
-alberto ops checkpoint reset <processor-id>        # back to 0: replays everything
-alberto ops checkpoint set <processor-id> 12345    # to an exact position
+```csharp
+await checkpoints.GetAsync("OrderSummaryProjection");
+await checkpoints.ResetAsync("OrderSummaryProjection");          // back to 0: replays everything
+await checkpoints.RewindAsync("OrderSummaryProjection", 12345);  // to an exact position
 ```
 
 Checkpoint writes from the loop are **monotonic**: the upsert uses `GREATEST`, so a processor can
-never move itself backwards. `reset` and `set` are the deliberate escape hatch (`ResetAsync` and
-`RewindAsync`). They are the only way a checkpoint goes down.
+never move itself backwards. `ResetAsync` and `RewindAsync` are the deliberate escape hatch and
+the only way a checkpoint goes down.
 
 Two things to have straight before using them:
 
@@ -366,102 +246,47 @@ Two things to have straight before using them:
   [a rebuild](projections.md#rebuilding-a-projection), not a rewind.
 - **Rewinding a reactor re-fires its side effects.** That is the ten-thousand-emails failure.
 
-`set` forward is the safe direction and has a genuine use: renaming a reactor's processor id would
-otherwise replay the entire log through it, so set the new id to the current head *before* the new
-version starts.
+Moving forward is the safe direction and has a genuine use: renaming a reactor's processor id would
+otherwise replay the entire log through it, so save the new id at the current head *before* the
+new version starts. `SaveAsync` is monotonic, which is exactly right here:
 
-```bash
-alberto status --json | jq .globalPosition                    # → 48213
-alberto ops checkpoint set order-emails-v2 48213 --yes
+```csharp
+await checkpoints.SaveAsync("order-emails-v2", head);   // head: SELECT MAX(global_position) …
 ```
-
-Both take `--dry-run`. Use it: it prints the processor, the position and the number of rows the real
-run would touch, and then does nothing.
-
-Without `--yes`, mutating commands prompt. In a non-interactive shell (CI, a container, a pipe)
-there is nothing to prompt with, so they refuse and tell you to add `--yes` rather than proceeding
-unconfirmed.
 
 ## Rebuilds
 
-```bash
-alberto ops rebuild start OrdersOverviewProjection
-alberto ops rebuild status
-alberto ops rebuild promote OrdersOverviewProjection
-alberto ops rebuild abort OrdersOverviewProjection
+```csharp
+await rebuilds.StartAsync("OrdersOverviewProjection", "OrdersOverviewProjection", targetPosition: head);
+await rebuilds.ListAsync();
+await rebuilds.RequestPromotionAsync("OrdersOverviewProjection");
+await rebuilds.RequestAbortAsync("OrdersOverviewProjection");
 ```
 
-`status` shows each projection's place in the state machine:
+Each `ProjectionRebuildState` carries its place in the state machine:
 
-| Status | Means |
+| `RebuildStatus` | Means |
 |---|---|
-| `idle` | No rebuild running: none ever has, or the last one finished |
-| `rebuilding` | A shadow loop is replaying history into the new version |
-| `ready` | The shadow loop reached the target position; waiting to be promoted |
-| `completed` | Promoted; the rebuilt version is the one readers see |
-| `aborted` | Abandoned, partial state discarded |
+| `Idle` | No rebuild running: none ever has, or the last one finished |
+| `Rebuilding` | A shadow loop is replaying history into the new version |
+| `Ready` | The shadow loop reached the target position; waiting to be promoted |
+| `Completed` | Promoted; the rebuilt version is the one readers see |
+| `Aborted` | Abandoned, partial state discarded |
 
-The **Progress** column is the shadow loop's own checkpoint against the target position. A rebuild
-sitting at `rebuilding` with no progress at all has not been picked up by any application, almost
-always because the module was not configured with `WithRebuilds()`.
+Progress is the shadow loop's own checkpoint against the target position. A rebuild sitting at
+`Rebuilding` with no progress at all has not been picked up by any application, almost always
+because the module was not configured with `WithRebuilds()`.
 
-`--projection-type` on `start` matters only when the projection's `Collection(...)` name differs
-from its processor id; it defaults to the processor id.
+The second argument to `StartAsync` is the projection type: the projection's `Collection(...)`
+name, which is usually its processor id. The target is normally the current head.
 
-`promote --force` publishes a version that has *not* finished replaying: an incomplete projection,
-live, to real readers. It exists for the case where you know the remaining tail is irrelevant. It
-is not a way to make a slow rebuild finish.
+`RequestPromotionAsync(id, force: true)` publishes a version that has *not* finished replaying: an
+incomplete projection, live, to real readers. It exists for the case where you know the remaining
+tail is irrelevant. It is not a way to make a slow rebuild finish.
 
-The full mechanism, and what you must have configured for it to be safe, is in
+Promotion and abort are *requests*: the module's `RebuildCoordinator` performs the handoff on its
+next poll. The full mechanism, and what you must have configured for it to be safe, is in
 [projections.md](projections.md#rebuilding-a-projection).
-
-## What a mutation records
-
-Every destructive CLI command appends an admin event to `alberto_events` **in the same transaction
-as the change it describes**. There is no separate audit table and no second write that can fail on
-its own: if the checkpoint moved, the record of it moving is committed with it, and if the mutation
-rolls back so does the record.
-
-| Command | Event type |
-|---|---|
-| `ops checkpoint set` | `admin-checkpoint-rewound` |
-| `ops checkpoint reset` | `admin-checkpoint-reset` |
-| `ops checkpoint rename` | `admin-checkpoint-renamed` |
-| `ops dead-letters retry` | `admin-dead-letters-marked-for-retry` |
-| `ops dead-letters retry-rewind` | `admin-dead-letters-retried` |
-| `ops dead-letters dismiss` | `admin-dead-letters-cleared` |
-| `ops outbox purge` | `admin-outbox-purged` |
-| `ops tenants release` | `admin-tenant-leases-released` |
-| `ops rebuild start` | `admin-rebuild-started` |
-| `ops rebuild promote` | `admin-rebuild-promoted` |
-| `ops rebuild abort` | `admin-rebuild-aborted` |
-
-A command that changes nothing records nothing: dismissing dead letters for a processor that has
-none, or flagging ones already flagged, returns zero and appends no event. The count in the event
-is what that invocation actually changed.
-
-The three rebuild events are the exception to the same-transaction rule: the transition is owned by
-`IProjectionRebuildStore`, which manages its own connection, so the event is appended immediately
-afterwards in its own transaction. A process killed between the two loses the record, not the
-transition.
-
-Every event carries an `OperatorId`. The CLI fills it with `Environment.UserName`. The OS account
-the command ran as.
-
-> **This is attribution, not authentication.** The CLI talks straight to PostgreSQL with whatever
-> connection string it was given, and anyone who can run it can set `USER` to anything. The audit
-> trail answers "which account did this, and when" for a team that is not trying to deceive each
-> other. It does not answer "prove it". Database credentials are the actual access control.
-
-They are ordinary events in the log, so you read them the way you read any others: tagged under
-`admin-checkpoint`, `admin-dl`, `admin-rebuild` or `admin-tenant-lease` with the processor id as
-the value. `ops outbox purge` is the one mutation that is not per-processor: it tags under
-`admin-outbox` with the fixed value `purge`. On a multi-tenant store they are written under the
-reserved tenant id `__admin__`, which keeps them out of every application tenant's queries.
-
-`alberto ops checkpoint rename` tags its event under **both** ids. The question "what happened to
-this processor?" has to be answerable from either name, and after a rename the old one is often all
-you have.
 
 ## Running more than one replica
 
@@ -485,10 +310,13 @@ Multi-tenant deployments have a second layer: tenants are distributed across rep
 consistent hash ring, each claimed by a lease in `alberto_tenant_leases`. See
 [multi-tenancy.md](multi-tenancy.md#tenant-leases).
 
-```bash
-alberto tenants                                        # who holds what
-alberto ops tenants release                            # force reacquisition after a crashed replica
-alberto ops tenants release --processor-id worker-3    # just that consumer's leases
+A crashed replica's tenant leases expire after `LeaseDuration` (60 s by default) and are picked up
+by the survivors. To force reacquisition sooner, delete the rows; the application reacquires on
+its next poll:
+
+```sql
+DELETE FROM orders.alberto_tenant_leases;                               -- every lease
+DELETE FROM orders.alberto_tenant_leases WHERE consumer_id = 'worker-3'; -- one consumer's
 ```
 
 ## Telemetry
@@ -655,7 +483,7 @@ startup:
 
 Set `AutoMigrate = false` where a running application must not issue DDL: a least-privilege
 production role, or a deployment pipeline that gates schema changes. Then run the migrations from
-your own step; the Orders example does exactly this with `apps/Alberto.Orders/Alberto.Orders.Migrations`.
+your own step; the [Orders example](https://github.com/codest-be/alberto-examples) does exactly this with `apps/Alberto.Orders/Alberto.Orders.Migrations`.
 
 A role that may run DDL on its own database but cannot connect to the server's `postgres`
 maintenance database can still migrate at startup: keep `AutoMigrate = true` and set
@@ -668,13 +496,13 @@ Each module owns its schema. Two modules in one database are two schemas, migrat
 
 | Symptom | Look at | Then |
 |---|---|---|
-| Read model is stale | `alberto status` lag for that processor | Growing → the app is failing or slow; pinned → check dead letters |
-| A specific document is wrong | `alberto projections list <type> --search <id>` | Bug in `apply` → fix, deploy, `ops rebuild start` |
-| Dead letters appeared | `alberto dead-letters --processor <id>` | Fix the handler, deploy, `ops dead-letters retry <id>` |
-| Events processed twice | `alberto processor <id>` and your deploy log | A rewind or a renamed processor id. Make the handler idempotent |
+| Read model is stale | `alberto.processor.lag` for that processor | Growing → the app is failing or slow; pinned → check dead letters |
+| A specific document is wrong | The document in the projection's store | Bug in `apply` → fix, deploy, `IProjectionRebuildStore.StartAsync` |
+| Dead letters appeared | `IDeadLetterStore.GetAsync(<id>)` | Fix the handler, deploy, `MarkForRetryAsync(<id>)` |
+| Events processed twice | The checkpoint's `updated_at` and your deploy log | A rewind or a renamed processor id. Make the handler idempotent |
 | Messages not delivered | `alberto_outbox_entries` status and `claim_expires_at` | Live claim → wait; expired claim → relay recovers it automatically |
 | Conflicts spiking | `alberto.concurrency.conflicts` | A boundary is too wide: narrow the query |
-| One tenant is stalled | `alberto tenants` | Stale lease → `ops tenants release` |
-| One tenant errors, the rest are fine | `alberto shards where <tenant>`, then that shard | Sharded module. The fault is in one database, not the module |
+| One tenant is stalled | `alberto_tenant_leases` for that tenant | Stale lease → delete it, or wait out `LeaseDuration` |
+| One tenant errors, the rest are fine | `ITenantShardMap.ResolveAsync(<tenant>)`, then that shard | Sharded module. The fault is in one database, not the module |
 | Health check reports `Degraded` | Its `data` payload names the unreachable shards | One shard down; the others keep serving. Do not pull the instance out |
-| Restored from a backup | `alberto status` vs. each checkpoint | A checkpoint ahead of the log head skips events silently. See [Backup and recovery](backup-and-recovery.md) |
+| Restored from a backup | The head vs. each checkpoint | A checkpoint ahead of the log head skips events silently. See [Backup and recovery](backup-and-recovery.md) |

@@ -78,44 +78,31 @@ If derived state is ahead, checkpoint monotonicity turns it into silent data los
 rewind on its own and does not error. The processor waits for position 9001. Every event the restore
 brought back between 8000 and 9000 is skipped, permanently, with nothing in the logs.
 
-The cure is `alberto ops checkpoint set`. `RewindAsync` is the deliberate escape hatch and the only
-way to move a checkpoint backwards:
+The cure is `ICheckpointStore.RewindAsync`, the deliberate escape hatch and the only way to move
+a checkpoint backwards: rewind each processor that is ahead to the restored log head.
 
-```bash
-alberto ops checkpoint set <processor-id> <restored-log-head> --dry-run
-```
-
-Positions are per-database, so on a sharded module set them one shard at a time. `ops checkpoint
-set` is the one mutation with no `--all-shards`, for exactly that reason.
+Positions are per-database, so on a sharded module rewind one shard at a time, to that shard's
+own head.
 
 ### After any restore, before starting the application
 
 Bring the application up *after* these, not before: a control loop that starts first will act on
 the state you are about to correct.
 
-1. **Compare every checkpoint against the log head.** Anything ahead of it must be rewound.
-   `alberto status` prints both (the store's global position and every processor's), which is the
-   whole check in one command.
+1. **Compare every checkpoint against the log head.** Anything ahead of it must be rewound. One
+   query is the whole check:
 
-   ```bash
-   alberto status
-   ```
-
-   ```bash
-   alberto checkpoints
+   ```sql
+   SELECT c.processor_id, c.last_position, h.head
+   FROM orders.alberto_processor_checkpoints c,
+        (SELECT COALESCE(MAX(global_position), 0) AS head FROM orders.alberto_events) h
+   WHERE c.last_position > h.head;
    ```
 
 2. **Resolve rebuilds that were in flight.** A rebuild interrupted by the restore has a
-   `rebuilding_version` and a target position that may no longer exist. Abort it and start again;
-   a rebuild is cheap to redo and there is no way to verify a partial one.
-
-   ```bash
-   alberto ops rebuild status
-   ```
-
-   ```bash
-   alberto ops rebuild abort <processor-id> --yes
-   ```
+   `rebuilding_version` and a target position that may no longer exist. Abort it
+   (`IProjectionRebuildStore.RequestAbortAsync`) and start again; a rebuild is cheap to redo and
+   there is no way to verify a partial one. `ListAsync` shows which are in flight.
 
    Check `active_version` too. If the restore rolled `alberto_projection_rebuild_meta` back past a
    promotion, readers resolve a version whose rows the reclaim sweep has since removed. The
@@ -125,25 +112,16 @@ the state you are about to correct.
    relay that no longer exists, and recover on their own: `ClaimPendingAsync` re-claims anything
    whose `claim_expires_at` has passed or was never set. Entries restored as `failed` stay failed.
    `IOutboxStore.RetryFailedAsync` (optionally filtered by message type) is what moves them back to
-   `pending`, and there is no CLI verb for it; `alberto ops outbox purge` is the only outbox command
-   and it only deletes delivered entries.
+   `pending`.
 
-   Dead letters are the separate case, and they do have CLI verbs:
-
-   ```bash
-   alberto dead-letters
-   ```
-
-   ```bash
-   alberto ops dead-letters retry <processor-id> --yes
-   ```
+   Dead letters are the separate case: read them with `IDeadLetterStore.GetAsync` and re-dispatch
+   them with `MarkForRetryAsync` once the handler is known to be good.
 
 4. **Leave the leases alone.** `alberto_processor_leases` and `alberto_tenant_leases` restore with
-   expiry times in the past and are re-acquired on the first poll. `alberto ops tenants release`
-   exists if something is genuinely stuck, but it is not part of a normal restore.
+   expiry times in the past and are re-acquired on the first poll.
 
-5. **On a sharded module, reconcile the catalog.** `alberto shards list` and `alberto shards where
-   <tenant>` against each restored shard; fix assignments with `alberto shards assign`.
+5. **On a sharded module, reconcile the catalog.** Compare `ITenantShardMap.GetAllAsync` against
+   each restored shard; assign missing tenants with `AssignAsync`.
 
 ### What a restore cannot undo
 
@@ -163,8 +141,8 @@ restore is where that stops being theoretical.
 Because the log is the truth, there is a second option that a CRUD database does not have: restore
 `alberto_events` and throw the derived state away.
 
-```bash
-alberto ops rebuild start <processor-id> --yes
+```csharp
+await rebuilds.StartAsync(processorId, projectionType, targetPosition: head);
 ```
 
 This replays the log into a shadow version under its own checkpoint and swaps it in one transaction,
@@ -173,7 +151,7 @@ so the projection stays readable throughout. See
 correct by construction, which is often the better trade when you are not certain a restored
 projection is consistent with the restored log.
 
-`alberto ops checkpoint reset` does the cruder version (delete the checkpoint, replay from zero
+`ICheckpointStore.ResetAsync` does the cruder version (delete the checkpoint, replay from zero
 into the *live* state) and is appropriate for a reactor, which has no state to swap, but not for a
 projection readers are querying.
 

@@ -38,7 +38,7 @@ public interface IDeadLetterStore
     /// When supplied, restricts the result to entries belonging to that tenant. Dead letter
     /// entries carry the full event payload, so a multi-tenant caller must pass the active
     /// tenant to avoid disclosing another tenant's data. Pass <see langword="null"/> for the
-    /// cross-tenant operator view (the CLI) and in single-tenant deployments.
+    /// cross-tenant operator view and in single-tenant deployments.
     /// </param>
     /// <remarks>
     /// <para>
@@ -49,7 +49,7 @@ public interface IDeadLetterStore
     /// regardless, because the argument is meaningless when the store has no tenant column to
     /// filter on. A caller that passes a tenant ID is entitled to ask "these events for this
     /// tenant"; if the store has no tenancy, the most recent dead-letter events are the same
-    /// list no matter which tenant is named. Filtering them out would make the CLI return
+    /// list no matter which tenant is named. Filtering them out would make an operator read return
     /// nothing on a single-tenant deployment while Postgres returns the full list.
     /// </para>
     /// <para>
@@ -78,7 +78,7 @@ public interface IDeadLetterStore
     Task ClearAsync(string processorId, CancellationToken ct = default);
 
     /// <summary>
-    /// Marks dead letter entries for retry via CLI. Sets retry_requested flag for reprocessing.
+    /// Marks dead letter entries for retry. Sets retry_requested flag for reprocessing.
     /// </summary>
     /// <remarks>
     /// Marking is not dispatching. Entries flagged here are picked up by

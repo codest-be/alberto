@@ -1,10 +1,8 @@
 # The packages published to nuget.org, one package ID per line.
 #
 # This is the set that IsPackable=true in src/, and it is deliberately NOT "everything under
-# src/". Alberto.Admin and Alberto.Admin.Postgres build and are tested but are parked — see the
-# admin-surface note in CLAUDE.md. Scripts that walk public API must use this list rather than a
-# src/* glob, or they will treat the parked surface as shipping API: Alberto.Admin carries a
-# 327-line PublicAPI.Unshipped.txt that must never be promoted to Shipped.
+# src/": Alberto.Commands.Analyzers and Alberto.SourceGeneration are build-time components, not
+# packages. Scripts that walk public API must use this list rather than a src/* glob.
 #
 # Blank lines and #-comments are ignored by readers.
 #

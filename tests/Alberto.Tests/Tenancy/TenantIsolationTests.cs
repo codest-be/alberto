@@ -1,6 +1,5 @@
 using System.Text.Json;
 using Alberto.Messaging;
-using Alberto.Admin;
 using Alberto.Postgres;
 using Alberto.Messaging.Postgres;
 using Alberto.Subscriptions;
@@ -820,126 +819,11 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
         Assert.Equal(TenantA, claim.Entry.TenantId);
     }
 
-    [Fact]
-    public async Task AdminInspection_Events_PreservesAndFiltersTenantIdentity()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var tag = new EventTag("ti-admin-events", Guid.NewGuid().ToString());
-
-        await using (var scopeA = CreateScopeForTenant(TenantA))
-        {
-            var store = scopeA.ServiceProvider.GetRequiredKeyedService<IEventStore>(ModuleKey);
-            await store.AppendAsync(
-                [CreateEvent(new OrderCreated(Guid.NewGuid()), tag)],
-                cancellationToken: ct);
-        }
-
-        await using (var scopeB = CreateScopeForTenant(TenantB))
-        {
-            var store = scopeB.ServiceProvider.GetRequiredKeyedService<IEventStore>(ModuleKey);
-            await store.AppendAsync(
-                [CreateEvent(new OrderCreated(Guid.NewGuid()), tag)],
-                cancellationToken: ct);
-        }
-
-        var admin = new PostgresAdminDataAccess(fixture.DataSource);
-        var events = await admin.GetEventsAsync(
-            type: null,
-            tag: tag.Value,
-            tenant: TenantA,
-            afterPosition: 0,
-            limit: 20,
-            ct);
-
-        var @event = Assert.Single(events);
-        Assert.Equal(TenantA, @event.TenantId);
-    }
-
-    [Fact]
-    public async Task AdminInspection_DeadLetters_PreservesAndFiltersTenantIdentity()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var processorId = $"ti-admin-dl-{Guid.NewGuid():N}";
-        var deadLetters = new PostgresDeadLetterStore(fixture.DataSource);
-
-        await deadLetters.StoreAsync(new DeadLetterEntry
-        {
-            Id = Guid.NewGuid(),
-            ProcessorId = processorId,
-            EventId = Guid.NewGuid(),
-            EventType = "admin-test",
-            EventData = "{}",
-            ErrorMessage = "tenant A",
-            StackTrace = null,
-            AttemptCount = 1,
-            FailedAt = DateTimeOffset.UtcNow,
-            GlobalPosition = 1,
-            TenantId = TenantA,
-        }, ct);
-        await deadLetters.StoreAsync(new DeadLetterEntry
-        {
-            Id = Guid.NewGuid(),
-            ProcessorId = processorId,
-            EventId = Guid.NewGuid(),
-            EventType = "admin-test",
-            EventData = "{}",
-            ErrorMessage = "tenant B",
-            StackTrace = null,
-            AttemptCount = 1,
-            FailedAt = DateTimeOffset.UtcNow,
-            GlobalPosition = 2,
-            TenantId = TenantB,
-        }, ct);
-
-        var admin = new PostgresAdminDataAccess(fixture.DataSource);
-        var entries = await admin.GetDeadLettersAsync(
-            processorId,
-            type: null,
-            tenant: TenantB,
-            limit: 20,
-            ct);
-
-        var entry = Assert.Single(entries);
-        Assert.Equal(TenantB, entry.TenantId);
-        Assert.Equal("tenant B", entry.ErrorMessage);
-    }
-
-    [Fact]
-    public async Task AdminInspection_ProjectionAndLeaseInventory_AreTopologyAware()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var projectionType = $"ti-admin-projection-{Guid.NewGuid():N}";
-        var documentId = Guid.NewGuid().ToString();
-        var stateStore = new PostgresStateStore<OrderState>(
-            fixture.DataSource,
-            projectionType,
-            tenantId: TenantA);
-        await stateStore.ApplyChangesAsync(
-            new Dictionary<string, OrderState>
-            {
-                [documentId] = new("tenant A", 10m),
-            },
-            [],
-            ct: ct);
-
-        var admin = new PostgresAdminDataAccess(fixture.DataSource);
-        var states = await admin.GetProjectionStatesAsync(
-            projectionType,
-            TenantA,
-            search: null,
-            limit: 20,
-            ct);
-        var inventory = await admin.GetTenantLeaseInventoryAsync(ct);
-
-        Assert.Equal(TenantA, Assert.Single(states).TenantId);
-        Assert.Equal(AdminTenancyMode.MultiTenant, inventory.TenancyMode);
-    }
-
     /// <summary>
     /// P1.2: <see cref="PostgresDeadLetterStore.GetAsync"/> scopes to <c>tenant_id</c> when a
     /// tenant is supplied, so tenant A cannot observe tenant B's dead-letter entries (which
     /// carry full event payloads). Passing <see langword="null"/> keeps the cross-tenant
-    /// operator view used by the CLI.
+    /// operator view.
     /// </summary>
     [Fact]
     public async Task DeadLetterStore_GetAsync_is_scoped_to_active_tenant()
@@ -988,7 +872,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
         var entriesForA = await deadLetterStore.GetAsync(processorId, tenantId: TenantA, ct: ct);
         Assert.Equal(entry.Id, Assert.Single(entriesForA).Id);
 
-        // No tenant supplied keeps the cross-tenant operator view the CLI depends on.
+        // No tenant supplied keeps the cross-tenant operator view.
         var entriesForOperator = await deadLetterStore.GetAsync(processorId, ct: ct);
         Assert.Equal(entry.Id, Assert.Single(entriesForOperator).Id);
     }

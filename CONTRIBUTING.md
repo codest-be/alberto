@@ -8,7 +8,6 @@ Clone the repository and make sure you have the prerequisites installed:
 
 - **.NET 10 SDK.** The solution targets `net10.0`
 - **Docker.** Testcontainers-backed integration tests spin up a PostgreSQL container
-- **Node.js 20+.** Required only for the K6 load tests under `tests/Alberto.Orders.LoadTests/`
 
 Run the full test suite:
 
@@ -80,11 +79,9 @@ Every **packable** project under `src/` carries two tracking files, and
 in neither. The point is that widening the surface Alberto has to support for the life of a major
 version is a line in a diff a reviewer can see, rather than something that lands with a feature.
 
-The gate is conditioned on `IsPackable` (see **Packability** below), so the three non-packable
-projects under `src/` are outside it: `Alberto.Admin.Postgres` and `Alberto.Commands.Analyzers`
-carry no tracking files at all, and `Alberto.Admin` carries them but is not checked against them.
-Its files are there so unparking the admin surface is one property flip rather than a surface
-audit. Nothing in those three assemblies is under semver until they are published.
+The gate is conditioned on `IsPackable` (see **Packability** below), so the non-packable
+build-time projects under `src/` (`Alberto.Commands.Analyzers`, `Alberto.SourceGeneration`) are
+outside it and carry no tracking files.
 
 The rules are set to `error` in the root `.editorconfig`. Nothing suppresses them. If you find
 yourself adding a `NoWarn`, a `.globalconfig`, or a project-local `.editorconfig` to get a build
@@ -152,10 +149,6 @@ abstract set and the test stays green.
 
 Interfaces Alberto implements for itself are not in scope here. Widen those freely. If you are
 unsure which kind you are looking at, ask whether a third party could plausibly have written it.
-
-`IAdminReader` and `IAdminOperator` are deliberately absent from the baseline. They are consumed
-by the parked front doors on `feature/admin-surface` and must stay **additive** so that branch
-keeps merging; see the note in `CLAUDE.md`.
 
 ## Code style
 

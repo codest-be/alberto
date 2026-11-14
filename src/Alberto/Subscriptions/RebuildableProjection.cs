@@ -20,7 +20,7 @@ internal sealed class RebuildableProjection
 {
     /// <summary>Creates a registration.</summary>
     /// <param name="processorId">
-    /// The live processor's id — the checkpoint key, and what an operator names on the CLI.
+    /// The live processor's id — the checkpoint key, and what an operator passes to the rebuild store.
     /// </param>
     /// <param name="projectionType">
     /// The key the projection's state rows are stored under. Equal to

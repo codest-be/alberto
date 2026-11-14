@@ -19,7 +19,7 @@ public sealed record ShardState(string ShardId, bool Healthy, string? LastError,
 /// trying a shard: a stale "unhealthy" would fail requests a recovered database could have
 /// served, and a stale "healthy" would not have saved the request anyway — the attempt fails on
 /// its own and reports here. What it is for is startup and operators: a shard whose migration
-/// could not run is recorded here instead of taking the host down, and the health check and CLI
+/// could not run is recorded here instead of taking the host down, and the health check
 /// read it to say which databases are missing.
 /// </remarks>
 [Experimental("ALB9001")]

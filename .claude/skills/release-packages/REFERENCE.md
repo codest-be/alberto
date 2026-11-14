@@ -117,7 +117,7 @@ echo "$LOG" | grep "Push to nuget.org" | grep -i "warn"          # must print no
 echo "$LOG" | grep "Push to nuget.org" | grep -oE "Pushing [A-Za-z.]+\.[0-9.]+\.nupkg" | sort -u
 ```
 
-Ten IDs, none of them `Alberto.Admin*` or `Alberto.Cli`.
+Ten IDs, exactly the ones in `.github/packages.txt`.
 
 ### Indexing
 

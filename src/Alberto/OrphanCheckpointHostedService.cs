@@ -73,15 +73,13 @@ internal sealed class OrphanCheckpointHostedService(
         if (orphans.Count == 0)
             return;
 
-        var renameCommands = string.Join(Environment.NewLine,
-            orphans.Select(id =>
-                $"  alberto ops checkpoint rename --module {definition.ModuleKey} --from {id} --to <new-processor-id>"));
         var message =
             $"Module '{definition.ModuleKey}' has {orphans.Count} checkpoint(s) that no declared " +
             $"processor claims: [{string.Join(", ", orphans)}]. This usually means a handler was " +
             "renamed, in which case the new processor will replay from the beginning. " +
-            $"Carry each position over with:{Environment.NewLine}{renameCommands}{Environment.NewLine}" +
-            "Pin the old id instead with [ProcessorId(\"...\")], or set " +
+            "Carry each position over by saving it under the new id with ICheckpointStore.SaveAsync " +
+            "and resetting the old one, or " +
+            "pin the old id instead with [ProcessorId(\"...\")], or set " +
             $"'{definition.ConfigurationPath}:Checkpoints:OrphanPolicy' to Warn or Off.";
 
         if (definition.Checkpoints.OrphanPolicy == OrphanCheckpointPolicy.Strict)

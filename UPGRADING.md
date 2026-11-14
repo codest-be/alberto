@@ -75,7 +75,7 @@ Later events wait. Fix the cause and the projection resumes by itself.
   (`ALB0028`): `Processors:<id>:Redelivery` and `Processors:<id>:Retry:DeadLetterOnMaxRetries`.
   Remove them. `ControlLoop:Retry` still sets the fast in-memory retries first, and `Halt` the waits after.
 - Dead letters a projection wrote before the upgrade stay in the table and can still be retried
-  or dismissed with `alberto ops dead-letters`.
+  or dismissed through `IDeadLetterStore`.
 - The outbox handler halts too, so messages are never published out of order.
 
 ### Custom dead-letter stores

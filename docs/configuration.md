@@ -255,9 +255,9 @@ Nested in `ControlLoop.Rebuilds` · configuration path: `ControlLoop:Rebuilds`
 | `VersionRefreshInterval` | `TimeSpan` | `00:00:05` (5 s) | `ControlLoop:Rebuilds:VersionRefreshInterval` |
 
 `Enabled = true` makes the application *able* to carry out a zero-downtime projection
-rebuild; nothing happens until an operator starts one with `alberto ops rebuild start`.
-Set `AutoPromote = false` to park a finished rebuild at `Ready` until an operator runs
-`alberto ops rebuild promote`, which is the setting you want when promotion should be a
+rebuild; nothing happens until an operator starts one with `IProjectionRebuildStore.StartAsync`.
+Set `AutoPromote = false` to park a finished rebuild at `Ready` until an operator calls
+`RequestPromotionAsync`, which is the setting you want when promotion should be a
 deliberate step rather than a consequence of catching up. Both intervals must be positive
 (ALB0009).
 
@@ -333,7 +333,8 @@ configuration is for.
 class (when `processorId` is omitted from `ReactTo<TEvent, THandler>`) changes the derived
 id and leaves the old checkpoint as an orphan. The startup report names the orphaned id —
 as a warning by default, as a startup error under `Strict` — giving you a chance to carry
-the position over with `alberto ops checkpoint rename` before the whole log is replayed.
+the position over before the whole log is replayed: read the old id's position with
+`ICheckpointStore.GetAsync`, `SaveAsync` it under the new id, then `ResetAsync` the old one.
 
 ---
 

@@ -73,7 +73,7 @@ Attempts exhausted ────────────────────�
                              └─ no  → skip event
 ```
 
-A separate retry loop picks up dead letters that an operator has marked for retry (`IDeadLetterStore.MarkForRetryAsync`, exposed as `alberto ops dead-letters retry`) and dead letters that are due for automatic redelivery.
+A separate retry loop picks up dead letters that an operator has marked for retry (`IDeadLetterStore.MarkForRetryAsync`) and dead letters that are due for automatic redelivery.
 
 **Reactors redeliver; projections halt.** The tail above depends on the processor's kind.
 
@@ -138,7 +138,7 @@ LISTENs on the `{schema}_events` channel and raises `IEventAppendedSignal` so th
 
 ### Processor health check (experimental, ALB9002)
 
-Every module registers a health check named `alberto-processors-{moduleKey}` (tags `alberto`, `processors`) into the host's health-check options; it is inert unless the host calls `AddHealthChecks()`. Each live `ControlLoop` reports a heartbeat per poll cycle and a fault flag if it stops permanently into a per-module `ProcessorHealthState`; `ProcessorHealthCheck` reads it. A faulted loop, or one whose last heartbeat is older than max(5 s, 5 × polling interval), is Unhealthy. Processors that never reported are skipped — a standby replica that did not win the lease is normal. Shadow rebuild loops do not report; rebuild progress is served by `alberto ops rebuild status`.
+Every module registers a health check named `alberto-processors-{moduleKey}` (tags `alberto`, `processors`) into the host's health-check options; it is inert unless the host calls `AddHealthChecks()`. Each live `ControlLoop` reports a heartbeat per poll cycle and a fault flag if it stops permanently into a per-module `ProcessorHealthState`; `ProcessorHealthCheck` reads it. A faulted loop, or one whose last heartbeat is older than max(5 s, 5 × polling interval), is Unhealthy. Processors that never reported are skipped — a standby replica that did not win the lease is normal. Shadow rebuild loops do not report; rebuild progress is read from `IProjectionRebuildStore.ListAsync`.
 
 ## Configuration
 
@@ -162,9 +162,10 @@ The table below shows how each knob is set in code and in configuration:
 
 ## Module Configuration Example
 
-Taken from `apps/Alberto.Orders/Alberto.Orders/Platform/OrdersModule.cs`. The state store is built
-by the projection's own slice (`OrdersOverviewProjection.StateStore`) so the writer and every query
-over it share one definition. See [vertical-slices.md](vertical-slices.md):
+Taken from `apps/Alberto.Orders/Alberto.Orders/Platform/OrdersModule.cs` in
+[alberto-examples](https://github.com/codest-be/alberto-examples). The state store is built by the projection's own slice
+(`OrdersOverviewProjection.StateStore`) so the writer and every query over it share one
+definition. See [vertical-slices.md](https://github.com/codest-be/alberto-examples/blob/main/docs/vertical-slices.md):
 
 ```csharp
 services.AddAlberto(ModuleKey, builder => builder
@@ -242,17 +243,13 @@ Two requirements, and a projection that meets neither will have its live state o
 
 ### Running one
 
-```bash
-alberto ops rebuild start OrdersOverviewProjection
-alberto ops rebuild status
-alberto ops rebuild abort OrdersOverviewProjection
-```
+Through the module's keyed `IProjectionRebuildStore`: `StartAsync(processorId, projectionType, targetPosition)`, `ListAsync`, `RequestAbortAsync(processorId)`.
 
-The replay runs *in the application*, not in the CLI: the CLI only moves the state machine, and a module without `WithRebuilds()` will leave a started rebuild sitting at `rebuilding` forever. With `WithRebuilds(autoPromote: false)` a finished rebuild parks at `ready` until `alberto ops rebuild promote <processor>`.
+The replay runs *in the application*, not in the caller: those calls only move the state machine, and a module without `WithRebuilds()` will leave a started rebuild sitting at `rebuilding` forever. With `WithRebuilds(autoPromote: false)` a finished rebuild parks at `ready` until `RequestPromotionAsync(processorId)`.
 
 ### How it works
 
-`RebuildCoordinator` is a hosted service that owns no state of its own. Everything it does is derived from `alberto_projection_rebuild_meta`, so a rebuild started from the CLI in one process is picked up in another, and a coordinator that crashes mid-rebuild resumes on restart. Each tick it:
+`RebuildCoordinator` is a hosted service that owns no state of its own. Everything it does is derived from `alberto_projection_rebuild_meta`, so a rebuild started from one process is picked up in another, and a coordinator that crashes mid-rebuild resumes on restart. Each tick it:
 
 1. Refreshes `ProjectionVersions`, the module's single cached view of the state machine. Every version selector resolves from this cache, so the coordinator and the stores it configures always agree.
 2. Starts a shadow control loop for each rebuild in flight, `ready` included, since a rebuild waiting on an operator still has to track the live loop, and a replica that restarted while one was already `ready` would otherwise have no loop to catch it up at all. The shadow loop uses its own checkpoint key (`<processor>::rebuild::<version>`) so replaying from position 0 does not drag the live projection back with it, and it always takes the batch path.
@@ -279,7 +276,7 @@ Because aborts consume numbers without moving the active one, the startup sweep 
 The following appear in the schema or the type system but have no orchestration behind them. Do not rely on them.
 
 - **Rebuild-mode processor tuning.** `IEventProcessor.IsRebuilding` is set for shadow loops, but there is no lag threshold and no separate rebuild batch size: a shadow loop runs on the module's configured batch size.
-- **Real-time admin push.** There is no admin HTTP API, no GraphQL admin subscriptions, and no admin dashboard on this branch. The `{schema}_events` NOTIFY channel exists to refresh `EventStoreHead`, not to feed a UI. The operator surface is the CLI in `tools/Alberto.Cli`. All of it exists on `feature/admin-surface`, held out of 1.0; note that even there the control loop pushes nothing. The subscriptions fire on operator mutations, so a console watching lag polls underneath.
+- **Real-time admin push.** There is no admin HTTP API, no GraphQL admin subscriptions, and no admin dashboard on this branch. The `{schema}_events` NOTIFY channel exists to refresh `EventStoreHead`, not to feed a UI. There is no operator tool either: operators call the core interfaces (see [operations.md](../operations.md)).
 
 ## Event deserialization invariant
 

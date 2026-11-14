@@ -23,6 +23,6 @@ CREATE TABLE IF NOT EXISTS $schema_prefix$alberto_tenant_shards (
     CONSTRAINT pk_alberto_tenant_shards PRIMARY KEY (module_key, tenant_id)
 );
 
--- Answers "what is in this shard?" for the CLI and for a shard being drained.
+-- Answers "what is in this shard?" for operators and for a shard being drained.
 CREATE INDEX IF NOT EXISTS ix_alberto_tenant_shards_shard
     ON $schema_prefix$alberto_tenant_shards (module_key, shard_id);

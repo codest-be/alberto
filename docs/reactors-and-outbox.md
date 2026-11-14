@@ -51,7 +51,7 @@ It is the checkpoint key. Two things follow:
 - **Change it and you get a brand-new processor starting at position 0**, which replays the entire
   log through your side effect. Renaming a reactor's id in a deployment is how people accidentally
   send ten thousand emails. If you must rename one, set its checkpoint before it starts:
-  `alberto ops checkpoint set <new-id> <current-head>`.
+  `ICheckpointStore.SaveAsync(newId, currentHead)`, then `ResetAsync` the old id.
 
 ### Async vs sync
 
@@ -382,11 +382,11 @@ The outbox was append-only in practice, and the partial indexes the relay depend
 - Several replicas sweeping concurrently is safe. The deletes are idempotent and the losers delete
   nothing.
 
-For a one-off cleanup, or to catch up a table that predates this, `alberto ops outbox purge --before
-<timestamp>` does the same delete from the CLI and records an `admin-outbox-purged` audit event.
+For a one-off cleanup, or to catch up a table that predates this, call
+`IOutboxStore.PurgeDeliveredAsync(before)` yourself: it is the same delete.
 
 > **Upgrading:** if your outbox predates `0.1.0`, the first sweep faces every delivered entry you
-> have ever written. If that table is large, purge it once from the CLI during a quiet window before
+> have ever written. If that table is large, purge it once with `PurgeDeliveredAsync` during a quiet window before
 > enabling the service, or set `deliveredRetention` wide and walk it down.
 
 ## Reactor, outbox, or inline projection?

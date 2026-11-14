@@ -267,7 +267,7 @@ public abstract class DeadLetterStoreSpecification
         await store.StoreAsync(entry, Ct);
 
         // A caller that passes a non-null tenantId to a single-tenant store must still see
-        // the entry. Filtering it out would make the CLI return nothing on single-tenant
+        // the entry. Filtering it out would make an operator read return nothing on single-tenant
         // deployments while the Postgres implementation returns the full list.
         var results = await store.GetAsync(ProcessorId, "any-tenant-does-not-filter", 100, Ct);
 
@@ -303,7 +303,7 @@ public abstract class DeadLetterStoreSpecification
 
     /// <summary>
     /// <c>GetAsync</c> must return entries sorted newest-first by
-    /// <see cref="DeadLetterEntry.FailedAt"/>. The operator views (CLI, admin) display
+    /// <see cref="DeadLetterEntry.FailedAt"/>. Operator views display
     /// most-recent failures at the top; both adapters agree on <c>ORDER BY failed_at DESC</c>.
     /// </summary>
     [Fact]

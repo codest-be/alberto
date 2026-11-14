@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 namespace Alberto.Subscriptions;
 
 /// <summary>
-/// Runs a dedicated loop for reprocessing dead-lettered events marked for retry via CLI.
+/// Runs a dedicated loop for reprocessing dead-lettered events marked for retry by an operator.
 /// Separate from the main ControlLoop to ensure fast retry turnaround (default 1 minute interval).
 /// Each entry is claimed with a time-bounded lease before dispatch — if the worker dies mid-dispatch
 /// the lease expires and another worker re-claims the entry, instead of the row being deleted up-front

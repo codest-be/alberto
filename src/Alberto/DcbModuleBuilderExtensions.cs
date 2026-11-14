@@ -540,8 +540,7 @@ public static class DcbModuleBuilderExtensions
     /// <para>
     /// A rebuild replays the whole log into a second, invisible copy of a projection's state
     /// while the live one keeps serving reads, then swaps the two in a single transaction.
-    /// Nothing happens until an operator starts one — <c>alberto ops rebuild start
-    /// &lt;processor&gt;</c> — and this method is what makes the application able to carry one out.
+    /// Nothing happens until an operator starts one — <see cref="IProjectionRebuildStore.StartAsync"/> — and this method is what makes the application able to carry one out.
     /// </para>
     /// <para>
     /// Requires a backend that registers an <see cref="IProjectionRebuildStore"/>; Postgres does.
@@ -554,7 +553,7 @@ public static class DcbModuleBuilderExtensions
     /// <param name="autoPromote">
     /// Promote a rebuild automatically as soon as it catches up. Default: <see langword="true"/>.
     /// Set <see langword="false"/> to park finished rebuilds at <c>Ready</c> until an operator
-    /// runs <c>alberto ops rebuild promote</c>.
+    /// calls <see cref="IProjectionRebuildStore.RequestPromotionAsync"/>.
     /// </param>
     /// <param name="pollingInterval">
     /// How often the coordinator re-reads the rebuild state machine. Default: 5 seconds.

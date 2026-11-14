@@ -1,7 +1,7 @@
 version: 2
 
 # One PR per family, not per package: packages that release together are bumped together, so a
-# HotChocolate or OpenTelemetry release lands as one reviewable change. Major versions are left
+# an OpenTelemetry release lands as one reviewable change. Major versions are left
 # out of the groups and arrive as their own PRs, because a major is a migration, not a bump.
 #
 # Dependabot PRs are exempt from the PR policy (.github/scripts/check-pr-policy.sh) and their
@@ -51,14 +51,6 @@ updates:
         patterns:
           - OpenTelemetry*
         update-types: [minor, patch]
-      aspire:
-        patterns:
-          - Aspire.*
-        update-types: [minor, patch]
-      hotchocolate:
-        patterns:
-          - HotChocolate*
-        update-types: [minor, patch]
       testing:
         patterns:
           - xunit*
@@ -73,20 +65,9 @@ updates:
         patterns:
           - xunit*
         update-types: [major]
-      cli:
-        patterns:
-          - Spectre.Console*
-          - System.CommandLine
-        update-types: [minor, patch]
       rebus:
         patterns:
           - Rebus*
-        update-types: [minor, patch]
-      admin-surface:
-        # Unreferenced on main; kept current for the parked feature/admin-surface branch.
-        patterns:
-          - ModelContextProtocol*
-          - Yarp.*
         update-types: [minor, patch]
       build-tooling:
         patterns:
@@ -95,20 +76,6 @@ updates:
           - BenchmarkDotNet*
           - dotnet-stryker
           - dotnet-reportgenerator-globaltool
-        update-types: [minor, patch]
-
-  - package-ecosystem: npm
-    directory: /tests/Alberto.Orders.LoadTests
-    schedule:
-      interval: weekly
-      day: monday
-    ignore:
-      # TypeScript 7 is the native compiler and has no JS API, so ts-loader cannot drive it.
-      - dependency-name: typescript
-        update-types: [version-update:semver-major]
-    groups:
-      load-tests:
-        patterns: ["*"]
         update-types: [minor, patch]
 
   - package-ecosystem: github-actions

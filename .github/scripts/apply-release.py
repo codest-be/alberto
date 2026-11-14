@@ -48,8 +48,8 @@ def die(msg: str) -> None:
 def packable_projects() -> list[str]:
     """The packages that ship to nuget.org.
 
-    Read from .github/packages.txt rather than globbing src/*: Alberto.Admin is parked and
-    carries a large PublicAPI.Unshipped.txt that must never be promoted to Shipped.
+    Read from .github/packages.txt rather than globbing src/*: not every project under src/
+    ships, and only the ones that do have public API to promote.
     """
     out = []
     for line in PACKAGES.read_text(encoding="utf-8").splitlines():
