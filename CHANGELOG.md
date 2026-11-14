@@ -17,6 +17,15 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ---
 
+## [0.8.0] - 2026-11-14
+
+### Changed
+
+- Control loops read and deserialize every event, then discard the types they do not handle (#221)
+- Append, head refresh, outbox and dead-letter paths do avoidable work (#219)
+
+---
+
 ## [0.7.0] - 2026-11-04
 
 A reactor that fails because something outside is down now comes back by itself, and a projection
@@ -920,7 +929,8 @@ Initial beta release. Core DCB event store abstractions, PostgreSQL backend, in-
 backend, command pipeline, EF Core projection support, transactional outbox, and
 OpenTelemetry instrumentation.
 
-[Unreleased]: https://github.com/codest-be/alberto/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/codest-be/alberto/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/codest-be/alberto/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/codest-be/alberto/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/codest-be/alberto/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/codest-be/alberto/compare/v0.4.0...v0.5.0

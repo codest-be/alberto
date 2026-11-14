@@ -487,10 +487,12 @@ Alberto.IEventStoreBackend
 Alberto.IEventStoreBackend.AppendAsync(System.Collections.Generic.IEnumerable<Alberto.IEventToPersist!>! events, Alberto.DcbQuery? dcbQuery = null, long? expectedPosition = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!
 Alberto.IEventStoreBackend.GetLastPositionAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<long>!
 Alberto.IEventStoreBackend.StreamAllAsync(long afterPosition = 0, int? limit = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!
+Alberto.IEventStoreBackend.StreamAllOfTypesAsync(System.Collections.Generic.IReadOnlySet<string!>! eventTypes, long afterPosition, int? limit, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!
 Alberto.IEventStoreBackend.StreamAsync(Alberto.DcbQuery! query, long afterPosition = 0, int? limit = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!
 Alberto.IEventStoreHeadBackend
 Alberto.IEventStoreHeadBackend.GetPositionsAsync(long afterPosition, int windowSize, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<long>!>!
 Alberto.IEventStoreHeadBackend.GetStableHeadAsync(long afterPosition, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<long>!
+Alberto.IEventStoreHeadBackend.GetStableHeadUpToAsync(long afterPosition, long upToPosition, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<long>!
 Alberto.IEventToPersist
 Alberto.IEventToPersist.EventData.get -> string!
 Alberto.IEventToPersist.EventType.get -> Alberto.EventType
@@ -977,6 +979,7 @@ Alberto.Tenancy.ShardRoutingEventStoreBackend.AppendAsync(System.Collections.Gen
 Alberto.Tenancy.ShardRoutingEventStoreBackend.GetLastPositionAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<long>!
 Alberto.Tenancy.ShardRoutingEventStoreBackend.ShardRoutingEventStoreBackend(string! moduleKey, Alberto.Tenancy.ITenantAccessor! tenantAccessor, Alberto.Tenancy.TenantShardResolver! resolver, System.Func<string!, Alberto.IEventStoreBackend!>! shardBackends) -> void
 Alberto.Tenancy.ShardRoutingEventStoreBackend.StreamAllAsync(long afterPosition = 0, int? limit = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!
+Alberto.Tenancy.ShardRoutingEventStoreBackend.StreamAllOfTypesAsync(System.Collections.Generic.IReadOnlySet<string!>! eventTypes, long afterPosition, int? limit, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!
 Alberto.Tenancy.ShardRoutingEventStoreBackend.StreamAsync(Alberto.DcbQuery! query, long afterPosition = 0, int? limit = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!
 Alberto.Tenancy.ShardState
 Alberto.Tenancy.ShardState.Healthy.get -> bool

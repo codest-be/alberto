@@ -1,2 +1,1 @@
 #nullable enable
-Alberto.Messaging.Postgres.PostgresOutboxStore.MarkDeliveredBatchAsync(System.Collections.Generic.IReadOnlyList<Alberto.Messaging.OutboxClaim!>! claims, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlySet<System.Guid>!>!
