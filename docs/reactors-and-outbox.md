@@ -51,7 +51,7 @@ It is the checkpoint key. Two things follow:
 - **Change it and you get a brand-new processor starting at position 0**, which replays the entire
   log through your side effect. Renaming a reactor's id in a deployment is how people accidentally
   send ten thousand emails. If you must rename one, set its checkpoint before it starts:
-  `ICheckpointStore.SaveAsync(newId, currentHead)`.
+  `ICheckpointStore.SaveAsync(newId, currentHead)`, then `ResetAsync` the old id.
 
 ### Async vs sync
 
