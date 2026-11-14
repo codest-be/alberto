@@ -37,7 +37,7 @@ internal sealed class ContextReactHandler
 /// Handler whose <see cref="ProcessorIdAttribute"/> derives a reserved processor id
 /// (<c>"consumer"</c>).  Used to verify that <c>ValidateProcessorIdArg</c> names the handler
 /// type in its error message when the id was derived from the type rather than passed explicitly
-/// (L890 of <c>DcbModuleBuilderExtensions.cs</c>).
+/// (L890 of <c>AlbertoModuleBuilderExtensions.cs</c>).
 /// </summary>
 [ProcessorId("consumer")]
 internal sealed class HandlerWithReservedProcessorId
@@ -48,7 +48,7 @@ internal sealed class HandlerWithReservedProcessorId
 
 /// <summary>
 /// Covers the sync/async registration branches of all four <c>ReactTo</c> overloads in
-/// <c>DcbModuleBuilderExtensions.cs</c>, concentrating on the paths that were
+/// <c>AlbertoModuleBuilderExtensions.cs</c>, concentrating on the paths that were
 /// mutation-test gaps:
 /// <list type="bullet">
 ///   <item>L201-211  factory, no context, Sync → <see cref="IPostAppendHandler"/></item>
@@ -63,7 +63,7 @@ public sealed class ReactToRegistrationTests
 {
     private const string ModuleKey = "orders";
 
-    private static IServiceProvider BuildModule(Action<DcbModuleBuilder> configure)
+    private static IServiceProvider BuildModule(Action<AlbertoModuleBuilder> configure)
     {
         var services = new ServiceCollection();
         services.AddAlberto(ModuleKey, m => { m.WithInMemory(); configure(m); });

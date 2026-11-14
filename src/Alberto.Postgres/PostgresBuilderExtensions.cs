@@ -28,8 +28,8 @@ public static class PostgresBuilderExtensions
     /// This declares the backend. No connection is opened and no migration runs until the host
     /// starts, so building a service provider is always side-effect free.
     /// </remarks>
-    public static DcbModuleBuilder WithPostgres(
-        this DcbModuleBuilder builder,
+    public static AlbertoModuleBuilder WithPostgres(
+        this AlbertoModuleBuilder builder,
         Func<PostgresOptions, PostgresOptions> configure)
     {
         ArgumentNullException.ThrowIfNull(builder);

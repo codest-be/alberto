@@ -11,7 +11,7 @@ namespace Alberto.Tests.Configuration;
 
 public class StartupValidationTests
 {
-    private static IHost BuildHost(Action<DcbModuleBuilder> configure)
+    private static IHost BuildHost(Action<AlbertoModuleBuilder> configure)
     {
         var builder = Host.CreateApplicationBuilder();
         builder.Services.AddAlberto("orders", configure);

@@ -14,7 +14,7 @@ namespace Alberto.Tests.Tenancy;
 /// <summary>
 /// Multi-tenant fixture on a private database. Runs the multi-tenant migration
 /// (without <c>singleTenant: true</c>) and wires up a DI service provider via
-/// <see cref="DcbModuleBuilder"/> with tenancy enabled so that
+/// <see cref="AlbertoModuleBuilder"/> with tenancy enabled so that
 /// <c>TenantEventStoreDecorator</c> is in the request-scoped backend chain.
 /// </summary>
 public sealed class MultiTenantPostgresFixture(PostgresCluster cluster)

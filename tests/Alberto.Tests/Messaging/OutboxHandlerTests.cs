@@ -148,7 +148,7 @@ public class OutboxHandlerTests
     // Helper: drives all deferred registrations from builder into a fresh ServiceCollection
     // and builds a provider, following the same pattern as
     // WithOutbox_in_sharded_module_each_shard_resolves_its_own_keyed_serializer.
-    private static ServiceProvider DriveRegistrations(DcbModuleBuilder builder, string moduleKey)
+    private static ServiceProvider DriveRegistrations(AlbertoModuleBuilder builder, string moduleKey)
     {
         var services = new ServiceCollection();
         var def = new AlbertoModuleDefinition { ModuleKey = moduleKey };
@@ -160,7 +160,7 @@ public class OutboxHandlerTests
     [Fact]
     public void WithOutbox_ThrowsWhenConfigureMappingsIsNull()
     {
-        var builder = new DcbModuleBuilder("test");
+        var builder = new AlbertoModuleBuilder("test");
         var store = new InMemoryOutboxStore();
         var ex = Assert.Throws<ArgumentNullException>(() =>
             builder.WithOutbox(null!, store));
@@ -170,7 +170,7 @@ public class OutboxHandlerTests
     [Fact]
     public void WithOutbox_ThrowsWhenOutboxStoreIsNull()
     {
-        var builder = new DcbModuleBuilder("test");
+        var builder = new AlbertoModuleBuilder("test");
         var ex = Assert.Throws<ArgumentNullException>(() =>
             builder.WithOutbox(_ => { }, null!));
         Assert.Equal("outboxStore", ex.ParamName);
@@ -185,7 +185,7 @@ public class OutboxHandlerTests
     public void WithOutbox_RegistersOutboxHandlerAsKeyedEventProcessor()
     {
         const string key = "orders";
-        var builder = new DcbModuleBuilder(key);
+        var builder = new AlbertoModuleBuilder(key);
         builder.WithOutbox(_ => { }, new InMemoryOutboxStore());
 
         using var provider = DriveRegistrations(builder, key);
@@ -203,7 +203,7 @@ public class OutboxHandlerTests
     public void WithOutbox_RegistersRetentionServiceEvenWithoutTransport()
     {
         const string key = "orders";
-        var builder = new DcbModuleBuilder(key);
+        var builder = new AlbertoModuleBuilder(key);
         builder.WithOutbox(_ => { }, new InMemoryOutboxStore());
 
         using var provider = DriveRegistrations(builder, key);
@@ -216,7 +216,7 @@ public class OutboxHandlerTests
     public void WithOutbox_RegistersRelayWhenTransportProvided()
     {
         const string key = "orders";
-        var builder = new DcbModuleBuilder(key);
+        var builder = new AlbertoModuleBuilder(key);
         builder.WithOutbox(_ => { }, new InMemoryOutboxStore(), transport: new InMemoryTransport());
 
         using var provider = DriveRegistrations(builder, key);
@@ -229,7 +229,7 @@ public class OutboxHandlerTests
     public void WithOutbox_DoesNotRegisterRelayWhenNoTransport()
     {
         const string key = "orders";
-        var builder = new DcbModuleBuilder(key);
+        var builder = new AlbertoModuleBuilder(key);
         builder.WithOutbox(_ => { }, new InMemoryOutboxStore());
 
         using var provider = DriveRegistrations(builder, key);
@@ -807,7 +807,7 @@ public class OutboxHandlerTests
         const string shardDb2Key = "orders#db2";
 
         var outboxStore = new InMemoryOutboxStore();
-        var builder = new DcbModuleBuilder(logicalKey);
+        var builder = new AlbertoModuleBuilder(logicalKey);
 
         // Capture the registry that configureMappings receives for each shard.
         // After the fix: called once per shard (inside the Register callback) → two entries.

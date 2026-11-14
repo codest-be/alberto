@@ -188,6 +188,7 @@ using Alberto;
 using Alberto.Commands;
 using Alberto.InMemory;
 using Alberto.Projections;
+using Alberto.Results;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 

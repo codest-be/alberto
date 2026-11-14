@@ -22,7 +22,7 @@ namespace Alberto.Subscriptions;
 /// <para>
 /// <b>Why this exists</b>: before the assembler, two call sites — the live-loop factory
 /// in <c>ControlLoopRegistration</c> and the shadow-rebuild factory in
-/// <c>DcbModuleBuilderExtensions</c> — independently composed middleware lists,
+/// <c>AlbertoModuleBuilderExtensions</c> — independently composed middleware lists,
 /// computed <c>hasUnpairedPerEventMiddlewares</c>, and called the <see cref="ControlLoop"/>
 /// constructor. A drift between those two sites would silently cause a rebuild to replay
 /// under different middleware than the live loop. The assembler is the single place where

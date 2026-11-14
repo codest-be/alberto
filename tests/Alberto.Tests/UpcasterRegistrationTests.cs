@@ -91,7 +91,7 @@ file static class UpcasterRegFixtures
 /// <see cref="DeclaredAsyncProjection{TState}"/> when they encounter an event stored at an
 /// older schema version.
 /// <para>
-/// The test injects the serializer via <see cref="DcbModuleBuilder.Register"/> rather than
+/// The test injects the serializer via <see cref="AlbertoModuleBuilder.Register"/> rather than
 /// <c>WithEventsFrom</c> because the test assembly contains duplicate <c>[EventType]</c> slugs
 /// across test classes, making <c>EventSerializer.FromAssembly(testAssembly)</c> fail.
 /// The DI wiring exercised here — keyed singleton <see cref="EventSerializer"/>, keyed scoped

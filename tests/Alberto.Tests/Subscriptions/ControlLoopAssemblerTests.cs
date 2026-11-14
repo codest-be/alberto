@@ -16,7 +16,7 @@ namespace Alberto.Tests.Subscriptions;
 /// <remarks>
 /// <para>
 /// Before the assembler existed, two call sites — <c>ControlLoopRegistration</c> (live loop)
-/// and <c>DcbModuleBuilderExtensions</c> (shadow-rebuild loop) — independently composed
+/// and <c>AlbertoModuleBuilderExtensions</c> (shadow-rebuild loop) — independently composed
 /// middleware lists and computed <c>hasUnpairedPerEventMiddlewares</c>. A drift between the
 /// two would cause a rebuild to replay under different middleware than the live loop — a
 /// silent correctness divergence with no prior test coverage.

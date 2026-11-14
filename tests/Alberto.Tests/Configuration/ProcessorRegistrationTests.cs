@@ -35,7 +35,7 @@ public class ProcessorRegistrationTests
             .GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>()
             .Get("orders");
 
-    private static IServiceCollection Module(Action<DcbModuleBuilder> configure)
+    private static IServiceCollection Module(Action<AlbertoModuleBuilder> configure)
     {
         var services = new ServiceCollection();
         services.AddSingleton<ShipmentNotifier>();

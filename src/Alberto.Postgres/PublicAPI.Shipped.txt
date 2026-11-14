@@ -69,7 +69,7 @@ Alberto.Postgres.PostgresStateStore<TState>.LoadManyAsync(System.Collections.Gen
 Alberto.Postgres.PostgresStateStore<TState>.PostgresStateStore(Npgsql.NpgsqlDataSource! dataSource, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TState>! jsonTypeInfo, string? projectionType = null, string? schema = null, Alberto.Projections.ProjectionVersion rebuildVersion = default(Alberto.Projections.ProjectionVersion), string? tenantId = null) -> void
 Alberto.Postgres.PostgresStateStore<TState>.PostgresStateStore(Npgsql.NpgsqlDataSource! dataSource, string? projectionType = null, string? schema = null, Alberto.Projections.ProjectionVersion rebuildVersion = default(Alberto.Projections.ProjectionVersion), string? tenantId = null) -> void
 Alberto.Postgres.ShardingBuilderExtensions
-static Alberto.Postgres.PostgresBuilderExtensions.WithPostgres(this Alberto.DcbModuleBuilder! builder, System.Func<Alberto.Postgres.PostgresOptions!, Alberto.Postgres.PostgresOptions!>! configure) -> Alberto.DcbModuleBuilder!
+static Alberto.Postgres.PostgresBuilderExtensions.WithPostgres(this Alberto.AlbertoModuleBuilder! builder, System.Func<Alberto.Postgres.PostgresOptions!, Alberto.Postgres.PostgresOptions!>! configure) -> Alberto.AlbertoModuleBuilder!
 static Alberto.Postgres.PostgresCatalogMigrator.Migrate(string! connectionString, string? schema = null) -> Alberto.Postgres.MigrationResult!
 static Alberto.Postgres.PostgresMigrator.GetPendingMigrations(string! connectionString, string? schema = null, bool singleTenant = false) -> System.Collections.Generic.IReadOnlyCollection<string!>!
 static Alberto.Postgres.PostgresMigrator.Migrate(string! connectionString, Alberto.Postgres.MigrationOptions? options) -> Alberto.Postgres.MigrationResult!

@@ -107,6 +107,7 @@ public class DiscardedPipelineAnalyzerTests
             using System.Threading.Tasks;
             using Alberto.Commands;
             using Alberto;
+            using Alberto.Results;
 
             public sealed record PlaceOrder(string OrderId);
 

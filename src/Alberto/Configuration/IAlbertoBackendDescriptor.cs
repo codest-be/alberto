@@ -5,7 +5,7 @@ namespace Alberto.Configuration;
 /// <summary>
 /// A storage backend as declared by <c>.WithPostgres(...)</c>, <c>.WithInMemory()</c> and friends.
 /// This is the supported extension point for third-party backends; it replaces reaching into
-/// <c>DcbModuleBuilder.Services</c> at declaration time.
+/// <c>AlbertoModuleBuilder.Services</c> at declaration time.
 /// </summary>
 /// <remarks>
 /// Implementations are immutable value objects. <see cref="ApplyConfiguration"/> returns a new

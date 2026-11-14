@@ -9,6 +9,7 @@ using Alberto.Telemetry;
 using Alberto.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
+using Alberto.Results;
 
 namespace Alberto.Tests.Telemetry;
 

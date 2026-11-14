@@ -1,6 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 
-namespace Alberto;
+namespace Alberto.Results;
 
 /// <summary>
 /// The outcome of a domain decision — either the events to append, or the problems

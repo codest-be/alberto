@@ -7,12 +7,12 @@ namespace Alberto;
 /// <see cref="AlbertoModuleDefinition"/>; nothing is registered and no I/O happens until the
 /// whole lambda has run. Call order therefore never changes the result.
 /// </summary>
-public sealed class DcbModuleBuilder
+public sealed class AlbertoModuleBuilder
 {
     private readonly List<Action<AlbertoModuleContext>> _deferredRegistrations = [];
     private readonly List<Action<TenancyBuilder>> _tenancyConfigurators = [];
 
-    internal DcbModuleBuilder(string moduleKey) =>
+    internal AlbertoModuleBuilder(string moduleKey) =>
         Definition = new AlbertoModuleDefinition { ModuleKey = moduleKey };
 
     /// <summary>The module key. Doubles as the DI service key for this module's services.</summary>
@@ -30,7 +30,7 @@ public sealed class DcbModuleBuilder
     /// Applies <paramref name="configure"/> to this module's declaration. This is the single
     /// mutation primitive; every <c>With*</c> extension is built on it.
     /// </summary>
-    public DcbModuleBuilder Configure(Func<AlbertoModuleDefinition, AlbertoModuleDefinition> configure)
+    public AlbertoModuleBuilder Configure(Func<AlbertoModuleDefinition, AlbertoModuleDefinition> configure)
     {
         ArgumentNullException.ThrowIfNull(configure);
 
@@ -44,7 +44,7 @@ public sealed class DcbModuleBuilder
     /// Declares which storage backend this module uses. A module has exactly one backend.
     /// </summary>
     /// <exception cref="InvalidOperationException">A backend was already declared.</exception>
-    public DcbModuleBuilder UseBackend(IAlbertoBackendDescriptor descriptor)
+    public AlbertoModuleBuilder UseBackend(IAlbertoBackendDescriptor descriptor)
     {
         ArgumentNullException.ThrowIfNull(descriptor);
 
@@ -59,7 +59,7 @@ public sealed class DcbModuleBuilder
     }
 
     /// <summary>Records a processor so startup validation can see it without resolving services.</summary>
-    public DcbModuleBuilder DeclareProcessor(ProcessorDeclaration declaration)
+    public AlbertoModuleBuilder DeclareProcessor(ProcessorDeclaration declaration)
     {
         ArgumentNullException.ThrowIfNull(declaration);
 
@@ -70,7 +70,7 @@ public sealed class DcbModuleBuilder
     /// Defers a service registration until the declaration is complete. The callback receives the
     /// final definition, so it can branch on tenancy or options that were declared later in the chain.
     /// </summary>
-    public DcbModuleBuilder Register(Action<AlbertoModuleContext> register)
+    public AlbertoModuleBuilder Register(Action<AlbertoModuleContext> register)
     {
         ArgumentNullException.ThrowIfNull(register);
 
@@ -81,7 +81,7 @@ public sealed class DcbModuleBuilder
     /// <summary>
     /// Declares that this module's data is partitioned per tenant. The backend must support it.
     /// </summary>
-    public DcbModuleBuilder WithTenancy() => Configure(d => d with { TenancyEnabled = true });
+    public AlbertoModuleBuilder WithTenancy() => Configure(d => d with { TenancyEnabled = true });
 
     /// <summary>
     /// Declares tenancy and configures how the tenants are laid out — in one database, which is
@@ -102,7 +102,7 @@ public sealed class DcbModuleBuilder
     /// this call — the module builder's rule that call order never changes the outcome holds for
     /// tenancy too.
     /// </remarks>
-    public DcbModuleBuilder WithTenancy(Action<TenancyBuilder> configure)
+    public AlbertoModuleBuilder WithTenancy(Action<TenancyBuilder> configure)
     {
         ArgumentNullException.ThrowIfNull(configure);
 

@@ -262,16 +262,16 @@ Alberto.DcbConflictException.DcbConflictException(string! message, long conflict
 Alberto.DcbConflictException.DcbConflictException(string! message, long conflictingPosition, long expectedPosition, Alberto.DcbQuery! query, System.Exception! innerException) -> void
 Alberto.DcbConflictException.ExpectedPosition.get -> long
 Alberto.DcbConflictException.Query.get -> Alberto.DcbQuery!
-Alberto.DcbConflictException.ToProblem() -> Alberto.Problem!
-Alberto.DcbModuleBuilder
-Alberto.DcbModuleBuilder.Configure(System.Func<Alberto.Configuration.AlbertoModuleDefinition!, Alberto.Configuration.AlbertoModuleDefinition!>! configure) -> Alberto.DcbModuleBuilder!
-Alberto.DcbModuleBuilder.DeclareProcessor(Alberto.Configuration.ProcessorDeclaration! declaration) -> Alberto.DcbModuleBuilder!
-Alberto.DcbModuleBuilder.ModuleKey.get -> string!
-Alberto.DcbModuleBuilder.Register(System.Action<Alberto.Configuration.AlbertoModuleContext!>! register) -> Alberto.DcbModuleBuilder!
-Alberto.DcbModuleBuilder.UseBackend(Alberto.Configuration.IAlbertoBackendDescriptor! descriptor) -> Alberto.DcbModuleBuilder!
-Alberto.DcbModuleBuilder.WithTenancy() -> Alberto.DcbModuleBuilder!
-Alberto.DcbModuleBuilder.WithTenancy(System.Action<Alberto.Configuration.TenancyBuilder!>! configure) -> Alberto.DcbModuleBuilder!
-Alberto.DcbModuleBuilderExtensions
+Alberto.DcbConflictException.ToProblem() -> Alberto.Results.Problem!
+Alberto.AlbertoModuleBuilder
+Alberto.AlbertoModuleBuilder.Configure(System.Func<Alberto.Configuration.AlbertoModuleDefinition!, Alberto.Configuration.AlbertoModuleDefinition!>! configure) -> Alberto.AlbertoModuleBuilder!
+Alberto.AlbertoModuleBuilder.DeclareProcessor(Alberto.Configuration.ProcessorDeclaration! declaration) -> Alberto.AlbertoModuleBuilder!
+Alberto.AlbertoModuleBuilder.ModuleKey.get -> string!
+Alberto.AlbertoModuleBuilder.Register(System.Action<Alberto.Configuration.AlbertoModuleContext!>! register) -> Alberto.AlbertoModuleBuilder!
+Alberto.AlbertoModuleBuilder.UseBackend(Alberto.Configuration.IAlbertoBackendDescriptor! descriptor) -> Alberto.AlbertoModuleBuilder!
+Alberto.AlbertoModuleBuilder.WithTenancy() -> Alberto.AlbertoModuleBuilder!
+Alberto.AlbertoModuleBuilder.WithTenancy(System.Action<Alberto.Configuration.TenancyBuilder!>! configure) -> Alberto.AlbertoModuleBuilder!
+Alberto.AlbertoModuleBuilderExtensions
 Alberto.DcbQuery
 Alberto.DcbQuery.AsIntersect() -> Alberto.DcbQuery!
 Alberto.DcbQuery.AsUnion() -> Alberto.DcbQuery!
@@ -293,20 +293,20 @@ Alberto.DcbQuery.WithTags(params string![]! tags) -> Alberto.DcbQuery!
 Alberto.DcbQuery.WithType<TEvent>() -> Alberto.DcbQuery!
 Alberto.DcbQuery.WithTypes(params Alberto.EventType[]! types) -> Alberto.DcbQuery!
 Alberto.DcbQuery.WithTypes(params string![]! typeIds) -> Alberto.DcbQuery!
-Alberto.Decision
-Alberto.Decision.Decision() -> void
-Alberto.Decision.Events.get -> System.Collections.Generic.IReadOnlyList<Alberto.IEvent!>!
-Alberto.Decision.IsError.get -> bool
-Alberto.Decision.IsSuccess.get -> bool
-Alberto.Decision.Problems.get -> System.Collections.Generic.IReadOnlyList<Alberto.Problem!>!
-Alberto.Decision<T>
-Alberto.Decision<T>.Decision() -> void
-Alberto.Decision<T>.Events.get -> System.Collections.Generic.IReadOnlyList<Alberto.IEvent!>!
-Alberto.Decision<T>.IsError.get -> bool
-Alberto.Decision<T>.IsSuccess.get -> bool
-Alberto.Decision<T>.Map<TNew>(System.Func<T, TNew>! transform) -> Alberto.Decision<TNew>
-Alberto.Decision<T>.Problems.get -> System.Collections.Generic.IReadOnlyList<Alberto.Problem!>!
-Alberto.Decision<T>.Value.get -> T
+Alberto.Results.Decision
+Alberto.Results.Decision.Decision() -> void
+Alberto.Results.Decision.Events.get -> System.Collections.Generic.IReadOnlyList<Alberto.IEvent!>!
+Alberto.Results.Decision.IsError.get -> bool
+Alberto.Results.Decision.IsSuccess.get -> bool
+Alberto.Results.Decision.Problems.get -> System.Collections.Generic.IReadOnlyList<Alberto.Results.Problem!>!
+Alberto.Results.Decision<T>
+Alberto.Results.Decision<T>.Decision() -> void
+Alberto.Results.Decision<T>.Events.get -> System.Collections.Generic.IReadOnlyList<Alberto.IEvent!>!
+Alberto.Results.Decision<T>.IsError.get -> bool
+Alberto.Results.Decision<T>.IsSuccess.get -> bool
+Alberto.Results.Decision<T>.Map<TNew>(System.Func<T, TNew>! transform) -> Alberto.Results.Decision<TNew>
+Alberto.Results.Decision<T>.Problems.get -> System.Collections.Generic.IReadOnlyList<Alberto.Results.Problem!>!
+Alberto.Results.Decision<T>.Value.get -> T
 Alberto.Diagnostics.ITraceContextProvider
 Alberto.Diagnostics.ITraceContextProvider.ExtractTraceContext(System.Collections.Generic.IReadOnlyDictionary<string!, string!>! metadata) -> Alberto.Diagnostics.TraceContext?
 Alberto.Diagnostics.TraceContext
@@ -445,29 +445,29 @@ Alberto.IEvolve<TState, TEvent>.Apply(TState state, TEvent event) -> TState
 Alberto.IGeneratedEvolver<TState>
 Alberto.IGeneratedEvolver<TState>.EvolveTable() -> System.Collections.Generic.IReadOnlyList<(System.Type! EventType, System.Func<TState, object!, TState>! Apply)>!
 Alberto.IGeneratedEvolver<TState>.GeneratedFor.get -> System.Type!
-Alberto.Problem
-Alberto.Problem.Code.get -> string!
-Alberto.Problem.Code.init -> void
-Alberto.Problem.Details.get -> System.Collections.Generic.IReadOnlyDictionary<string!, object!>!
-Alberto.Problem.Details.init -> void
-Alberto.Problem.Message.get -> string!
-Alberto.Problem.Message.init -> void
+Alberto.Results.Problem
+Alberto.Results.Problem.Code.get -> string!
+Alberto.Results.Problem.Code.init -> void
+Alberto.Results.Problem.Details.get -> System.Collections.Generic.IReadOnlyDictionary<string!, object!>!
+Alberto.Results.Problem.Details.init -> void
+Alberto.Results.Problem.Message.get -> string!
+Alberto.Results.Problem.Message.init -> void
 Alberto.ReactorMode
 Alberto.ReactorMode.Async = 0 -> Alberto.ReactorMode
 Alberto.ReactorMode.Sync = 1 -> Alberto.ReactorMode
-Alberto.Result
-Alberto.Result.IsFailure.get -> bool
-Alberto.Result.IsSuccess.get -> bool
-Alberto.Result.Problems.get -> System.Collections.Generic.IReadOnlyList<Alberto.Problem!>!
-Alberto.Result.Result() -> void
-Alberto.Result<T>
-Alberto.Result<T>.IsFailure.get -> bool
-Alberto.Result<T>.IsSuccess.get -> bool
-Alberto.Result<T>.Map<TNew>(System.Func<T, TNew>! transform) -> Alberto.Result<TNew>
-Alberto.Result<T>.Problems.get -> System.Collections.Generic.IReadOnlyList<Alberto.Problem!>!
-Alberto.Result<T>.Result() -> void
-Alberto.Result<T>.Value.get -> T
-Alberto.ServiceCollectionExtensions
+Alberto.Results.Result
+Alberto.Results.Result.IsFailure.get -> bool
+Alberto.Results.Result.IsSuccess.get -> bool
+Alberto.Results.Result.Problems.get -> System.Collections.Generic.IReadOnlyList<Alberto.Results.Problem!>!
+Alberto.Results.Result.Result() -> void
+Alberto.Results.Result<T>
+Alberto.Results.Result<T>.IsFailure.get -> bool
+Alberto.Results.Result<T>.IsSuccess.get -> bool
+Alberto.Results.Result<T>.Map<TNew>(System.Func<T, TNew>! transform) -> Alberto.Results.Result<TNew>
+Alberto.Results.Result<T>.Problems.get -> System.Collections.Generic.IReadOnlyList<Alberto.Results.Problem!>!
+Alberto.Results.Result<T>.Result() -> void
+Alberto.Results.Result<T>.Value.get -> T
+Alberto.AlbertoServiceCollectionExtensions
 Alberto.Subscriptions.BatchConsumeContext
 Alberto.Subscriptions.BatchConsumeContext.Attempt.get -> int
 Alberto.Subscriptions.BatchConsumeContext.BatchConsumeContext() -> void
@@ -916,18 +916,18 @@ static Alberto.Configuration.AlbertoValidationReport.Describe(string! moduleKey,
 static Alberto.Configuration.ControlLoopOptions.Default.get -> Alberto.Configuration.ControlLoopOptions!
 static Alberto.Configuration.ProcessorId.For(System.Type! handlerType) -> string!
 static Alberto.Configuration.ProcessorId.For<THandler>() -> string!
-static Alberto.DcbModuleBuilderExtensions.AddBatchConsumeMiddleware(this Alberto.DcbModuleBuilder! builder, System.Func<System.IServiceProvider!, Alberto.Subscriptions.BatchConsumeMiddleware!>! factory) -> Alberto.DcbModuleBuilder!
-static Alberto.DcbModuleBuilderExtensions.AddConsumeMiddleware(this Alberto.DcbModuleBuilder! builder, System.Func<System.IServiceProvider!, Alberto.Subscriptions.ConsumeMiddleware!>! factory) -> Alberto.DcbModuleBuilder!
-static Alberto.DcbModuleBuilderExtensions.AddProjection<TState>(this Alberto.DcbModuleBuilder! builder, Alberto.Projections.ProjectionDeclaration<TState>! declaration, System.Func<Alberto.Projections.ProjectionStoreContext, System.Func<string?, Alberto.Projections.IStateStore<TState>!>!>! stateStoreFactory, string? projectionType = null) -> Alberto.DcbModuleBuilder!
-static Alberto.DcbModuleBuilderExtensions.AddUpcaster(this Alberto.DcbModuleBuilder! builder, Alberto.Upcasting.UpcasterDeclaration! declaration) -> Alberto.DcbModuleBuilder!
-static Alberto.DcbModuleBuilderExtensions.ReactTo<TEvent, THandler>(this Alberto.DcbModuleBuilder! builder, System.Func<THandler!, System.Func<TEvent!, Alberto.Subscriptions.ReactorContext!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>!>! methodSelector, string? processorId = null, Alberto.ReactorMode mode = Alberto.ReactorMode.Async, System.Func<Alberto.Subscriptions.ProcessorExecutionOptions!, Alberto.Subscriptions.ProcessorExecutionOptions!>? configure = null) -> Alberto.DcbModuleBuilder!
-static Alberto.DcbModuleBuilderExtensions.ReactTo<TEvent, THandler>(this Alberto.DcbModuleBuilder! builder, System.Func<THandler!, System.Func<TEvent!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>!>! methodSelector, string? processorId = null, Alberto.ReactorMode mode = Alberto.ReactorMode.Async, System.Func<Alberto.Subscriptions.ProcessorExecutionOptions!, Alberto.Subscriptions.ProcessorExecutionOptions!>? configure = null) -> Alberto.DcbModuleBuilder!
-static Alberto.DcbModuleBuilderExtensions.ReactTo<TEvent>(this Alberto.DcbModuleBuilder! builder, System.Func<System.IServiceProvider!, System.Func<TEvent!, Alberto.Subscriptions.ReactorContext!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>!>! handlerFactory, string! processorId, Alberto.ReactorMode mode = Alberto.ReactorMode.Async, System.Func<Alberto.Subscriptions.ProcessorExecutionOptions!, Alberto.Subscriptions.ProcessorExecutionOptions!>? configure = null) -> Alberto.DcbModuleBuilder!
-static Alberto.DcbModuleBuilderExtensions.ReactTo<TEvent>(this Alberto.DcbModuleBuilder! builder, System.Func<System.IServiceProvider!, System.Func<TEvent!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>!>! handlerFactory, string! processorId, Alberto.ReactorMode mode = Alberto.ReactorMode.Async, System.Func<Alberto.Subscriptions.ProcessorExecutionOptions!, Alberto.Subscriptions.ProcessorExecutionOptions!>? configure = null) -> Alberto.DcbModuleBuilder!
-static Alberto.DcbModuleBuilderExtensions.UseErrorClassifier(this Alberto.DcbModuleBuilder! builder, Alberto.Subscriptions.IErrorClassifier! classifier) -> Alberto.DcbModuleBuilder!
-static Alberto.DcbModuleBuilderExtensions.UseErrorClassifier<TClassifier>(this Alberto.DcbModuleBuilder! builder) -> Alberto.DcbModuleBuilder!
-static Alberto.DcbModuleBuilderExtensions.WithControlLoop(this Alberto.DcbModuleBuilder! builder, System.Func<Alberto.Configuration.ControlLoopOptions!, Alberto.Configuration.ControlLoopOptions!>? configure = null) -> Alberto.DcbModuleBuilder!
-static Alberto.DcbModuleBuilderExtensions.WithRebuilds(this Alberto.DcbModuleBuilder! builder, bool autoPromote = true, System.TimeSpan? pollingInterval = null) -> Alberto.DcbModuleBuilder!
+static Alberto.AlbertoModuleBuilderExtensions.AddBatchConsumeMiddleware(this Alberto.AlbertoModuleBuilder! builder, System.Func<System.IServiceProvider!, Alberto.Subscriptions.BatchConsumeMiddleware!>! factory) -> Alberto.AlbertoModuleBuilder!
+static Alberto.AlbertoModuleBuilderExtensions.AddConsumeMiddleware(this Alberto.AlbertoModuleBuilder! builder, System.Func<System.IServiceProvider!, Alberto.Subscriptions.ConsumeMiddleware!>! factory) -> Alberto.AlbertoModuleBuilder!
+static Alberto.AlbertoModuleBuilderExtensions.AddProjection<TState>(this Alberto.AlbertoModuleBuilder! builder, Alberto.Projections.ProjectionDeclaration<TState>! declaration, System.Func<Alberto.Projections.ProjectionStoreContext, System.Func<string?, Alberto.Projections.IStateStore<TState>!>!>! stateStoreFactory, string? projectionType = null) -> Alberto.AlbertoModuleBuilder!
+static Alberto.AlbertoModuleBuilderExtensions.AddUpcaster(this Alberto.AlbertoModuleBuilder! builder, Alberto.Upcasting.UpcasterDeclaration! declaration) -> Alberto.AlbertoModuleBuilder!
+static Alberto.AlbertoModuleBuilderExtensions.ReactTo<TEvent, THandler>(this Alberto.AlbertoModuleBuilder! builder, System.Func<THandler!, System.Func<TEvent!, Alberto.Subscriptions.ReactorContext!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>!>! methodSelector, string? processorId = null, Alberto.ReactorMode mode = Alberto.ReactorMode.Async, System.Func<Alberto.Subscriptions.ProcessorExecutionOptions!, Alberto.Subscriptions.ProcessorExecutionOptions!>? configure = null) -> Alberto.AlbertoModuleBuilder!
+static Alberto.AlbertoModuleBuilderExtensions.ReactTo<TEvent, THandler>(this Alberto.AlbertoModuleBuilder! builder, System.Func<THandler!, System.Func<TEvent!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>!>! methodSelector, string? processorId = null, Alberto.ReactorMode mode = Alberto.ReactorMode.Async, System.Func<Alberto.Subscriptions.ProcessorExecutionOptions!, Alberto.Subscriptions.ProcessorExecutionOptions!>? configure = null) -> Alberto.AlbertoModuleBuilder!
+static Alberto.AlbertoModuleBuilderExtensions.ReactTo<TEvent>(this Alberto.AlbertoModuleBuilder! builder, System.Func<System.IServiceProvider!, System.Func<TEvent!, Alberto.Subscriptions.ReactorContext!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>!>! handlerFactory, string! processorId, Alberto.ReactorMode mode = Alberto.ReactorMode.Async, System.Func<Alberto.Subscriptions.ProcessorExecutionOptions!, Alberto.Subscriptions.ProcessorExecutionOptions!>? configure = null) -> Alberto.AlbertoModuleBuilder!
+static Alberto.AlbertoModuleBuilderExtensions.ReactTo<TEvent>(this Alberto.AlbertoModuleBuilder! builder, System.Func<System.IServiceProvider!, System.Func<TEvent!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>!>! handlerFactory, string! processorId, Alberto.ReactorMode mode = Alberto.ReactorMode.Async, System.Func<Alberto.Subscriptions.ProcessorExecutionOptions!, Alberto.Subscriptions.ProcessorExecutionOptions!>? configure = null) -> Alberto.AlbertoModuleBuilder!
+static Alberto.AlbertoModuleBuilderExtensions.UseErrorClassifier(this Alberto.AlbertoModuleBuilder! builder, Alberto.Subscriptions.IErrorClassifier! classifier) -> Alberto.AlbertoModuleBuilder!
+static Alberto.AlbertoModuleBuilderExtensions.UseErrorClassifier<TClassifier>(this Alberto.AlbertoModuleBuilder! builder) -> Alberto.AlbertoModuleBuilder!
+static Alberto.AlbertoModuleBuilderExtensions.WithControlLoop(this Alberto.AlbertoModuleBuilder! builder, System.Func<Alberto.Configuration.ControlLoopOptions!, Alberto.Configuration.ControlLoopOptions!>? configure = null) -> Alberto.AlbertoModuleBuilder!
+static Alberto.AlbertoModuleBuilderExtensions.WithRebuilds(this Alberto.AlbertoModuleBuilder! builder, bool autoPromote = true, System.TimeSpan? pollingInterval = null) -> Alberto.AlbertoModuleBuilder!
 static Alberto.DcbQuery.All.get -> Alberto.DcbQuery!
 static Alberto.DcbQuery.ByAllTags(params Alberto.EventTag[]! tags) -> Alberto.DcbQuery!
 static Alberto.DcbQuery.ByAllTags(params string![]! tags) -> Alberto.DcbQuery!
@@ -942,19 +942,19 @@ static Alberto.DcbQuery.For(string! concept, int id) -> Alberto.DcbQuery!
 static Alberto.DcbQuery.For(string! concept, long id) -> Alberto.DcbQuery!
 static Alberto.DcbQuery.For(string! concept, string! id) -> Alberto.DcbQuery!
 static Alberto.DcbQuery.For<TId>(string! concept, TId id) -> Alberto.DcbQuery!
-static Alberto.Decision.Fail(Alberto.Problem! problem) -> Alberto.Decision
-static Alberto.Decision.Fail(System.Collections.Generic.IEnumerable<Alberto.Problem!>! problems) -> Alberto.Decision
-static Alberto.Decision.Fail(string! code, string! message) -> Alberto.Decision
-static Alberto.Decision.Succeed(System.Collections.Generic.IEnumerable<Alberto.IEvent!>! events) -> Alberto.Decision
-static Alberto.Decision.Succeed(params Alberto.IEvent![]! events) -> Alberto.Decision
-static Alberto.Decision.implicit operator Alberto.Decision(Alberto.Problem! problem) -> Alberto.Decision
-static Alberto.Decision<T>.Fail(Alberto.Problem! problem) -> Alberto.Decision<T>
-static Alberto.Decision<T>.Fail(System.Collections.Generic.IEnumerable<Alberto.Problem!>! problems) -> Alberto.Decision<T>
-static Alberto.Decision<T>.Fail(string! code, string! message) -> Alberto.Decision<T>
-static Alberto.Decision<T>.Succeed(T value, System.Collections.Generic.IEnumerable<Alberto.IEvent!>! events) -> Alberto.Decision<T>
-static Alberto.Decision<T>.Succeed(T value, params Alberto.IEvent![]! events) -> Alberto.Decision<T>
-static Alberto.Decision<T>.implicit operator Alberto.Decision(Alberto.Decision<T> decision) -> Alberto.Decision
-static Alberto.Decision<T>.implicit operator Alberto.Decision<T>(Alberto.Problem! problem) -> Alberto.Decision<T>
+static Alberto.Results.Decision.Fail(Alberto.Results.Problem! problem) -> Alberto.Results.Decision
+static Alberto.Results.Decision.Fail(System.Collections.Generic.IEnumerable<Alberto.Results.Problem!>! problems) -> Alberto.Results.Decision
+static Alberto.Results.Decision.Fail(string! code, string! message) -> Alberto.Results.Decision
+static Alberto.Results.Decision.Succeed(System.Collections.Generic.IEnumerable<Alberto.IEvent!>! events) -> Alberto.Results.Decision
+static Alberto.Results.Decision.Succeed(params Alberto.IEvent![]! events) -> Alberto.Results.Decision
+static Alberto.Results.Decision.implicit operator Alberto.Results.Decision(Alberto.Results.Problem! problem) -> Alberto.Results.Decision
+static Alberto.Results.Decision<T>.Fail(Alberto.Results.Problem! problem) -> Alberto.Results.Decision<T>
+static Alberto.Results.Decision<T>.Fail(System.Collections.Generic.IEnumerable<Alberto.Results.Problem!>! problems) -> Alberto.Results.Decision<T>
+static Alberto.Results.Decision<T>.Fail(string! code, string! message) -> Alberto.Results.Decision<T>
+static Alberto.Results.Decision<T>.Succeed(T value, System.Collections.Generic.IEnumerable<Alberto.IEvent!>! events) -> Alberto.Results.Decision<T>
+static Alberto.Results.Decision<T>.Succeed(T value, params Alberto.IEvent![]! events) -> Alberto.Results.Decision<T>
+static Alberto.Results.Decision<T>.implicit operator Alberto.Results.Decision(Alberto.Results.Decision<T> decision) -> Alberto.Results.Decision
+static Alberto.Results.Decision<T>.implicit operator Alberto.Results.Decision<T>(Alberto.Results.Problem! problem) -> Alberto.Results.Decision<T>
 static Alberto.EventSerializer.FromAssemblies(System.Text.Json.JsonSerializerOptions? options = null, params System.Reflection.Assembly![]! assemblies) -> Alberto.EventSerializer!
 static Alberto.EventSerializer.FromAssembly(System.Reflection.Assembly! assembly, System.Text.Json.JsonSerializerOptions? options = null) -> Alberto.EventSerializer!
 static Alberto.EventSerializer.FromRegistry(Alberto.IEventTypeRegistry! registry) -> Alberto.EventSerializer!
@@ -974,17 +974,17 @@ static Alberto.EventTypeAttribute.GetEventTypeId(System.Type! type) -> string!
 static Alberto.EventTypeRegistry.CreateBuilder() -> Alberto.EventTypeRegistryBuilder!
 static Alberto.EventTypeRegistry.FromAssemblies(System.Text.Json.JsonSerializerOptions? options, params System.Reflection.Assembly![]! assemblies) -> Alberto.IEventTypeRegistry!
 static Alberto.EventTypeRegistry.FromAssembly(System.Reflection.Assembly! assembly, System.Text.Json.JsonSerializerOptions? options = null) -> Alberto.IEventTypeRegistry!
-static Alberto.Problem.Create(string! code, string! message, System.Collections.Generic.IReadOnlyDictionary<string!, object!>? details = null) -> Alberto.Problem!
-static Alberto.Result.Fail(Alberto.Problem! problem) -> Alberto.Result
-static Alberto.Result.Fail(System.Collections.Generic.IEnumerable<Alberto.Problem!>! problems) -> Alberto.Result
-static Alberto.Result.Success() -> Alberto.Result
-static Alberto.Result.implicit operator Alberto.Result(Alberto.Problem! problem) -> Alberto.Result
-static Alberto.Result<T>.Fail(Alberto.Problem! problem) -> Alberto.Result<T>
-static Alberto.Result<T>.Fail(System.Collections.Generic.IEnumerable<Alberto.Problem!>! problems) -> Alberto.Result<T>
-static Alberto.Result<T>.Success(T value) -> Alberto.Result<T>
-static Alberto.Result<T>.implicit operator Alberto.Result<T>(Alberto.Problem! problem) -> Alberto.Result<T>
-static Alberto.Result<T>.implicit operator Alberto.Result<T>(T value) -> Alberto.Result<T>
-static Alberto.ServiceCollectionExtensions.AddAlberto(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, string! moduleKey, System.Action<Alberto.DcbModuleBuilder!>! configure) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Alberto.Results.Problem.Create(string! code, string! message, System.Collections.Generic.IReadOnlyDictionary<string!, object!>? details = null) -> Alberto.Results.Problem!
+static Alberto.Results.Result.Fail(Alberto.Results.Problem! problem) -> Alberto.Results.Result
+static Alberto.Results.Result.Fail(System.Collections.Generic.IEnumerable<Alberto.Results.Problem!>! problems) -> Alberto.Results.Result
+static Alberto.Results.Result.Success() -> Alberto.Results.Result
+static Alberto.Results.Result.implicit operator Alberto.Results.Result(Alberto.Results.Problem! problem) -> Alberto.Results.Result
+static Alberto.Results.Result<T>.Fail(Alberto.Results.Problem! problem) -> Alberto.Results.Result<T>
+static Alberto.Results.Result<T>.Fail(System.Collections.Generic.IEnumerable<Alberto.Results.Problem!>! problems) -> Alberto.Results.Result<T>
+static Alberto.Results.Result<T>.Success(T value) -> Alberto.Results.Result<T>
+static Alberto.Results.Result<T>.implicit operator Alberto.Results.Result<T>(Alberto.Results.Problem! problem) -> Alberto.Results.Result<T>
+static Alberto.Results.Result<T>.implicit operator Alberto.Results.Result<T>(T value) -> Alberto.Results.Result<T>
+static Alberto.AlbertoServiceCollectionExtensions.AddAlberto(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, string! moduleKey, System.Action<Alberto.AlbertoModuleBuilder!>! configure) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static Alberto.Subscriptions.BatchConsumeMiddlewares.RetryAndDeadLetter(Alberto.Configuration.RetryOptions! retry, Alberto.Subscriptions.IErrorClassifier! classifier, Alberto.DeadLetters.IDeadLetterStore? deadLetterStore, System.TimeProvider? timeProvider = null, Microsoft.Extensions.Logging.ILogger? logger = null) -> Alberto.Subscriptions.BatchConsumeMiddleware!
 static Alberto.Subscriptions.ConsumeMiddlewares.RetryAndDeadLetter(Alberto.Configuration.RetryOptions! retry, Alberto.Subscriptions.IErrorClassifier! classifier, Alberto.DeadLetters.IDeadLetterStore? deadLetterStore, System.TimeProvider? timeProvider = null, Microsoft.Extensions.Logging.ILogger? logger = null) -> Alberto.Subscriptions.ConsumeMiddleware!
 static Alberto.Projections.DeclareProjection.For<TState>(string! processorId) -> Alberto.Projections.ProjectionDeclarationBuilder<TState>!

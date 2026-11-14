@@ -1,6 +1,7 @@
 using Alberto.Configuration;
 using FluentAssertions;
 using Xunit;
+using Alberto.Results;
 
 namespace Alberto.Tests.Configuration;
 

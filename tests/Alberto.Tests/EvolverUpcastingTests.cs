@@ -3,6 +3,7 @@ using Alberto.InMemory;
 using Alberto.Upcasting;
 using FluentAssertions;
 using Xunit;
+using Alberto.Results;
 
 namespace Alberto.Tests;
 

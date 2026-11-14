@@ -54,8 +54,8 @@ public static class AlbertoStoreBuilderExtensions
     /// </example>
     [RequiresUnreferencedCode(ScanMessage)]
     [RequiresDynamicCode(ScanMessage)]
-    public static DcbModuleBuilder WithEventsFrom(
-        this DcbModuleBuilder builder,
+    public static AlbertoModuleBuilder WithEventsFrom(
+        this AlbertoModuleBuilder builder,
         Assembly eventsAssembly)
     {
         ArgumentNullException.ThrowIfNull(builder);
@@ -98,8 +98,8 @@ public static class AlbertoStoreBuilderExtensions
     ///     .WithEvents(events));
     /// </code>
     /// </example>
-    public static DcbModuleBuilder WithEvents(
-        this DcbModuleBuilder builder,
+    public static AlbertoModuleBuilder WithEvents(
+        this AlbertoModuleBuilder builder,
         IEventTypeRegistry registry)
     {
         ArgumentNullException.ThrowIfNull(builder);
@@ -108,8 +108,8 @@ public static class AlbertoStoreBuilderExtensions
         return RegisterEvents(builder, registry, EventSerializer.FromRegistry);
     }
 
-    private static DcbModuleBuilder RegisterEvents(
-        DcbModuleBuilder builder,
+    private static AlbertoModuleBuilder RegisterEvents(
+        AlbertoModuleBuilder builder,
         IEventTypeRegistry registry,
         Func<IEventTypeRegistry, EventSerializer> createSerializer)
     {

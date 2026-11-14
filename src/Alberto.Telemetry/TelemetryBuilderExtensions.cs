@@ -22,8 +22,8 @@ public static class TelemetryBuilderExtensions
     /// <param name="builder">The module builder.</param>
     /// <param name="configure">Transforms the telemetry options with a <c>with</c> expression.</param>
     /// <returns>The module builder for chaining.</returns>
-    public static DcbModuleBuilder WithTelemetry(
-        this DcbModuleBuilder builder,
+    public static AlbertoModuleBuilder WithTelemetry(
+        this AlbertoModuleBuilder builder,
         Func<TelemetryOptions, TelemetryOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(builder);

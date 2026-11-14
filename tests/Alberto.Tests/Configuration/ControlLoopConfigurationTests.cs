@@ -14,7 +14,7 @@ using Xunit;
 namespace Alberto.Tests.Configuration;
 
 /// <summary>
-/// Tests that <see cref="DcbModuleBuilderExtensions.WithControlLoop"/> correctly records intent
+/// Tests that <see cref="AlbertoModuleBuilderExtensions.WithControlLoop"/> correctly records intent
 /// into the <see cref="AlbertoModuleDefinition"/> and that configuration wins over code defaults.
 /// </summary>
 public class ControlLoopConfigurationTests

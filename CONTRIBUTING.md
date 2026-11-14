@@ -105,7 +105,7 @@ leave `Unshipped` with just its `#nullable enable` line.
 guidelines, not bugs, and are satisfiable by justification when the overloads are separated by a
 *required* parameter or by delegate shape rather than by the optional tail. Where that is the
 case, add a `[SuppressMessage]` with a `Justification` naming which parameter does the separating.
-See the existing ones in `DcbModuleBuilderExtensions.ReactTo` for the form. Do not reach for
+See the existing ones in `AlbertoModuleBuilderExtensions.ReactTo` for the form. Do not reach for
 `#pragma warning disable`, and do not lower the severity.
 
 **Packability.** `Directory.Build.props` defaults `IsPackable` to `false`; each project under

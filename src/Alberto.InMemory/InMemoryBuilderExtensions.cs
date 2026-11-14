@@ -21,7 +21,7 @@ public static class InMemoryBuilderExtensions
     /// </summary>
     /// <param name="builder">The module builder.</param>
     /// <returns>The module builder for chaining.</returns>
-    public static DcbModuleBuilder WithInMemory(this DcbModuleBuilder builder)
+    public static AlbertoModuleBuilder WithInMemory(this AlbertoModuleBuilder builder)
     {
         ArgumentNullException.ThrowIfNull(builder);
 
@@ -35,7 +35,7 @@ public static class InMemoryBuilderExtensions
     /// <param name="builder">The module builder.</param>
     /// <param name="sharedModuleKey">The module key whose event store backend to share.</param>
     /// <returns>The module builder for chaining.</returns>
-    public static DcbModuleBuilder WithInMemory(this DcbModuleBuilder builder, string sharedModuleKey)
+    public static AlbertoModuleBuilder WithInMemory(this AlbertoModuleBuilder builder, string sharedModuleKey)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentException.ThrowIfNullOrWhiteSpace(sharedModuleKey);

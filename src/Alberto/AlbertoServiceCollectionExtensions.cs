@@ -15,7 +15,7 @@ namespace Alberto;
 /// <summary>
 /// Extension methods for registering Alberto DCB modules.
 /// </summary>
-public static class ServiceCollectionExtensions
+public static class AlbertoServiceCollectionExtensions
 {
     /// <summary>
     /// Adds an Alberto DCB module. The <paramref name="configure"/> callback only declares
@@ -37,7 +37,7 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddAlberto(
         this IServiceCollection services,
         string moduleKey,
-        Action<DcbModuleBuilder> configure)
+        Action<AlbertoModuleBuilder> configure)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentException.ThrowIfNullOrWhiteSpace(moduleKey);
@@ -77,12 +77,12 @@ public static class ServiceCollectionExtensions
                 "module, it overlays its options and starts a second set of control loops that " +
                 "race on the same checkpoint, dispatching every event twice." + Environment.NewLine +
                 "  → Give each module its own key. To extend a module declared elsewhere, keep a " +
-                "reference to its DcbModuleBuilder rather than calling AddAlberto again.");
+                "reference to its AlbertoModuleBuilder rather than calling AddAlberto again.");
 
         MarkModuleKeyTaken(services, moduleKey);
 
         // Phase 1 — declare. Runs the user's lambda against an accumulator; touches nothing else.
-        var builder = new DcbModuleBuilder(moduleKey);
+        var builder = new AlbertoModuleBuilder(moduleKey);
         configure(builder);
 
         // Tenancy is declared last, against the completed declaration, so a shard can inherit

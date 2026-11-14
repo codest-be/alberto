@@ -6,7 +6,7 @@ namespace Alberto.Telemetry;
 /// <summary>
 /// Extension methods for registering Alberto telemetry with OpenTelemetry.
 /// </summary>
-public static class ServiceCollectionExtensions
+public static class AlbertoTelemetryServiceCollectionExtensions
 {
     /// <summary>
     /// Adds Alberto tracing to an OpenTelemetry <see cref="TracerProviderBuilder"/>.

@@ -1,4 +1,4 @@
-namespace Alberto;
+namespace Alberto.Results;
 
 public sealed record Problem
 {

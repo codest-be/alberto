@@ -16,7 +16,7 @@ public class UnshardedRegistrationParityTests
 {
     private const string ConnectionString = "Host=localhost;Database=alberto;Username=x;Password=y";
 
-    private static ServiceProvider Provider(Action<DcbModuleBuilder> configure)
+    private static ServiceProvider Provider(Action<AlbertoModuleBuilder> configure)
     {
         var services = new ServiceCollection();
         services.AddAlberto("orders", configure);

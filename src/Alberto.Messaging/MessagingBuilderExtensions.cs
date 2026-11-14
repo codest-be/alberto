@@ -15,11 +15,11 @@ public static class MessagingBuilderExtensions
 {
     /// <summary>
     /// Binary-compatible overload of
-    /// <see cref="WithOutbox(DcbModuleBuilder, Action{IMessageMappingRegistry}, IOutboxStore, IMessageTransport?, int, TimeSpan?, TimeSpan?, TimeSpan?, int)"/>
+    /// <see cref="WithOutbox(AlbertoModuleBuilder, Action{IMessageMappingRegistry}, IOutboxStore, IMessageTransport?, int, TimeSpan?, TimeSpan?, TimeSpan?, int)"/>
     /// with <see cref="OutboxRelay.DefaultMaxRetries"/>.
     /// </summary>
-    public static DcbModuleBuilder WithOutbox(
-        this DcbModuleBuilder builder,
+    public static AlbertoModuleBuilder WithOutbox(
+        this AlbertoModuleBuilder builder,
         Action<IMessageMappingRegistry> configureMappings,
         IOutboxStore outboxStore,
         IMessageTransport? transport,
@@ -73,8 +73,8 @@ public static class MessagingBuilderExtensions
     /// entries reach <c>delivered</c> by being delivered, and a host that relays elsewhere still
     /// accumulates them.
     /// </remarks>
-    public static DcbModuleBuilder WithOutbox(
-        this DcbModuleBuilder builder,
+    public static AlbertoModuleBuilder WithOutbox(
+        this AlbertoModuleBuilder builder,
         Action<IMessageMappingRegistry> configureMappings,
         IOutboxStore outboxStore,
         IMessageTransport? transport = null,

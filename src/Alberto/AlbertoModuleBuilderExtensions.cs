@@ -16,9 +16,9 @@ using Microsoft.Extensions.Options;
 namespace Alberto;
 
 /// <summary>
-/// Extension methods for <see cref="DcbModuleBuilder"/>.
+/// Extension methods for <see cref="AlbertoModuleBuilder"/>.
 /// </summary>
-public static class DcbModuleBuilderExtensions
+public static class AlbertoModuleBuilderExtensions
 {
     /// <summary>
     /// Registers an async projection processor using the declaration-based API.
@@ -93,8 +93,8 @@ public static class DcbModuleBuilderExtensions
     /// var store = factory(TenantScope.CrossTenant);
     /// </code>
     /// </remarks>
-    public static DcbModuleBuilder AddProjection<TState>(
-        this DcbModuleBuilder builder,
+    public static AlbertoModuleBuilder AddProjection<TState>(
+        this AlbertoModuleBuilder builder,
         ProjectionDeclaration<TState> declaration,
         Func<ProjectionStoreContext, Func<string?, IStateStore<TState>>> stateStoreFactory,
         string? projectionType = null)
@@ -179,8 +179,8 @@ public static class DcbModuleBuilderExtensions
                         "differs in arity, not by the optional tail: no call can bind to both, and " +
                         "collapsing them would mean asking every caller that does not need " +
                         "ReactorContext to accept and ignore it.")]
-    public static DcbModuleBuilder ReactTo<TEvent>(
-        this DcbModuleBuilder builder,
+    public static AlbertoModuleBuilder ReactTo<TEvent>(
+        this AlbertoModuleBuilder builder,
         Func<IServiceProvider, Func<TEvent, CancellationToken, Task>> handlerFactory,
         string processorId,
         ReactorMode mode = ReactorMode.Async,
@@ -256,8 +256,8 @@ public static class DcbModuleBuilderExtensions
                         "differs in arity, not by the optional tail: no call can bind to both, and " +
                         "collapsing them would mean asking every caller that does not need " +
                         "ReactorContext to accept and ignore it.")]
-    public static DcbModuleBuilder ReactTo<TEvent>(
-        this DcbModuleBuilder builder,
+    public static AlbertoModuleBuilder ReactTo<TEvent>(
+        this AlbertoModuleBuilder builder,
         Func<IServiceProvider, Func<TEvent, ReactorContext, CancellationToken, Task>> handlerFactory,
         string processorId,
         ReactorMode mode = ReactorMode.Async,
@@ -333,8 +333,8 @@ public static class DcbModuleBuilderExtensions
                         "differs in arity, not by the optional tail: no call can bind to both, and " +
                         "collapsing them would mean asking every caller that does not need " +
                         "ReactorContext to accept and ignore it.")]
-    public static DcbModuleBuilder ReactTo<TEvent, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] THandler>(
-        this DcbModuleBuilder builder,
+    public static AlbertoModuleBuilder ReactTo<TEvent, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] THandler>(
+        this AlbertoModuleBuilder builder,
         Func<THandler, Func<TEvent, CancellationToken, Task>> methodSelector,
         string? processorId = null,
         ReactorMode mode = ReactorMode.Async,
@@ -430,8 +430,8 @@ public static class DcbModuleBuilderExtensions
                         "differs in arity, not by the optional tail: no call can bind to both, and " +
                         "collapsing them would mean asking every caller that does not need " +
                         "ReactorContext to accept and ignore it.")]
-    public static DcbModuleBuilder ReactTo<TEvent, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] THandler>(
-        this DcbModuleBuilder builder,
+    public static AlbertoModuleBuilder ReactTo<TEvent, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] THandler>(
+        this AlbertoModuleBuilder builder,
         Func<THandler, Func<TEvent, ReactorContext, CancellationToken, Task>> methodSelector,
         string? processorId = null,
         ReactorMode mode = ReactorMode.Async,
@@ -512,8 +512,8 @@ public static class DcbModuleBuilderExtensions
     /// <c>o => o with { BatchSize = 500 }</c>. Anything set here is still overridable from
     /// <c>Alberto:Modules:{moduleKey}:ControlLoop</c>.
     /// </param>
-    public static DcbModuleBuilder WithControlLoop(
-        this DcbModuleBuilder builder,
+    public static AlbertoModuleBuilder WithControlLoop(
+        this AlbertoModuleBuilder builder,
         Func<ControlLoopOptions, ControlLoopOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
@@ -561,8 +561,8 @@ public static class DcbModuleBuilderExtensions
     /// <param name="pollingInterval">
     /// How often the coordinator re-reads the rebuild state machine. Default: 5 seconds.
     /// </param>
-    public static DcbModuleBuilder WithRebuilds(
-        this DcbModuleBuilder builder,
+    public static AlbertoModuleBuilder WithRebuilds(
+        this AlbertoModuleBuilder builder,
         bool autoPromote = true,
         TimeSpan? pollingInterval = null)
     {
@@ -688,8 +688,8 @@ public static class DcbModuleBuilderExtensions
     /// (first added is outermost). The built-in retry-and-dead-letter middleware is always the
     /// innermost layer, so custom middleware observes the outcome of the whole retry sequence.
     /// </summary>
-    public static DcbModuleBuilder AddConsumeMiddleware(
-        this DcbModuleBuilder builder,
+    public static AlbertoModuleBuilder AddConsumeMiddleware(
+        this AlbertoModuleBuilder builder,
         Func<IServiceProvider, ConsumeMiddleware> factory)
     {
         ArgumentNullException.ThrowIfNull(builder);
@@ -704,8 +704,8 @@ public static class DcbModuleBuilderExtensions
     /// counterpart forces the control loop back onto per-event dispatch, so register both when a
     /// processor should keep batching.
     /// </summary>
-    public static DcbModuleBuilder AddBatchConsumeMiddleware(
-        this DcbModuleBuilder builder,
+    public static AlbertoModuleBuilder AddBatchConsumeMiddleware(
+        this AlbertoModuleBuilder builder,
         Func<IServiceProvider, BatchConsumeMiddleware> factory)
     {
         ArgumentNullException.ThrowIfNull(builder);
@@ -719,8 +719,8 @@ public static class DcbModuleBuilderExtensions
     /// Replaces the classifier that decides whether a handler failure is transient (retry) or
     /// permanent (dead-letter immediately). Defaults to <see cref="DefaultErrorClassifier"/>.
     /// </summary>
-    public static DcbModuleBuilder UseErrorClassifier(
-        this DcbModuleBuilder builder,
+    public static AlbertoModuleBuilder UseErrorClassifier(
+        this AlbertoModuleBuilder builder,
         IErrorClassifier classifier)
     {
         ArgumentNullException.ThrowIfNull(builder);
@@ -734,7 +734,7 @@ public static class DcbModuleBuilderExtensions
     /// Replaces the error classifier with one resolved from the container, so it can take
     /// dependencies. Defaults to <see cref="DefaultErrorClassifier"/>.
     /// </summary>
-    public static DcbModuleBuilder UseErrorClassifier<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TClassifier>(this DcbModuleBuilder builder)
+    public static AlbertoModuleBuilder UseErrorClassifier<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TClassifier>(this AlbertoModuleBuilder builder)
         where TClassifier : class, IErrorClassifier
     {
         ArgumentNullException.ThrowIfNull(builder);
@@ -762,7 +762,7 @@ public static class DcbModuleBuilderExtensions
     }
 
     private static void RegisterAsyncProcessor(
-        DcbModuleBuilder builder,
+        AlbertoModuleBuilder builder,
         string processorId,
         ProcessorExecutionOptions executionOptions,
         Func<IServiceProvider, string, IEventProcessor> processorFactory)
@@ -827,8 +827,8 @@ public static class DcbModuleBuilderExtensions
     /// );
     /// </code>
     /// </example>
-    public static DcbModuleBuilder AddUpcaster(
-        this DcbModuleBuilder builder,
+    public static AlbertoModuleBuilder AddUpcaster(
+        this AlbertoModuleBuilder builder,
         UpcasterDeclaration declaration)
     {
         ArgumentNullException.ThrowIfNull(builder);

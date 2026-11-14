@@ -1,5 +1,6 @@
 using Alberto.Subscriptions;
 using Microsoft.Extensions.Options;
+using Alberto.Results;
 
 namespace Alberto.Configuration;
 

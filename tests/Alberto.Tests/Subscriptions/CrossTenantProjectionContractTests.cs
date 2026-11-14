@@ -24,7 +24,7 @@ namespace Alberto.Tests.Subscriptions;
 ///
 /// <para>
 /// <strong>Fix:</strong> reader and writer no longer decide independently.
-/// <see cref="Alberto.DcbModuleBuilderExtensions.AddProjection{TState}"/> registers the
+/// <see cref="Alberto.AlbertoModuleBuilderExtensions.AddProjection{TState}"/> registers the
 /// writer's own <c>Func&lt;string?, IStateStore&lt;TState&gt;&gt;</c> keyed by
 /// <c>"{moduleKey}:{declaration.ProcessorId}"</c>, and readers resolve it rather than
 /// constructing a store of their own — leaving them nothing to disagree about except which

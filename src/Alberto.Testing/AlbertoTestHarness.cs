@@ -43,7 +43,7 @@ public sealed class AlbertoTestHarness : IAsyncDisposable
     /// <param name="cancellationToken">Cancellation token.</param>
     public static async Task<AlbertoTestHarness> StartAsync(
         string moduleKey,
-        Action<DcbModuleBuilder> configure,
+        Action<AlbertoModuleBuilder> configure,
         Action<IServiceCollection>? configureServices = null,
         TimeProvider? timeProvider = null,
         CancellationToken cancellationToken = default)

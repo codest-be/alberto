@@ -378,7 +378,7 @@ public class OrphanCheckpointTests
     public async Task ThirdPartyDecorator_CanEnumerateFalse_IsOptedOutByResolutionSite()
     {
         // Regression test for the "shallow seam" defect. The resolution site in
-        // ServiceCollectionExtensions.cs used to cast to the concrete CachingCheckpointStore
+        // AlbertoServiceCollectionExtensions.cs used to cast to the concrete CachingCheckpointStore
         // type and fall through to `as ICheckpointInventory` for every other store. A
         // third-party decorator implementing ICheckpointStore + ICheckpointInventory over a
         // non-enumerable inner had no way to express "I cannot enumerate" through the public
@@ -387,7 +387,7 @@ public class OrphanCheckpointTests
         // all-clear under Strict policy.
         //
         // After the fix, ICheckpointInventory carries `bool CanEnumerate => true;` (default).
-        // The production expression in ServiceCollectionExtensions.cs is now:
+        // The production expression in AlbertoServiceCollectionExtensions.cs is now:
         //     store is ICheckpointInventory { CanEnumerate: true } inv ? inv : null
         // A decorator that overrides CanEnumerate to false receives null, and the hosted
         // service logs the skip instead of calling ListProcessorIdsAsync.
@@ -396,7 +396,7 @@ public class OrphanCheckpointTests
         // (which overrides it) does not compile. That is the defect — the interface offered no
         // way to ask the capability question at all.
         //
-        // This test goes through the PRODUCTION resolution site (ServiceCollectionExtensions.cs)
+        // This test goes through the PRODUCTION resolution site (AlbertoServiceCollectionExtensions.cs)
         // via real DI, not a local copy of the pattern. If someone reverts that expression to
         // the old `as ICheckpointInventory` cast, the decorator is resolved as a live inventory,
         // ListProcessorIdsAsync is called, and ListProcessorIdsAsyncCallCount becomes 1.

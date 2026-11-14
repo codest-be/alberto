@@ -1,6 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 
-namespace Alberto;
+namespace Alberto.Results;
 
 public readonly record struct Result
 {

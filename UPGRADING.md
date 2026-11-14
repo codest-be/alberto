@@ -7,6 +7,15 @@ This file covers 0.x release-to-release steps; [docs/migrating-to-1.0.md](docs/m
 
 ## To the next release (pre-1.0, breaking)
 
+### Three naming fixes
+
+| Was | Is |
+|---|---|
+| `DcbModuleBuilder`, `DcbModuleBuilderExtensions` | `AlbertoModuleBuilder`, `AlbertoModuleBuilderExtensions`. `DcbQuery` and `DcbConflictException` keep their names: DCB is the domain term there |
+| `Alberto.ServiceCollectionExtensions` (`AddAlberto`) | `Alberto.AlbertoServiceCollectionExtensions`. Call sites are unaffected, it is an extension method |
+| `Alberto.Telemetry.ServiceCollectionExtensions` (`AddAlbertoInstrumentation`) | `Alberto.Telemetry.AlbertoTelemetryServiceCollectionExtensions`. Call sites are unaffected |
+| `Alberto.Result`, `Result<T>`, `Problem`, `Decision`, `Decision<T>` | `Alberto.Results.*`. `using Alberto;` no longer brings a type called `Result` into code that has its own: add `using Alberto.Results;` |
+
 ### `Alberto.Subscriptions` split by concern
 
 The namespace mixed the control loop with checkpoints, leases, dead letters and projection state.

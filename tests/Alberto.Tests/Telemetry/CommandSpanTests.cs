@@ -5,6 +5,7 @@ using Alberto.Commands;
 using Alberto.InMemory;
 using Alberto.Telemetry;
 using Xunit;
+using Alberto.Results;
 
 namespace Alberto.Tests.Telemetry;
 
