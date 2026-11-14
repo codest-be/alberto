@@ -15,7 +15,9 @@ namespace Alberto.EntityFramework;
 /// Every read is filtered by <see cref="IProjectionEntity.RebuildVersion"/> and every write
 /// stamps it, so a shadow rebuild loop's rows coexist with the live ones in the same table
 /// instead of overwriting them. That only holds if the entity's key includes the column —
-/// see <see cref="EfProjectionModelBuilderExtensions.ProjectionEntity{TEntity}"/>.
+/// see <see cref="EfProjectionModelBuilderExtensions"/>. Every query here also turns off
+/// <see cref="ProjectionQueryFilters.ActiveVersion"/>, because the store addresses a version
+/// explicitly: a shadow loop filtered to the active version would miss its own rows.
 /// </remarks>
 /// <typeparam name="TEntity">The entity type implementing <see cref="IProjectionEntity"/>.</typeparam>
 /// <typeparam name="TDbContext">The DbContext type containing the entity DbSet.</typeparam>
@@ -61,6 +63,7 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
 
         var version = _rebuildVersion.Current;
         var entities = await context.Set<TEntity>()
+            .IgnoreQueryFilters([ProjectionQueryFilters.ActiveVersion])
             .AsNoTracking()
             .Where(e => ids.Contains(e.DocumentId) && e.RebuildVersion == version)
             .ToListAsync(ct);
@@ -82,6 +85,7 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
 
         var version = _rebuildVersion.Current;
         return await context.Set<TEntity>()
+            .IgnoreQueryFilters([ProjectionQueryFilters.ActiveVersion])
             .AsNoTracking()
             .Where(e => e.RebuildVersion == version)
             .OrderByDescending(e => e.UpdatedAt)
@@ -139,6 +143,7 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
         await using var context = await _contextFactory.CreateDbContextAsync(ct);
         var allDocIds = upserts.Keys.Concat(deletes).Distinct().ToList();
         var existingEntities = await context.Set<TEntity>()
+            .IgnoreQueryFilters([ProjectionQueryFilters.ActiveVersion])
             .Where(e => allDocIds.Contains(e.DocumentId) && e.RebuildVersion == version)
             .ToDictionaryAsync(e => e.DocumentId, ct);
 

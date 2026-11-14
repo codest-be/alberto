@@ -37,7 +37,9 @@ internal sealed class EfProjectionStateClearer<TEntity, TDbContext> : IProjectio
         // ExecuteDeleteAsync performs a bulk delete without loading entities into memory.
         // Deleting no rows is a success, which is what makes this safe to re-run after a
         // coordinator crash.
+        // The active-version filter would hide exactly the versions this exists to delete.
         await context.Set<TEntity>()
+            .IgnoreQueryFilters([ProjectionQueryFilters.ActiveVersion])
             .Where(e => e.RebuildVersion == rebuildVersion)
             .ExecuteDeleteAsync(ct);
     }
