@@ -196,7 +196,7 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : IInlineP
             switch (result)
             {
                 case ProjectionResult<TEntity>.Set set:
-                    set.State.LastProcessedPosition = evt.GlobalPosition;
+                    ProjectionEntityStamp.LastProcessedPosition(set.State, evt.GlobalPosition);
                     pending[docId] = set.State;
                     deletes.Remove(docId);
                     break;
@@ -221,13 +221,13 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : IInlineP
 
         foreach (var (docId, entity) in pending)
         {
-            entity.DocumentId = docId;
+            ProjectionEntityStamp.DocumentId(entity, docId);
             // Stamped rather than left to the column default. A loaded row already carries the
             // right version, but a declaration that returns a fresh instance leaves it at the
             // CLR default, and relying on the store default to rewrite that only works while
             // the live version happens to be 1.
-            entity.RebuildVersion = version;
-            entity.UpdatedAt = now;
+            ProjectionEntityStamp.RebuildVersion(entity, version);
+            ProjectionEntityStamp.UpdatedAt(entity, now);
 
             if (existing.ContainsKey(docId))
                 context.Set<TEntity>().Update(entity);
