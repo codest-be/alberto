@@ -66,7 +66,7 @@ public sealed class ControlLoopMiddlewareTests
         public IReadOnlySet<string> HandledEventTypes { get; } =
             new HashSet<string> { "middleware-test-event" };
 
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default)
         {
             AttemptsByPosition[@event.GlobalPosition] =
                 AttemptsByPosition.GetValueOrDefault(@event.GlobalPosition) + 1;
@@ -84,15 +84,15 @@ public sealed class ControlLoopMiddlewareTests
     [Fact]
     public async Task BadEventIsDeadLettered_LoopContinues_CheckpointAdvances()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var backend = new InMemoryEventStoreBackend();
         var checkpoints = new InMemoryCheckpointStore();
         var deadLetters = new InMemoryDeadLetterStore();
 
         // Position 1 = poison, positions 2..3 should still be processed
-        await backend.AppendAsync([CreateEvent(new TestEvent("poison"))], cancellationToken: ct);
-        await backend.AppendAsync([CreateEvent(new TestEvent("ok-1"))], cancellationToken: ct);
-        await backend.AppendAsync([CreateEvent(new TestEvent("ok-2"))], cancellationToken: ct);
+        await backend.AppendAsync([CreateEvent(new TestEvent("poison"))], cancellationToken: cancellationToken);
+        await backend.AppendAsync([CreateEvent(new TestEvent("ok-1"))], cancellationToken: cancellationToken);
+        await backend.AppendAsync([CreateEvent(new TestEvent("ok-2"))], cancellationToken: cancellationToken);
 
         var processor = new SelectivelyFaultingProcessor(
             "selective",
@@ -128,11 +128,11 @@ public sealed class ControlLoopMiddlewareTests
         Assert.All(processor.ProcessedEvents, e => Assert.NotEqual(1, e.GlobalPosition));
 
         // Checkpoint advanced past the poison event
-        var checkpoint = await checkpoints.GetAsync("selective", ct);
+        var checkpoint = await checkpoints.GetAsync("selective", cancellationToken);
         Assert.Equal(3, checkpoint);
 
         // Poison event landed in dead-letter storage
-        var entries = await deadLetters.GetAsync("selective", ct: ct);
+        var entries = await deadLetters.GetAsync("selective", cancellationToken: cancellationToken);
         var entry = Assert.Single(entries);
         Assert.Equal("selective", entry.ProcessorId);
         Assert.Equal(1, entry.GlobalPosition);
@@ -145,9 +145,9 @@ public sealed class ControlLoopMiddlewareTests
         var backend = new InMemoryEventStoreBackend();
         var checkpoints = new InMemoryCheckpointStore();
         var deadLetters = new InMemoryDeadLetterStore();
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
 
-        await backend.AppendAsync([CreateEvent(new TestEvent("poison"))], cancellationToken: ct);
+        await backend.AppendAsync([CreateEvent(new TestEvent("poison"))], cancellationToken: cancellationToken);
 
         // NotSupportedException is classified Permanent (indicates a programmer error /
         // unsupported code path that retrying will never fix). InvalidOperationException was
@@ -183,7 +183,7 @@ public sealed class ControlLoopMiddlewareTests
 
         Assert.False(loop.IsFaulted);
         Assert.Equal(1, processor.AttemptsByPosition[1]); // exactly one attempt — no retries
-        Assert.Equal(1, await deadLetters.CountAsync("perm", ct));
+        Assert.Equal(1, await deadLetters.CountAsync("perm", cancellationToken));
     }
 
     [Fact]
@@ -192,9 +192,9 @@ public sealed class ControlLoopMiddlewareTests
         var backend = new InMemoryEventStoreBackend();
         var checkpoints = new InMemoryCheckpointStore();
         var deadLetters = new InMemoryDeadLetterStore();
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
 
-        await backend.AppendAsync([CreateEvent(new TestEvent("transient"))], cancellationToken: ct);
+        await backend.AppendAsync([CreateEvent(new TestEvent("transient"))], cancellationToken: cancellationToken);
 
         var attempts = 0;
         var processor = new ThrowingProcessor("trans", () =>
@@ -233,9 +233,9 @@ public sealed class ControlLoopMiddlewareTests
 
         Assert.False(loop.IsFaulted);
         Assert.Equal(3, attempts); // 1 initial + 2 retries
-        Assert.Equal(1, await deadLetters.CountAsync("trans", ct));
+        Assert.Equal(1, await deadLetters.CountAsync("trans", cancellationToken));
 
-        var checkpoint = await checkpoints.GetAsync("trans", ct);
+        var checkpoint = await checkpoints.GetAsync("trans", cancellationToken);
         Assert.Equal(1, checkpoint);
     }
 
@@ -247,7 +247,7 @@ public sealed class ControlLoopMiddlewareTests
         public IReadOnlySet<string> HandledEventTypes { get; } =
             new HashSet<string> { "middleware-test-event" };
 
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default)
         {
             onProcess();
             return Task.CompletedTask;
@@ -273,13 +273,13 @@ public sealed class ControlLoopMiddlewareTests
         public IReadOnlySet<string> HandledEventTypes { get; } =
             new HashSet<string> { "middleware-test-event" };
 
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default)
         {
             ProcessedEvents.Add(@event);
             return Task.CompletedTask;
         }
 
-        public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct = default)
+        public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken cancellationToken = default)
         {
             var key = string.Join(",", events.Select(e => e.GlobalPosition));
             AttemptsByBatch[key] = AttemptsByBatch.GetValueOrDefault(key) + 1;
@@ -298,13 +298,13 @@ public sealed class ControlLoopMiddlewareTests
     /// or <paramref name="timeout"/> elapses, then calls <see cref="Assert.Fail"/>.
     /// Replaces wall-clock <c>Task.Delay</c> waits with deterministic condition-based synchronization.
     /// </summary>
-    private static async Task WaitForAsync(Func<bool> condition, TimeSpan timeout, CancellationToken ct = default)
+    private static async Task WaitForAsync(Func<bool> condition, TimeSpan timeout, CancellationToken cancellationToken = default)
     {
         var deadline = DateTime.UtcNow + timeout;
         while (DateTime.UtcNow < deadline)
         {
             if (condition()) return;
-            await Task.Delay(15, ct);
+            await Task.Delay(15, cancellationToken);
         }
         Assert.Fail($"Condition not met within {timeout}");
     }
@@ -312,14 +312,14 @@ public sealed class ControlLoopMiddlewareTests
     [Fact]
     public async Task BatchedPoisonEvent_IsolatedDeadLettered_HealthyEventsStillAdvance()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var backend = new InMemoryEventStoreBackend();
         var checkpoints = new InMemoryCheckpointStore();
         var deadLetters = new InMemoryDeadLetterStore();
 
-        await backend.AppendAsync([CreateEvent(new TestEvent("poison"))], cancellationToken: ct);
-        await backend.AppendAsync([CreateEvent(new TestEvent("ok-1"))], cancellationToken: ct);
-        await backend.AppendAsync([CreateEvent(new TestEvent("ok-2"))], cancellationToken: ct);
+        await backend.AppendAsync([CreateEvent(new TestEvent("poison"))], cancellationToken: cancellationToken);
+        await backend.AppendAsync([CreateEvent(new TestEvent("ok-1"))], cancellationToken: cancellationToken);
+        await backend.AppendAsync([CreateEvent(new TestEvent("ok-2"))], cancellationToken: cancellationToken);
 
         var processor = new BatchSelectiveProcessor(
             "batch-selective",
@@ -356,10 +356,10 @@ public sealed class ControlLoopMiddlewareTests
         Assert.Equal([2L, 3L], processor.ProcessedBatches.SelectMany(b => b.Select(e => e.GlobalPosition)).Order().ToArray());
         Assert.Empty(processor.ProcessedEvents);
 
-        var checkpoint = await checkpoints.GetAsync("batch-selective", ct);
+        var checkpoint = await checkpoints.GetAsync("batch-selective", cancellationToken);
         Assert.Equal(3, checkpoint);
 
-        var entries = await deadLetters.GetAsync("batch-selective", ct: ct);
+        var entries = await deadLetters.GetAsync("batch-selective", cancellationToken: cancellationToken);
         var entry = Assert.Single(entries);
         Assert.Equal(1, entry.GlobalPosition);
         Assert.Contains("Simulated permanent fault", entry.ErrorMessage);

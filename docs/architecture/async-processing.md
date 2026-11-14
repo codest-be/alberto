@@ -97,7 +97,7 @@ A separate retry loop picks up dead letters that an operator has marked for retr
 
 Transforms events into read-model state using pure functions.
 
-**Location:** `src/Alberto/Subscriptions/DeclaredAsyncProjection.cs`
+**Location:** `src/Alberto/Projections/DeclaredAsyncProjection.cs`
 
 1. Extract document ID from the event
 2. Get the tenant-scoped state store (one store per tenant, built lazily from the factory)
@@ -162,7 +162,7 @@ The table below shows how each knob is set in code and in configuration:
 
 ## Module Configuration Example
 
-Taken from `apps/Alberto.Orders/Alberto.Orders/Platform/OrdersModule.cs` in
+Taken from the Orders module (`Platform/OrdersModule.cs`) in
 [alberto-examples](https://github.com/codest-be/alberto-examples). The state store is built by the projection's own slice
 (`OrdersOverviewProjection.StateStore`) so the writer and every query over it share one
 definition. See [vertical-slices.md](https://github.com/codest-be/alberto-examples/blob/main/docs/vertical-slices.md):
@@ -276,7 +276,7 @@ Because aborts consume numbers without moving the active one, the startup sweep 
 The following appear in the schema or the type system but have no orchestration behind them. Do not rely on them.
 
 - **Rebuild-mode processor tuning.** `IEventProcessor.IsRebuilding` is set for shadow loops, but there is no lag threshold and no separate rebuild batch size: a shadow loop runs on the module's configured batch size.
-- **Real-time admin push.** There is no admin HTTP API, no GraphQL admin subscriptions, and no admin dashboard on this branch. The `{schema}_events` NOTIFY channel exists to refresh `EventStoreHead`, not to feed a UI. There is no operator tool either: operators call the core interfaces (see [operations.md](../operations.md)).
+- **Real-time admin push.** There is no admin HTTP API and no admin dashboard. The `{schema}_events` NOTIFY channel exists to refresh `EventStoreHead`, not to feed a UI. There is no operator tool either: operators call the core interfaces (see [operations.md](../operations.md)).
 
 ## Event deserialization invariant
 
@@ -303,14 +303,14 @@ rule" for how to add a file to the allow-list when non-event JSON deserializatio
 | Batch middleware | `src/Alberto/Subscriptions/BatchConsumeMiddleware.cs` |
 | RetryOptions | `src/Alberto/Configuration/RetryOptions.cs` |
 | IErrorClassifier | `src/Alberto/Subscriptions/IErrorClassifier.cs` |
-| DeclaredAsyncProjection | `src/Alberto/Subscriptions/DeclaredAsyncProjection.cs` |
+| DeclaredAsyncProjection | `src/Alberto/Projections/DeclaredAsyncProjection.cs` |
 | FunctionalReactor | `src/Alberto/Subscriptions/FunctionalReactor.cs` |
-| CachingCheckpointStore | `src/Alberto/Subscriptions/CachingCheckpointStore.cs` |
+| CachingCheckpointStore | `src/Alberto/Checkpoints/CachingCheckpointStore.cs` |
 | PostgresCheckpointStore | `src/Alberto.Postgres/PostgresCheckpointStore.cs` |
 | PostgresEventListener | `src/Alberto.Postgres/PostgresEventListener.cs` |
 | EfStateStore | `src/Alberto.EntityFramework/EfStateStore.cs` |
-| RebuildCoordinator | `src/Alberto/Subscriptions/RebuildCoordinator.cs` |
-| ProjectionVersions | `src/Alberto/Subscriptions/ProjectionVersions.cs` |
-| IProjectionRebuildStore | `src/Alberto/Subscriptions/IProjectionRebuildStore.cs` |
+| RebuildCoordinator | `src/Alberto/Projections/RebuildCoordinator.cs` |
+| ProjectionVersions | `src/Alberto/Projections/ProjectionVersions.cs` |
+| IProjectionRebuildStore | `src/Alberto/Projections/IProjectionRebuildStore.cs` |
 | PostgresProjectionRebuildStore | `src/Alberto.Postgres/PostgresProjectionRebuildStore.cs` |
 | NOTIFY trigger | `src/Alberto.Postgres/Migrations/SingleTenant/002_QueryFunctions.sql` (“Migration 010”) |

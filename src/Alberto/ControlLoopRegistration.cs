@@ -1,5 +1,9 @@
 #pragma warning disable ALB9002 // DI registration layer for the experimental processor health check.
 using Alberto.Configuration;
+using Alberto.Checkpoints;
+using Alberto.DeadLetters;
+using Alberto.Leases;
+using Alberto.Projections;
 using Alberto.Subscriptions;
 using Alberto.Telemetry;
 using Microsoft.Extensions.DependencyInjection;
@@ -136,7 +140,7 @@ internal static class ControlLoopRegistration
 
             // ControlLoopAssembler composes the middleware chain once and derives
             // hasUnpairedPerEventMiddlewares internally, so both this path and the
-            // shadow-rebuild path (DcbModuleBuilderExtensions) share a single assembly seam.
+            // shadow-rebuild path (AlbertoModuleBuilderExtensions) share a single assembly seam.
             var assembler = new ControlLoopAssembler(
                 sp.GetKeyedServices<ConsumeMiddleware>(moduleKey).ToList(),
                 sp.GetKeyedServices<BatchConsumeMiddleware>(moduleKey).ToList(),

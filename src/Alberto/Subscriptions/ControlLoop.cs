@@ -4,6 +4,7 @@ using System.Threading.Channels;
 using Alberto.Telemetry;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Alberto.Checkpoints;
 
 namespace Alberto.Subscriptions;
 
@@ -253,7 +254,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
         }
     }
 
-    private async Task RunAsync(CancellationToken ct)
+    private async Task RunAsync(CancellationToken cancellationToken)
     {
         // StartAsync runs this inline, so without this the loop would inherit whatever span the host
         // started it under and parent every poll to it for the life of the process. See BackgroundSpans.
@@ -261,7 +262,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
         using var scope = _logger?.BeginScope(BackgroundSpans.Scope(ProcessorId, _moduleKey));
         try
         {
-            await RunLoopAsync(ct);
+            await RunLoopAsync(cancellationToken);
         }
         finally
         {
@@ -273,18 +274,18 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
         }
     }
 
-    private async Task RunLoopAsync(CancellationToken ct)
+    private async Task RunLoopAsync(CancellationToken cancellationToken)
     {
         _logger?.LogInformation("ControlLoop {ProcessorId} starting", ProcessorId);
 
         if (_executionOptions.MaxConcurrency > 1)
         {
-            await RunPipelinedAsync(ct);
+            await RunPipelinedAsync(cancellationToken);
             return;
         }
 
         var infrastructureFailures = 0;
-        while (!ct.IsCancellationRequested)
+        while (!cancellationToken.IsCancellationRequested)
         {
             // The event whose dispatch is in flight, for the fault record. Stays null under
             // batch dispatch, where the failing event is unknown.
@@ -294,27 +295,27 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
             var inHandler = false;
             try
             {
-                var checkpoint = await _checkpointStore.GetAsync(ProcessorId, ct) ?? 0L;
+                var checkpoint = await _checkpointStore.GetAsync(ProcessorId, cancellationToken) ?? 0L;
                 var head = _head.Current;
 
                 if (checkpoint >= head)
                 {
                     ReportProgress(0L);
                     infrastructureFailures = 0;
-                    await Task.Delay(_pollingInterval, ct);
+                    await Task.Delay(_pollingInterval, cancellationToken);
                     continue;
                 }
 
-                var events = await PollAsync(checkpoint, ct);
+                var events = await PollAsync(checkpoint, cancellationToken);
 
                 if (events.Count == 0)
                 {
                     // No events between checkpoint and head — skip forward safely
-                    await SaveCheckpointAsync(head, ct);
-                    await ClearFaultOnceAsync(ct);
+                    await SaveCheckpointAsync(head, cancellationToken);
+                    await ClearFaultOnceAsync(cancellationToken);
                     ReportProgress(0L);
                     infrastructureFailures = 0;
-                    await Task.Delay(_pollingInterval, ct);
+                    await Task.Delay(_pollingInterval, cancellationToken);
                     continue;
                 }
 
@@ -333,14 +334,14 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
                 inHandler = true;
                 if (ShouldUseBatchDispatch && relevantEvents.Count > 0)
                 {
-                    await DispatchBatchAsync(relevantEvents, ct);
+                    await DispatchBatchAsync(relevantEvents, cancellationToken);
                 }
                 else
                 {
                     foreach (var evt in relevantEvents)
                     {
                         dispatching = evt;
-                        await DispatchAsync(evt, ct);
+                        await DispatchAsync(evt, cancellationToken);
                     }
 
                     dispatching = null;
@@ -360,8 +361,8 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
 
                 if (newCheckpoint > checkpoint)
                 {
-                    await SaveCheckpointAsync(newCheckpoint, ct);
-                    await ClearFaultOnceAsync(ct);
+                    await SaveCheckpointAsync(newCheckpoint, cancellationToken);
+                    await ClearFaultOnceAsync(cancellationToken);
                 }
 
                 ReportProgress(head - newCheckpoint);
@@ -372,12 +373,12 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
                 // short one left the checkpoint at the head, where the next pass waits anyway. A
                 // full batch with nothing at or below the head made none, and would spin.
                 if (events.Count == _batchSize && visibleEvents.Count == 0)
-                    await Task.Delay(_pollingInterval, ct);
+                    await Task.Delay(_pollingInterval, cancellationToken);
             }
-            catch (OperationCanceledException ex) when (IsShutdownCancellation(ex, ct)) { break; }
-            catch (Exception ex) when (!inHandler && !ct.IsCancellationRequested)
+            catch (OperationCanceledException ex) when (IsShutdownCancellation(ex, cancellationToken)) { break; }
+            catch (Exception ex) when (!inHandler && !cancellationToken.IsCancellationRequested)
             {
-                await BackOffAsync(ex, ++infrastructureFailures, ct);
+                await BackOffAsync(ex, ++infrastructureFailures, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -400,14 +401,14 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
     /// into the channel. Backpressure kicks in when all worker slots are busy.
     /// Checkpoint advances to the highest contiguous completed position (watermark).
     /// </summary>
-    private async Task RunPipelinedAsync(CancellationToken ct)
+    private async Task RunPipelinedAsync(CancellationToken cancellationToken)
     {
         var maxConcurrency = _executionOptions.MaxConcurrency;
-        var initialCheckpoint = await _checkpointStore.GetAsync(ProcessorId, ct) ?? 0L;
+        var initialCheckpoint = await _checkpointStore.GetAsync(ProcessorId, cancellationToken) ?? 0L;
         var watermark = new PositionWatermark(initialCheckpoint);
         // Not `using`: when the worker drain times out the abandoned workers still hold this
         // token, so disposal is deferred until they actually exit (see the finally block).
-        var pipelineCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var pipelineCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var pipelineToken = pipelineCts.Token;
         PipelineFault? pipelineFailure = null;
 
@@ -568,7 +569,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
     /// with exponential back-off from the polling interval, capped at <see cref="MaxInfrastructureBackoff"/>.
     /// The loop keeps its place and tries again rather than faulting until restart.
     /// </summary>
-    private async Task BackOffAsync(Exception failure, int consecutiveFailures, CancellationToken ct)
+    private async Task BackOffAsync(Exception failure, int consecutiveFailures, CancellationToken cancellationToken)
     {
         var ticks = _pollingInterval.Ticks * (1L << Math.Min(consecutiveFailures - 1, 10));
         var delay = TimeSpan.FromTicks(Math.Min(ticks, MaxInfrastructureBackoff.Ticks));
@@ -576,8 +577,8 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
             "ControlLoop {ProcessorId} hit an infrastructure error ({Failures} in a row); retrying in {Delay}.",
             ProcessorId, consecutiveFailures, delay);
         // Shutdown during the wait is not a failure: the caller's loop condition exits cleanly.
-        try { await Task.Delay(delay, ct); }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        try { await Task.Delay(delay, cancellationToken); }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
     }
 
     /// <summary>The first failure that stopped a pipelined run, with the event it happened on when known.</summary>
@@ -599,17 +600,17 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
         ChannelReader<IEventEnvelope> reader,
         PositionWatermark watermark,
         Action<Exception, IEventEnvelope?> reportFailure,
-        CancellationToken ct)
+        CancellationToken cancellationToken)
     {
         try
         {
-            await foreach (var evt in reader.ReadAllAsync(ct))
+            await foreach (var evt in reader.ReadAllAsync(cancellationToken))
             {
                 try
                 {
-                    await DispatchAsync(evt, ct);
+                    await DispatchAsync(evt, cancellationToken);
                 }
-                catch (OperationCanceledException ex) when (IsShutdownCancellation(ex, ct))
+                catch (OperationCanceledException ex) when (IsShutdownCancellation(ex, cancellationToken))
                 {
                     // Shutdown cancellation: leave this position in-flight so the
                     // watermark checkpoint does not advance past an unprocessed event.
@@ -637,7 +638,7 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
         // ReadAllAsync, never processor code. Narrowing it would let an OCE escape into the
         // Task.WhenAll(workers) inside RunPipelinedAsync's finally, throwing from the block
         // that records the fault instead of being recorded by it.
-        catch (OperationCanceledException) when (ct.IsCancellationRequested) { /* shutting down */ }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { /* shutting down */ }
     }
 
     /// <summary>
@@ -648,47 +649,47 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
     /// Cooperative cancellation always carries the token that caused it. An OCE that carries
     /// no cancelled token — a processor throwing <c>new OperationCanceledException()</c>, a
     /// <c>TaskCompletionSource</c> cancelled without a token — is an escaped failure, not a
-    /// clean stop. Testing only <c>ct.IsCancellationRequested</c> conflates the two, so any
+    /// clean stop. Testing only <c>cancellationToken.IsCancellationRequested</c> conflates the two, so any
     /// handler that failed at the same moment the host shut down was reported as a graceful
     /// stop and <see cref="IsFaulted"/> silently stayed <c>false</c>.
     /// </remarks>
-    private static bool IsShutdownCancellation(OperationCanceledException exception, CancellationToken ct)
-        => ct.IsCancellationRequested && exception.CancellationToken.IsCancellationRequested;
+    private static bool IsShutdownCancellation(OperationCanceledException exception, CancellationToken cancellationToken)
+        => cancellationToken.IsCancellationRequested && exception.CancellationToken.IsCancellationRequested;
 
     /// <summary>
     /// Reads the next batch under an <c>alberto.poll</c> span, so the read span beneath it carries
     /// which processor asked. Only the read: dispatch has its own consume spans, parented by
     /// <see cref="TraceParenting"/>, and an idle poll that never reads records nothing.
     /// </summary>
-    private async Task<IReadOnlyCollection<IEventEnvelope>> PollAsync(long afterPosition, CancellationToken ct)
+    private async Task<IReadOnlyCollection<IEventEnvelope>> PollAsync(long afterPosition, CancellationToken cancellationToken)
     {
         using var activity = BackgroundSpans.StartRoot("alberto.poll");
         BackgroundSpans.TagProcessor(activity, ProcessorId, _moduleKey);
         activity?.SetTag("alberto.poll.after_position", afterPosition);
         try
         {
-            var events = await _backend.StreamAllOfTypesAsync(
-                _processor.HandledEventTypes, afterPosition, _batchSize, ct);
+            var events = await _backend.ReadAllOfTypesAsync(
+                _processor.HandledEventTypes, afterPosition, _batchSize, cancellationToken);
             activity?.SetTag("alberto.poll.events", events.Count);
             return events;
         }
-        catch (Exception ex) when (!ct.IsCancellationRequested)
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             BackgroundSpans.Fail(activity, ex);
             throw;
         }
     }
 
-    private async Task SaveCheckpointAsync(long position, CancellationToken ct)
+    private async Task SaveCheckpointAsync(long position, CancellationToken cancellationToken)
     {
         using var activity = BackgroundSpans.StartRoot("alberto.checkpoint.save");
         BackgroundSpans.TagProcessor(activity, ProcessorId, _moduleKey);
         activity?.SetTag("alberto.checkpoint.position", position);
         try
         {
-            await _checkpointStore.SaveAsync(ProcessorId, position, ct);
+            await _checkpointStore.SaveAsync(ProcessorId, position, cancellationToken);
         }
-        catch (Exception ex) when (!ct.IsCancellationRequested)
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             BackgroundSpans.Fail(activity, ex);
             throw;
@@ -705,14 +706,14 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
     private void ReportFaulted() =>
         _healthState?.Report(ProcessorId, isFaulted: true, lag: 0, _timeProvider.GetUtcNow());
 
-    private async Task SaveWatermarkCheckpointAsync(PositionWatermark watermark, CancellationToken ct)
+    private async Task SaveWatermarkCheckpointAsync(PositionWatermark watermark, CancellationToken cancellationToken)
     {
         var safeCheckpoint = watermark.SafeCheckpoint;
-        var current = await _checkpointStore.GetAsync(ProcessorId, ct) ?? 0L;
+        var current = await _checkpointStore.GetAsync(ProcessorId, cancellationToken) ?? 0L;
         if (safeCheckpoint > current)
         {
-            await SaveCheckpointAsync(safeCheckpoint, ct);
-            await ClearFaultOnceAsync(ct);
+            await SaveCheckpointAsync(safeCheckpoint, cancellationToken);
+            await ClearFaultOnceAsync(cancellationToken);
         }
     }
 
@@ -722,13 +723,13 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
     /// again. Never called on the fault path itself: in the pipelined finally the final
     /// watermark flush runs before the fault is recorded, so a clear there cannot erase it.
     /// </summary>
-    private async Task ClearFaultOnceAsync(CancellationToken ct)
+    private async Task ClearFaultOnceAsync(CancellationToken cancellationToken)
     {
         if (_faultCleared || _faultStore is null)
             return;
 
         _faultCleared = true;
-        await _faultStore.ClearFaultAsync(ProcessorId, ct);
+        await _faultStore.ClearFaultAsync(ProcessorId, cancellationToken);
     }
 
     /// <summary>
@@ -764,10 +765,10 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
         }
     }
 
-    private Task DispatchAsync(IEventEnvelope evt, CancellationToken ct)
+    private Task DispatchAsync(IEventEnvelope evt, CancellationToken cancellationToken)
     {
         if (_middlewares.Count == 0)
-            return _processor.ProcessEventAsync(evt, ct);
+            return _processor.ProcessEventAsync(evt, cancellationToken);
 
         var context = new ConsumeEventContext
         {
@@ -777,18 +778,18 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
             IsRebuild = _processor.IsRebuilding,
             TraceParenting = _executionOptions.TraceParenting,
             HaltObserver = this,
-            CancellationToken = ct,
+            CancellationToken = cancellationToken,
         };
 
-        return _composedMiddleware(context, () => _processor.ProcessEventAsync(evt, ct));
+        return _composedMiddleware(context, () => _processor.ProcessEventAsync(evt, cancellationToken));
     }
 
-    private Task DispatchBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct)
-        => DispatchBatchAsync(events, ct, allowSplit: true);
+    private Task DispatchBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken cancellationToken)
+        => DispatchBatchAsync(events, cancellationToken, allowSplit: true);
 
     private async Task DispatchBatchAsync(
         IReadOnlyList<IEventEnvelope> events,
-        CancellationToken ct,
+        CancellationToken cancellationToken,
         bool allowSplit)
     {
         if (_processor is not IBatchableProcessor batchableProcessor)
@@ -804,18 +805,18 @@ public sealed class ControlLoop : IHostedService, IAsyncDisposable, IHaltObserve
             Envelopes = events,
             IsRebuild = _processor.IsRebuilding,
             HaltObserver = this,
-            CancellationToken = ct,
+            CancellationToken = cancellationToken,
         };
 
         try
         {
-            await _composedBatchMiddleware(context, () => batchableProcessor.ProcessBatchAsync(events, ct));
+            await _composedBatchMiddleware(context, () => batchableProcessor.ProcessBatchAsync(events, cancellationToken));
         }
         catch (Exception ex) when (allowSplit && events.Count > 1 && ex is not OperationCanceledException)
         {
             var midpoint = events.Count / 2;
-            await DispatchBatchAsync(events.Take(midpoint).ToArray(), ct, allowSplit: true);
-            await DispatchBatchAsync(events.Skip(midpoint).ToArray(), ct, allowSplit: true);
+            await DispatchBatchAsync(events.Take(midpoint).ToArray(), cancellationToken, allowSplit: true);
+            await DispatchBatchAsync(events.Skip(midpoint).ToArray(), cancellationToken, allowSplit: true);
         }
     }
 

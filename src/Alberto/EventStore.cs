@@ -1,3 +1,4 @@
+using Alberto.Projections;
 using Alberto.Subscriptions;
 using Alberto.Telemetry;
 
@@ -117,14 +118,14 @@ public sealed class EventStore : IEventStore, IEventStoreConfigurator
     /// the caller has (a command's, typically), beside the <c>append</c> span that has already ended.
     /// </summary>
     private static async Task ProjectInlineAsync(
-        IInlineProjection projection, List<IEventEnvelope> events, CancellationToken ct)
+        IInlineProjection projection, List<IEventEnvelope> events, CancellationToken cancellationToken)
     {
         using var activity = AlbertoMetrics.Source.StartActivity("alberto.projection.inline");
         activity?.SetTag("alberto.projection.type", projection.GetType().FullName);
         activity?.SetTag("alberto.projection.events", events.Count);
         try
         {
-            await projection.ProcessAsync(events, ct);
+            await projection.ProcessAsync(events, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -134,19 +135,32 @@ public sealed class EventStore : IEventStore, IEventStoreConfigurator
     }
 
     /// <inheritdoc/>
-    public Task<IReadOnlyCollection<IEventEnvelope>> StreamAsync(
+    public Task<IReadOnlyCollection<IEventEnvelope>> ReadAsync(
         DcbQuery query,
-        long afterPosition = 0,
-        int? limit = null,
+        long afterPosition,
+        int limit,
         CancellationToken cancellationToken = default) =>
-        _backend.StreamAsync(query, afterPosition, limit, cancellationToken);
+        _backend.ReadAsync(query, afterPosition, limit, cancellationToken);
 
     /// <inheritdoc/>
-    public Task<IReadOnlyCollection<IEventEnvelope>> StreamAllAsync(
-        long afterPosition = 0,
-        int? limit = null,
+    public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllAsync(
+        long afterPosition,
+        int limit,
         CancellationToken cancellationToken = default) =>
-        _backend.StreamAllAsync(afterPosition, limit, cancellationToken);
+        _backend.ReadAllAsync(afterPosition, limit, cancellationToken);
+
+    /// <inheritdoc/>
+    public IAsyncEnumerable<IEventEnvelope> StreamAsync(
+        DcbQuery query,
+        long afterPosition = 0,
+        CancellationToken cancellationToken = default) =>
+        _backend.StreamAsync(query, afterPosition, cancellationToken);
+
+    /// <inheritdoc/>
+    public IAsyncEnumerable<IEventEnvelope> StreamAllAsync(
+        long afterPosition = 0,
+        CancellationToken cancellationToken = default) =>
+        _backend.StreamAllAsync(afterPosition, cancellationToken);
 
     /// <inheritdoc/>
     public Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default) =>

@@ -4,9 +4,6 @@
              which is what dictates the target framework. -->
         <TargetFramework>netstandard2.0</TargetFramework>
         <LangVersion>latest</LangVersion>
-        <Nullable>enable</Nullable>
-        <ImplicitUsings>enable</ImplicitUsings>
-        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
         <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
 
         <!-- Not a package of its own: the assembly is packed into Alberto.Commands under

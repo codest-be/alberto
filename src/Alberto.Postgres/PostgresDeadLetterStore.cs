@@ -1,4 +1,4 @@
-using Alberto.Subscriptions;
+using Alberto.DeadLetters;
 using Npgsql;
 
 namespace Alberto.Postgres;
@@ -12,7 +12,7 @@ namespace Alberto.Postgres;
 /// The compatibility constructor's <c>multiTenant</c> flag can assert multi-tenant storage,
 /// but never overrides the topology reported by the schema.
 /// </remarks>
-public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
+internal sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly SchemaQualifier _schema;
@@ -55,10 +55,10 @@ public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
     }
 
     /// <inheritdoc />
-    public async Task StoreAsync(DeadLetterEntry entry, CancellationToken ct = default)
+    public async Task StoreAsync(DeadLetterEntry entry, CancellationToken cancellationToken = default)
     {
-        await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        var multiTenant = await _topology.IsMultiTenantAsync(conn, ct);
+        await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
+        var multiTenant = await _topology.IsMultiTenantAsync(conn, cancellationToken);
 
         // In multi-tenant mode include tenant_id so the column (added by the multi-tenant
         // migration) is populated.  In single-tenant mode the column does not exist, so
@@ -123,7 +123,7 @@ public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
                 Value = (object?)entry.TenantId ?? DBNull.Value
             });
 
-        await cmd.ExecuteNonQueryAsync(ct);
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
     /// <inheritdoc />
@@ -131,10 +131,10 @@ public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
         string processorId,
         string? tenantId = null,
         int limit = 100,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
-        await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        var multiTenant = await _topology.IsMultiTenantAsync(conn, ct);
+        await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
+        var multiTenant = await _topology.IsMultiTenantAsync(conn, cancellationToken);
 
         // The tenant_id column only exists under the multi-tenant migration. In single-tenant
         // mode there is nothing to select or filter on, and a supplied tenantId is meaningless.
@@ -160,9 +160,9 @@ public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
             cmd.Parameters.AddWithValue("tenantId", tenantId!);
 
         var entries = new List<DeadLetterEntry>();
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
 
-        while (await reader.ReadAsync(ct))
+        while (await reader.ReadAsync(cancellationToken))
         {
             entries.Add(new DeadLetterEntry
             {
@@ -187,24 +187,24 @@ public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
     }
 
     /// <inheritdoc />
-    public async Task<int> CountAsync(string processorId, CancellationToken ct = default)
+    public async Task<int> CountAsync(string processorId, CancellationToken cancellationToken = default)
     {
         var sql = $"SELECT COUNT(*) FROM {_schema.Table("alberto_dead_letter_events")} WHERE processor_id = @processorId";
 
-        await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        await _topology.IsMultiTenantAsync(conn, ct);
+        await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await _topology.IsMultiTenantAsync(conn, cancellationToken);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = sql;
         cmd.Parameters.AddWithValue("processorId", processorId);
 
-        var result = await cmd.ExecuteScalarAsync(ct);
+        var result = await cmd.ExecuteScalarAsync(cancellationToken);
         return Convert.ToInt32(result);
     }
 
     /// <inheritdoc />
     public async Task<bool> CompleteRetryAsync(
         DeadLetterClaim claim,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(claim);
 
@@ -214,32 +214,32 @@ public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
               AND claim_id = @claim_id
             """;
 
-        await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        await _topology.IsMultiTenantAsync(conn, ct);
+        await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await _topology.IsMultiTenantAsync(conn, cancellationToken);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = sql;
         cmd.Parameters.AddWithValue("id", claim.Entry.Id);
         cmd.Parameters.AddWithValue("claim_id", claim.Token);
 
-        return await cmd.ExecuteNonQueryAsync(ct) == 1;
+        return await cmd.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
 
     /// <inheritdoc />
-    public async Task ClearAsync(string processorId, CancellationToken ct = default)
+    public async Task ClearAsync(string processorId, CancellationToken cancellationToken = default)
     {
         var sql = $"DELETE FROM {_schema.Table("alberto_dead_letter_events")} WHERE processor_id = @processorId";
 
-        await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        await _topology.IsMultiTenantAsync(conn, ct);
+        await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await _topology.IsMultiTenantAsync(conn, cancellationToken);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = sql;
         cmd.Parameters.AddWithValue("processorId", processorId);
 
-        await cmd.ExecuteNonQueryAsync(ct);
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
     /// <inheritdoc />
-    public async Task MarkForRetryAsync(string processorId, CancellationToken ct = default)
+    public async Task MarkForRetryAsync(string processorId, CancellationToken cancellationToken = default)
     {
         var sql = $"""
             UPDATE {_schema.Table("alberto_dead_letter_events")}
@@ -247,13 +247,13 @@ public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
             WHERE processor_id = @processorId
             """;
 
-        await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        await _topology.IsMultiTenantAsync(conn, ct);
+        await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await _topology.IsMultiTenantAsync(conn, cancellationToken);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = sql;
         cmd.Parameters.AddWithValue("processorId", processorId);
 
-        await cmd.ExecuteNonQueryAsync(ct);
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
     /// <inheritdoc />
@@ -262,8 +262,8 @@ public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
         int batchSize,
         TimeSpan leaseDuration,
         string claimedBy,
-        CancellationToken ct = default)
-        => ClaimCoreAsync(processorId, batchSize, leaseDuration, claimedBy, dueAt: null, ct);
+        CancellationToken cancellationToken = default)
+        => ClaimCoreAsync(processorId, batchSize, leaseDuration, claimedBy, dueAt: null, cancellationToken);
 
     /// <inheritdoc />
     public Task<IReadOnlyList<DeadLetterClaim>> ClaimDueAsync(
@@ -272,8 +272,8 @@ public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
         TimeSpan leaseDuration,
         string claimedBy,
         DateTimeOffset now,
-        CancellationToken ct = default)
-        => ClaimCoreAsync(processorId, batchSize, leaseDuration, claimedBy, dueAt: now, ct);
+        CancellationToken cancellationToken = default)
+        => ClaimCoreAsync(processorId, batchSize, leaseDuration, claimedBy, dueAt: now, cancellationToken);
 
     private async Task<IReadOnlyList<DeadLetterClaim>> ClaimCoreAsync(
         string processorId,
@@ -281,13 +281,13 @@ public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
         TimeSpan leaseDuration,
         string claimedBy,
         DateTimeOffset? dueAt,
-        CancellationToken ct)
+        CancellationToken cancellationToken)
     {
         if (leaseDuration <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(leaseDuration), "Lease duration must be positive.");
 
-        await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        var sql = await BuildClaimSqlAsync(conn, ct);
+        await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
+        var sql = await BuildClaimSqlAsync(conn, cancellationToken);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = sql;
         cmd.Parameters.AddWithValue("processorId", processorId);
@@ -302,9 +302,9 @@ public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
         });
 
         var claims = new List<DeadLetterClaim>();
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
 
-        while (await reader.ReadAsync(ct))
+        while (await reader.ReadAsync(cancellationToken))
         {
             // Parse tags from array
             IReadOnlyCollection<string>? tags = null;
@@ -366,7 +366,7 @@ public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
     /// <inheritdoc />
     public async Task<bool> AbandonRetryAsync(
         DeadLetterClaim claim,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(claim);
 
@@ -386,8 +386,8 @@ public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
               AND claim_id = @claim_id
             """;
 
-        await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        await _topology.IsMultiTenantAsync(conn, ct);
+        await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await _topology.IsMultiTenantAsync(conn, cancellationToken);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = sql;
         cmd.Parameters.AddWithValue("id", claim.Entry.Id);
@@ -398,7 +398,7 @@ public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
             Value = claim.Entry.NextRetryAt is { } next ? next.ToUniversalTime() : DBNull.Value
         });
 
-        return await cmd.ExecuteNonQueryAsync(ct) == 1;
+        return await cmd.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
 
     // Atomically:
@@ -412,9 +412,9 @@ public sealed class PostgresDeadLetterStore : IClaimableDeadLetterStore
     // The tenant_id column in the SELECT comes from alberto_events (not dead_letter_events)
     // because it reflects the event's origin tenant.  The probe result is cached so the
     // catalog is not queried on every call (SQL-4).
-    private async Task<string> BuildClaimSqlAsync(NpgsqlConnection conn, CancellationToken ct)
+    private async Task<string> BuildClaimSqlAsync(NpgsqlConnection conn, CancellationToken cancellationToken)
     {
-        var hasTenantId = await _topology.IsMultiTenantAsync(conn, ct);
+        var hasTenantId = await _topology.IsMultiTenantAsync(conn, cancellationToken);
         var tenantSelect = hasTenantId ? "e.tenant_id" : "NULL::text AS tenant_id";
 
         return $"""

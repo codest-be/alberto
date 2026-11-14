@@ -70,8 +70,8 @@ public sealed class MigrationHostShutdownTests(PostgresCluster cluster)
     [Fact]
     public async Task A_host_stopped_again_after_it_was_disposed_does_not_throw()
     {
-        var ct = TestContext.Current.CancellationToken;
-        var database = await cluster.CloneAsync(PostgresTemplates.Empty, "stoptwice", ct);
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var database = await cluster.CloneAsync(PostgresTemplates.Empty, "stoptwice", cancellationToken);
 
         var builder = Host.CreateApplicationBuilder();
         builder.Services.AddAlberto("stop_twice", module => module
@@ -84,11 +84,11 @@ public sealed class MigrationHostShutdownTests(PostgresCluster cluster)
             }));
 
         var host = builder.Build();
-        await host.StartAsync(ct);
-        await host.StopAsync(ct);
+        await host.StartAsync(cancellationToken);
+        await host.StopAsync(cancellationToken);
         host.Dispose();
 
-        var stopAgain = () => host.StopAsync(ct);
+        var stopAgain = () => host.StopAsync(cancellationToken);
 
         await stopAgain.Should().NotThrowAsync();
     }
@@ -96,9 +96,9 @@ public sealed class MigrationHostShutdownTests(PostgresCluster cluster)
     [Fact]
     public async Task A_sharded_host_disposed_while_a_shard_is_retrying_can_still_be_stopped()
     {
-        var ct = TestContext.Current.CancellationToken;
-        var db1 = await cluster.CloneAsync(PostgresTemplates.MultiTenant, "stoptwicedb1", ct);
-        var catalog = await cluster.CloneAsync(PostgresTemplates.Empty, "stoptwicecatalog", ct);
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var db1 = await cluster.CloneAsync(PostgresTemplates.MultiTenant, "stoptwicedb1", cancellationToken);
+        var catalog = await cluster.CloneAsync(PostgresTemplates.Empty, "stoptwicecatalog", cancellationToken);
 
         var builder = Host.CreateApplicationBuilder();
         builder.Services.AddAlberto("stop_twice_sharded", module => module
@@ -112,10 +112,10 @@ public sealed class MigrationHostShutdownTests(PostgresCluster cluster)
 
         // db2 is down, so its migration service is left with a retry loop running. Disposing
         // without a stop first is the path where that loop used to be orphaned.
-        await host.StartAsync(ct);
+        await host.StartAsync(cancellationToken);
         host.Dispose();
 
-        var stop = () => host.StopAsync(ct);
+        var stop = () => host.StopAsync(cancellationToken);
 
         await stop.Should().NotThrowAsync();
         await stop.Should().NotThrowAsync();

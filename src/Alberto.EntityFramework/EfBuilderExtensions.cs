@@ -17,8 +17,8 @@ public static class EfBuilderExtensions
     /// <param name="builder">The module builder.</param>
     /// <param name="configure">Action to configure the DbContext options.</param>
     /// <returns>The module builder for chaining.</returns>
-    public static DcbModuleBuilder WithEntityFramework<TDbContext>(
-        this DcbModuleBuilder builder,
+    public static AlbertoModuleBuilder WithEntityFramework<TDbContext>(
+        this AlbertoModuleBuilder builder,
         Action<DbContextOptionsBuilder> configure)
         where TDbContext : DbContext
     {
@@ -37,8 +37,8 @@ public static class EfBuilderExtensions
     /// <param name="builder">The module builder.</param>
     /// <param name="configure">Action to configure the DbContext options with service provider access.</param>
     /// <returns>The module builder for chaining.</returns>
-    public static DcbModuleBuilder WithEntityFramework<TDbContext>(
-        this DcbModuleBuilder builder,
+    public static AlbertoModuleBuilder WithEntityFramework<TDbContext>(
+        this AlbertoModuleBuilder builder,
         Action<IServiceProvider, DbContextOptionsBuilder> configure)
         where TDbContext : DbContext
     {

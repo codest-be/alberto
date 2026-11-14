@@ -7,7 +7,7 @@ using Xunit;
 namespace Alberto.Tests.Configuration;
 
 /// <summary>
-/// Specifies the argument-validation rules for <see cref="ServiceCollectionExtensions.AddAlberto"/>
+/// Specifies the argument-validation rules for <see cref="AlbertoServiceCollectionExtensions.AddAlberto"/>
 /// and the auto-control-loop registration behaviour when <c>WithControlLoop</c> is omitted.
 /// </summary>
 public class AddAlbertoArgumentTests
@@ -135,10 +135,10 @@ public class AddAlbertoArgumentTests
     public void AddAlberto_AutoRegistration_SetsControlLoopConfiguredLatch()
     {
         var services = new ServiceCollection();
-        DcbModuleBuilder? captured = null;
+        AlbertoModuleBuilder? captured = null;
 
         // No explicit WithControlLoop — the auto-registration block must fire.
-        // DcbModuleBuilder is a class; captured holds the reference that AddAlberto
+        // AlbertoModuleBuilder is a class; captured holds the reference that AddAlberto
         // continues to operate on after configure() returns, so it reflects the post-block state.
         services.AddAlberto("orders", b =>
         {

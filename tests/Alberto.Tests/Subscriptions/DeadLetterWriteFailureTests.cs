@@ -1,4 +1,5 @@
 using Alberto.Configuration;
+using Alberto.DeadLetters;
 using Alberto.Subscriptions;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
@@ -38,7 +39,7 @@ public sealed class DeadLetterWriteFailureTests
 
     private static BatchConsumeContext MakeContext(
         IReadOnlyList<IEventEnvelope>? envelopes = null,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         var batch = envelopes ?? [MakeEnvelope(position: 1)];
         return new BatchConsumeContext
@@ -47,20 +48,20 @@ public sealed class DeadLetterWriteFailureTests
             ModuleKey = "test-module",
             Envelopes = batch,
             IsRebuild = false,
-            CancellationToken = ct,
+            CancellationToken = cancellationToken,
         };
     }
 
     private static ConsumeEventContext MakeSingleContext(
         IEventEnvelope? envelope = null,
-        CancellationToken ct = default) =>
+        CancellationToken cancellationToken = default) =>
         new()
         {
             ProcessorId = "test-processor",
             ModuleKey = "test-module",
             Envelope = envelope ?? MakeEnvelope(position: 1),
             IsRebuild = false,
-            CancellationToken = ct,
+            CancellationToken = cancellationToken,
         };
 
     private static IEventEnvelope MakeEnvelope(long position) =>
@@ -90,23 +91,23 @@ public sealed class DeadLetterWriteFailureTests
         /// <summary>Number of times <see cref="StoreAsync"/> was called.</summary>
         public int StoreCallCount => _storeCallCount;
 
-        public Task StoreAsync(DeadLetterEntry entry, CancellationToken ct = default)
+        public Task StoreAsync(DeadLetterEntry entry, CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _storeCallCount);
             throw new InvalidOperationException("Simulated dead-letter store failure");
         }
 
         public Task<IReadOnlyList<DeadLetterEntry>> GetAsync(
-            string processorId, string? tenantId = null, int limit = 100, CancellationToken ct = default)
+            string processorId, string? tenantId = null, int limit = 100, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<DeadLetterEntry>>([]);
 
-        public Task<int> CountAsync(string processorId, CancellationToken ct = default)
+        public Task<int> CountAsync(string processorId, CancellationToken cancellationToken = default)
             => Task.FromResult(0);
 
-        public Task ClearAsync(string processorId, CancellationToken ct = default)
+        public Task ClearAsync(string processorId, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
-        public Task MarkForRetryAsync(string processorId, CancellationToken ct = default)
+        public Task MarkForRetryAsync(string processorId, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
     }
 
@@ -156,7 +157,7 @@ public sealed class DeadLetterWriteFailureTests
             timeProvider: null,
             logger: null);
 
-        var context = MakeContext(ct: TestContext.Current.CancellationToken);
+        var context = MakeContext(cancellationToken: TestContext.Current.CancellationToken);
 
         // Act — processor always fails so the single-event dead-letter path is reached.
         var act = async () =>
@@ -187,7 +188,7 @@ public sealed class DeadLetterWriteFailureTests
             store,
             timeProvider: clock,
             logger: null);
-        var context = MakeContext(ct: TestContext.Current.CancellationToken);
+        var context = MakeContext(cancellationToken: TestContext.Current.CancellationToken);
 
         var run = MiddlewareRunner.RunAsync(
             context, [middleware], () => throw new InvalidOperationException("processor failure"));
@@ -267,7 +268,7 @@ public sealed class DeadLetterWriteFailureTests
             timeProvider: null,
             logger: null);
 
-        var context = MakeContext(ct: TestContext.Current.CancellationToken);
+        var context = MakeContext(cancellationToken: TestContext.Current.CancellationToken);
 
         // Act
         await MiddlewareRunner.RunAsync(
@@ -300,7 +301,7 @@ public sealed class DeadLetterWriteFailureTests
             timeProvider: null,
             logger: null);
 
-        var context = MakeSingleContext(ct: TestContext.Current.CancellationToken);
+        var context = MakeSingleContext(cancellationToken: TestContext.Current.CancellationToken);
 
         var act = async () =>
             await MiddlewareRunner.RunAsync(
@@ -364,7 +365,7 @@ public sealed class DeadLetterWriteFailureTests
             timeProvider: null,
             logger: null);
 
-        var context = MakeSingleContext(ct: TestContext.Current.CancellationToken);
+        var context = MakeSingleContext(cancellationToken: TestContext.Current.CancellationToken);
 
         await MiddlewareRunner.RunAsync(
             context,

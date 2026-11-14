@@ -1,5 +1,18 @@
 root = true
 
+[*]
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.{cs,csproj,props,targets}]
+indent_style = space
+
+[*.cs]
+indent_size = 4
+
 # The semver gate. Every public type and member of a packable project must be declared in that
 # project's PublicAPI.Shipped.txt (frozen, released surface) or PublicAPI.Unshipped.txt (added
 # since the last release). These run at error severity on purpose: a public API change that

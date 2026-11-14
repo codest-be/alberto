@@ -282,7 +282,7 @@ public sealed class PostgresEventListenerTests : IAsyncLifetime
     /// are inserted in one SQL statement — verifying that the batch-notify trigger
     /// (SQL-3) fires only once.
     /// </summary>
-    private async Task AppendEventsAsync(int count, CancellationToken ct)
+    private async Task AppendEventsAsync(int count, CancellationToken cancellationToken)
     {
         var backend = new PostgresEventStoreBackend(_dataSource);
         var store = new EventStore(backend);
@@ -297,7 +297,7 @@ public sealed class PostgresEventListenerTests : IAsyncLifetime
             })
             .ToArray();
 
-        await store.AppendAsync(events, cancellationToken: ct);
+        await store.AppendAsync(events, cancellationToken: cancellationToken);
     }
 
     /// <summary>
@@ -317,9 +317,9 @@ public sealed class PostgresEventListenerTests : IAsyncLifetime
     /// Terminates all backend connections whose <c>application_name</c> matches
     /// <paramref name="appName"/>, simulating a network-level connection drop.
     /// </summary>
-    private async Task TerminateConnectionsAsync(string appName, CancellationToken ct)
+    private async Task TerminateConnectionsAsync(string appName, CancellationToken cancellationToken)
     {
-        await using var adminConn = await _dataSource.OpenConnectionAsync(ct).ConfigureAwait(false);
+        await using var adminConn = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var cmd = new NpgsqlCommand(
             "SELECT pg_terminate_backend(pid) " +
             "FROM pg_stat_activity " +
@@ -327,7 +327,7 @@ public sealed class PostgresEventListenerTests : IAsyncLifetime
             "  AND pid <> pg_backend_pid()",
             adminConn);
         cmd.Parameters.AddWithValue("appName", appName);
-        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 }
 

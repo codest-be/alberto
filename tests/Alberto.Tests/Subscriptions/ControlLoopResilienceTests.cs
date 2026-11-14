@@ -1,4 +1,5 @@
 using Alberto.InMemory;
+using Alberto.Checkpoints;
 using Alberto.Subscriptions;
 using FluentAssertions;
 using Xunit;
@@ -25,7 +26,7 @@ public sealed class ControlLoopResilienceTests
         public bool IsRebuilding { get; set; }
         public IReadOnlySet<string> HandledEventTypes { get; } = new HashSet<string> { TypeId };
 
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _processed);
             return Task.CompletedTask;
@@ -37,16 +38,32 @@ public sealed class ControlLoopResilienceTests
         private int _calls;
         public int Calls => Volatile.Read(ref _calls);
 
-        public async Task<IReadOnlyCollection<IEventEnvelope>> StreamAllAsync(
-            long afterPosition = 0, int? limit = null, CancellationToken cancellationToken = default)
+        public IAsyncEnumerable<IEventEnvelope> StreamAllAsync(
+            long afterPosition = 0, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllOfTypesAsync(
+            IReadOnlySet<string> eventTypes, long afterPosition, int limit, CancellationToken cancellationToken = default)
         {
             // Yield so a spinning loop shows up as a high call count rather than blocking StartAsync.
-            await Task.Yield();
-            return reader(Interlocked.Increment(ref _calls), afterPosition);
+            return Core();
+            async Task<IReadOnlyCollection<IEventEnvelope>> Core()
+            {
+                await Task.Yield();
+                return reader(Interlocked.Increment(ref _calls), afterPosition);
+            }
         }
 
-        public Task<IReadOnlyCollection<IEventEnvelope>> StreamAsync(
-            DcbQuery query, long afterPosition = 0, int? limit = null, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyCollection<IEventEnvelope>> ReadAsync(
+            DcbQuery query, long afterPosition, int limit, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllAsync(
+            long afterPosition, int limit, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public IAsyncEnumerable<IEventEnvelope> StreamAsync(
+            DcbQuery query, long afterPosition = 0, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
         public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
@@ -77,13 +94,13 @@ public sealed class ControlLoopResilienceTests
         CreatedAt = DateTimeOffset.UtcNow,
     };
 
-    private static async Task WaitForAsync(Func<bool> condition, CancellationToken ct)
+    private static async Task WaitForAsync(Func<bool> condition, CancellationToken cancellationToken)
     {
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
         while (!condition())
         {
             if (DateTime.UtcNow > deadline) throw new TimeoutException("Condition not met within 10s.");
-            await Task.Delay(10, ct);
+            await Task.Delay(10, cancellationToken);
         }
     }
 

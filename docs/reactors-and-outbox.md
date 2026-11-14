@@ -13,10 +13,10 @@ The simplest form is a lambda per event type:
 
 ```csharp
 .ReactTo<OrderPlaced>(
-    sp => async (e, ct) =>
+    sp => async (e, cancellationToken) =>
     {
         var email = sp.GetRequiredService<IEmailSender>();
-        await email.SendOrderConfirmationAsync(e.CustomerId, e.OrderId, ct);
+        await email.SendOrderConfirmationAsync(e.CustomerId, e.OrderId, cancellationToken);
     },
     processorId: "order-confirmation-email")
 ```
@@ -38,7 +38,7 @@ Both forms have an overload whose handler also takes a `ReactorContext`, carryin
 
 ```csharp
 .ReactTo<OrderPlaced>(
-    sp => async (e, ctx, ct) => await Notify(e, ctx.TenantId, ct),
+    sp => async (e, ctx, cancellationToken) => await Notify(e, ctx.TenantId, cancellationToken),
     processorId: "order-notifications")
 ```
 
@@ -145,7 +145,7 @@ Then map events to it:
 
 - `Map<TEvent, TMessage>` takes the message type and version from the `[Message]` attribute. The
   three-generic overload resolves one dependency from DI at map time.
-- For full control, `map.Map<TEvent>((envelope, sp, ct) => …)` returns an `ExternalMessage`
+- For full control, `map.Map<TEvent>((envelope, sp, cancellationToken) => …)` returns an `ExternalMessage`
   directly, or `null` to publish nothing for that event, which is the supported way to filter.
 - **`transport` is optional.** Omit it and entries accumulate in the table with no relay; drain
   them from your own process. Provide one and an `OutboxRelay` is registered as a hosted service.
@@ -169,9 +169,9 @@ what `[Message("…", version)]` is for.
 ```csharp
 public interface IMessageTransport
 {
-    Task PublishAsync(ExternalMessage message, CancellationToken ct = default);
-    Task StartAsync(CancellationToken ct = default);
-    Task StopAsync(CancellationToken ct = default);
+    Task PublishAsync(ExternalMessage message, CancellationToken cancellationToken = default);
+    Task StartAsync(CancellationToken cancellationToken = default);
+    Task StopAsync(CancellationToken cancellationToken = default);
 }
 ```
 
@@ -227,7 +227,7 @@ and that is the whole adapter:
 ```csharp
 public sealed class RebusTransport(IBus bus) : IMessageTransport
 {
-    public Task PublishAsync(ExternalMessage message, CancellationToken ct = default)
+    public Task PublishAsync(ExternalMessage message, CancellationToken cancellationToken = default)
     {
         var body = new AlbertoMessage(message.MessageType, message.Version, message.Payload);
         var headers = message.Metadata.Count > 0
@@ -239,8 +239,8 @@ public sealed class RebusTransport(IBus bus) : IMessageTransport
             : bus.Send(body, headers);
     }
 
-    public Task StartAsync(CancellationToken ct = default) => Task.CompletedTask;
-    public Task StopAsync(CancellationToken ct = default) => Task.CompletedTask;
+    public Task StartAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+    public Task StopAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 }
 ```
 
@@ -346,7 +346,7 @@ group ids (SQS FIFO) or a routing key (RabbitMQ) will keep one entity's messages
 path. Alberto passes the hint through untouched and never interprets it.
 
 ```csharp
-map.Map<OrderPlaced>((envelope, sp, ct) => new ExternalMessage(
+map.Map<OrderPlaced>((envelope, sp, cancellationToken) => new ExternalMessage(
     "order-placed", "1", Serialize(envelope.Event), [],
     RoutingHint: envelope.Event.OrderId.ToString()));
 ```

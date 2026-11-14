@@ -1,5 +1,5 @@
 using System.Collections.Concurrent;
-using Alberto.Subscriptions;
+using Alberto.DeadLetters;
 
 namespace Alberto.InMemory;
 
@@ -8,14 +8,14 @@ namespace Alberto.InMemory;
 /// Useful for testing and development.
 /// </summary>
 /// <param name="timeProvider">Clock used to stamp <see cref="DeadLetterEntry.CreatedAt"/> when not supplied by the caller, and to drive claim-lease expiry. Defaults to <see cref="TimeProvider.System"/>.</param>
-public sealed class InMemoryDeadLetterStore(TimeProvider? timeProvider = null) : IClaimableDeadLetterStore
+internal sealed class InMemoryDeadLetterStore(TimeProvider? timeProvider = null) : IClaimableDeadLetterStore
 {
     // Keyed by (processor, event): the store holds one entry per event a processor failed.
     private readonly ConcurrentDictionary<(string ProcessorId, Guid EventId), DeadLetterEntry> _entries = new();
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
     /// <inheritdoc />
-    public Task StoreAsync(DeadLetterEntry entry, CancellationToken ct = default)
+    public Task StoreAsync(DeadLetterEntry entry, CancellationToken cancellationToken = default)
     {
         var stamped = entry with { CreatedAt = entry.CreatedAt ?? _timeProvider.GetUtcNow().UtcDateTime };
 
@@ -41,7 +41,7 @@ public sealed class InMemoryDeadLetterStore(TimeProvider? timeProvider = null) :
         string processorId,
         string? tenantId = null,
         int limit = 100,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         var entries = _entries.Values
             .Where(e => e.ProcessorId == processorId)
@@ -59,14 +59,14 @@ public sealed class InMemoryDeadLetterStore(TimeProvider? timeProvider = null) :
     }
 
     /// <inheritdoc />
-    public Task<int> CountAsync(string processorId, CancellationToken ct = default)
+    public Task<int> CountAsync(string processorId, CancellationToken cancellationToken = default)
     {
         var count = _entries.Values.Count(e => e.ProcessorId == processorId);
         return Task.FromResult(count);
     }
 
     /// <inheritdoc />
-    public Task<bool> CompleteRetryAsync(DeadLetterClaim claim, CancellationToken ct = default)
+    public Task<bool> CompleteRetryAsync(DeadLetterClaim claim, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(claim);
 
@@ -84,7 +84,7 @@ public sealed class InMemoryDeadLetterStore(TimeProvider? timeProvider = null) :
     }
 
     /// <inheritdoc />
-    public Task ClearAsync(string processorId, CancellationToken ct = default)
+    public Task ClearAsync(string processorId, CancellationToken cancellationToken = default)
     {
         var toRemove = _entries.Keys.Where(k => k.ProcessorId == processorId).ToList();
         foreach (var id in toRemove)
@@ -95,7 +95,7 @@ public sealed class InMemoryDeadLetterStore(TimeProvider? timeProvider = null) :
     }
 
     /// <inheritdoc />
-    public Task MarkForRetryAsync(string processorId, CancellationToken ct = default)
+    public Task MarkForRetryAsync(string processorId, CancellationToken cancellationToken = default)
     {
         foreach (var key in _entries.Keys.Where(k => k.ProcessorId == processorId))
         {
@@ -115,7 +115,7 @@ public sealed class InMemoryDeadLetterStore(TimeProvider? timeProvider = null) :
         int batchSize,
         TimeSpan leaseDuration,
         string claimedBy,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
         => ClaimCore(processorId, batchSize, leaseDuration, claimedBy, dueAt: null);
 
     /// <inheritdoc />
@@ -125,7 +125,7 @@ public sealed class InMemoryDeadLetterStore(TimeProvider? timeProvider = null) :
         TimeSpan leaseDuration,
         string claimedBy,
         DateTimeOffset now,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
         => ClaimCore(processorId, batchSize, leaseDuration, claimedBy, dueAt: now);
 
     private Task<IReadOnlyList<DeadLetterClaim>> ClaimCore(
@@ -172,7 +172,7 @@ public sealed class InMemoryDeadLetterStore(TimeProvider? timeProvider = null) :
     }
 
     /// <inheritdoc />
-    public Task<bool> AbandonRetryAsync(DeadLetterClaim claim, CancellationToken ct = default)
+    public Task<bool> AbandonRetryAsync(DeadLetterClaim claim, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(claim);
 

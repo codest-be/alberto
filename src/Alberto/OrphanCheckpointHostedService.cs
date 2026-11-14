@@ -1,5 +1,6 @@
 using Alberto.Configuration;
-using Alberto.Subscriptions;
+using Alberto.Checkpoints;
+using Alberto.Projections;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 

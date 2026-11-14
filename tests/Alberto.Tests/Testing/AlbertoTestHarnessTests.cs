@@ -1,5 +1,5 @@
 using Alberto.InMemory;
-using Alberto.Subscriptions;
+using Alberto.Projections;
 using Alberto.Testing;
 using Xunit;
 
@@ -13,7 +13,7 @@ public class AlbertoTestHarnessTests
     [Fact]
     public async Task AppendThenWaitForQuiescence_LetsAProjectionBeAssertedWithoutPolling()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var orderId = Guid.NewGuid();
         var stateStore = new InMemoryStateStore<OrderTotal>();
 
@@ -32,19 +32,19 @@ public class AlbertoTestHarnessTests
                             })
                         .Build(),
                     _ => _ => stateStore),
-            ct: ct);
+            cancellationToken: cancellationToken);
 
-        await harness.AppendAsync(new HarnessOrderCreated(orderId, 42m), ct: ct);
-        await harness.WaitForQuiescenceAsync(ct: ct);
+        await harness.AppendAsync(new HarnessOrderCreated(orderId, 42m), cancellationToken: cancellationToken);
+        await harness.WaitForQuiescenceAsync(cancellationToken: cancellationToken);
 
-        var loaded = await stateStore.LoadManyAsync([orderId.ToString()], ct);
+        var loaded = await stateStore.LoadManyAsync([orderId.ToString()], cancellationToken);
         Assert.Equal(42m, loaded[orderId.ToString()].Amount);
     }
 
     [Fact]
     public async Task WaitForQuiescenceAsync_ThrowsRatherThanReturningWhenNothingCatchesUp()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
 
         await using var harness = await AlbertoTestHarness.StartAsync(
             "stalled",
@@ -53,13 +53,13 @@ public class AlbertoTestHarnessTests
                 .ReactTo<HarnessOrderCreated>(
                     sp => (e, stalledCt) => Task.Delay(Timeout.Infinite, stalledCt),
                     processorId: "stalled-reactor"),
-            ct: ct);
+            cancellationToken: cancellationToken);
 
-        await harness.AppendAsync(new HarnessOrderCreated(Guid.NewGuid(), 1m), ct: ct);
+        await harness.AppendAsync(new HarnessOrderCreated(Guid.NewGuid(), 1m), cancellationToken: cancellationToken);
 
         // A harness that returned silently here would turn every downstream assertion into a
         // race that fails somewhere else, days later.
         await Assert.ThrowsAsync<TimeoutException>(
-            () => harness.WaitForQuiescenceAsync(TimeSpan.FromMilliseconds(200), ct));
+            () => harness.WaitForQuiescenceAsync(TimeSpan.FromMilliseconds(200), cancellationToken));
     }
 }

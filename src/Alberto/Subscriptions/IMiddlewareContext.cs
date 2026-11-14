@@ -19,13 +19,13 @@ public interface IMiddlewareContext
     /// Current attempt number (1-based). Updated by retry middleware
     /// before each execution attempt.
     /// </summary>
-    int Attempt { get; set; }
+    int Attempt { get; internal set; }
 
     /// <summary>
     /// The last exception thrown by the inner pipeline, or
     /// <see langword="null"/> after a successful attempt.
     /// </summary>
-    Exception? LastError { get; set; }
+    Exception? LastError { get; internal set; }
 
     /// <summary>Propagates cancellation from the subscription owner.</summary>
     CancellationToken CancellationToken { get; }

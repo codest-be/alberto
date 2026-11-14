@@ -1,4 +1,4 @@
-using Alberto.Subscriptions;
+using Alberto.Projections;
 
 namespace Alberto.Testing;
 
@@ -120,7 +120,7 @@ internal sealed class ProjectionFold<TState> where TState : new()
         switch (_declaration.Apply(state, @event, context))
         {
             case ProjectionResult<TState>.Set set:
-                if (set.State is IProjectionEntity written) written.LastProcessedPosition = position;
+                if (set.State is IProjectionEntity written) ProjectionEntityStamp.LastProcessedPosition(written, position);
                 _documents[documentId] = set.State;
                 _written.Add(documentId);
                 _removed.Remove(documentId);

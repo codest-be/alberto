@@ -1,5 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
-using Alberto.Subscriptions;
+using Alberto.Projections;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 

@@ -1,8 +1,9 @@
 using Alberto;
+using Alberto.Results;
 namespace Alberto.Commands;
 
 /// <summary>
-/// A decision made without a DCB boundary. There is no <c>Commit(ct)</c>: the caller
+/// A decision made without a DCB boundary. There is no <c>Commit(cancellationToken)</c>: the caller
 /// either supplies the query and position it observed, or states outright that no
 /// conflict check is wanted.
 /// </summary>
@@ -77,7 +78,7 @@ public readonly struct UnboundDecision<TValue>
     {
         var store = PipelineInternals.Require(_store);
         var decide = _decide!;
-        return new UnboundDecision<TNew>(store, async ct => (await decide(ct)).Map(map), _commandType);
+        return new UnboundDecision<TNew>(store, async cancellationToken => (await decide(cancellationToken)).Map(map), _commandType);
     }
 
     /// <inheritdoc cref="UnboundDecision.Commit"/>

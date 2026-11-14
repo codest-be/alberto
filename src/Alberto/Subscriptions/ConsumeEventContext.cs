@@ -13,8 +13,8 @@ public sealed class ConsumeEventContext : IMiddlewareContext
     /// <summary>How the consume span should relate to the event's append trace.</summary>
     public TraceParenting TraceParenting { get; init; }
 
-    public int Attempt { get; set; }
-    public bool DeadLettered { get; set; }
+    public int Attempt { get; internal set; }
+    public bool DeadLettered { get; internal set; }
 
     /// <summary>
     /// Whether the dead-letter row for a <see cref="DeadLettered"/> event was actually written.
@@ -31,6 +31,8 @@ public sealed class ConsumeEventContext : IMiddlewareContext
     /// <summary>Told when this event starts and stops halting its processor. Null outside a control loop.</summary>
     internal IHaltObserver? HaltObserver { get; init; }
 
-    public Exception? LastError { get; set; }
+    public Exception? LastError { get; internal set; }
+    int IMiddlewareContext.Attempt { get => Attempt; set => Attempt = value; }
+    Exception? IMiddlewareContext.LastError { get => LastError; set => LastError = value; }
     public CancellationToken CancellationToken { get; init; }
 }

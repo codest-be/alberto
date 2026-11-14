@@ -1,3 +1,4 @@
+using Alberto.DeadLetters;
 using Alberto.Subscriptions;
 using Xunit;
 
@@ -41,38 +42,38 @@ public sealed class DeadLetterRetryLoopTests
 
         public IReadOnlySet<string> HandledEventTypes { get; } = new HashSet<string>(StringComparer.Ordinal);
 
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default) => Task.CompletedTask;
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     private sealed class TestDeadLetterStore : IClaimableDeadLetterStore
     {
-        public Task StoreAsync(DeadLetterEntry entry, CancellationToken ct = default) => Task.CompletedTask;
+        public Task StoreAsync(DeadLetterEntry entry, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
         public Task<IReadOnlyList<DeadLetterEntry>> GetAsync(
             string processorId,
             string? tenantId = null,
             int limit = 100,
-            CancellationToken ct = default) =>
+            CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<DeadLetterEntry>>([]);
 
-        public Task<int> CountAsync(string processorId, CancellationToken ct = default) => Task.FromResult(0);
+        public Task<int> CountAsync(string processorId, CancellationToken cancellationToken = default) => Task.FromResult(0);
 
-        public Task<bool> CompleteRetryAsync(DeadLetterClaim claim, CancellationToken ct = default) =>
+        public Task<bool> CompleteRetryAsync(DeadLetterClaim claim, CancellationToken cancellationToken = default) =>
             Task.FromResult(true);
 
-        public Task ClearAsync(string processorId, CancellationToken ct = default) => Task.CompletedTask;
+        public Task ClearAsync(string processorId, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
-        public Task MarkForRetryAsync(string processorId, CancellationToken ct = default) => Task.CompletedTask;
+        public Task MarkForRetryAsync(string processorId, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
         public Task<IReadOnlyList<DeadLetterClaim>> ClaimRetryRequestedAsync(
             string processorId,
             int batchSize,
             TimeSpan leaseDuration,
             string claimedBy,
-            CancellationToken ct = default) =>
+            CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<DeadLetterClaim>>([]);
 
-        public Task<bool> AbandonRetryAsync(DeadLetterClaim claim, CancellationToken ct = default) =>
+        public Task<bool> AbandonRetryAsync(DeadLetterClaim claim, CancellationToken cancellationToken = default) =>
             Task.FromResult(true);
     }
 }

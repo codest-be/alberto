@@ -18,7 +18,7 @@ side-effect free.
 
 ### Phase 1: Declare
 
-The `configure` callback runs against a fresh `DcbModuleBuilder`. Each fluent call records
+The `configure` callback runs against a fresh `AlbertoModuleBuilder`. Each fluent call records
 intent into an immutable `AlbertoModuleDefinition`; nothing is registered and no I/O
 happens. Call order inside the callback is irrelevant. The module key, backend, processor
 list, and options are accumulated without touching any service.
@@ -479,7 +479,7 @@ surfacing them in one error message.
 | `ALB0023` | `.WithRebuilds()` is declared but the in-memory backend does not provide an `IProjectionRebuildStore` | Switch to `.WithPostgres(...)`, or remove `.WithRebuilds()` |
 | `ALB0024` | Retired. The in-memory backend now provides an `IProcessorLeaseManager` and a fenced checkpoint store, so `Leases.Enabled = true` works with `.WithInMemory()` | — |
 | `ALB0025` | `Leases.Enabled = true` but no `IProcessorLeaseManager` is registered under the module key, so leases can never be acquired, renewed or fenced. Only reachable through a custom `IAlbertoBackendDescriptor`. The built-in backends both register a manager, so neither can reach this | Register an `IProcessorLeaseManager` for the module, switch to `.WithPostgres(...)`, or disable leases |
-| `ALB0026` | `AddAlberto` was called twice with the same module key | Give each module its own key. To extend a module declared elsewhere, hold onto the `DcbModuleBuilder` rather than calling `AddAlberto` again |
+| `ALB0026` | `AddAlberto` was called twice with the same module key | Give each module its own key. To extend a module declared elsewhere, hold onto the `AlbertoModuleBuilder` rather than calling `AddAlberto` again |
 | `ALB0028` | A processor that halts on failure (a projection, or the outbox handler) has `Redelivery` or `Retry:DeadLetterOnMaxRetries` set under `Processors:<id>`. A halting processor never dead-letters | Remove them. Tune its waits with `Processors:<id>:Halt` |
 | `ALB0027` | `AddEfProjection` on a module that declared `.WithTenancy()`. `IProjectionEntity` has no tenant column, so the EF state store and the inline projection both load and write by `(DocumentId, RebuildVersion)` alone, so two tenants producing the same document id share one row | If this declaration's ids are already unique across every tenant (a GUID aggregate id, say), state it: `AddEfProjection<TEntity, TDbContext>(declaration, documentIds: EfDocumentIdUniqueness.AcrossTenants)`. If they are not, prefix a tenant discriminator the event itself carries, give each tenant its own database with `.WithTenancy(t => t.AcrossPostgresDatabases(...))`, or use the JSONB store via `AddProjection`, whose tenancy is part of the migrated schema |
 
@@ -644,8 +644,8 @@ public sealed record MyBackendDescriptor(MyBackendOptions Options)
 // 4. Builder extension: the public entry point
 public static class MyBackendBuilderExtensions
 {
-    public static DcbModuleBuilder WithMyBackend(
-        this DcbModuleBuilder builder,
+    public static AlbertoModuleBuilder WithMyBackend(
+        this AlbertoModuleBuilder builder,
         Func<MyBackendOptions, MyBackendOptions> configure)
     {
         var options = configure(new MyBackendOptions());

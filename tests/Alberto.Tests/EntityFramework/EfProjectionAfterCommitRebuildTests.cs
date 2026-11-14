@@ -1,5 +1,6 @@
 using Alberto.EntityFramework;
 using Alberto.InMemory;
+using Alberto.Projections;
 using Alberto.Subscriptions;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;

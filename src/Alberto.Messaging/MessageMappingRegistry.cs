@@ -35,9 +35,9 @@ public sealed class MessageMappingRegistry : IMessageMappingRegistry
 
     /// <inheritdoc/>
     public ValueTask<ExternalMessage?> TryMapAsync(
-        IEventEnvelope envelope, IServiceProvider serviceProvider, CancellationToken ct)
+        IEventEnvelope envelope, IServiceProvider serviceProvider, CancellationToken cancellationToken)
         => _mappers.TryGetValue(envelope.EventType.Id, out var mapper)
-            ? mapper(envelope, serviceProvider, ct)
+            ? mapper(envelope, serviceProvider, cancellationToken)
             : ValueTask.FromResult<ExternalMessage?>(null);
 
     /// <inheritdoc/>

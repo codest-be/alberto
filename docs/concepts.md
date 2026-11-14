@@ -129,17 +129,17 @@ await store.Handle(command)
     .Load(boundary, initialState, applyFn)           // folds AND captures the position
     .Decide((cmd, state) => …)                       // → events, or a Problem
     .RetryOnConflict(3)                              // optional; re-reads and re-decides
-    .Commit(ct);                                     // appends under the boundary
+    .Commit(cancellationToken);                                     // appends under the boundary
 ```
 
-`Commit(ct)` takes no boundary because `Load` already established one. That is enforced by the
+`Commit(cancellationToken)` takes no boundary because `Load` already established one. That is enforced by the
 type system rather than at runtime: `Load` returns a *bound* pipeline and only a bound pipeline has
-`Commit(ct)`.
+`Commit(cancellationToken)`.
 
 When state comes from somewhere other than the log (a cache, a read model) use `LoadUnbound`, or
 skip loading entirely and `Decide` straight off `Handle`. Neither establishes a boundary, so the
-pipeline that comes back offers only `Commit(query, expectedPosition, ct)` and
-`CommitUnconditionally(ct)`: you have to say what the append is checked against, or say out loud
+pipeline that comes back offers only `Commit(query, expectedPosition, cancellationToken)` and
+`CommitUnconditionally(cancellationToken)`: you have to say what the append is checked against, or say out loud
 that it is checked against nothing.
 
 For the rarer case where the boundary is only discoverable *during* the read (you fold one query
@@ -232,15 +232,23 @@ store.
 
 | Interface | For | Gives you |
 |---|---|---|
-| `IEventStore` | Application code | Appends with boundary conditions, tenancy applied |
-| `IEventStoreBackend` | Infrastructure | The raw log. `StreamAsync`, `StreamAllAsync`, `GetLastPositionAsync` |
+| `IEventStore` | Application code, and what a backend author implements | Appends with boundary conditions, `ReadAsync`/`ReadAllAsync` (batches), `StreamAsync`/`StreamAllAsync` (lazy), `GetLastPositionAsync` |
+| `IEventStoreBackend` | Backend authors | `IEventStore` plus `ReadAllOfTypesAsync`, the filtered feed the control loop reads |
+
+Depend on `IEventStore`. Implement `IEventStoreBackend`; `EventStore` wraps it and adds argument
+validation, inline projections and post-append handlers.
 
 ```csharp
 Task<...> AppendAsync(IEnumerable<IEventToPersist> events, DcbQuery? condition = null,
-                      long? expectedPosition = null, CancellationToken ct = default);
-Task<...> StreamAsync(DcbQuery query, long afterPosition = 0, int? limit = null,
-                      CancellationToken ct = default);
+                      long? expectedPosition = null, CancellationToken cancellationToken = default);
+IAsyncEnumerable<IEventEnvelope> StreamAsync(DcbQuery query, long afterPosition = 0,
+                                             CancellationToken cancellationToken = default);
+Task<IReadOnlyCollection<IEventEnvelope>> ReadAsync(DcbQuery query, long afterPosition, int limit,
+                                                    CancellationToken cancellationToken = default);
 ```
+
+`Stream*` never materialises the result: Postgres yields rows from the data reader and the
+in-memory backend yields lazily. `Read*` returns one bounded batch, so `limit` is required.
 
 Read models and queries should go through a projection, not `StreamAsync`: folding a large
 boundary on every request is exactly the cost projections exist to avoid. `StreamAsync` on the

@@ -6,7 +6,7 @@ Thank you for taking the time to contribute.
 
 Clone the repository and make sure you have the prerequisites installed:
 
-- **.NET 10 SDK.** The solution targets `net10.0`
+- **.NET 10 SDK.** Libraries target `net10.0` and `net11.0`; tests and benchmarks target `net10.0`
 - **Docker.** Testcontainers-backed integration tests spin up a PostgreSQL container
 
 Run the full test suite:
@@ -30,14 +30,11 @@ thousands of them.
 
 ## Test quality gates
 
-Two numbers gate a PR, and both have a floor CI enforces:
+Line coverage over the shipped packages gates a PR; CI enforces the floor. Mutation testing
+(Stryker) is an on-demand local tool, not a PR gate: use it when a line may be covered by a test
+that asserts nothing about it.
 
-- **Line coverage** over the shipped packages, from the whole suite.
-- **Mutation score on the code your branch changed**, from Stryker. This is the one that
-  usually needs attention, because a line can be covered by a test that asserts nothing about
-  it.
-
-Check either locally before pushing:
+Check either locally:
 
 ```bash
 build/coverage.sh
@@ -108,7 +105,7 @@ leave `Unshipped` with just its `#nullable enable` line.
 guidelines, not bugs, and are satisfiable by justification when the overloads are separated by a
 *required* parameter or by delegate shape rather than by the optional tail. Where that is the
 case, add a `[SuppressMessage]` with a `Justification` naming which parameter does the separating.
-See the existing ones in `DcbModuleBuilderExtensions.ReactTo` for the form. Do not reach for
+See the existing ones in `AlbertoModuleBuilderExtensions.ReactTo` for the form. Do not reach for
 `#pragma warning disable`, and do not lower the severity.
 
 **Packability.** `Directory.Build.props` defaults `IsPackable` to `false`; each project under
@@ -130,7 +127,7 @@ the old interface. There is no way to walk that back short of a major version.
 So the rule is: **after 1.0, new members on these interfaces ship with a default implementation.**
 
 `ExtensionPointContractTests` in `tests/Alberto.Tests` enforces it by pinning today's abstract
-member set on `IEventStoreBackend`, `IDeadLetterStore`, `IClaimableDeadLetterStore` and
+member set on `IEventStore`, `IEventStoreBackend`, `IDeadLetterStore`, `IClaimableDeadLetterStore` and
 `IProjectionRebuildStore`. A member added with a default body does not appear in the reflected
 abstract set and the test stays green.
 

@@ -395,7 +395,7 @@ public abstract class OutboxStoreSpecification
             ?? throw new InvalidOperationException($"Inserted entry {entry.Id} was not returned by ClaimPendingAsync.");
         await store.MarkFailedAsync(ourClaim, "error", Ct);
 
-        await store.RetryFailedAsync(ct: Ct);
+        await store.RetryFailedAsync(cancellationToken: Ct);
 
         var second = await store.ClaimPendingAsync(100, TimeSpan.FromMinutes(5), "worker", Ct);
         // Filter to our specific entry so entries from other facts do not inflate the

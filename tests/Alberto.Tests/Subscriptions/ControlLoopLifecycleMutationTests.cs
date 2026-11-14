@@ -35,14 +35,14 @@ public sealed class ControlLoopLifecycleMutationTests
         EventData = JsonSerializer.Serialize(new LifecycleEvent(label)),
     };
 
-    private static async Task WaitForAsync(Func<bool> condition, CancellationToken ct)
+    private static async Task WaitForAsync(Func<bool> condition, CancellationToken cancellationToken)
     {
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
         while (!condition())
         {
             if (DateTime.UtcNow > deadline)
                 throw new TimeoutException("Condition not met within 10s.");
-            await Task.Delay(10, ct);
+            await Task.Delay(10, cancellationToken);
         }
     }
 
@@ -57,8 +57,8 @@ public sealed class ControlLoopLifecycleMutationTests
         public bool IsRebuilding { get; set; }
         public IReadOnlySet<string> HandledEventTypes { get; } = new HashSet<string> { EventTypeId };
 
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
-            => handler(@event, ct);
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default)
+            => handler(@event, cancellationToken);
     }
 
     /// <summary>A processor that also counts how many times it was asynchronously disposed.</summary>
@@ -75,8 +75,8 @@ public sealed class ControlLoopLifecycleMutationTests
         public bool IsRebuilding { get; set; }
         public IReadOnlySet<string> HandledEventTypes { get; } = new HashSet<string> { EventTypeId };
 
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
-            => handler is null ? Task.CompletedTask : handler(@event, ct);
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default)
+            => handler is null ? Task.CompletedTask : handler(@event, cancellationToken);
 
         public ValueTask DisposeAsync()
         {
@@ -127,14 +127,14 @@ public sealed class ControlLoopLifecycleMutationTests
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var observedCancellation = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        var processor = new DelegatingProcessor("cancel-token", async (_, ct) =>
+        var processor = new DelegatingProcessor("cancel-token", async (_, cancellationToken) =>
         {
             entered.TrySetResult();
             try
             {
-                await Task.Delay(Timeout.Infinite, ct);
+                await Task.Delay(Timeout.Infinite, cancellationToken);
             }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 observedCancellation.TrySetResult();
                 throw;

@@ -9,6 +9,7 @@ using Alberto.Telemetry;
 using Alberto.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
+using Alberto.Results;
 
 namespace Alberto.Tests.Telemetry;
 
@@ -65,7 +66,7 @@ public sealed class EndToEndTraceTests
         }
 
         // Consumers: a reactor (Parent) that feeds the outbox handler, and a projection (Link).
-        var envelope = (await backend.StreamAllAsync()).Single();
+        var envelope = (await backend.StreamAllAsync().ToListAsync()).Single();
         var registry = new MessageMappingRegistry(null);
         registry.Map<Placed>((_, _, _) => ValueTask.FromResult<ExternalMessage?>(
             new ExternalMessage("order.placed", id.ToString(), "{}", new Dictionary<string, string>())));
@@ -76,7 +77,10 @@ public sealed class EndToEndTraceTests
 
         ConsumeEventContext Context(string processor, TraceParenting parenting) => new()
         {
-            ProcessorId = processor, ModuleKey = "orders", Envelope = envelope, IsRebuild = false,
+            ProcessorId = processor,
+            ModuleKey = "orders",
+            Envelope = envelope,
+            IsRebuild = false,
             TraceParenting = parenting,
         };
         await TelemetryConsumeMiddleware.Create(provider)(

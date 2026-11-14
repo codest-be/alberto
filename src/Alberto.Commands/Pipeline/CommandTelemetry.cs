@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Alberto.Telemetry;
+using Alberto.Results;
 
 namespace Alberto.Commands;
 

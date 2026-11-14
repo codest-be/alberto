@@ -1,6 +1,5 @@
 using System.Text.Json;
 using Alberto.Postgres;
-using Alberto.Subscriptions;
 using Alberto.Tests.Infrastructure;
 using Npgsql;
 using Xunit;
@@ -35,33 +34,33 @@ public sealed class EventStoreHeadStablePostgresBarrierTests(SingleTenantPostgre
     [Fact]
     public async Task OpenTransaction_SameDatabase_PinsStableHeadUntilItEnds()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var backend = new PostgresEventStoreBackend(fixture.DataSource);
         var headBackend = (IEventStoreHeadBackend)backend;
-        var startPosition = await backend.GetLastPositionAsync(ct);
+        var startPosition = await backend.GetLastPositionAsync(cancellationToken);
 
         // Force an xid on a separate, still-open connection/transaction — no writes needed,
         // pg_current_xact_id() alone allocates one and pins it as the oldest in-flight xid.
         await using var pinning = new NpgsqlConnection(fixture.ConnectionString);
-        await pinning.OpenAsync(ct);
-        await using var pinningTx = await pinning.BeginTransactionAsync(ct);
+        await pinning.OpenAsync(cancellationToken);
+        await using var pinningTx = await pinning.BeginTransactionAsync(cancellationToken);
         await using (var xidCmd = new NpgsqlCommand("SELECT pg_current_xact_id()", pinning, pinningTx))
-            await xidCmd.ExecuteScalarAsync(ct);
+            await xidCmd.ExecuteScalarAsync(cancellationToken);
 
         // Now commit an event on the real connection, after the pinning xid was allocated.
-        await backend.AppendAsync([Event(1)], cancellationToken: ct);
-        var newPosition = await backend.GetLastPositionAsync(ct);
+        await backend.AppendAsync([Event(1)], cancellationToken: cancellationToken);
+        var newPosition = await backend.GetLastPositionAsync(cancellationToken);
         Assert.True(newPosition > startPosition);
 
-        var stalledHead = await headBackend.GetStableHeadAsync(startPosition, ct);
+        var stalledHead = await headBackend.GetStableHeadAsync(startPosition, cancellationToken);
         Assert.True(stalledHead < newPosition,
             $"expected the barrier to hold the stable head below {newPosition} while the pinning " +
             $"transaction is open, got {stalledHead}");
 
         // End the pinning transaction — the barrier must release.
-        await pinningTx.CommitAsync(ct);
+        await pinningTx.CommitAsync(cancellationToken);
 
-        var releasedHead = await headBackend.GetStableHeadAsync(startPosition, ct);
+        var releasedHead = await headBackend.GetStableHeadAsync(startPosition, cancellationToken);
         Assert.True(releasedHead >= newPosition,
             $"expected the barrier to release to >= {newPosition} after commit, got {releasedHead}");
     }
@@ -73,26 +72,26 @@ public sealed class EventStoreHeadStablePostgresBarrierTests(SingleTenantPostgre
     [Fact]
     public async Task OpenTransaction_RolledBack_ReleasesStableHead()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var backend = new PostgresEventStoreBackend(fixture.DataSource);
         var headBackend = (IEventStoreHeadBackend)backend;
-        var startPosition = await backend.GetLastPositionAsync(ct);
+        var startPosition = await backend.GetLastPositionAsync(cancellationToken);
 
         await using var pinning = new NpgsqlConnection(fixture.ConnectionString);
-        await pinning.OpenAsync(ct);
-        await using var pinningTx = await pinning.BeginTransactionAsync(ct);
+        await pinning.OpenAsync(cancellationToken);
+        await using var pinningTx = await pinning.BeginTransactionAsync(cancellationToken);
         await using (var xidCmd = new NpgsqlCommand("SELECT pg_current_xact_id()", pinning, pinningTx))
-            await xidCmd.ExecuteScalarAsync(ct);
+            await xidCmd.ExecuteScalarAsync(cancellationToken);
 
-        await backend.AppendAsync([Event(2)], cancellationToken: ct);
-        var newPosition = await backend.GetLastPositionAsync(ct);
+        await backend.AppendAsync([Event(2)], cancellationToken: cancellationToken);
+        var newPosition = await backend.GetLastPositionAsync(cancellationToken);
 
-        var stalledHead = await headBackend.GetStableHeadAsync(startPosition, ct);
+        var stalledHead = await headBackend.GetStableHeadAsync(startPosition, cancellationToken);
         Assert.True(stalledHead < newPosition);
 
-        await pinningTx.RollbackAsync(ct);
+        await pinningTx.RollbackAsync(cancellationToken);
 
-        var releasedHead = await headBackend.GetStableHeadAsync(startPosition, ct);
+        var releasedHead = await headBackend.GetStableHeadAsync(startPosition, cancellationToken);
         Assert.True(releasedHead >= newPosition);
     }
 
@@ -105,27 +104,27 @@ public sealed class EventStoreHeadStablePostgresBarrierTests(SingleTenantPostgre
     [Fact]
     public async Task OpenTransaction_ReadOnly_NoXid_DoesNotPinStableHead()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var backend = new PostgresEventStoreBackend(fixture.DataSource);
         var headBackend = (IEventStoreHeadBackend)backend;
-        var startPosition = await backend.GetLastPositionAsync(ct);
+        var startPosition = await backend.GetLastPositionAsync(cancellationToken);
 
         await using var readOnly = new NpgsqlConnection(fixture.ConnectionString);
-        await readOnly.OpenAsync(ct);
+        await readOnly.OpenAsync(cancellationToken);
         await using var readOnlyTx = await readOnly.BeginTransactionAsync(
-            System.Data.IsolationLevel.RepeatableRead, ct);
+            System.Data.IsolationLevel.RepeatableRead, cancellationToken);
         // No pg_current_xact_id() call here — a plain SELECT never allocates an xid.
         await using (var probe = new NpgsqlCommand("SELECT 1", readOnly, readOnlyTx))
-            await probe.ExecuteScalarAsync(ct);
+            await probe.ExecuteScalarAsync(cancellationToken);
 
-        await backend.AppendAsync([Event(4)], cancellationToken: ct);
-        var newPosition = await backend.GetLastPositionAsync(ct);
+        await backend.AppendAsync([Event(4)], cancellationToken: cancellationToken);
+        var newPosition = await backend.GetLastPositionAsync(cancellationToken);
 
-        var head = await headBackend.GetStableHeadAsync(startPosition, ct);
+        var head = await headBackend.GetStableHeadAsync(startPosition, cancellationToken);
         Assert.True(head >= newPosition,
             $"expected a read-only session with no xid to NOT pin the barrier, got {head} < {newPosition}");
 
-        await readOnlyTx.CommitAsync(ct);
+        await readOnlyTx.CommitAsync(cancellationToken);
     }
 
     /// <summary>
@@ -138,10 +137,10 @@ public sealed class EventStoreHeadStablePostgresBarrierTests(SingleTenantPostgre
     [Fact]
     public async Task OpenTransaction_OtherDatabase_SameServer_AlsoPinsStableHead()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var backend = new PostgresEventStoreBackend(fixture.DataSource);
         var headBackend = (IEventStoreHeadBackend)backend;
-        var startPosition = await backend.GetLastPositionAsync(ct);
+        var startPosition = await backend.GetLastPositionAsync(cancellationToken);
 
         // A second, unrelated database on the same server/postmaster as the fixture's.
         var otherDb = "barrier_cross_db_" + Guid.NewGuid().ToString("N")[..8];
@@ -149,40 +148,40 @@ public sealed class EventStoreHeadStablePostgresBarrierTests(SingleTenantPostgre
         var originalDb = adminBuilder.Database;
         await using (var admin = new NpgsqlConnection(fixture.ConnectionString))
         {
-            await admin.OpenAsync(ct);
+            await admin.OpenAsync(cancellationToken);
             await using var create = new NpgsqlCommand($"""CREATE DATABASE "{otherDb}";""", admin);
-            await create.ExecuteNonQueryAsync(ct);
+            await create.ExecuteNonQueryAsync(cancellationToken);
         }
 
         try
         {
             adminBuilder.Database = otherDb;
             await using var pinning = new NpgsqlConnection(adminBuilder.ConnectionString);
-            await pinning.OpenAsync(ct);
-            await using var pinningTx = await pinning.BeginTransactionAsync(ct);
+            await pinning.OpenAsync(cancellationToken);
+            await using var pinningTx = await pinning.BeginTransactionAsync(cancellationToken);
             await using (var xidCmd = new NpgsqlCommand("SELECT pg_current_xact_id()", pinning, pinningTx))
-                await xidCmd.ExecuteScalarAsync(ct);
+                await xidCmd.ExecuteScalarAsync(cancellationToken);
 
-            await backend.AppendAsync([Event(3)], cancellationToken: ct);
-            var newPosition = await backend.GetLastPositionAsync(ct);
+            await backend.AppendAsync([Event(3)], cancellationToken: cancellationToken);
+            var newPosition = await backend.GetLastPositionAsync(cancellationToken);
 
-            var stalledHead = await headBackend.GetStableHeadAsync(startPosition, ct);
+            var stalledHead = await headBackend.GetStableHeadAsync(startPosition, cancellationToken);
             Assert.True(stalledHead < newPosition,
                 $"expected a transaction on database '{otherDb}' (same server) to still pin " +
                 $"the stable head on '{originalDb}' below {newPosition}, got {stalledHead}");
 
-            await pinningTx.CommitAsync(ct);
+            await pinningTx.CommitAsync(cancellationToken);
 
-            var releasedHead = await headBackend.GetStableHeadAsync(startPosition, ct);
+            var releasedHead = await headBackend.GetStableHeadAsync(startPosition, cancellationToken);
             Assert.True(releasedHead >= newPosition);
         }
         finally
         {
             await using var admin = new NpgsqlConnection(fixture.ConnectionString);
-            await admin.OpenAsync(ct);
+            await admin.OpenAsync(cancellationToken);
             await using var drop = new NpgsqlCommand(
                 $"""DROP DATABASE IF EXISTS "{otherDb}" WITH (FORCE);""", admin);
-            await drop.ExecuteNonQueryAsync(ct);
+            await drop.ExecuteNonQueryAsync(cancellationToken);
         }
     }
 }

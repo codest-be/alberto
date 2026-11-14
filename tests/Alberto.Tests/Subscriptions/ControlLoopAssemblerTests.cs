@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using Alberto.Configuration;
 using Alberto.InMemory;
+using Alberto.DeadLetters;
 using Alberto.Subscriptions;
 using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
@@ -15,7 +16,7 @@ namespace Alberto.Tests.Subscriptions;
 /// <remarks>
 /// <para>
 /// Before the assembler existed, two call sites — <c>ControlLoopRegistration</c> (live loop)
-/// and <c>DcbModuleBuilderExtensions</c> (shadow-rebuild loop) — independently composed
+/// and <c>AlbertoModuleBuilderExtensions</c> (shadow-rebuild loop) — independently composed
 /// middleware lists and computed <c>hasUnpairedPerEventMiddlewares</c>. A drift between the
 /// two would cause a rebuild to replay under different middleware than the live loop — a
 /// silent correctness divergence with no prior test coverage.
@@ -40,7 +41,7 @@ public sealed class ControlLoopAssemblerTests
 
         public List<string> ProcessedValues { get; } = [];
 
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default)
         {
             var ev = JsonSerializer.Deserialize<TestEvent>(@event.EventData)!;
             lock (ProcessedValues) ProcessedValues.Add(ev.Value);
@@ -57,7 +58,7 @@ public sealed class ControlLoopAssemblerTests
     [Fact]
     public async Task LiveAndShadowLoops_CreatedBySameAssembler_ExecuteMiddlewareInSameOrder()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var backend = new InMemoryEventStoreBackend();
 
         var liveLog = new ConcurrentBag<string>();
@@ -123,21 +124,21 @@ public sealed class ControlLoopAssemblerTests
             EventType = new EventType("assembler-test-event"),
             Tags = [],
             EventData = JsonSerializer.Serialize(new TestEvent("hello")),
-        }], cancellationToken: ct);
+        }], cancellationToken: cancellationToken);
 
         // Start both loops and wait until each has processed the event.
-        await head.StartAsync(ct);
-        await liveLoop.StartAsync(ct);
-        await shadowLoop.StartAsync(ct);
+        await head.StartAsync(cancellationToken);
+        await liveLoop.StartAsync(cancellationToken);
+        await shadowLoop.StartAsync(cancellationToken);
 
         var deadline = DateTime.UtcNow.AddSeconds(5);
         while ((liveProcessor.ProcessedValues.Count == 0 || shadowProcessor.ProcessedValues.Count == 0)
                && DateTime.UtcNow < deadline)
-            await Task.Delay(20, ct);
+            await Task.Delay(20, cancellationToken);
 
-        await liveLoop.StopAsync(ct);
-        await shadowLoop.StopAsync(ct);
-        await head.StopAsync(ct);
+        await liveLoop.StopAsync(cancellationToken);
+        await shadowLoop.StopAsync(cancellationToken);
+        await head.StopAsync(cancellationToken);
 
         // Both loops processed the event.
         liveProcessor.ProcessedValues.Should().ContainSingle("hello");
@@ -156,7 +157,7 @@ public sealed class ControlLoopAssemblerTests
     [Fact]
     public async Task Assembler_WithUnpairedPerEventMiddleware_ForcesPerEventDispatch()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var backend = new InMemoryEventStoreBackend();
         var checkpoints = new InMemoryCheckpointStore();
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
@@ -195,17 +196,17 @@ public sealed class ControlLoopAssemblerTests
             EventType = new EventType("assembler-test-event"),
             Tags = [],
             EventData = JsonSerializer.Serialize(new TestEvent("x")),
-        }], cancellationToken: ct);
+        }], cancellationToken: cancellationToken);
 
-        await head.StartAsync(ct);
-        await loop.StartAsync(ct);
+        await head.StartAsync(cancellationToken);
+        await loop.StartAsync(cancellationToken);
 
         var deadline = DateTime.UtcNow.AddSeconds(5);
         while (perEventCallCount == 0 && batchCallCount == 0 && DateTime.UtcNow < deadline)
-            await Task.Delay(20, ct);
+            await Task.Delay(20, cancellationToken);
 
-        await loop.StopAsync(ct);
-        await head.StopAsync(ct);
+        await loop.StopAsync(cancellationToken);
+        await head.StopAsync(cancellationToken);
 
         perEventCallCount.Should().BeGreaterThan(0,
             "per-event dispatch must be used when there are unpaired per-event middlewares");
@@ -223,7 +224,7 @@ public sealed class ControlLoopAssemblerTests
     [Fact]
     public async Task Assembler_WithFakeTimeProvider_StampsFailedAtFromClock()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var fakeTime = new FakeTimeProvider();
         var fixedInstant = new DateTimeOffset(2025, 6, 15, 8, 0, 0, TimeSpan.Zero);
         fakeTime.SetUtcNow(fixedInstant);
@@ -253,21 +254,21 @@ public sealed class ControlLoopAssemblerTests
             EventType = new EventType("assembler-test-event"),
             Tags = [],
             EventData = JsonSerializer.Serialize(new TestEvent("fail-me")),
-        }], cancellationToken: ct);
+        }], cancellationToken: cancellationToken);
 
-        await head.StartAsync(ct);
-        await loop.StartAsync(ct);
+        await head.StartAsync(cancellationToken);
+        await loop.StartAsync(cancellationToken);
 
         IReadOnlyList<DeadLetterEntry> entries = [];
         var deadline = DateTime.UtcNow.AddSeconds(5);
         while (entries.Count == 0 && DateTime.UtcNow < deadline)
         {
-            await Task.Delay(20, ct);
-            entries = await deadLetterStore.GetAsync("fail-proc", ct: ct);
+            await Task.Delay(20, cancellationToken);
+            entries = await deadLetterStore.GetAsync("fail-proc", cancellationToken: cancellationToken);
         }
 
-        await loop.StopAsync(ct);
-        await head.StopAsync(ct);
+        await loop.StopAsync(cancellationToken);
+        await head.StopAsync(cancellationToken);
 
         entries.Should().ContainSingle()
             .Which.FailedAt.Should().Be(fixedInstant,
@@ -282,7 +283,7 @@ public sealed class ControlLoopAssemblerTests
         public IReadOnlySet<string> HandledEventTypes { get; } =
             new HashSet<string> { "assembler-test-event" };
 
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default) =>
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("deliberate failure for dead-letter test");
     }
 
@@ -297,13 +298,13 @@ public sealed class ControlLoopAssemblerTests
         public IReadOnlySet<string> HandledEventTypes { get; } =
             new HashSet<string> { "assembler-test-event" };
 
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default)
         {
             onPerEvent();
             return Task.CompletedTask;
         }
 
-        public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct = default)
+        public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken cancellationToken = default)
         {
             onBatch();
             return Task.CompletedTask;

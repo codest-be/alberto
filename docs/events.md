@@ -203,7 +203,7 @@ yourself. Use the command pipeline, which threads `EventSerializer.Deserialize` 
 await store.Handle(command)
     .Load(boundary, evolver)
     .Decide((cmd, state) => …)
-    .Commit(ct);
+    .Commit(cancellationToken);
 ```
 
 ### A gap with nothing covering it is refused

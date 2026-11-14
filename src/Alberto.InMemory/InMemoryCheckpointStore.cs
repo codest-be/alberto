@@ -1,3 +1,4 @@
+using Alberto.Checkpoints;
 using Alberto.Subscriptions;
 
 namespace Alberto.InMemory;
@@ -13,13 +14,13 @@ namespace Alberto.InMemory;
 /// <see cref="RewindAsync"/> is the deliberate escape hatch that can move a checkpoint
 /// backwards, mirroring the operator-only rewind path in production.
 /// </remarks>
-public sealed class InMemoryCheckpointStore : ICheckpointStore, ICheckpointInventory, IProcessorFaultStore
+internal sealed class InMemoryCheckpointStore : ICheckpointStore, ICheckpointInventory, IProcessorFaultStore
 {
     private readonly object _lock = new();
     private readonly Dictionary<string, long> _checkpoints = new();
     private readonly Dictionary<string, ProcessorFaultRecord> _faults = new();
 
-    public Task<long?> GetAsync(string processorId, CancellationToken ct = default)
+    public Task<long?> GetAsync(string processorId, CancellationToken cancellationToken = default)
     {
         lock (_lock)
         {
@@ -29,7 +30,7 @@ public sealed class InMemoryCheckpointStore : ICheckpointStore, ICheckpointInven
         }
     }
 
-    public Task SaveAsync(string processorId, long position, CancellationToken ct = default)
+    public Task SaveAsync(string processorId, long position, CancellationToken cancellationToken = default)
     {
         lock (_lock)
         {
@@ -42,7 +43,7 @@ public sealed class InMemoryCheckpointStore : ICheckpointStore, ICheckpointInven
         }
     }
 
-    public Task ResetAsync(string processorId, CancellationToken ct = default)
+    public Task ResetAsync(string processorId, CancellationToken cancellationToken = default)
     {
         lock (_lock)
         {
@@ -52,7 +53,7 @@ public sealed class InMemoryCheckpointStore : ICheckpointStore, ICheckpointInven
         }
     }
 
-    public Task RewindAsync(string processorId, long position, CancellationToken ct = default)
+    public Task RewindAsync(string processorId, long position, CancellationToken cancellationToken = default)
     {
         lock (_lock)
         {
@@ -65,7 +66,7 @@ public sealed class InMemoryCheckpointStore : ICheckpointStore, ICheckpointInven
     }
 
     Task IProcessorFaultStore.RecordFaultAsync(
-        string processorId, ProcessorFaultRecord fault, CancellationToken ct)
+        string processorId, ProcessorFaultRecord fault, CancellationToken cancellationToken)
     {
         lock (_lock)
         {
@@ -74,7 +75,7 @@ public sealed class InMemoryCheckpointStore : ICheckpointStore, ICheckpointInven
         }
     }
 
-    Task IProcessorFaultStore.ClearFaultAsync(string processorId, CancellationToken ct)
+    Task IProcessorFaultStore.ClearFaultAsync(string processorId, CancellationToken cancellationToken)
     {
         lock (_lock)
         {
@@ -84,7 +85,7 @@ public sealed class InMemoryCheckpointStore : ICheckpointStore, ICheckpointInven
     }
 
     Task<ProcessorFaultRecord?> IProcessorFaultStore.GetFaultAsync(
-        string processorId, CancellationToken ct)
+        string processorId, CancellationToken cancellationToken)
     {
         lock (_lock)
         {
@@ -105,7 +106,7 @@ public sealed class InMemoryCheckpointStore : ICheckpointStore, ICheckpointInven
     }
 
     /// <inheritdoc />
-    public Task<IReadOnlyList<string>> ListProcessorIdsAsync(CancellationToken ct = default)
+    public Task<IReadOnlyList<string>> ListProcessorIdsAsync(CancellationToken cancellationToken = default)
     {
         lock (_lock)
         {

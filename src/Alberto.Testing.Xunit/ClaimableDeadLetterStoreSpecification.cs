@@ -1,4 +1,4 @@
-using Alberto.Subscriptions;
+using Alberto.DeadLetters;
 using Xunit;
 
 namespace Alberto.Testing.Xunit;
@@ -40,7 +40,7 @@ public abstract class ClaimableDeadLetterStoreSpecification : DeadLetterStoreSpe
 
         var claims = await store.ClaimRetryRequestedAsync(
             ProcessorId, batchSize: 10, leaseDuration: TimeSpan.FromMinutes(5),
-            claimedBy: "worker", ct: Ct);
+            claimedBy: "worker", cancellationToken: Ct);
 
         var claim = Assert.Single(claims);
         Assert.Equal(entry.Id, claim.Entry.Id);
@@ -59,7 +59,7 @@ public abstract class ClaimableDeadLetterStoreSpecification : DeadLetterStoreSpe
 
         var claims = await store.ClaimRetryRequestedAsync(
             ProcessorId, batchSize: 10, leaseDuration: TimeSpan.FromMinutes(5),
-            claimedBy: "worker", ct: Ct);
+            claimedBy: "worker", cancellationToken: Ct);
 
         Assert.Empty(claims);
     }
@@ -78,13 +78,13 @@ public abstract class ClaimableDeadLetterStoreSpecification : DeadLetterStoreSpe
         // First worker claims the entry with a generous lease.
         var first = await store.ClaimRetryRequestedAsync(
             ProcessorId, batchSize: 10, leaseDuration: TimeSpan.FromHours(1),
-            claimedBy: "worker-1", ct: Ct);
+            claimedBy: "worker-1", cancellationToken: Ct);
         Assert.Single(first);
 
         // Second worker must get nothing while the lease is still valid.
         var second = await store.ClaimRetryRequestedAsync(
             ProcessorId, batchSize: 10, leaseDuration: TimeSpan.FromHours(1),
-            claimedBy: "worker-2", ct: Ct);
+            claimedBy: "worker-2", cancellationToken: Ct);
         Assert.Empty(second);
     }
 
@@ -103,7 +103,7 @@ public abstract class ClaimableDeadLetterStoreSpecification : DeadLetterStoreSpe
 
         var claims = await store.ClaimRetryRequestedAsync(
             ProcessorId, batchSize: 10, leaseDuration: TimeSpan.FromMinutes(5),
-            claimedBy: "worker", ct: Ct);
+            claimedBy: "worker", cancellationToken: Ct);
 
         Assert.Single(claims);
     }
@@ -125,7 +125,7 @@ public abstract class ClaimableDeadLetterStoreSpecification : DeadLetterStoreSpe
         await store.MarkForRetryAsync(ProcessorId, Ct);
         var claim = Assert.Single(await store.ClaimRetryRequestedAsync(
             ProcessorId, batchSize: 10, leaseDuration: TimeSpan.FromHours(1),
-            claimedBy: "worker-1", ct: Ct));
+            claimedBy: "worker-1", cancellationToken: Ct));
 
         await store.StoreAsync(entry with
         {
@@ -136,7 +136,7 @@ public abstract class ClaimableDeadLetterStoreSpecification : DeadLetterStoreSpe
 
         Assert.Empty(await store.ClaimRetryRequestedAsync(
             ProcessorId, batchSize: 10, leaseDuration: TimeSpan.FromHours(1),
-            claimedBy: "worker-2", ct: Ct));
+            claimedBy: "worker-2", cancellationToken: Ct));
         Assert.True(await store.AbandonRetryAsync(claim, Ct));
 
         var stored = Assert.Single(await store.GetAsync(ProcessorId, null, 100, Ct));
@@ -163,7 +163,7 @@ public abstract class ClaimableDeadLetterStoreSpecification : DeadLetterStoreSpe
 
         var claims = await store.ClaimDueAsync(
             ProcessorId, batchSize: 10, leaseDuration: TimeSpan.FromHours(1),
-            claimedBy: "worker-1", now: now, ct: Ct);
+            claimedBy: "worker-1", now: now, cancellationToken: Ct);
 
         Assert.Equal(due.EventId, Assert.Single(claims).Entry.EventId);
     }
@@ -178,7 +178,7 @@ public abstract class ClaimableDeadLetterStoreSpecification : DeadLetterStoreSpe
 
         var claims = await store.ClaimDueAsync(
             ProcessorId, batchSize: 10, leaseDuration: TimeSpan.FromHours(1),
-            claimedBy: "worker-1", now: DateTimeOffset.UtcNow, ct: Ct);
+            claimedBy: "worker-1", now: DateTimeOffset.UtcNow, cancellationToken: Ct);
 
         Assert.Single(claims);
     }
@@ -195,7 +195,9 @@ public abstract class ClaimableDeadLetterStoreSpecification : DeadLetterStoreSpe
 
         await store.StoreAsync(entry with
         {
-            Id = Guid.NewGuid(), NextRetryAt = second, RedeliveryCount = 1,
+            Id = Guid.NewGuid(),
+            NextRetryAt = second,
+            RedeliveryCount = 1,
         }, Ct);
 
         var stored = Assert.Single(await store.GetAsync(ProcessorId, null, 100, Ct));
@@ -223,7 +225,7 @@ public abstract class ClaimableDeadLetterStoreSpecification : DeadLetterStoreSpe
         await store.MarkForRetryAsync(ProcessorId, Ct);
         var claims = await store.ClaimRetryRequestedAsync(
             ProcessorId, batchSize: 10, leaseDuration: TimeSpan.FromMinutes(5),
-            claimedBy: "worker", ct: Ct);
+            claimedBy: "worker", cancellationToken: Ct);
         var claim = Assert.Single(claims);
 
         var result = await store.CompleteRetryAsync(claim, Ct);
@@ -245,7 +247,7 @@ public abstract class ClaimableDeadLetterStoreSpecification : DeadLetterStoreSpe
         await store.MarkForRetryAsync(ProcessorId, Ct);
         var claims = await store.ClaimRetryRequestedAsync(
             ProcessorId, batchSize: 10, leaseDuration: TimeSpan.FromMinutes(5),
-            claimedBy: "worker", ct: Ct);
+            claimedBy: "worker", cancellationToken: Ct);
         var realClaim = Assert.Single(claims);
 
         // Construct a claim with a wrong token.
@@ -270,7 +272,7 @@ public abstract class ClaimableDeadLetterStoreSpecification : DeadLetterStoreSpe
         await store.MarkForRetryAsync(ProcessorId, Ct);
         var claims = await store.ClaimRetryRequestedAsync(
             ProcessorId, batchSize: 10, leaseDuration: TimeSpan.FromMinutes(5),
-            claimedBy: "worker", ct: Ct);
+            claimedBy: "worker", cancellationToken: Ct);
         var claim = Assert.Single(claims);
 
         // First call removes the entry.
@@ -296,7 +298,7 @@ public abstract class ClaimableDeadLetterStoreSpecification : DeadLetterStoreSpe
         await store.MarkForRetryAsync(ProcessorId, Ct);
         var claims = await store.ClaimRetryRequestedAsync(
             ProcessorId, batchSize: 10, leaseDuration: TimeSpan.FromMinutes(5),
-            claimedBy: "worker", ct: Ct);
+            claimedBy: "worker", cancellationToken: Ct);
         var claim = Assert.Single(claims);
 
         var result = await store.AbandonRetryAsync(claim, Ct);
@@ -348,14 +350,14 @@ public abstract class ClaimableDeadLetterStoreSpecification : DeadLetterStoreSpe
         await store.MarkForRetryAsync(ProcessorId, Ct);
         var first = await store.ClaimRetryRequestedAsync(
             ProcessorId, batchSize: 10, leaseDuration: TimeSpan.FromMinutes(5),
-            claimedBy: "worker-1", ct: Ct);
+            claimedBy: "worker-1", cancellationToken: Ct);
         await store.AbandonRetryAsync(Assert.Single(first), Ct);
 
         // Re-mark and re-claim.
         await store.MarkForRetryAsync(ProcessorId, Ct);
         var second = await store.ClaimRetryRequestedAsync(
             ProcessorId, batchSize: 10, leaseDuration: TimeSpan.FromMinutes(5),
-            claimedBy: "worker-2", ct: Ct);
+            claimedBy: "worker-2", cancellationToken: Ct);
 
         Assert.Single(second);
     }
@@ -372,7 +374,7 @@ public abstract class ClaimableDeadLetterStoreSpecification : DeadLetterStoreSpe
         await store.MarkForRetryAsync(ProcessorId, Ct);
         var claims = await store.ClaimRetryRequestedAsync(
             ProcessorId, batchSize: 10, leaseDuration: TimeSpan.FromMinutes(5),
-            claimedBy: "worker", ct: Ct);
+            claimedBy: "worker", cancellationToken: Ct);
         var realClaim = Assert.Single(claims);
 
         var fabricated = new DeadLetterClaim(realClaim.Entry, Guid.NewGuid(), realClaim.ExpiresAt);
@@ -396,7 +398,7 @@ public abstract class ClaimableDeadLetterStoreSpecification : DeadLetterStoreSpe
         await store.MarkForRetryAsync(ProcessorId, Ct);
         var claims = await store.ClaimRetryRequestedAsync(
             ProcessorId, batchSize: 10, leaseDuration: TimeSpan.FromMinutes(5),
-            claimedBy: "worker", ct: Ct);
+            claimedBy: "worker", cancellationToken: Ct);
         var claim = Assert.Single(claims);
 
         // Remove the entry via a successful completion.

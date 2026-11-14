@@ -1,4 +1,4 @@
-using Alberto.Subscriptions;
+using Alberto.Leases;
 using Npgsql;
 
 namespace Alberto.Postgres;
@@ -8,7 +8,7 @@ namespace Alberto.Postgres;
 /// Leases expire and must be periodically renewed, enabling single-leader processing
 /// per processor and automatic recovery when replicas crash.
 /// </summary>
-public sealed class PostgresProcessorLeaseManager : IProcessorLeaseManager
+internal sealed class PostgresProcessorLeaseManager : IProcessorLeaseManager
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly SchemaQualifier _schema;
@@ -28,9 +28,9 @@ public sealed class PostgresProcessorLeaseManager : IProcessorLeaseManager
 
     /// <inheritdoc/>
     public async Task<IProcessorLease?> TryAcquireAsync(
-        string consumerId, string processorId, string replicaId, CancellationToken ct = default)
+        string consumerId, string processorId, string replicaId, CancellationToken cancellationToken = default)
     {
-        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
 
         // Expiry is computed by the database, not the caller: the same clock that writes
         // expires_at is the clock the WHERE below evaluates it against. Computing it from
@@ -64,9 +64,9 @@ public sealed class PostgresProcessorLeaseManager : IProcessorLeaseManager
         cmd.Parameters.AddWithValue("replica_id", replicaId);
         cmd.Parameters.AddWithValue("lease_duration", LeaseDuration);
 
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
 
-        if (await reader.ReadAsync(ct))
+        if (await reader.ReadAsync(cancellationToken))
         {
             var actualExpiresAt = reader.GetDateTime(0);
             return new ProcessorLease(
@@ -80,9 +80,9 @@ public sealed class PostgresProcessorLeaseManager : IProcessorLeaseManager
 
     /// <inheritdoc/>
     public async Task<IReadOnlyList<string>> RenewLeasesAsync(
-        string consumerId, string replicaId, CancellationToken ct = default)
+        string consumerId, string replicaId, CancellationToken cancellationToken = default)
     {
-        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
 
         await using var cmd = new NpgsqlCommand($@"
             UPDATE {_schema.Table("alberto_processor_leases")}
@@ -96,9 +96,9 @@ public sealed class PostgresProcessorLeaseManager : IProcessorLeaseManager
         cmd.Parameters.AddWithValue("lease_duration", LeaseDuration);
 
         var renewed = new List<string>();
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
 
-        while (await reader.ReadAsync(ct))
+        while (await reader.ReadAsync(cancellationToken))
         {
             renewed.Add(reader.GetString(0));
         }
@@ -108,9 +108,9 @@ public sealed class PostgresProcessorLeaseManager : IProcessorLeaseManager
 
     /// <inheritdoc/>
     public async Task ReleaseAllLeasesAsync(
-        string consumerId, string replicaId, CancellationToken ct = default)
+        string consumerId, string replicaId, CancellationToken cancellationToken = default)
     {
-        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
 
         await using var cmd = new NpgsqlCommand($@"
             DELETE FROM {_schema.Table("alberto_processor_leases")}
@@ -119,33 +119,6 @@ public sealed class PostgresProcessorLeaseManager : IProcessorLeaseManager
         cmd.Parameters.AddWithValue("consumer_id", consumerId);
         cmd.Parameters.AddWithValue("replica_id", replicaId);
 
-        await cmd.ExecuteNonQueryAsync(ct);
-    }
-
-    /// <inheritdoc/>
-    public async Task<IReadOnlyList<ProcessorLeaseInfo>> GetAllLeasesAsync(
-        string consumerId, CancellationToken ct = default)
-    {
-        await using var connection = await _dataSource.OpenConnectionAsync(ct);
-        await using var cmd = new NpgsqlCommand($@"
-            SELECT processor_id, replica_id, acquired_at, expires_at
-            FROM {_schema.Table("alberto_processor_leases")}
-            WHERE consumer_id = @consumer_id
-            ORDER BY processor_id", connection);
-
-        cmd.Parameters.AddWithValue("consumer_id", consumerId);
-
-        var leases = new List<ProcessorLeaseInfo>();
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
-        {
-            leases.Add(new ProcessorLeaseInfo(
-                reader.GetString(0),
-                reader.GetString(1),
-                new DateTimeOffset(reader.GetDateTime(2), TimeSpan.Zero),
-                new DateTimeOffset(reader.GetDateTime(3), TimeSpan.Zero)));
-        }
-
-        return leases;
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 }

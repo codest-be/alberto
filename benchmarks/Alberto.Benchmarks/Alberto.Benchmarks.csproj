@@ -3,13 +3,12 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <!--
-      TreatWarningsAsErrors is intentionally omitted: BenchmarkDotNet generates
+      TreatWarningsAsErrors is intentionally off: BenchmarkDotNet generates
       code that can raise diagnostics warnings (CS8618, CS0649, etc.) that we do
       not own. Keeping it off avoids a red herring build failure when the rest of
-      the repo has it enabled per-project.
+      the repo has it enabled globally.
     -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>

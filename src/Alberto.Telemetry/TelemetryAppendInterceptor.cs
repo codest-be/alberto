@@ -17,7 +17,7 @@ internal sealed class TelemetryAppendInterceptor(bool recordEventTagValues = fal
     public async Task<IReadOnlyCollection<IEventEnvelope>> OnAppendingAsync(
         AppendContext context,
         Func<AppendContext, Task<IReadOnlyCollection<IEventEnvelope>>> next,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         using var activity = AlbertoMetrics.Source.StartActivity(
             moduleKey is null

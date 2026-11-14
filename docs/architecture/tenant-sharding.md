@@ -269,7 +269,6 @@ without first calling `AcrossPostgresDatabases`.
 | `ShardState` | `Alberto.Tenancy` |
 | `ShardHealthCheck` | `Alberto.Tenancy` |
 | `ShardRoutingEventStore` | `Alberto.Tenancy` |
-| `ShardRoutingEventStoreBackend` | `Alberto.Tenancy` |
 | `UnknownTenantException` | `Alberto.Tenancy` |
 | `ShardUnavailableException` | `Alberto.Tenancy` |
 
@@ -295,7 +294,7 @@ omit it when placement is a deliberate act.
 
 ### There are no cross-shard reads
 
-`StreamAllAsync` on a sharded module still returns one shard's worth of events. The current
+`ReadAllAsync` and `StreamAllAsync` on a sharded module still returns one shard's worth of events. The current
 tenant's. It cannot union: `afterPosition` is a per-database sequence, so a merged result would
 order by numbers from unrelated sequences and silently skip events on the next page. Reading every
 shard is a fan-out you write, with a cursor per shard.

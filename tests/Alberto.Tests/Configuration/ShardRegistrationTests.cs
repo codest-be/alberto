@@ -1,6 +1,6 @@
 using Alberto.Configuration;
 using Alberto.Postgres;
-using Alberto.Subscriptions;
+using Alberto.Checkpoints;
 using Alberto.Tenancy;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
@@ -118,8 +118,6 @@ public class ShardRegistrationTests
 
         scope.ServiceProvider.GetRequiredKeyedService<IEventStore>("orders")
             .Should().BeOfType<ShardRoutingEventStore>();
-        scope.ServiceProvider.GetRequiredKeyedService<IEventStoreBackend>("orders")
-            .Should().BeOfType<ShardRoutingEventStoreBackend>();
 
         scope.ServiceProvider.GetRequiredKeyedService<IEventStore>("orders#db1")
             .Should().NotBeOfType<ShardRoutingEventStore>();

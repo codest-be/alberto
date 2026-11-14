@@ -38,7 +38,7 @@ public class ProcessorExecutionConfigurationTests
     {
         var definition = Definition(
             Processor("send-email", batching: ProcessorBatchingMode.Required, maxConcurrency: 1),
-            Processor("send-sms",   batching: ProcessorBatchingMode.Required, maxConcurrency: 1));
+            Processor("send-sms", batching: ProcessorBatchingMode.Required, maxConcurrency: 1));
 
         var configuration = Configuration(
             ("Alberto:Modules:orders:Processors:send-email:MaxConcurrency", "4"));

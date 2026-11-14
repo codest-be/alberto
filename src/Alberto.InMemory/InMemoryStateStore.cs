@@ -1,5 +1,5 @@
 using System.Collections.Concurrent;
-using Alberto.Subscriptions;
+using Alberto.Projections;
 
 namespace Alberto.InMemory;
 
@@ -57,7 +57,7 @@ public sealed class InMemoryStateStore<TState>(ProjectionVersion rebuildVersion 
     /// <inheritdoc/>
     public Task<IReadOnlyDictionary<string, TState>> LoadManyAsync(
         IEnumerable<string> documentIds,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(documentIds);
 
@@ -82,7 +82,7 @@ public sealed class InMemoryStateStore<TState>(ProjectionVersion rebuildVersion 
     public Task ApplyChangesAsync(
         IReadOnlyDictionary<string, TState> upserts,
         IReadOnlyCollection<string> deletes,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(upserts);
         ArgumentNullException.ThrowIfNull(deletes);
@@ -107,7 +107,7 @@ public sealed class InMemoryStateStore<TState>(ProjectionVersion rebuildVersion 
     /// <inheritdoc/>
     public Task<IReadOnlyList<TState>> ListRecentAsync(
         int limit = 20,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         var version = _rebuildVersion.Current;
 

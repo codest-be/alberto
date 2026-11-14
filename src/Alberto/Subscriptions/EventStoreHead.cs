@@ -101,18 +101,18 @@ public sealed class EventStoreHead : IHostedService
         }
     }
 
-    private async Task RunAsync(CancellationToken ct)
+    private async Task RunAsync(CancellationToken cancellationToken)
     {
         try
         {
-            while (!ct.IsCancellationRequested)
+            while (!cancellationToken.IsCancellationRequested)
             {
                 try
                 {
-                    await WaitForNextRefreshAsync(ct);
-                    await RefreshAsync(ct);
+                    await WaitForNextRefreshAsync(cancellationToken);
+                    await RefreshAsync(cancellationToken);
                 }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { break; }
                 catch (Exception ex) { _logger?.LogWarning(ex, "EventStoreHead refresh failed"); }
             }
         }
@@ -128,17 +128,17 @@ public sealed class EventStoreHead : IHostedService
     /// append notification (LISTEN/NOTIFY). The interval remains an upper bound so
     /// the head still advances if a notification is missed or unavailable.
     /// </summary>
-    private Task WaitForNextRefreshAsync(CancellationToken ct)
+    private Task WaitForNextRefreshAsync(CancellationToken cancellationToken)
         => _signal is null
-            ? Task.Delay(_refreshInterval, ct)
-            : _signal.WaitAsync(_refreshInterval, ct);
+            ? Task.Delay(_refreshInterval, cancellationToken)
+            : _signal.WaitAsync(_refreshInterval, cancellationToken);
 
     /// <summary>
     /// Performs one poll: advances the contiguous head, clamps it to the stable-head barrier,
     /// and updates stall tracking. Internal (rather than private) so tests can drive individual
     /// polls deterministically without spinning up the background loop.
     /// </summary>
-    internal async Task RefreshAsync(CancellationToken ct)
+    internal async Task RefreshAsync(CancellationToken cancellationToken)
     {
         var start = _current;
         var current = start;
@@ -149,8 +149,8 @@ public sealed class EventStoreHead : IHostedService
         // Bounded so a log that keeps growing under us cannot pin this refresh forever.
         for (var window = 0; window < MaxWindowsPerRefresh; window++)
         {
-            ct.ThrowIfCancellationRequested();
-            var positions = await _backend.GetPositionsAsync(current, _windowSize, ct);
+            cancellationToken.ThrowIfCancellationRequested();
+            var positions = await _backend.GetPositionsAsync(current, _windowSize, cancellationToken);
             var head = FindContiguousHead(current, positions);
 
             // Clamp to the in-flight visibility barrier: never advance past an append
@@ -160,7 +160,7 @@ public sealed class EventStoreHead : IHostedService
             // Only the window just read can be clamped, so the backend is asked about that range
             // and nothing past it; and an empty or gapped-at-the-start window has nothing to clamp.
             var stableHead = head > current
-                ? await _backend.GetStableHeadUpToAsync(current, head, ct)
+                ? await _backend.GetStableHeadUpToAsync(current, head, cancellationToken)
                 : long.MaxValue;
             holding = stableHead < head;
             if (holding)

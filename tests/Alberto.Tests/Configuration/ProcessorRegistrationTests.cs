@@ -1,6 +1,7 @@
 using Alberto;
 using Alberto.Configuration;
 using Alberto.InMemory;
+using Alberto.Projections;
 using Alberto.Subscriptions;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,13 +19,13 @@ internal sealed class ShipmentSummary { }
 
 internal sealed class ShipmentNotifier
 {
-    public Task HandleAsync(ShipmentDispatched e, CancellationToken ct) => Task.CompletedTask;
+    public Task HandleAsync(ShipmentDispatched e, CancellationToken cancellationToken) => Task.CompletedTask;
 }
 
 [ProcessorId("shipments.legacy")]
 internal sealed class RenamedShipmentNotifier
 {
-    public Task HandleAsync(ShipmentDispatched e, CancellationToken ct) => Task.CompletedTask;
+    public Task HandleAsync(ShipmentDispatched e, CancellationToken cancellationToken) => Task.CompletedTask;
 }
 
 public class ProcessorRegistrationTests
@@ -34,7 +35,7 @@ public class ProcessorRegistrationTests
             .GetRequiredService<IOptionsMonitor<AlbertoModuleDefinition>>()
             .Get("orders");
 
-    private static IServiceCollection Module(Action<DcbModuleBuilder> configure)
+    private static IServiceCollection Module(Action<AlbertoModuleBuilder> configure)
     {
         var services = new ServiceCollection();
         services.AddSingleton<ShipmentNotifier>();

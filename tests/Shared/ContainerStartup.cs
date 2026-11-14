@@ -46,18 +46,18 @@ internal static class ContainerStartup
     /// assigned when the daemon creates the container, so retrying the same instance would ask
     /// for the same allocation again rather than drawing a new one.
     /// </param>
-    /// <param name="ct">Cancels the start and the delay between attempts.</param>
+    /// <param name="cancellationToken">Cancels the start and the delay between attempts.</param>
     /// <returns>The started container. The caller owns it and must dispose it.</returns>
     public static Task<TContainer> StartNewAsync<TContainer>(
         Func<TContainer> build,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
         where TContainer : IContainer =>
         StartNewCoreAsync(
             build,
             static (container, token) => container.StartAsync(token),
             static container => container.DisposeAsync().AsTask(),
             RetryDelay,
-            ct);
+            cancellationToken);
 
     /// <summary>
     /// The retry policy itself, over delegates rather than <see cref="IContainer"/>, so that
@@ -69,20 +69,20 @@ internal static class ContainerStartup
     /// <param name="start">The operation that can lose the port race.</param>
     /// <param name="dispose">Discards a subject whose start failed.</param>
     /// <param name="retryDelay">Multiplied by the attempt number; zero in tests.</param>
-    /// <param name="ct">Cancels the start and the delay between attempts.</param>
+    /// <param name="cancellationToken">Cancels the start and the delay between attempts.</param>
     internal static async Task<T> StartNewCoreAsync<T>(
         Func<T> build,
         Func<T, CancellationToken, Task> start,
         Func<T, Task> dispose,
         TimeSpan retryDelay,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         for (var attempt = 1; ; attempt++)
         {
             var subject = build();
             try
             {
-                await start(subject, ct);
+                await start(subject, cancellationToken);
                 return subject;
             }
             catch (Exception ex) when (attempt < MaxAttempts && IsHostPortCollision(ex))
@@ -100,7 +100,7 @@ internal static class ContainerStartup
                     // Ignored — see above.
                 }
 
-                await Task.Delay(retryDelay * attempt, ct);
+                await Task.Delay(retryDelay * attempt, cancellationToken);
             }
         }
     }

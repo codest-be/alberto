@@ -35,7 +35,7 @@ public class ReactToScopedHandlerTests
 
         public List<string> Handled { get; }
 
-        public Task Handle(ItemProcessed e, CancellationToken ct)
+        public Task Handle(ItemProcessed e, CancellationToken cancellationToken)
         {
             Handled.Add(e.Name);
             _instanceLog.Add(_instanceId);
@@ -62,7 +62,7 @@ public class ReactToScopedHandlerTests
         ITenantAccessor tenantAccessor,
         TenantCapture capture)
     {
-        public Task Handle(ItemProcessed e, CancellationToken ct)
+        public Task Handle(ItemProcessed e, CancellationToken cancellationToken)
         {
             capture.TenantId = tenantAccessor.TenantId;
             return Task.CompletedTask;
@@ -159,7 +159,7 @@ public class ReactToScopedHandlerTests
                 sp =>
                 {
                     var state = sp.GetRequiredService<ReactorContextCapture>();
-                    return (_, context, ct) =>
+                    return (_, context, cancellationToken) =>
                     {
                         state.TimestampUtc = context.Timestamp;
                         return Task.CompletedTask;

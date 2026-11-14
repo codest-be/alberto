@@ -39,13 +39,13 @@ public sealed class ControlLoopGroupSuspensionTests
         public IReadOnlySet<string> HandledEventTypes { get; } =
             new HashSet<string> { "suspension-test-event" };
 
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _count);
             return Task.CompletedTask;
         }
 
-        public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct = default)
+        public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken cancellationToken = default)
         {
             Interlocked.Add(ref _count, events.Count);
             return Task.CompletedTask;
@@ -55,7 +55,7 @@ public sealed class ControlLoopGroupSuspensionTests
     [Fact]
     public async Task A_Suspended_Loop_Stops_Consuming_And_Catches_Up_When_Resumed()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var backend = new InMemoryEventStoreBackend();
         var checkpoints = new InMemoryCheckpointStore();
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(10));
@@ -66,21 +66,21 @@ public sealed class ControlLoopGroupSuspensionTests
             pollingInterval: TimeSpan.FromMilliseconds(10), batchSize: 100, moduleKey: "test");
         var group = new ControlLoopGroup([loop]);
 
-        await head.StartAsync(ct);
-        await group.StartAsync(ct);
+        await head.StartAsync(cancellationToken);
+        await group.StartAsync(cancellationToken);
 
-        await AppendAsync(backend, 3, ct);
-        await WaitUntilAsync(() => processor.ProcessedCount == 3, "the loop to catch up", ct);
+        await AppendAsync(backend, 3, cancellationToken);
+        await WaitUntilAsync(() => processor.ProcessedCount == 3, "the loop to catch up", cancellationToken);
 
-        var suspension = await group.SuspendAsync("totals", ct);
+        var suspension = await group.SuspendAsync("totals", cancellationToken);
 
         // Everything appended from here stands in for the events that used to be consumed into
         // the version a promotion was about to discard.
-        await AppendAsync(backend, 5, ct);
+        await AppendAsync(backend, 5, cancellationToken);
 
         // Generously longer than the 10ms polling interval: a loop that was still running would
         // have taken these many times over.
-        await Task.Delay(TimeSpan.FromMilliseconds(300), ct);
+        await Task.Delay(TimeSpan.FromMilliseconds(300), cancellationToken);
         processor.ProcessedCount.Should().Be(
             3, "a suspended loop must not consume — that is the whole point of suspending it");
 
@@ -88,7 +88,7 @@ public sealed class ControlLoopGroupSuspensionTests
 
         await WaitUntilAsync(
             () => processor.ProcessedCount == 8,
-            "the resumed loop to pick up what arrived while it was parked", ct);
+            "the resumed loop to pick up what arrived while it was parked", cancellationToken);
 
         await group.StopAsync(CancellationToken.None);
         await head.StopAsync(CancellationToken.None);
@@ -103,15 +103,15 @@ public sealed class ControlLoopGroupSuspensionTests
     [Fact]
     public async Task Suspending_An_Unknown_Processor_Is_A_No_Op()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var group = new ControlLoopGroup([]);
 
-        var suspension = await group.SuspendAsync("nobody", ct);
+        var suspension = await group.SuspendAsync("nobody", cancellationToken);
 
         await suspension.DisposeAsync();
     }
 
-    private static async Task AppendAsync(InMemoryEventStoreBackend backend, int count, CancellationToken ct)
+    private static async Task AppendAsync(InMemoryEventStoreBackend backend, int count, CancellationToken cancellationToken)
     {
         for (var i = 0; i < count; i++)
         {
@@ -125,18 +125,18 @@ public sealed class ControlLoopGroupSuspensionTests
                         EventData = JsonSerializer.Serialize(new Counted(i)),
                     },
                 ],
-                cancellationToken: ct);
+                cancellationToken: cancellationToken);
         }
     }
 
-    private static async Task WaitUntilAsync(Func<bool> condition, string what, CancellationToken ct)
+    private static async Task WaitUntilAsync(Func<bool> condition, string what, CancellationToken cancellationToken)
     {
         var deadline = DateTimeOffset.UtcNow.AddSeconds(10);
 
         while (DateTimeOffset.UtcNow < deadline)
         {
             if (condition()) return;
-            await Task.Delay(20, ct);
+            await Task.Delay(20, cancellationToken);
         }
 
         throw new TimeoutException($"Timed out after 10s waiting for {what}.");

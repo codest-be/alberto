@@ -1,4 +1,4 @@
-using Alberto.Subscriptions;
+using Alberto.Projections;
 
 namespace Alberto.Testing.Xunit;
 
@@ -27,9 +27,9 @@ public abstract class RebuildCoordinatorFacade
 {
     /// <summary>Marks a historical replay ready after its checkpoint reaches the target.</summary>
     /// <param name="processorId">The processor to mark ready.</param>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public abstract Task<ProjectionRebuildState> MarkReadyAsync(
-        string processorId, CancellationToken ct = default);
+        string processorId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Atomically flips the rebuilt version to active. The caller must already have stopped the
@@ -37,17 +37,17 @@ public abstract class RebuildCoordinatorFacade
     /// </summary>
     /// <param name="processorId">The processor to promote.</param>
     /// <param name="force">Permit promotion before the original target is reached.</param>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public abstract Task<RebuildOutcome> CompletePromotionAsync(
-        string processorId, bool force = false, CancellationToken ct = default);
+        string processorId, bool force = false, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Atomically marks an abort complete. The caller must already have stopped the shadow loop.
     /// </summary>
     /// <param name="processorId">The processor to abort.</param>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public abstract Task<RebuildOutcome> CompleteAbortAsync(
-        string processorId, CancellationToken ct = default);
+        string processorId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Deletes every state row a projection holds at one version, across all tenants.
@@ -55,9 +55,9 @@ public abstract class RebuildCoordinatorFacade
     /// </summary>
     /// <param name="projectionType">The key the projection's state rows are stored under.</param>
     /// <param name="version">The rebuild version to reclaim.</param>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public abstract Task DiscardStateVersionAsync(
-        string projectionType, int version, CancellationToken ct = default);
+        string projectionType, int version, CancellationToken cancellationToken = default);
 
     // ── Internal adapter ──────────────────────────────────────────────────────
     //
@@ -73,19 +73,19 @@ public abstract class RebuildCoordinatorFacade
             _store = store;
 
         public override Task<ProjectionRebuildState> MarkReadyAsync(
-            string processorId, CancellationToken ct = default) =>
-            _store.MarkReadyAsync(processorId, ct);
+            string processorId, CancellationToken cancellationToken = default) =>
+            _store.MarkReadyAsync(processorId, cancellationToken);
 
         public override Task<RebuildOutcome> CompletePromotionAsync(
-            string processorId, bool force = false, CancellationToken ct = default) =>
-            _store.CompletePromotionAsync(processorId, force, ct);
+            string processorId, bool force = false, CancellationToken cancellationToken = default) =>
+            _store.CompletePromotionAsync(processorId, force, cancellationToken);
 
         public override Task<RebuildOutcome> CompleteAbortAsync(
-            string processorId, CancellationToken ct = default) =>
-            _store.CompleteAbortAsync(processorId, ct);
+            string processorId, CancellationToken cancellationToken = default) =>
+            _store.CompleteAbortAsync(processorId, cancellationToken);
 
         public override Task DiscardStateVersionAsync(
-            string projectionType, int version, CancellationToken ct = default) =>
-            _store.DiscardStateVersionAsync(projectionType, version, ct);
+            string projectionType, int version, CancellationToken cancellationToken = default) =>
+            _store.DiscardStateVersionAsync(projectionType, version, cancellationToken);
     }
 }

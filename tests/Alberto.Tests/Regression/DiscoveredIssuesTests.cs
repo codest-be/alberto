@@ -65,8 +65,8 @@ public sealed class DiscoveredIssuesTests
         public IReadOnlySet<string> HandledEventTypes { get; } =
             new HashSet<string> { RegressionEventTypeId };
 
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
-            => handler(@event, ct);
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default)
+            => handler(@event, cancellationToken);
     }
 
     /// <summary>
@@ -205,14 +205,14 @@ public sealed class DiscoveredIssuesTests
     // ── ControlLoop: non-shutdown OperationCanceledException handling ───────────────
     //
     // Cooperative cancellation always carries the token that caused it. ControlLoop's
-    // cancellation catch-arms therefore ask `IsShutdownCancellation(ex, ct)` — both that
+    // cancellation catch-arms therefore ask `IsShutdownCancellation(ex, cancellationToken)` — both that
     // the loop token is cancelled AND that the exception carries a cancelled token —
-    // rather than `ct.IsCancellationRequested` alone.
+    // rather than `cancellationToken.IsCancellationRequested` alone.
     //
     // An OperationCanceledException carrying no cancelled token is an escaped processor
     // failure, not host shutdown. It must fault the loop and leave the position in flight,
     // whether or not a shutdown happens to be under way at the same moment. Testing only
-    // `ct.IsCancellationRequested` conflated the two: a handler that failed while the host
+    // `cancellationToken.IsCancellationRequested` conflated the two: a handler that failed while the host
     // was shutting down was logged as a graceful stop and IsFaulted stayed false, which made
     // IsFaulted unusable as an observability signal exactly when it mattered most.
     //
@@ -247,7 +247,7 @@ public sealed class DiscoveredIssuesTests
 
         var processor = new DelegatingProcessor(
             processorId: "non-shutdown-oce-regression",
-            handler: (evt, ct) =>
+            handler: (evt, cancellationToken) =>
             {
                 if (evt.GlobalPosition == 2)
                 {
@@ -331,11 +331,11 @@ public sealed class DiscoveredIssuesTests
 
         var processor = new DelegatingProcessor(
             processorId: "shutdown-coincidence-regression",
-            handler: async (evt, ct) =>
+            handler: async (evt, cancellationToken) =>
             {
                 handlerEntered.TrySetResult();
 
-                // Deliberately not ct-aware: the handler is still working when shutdown
+                // Deliberately not cancellationToken-aware: the handler is still working when shutdown
                 // is requested, and only then does it fail.
                 await shutdownRequested.Task;
 
@@ -399,7 +399,7 @@ public sealed class DiscoveredIssuesTests
 
         var processor = new DelegatingProcessor(
             processorId: "sequential-shutdown-coincidence-regression",
-            handler: async (evt, ct) =>
+            handler: async (evt, cancellationToken) =>
             {
                 handlerEntered.TrySetResult();
                 await shutdownRequested.Task;

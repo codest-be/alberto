@@ -1,5 +1,5 @@
 using Alberto.InMemory;
-using Alberto.Subscriptions;
+using Alberto.Projections;
 using Alberto.Testing.Xunit;
 
 namespace Alberto.Tests.Subscriptions;
@@ -14,7 +14,7 @@ namespace Alberto.Tests.Subscriptions;
 // internal interface and threw InvalidCastException at runtime:
 //
 //   System.InvalidCastException: Unable to cast object of type 'MinimalRebuildStore'
-//   to type 'Alberto.Subscriptions.IProjectionRebuildCoordinatorStore'.
+//   to type 'Alberto.Projections.IProjectionRebuildCoordinatorStore'.
 //
 // The failure is a runtime cast, not a visibility issue.  Alberto.Tests has
 // InternalsVisibleTo access to Alberto (it can reference the internal interface),
@@ -38,23 +38,23 @@ internal sealed class MinimalRebuildStore : IProjectionRebuildStore
     internal readonly InMemoryProjectionRebuildStore Inner = new();
 
     public Task<ProjectionRebuildState> GetAsync(
-        string processorId, string projectionType, CancellationToken ct = default) =>
-        Inner.GetAsync(processorId, projectionType, ct);
+        string processorId, string projectionType, CancellationToken cancellationToken = default) =>
+        Inner.GetAsync(processorId, projectionType, cancellationToken);
 
-    public Task<IReadOnlyList<ProjectionRebuildState>> ListAsync(CancellationToken ct = default) =>
-        Inner.ListAsync(ct);
+    public Task<IReadOnlyList<ProjectionRebuildState>> ListAsync(CancellationToken cancellationToken = default) =>
+        Inner.ListAsync(cancellationToken);
 
     public Task<ProjectionRebuildState> StartAsync(
-        string processorId, string projectionType, long targetPosition, CancellationToken ct = default) =>
-        Inner.StartAsync(processorId, projectionType, targetPosition, ct);
+        string processorId, string projectionType, long targetPosition, CancellationToken cancellationToken = default) =>
+        Inner.StartAsync(processorId, projectionType, targetPosition, cancellationToken);
 
     public Task<ProjectionRebuildState> RequestPromotionAsync(
-        string processorId, bool force = false, CancellationToken ct = default) =>
-        Inner.RequestPromotionAsync(processorId, force, ct);
+        string processorId, bool force = false, CancellationToken cancellationToken = default) =>
+        Inner.RequestPromotionAsync(processorId, force, cancellationToken);
 
     public Task<ProjectionRebuildState> RequestAbortAsync(
-        string processorId, CancellationToken ct = default) =>
-        Inner.RequestAbortAsync(processorId, ct);
+        string processorId, CancellationToken cancellationToken = default) =>
+        Inner.RequestAbortAsync(processorId, cancellationToken);
 }
 
 /// <summary>
@@ -86,19 +86,19 @@ public sealed class ThirdPartyAdapterSpecificationTests : ProjectionRebuildStore
             _coordinator = coordinator;
 
         public override Task<ProjectionRebuildState> MarkReadyAsync(
-            string processorId, CancellationToken ct = default) =>
-            _coordinator.MarkReadyAsync(processorId, ct);
+            string processorId, CancellationToken cancellationToken = default) =>
+            _coordinator.MarkReadyAsync(processorId, cancellationToken);
 
         public override Task<RebuildOutcome> CompletePromotionAsync(
-            string processorId, bool force = false, CancellationToken ct = default) =>
-            _coordinator.CompletePromotionAsync(processorId, force, ct);
+            string processorId, bool force = false, CancellationToken cancellationToken = default) =>
+            _coordinator.CompletePromotionAsync(processorId, force, cancellationToken);
 
         public override Task<RebuildOutcome> CompleteAbortAsync(
-            string processorId, CancellationToken ct = default) =>
-            _coordinator.CompleteAbortAsync(processorId, ct);
+            string processorId, CancellationToken cancellationToken = default) =>
+            _coordinator.CompleteAbortAsync(processorId, cancellationToken);
 
         public override Task DiscardStateVersionAsync(
-            string projectionType, int version, CancellationToken ct = default) =>
-            _coordinator.DiscardStateVersionAsync(projectionType, version, ct);
+            string projectionType, int version, CancellationToken cancellationToken = default) =>
+            _coordinator.DiscardStateVersionAsync(projectionType, version, cancellationToken);
     }
 }

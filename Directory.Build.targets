@@ -1,48 +1,29 @@
 <Project>
 
-    <!--
-        Properties that must be tested against IsPackable.
-
-        This file exists because of MSBuild's evaluation order. Directory.Build.props is imported
-        at the very top of every project, before the csproj body; Directory.Build.targets is
-        imported at the bottom, after it. Properties are evaluated in import order, so a
-        Condition="'$(IsPackable)' == 'true'" written in Directory.Build.props is tested while
-        IsPackable is still the repo-wide default of false, and the whole group is skipped without
-        any warning. The same condition here is tested after each src/ project has set
-        IsPackable=true, so it behaves as intended.
-
-        This is not hypothetical: these properties previously lived in Directory.Build.props and
-        were dead for every package. The visible symptom was `warn : Readme missing` on each push
-        to nuget.org — README.md was packed into the .nupkg by the ItemGroup (items are evaluated
-        in a later pass, so that condition did work) but PackageReadmeFile was empty, so nothing
-        declared it in the .nuspec and the gallery never rendered it. Alberto 0.1.0 shipped that
-        way. If you move any of this back into Directory.Build.props, it will stop working.
-
-        Everything is still evaluated before any target runs, so ContinuousIntegrationBuild
-        reaches the compiler and PackageReadmeFile reaches Pack.
-    -->
+    <!-- Properties tested against IsPackable must live here: Directory.Build.props is imported before
+         the csproj sets IsPackable=true, so the same Condition there is silently false. -->
     <PropertyGroup Condition="'$(IsPackable)' == 'true'">
 
-        <!-- SourceLink — embeds a source-server pointer into the .pdb so debuggers can step into
-             library source straight from nuget.org. Only meaningful on packable projects;
-             non-packable projects (apps, tests, tools) produce no .snupkg and need none of this.
-             ContinuousIntegrationBuild is gated on the CI env-var so local dev builds stay fast
-             and the compiler does not try to make paths deterministic on a developer machine. -->
+        <!-- SourceLink. ContinuousIntegrationBuild is CI-only so local builds stay non-deterministic-path and fast. -->
         <PublishRepositoryUrl>true</PublishRepositoryUrl>
         <EmbedUntrackedSources>true</EmbedUntrackedSources>
         <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
 
-        <!-- The repo-root README is the landing page for every package on nuget.org. The file is
-             placed at the .nupkg root by the None Include in Directory.Build.props; this names it.
-             Because it is the package page, its links are absolute GitHub URLs — nuget.org has no
-             repository to resolve a relative path against. -->
+        <!-- README links must be absolute GitHub URLs: nuget.org cannot resolve relative paths. -->
         <PackageReadmeFile>README.md</PackageReadmeFile>
 
-        <!-- The embedded icon, not the deprecated iconUrl. icon.svg at the repo root is the
-             source; icon.png is rendered from it at 256×256 and is what ships, because NuGet
-             accepts only PNG and JPEG. Regenerate with:
-               rsvg-convert -w 256 -h 256 icon.svg -o icon.png -->
+        <!-- NuGet accepts only PNG/JPEG; regenerate with: rsvg-convert -w 256 -h 256 icon.svg -o icon.png -->
         <PackageIcon>icon.png</PackageIcon>
+
+        <!-- Set PackageValidationBaselineVersion once a previous release exists. -->
+        <EnablePackageValidation>true</EnablePackageValidation>
     </PropertyGroup>
+
+    <!-- Packages ship lockstep with InternalsVisibleTo: packed Alberto.* references must be exact ([x.y.z]). -->
+    <Target Name="PinProjectVersionExact" AfterTargets="_GetProjectReferenceVersions" Condition="'$(IsPackable)' == 'true'">
+        <ItemGroup>
+            <_ProjectReferencesWithVersions ProjectVersion="[%(ProjectVersion)]" />
+        </ItemGroup>
+    </Target>
 
 </Project>

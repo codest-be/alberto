@@ -24,14 +24,14 @@ public sealed class EventStoreHeadStallDetectionTests
         var backend = new FakeHeadBackend { Positions = [1, 2, 3], StableHead = 1 };
         var head = new EventStoreHead(backend,
             logger: logger, timeProvider: time, moduleKey: "m1", stallWarningThreshold: Threshold);
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
 
-        await head.RefreshAsync(ct); // first poll: head moves 0 -> 1, not yet "stalled"
-        await head.RefreshAsync(ct); // second poll: head stays at 1 — the stall clock starts here
+        await head.RefreshAsync(cancellationToken); // first poll: head moves 0 -> 1, not yet "stalled"
+        await head.RefreshAsync(cancellationToken); // second poll: head stays at 1 — the stall clock starts here
 
         // Advance less than the threshold and poll again without anything else changing.
         time.Advance(TimeSpan.FromSeconds(10));
-        await head.RefreshAsync(ct);
+        await head.RefreshAsync(cancellationToken);
 
         Assert.Equal(1, head.Current);
         Assert.DoesNotContain(logger.Entries, e => e.Level == LogLevel.Warning);
@@ -48,13 +48,13 @@ public sealed class EventStoreHeadStallDetectionTests
         var backend = new FakeHeadBackend { Positions = [1, 2, 3], StableHead = 1 };
         var head = new EventStoreHead(backend,
             logger: logger, timeProvider: time, moduleKey: "m2", stallWarningThreshold: Threshold);
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
 
-        await head.RefreshAsync(ct); // head moves 0 -> 1
-        await head.RefreshAsync(ct); // head stays at 1 — the stall clock starts here
+        await head.RefreshAsync(cancellationToken); // head moves 0 -> 1
+        await head.RefreshAsync(cancellationToken); // head stays at 1 — the stall clock starts here
 
         time.Advance(Threshold + TimeSpan.FromSeconds(1));
-        await head.RefreshAsync(ct);
+        await head.RefreshAsync(cancellationToken);
 
         Assert.Equal(1, head.Current);
         Assert.Single(logger.Entries, e => e.Level == LogLevel.Warning);
@@ -62,7 +62,7 @@ public sealed class EventStoreHeadStallDetectionTests
 
         // Polling again while still stalled must not warn a second time.
         time.Advance(TimeSpan.FromSeconds(5));
-        await head.RefreshAsync(ct);
+        await head.RefreshAsync(cancellationToken);
         Assert.Single(logger.Entries, e => e.Level == LogLevel.Warning);
     }
 
@@ -76,13 +76,13 @@ public sealed class EventStoreHeadStallDetectionTests
         var backend = new FakeHeadBackend { Positions = [1, 2, 3], StableHead = 1 };
         var head = new EventStoreHead(backend,
             logger: logger, timeProvider: time, moduleKey: "m6", stallWarningThreshold: threshold);
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
 
-        await head.RefreshAsync(ct); // head moves 0 -> 1
-        await head.RefreshAsync(ct); // head stays at 1 — the stall clock starts here
+        await head.RefreshAsync(cancellationToken); // head moves 0 -> 1
+        await head.RefreshAsync(cancellationToken); // head stays at 1 — the stall clock starts here
 
         time.Advance(threshold);
-        await head.RefreshAsync(ct);
+        await head.RefreshAsync(cancellationToken);
 
         Assert.Single(logger.Entries, e => e.Level == LogLevel.Warning);
         AssertGauge("m6", g => g == threshold.TotalSeconds);
@@ -98,12 +98,12 @@ public sealed class EventStoreHeadStallDetectionTests
         var backend = new FakeHeadBackend { Positions = [1, 2], StableHead = 2 };
         var head = new EventStoreHead(backend,
             logger: logger, timeProvider: time, moduleKey: "m7", stallWarningThreshold: Threshold);
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
 
-        await head.RefreshAsync(ct); // head moves 0 -> 2
-        await head.RefreshAsync(ct);
+        await head.RefreshAsync(cancellationToken); // head moves 0 -> 2
+        await head.RefreshAsync(cancellationToken);
         time.Advance(Threshold + TimeSpan.FromSeconds(1));
-        await head.RefreshAsync(ct);
+        await head.RefreshAsync(cancellationToken);
 
         Assert.Equal(2, head.Current);
         Assert.DoesNotContain(logger.Entries, e => e.Level == LogLevel.Warning);
@@ -118,18 +118,18 @@ public sealed class EventStoreHeadStallDetectionTests
         var backend = new FakeHeadBackend { Positions = [1, 2, 3], StableHead = 1 };
         var head = new EventStoreHead(backend,
             logger: logger, timeProvider: time, moduleKey: "m3", stallWarningThreshold: Threshold);
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
 
-        await head.RefreshAsync(ct); // head moves 0 -> 1
-        await head.RefreshAsync(ct); // head stays at 1 — the stall clock starts here
+        await head.RefreshAsync(cancellationToken); // head moves 0 -> 1
+        await head.RefreshAsync(cancellationToken); // head stays at 1 — the stall clock starts here
 
         time.Advance(Threshold + TimeSpan.FromSeconds(1));
-        await head.RefreshAsync(ct);
+        await head.RefreshAsync(cancellationToken);
         Assert.Single(logger.Entries, e => e.Level == LogLevel.Warning);
 
         // The barrier releases: the backend now lets the head all the way through.
         backend.StableHead = long.MaxValue;
-        await head.RefreshAsync(ct);
+        await head.RefreshAsync(cancellationToken);
 
         Assert.Equal(3, head.Current);
         Assert.Single(logger.Entries, e => e.Level == LogLevel.Information);
@@ -149,19 +149,19 @@ public sealed class EventStoreHeadStallDetectionTests
         var backend = new FakeHeadBackend { Positions = [1, 2, 3, 4, 5, 6], StableHead = 1 };
         var head = new EventStoreHead(backend,
             logger: logger, timeProvider: time, moduleKey: "m5", stallWarningThreshold: Threshold);
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
 
-        await head.RefreshAsync(ct); // head moves 0 -> 1
-        await head.RefreshAsync(ct); // head stays at 1 — the stall clock starts here
+        await head.RefreshAsync(cancellationToken); // head moves 0 -> 1
+        await head.RefreshAsync(cancellationToken); // head stays at 1 — the stall clock starts here
 
         time.Advance(Threshold + TimeSpan.FromSeconds(1));
-        await head.RefreshAsync(ct);
+        await head.RefreshAsync(cancellationToken);
         Assert.Single(logger.Entries, e => e.Level == LogLevel.Warning);
 
         // The blocker inches forward: stableHead moves 1 -> 2, still well short of the
         // contiguous head (6), so the barrier is still holding.
         backend.StableHead = 2;
-        await head.RefreshAsync(ct);
+        await head.RefreshAsync(cancellationToken);
 
         Assert.Equal(2, head.Current);
         Assert.DoesNotContain(logger.Entries, e => e.Level == LogLevel.Information);
@@ -169,14 +169,14 @@ public sealed class EventStoreHeadStallDetectionTests
 
         // Still the same incident: freezing again past the threshold does not warn a second
         // time, and the eventual real release is logged exactly once.
-        await head.RefreshAsync(ct);
+        await head.RefreshAsync(cancellationToken);
         time.Advance(Threshold + TimeSpan.FromSeconds(1));
-        await head.RefreshAsync(ct);
+        await head.RefreshAsync(cancellationToken);
         Assert.Single(logger.Entries, e => e.Level == LogLevel.Warning);
         AssertGauge("m5", g => g > 0);
 
         backend.StableHead = long.MaxValue;
-        await head.RefreshAsync(ct);
+        await head.RefreshAsync(cancellationToken);
         Assert.Single(logger.Entries, e => e.Level == LogLevel.Information);
     }
 
@@ -191,28 +191,28 @@ public sealed class EventStoreHeadStallDetectionTests
         var backend = new FakeHeadBackend { Positions = [1, 2, 3], StableHead = 1 };
         var head = new EventStoreHead(backend,
             logger: logger, timeProvider: time, moduleKey: "m6", stallWarningThreshold: Threshold);
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
 
-        await head.RefreshAsync(ct); // head moves 0 -> 1
-        await head.RefreshAsync(ct); // stall clock starts
+        await head.RefreshAsync(cancellationToken); // head moves 0 -> 1
+        await head.RefreshAsync(cancellationToken); // stall clock starts
 
         time.Advance(Threshold + TimeSpan.FromSeconds(1));
-        await head.RefreshAsync(ct);
+        await head.RefreshAsync(cancellationToken);
         Assert.Single(logger.Entries, e => e.Level == LogLevel.Warning);
 
         // Full release.
         backend.StableHead = long.MaxValue;
-        await head.RefreshAsync(ct);
+        await head.RefreshAsync(cancellationToken);
         Assert.Equal(3, head.Current);
         Assert.Single(logger.Entries, e => e.Level == LogLevel.Information);
 
         // A fresh, unrelated stall: a new event arrives and a new blocker pins the barrier again.
         backend.Positions = [1, 2, 3, 4];
         backend.StableHead = 3;
-        await head.RefreshAsync(ct); // head stays at 3 — second stall clock starts here
+        await head.RefreshAsync(cancellationToken); // head stays at 3 — second stall clock starts here
 
         time.Advance(Threshold + TimeSpan.FromSeconds(1));
-        await head.RefreshAsync(ct);
+        await head.RefreshAsync(cancellationToken);
 
         Assert.Equal(2, logger.Entries.Count(e => e.Level == LogLevel.Warning));
     }
@@ -227,15 +227,15 @@ public sealed class EventStoreHeadStallDetectionTests
         var backend = new FakeHeadBackend { Positions = [1, 2, 3, 4, 5], StableHead = 1 };
         var head = new EventStoreHead(backend,
             logger: logger, timeProvider: time, moduleKey: "m4", stallWarningThreshold: Threshold);
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
 
-        await head.RefreshAsync(ct); // holds at 1
+        await head.RefreshAsync(cancellationToken); // holds at 1
 
         for (var stableHead = 2; stableHead <= 5; stableHead++)
         {
             time.Advance(Threshold + TimeSpan.FromSeconds(1)); // would trip the threshold if stalled
             backend.StableHead = stableHead;
-            await head.RefreshAsync(ct);
+            await head.RefreshAsync(cancellationToken);
         }
 
         Assert.Equal(5, head.Current);

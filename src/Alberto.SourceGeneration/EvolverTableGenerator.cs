@@ -37,14 +37,14 @@ public sealed class EvolverTableGenerator : IIncrementalGenerator
         // Collected and de-duplicated: a partial evolver whose parts each carry a base list is seen once per part.
         var evolvers = context.SyntaxProvider.CreateSyntaxProvider(
                 static (node, _) => node is ClassDeclarationSyntax { BaseList: not null },
-                static (ctx, ct) => ReadEvolver(ctx, ct))
+                static (ctx, cancellationToken) => ReadEvolver(ctx, cancellationToken))
             .Where(static e => e is not null)
             .Collect()
             .Select(static (all, _) => new EquatableArray<EvolverModel>([.. all.GroupBy(e => e!.TypeName).Select(g => g.First()!)]));
 
         var hasRegistry = context.SyntaxProvider.CreateSyntaxProvider(
                 static (node, _) => node is ClassDeclarationSyntax { AttributeLists.Count: > 0 },
-                static (ctx, ct) => ctx.SemanticModel.GetDeclaredSymbol(ctx.Node, ct) is INamedTypeSymbol type
+                static (ctx, cancellationToken) => ctx.SemanticModel.GetDeclaredSymbol(ctx.Node, cancellationToken) is INamedTypeSymbol type
                                     && type.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == RegistryAttribute))
             .Where(static r => r)
             .Collect()
@@ -61,10 +61,10 @@ public sealed class EvolverTableGenerator : IIncrementalGenerator
         });
     }
 
-    private static EvolverModel? ReadEvolver(GeneratorSyntaxContext ctx, CancellationToken ct)
+    private static EvolverModel? ReadEvolver(GeneratorSyntaxContext ctx, CancellationToken cancellationToken)
     {
         var syntax = (ClassDeclarationSyntax)ctx.Node;
-        if (ctx.SemanticModel.GetDeclaredSymbol(syntax, ct) is not INamedTypeSymbol type
+        if (ctx.SemanticModel.GetDeclaredSymbol(syntax, cancellationToken) is not INamedTypeSymbol type
             || type.IsAbstract || type.IsGenericType)
             return null;
 
@@ -80,7 +80,7 @@ public sealed class EvolverTableGenerator : IIncrementalGenerator
         {
             if (outer.IsGenericType) return null;
             partial &= outer.DeclaringSyntaxReferences.All(r =>
-                r.GetSyntax(ct) is TypeDeclarationSyntax t && t.Modifiers.Any(SyntaxKind.PartialKeyword));
+                r.GetSyntax(cancellationToken) is TypeDeclarationSyntax t && t.Modifiers.Any(SyntaxKind.PartialKeyword));
             containers.Insert(0, $"partial {EventRegistryGenerator.Keyword(outer)} {outer.Name}");
         }
 

@@ -10,10 +10,7 @@
     <PropertyGroup>
         <OutputType>Exe</OutputType>
         <TargetFramework>net10.0</TargetFramework>
-        <ImplicitUsings>enable</ImplicitUsings>
-        <Nullable>enable</Nullable>
         <IsPackable>false</IsPackable>
-        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
 
         <PublishAot>true</PublishAot>
         <!-- Any IL2xxx/IL3xxx that ILC finds in Alberto, or in anything Alberto pulls in, fails the

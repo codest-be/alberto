@@ -1,5 +1,5 @@
 using Alberto.Postgres;
-using Alberto.Subscriptions;
+using Alberto.Projections;
 using Alberto.Tests.Infrastructure;
 using FluentAssertions;
 using Npgsql;
@@ -21,30 +21,30 @@ internal static class ProjectionRebuildCoordinatorTestExtensions
     public static Task<ProjectionRebuildState> MarkReadyAsync(
         this PostgresProjectionRebuildStore store,
         string processorId,
-        CancellationToken ct) =>
-        ((IProjectionRebuildCoordinatorStore)store).MarkReadyAsync(processorId, ct);
+        CancellationToken cancellationToken) =>
+        ((IProjectionRebuildCoordinatorStore)store).MarkReadyAsync(processorId, cancellationToken);
 
     public static Task<RebuildOutcome> PromoteAsync(
         this PostgresProjectionRebuildStore store,
         string processorId,
         bool force,
-        CancellationToken ct) =>
+        CancellationToken cancellationToken) =>
         ((IProjectionRebuildCoordinatorStore)store)
-            .CompletePromotionAsync(processorId, force, ct);
+            .CompletePromotionAsync(processorId, force, cancellationToken);
 
     public static Task<RebuildOutcome> AbortAsync(
         this PostgresProjectionRebuildStore store,
         string processorId,
-        CancellationToken ct) =>
-        ((IProjectionRebuildCoordinatorStore)store).CompleteAbortAsync(processorId, ct);
+        CancellationToken cancellationToken) =>
+        ((IProjectionRebuildCoordinatorStore)store).CompleteAbortAsync(processorId, cancellationToken);
 
     public static Task DiscardStateVersionAsync(
         this PostgresProjectionRebuildStore store,
         string projectionType,
         int version,
-        CancellationToken ct) =>
+        CancellationToken cancellationToken) =>
         ((IProjectionRebuildCoordinatorStore)store)
-            .DiscardStateVersionAsync(projectionType, version, ct);
+            .DiscardStateVersionAsync(projectionType, version, cancellationToken);
 }
 
 /// <summary>
@@ -72,9 +72,9 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
     }
 
     private async Task InsertStateAsync(
-        string projectionType, string documentId, int rebuildVersion, CancellationToken ct)
+        string projectionType, string documentId, int rebuildVersion, CancellationToken cancellationToken)
     {
-        await using var conn = await fixture.DataSource.OpenConnectionAsync(ct);
+        await using var conn = await fixture.DataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
             """
             INSERT INTO alberto_projection_states
@@ -84,12 +84,12 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
         cmd.Parameters.AddWithValue("type", projectionType);
         cmd.Parameters.AddWithValue("doc", documentId);
         cmd.Parameters.AddWithValue("version", rebuildVersion);
-        await cmd.ExecuteNonQueryAsync(ct);
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private async Task<int> CountStateAsync(string projectionType, int rebuildVersion, CancellationToken ct)
+    private async Task<int> CountStateAsync(string projectionType, int rebuildVersion, CancellationToken cancellationToken)
     {
-        await using var conn = await fixture.DataSource.OpenConnectionAsync(ct);
+        await using var conn = await fixture.DataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
             """
             SELECT count(*) FROM alberto_projection_states
@@ -97,16 +97,16 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
             """, conn);
         cmd.Parameters.AddWithValue("type", projectionType);
         cmd.Parameters.AddWithValue("version", rebuildVersion);
-        return (int)(long)(await cmd.ExecuteScalarAsync(ct))!;
+        return (int)(long)(await cmd.ExecuteScalarAsync(cancellationToken))!;
     }
 
     [Fact]
     public async Task GetAsync_ProcessorNeverRebuilt_ReportsIdleAtVersionOne()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var (processorId, projectionType) = NewIdentity();
 
-        var state = await CreateStore().GetAsync(processorId, projectionType, ct);
+        var state = await CreateStore().GetAsync(processorId, projectionType, cancellationToken);
 
         state.Status.Should().Be(RebuildStatus.Idle);
         state.ActiveVersion.Should().Be(1);
@@ -118,11 +118,11 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
     [Fact]
     public async Task StartAsync_AllocatesNextVersion_AndRecordsTarget()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var (processorId, projectionType) = NewIdentity();
         var store = CreateStore();
 
-        var started = await store.StartAsync(processorId, projectionType, targetPosition: 4711, ct);
+        var started = await store.StartAsync(processorId, projectionType, targetPosition: 4711, cancellationToken);
 
         started.Status.Should().Be(RebuildStatus.Rebuilding);
         started.ActiveVersion.Should().Be(1, "readers must keep seeing the version they were on");
@@ -133,24 +133,24 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
         started.IsRebuildInFlight.Should().BeTrue();
 
         // Survives the round trip, so a coordinator restarting mid-rebuild sees the same thing.
-        var reread = await store.GetAsync(processorId, projectionType, ct);
+        var reread = await store.GetAsync(processorId, projectionType, cancellationToken);
         reread.Should().BeEquivalentTo(started);
     }
 
     [Fact]
     public async Task StartAsync_SecondRebuildWhileOneIsInFlight_IsRejected()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var (processorId, projectionType) = NewIdentity();
         var store = CreateStore();
 
-        await store.StartAsync(processorId, projectionType, targetPosition: 10, ct);
+        await store.StartAsync(processorId, projectionType, targetPosition: 10, cancellationToken);
 
-        var second = () => store.StartAsync(processorId, projectionType, targetPosition: 20, ct);
+        var second = () => store.StartAsync(processorId, projectionType, targetPosition: 20, cancellationToken);
         await second.Should().ThrowAsync<RebuildStateException>();
 
         // The rejected start must not have moved anything.
-        var state = await store.GetAsync(processorId, projectionType, ct);
+        var state = await store.GetAsync(processorId, projectionType, cancellationToken);
         state.RebuildingVersion.Should().Be(2);
         state.TargetPosition.Should().Be(10);
     }
@@ -158,14 +158,14 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
     [Fact]
     public async Task StartAsync_AfterAReadyRebuild_IsAlsoRejected()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var (processorId, projectionType) = NewIdentity();
         var store = CreateStore();
 
-        await store.StartAsync(processorId, projectionType, targetPosition: 10, ct);
-        await store.MarkReadyAsync(processorId, ct);
+        await store.StartAsync(processorId, projectionType, targetPosition: 10, cancellationToken);
+        await store.MarkReadyAsync(processorId, cancellationToken);
 
-        var second = () => store.StartAsync(processorId, projectionType, targetPosition: 20, ct);
+        var second = () => store.StartAsync(processorId, projectionType, targetPosition: 20, cancellationToken);
         await second.Should().ThrowAsync<RebuildStateException>(
             "a rebuilt-but-unpromoted version is still in flight");
     }
@@ -173,12 +173,12 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
     [Fact]
     public async Task MarkReadyAsync_FromRebuilding_Transitions()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var (processorId, projectionType) = NewIdentity();
         var store = CreateStore();
 
-        await store.StartAsync(processorId, projectionType, targetPosition: 10, ct);
-        var ready = await store.MarkReadyAsync(processorId, ct);
+        await store.StartAsync(processorId, projectionType, targetPosition: 10, cancellationToken);
+        var ready = await store.MarkReadyAsync(processorId, cancellationToken);
 
         ready.Status.Should().Be(RebuildStatus.Ready);
         ready.RebuildingVersion.Should().Be(2);
@@ -188,11 +188,11 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
     [Fact]
     public async Task MarkReadyAsync_WithNoRebuildInFlight_IsRejected()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var (processorId, _) = NewIdentity();
         var store = CreateStore();
 
-        var act = () => store.MarkReadyAsync(processorId, ct);
+        var act = () => store.MarkReadyAsync(processorId, cancellationToken);
         await act.Should().ThrowAsync<RebuildStateException>();
     }
 
@@ -203,12 +203,12 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
         bool force,
         RebuildOperatorAction expected)
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var (processorId, projectionType) = NewIdentity();
         var store = CreateStore();
 
-        await store.StartAsync(processorId, projectionType, targetPosition: 10, ct);
-        var requested = await store.RequestPromotionAsync(processorId, force, ct);
+        await store.StartAsync(processorId, projectionType, targetPosition: 10, cancellationToken);
+        var requested = await store.RequestPromotionAsync(processorId, force, cancellationToken);
 
         requested.RequestedAction.Should().Be(expected);
         requested.Status.Should().Be(RebuildStatus.Rebuilding);
@@ -219,36 +219,36 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
     [Fact]
     public async Task RequestAbortAsync_RecordsIntentWithoutDeletingShadowState()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var (processorId, projectionType) = NewIdentity();
         var store = CreateStore();
 
-        await store.StartAsync(processorId, projectionType, targetPosition: 10, ct);
-        await InsertStateAsync(projectionType, "doc", rebuildVersion: 2, ct);
+        await store.StartAsync(processorId, projectionType, targetPosition: 10, cancellationToken);
+        await InsertStateAsync(projectionType, "doc", rebuildVersion: 2, cancellationToken);
 
-        var requested = await store.RequestAbortAsync(processorId, ct);
+        var requested = await store.RequestAbortAsync(processorId, cancellationToken);
 
         requested.RequestedAction.Should().Be(RebuildOperatorAction.Abort);
         requested.Status.Should().Be(RebuildStatus.Rebuilding);
-        (await CountStateAsync(projectionType, 2, ct)).Should().Be(1);
+        (await CountStateAsync(projectionType, 2, cancellationToken)).Should().Be(1);
     }
 
     [Fact]
     public async Task PromoteAsync_FromReady_FlipsTheVersion_AndLeavesTheSupersededStateForTheSweep()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var (processorId, projectionType) = NewIdentity();
         var store = CreateStore();
 
         // Two documents on the live version, one rebuilt document on the shadow version.
-        await InsertStateAsync(projectionType, "doc-1", rebuildVersion: 1, ct);
-        await InsertStateAsync(projectionType, "doc-2", rebuildVersion: 1, ct);
+        await InsertStateAsync(projectionType, "doc-1", rebuildVersion: 1, cancellationToken);
+        await InsertStateAsync(projectionType, "doc-2", rebuildVersion: 1, cancellationToken);
 
-        await store.StartAsync(processorId, projectionType, targetPosition: 10, ct);
-        await InsertStateAsync(projectionType, "doc-1", rebuildVersion: 2, ct);
-        await store.MarkReadyAsync(processorId, ct);
+        await store.StartAsync(processorId, projectionType, targetPosition: 10, cancellationToken);
+        await InsertStateAsync(projectionType, "doc-1", rebuildVersion: 2, cancellationToken);
+        await store.MarkReadyAsync(processorId, cancellationToken);
 
-        var outcome = await store.PromoteAsync(processorId, force: false, ct);
+        var outcome = await store.PromoteAsync(processorId, force: false, cancellationToken);
         var promoted = outcome.State;
 
         promoted.Status.Should().Be(RebuildStatus.Completed);
@@ -259,40 +259,40 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
         outcome.DiscardedVersion.Should().Be(
             1, "the coordinator needs the superseded version to reclaim it later");
 
-        (await CountStateAsync(projectionType, 1, ct)).Should().Be(
+        (await CountStateAsync(projectionType, 1, cancellationToken)).Should().Be(
             2, "a reader that resolved version 1 just before the flip is still holding that " +
                "number, and deleting the rows here is what used to leave it seeing nothing");
-        (await CountStateAsync(projectionType, 2, ct)).Should().Be(
+        (await CountStateAsync(projectionType, 2, cancellationToken)).Should().Be(
             1, "the promoted version's rows are exactly what the rebuild wrote");
 
         // The reclaim is a separate step the coordinator takes a grace period later, once no
         // reader can still be holding the superseded version.
-        await store.DiscardStateVersionAsync(projectionType, outcome.DiscardedVersion, ct);
+        await store.DiscardStateVersionAsync(projectionType, outcome.DiscardedVersion, cancellationToken);
 
-        (await CountStateAsync(projectionType, 1, ct)).Should().Be(0);
-        (await CountStateAsync(projectionType, 2, ct)).Should().Be(
+        (await CountStateAsync(projectionType, 1, cancellationToken)).Should().Be(0);
+        (await CountStateAsync(projectionType, 2, cancellationToken)).Should().Be(
             1, "reclaiming the superseded version must not touch the promoted one");
     }
 
     [Fact]
     public async Task PromoteAsync_WhileStillRebuilding_IsRejectedUnlessForced()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var (processorId, projectionType) = NewIdentity();
         var store = CreateStore();
 
-        await store.StartAsync(processorId, projectionType, targetPosition: 10, ct);
+        await store.StartAsync(processorId, projectionType, targetPosition: 10, cancellationToken);
 
-        var unforced = () => store.PromoteAsync(processorId, force: false, ct);
+        var unforced = () => store.PromoteAsync(processorId, force: false, cancellationToken);
         await unforced.Should().ThrowAsync<RebuildStateException>(
             "publishing a projection that has not finished replaying needs an explicit override");
 
         // The rejected promote left the rebuild exactly where it was.
-        var afterRejection = await store.GetAsync(processorId, projectionType, ct);
+        var afterRejection = await store.GetAsync(processorId, projectionType, cancellationToken);
         afterRejection.Status.Should().Be(RebuildStatus.Rebuilding);
         afterRejection.ActiveVersion.Should().Be(1);
 
-        var forced = await store.PromoteAsync(processorId, force: true, ct);
+        var forced = await store.PromoteAsync(processorId, force: true, cancellationToken);
         forced.State.ActiveVersion.Should().Be(2);
         forced.State.Status.Should().Be(RebuildStatus.Completed);
         forced.DiscardedVersion.Should().Be(1);
@@ -301,11 +301,11 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
     [Fact]
     public async Task PromoteAsync_WithNoRebuildInFlight_IsRejected()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var (processorId, _) = NewIdentity();
         var store = CreateStore();
 
-        var act = () => store.PromoteAsync(processorId, force: true, ct);
+        var act = () => store.PromoteAsync(processorId, force: true, cancellationToken);
         await act.Should().ThrowAsync<RebuildStateException>(
             "force overrides an unfinished rebuild, not the absence of one");
     }
@@ -313,17 +313,17 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
     [Fact]
     public async Task AbortAsync_DiscardsThePartialVersion_AndLeavesTheActiveOneAlone()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var (processorId, projectionType) = NewIdentity();
         var store = CreateStore();
 
-        await InsertStateAsync(projectionType, "doc-1", rebuildVersion: 1, ct);
+        await InsertStateAsync(projectionType, "doc-1", rebuildVersion: 1, cancellationToken);
 
-        await store.StartAsync(processorId, projectionType, targetPosition: 10, ct);
-        await InsertStateAsync(projectionType, "doc-1", rebuildVersion: 2, ct);
-        await InsertStateAsync(projectionType, "doc-2", rebuildVersion: 2, ct);
+        await store.StartAsync(processorId, projectionType, targetPosition: 10, cancellationToken);
+        await InsertStateAsync(projectionType, "doc-1", rebuildVersion: 2, cancellationToken);
+        await InsertStateAsync(projectionType, "doc-2", rebuildVersion: 2, cancellationToken);
 
-        var outcome = await store.AbortAsync(processorId, ct);
+        var outcome = await store.AbortAsync(processorId, cancellationToken);
         var aborted = outcome.State;
 
         aborted.Status.Should().Be(RebuildStatus.Aborted);
@@ -333,60 +333,60 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
         outcome.DiscardedVersion.Should().Be(
             2, "an abort discards the version it abandoned, not the live one");
 
-        (await CountStateAsync(projectionType, 1, ct)).Should().Be(1);
-        (await CountStateAsync(projectionType, 2, ct)).Should().Be(
+        (await CountStateAsync(projectionType, 1, cancellationToken)).Should().Be(1);
+        (await CountStateAsync(projectionType, 2, cancellationToken)).Should().Be(
             2, "the abandoned version is unreachable, but its rows wait for the sweep — the " +
                "shadow loop that wrote them has not necessarily noticed the abort yet, so a " +
                "delete here would race its last writes rather than remove them");
 
-        await store.DiscardStateVersionAsync(projectionType, outcome.DiscardedVersion, ct);
+        await store.DiscardStateVersionAsync(projectionType, outcome.DiscardedVersion, cancellationToken);
 
-        (await CountStateAsync(projectionType, 1, ct)).Should().Be(
+        (await CountStateAsync(projectionType, 1, cancellationToken)).Should().Be(
             1, "reclaiming the abandoned version must not touch the live one");
-        (await CountStateAsync(projectionType, 2, ct)).Should().Be(0);
+        (await CountStateAsync(projectionType, 2, cancellationToken)).Should().Be(0);
     }
 
     [Fact]
     public async Task DiscardStateVersionAsync_ForAVersionHoldingNothing_IsANoOp()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var (_, projectionType) = NewIdentity();
         var store = CreateStore();
 
-        await InsertStateAsync(projectionType, "doc-1", rebuildVersion: 1, ct);
+        await InsertStateAsync(projectionType, "doc-1", rebuildVersion: 1, cancellationToken);
 
         // The sweep runs on every replica and covers the whole version range each time, so
         // reclaiming a version that another replica already reclaimed — or that never held
         // anything — has to be ordinary rather than an error.
-        await store.DiscardStateVersionAsync(projectionType, 7, ct);
-        await store.DiscardStateVersionAsync(projectionType, 7, ct);
+        await store.DiscardStateVersionAsync(projectionType, 7, cancellationToken);
+        await store.DiscardStateVersionAsync(projectionType, 7, cancellationToken);
 
-        (await CountStateAsync(projectionType, 1, ct)).Should().Be(1);
+        (await CountStateAsync(projectionType, 1, cancellationToken)).Should().Be(1);
     }
 
     [Fact]
     public async Task AbortAsync_WithNoRebuildInFlight_IsRejected()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var (processorId, _) = NewIdentity();
         var store = CreateStore();
 
-        var act = () => store.AbortAsync(processorId, ct);
+        var act = () => store.AbortAsync(processorId, cancellationToken);
         await act.Should().ThrowAsync<RebuildStateException>();
     }
 
     [Fact]
     public async Task StartAsync_AfterAPromotion_AllocatesTheVersionAfterTheActiveOne()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var (processorId, projectionType) = NewIdentity();
         var store = CreateStore();
 
-        await store.StartAsync(processorId, projectionType, targetPosition: 10, ct);
-        await store.MarkReadyAsync(processorId, ct);
-        await store.PromoteAsync(processorId, force: false, ct);
+        await store.StartAsync(processorId, projectionType, targetPosition: 10, cancellationToken);
+        await store.MarkReadyAsync(processorId, cancellationToken);
+        await store.PromoteAsync(processorId, force: false, cancellationToken);
 
-        var second = await store.StartAsync(processorId, projectionType, targetPosition: 99, ct);
+        var second = await store.StartAsync(processorId, projectionType, targetPosition: 99, cancellationToken);
 
         second.ActiveVersion.Should().Be(2);
         second.RebuildingVersion.Should().Be(
@@ -397,14 +397,14 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
     [Fact]
     public async Task StartAsync_AfterAnAbort_DoesNotReuseTheAbandonedVersionNumber()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var (processorId, projectionType) = NewIdentity();
         var store = CreateStore();
 
-        await store.StartAsync(processorId, projectionType, targetPosition: 10, ct);
-        await store.AbortAsync(processorId, ct);
+        await store.StartAsync(processorId, projectionType, targetPosition: 10, cancellationToken);
+        await store.AbortAsync(processorId, cancellationToken);
 
-        var retried = await store.StartAsync(processorId, projectionType, targetPosition: 20, ct);
+        var retried = await store.StartAsync(processorId, projectionType, targetPosition: 20, cancellationToken);
 
         // AbortAsync deleted every row at version 2, but it could not stop the shadow loop that
         // was writing them — that lives in the application process and finds out one poll later.
@@ -418,7 +418,7 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
     [Fact]
     public async Task StartAsync_AllocatesAFreshVersion_ForEveryRebuildHoweverItEnded()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var (processorId, projectionType) = NewIdentity();
         var store = CreateStore();
 
@@ -426,17 +426,17 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
 
         for (var i = 0; i < 3; i++)
         {
-            seen.Add((await store.StartAsync(processorId, projectionType, 10, ct))
+            seen.Add((await store.StartAsync(processorId, projectionType, 10, cancellationToken))
                 .RebuildingVersion!.Value);
-            await store.AbortAsync(processorId, ct);
+            await store.AbortAsync(processorId, cancellationToken);
         }
 
-        var promoted = await store.StartAsync(processorId, projectionType, 10, ct);
+        var promoted = await store.StartAsync(processorId, projectionType, 10, cancellationToken);
         seen.Add(promoted.RebuildingVersion!.Value);
-        await store.MarkReadyAsync(processorId, ct);
-        await store.PromoteAsync(processorId, force: false, ct);
+        await store.MarkReadyAsync(processorId, cancellationToken);
+        await store.PromoteAsync(processorId, force: false, cancellationToken);
 
-        seen.Add((await store.StartAsync(processorId, projectionType, 10, ct))
+        seen.Add((await store.StartAsync(processorId, projectionType, 10, cancellationToken))
             .RebuildingVersion!.Value);
 
         seen.Should().Equal([2, 3, 4, 5, 6],
@@ -447,13 +447,13 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
     [Fact]
     public async Task ListAsync_ReturnsEveryProcessorWithRecordedState()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var (processorId, projectionType) = NewIdentity();
         var store = CreateStore();
 
-        await store.StartAsync(processorId, projectionType, targetPosition: 10, ct);
+        await store.StartAsync(processorId, projectionType, targetPosition: 10, cancellationToken);
 
-        var all = await store.ListAsync(ct);
+        var all = await store.ListAsync(cancellationToken);
 
         all.Should().ContainSingle(s => s.ProcessorId == processorId)
             .Which.Status.Should().Be(RebuildStatus.Rebuilding);
@@ -462,7 +462,7 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
     [Fact]
     public async Task ConcurrentStarts_ExactlyOneWins()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var (processorId, projectionType) = NewIdentity();
         var store = CreateStore();
 
@@ -473,14 +473,14 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
             {
                 try
                 {
-                    await store.StartAsync(processorId, projectionType, targetPosition: i, ct);
+                    await store.StartAsync(processorId, projectionType, targetPosition: i, cancellationToken);
                     return true;
                 }
                 catch (RebuildStateException)
                 {
                     return false;
                 }
-            }, ct))
+            }, cancellationToken))
             .ToArray();
 
         var outcomes = await Task.WhenAll(attempts);

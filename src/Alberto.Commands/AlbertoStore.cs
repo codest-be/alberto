@@ -1,4 +1,5 @@
 using Alberto;
+using Alberto.Results;
 namespace Alberto.Commands;
 
 /// <summary>
@@ -82,15 +83,16 @@ public sealed class AlbertoStore(
     {
         ArgumentNullException.ThrowIfNull(evolver);
 
-        var envelopes = await eventStore.StreamAsync(query, cancellationToken: cancellationToken);
-
-        CommandTelemetry.EventsRead(envelopes.Count);
+        var envelopes = new List<IEventEnvelope>();
         var lastPosition = 0L;
-        foreach (var envelope in envelopes)
+        await foreach (var envelope in eventStore.StreamAsync(query, cancellationToken: cancellationToken))
         {
+            envelopes.Add(envelope);
             if (envelope.GlobalPosition > lastPosition)
                 lastPosition = envelope.GlobalPosition;
         }
+
+        CommandTelemetry.EventsRead(envelopes.Count);
 
         // Route through EventSerializer (which applies the upcaster chain) rather than
         // letting Evolver fall back to raw JsonSerializer — that path silently bypasses
@@ -104,20 +106,18 @@ public sealed class AlbertoStore(
         Func<TState, IEvent, TState> apply,
         CancellationToken cancellationToken)
     {
-        var events = await eventStore.StreamAsync(
-            query,
-            cancellationToken: cancellationToken);
-
-        CommandTelemetry.EventsRead(events.Count);
         var state = initial;
         var lastPosition = 0L;
+        var count = 0;
 
-        foreach (var envelope in events)
+        await foreach (var envelope in eventStore.StreamAsync(query, cancellationToken: cancellationToken))
         {
             state = apply(state, serializer.Deserialize(envelope));
             lastPosition = envelope.GlobalPosition;
+            count++;
         }
 
+        CommandTelemetry.EventsRead(count);
         return (state, lastPosition);
     }
 

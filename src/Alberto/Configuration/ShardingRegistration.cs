@@ -76,11 +76,5 @@ internal static class ShardingRegistration
             sp.GetRequiredService<ITenantAccessor>(),
             sp.GetRequiredKeyedService<TenantShardResolver>(moduleKey),
             shardKey => sp.GetRequiredKeyedService<IEventStore>(shardKey)));
-
-        services.AddKeyedScoped<IEventStoreBackend>(moduleKey, (sp, _) => new ShardRoutingEventStoreBackend(
-            moduleKey,
-            sp.GetRequiredService<ITenantAccessor>(),
-            sp.GetRequiredKeyedService<TenantShardResolver>(moduleKey),
-            shardKey => sp.GetRequiredKeyedService<IEventStoreBackend>(shardKey)));
     }
 }

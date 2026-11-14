@@ -96,7 +96,7 @@ public sealed record DeadLetterRetryOptions
 }
 
 /// <summary>Configuration mirror for <see cref="DeadLetterRetryOptions"/>.</summary>
-public sealed class DeadLetterRetryOverrides : IAlbertoOverrides<DeadLetterRetryOptions>
+internal sealed class DeadLetterRetryOverrides : IAlbertoOverrides<DeadLetterRetryOptions>
 {
     /// <summary>Mirror of <see cref="DeadLetterRetryOptions.PollingInterval"/>.</summary>
     public TimeSpan? PollingInterval { get; set; }
@@ -147,7 +147,7 @@ public sealed record ProcessorLeaseOptions
 }
 
 /// <summary>Configuration mirror for <see cref="ProcessorLeaseOptions"/>.</summary>
-public sealed class ProcessorLeaseOverrides : IAlbertoOverrides<ProcessorLeaseOptions>
+internal sealed class ProcessorLeaseOverrides : IAlbertoOverrides<ProcessorLeaseOptions>
 {
     /// <summary>Mirror of <see cref="ProcessorLeaseOptions.Enabled"/>.</summary>
     public bool? Enabled { get; set; }

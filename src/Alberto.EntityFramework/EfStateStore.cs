@@ -1,5 +1,5 @@
 using System.Data.Common;
-using Alberto.Subscriptions;
+using Alberto.Projections;
 using Alberto.Telemetry;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -51,7 +51,7 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
     /// <inheritdoc/>
     public async Task<IReadOnlyDictionary<string, TEntity>> LoadManyAsync(
         IEnumerable<string> documentIds,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(documentIds);
 
@@ -59,14 +59,14 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
         if (ids.Count == 0)
             return new Dictionary<string, TEntity>();
 
-        await using var context = await _contextFactory.CreateDbContextAsync(ct);
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
 
         var version = _rebuildVersion.Current;
         var entities = await context.Set<TEntity>()
             .IgnoreQueryFilters([ProjectionQueryFilters.ActiveVersion])
             .AsNoTracking()
             .Where(e => ids.Contains(e.DocumentId) && e.RebuildVersion == version)
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
 
         return entities.ToDictionary(e => e.DocumentId);
     }
@@ -79,9 +79,9 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
     /// </remarks>
     public async Task<IReadOnlyList<TEntity>> ListRecentAsync(
         int limit = 20,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync(ct);
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
 
         var version = _rebuildVersion.Current;
         return await context.Set<TEntity>()
@@ -90,14 +90,14 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
             .Where(e => e.RebuildVersion == version)
             .OrderByDescending(e => e.UpdatedAt)
             .Take(limit)
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
     }
 
     /// <inheritdoc/>
     public async Task ApplyChangesAsync(
         IReadOnlyDictionary<string, TEntity> upserts,
         IReadOnlyCollection<string> deletes,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(upserts);
         ArgumentNullException.ThrowIfNull(deletes);
@@ -114,7 +114,7 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
         {
             try
             {
-                await WriteBatchOnceAsync(upserts, deletes, version, ct);
+                await WriteBatchOnceAsync(upserts, deletes, version, cancellationToken);
                 return;
             }
             catch (Exception ex) when (IsRetryableConflict(ex))
@@ -124,7 +124,7 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
                 if (attempt == MaxWriteAttempts)
                     throw ToConcurrencyConflict(ex, upserts.Keys, deletes);
 
-                await Task.Delay(delay, ct);
+                await Task.Delay(delay, cancellationToken);
                 delay *= 2;
             }
         }
@@ -138,14 +138,14 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
         IReadOnlyDictionary<string, TEntity> upserts,
         IReadOnlyCollection<string> deletes,
         int version,
-        CancellationToken ct)
+        CancellationToken cancellationToken)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync(ct);
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         var allDocIds = upserts.Keys.Concat(deletes).Distinct().ToList();
         var existingEntities = await context.Set<TEntity>()
             .IgnoreQueryFilters([ProjectionQueryFilters.ActiveVersion])
             .Where(e => allDocIds.Contains(e.DocumentId) && e.RebuildVersion == version)
-            .ToDictionaryAsync(e => e.DocumentId, ct);
+            .ToDictionaryAsync(e => e.DocumentId, cancellationToken);
 
         // Delete-wins: a document ID present in both upserts and deletes must be absent
         // after the batch. EF cannot express "insert then delete in one statement" the way
@@ -165,9 +165,9 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
             if (deleteSet?.Contains(docId) == true)
                 continue; // delete wins; skip the upsert for this document
 
-            newEntity.DocumentId = docId;
-            newEntity.RebuildVersion = version;
-            newEntity.UpdatedAt = DateTimeOffset.UtcNow;
+            ProjectionEntityStamp.DocumentId(newEntity, docId);
+            ProjectionEntityStamp.RebuildVersion(newEntity, version);
+            ProjectionEntityStamp.UpdatedAt(newEntity, DateTimeOffset.UtcNow);
 
             if (existingEntities.TryGetValue(docId, out var existing))
             {
@@ -180,7 +180,7 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
             }
         }
 
-        await context.SaveChangesAsync(ct);
+        await context.SaveChangesAsync(cancellationToken);
     }
 
     /// <summary>

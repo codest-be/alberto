@@ -16,5 +16,5 @@ internal sealed class NoOpAppendInterceptor : IAppendInterceptor
     public Task<IReadOnlyCollection<IEventEnvelope>> OnAppendingAsync(
         AppendContext context,
         Func<AppendContext, Task<IReadOnlyCollection<IEventEnvelope>>> next,
-        CancellationToken ct = default) => next(context);
+        CancellationToken cancellationToken = default) => next(context);
 }

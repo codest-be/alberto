@@ -198,7 +198,7 @@ public class TelemetryRegistrationTests
     {
         // The spec retains AddAlbertoInstrumentation for manual TracerProvider wiring.
         // It must not carry [Obsolete] — the attribute was added by mistake.
-        typeof(Alberto.Telemetry.ServiceCollectionExtensions)
+        typeof(Alberto.Telemetry.AlbertoTelemetryServiceCollectionExtensions)
             .GetMethods()
             .Where(m => m.Name == "AddAlbertoInstrumentation"
                      && m.GetParameters().Length == 1
@@ -211,7 +211,7 @@ public class TelemetryRegistrationTests
     [Fact]
     public void AddAlbertoInstrumentation_MeterProviderBuilder_is_not_obsolete()
     {
-        typeof(Alberto.Telemetry.ServiceCollectionExtensions)
+        typeof(Alberto.Telemetry.AlbertoTelemetryServiceCollectionExtensions)
             .GetMethods()
             .Where(m => m.Name == "AddAlbertoInstrumentation"
                      && m.GetParameters().Length == 1

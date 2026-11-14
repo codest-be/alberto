@@ -20,7 +20,7 @@ internal sealed record ReactRegEvent(string Id) : IEvent;
 /// </summary>
 internal sealed class SimpleReactHandler
 {
-    public Task HandleAsync(ReactRegEvent e, CancellationToken ct) => Task.CompletedTask;
+    public Task HandleAsync(ReactRegEvent e, CancellationToken cancellationToken) => Task.CompletedTask;
 }
 
 /// <summary>
@@ -29,7 +29,7 @@ internal sealed class SimpleReactHandler
 /// </summary>
 internal sealed class ContextReactHandler
 {
-    public Task HandleAsync(ReactRegEvent e, ReactorContext ctx, CancellationToken ct) =>
+    public Task HandleAsync(ReactRegEvent e, ReactorContext ctx, CancellationToken cancellationToken) =>
         Task.CompletedTask;
 }
 
@@ -37,18 +37,18 @@ internal sealed class ContextReactHandler
 /// Handler whose <see cref="ProcessorIdAttribute"/> derives a reserved processor id
 /// (<c>"consumer"</c>).  Used to verify that <c>ValidateProcessorIdArg</c> names the handler
 /// type in its error message when the id was derived from the type rather than passed explicitly
-/// (L890 of <c>DcbModuleBuilderExtensions.cs</c>).
+/// (L890 of <c>AlbertoModuleBuilderExtensions.cs</c>).
 /// </summary>
 [ProcessorId("consumer")]
 internal sealed class HandlerWithReservedProcessorId
 {
-    public Task HandleAsync(ReactRegEvent e, ReactorContext ctx, CancellationToken ct) =>
+    public Task HandleAsync(ReactRegEvent e, ReactorContext ctx, CancellationToken cancellationToken) =>
         Task.CompletedTask;
 }
 
 /// <summary>
 /// Covers the sync/async registration branches of all four <c>ReactTo</c> overloads in
-/// <c>DcbModuleBuilderExtensions.cs</c>, concentrating on the paths that were
+/// <c>AlbertoModuleBuilderExtensions.cs</c>, concentrating on the paths that were
 /// mutation-test gaps:
 /// <list type="bullet">
 ///   <item>L201-211  factory, no context, Sync → <see cref="IPostAppendHandler"/></item>
@@ -63,7 +63,7 @@ public sealed class ReactToRegistrationTests
 {
     private const string ModuleKey = "orders";
 
-    private static IServiceProvider BuildModule(Action<DcbModuleBuilder> configure)
+    private static IServiceProvider BuildModule(Action<AlbertoModuleBuilder> configure)
     {
         var services = new ServiceCollection();
         services.AddAlberto(ModuleKey, m => { m.WithInMemory(); configure(m); });
@@ -82,7 +82,7 @@ public sealed class ReactToRegistrationTests
     public void ReactTo_factory_no_context_sync_registers_IPostAppendHandler()
     {
         var sp = BuildModule(m => m.ReactTo<ReactRegEvent>(
-            _ => (e, ct) => Task.CompletedTask,
+            _ => (e, cancellationToken) => Task.CompletedTask,
             "reactor_a",
             ReactorMode.Sync));
 
@@ -98,7 +98,7 @@ public sealed class ReactToRegistrationTests
     public void ReactTo_factory_with_context_sync_registers_IPostAppendHandler()
     {
         var sp = BuildModule(m => m.ReactTo<ReactRegEvent>(
-            _ => (e, ctx, ct) => Task.CompletedTask,
+            _ => (e, ctx, cancellationToken) => Task.CompletedTask,
             "reactor_b",
             ReactorMode.Sync));
 
@@ -112,7 +112,7 @@ public sealed class ReactToRegistrationTests
     public void ReactTo_factory_with_context_async_registers_IEventProcessor()
     {
         var sp = BuildModule(m => m.ReactTo<ReactRegEvent>(
-            _ => (e, ctx, ct) => Task.CompletedTask,
+            _ => (e, ctx, cancellationToken) => Task.CompletedTask,
             "reactor_c")); // default: ReactorMode.Async
 
         AsyncProcessors(sp).Should().ContainSingle(
@@ -204,7 +204,7 @@ public sealed class ReactToRegistrationTests
         var invoked = 0;
 
         var sp = BuildModule(m => m.ReactTo<ReactRegEvent>(
-            _ => (e, ct) => { Interlocked.Increment(ref invoked); return Task.CompletedTask; },
+            _ => (e, cancellationToken) => { Interlocked.Increment(ref invoked); return Task.CompletedTask; },
             "e2e_reactor",
             ReactorMode.Sync));
 

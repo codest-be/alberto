@@ -6,6 +6,10 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using Alberto.Append;
+using Alberto.Checkpoints;
+using Alberto.DeadLetters;
+using Alberto.Leases;
+using Alberto.Projections;
 using Alberto.Subscriptions;
 using Alberto.Telemetry;
 using Alberto.Tenancy;
@@ -212,13 +216,6 @@ public sealed record PostgresBackendDescriptor(PostgresOptions Options) : IAlber
             return builder.Build();
         });
 
-        // Register append interceptor pipeline.
-        services.AddKeyedSingleton<IAppendInterceptorPipeline>(moduleKey, (sp, _) =>
-        {
-            var interceptors = sp.GetKeyedServices<IAppendInterceptor>(moduleKey);
-            return new AppendInterceptorPipeline(interceptors);
-        });
-
         if (context.TenancyEnabled)
             PostgresBuilderExtensions.RegisterTenantBackend(context, runtime);
         else
@@ -257,17 +254,6 @@ public sealed record PostgresBackendDescriptor(PostgresOptions Options) : IAlber
             sp.GetRequiredKeyedService<PostgresProjectionRebuildStore>(moduleKey));
         services.AddKeyedSingleton<IProjectionRebuildCoordinatorStore>(moduleKey, (sp, _) =>
             sp.GetRequiredKeyedService<PostgresProjectionRebuildStore>(moduleKey));
-
-        // Tenant processor lock (used for tenant-distributed mode).
-        services.AddKeyedSingleton<ITenantProcessorLock>(moduleKey, (sp, _) =>
-        {
-            var opts = runtime.Resolve(sp);
-            var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
-            return new PostgresTenantProcessorLock(dataSource, opts.Schema, opts.LeaseDuration, moduleKey)
-            {
-                Instruments = AlbertoInstruments.For(sp),
-            };
-        });
 
         // Processor lease manager.
         services.AddKeyedSingleton<IProcessorLeaseManager>(moduleKey, (sp, _) =>

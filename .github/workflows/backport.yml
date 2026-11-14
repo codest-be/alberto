@@ -2,9 +2,7 @@ name: Backport
 
 # Copies a change that has already merged into `main` onto a `release/**` branch.
 #
-# **Direction rule: fix on `main` first, then backport.** Nothing is fixed directly on a release
-# branch. A fix that lands only on `release/1.0` is a regression waiting for the next release,
-# because `main` never learned about it.
+# Fix on `main` first, then backport; never fix directly on a release branch.
 #
 # Two ways in:
 #   * label a pull request `backport/1.0` — the backport opens when it merges, or when the label
@@ -12,12 +10,8 @@ name: Backport
 #   * run this workflow by hand with a pull request number and a line.
 
 on:
-  # pull_request_target, not pull_request: a fork's pull_request run gets a read-only token and
-  # could not push a branch. The usual danger of pull_request_target — a writable token in a job
-  # that runs contributor code — does not arise here, because this job never checks out or
-  # executes the pull request's head. It checks out the base repository, cherry-picks a commit
-  # that is already merged and reviewed, and opens a pull request. There is no build step, and
-  # adding one would reintroduce exactly that danger.
+  # pull_request_target so a fork's PR can push a branch. Safe only because this job never checks out
+  # or runs the PR head (no build step; adding one would reintroduce the danger).
   pull_request_target:
     types: [closed, labeled]
 
@@ -35,16 +29,12 @@ on:
 jobs:
   backport:
     # On the label paths, only merged pull requests carrying at least one backport/* label.
-    # `labeled` is included so a line can be added after the fact, which is the common case: the
-    # decision to patch an older release is usually made after the fix is already in.
+    # `labeled` lets a line be added after the fix is already in.
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.pull_request.merged == true &&
        contains(join(github.event.pull_request.labels.*.name, ','), 'backport/'))
-    # release-ci: a self-hosted group on an unprivileged user that runs no contributor code. The
-    # note above about this job never checking out the pull request's head is what makes that
-    # placement correct — a writable token and a fork's code must not share a runner, and here
-    # only the token is present.
+    # release-ci: no contributor code runs here, which is safe only because the PR head is never checked out.
     runs-on: [self-hosted, release-ci]
     # git and gh only; it finishes in seconds.
     timeout-minutes: 15
@@ -55,7 +45,7 @@ jobs:
     steps:
       # RELEASE_TOKEN: see release.yml. A pull request opened with the built-in GITHUB_TOKEN
       # does not trigger workflow runs, so the backport would arrive with no CI on it.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           token: ${{ secrets.RELEASE_TOKEN || github.token }}
@@ -72,9 +62,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Scratch files go under RUNNER_TEMP, which the runner clears per job, rather than a
-          # fixed /tmp path. On this persistent runner a fixed path is shared between every run
-          # of every workflow, so a stale file could be posted as a comment on the wrong PR.
+          # RUNNER_TEMP, not /tmp: the persistent runner shares /tmp across runs.
           TMP="${RUNNER_TEMP:-/tmp}"
 
           if [ "$EVENT" = "workflow_dispatch" ]; then

@@ -21,12 +21,12 @@ internal sealed class ControlLoopGroup(IReadOnlyList<ControlLoop> loops)
     public ValueTask DisposeAsync() =>
         new(Task.WhenAll(loops.Select(l => l.DisposeAsync().AsTask())));
 
-    public async ValueTask<IAsyncDisposable> SuspendAsync(string processorId, CancellationToken ct)
+    public async ValueTask<IAsyncDisposable> SuspendAsync(string processorId, CancellationToken cancellationToken)
     {
         if (!_byProcessorId.TryGetValue(processorId, out var loop))
             return NullLoopSuspension.Instance;
 
-        await loop.StopAsync(ct);
+        await loop.StopAsync(cancellationToken);
         return new Suspension(loop);
     }
 

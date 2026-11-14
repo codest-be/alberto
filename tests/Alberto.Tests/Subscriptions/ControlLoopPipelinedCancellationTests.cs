@@ -67,8 +67,8 @@ public sealed class ControlLoopPipelinedCancellationTests
         public IReadOnlySet<string> HandledEventTypes { get; } =
             new HashSet<string> { EventTypeId };
 
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
-            => handler(@event, ct);
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default)
+            => handler(@event, cancellationToken);
     }
 
     // ── PositionWatermark unit test ────────────────────────────────────────────────
@@ -167,7 +167,7 @@ public sealed class ControlLoopPipelinedCancellationTests
 
         var processor = new DelegatingProcessor(
             processorId: "pipeline-cancel-regression",
-            handler: (evt, ct) =>
+            handler: (evt, cancellationToken) =>
             {
                 if (evt.GlobalPosition == 2)
                 {
@@ -176,10 +176,10 @@ public sealed class ControlLoopPipelinedCancellationTests
                     // CancellationToken has not yet been fired.
                     handlerEnteredForPos2.TrySetResult();
 
-                    // Block until the cancellation token fires.  When ct is cancelled,
+                    // Block until the cancellation token fires.  When cancellationToken is cancelled,
                     // Task.Delay throws OperationCanceledException, which propagates back
                     // through DispatchAsync to the worker's try/catch.
-                    return Task.Delay(Timeout.Infinite, ct);
+                    return Task.Delay(Timeout.Infinite, cancellationToken);
                 }
 
                 // Positions 1 and 3: complete synchronously.

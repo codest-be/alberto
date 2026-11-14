@@ -18,6 +18,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using Alberto.Results;
 
 const string ModuleKey = "smoke";
 var timeout = TimeSpan.FromSeconds(60);
@@ -105,7 +106,7 @@ try
             .Commit(CancellationToken.None);
         Check(result.IsSuccess, $"open failed: {string.Join("; ", result.Problems.Select(p => p.Message))}");
 
-        var stored = await eventStore.StreamAsync(accountBoundary);
+        var stored = await eventStore.StreamAsync(accountBoundary).ToListAsync();
         Check(stored.Count == 1, $"expected 1 event under the boundary, found {stored.Count}");
         var envelope = stored.Single();
         Check(envelope.EventType.Id == AccountOpened.Id, $"stored as '{envelope.EventType.Id}'");
@@ -147,9 +148,9 @@ try
             .Commit(CancellationToken.None);
         Check(result.IsSuccess, $"deposit failed: {string.Join("; ", result.Problems.Select(p => p.Message))}");
 
-        var deposits = (await eventStore.StreamAsync(accountBoundary))
+        var deposits = await eventStore.StreamAsync(accountBoundary)
             .Where(e => e.EventType.Id == FundsDeposited.Id)
-            .ToList();
+            .ToListAsync();
         Check(deposits.Count == 2, $"expected 2 deposits, found {deposits.Count}");
         Check(deposits[^1].EventType.Version == 2, $"new deposit written at v{deposits[^1].EventType.Version}, not v2");
     });

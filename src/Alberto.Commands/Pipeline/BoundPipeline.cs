@@ -1,4 +1,5 @@
 using Alberto;
+using Alberto.Results;
 namespace Alberto.Commands;
 
 /// <summary>
@@ -33,13 +34,13 @@ public readonly struct BoundPipeline<TCommand, TState>
     public BoundDecision Decide(Func<TCommand, TState, Decision> decide)
     {
         var (store, load, once) = Unwrap();
-        return new BoundDecision(store, async ct =>
+        return new BoundDecision(store, async cancellationToken =>
         {
-            var staged = await once.Get(ct);
+            var staged = await once.Get(cancellationToken);
             if (staged.HasProblems)
                 return (Decision.Fail(staged.Problems!), default);
 
-            var (state, boundary) = await CommandTelemetry.Load(load, staged.Command, ct);
+            var (state, boundary) = await CommandTelemetry.Load(load, staged.Command, cancellationToken);
             var decision = CommandTelemetry.Decide(
                 () => decide(staged.Command, state),
                 d => d.IsError ? d.Problems : null);
@@ -58,13 +59,13 @@ public readonly struct BoundPipeline<TCommand, TState>
     public BoundDecision<TValue> Decide<TValue>(Func<TCommand, TState, Decision<TValue>> decide)
     {
         var (store, load, once) = Unwrap();
-        return new BoundDecision<TValue>(store, async ct =>
+        return new BoundDecision<TValue>(store, async cancellationToken =>
         {
-            var staged = await once.Get(ct);
+            var staged = await once.Get(cancellationToken);
             if (staged.HasProblems)
                 return (Decision<TValue>.Fail(staged.Problems!), default);
 
-            var (state, boundary) = await CommandTelemetry.Load(load, staged.Command, ct);
+            var (state, boundary) = await CommandTelemetry.Load(load, staged.Command, cancellationToken);
             var decision = CommandTelemetry.Decide(
                 () => decide(staged.Command, state),
                 d => d.IsError ? d.Problems : null);

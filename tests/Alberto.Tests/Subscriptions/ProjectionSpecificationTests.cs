@@ -1,5 +1,5 @@
 using System.Text.Json;
-using Alberto.Subscriptions;
+using Alberto.Projections;
 using Xunit;
 
 namespace Alberto.Tests.Subscriptions;

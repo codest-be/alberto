@@ -1,11 +1,7 @@
 name: Cut release branch
 
-# Creates a `release/X.Y` branch from `main`, which is what makes patching an older line
-# possible at all. Without it every fix ships in whatever `main` has become, which is the
-# fix-forward model this repository deliberately does not use.
-#
-# Cut the branch when `main` starts moving past a line you still intend to patch — normally
-# right after that line's first release, or just before merging something that would break it.
+# Creates a `release/X.Y` branch from `main` so an older line can be patched. Cut it when `main` is about
+# to move past a line you still intend to patch.
 
 on:
   workflow_dispatch:
@@ -26,10 +22,9 @@ jobs:
       contents: write
 
     steps:
-      # RELEASE_TOKEN, not GITHUB_TOKEN: the release-branch ruleset forbids creating `release/**`
-      # to everyone but org admins, and a ruleset cannot exempt the GitHub Actions app. The token
-      # is the maintainer's, so the push is theirs. See docs/releasing.md.
-      - uses: actions/checkout@v7
+      # RELEASE_TOKEN: the ruleset forbids creating `release/**` to all but org admins and cannot exempt
+      # the Actions app. See docs/releasing.md.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           token: ${{ secrets.RELEASE_TOKEN }}
@@ -55,10 +50,7 @@ jobs:
             exit 1
           fi
 
-          # The line has to match what main is currently carrying, or the branch would be created
-          # already unable to release: resolve-version.sh checks the milestone against the
-          # branch's own VersionPrefix, so release/1.0 cut from a main already on 1.1.0 would
-          # reject every 1.0.x milestone as not ahead of it.
+          # The line must match main's VersionPrefix, or resolve-version.sh would reject every milestone on the new branch.
           CURRENT=$(sed -n 's:.*<VersionPrefix>\(.*\)</VersionPrefix>.*:\1:p' Directory.Build.props | head -1)
           CURRENT_LINE="${CURRENT%.*}"
 

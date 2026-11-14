@@ -6,7 +6,8 @@ namespace Alberto.Append;
 
 /// <summary>
 /// Decorator that executes the append interceptor pipeline around backend operations.
-/// Reads pass through to the inner backend, under a span when someone is listening.
+/// Reads pass through to the inner backend, under a span when someone is listening (a streamed read
+/// is spanned for as long as it is enumerated).
 /// </summary>
 /// <param name="inner">The backend whose operations are wrapped.</param>
 /// <param name="pipeline">The append interceptors run around each append.</param>
@@ -88,27 +89,86 @@ internal sealed class InterceptingEventStoreBackend(
     }
 
     /// <inheritdoc />
-    public Task<IReadOnlyCollection<IEventEnvelope>> StreamAsync(
+    public Task<IReadOnlyCollection<IEventEnvelope>> ReadAsync(
         DcbQuery query,
-        long afterPosition = 0,
-        int? limit = null,
+        long afterPosition,
+        int limit,
         CancellationToken cancellationToken = default)
-        => TracedRead(afterPosition, limit, () => _inner.StreamAsync(query, afterPosition, limit, cancellationToken));
+        => TracedRead(afterPosition, limit, () => _inner.ReadAsync(query, afterPosition, limit, cancellationToken));
 
     /// <inheritdoc />
-    public Task<IReadOnlyCollection<IEventEnvelope>> StreamAllAsync(
-        long afterPosition = 0,
-        int? limit = null,
+    public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllAsync(
+        long afterPosition,
+        int limit,
         CancellationToken cancellationToken = default)
-        => TracedRead(afterPosition, limit, () => _inner.StreamAllAsync(afterPosition, limit, cancellationToken));
+        => TracedRead(afterPosition, limit, () => _inner.ReadAllAsync(afterPosition, limit, cancellationToken));
 
     /// <inheritdoc />
-    public Task<IReadOnlyCollection<IEventEnvelope>> StreamAllOfTypesAsync(
+    public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllOfTypesAsync(
         IReadOnlySet<string> eventTypes,
         long afterPosition,
-        int? limit,
+        int limit,
         CancellationToken cancellationToken = default)
-        => TracedRead(afterPosition, limit, () => _inner.StreamAllOfTypesAsync(eventTypes, afterPosition, limit, cancellationToken));
+        => TracedRead(afterPosition, limit, () => _inner.ReadAllOfTypesAsync(eventTypes, afterPosition, limit, cancellationToken));
+
+    // A streamed read is spanned from the first MoveNext to disposal, so the span measures the
+    // whole enumeration, including the time the caller spends between events.
+    /// <inheritdoc />
+    public IAsyncEnumerable<IEventEnvelope> StreamAsync(
+        DcbQuery query, long afterPosition = 0, CancellationToken cancellationToken = default)
+        => TracedStream(afterPosition, _inner.StreamAsync(query, afterPosition, cancellationToken), cancellationToken);
+
+    /// <inheritdoc />
+    public IAsyncEnumerable<IEventEnvelope> StreamAllAsync(
+        long afterPosition = 0, CancellationToken cancellationToken = default)
+        => TracedStream(afterPosition, _inner.StreamAllAsync(afterPosition, cancellationToken), cancellationToken);
+
+    private async IAsyncEnumerable<IEventEnvelope> TracedStream(
+        long afterPosition,
+        IAsyncEnumerable<IEventEnvelope> source,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        using var activity = AlbertoMetrics.Source.StartActivity(
+            "alberto.read",
+            dbSystem is null ? ActivityKind.Internal : ActivityKind.Client);
+        if (activity is null)
+        {
+            await foreach (var e in source.WithCancellation(cancellationToken).ConfigureAwait(false))
+                yield return e;
+            yield break;
+        }
+
+        activity.SetTag("db.system.name", dbSystem);
+        activity.SetTag("alberto.read.after_position", afterPosition);
+        var count = 0;
+        await using var enumerator = source.GetAsyncEnumerator(cancellationToken);
+        try
+        {
+            while (true)
+            {
+                // MoveNextAsync sits in its own try so a failure is recorded; a yield may not.
+                bool more;
+                try
+                {
+                    more = await enumerator.MoveNextAsync().ConfigureAwait(false);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    BackgroundSpans.Fail(activity, exception);
+                    throw;
+                }
+
+                if (!more)
+                    yield break;
+                count++;
+                yield return enumerator.Current;
+            }
+        }
+        finally
+        {
+            activity.SetTag("alberto.read.events", count);
+        }
+    }
 
     private async Task<IReadOnlyCollection<IEventEnvelope>> TracedRead(
         long afterPosition,

@@ -1,4 +1,4 @@
-using Alberto.Subscriptions;
+using Alberto.Checkpoints;
 using Xunit;
 
 namespace Alberto.Tests.Subscriptions;
@@ -36,7 +36,7 @@ public class CachingCheckpointStoreFenceRejectionTests
     {
         const string processorId = "proc-1";
         const long persistedPosition = 100L;
-        const long cachedPosition   = 200L;
+        const long cachedPosition = 200L;
 
         // Arrange: inner store holds the last truly persisted position.
         var inner = new FencedCheckpointStore(leaseHeld: false);
@@ -83,7 +83,7 @@ public class CachingCheckpointStoreFenceRejectionTests
     {
         const string processorId = "proc-1";
         const long persistedPosition = 50L;
-        const long cachedPosition   = 150L;
+        const long cachedPosition = 150L;
 
         var inner = new FencedCheckpointStore(leaseHeld: false);
         await inner.SaveAsync(processorId, persistedPosition, TestContext.Current.CancellationToken);
@@ -122,7 +122,7 @@ public class CachingCheckpointStoreFenceRejectionTests
     {
         const string processorId = "proc-1";
         const long persistedPosition = 10L;
-        const long cachedPosition   = 99L;
+        const long cachedPosition = 99L;
 
         var inner = new FencedCheckpointStore(leaseHeld: false);
         await inner.SaveAsync(processorId, persistedPosition, TestContext.Current.CancellationToken);
@@ -321,25 +321,25 @@ public class CachingCheckpointStoreFenceRejectionTests
 
         public FencedCheckpointStore(bool leaseHeld) => LeaseHeld = leaseHeld;
 
-        public Task<long?> GetAsync(string processorId, CancellationToken ct = default)
+        public Task<long?> GetAsync(string processorId, CancellationToken cancellationToken = default)
         {
             _data.TryGetValue(processorId, out var value);
             return Task.FromResult(value);
         }
 
-        public Task SaveAsync(string processorId, long position, CancellationToken ct = default)
+        public Task SaveAsync(string processorId, long position, CancellationToken cancellationToken = default)
         {
             _data[processorId] = position;
             return Task.CompletedTask;
         }
 
-        public Task ResetAsync(string processorId, CancellationToken ct = default)
+        public Task ResetAsync(string processorId, CancellationToken cancellationToken = default)
         {
             _data.Remove(processorId);
             return Task.CompletedTask;
         }
 
-        public Task RewindAsync(string processorId, long position, CancellationToken ct = default)
+        public Task RewindAsync(string processorId, long position, CancellationToken cancellationToken = default)
         {
             _data[processorId] = position;
             return Task.CompletedTask;
@@ -352,7 +352,7 @@ public class CachingCheckpointStoreFenceRejectionTests
             string replicaId,
             long fenceToken,
             bool useProcessorLeaseFencing = false,
-            CancellationToken ct = default)
+            CancellationToken cancellationToken = default)
         {
             if (!LeaseHeld)
                 return Task.FromResult(false);

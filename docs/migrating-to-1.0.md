@@ -36,9 +36,8 @@ they touch a persisted table.
 | TV-1..3 | Tag reservation | Low | `EventTag` and `[Tag]` reject any concept starting with `_` |
 | MT-1..2 | Metric dimensions | Medium | Sharded-module metric tags split from one combined string into two dimensions |
 | MT-3 | Metric dimensions | Medium | Tenant-ownership gauges rename tag `module.key` → `module`; sharded composite key values are now split into `module` + `shard` |
-| MT-4..5 | Metric removal | Medium | `alberto.events_filtered_by_tenant` and `alberto.tenant_leases_lost` counters removed |
+| MT-4..5 | Metric removal | Medium | `alberto.events_filtered_by_tenant`, `alberto.tenant_leases_lost`, `alberto.tenant_locks_acquired` and `alberto.tenant_lock_failures` counters removed |
 | MT-6 | Metric units | Low | `alberto.append.duration` and `alberto.processing.duration` units changed from `"ms"` to `"s"` |
-| MT-7 | Metric dimensions | Medium | `alberto.tenant_locks_acquired` and `alberto.tenant_lock_failures` no longer carry a `tenant.id` tag |
 | TT-1 | Trace span attributes | Medium | Consume-path span attributes renamed: `"module.key"` → `"module"`, `"module.shard"` → `"shard"` |
 | TT-4 | Trace span names and attributes | **High** | Spans renamed (`Alberto.Append` → `append {module}`, `Alberto.Consume` → `process {processorId}`), Alberto attributes namespaced under `alberto.*`, `messaging.*` added, span status no longer `Ok` and never carries a message |
 | TT-5 | Trace parenting | Medium | Reactor and outbox-handler consume spans are children of the append trace; batch spans link every upstream trace |
@@ -104,14 +103,14 @@ command: a window through which conflicting writes could slip undetected.
 
 ```csharp
 // before
-var (state, position) = await store.FoldWithPosition(query, State.Initial, Apply, ct);
+var (state, position) = await store.FoldWithPosition(query, State.Initial, Apply, cancellationToken);
 
 // after: use the single-return overload; the command pipeline handles position capture internally
-var state = await store.Fold(query, State.Initial, Apply, ct);
+var state = await store.Fold(query, State.Initial, Apply, cancellationToken);
 ```
 
 If you genuinely need the position for a reason outside the command pipeline (for example
-to pass it to a downstream service as a fence), read it from `IEventStoreBackend.GetLastPositionAsync`
+to pass it to a downstream service as a fence), read it from `IEventStore.GetLastPositionAsync`
 rather than from a fold.
 
 ---
@@ -126,13 +125,13 @@ reachable through any current registration path.
 // before: required implementing IReact<TEvent>
 public class NotificationReactor : IReact<OrderConfirmed>
 {
-    public Task ReactAsync(OrderConfirmed @event, CancellationToken ct) => ...;
+    public Task ReactAsync(OrderConfirmed @event, CancellationToken cancellationToken) => ...;
 }
 
 // after: a plain method; the module builder wires it
 public class NotificationReactor
 {
-    public Task OnOrderConfirmed(OrderConfirmed @event, CancellationToken ct) => ...;
+    public Task OnOrderConfirmed(OrderConfirmed @event, CancellationToken cancellationToken) => ...;
 }
 
 // registration
@@ -174,7 +173,7 @@ public sealed class OrderSummaryBatchHandler : IEfBatchHandler<OrdersDbContext>
     public IReadOnlySet<string> HandledEventTypes { get; } =
         new HashSet<string> { "order-created", "order-shipped" };
 
-    public async Task ApplyAsync(OrdersDbContext db, IEventEnvelope e, CancellationToken ct)
+    public async Task ApplyAsync(OrdersDbContext db, IEventEnvelope e, CancellationToken cancellationToken)
     {
         // hand-written dispatch on e.EventType.Id, hand-written load of the entity
     }
@@ -212,12 +211,12 @@ It now returns `Task<IReadOnlyDictionary<TKey, TState?>>`.
 
 ```csharp
 // before
-Dictionary<Guid, OrderState?> states = await store.LoadManyAsync(ids, ct);
+Dictionary<Guid, OrderState?> states = await store.LoadManyAsync(ids, cancellationToken);
 
 // after
-IReadOnlyDictionary<Guid, OrderState?> states = await store.LoadManyAsync(ids, ct);
+IReadOnlyDictionary<Guid, OrderState?> states = await store.LoadManyAsync(ids, cancellationToken);
 // or, if you need mutation:
-var states = (await store.LoadManyAsync(ids, ct)).ToDictionary(...);
+var states = (await store.LoadManyAsync(ids, cancellationToken)).ToDictionary(...);
 ```
 
 ---
@@ -305,18 +304,18 @@ A transport that rejected cleanup unless startup completed will now mask neither
 
 ```csharp
 // before (no longer valid): partial startup could allocate _client and then throw
-public Task StopAsync(CancellationToken ct) =>
+public Task StopAsync(CancellationToken cancellationToken) =>
     _started
-        ? _client!.CloseAsync(ct)
+        ? _client!.CloseAsync(cancellationToken)
         : throw new InvalidOperationException("Transport was not started");
 
 // after: cleanup is safe after successful or partial startup
-public async Task StopAsync(CancellationToken ct)
+public async Task StopAsync(CancellationToken cancellationToken)
 {
     if (_client is null)
         return;
 
-    await _client.CloseAsync(ct);
+    await _client.CloseAsync(cancellationToken);
     _client = null;
 }
 ```
@@ -482,30 +481,6 @@ The unit strings on both duration histograms were corrected to match the OTel se
 **Symptom.** Prometheus histogram bucket thresholds and alerts that assumed millisecond values will fire incorrectly. All durations appear 1000× smaller than expected.
 
 **Fix.** Multiply all threshold values in histogram queries, recording rules, and alert expressions for these two instruments by `0.001`. Verify that any explicit bucket boundaries configured in your OTel SDK exporter also use second-scale values.
-
----
-
-### MT-7: `tenant.id` removed from `alberto.tenant_locks_acquired` and `alberto.tenant_lock_failures`
-
-Both counters were tagged `{consumer.id, tenant.id}`. The tag set is now `{consumer.id}` only.
-
-A tenant id is unbounded. It grows with the customer base, and nothing bounds it above. Every
-distinct tag combination is an independent time series that the .NET `Meter` SDK allocates on first
-use, holds for the life of the process, never evicts, and exports on every collection cycle. So a
-store with 50 000 tenants held 50 000 series per counter per replica, and a store with 500 000 held
-ten times that. At roughly 1–3 KB of Prometheus head-block memory per series, these two counters
-were most expensive exactly when the product was doing best, and the failure mode is a cliff: the
-collector OOMs or starts dropping, not a gradual slowdown.
-
-**Symptom.** Any query that groups, filters, or joins these two counters by `tenant.id` stops
-returning a per-tenant breakdown after upgrade. A `sum by (tenant_id)` collapses to a single
-series; a `{tenant_id="acme"}` selector matches nothing.
-
-**Fix.** Aggregate by `consumer.id` instead. That is the question a counter answers well ("is
-this consumer's lease failure rate rising?"). For the per-tenant question ("did tenant `acme` get
-its lease?"), use traces and logs: it is a question about one event at one moment, not a rate over
-time, and the lease acquisition is already on the consume-path span. For tenant fan-out without
-the cardinality, `alberto.owned_tenant_count` reports how many tenants a consumer currently holds.
 
 ---
 
@@ -681,7 +656,7 @@ var state = evolver.Reconstitute(envelopes);
 await store.Handle(command)
     .Load(boundary, evolver)
     .Decide((cmd, state) => …)
-    .Commit(ct);
+    .Commit(cancellationToken);
 ```
 
 The pipeline threads `EventSerializer.Deserialize` automatically. Call sites already using it
@@ -817,9 +792,9 @@ Three members left `IDeadLetterStore`:
 
 ```csharp
 Task<IReadOnlyList<DeadLetterClaim>> ClaimRetryRequestedAsync(
-    string processorId, int batchSize, TimeSpan leaseDuration, string claimedBy, CancellationToken ct = default);
-Task<bool> CompleteRetryAsync(DeadLetterClaim claim, CancellationToken ct = default);
-Task<bool> AbandonRetryAsync(DeadLetterClaim claim, CancellationToken ct = default);
+    string processorId, int batchSize, TimeSpan leaseDuration, string claimedBy, CancellationToken cancellationToken = default);
+Task<bool> CompleteRetryAsync(DeadLetterClaim claim, CancellationToken cancellationToken = default);
+Task<bool> AbandonRetryAsync(DeadLetterClaim claim, CancellationToken cancellationToken = default);
 ```
 
 They now sit on `IClaimableDeadLetterStore`, which extends `IDeadLetterStore` and is type-tested
@@ -846,14 +821,14 @@ public sealed class MyDeadLetterStore : IClaimableDeadLetterStore { ... }  // wa
 If your store threw `NotSupportedException` from them, delete them and implement
 `IDeadLetterStore` alone. It still records, counts, reads and clears dead letters; what it loses
 is the automatic retry loop. Alberto logs a warning naming the store type at startup.
-`alberto ops deadletter retry` will still flag entries and nothing will dispatch them, so the
-warning is there rather than leaving an operator watching a flag that never clears.
+`IDeadLetterStore.MarkForRetryAsync` will still flag entries and nothing will dispatch them, so
+the warning is there rather than leaving an operator watching a flag that never clears.
 
 **Fix: calling the methods.** Type-test:
 
 ```csharp
 if (store is IClaimableDeadLetterStore claimable)
-    await claimable.ClaimRetryRequestedAsync(processorId, 10, TimeSpan.FromMinutes(1), "me", ct);
+    await claimable.ClaimRetryRequestedAsync(processorId, 10, TimeSpan.FromMinutes(1), "me", cancellationToken);
 ```
 
 **Fix: the conformance suite.** `DeadLetterStoreSpecification` keeps the core requirements and
@@ -1000,7 +975,7 @@ can both pass a boundary check that should have rejected one of them.
   database is the safe rollout.
 - A rolling deploy with both versions live and appending is **not** safe. If your platform will
   not let you stop writes, scale the old deployment to zero replicas first, then deploy.
-- Readers, projections, the outbox relay and the CLI are unaffected: none of them take the
+- Readers, projections, the outbox relay are unaffected: none of them take the
   append lock.
 - Nothing is corrupted by a *past* collision, so there is nothing to repair afterwards.
 
@@ -1057,29 +1032,16 @@ moved out of the `Alberto.Postgres` package into a new, also-unpublished
 - `PostgresAdminOperator`
 - `PostgresAdminServiceCollectionExtensions` (`AddAlbertoPostgresAdmin`)
 
-`IAdminReader`/`IAdminOperator` are the contract the parked admin front doors (a GraphQL API, an
-MCP server, a React console and a BFF on `feature/admin-surface`) are built on. Publishing them at
-1.0 would freeze the abstraction under semver before anything that consumes it exists, which is the
-same reason those front doors are parked. Both projects still build, sit in the solution, and are
-covered by tests; they just do not become packages.
-
-**Not affected.** The `Alberto.Cli` tool still ships, and it is the supported operator surface.
-`dotnet tool install --global Alberto.Cli` and every `alberto` command behave exactly as before.
-Nothing in `Alberto`, `Alberto.Postgres` or any other published package lost a member that
-you could reach without already depending on the admin abstraction.
+**Update.** `Alberto.Admin`, `Alberto.Admin.Postgres` and the `Alberto.Cli` tool have since been
+removed from the repository altogether; they remain in git history. Operators call the core
+interfaces (`ICheckpointStore`, `IDeadLetterStore`, `IOutboxStore`, `IProjectionRebuildStore`)
+directly. See [operations.md](operations.md).
 
 **Symptom.** A project referencing the `Alberto.Admin` package fails to restore (`NU1101`), or
 one referencing `Alberto.Postgres` stops compiling against `PostgresAdminDataAccess`,
-`PostgresAdminOperator` or `AddAlbertoPostgresAdmin` (`CS0246` / `CS1061`). Namespaces are
-unchanged (the types are still `Alberto.Postgres.*`), so no `using` needs editing; the
-assembly they live in is simply not one you can get from a feed.
+`PostgresAdminOperator` or `AddAlbertoPostgresAdmin` (`CS0246` / `CS1061`).
 
-**Fix.** If you were driving admin operations from your own code, either build the two projects
-from source and reference them as projects, or shell out to the `alberto` CLI, which does the same
-work through the same interfaces. If you only ever used the CLI, there is nothing to do.
-
-Unparking after 1.0 is `IsPackable=true` on both projects plus capturing their
-`PublicAPI.Shipped.txt` baselines.
+**Fix.** Call the core interfaces directly, and use plain SQL for inspection.
 
 ---
 
@@ -1164,9 +1126,8 @@ ever held, not one window's worth.
    entries are kept forever and the service does nothing. Do this if the table is your integration
    audit trail, and plan to archive it somewhere, because the growth problem does not go away.
 2. **Take the default, but drain the backlog first.** Run
-   `alberto ops outbox purge --before <timestamp>` during a quiet window, walking the cutoff back
-   in steps if the table is large, then deploy. The CLI command does the same delete and records an
-   `admin-outbox-purged` audit event.
+   `IOutboxStore.PurgeDeliveredAsync` during a quiet window, walking the cutoff back
+   in steps if the table is large, then deploy.
 3. **Start wide and narrow it.** Deploy with `deliveredRetention: TimeSpan.FromDays(90)`, then
    lower it over subsequent releases until you reach the window you want.
 
@@ -1184,8 +1145,8 @@ retention window an entry can survive, not how long it is kept.
 ## The command pipeline is reshaped; `Persist` is now `Commit`
 
 The fluent pipeline in `Alberto.Commands` was rebuilt around one idea: **the boundary should
-decide which terminal you get.** Previously every pipeline exposed `Persist(query, position, ct)`,
-`PersistUnconditionally(ct)` and a `Persist(ct)` that threw at runtime when no boundary had been
+decide which terminal you get.** Previously every pipeline exposed `Persist(query, position, cancellationToken)`,
+`PersistUnconditionally(cancellationToken)` and a `Persist(cancellationToken)` that threw at runtime when no boundary had been
 established. Now the type you are holding tells you which of those is legal.
 
 | Change | Severity | What broke |
@@ -1204,21 +1165,21 @@ await store.Handle(command)
     .NoValidation()
     .Load(boundary, initial, apply)
     .Decide((cmd, state) => …)
-    .Persist(ct);
+    .Persist(cancellationToken);
 
 // after
 await store.Handle(command)
     .Load(boundary, initial, apply)
     .Decide((cmd, state) => …)
-    .Commit(ct);
+    .Commit(cancellationToken);
 ```
 
 `Validate` is now genuinely optional. Drop `NoValidation()` and nothing replaces it. It is also
 chainable, and short-circuits on the first failure without reading the log.
 
-`Load` returns a **bound** pipeline, and only a bound pipeline has `Commit(ct)`. Skipping `Load`,
+`Load` returns a **bound** pipeline, and only a bound pipeline has `Commit(cancellationToken)`. Skipping `Load`,
 or using the new `LoadUnbound` for state that does not come from the log, gives you an **unbound**
-pipeline whose terminals are `Commit(query, expectedPosition, ct)` and `CommitUnconditionally(ct)`.
+pipeline whose terminals are `Commit(query, expectedPosition, cancellationToken)` and `CommitUnconditionally(cancellationToken)`.
 The runtime "no boundary was observed" exception is gone because that state is now unrepresentable.
 
 Two terminals are new. `TryCommit` returns a failed `Result` carrying a `dcb.conflict` problem
@@ -1255,11 +1216,11 @@ Work that needs to be awaited moves to `Enrich`, which runs before `Load`:
 
 ```csharp
 await store.Handle(command)
-    .Enrich(async (cmd, ct) => cmd with { Rate = await rates.GetAsync(cmd.Currency, ct) })
+    .Enrich(async (cmd, cancellationToken) => cmd with { Rate = await rates.GetAsync(cmd.Currency, cancellationToken) })
     .Load(cmd => Boundary(cmd.OrderId), evolver)
     .Decide((cmd, state) => Actions.Convert(state, cmd.Rate))
     .RetryOnConflict(3)
-    .Commit(ct);
+    .Commit(cancellationToken);
 ```
 
 `Enrich` may change the command's type, and it runs once even when `RetryOnConflict` re-reads.
@@ -1270,30 +1231,34 @@ The old three-lambda overload let an async loader declare the boundary it had ob
 
 ```csharp
 // before
-.Load(cmd => LoadAsync(store, cmd, ct), loaded => loaded.Query, loaded => loaded.Position)
+.Load(cmd => LoadAsync(store, cmd, cancellationToken), loaded => loaded.Query, loaded => loaded.Position)
 .Decide((cmd, loaded) => Decide(loaded.State, …))
-.Persist(ct);
+.Persist(cancellationToken);
 ```
 
 That shape does not survive the bound/unbound split. The unbound terminal's arguments are
 evaluated *before* the deferred chain runs, so a loader cannot supply them. `LoadUnder` restores
 the capability with the type-state guarantee intact: the loader returns its state, its boundary
-and the position it read at, and the pipeline it produces is **bound**, so `Commit(ct)` checks
+and the position it read at, and the pipeline it produces is **bound**, so `Commit(cancellationToken)` checks
 against exactly that.
 
 ```csharp
 // after
-.LoadUnder(async (cmd, ct) =>
+.LoadUnder(async (cmd, cancellationToken) =>
 {
     var boundary = BuildBoundary(cmd);
     // Use IEventStore.StreamAsync directly: fold state and track the max position in one pass.
-    var envelopes = await eventStore.StreamAsync(boundary, cancellationToken: ct);
-    var state = envelopes.Aggregate(State.Initial, (s, e) => Apply(s, serializer.Deserialize(e)));
-    var position = envelopes.Count > 0 ? envelopes.Max(e => e.GlobalPosition) : 0L;
+    var state = State.Initial;
+    var position = 0L;
+    await foreach (var e in eventStore.StreamAsync(boundary, cancellationToken: cancellationToken))
+    {
+        state = Apply(state, serializer.Deserialize(e));
+        position = Math.Max(position, e.GlobalPosition);
+    }
     return (state, boundary, position);
 })
 .Decide((cmd, state) => Decide(state, …))
-.Commit(ct);
+.Commit(cancellationToken);
 ```
 
 Most call sites do not need it. If the boundary is merely *derived from the command*, prefer

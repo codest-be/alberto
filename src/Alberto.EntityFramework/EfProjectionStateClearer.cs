@@ -1,4 +1,4 @@
-using Alberto.Subscriptions;
+using Alberto.Projections;
 using Microsoft.EntityFrameworkCore;
 
 namespace Alberto.EntityFramework;
@@ -30,9 +30,9 @@ internal sealed class EfProjectionStateClearer<TEntity, TDbContext> : IProjectio
     public string ProcessorId { get; }
 
     /// <inheritdoc/>
-    public async Task ClearVersionAsync(int rebuildVersion, CancellationToken ct = default)
+    public async Task ClearVersionAsync(int rebuildVersion, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync(ct);
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
 
         // ExecuteDeleteAsync performs a bulk delete without loading entities into memory.
         // Deleting no rows is a success, which is what makes this safe to re-run after a
@@ -41,6 +41,6 @@ internal sealed class EfProjectionStateClearer<TEntity, TDbContext> : IProjectio
         await context.Set<TEntity>()
             .IgnoreQueryFilters([ProjectionQueryFilters.ActiveVersion])
             .Where(e => e.RebuildVersion == rebuildVersion)
-            .ExecuteDeleteAsync(ct);
+            .ExecuteDeleteAsync(cancellationToken);
     }
 }

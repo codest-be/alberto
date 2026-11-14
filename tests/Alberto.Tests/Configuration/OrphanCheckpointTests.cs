@@ -1,6 +1,8 @@
 using Alberto;
 using Alberto.Configuration;
 using Alberto.InMemory;
+using Alberto.Checkpoints;
+using Alberto.Projections;
 using Alberto.Subscriptions;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
@@ -26,7 +28,7 @@ public class OrphanCheckpointTests
     {
         public int Calls { get; private set; }
 
-        public Task<IReadOnlyList<string>> ListProcessorIdsAsync(CancellationToken ct = default)
+        public Task<IReadOnlyList<string>> ListProcessorIdsAsync(CancellationToken cancellationToken = default)
         {
             Calls++;
             return Task.FromResult<IReadOnlyList<string>>(processorIds);
@@ -36,10 +38,10 @@ public class OrphanCheckpointTests
     private static AlbertoModuleDefinition Definition(
         OrphanCheckpointPolicy policy,
         params string[] declaredProcessorIds) => new()
-    {
-        ModuleKey = "orders",
-        Checkpoints = new CheckpointOptions { OrphanPolicy = policy },
-        Processors =
+        {
+            ModuleKey = "orders",
+            Checkpoints = new CheckpointOptions { OrphanPolicy = policy },
+            Processors =
         [
             .. declaredProcessorIds.Select(id => new ProcessorDeclaration
             {
@@ -47,7 +49,7 @@ public class OrphanCheckpointTests
                 Kind = ProcessorKind.Reactor,
             }),
         ],
-    };
+        };
 
     private static Task RunAsync(
         AlbertoModuleDefinition definition,
@@ -171,40 +173,40 @@ public class OrphanCheckpointTests
         : IProjectionRebuildStore, IProjectionRebuildCoordinatorStore
     {
         // IProjectionRebuildStore — only ListAsync is called during a sweep
-        public Task<IReadOnlyList<ProjectionRebuildState>> ListAsync(CancellationToken ct = default)
+        public Task<IReadOnlyList<ProjectionRebuildState>> ListAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(states);
 
         public Task<ProjectionRebuildState> GetAsync(
-            string processorId, string projectionType, CancellationToken ct = default)
+            string processorId, string projectionType, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
         public Task<ProjectionRebuildState> StartAsync(
-            string processorId, string projectionType, long targetPosition, CancellationToken ct = default)
+            string processorId, string projectionType, long targetPosition, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
         public Task<ProjectionRebuildState> RequestPromotionAsync(
-            string processorId, bool force = false, CancellationToken ct = default)
+            string processorId, bool force = false, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
         public Task<ProjectionRebuildState> RequestAbortAsync(
-            string processorId, CancellationToken ct = default)
+            string processorId, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
         // IProjectionRebuildCoordinatorStore — only DiscardStateVersionAsync is called during ClearAsync
         public Task DiscardStateVersionAsync(
-            string projectionType, int version, CancellationToken ct = default)
+            string projectionType, int version, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
         public Task<ProjectionRebuildState> MarkReadyAsync(
-            string processorId, CancellationToken ct = default)
+            string processorId, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
         public Task<RebuildOutcome> CompletePromotionAsync(
-            string processorId, bool force = false, CancellationToken ct = default)
+            string processorId, bool force = false, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
         public Task<RebuildOutcome> CompleteAbortAsync(
-            string processorId, CancellationToken ct = default)
+            string processorId, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
     }
 
@@ -227,22 +229,22 @@ public class OrphanCheckpointTests
     {
         private readonly Dictionary<string, long> _data = new();
 
-        public Task<long?> GetAsync(string processorId, CancellationToken ct = default)
+        public Task<long?> GetAsync(string processorId, CancellationToken cancellationToken = default)
             => Task.FromResult(_data.TryGetValue(processorId, out var v) ? (long?)v : null);
 
-        public Task SaveAsync(string processorId, long position, CancellationToken ct = default)
+        public Task SaveAsync(string processorId, long position, CancellationToken cancellationToken = default)
         {
             _data[processorId] = position;
             return Task.CompletedTask;
         }
 
-        public Task ResetAsync(string processorId, CancellationToken ct = default)
+        public Task ResetAsync(string processorId, CancellationToken cancellationToken = default)
         {
             _data.Remove(processorId);
             return Task.CompletedTask;
         }
 
-        public Task RewindAsync(string processorId, long position, CancellationToken ct = default)
+        public Task RewindAsync(string processorId, long position, CancellationToken cancellationToken = default)
         {
             _data[processorId] = position;
             return Task.CompletedTask;
@@ -257,7 +259,7 @@ public class OrphanCheckpointTests
         // a just-written checkpoint would be absent from the listing — making an active
         // processor look like it has no row and causing the orphan check to miss a genuine
         // rename that only affected that processor. The fix is to flush before listing.
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var inner = new InMemoryCheckpointStore();
 
         // Long intervals so no background timer fires during the test.
@@ -267,8 +269,8 @@ public class OrphanCheckpointTests
             resyncInterval: TimeSpan.FromHours(1));
 
         // Write a checkpoint into the buffer only — the inner store is still empty.
-        await caching.SaveAsync("OldProcessorName", 100, ct);
-        (await inner.GetAsync("OldProcessorName", ct)).Should().BeNull(
+        await caching.SaveAsync("OldProcessorName", 100, cancellationToken);
+        (await inner.GetAsync("OldProcessorName", cancellationToken)).Should().BeNull(
             "the checkpoint is still buffered; the inner store must not have it yet");
 
         // InMemoryCheckpointStore implements ICheckpointInventory and CanEnumerate defaults
@@ -277,7 +279,7 @@ public class OrphanCheckpointTests
             caching is ICheckpointInventory { CanEnumerate: true } inv ? inv : null;
         inventory.Should().NotBeNull("InMemoryCheckpointStore implements ICheckpointInventory");
 
-        var ids = await inventory!.ListProcessorIdsAsync(ct);
+        var ids = await inventory!.ListProcessorIdsAsync(cancellationToken);
         ids.Should().Contain("OldProcessorName",
             "the decorator must flush pending writes before listing so buffered processors are visible");
 
@@ -299,9 +301,9 @@ public class OrphanCheckpointTests
         // does not implement ICheckpointInventory, so the resolution-site pattern match
         // (`is ICheckpointInventory { CanEnumerate: true }`) correctly returns null, and
         // the hosted service skips the check rather than receiving a false all-clear.
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var inner = new NoInventoryStore();
-        await inner.SaveAsync("OrphanedProcessor", 42, ct);
+        await inner.SaveAsync("OrphanedProcessor", 42, cancellationToken);
 
         await using var caching = new CachingCheckpointStore(
             inner,
@@ -351,32 +353,32 @@ public class OrphanCheckpointTests
         // This override is only expressible after ICheckpointInventory.CanEnumerate was added.
         public bool CanEnumerate => inner is ICheckpointInventory;
 
-        public Task<IReadOnlyList<string>> ListProcessorIdsAsync(CancellationToken ct = default)
+        public Task<IReadOnlyList<string>> ListProcessorIdsAsync(CancellationToken cancellationToken = default)
         {
             ListProcessorIdsAsyncCallCount++;
             return inner is ICheckpointInventory inv
-                ? inv.ListProcessorIdsAsync(ct)
+                ? inv.ListProcessorIdsAsync(cancellationToken)
                 : Task.FromResult<IReadOnlyList<string>>([]);
         }
 
-        public Task<long?> GetAsync(string processorId, CancellationToken ct = default)
-            => inner.GetAsync(processorId, ct);
+        public Task<long?> GetAsync(string processorId, CancellationToken cancellationToken = default)
+            => inner.GetAsync(processorId, cancellationToken);
 
-        public Task SaveAsync(string processorId, long position, CancellationToken ct = default)
-            => inner.SaveAsync(processorId, position, ct);
+        public Task SaveAsync(string processorId, long position, CancellationToken cancellationToken = default)
+            => inner.SaveAsync(processorId, position, cancellationToken);
 
-        public Task ResetAsync(string processorId, CancellationToken ct = default)
-            => inner.ResetAsync(processorId, ct);
+        public Task ResetAsync(string processorId, CancellationToken cancellationToken = default)
+            => inner.ResetAsync(processorId, cancellationToken);
 
-        public Task RewindAsync(string processorId, long position, CancellationToken ct = default)
-            => inner.RewindAsync(processorId, position, ct);
+        public Task RewindAsync(string processorId, long position, CancellationToken cancellationToken = default)
+            => inner.RewindAsync(processorId, position, cancellationToken);
     }
 
     [Fact]
     public async Task ThirdPartyDecorator_CanEnumerateFalse_IsOptedOutByResolutionSite()
     {
         // Regression test for the "shallow seam" defect. The resolution site in
-        // ServiceCollectionExtensions.cs used to cast to the concrete CachingCheckpointStore
+        // AlbertoServiceCollectionExtensions.cs used to cast to the concrete CachingCheckpointStore
         // type and fall through to `as ICheckpointInventory` for every other store. A
         // third-party decorator implementing ICheckpointStore + ICheckpointInventory over a
         // non-enumerable inner had no way to express "I cannot enumerate" through the public
@@ -385,7 +387,7 @@ public class OrphanCheckpointTests
         // all-clear under Strict policy.
         //
         // After the fix, ICheckpointInventory carries `bool CanEnumerate => true;` (default).
-        // The production expression in ServiceCollectionExtensions.cs is now:
+        // The production expression in AlbertoServiceCollectionExtensions.cs is now:
         //     store is ICheckpointInventory { CanEnumerate: true } inv ? inv : null
         // A decorator that overrides CanEnumerate to false receives null, and the hosted
         // service logs the skip instead of calling ListProcessorIdsAsync.
@@ -394,16 +396,16 @@ public class OrphanCheckpointTests
         // (which overrides it) does not compile. That is the defect — the interface offered no
         // way to ask the capability question at all.
         //
-        // This test goes through the PRODUCTION resolution site (ServiceCollectionExtensions.cs)
+        // This test goes through the PRODUCTION resolution site (AlbertoServiceCollectionExtensions.cs)
         // via real DI, not a local copy of the pattern. If someone reverts that expression to
         // the old `as ICheckpointInventory` cast, the decorator is resolved as a live inventory,
         // ListProcessorIdsAsync is called, and ListProcessorIdsAsyncCallCount becomes 1.
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
 
         // Write a real orphan: an empty-list return from ThirdPartyDecorator would be a
         // false all-clear (no orphans detected), which is distinct from a correct skip.
         var inner = new NoInventoryStore();
-        await inner.SaveAsync("OrphanedProcessor", 42, ct);
+        await inner.SaveAsync("OrphanedProcessor", 42, cancellationToken);
         var decorator = new ThirdPartyDecorator(inner);
 
         // Build the DI container as a real host would, then replace the keyed ICheckpointStore
@@ -429,7 +431,7 @@ public class OrphanCheckpointTests
         var orphanService = sp.GetServices<IHostedService>()
             .OfType<OrphanCheckpointHostedService>()
             .Single();
-        await orphanService.StartAsync(ct);
+        await orphanService.StartAsync(cancellationToken);
 
         // The production expression must have returned null (CanEnumerate: false → opted-out).
         // If the expression were reverted to the old `as ICheckpointInventory` cast, the
@@ -451,28 +453,28 @@ public class OrphanCheckpointTests
 
         public int ListProcessorIdsAsyncCallCount { get; private set; }
 
-        public Task<IReadOnlyList<string>> ListProcessorIdsAsync(CancellationToken ct = default)
+        public Task<IReadOnlyList<string>> ListProcessorIdsAsync(CancellationToken cancellationToken = default)
         {
             ListProcessorIdsAsyncCallCount++;
             return Task.FromResult<IReadOnlyList<string>>([.. _data.Keys]);
         }
 
-        public Task<long?> GetAsync(string processorId, CancellationToken ct = default)
+        public Task<long?> GetAsync(string processorId, CancellationToken cancellationToken = default)
             => Task.FromResult(_data.TryGetValue(processorId, out var v) ? (long?)v : null);
 
-        public Task SaveAsync(string processorId, long position, CancellationToken ct = default)
+        public Task SaveAsync(string processorId, long position, CancellationToken cancellationToken = default)
         {
             _data[processorId] = position;
             return Task.CompletedTask;
         }
 
-        public Task ResetAsync(string processorId, CancellationToken ct = default)
+        public Task ResetAsync(string processorId, CancellationToken cancellationToken = default)
         {
             _data.Remove(processorId);
             return Task.CompletedTask;
         }
 
-        public Task RewindAsync(string processorId, long position, CancellationToken ct = default)
+        public Task RewindAsync(string processorId, long position, CancellationToken cancellationToken = default)
         {
             _data[processorId] = position;
             return Task.CompletedTask;
@@ -492,10 +494,10 @@ public class OrphanCheckpointTests
         // of the orphan check — Strict policy would stop throwing, and the absence of a complaint
         // would read as "no orphans" rather than "nobody looked". That is the same false all-clear
         // the CanEnumerate work exists to remove, arriving through the default instead of the cast.
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
 
         var store = new SilentInventoryStore();
-        await store.SaveAsync("OrphanedProcessor", 42, ct);
+        await store.SaveAsync("OrphanedProcessor", 42, cancellationToken);
 
         var services = new ServiceCollection();
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment("Production"));
@@ -511,7 +513,7 @@ public class OrphanCheckpointTests
         var orphanService = sp.GetServices<IHostedService>()
             .OfType<OrphanCheckpointHostedService>()
             .Single();
-        await orphanService.StartAsync(ct);
+        await orphanService.StartAsync(cancellationToken);
 
         store.ListProcessorIdsAsyncCallCount.Should().Be(1,
             "a store that implements ICheckpointInventory without overriding CanEnumerate must " +
@@ -521,7 +523,7 @@ public class OrphanCheckpointTests
     [Fact]
     public async Task ClearAsync_ResetsTheShadowCheckpoint_SoItDoesNotOrphan()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
 
         // A completed rebuild: version 2 is the active one; version 1 was the previous active
         // and was discarded when the rebuild promoted. The shadow loop that filled version 2
@@ -531,7 +533,7 @@ public class OrphanCheckpointTests
         var shadowKey = RebuildableProjection.ShadowProcessorId(processorId, discardedVersion);
 
         var checkpointStore = new InMemoryCheckpointStore();
-        await checkpointStore.SaveAsync(shadowKey, 42, ct);
+        await checkpointStore.SaveAsync(shadowKey, 42, cancellationToken);
 
         // The state the database would hold after a successful promotion + elapsed grace period.
         var rebuildState = new ProjectionRebuildState(
@@ -570,21 +572,21 @@ public class OrphanCheckpointTests
                 AutoPromote: false,
                 ReclaimGracePeriod: TimeSpan.Zero));
 
-        await coordinator.StartAsync(ct);
+        await coordinator.StartAsync(cancellationToken);
 
         // The startup sweep runs once before entering the main polling loop; all stubs are
         // in-memory, so it completes in microseconds. Poll briefly to let the background task
         // reach that point before asserting.
         var deadline = DateTimeOffset.UtcNow.AddSeconds(5);
-        while (DateTimeOffset.UtcNow < deadline && await checkpointStore.GetAsync(shadowKey, ct) is not null)
-            await Task.Delay(10, ct);
+        while (DateTimeOffset.UtcNow < deadline && await checkpointStore.GetAsync(shadowKey, cancellationToken) is not null)
+            await Task.Delay(10, cancellationToken);
 
-        await coordinator.StopAsync(ct);
+        await coordinator.StopAsync(cancellationToken);
 
         // After the sweep the shadow checkpoint row must be gone. Without the ClearAsync fix
         // it would survive, and the next call to OrphanCheckpointHostedService.StartAsync under
         // a Strict policy would throw — bricking every restart until the row was hand-deleted.
-        (await checkpointStore.GetAsync(shadowKey, ct)).Should().BeNull(
+        (await checkpointStore.GetAsync(shadowKey, cancellationToken)).Should().BeNull(
             "ClearAsync must call checkpoints.ResetAsync on the shadow key so the row cannot orphan");
     }
 }

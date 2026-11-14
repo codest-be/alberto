@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Alberto.Configuration;
 using Alberto.InMemory;
+using Alberto.DeadLetters;
 using Alberto.Subscriptions;
 using Alberto.Telemetry;
 using FluentAssertions;
@@ -35,9 +36,9 @@ public sealed class ReactorRedeliveryTests
         public int Deliveries;
         public List<string> Handled { get; } = [];
 
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default) => Handle([@event]);
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default) => Handle([@event]);
 
-        public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct = default) => Handle(events);
+        public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken cancellationToken = default) => Handle(events);
 
         private Task Handle(IReadOnlyList<IEventEnvelope> events)
         {
@@ -102,7 +103,7 @@ public sealed class ReactorRedeliveryTests
         RedeliveryOptions? moduleRedelivery = null,
         ProcessorExecutionOptions? execution = null)
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var backend = new InMemoryEventStoreBackend();
         var deadLetters = new InMemoryDeadLetterStore();
         var clock = new FakeTimeProvider(DateTimeOffset.Parse("2026-01-01T00:00:00Z"));
@@ -146,14 +147,19 @@ public sealed class ReactorRedeliveryTests
             timeProvider: clock,
             drainTimeout: TimeSpan.FromSeconds(1));
 
-        await head.StartAsync(ct);
-        await loop.StartAsync(ct);
-        await retryLoop.StartAsync(ct);
+        await head.StartAsync(cancellationToken);
+        await loop.StartAsync(cancellationToken);
+        await retryLoop.StartAsync(cancellationToken);
 
         return new Rig
         {
-            Backend = backend, DeadLetters = deadLetters, Head = head, Clock = clock,
-            Reactor = reactor, Loop = loop, RetryLoop = retryLoop,
+            Backend = backend,
+            DeadLetters = deadLetters,
+            Head = head,
+            Clock = clock,
+            Reactor = reactor,
+            Loop = loop,
+            RetryLoop = retryLoop,
         };
     }
 

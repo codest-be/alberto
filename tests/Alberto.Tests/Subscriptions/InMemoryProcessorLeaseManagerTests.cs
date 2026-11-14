@@ -1,5 +1,4 @@
 using Alberto.InMemory;
-using Alberto.Subscriptions;
 using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
@@ -68,10 +67,9 @@ public sealed class InMemoryProcessorLeaseManagerTests
     }
 
     [Fact]
-    public async Task TryAcquireAsync_BySameReplica_PreservesAcquiredAtButIssuesNewToken()
+    public async Task TryAcquireAsync_BySameReplica_IssuesNewTokenAndExtendsExpiry()
     {
         var first = await _manager.TryAcquireAsync("consumer", "proc", "replica-1");
-        var acquiredAtBefore = (await _manager.GetAllLeasesAsync("consumer")).Single().AcquiredAt;
 
         _clock.Advance(TimeSpan.FromSeconds(5));
         var second = await _manager.TryAcquireAsync("consumer", "proc", "replica-1");
@@ -79,13 +77,12 @@ public sealed class InMemoryProcessorLeaseManagerTests
         second.Should().NotBeNull();
         second!.FenceToken.Should().BeGreaterThan(first!.FenceToken);
 
-        var info = (await _manager.GetAllLeasesAsync("consumer")).Single();
-        info.AcquiredAt.Should().Be(acquiredAtBefore, "re-acquiring your own lease must not restart the holding period");
-        info.ExpiresAt.Should().Be(_clock.GetUtcNow() + TimeSpan.FromSeconds(30), "the expiry must extend from the re-acquisition time");
+        _manager.GetActiveLease("consumer", "proc")!.Value.ExpiresAt
+            .Should().Be(_clock.GetUtcNow() + TimeSpan.FromSeconds(30), "the expiry must extend from the re-acquisition time");
     }
 
     [Fact]
-    public async Task TryAcquireAsync_AfterExpiry_AnotherReplicaCanClaimAndAcquiredAtResets()
+    public async Task TryAcquireAsync_AfterExpiry_AnotherReplicaCanClaim()
     {
         await _manager.TryAcquireAsync("consumer", "proc", "replica-1");
 
@@ -93,9 +90,7 @@ public sealed class InMemoryProcessorLeaseManagerTests
         var stolen = await _manager.TryAcquireAsync("consumer", "proc", "replica-2");
 
         stolen.Should().NotBeNull();
-        var info = (await _manager.GetAllLeasesAsync("consumer")).Single();
-        info.ReplicaId.Should().Be("replica-2");
-        info.AcquiredAt.Should().Be(_clock.GetUtcNow(), "a fresh acquisition after expiry starts a new holding period");
+        (await _manager.TryAcquireAsync("consumer", "proc", "replica-1")).Should().BeNull("replica-2 now holds the lease");
     }
 
     [Fact]
@@ -133,9 +128,8 @@ public sealed class InMemoryProcessorLeaseManagerTests
 
         renewed.Should().BeEquivalentTo(["mine"]);
 
-        var leases = await _manager.GetAllLeasesAsync("consumer");
-        leases.Single(l => l.ProcessorId == "mine").ExpiresAt.Should().Be(_clock.GetUtcNow() + TimeSpan.FromSeconds(30));
-        leases.Single(l => l.ProcessorId == "theirs").ExpiresAt.Should().NotBe(_clock.GetUtcNow() + TimeSpan.FromSeconds(30));
+        _manager.GetActiveLease("consumer", "mine")!.Value.ExpiresAt.Should().Be(_clock.GetUtcNow() + TimeSpan.FromSeconds(30));
+        _manager.GetActiveLease("consumer", "theirs")!.Value.ExpiresAt.Should().NotBe(_clock.GetUtcNow() + TimeSpan.FromSeconds(30));
     }
 
     [Fact]
@@ -177,43 +171,9 @@ public sealed class InMemoryProcessorLeaseManagerTests
 
         await _manager.ReleaseAllLeasesAsync("consumer", "replica-1");
 
-        var remaining = await _manager.GetAllLeasesAsync("consumer");
-        remaining.Should().ContainSingle().Which.ProcessorId.Should().Be("theirs");
-
-        var otherConsumerLeases = await _manager.GetAllLeasesAsync("other-consumer");
-        otherConsumerLeases.Should().ContainSingle("releasing one consumer's leases must not touch another consumer's");
-    }
-
-    [Fact]
-    public async Task GetAllLeasesAsync_ReturnsOnlyLeasesForTheRequestedConsumer()
-    {
-        await _manager.TryAcquireAsync("consumer-a", "proc-a", "replica-1");
-        await _manager.TryAcquireAsync("consumer-b", "proc-b", "replica-1");
-
-        var leases = await _manager.GetAllLeasesAsync("consumer-a");
-
-        leases.Should().ContainSingle().Which.ProcessorId.Should().Be("proc-a");
-    }
-
-    [Fact]
-    public async Task GetAllLeasesAsync_ProjectsAllFieldsFromTheStoredRecord()
-    {
-        await _manager.TryAcquireAsync("consumer", "proc", "replica-1");
-
-        var info = (await _manager.GetAllLeasesAsync("consumer")).Single();
-
-        info.ProcessorId.Should().Be("proc");
-        info.ReplicaId.Should().Be("replica-1");
-        info.AcquiredAt.Should().Be(_clock.GetUtcNow());
-        info.ExpiresAt.Should().Be(_clock.GetUtcNow() + TimeSpan.FromSeconds(30));
-    }
-
-    [Fact]
-    public async Task GetAllLeasesAsync_WithNoLeases_ReturnsEmpty()
-    {
-        var leases = await _manager.GetAllLeasesAsync("consumer");
-
-        leases.Should().BeEmpty();
+        _manager.GetActiveLease("consumer", "mine").Should().BeNull();
+        _manager.GetActiveLease("consumer", "theirs").Should().NotBeNull();
+        _manager.GetActiveLease("other-consumer", "mine-elsewhere").Should().NotBeNull("releasing one consumer's leases must not touch another consumer's");
     }
 
     [Fact]
@@ -236,14 +196,14 @@ public sealed class InMemoryProcessorLeaseManagerTests
     }
 
     [Fact]
-    public async Task TryAcquireAsync_BySameReplicaAfterExpiry_StartsANewHoldingPeriod()
+    public async Task TryAcquireAsync_BySameReplicaAfterExpiry_IssuesNewToken()
     {
-        await _manager.TryAcquireAsync("consumer", "proc", "replica-1");
+        var first = await _manager.TryAcquireAsync("consumer", "proc", "replica-1");
 
         _clock.Advance(TimeSpan.FromSeconds(31));
-        await _manager.TryAcquireAsync("consumer", "proc", "replica-1");
+        var second = await _manager.TryAcquireAsync("consumer", "proc", "replica-1");
 
-        (await _manager.GetAllLeasesAsync("consumer")).Single().AcquiredAt.Should().Be(_clock.GetUtcNow());
+        second!.FenceToken.Should().BeGreaterThan(first!.FenceToken);
     }
 
     [Fact]

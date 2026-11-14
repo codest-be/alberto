@@ -33,7 +33,7 @@ public static class Poll
     /// Clock used for both the deadline and the delay. Defaults to <see cref="TimeProvider.System"/>.
     /// Pass a fake to drive a test that must not spend real time.
     /// </param>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <exception cref="TimeoutException">The condition did not hold within <paramref name="timeout"/>.</exception>
     [SuppressMessage("ApiDesign", "RS0026:Do not add multiple overloads with optional parameters",
         Justification = "The overloads are separated by the condition delegate — Func<bool> against " +
@@ -45,7 +45,7 @@ public static class Poll
         TimeSpan? timeout = null,
         TimeSpan? interval = null,
         TimeProvider? timeProvider = null,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(condition);
         ArgumentException.ThrowIfNullOrWhiteSpace(what);
@@ -57,7 +57,7 @@ public static class Poll
 
         while (true)
         {
-            ct.ThrowIfCancellationRequested();
+            cancellationToken.ThrowIfCancellationRequested();
 
             // Evaluate before delaying: a condition that already holds must cost nothing.
             if (await condition().ConfigureAwait(false))
@@ -67,7 +67,7 @@ public static class Poll
                 throw new TimeoutException(
                     $"Timed out after {effectiveTimeout} waiting for {what}.");
 
-            await Task.Delay(effectiveInterval, clock, ct).ConfigureAwait(false);
+            await Task.Delay(effectiveInterval, clock, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -82,10 +82,10 @@ public static class Poll
         TimeSpan? timeout = null,
         TimeSpan? interval = null,
         TimeProvider? timeProvider = null,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(condition);
         return UntilAsync(
-            () => new ValueTask<bool>(condition()), what, timeout, interval, timeProvider, ct);
+            () => new ValueTask<bool>(condition()), what, timeout, interval, timeProvider, cancellationToken);
     }
 }

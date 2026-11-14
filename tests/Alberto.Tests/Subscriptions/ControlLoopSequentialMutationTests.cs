@@ -1,6 +1,7 @@
 using System.Diagnostics.Metrics;
 using Alberto.Configuration;
 using Alberto.InMemory;
+using Alberto.Checkpoints;
 using Alberto.Subscriptions;
 using Alberto.Telemetry;
 using FluentAssertions;
@@ -40,13 +41,13 @@ public sealed class ControlLoopSequentialMutationTests
         public bool IsRebuilding { get; set; }
         public IReadOnlySet<string> HandledEventTypes { get; } = new HashSet<string> { TestEventTypeId };
 
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _processedCount);
             return Task.CompletedTask;
         }
 
-        public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct = default)
+        public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _batchCount);
             Interlocked.Add(ref _processedCount, events.Count);
@@ -61,10 +62,10 @@ public sealed class ControlLoopSequentialMutationTests
         public bool IsRebuilding { get; set; }
         public IReadOnlySet<string> HandledEventTypes { get; } = new HashSet<string> { TestEventTypeId };
 
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("Simulated fault");
 
-        public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct = default)
+        public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("Simulated fault");
     }
 
@@ -82,17 +83,29 @@ public sealed class ControlLoopSequentialMutationTests
         public List<TimeSpan> CallTimestamps { get; } = [];
         public Func<long, int?, IReadOnlyCollection<IEventEnvelope>> Reader { get; set; } = (_, _) => [];
 
-        public Task<IReadOnlyCollection<IEventEnvelope>> StreamAllAsync(
-            long afterPosition = 0, int? limit = null, CancellationToken cancellationToken = default)
+        public IAsyncEnumerable<IEventEnvelope> StreamAllAsync(
+            long afterPosition = 0, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllOfTypesAsync(
+            IReadOnlySet<string> eventTypes, long afterPosition, int limit, CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _callCount);
             lock (CallTimestamps) CallTimestamps.Add(_stopwatch.Elapsed);
             return Task.FromResult(Reader(afterPosition, limit));
         }
 
-        public Task<IReadOnlyCollection<IEventEnvelope>> StreamAsync(
-            DcbQuery query, long afterPosition = 0, int? limit = null, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException("Not used by ControlLoop.");
+        public Task<IReadOnlyCollection<IEventEnvelope>> ReadAsync(
+            DcbQuery query, long afterPosition, int limit, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllAsync(
+            long afterPosition, int limit, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public IAsyncEnumerable<IEventEnvelope> StreamAsync(
+            DcbQuery query, long afterPosition = 0, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
 
         public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
             IEnumerable<IEventToPersist> events, DcbQuery? dcbQuery = null, long? expectedPosition = null,
@@ -116,18 +129,18 @@ public sealed class ControlLoopSequentialMutationTests
     {
         public List<(string ProcessorId, long Position)> SaveCalls { get; } = [];
 
-        public Task<long?> GetAsync(string processorId, CancellationToken ct = default) => inner.GetAsync(processorId, ct);
+        public Task<long?> GetAsync(string processorId, CancellationToken cancellationToken = default) => inner.GetAsync(processorId, cancellationToken);
 
-        public Task SaveAsync(string processorId, long position, CancellationToken ct = default)
+        public Task SaveAsync(string processorId, long position, CancellationToken cancellationToken = default)
         {
             lock (SaveCalls) SaveCalls.Add((processorId, position));
-            return inner.SaveAsync(processorId, position, ct);
+            return inner.SaveAsync(processorId, position, cancellationToken);
         }
 
-        public Task ResetAsync(string processorId, CancellationToken ct = default) => inner.ResetAsync(processorId, ct);
+        public Task ResetAsync(string processorId, CancellationToken cancellationToken = default) => inner.ResetAsync(processorId, cancellationToken);
 
-        public Task RewindAsync(string processorId, long position, CancellationToken ct = default)
-            => inner.RewindAsync(processorId, position, ct);
+        public Task RewindAsync(string processorId, long position, CancellationToken cancellationToken = default)
+            => inner.RewindAsync(processorId, position, cancellationToken);
     }
 
     private sealed class CapturingLogger : ILogger<ControlLoop>
@@ -164,14 +177,14 @@ public sealed class ControlLoopSequentialMutationTests
         EventData = System.Text.Json.JsonSerializer.Serialize(new TestEvent("x")),
     };
 
-    private static async Task WaitForAsync(Func<bool> condition, CancellationToken ct)
+    private static async Task WaitForAsync(Func<bool> condition, CancellationToken cancellationToken)
     {
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
         while (!condition())
         {
             if (DateTime.UtcNow > deadline)
                 throw new TimeoutException("Condition not met within 10s.");
-            await Task.Delay(10, ct);
+            await Task.Delay(10, cancellationToken);
         }
     }
 
@@ -531,8 +544,8 @@ public sealed class ControlLoopSequentialMutationTests
     // --- Skipped survivors (documented, not tested) ---
     //
     // 279: "catch (OperationCanceledException ...) { break; }" with `break` removed.
-    // IsShutdownCancellation(ex, ct) requires ct.IsCancellationRequested to be true before this
-    // catch can even match, so the enclosing `while (!ct.IsCancellationRequested)` is already
+    // IsShutdownCancellation(ex, cancellationToken) requires cancellationToken.IsCancellationRequested to be true before this
+    // catch can even match, so the enclosing `while (!cancellationToken.IsCancellationRequested)` is already
     // guaranteed false on the very next loop-condition check regardless of whether `break` ran.
     // Equivalent mutant: no test can observe a difference.
 }

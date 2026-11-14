@@ -331,7 +331,7 @@ public sealed class DcbQuery
     /// Returns a new query with additional event types.
     /// </summary>
     public DcbQuery WithTypes(params EventType[] types)
-        => new([..Types, ..types], Tags, TagMatchMode, CompositionMode, _explicitAll);
+        => new([.. Types, .. types], Tags, TagMatchMode, CompositionMode, _explicitAll);
 
     /// <summary>
     /// Returns a new query with additional event types (string overload).
@@ -349,7 +349,7 @@ public sealed class DcbQuery
     /// Returns a new query with additional tag matches.
     /// </summary>
     public DcbQuery WithTags(params EventTag[] tags)
-        => new(Types, [..Tags, ..tags], TagMatchMode, CompositionMode, _explicitAll);
+        => new(Types, [.. Tags, .. tags], TagMatchMode, CompositionMode, _explicitAll);
 
     /// <summary>
     /// Returns a new query with additional tag matches (string overload).

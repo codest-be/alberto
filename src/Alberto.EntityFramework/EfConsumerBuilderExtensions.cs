@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using Alberto.Configuration;
 using Alberto.EntityFramework.Inline;
+using Alberto.Projections;
 using Alberto.Subscriptions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -53,8 +54,8 @@ public static class EfConsumerBuilderExtensions
                         "third parameter is an enum here and a delegate there, so no call site can " +
                         "drift between them. Nothing has shipped yet — the whole baseline is " +
                         "Unshipped — so there is no binary compatibility to preserve either.")]
-    public static DcbModuleBuilder AddEfProjection<TEntity, TDbContext>(
-        this DcbModuleBuilder builder,
+    public static AlbertoModuleBuilder AddEfProjection<TEntity, TDbContext>(
+        this AlbertoModuleBuilder builder,
         ProjectionDeclaration<TEntity> declaration,
         ProjectionMode mode = ProjectionMode.Async,
         EfDocumentIdUniqueness documentIds = EfDocumentIdUniqueness.NotDeclared)
@@ -68,7 +69,7 @@ public static class EfConsumerBuilderExtensions
         // service-collection writes, including the inline path that skips DeclareProcessor.
         // The rule and error format match the core AddProjection / ReactTo path exactly because
         // they call the same helper.
-        DcbModuleBuilderExtensions.ValidateProcessorIdArg(declaration.ProcessorId, builder.ModuleKey);
+        AlbertoModuleBuilderExtensions.ValidateProcessorIdArg(declaration.ProcessorId, builder.ModuleKey);
 
         if (mode == ProjectionMode.Inline)
         {
@@ -162,8 +163,8 @@ public static class EfConsumerBuilderExtensions
     /// <returns>The module builder for chaining.</returns>
     [SuppressMessage("ApiDesign", "RS0026:Do not add multiple overloads with optional parameters",
         Justification = "See the matching suppression on the ProjectionMode overload.")]
-    public static DcbModuleBuilder AddEfProjection<TEntity, TDbContext>(
-        this DcbModuleBuilder builder,
+    public static AlbertoModuleBuilder AddEfProjection<TEntity, TDbContext>(
+        this AlbertoModuleBuilder builder,
         ProjectionDeclaration<TEntity> declaration,
         Func<IServiceProvider, Func<IReadOnlyList<IEventEnvelope>, CancellationToken, Task>> afterCommit,
         EfDocumentIdUniqueness documentIds = EfDocumentIdUniqueness.NotDeclared)
@@ -175,7 +176,7 @@ public static class EfConsumerBuilderExtensions
         ArgumentNullException.ThrowIfNull(afterCommit);
 
         // Same separator / reserved-word guard as the first overload and the core AddProjection path.
-        DcbModuleBuilderExtensions.ValidateProcessorIdArg(declaration.ProcessorId, builder.ModuleKey);
+        AlbertoModuleBuilderExtensions.ValidateProcessorIdArg(declaration.ProcessorId, builder.ModuleKey);
 
         builder.DeclareProcessor(new ProcessorDeclaration
         {

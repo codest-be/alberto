@@ -15,7 +15,7 @@ public sealed class BatchMiddlewareTests
 
     private static BatchConsumeContext MakeContext(
         IReadOnlyList<IEventEnvelope>? envelopes = null,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         var batch = envelopes ?? [MakeEnvelope(1)];
         return new BatchConsumeContext
@@ -24,7 +24,7 @@ public sealed class BatchMiddlewareTests
             ModuleKey = "test-module",
             Envelopes = batch,
             IsRebuild = false,
-            CancellationToken = ct,
+            CancellationToken = cancellationToken,
         };
     }
 
@@ -60,7 +60,7 @@ public sealed class BatchMiddlewareTests
         };
 
         await MiddlewareRunner.RunAsync(
-            MakeContext(ct: TestContext.Current.CancellationToken),
+            MakeContext(cancellationToken: TestContext.Current.CancellationToken),
             [first, second],
             () =>
             {
@@ -80,7 +80,7 @@ public sealed class BatchMiddlewareTests
             new AlwaysPermanentClassifier(),
             deadLetterStore);
 
-        var context = MakeContext(ct: TestContext.Current.CancellationToken);
+        var context = MakeContext(cancellationToken: TestContext.Current.CancellationToken);
 
         await MiddlewareRunner.RunAsync(
             context,
@@ -90,7 +90,7 @@ public sealed class BatchMiddlewareTests
         Assert.Equal(1, context.DeadLetteredCount);
         Assert.Equal(1, context.Attempt);
         Assert.NotNull(context.LastError);
-        var entries = await deadLetterStore.GetAsync("test-processor", ct: TestContext.Current.CancellationToken);
+        var entries = await deadLetterStore.GetAsync("test-processor", cancellationToken: TestContext.Current.CancellationToken);
         var entry = Assert.Single(entries);
         Assert.Equal("tenant-a", entry.TenantId);
         Assert.Equal(["order:123"], entry.Tags);

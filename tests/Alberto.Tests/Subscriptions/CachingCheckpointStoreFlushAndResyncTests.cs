@@ -1,4 +1,4 @@
-using Alberto.Subscriptions;
+using Alberto.Checkpoints;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
@@ -40,21 +40,21 @@ public class CachingCheckpointStoreFlushAndResyncTests
     [Fact]
     public async Task SaveAsync_AheadUpdateFactory_NullCachedEntry_ReturnsNewPosition()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var inner = new SimpleCheckpointStore(); // nothing stored
 
         await using var cache = new CachingCheckpointStore(
             inner, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
 
         // GetAsync: cache miss → inner returns null → _cache["proc"] = null (add factory).
-        var fromGet = await cache.GetAsync("proc", ct);
+        var fromGet = await cache.GetAsync("proc", cancellationToken);
         Assert.Null(fromGet);
 
         // SaveAsync: _cache["proc"] already exists (null), so the update factory fires:
         // Ahead(existing=null, position=50) → left is null → return right (50).
-        await cache.SaveAsync("proc", 50L, ct);
+        await cache.SaveAsync("proc", 50L, cancellationToken);
 
-        var result = await cache.GetAsync("proc", ct);
+        var result = await cache.GetAsync("proc", cancellationToken);
         Assert.Equal(50L, result);
     }
 
@@ -74,7 +74,7 @@ public class CachingCheckpointStoreFlushAndResyncTests
     [Fact]
     public async Task GetAsync_AheadUpdateFactory_NonNullLeft_NullRight_ReturnsLeft()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var inner = new SimpleCheckpointStore();
         inner.Set("proc", 100L);
 
@@ -82,14 +82,14 @@ public class CachingCheckpointStoreFlushAndResyncTests
             inner, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
 
         // Warm the cache to 100.
-        await cache.GetAsync("proc", ct);
+        await cache.GetAsync("proc", cancellationToken);
 
         // Delete from inner (simulates an operator reset without going through the cache).
         inner.Delete("proc");
 
         // Second call: cache key exists (100), inner returns null → update factory fires:
         // Ahead(100, null) → right is null → return left (100).
-        var result = await cache.GetAsync("proc", ct);
+        var result = await cache.GetAsync("proc", cancellationToken);
         Assert.Equal(100L, result);
     }
 
@@ -112,18 +112,18 @@ public class CachingCheckpointStoreFlushAndResyncTests
     [Fact]
     public async Task SaveAsync_DirtyEntry_KeepsHigherPosition_WhenLowerFollows()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var inner = new SimpleCheckpointStore();
 
         await using var cache = new CachingCheckpointStore(
             inner, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
 
-        await cache.SaveAsync("proc", 200L, ct);
-        await cache.SaveAsync("proc", 100L, ct);   // lower — must not win
+        await cache.SaveAsync("proc", 200L, cancellationToken);
+        await cache.SaveAsync("proc", 100L, cancellationToken);   // lower — must not win
 
-        await cache.FlushAsync(ct);
+        await cache.FlushAsync(cancellationToken);
 
-        Assert.Equal(200L, await inner.GetAsync("proc", ct));
+        Assert.Equal(200L, await inner.GetAsync("proc", cancellationToken));
     }
 
     #endregion
@@ -144,7 +144,7 @@ public class CachingCheckpointStoreFlushAndResyncTests
     [Fact]
     public async Task FlushAsync_WhenStoreMatchesPersisted_WritesThrough()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var inner = new SimpleCheckpointStore();
         inner.Set("proc", 100L);
 
@@ -152,16 +152,16 @@ public class CachingCheckpointStoreFlushAndResyncTests
             inner, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
 
         // GetAsync loads 100, populating _persisted["proc"] = 100.
-        await cache.GetAsync("proc", ct);
+        await cache.GetAsync("proc", cancellationToken);
 
         // Advance without touching inner (inner still has 100 = persisted).
-        await cache.SaveAsync("proc", 150L, ct);
+        await cache.SaveAsync("proc", 150L, cancellationToken);
 
         // Flush: ApplyExternalResetIfDetectedAsync checks storePosition(100) >= persistedPosition(100)
         // → true → returns false (no reset) → write proceeds → inner gets 150.
-        await cache.FlushAsync(ct);
+        await cache.FlushAsync(cancellationToken);
 
-        Assert.Equal(150L, await inner.GetAsync("proc", ct));
+        Assert.Equal(150L, await inner.GetAsync("proc", cancellationToken));
     }
 
     /// <summary>
@@ -179,7 +179,7 @@ public class CachingCheckpointStoreFlushAndResyncTests
     [Fact]
     public async Task FlushAsync_WhenExternalResetDetectedDuringFlush_DropsWriteAndUpdatesCache()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var inner = new SimpleCheckpointStore();
         inner.Set("proc", 100L);
 
@@ -187,23 +187,23 @@ public class CachingCheckpointStoreFlushAndResyncTests
             inner, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
 
         // Warm cache to 100; _persisted["proc"] = 100.
-        await cache.GetAsync("proc", ct);
+        await cache.GetAsync("proc", cancellationToken);
 
         // Advance the cache (dirty entry at 150).
-        await cache.SaveAsync("proc", 150L, ct);
+        await cache.SaveAsync("proc", 150L, cancellationToken);
 
         // Simulate an operator reset: inner now holds 30 (below persisted=100).
         inner.Set("proc", 30L);
 
         // Flush: ApplyExternalResetIfDetectedAsync detects the reset (30 < 100).
         // The flush must NOT write 150 to inner; cache must drop to 30.
-        await cache.FlushAsync(ct);
+        await cache.FlushAsync(cancellationToken);
 
         // Inner stays at 30 — the dirty write was dropped.
-        Assert.Equal(30L, await inner.GetAsync("proc", ct));
+        Assert.Equal(30L, await inner.GetAsync("proc", cancellationToken));
 
         // Cache also reflects the reset position.
-        Assert.Equal(30L, await cache.GetAsync("proc", ct));
+        Assert.Equal(30L, await cache.GetAsync("proc", cancellationToken));
     }
 
     #endregion
@@ -226,7 +226,7 @@ public class CachingCheckpointStoreFlushAndResyncTests
     [Fact]
     public async Task ResyncFromStore_AfterDetectingReset_UpdatesPersistedSoSubsequentFlushSucceeds()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var inner = new SimpleCheckpointStore();
         inner.Set("proc", 500L);
 
@@ -234,26 +234,26 @@ public class CachingCheckpointStoreFlushAndResyncTests
             inner, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
 
         // Warm: cache and _persisted both set to 500.
-        await cache.GetAsync("proc", ct);
+        await cache.GetAsync("proc", cancellationToken);
 
         // Inner is externally reset to 100 (below cached=500).
         inner.Set("proc", 100L);
 
         // Resync detects the reset and lowers cache to 100.
         // _persisted must also be updated to 100.
-        await cache.ResyncFromStoreAsync(ct);
-        Assert.Equal(100L, await cache.GetAsync("proc", ct));
+        await cache.ResyncFromStoreAsync(cancellationToken);
+        Assert.Equal(100L, await cache.GetAsync("proc", cancellationToken));
 
         // Now the processor resumes from 100 and saves 150.
-        await cache.SaveAsync("proc", 150L, ct);
+        await cache.SaveAsync("proc", 150L, cancellationToken);
 
         // Flush: ApplyExternalResetIfDetectedAsync should see persistedPosition=100 (updated by
         // resync), storePosition=100 (inner hasn't changed), 100 >= 100 → no reset → write 150.
         // Without the persisted update: persistedPosition=500, storePosition=100, 100 < 500 →
         // falsely detected reset → write skipped, inner stays at 100.
-        await cache.FlushAsync(ct);
+        await cache.FlushAsync(cancellationToken);
 
-        Assert.Equal(150L, await inner.GetAsync("proc", ct));
+        Assert.Equal(150L, await inner.GetAsync("proc", cancellationToken));
     }
 
     #endregion
@@ -274,7 +274,7 @@ public class CachingCheckpointStoreFlushAndResyncTests
     [Fact]
     public async Task ResyncFromStore_WhenStoreMatchesCache_DoesNotLogWarning()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var inner = new SimpleCheckpointStore();
         inner.Set("proc", 500L);
 
@@ -287,10 +287,10 @@ public class CachingCheckpointStoreFlushAndResyncTests
             logger: logger);
 
         // Warm: cache = 500, inner = 500 — they are equal.
-        await cache.GetAsync("proc", ct);
+        await cache.GetAsync("proc", cancellationToken);
 
         // Resync: storePosition(500) < cachedPosition(500) → false → no update, no warning.
-        await cache.ResyncFromStoreAsync(ct);
+        await cache.ResyncFromStoreAsync(cancellationToken);
 
         var warnings = logger.Entries.Where(e => e.Level == LogLevel.Warning).ToList();
         Assert.Empty(warnings);
@@ -315,7 +315,7 @@ public class CachingCheckpointStoreFlushAndResyncTests
     [Fact]
     public async Task OnFlushTimer_WhenInnerSaveThrows_LogsError()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         // Throws only on the first SaveAsync so the timer-triggered flush fails (and is logged)
         // while the DisposeAsync-triggered flush can drain the dirty set cleanly.
         var inner = new ThrowOnFirstSaveStore();
@@ -330,7 +330,7 @@ public class CachingCheckpointStoreFlushAndResyncTests
             timeProvider: time);
 
         // Put a dirty entry so FlushAsync actually calls inner.SaveAsync.
-        await cache.SaveAsync("proc", 42L, ct);
+        await cache.SaveAsync("proc", 42L, cancellationToken);
 
         // Trigger OnFlushTimer.
         time.Advance(TimeSpan.FromMilliseconds(50));
@@ -359,7 +359,7 @@ public class CachingCheckpointStoreFlushAndResyncTests
     [Fact]
     public async Task OnResyncTimer_WhenInnerGetThrows_LogsError()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var inner = new FailOnSecondGetStore();
         var logger = new CapturingLogger<CachingCheckpointStore>();
         var time = new FakeTimeProvider();
@@ -372,7 +372,7 @@ public class CachingCheckpointStoreFlushAndResyncTests
             timeProvider: time);
 
         // First GetAsync: inner.GetAsync #1 → 100 → cache["proc"] = 100 (not dirty).
-        await cache.GetAsync("proc", ct);
+        await cache.GetAsync("proc", cancellationToken);
 
         // Trigger OnResyncTimer.  ResyncFromStoreAsync will call inner.GetAsync #2 → throws.
         time.Advance(TimeSpan.FromMilliseconds(50));
@@ -396,7 +396,7 @@ public class CachingCheckpointStoreFlushAndResyncTests
     [Fact]
     public async Task DisposeAsync_WritesPendingCheckpointsThroughToTheInnerStore()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var inner = new SimpleCheckpointStore();
 
         // Intervals long enough that no timer can fire — the only thing that can persist this
@@ -404,12 +404,12 @@ public class CachingCheckpointStoreFlushAndResyncTests
         var cache = new CachingCheckpointStore(
             inner, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
 
-        await cache.SaveAsync("proc", 100L, ct);
-        Assert.Null(await inner.GetAsync("proc", ct));
+        await cache.SaveAsync("proc", 100L, cancellationToken);
+        Assert.Null(await inner.GetAsync("proc", cancellationToken));
 
         await cache.DisposeAsync();
 
-        Assert.Equal(100L, await inner.GetAsync("proc", ct));
+        Assert.Equal(100L, await inner.GetAsync("proc", cancellationToken));
     }
 
     /// <summary>
@@ -420,13 +420,13 @@ public class CachingCheckpointStoreFlushAndResyncTests
     [Fact]
     public async Task DisposeAsync_IsIdempotent_AndDoesNotFlushTwice()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var inner = new CountingSaveStore();
 
         var cache = new CachingCheckpointStore(
             inner, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
 
-        await cache.SaveAsync("proc", 100L, ct);
+        await cache.SaveAsync("proc", 100L, cancellationToken);
 
         await cache.DisposeAsync();
         var savesAfterFirstDispose = inner.SaveCount;
@@ -444,23 +444,23 @@ public class CachingCheckpointStoreFlushAndResyncTests
 
         public int SaveCount { get; private set; }
 
-        public Task<long?> GetAsync(string processorId, CancellationToken ct = default)
+        public Task<long?> GetAsync(string processorId, CancellationToken cancellationToken = default)
             => Task.FromResult(_data.TryGetValue(processorId, out var v) ? (long?)v : null);
 
-        public Task SaveAsync(string processorId, long position, CancellationToken ct = default)
+        public Task SaveAsync(string processorId, long position, CancellationToken cancellationToken = default)
         {
             SaveCount++;
             _data[processorId] = position;
             return Task.CompletedTask;
         }
 
-        public Task ResetAsync(string processorId, CancellationToken ct = default)
+        public Task ResetAsync(string processorId, CancellationToken cancellationToken = default)
         {
             _data.Remove(processorId);
             return Task.CompletedTask;
         }
 
-        public Task RewindAsync(string processorId, long position, CancellationToken ct = default)
+        public Task RewindAsync(string processorId, long position, CancellationToken cancellationToken = default)
         {
             _data[processorId] = position;
             return Task.CompletedTask;
@@ -492,25 +492,25 @@ public class CachingCheckpointStoreFlushAndResyncTests
         public void Set(string id, long? value) => _data[id] = value;
         public void Delete(string id) => _data.Remove(id);
 
-        public Task<long?> GetAsync(string processorId, CancellationToken ct = default)
+        public Task<long?> GetAsync(string processorId, CancellationToken cancellationToken = default)
         {
             _data.TryGetValue(processorId, out var value);
             return Task.FromResult(value);
         }
 
-        public Task SaveAsync(string processorId, long position, CancellationToken ct = default)
+        public Task SaveAsync(string processorId, long position, CancellationToken cancellationToken = default)
         {
             _data[processorId] = position;
             return Task.CompletedTask;
         }
 
-        public Task ResetAsync(string processorId, CancellationToken ct = default)
+        public Task ResetAsync(string processorId, CancellationToken cancellationToken = default)
         {
             _data.Remove(processorId);
             return Task.CompletedTask;
         }
 
-        public Task RewindAsync(string processorId, long position, CancellationToken ct = default)
+        public Task RewindAsync(string processorId, long position, CancellationToken cancellationToken = default)
         {
             _data[processorId] = position;
             return Task.CompletedTask;
@@ -527,20 +527,20 @@ public class CachingCheckpointStoreFlushAndResyncTests
     {
         private int _saveCalls;
 
-        public Task<long?> GetAsync(string processorId, CancellationToken ct = default)
+        public Task<long?> GetAsync(string processorId, CancellationToken cancellationToken = default)
             => Task.FromResult<long?>(null);
 
-        public Task SaveAsync(string processorId, long position, CancellationToken ct = default)
+        public Task SaveAsync(string processorId, long position, CancellationToken cancellationToken = default)
         {
             if (++_saveCalls == 1)
                 return Task.FromException(new InvalidOperationException("simulated flush failure"));
             return Task.CompletedTask;
         }
 
-        public Task ResetAsync(string processorId, CancellationToken ct = default)
+        public Task ResetAsync(string processorId, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
-        public Task RewindAsync(string processorId, long position, CancellationToken ct = default)
+        public Task RewindAsync(string processorId, long position, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
     }
 
@@ -554,20 +554,20 @@ public class CachingCheckpointStoreFlushAndResyncTests
     {
         private int _getCalls;
 
-        public Task<long?> GetAsync(string processorId, CancellationToken ct = default)
+        public Task<long?> GetAsync(string processorId, CancellationToken cancellationToken = default)
         {
             if (++_getCalls == 1)
                 return Task.FromResult<long?>(100L);
             return Task.FromException<long?>(new InvalidOperationException("simulated resync failure"));
         }
 
-        public Task SaveAsync(string processorId, long position, CancellationToken ct = default)
+        public Task SaveAsync(string processorId, long position, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
-        public Task ResetAsync(string processorId, CancellationToken ct = default)
+        public Task ResetAsync(string processorId, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
-        public Task RewindAsync(string processorId, long position, CancellationToken ct = default)
+        public Task RewindAsync(string processorId, long position, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
     }
 

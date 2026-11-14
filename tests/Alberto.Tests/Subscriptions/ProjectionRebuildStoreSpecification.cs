@@ -1,6 +1,6 @@
 using Alberto.InMemory;
 using Alberto.Postgres;
-using Alberto.Subscriptions;
+using Alberto.Projections;
 using Alberto.Testing.Xunit;
 using Alberto.Tests.Postgres;
 using Xunit;

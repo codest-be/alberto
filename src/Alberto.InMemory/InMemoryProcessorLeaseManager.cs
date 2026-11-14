@@ -1,4 +1,4 @@
-using Alberto.Subscriptions;
+using Alberto.Leases;
 
 namespace Alberto.InMemory;
 
@@ -70,7 +70,7 @@ internal sealed class InMemoryProcessorLeaseManager : IProcessorLeaseManager
     /// holds a live lease. Every successful acquisition issues a new fence token.
     /// </remarks>
     public Task<IProcessorLease?> TryAcquireAsync(
-        string consumerId, string processorId, string replicaId, CancellationToken ct = default)
+        string consumerId, string processorId, string replicaId, CancellationToken cancellationToken = default)
     {
         lock (_lock)
         {
@@ -109,7 +109,7 @@ internal sealed class InMemoryProcessorLeaseManager : IProcessorLeaseManager
     /// ownership stretch, not a new acquisition.
     /// </remarks>
     public Task<IReadOnlyList<string>> RenewLeasesAsync(
-        string consumerId, string replicaId, CancellationToken ct = default)
+        string consumerId, string replicaId, CancellationToken cancellationToken = default)
     {
         lock (_lock)
         {
@@ -136,7 +136,7 @@ internal sealed class InMemoryProcessorLeaseManager : IProcessorLeaseManager
 
     /// <inheritdoc/>
     public Task ReleaseAllLeasesAsync(
-        string consumerId, string replicaId, CancellationToken ct = default)
+        string consumerId, string replicaId, CancellationToken cancellationToken = default)
     {
         lock (_lock)
         {
@@ -148,25 +148,6 @@ internal sealed class InMemoryProcessorLeaseManager : IProcessorLeaseManager
                 _leases.Remove(key);
 
             return Task.CompletedTask;
-        }
-    }
-
-    /// <inheritdoc/>
-    public Task<IReadOnlyList<ProcessorLeaseInfo>> GetAllLeasesAsync(
-        string consumerId, CancellationToken ct = default)
-    {
-        lock (_lock)
-        {
-            IReadOnlyList<ProcessorLeaseInfo> result = _leases
-                .Where(kv => kv.Key.ConsumerId == consumerId)
-                .Select(kv => new ProcessorLeaseInfo(
-                    kv.Key.ProcessorId,
-                    kv.Value.ReplicaId,
-                    kv.Value.AcquiredAt,
-                    kv.Value.ExpiresAt))
-                .ToArray();
-
-            return Task.FromResult(result);
         }
     }
 }

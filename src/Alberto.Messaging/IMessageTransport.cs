@@ -10,17 +10,17 @@ public interface IMessageTransport
     /// completed successfully. Calls may be concurrent when one transport instance is shared
     /// by several outbox registrations.
     /// </summary>
-    Task PublishAsync(ExternalMessage message, CancellationToken ct = default);
+    Task PublishAsync(ExternalMessage message, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Starts the transport before the relay claims any messages. Alberto makes one bounded
     /// <see cref="StopAsync"/> call even when this method partially initializes and then throws.
     /// </summary>
-    Task StartAsync(CancellationToken ct = default);
+    Task StartAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Stops the transport once after the last relay using it has stopped. Implementations must
     /// tolerate cleanup after a partially successful <see cref="StartAsync"/> call.
     /// </summary>
-    Task StopAsync(CancellationToken ct = default);
+    Task StopAsync(CancellationToken cancellationToken = default);
 }

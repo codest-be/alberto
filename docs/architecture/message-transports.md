@@ -11,9 +11,9 @@ decision rather than a backlog item.
 ```csharp
 public interface IMessageTransport
 {
-    Task PublishAsync(ExternalMessage message, CancellationToken ct = default);
-    Task StartAsync(CancellationToken ct = default);
-    Task StopAsync(CancellationToken ct = default);
+    Task PublishAsync(ExternalMessage message, CancellationToken cancellationToken = default);
+    Task StartAsync(CancellationToken cancellationToken = default);
+    Task StopAsync(CancellationToken cancellationToken = default);
 }
 ```
 

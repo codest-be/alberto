@@ -66,7 +66,7 @@ public sealed class RebusTransportAdapterTests : IAsyncLifetime
     [Fact]
     public async Task DefaultSerializer_DeliversEnvelopeToHandler()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var received = new TaskCompletionSource<AlbertoMessage>(
             TaskCreationOptions.RunContinuationsAsynchronously);
         string? correlationId = null;
@@ -87,9 +87,9 @@ public sealed class RebusTransportAdapterTests : IAsyncLifetime
             destination: "orders",
             metadata: new Dictionary<string, string> { ["correlation-id"] = "corr-123" });
 
-        await DeliverAsync(new RebusTransport(bus), entry, ct);
+        await DeliverAsync(new RebusTransport(bus), entry, cancellationToken);
 
-        var message = await received.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+        var message = await received.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
         message.MessageType.Should().Be("order.placed");
         message.Version.Should().Be("1");
         AssertOrderPayload(message.Payload, "order-42");
@@ -97,7 +97,7 @@ public sealed class RebusTransportAdapterTests : IAsyncLifetime
         // Metadata survives as Rebus headers, forwarded via the optionalHeaders parameter.
         correlationId.Should().Be("corr-123");
 
-        (await ReadOutboxStatusAsync(entry.Id, ct)).Should().Be("delivered");
+        (await ReadOutboxStatusAsync(entry.Id, cancellationToken)).Should().Be("delivered");
     }
 
     /// <summary>
@@ -108,7 +108,7 @@ public sealed class RebusTransportAdapterTests : IAsyncLifetime
     [Fact]
     public async Task NullDestination_FallsBackToTypeBasedRouting()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var received = new TaskCompletionSource<AlbertoMessage>(
             TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -127,13 +127,13 @@ public sealed class RebusTransportAdapterTests : IAsyncLifetime
             """{"orderId":"order-99"}""",
             destination: null);
 
-        await DeliverAsync(new RebusTransport(bus), entry, ct);
+        await DeliverAsync(new RebusTransport(bus), entry, cancellationToken);
 
-        var message = await received.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+        var message = await received.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
         message.MessageType.Should().Be("order.cancelled");
         AssertOrderPayload(message.Payload, "order-99");
 
-        (await ReadOutboxStatusAsync(entry.Id, ct)).Should().Be("delivered");
+        (await ReadOutboxStatusAsync(entry.Id, cancellationToken)).Should().Be("delivered");
     }
 
     /// <summary>
@@ -144,7 +144,7 @@ public sealed class RebusTransportAdapterTests : IAsyncLifetime
     [Fact]
     public async Task AlbertoSerializer_RoundTripsThroughHandler()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var received = new TaskCompletionSource<AlbertoMessage>(
             TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -163,9 +163,9 @@ public sealed class RebusTransportAdapterTests : IAsyncLifetime
             """{"orderId":"order-7","amount":12.5}""",
             destination: "orders-raw");
 
-        await DeliverAsync(new RebusTransport(bus), entry, ct);
+        await DeliverAsync(new RebusTransport(bus), entry, cancellationToken);
 
-        var message = await received.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+        var message = await received.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
         message.MessageType.Should().Be("order.shipped");
         message.Version.Should().Be("1");
         AssertOrderPayload(message.Payload, "order-7");
@@ -182,7 +182,7 @@ public sealed class RebusTransportAdapterTests : IAsyncLifetime
     [Fact]
     public async Task AlbertoSerializer_WritesRawJsonAsTheWireBody()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         const string unconsumed = "orders-wire-inspect";
 
         using var activator = new BuiltinHandlerActivator();
@@ -194,15 +194,15 @@ public sealed class RebusTransportAdapterTests : IAsyncLifetime
             """{"orderId":"order-1","amount":5.25}""",
             destination: unconsumed);
 
-        await DeliverAsync(new RebusTransport(bus), entry, ct);
-        (await ReadOutboxStatusAsync(entry.Id, ct)).Should().Be("delivered");
+        await DeliverAsync(new RebusTransport(bus), entry, cancellationToken);
+        (await ReadOutboxStatusAsync(entry.Id, cancellationToken)).Should().Be("delivered");
 
-        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
             "SELECT body FROM rebus_messages WHERE recipient = @q LIMIT 1", conn);
         cmd.Parameters.AddWithValue("q", unconsumed);
 
-        var body = (byte[])(await cmd.ExecuteScalarAsync(ct)
+        var body = (byte[])(await cmd.ExecuteScalarAsync(cancellationToken)
             ?? throw new InvalidOperationException($"No queued message for '{unconsumed}'."));
 
         // A double-encoded body would parse as a JSON string; a raw one parses as an object.
@@ -267,17 +267,17 @@ public sealed class RebusTransportAdapterTests : IAsyncLifetime
     /// In production the row is written by <c>OutboxHandler</c> from a committed event. Seeding
     /// it directly keeps these tests on the transport adapter rather than the control loop.
     /// </remarks>
-    private async Task DeliverAsync(IMessageTransport transport, OutboxEntry entry, CancellationToken ct)
+    private async Task DeliverAsync(IMessageTransport transport, OutboxEntry entry, CancellationToken cancellationToken)
     {
         var store = new PostgresOutboxStore(_dataSource);
-        await store.InsertAsync(entry, ct);
+        await store.InsertAsync(entry, cancellationToken);
 
         var signaling = new PollSignalingOutboxStore(store);
         var relay = new OutboxRelay(signaling, transport, pollingInterval: TimeSpan.FromMilliseconds(50));
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         await relay.StartAsync(cts.Token);
-        await signaling.WhenRelayFinished.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        await signaling.WhenRelayFinished.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
         await relay.StopAsync(cts.Token);
 
         var executeTask = relay.ExecuteTask!;
@@ -293,13 +293,13 @@ public sealed class RebusTransportAdapterTests : IAsyncLifetime
         relay.Dispose();
     }
 
-    private async Task<string> ReadOutboxStatusAsync(Guid entryId, CancellationToken ct)
+    private async Task<string> ReadOutboxStatusAsync(Guid entryId, CancellationToken cancellationToken)
     {
-        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(
             "SELECT status FROM alberto_outbox_entries WHERE id = @id", conn);
         cmd.Parameters.AddWithValue("id", entryId);
-        return (string)(await cmd.ExecuteScalarAsync(ct)
+        return (string)(await cmd.ExecuteScalarAsync(cancellationToken)
             ?? throw new InvalidOperationException($"Outbox entry {entryId} not found."));
     }
 
@@ -327,30 +327,30 @@ public sealed class RebusTransportAdapterTests : IAsyncLifetime
 
         public Task WhenRelayFinished => _tcs.Task;
 
-        public Task InsertAsync(OutboxEntry entry, CancellationToken ct = default)
-            => inner.InsertAsync(entry, ct);
+        public Task InsertAsync(OutboxEntry entry, CancellationToken cancellationToken = default)
+            => inner.InsertAsync(entry, cancellationToken);
 
         public Task<IReadOnlyList<OutboxClaim>> ClaimPendingAsync(
-            int limit, TimeSpan claimLease, string claimedBy, CancellationToken ct = default)
+            int limit, TimeSpan claimLease, string claimedBy, CancellationToken cancellationToken = default)
         {
             if (Interlocked.Increment(ref _pollCount) >= 2)
                 _tcs.TrySetResult();
-            return inner.ClaimPendingAsync(limit, claimLease, claimedBy, ct);
+            return inner.ClaimPendingAsync(limit, claimLease, claimedBy, cancellationToken);
         }
 
-        public Task<bool> MarkDeliveredAsync(OutboxClaim claim, CancellationToken ct = default)
-            => inner.MarkDeliveredAsync(claim, ct);
+        public Task<bool> MarkDeliveredAsync(OutboxClaim claim, CancellationToken cancellationToken = default)
+            => inner.MarkDeliveredAsync(claim, cancellationToken);
 
-        public Task<bool> MarkFailedAsync(OutboxClaim claim, string error, CancellationToken ct = default)
-            => inner.MarkFailedAsync(claim, error, ct);
+        public Task<bool> MarkFailedAsync(OutboxClaim claim, string error, CancellationToken cancellationToken = default)
+            => inner.MarkFailedAsync(claim, error, cancellationToken);
 
-        public Task<bool> MarkAttemptFailedAsync(OutboxClaim claim, string error, int maxRetries, CancellationToken ct)
-            => inner.MarkAttemptFailedAsync(claim, error, maxRetries, ct);
+        public Task<bool> MarkAttemptFailedAsync(OutboxClaim claim, string error, int maxRetries, CancellationToken cancellationToken)
+            => inner.MarkAttemptFailedAsync(claim, error, maxRetries, cancellationToken);
 
-        public Task RetryFailedAsync(string? messageType = null, CancellationToken ct = default)
-            => inner.RetryFailedAsync(messageType, ct);
+        public Task RetryFailedAsync(string? messageType = null, CancellationToken cancellationToken = default)
+            => inner.RetryFailedAsync(messageType, cancellationToken);
 
-        public Task PurgeDeliveredAsync(DateTimeOffset before, CancellationToken ct = default)
-            => inner.PurgeDeliveredAsync(before, ct);
+        public Task PurgeDeliveredAsync(DateTimeOffset before, CancellationToken cancellationToken = default)
+            => inner.PurgeDeliveredAsync(before, cancellationToken);
     }
 }

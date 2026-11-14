@@ -33,7 +33,7 @@ load. A bare `container.StartAsync()` is the bug. See
 ```bash
 build/coverage.sh                       # Line/branch coverage, whole suite
 build/mutation-test.sh                  # Stryker over the core packages
-build/mutation-test.sh --since main     # Only what the branch changed (what PR CI gates on)
+build/mutation-test.sh --since main     # Only what the branch changed (on demand; CI does not run it on PRs)
 ```
 
 Coverage runs the whole suite; mutation testing runs `Category!=Integration` only, because it
@@ -107,7 +107,7 @@ There is no operator tool and no admin API. Operators resolve the core interface
 
 | Layer | Technology |
 |-------|------------|
-| Framework | .NET 10.0 and 11.0 (libraries), ASP.NET Core |
+| Framework | .NET 10.0 and 11.0 (libraries) |
 | Database | PostgreSQL (Npgsql 10.0.3) |
 | Migrations | DbUp-PostgreSQL 7.0.1 (event store), EF Core 10.0.15 on both targets (`Alberto.EntityFramework`); stays 10.x until the Npgsql EF provider ships 11.0.0 GA |
 | Observability | OpenTelemetry 1.21.0 |

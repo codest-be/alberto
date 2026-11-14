@@ -12,10 +12,10 @@ public interface IAppendInterceptor
     /// </summary>
     /// <param name="context">The append context containing events to persist.</param>
     /// <param name="next">The next interceptor or final append action.</param>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The appended events with assigned global positions.</returns>
     Task<IReadOnlyCollection<IEventEnvelope>> OnAppendingAsync(
         AppendContext context,
         Func<AppendContext, Task<IReadOnlyCollection<IEventEnvelope>>> next,
-        CancellationToken ct = default);
+        CancellationToken cancellationToken = default);
 }

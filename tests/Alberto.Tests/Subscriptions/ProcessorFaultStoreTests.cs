@@ -1,5 +1,6 @@
 using Alberto.InMemory;
 using Alberto.Postgres;
+using Alberto.Checkpoints;
 using Alberto.Subscriptions;
 using Xunit;
 
@@ -255,16 +256,16 @@ public sealed class CachingProcessorFaultStoreWithoutSupportTests : IAsyncDispos
 {
     private sealed class PlainCheckpointStore : ICheckpointStore
     {
-        public Task<long?> GetAsync(string processorId, CancellationToken ct = default)
+        public Task<long?> GetAsync(string processorId, CancellationToken cancellationToken = default)
             => Task.FromResult<long?>(null);
 
-        public Task SaveAsync(string processorId, long position, CancellationToken ct = default)
+        public Task SaveAsync(string processorId, long position, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
-        public Task ResetAsync(string processorId, CancellationToken ct = default)
+        public Task ResetAsync(string processorId, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
-        public Task RewindAsync(string processorId, long position, CancellationToken ct = default)
+        public Task RewindAsync(string processorId, long position, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
     }
 

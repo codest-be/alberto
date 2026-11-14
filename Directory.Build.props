@@ -4,7 +4,7 @@
         <Authors>Bjorn Vandenbussche</Authors>
         <Company>Codest</Company>
         <Product>Alberto DCB Event Store</Product>
-        <Copyright>Copyright © 2025 Alberto</Copyright>
+        <Copyright>Copyright © $([System.DateTime]::UtcNow.Year) Alberto</Copyright>
 
         <!-- Version -->
         <VersionPrefix>0.9.0</VersionPrefix>
@@ -20,16 +20,15 @@
         <PackageTags>DCB;events;eventsourcing;dotnet;postgresql;dynamic-consistency-boundary</PackageTags>
 
         <!-- Build Configuration -->
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
 
         <!-- Every library under /src ships for both. Benchmarks and tests run on
              net10.0 only: they are consumers of one runtime, not the thing being shipped. -->
         <AlbertoLibraryTargetFrameworks>net10.0;net11.0</AlbertoLibraryTargetFrameworks>
 
-        <!-- Nothing ships to NuGet unless it says so. The SDK default is the other way round, which
-             quietly handed the package metadata, SourceLink and the public-API gate below to every
-             app, test, tool and benchmark project in the repo. Each package under /src sets
-             IsPackable=true in its own PropertyGroup, and a csproj body is evaluated after this
-             file, so opting in still works exactly as before. -->
+        <!-- Opt-in: each package under /src sets IsPackable=true in its own csproj. -->
         <IsPackable>false</IsPackable>
 
         <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
@@ -39,41 +38,24 @@
 
         <!-- Documentation -->
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
-        <!-- CS1591 (missing XML doc) is suppressed until the public surface is fully documented.
-             Remove this suppression and fix all missing-doc warnings before a stable v1 release. -->
+        <!-- CS1591 (missing XML doc) is suppressed until the public surface is fully documented. -->
         <NoWarn>$(NoWarn);CS1591</NoWarn>
     </PropertyGroup>
 
-    <!-- Packable-only *properties* live in Directory.Build.targets, not here. MSBuild evaluates
-         every property in file-import order before it evaluates any item, so a PropertyGroup in
-         this file guarded on '$(IsPackable)' == 'true' is tested while IsPackable is still the
-         false set above — the csproj body that flips it has not been read yet. Such a group is
-         silently dead. Items are different: the ItemGroup below is evaluated in a later pass, by
-         which time IsPackable is true, so guarding items here works and is deliberate. -->
+    <!-- Packable-only properties go in Directory.Build.targets: a property group guarded on IsPackable here is evaluated before the csproj sets it and is silently dead. Items are evaluated later, so the ItemGroup below works. -->
 
     <ItemGroup Condition="'$(IsPackable)' == 'true'">
-        <!-- README.md lives at the repo root; PackagePath="\" places it at the nupkg root
-             where NuGet gallery tooling looks for it. Same for the package icon — both are
-             named by properties in Directory.Build.targets, which is where they have to be
-             set (see the comment at the top of that file). -->
+        <!-- Packed at the nupkg root; named by PackageReadmeFile/PackageIcon in Directory.Build.targets. -->
         <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="\" />
         <None Include="$(MSBuildThisFileDirectory)icon.png" Pack="true" PackagePath="\" />
 
-        <!-- SourceLink — PrivateAssets="All" keeps this dev-time reference out of the dependency
-             graph that consumers see; it is compile-time only. -->
+        <!-- SourceLink; build-time only. -->
         <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
 
-        <!-- Public API surface tracking — every public type and member must appear in this
-             project's PublicAPI.Shipped.txt / PublicAPI.Unshipped.txt, so adding or removing one
-             is a reviewable diff rather than something that slips out in a patch release. The
-             rules are at error severity (see .editorconfig); the build fails on an undeclared
-             symbol. PrivateAssets="All" because this is a build-time analyzer only. -->
+        <!-- Public API tracking: every public symbol must be in the project's PublicAPI.*.txt (errors per .editorconfig). -->
         <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="All" />
 
-        <!-- Wire the per-project declaration files as additional inputs to the analyzer. The
-             Condition guards prevent a misleading "file not found" diagnostic during the window
-             before the files exist — though they should always exist once the project is checked
-             out because every packable project commits both. -->
+        <!-- Feed the per-project declaration files to the analyzer. -->
         <AdditionalFiles Include="PublicAPI.Shipped.txt"   Condition="Exists('PublicAPI.Shipped.txt')" />
         <AdditionalFiles Include="PublicAPI.Unshipped.txt" Condition="Exists('PublicAPI.Unshipped.txt')" />
     </ItemGroup>

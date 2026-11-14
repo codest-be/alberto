@@ -32,7 +32,7 @@ public sealed record CheckpointOptions
 }
 
 /// <summary>Configuration mirror for <see cref="CheckpointOptions"/>.</summary>
-public sealed class CheckpointOverrides : IAlbertoOverrides<CheckpointOptions>
+internal sealed class CheckpointOverrides : IAlbertoOverrides<CheckpointOptions>
 {
     /// <summary>Mirror of <see cref="CheckpointOptions.OrphanPolicy"/>.</summary>
     public OrphanCheckpointPolicy? OrphanPolicy { get; set; }

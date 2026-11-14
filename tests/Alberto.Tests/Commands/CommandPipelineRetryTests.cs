@@ -3,6 +3,7 @@ using Alberto.Commands;
 using Alberto.InMemory;
 using System.Text.Json;
 using Xunit;
+using Alberto.Results;
 
 namespace Alberto.Tests.Commands;
 
@@ -73,18 +74,21 @@ public sealed class CommandPipelineRetryTests
             return Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
         }
 
-        public Task<IReadOnlyCollection<IEventEnvelope>> StreamAsync(
-            DcbQuery query,
-            long afterPosition = 0,
-            int? limit = null,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
+        public Task<IReadOnlyCollection<IEventEnvelope>> ReadAsync(
+            DcbQuery query, long afterPosition, int limit, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
 
-        public Task<IReadOnlyCollection<IEventEnvelope>> StreamAllAsync(
-            long afterPosition = 0,
-            int? limit = null,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
+        public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllAsync(
+            long afterPosition, int limit, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
+
+        public IAsyncEnumerable<IEventEnvelope> StreamAsync(
+            DcbQuery query, long afterPosition = 0, CancellationToken cancellationToken = default)
+            => AsyncEnumerable.Empty<IEventEnvelope>();
+
+        public IAsyncEnumerable<IEventEnvelope> StreamAllAsync(
+            long afterPosition = 0, CancellationToken cancellationToken = default)
+            => AsyncEnumerable.Empty<IEventEnvelope>();
 
         public Task<long> GetLastPositionAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(0L);
@@ -427,7 +431,7 @@ public sealed class CommandPipelineRetryTests
 
     // -----------------------------------------------------------------------
     // UnboundDecision.TryCommit — kills L32 (try body) and L36 (catch body).
-    // These are both NoCoverage because TryCommit(query, pos, ct) is never
+    // These are both NoCoverage because TryCommit(query, pos, cancellationToken) is never
     // called anywhere in the existing suite.
     // -----------------------------------------------------------------------
 

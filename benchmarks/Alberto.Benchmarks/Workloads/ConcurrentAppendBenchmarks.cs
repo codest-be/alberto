@@ -153,7 +153,7 @@ public class ConcurrentAppendBenchmarks
                 // at TotalAppends: that is the most this tag can ever hold within one
                 // invocation (Shared accumulates across every writer; Disjoint only from this
                 // one), so it always sees the whole boundary.
-                var current = await _backend.StreamAsync(query, afterPosition: 0, limit: TotalAppends);
+                var current = await _backend.ReadAsync(query, afterPosition: 0, limit: TotalAppends);
                 expectedPosition = current.Count > 0 ? current.Max(e => e.GlobalPosition) : 0;
             }
 

@@ -31,7 +31,7 @@ namespace Alberto.Tests.Messaging.Rebus;
 public sealed class RebusTransport(IBus bus) : IMessageTransport
 {
     /// <inheritdoc />
-    public Task PublishAsync(ExternalMessage message, CancellationToken ct = default)
+    public Task PublishAsync(ExternalMessage message, CancellationToken cancellationToken = default)
     {
         var body = new AlbertoMessage(message.MessageType, message.Version, message.Payload);
         var headers = message.Metadata.Count > 0
@@ -44,8 +44,8 @@ public sealed class RebusTransport(IBus bus) : IMessageTransport
     }
 
     /// <inheritdoc />
-    public Task StartAsync(CancellationToken ct = default) => Task.CompletedTask;
+    public Task StartAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 
     /// <inheritdoc />
-    public Task StopAsync(CancellationToken ct = default) => Task.CompletedTask;
+    public Task StopAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 }

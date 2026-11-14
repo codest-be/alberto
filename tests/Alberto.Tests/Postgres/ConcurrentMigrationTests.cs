@@ -21,20 +21,20 @@ namespace Alberto.Tests.Postgres;
 [Trait("Category", "Integration")]
 public sealed class ConcurrentMigrationTests(PostgresCluster cluster)
 {
-    private Task<string> FreshDatabaseAsync(CancellationToken ct = default) =>
-        cluster.CloneAsync(PostgresTemplates.Empty, nameof(ConcurrentMigrationTests), ct);
+    private Task<string> FreshDatabaseAsync(CancellationToken cancellationToken = default) =>
+        cluster.CloneAsync(PostgresTemplates.Empty, nameof(ConcurrentMigrationTests), cancellationToken);
 
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
     public async Task Two_migrators_racing_against_a_fresh_database_both_complete_without_error(bool singleTenant)
     {
-        var ct = TestContext.Current.CancellationToken;
-        var connectionString = await FreshDatabaseAsync(ct);
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var connectionString = await FreshDatabaseAsync(cancellationToken);
 
         // Race two concurrent migrators at the same starting line.
-        var t1 = Task.Run(() => PostgresMigrator.Migrate(connectionString, singleTenant: singleTenant), ct);
-        var t2 = Task.Run(() => PostgresMigrator.Migrate(connectionString, singleTenant: singleTenant), ct);
+        var t1 = Task.Run(() => PostgresMigrator.Migrate(connectionString, singleTenant: singleTenant), cancellationToken);
+        var t2 = Task.Run(() => PostgresMigrator.Migrate(connectionString, singleTenant: singleTenant), cancellationToken);
 
         var results = await Task.WhenAll(t1, t2);
 
@@ -53,7 +53,7 @@ public sealed class ConcurrentMigrationTests(PostgresCluster cluster)
         // and runs all N scripts; the other acquires the lock afterward, finds all N scripts
         // already journalled, and executes nothing. Their executed-script counts therefore
         // sum to N — the same as the journal entry count.
-        var journalCount = await CountJournalEntriesAsync(connectionString, ct);
+        var journalCount = await CountJournalEntriesAsync(connectionString, cancellationToken);
         var totalExecuted = results[0].ExecutedScripts.Count + results[1].ExecutedScripts.Count;
         ((long)totalExecuted).Should().Be(journalCount,
             because: "between them the two runs execute every script exactly once — " +
@@ -64,11 +64,11 @@ public sealed class ConcurrentMigrationTests(PostgresCluster cluster)
     // Helpers
     // =========================================================================
 
-    private static async Task<long> CountJournalEntriesAsync(string connectionString, CancellationToken ct)
+    private static async Task<long> CountJournalEntriesAsync(string connectionString, CancellationToken cancellationToken)
     {
         await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand("SELECT COUNT(*) FROM schemaversions", connection);
-        return Convert.ToInt64(await command.ExecuteScalarAsync(ct));
+        return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken));
     }
 }

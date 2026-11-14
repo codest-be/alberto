@@ -106,7 +106,7 @@ public sealed class OutboxRetentionService : BackgroundService
     public bool IsEnabled => _retention != Timeout.InfiniteTimeSpan;
 
     /// <inheritdoc/>
-    protected override async Task ExecuteAsync(CancellationToken ct)
+    protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
         if (!IsEnabled)
             return;
@@ -117,13 +117,13 @@ public sealed class OutboxRetentionService : BackgroundService
         using var timer = new PeriodicTimer(_interval, _timeProvider);
         _armed.TrySetResult();
 
-        while (await SafeWaitAsync(timer, ct))
+        while (await SafeWaitAsync(timer, cancellationToken))
         {
             try
             {
-                await PurgeAsync(ct);
+                await PurgeAsync(cancellationToken);
             }
-            catch (Exception ex) when (!ct.IsCancellationRequested)
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
                 // A failed sweep is not worth taking the host down for: the rows it would have
                 // removed are inert, and the next sweep faces the same work plus a little more.
@@ -133,27 +133,27 @@ public sealed class OutboxRetentionService : BackgroundService
     }
 
     /// <summary>One sweep, under a root <c>alberto.outbox.purge</c> span.</summary>
-    private async Task PurgeAsync(CancellationToken ct)
+    private async Task PurgeAsync(CancellationToken cancellationToken)
     {
         var before = _timeProvider.GetUtcNow() - _retention;
         using var activity = BackgroundSpans.StartRoot("alberto.outbox.purge");
         activity?.SetTag("alberto.outbox.purge.before", before.ToString("O"));
         try
         {
-            await _store.PurgeDeliveredAsync(before, ct);
+            await _store.PurgeDeliveredAsync(before, cancellationToken);
         }
-        catch (Exception ex) when (!ct.IsCancellationRequested)
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             BackgroundSpans.Fail(activity, ex);
             throw;
         }
     }
 
-    private static async Task<bool> SafeWaitAsync(PeriodicTimer timer, CancellationToken ct)
+    private static async Task<bool> SafeWaitAsync(PeriodicTimer timer, CancellationToken cancellationToken)
     {
         try
         {
-            return await timer.WaitForNextTickAsync(ct);
+            return await timer.WaitForNextTickAsync(cancellationToken);
         }
         catch (OperationCanceledException)
         {

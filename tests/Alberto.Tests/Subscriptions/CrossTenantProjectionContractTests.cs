@@ -24,7 +24,7 @@ namespace Alberto.Tests.Subscriptions;
 ///
 /// <para>
 /// <strong>Fix:</strong> reader and writer no longer decide independently.
-/// <see cref="Alberto.DcbModuleBuilderExtensions.AddProjection{TState}"/> registers the
+/// <see cref="Alberto.AlbertoModuleBuilderExtensions.AddProjection{TState}"/> registers the
 /// writer's own <c>Func&lt;string?, IStateStore&lt;TState&gt;&gt;</c> keyed by
 /// <c>"{moduleKey}:{declaration.ProcessorId}"</c>, and readers resolve it rather than
 /// constructing a store of their own — leaving them nothing to disagree about except which
@@ -60,7 +60,7 @@ public sealed class CrossTenantProjectionContractTests(SingleTenantPostgresFixtu
     [Fact]
     public async Task CrossTenantProjection_ReaderWithoutTenantId_SeesWhatWriterWrote()
     {
-        var projectionType = $"ct-contract-{_id}";
+        var projectionType = $"cancellationToken-contract-{_id}";
         var docId = "overview";
 
         // Writer path: no tenantId — the only mode this schema supports, and the one a
@@ -98,7 +98,7 @@ public sealed class CrossTenantProjectionContractTests(SingleTenantPostgresFixtu
     [Fact]
     public async Task CrossTenantProjection_MultiTenantReaderOnSingleTenantSchema_Throws()
     {
-        var projectionType = $"ct-mismatch-{_id}";
+        var projectionType = $"cancellationToken-mismatch-{_id}";
         var docId = "overview";
 
         var writer = new PostgresStateStore<SimpleState>(fixture.DataSource, projectionType);

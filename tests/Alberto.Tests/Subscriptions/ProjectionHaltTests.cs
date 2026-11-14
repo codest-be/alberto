@@ -38,14 +38,14 @@ public sealed class ProjectionHaltTests
         public List<string> Applied { get; } = [];
         public int PoisonAttempts;
 
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default)
         {
             Apply([Value(@event)]);
             return Task.CompletedTask;
         }
 
         // All-or-nothing, so a bisected batch never applies an event twice.
-        public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct = default)
+        public Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken cancellationToken = default)
         {
             Apply(events.Select(Value).ToList());
             return Task.CompletedTask;
@@ -122,7 +122,7 @@ public sealed class ProjectionHaltTests
         bool batching,
         ProcessorExecutionOptions? execution = null)
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var backend = new InMemoryEventStoreBackend();
         var checkpoints = new InMemoryCheckpointStore();
         var deadLetters = new InMemoryDeadLetterStore();
@@ -156,13 +156,19 @@ public sealed class ProjectionHaltTests
             pollingInterval: TimeSpan.FromMilliseconds(10), batchSize: 100, moduleKey: ModuleKey,
             executionOptions: execution, healthState: health);
 
-        await head.StartAsync(ct);
-        await loop.StartAsync(ct);
+        await head.StartAsync(cancellationToken);
+        await loop.StartAsync(cancellationToken);
 
         return new Rig
         {
-            Backend = backend, Checkpoints = checkpoints, DeadLetters = deadLetters, Head = head,
-            Health = health, Clock = clock, Processor = processor, Loop = loop,
+            Backend = backend,
+            Checkpoints = checkpoints,
+            DeadLetters = deadLetters,
+            Head = head,
+            Health = health,
+            Clock = clock,
+            Processor = processor,
+            Loop = loop,
         };
     }
 
@@ -171,7 +177,7 @@ public sealed class ProjectionHaltTests
     [InlineData(true)]
     public async Task Projection_halts_on_failing_event_and_resumes_in_order(bool batching)
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         await using var rig = await StartAsync(ProcessorKind.Projection, batching);
 
         // Appended together so the batch path has to isolate the poison event by bisecting.
@@ -183,8 +189,8 @@ public sealed class ProjectionHaltTests
 
         // Halted: stuck on the event, nothing later applied, nothing dead-lettered, reported.
         rig.Processor.Snapshot().Should().NotContain(["c", "d"]);
-        (await rig.DeadLetters.CountAsync("flaky", ct)).Should().Be(0);
-        (await rig.Checkpoints.GetAsync("flaky", ct) ?? 0).Should().BeLessThan(3, "the checkpoint must not pass the failing event");
+        (await rig.DeadLetters.CountAsync("flaky", cancellationToken)).Should().Be(0);
+        (await rig.Checkpoints.GetAsync("flaky", cancellationToken) ?? 0).Should().BeLessThan(3, "the checkpoint must not pass the failing event");
         rig.Loop.IsFaulted.Should().BeTrue();
         rig.Health.Get("flaky").IsFaulted.Should().BeTrue();
 
@@ -193,14 +199,14 @@ public sealed class ProjectionHaltTests
         await rig.PumpUntilAsync(() => rig.Processor.Snapshot().Length == 5, "resume after the failure clears");
 
         rig.Processor.Snapshot().Should().Equal("a", "b", "poison", "c", "d");
-        (await rig.DeadLetters.CountAsync("flaky", ct)).Should().Be(0);
+        (await rig.DeadLetters.CountAsync("flaky", cancellationToken)).Should().Be(0);
         await rig.PumpUntilAsync(() => !rig.Loop.IsFaulted && !rig.Health.Get("flaky").IsFaulted, "halt flag clears");
     }
 
     [Fact]
     public async Task Reactor_still_dead_letters_and_moves_on()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         await using var rig = await StartAsync(ProcessorKind.Reactor, batching: false);
 
         await rig.AppendAsync("a", "poison", "c");
@@ -208,7 +214,7 @@ public sealed class ProjectionHaltTests
         await rig.PumpUntilAsync(() => rig.Processor.Snapshot().Length == 2, "events after the poison one are applied");
 
         rig.Processor.Snapshot().Should().Equal("a", "c");
-        (await rig.DeadLetters.CountAsync("flaky", ct)).Should().Be(1);
+        (await rig.DeadLetters.CountAsync("flaky", cancellationToken)).Should().Be(1);
         rig.Loop.IsFaulted.Should().BeFalse();
     }
 

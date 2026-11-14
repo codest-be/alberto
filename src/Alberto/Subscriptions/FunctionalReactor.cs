@@ -22,15 +22,15 @@ internal sealed class FunctionalReactor<TEvent>(
         EventTypeAttribute.GetEventTypeId(typeof(TEvent))
     };
 
-    public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
+    public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default)
     {
         if (!IsActive || !HandledEventTypes.Contains(@event.EventType.Id))
             return Task.CompletedTask;
 
-        return ProcessAsync(@event, ct);
+        return ProcessAsync(@event, cancellationToken);
     }
 
-    public async Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken ct = default)
+    public async Task ProcessBatchAsync(IReadOnlyList<IEventEnvelope> events, CancellationToken cancellationToken = default)
     {
         if (!IsActive)
             return;
@@ -38,19 +38,19 @@ internal sealed class FunctionalReactor<TEvent>(
         if (maxConcurrency <= 1)
         {
             foreach (var @event in events)
-                await ProcessAsync(@event, ct);
+                await ProcessAsync(@event, cancellationToken);
             return;
         }
 
         await Parallel.ForEachAsync(
             events,
-            new ParallelOptions { MaxDegreeOfParallelism = maxConcurrency, CancellationToken = ct },
+            new ParallelOptions { MaxDegreeOfParallelism = maxConcurrency, CancellationToken = cancellationToken },
             async (@event, token) => await ProcessAsync(@event, token));
     }
 
-    private Task ProcessAsync(IEventEnvelope @event, CancellationToken ct)
+    private Task ProcessAsync(IEventEnvelope @event, CancellationToken cancellationToken)
     {
         var payload = EventEnvelopeExtensions.DeserializeEvent<TEvent>(@event, serializer);
-        return handler(payload, ReactorContext.FromEnvelope(@event), ct);
+        return handler(payload, ReactorContext.FromEnvelope(@event), cancellationToken);
     }
 }

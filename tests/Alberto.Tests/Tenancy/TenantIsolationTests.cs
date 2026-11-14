@@ -2,7 +2,7 @@ using System.Text.Json;
 using Alberto.Messaging;
 using Alberto.Postgres;
 using Alberto.Messaging.Postgres;
-using Alberto.Subscriptions;
+using Alberto.DeadLetters;
 using Alberto.Tenancy;
 using Alberto.Tests.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,7 +14,7 @@ namespace Alberto.Tests.Tenancy;
 /// <summary>
 /// Multi-tenant fixture on a private database. Runs the multi-tenant migration
 /// (without <c>singleTenant: true</c>) and wires up a DI service provider via
-/// <see cref="DcbModuleBuilder"/> with tenancy enabled so that
+/// <see cref="AlbertoModuleBuilder"/> with tenancy enabled so that
 /// <c>TenantEventStoreDecorator</c> is in the request-scoped backend chain.
 /// </summary>
 public sealed class MultiTenantPostgresFixture(PostgresCluster cluster)
@@ -120,7 +120,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
         return new EventToPersist
         {
             EventType = new EventType(eventTypeId),
-            Tags = [..tags],
+            Tags = [.. tags],
             EventData = JsonSerializer.Serialize(@event),
         };
     }
@@ -146,7 +146,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
     [Fact]
     public async Task TenantA_events_are_not_visible_to_TenantB()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var orderId = Guid.NewGuid();
         var tag = new EventTag("ti-order", orderId.ToString());
 
@@ -157,13 +157,13 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
                 [CreateEvent(new OrderCreated(orderId), tag)],
                 dcbQuery: null,
                 expectedPosition: null,
-                cancellationToken: ct);
+                cancellationToken: cancellationToken);
         }
 
         await using (var scopeB = CreateScopeForTenant(TenantB))
         {
             var storeB = scopeB.ServiceProvider.GetRequiredKeyedService<IEventStore>(ModuleKey);
-            var events = await storeB.StreamAsync(DcbQuery.ByTags(tag.Value), cancellationToken: ct);
+            var events = await storeB.StreamAsync(DcbQuery.ByTags(tag.Value), cancellationToken: cancellationToken).ToListAsync();
 
             Assert.Empty(events);
         }
@@ -177,7 +177,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
     [Fact]
     public async Task TenantA_stream_returns_only_tenantA_events_not_tenantB()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var orderId = Guid.NewGuid();
         var tag = new EventTag("ti-shared", orderId.ToString());
 
@@ -188,7 +188,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
                 [CreateEvent(new OrderCreated(orderId), tag)],
                 dcbQuery: null,
                 expectedPosition: null,
-                cancellationToken: ct);
+                cancellationToken: cancellationToken);
         }
 
         await using (var scopeB = CreateScopeForTenant(TenantB))
@@ -198,13 +198,13 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
                 [CreateEvent(new OrderCreated(orderId), tag)],
                 dcbQuery: null,
                 expectedPosition: null,
-                cancellationToken: ct);
+                cancellationToken: cancellationToken);
         }
 
         await using (var scopeA2 = CreateScopeForTenant(TenantA))
         {
             var storeA2 = scopeA2.ServiceProvider.GetRequiredKeyedService<IEventStore>(ModuleKey);
-            var events = await storeA2.StreamAsync(DcbQuery.ByTags(tag.Value), cancellationToken: ct);
+            var events = await storeA2.StreamAsync(DcbQuery.ByTags(tag.Value), cancellationToken: cancellationToken).ToListAsync();
 
             var ev = Assert.Single(events);
             Assert.Equal(TenantA, ev.TenantId);
@@ -221,13 +221,13 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
     [Fact]
     public async Task StreamAllAsync_throws_InvalidOperationException_when_request_tenant_is_active()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
 
         await using var scopeA = CreateScopeForTenant(TenantA);
         var storeA = scopeA.ServiceProvider.GetRequiredKeyedService<IEventStore>(ModuleKey);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => storeA.StreamAllAsync(cancellationToken: ct));
+            async () => await storeA.StreamAllAsync(cancellationToken: cancellationToken).ToListAsync());
     }
 
     // ─── Regression: multi-tenant types-and-tags read SQL ───────────────────
@@ -247,7 +247,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
     [Fact]
     public async Task Stream_ByTypesAndTags_IsTenantScoped_AndReturnsEachEventOnce()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var orderId = Guid.NewGuid();
         var orderTag = new EventTag("ti-tt-order", orderId.ToString());
         var customerTag = new EventTag("ti-tt-customer", orderId.ToString());
@@ -270,7 +270,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
                 ],
                 dcbQuery: null,
                 expectedPosition: null,
-                cancellationToken: ct);
+                cancellationToken: cancellationToken);
         }
 
         await using (var scopeB = CreateScopeForTenant(TenantB))
@@ -280,7 +280,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
                 [Tagged(new OrderCreated(orderId), orderTag, customerTag)], // right shape, wrong tenant
                 dcbQuery: null,
                 expectedPosition: null,
-                cancellationToken: ct);
+                cancellationToken: cancellationToken);
         }
 
         await using (var scopeA2 = CreateScopeForTenant(TenantA))
@@ -290,7 +290,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
                 .WithTypes("ti-order-created")
                 .WithTags(orderTag.Value, customerTag.Value);
 
-            var events = await storeA2.StreamAsync(query, cancellationToken: ct);
+            var events = await storeA2.StreamAsync(query, cancellationToken: cancellationToken).ToListAsync();
 
             var ev = Assert.Single(events);
             Assert.Equal(TenantA, ev.TenantId);
@@ -313,7 +313,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
     [Fact]
     public async Task Stream_BySingleTagFastPath_IsTenantScoped()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var orderId = Guid.NewGuid();
         var orderTag = new EventTag("ti-fp-order", orderId.ToString());
 
@@ -335,7 +335,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
                 ],
                 dcbQuery: null,
                 expectedPosition: null,
-                cancellationToken: ct);
+                cancellationToken: cancellationToken);
         }
 
         await using (var scopeB = CreateScopeForTenant(TenantB))
@@ -345,7 +345,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
                 [Tagged(new OrderCreated(orderId), orderTag)], // right shape, wrong tenant
                 dcbQuery: null,
                 expectedPosition: null,
-                cancellationToken: ct);
+                cancellationToken: cancellationToken);
         }
 
         await using (var scopeA2 = CreateScopeForTenant(TenantA))
@@ -355,7 +355,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
                 .WithTypes("ti-order-created")
                 .WithTags(orderTag.Value);
 
-            var events = await storeA2.StreamAsync(query, cancellationToken: ct);
+            var events = await storeA2.StreamAsync(query, cancellationToken: cancellationToken).ToListAsync();
 
             var ev = Assert.Single(events);
             Assert.Equal(TenantA, ev.TenantId);
@@ -367,7 +367,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
                 .WithTypes("ti-order-created", "ti-order-shipped")
                 .WithTags(orderTag.Value);
 
-            var multiTypeEvents = await storeA2.StreamAsync(multiTypeQuery, cancellationToken: ct);
+            var multiTypeEvents = await storeA2.StreamAsync(multiTypeQuery, cancellationToken: cancellationToken).ToListAsync();
 
             Assert.Equal(2, multiTypeEvents.Count);
             Assert.All(multiTypeEvents, e => Assert.Equal(TenantA, e.TenantId));
@@ -389,7 +389,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
     [Fact]
     public async Task Stream_ByTypes_IsTenantScoped()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var orderId = Guid.NewGuid();
 
         await using (var scopeA = CreateScopeForTenant(TenantA))
@@ -403,7 +403,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
                 ],
                 dcbQuery: null,
                 expectedPosition: null,
-                cancellationToken: ct);
+                cancellationToken: cancellationToken);
         }
 
         await using (var scopeB = CreateScopeForTenant(TenantB))
@@ -416,7 +416,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
                 ],
                 dcbQuery: null,
                 expectedPosition: null,
-                cancellationToken: ct);
+                cancellationToken: cancellationToken);
         }
 
         await using (var scopeA2 = CreateScopeForTenant(TenantA))
@@ -425,7 +425,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
 
             // One named type: a single probe, the shape a leaked tenant predicate would widen
             // from two rows to three.
-            var single = await storeA2.StreamAsync(DcbQuery.ByTypes("ti-probe-alpha"), cancellationToken: ct);
+            var single = await storeA2.StreamAsync(DcbQuery.ByTypes("ti-probe-alpha"), cancellationToken: cancellationToken).ToListAsync();
 
             Assert.Equal(2, single.Count);
             Assert.All(single, e => Assert.Equal(TenantA, e.TenantId));
@@ -433,7 +433,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
 
             // Several named types: one probe each, every one of which must be scoped.
             var several = await storeA2.StreamAsync(
-                DcbQuery.ByTypes("ti-probe-alpha", "ti-probe-beta"), cancellationToken: ct);
+                DcbQuery.ByTypes("ti-probe-alpha", "ti-probe-beta"), cancellationToken: cancellationToken).ToListAsync();
 
             Assert.Equal(3, several.Count);
             Assert.All(several, e => Assert.Equal(TenantA, e.TenantId));
@@ -444,7 +444,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
             // The same type twice, which is what DcbQuery produces from ByTypes(x).WithTypes(x):
             // deduplicated to one probe, so still tenant A's two events and not four rows.
             var repeated = await storeA2.StreamAsync(
-                DcbQuery.ByTypes("ti-probe-alpha").WithTypes("ti-probe-alpha"), cancellationToken: ct);
+                DcbQuery.ByTypes("ti-probe-alpha").WithTypes("ti-probe-alpha"), cancellationToken: cancellationToken).ToListAsync();
 
             Assert.Equal(single.Select(e => e.GlobalPosition), repeated.Select(e => e.GlobalPosition));
         }
@@ -467,7 +467,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
     [Fact]
     public async Task Stream_ByTagAxisShapes_IsTenantScoped()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var orderId = Guid.NewGuid();
         var order = new EventTag("ti-alltags-order", orderId.ToString());
         var region = new EventTag("ti-alltags-region", Guid.NewGuid().ToString());
@@ -486,37 +486,37 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
         {
             await using var scope = CreateScopeForTenant(tenant);
             var store = scope.ServiceProvider.GetRequiredKeyedService<IEventStore>(ModuleKey);
-            await store.AppendAsync(Batch(), dcbQuery: null, expectedPosition: null, cancellationToken: ct);
+            await store.AppendAsync(Batch(), dcbQuery: null, expectedPosition: null, cancellationToken: cancellationToken);
         }
 
         await using var scopeA = CreateScopeForTenant(TenantA);
         var storeA = scopeA.ServiceProvider.GetRequiredKeyedService<IEventStore>(ModuleKey);
 
         // alberto_read_by_all_tags: driver probe, driving scan, one EXISTS probe.
-        var allTags = await storeA.StreamAsync(DcbQuery.ByAllTags(order, region), cancellationToken: ct);
+        var allTags = await storeA.StreamAsync(DcbQuery.ByAllTags(order, region), cancellationToken: cancellationToken).ToListAsync();
         Assert.Equal(2, allTags.Count);
         Assert.All(allTags, e => Assert.Equal(TenantA, e.TenantId));
 
         // Reversing the tags changes which one drives — and must change nothing else.
-        var reversed = await storeA.StreamAsync(DcbQuery.ByAllTags(region, order), cancellationToken: ct);
+        var reversed = await storeA.StreamAsync(DcbQuery.ByAllTags(region, order), cancellationToken: cancellationToken).ToListAsync();
         Assert.Equal(allTags.Select(e => e.GlobalPosition), reversed.Select(e => e.GlobalPosition));
 
         // alberto_read_by_types_and_all_tags, one named type: the scalar type-position probe.
         var oneType = await storeA.StreamAsync(
-            DcbQuery.ByAllTags(order, region).WithTypes("ti-order-created"), cancellationToken: ct);
+            DcbQuery.ByAllTags(order, region).WithTypes("ti-order-created"), cancellationToken: cancellationToken).ToListAsync();
         Assert.Equal(TenantA, Assert.Single(oneType).TenantId);
 
         // The same function, several named types: here the type is tested on the events row,
         // which carries no tenant predicate of its own and relies on the driving scan's.
         var severalTypes = await storeA.StreamAsync(
             DcbQuery.ByAllTags(order, region).WithTypes("ti-order-created", "ti-order-shipped"),
-            cancellationToken: ct);
+            cancellationToken: cancellationToken).ToListAsync();
         Assert.Equal(2, severalTypes.Count);
         Assert.All(severalTypes, e => Assert.Equal(TenantA, e.TenantId));
 
         // alberto_read_by_types_or_tags: a bounded probe per type and per tag, unioned.
         var orTags = await storeA.StreamAsync(
-            DcbQuery.ByTags(order).WithTypes("ti-union-alpha").AsUnion(), cancellationToken: ct);
+            DcbQuery.ByTags(order).WithTypes("ti-union-alpha").AsUnion(), cancellationToken: cancellationToken).ToListAsync();
         Assert.Equal(4, orTags.Count);
         Assert.All(orTags, e => Assert.Equal(TenantA, e.TenantId));
         Assert.Equal(
@@ -525,7 +525,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
 
         // alberto_read_by_types_or_all_tags: the type probes unioned with the all-tags scan.
         var orAllTags = await storeA.StreamAsync(
-            DcbQuery.ByAllTags(order, region).WithTypes("ti-union-alpha").AsUnion(), cancellationToken: ct);
+            DcbQuery.ByAllTags(order, region).WithTypes("ti-union-alpha").AsUnion(), cancellationToken: cancellationToken).ToListAsync();
         Assert.Equal(3, orAllTags.Count);
         Assert.All(orAllTags, e => Assert.Equal(TenantA, e.TenantId));
     }
@@ -543,7 +543,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
     [Fact]
     public async Task GetStableHeadGlobal_AfterCommittedAppend_ExecutesBarrierSql()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var tag = new EventTag("ti-stablehead", Guid.NewGuid().ToString());
 
         // Commit at least one row so the barrier's ascending index scan has a row to evaluate.
@@ -554,14 +554,14 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
                 [CreateEvent(new OrderCreated(Guid.NewGuid()), tag)],
                 dcbQuery: null,
                 expectedPosition: null,
-                cancellationToken: ct);
+                cancellationToken: cancellationToken);
         }
 
         var backend = new PostgresTenantEventStoreBackend(fixture.DataSource);
 
         // The append has committed, so nothing is in flight: the barrier must not throw
         // "cannot cast type xid8 to bigint" and must return a non-negative head.
-        var stableHead = await backend.GetStableHeadGlobalAsync(0, long.MaxValue, ct);
+        var stableHead = await backend.GetStableHeadGlobalAsync(0, long.MaxValue, cancellationToken);
 
         Assert.True(stableHead >= 0, $"expected non-negative stable head, got {stableHead}");
     }
@@ -575,7 +575,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
     [Fact]
     public async Task StateStore_tenantA_writes_are_not_visible_to_tenantB()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var projectionType = $"ti-proj-{Guid.NewGuid():N}";
         var docId = Guid.NewGuid().ToString();
 
@@ -592,9 +592,9 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
         await storeA.ApplyChangesAsync(
             new Dictionary<string, OrderState> { [docId] = new OrderState("tenant-a-order", 42.50m) },
             [],
-            ct: ct);
+            cancellationToken: cancellationToken);
 
-        var resultB = await storeB.LoadManyAsync([docId], ct: ct);
+        var resultB = await storeB.LoadManyAsync([docId], cancellationToken: cancellationToken);
         Assert.Empty(resultB);
     }
 
@@ -605,7 +605,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
     [Fact]
     public async Task StateStore_tenantB_writes_do_not_overwrite_tenantA()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var projectionType = $"ti-proj-{Guid.NewGuid():N}";
         var docId = Guid.NewGuid().ToString();
 
@@ -622,14 +622,14 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
         await storeA.ApplyChangesAsync(
             new Dictionary<string, OrderState> { [docId] = new OrderState("original", 10m) },
             [],
-            ct: ct);
+            cancellationToken: cancellationToken);
 
         await storeB.ApplyChangesAsync(
             new Dictionary<string, OrderState> { [docId] = new OrderState("overwritten", 99m) },
             [],
-            ct: ct);
+            cancellationToken: cancellationToken);
 
-        var resultA = await storeA.LoadManyAsync([docId], ct: ct);
+        var resultA = await storeA.LoadManyAsync([docId], cancellationToken: cancellationToken);
         Assert.Equal("original", resultA[docId].Label);
         Assert.Equal(10m, resultA[docId].Amount);
     }
@@ -641,7 +641,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
     [Fact]
     public async Task StateStore_delete_in_tenantA_does_not_affect_tenantB()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var projectionType = $"ti-proj-{Guid.NewGuid():N}";
         var docId = Guid.NewGuid().ToString();
 
@@ -658,20 +658,20 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
         await storeA.ApplyChangesAsync(
             new Dictionary<string, OrderState> { [docId] = new OrderState("a-doc", 1m) },
             [],
-            ct: ct);
+            cancellationToken: cancellationToken);
 
         await storeB.ApplyChangesAsync(
             new Dictionary<string, OrderState> { [docId] = new OrderState("b-doc", 2m) },
             [],
-            ct: ct);
+            cancellationToken: cancellationToken);
 
         // Delete the document for tenant A only.
-        await storeA.ApplyChangesAsync(new Dictionary<string, OrderState>(), [docId], ct: ct);
+        await storeA.ApplyChangesAsync(new Dictionary<string, OrderState>(), [docId], cancellationToken: cancellationToken);
 
-        var resultA = await storeA.LoadManyAsync([docId], ct: ct);
+        var resultA = await storeA.LoadManyAsync([docId], cancellationToken: cancellationToken);
         Assert.Empty(resultA);
 
-        var resultB = await storeB.LoadManyAsync([docId], ct: ct);
+        var resultB = await storeB.LoadManyAsync([docId], cancellationToken: cancellationToken);
         Assert.Equal("b-doc", resultB[docId].Label);
     }
 
@@ -685,7 +685,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
     [Fact]
     public async Task DeadLetterStore_StoreAsync_persists_tenant_id_in_multiTenant_mode()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var orderId = Guid.NewGuid();
         var tag = new EventTag("ti-dl", orderId.ToString());
 
@@ -698,7 +698,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
                 [CreateEvent(new OrderCreated(orderId), tag)],
                 dcbQuery: null,
                 expectedPosition: null,
-                cancellationToken: ct);
+                cancellationToken: cancellationToken);
             persisted = appended.Single();
         }
 
@@ -719,14 +719,14 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
             TenantId = TenantA,
         };
 
-        await deadLetterStore.StoreAsync(entry, ct);
+        await deadLetterStore.StoreAsync(entry, cancellationToken);
 
         // Verify the tenant_id column was written via a direct SQL query.
-        await using var conn = await fixture.DataSource.OpenConnectionAsync(ct);
+        await using var conn = await fixture.DataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT tenant_id FROM alberto_dead_letter_events WHERE id = @id";
         cmd.Parameters.AddWithValue("id", entry.Id);
-        var storedTenantId = (string?)await cmd.ExecuteScalarAsync(ct);
+        var storedTenantId = (string?)await cmd.ExecuteScalarAsync(cancellationToken);
 
         Assert.Equal(TenantA, storedTenantId);
     }
@@ -739,7 +739,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
     [Fact]
     public async Task DeadLetterStore_LegacyFalseHint_StillUsesMultiTenantSchemaForClaims()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var orderId = Guid.NewGuid();
         var tag = new EventTag("ti-dl-retry", orderId.ToString());
 
@@ -751,7 +751,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
                 [CreateEvent(new OrderCreated(orderId), tag)],
                 dcbQuery: null,
                 expectedPosition: null,
-                cancellationToken: ct);
+                cancellationToken: cancellationToken);
             persisted = appended.Single();
         }
 
@@ -774,15 +774,15 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
             TenantId = TenantA,
         };
 
-        await deadLetterStore.StoreAsync(entry, ct);
-        await deadLetterStore.MarkForRetryAsync(processorId, ct);
+        await deadLetterStore.StoreAsync(entry, cancellationToken);
+        await deadLetterStore.MarkForRetryAsync(processorId, cancellationToken);
 
         var retries = await deadLetterStore.ClaimRetryRequestedAsync(
             processorId,
             batchSize: 10,
             leaseDuration: TimeSpan.FromMinutes(5),
             claimedBy: "ti-worker",
-            ct: ct);
+            cancellationToken: cancellationToken);
 
         var retry = Assert.Single(retries);
         Assert.Equal(TenantA, retry.Entry.TenantId);
@@ -792,7 +792,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
     [Fact]
     public async Task OutboxStore_CarriesTenantIdentityThroughPersistenceAndClaim()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var store = new PostgresOutboxStore(fixture.DataSource);
         var entry = new OutboxEntry(
             Id: Guid.NewGuid(),
@@ -808,12 +808,12 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
             DeliveredAt: null,
             TenantId: TenantA);
 
-        await store.InsertAsync(entry, ct);
+        await store.InsertAsync(entry, cancellationToken);
         var claim = (await store.ClaimPendingAsync(
                 100,
                 TimeSpan.FromMinutes(5),
                 "tenant-test",
-                ct))
+                cancellationToken))
             .Single(c => c.Entry.Id == entry.Id);
 
         Assert.Equal(TenantA, claim.Entry.TenantId);
@@ -828,7 +828,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
     [Fact]
     public async Task DeadLetterStore_GetAsync_is_scoped_to_active_tenant()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var orderId = Guid.NewGuid();
         var tag = new EventTag("ti-dl-get", orderId.ToString());
 
@@ -840,7 +840,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
                 [CreateEvent(new OrderCreated(orderId), tag)],
                 dcbQuery: null,
                 expectedPosition: null,
-                cancellationToken: ct);
+                cancellationToken: cancellationToken);
             persisted = appended.Single();
         }
 
@@ -861,19 +861,19 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
             TenantId = TenantA,
         };
 
-        await deadLetterStore.StoreAsync(entry, ct);
+        await deadLetterStore.StoreAsync(entry, cancellationToken);
 
         // Tenant B's view of this processor must be empty because the entry belongs to tenant A.
-        var entriesForB = await deadLetterStore.GetAsync(processorId, tenantId: TenantB, ct: ct);
+        var entriesForB = await deadLetterStore.GetAsync(processorId, tenantId: TenantB, cancellationToken: cancellationToken);
         Assert.Empty(entriesForB);
 
         // Tenant A must still see its own entry — otherwise a filter that always matches
         // nothing would satisfy the assertion above.
-        var entriesForA = await deadLetterStore.GetAsync(processorId, tenantId: TenantA, ct: ct);
+        var entriesForA = await deadLetterStore.GetAsync(processorId, tenantId: TenantA, cancellationToken: cancellationToken);
         Assert.Equal(entry.Id, Assert.Single(entriesForA).Id);
 
         // No tenant supplied keeps the cross-tenant operator view.
-        var entriesForOperator = await deadLetterStore.GetAsync(processorId, ct: ct);
+        var entriesForOperator = await deadLetterStore.GetAsync(processorId, cancellationToken: cancellationToken);
         Assert.Equal(entry.Id, Assert.Single(entriesForOperator).Id);
     }
 }

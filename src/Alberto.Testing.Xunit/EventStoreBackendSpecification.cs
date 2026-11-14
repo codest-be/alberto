@@ -33,21 +33,21 @@ public abstract class EventStoreBackendSpecification
     // ── Capability hooks ─────────────────────────────────────────────────────
 
     /// <summary>
-    /// Selects which contract the two <c>StreamAllAsync</c> facts assert.
+    /// Selects which contract the two <c>ReadAllAsync</c> facts assert.
     ///
     /// <para>
     /// When <see langword="true"/> (the default) each fact asserts that
-    /// <see cref="IEventStoreBackend.StreamAllAsync"/> returns all events after the given
+    /// <see cref="IEventStore.ReadAllAsync"/> returns all events after the given
     /// position — the normal cross-tenant streaming contract.
     /// </para>
     ///
     /// <para>
     /// When <see langword="false"/> each fact instead asserts that
-    /// <see cref="IEventStoreBackend.StreamAllAsync"/> throws
+    /// <see cref="IEventStore.ReadAllAsync"/> throws
     /// <see cref="InvalidOperationException"/>. Set this for backends that intentionally
     /// restrict cross-tenant streaming — specifically the request-scoped tenant decorators
     /// (<c>InMemoryTenantEventStoreDecorator</c> / <c>TenantEventStoreDecorator</c>) whose
-    /// <c>StreamAllAsync</c> throws when <c>HasTenant</c> is true. That restriction is a
+    /// <c>ReadAllAsync</c> and <c>StreamAllAsync</c> throw when <c>HasTenant</c> is true. That restriction is a
     /// deliberate isolation guard, not a missing feature; the guard is part of the contract
     /// and must be asserted, not skipped.
     /// </para>
@@ -67,7 +67,8 @@ public abstract class EventStoreBackendSpecification
 
         Assert.Single(result);
         Assert.Equal(eventToPersist.Id, result.First().Id);
-        Assert.Equal(eventToPersist.EventType.Id, result.First().EventType.Id);    }
+        Assert.Equal(eventToPersist.EventType.Id, result.First().EventType.Id);
+    }
 
     /// <summary>Multiple events in one batch must receive strictly increasing global positions.</summary>
     [Fact]
@@ -85,7 +86,8 @@ public abstract class EventStoreBackendSpecification
 
         var positions = result.Select(e => e.GlobalPosition).ToList();
         Assert.Equal(3, positions.Count);
-        Assert.True(positions[0] < positions[1] && positions[1] < positions[2]);    }
+        Assert.True(positions[0] < positions[1] && positions[1] < positions[2]);
+    }
 
     /// <summary>The event payload and tags stored must match those supplied to <c>AppendAsync</c>.</summary>
     /// <remarks>
@@ -110,7 +112,8 @@ public abstract class EventStoreBackendSpecification
         Assert.True(
             JsonNode.DeepEquals(JsonNode.Parse(payload), JsonNode.Parse(appended.EventData)),
             $"EventData must round-trip as semantically equal JSON. Sent {payload}, got {appended.EventData}.");
-        Assert.Equal(eventToPersist.Tags.Count, appended.Tags.Count);    }
+        Assert.Equal(eventToPersist.Tags.Count, appended.Tags.Count);
+    }
 
     /// <summary>
     /// A payload that is not well-formed JSON must be refused, rather than stored and left to fail
@@ -162,7 +165,8 @@ public abstract class EventStoreBackendSpecification
 
         var appended = result.First();
         Assert.Equal("corr-123", appended.Metadata["correlation-id"]);
-        Assert.Equal("user-456", appended.Metadata["user-id"]);    }
+        Assert.Equal("user-456", appended.Metadata["user-id"]);
+    }
 
     #endregion
 
@@ -175,9 +179,10 @@ public abstract class EventStoreBackendSpecification
         var backend = await CreateBackend();
         var query = DcbQuery.ByTags($"order:{TestId}-empty");
 
-        var result = await backend.StreamAsync(query, cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.StreamAsync(query, cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
-        Assert.Empty(result);    }
+        Assert.Empty(result);
+    }
 
     /// <summary>A tag query must return only events whose tag set contains that tag value.</summary>
     [Fact]
@@ -190,10 +195,11 @@ public abstract class EventStoreBackendSpecification
             CreateEvent("customer-updated", $"customer:{TestId}")
         ], cancellationToken: TestContext.Current.CancellationToken);
 
-        var result = await backend.StreamAsync(DcbQuery.ByTags($"order:{TestId}"), cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.StreamAsync(DcbQuery.ByTags($"order:{TestId}"), cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
         Assert.Equal(2, result.Count);
-        Assert.All(result, e => Assert.Contains(e.Tags, t => t.Value == $"order:{TestId}"));    }
+        Assert.All(result, e => Assert.Contains(e.Tags, t => t.Value == $"order:{TestId}"));
+    }
 
     /// <summary>An event-type query must return only events whose type matches the specified value.</summary>
     [Fact]
@@ -206,10 +212,11 @@ public abstract class EventStoreBackendSpecification
             CreateEvent($"order-placed-{TestId}", $"order:2{TestId}")
         ], cancellationToken: TestContext.Current.CancellationToken);
 
-        var result = await backend.StreamAsync(DcbQuery.ByTypes($"order-placed-{TestId}"), cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.StreamAsync(DcbQuery.ByTypes($"order-placed-{TestId}"), cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
         Assert.Equal(2, result.Count);
-        Assert.All(result, e => Assert.Equal($"order-placed-{TestId}", e.EventType.Id));    }
+        Assert.All(result, e => Assert.Equal($"order-placed-{TestId}", e.EventType.Id));
+    }
 
     /// <summary>A union query must return events matching either the type axis or the tag axis.</summary>
     [Fact]
@@ -227,9 +234,10 @@ public abstract class EventStoreBackendSpecification
             .WithTags(new EventTag("order", $"2{TestId}"))
             .AsUnion();
 
-        var result = await backend.StreamAsync(query, cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.StreamAsync(query, cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
-        Assert.Equal(2, result.Count);    }
+        Assert.Equal(2, result.Count);
+    }
 
     /// <summary>An intersect (default) query must return only events matching both the type and tag axes.</summary>
     [Fact]
@@ -247,7 +255,7 @@ public abstract class EventStoreBackendSpecification
             .WithTypes($"order-placed-{TestId}")
             .WithTags(new EventTag("order", $"2{TestId}"));
 
-        var result = await backend.StreamAsync(query, cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.StreamAsync(query, cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
         var matched = Assert.Single(result);
         Assert.Equal($"order-placed-{TestId}", matched.EventType.Id);
@@ -274,7 +282,7 @@ public abstract class EventStoreBackendSpecification
             .WithTypes($"order-placed-{TestId}")
             .WithTags($"order:1{TestId}", $"customer:1{TestId}");
 
-        var result = await backend.StreamAsync(query, cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.StreamAsync(query, cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
         var matched = Assert.Single(result);
         Assert.Equal($"order-placed-{TestId}", matched.EventType.Id);
@@ -298,7 +306,7 @@ public abstract class EventStoreBackendSpecification
             .WithTypes($"order-placed-{TestId}")
             .WithTags($"order:1{TestId}", $"customer:1{TestId}", $"order:2{TestId}");
 
-        var result = await backend.StreamAsync(query, limit: 2, cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.ReadAsync(query, afterPosition: 0, limit: 2, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(2, result.Count);
         Assert.Equal(2, result.Select(e => e.GlobalPosition).Distinct().Count());
@@ -318,7 +326,7 @@ public abstract class EventStoreBackendSpecification
 
         var result = await backend.StreamAsync(
             DcbQuery.ByAllTags($"reader:{TestId}", $"source:{TestId}"),
-            cancellationToken: TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
         var matched = Assert.Single(result);
         Assert.Equal("source-followed", matched.EventType.Id);
@@ -327,9 +335,9 @@ public abstract class EventStoreBackendSpecification
     }
 
     /// <summary>
-    /// A read of the whole log for some event types must return every event of those types in
-    /// position order. Filtering is a hint a backend may ignore, so other types are tolerated;
-    /// the facts a control loop's checkpoint rests on are the order and the completeness.
+    /// A read of the whole log for some event types must return exactly the events of those types,
+    /// in position order. The filter is part of the contract: a backend that returns other types
+    /// has not implemented it.
     /// </summary>
     [Fact]
     public async Task StreamAllOfTypes_ReturnsEveryMatchingEvent_InPositionOrder()
@@ -337,22 +345,22 @@ public abstract class EventStoreBackendSpecification
         if (!SupportsStreamAll)
             return;
 
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var backend = await CreateBackend();
-        var start = await backend.GetLastPositionAsync(ct);
+        var start = await backend.GetLastPositionAsync(cancellationToken);
         var (wanted, other) = ($"wanted-{TestId}", $"other-{TestId}");
 
         var appended = await backend.AppendAsync([
             CreateEvent(wanted, $"tag:1{TestId}"),
             CreateEvent(other, $"tag:2{TestId}"),
             CreateEvent(wanted, $"tag:3{TestId}")
-        ], cancellationToken: ct);
+        ], cancellationToken: cancellationToken);
 
-        var result = await backend.StreamAllOfTypesAsync(new HashSet<string> { wanted }, start, limit: null, ct);
+        var result = await backend.ReadAllOfTypesAsync(new HashSet<string> { wanted }, start, limit: int.MaxValue, cancellationToken);
 
         Assert.Equal(
             appended.Where(e => e.EventType.Id == wanted).Select(e => e.GlobalPosition),
-            result.Where(e => e.EventType.Id == wanted).Select(e => e.GlobalPosition));
+            result.Select(e => e.GlobalPosition));
     }
 
     /// <summary>
@@ -367,7 +375,7 @@ public abstract class EventStoreBackendSpecification
         {
             var guardBackend = await CreateBackend();
             await Assert.ThrowsAsync<InvalidOperationException>(
-                () => guardBackend.StreamAllAsync(cancellationToken: TestContext.Current.CancellationToken));
+                () => guardBackend.ReadAllAsync(afterPosition: 0, limit: int.MaxValue, cancellationToken: TestContext.Current.CancellationToken));
             return;
         }
 
@@ -382,7 +390,7 @@ public abstract class EventStoreBackendSpecification
             CreateEvent("event-c", $"tag:3{TestId}")
         ], cancellationToken: TestContext.Current.CancellationToken);
 
-        var result = await backend.StreamAllAsync(afterPosition: startPosition, cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.StreamAllAsync(afterPosition: startPosition, cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
         Assert.Equal(3, result.Count);
     }
@@ -401,10 +409,11 @@ public abstract class EventStoreBackendSpecification
         ], cancellationToken: TestContext.Current.CancellationToken);
 
         var afterPosition = firstBatch.Last().GlobalPosition;
-        var result = await backend.StreamAsync(DcbQuery.ByTags($"order:{TestId}"), afterPosition, cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.StreamAsync(DcbQuery.ByTags($"order:{TestId}"), afterPosition, cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
         Assert.Single(result);
-        Assert.Equal("event-c", result.First().EventType.Id);    }
+        Assert.Equal("event-c", result.First().EventType.Id);
+    }
 
     /// <summary>When a <c>limit</c> is supplied the result must contain at most that many events.</summary>
     [Fact]
@@ -419,9 +428,10 @@ public abstract class EventStoreBackendSpecification
             CreateEvent("event-e", $"order:{TestId}")
         ], cancellationToken: TestContext.Current.CancellationToken);
 
-        var result = await backend.StreamAsync(DcbQuery.ByTags($"order:{TestId}"), limit: 3, cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.ReadAsync(DcbQuery.ByTags($"order:{TestId}"), afterPosition: 0, limit: 3, cancellationToken: TestContext.Current.CancellationToken);
 
-        Assert.Equal(3, result.Count);    }
+        Assert.Equal(3, result.Count);
+    }
 
     /// <summary>Events must be returned in ascending global-position order regardless of insertion order.</summary>
     [Fact]
@@ -434,10 +444,11 @@ public abstract class EventStoreBackendSpecification
             CreateEvent("event-b", $"order:{TestId}")
         ], cancellationToken: TestContext.Current.CancellationToken);
 
-        var result = await backend.StreamAsync(DcbQuery.ByTags($"order:{TestId}"), cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.StreamAsync(DcbQuery.ByTags($"order:{TestId}"), cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
         var positions = result.Select(e => e.GlobalPosition).ToList();
-        Assert.True(positions.SequenceEqual(positions.OrderBy(p => p)));    }
+        Assert.True(positions.SequenceEqual(positions.OrderBy(p => p)));
+    }
 
     #endregion
 
@@ -543,7 +554,7 @@ public abstract class EventStoreBackendSpecification
         {
             var guardBackend = await CreateBackend();
             await Assert.ThrowsAsync<InvalidOperationException>(
-                () => guardBackend.StreamAllAsync(cancellationToken: TestContext.Current.CancellationToken));
+                () => guardBackend.ReadAllAsync(afterPosition: 0, limit: int.MaxValue, cancellationToken: TestContext.Current.CancellationToken));
             return;
         }
 
@@ -555,7 +566,7 @@ public abstract class EventStoreBackendSpecification
         await backend.AppendAsync([CreateEvent("event-a", $"tag:1{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
         await backend.AppendAsync([CreateEvent("event-b", $"tag:2{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
 
-        var result = await backend.StreamAllAsync(afterPosition: startPosition, cancellationToken: TestContext.Current.CancellationToken);
+        var result = await backend.StreamAllAsync(afterPosition: startPosition, cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
         Assert.Equal(2, result.Count);
     }
@@ -578,7 +589,8 @@ public abstract class EventStoreBackendSpecification
         var dcbQuery = DcbQuery.ByTags($"order:{TestId}");
         var result = await backend.AppendAsync([CreateEvent("order-confirmed", $"order:{TestId}")], dcbQuery, lastPosition, TestContext.Current.CancellationToken);
 
-        Assert.Single(result);    }
+        Assert.Single(result);
+    }
 
     /// <summary>
     /// An append with a DCB boundary check must throw <see cref="DcbConflictException"/> when a
@@ -596,7 +608,8 @@ public abstract class EventStoreBackendSpecification
         var dcbQuery = DcbQuery.ByTags($"order:{TestId}");
 
         await Assert.ThrowsAsync<DcbConflictException>(() =>
-            backend.AppendAsync([CreateEvent("order-shipped", $"order:{TestId}")], dcbQuery, firstPosition, TestContext.Current.CancellationToken));    }
+            backend.AppendAsync([CreateEvent("order-shipped", $"order:{TestId}")], dcbQuery, firstPosition, TestContext.Current.CancellationToken));
+    }
 
     /// <summary>
     /// When multiple writers race to be first to append to an empty boundary (position 0),
@@ -635,7 +648,7 @@ public abstract class EventStoreBackendSpecification
 
         Assert.Equal(1, results.Count(succeeded => succeeded));
 
-        var stored = await backend.StreamAsync(query, cancellationToken: TestContext.Current.CancellationToken);
+        var stored = await backend.StreamAsync(query, cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
         Assert.Single(stored);
     }
 
@@ -652,7 +665,8 @@ public abstract class EventStoreBackendSpecification
         var dcbQuery = DcbQuery.ByTags($"order:{TestId}");
 
         await Assert.ThrowsAsync<DcbConflictException>(() =>
-            backend.AppendAsync([CreateEvent("order-created", $"order:{TestId}")], dcbQuery, 0, TestContext.Current.CancellationToken));    }
+            backend.AppendAsync([CreateEvent("order-created", $"order:{TestId}")], dcbQuery, 0, TestContext.Current.CancellationToken));
+    }
 
     /// <summary>
     /// A DCB check expecting an empty boundary (position 0) must succeed when no matching events exist.
@@ -666,7 +680,8 @@ public abstract class EventStoreBackendSpecification
 
         var result = await backend.AppendAsync([CreateEvent("order-created", $"order:{TestId}")], dcbQuery, 0, TestContext.Current.CancellationToken);
 
-        Assert.Single(result);    }
+        Assert.Single(result);
+    }
 
     /// <summary>
     /// A boundary scoped to one tag must not be affected by events tagged with a different tag.
@@ -679,11 +694,12 @@ public abstract class EventStoreBackendSpecification
         await backend.AppendAsync([CreateEvent("customer-updated", $"customer:{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
 
         var dcbQuery = DcbQuery.ByTags($"customer:{TestId}");
-        var lastCustomerPosition = (await backend.StreamAsync(dcbQuery, cancellationToken: TestContext.Current.CancellationToken)).Last().GlobalPosition;
+        var lastCustomerPosition = (await backend.StreamAsync(dcbQuery, cancellationToken: TestContext.Current.CancellationToken).ToListAsync()).Last().GlobalPosition;
 
         var result = await backend.AppendAsync([CreateEvent("customer-verified", $"customer:{TestId}")], dcbQuery, lastCustomerPosition, TestContext.Current.CancellationToken);
 
-        Assert.Single(result);    }
+        Assert.Single(result);
+    }
 
     /// <summary>
     /// An all-tags boundary must ignore events that match only a subset of the required tags.
@@ -751,7 +767,8 @@ public abstract class EventStoreBackendSpecification
         // Use a fresh backend that has no events (in-memory only; for Postgres use starting position)
         var position = await backend.GetLastPositionAsync(TestContext.Current.CancellationToken);
 
-        Assert.True(position >= 0);    }
+        Assert.True(position >= 0);
+    }
 
     /// <summary>
     /// After an append <c>GetLastPositionAsync</c> must return a value at least as large as
@@ -768,7 +785,8 @@ public abstract class EventStoreBackendSpecification
 
         var position = await backend.GetLastPositionAsync(TestContext.Current.CancellationToken);
 
-        Assert.True(position >= appended.Last().GlobalPosition);    }
+        Assert.True(position >= appended.Last().GlobalPosition);
+    }
 
     #endregion
 
@@ -910,7 +928,7 @@ public abstract class EventStoreBackendSpecification
         // Query specifies ONLY the user-domain tag — no version tag in the boundary.
         var results = await backend.StreamAsync(
             DcbQuery.ByAllTags(userTag),
-            cancellationToken: TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
         Assert.Single(results);
 
@@ -942,10 +960,130 @@ public abstract class EventStoreBackendSpecification
 
         var results = await backend.StreamAsync(
             DcbQuery.ByTags(tag),
-            cancellationToken: TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken).ToListAsync();
 
         Assert.Single(results);
         Assert.Equal(1, results.Single().EventType.Version);
+    }
+
+    #endregion
+
+    #region Streaming Read Tests
+
+    /// <summary>A streamed query must yield exactly what a batch read of the same query returns, in position order.</summary>
+    [Fact]
+    public async Task StreamingRead_ByQuery_YieldsSameEventsAsBatchRead()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var backend = await CreateBackend();
+        await backend.AppendAsync([
+            CreateEvent("stream-a", $"stream:{TestId}"),
+            CreateEvent("stream-b", $"stream:{TestId}"),
+            CreateEvent("stream-a", $"other:{TestId}"),
+            CreateEvent("stream-c", $"stream:{TestId}")
+        ], cancellationToken: cancellationToken);
+
+        var query = DcbQuery.ByTags($"stream:{TestId}");
+        var batch = await backend.ReadAsync(query, afterPosition: 0, limit: int.MaxValue, cancellationToken: cancellationToken);
+
+        var streamed = new List<IEventEnvelope>();
+        await foreach (var e in backend.StreamAsync(query, cancellationToken: cancellationToken))
+            streamed.Add(e);
+
+        Assert.Equal(3, streamed.Count);
+        Assert.Equal(batch.Select(e => e.GlobalPosition), streamed.Select(e => e.GlobalPosition));
+        Assert.Equal(streamed.Select(e => e.GlobalPosition).Order(), streamed.Select(e => e.GlobalPosition));
+        Assert.Equal(["stream-a", "stream-b", "stream-c"], streamed.Select(e => e.EventType.Id));
+    }
+
+    /// <summary>A streamed query must honour <c>afterPosition</c>.</summary>
+    [Fact]
+    public async Task StreamingRead_WithAfterPosition_SkipsEarlierEvents()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var backend = await CreateBackend();
+        var first = await backend.AppendAsync([CreateEvent("after-1", $"after:{TestId}")], cancellationToken: cancellationToken);
+        await backend.AppendAsync([CreateEvent("after-2", $"after:{TestId}"), CreateEvent("after-3", $"after:{TestId}")], cancellationToken: cancellationToken);
+
+        var streamed = new List<IEventEnvelope>();
+        await foreach (var e in backend.StreamAsync(DcbQuery.ByTags($"after:{TestId}"), first.Single().GlobalPosition, cancellationToken))
+            streamed.Add(e);
+
+        Assert.Equal(["after-2", "after-3"], streamed.Select(e => e.EventType.Id));
+    }
+
+    /// <summary>A consumer that stops early must get the events read so far and leave the backend usable.</summary>
+    [Fact]
+    public async Task StreamingRead_StoppedEarly_YieldsLeadingEventsAndLeavesBackendUsable()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var backend = await CreateBackend();
+        await backend.AppendAsync(
+            Enumerable.Range(0, 5).Select(i => CreateEvent($"early-{i}", $"early:{TestId}")).ToList(),
+            cancellationToken: cancellationToken);
+
+        var seen = new List<string>();
+        await foreach (var e in backend.StreamAsync(DcbQuery.ByTags($"early:{TestId}"), cancellationToken: cancellationToken))
+        {
+            seen.Add(e.EventType.Id);
+            if (seen.Count == 2)
+                break;
+        }
+
+        Assert.Equal(["early-0", "early-1"], seen);
+        Assert.True(await backend.GetLastPositionAsync(cancellationToken) > 0);
+    }
+
+    /// <summary>A cancelled token must stop a streamed read with <see cref="OperationCanceledException"/>.</summary>
+    [Fact]
+    public async Task StreamingRead_WithCancelledToken_Throws()
+    {
+        var backend = await CreateBackend();
+        await backend.AppendAsync([CreateEvent("cancel-1", $"cancel:{TestId}")], cancellationToken: TestContext.Current.CancellationToken);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+        {
+            await foreach (var _ in backend.StreamAsync(DcbQuery.ByTags($"cancel:{TestId}"), cancellationToken: cts.Token))
+            {
+            }
+        });
+    }
+
+    /// <summary>
+    /// Streaming the whole log must yield every event after the position, or throw
+    /// <see cref="InvalidOperationException"/> when <see cref="SupportsStreamAll"/> is
+    /// <see langword="false"/> (isolation guard), exactly as <c>ReadAllAsync</c> does.
+    /// </summary>
+    [Fact]
+    public async Task StreamingRead_All_YieldsEveryEventAfterPosition()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var backend = await CreateBackend();
+
+        if (!SupportsStreamAll)
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            {
+                await foreach (var _ in backend.StreamAllAsync(cancellationToken: cancellationToken))
+                {
+                }
+            });
+            return;
+        }
+
+        var start = await backend.GetLastPositionAsync(cancellationToken);
+        var appended = await backend.AppendAsync([
+            CreateEvent("all-a", $"all:1{TestId}"),
+            CreateEvent("all-b", $"all:2{TestId}")
+        ], cancellationToken: cancellationToken);
+
+        var streamed = new List<IEventEnvelope>();
+        await foreach (var e in backend.StreamAllAsync(start, cancellationToken))
+            streamed.Add(e);
+
+        Assert.Equal(appended.Select(e => e.GlobalPosition), streamed.Select(e => e.GlobalPosition));
     }
 
     #endregion

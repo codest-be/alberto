@@ -1,4 +1,5 @@
 using Alberto.Configuration;
+using Alberto.DeadLetters;
 using Alberto.Subscriptions;
 using Xunit;
 
@@ -15,7 +16,7 @@ public sealed class MiddlewareTests
 
     #region Helpers
 
-    private static ConsumeEventContext MakeContext(CancellationToken ct = default)
+    private static ConsumeEventContext MakeContext(CancellationToken cancellationToken = default)
     {
         var envelope = new EventEnvelope
         {
@@ -34,7 +35,7 @@ public sealed class MiddlewareTests
             ModuleKey = "test-module",
             Envelope = envelope,
             IsRebuild = false,
-            CancellationToken = ct
+            CancellationToken = cancellationToken
         };
     }
 
@@ -358,31 +359,31 @@ public sealed class MiddlewareTests
     {
         public List<DeadLetterEntry> Entries { get; } = [];
 
-        public Task StoreAsync(DeadLetterEntry entry, CancellationToken ct = default)
+        public Task StoreAsync(DeadLetterEntry entry, CancellationToken cancellationToken = default)
         {
             Entries.Add(entry);
             return Task.CompletedTask;
         }
 
-        public Task<IReadOnlyList<DeadLetterEntry>> GetAsync(string processorId, string? tenantId = null, int limit = 100, CancellationToken ct = default)
+        public Task<IReadOnlyList<DeadLetterEntry>> GetAsync(string processorId, string? tenantId = null, int limit = 100, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<DeadLetterEntry>>(Entries.Where(e => e.ProcessorId == processorId).ToList());
 
-        public Task<int> CountAsync(string processorId, CancellationToken ct = default)
+        public Task<int> CountAsync(string processorId, CancellationToken cancellationToken = default)
             => Task.FromResult(Entries.Count(e => e.ProcessorId == processorId));
 
-        public Task<bool> CompleteRetryAsync(DeadLetterClaim claim, CancellationToken ct = default)
+        public Task<bool> CompleteRetryAsync(DeadLetterClaim claim, CancellationToken cancellationToken = default)
         {
             var removed = Entries.RemoveAll(e => e.Id == claim.Entry.Id && e.ClaimId == claim.Token);
             return Task.FromResult(removed == 1);
         }
 
-        public Task ClearAsync(string processorId, CancellationToken ct = default)
+        public Task ClearAsync(string processorId, CancellationToken cancellationToken = default)
         {
             Entries.RemoveAll(e => e.ProcessorId == processorId);
             return Task.CompletedTask;
         }
 
-        public Task MarkForRetryAsync(string processorId, CancellationToken ct = default)
+        public Task MarkForRetryAsync(string processorId, CancellationToken cancellationToken = default)
         {
             for (var index = 0; index < Entries.Count; index++)
             {
@@ -398,7 +399,7 @@ public sealed class MiddlewareTests
             int batchSize,
             TimeSpan leaseDuration,
             string claimedBy,
-            CancellationToken ct = default)
+            CancellationToken cancellationToken = default)
         {
             var now = DateTimeOffset.UtcNow;
             var lease = now + leaseDuration;
@@ -425,7 +426,7 @@ public sealed class MiddlewareTests
             return Task.FromResult<IReadOnlyList<DeadLetterClaim>>(claimed);
         }
 
-        public Task<bool> AbandonRetryAsync(DeadLetterClaim claim, CancellationToken ct = default)
+        public Task<bool> AbandonRetryAsync(DeadLetterClaim claim, CancellationToken cancellationToken = default)
         {
             for (var index = 0; index < Entries.Count; index++)
             {

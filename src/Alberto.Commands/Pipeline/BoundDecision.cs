@@ -1,9 +1,10 @@
 using System.Diagnostics;
 using Alberto;
+using Alberto.Results;
 namespace Alberto.Commands;
 
 /// <summary>
-/// A decision made inside a DCB boundary, ready to commit. <c>Commit(ct)</c> is available
+/// A decision made inside a DCB boundary, ready to commit. <c>Commit(cancellationToken)</c> is available
 /// here and nowhere else: reaching this type is the proof that a boundary was established.
 /// </summary>
 public readonly struct BoundDecision
@@ -58,8 +59,8 @@ public readonly struct BoundDecision
             command => ConflictRetryLoop.Run(
                 attempts,
                 attempt,
-                async (bd, ct) => await store.Persist(
-                    bd.Decision, bd.Boundary.Query, bd.Boundary.ExpectedPosition, ct),
+                async (bd, cancellationToken) => await store.Persist(
+                    bd.Decision, bd.Boundary.Query, bd.Boundary.ExpectedPosition, cancellationToken),
                 cancellationToken,
                 command),
             result => result.IsSuccess ? null : result.Problems);
@@ -118,9 +119,9 @@ public readonly struct BoundDecision<TValue>
         var attempts = _attempts;
         return new BoundDecision<TNew>(
             store,
-            async ct =>
+            async cancellationToken =>
             {
-                var (decision, boundary) = await attempt(ct);
+                var (decision, boundary) = await attempt(cancellationToken);
                 return (decision.Map(map), boundary);
             },
             _commandType,
@@ -145,8 +146,8 @@ public readonly struct BoundDecision<TValue>
             command => ConflictRetryLoop.Run(
                 attempts,
                 attempt,
-                async (bd, ct) => await store.Persist(
-                    bd.Decision, bd.Boundary.Query, bd.Boundary.ExpectedPosition, ct),
+                async (bd, cancellationToken) => await store.Persist(
+                    bd.Decision, bd.Boundary.Query, bd.Boundary.ExpectedPosition, cancellationToken),
                 cancellationToken,
                 command),
             result => result.IsSuccess ? null : result.Problems);

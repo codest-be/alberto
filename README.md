@@ -25,7 +25,7 @@ await store.Handle(new ReserveSeat(showId, "A12", customerId))
     .Decide((cmd, state) => state.IsTaken
         ? Problem.Create("seat.taken", $"Seat {cmd.Seat} is already reserved.")
         : Decision.Succeed(new SeatReserved(cmd.ShowId, cmd.Seat, cmd.CustomerId)))
-    .Commit(ct);
+    .Commit(cancellationToken);
 ```
 
 That block loads exactly the events the decision depends on, folds them into state, decides, and
@@ -291,9 +291,9 @@ public sealed class MyStoreTests : EventStoreBackendSpecification
 }
 ```
 
-That inherits 38 facts for an event store backend, 26 for a state store, 15 for an outbox, 9 each
-for a checkpoint or dead-letter store, and 8 more for a claimable dead-letter store. Its xUnit and
-FluentAssertions references are `PrivateAssets="all"`, so nothing test-only reaches your
+That inherits 43 facts for an event store backend, 26 for a state store, 15 for an outbox, 9 each
+for a checkpoint or dead-letter store, and 8 more for a claimable dead-letter store. It asserts with plain xUnit v3
+`Assert.*`, and its xUnit references are `PrivateAssets="all"`, so nothing test-only reaches your
 application's dependency graph.
 
 ## Documentation

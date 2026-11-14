@@ -1,3 +1,5 @@
+using Alberto.Checkpoints;
+
 namespace Alberto.Subscriptions;
 
 /// <summary>
@@ -31,10 +33,10 @@ internal sealed record ProcessorFaultRecord(
 /// </remarks>
 internal interface IProcessorFaultStore
 {
-    Task RecordFaultAsync(string processorId, ProcessorFaultRecord fault, CancellationToken ct = default);
+    Task RecordFaultAsync(string processorId, ProcessorFaultRecord fault, CancellationToken cancellationToken = default);
 
-    Task ClearFaultAsync(string processorId, CancellationToken ct = default);
+    Task ClearFaultAsync(string processorId, CancellationToken cancellationToken = default);
 
     /// <summary>The recorded fault, or null when the processor has none.</summary>
-    Task<ProcessorFaultRecord?> GetFaultAsync(string processorId, CancellationToken ct = default);
+    Task<ProcessorFaultRecord?> GetFaultAsync(string processorId, CancellationToken cancellationToken = default);
 }

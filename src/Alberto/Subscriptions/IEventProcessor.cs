@@ -37,7 +37,7 @@ public interface IEventProcessor
     /// Process a single event.
     /// </summary>
     /// <param name="event">The event to process.</param>
-    /// <param name="ct">Cancellation token.</param>
-    Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default);
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default);
 
 }

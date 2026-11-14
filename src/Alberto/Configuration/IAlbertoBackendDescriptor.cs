@@ -5,7 +5,7 @@ namespace Alberto.Configuration;
 /// <summary>
 /// A storage backend as declared by <c>.WithPostgres(...)</c>, <c>.WithInMemory()</c> and friends.
 /// This is the supported extension point for third-party backends; it replaces reaching into
-/// <c>DcbModuleBuilder.Services</c> at declaration time.
+/// <c>AlbertoModuleBuilder.Services</c> at declaration time.
 /// </summary>
 /// <remarks>
 /// Implementations are immutable value objects. <see cref="ApplyConfiguration"/> returns a new
@@ -56,6 +56,21 @@ public interface IAlbertoBackendDescriptor
     /// <summary>
     /// Registers the backend's services. Called once, after validation, with the final definition.
     /// </summary>
+    /// <remarks>
+    /// Register the event store backend with
+    /// <see cref="AlbertoModuleContextExtensions.AddEventStoreBackend"/>, which keys it by
+    /// <c>context.ModuleKey</c>, wraps it so the module's append interceptors run, and registers the
+    /// interceptor pipeline. Do not register <see cref="IEventStoreBackend"/> directly. A backend
+    /// must also register, keyed by <c>context.ModuleKey</c> in <c>context.Services</c>:
+    /// <list type="bullet">
+    /// <item><description><see cref="IEventStore"/>, built over the keyed <see cref="IEventStoreBackend"/>, the module's keyed <c>IInlineProjection</c>s and <c>IPostAppendHandler</c>s.</description></item>
+    /// <item><description><c>ICheckpointStore</c> and <c>IDeadLetterStore</c>.</description></item>
+    /// <item><description><c>IProcessorLeaseManager</c>, which an unused lease-less module leaves inert.</description></item>
+    /// </list>
+    /// A backend serving a tenancy module also registers a singleton backend under
+    /// <c>context.ModuleKey + ":consumer"</c> for control loops (pass <c>keySuffix: ":consumer"</c>).
+    /// Backends that do not support projection rebuilds say so in <see cref="Validate"/>.
+    /// </remarks>
     void Register(AlbertoModuleContext context);
 
     /// <summary>

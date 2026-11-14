@@ -1,7 +1,7 @@
 using Alberto.EntityFramework;
 using Alberto.EntityFramework.Inline;
 using Alberto.Postgres;
-using Alberto.Subscriptions;
+using Alberto.Projections;
 using Alberto.Tests.Subscriptions;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -214,7 +214,7 @@ public sealed class EfActiveVersionFilterTests(StateStoreRebuildVersionFixture f
     {
         IProjectionRebuildCoordinatorStore store = RebuildStore();
         await store.MarkReadyAsync(ProcessorId, Ct);
-        await store.CompletePromotionAsync(ProcessorId, ct: Ct);
+        await store.CompletePromotionAsync(ProcessorId, cancellationToken: Ct);
     }
 
     private async Task<IAsyncDisposable> IsolatedAsync()

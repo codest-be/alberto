@@ -74,7 +74,7 @@ public sealed class InMemoryOutboxStore : IOutboxStore
     }
 
     /// <inheritdoc/>
-    public Task InsertAsync(OutboxEntry entry, CancellationToken ct = default)
+    public Task InsertAsync(OutboxEntry entry, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(entry);
         lock (_lock)
@@ -92,7 +92,7 @@ public sealed class InMemoryOutboxStore : IOutboxStore
         int limit,
         TimeSpan claimLease,
         string claimedBy,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         var now = _timeProvider.GetUtcNow();
         var results = new List<OutboxClaim>();
@@ -126,7 +126,7 @@ public sealed class InMemoryOutboxStore : IOutboxStore
     }
 
     /// <inheritdoc/>
-    public Task<bool> MarkDeliveredAsync(OutboxClaim claim, CancellationToken ct = default)
+    public Task<bool> MarkDeliveredAsync(OutboxClaim claim, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(claim);
         var now = _timeProvider.GetUtcNow();
@@ -153,12 +153,12 @@ public sealed class InMemoryOutboxStore : IOutboxStore
     }
 
     /// <inheritdoc/>
-    public Task<bool> MarkFailedAsync(OutboxClaim claim, string error, CancellationToken ct = default)
-        => MarkAttemptFailedAsync(claim, error, 1, ct);
+    public Task<bool> MarkFailedAsync(OutboxClaim claim, string error, CancellationToken cancellationToken = default)
+        => MarkAttemptFailedAsync(claim, error, 1, cancellationToken);
 
     /// <inheritdoc/>
     public Task<bool> MarkAttemptFailedAsync(OutboxClaim claim, string error, int maxRetries,
-        CancellationToken ct)
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(claim);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxRetries);
@@ -193,7 +193,7 @@ public sealed class InMemoryOutboxStore : IOutboxStore
     /// Entries that are <c>processing</c> with an expired lease are not reset here —
     /// <see cref="ClaimPendingAsync"/> handles those by re-claiming them.
     /// </remarks>
-    public Task RetryFailedAsync(string? messageType = null, CancellationToken ct = default)
+    public Task RetryFailedAsync(string? messageType = null, CancellationToken cancellationToken = default)
     {
         lock (_lock)
         {
@@ -218,7 +218,7 @@ public sealed class InMemoryOutboxStore : IOutboxStore
     }
 
     /// <inheritdoc/>
-    public Task PurgeDeliveredAsync(DateTimeOffset before, CancellationToken ct = default)
+    public Task PurgeDeliveredAsync(DateTimeOffset before, CancellationToken cancellationToken = default)
     {
         lock (_lock)
         {

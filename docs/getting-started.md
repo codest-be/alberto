@@ -106,13 +106,13 @@ matching the boundary was written while you were deciding, the append is rejecte
 `DcbConflictException` instead of overwriting someone's reservation. That is the whole optimistic
 concurrency story. You never write a version number yourself.
 
-Because the boundary comes from `Load`, `Commit(ct)` needs no arguments, and the compiler will not
+Because the boundary comes from `Load`, `Commit(cancellationToken)` needs no arguments, and the compiler will not
 let you call it without a `Load`. Add `.RetryOnConflict(3)` before `Commit` to re-read and re-decide
-instead of surfacing the conflict, or use `.TryCommit(ct)` to get the conflict back as a
+instead of surfacing the conflict, or use `.TryCommit(cancellationToken)` to get the conflict back as a
 `dcb.conflict` problem rather than an exception.
 
 Two optional stages sit in front of `Load`. `.Validate(cmd => …)` rejects the command before
-anything touches the store, and `.Enrich(async (cmd, ct) => …)` replaces it with something richer:
+anything touches the store, and `.Enrich(async (cmd, cancellationToken) => …)` replaces it with something richer:
 an FX rate, a fraud score, a row from another service. Both run once, even when `RetryOnConflict`
 re-runs the read-decide loop.
 
@@ -187,7 +187,8 @@ using System.Reflection;
 using Alberto;
 using Alberto.Commands;
 using Alberto.InMemory;
-using Alberto.Subscriptions;
+using Alberto.Projections;
+using Alberto.Results;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -334,5 +335,4 @@ all, EF projections can run [inline](projections.md#inline-vs-async) instead.
 - **[Reactors and the outbox](reactors-and-outbox.md).** Doing things to the outside world.
 - **[Operations](operations.md).** Operator interfaces, dead letters, retries and telemetry.
 - **A real application.** [alberto-examples](https://github.com/codest-be/alberto-examples) holds an Orders GraphQL API on Postgres
-  with tenancy, EF projections and an outbox. Run the lot with
-  `dotnet run --project apps/Alberto.AppHost` from that repository.
+  with tenancy, EF projections and an outbox. It lives in its own repository and consumes Alberto from nuget.org.

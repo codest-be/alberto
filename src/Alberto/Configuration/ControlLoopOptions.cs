@@ -58,7 +58,7 @@ public sealed record ControlLoopOptions
 }
 
 /// <summary>Configuration mirror for <see cref="ControlLoopOptions"/>.</summary>
-public sealed class ControlLoopOverrides : IAlbertoOverrides<ControlLoopOptions>
+internal sealed class ControlLoopOverrides : IAlbertoOverrides<ControlLoopOptions>
 {
     /// <summary>Mirror of <see cref="ControlLoopOptions.PollingInterval"/>.</summary>
     public TimeSpan? PollingInterval { get; set; }
@@ -137,7 +137,7 @@ public sealed record RebuildOptions
 }
 
 /// <summary>Configuration mirror for <see cref="RebuildOptions"/>.</summary>
-public sealed class RebuildOverrides : IAlbertoOverrides<RebuildOptions>
+internal sealed class RebuildOverrides : IAlbertoOverrides<RebuildOptions>
 {
     /// <summary>Mirror of <see cref="RebuildOptions.Enabled"/>.</summary>
     public bool? Enabled { get; set; }

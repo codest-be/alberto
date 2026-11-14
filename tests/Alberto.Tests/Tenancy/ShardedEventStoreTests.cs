@@ -1,4 +1,5 @@
-using Alberto.Subscriptions;
+using Alberto.Checkpoints;
+using Alberto.DeadLetters;
 using Alberto.Tenancy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -41,11 +42,11 @@ public sealed class ShardedEventStoreTests(ShardedPostgresFixture fixture)
 
     private static async Task<long> CountEventsAsync(NpgsqlDataSource dataSource, string tenantId)
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         await using var command = dataSource.CreateCommand(
             "SELECT count(*) FROM alberto_events WHERE tenant_id = @tenant");
         command.Parameters.AddWithValue("tenant", tenantId);
-        return (long)(await command.ExecuteScalarAsync(ct))!;
+        return (long)(await command.ExecuteScalarAsync(cancellationToken))!;
     }
 
     [Fact]
@@ -61,24 +62,24 @@ public sealed class ShardedEventStoreTests(ShardedPostgresFixture fixture)
     [Fact]
     public async Task Two_tenants_on_two_shards_never_see_each_other()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var id = NewId();
         var query = DcbQuery.For(Concept, id);
 
         await using (var scope = ScopeFor(ShardedPostgresFixture.TenantOnDb1))
-            await StoreOf(scope).AppendAsync([Event(id)], cancellationToken: ct);
+            await StoreOf(scope).AppendAsync([Event(id)], cancellationToken: cancellationToken);
 
         await using (var scope = ScopeFor(ShardedPostgresFixture.TenantOnDb2))
         {
             // Same tag, other database: not merely filtered out by tenant_id — it is not there.
-            (await StoreOf(scope).StreamAsync(query, cancellationToken: ct)).Should().BeEmpty();
+            (await StoreOf(scope).StreamAsync(query, cancellationToken: cancellationToken).ToListAsync()).Should().BeEmpty();
 
-            await StoreOf(scope).AppendAsync([Event(id)], cancellationToken: ct);
-            (await StoreOf(scope).StreamAsync(query, cancellationToken: ct)).Should().ContainSingle();
+            await StoreOf(scope).AppendAsync([Event(id)], cancellationToken: cancellationToken);
+            (await StoreOf(scope).StreamAsync(query, cancellationToken: cancellationToken).ToListAsync()).Should().ContainSingle();
         }
 
         await using (var scope = ScopeFor(ShardedPostgresFixture.TenantOnDb1))
-            (await StoreOf(scope).StreamAsync(query, cancellationToken: ct)).Should().ContainSingle();
+            (await StoreOf(scope).StreamAsync(query, cancellationToken: cancellationToken).ToListAsync()).Should().ContainSingle();
     }
 
     [Fact]
@@ -86,15 +87,15 @@ public sealed class ShardedEventStoreTests(ShardedPostgresFixture fixture)
     {
         // Sharding sits above row-level tenancy rather than replacing it: two tenants that share
         // db1 are isolated exactly as they would be in an unsharded module.
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var id = NewId();
         var query = DcbQuery.For(Concept, id);
 
         await using (var scope = ScopeFor(ShardedPostgresFixture.TenantOnDb1))
-            await StoreOf(scope).AppendAsync([Event(id)], cancellationToken: ct);
+            await StoreOf(scope).AppendAsync([Event(id)], cancellationToken: cancellationToken);
 
         await using (var scope = ScopeFor(ShardedPostgresFixture.TenantAlsoOnDb1))
-            (await StoreOf(scope).StreamAsync(query, cancellationToken: ct)).Should().BeEmpty();
+            (await StoreOf(scope).StreamAsync(query, cancellationToken: cancellationToken).ToListAsync()).Should().BeEmpty();
     }
 
     [Fact]
@@ -103,38 +104,38 @@ public sealed class ShardedEventStoreTests(ShardedPostgresFixture fixture)
         // Positions come from a per-database BIGSERIAL, so they are only comparable within one
         // shard. Two shards therefore hand out overlapping numbers, which is exactly why
         // StreamAllAsync is not allowed to union across them.
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
 
         await using var db1 = ScopeFor(ShardedPostgresFixture.TenantOnDb1);
         await using var db2 = ScopeFor(ShardedPostgresFixture.TenantOnDb2);
 
-        var beforeOnDb2 = await StoreOf(db2).GetLastPositionAsync(ct);
+        var beforeOnDb2 = await StoreOf(db2).GetLastPositionAsync(cancellationToken);
 
         for (var i = 0; i < 3; i++)
-            await StoreOf(db1).AppendAsync([Event(NewId())], cancellationToken: ct);
+            await StoreOf(db1).AppendAsync([Event(NewId())], cancellationToken: cancellationToken);
 
-        (await StoreOf(db2).GetLastPositionAsync(ct)).Should().Be(beforeOnDb2);
+        (await StoreOf(db2).GetLastPositionAsync(cancellationToken)).Should().Be(beforeOnDb2);
     }
 
     [Fact]
     public async Task Checkpoints_are_shard_local()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         const string processorId = "shard-checkpoint-test";
 
         var db1 = fixture.Services.GetRequiredKeyedService<ICheckpointStore>($"{ModuleKey}#db1");
         var db2 = fixture.Services.GetRequiredKeyedService<ICheckpointStore>($"{ModuleKey}#db2");
 
-        await db1.SaveAsync(processorId, 42, ct);
+        await db1.SaveAsync(processorId, 42, cancellationToken);
 
-        (await db1.GetAsync(processorId, ct)).Should().Be(42);
-        (await db2.GetAsync(processorId, ct)).Should().BeNull();
+        (await db1.GetAsync(processorId, cancellationToken)).Should().Be(42);
+        (await db2.GetAsync(processorId, cancellationToken)).Should().BeNull();
     }
 
     [Fact]
     public async Task Dead_letters_are_shard_local()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         const string processorId = "shard-deadletter-test";
 
         var db1 = fixture.Services.GetRequiredKeyedService<IDeadLetterStore>($"{ModuleKey}#db1");
@@ -154,10 +155,10 @@ public sealed class ShardedEventStoreTests(ShardedPostgresFixture fixture)
                 FailedAt = DateTimeOffset.UtcNow,
                 GlobalPosition = 1,
             },
-            ct);
+            cancellationToken);
 
-        (await db1.CountAsync(processorId, ct)).Should().Be(1);
-        (await db2.CountAsync(processorId, ct)).Should().Be(0);
+        (await db1.CountAsync(processorId, cancellationToken)).Should().Be(1);
+        (await db2.CountAsync(processorId, cancellationToken)).Should().Be(0);
     }
 
     [Fact]
@@ -165,14 +166,14 @@ public sealed class ShardedEventStoreTests(ShardedPostgresFixture fixture)
     {
         // The whole point of storing only the id: a dump of this table leaks no credentials, and
         // a shard can move host without a data migration.
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
 
         await using var command = fixture.Catalog.CreateCommand(
             "SELECT column_name FROM information_schema.columns WHERE table_name = 'alberto_tenant_shards'");
-        await using var reader = await command.ExecuteReaderAsync(ct);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
         var columns = new List<string>();
-        while (await reader.ReadAsync(ct))
+        while (await reader.ReadAsync(cancellationToken))
             columns.Add(reader.GetString(0));
 
         columns.Should().BeEquivalentTo("module_key", "tenant_id", "shard_id", "assigned_at");
@@ -197,27 +198,27 @@ public sealed class ShardedEventStoreTests(ShardedPostgresFixture fixture)
     {
         // Writing a tenant's events to two databases is unrecoverable, so a second AssignAsync
         // reports the assignment already in force rather than moving the tenant.
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var map = fixture.Services.GetRequiredKeyedService<ITenantShardMap>(ModuleKey);
         var tenantId = $"race{Guid.NewGuid():N}"[..20];
 
-        (await map.AssignAsync(tenantId, "db1", ct)).Should().Be("db1");
-        (await map.AssignAsync(tenantId, "db2", ct)).Should().Be("db1");
-        (await map.ResolveAsync(tenantId, ct)).Should().Be("db1");
+        (await map.AssignAsync(tenantId, "db1", cancellationToken)).Should().Be("db1");
+        (await map.AssignAsync(tenantId, "db2", cancellationToken)).Should().Be("db1");
+        (await map.ResolveAsync(tenantId, cancellationToken)).Should().Be("db1");
     }
 
     [Fact]
     public async Task Concurrent_assignments_of_one_tenant_agree_on_one_shard()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var map = fixture.Services.GetRequiredKeyedService<ITenantShardMap>(ModuleKey);
         var tenantId = $"race{Guid.NewGuid():N}"[..20];
 
         var results = await Task.WhenAll(Enumerable.Range(0, 8).Select(async i =>
-            await map.AssignAsync(tenantId, i % 2 == 0 ? "db1" : "db2", ct)));
+            await map.AssignAsync(tenantId, i % 2 == 0 ? "db1" : "db2", cancellationToken)));
 
         results.Should().AllBe(results[0]);
-        (await map.ResolveAsync(tenantId, ct)).Should().Be(results[0]);
+        (await map.ResolveAsync(tenantId, cancellationToken)).Should().Be(results[0]);
     }
 
     [Fact]

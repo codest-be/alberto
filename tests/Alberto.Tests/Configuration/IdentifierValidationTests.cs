@@ -25,7 +25,7 @@ internal sealed record IdentifierProbeEvent(string Id) : IEvent;
 internal sealed class catalog
 #pragma warning restore CS8981
 {
-    public Task HandleAsync(IdentifierProbeEvent e, CancellationToken ct) => Task.CompletedTask;
+    public Task HandleAsync(IdentifierProbeEvent e, CancellationToken cancellationToken) => Task.CompletedTask;
 }
 
 /// <summary>

@@ -1,5 +1,5 @@
 using System.Reflection;
-using Alberto.Subscriptions;
+using Alberto.Projections;
 using Alberto.Testing;
 using Xunit;
 

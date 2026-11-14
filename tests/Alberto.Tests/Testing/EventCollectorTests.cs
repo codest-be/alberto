@@ -16,7 +16,7 @@ public class EventCollectorTests
         var envelope = Envelope();
 
         var waiting = collector.WaitForProjectedAsync(
-            "p1", "collector-probe", ct: TestContext.Current.CancellationToken);
+            "p1", "collector-probe", cancellationToken: TestContext.Current.CancellationToken);
 
         collector.OnProjected("p1", envelope);
 
@@ -31,7 +31,7 @@ public class EventCollectorTests
         collector.OnProjected("p1", envelope);
 
         Assert.Same(envelope, await collector.WaitForProjectedAsync(
-            "p1", "collector-probe", ct: TestContext.Current.CancellationToken));
+            "p1", "collector-probe", cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -43,7 +43,7 @@ public class EventCollectorTests
         var waiting = collector.WaitForProjectedAsync(
             "p1", "never-projected",
             timeout: TimeSpan.FromSeconds(5),
-            ct: TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
 
         time.Advance(TimeSpan.FromSeconds(6));
 
@@ -60,7 +60,7 @@ public class EventCollectorTests
         var waiting = collector.WaitForProjectedAsync(
             "p1", "never-projected",
             timeout: TimeSpan.FromSeconds(30),
-            ct: cts.Token);
+            cancellationToken: cts.Token);
 
         // Cancel while the wait is in progress.
         await cts.CancelAsync();

@@ -1,7 +1,7 @@
 using System.Data.Common;
 using System.Text.Json;
 using Alberto.EntityFramework;
-using Alberto.Subscriptions;
+using Alberto.Projections;
 using Alberto.Tests.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -76,7 +76,7 @@ public sealed class EfTestDbContext : DbContext
 
     public EfTestDbContext(DbContextOptions<EfTestDbContext> options) : base(options)
     {
-        _baseSave = ct => base.SaveChangesAsync(ct);
+        _baseSave = cancellationToken => base.SaveChangesAsync(cancellationToken);
     }
 
     public DbSet<CounterEntity> Counters => Set<CounterEntity>();
@@ -153,7 +153,7 @@ public sealed class ControlledDbContextFactory : IDbContextFactory<EfTestDbConte
 
     /// <summary>Enqueues a save call that delegates to the real <c>SaveChangesAsync</c>.</summary>
     public void EnqueueSuccess()
-        => _queue.Enqueue((baseSave, ct) => baseSave(ct));
+        => _queue.Enqueue((baseSave, cancellationToken) => baseSave(cancellationToken));
 
     public EfTestDbContext CreateDbContext()
     {
@@ -167,7 +167,7 @@ public sealed class ControlledDbContextFactory : IDbContextFactory<EfTestDbConte
         return context;
     }
 
-    public Task<EfTestDbContext> CreateDbContextAsync(CancellationToken ct = default)
+    public Task<EfTestDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
         => Task.FromResult(CreateDbContext());
 }
 

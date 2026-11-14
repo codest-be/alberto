@@ -146,7 +146,7 @@ public class InMemoryDescriptorTests
             .Should().Throw<ArgumentNullException>().WithParameterName("builder");
         FluentActions.Invoking(() => InMemoryBuilderExtensions.WithInMemory(null!, "orders"))
             .Should().Throw<ArgumentNullException>().WithParameterName("builder");
-        FluentActions.Invoking(() => new DcbModuleBuilder("payments").WithInMemory(" "))
+        FluentActions.Invoking(() => new AlbertoModuleBuilder("payments").WithInMemory(" "))
             .Should().Throw<ArgumentException>().WithParameterName("sharedModuleKey");
     }
 }

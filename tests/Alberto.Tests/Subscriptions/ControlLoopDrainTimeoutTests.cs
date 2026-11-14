@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using Alberto.Configuration;
 using Alberto.InMemory;
+using Alberto.DeadLetters;
 using Alberto.Subscriptions;
 using Xunit;
 
@@ -67,13 +68,13 @@ public sealed class ControlLoopDrainTimeoutTests
     /// race the loop's own progress.
     /// </summary>
     private static async Task WaitForCheckpointAsync(
-        InMemoryCheckpointStore checkpoints, string processorId, long expected, CancellationToken ct)
+        InMemoryCheckpointStore checkpoints, string processorId, long expected, CancellationToken cancellationToken)
     {
         var deadline = Stopwatch.StartNew();
         while (deadline.Elapsed < TimeSpan.FromSeconds(10))
         {
-            if (await checkpoints.GetAsync(processorId, ct) >= expected) return;
-            await Task.Delay(10, ct);
+            if (await checkpoints.GetAsync(processorId, cancellationToken) >= expected) return;
+            await Task.Delay(10, cancellationToken);
         }
 
         Assert.Fail($"Checkpoint for '{processorId}' never reached {expected}.");
@@ -109,8 +110,8 @@ public sealed class ControlLoopDrainTimeoutTests
         public IReadOnlySet<string> HandledEventTypes { get; } =
             new HashSet<string> { EventTypeId };
 
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
-            => handler(@event, ct);
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default)
+            => handler(@event, cancellationToken);
     }
 
     /// <summary>
@@ -157,34 +158,34 @@ public sealed class ControlLoopDrainTimeoutTests
 
         public async Task<IReadOnlyList<DeadLetterClaim>> ClaimRetryRequestedAsync(
             string processorId, int batchSize, TimeSpan leaseDuration,
-            string claimedBy, CancellationToken ct = default)
+            string claimedBy, CancellationToken cancellationToken = default)
         {
             _stalled.TrySetResult();
-            await _release.Task; // deliberately not observing ct
+            await _release.Task; // deliberately not observing cancellationToken
             return [];
         }
 
-        public Task StoreAsync(DeadLetterEntry entry, CancellationToken ct = default)
-            => _inner.StoreAsync(entry, ct);
+        public Task StoreAsync(DeadLetterEntry entry, CancellationToken cancellationToken = default)
+            => _inner.StoreAsync(entry, cancellationToken);
 
         public Task<IReadOnlyList<DeadLetterEntry>> GetAsync(
-            string processorId, string? tenantId = null, int limit = 100, CancellationToken ct = default)
-            => _inner.GetAsync(processorId, tenantId, limit, ct);
+            string processorId, string? tenantId = null, int limit = 100, CancellationToken cancellationToken = default)
+            => _inner.GetAsync(processorId, tenantId, limit, cancellationToken);
 
-        public Task<int> CountAsync(string processorId, CancellationToken ct = default)
-            => _inner.CountAsync(processorId, ct);
+        public Task<int> CountAsync(string processorId, CancellationToken cancellationToken = default)
+            => _inner.CountAsync(processorId, cancellationToken);
 
-        public Task<bool> CompleteRetryAsync(DeadLetterClaim claim, CancellationToken ct = default)
-            => _inner.CompleteRetryAsync(claim, ct);
+        public Task<bool> CompleteRetryAsync(DeadLetterClaim claim, CancellationToken cancellationToken = default)
+            => _inner.CompleteRetryAsync(claim, cancellationToken);
 
-        public Task ClearAsync(string processorId, CancellationToken ct = default)
-            => _inner.ClearAsync(processorId, ct);
+        public Task ClearAsync(string processorId, CancellationToken cancellationToken = default)
+            => _inner.ClearAsync(processorId, cancellationToken);
 
-        public Task MarkForRetryAsync(string processorId, CancellationToken ct = default)
-            => _inner.MarkForRetryAsync(processorId, ct);
+        public Task MarkForRetryAsync(string processorId, CancellationToken cancellationToken = default)
+            => _inner.MarkForRetryAsync(processorId, cancellationToken);
 
-        public Task<bool> AbandonRetryAsync(DeadLetterClaim claim, CancellationToken ct = default)
-            => _inner.AbandonRetryAsync(claim, ct);
+        public Task<bool> AbandonRetryAsync(DeadLetterClaim claim, CancellationToken cancellationToken = default)
+            => _inner.AbandonRetryAsync(claim, cancellationToken);
     }
 
     // ── ControlLoop: sequential mode ──────────────────────────────────────────────

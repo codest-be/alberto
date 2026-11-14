@@ -76,9 +76,9 @@ Do not weaken the pattern.
 
 With tenancy on:
 
-- **Reads are filtered in SQL.** `StreamAsync` becomes `StreamForTenant`, and the tenant predicate
+- **Reads are filtered in SQL.** `ReadAsync` and `StreamAsync` become `ReadForTenant` and `StreamForTenant`, and the tenant predicate
   is part of the query, not a `.Where` you could forget.
-- **`StreamAllAsync` throws inside a request.** It legitimately crosses tenants, so it is allowed
+- **`ReadAllAsync` and `StreamAllAsync` throw inside a request.** It legitimately crosses tenants, so it is allowed
   only for the background consumer feed (which runs with no tenant set). Calling it from a
   request-scoped context (where a tenant *is* set) throws `InvalidOperationException` rather than
   quietly returning everyone's events. This guard exists because it is the exact shape of a
@@ -191,8 +191,4 @@ need leases enabled (`.WithControlLoop(o => o with { Leases = o.Leases with { En
 
 The Orders example in [alberto-examples](https://github.com/codest-be/alberto-examples) is multi-tenant end to end: an `X-Tenant-Id`
 header interceptor, tenant propagation into HotChocolate's resolver context, tenant-scoped
-projections and leases. Run it from that repository with:
-
-```bash
-dotnet run --project apps/Alberto.AppHost
-```
+projections and leases. The README in that repository says how to run it.

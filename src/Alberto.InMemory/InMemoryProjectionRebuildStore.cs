@@ -1,4 +1,4 @@
-using Alberto.Subscriptions;
+using Alberto.Projections;
 
 namespace Alberto.InMemory;
 
@@ -23,7 +23,7 @@ namespace Alberto.InMemory;
 /// no rows is safe.
 /// </para>
 /// </remarks>
-public sealed class InMemoryProjectionRebuildStore :
+internal sealed class InMemoryProjectionRebuildStore :
     IProjectionRebuildStore,
     IProjectionRebuildCoordinatorStore
 {
@@ -34,7 +34,7 @@ public sealed class InMemoryProjectionRebuildStore :
 
     /// <inheritdoc/>
     public Task<ProjectionRebuildState> GetAsync(
-        string processorId, string projectionType, CancellationToken ct = default)
+        string processorId, string projectionType, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
         ArgumentException.ThrowIfNullOrWhiteSpace(projectionType);
@@ -52,7 +52,7 @@ public sealed class InMemoryProjectionRebuildStore :
     }
 
     /// <inheritdoc/>
-    public Task<IReadOnlyList<ProjectionRebuildState>> ListAsync(CancellationToken ct = default)
+    public Task<IReadOnlyList<ProjectionRebuildState>> ListAsync(CancellationToken cancellationToken = default)
     {
         lock (_lock)
         {
@@ -63,7 +63,7 @@ public sealed class InMemoryProjectionRebuildStore :
 
     /// <inheritdoc/>
     public Task<ProjectionRebuildState> StartAsync(
-        string processorId, string projectionType, long targetPosition, CancellationToken ct = default)
+        string processorId, string projectionType, long targetPosition, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
         ArgumentException.ThrowIfNullOrWhiteSpace(projectionType);
@@ -120,21 +120,21 @@ public sealed class InMemoryProjectionRebuildStore :
 
     /// <inheritdoc/>
     public Task<ProjectionRebuildState> RequestPromotionAsync(
-        string processorId, bool force = false, CancellationToken ct = default) =>
+        string processorId, bool force = false, CancellationToken cancellationToken = default) =>
         RequestActionAsync(
             processorId,
             force ? RebuildOperatorAction.ForcePromote : RebuildOperatorAction.Promote,
-            ct);
+            cancellationToken);
 
     /// <inheritdoc/>
     public Task<ProjectionRebuildState> RequestAbortAsync(
-        string processorId, CancellationToken ct = default) =>
-        RequestActionAsync(processorId, RebuildOperatorAction.Abort, ct);
+        string processorId, CancellationToken cancellationToken = default) =>
+        RequestActionAsync(processorId, RebuildOperatorAction.Abort, cancellationToken);
 
     private Task<ProjectionRebuildState> RequestActionAsync(
         string processorId,
         RebuildOperatorAction action,
-        CancellationToken ct)
+        CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
 
@@ -152,7 +152,7 @@ public sealed class InMemoryProjectionRebuildStore :
 
     /// <inheritdoc/>
     Task<ProjectionRebuildState> IProjectionRebuildCoordinatorStore.MarkReadyAsync(
-        string processorId, CancellationToken ct)
+        string processorId, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
 
@@ -171,7 +171,7 @@ public sealed class InMemoryProjectionRebuildStore :
 
     /// <inheritdoc/>
     Task<RebuildOutcome> IProjectionRebuildCoordinatorStore.CompletePromotionAsync(
-        string processorId, bool force, CancellationToken ct)
+        string processorId, bool force, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
 
@@ -212,7 +212,7 @@ public sealed class InMemoryProjectionRebuildStore :
 
     /// <inheritdoc/>
     Task<RebuildOutcome> IProjectionRebuildCoordinatorStore.CompleteAbortAsync(
-        string processorId, CancellationToken ct)
+        string processorId, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(processorId);
 
@@ -241,7 +241,7 @@ public sealed class InMemoryProjectionRebuildStore :
 
     /// <inheritdoc/>
     Task IProjectionRebuildCoordinatorStore.DiscardStateVersionAsync(
-        string projectionType, int version, CancellationToken ct)
+        string projectionType, int version, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(projectionType);
 

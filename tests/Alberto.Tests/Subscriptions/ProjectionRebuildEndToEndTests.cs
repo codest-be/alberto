@@ -1,6 +1,6 @@
 using System.Text.Json;
 using Alberto.Postgres;
-using Alberto.Subscriptions;
+using Alberto.Projections;
 using Alberto.Tests.Infrastructure;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -208,21 +208,21 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
     [Fact]
     public async Task Rebuild_ReplacesCorruptedState_WithoutEverServingAPartialProjection()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var player = NewPlayer();
 
-        await AppendAsync(player, 3, ct);
-        await AppendAsync(player, 4, ct);
+        await AppendAsync(player, 3, cancellationToken);
+        await AppendAsync(player, 4, cancellationToken);
 
-        var versionBefore = await ActiveVersionAsync(ct);
+        var versionBefore = await ActiveVersionAsync(cancellationToken);
         await WaitUntilAsync(
-            async () => await ReadAsync(versionBefore, player, ct) is { Points: 7 },
-            "the live projection to catch up", ct);
+            async () => await ReadAsync(versionBefore, player, cancellationToken) is { Points: 7 },
+            "the live projection to catch up", cancellationToken);
 
         // Corrupt what the projection serves, the way a bug in an Apply method would have.
-        await WriteAsync(versionBefore, player, new Totals { Points = 999 }, ct);
+        await WriteAsync(versionBefore, player, new Totals { Points = 999 }, cancellationToken);
 
-        var started = await StartRebuildAsync(ct);
+        var started = await StartRebuildAsync(cancellationToken);
 
         // While the rebuild runs, readers keep seeing the old version — wrong, but whole.
         // Any other value would mean the shadow loop is writing where readers can see it.
@@ -230,15 +230,15 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
         await WaitUntilAsync(
             async () =>
             {
-                observed.AddRange(await ReadAtAStableVersionAsync(player, ct));
-                return (await StateAsync(ct)).Status is RebuildStatus.Completed;
+                observed.AddRange(await ReadAtAStableVersionAsync(player, cancellationToken));
+                return (await StateAsync(cancellationToken)).Status is RebuildStatus.Completed;
             },
-            "the rebuild to be promoted", ct);
+            "the rebuild to be promoted", cancellationToken);
 
         observed.Should().OnlyContain(points => points == 999 || points == 7,
             "a reader moves from the complete old version straight to the complete new one");
 
-        var promoted = await StateAsync(ct);
+        var promoted = await StateAsync(cancellationToken);
         // Against the version the rebuild was actually handed, not versionBefore+1: an abort
         // consumes last_allocated_version without advancing active_version, so the two are only
         // the same number until something in this test's own history aborts.
@@ -246,14 +246,14 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
             "the promoted version must be the one the rebuild was writing into");
         promoted.RebuildingVersion.Should().BeNull();
 
-        var afterPromotion = await ReadAsync(promoted.ActiveVersion, player, ct);
+        var afterPromotion = await ReadAsync(promoted.ActiveVersion, player, cancellationToken);
         afterPromotion!.Points.Should().Be(7, "the rebuild replayed the log rather than copying the bad state");
 
         // Advance the coordinator's clock well past the grace period so the sweep can reclaim,
         // wrapped in try/finally so a failure cannot leak an advanced clock into later tests.
         await WithClockAdvancedPastGracePeriodAsync(
-            async () => await ReadAsync(versionBefore, player, ct) is null,
-            "the sweep to reclaim the superseded version once its grace period has elapsed", ct);
+            async () => await ReadAsync(versionBefore, player, cancellationToken) is null,
+            "the sweep to reclaim the superseded version once its grace period has elapsed", cancellationToken);
     }
 
     /// <summary>
@@ -272,31 +272,31 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
     [Fact]
     public async Task PromotionLeavesTheSupersededVersionReadable_ForAReaderThatResolvedItFirst()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var player = NewPlayer();
 
-        await AppendAsync(player, 5, ct);
+        await AppendAsync(player, 5, cancellationToken);
 
         // The reader's half-completed query: it has the version, it has not yet run the read.
-        var resolvedVersion = await ActiveVersionAsync(ct);
+        var resolvedVersion = await ActiveVersionAsync(cancellationToken);
         await WaitUntilAsync(
-            async () => await ReadAsync(resolvedVersion, player, ct) is { Points: 5 },
-            "the live projection to catch up", ct);
+            async () => await ReadAsync(resolvedVersion, player, cancellationToken) is { Points: 5 },
+            "the live projection to catch up", cancellationToken);
 
-        var started = await StartRebuildAsync(ct);
+        var started = await StartRebuildAsync(cancellationToken);
         await WaitUntilAsync(
             async () =>
             {
-                var state = await StateAsync(ct);
+                var state = await StateAsync(cancellationToken);
                 return state.Status is RebuildStatus.Completed &&
                        state.ActiveVersion == started.RebuildingVersion;
             },
-            "the rebuild to be promoted", ct);
+            "the rebuild to be promoted", cancellationToken);
 
         // The coordinator's clock is frozen behind wall time, so the sweep's grace-period
         // gate holds: the superseded version's rows are guaranteed intact regardless of how
         // long the test took to detect the promotion.
-        (await ReadAsync(resolvedVersion, player, ct))
+        (await ReadAsync(resolvedVersion, player, cancellationToken))
             .Should().NotBeNull("a version cannot be deleted while readers may still be holding it")
             .And.BeEquivalentTo(new Totals { Points = 5 },
                 "and what it holds is the complete old projection, not a half-deleted one");
@@ -304,8 +304,8 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
         // Advance the coordinator's clock well past the grace period so the sweep can reclaim,
         // wrapped in try/finally so a failure cannot leak an advanced clock into later tests.
         await WithClockAdvancedPastGracePeriodAsync(
-            async () => await ReadAsync(resolvedVersion, player, ct) is null,
-            "the sweep to reclaim the superseded version", ct);
+            async () => await ReadAsync(resolvedVersion, player, cancellationToken) is null,
+            "the sweep to reclaim the superseded version", cancellationToken);
     }
 
     /// <summary>
@@ -315,33 +315,33 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
     [Fact]
     public async Task Rebuild_CatchesUpOnEventsThatArriveWhileItIsRunning()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var player = NewPlayer();
 
-        await AppendAsync(player, 10, ct);
+        await AppendAsync(player, 10, cancellationToken);
 
-        var versionBefore = await ActiveVersionAsync(ct);
+        var versionBefore = await ActiveVersionAsync(cancellationToken);
         await WaitUntilAsync(
-            async () => await ReadAsync(versionBefore, player, ct) is { Points: 10 },
-            "the live projection to catch up", ct);
+            async () => await ReadAsync(versionBefore, player, cancellationToken) is { Points: 10 },
+            "the live projection to catch up", cancellationToken);
 
-        await StartRebuildAsync(ct);
+        await StartRebuildAsync(cancellationToken);
 
         // Lands after the target position the rebuild was told to replay to.
-        await AppendAsync(player, 5, ct);
+        await AppendAsync(player, 5, cancellationToken);
 
         await WaitUntilAsync(
             async () =>
             {
-                var state = await StateAsync(ct);
+                var state = await StateAsync(cancellationToken);
                 return state.Status is RebuildStatus.Completed && state.ActiveVersion > versionBefore;
             },
-            "the rebuild to be promoted", ct);
+            "the rebuild to be promoted", cancellationToken);
 
-        var active = await ActiveVersionAsync(ct);
+        var active = await ActiveVersionAsync(cancellationToken);
         await WaitUntilAsync(
-            async () => await ReadAsync(active, player, ct) is { Points: 15 },
-            "the promoted version to include the events appended mid-rebuild", ct);
+            async () => await ReadAsync(active, player, cancellationToken) is { Points: 15 },
+            "the promoted version to include the events appended mid-rebuild", cancellationToken);
     }
 
     /// <summary>
@@ -359,22 +359,22 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
     [Fact]
     public async Task AbortedRebuild_LeavesTheLiveVersionUntouched()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var player = NewPlayer();
 
-        await AppendAsync(player, 8, ct);
+        await AppendAsync(player, 8, cancellationToken);
 
-        var versionBefore = await ActiveVersionAsync(ct);
+        var versionBefore = await ActiveVersionAsync(cancellationToken);
         await WaitUntilAsync(
-            async () => await ReadAsync(versionBefore, player, ct) is { Points: 8 },
-            "the live projection to catch up", ct);
+            async () => await ReadAsync(versionBefore, player, cancellationToken) is { Points: 8 },
+            "the live projection to catch up", cancellationToken);
 
         // Seed the version being rebuilt, so the abort has state to discard rather than
         // trivially succeeding on an empty one. Written by hand rather than by waiting for the
         // real shadow loop: the fixture auto-promotes, and waiting is long enough for the
         // rebuild to finish and leave nothing to abort.
         var (started, outcome) = await AbortAFreshRebuildAsync(
-            version => WriteAsync(version, player, new Totals { Points = 8 }, ct), ct);
+            version => WriteAsync(version, player, new Totals { Points = 8 }, cancellationToken), cancellationToken);
 
         var abandonedVersion = started.RebuildingVersion!.Value;
 
@@ -383,7 +383,7 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
             "an abort must not move the version readers are served from");
         outcome.State.RebuildingVersion.Should().BeNull();
 
-        (await ReadAsync(started.ActiveVersion, player, ct))!.Points.Should().Be(8);
+        (await ReadAsync(started.ActiveVersion, player, cancellationToken))!.Points.Should().Be(8);
 
         // Advance the coordinator's clock well past the grace period so the sweep can reclaim.
         // The "live version undisturbed" assertion runs while advanced because it depends on the
@@ -392,10 +392,10 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
         try
         {
             await WaitUntilAsync(
-                async () => await ReadAsync(abandonedVersion, player, ct) is null,
-                "the sweep to reclaim the abandoned version once its grace period has elapsed", ct);
+                async () => await ReadAsync(abandonedVersion, player, cancellationToken) is null,
+                "the sweep to reclaim the abandoned version once its grace period has elapsed", cancellationToken);
 
-            (await ReadAsync(started.ActiveVersion, player, ct))!.Points.Should().Be(
+            (await ReadAsync(started.ActiveVersion, player, cancellationToken))!.Points.Should().Be(
                 8, "reclaiming the abandoned version must not disturb the live one");
         }
         finally
@@ -414,36 +414,36 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
     [Fact]
     public async Task RebuildAfterAnAbort_GetsAFreshVersionNumber()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var cancellationToken = TestContext.Current.CancellationToken;
         var player = NewPlayer();
 
-        await AppendAsync(player, 6, ct);
+        await AppendAsync(player, 6, cancellationToken);
 
-        var before = await ActiveVersionAsync(ct);
+        var before = await ActiveVersionAsync(cancellationToken);
         await WaitUntilAsync(
-            async () => await ReadAsync(before, player, ct) is { Points: 6 },
-            "the live projection to catch up", ct);
+            async () => await ReadAsync(before, player, cancellationToken) is { Points: 6 },
+            "the live projection to catch up", cancellationToken);
 
-        var abandonedVersion = (await AbortAFreshRebuildAsync(afterStart: null, ct))
+        var abandonedVersion = (await AbortAFreshRebuildAsync(afterStart: null, cancellationToken))
             .Started.RebuildingVersion!.Value;
 
         // The write the abort could not prevent: the shadow loop lives in the application
         // process and only learns of the abort on a later tick, so anything it has in hand lands
         // after the abort transaction deleted the version. Doing it by hand rather than racing
         // the real loop for it keeps the test about the allocation, not about timing.
-        await WriteAsync(abandonedVersion, player, new Totals { Points = 6 }, ct);
+        await WriteAsync(abandonedVersion, player, new Totals { Points = 6 }, cancellationToken);
 
-        var second = await StartRebuildAsync(ct);
+        var second = await StartRebuildAsync(cancellationToken);
 
         second.RebuildingVersion.Should().NotBe(abandonedVersion,
             "a version a shadow loop may still be writing into cannot be reallocated");
 
         await WaitUntilAsync(
-            async () => await StateAsync(ct) is { Status: RebuildStatus.Completed } s
+            async () => await StateAsync(cancellationToken) is { Status: RebuildStatus.Completed } s
                         && s.ActiveVersion == second.RebuildingVersion,
-            "the second rebuild to be promoted", ct);
+            "the second rebuild to be promoted", cancellationToken);
 
-        (await ReadAsync(second.RebuildingVersion!.Value, player, ct))!.Points.Should().Be(6,
+        (await ReadAsync(second.RebuildingVersion!.Value, player, cancellationToken))!.Points.Should().Be(6,
             "replaying one event of 6 points onto an aborted rebuild's leftovers would read 12");
     }
 
@@ -457,12 +457,12 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
     /// an advanced clock into the next test.
     /// </summary>
     private async Task WithClockAdvancedPastGracePeriodAsync(
-        Func<Task<bool>> condition, string what, CancellationToken ct)
+        Func<Task<bool>> condition, string what, CancellationToken cancellationToken)
     {
         fixture.TimeProvider.SetUtcNow(DateTimeOffset.UtcNow + TimeSpan.FromMinutes(10));
         try
         {
-            await WaitUntilAsync(condition, what, ct);
+            await WaitUntilAsync(condition, what, cancellationToken);
         }
         finally
         {
@@ -472,7 +472,7 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
 
     private static string NewPlayer() => $"p-{Guid.NewGuid():N}";
 
-    private async Task AppendAsync(string player, int points, CancellationToken ct) =>
+    private async Task AppendAsync(string player, int points, CancellationToken cancellationToken) =>
         await EventStore.AppendAsync(
             [
                 new EventToPersist
@@ -482,7 +482,7 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
                     EventData = JsonSerializer.Serialize(new Scored(player, points)),
                 }
             ],
-            cancellationToken: ct);
+            cancellationToken: cancellationToken);
 
     /// <summary>
     /// Starts a rebuild and aborts it while it is still in flight, returning the version it
@@ -499,26 +499,26 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
     /// Runs against the freshly allocated rebuilding version before the abort, for tests that
     /// need that version to hold something. Re-runs on each attempt.
     /// </param>
-    /// <param name="ct">Cancels the retry loop and the coordinator calls it makes.</param>
+    /// <param name="cancellationToken">Cancels the retry loop and the coordinator calls it makes.</param>
     private async Task<(ProjectionRebuildState Started, RebuildOutcome Outcome)>
-        AbortAFreshRebuildAsync(Func<int, Task>? afterStart, CancellationToken ct)
+        AbortAFreshRebuildAsync(Func<int, Task>? afterStart, CancellationToken cancellationToken)
     {
         for (var attempt = 1; ; attempt++)
         {
-            var started = await StartRebuildAsync(ct);
+            var started = await StartRebuildAsync(cancellationToken);
 
             if (afterStart is not null)
                 await afterStart(started.RebuildingVersion!.Value);
 
             try
             {
-                await RebuildStore.RequestAbortAsync(ProcessorId, ct);
+                await RebuildStore.RequestAbortAsync(ProcessorId, cancellationToken);
                 await WaitUntilAsync(
-                    async () => !(await StateAsync(ct)).IsRebuildInFlight,
+                    async () => !(await StateAsync(cancellationToken)).IsRebuildInFlight,
                     "the coordinator to complete the requested abort",
-                    ct);
+                    cancellationToken);
 
-                var settled = await StateAsync(ct);
+                var settled = await StateAsync(cancellationToken);
                 if (settled.Status is RebuildStatus.Aborted)
                 {
                     return (
@@ -541,19 +541,19 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
     /// Starts a rebuild the way an operator does: capture the head as the target, then hand the
     /// state machine the transition and let the coordinator notice.
     /// </summary>
-    private async Task<ProjectionRebuildState> StartRebuildAsync(CancellationToken ct)
+    private async Task<ProjectionRebuildState> StartRebuildAsync(CancellationToken cancellationToken)
     {
         await using var cmd = fixture.DataSource.CreateCommand(
             "SELECT COALESCE(MAX(global_position), 0) FROM alberto_events");
-        var head = Convert.ToInt64(await cmd.ExecuteScalarAsync(ct));
+        var head = Convert.ToInt64(await cmd.ExecuteScalarAsync(cancellationToken));
         return await RebuildStore.StartAsync(
-            ProcessorId, ProjectionType, head, ct);
+            ProcessorId, ProjectionType, head, cancellationToken);
     }
 
-    private Task<ProjectionRebuildState> StateAsync(CancellationToken ct) =>
-        RebuildStore.GetAsync(ProcessorId, ProjectionType, ct);
+    private Task<ProjectionRebuildState> StateAsync(CancellationToken cancellationToken) =>
+        RebuildStore.GetAsync(ProcessorId, ProjectionType, cancellationToken);
 
-    private async Task<int> ActiveVersionAsync(CancellationToken ct) => (await StateAsync(ct)).ActiveVersion;
+    private async Task<int> ActiveVersionAsync(CancellationToken cancellationToken) => (await StateAsync(cancellationToken)).ActiveVersion;
 
     /// <summary>
     /// A state store pinned to one version, for looking at what a rebuild did to storage rather
@@ -562,9 +562,9 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
     private PostgresStateStore<Totals> StoreAtVersion(int version) =>
         new(fixture.DataSource, ProjectionType, rebuildVersion: ProjectionVersion.From(() => version));
 
-    private async Task<Totals?> ReadAsync(int version, string player, CancellationToken ct)
+    private async Task<Totals?> ReadAsync(int version, string player, CancellationToken cancellationToken)
     {
-        var states = await StoreAtVersion(version).LoadManyAsync([player], ct: ct);
+        var states = await StoreAtVersion(version).LoadManyAsync([player], cancellationToken: cancellationToken);
         return states.GetValueOrDefault(player);
     }
 
@@ -589,24 +589,24 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
     /// record was served at a version that stood still for the whole read.
     /// </para>
     /// </remarks>
-    private async Task<IReadOnlyList<int?>> ReadAtAStableVersionAsync(string player, CancellationToken ct)
+    private async Task<IReadOnlyList<int?>> ReadAtAStableVersionAsync(string player, CancellationToken cancellationToken)
     {
-        var before = await ActiveVersionAsync(ct);
-        var points = (await ReadAsync(before, player, ct))?.Points;
-        var after = await ActiveVersionAsync(ct);
+        var before = await ActiveVersionAsync(cancellationToken);
+        var points = (await ReadAsync(before, player, cancellationToken))?.Points;
+        var after = await ActiveVersionAsync(cancellationToken);
 
         return before == after ? [points] : [];
     }
 
-    private Task WriteAsync(int version, string player, Totals state, CancellationToken ct) =>
+    private Task WriteAsync(int version, string player, Totals state, CancellationToken cancellationToken) =>
         StoreAtVersion(version).ApplyChangesAsync(
-            new Dictionary<string, Totals> { [player] = state }, [], ct: ct);
+            new Dictionary<string, Totals> { [player] = state }, [], cancellationToken: cancellationToken);
 
     /// <summary>
     /// Polls until a condition holds, failing with what it was waiting for rather than with a
     /// bare timeout. The coordinator is a background loop; there is nothing to await on it.
     /// </summary>
-    private static async Task WaitUntilAsync(Func<Task<bool>> condition, string what, CancellationToken ct)
+    private static async Task WaitUntilAsync(Func<Task<bool>> condition, string what, CancellationToken cancellationToken)
     {
         var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
 
@@ -615,7 +615,7 @@ public sealed class ProjectionRebuildEndToEndTests(ProjectionRebuildHostFixture 
             if (await condition())
                 return;
 
-            await Task.Delay(50, ct);
+            await Task.Delay(50, cancellationToken);
         }
 
         throw new TimeoutException($"Timed out after 30s waiting for {what}.");

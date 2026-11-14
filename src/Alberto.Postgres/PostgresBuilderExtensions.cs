@@ -1,6 +1,7 @@
 using Alberto;
 using Alberto.Append;
 using Alberto.Configuration;
+using Alberto.Projections;
 using Alberto.Subscriptions;
 using Alberto.Tenancy;
 using Microsoft.Extensions.DependencyInjection;
@@ -27,8 +28,8 @@ public static class PostgresBuilderExtensions
     /// This declares the backend. No connection is opened and no migration runs until the host
     /// starts, so building a service provider is always side-effect free.
     /// </remarks>
-    public static DcbModuleBuilder WithPostgres(
-        this DcbModuleBuilder builder,
+    public static AlbertoModuleBuilder WithPostgres(
+        this AlbertoModuleBuilder builder,
         Func<PostgresOptions, PostgresOptions> configure)
     {
         ArgumentNullException.ThrowIfNull(builder);
@@ -46,17 +47,14 @@ public static class PostgresBuilderExtensions
         var services = context.Services;
         var moduleKey = context.ModuleKey;
 
-        services.AddKeyedSingleton<IEventStoreBackend>(moduleKey, (sp, _) =>
+        context.AddEventStoreBackend(ServiceLifetime.Singleton, sp =>
         {
             var opts = runtime.Resolve(sp);
             var dataSource = sp.GetRequiredKeyedService<NpgsqlDataSource>(moduleKey);
             var timeProvider = sp.GetService<TimeProvider>() ?? TimeProvider.System;
-            var rawBackend = new PostgresEventStoreBackend(
+            return new PostgresEventStoreBackend(
                 dataSource, timeProvider, opts.Schema, opts.EnableStableHeadBarrier);
-
-            var pipeline = sp.GetRequiredKeyedService<IAppendInterceptorPipeline>(moduleKey);
-            return new InterceptingEventStoreBackend(rawBackend, pipeline, "postgresql");
-        });
+        }, dbSystem: "postgresql");
 
         services.AddKeyedSingleton<IEventStore>(moduleKey, (sp, key) =>
         {
@@ -91,26 +89,20 @@ public static class PostgresBuilderExtensions
         // Register IEventStoreBackend (keyed, scoped) as decorator chain:
         // InterceptingBackend(TenantDecorator(TenantBackend))
         // Used by the API request path — scoped so ITenantAccessor is resolved per request.
-        services.AddKeyedScoped<IEventStoreBackend>(moduleKey, (sp, _) =>
-        {
-            var rawTenantBackend = sp.GetRequiredKeyedService<PostgresTenantEventStoreBackend>(moduleKey + ":tenant-raw");
-            var tenantAccessor = sp.GetRequiredService<ITenantAccessor>();
-            var decorator = new TenantEventStoreDecorator(rawTenantBackend, tenantAccessor);
-
-            var pipeline = sp.GetRequiredKeyedService<IAppendInterceptorPipeline>(moduleKey);
-            return new InterceptingEventStoreBackend(decorator, pipeline, "postgresql");
-        });
+        context.AddEventStoreBackend(ServiceLifetime.Scoped, sp =>
+            new TenantEventStoreDecorator(
+                sp.GetRequiredKeyedService<PostgresTenantEventStoreBackend>(moduleKey + ":tenant-raw"),
+                sp.GetRequiredService<ITenantAccessor>()),
+            dbSystem: "postgresql");
 
         // Register a singleton backend for ControlLoops (streams all events, no per-request
         // tenant scoping). ControlLoops are singletons and cannot consume scoped services, so
         // they use this key.
-        services.AddKeyedSingleton<IEventStoreBackend>(moduleKey + ":consumer", (sp, _) =>
-        {
-            var rawTenantBackend = sp.GetRequiredKeyedService<PostgresTenantEventStoreBackend>(moduleKey + ":tenant-raw");
-            var decorator = new TenantEventStoreDecorator(rawTenantBackend, ConsumerTenantAccessor.Instance);
-            var pipeline = sp.GetRequiredKeyedService<IAppendInterceptorPipeline>(moduleKey);
-            return new InterceptingEventStoreBackend(decorator, pipeline, "postgresql");
-        });
+        context.AddEventStoreBackend(ServiceLifetime.Singleton, sp =>
+            new TenantEventStoreDecorator(
+                sp.GetRequiredKeyedService<PostgresTenantEventStoreBackend>(moduleKey + ":tenant-raw"),
+                ConsumerTenantAccessor.Instance),
+            ":consumer", "postgresql");
 
         services.AddKeyedScoped<IEventStore>(moduleKey, (sp, key) =>
         {

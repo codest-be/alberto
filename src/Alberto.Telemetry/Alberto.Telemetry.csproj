@@ -2,9 +2,6 @@
 
   <PropertyGroup>
     <TargetFrameworks>$(AlbertoLibraryTargetFrameworks)</TargetFrameworks>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
 
     <!-- Package Metadata -->
     <PackageId>Alberto.Telemetry</PackageId>

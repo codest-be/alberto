@@ -16,7 +16,7 @@ public class UnshardedRegistrationParityTests
 {
     private const string ConnectionString = "Host=localhost;Database=alberto;Username=x;Password=y";
 
-    private static ServiceProvider Provider(Action<DcbModuleBuilder> configure)
+    private static ServiceProvider Provider(Action<AlbertoModuleBuilder> configure)
     {
         var services = new ServiceCollection();
         services.AddAlberto("orders", configure);
@@ -39,8 +39,6 @@ public class UnshardedRegistrationParityTests
 
         scope.ServiceProvider.GetRequiredKeyedService<IEventStore>("orders")
             .Should().NotBeOfType<ShardRoutingEventStore>();
-        scope.ServiceProvider.GetRequiredKeyedService<IEventStoreBackend>("orders")
-            .Should().NotBeOfType<ShardRoutingEventStoreBackend>();
     }
 
     [Fact]

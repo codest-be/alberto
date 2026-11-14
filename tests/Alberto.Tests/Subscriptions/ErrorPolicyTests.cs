@@ -1,5 +1,4 @@
 using Alberto.Configuration;
-using Alberto.Subscriptions;
 using Xunit;
 
 namespace Alberto.Tests.Subscriptions;

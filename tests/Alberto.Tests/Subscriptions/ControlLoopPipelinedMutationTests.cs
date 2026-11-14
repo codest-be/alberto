@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Alberto.InMemory;
+using Alberto.Checkpoints;
 using Alberto.Subscriptions;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
@@ -57,8 +58,8 @@ public sealed class ControlLoopPipelinedMutationTests
 
         public IReadOnlySet<string> HandledEventTypes { get; } = new HashSet<string> { EventTypeId };
 
-        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken ct = default)
-            => handler(@event, ct);
+        public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default)
+            => handler(@event, cancellationToken);
     }
 
     /// <summary>Wraps an <see cref="IEventStoreBackend"/>, counting <see cref="StreamAllAsync"/> calls.</summary>
@@ -67,16 +68,28 @@ public sealed class ControlLoopPipelinedMutationTests
         private int _streamAllCount;
         public int StreamAllCount => Volatile.Read(ref _streamAllCount);
 
-        public Task<IReadOnlyCollection<IEventEnvelope>> StreamAllAsync(
-            long afterPosition = 0, int? limit = null, CancellationToken cancellationToken = default)
+        public IAsyncEnumerable<IEventEnvelope> StreamAllAsync(
+            long afterPosition = 0, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllOfTypesAsync(
+            IReadOnlySet<string> eventTypes, long afterPosition, int limit, CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _streamAllCount);
-            return inner.StreamAllAsync(afterPosition, limit, cancellationToken);
+            return inner.ReadAllOfTypesAsync(eventTypes, afterPosition, limit, cancellationToken);
         }
 
-        public Task<IReadOnlyCollection<IEventEnvelope>> StreamAsync(
-            DcbQuery query, long afterPosition = 0, int? limit = null, CancellationToken cancellationToken = default)
-            => inner.StreamAsync(query, afterPosition, limit, cancellationToken);
+        public Task<IReadOnlyCollection<IEventEnvelope>> ReadAsync(
+            DcbQuery query, long afterPosition, int limit, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllAsync(
+            long afterPosition, int limit, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public IAsyncEnumerable<IEventEnvelope> StreamAsync(
+            DcbQuery query, long afterPosition = 0, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
 
         public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
             IEnumerable<IEventToPersist> events, DcbQuery? dcbQuery = null, long? expectedPosition = null,
@@ -95,23 +108,23 @@ public sealed class ControlLoopPipelinedMutationTests
         public int GetCount => Volatile.Read(ref _getCount);
         public int SaveCount => Volatile.Read(ref _saveCount);
 
-        public Task<long?> GetAsync(string processorId, CancellationToken ct = default)
+        public Task<long?> GetAsync(string processorId, CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _getCount);
-            return inner.GetAsync(processorId, ct);
+            return inner.GetAsync(processorId, cancellationToken);
         }
 
-        public Task SaveAsync(string processorId, long position, CancellationToken ct = default)
+        public Task SaveAsync(string processorId, long position, CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _saveCount);
-            return inner.SaveAsync(processorId, position, ct);
+            return inner.SaveAsync(processorId, position, cancellationToken);
         }
 
-        public Task ResetAsync(string processorId, CancellationToken ct = default)
-            => inner.ResetAsync(processorId, ct);
+        public Task ResetAsync(string processorId, CancellationToken cancellationToken = default)
+            => inner.ResetAsync(processorId, cancellationToken);
 
-        public Task RewindAsync(string processorId, long position, CancellationToken ct = default)
-            => inner.RewindAsync(processorId, position, ct);
+        public Task RewindAsync(string processorId, long position, CancellationToken cancellationToken = default)
+            => inner.RewindAsync(processorId, position, cancellationToken);
     }
 
     /// <summary>
@@ -144,15 +157,27 @@ public sealed class ControlLoopPipelinedMutationTests
             return Task.FromResult<IReadOnlyList<long>>([]);
         }
 
-        public Task<IReadOnlyCollection<IEventEnvelope>> StreamAllAsync(
-            long afterPosition = 0, int? limit = null, CancellationToken cancellationToken = default)
+        public IAsyncEnumerable<IEventEnvelope> StreamAllAsync(
+            long afterPosition = 0, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllOfTypesAsync(
+            IReadOnlySet<string> eventTypes, long afterPosition, int limit, CancellationToken cancellationToken = default)
         {
             lock (_lock) _streamAllCallTimestamps.Add(DateTime.UtcNow);
-            return inner.StreamAllAsync(afterPosition, limit, cancellationToken);
+            return inner.ReadAllOfTypesAsync(eventTypes, afterPosition, limit, cancellationToken);
         }
 
-        public Task<IReadOnlyCollection<IEventEnvelope>> StreamAsync(
-            DcbQuery query, long afterPosition = 0, int? limit = null, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyCollection<IEventEnvelope>> ReadAsync(
+            DcbQuery query, long afterPosition, int limit, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllAsync(
+            long afterPosition, int limit, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public IAsyncEnumerable<IEventEnvelope> StreamAsync(
+            DcbQuery query, long afterPosition = 0, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
         public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
@@ -186,12 +211,24 @@ public sealed class ControlLoopPipelinedMutationTests
             return Task.FromResult<IReadOnlyList<long>>([]);
         }
 
-        public Task<IReadOnlyCollection<IEventEnvelope>> StreamAllAsync(
-            long afterPosition = 0, int? limit = null, CancellationToken cancellationToken = default)
+        public IAsyncEnumerable<IEventEnvelope> StreamAllAsync(
+            long afterPosition = 0, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllOfTypesAsync(
+            IReadOnlySet<string> eventTypes, long afterPosition, int limit, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyCollection<IEventEnvelope>>([]);
 
-        public Task<IReadOnlyCollection<IEventEnvelope>> StreamAsync(
-            DcbQuery query, long afterPosition = 0, int? limit = null, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyCollection<IEventEnvelope>> ReadAsync(
+            DcbQuery query, long afterPosition, int limit, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<IReadOnlyCollection<IEventEnvelope>> ReadAllAsync(
+            long afterPosition, int limit, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public IAsyncEnumerable<IEventEnvelope> StreamAsync(
+            DcbQuery query, long afterPosition = 0, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
         public Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
@@ -228,22 +265,22 @@ public sealed class ControlLoopPipelinedMutationTests
 
     // ── helpers ───────────────────────────────────────────────────────────────────
 
-    private static async Task WaitForAsync(Func<bool> condition, CancellationToken ct, TimeSpan? timeout = null)
+    private static async Task WaitForAsync(Func<bool> condition, CancellationToken cancellationToken, TimeSpan? timeout = null)
     {
         var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(10));
         while (!condition())
         {
             if (DateTime.UtcNow > deadline)
                 throw new TimeoutException("Condition not met within the deadline.");
-            await Task.Delay(10, ct);
+            await Task.Delay(10, cancellationToken);
         }
     }
 
     private static async Task WaitForCheckpointAsync(
-        ICheckpointStore checkpoints, string processorId, long expected, CancellationToken ct)
+        ICheckpointStore checkpoints, string processorId, long expected, CancellationToken cancellationToken)
     {
         await WaitForAsync(
-            () => checkpoints.GetAsync(processorId, ct).GetAwaiter().GetResult() >= expected, ct);
+            () => checkpoints.GetAsync(processorId, cancellationToken).GetAwaiter().GetResult() >= expected, cancellationToken);
     }
 
     // ── 303: initialCheckpoint = GetAsync ?? 0L => 0L ──────────────────────────────

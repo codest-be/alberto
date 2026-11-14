@@ -52,7 +52,7 @@ public sealed class TracePropagationTests
                 Metadata = eventMetadata ?? [],
             },
         ]);
-        return (await backend.StreamAllAsync()).Single().Metadata;
+        return (await backend.StreamAllAsync().ToListAsync()).Single().Metadata;
     }
 
     [Fact]
@@ -262,10 +262,10 @@ public sealed class TracePropagationTests
 
     private sealed class ThrowingTransport : IMessageTransport
     {
-        public Task PublishAsync(ExternalMessage message, CancellationToken ct) =>
+        public Task PublishAsync(ExternalMessage message, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("secret SELECT * FROM x");
-        public Task StartAsync(CancellationToken ct) => Task.CompletedTask;
-        public Task StopAsync(CancellationToken ct) => Task.CompletedTask;
+        public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private static async Task WaitUntil(Func<bool> condition)

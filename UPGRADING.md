@@ -3,6 +3,80 @@
 Notes for moving between Alberto releases. Breaking changes of a release are also listed in its
 section of [CHANGELOG.md](CHANGELOG.md).
 
+This file covers 0.x release-to-release steps; [docs/migrating-to-1.0.md](docs/migrating-to-1.0.md) covers the older `0.1.0-beta` to 1.0 breaking changes.
+
+## To the next release (pre-1.0, breaking)
+
+### Three naming fixes
+
+| Was | Is |
+|---|---|
+| `DcbModuleBuilder`, `DcbModuleBuilderExtensions` | `AlbertoModuleBuilder`, `AlbertoModuleBuilderExtensions`. `DcbQuery` and `DcbConflictException` keep their names: DCB is the domain term there |
+| `Alberto.ServiceCollectionExtensions` (`AddAlberto`) | `Alberto.AlbertoServiceCollectionExtensions`. Call sites are unaffected, it is an extension method |
+| `Alberto.Telemetry.ServiceCollectionExtensions` (`AddAlbertoInstrumentation`) | `Alberto.Telemetry.AlbertoTelemetryServiceCollectionExtensions`. Call sites are unaffected |
+| `Alberto.Result`, `Result<T>`, `Problem`, `Decision`, `Decision<T>` | `Alberto.Results.*`. `using Alberto;` no longer brings a type called `Result` into code that has its own: add `using Alberto.Results;` |
+
+### `Alberto.Subscriptions` split by concern
+
+The namespace mixed the control loop with checkpoints, leases, dead letters and projection state.
+Types moved; none changed shape. Add the `using` the compiler asks for.
+
+| Types | Was | Is |
+|---|---|---|
+| `ICheckpointStore`, `IFencedCheckpointStore`, `IFencableCheckpointStore`, `ICheckpointInventory`, `CachingCheckpointStore` | `Alberto.Subscriptions` | `Alberto.Checkpoints` |
+| `IProcessorLeaseManager`, `IProcessorLease`, `ProcessorLease` | `Alberto.Subscriptions` | `Alberto.Leases` |
+| `IDeadLetterStore`, `IClaimableDeadLetterStore`, `DeadLetterEntry`, `DeadLetterClaim`, `DeadLetterEntryFactory`, `DeadLetterRetryLoop`, `DeadLetterRetryLoopGroup`, `DeadLetterRetryLoopOptions` | `Alberto.Subscriptions` | `Alberto.DeadLetters` |
+| `IStateStore<T>`, `IProjectionEntity`, `ProjectionEntityStamp`, `ProjectionDeclaration<T>`, `DeclareProjection`, `ProjectionContext`, `ProjectionStoreContext`, `ProjectionResult<T>`, `ProjectionResults`, `IInlineProjection`, `DeclaredAsyncProjection<T>`, `ProjectionCatchUp`, `IProjectionStateClearer`, `ConcurrencyConflictException` | `Alberto.Subscriptions` | `Alberto.Projections` |
+| `IProjectionRebuildStore`, `IProjectionRebuildCoordinatorStore`, `ProjectionVersion`, `ProjectionVersions`, `RebuildCoordinator`, `RebuildableProjection`, rebuild status/outcome types | `Alberto.Subscriptions` | `Alberto.Projections` |
+| `ControlLoop*`, `IEventProcessor`, `IBatchableProcessor`, `ConsumeEventContext`, `BatchConsumeContext`, middleware, error classifiers, reactors, `ProcessorExecutionOptions`, processor health, `EventStoreHead` | `Alberto.Subscriptions` | unchanged |
+
+### Event store reads: batch `Read*`, lazy `Stream*`
+
+One interface answers "what do I depend on": `IEventStore`. `IEventStoreBackend` now extends it and
+adds only `ReadAllOfTypesAsync`, so `EventStore` and the tenant and shard routers are written once.
+
+| Was | Is |
+|---|---|
+| `StreamAsync(query, afterPosition, limit?, cancellationToken)` returning a collection | `ReadAsync(query, afterPosition, limit, cancellationToken)` |
+| `StreamAllAsync(afterPosition, limit?, cancellationToken)` returning a collection | `ReadAllAsync(afterPosition, limit, cancellationToken)` |
+| `IEventStoreBackend.StreamAllOfTypesAsync(...)`, defaulted | `ReadAllOfTypesAsync(eventTypes, afterPosition, limit, cancellationToken)`, abstract, filtering mandatory |
+| (none) | `StreamAsync(query, afterPosition = 0, cancellationToken)` and `StreamAllAsync(afterPosition = 0, cancellationToken)` returning `IAsyncEnumerable<IEventEnvelope>` |
+
+`limit` is required: no caller in `src` read unbounded. Pass `int.MaxValue` for the old `null`.
+`await store.StreamAsync(q)` becomes `await store.StreamAsync(q).ToListAsync()`, or better an
+`await foreach`.
+
+A custom `IEventStoreBackend` must now implement `ReadAsync`, `ReadAllAsync`, `StreamAsync`,
+`StreamAllAsync` and `ReadAllOfTypesAsync` (the old default silently returned unfiltered events).
+`ShardRoutingEventStoreBackend` is gone; sharding routes at `IEventStore` only. A streamed read is
+spanned (`alberto.read`) for as long as it is enumerated.
+
+### Removed, internal and read-only
+
+**`CancellationToken` parameters are all named `cancellationToken`.** Some were `ct`. Only named
+arguments break: `store.GetAsync(id, ct: token)` becomes `cancellationToken: token`.
+
+**Removed, because nothing in the library used them:** `ProcessingResult`; `ITenantProcessorLock`,
+`ITenantLease`, `TenantLease`, `TenantLeaseInfo` and `PostgresTenantProcessorLock`;
+`IProcessorLeaseManager.GetAllLeasesAsync` and `ProcessorLeaseInfo`; the metrics
+`alberto.tenant_locks_acquired` and `alberto.tenant_lock_failures`. The `alberto_tenant_leases`
+table stays in the schema, unused. There is no migration to run.
+
+**Backend classes are internal.** Resolve the interface from the module's keyed services instead of
+constructing the class: `sp.GetRequiredKeyedService<IDeadLetterStore>(moduleKey)`. Four stay public
+because applications construct them: `PostgresStateStore<T>`, `InMemoryStateStore<T>`,
+`PostgresOutboxStore`, and `PostgresCheckpointStore` (the keyed `ICheckpointStore` is a cache in
+front of the table; construct this one to read what is actually stored).
+
+**The `*Overrides` configuration mirrors are internal**, apart from `RetryOverrides`,
+`HaltOverrides` and `RedeliveryOverrides`. Configuration keys are unchanged.
+
+**`IProjectionEntity` is getter-only.** The framework stamps `LastProcessedPosition` and friends
+through the entity's own setter, which may now be `private`. Existing entities compile unchanged.
+
+**Middleware context state is read-only.** `Attempt`, `LastError`, `DeadLettered` and
+`DeadLetteredCount` have no public setter; only the built-in retry middleware writes them.
+
 ## To 0.8.0
 
 ### Run the migration
@@ -15,12 +89,12 @@ primary key written on every append. It runs on startup; `DROP INDEX` takes a br
 
 ### Custom event store backends
 
-`IEventStoreHeadBackend.GetStableHeadUpToAsync(afterPosition, upToPosition, ct)` is new and has a
+`IEventStoreHeadBackend.GetStableHeadUpToAsync(afterPosition, upToPosition, cancellationToken)` is new and has a
 default implementation that calls `GetStableHeadAsync`, so nothing breaks. A backend whose
 barrier query scans forward from `afterPosition` should override it and stop at `upToPosition`:
 the head only asks about the window it just read.
 
-`IEventStoreBackend.StreamAllOfTypesAsync(eventTypes, afterPosition, limit, ct)` is new too, and
+`IEventStoreBackend.StreamAllOfTypesAsync(eventTypes, afterPosition, limit, cancellationToken)` is new too, and
 defaults to `StreamAllAsync`. The control loop now reads through it, passing the processor's
 handled types, so a backend that overrides it sends only the events the processor will handle.
 Two things must hold whether it filters or not: events come back in position order, and fewer
