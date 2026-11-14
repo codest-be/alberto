@@ -1,5 +1,4 @@
 using Alberto.Subscriptions;
-using FluentAssertions;
 using Xunit;
 
 namespace Alberto.Testing.Xunit;
@@ -122,7 +121,7 @@ public abstract class StateStoreSpecification<TState>
 
         var result = await store.LoadManyAsync([], Ct);
 
-        result.Should().BeEmpty();
+        Assert.Empty(result);
     }
 
     /// <summary>IDs that do not exist in the store must be absent from the result (no KeyNotFoundException).</summary>
@@ -134,7 +133,7 @@ public abstract class StateStoreSpecification<TState>
         var result = await store.LoadManyAsync(
             [$"missing-{TestId}-a", $"missing-{TestId}-b"], Ct);
 
-        result.Should().BeEmpty();
+        Assert.Empty(result);
     }
 
     /// <summary>
@@ -149,17 +148,11 @@ public abstract class StateStoreSpecification<TState>
     {
         var store = await CreateStore(NewProjectionType());
 
-        await FluentActions.Awaiting(() => store.LoadManyAsync(null!, Ct))
-            .Should().ThrowAsync<ArgumentNullException>()
-            .WithParameterName("documentIds");
+        Assert.Equal("documentIds", (await Assert.ThrowsAnyAsync<ArgumentNullException>(() => store.LoadManyAsync(null!, Ct))).ParamName);
 
-        await FluentActions.Awaiting(() => store.ApplyChangesAsync(null!, [], Ct))
-            .Should().ThrowAsync<ArgumentNullException>()
-            .WithParameterName("upserts");
+        Assert.Equal("upserts", (await Assert.ThrowsAnyAsync<ArgumentNullException>(() => store.ApplyChangesAsync(null!, [], Ct))).ParamName);
 
-        await FluentActions.Awaiting(() => store.ApplyChangesAsync(new Dictionary<string, TState>(), null!, Ct))
-            .Should().ThrowAsync<ArgumentNullException>()
-            .WithParameterName("deletes");
+        Assert.Equal("deletes", (await Assert.ThrowsAnyAsync<ArgumentNullException>(() => store.ApplyChangesAsync(new Dictionary<string, TState>(), null!, Ct))).ParamName);
     }
 
     /// <summary>After an upsert, <c>LoadManyAsync</c> must return the stored state for the document ID.</summary>
@@ -172,8 +165,8 @@ public abstract class StateStoreSpecification<TState>
         await store.ApplyChangesAsync(MakeDict(docId, 42), [], Ct);
 
         var result = await store.LoadManyAsync([docId], Ct);
-        result.Should().ContainKey(docId);
-        ReadValue(result[docId]).Should().Be(42);
+        Assert.True(result.ContainsKey(docId));
+        Assert.Equal(42, ReadValue(result[docId]));
     }
 
     /// <summary>A second upsert for the same document ID must overwrite the previous value.</summary>
@@ -186,7 +179,7 @@ public abstract class StateStoreSpecification<TState>
         await store.ApplyChangesAsync(MakeDict(docId, 10), [], Ct);
         await store.ApplyChangesAsync(MakeDict(docId, 20), [], Ct);
 
-        ReadValue((await store.LoadManyAsync([docId], Ct))[docId]).Should().Be(20);
+        Assert.Equal(20, ReadValue((await store.LoadManyAsync([docId], Ct))[docId]));
     }
 
     /// <summary>Deleting a document ID must remove it so subsequent loads return an empty result.</summary>
@@ -199,7 +192,7 @@ public abstract class StateStoreSpecification<TState>
         await store.ApplyChangesAsync(MakeDict(docId, 1), [], Ct);
         await store.ApplyChangesAsync(new Dictionary<string, TState>(), [docId], Ct);
 
-        (await store.LoadManyAsync([docId], Ct)).Should().BeEmpty();
+        Assert.Empty((await store.LoadManyAsync([docId], Ct)));
     }
 
     /// <summary>Deleting a document ID that does not exist must not throw.</summary>
@@ -212,7 +205,7 @@ public abstract class StateStoreSpecification<TState>
             await store.ApplyChangesAsync(
                 new Dictionary<string, TState>(), [$"doc-{TestId}-absent"], Ct);
 
-        await act.Should().NotThrowAsync();
+        await act();
     }
 
     /// <summary>An empty upsert-and-delete batch must not throw.</summary>
@@ -224,7 +217,7 @@ public abstract class StateStoreSpecification<TState>
         var act = async () =>
             await store.ApplyChangesAsync(new Dictionary<string, TState>(), [], Ct);
 
-        await act.Should().NotThrowAsync();
+        await act();
     }
 
     /// <summary>
@@ -246,8 +239,8 @@ public abstract class StateStoreSpecification<TState>
         await store.ApplyChangesAsync(new Dictionary<string, TState>(), [], Ct);
 
         var result = await store.LoadManyAsync([docId], Ct);
-        result.Should().ContainKey(docId, "the document must survive an empty batch");
-        ReadValue(result[docId]).Should().Be(77, "the value must be unchanged by the empty batch");
+        Assert.True(result.ContainsKey(docId));
+        Assert.Equal(77, ReadValue(result[docId]));
     }
 
     /// <summary>A batch that both upserts and deletes must apply all changes atomically.</summary>
@@ -268,9 +261,9 @@ public abstract class StateStoreSpecification<TState>
         await store.ApplyChangesAsync(MakeDict(keepId, 99), [dropId], Ct);
 
         var result = await store.LoadManyAsync([keepId, dropId], Ct);
-        result.Should().ContainKey(keepId);
-        result.Should().NotContainKey(dropId);
-        ReadValue(result[keepId]).Should().Be(99);
+        Assert.True(result.ContainsKey(keepId));
+        Assert.False(result.ContainsKey(dropId));
+        Assert.Equal(99, ReadValue(result[keepId]));
     }
 
     /// <summary>Loading a mix of existing and missing IDs must return only the existing documents.</summary>
@@ -284,7 +277,7 @@ public abstract class StateStoreSpecification<TState>
         await store.ApplyChangesAsync(MakeDict(existId, 5), [], Ct);
 
         var result = await store.LoadManyAsync([existId, missId], Ct);
-        result.Should().HaveCount(1).And.ContainKey(existId);
+        Assert.Equal([existId], result.Keys);
     }
 
     // ── Spec fact — projectionType isolation ──────────────────────────────────
@@ -316,8 +309,8 @@ public abstract class StateStoreSpecification<TState>
         var rA = await storeA.LoadManyAsync([docId], Ct);
         var rB = await storeB.LoadManyAsync([docId], Ct);
 
-        ReadValue(rA[docId]).Should().Be(11, "storeA must not see storeB's data");
-        ReadValue(rB[docId]).Should().Be(22, "storeB must not see storeA's data");
+        Assert.Equal(11, ReadValue(rA[docId]));
+        Assert.Equal(22, ReadValue(rB[docId]));
     }
 
     /// <summary>
@@ -344,9 +337,8 @@ public abstract class StateStoreSpecification<TState>
         // Delete only from storeA.
         await storeA.ApplyChangesAsync(new Dictionary<string, TState>(), [docId], Ct);
 
-        (await storeA.LoadManyAsync([docId], Ct)).Should().BeEmpty("deleted from storeA");
-        (await storeB.LoadManyAsync([docId], Ct))
-            .Should().ContainKey(docId, "storeB's row must survive storeA's delete");
+        Assert.Empty((await storeA.LoadManyAsync([docId], Ct)));
+        Assert.True((await storeB.LoadManyAsync([docId], Ct)).ContainsKey(docId));
     }
 
     // ── Spec facts — rebuild-version scoping ──────────────────────────────────
@@ -369,16 +361,14 @@ public abstract class StateStoreSpecification<TState>
         await store.ApplyChangesAsync(MakeDict(docId, 10), [], Ct);
 
         version = 2;
-        (await store.LoadManyAsync([docId], Ct)).Should().BeEmpty(
-            "shadow version 2 starts from nothing");
+        Assert.Empty((await store.LoadManyAsync([docId], Ct)));
 
         await store.ApplyChangesAsync(MakeDict(docId, 99), [], Ct);
 
-        ReadValue((await store.LoadManyAsync([docId], Ct))[docId]).Should().Be(99);
+        Assert.Equal(99, ReadValue((await store.LoadManyAsync([docId], Ct))[docId]));
 
         version = 1;
-        ReadValue((await store.LoadManyAsync([docId], Ct))[docId])
-            .Should().Be(10, "shadow rebuild must not overwrite what live readers see");
+        Assert.Equal(10, ReadValue((await store.LoadManyAsync([docId], Ct))[docId]));
     }
 
     /// <summary>A delete at one rebuild version must not remove the document at another version.</summary>
@@ -396,11 +386,10 @@ public abstract class StateStoreSpecification<TState>
         await store.ApplyChangesAsync(MakeDict(docId, 99), [], Ct);
         await store.ApplyChangesAsync(new Dictionary<string, TState>(), [docId], Ct);
 
-        (await store.LoadManyAsync([docId], Ct)).Should().BeEmpty("deleted at v2");
+        Assert.Empty((await store.LoadManyAsync([docId], Ct)));
 
         version = 1;
-        (await store.LoadManyAsync([docId], Ct))
-            .Should().ContainKey(docId, "a delete in v2 must not remove the v1 row");
+        Assert.True((await store.LoadManyAsync([docId], Ct)).ContainsKey(docId));
     }
 
     /// <summary>
@@ -420,12 +409,10 @@ public abstract class StateStoreSpecification<TState>
         version = 2; // shadow rebuild begins
         await store.ApplyChangesAsync(MakeDict(docId, 99), [], Ct);  // shadow at v2
 
-        ReadValue((await store.LoadManyAsync([docId], Ct))[docId])
-            .Should().Be(99, "store is now at v2 after promotion");
+        Assert.Equal(99, ReadValue((await store.LoadManyAsync([docId], Ct))[docId]));
 
         version = 1; // verify v1 isolation: the live row was not overwritten
-        ReadValue((await store.LoadManyAsync([docId], Ct))[docId])
-            .Should().Be(10, "the shadow rebuild must not have overwritten the v1 row");
+        Assert.Equal(10, ReadValue((await store.LoadManyAsync([docId], Ct))[docId]));
     }
 
     /// <summary>
@@ -453,16 +440,14 @@ public abstract class StateStoreSpecification<TState>
         // Nothing at version 2 — holds for all adapters (different reason for InMemory).
         var version = 2;
         var probe = await CreateStore(projType, ProjectionVersion.From(() => version));
-        (await probe.LoadManyAsync([docId], Ct))
-            .Should().BeEmpty("the no-selector store writes at version 1, not 2");
+        Assert.Empty((await probe.LoadManyAsync([docId], Ct)));
 
         // For adapters sharing a backing store, switch the probe to version 1 and confirm
         // the no-selector store wrote there.
         if (SupportsSharedBackingStore)
         {
             version = 1;
-            ReadValue((await probe.LoadManyAsync([docId], Ct))[docId])
-                .Should().Be(7, "the default version is 1");
+            Assert.Equal(7, ReadValue((await probe.LoadManyAsync([docId], Ct))[docId]));
         }
     }
 
@@ -495,8 +480,8 @@ public abstract class StateStoreSpecification<TState>
         var rA = await storeA.LoadManyAsync([docId], Ct);
         var rB = await storeB.LoadManyAsync([docId], Ct);
 
-        ReadValue(rA[docId]).Should().Be(11, "storeA must not see storeB's data");
-        ReadValue(rB[docId]).Should().Be(22, "storeB must not see storeA's data");
+        Assert.Equal(11, ReadValue(rA[docId]));
+        Assert.Equal(22, ReadValue(rB[docId]));
     }
 
     /// <summary>
@@ -523,9 +508,8 @@ public abstract class StateStoreSpecification<TState>
 
         await storeA.ApplyChangesAsync(new Dictionary<string, TState>(), [docId], Ct);
 
-        (await storeA.LoadManyAsync([docId], Ct)).Should().BeEmpty("deleted from storeA");
-        ReadValue((await storeB.LoadManyAsync([docId], Ct))[docId])
-            .Should().Be(22, "storeB's row must survive storeA's delete");
+        Assert.Empty((await storeA.LoadManyAsync([docId], Ct)));
+        Assert.Equal(22, ReadValue((await storeB.LoadManyAsync([docId], Ct))[docId]));
     }
 
     // ── Spec facts — ListRecentAsync ──────────────────────────────────────────
@@ -557,8 +541,7 @@ public abstract class StateStoreSpecification<TState>
 
         var recent = await store.ListRecentAsync(3, Ct);
 
-        recent.Select(ReadValue).Should().Equal(
-            ListRecentValueBase + 3, ListRecentValueBase + 2, ListRecentValueBase + 1);
+        Assert.Equal([ListRecentValueBase + 3, ListRecentValueBase + 2, ListRecentValueBase + 1], recent.Select(ReadValue));
     }
 
     /// <summary>
@@ -578,7 +561,7 @@ public abstract class StateStoreSpecification<TState>
 
         var recent = await store.ListRecentAsync(2, Ct);
 
-        ReadValue(recent[0]).Should().Be(ListRecentValueBase + 13);
+        Assert.Equal(ListRecentValueBase + 13, ReadValue(recent[0]));
     }
 
     /// <summary>The result must contain at most <c>limit</c> documents.</summary>
@@ -591,7 +574,7 @@ public abstract class StateStoreSpecification<TState>
             await store.ApplyChangesAsync(
                 MakeDict($"doc-{TestId}-lr-limit-{i}", ListRecentValueBase + 20 + i), [], Ct);
 
-        (await store.ListRecentAsync(2, Ct)).Should().HaveCount(2);
+        Assert.Equal(2, (await store.ListRecentAsync(2, Ct)).Count);
     }
 
     /// <summary>
@@ -627,9 +610,7 @@ public abstract class StateStoreSpecification<TState>
             .Where(v => v is ListRecentValueBase + 71 or ListRecentValueBase + 72 or ListRecentValueBase + 73)
             .ToList();
 
-        values.Should().HaveCount(3,
-            "all documents written in one batch must appear in ListRecentAsync " +
-            "when limit is large enough, regardless of their within-batch order");
+        Assert.Equal(3, values.Count);
     }
 
     /// <summary>Deleted documents must not appear in the listing.</summary>
@@ -646,9 +627,9 @@ public abstract class StateStoreSpecification<TState>
 
         var recent = await store.ListRecentAsync(20, Ct);
 
-        recent.Select(ReadValue).Should()
-            .Contain(ListRecentValueBase + 32).And
-            .NotContain(ListRecentValueBase + 31);
+        var seen = recent.Select(ReadValue).ToList();
+        Assert.Contains(ListRecentValueBase + 32, seen);
+        Assert.DoesNotContain(ListRecentValueBase + 31, seen);
     }
 
     /// <summary>
@@ -667,16 +648,15 @@ public abstract class StateStoreSpecification<TState>
             MakeDict($"doc-{TestId}-lr-v1", ListRecentValueBase + 41), [], Ct);
 
         version = 2;
-        (await store.ListRecentAsync(20, Ct)).Select(ReadValue)
-            .Should().NotContain(ListRecentValueBase + 41, "v1's documents are not v2's");
+        Assert.DoesNotContain(ListRecentValueBase + 41, (await store.ListRecentAsync(20, Ct)).Select(ReadValue));
 
         await store.ApplyChangesAsync(
             MakeDict($"doc-{TestId}-lr-v2", ListRecentValueBase + 42), [], Ct);
 
         version = 1;
         var live = (await store.ListRecentAsync(20, Ct)).Select(ReadValue).ToList();
-        live.Should().Contain(ListRecentValueBase + 41);
-        live.Should().NotContain(ListRecentValueBase + 42, "the shadow's documents stay hidden");
+        Assert.Contains(ListRecentValueBase + 41, live);
+        Assert.DoesNotContain(ListRecentValueBase + 42, live);
     }
 
     /// <summary>
@@ -703,10 +683,8 @@ public abstract class StateStoreSpecification<TState>
         await storeB.ApplyChangesAsync(
             MakeDict($"doc-{TestId}-lr-pt-b", ListRecentValueBase + 52), [], Ct);
 
-        (await storeA.ListRecentAsync(20, Ct)).Select(ReadValue)
-            .Should().Equal(ListRecentValueBase + 51);
-        (await storeB.ListRecentAsync(20, Ct)).Select(ReadValue)
-            .Should().Equal(ListRecentValueBase + 52);
+        Assert.Equal([ListRecentValueBase + 51], (await storeA.ListRecentAsync(20, Ct)).Select(ReadValue));
+        Assert.Equal([ListRecentValueBase + 52], (await storeB.ListRecentAsync(20, Ct)).Select(ReadValue));
     }
 
     /// <summary>
@@ -733,10 +711,8 @@ public abstract class StateStoreSpecification<TState>
         await storeB.ApplyChangesAsync(
             MakeDict($"doc-{TestId}-lr-tenant-b", ListRecentValueBase + 62), [], Ct);
 
-        (await storeA.ListRecentAsync(20, Ct)).Select(ReadValue)
-            .Should().Equal([ListRecentValueBase + 61], "storeA must not list storeB's documents");
-        (await storeB.ListRecentAsync(20, Ct)).Select(ReadValue)
-            .Should().Equal([ListRecentValueBase + 62], "storeB must not list storeA's documents");
+        Assert.Equal([ListRecentValueBase + 61], (await storeA.ListRecentAsync(20, Ct)).Select(ReadValue));
+        Assert.Equal([ListRecentValueBase + 62], (await storeB.ListRecentAsync(20, Ct)).Select(ReadValue));
     }
 
     /// <summary>
@@ -755,7 +731,7 @@ public abstract class StateStoreSpecification<TState>
 
         var store = await CreateStore(NewProjectionType());
 
-        (await store.ListRecentAsync(20, Ct)).Should().BeEmpty();
+        Assert.Empty((await store.ListRecentAsync(20, Ct)));
     }
 
     // ── Spec fact — concurrent access ─────────────────────────────────────────
@@ -780,8 +756,8 @@ public abstract class StateStoreSpecification<TState>
             store.ApplyChangesAsync(MakeDict(docId, 2), [], Ct));
 
         var result = await store.LoadManyAsync([docId], Ct);
-        result.Should().ContainKey(docId, "at least one concurrent write must have committed");
-        ReadValue(result[docId]).Should().BeOneOf(1, 2);
+        Assert.True(result.ContainsKey(docId));
+        Assert.Contains(ReadValue(result[docId]), new[] { 1, 2 });
     }
 
     // ── Spec facts — ApplyChanges atomicity ───────────────────────────────────
@@ -803,8 +779,7 @@ public abstract class StateStoreSpecification<TState>
             [docId],
             Ct);
 
-        (await store.LoadManyAsync([docId], Ct)).Should().BeEmpty(
-            "delete wins when the same document ID appears in both upserts and deletes");
+        Assert.Empty((await store.LoadManyAsync([docId], Ct)));
     }
 
     /// <summary>
@@ -886,8 +861,6 @@ public abstract class StateStoreSpecification<TState>
 
         await Task.WhenAll(writer, reader);
 
-        (partial == 0).Should().BeTrue(
-            "a concurrent read must see either the complete before-state or the complete " +
-            "after-state, never documents from both sets at once");
+        Assert.Equal(0, partial);
     }
 }
