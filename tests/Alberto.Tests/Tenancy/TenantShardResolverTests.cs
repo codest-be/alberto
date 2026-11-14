@@ -15,6 +15,20 @@ public class TenantShardResolverTests
         new("orders", map, declaredShards ?? TwoShards, defaultShardId);
 
     [Fact]
+    public async Task The_refresher_stopped_while_it_waits_for_the_next_tick_ends_cleanly()
+    {
+        var map = new FakeTenantShardMap();
+        var refresher = new TenantShardCacheRefresher("orders", Resolver(map), TimeSpan.FromHours(1));
+
+        await refresher.StartAsync(TestContext.Current.CancellationToken);
+        // ExecuteAsync starts on the thread pool: stopping before it runs would cancel a task that never started.
+        SpinWait.SpinUntil(() => Volatile.Read(ref map.GetAllCalls) > 0, TimeSpan.FromSeconds(10)).Should().BeTrue();
+        await refresher.StopAsync(TestContext.Current.CancellationToken);
+
+        refresher.ExecuteTask!.Status.Should().Be(TaskStatus.RanToCompletion);
+    }
+
+    [Fact]
     public async Task An_assigned_tenant_resolves_to_its_shard()
     {
         var map = new FakeTenantShardMap().Assign("acme", "db2");
