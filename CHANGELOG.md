@@ -17,6 +17,15 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ---
 
+## [0.11.0] - 2026-11-14
+
+### Fixed
+
+- Projection rebuild cannot advance when ControlLoop:Leases:Enabled is true (#233)
+- Per-processor BatchingMode, MaxConcurrency and TraceParenting configuration never reaches the control loop (#232)
+
+---
+
 ## [0.10.0] - 2026-11-14
 
 A breaking cleanup of the public surface before 1.0 freezes it. No migrations and no behaviour
@@ -1064,7 +1073,8 @@ Initial beta release. Core DCB event store abstractions, PostgreSQL backend, in-
 backend, command pipeline, EF Core projection support, transactional outbox, and
 OpenTelemetry instrumentation.
 
-[Unreleased]: https://github.com/codest-be/alberto/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/codest-be/alberto/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/codest-be/alberto/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/codest-be/alberto/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/codest-be/alberto/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/codest-be/alberto/compare/v0.7.0...v0.8.0
