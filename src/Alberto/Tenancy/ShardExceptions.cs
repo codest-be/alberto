@@ -8,15 +8,14 @@ namespace Alberto.Tenancy;
 /// <remarks>
 /// This is the deliberate strict mode: without a default shard, Alberto will not guess where a
 /// tenant belongs, because guessing wrong writes events into a database the tenant will never be
-/// read from again. Assign the tenant with <c>alberto shards assign</c>, or declare a default
+/// read from again. Assign the tenant with <see cref="ITenantShardMap.AssignAsync"/>, or declare a default
 /// shard with <c>.WithDefaultShard(...)</c> to have new tenants placed automatically.
 /// </remarks>
 [Experimental("ALB9001")]
 public sealed class UnknownTenantException(string moduleKey, string tenantId)
     : InvalidOperationException(
         $"Tenant '{tenantId}' has no shard assignment in module '{moduleKey}', and the module " +
-        "declares no default shard. Assign it with 'alberto shards assign " +
-        $"{tenantId} --shard <id>', or declare a default shard with .WithDefaultShard(\"...\").")
+        "declares no default shard. Assign it with ITenantShardMap.AssignAsync, or declare a default shard with .WithDefaultShard(\"...\").")
 {
     /// <summary>The module the tenant was being resolved for.</summary>
     public string ModuleKey { get; } = moduleKey;

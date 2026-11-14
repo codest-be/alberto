@@ -108,15 +108,9 @@ The lease is also a **fence**. `IFencedCheckpointStore.SaveIfLeaseHeldAsync` mak
 write conditional on still holding the lease, so a replica that was partitioned away, paused by GC
 and then came back cannot overwrite the checkpoint its successor has already moved forward.
 
-Inspect and intervene from the CLI:
-
-```bash
-alberto tenants                  # who holds what, and until when
-alberto ops tenants release      # force reacquisition: after a crashed replica, say
-```
-
-`release` is transactional across the lease and assignment tables, which is why it lives in
-`PostgresAdminDataAccess` rather than being composed from per-processor calls.
+A crashed replica's leases expire after `LeaseDuration` and are picked up by the survivors.
+[Operations](operations.md#running-more-than-one-replica) shows how to inspect them and how to
+force reacquisition sooner.
 
 ## Reading a projection for a tenant
 

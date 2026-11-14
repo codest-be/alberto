@@ -6,7 +6,7 @@ namespace Alberto.Configuration;
 /// One shard of a module: an id, and the backend that shard's data lives in.
 /// </summary>
 /// <param name="ShardId">
-/// Identifies the shard in configuration, in the catalog, in metrics and in the CLI. Stable —
+/// Identifies the shard in configuration, in the catalog, and in metrics. Stable —
 /// it is written into the catalog next to every tenant assigned to this shard, so renaming a
 /// shard strands those tenants.
 /// </param>

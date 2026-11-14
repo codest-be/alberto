@@ -35,7 +35,7 @@ public sealed record DeadLetterEntry
     /// <summary>Position of the original event in the global log (0 if unknown).</summary>
     public long GlobalPosition { get; init; } = 0;
 
-    /// <summary>Whether this entry is marked for retry via the CLI.</summary>
+    /// <summary>Whether this entry is marked for retry by an operator.</summary>
     public bool RetryRequested { get; init; } = false;
 
     /// <summary>

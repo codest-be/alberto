@@ -40,7 +40,7 @@ public static class OrdersOverviewProjection
 ```
 
 - **`For<TState>(processorId)`.** The processor id is the projection's identity: its checkpoint
-  key, what `alberto status` lists, what you pass to `alberto ops rebuild start`. Use
+  key, and what you pass to `IProjectionRebuildStore.StartAsync`. Use
   `nameof(TheProjectionClass)` so it survives renames visibly rather than silently.
 - **`Collection(name)`.** Optional; defaults to the processor id. It names the logical document
   set inside `alberto_projection_states`.
@@ -242,7 +242,7 @@ webhook that has already fired cannot be unfired.
 
 The consequence, so it is a choice and not a surprise: anything the callback maintains *outside*
 the `DbContext` (a search index, an external cache) is not rebuilt by
-`alberto ops rebuild`, and needs a refresh path of its own. Keep the callback to things that are
+a rebuild, and needs a refresh path of its own. Keep the callback to things that are
 cheap to redo, and put anything that must survive a rebuild in the projection entity itself.
 
 ### EF projections on a tenant-enabled module
@@ -341,14 +341,17 @@ parks a finished rebuild at `ready` until an operator promotes it.
 
 ### Running one
 
-```bash
-alberto ops rebuild start OrdersOverviewProjection
-alberto ops rebuild status
-alberto ops rebuild promote OrdersOverviewProjection   # only needed with autoPromote: false
-alberto ops rebuild abort OrdersOverviewProjection
+```csharp
+var rebuilds = sp.GetRequiredKeyedService<IProjectionRebuildStore>("orders");
+
+await rebuilds.StartAsync("OrdersOverviewProjection", "OrdersOverviewProjection", targetPosition: head);
+await rebuilds.GetAsync("OrdersOverviewProjection", "OrdersOverviewProjection");
+await rebuilds.RequestPromotionAsync("OrdersOverviewProjection");   // only needed with autoPromote: false
+await rebuilds.RequestAbortAsync("OrdersOverviewProjection");
 ```
 
-**The replay runs in your application, not in the CLI.** The CLI only moves the state machine. A
+**The replay runs in your application, not in the caller.** These calls only move the state
+machine. A
 module without `WithRebuilds()` will leave a started rebuild sitting at `rebuilding` forever.
 
 The coordinator holds no state of its own. Everything derives from
@@ -358,7 +361,7 @@ and a coordinator that crashes mid-rebuild resumes on restart.
 ### Limits
 
 - One rebuild per processor at a time; two operators racing cannot both win.
-- Version numbers only ever go up, including across aborts, so `alberto ops rebuild status` will
+- Version numbers only ever go up, including across aborts, so `ListAsync` will
   show gaps after a few abandoned attempts. That is deliberate: an abort cannot stop the shadow
   loop in the application process synchronously, so handing its number to the next rebuild would
   let its last few writes seed the replay.
@@ -369,8 +372,8 @@ and a coordinator that crashes mid-rebuild resumes on restart.
   resolves the active version and *then* queries it, so deleting inside the flip would leave a
   reader holding a number that had just stopped existing. The superseded (or abandoned) version
   survives until the coordinator's sweep reclaims it, a grace period of twice the version-cache
-  refresh interval after the transition. Expect `alberto ops rebuild status` to show a dead
-  version's rows still on disk for a few seconds after a promote or abort.
+  refresh interval after the transition. Expect a dead
+  version's rows to stay on disk for a few seconds after a promote or abort.
 - A rebuild reprocesses every event. **Reactors are not rebuilt.** Replaying side effects is not
   something the coordinator can make safe.
 - Inline projections cannot be rebuilt this way.

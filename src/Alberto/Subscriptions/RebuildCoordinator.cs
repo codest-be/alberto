@@ -42,7 +42,7 @@ internal sealed record RebuildCoordinatorOptions(
 /// <remarks>
 /// <para>
 /// The coordinator owns no state of its own. Everything it does is derived from the rebuild
-/// state machine in the database, so an operator can start a rebuild from the CLI in one
+/// state machine in the database, so an operator can start a rebuild from one
 /// process and have it picked up here in another, and a coordinator that crashes mid-rebuild
 /// resumes on restart rather than stranding it.
 /// </para>

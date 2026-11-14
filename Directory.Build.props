@@ -21,7 +21,7 @@
 
         <!-- Build Configuration -->
 
-        <!-- Every library under /src ships for both. Apps, the CLI, benchmarks and tests run on
+        <!-- Every library under /src ships for both. Benchmarks and tests run on
              net10.0 only: they are consumers of one runtime, not the thing being shipped. -->
         <AlbertoLibraryTargetFrameworks>net10.0;net11.0</AlbertoLibraryTargetFrameworks>
 

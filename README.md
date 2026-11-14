@@ -72,7 +72,7 @@ never contend; two people reserving the same seat always do.
   splits a failing batch to isolate the one event that broke.
 - **Zero-downtime projection rebuilds.** Change how a projection reads history, then replay the
   whole log into a shadow copy while the live one keeps serving reads, and swap them in one
-  transaction. Driven by the CLI, executed by your running application.
+  transaction. Started through `IProjectionRebuildStore`, executed by your running application.
   See [docs/projections.md](https://github.com/codest-be/alberto/blob/main/docs/projections.md#rebuilding-a-projection).
 - **Multi-tenancy that reaches the SQL.** Tenant isolation is enforced in the queries and the
   leases, not by a filter you might forget. See [docs/multi-tenancy.md](https://github.com/codest-be/alberto/blob/main/docs/multi-tenancy.md).
@@ -80,10 +80,6 @@ never contend; two people reserving the same seat always do.
   projections, and a relay claims them with `FOR UPDATE SKIP LOCKED`. Messages are derived from
   events that are already durable, so at-least-once delivery needs no distributed transaction.
   See [docs/reactors-and-outbox.md](https://github.com/codest-be/alberto/blob/main/docs/reactors-and-outbox.md).
-- **An operator CLI.** Inspect checkpoints, events, projections, dead letters and tenant leases;
-  rewind a processor; retry or dismiss dead letters; run a rebuild. Mutating commands confirm before
-  they act and most of them take `--dry-run`; every command that reports takes `--json`, so the tool
-  you use interactively is the one your runbooks call. See [docs/operations.md](https://github.com/codest-be/alberto/blob/main/docs/operations.md).
 - **OpenTelemetry throughout.** Traces across the append→consume seam, and metrics for lag,
   conflicts, retries and dead letters.
 
@@ -310,7 +306,7 @@ application's dependency graph.
 | [Projections](https://github.com/codest-be/alberto/blob/main/docs/projections.md) | Declaring them, storing them, rebuilding them live |
 | [Reactors and the outbox](https://github.com/codest-be/alberto/blob/main/docs/reactors-and-outbox.md) | Side effects and publishing to the outside world |
 | [Multi-tenancy](https://github.com/codest-be/alberto/blob/main/docs/multi-tenancy.md) | Tenant isolation, leases, and what it costs |
-| [Operations](https://github.com/codest-be/alberto/blob/main/docs/operations.md) | The `alberto` CLI, dead letters, error policy, telemetry |
+| [Operations](https://github.com/codest-be/alberto/blob/main/docs/operations.md) | Operator interfaces, dead letters, error policy, telemetry |
 | [Backup and recovery](https://github.com/codest-be/alberto/blob/main/docs/backup-and-recovery.md) | What is truth, what is derived, and what a restore invalidates |
 | [Configuration reference](https://github.com/codest-be/alberto/blob/main/docs/configuration.md) | Three-phase pipeline, all options, validation codes, custom backends |
 | [Async processing architecture](https://github.com/codest-be/alberto/blob/main/docs/architecture/async-processing.md) | How the control loop actually works |
@@ -323,11 +319,10 @@ application's dependency graph.
 
 ```
 /src        Packable core libraries
-/tools      The alberto operator CLI
-/tests      xUnit v3 unit + Testcontainers integration tests, and K6 load tests
+/tests      xUnit v3 unit + Testcontainers integration tests
 ```
 
-The example applications (Orders and Payments, a GraphQL API on Postgres run by .NET Aspire) live
+The example applications (Orders and Payments, a GraphQL API on Postgres) live
 in their own repository, [codest-be/alberto-examples](https://github.com/codest-be/alberto-examples), and consume Alberto from nuget.org.
 
 ## Project status

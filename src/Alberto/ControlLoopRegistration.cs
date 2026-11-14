@@ -223,7 +223,7 @@ internal static class ControlLoopRegistration
         services.AddSingleton<IHostedService>(sp =>
             (IHostedService)sp.GetRequiredKeyedService<ILiveLoopSuspender>(moduleKey));
 
-        // Dead letter retry loop — dedicated polling for CLI-requested retries.
+        // Dead letter retry loop — dedicated polling for operator-requested retries.
         services.AddSingleton<IHostedService>(sp =>
         {
             var options = Options(sp, moduleKey);
@@ -249,14 +249,14 @@ internal static class ControlLoopRegistration
             // Automatic retry needs an atomic claim-and-fence, which is the optional
             // IClaimableDeadLetterStore capability rather than part of every store's contract.
             // A store without it can still record and clear dead letters and can still be
-            // marked for retry from the CLI — nothing will act on the mark, so say so once at
+            // marked for retry by an operator — nothing will act on the mark, so say so once at
             // startup instead of letting the operator watch a flag that never clears.
             if (deadLetterStore is not IClaimableDeadLetterStore claimableStore)
             {
                 logger?.LogWarning(
                     "The dead letter store registered for module '{ModuleKey}' ({StoreType}) does not " +
                     "implement IClaimableDeadLetterStore, so no dead-letter retry loop was started. " +
-                    "'alberto ops deadletter retry' will flag entries and nothing will dispatch them.",
+                    "IDeadLetterStore.MarkForRetryAsync will flag entries and nothing will dispatch them.",
                     moduleKey,
                     deadLetterStore.GetType().FullName);
 

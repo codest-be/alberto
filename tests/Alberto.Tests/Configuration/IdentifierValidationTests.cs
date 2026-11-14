@@ -257,8 +257,8 @@ public class IdentifierValidationTests
     [Fact]
     public void TenantContext_TenantIdRule_matches_IdentifierRules_Rule()
     {
-        // TenantContext.TenantIdRule is used in the CLI's error message for invalid tenant IDs
-        // in 'alberto shards assign'. It must stay aligned with IdentifierRules.Rule so both
+        // TenantContext.TenantIdRule is the operator-facing wording for invalid tenant IDs
+        // It must stay aligned with IdentifierRules.Rule so both
         // code paths tell the operator the same thing.
         TenantContext.TenantIdRule.Should().Be(IdentifierRules.Rule,
             "TenantIdRule is a const alias for IdentifierRules.Rule and must never diverge");

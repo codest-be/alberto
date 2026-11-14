@@ -188,13 +188,13 @@ as a position, called a **checkpoint**, stored per processor in
 - Checkpoint writes are **monotonic.** The upsert uses `GREATEST`, so a processor cannot move
   itself backwards, even after a restart that resurrects a stale in-memory value.
 - `RewindAsync` is the single deliberate escape hatch that writes unconditionally. It exists for
-  operators, and it is what `alberto ops checkpoint set` calls.
+  operators.
 - `SaveIfLeaseHeldAsync` on `IFencedCheckpointStore` makes the write conditional on still holding
   the processor or tenant lease, so a partitioned replica cannot clobber a newer checkpoint.
 
 **Lag** is `head position − checkpoint position`. It is the number you watch in production:
-`alberto status` prints the head and each processor's position, and
-[operations.md](operations.md#reading-lag) has the one-liner that subtracts them.
+the `alberto.processor.lag` gauge reports it per processor, and
+[operations.md](operations.md#inspecting) has the query that computes it from the tables.
 
 ## Processors
 

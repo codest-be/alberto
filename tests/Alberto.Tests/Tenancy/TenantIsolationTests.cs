@@ -872,7 +872,7 @@ public sealed class TenantIsolationTests(MultiTenantPostgresFixture fixture)
         var entriesForA = await deadLetterStore.GetAsync(processorId, tenantId: TenantA, ct: ct);
         Assert.Equal(entry.Id, Assert.Single(entriesForA).Id);
 
-        // No tenant supplied keeps the cross-tenant operator view the CLI depends on.
+        // No tenant supplied keeps the cross-tenant operator view.
         var entriesForOperator = await deadLetterStore.GetAsync(processorId, ct: ct);
         Assert.Equal(entry.Id, Assert.Single(entriesForOperator).Id);
     }

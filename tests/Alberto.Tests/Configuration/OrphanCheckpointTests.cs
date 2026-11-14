@@ -67,7 +67,7 @@ public class OrphanCheckpointTests
 
         var exception = await act.Should().ThrowAsync<InvalidOperationException>();
         exception.Which.Message.Should().Contain("OldReactorName");
-        exception.Which.Message.Should().Contain("ops checkpoint rename");
+        exception.Which.Message.Should().Contain("ICheckpointStore.SaveAsync");
     }
 
     [Fact]

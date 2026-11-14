@@ -50,7 +50,7 @@ internal static class ProjectionRebuildCoordinatorTestExtensions
 /// <summary>
 /// Integration tests for <see cref="PostgresProjectionRebuildStore"/>.
 ///
-/// The state machine is the contract the rebuild coordinator and the operator CLI both
+/// The state machine is the contract the rebuild coordinator and operators both
 /// depend on, so every transition is exercised from both a permitted and a forbidden
 /// starting state. The promotion and abort tests additionally assert on the contents of
 /// <c>alberto_projection_states</c>, because what a transition does to the rows matters as

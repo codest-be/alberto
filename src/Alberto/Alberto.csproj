@@ -28,10 +28,6 @@
         <InternalsVisibleTo Include="Alberto.Telemetry"/>
         <InternalsVisibleTo Include="Alberto.Commands"/>
         <InternalsVisibleTo Include="Alberto.Benchmarks"/>
-        <!-- The CLI drives rebuilds, so it needs RebuildableProjection.ShadowProcessorId to name
-             the shadow processor a rebuild runs under. That naming convention is shared between
-             the coordinator and the operator surface but is not something a package consumer
-             composes against, which is why it stays internal rather than becoming public API. -->
         <!-- The only grant on this list to an assembly we publish, so it is the only one that
              couples a shipped package to an internal member. It is deliberately down to a single
              member: EventTag.ForVersion, which the backend conformance suite needs because a
