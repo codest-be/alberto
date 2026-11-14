@@ -122,7 +122,7 @@ internal sealed class DeclaredAsyncProjection<TState> : IBatchableProcessor, IPr
         switch (result)
         {
             case ProjectionResult<TState>.Set s:
-                if (s.State is IProjectionEntity pe) pe.LastProcessedPosition = @event.GlobalPosition;
+                if (s.State is IProjectionEntity pe) ProjectionEntityStamp.LastProcessedPosition(pe, @event.GlobalPosition);
                 await stateStore.ApplyChangesAsync(
                     new Dictionary<string, TState> { [docId] = s.State },
                     [],
@@ -234,7 +234,7 @@ internal sealed class DeclaredAsyncProjection<TState> : IBatchableProcessor, IPr
             switch (result)
             {
                 case ProjectionResult<TState>.Set s:
-                    if (s.State is IProjectionEntity pe) pe.LastProcessedPosition = evt.GlobalPosition;
+                    if (s.State is IProjectionEntity pe) ProjectionEntityStamp.LastProcessedPosition(pe, evt.GlobalPosition);
                     upserts[docId] = s.State;
                     deletes.Remove(docId);
                     break;

@@ -24,6 +24,7 @@
         <InternalsVisibleTo Include="Alberto.EntityFramework"/>
         <InternalsVisibleTo Include="Alberto.Telemetry"/>
         <InternalsVisibleTo Include="Alberto.Commands"/>
+        <InternalsVisibleTo Include="Alberto.Testing"/>
         <InternalsVisibleTo Include="Alberto.Benchmarks"/>
         <!-- The only grant on this list to an assembly we publish, so it is the only one that
              couples a shipped package to an internal member. It is deliberately down to a single

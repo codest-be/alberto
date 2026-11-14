@@ -165,9 +165,9 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
             if (deleteSet?.Contains(docId) == true)
                 continue; // delete wins; skip the upsert for this document
 
-            newEntity.DocumentId = docId;
-            newEntity.RebuildVersion = version;
-            newEntity.UpdatedAt = DateTimeOffset.UtcNow;
+            ProjectionEntityStamp.DocumentId(newEntity, docId);
+            ProjectionEntityStamp.RebuildVersion(newEntity, version);
+            ProjectionEntityStamp.UpdatedAt(newEntity, DateTimeOffset.UtcNow);
 
             if (existingEntities.TryGetValue(docId, out var existing))
             {

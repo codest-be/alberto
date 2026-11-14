@@ -177,11 +177,13 @@ When the read model wants to be a real table you can filter, join and page over:
 ```csharp
 public sealed class OrderSummaryEntity : IProjectionEntity
 {
-    public string DocumentId { get; set; } = "";
-    public DateTimeOffset UpdatedAt { get; set; }
-    public long LastProcessedPosition { get; set; }
-    public uint Version { get; set; }             // EF concurrency token
-    public int RebuildVersion { get; set; }
+    // Bookkeeping. The interface only reads these; the framework writes them, so
+    // the setters can stay private. EF binds private setters.
+    public string DocumentId { get; private set; } = "";
+    public DateTimeOffset UpdatedAt { get; private set; }
+    public long LastProcessedPosition { get; private set; }
+    public uint Version { get; private set; }     // EF concurrency token
+    public int RebuildVersion { get; private set; }
 
     public string CustomerName { get; set; } = "";
     public decimal Total { get; set; }

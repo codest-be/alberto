@@ -470,18 +470,15 @@ Alberto.Result<T>.Value.get -> T
 Alberto.ServiceCollectionExtensions
 Alberto.Subscriptions.BatchConsumeContext
 Alberto.Subscriptions.BatchConsumeContext.Attempt.get -> int
-Alberto.Subscriptions.BatchConsumeContext.Attempt.set -> void
 Alberto.Subscriptions.BatchConsumeContext.BatchConsumeContext() -> void
 Alberto.Subscriptions.BatchConsumeContext.CancellationToken.get -> System.Threading.CancellationToken
 Alberto.Subscriptions.BatchConsumeContext.CancellationToken.init -> void
 Alberto.Subscriptions.BatchConsumeContext.DeadLetteredCount.get -> int
-Alberto.Subscriptions.BatchConsumeContext.DeadLetteredCount.set -> void
 Alberto.Subscriptions.BatchConsumeContext.Envelopes.get -> System.Collections.Generic.IReadOnlyList<Alberto.IEventEnvelope!>!
 Alberto.Subscriptions.BatchConsumeContext.Envelopes.init -> void
 Alberto.Subscriptions.BatchConsumeContext.IsRebuild.get -> bool
 Alberto.Subscriptions.BatchConsumeContext.IsRebuild.init -> void
 Alberto.Subscriptions.BatchConsumeContext.LastError.get -> System.Exception?
-Alberto.Subscriptions.BatchConsumeContext.LastError.set -> void
 Alberto.Subscriptions.BatchConsumeContext.ModuleKey.get -> string!
 Alberto.Subscriptions.BatchConsumeContext.ModuleKey.init -> void
 Alberto.Subscriptions.BatchConsumeContext.ProcessorId.get -> string!
@@ -493,18 +490,15 @@ Alberto.Subscriptions.ConcurrencyConflictException.ConcurrencyConflictException(
 Alberto.Subscriptions.ConcurrencyConflictException.DocumentId.get -> string!
 Alberto.Subscriptions.ConsumeEventContext
 Alberto.Subscriptions.ConsumeEventContext.Attempt.get -> int
-Alberto.Subscriptions.ConsumeEventContext.Attempt.set -> void
 Alberto.Subscriptions.ConsumeEventContext.CancellationToken.get -> System.Threading.CancellationToken
 Alberto.Subscriptions.ConsumeEventContext.CancellationToken.init -> void
 Alberto.Subscriptions.ConsumeEventContext.ConsumeEventContext() -> void
 Alberto.Subscriptions.ConsumeEventContext.DeadLettered.get -> bool
-Alberto.Subscriptions.ConsumeEventContext.DeadLettered.set -> void
 Alberto.Subscriptions.ConsumeEventContext.Envelope.get -> Alberto.IEventEnvelope!
 Alberto.Subscriptions.ConsumeEventContext.Envelope.init -> void
 Alberto.Subscriptions.ConsumeEventContext.IsRebuild.get -> bool
 Alberto.Subscriptions.ConsumeEventContext.IsRebuild.init -> void
 Alberto.Subscriptions.ConsumeEventContext.LastError.get -> System.Exception?
-Alberto.Subscriptions.ConsumeEventContext.LastError.set -> void
 Alberto.Subscriptions.ConsumeEventContext.ModuleKey.get -> string!
 Alberto.Subscriptions.ConsumeEventContext.ModuleKey.init -> void
 Alberto.Subscriptions.ConsumeEventContext.ProcessorId.get -> string!
@@ -622,10 +616,8 @@ Alberto.Subscriptions.IInlineProjection.HandledEventTypes.get -> System.Collecti
 Alberto.Subscriptions.IInlineProjection.ProcessAsync(System.Collections.Generic.IReadOnlyList<Alberto.IEventEnvelope!>! events, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Alberto.Subscriptions.IMiddlewareContext
 Alberto.Subscriptions.IMiddlewareContext.Attempt.get -> int
-Alberto.Subscriptions.IMiddlewareContext.Attempt.set -> void
 Alberto.Subscriptions.IMiddlewareContext.CancellationToken.get -> System.Threading.CancellationToken
 Alberto.Subscriptions.IMiddlewareContext.LastError.get -> System.Exception?
-Alberto.Subscriptions.IMiddlewareContext.LastError.set -> void
 Alberto.Subscriptions.IMiddlewareContext.ModuleKey.get -> string!
 Alberto.Subscriptions.IMiddlewareContext.ProcessorId.get -> string!
 Alberto.Subscriptions.IPostAppendHandler
@@ -642,15 +634,10 @@ Alberto.Subscriptions.IProcessorLeaseManager.RenewLeasesAsync(string! consumerId
 Alberto.Subscriptions.IProcessorLeaseManager.TryAcquireAsync(string! consumerId, string! processorId, string! replicaId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.IProcessorLease?>!
 Alberto.Subscriptions.IProjectionEntity
 Alberto.Subscriptions.IProjectionEntity.DocumentId.get -> string!
-Alberto.Subscriptions.IProjectionEntity.DocumentId.set -> void
 Alberto.Subscriptions.IProjectionEntity.LastProcessedPosition.get -> long
-Alberto.Subscriptions.IProjectionEntity.LastProcessedPosition.set -> void
 Alberto.Subscriptions.IProjectionEntity.RebuildVersion.get -> int
-Alberto.Subscriptions.IProjectionEntity.RebuildVersion.set -> void
 Alberto.Subscriptions.IProjectionEntity.UpdatedAt.get -> System.DateTimeOffset
-Alberto.Subscriptions.IProjectionEntity.UpdatedAt.set -> void
 Alberto.Subscriptions.IProjectionEntity.Version.get -> uint
-Alberto.Subscriptions.IProjectionEntity.Version.set -> void
 Alberto.Subscriptions.IProjectionRebuildStore
 Alberto.Subscriptions.IProjectionRebuildStore.GetAsync(string! processorId, string! projectionType, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Subscriptions.ProjectionRebuildState!>!
 Alberto.Subscriptions.IProjectionRebuildStore.ListAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Alberto.Subscriptions.ProjectionRebuildState!>!>!
