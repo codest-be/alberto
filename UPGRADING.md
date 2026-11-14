@@ -20,6 +20,13 @@ default implementation that calls `GetStableHeadAsync`, so nothing breaks. A bac
 barrier query scans forward from `afterPosition` should override it and stop at `upToPosition`:
 the head only asks about the window it just read.
 
+`IEventStoreBackend.StreamAllOfTypesAsync(eventTypes, afterPosition, limit, ct)` is new too, and
+defaults to `StreamAllAsync`. The control loop now reads through it, passing the processor's
+handled types, so a backend that overrides it sends only the events the processor will handle.
+Two things must hold whether it filters or not: events come back in position order, and fewer
+than `limit` means no further event of those types was visible. The loop relies on the second
+to checkpoint at the head after a short batch, rather than at the last event it was given.
+
 ## To 0.7.0
 
 ### Run the migration

@@ -327,6 +327,35 @@ public abstract class EventStoreBackendSpecification
     }
 
     /// <summary>
+    /// A read of the whole log for some event types must return every event of those types in
+    /// position order. Filtering is a hint a backend may ignore, so other types are tolerated;
+    /// the facts a control loop's checkpoint rests on are the order and the completeness.
+    /// </summary>
+    [Fact]
+    public async Task StreamAllOfTypes_ReturnsEveryMatchingEvent_InPositionOrder()
+    {
+        if (!SupportsStreamAll)
+            return;
+
+        var ct = TestContext.Current.CancellationToken;
+        var backend = await CreateBackend();
+        var start = await backend.GetLastPositionAsync(ct);
+        var (wanted, other) = ($"wanted-{TestId}", $"other-{TestId}");
+
+        var appended = await backend.AppendAsync([
+            CreateEvent(wanted, $"tag:1{TestId}"),
+            CreateEvent(other, $"tag:2{TestId}"),
+            CreateEvent(wanted, $"tag:3{TestId}")
+        ], cancellationToken: ct);
+
+        var result = await backend.StreamAllOfTypesAsync(new HashSet<string> { wanted }, start, limit: null, ct);
+
+        Assert.Equal(
+            appended.Where(e => e.EventType.Id == wanted).Select(e => e.GlobalPosition),
+            result.Where(e => e.EventType.Id == wanted).Select(e => e.GlobalPosition));
+    }
+
+    /// <summary>
     /// An empty query (no type or tag filter) must return all events after the given position
     /// when <see cref="SupportsStreamAll"/> is <see langword="true"/>, or throw
     /// <see cref="InvalidOperationException"/> when it is <see langword="false"/> (isolation guard).

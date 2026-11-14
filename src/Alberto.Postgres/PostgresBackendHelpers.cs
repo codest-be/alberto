@@ -697,6 +697,35 @@ internal static class PostgresBackendHelpers
         return results;
     }
 
+    /// <summary>
+    /// Reads events of <paramref name="eventTypes"/> across the whole log, in position order.
+    /// Plain SQL rather than a function: it needs no migration, and the filter runs beside the
+    /// primary-key scan <c>alberto_read_all</c> already does, so only matching rows are sent.
+    /// </summary>
+    internal static async Task<IReadOnlyCollection<IEventEnvelope>> ReadAllOfTypesAsync(
+        SchemaQualifier schema,
+        NpgsqlDataSource dataSource,
+        bool tenanted,
+        IReadOnlySet<string> eventTypes,
+        long afterPosition,
+        int? limit,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var cmd = new NpgsqlCommand(
+            $"SELECT global_position, {(tenanted ? "tenant_id, " : "")}event_id, event_type, event_tags, " +
+            $"event_data, event_metadata, created_at FROM {schema.Table("alberto_events")} " +
+            "WHERE global_position > @after AND event_type = ANY(@types) " +
+            "ORDER BY global_position LIMIT @limit",
+            connection);
+
+        cmd.Parameters.AddWithValue("after", afterPosition);
+        cmd.Parameters.AddWithValue("types", eventTypes.ToArray());
+        cmd.Parameters.Add(new NpgsqlParameter("limit", NpgsqlTypes.NpgsqlDbType.Integer) { Value = (object?)limit ?? DBNull.Value });
+
+        return await ReadEventsAsync(cmd, includeTenantId: tenanted, tenantId: null, cancellationToken);
+    }
+
     // ---------------------------------------------------------------------------
     // JSON serialisation for append
     // ---------------------------------------------------------------------------

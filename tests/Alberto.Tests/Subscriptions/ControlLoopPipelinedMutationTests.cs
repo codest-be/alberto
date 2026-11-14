@@ -492,26 +492,18 @@ public sealed class ControlLoopPipelinedMutationTests
         (await checkpoints.GetAsync(processorId, TestContext.Current.CancellationToken)).Should().Be(5);
     }
 
-    // ── 374 (negated) + 375 (delay removed): partial-batch delay ───────────────────
+    // ── short batch: read position jumps to the head ───────────────────────────────
 
     /// <summary>
-    /// After a partial read (fewer events than the batch size — meaning nothing more is currently
-    /// available), the loop must wait a full polling interval before reading again. Negating the
-    /// guard or removing the delay both cause an extra, near-immediate re-read.
-    /// <para>
-    /// A real <see cref="EventStoreHead"/> would track the backend exactly, so "caught up to
-    /// head" and "read fewer than a full batch" collapse into the same next iteration and the
-    /// idle branch's own delay (330/338) masks a broken 374/375 — the idle branch delays either
-    /// way. <see cref="FixedHeadCountingBackend"/> reports a head three positions ahead of what
-    /// the backend actually holds, so after the partial read <c>readPosition (2) &lt; head (5)</c>
-    /// and the *only* delay standing between this call and the next <c>StreamAllAsync</c> is
-    /// 374/375 itself.
-    /// </para>
+    /// The read is filtered to the handled types, so a short batch means no further match was
+    /// visible and everything up to the head is read. <see cref="FixedHeadCountingBackend"/>
+    /// reports a head three positions past the last event, standing in for a tail of events the
+    /// filter skipped: the loop must checkpoint the head and not read that tail again.
     /// </summary>
     [Fact]
-    public async Task Pipelined_PartialBatch_DelaysBeforeReadingAgain()
+    public async Task Pipelined_ShortBatch_AdvancesToHead_WithoutReadingAgain()
     {
-        const string processorId = "partial-batch-delay";
+        const string processorId = "short-batch-head";
         var backend = new InMemoryEventStoreBackend();
         var fixedHeadBackend = new FixedHeadCountingBackend(fixedHead: 5, backend);
         var checkpoints = new InMemoryCheckpointStore();
@@ -521,33 +513,21 @@ public sealed class ControlLoopPipelinedMutationTests
 
         var processor = new DelegatingProcessor(processorId, (_, _) => Task.CompletedTask);
         var head = new EventStoreHead(fixedHeadBackend, refreshInterval: TimeSpan.FromMilliseconds(10));
-        // batchSize (3) > events actually stored (2), so the first read is already partial —
-        // but head (5) is still ahead of readPosition (2), so the next iteration re-reads
-        // instead of taking the "caught up" idle branch.
         var loop = new ControlLoop(processor, head, fixedHeadBackend, checkpoints,
-            pollingInterval: TimeSpan.FromMilliseconds(500), batchSize: 3, executionOptions: Pipelined2);
+            pollingInterval: TimeSpan.FromMilliseconds(20), batchSize: 3, executionOptions: Pipelined2);
 
         using var cts = new CancellationTokenSource();
         await head.StartAsync(cts.Token);
         await loop.StartAsync(cts.Token);
 
-        // Wait for the second StreamAllAsync call (the re-read after the partial batch) rather
-        // than for the checkpoint: under the mutation the watermark jumps straight from 2 to head
-        // (the re-read comes back empty), too fast for a checkpoint-based poll to reliably land on
-        // the intermediate value. Comparing the two calls' own timestamps sidesteps that race
-        // entirely — it needs no assumption about what happens after the second call.
-        await WaitForAsync(() => fixedHeadBackend.StreamAllCount >= 2, TestContext.Current.CancellationToken);
+        await WaitForCheckpointAsync(checkpoints, processorId, 5, TestContext.Current.CancellationToken);
+        await Task.Delay(100, TestContext.Current.CancellationToken);
 
         await cts.CancelAsync();
         await loop.StopAsync(CancellationToken.None);
         await head.StopAsync(CancellationToken.None);
 
-        var timestamps = fixedHeadBackend.StreamAllCallTimestamps;
-        var gap = timestamps[1] - timestamps[0];
-
-        gap.Should().BeGreaterThanOrEqualTo(TimeSpan.FromMilliseconds(300),
-            "a partial read must delay a full polling interval before reading again, even though " +
-            "the head has not been caught up to yet");
+        fixedHeadBackend.StreamAllCount.Should().Be(1);
     }
 
     // ── 384 (ReportFailure removed) + 426 (ReportFaulted removed) ──────────────────

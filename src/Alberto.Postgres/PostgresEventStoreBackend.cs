@@ -62,6 +62,14 @@ public sealed class PostgresEventStoreBackend(
         return await PostgresBackendHelpers.ReadEventsAsync(cmd, includeTenantId: false, tenantId: null, cancellationToken);
     }
 
+    public Task<IReadOnlyCollection<IEventEnvelope>> StreamAllOfTypesAsync(
+        IReadOnlySet<string> eventTypes,
+        long afterPosition,
+        int? limit,
+        CancellationToken cancellationToken = default)
+        => PostgresBackendHelpers.ReadAllOfTypesAsync(
+            _schema, _dataSource, tenanted: false, eventTypes, afterPosition, limit, cancellationToken);
+
     public async Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
         IEnumerable<IEventToPersist> events,
         DcbQuery? dcbQuery = null,

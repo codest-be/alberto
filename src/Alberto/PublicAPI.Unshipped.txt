@@ -1,2 +1,4 @@
 #nullable enable
 Alberto.IEventStoreHeadBackend.GetStableHeadUpToAsync(long afterPosition, long upToPosition, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<long>!
+Alberto.IEventStoreBackend.StreamAllOfTypesAsync(System.Collections.Generic.IReadOnlySet<string!>! eventTypes, long afterPosition, int? limit, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!
+Alberto.Tenancy.ShardRoutingEventStoreBackend.StreamAllOfTypesAsync(System.Collections.Generic.IReadOnlySet<string!>! eventTypes, long afterPosition, int? limit, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!

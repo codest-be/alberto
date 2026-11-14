@@ -48,6 +48,18 @@ public sealed class ShardRoutingEventStoreBackend(
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyCollection<IEventEnvelope>> StreamAllOfTypesAsync(
+        IReadOnlySet<string> eventTypes,
+        long afterPosition,
+        int? limit,
+        CancellationToken cancellationToken = default)
+    {
+        var backend = await _router.ForCurrentTenantAsync(cancellationToken).ConfigureAwait(false);
+        return await backend.StreamAllOfTypesAsync(eventTypes, afterPosition, limit, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
     public async Task<IReadOnlyCollection<IEventEnvelope>> AppendAsync(
         IEnumerable<IEventToPersist> events,
         DcbQuery? dcbQuery = null,
