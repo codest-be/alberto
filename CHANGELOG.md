@@ -19,10 +19,35 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ## [0.9.0] - 2026-11-14
 
+Adds .NET 11 and an opt-in query filter that hides inactive rebuild versions from EF projection
+reads. No breaking changes and no migrations.
+
+### Added
+
+- **EF projections can filter application reads to the active rebuild version** (#228). Map the
+  entity with the new `modelBuilder.ProjectionEntity<T>(processorId, configure)` overload and a
+  plain `DbSet` query returns only the rows of the version currently serving reads: no duplicates
+  while a shadow rebuild is in flight, no superseded rows after a promotion. The active version is
+  resolved in SQL on every query, so a promotion is visible on the next read. Opt out per query with
+  `.IgnoreQueryFilters([ProjectionQueryFilters.ActiveVersion])`; other named filters stay applied.
+  The filter reads `alberto_projection_rebuild_meta`, so it requires the event store's Postgres
+  schema in the same database as the `DbContext`. The existing `ProjectionEntity<T>(configure)`
+  overload is unchanged and applies no filter. See [docs/projections.md](docs/projections.md).
+- **.NET 11** (#225). Every package now targets `net10.0` and `net11.0`.
+
 ### Changed
 
-- Filter EF projection reads to the active rebuild version by default (#228)
-- Target .NET 11 and group dependency updates with Dependabot (#225)
+- Dependencies updated to their latest releases (#225), including Npgsql 10.0.3 and
+  OpenTelemetry 1.21.0. EF Core stays on 10.x on both targets until the Npgsql EF provider ships
+  11.0.
+
+### Removed (repository only, no package affected)
+
+- The example applications moved to
+  [codest-be/alberto-examples](https://github.com/codest-be/alberto-examples), and the operator CLI
+  and the parked admin projects were deleted (#226). None of these were published to nuget.org;
+  the ten packages are unchanged. [docs/operations.md](docs/operations.md) covers operating a
+  store without the CLI.
 
 ---
 
