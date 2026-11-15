@@ -104,6 +104,10 @@ public class TelemetryRegistrationTests
         provider.GetRequiredService<IEnumerable<IHostedService>>();
 
         var eventStore = provider.GetRequiredKeyedService<IEventStore>("orders");
+        // The listener is process-wide, so appends from tests running in parallel are exported
+        // too. Looking only at this trace makes the assertion about this append alone.
+        using var root = new Activity("test-root").Start();
+        root.ActivityTraceFlags = ActivityTraceFlags.Recorded;
         await eventStore.AppendAsync(
             [new EventToPersist
             {
@@ -115,7 +119,7 @@ public class TelemetryRegistrationTests
 
         tracerProvider.ForceFlush();
 
-        exported.Should().NotContain(a => a.OperationName.StartsWith(AlbertoMetrics.AppendActivityName),
+        exported.Should().NotContain(a => a.TraceId == root.TraceId && a.OperationName.StartsWith(AlbertoMetrics.AppendActivityName),
             "Telemetry:Enabled = false must suppress Alberto append activities");
     }
 
