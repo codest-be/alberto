@@ -24,6 +24,10 @@ env:
 
 jobs:
   publish:
+    # The release PR's squash merge ("Release X.Y.Z (#N)", titled by release.yml) is about to be tagged,
+    # and the tag run builds and tests the same commit: skip its beta. Prefix match only (expressions
+    # have no regex), so any other merge titled "Release ..." loses its beta too; the next push has one.
+    if: ${{ !(github.event_name == 'push' && github.ref_type == 'branch' && startsWith(github.event.head_commit.message, 'Release ')) }}
     # release-ci, not public-ci: this job holds publishing credentials and must never share a machine
     # account with the runner that builds contributor code. Nothing here checks out a pull request.
     runs-on: [self-hosted, release-ci]
