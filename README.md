@@ -266,6 +266,29 @@ that never catches up fails where it broke instead of in an unrelated assertion 
 `Poll.UntilAsync` covers conditions the harness cannot see, `EventCollector` captures what was
 projected, and `InMemoryOutboxStore` stands in for a relay in reactor tests.
 
+Two more waits cover what leaves a module and what a reactor appends later. Each returns what it
+waited for and throws `TimeoutException` naming it:
+
+```csharp
+// What the outbox relay published. Pass the collector as the transport; give it the real
+// transport as `inner` to keep delivering, and it records each message once that accepted it.
+var messages = new MessageCollector(inner: transport);
+builder.WithOutbox(mappings, outboxStore, transport: messages);
+
+var shipped = await messages.WaitForPublishedAsync("order.shipped", tenantId: "acme");
+var refund  = await messages.WaitForPublishedAsync(
+    m => m.MessageType == "refund.issued" && m.Payload.Contains(orderId), "the refund for the order");
+
+// An event a reactor appends after the command returned. Narrow the query to the test's own tag,
+// so a parallel test's event does not match.
+var invoiced = await eventStore.WaitForEventAsync(
+    DcbQuery.For("order", orderId).WithType<OrderInvoiced>(), "the order to be invoiced");
+```
+
+An event a command appends is in the store when the command returns, so read it. When the test
+cares about a read model, wait for the projection (`WaitForQuiescenceAsync`), not for the event
+on its way there.
+
 Two rules tend to bite on the first test:
 
 - **Module keys are Alberto identifiers**, not free text: lowercase letters, digits and

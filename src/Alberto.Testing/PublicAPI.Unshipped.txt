@@ -1,4 +1,5 @@
 #nullable enable
+Alberto.Testing.EventStoreWaitExtensions
 Alberto.Testing.MessageCollector
 Alberto.Testing.MessageCollector.MessageCollector(Alberto.Messaging.IMessageTransport? inner = null, System.TimeProvider? timeProvider = null) -> void
 Alberto.Testing.MessageCollector.Published.get -> System.Collections.Generic.IReadOnlyList<Alberto.Messaging.ExternalMessage!>!
@@ -7,3 +8,4 @@ Alberto.Testing.MessageCollector.StartAsync(System.Threading.CancellationToken c
 Alberto.Testing.MessageCollector.StopAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Alberto.Testing.MessageCollector.WaitForPublishedAsync(System.Func<Alberto.Messaging.ExternalMessage!, bool>! predicate, string! what, System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Messaging.ExternalMessage!>!
 Alberto.Testing.MessageCollector.WaitForPublishedAsync(string! messageType, string? tenantId = null, System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Messaging.ExternalMessage!>!
+static Alberto.Testing.EventStoreWaitExtensions.WaitForEventAsync(this Alberto.IEventStore! store, Alberto.DcbQuery! query, string! what, System.Func<Alberto.IEventEnvelope!, bool>? predicate = null, System.TimeSpan? timeout = null, System.TimeProvider? timeProvider = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.IEventEnvelope!>!
