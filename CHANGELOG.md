@@ -19,10 +19,17 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ## [0.12.0] - 2026-11-15
 
-### Changed
+### Added
 
-- Alberto.Testing: wait for a published message and for an appended event (#242)
-- Release merge commits build a beta that the tag run immediately repeats (#239)
+- `Alberto.Testing.MessageCollector`: an `IMessageTransport` that records what the outbox relay
+  publishes, optionally after delivering to an inner transport. `WaitForPublishedAsync`, by message
+  type and tenant or by predicate, returns the message or throws `TimeoutException` (#242)
+- `IEventStore.WaitForEventAsync(query, what, predicate?)` in `Alberto.Testing`: waits for an event
+  a reactor appends after the command returned, and returns its envelope (#242)
+
+### Fixed
+
+- A release merge commit no longer builds a beta package that the tag run immediately repeats (#239)
 
 ---
 
