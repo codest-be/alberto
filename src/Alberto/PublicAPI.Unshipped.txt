@@ -1,1 +1,3 @@
 #nullable enable
+Alberto.Configuration.ProcessorLeaseOptions.Rebalance.get -> bool
+Alberto.Configuration.ProcessorLeaseOptions.Rebalance.init -> void

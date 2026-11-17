@@ -20,6 +20,15 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
     private readonly string _replicaId;
     private readonly ILogger? _logger;
     private readonly Func<CancellationToken, Task>? _flushCheckpoints;
+
+    /// <summary>Set when <see cref="Configuration.ProcessorLeaseOptions.Rebalance"/> is on.</summary>
+    private readonly IRebalancingLeaseManager? _rebalancer;
+
+    /// <summary>
+    /// This replica's presence lease, so a replica that holds no processor still counts as live.
+    /// The colon keeps it apart from processor ids, which are module-chosen names.
+    /// </summary>
+    private string PresenceId => $"alberto:replica:{_replicaId}";
     private readonly ConcurrentDictionary<string, ControlLoop> _runningLoops = new();
 
     /// <summary>
@@ -40,8 +49,18 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
         string consumerId,
         string replicaId,
         ILogger? logger = null,
-        Func<CancellationToken, Task>? flushCheckpoints = null)
+        Func<CancellationToken, Task>? flushCheckpoints = null,
+        bool rebalance = false)
     {
+        if (rebalance)
+        {
+            // Never fall back to renewing every row: that revives the leases being shed.
+            _rebalancer = leaseManager as IRebalancingLeaseManager
+                ?? throw new InvalidOperationException(
+                    $"Lease rebalancing needs a lease manager that can renew a subset of leases and count live replicas; " +
+                    $"{leaseManager.GetType().Name} cannot. Turn ProcessorLeaseOptions.Rebalance off or use the Postgres or in-memory backend.");
+        }
+
         _flushCheckpoints = flushCheckpoints;
         _allLoops = allLoops;
         _leaseManager = leaseManager;
@@ -144,9 +163,13 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
         });
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
+        var share = await FairShareAsync(cancellationToken);
+
         // Try to acquire leases for all processors and start those we get
         foreach (var loop in _allLoops)
         {
+            if (_runningLoops.Count >= share) break;
+
             try
             {
                 var lease = await AcquireAsync(loop.ProcessorId, cancellationToken);
@@ -269,7 +292,10 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
         }
     }
 
-    private async void OnRenewalTimer(object? state)
+    private async void OnRenewalTimer(object? state) => await RenewOnceAsync();
+
+    /// <summary>One renewal pass; the timer's body, awaitable for tests.</summary>
+    internal async Task RenewOnceAsync()
     {
         if (_cts is null || _cts.IsCancellationRequested) return;
         // The timer captured StartAsync's context: its log scope, which is wanted, and the span
@@ -278,19 +304,24 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
 
         try
         {
-            var renewed = await RenewAsync(_cts.Token);
+            var (renewed, shed) = await RenewAsync(_cts.Token);
 
             var renewedSet = new HashSet<string>(renewed, StringComparer.Ordinal);
+            var stopped = new List<string>();
 
-            // Stop any running loops whose leases were not renewed (stolen/expired)
+            // Stop any running loops whose leases were not renewed (stolen/expired, or shed)
             foreach (var (processorId, loop) in _runningLoops)
             {
                 if (renewedSet.Contains(processorId))
                     continue;
 
-                _logger?.LogWarning(
-                    "Lease for processor {ProcessorId} was not renewed — stopping loop",
-                    processorId);
+                if (shed.Contains(processorId))
+                    _logger?.LogInformation(
+                        "Shedding processor {ProcessorId} to stay within this replica's fair share", processorId);
+                else
+                    _logger?.LogWarning(
+                        "Lease for processor {ProcessorId} was not renewed — stopping loop",
+                        processorId);
 
                 try
                 {
@@ -303,6 +334,22 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
                         processorId);
                 }
 
+                stopped.Add(processorId);
+            }
+
+            // A shed lease is still ours until it expires, so its last checkpoint passes the
+            // fence, but only while the fence token is still on record. Flush first.
+            if (shed.Count > 0 && _flushCheckpoints is not null)
+            {
+                try { await _flushCheckpoints(CancellationToken.None); }
+                catch (Exception ex)
+                {
+                    _logger?.LogWarning(ex, "Failed to flush checkpoints for shed processors");
+                }
+            }
+
+            foreach (var processorId in stopped)
+            {
                 // Remove the fence token BEFORE removing the loop entry. OnScanTimer's only guard
                 // is _runningLoops.ContainsKey; if the loop entry were removed first, a concurrent
                 // scan could pass that guard, re-acquire the lease, and store a new token T2 — then
@@ -322,7 +369,10 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
         }
     }
 
-    private async void OnScanTimer(object? state)
+    private async void OnScanTimer(object? state) => await ScanOnceAsync();
+
+    /// <summary>One scan pass; the timer's body, awaitable for tests.</summary>
+    internal async Task ScanOnceAsync()
     {
         if (_cts is null || _cts.IsCancellationRequested) return;
         if (!await _scanLock.WaitAsync(0)) return; // Skip if a scan is already in progress
@@ -330,9 +380,14 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
 
         try
         {
+            var share = await FairShareAsync(_cts.Token);
+
             foreach (var loop in _allLoops)
             {
                 if (_cts.IsCancellationRequested) break;
+                // Checked on every acquire: TryAcquireAsync hands a replica back its own
+                // unexpired row, so without the cap a scan would re-take what renewal just shed.
+                if (_runningLoops.Count >= share) break;
                 if (_runningLoops.ContainsKey(loop.ProcessorId)) continue;
 
                 try
@@ -395,15 +450,54 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
         }
     }
 
-    private async Task<IReadOnlyList<string>> RenewAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// ceil(processors / live replicas), after refreshing this replica's presence lease.
+    /// Unlimited when rebalancing is off.
+    /// </summary>
+    private async Task<int> FairShareAsync(CancellationToken cancellationToken)
+    {
+        if (_rebalancer is null) return int.MaxValue;
+
+        try
+        {
+            await _leaseManager.TryAcquireAsync(_consumerId, PresenceId, _replicaId, cancellationToken);
+            var live = Math.Max(1, await _rebalancer.CountLiveReplicasAsync(_consumerId, cancellationToken));
+            return (_allLoops.Count + live - 1) / live;
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            // Unknown share: keep what is held, take nothing new.
+            _logger?.LogWarning(ex, "Failed to compute the fair share for replica {ReplicaId}", _replicaId);
+            return _runningLoops.Count;
+        }
+    }
+
+    private async Task<(IReadOnlyList<string> Renewed, IReadOnlySet<string> Shed)> RenewAsync(
+        CancellationToken cancellationToken)
     {
         using var activity = StartLeaseSpan("alberto.lease.renew");
         try
         {
-            var renewed = await _leaseManager.RenewLeasesAsync(_consumerId, _replicaId, cancellationToken);
+            IReadOnlyList<string> renewed;
+            IReadOnlySet<string> shed = new HashSet<string>();
+            if (_rebalancer is null)
+            {
+                renewed = await _leaseManager.RenewLeasesAsync(_consumerId, _replicaId, cancellationToken);
+            }
+            else
+            {
+                // Keep the first processors in declaration order, so every renewal sheds the same ones.
+                var share = await FairShareAsync(cancellationToken);
+                var keep = _allLoops.Select(l => l.ProcessorId).Where(_runningLoops.ContainsKey).Take(share).ToList();
+                shed = _runningLoops.Keys.Except(keep).ToHashSet(StringComparer.Ordinal);
+                renewed = await _rebalancer.RenewLeasesAsync(
+                    _consumerId, _replicaId, [.. keep, PresenceId], cancellationToken);
+                activity?.SetTag("alberto.lease.shed", shed.Count);
+            }
+
             activity?.SetTag("alberto.lease.renewed", renewed.Count);
             activity?.SetTag("alberto.lease.lost", _runningLoops.Keys.Count(id => !renewed.Contains(id)));
-            return renewed;
+            return (renewed, shed);
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {

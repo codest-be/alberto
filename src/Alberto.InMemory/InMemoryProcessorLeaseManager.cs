@@ -12,10 +12,10 @@ namespace Alberto.InMemory;
 /// State is process-local and not shared between instances. All methods are
 /// thread-safe via a single lock. Every call to <see cref="TryAcquireAsync"/>
 /// that succeeds — including a same-replica re-acquisition — issues a new fence
-/// token from the monotonic counter. Only <see cref="RenewLeasesAsync"/> extends
+/// token from the monotonic counter. Only <see cref="RenewLeasesAsync(string, string, CancellationToken)"/> extends
 /// an existing lease without changing its token.
 /// </remarks>
-internal sealed class InMemoryProcessorLeaseManager : IProcessorLeaseManager
+internal sealed class InMemoryProcessorLeaseManager : IProcessorLeaseManager, IRebalancingLeaseManager
 {
     private readonly TimeProvider _clock;
     private long _tokenSequence;
@@ -128,6 +128,43 @@ internal sealed class InMemoryProcessorLeaseManager : IProcessorLeaseManager
 
                 _leases[key] = record with { ExpiresAt = newExpiry };
                 renewed.Add(key.ProcessorId);
+            }
+
+            return Task.FromResult<IReadOnlyList<string>>(renewed);
+        }
+    }
+
+    /// <inheritdoc/>
+    public Task<int> CountLiveReplicasAsync(string consumerId, CancellationToken cancellationToken)
+    {
+        lock (_lock)
+        {
+            var now = _clock.GetUtcNow();
+            return Task.FromResult(_leases
+                .Where(l => l.Key.ConsumerId == consumerId && l.Value.ExpiresAt > now)
+                .Select(l => l.Value.ReplicaId)
+                .Distinct()
+                .Count());
+        }
+    }
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<string>> RenewLeasesAsync(
+        string consumerId, string replicaId, IReadOnlyCollection<string> processorIds,
+        CancellationToken cancellationToken)
+    {
+        lock (_lock)
+        {
+            var now = _clock.GetUtcNow();
+            var renewed = new List<string>();
+            foreach (var processorId in processorIds)
+            {
+                var key = (consumerId, processorId);
+                if (!_leases.TryGetValue(key, out var record) || record.ReplicaId != replicaId || record.ExpiresAt <= now)
+                    continue;
+
+                _leases[key] = record with { ExpiresAt = now + LeaseDuration };
+                renewed.Add(processorId);
             }
 
             return Task.FromResult<IReadOnlyList<string>>(renewed);
