@@ -464,6 +464,12 @@ Alberto.Evolver<TState>.Evolve(TState state, Alberto.IEventEnvelope! envelope) -
 Alberto.Evolver<TState>.Evolver() -> void
 Alberto.Evolver<TState>.HandledEventTypes.get -> System.Collections.Generic.IReadOnlySet<string!>!
 Alberto.Evolver<TState>.Reconstitute(System.Collections.Generic.IEnumerable<Alberto.IEventEnvelope!>! events, TState? initial = default(TState?)) -> TState
+Alberto.HeadWindow
+Alberto.HeadWindow.HeadWindow(System.Collections.Generic.IReadOnlyList<long>! Positions, Alberto.TransactionHorizon? Horizon) -> void
+Alberto.HeadWindow.Horizon.get -> Alberto.TransactionHorizon?
+Alberto.HeadWindow.Horizon.init -> void
+Alberto.HeadWindow.Positions.get -> System.Collections.Generic.IReadOnlyList<long>!
+Alberto.HeadWindow.Positions.init -> void
 Alberto.IEvent
 Alberto.IEventEnvelope
 Alberto.IEventEnvelope.CreatedAt.get -> System.DateTimeOffset
@@ -486,6 +492,7 @@ Alberto.IEventStore.StreamAsync(Alberto.DcbQuery! query, long afterPosition = 0,
 Alberto.IEventStoreBackend
 Alberto.IEventStoreBackend.ReadAllOfTypesAsync(System.Collections.Generic.IReadOnlySet<string!>! eventTypes, long afterPosition, int limit, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!
 Alberto.IEventStoreHeadBackend
+Alberto.IEventStoreHeadBackend.GetPositionWindowAsync(long afterPosition, int windowSize, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.HeadWindow!>!
 Alberto.IEventStoreHeadBackend.GetPositionsAsync(long afterPosition, int windowSize, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<long>!>!
 Alberto.IEventStoreHeadBackend.GetStableHeadAsync(long afterPosition, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<long>!
 Alberto.IEventStoreHeadBackend.GetStableHeadUpToAsync(long afterPosition, long upToPosition, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<long>!
@@ -876,6 +883,14 @@ Alberto.Tenancy.UnknownTenantException
 Alberto.Tenancy.UnknownTenantException.ModuleKey.get -> string!
 Alberto.Tenancy.UnknownTenantException.TenantId.get -> string!
 Alberto.Tenancy.UnknownTenantException.UnknownTenantException(string! moduleKey, string! tenantId) -> void
+Alberto.TransactionHorizon
+Alberto.TransactionHorizon.LastPosition.get -> long
+Alberto.TransactionHorizon.LastPosition.init -> void
+Alberto.TransactionHorizon.NextToStart.get -> long
+Alberto.TransactionHorizon.NextToStart.init -> void
+Alberto.TransactionHorizon.OldestRunning.get -> long
+Alberto.TransactionHorizon.OldestRunning.init -> void
+Alberto.TransactionHorizon.TransactionHorizon(long OldestRunning, long NextToStart, long LastPosition) -> void
 Alberto.Upcasting.DeclareUpcaster
 Alberto.Upcasting.UpcasterDeclaration
 Alberto.Upcasting.UpcasterDeclaration.CurrentVersion.get -> int

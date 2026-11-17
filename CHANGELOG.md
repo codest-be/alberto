@@ -19,6 +19,13 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ## [0.13.0] - 2026-11-17
 
+### Fixed
+
+- The stable head no longer skips an append still open in a multi-tenant store while other tenants'
+  appends commit above it; that event was lost to every subscriber. A gap is passed only once the
+  database proves no transaction can still fill it, and a held gap is looked at again within
+  milliseconds rather than at the next refresh (#251)
+
 ### Changed
 
 - ProjectionCatchUp times out on replicas that do not hold the processor lease (#247)
