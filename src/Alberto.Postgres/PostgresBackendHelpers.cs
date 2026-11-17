@@ -144,7 +144,10 @@ internal static class PostgresBackendHelpers
     // Advisory-lock acquisition
     // ---------------------------------------------------------------------------
 
-    private const string AppendLockSql = "SELECT pg_advisory_xact_lock(hashtextextended(@lock_key, 0))";
+    // pg_current_xact_id() gives the append its transaction id before the append function draws a
+    // global_position. The head relies on that order: a position visible as drawn belongs to a
+    // transaction older than the snapshot that saw it (see GetPositionWindowAsync).
+    private const string AppendLockSql = "SELECT pg_advisory_xact_lock(hashtextextended(@lock_key, 0)), pg_current_xact_id()";
 
     /// <summary>
     /// Acquires a transaction-scoped advisory lock keyed by <paramref name="lockKey"/>.
@@ -515,6 +518,31 @@ internal static class PostgresBackendHelpers
     }
 
     /// <summary>
+    /// <see cref="GetPositionsAsync"/> plus the transaction horizon of the snapshot the positions were
+    /// read in and the last position it saw, in one statement so all come from the same snapshot (<c>pg_current_snapshot()</c> is
+    /// the statement's snapshot). The append takes its xid before it draws a position, so every
+    /// position below one this snapshot sees was drawn by a transaction older than its xmax.
+    /// </summary>
+    internal static async Task<HeadWindow> GetPositionWindowAsync(
+        SchemaQualifier schema, NpgsqlDataSource dataSource,
+        long afterPosition, int windowSize, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var cmd = new NpgsqlCommand(
+            "SELECT pg_snapshot_xmin(s)::TEXT::BIGINT, pg_snapshot_xmax(s)::TEXT::BIGINT, ARRAY(" +
+            $"SELECT global_position FROM {schema.Table("alberto_events")} " +
+            "WHERE global_position > @after ORDER BY global_position LIMIT @limit), " +
+            $"(SELECT COALESCE(max(global_position), 0) FROM {schema.Table("alberto_events")}) " +
+            "FROM pg_current_snapshot() s",
+            connection);
+        cmd.Parameters.AddWithValue("after", afterPosition);
+        cmd.Parameters.AddWithValue("limit", windowSize);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        await reader.ReadAsync(cancellationToken);
+        return new HeadWindow(reader.GetFieldValue<long[]>(2), new TransactionHorizon(reader.GetInt64(0), reader.GetInt64(1), reader.GetInt64(3)));
+    }
+
+    /// <summary>
     /// Returns the highest global position that is fully stable (every inserting
     /// transaction has committed and predates every in-flight transaction).
     /// Returns <see cref="long.MaxValue"/> when the barrier is disabled or when all
@@ -525,9 +553,10 @@ internal static class PostgresBackendHelpers
     /// in-flight transaction (<c>pg_snapshot_xmin</c>). We find the FIRST position
     /// after <paramref name="afterPosition"/> that is NOT yet stable (committed but
     /// younger than the oldest running transaction) and clamp the head just below it.
-    /// Because the append path assigns <c>global_position</c> and the xid under the
-    /// same advisory lock, a committed event above an uncommitted one is itself
-    /// non-stable, so this boundary never advances past an in-flight append. Rows with
+    /// This holds the head below a committed event an open transaction could precede, but
+    /// it can stop exactly on a gap an open append drew (multi-tenant appends lock per tenant
+    /// and draw from one sequence concurrently), so it does not prove a gap permanent: the
+    /// head does that with <see cref="GetPositionWindowAsync"/>'s horizon. Rows with
     /// <c>NULL pg_xact_id</c> predate migration 008 and are always stable. Ascending
     /// index scan from the head — stops at the first non-stable row (the recent tail),
     /// so it stays cheap even when a long-running transaction pins xmin.
