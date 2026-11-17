@@ -143,6 +143,10 @@ internal sealed class PostgresTenantEventStoreBackend(
         long afterPosition, int windowSize, CancellationToken cancellationToken = default)
         => PostgresBackendHelpers.GetPositionsAsync(_schema, _dataSource, afterPosition, windowSize, cancellationToken);
 
+    public Task<HeadWindow> GetPositionWindowGlobalAsync(
+        long afterPosition, int windowSize, CancellationToken cancellationToken = default)
+        => PostgresBackendHelpers.GetPositionWindowAsync(_schema, _dataSource, afterPosition, windowSize, cancellationToken);
+
     public Task<long> GetStableHeadGlobalAsync(
         long afterPosition, long upToPosition, CancellationToken cancellationToken = default)
         => PostgresBackendHelpers.GetStableHeadAsync(_schema, _dataSource, _enableStableHeadBarrier, afterPosition, upToPosition, cancellationToken);

@@ -129,9 +129,17 @@ public sealed class EventStoreHead : IHostedService
     /// the head still advances if a notification is missed or unavailable.
     /// </summary>
     private Task WaitForNextRefreshAsync(CancellationToken cancellationToken)
-        => _signal is null
-            ? Task.Delay(_refreshInterval, cancellationToken)
-            : _signal.WaitAsync(_refreshInterval, cancellationToken);
+    {
+        // A gap still unproven usually proves on the next snapshot (a rollback sends no NOTIFY), so
+        // look again soon, backing off to the interval when an open transaction keeps it unproven.
+        var wait = _gapRetry > TimeSpan.Zero && _gapRetry < _refreshInterval ? _gapRetry : _refreshInterval;
+        return _signal is null
+            ? Task.Delay(wait, cancellationToken)
+            : _signal.WaitAsync(wait, cancellationToken);
+    }
+
+    private TimeSpan _gapRetry;
+    private static readonly TimeSpan FirstGapRetry = TimeSpan.FromMilliseconds(10);
 
     /// <summary>
     /// Performs one poll: advances the contiguous head, clamps it to the stable-head barrier,
@@ -143,6 +151,7 @@ public sealed class EventStoreHead : IHostedService
         var start = _current;
         var current = start;
         var holding = false;
+        var gapHeld = false;
 
         // A window holds at most _windowSize positions, so catching up on a large log takes many
         // of them: keep going while each one comes back full instead of one window per poll.
@@ -150,8 +159,11 @@ public sealed class EventStoreHead : IHostedService
         for (var window = 0; window < MaxWindowsPerRefresh; window++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var positions = await _backend.GetPositionsAsync(current, _windowSize, cancellationToken);
-            var head = FindContiguousHead(current, positions);
+            var read = await _backend.GetPositionWindowAsync(current, _windowSize, cancellationToken);
+            var positions = read.Positions;
+            var head = read.Horizon is { } horizon
+                ? AdvanceThroughProvenGaps(current, positions, horizon, out gapHeld)
+                : FindContiguousHead(current, positions);
 
             // Clamp to the in-flight visibility barrier: never advance past an append
             // whose transaction has not committed yet. Backends without a barrier
@@ -162,8 +174,8 @@ public sealed class EventStoreHead : IHostedService
             var stableHead = head > current
                 ? await _backend.GetStableHeadUpToAsync(current, head, cancellationToken)
                 : long.MaxValue;
-            holding = stableHead < head;
-            if (holding)
+            holding = gapHeld || stableHead < head;
+            if (stableHead < head)
                 head = stableHead;
 
             var advanced = head > current;
@@ -174,10 +186,63 @@ public sealed class EventStoreHead : IHostedService
                 break;
         }
 
+        _gapRetry = !gapHeld ? TimeSpan.Zero
+            : _gapRetry == TimeSpan.Zero ? FirstGapRetry
+            : _gapRetry < _refreshInterval ? _gapRetry * 2 : _refreshInterval;
         TrackStall(holding, headAdvanced: current != start);
     }
 
     private const int MaxWindowsPerRefresh = 1000;
+
+    // Gaps at or below _provenThrough are permanent. _unprovenGap is the last position in the log when a
+    // gap was first seen and the horizon's NextToStart then: once no transaction older than that is
+    // running, nothing at or below that position can still appear.
+    private long _provenThrough;
+    private (long Below, long Horizon)? _unprovenGap;
+
+    /// <summary>
+    /// Advances through <paramref name="positions"/> and over the gaps proven permanent. A gap is a
+    /// position drawn by an append that has not committed, or by one that rolled back; positions after
+    /// it do not tell which, because appends of different tenants draw from one sequence concurrently.
+    /// The backend gives each append its transaction id before it draws a position, so every position at
+    /// or below the last one a snapshot sees was drawn by a transaction older than that snapshot's
+    /// NextToStart. Once a snapshot's OldestRunning reaches it (the same snapshot when nothing was
+    /// running), those transactions have all ended, and a gap still there is permanent. The proof covers
+    /// the whole log as it stood, so catching up over old gaps proves them all at once.
+    /// </summary>
+    private long AdvanceThroughProvenGaps(long afterPosition, IReadOnlyList<long> positions, TransactionHorizon horizon, out bool held)
+    {
+        held = false;
+        var head = afterPosition;
+        foreach (var position in positions)
+        {
+            if (position != head + 1 && position - 1 > _provenThrough)
+            {
+                // An earlier gap's proof may cover this one; if not, this snapshot starts a new proof,
+                // which it completes itself when nothing was running.
+                TryProve(horizon);
+                if (position - 1 > _provenThrough)
+                {
+                    _unprovenGap ??= (horizon.LastPosition, horizon.NextToStart);
+                    TryProve(horizon);
+                }
+                if (position - 1 > _provenThrough)
+                {
+                    held = true;
+                    break;
+                }
+            }
+            head = position;
+        }
+        return head;
+    }
+
+    private void TryProve(TransactionHorizon horizon)
+    {
+        if (_unprovenGap is not { } gap || horizon.OldestRunning < gap.Horizon) return;
+        _provenThrough = Math.Max(_provenThrough, gap.Below);
+        _unprovenGap = null;
+    }
 
     /// <summary>
     /// Tracks how long the barrier has held the head back without it advancing, warns once

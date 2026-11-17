@@ -1,1 +1,16 @@
 #nullable enable
+Alberto.HeadWindow
+Alberto.HeadWindow.HeadWindow(System.Collections.Generic.IReadOnlyList<long>! Positions, Alberto.TransactionHorizon? Horizon) -> void
+Alberto.HeadWindow.Horizon.get -> Alberto.TransactionHorizon?
+Alberto.HeadWindow.Horizon.init -> void
+Alberto.HeadWindow.Positions.get -> System.Collections.Generic.IReadOnlyList<long>!
+Alberto.HeadWindow.Positions.init -> void
+Alberto.IEventStoreHeadBackend.GetPositionWindowAsync(long afterPosition, int windowSize, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.HeadWindow!>!
+Alberto.TransactionHorizon
+Alberto.TransactionHorizon.NextToStart.get -> long
+Alberto.TransactionHorizon.NextToStart.init -> void
+Alberto.TransactionHorizon.OldestRunning.get -> long
+Alberto.TransactionHorizon.OldestRunning.init -> void
+Alberto.TransactionHorizon.LastPosition.get -> long
+Alberto.TransactionHorizon.LastPosition.init -> void
+Alberto.TransactionHorizon.TransactionHorizon(long OldestRunning, long NextToStart, long LastPosition) -> void
