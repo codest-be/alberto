@@ -56,9 +56,12 @@ public sealed class ProjectionCatchUpAcrossReplicasTests(SingleTenantPostgresFix
         (await LeaseHolderAsync(cancellationToken)).Should().Be("replica-fenced");
 
         // Control: while the lease is held, the batch's checkpoint reaches the database.
+        // The owner's own wait is answered by its cache, which moves before the write lands, so
+        // the control waits on the database itself.
         var first = await AppendSeatAsync(owner, cancellationToken);
-        await owner.Services.GetRequiredKeyedService<ProjectionCatchUp>(ModuleKey)
-            .WaitForProjectionAsync(ProcessorId, TimeSpan.FromSeconds(1), cancellationToken);
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(1);
+        while ((await StoredCheckpointAsync(cancellationToken) ?? 0) < first && DateTime.UtcNow < deadline)
+            await Task.Delay(20, cancellationToken);
         (await StoredCheckpointAsync(cancellationToken)).Should().BeGreaterThanOrEqualTo(first);
 
         // Another replica takes the lease over, in a later generation. The owner has not
