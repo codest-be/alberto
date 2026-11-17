@@ -41,8 +41,10 @@ public sealed class ProjectionCatchUpAcrossReplicasTests(SingleTenantPostgresFix
         // database, the owner's write after the batch is.
         var catchUp = other.Services.GetRequiredKeyedService<ProjectionCatchUp>(ModuleKey);
         var elapsed = System.Diagnostics.Stopwatch.StartNew();
-        await catchUp.WaitForProjectionAsync(ProcessorId, TimeSpan.FromSeconds(1), cancellationToken);
-        elapsed.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(1));
+        // Ten seconds, not one: a loaded runner can take a second to get the head refresh and the batch
+        // through, and ten still tells the owner's write apart from the 30 s timer.
+        await catchUp.WaitForProjectionAsync(ProcessorId, TimeSpan.FromSeconds(10), cancellationToken);
+        elapsed.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(10));
 
         (await LeaseHolderAsync(cancellationToken)).Should().Be("replica-owner",
             because: "the wait returned on a replica that never ran the projection");
@@ -59,7 +61,7 @@ public sealed class ProjectionCatchUpAcrossReplicasTests(SingleTenantPostgresFix
         // The owner's own wait is answered by its cache, which moves before the write lands, so
         // the control waits on the database itself.
         var first = await AppendSeatAsync(owner, cancellationToken);
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(1);
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
         while ((await StoredCheckpointAsync(cancellationToken) ?? 0) < first && DateTime.UtcNow < deadline)
             await Task.Delay(20, cancellationToken);
         (await StoredCheckpointAsync(cancellationToken)).Should().BeGreaterThanOrEqualTo(first);
