@@ -17,6 +17,22 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ---
 
+## [0.13.0] - 2026-11-17
+
+### Fixed
+
+- The stable head no longer skips an append still open in a multi-tenant store while other tenants'
+  appends commit above it; that event was lost to every subscriber. A gap is passed only once the
+  database proves no transaction can still fill it, and a held gap is looked at again within
+  milliseconds rather than at the next refresh (#251)
+
+### Changed
+
+- ProjectionCatchUp times out on replicas that do not hold the processor lease (#247)
+- TelemetryEnabled_false_suppresses_Alberto_append_activities is flaky (#237)
+
+---
+
 ## [0.12.0] - 2026-11-15
 
 ### Added
@@ -1089,7 +1105,8 @@ Initial beta release. Core DCB event store abstractions, PostgreSQL backend, in-
 backend, command pipeline, EF Core projection support, transactional outbox, and
 OpenTelemetry instrumentation.
 
-[Unreleased]: https://github.com/codest-be/alberto/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/codest-be/alberto/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/codest-be/alberto/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/codest-be/alberto/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/codest-be/alberto/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/codest-be/alberto/compare/v0.9.0...v0.10.0
