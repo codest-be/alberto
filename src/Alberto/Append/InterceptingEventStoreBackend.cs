@@ -207,6 +207,10 @@ internal sealed class InterceptingEventStoreBackend(
         => _innerHead.GetPositionsAsync(afterPosition, windowSize, cancellationToken);
 
     /// <inheritdoc />
+    public Task<HeadWindow> GetPositionWindowAsync(
+        long afterPosition, int windowSize, CancellationToken cancellationToken = default)
+        => _innerHead.GetPositionWindowAsync(afterPosition, windowSize, cancellationToken);
+
     public Task<long> GetStableHeadAsync(
         long afterPosition, CancellationToken cancellationToken = default)
         => _innerHead.GetStableHeadAsync(afterPosition, cancellationToken);

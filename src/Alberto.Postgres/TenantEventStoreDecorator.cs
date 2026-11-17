@@ -97,6 +97,10 @@ internal sealed class TenantEventStoreDecorator : IEventStoreBackend, IEventStor
         long afterPosition, int windowSize, CancellationToken cancellationToken = default)
         => _inner.GetPositionsGlobalAsync(afterPosition, windowSize, cancellationToken);
 
+    public Task<HeadWindow> GetPositionWindowAsync(
+        long afterPosition, int windowSize, CancellationToken cancellationToken = default)
+        => _inner.GetPositionWindowGlobalAsync(afterPosition, windowSize, cancellationToken);
+
     public Task<long> GetStableHeadAsync(
         long afterPosition, CancellationToken cancellationToken = default)
         => GetStableHeadUpToAsync(afterPosition, long.MaxValue, cancellationToken);
