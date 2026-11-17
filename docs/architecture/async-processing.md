@@ -123,7 +123,7 @@ The Postgres backend wires `CachingCheckpointStore` over `PostgresCheckpointStor
 
 | Store | Role |
 |-------|------|
-| `CachingCheckpointStore` | In-memory read/write cache; marks entries dirty and flushes on a timer |
+| `CachingCheckpointStore` | In-memory read/write cache; marks entries dirty and flushes on a timer (30 s). With leases on, it writes (fenced) after every batch that advanced the checkpoint, so other replicas see progress straight away |
 | `PostgresCheckpointStore` | The durable store; also implements `IFencedCheckpointStore` |
 
 `SaveAsync` is **monotonic.** The Postgres upsert uses `GREATEST`, so a processor can never move its own checkpoint backwards. `RewindAsync` is the deliberate escape hatch that writes unconditionally; it is intended only for operator-initiated rewinds and both decorators bypass their caches and write straight through.

@@ -140,8 +140,37 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
             (position, _cacheGeneration),
             (_, existing) => (Math.Max(existing.Position, position), _cacheGeneration));
 
-        // Don't write to DB immediately - the timer will flush periodically
-        return Task.CompletedTask;
+        // Unleased, the timer flushes periodically. Leased, the processor runs on one replica
+        // and every other replica learns its progress only from the database (ProjectionCatchUp
+        // waits on it), so the write goes through now, once per batch, still fenced. A shadow
+        // rebuild loop is unleased and nobody waits on it, so it keeps the timer.
+        return _fencingContext is null || RebuildableProjection.IsShadowProcessorId(processorId)
+            ? Task.CompletedTask
+            : WriteThroughAsync(processorId, cancellationToken);
+    }
+
+    private async Task WriteThroughAsync(string processorId, CancellationToken cancellationToken)
+    {
+        await _flushLock.WaitAsync(cancellationToken);
+        try
+        {
+            if (!_dirty.TryGetValue(processorId, out var entry))
+                return;
+            if (_persisted.TryGetValue(processorId, out var persisted) && persisted >= entry.Position)
+                return;
+
+            await FlushEntryAsync(processorId, entry.Position, entry.Generation, _cacheGeneration, cancellationToken);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            // The batch is processed; failing the save would redeliver it. The entry stays
+            // dirty and the timer retries, as it would have without the write-through.
+            _logger?.LogError(ex, "Failed to write checkpoint for processor {ProcessorId}; the periodic flush will retry", processorId);
+        }
+        finally
+        {
+            _flushLock.Release();
+        }
     }
 
     public async Task ResetAsync(string processorId, CancellationToken cancellationToken = default)
@@ -347,75 +376,78 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
             // Entries whose stamped generation is older than flushGen were written during
             // a fence-violation race window (see SaveAsync) and must be discarded (COR-2).
             var flushGen = _cacheGeneration;
-            var toFlush = _dirty.ToArray();
-            var fenced = _fencingContext is not null ? _inner as IFencedCheckpointStore : null;
-
-            // Write all dirty checkpoints FIRST, then remove only after success
-            foreach (var (processorId, (position, entryGen)) in toFlush)
-            {
-                // Discard entries stamped with an older generation: they were written from
-                // a stale cache that survived a prior fence-violation cleanup window.
-                if (entryGen < flushGen)
-                {
-                    _dirty.TryRemove(processorId, out _);
-                    continue;
-                }
-
-                if (await ApplyExternalResetIfDetectedAsync(processorId, cancellationToken))
-                    continue;
-
-                // A shadow rebuild loop is not in the lease group, so no lease exists for its
-                // id and a fenced write would be rejected forever.
-                // ponytail: shadow loops are unleased, so two replicas can replay one rebuild
-                // (idempotent, checkpoint is GREATEST); lease the shadow id if that ever costs.
-                if (fenced is not null && !RebuildableProjection.IsShadowProcessorId(processorId))
-                {
-                    var leaseHeld = await fenced.SaveIfLeaseHeldAsync(
-                        processorId, position,
-                        _fencingContext!.ConsumerId, _fencingContext.ReplicaId,
-                        _fencingContext.FenceTokenProvider?.Invoke(processorId) ?? 0,
-                        _fencingContext.UseProcessorLeaseFencing, cancellationToken);
-
-                    if (!leaseHeld)
-                    {
-                        _logger?.LogWarning(
-                            "Fenced checkpoint flush rejected for processor {ProcessorId} — lease expired",
-                            processorId);
-                        // Remove all three dictionaries first, then bump the generation.
-                        // Any concurrent SaveAsync that races into the window between
-                        // _dirty.TryRemove and the Increment captures the old generation;
-                        // the next flush filters those entries via entryGen < flushGen (COR-2).
-                        _dirty.TryRemove(processorId, out _);
-                        // Reset the cache so the next GetAsync re-reads the true DB value.
-                        // Keeping the stale high-water mark would cause the processor to skip
-                        // events between the real DB checkpoint and the cached position.
-                        _cache.TryRemove(processorId, out _);
-                        _persisted.TryRemove(processorId, out _);
-                        Interlocked.Increment(ref _cacheGeneration);
-                        // Invoke the primary handler first, then every additive subscriber.
-                        // Read one snapshot: a concurrent SubscribeFenceViolation swaps the
-                        // array rather than mutating it, so this enumeration stays valid.
-                        OnFenceViolation?.Invoke(processorId);
-                        foreach (var h in Volatile.Read(ref _subscribedFenceHandlers))
-                            h(processorId);
-                        continue;
-                    }
-                }
-                else
-                {
-                    await _inner.SaveAsync(processorId, position, cancellationToken);
-                }
-
-                _persisted[processorId] = position;
-
-                // Only remove AFTER successful write
-                _dirty.TryRemove(processorId, out _);
-            }
+            foreach (var (processorId, (position, entryGen)) in _dirty.ToArray())
+                await FlushEntryAsync(processorId, position, entryGen, flushGen, cancellationToken);
         }
         finally
         {
             _flushLock.Release();
         }
+    }
+
+    // Writes one dirty entry. Caller holds _flushLock.
+    private async Task FlushEntryAsync(
+        string processorId, long position, int entryGen, int flushGen, CancellationToken cancellationToken)
+    {
+        var fenced = _fencingContext is not null ? _inner as IFencedCheckpointStore : null;
+
+        // Discard entries stamped with an older generation: they were written from
+        // a stale cache that survived a prior fence-violation cleanup window.
+        if (entryGen < flushGen)
+        {
+            _dirty.TryRemove(processorId, out _);
+            return;
+        }
+
+        if (await ApplyExternalResetIfDetectedAsync(processorId, cancellationToken))
+            return;
+
+        // A shadow rebuild loop is not in the lease group, so no lease exists for its
+        // id and a fenced write would be rejected forever.
+        // ponytail: shadow loops are unleased, so two replicas can replay one rebuild
+        // (idempotent, checkpoint is GREATEST); lease the shadow id if that ever costs.
+        if (fenced is not null && !RebuildableProjection.IsShadowProcessorId(processorId))
+        {
+            var leaseHeld = await fenced.SaveIfLeaseHeldAsync(
+                processorId, position,
+                _fencingContext!.ConsumerId, _fencingContext.ReplicaId,
+                _fencingContext.FenceTokenProvider?.Invoke(processorId) ?? 0,
+                _fencingContext.UseProcessorLeaseFencing, cancellationToken);
+
+            if (!leaseHeld)
+            {
+                _logger?.LogWarning(
+                    "Fenced checkpoint flush rejected for processor {ProcessorId} — lease expired",
+                    processorId);
+                // Remove all three dictionaries first, then bump the generation.
+                // Any concurrent SaveAsync that races into the window between
+                // _dirty.TryRemove and the Increment captures the old generation;
+                // the next flush filters those entries via entryGen < flushGen (COR-2).
+                _dirty.TryRemove(processorId, out _);
+                // Reset the cache so the next GetAsync re-reads the true DB value.
+                // Keeping the stale high-water mark would cause the processor to skip
+                // events between the real DB checkpoint and the cached position.
+                _cache.TryRemove(processorId, out _);
+                _persisted.TryRemove(processorId, out _);
+                Interlocked.Increment(ref _cacheGeneration);
+                // Invoke the primary handler first, then every additive subscriber.
+                // Read one snapshot: a concurrent SubscribeFenceViolation swaps the
+                // array rather than mutating it, so this enumeration stays valid.
+                OnFenceViolation?.Invoke(processorId);
+                foreach (var h in Volatile.Read(ref _subscribedFenceHandlers))
+                    h(processorId);
+                return;
+            }
+        }
+        else
+        {
+            await _inner.SaveAsync(processorId, position, cancellationToken);
+        }
+
+        _persisted[processorId] = position;
+
+        // Only remove AFTER successful write
+        _dirty.TryRemove(processorId, out _);
     }
 
     private async Task<bool> ApplyExternalResetIfDetectedAsync(string processorId, CancellationToken cancellationToken)

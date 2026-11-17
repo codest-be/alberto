@@ -335,6 +335,63 @@ public class CachingCheckpointStoreFenceRejectionTests
 
     #endregion
 
+    #region Write-through under leases
+
+    // With leases on, other replicas learn a processor's progress only from the database, so
+    // each advancing save is written at once rather than on the 30 s timer.
+    [Fact]
+    public async Task SaveAsync_Fenced_WritesThroughOncePerAdvance()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var inner = new FencedCheckpointStore(leaseHeld: true);
+        await using var cache = new CachingCheckpointStore(inner, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
+        cache.SetFencingContext(new FencingContext("consumer-1", "replica-1"));
+
+        await cache.SaveAsync("proc-1", 10, ct);
+        Assert.Equal(10, await inner.GetAsync("proc-1", ct));
+        Assert.Equal(1, inner.FencedWrites);
+
+        await cache.SaveAsync("proc-1", 10, ct);
+        Assert.Equal(1, inner.FencedWrites);
+
+        await cache.SaveAsync("proc-1", 20, ct);
+        Assert.Equal(20, await inner.GetAsync("proc-1", ct));
+        Assert.Equal(2, inner.FencedWrites);
+    }
+
+    [Fact]
+    public async Task SaveAsync_Unfenced_WaitsForTheFlush()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var inner = new FencedCheckpointStore(leaseHeld: true);
+        await using var cache = new CachingCheckpointStore(inner, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
+
+        await cache.SaveAsync("proc-1", 10, ct);
+
+        Assert.Null(await inner.GetAsync("proc-1", ct));
+    }
+
+    [Fact]
+    public async Task SaveAsync_Fenced_LeaseLost_DoesNotWriteAndReportsTheViolation()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var inner = new FencedCheckpointStore(leaseHeld: true);
+        await using var cache = new CachingCheckpointStore(inner, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
+        cache.SetFencingContext(new FencingContext("consumer-1", "replica-1"));
+        var violated = new List<string>();
+        cache.OnFenceViolation = violated.Add;
+
+        await cache.SaveAsync("proc-1", 10, ct);
+        inner.LeaseHeld = false;
+        await cache.SaveAsync("proc-1", 20, ct);
+
+        Assert.Equal(10, await inner.GetAsync("proc-1", ct));
+        Assert.Equal(["proc-1"], violated);
+        Assert.Equal(10, await cache.GetAsync("proc-1", ct));
+    }
+
+    #endregion
+
     #region Test helpers
 
     /// <summary>
@@ -347,6 +404,8 @@ public class CachingCheckpointStoreFenceRejectionTests
 
         /// <summary>Gets or sets whether <see cref="SaveIfLeaseHeldAsync"/> accepts writes.</summary>
         public bool LeaseHeld { get; set; }
+
+        public int FencedWrites { get; private set; }
 
         public FencedCheckpointStore(bool leaseHeld) => LeaseHeld = leaseHeld;
 
@@ -383,6 +442,7 @@ public class CachingCheckpointStoreFenceRejectionTests
             bool useProcessorLeaseFencing = false,
             CancellationToken cancellationToken = default)
         {
+            FencedWrites++;
             if (!LeaseHeld)
                 return Task.FromResult(false);
 
