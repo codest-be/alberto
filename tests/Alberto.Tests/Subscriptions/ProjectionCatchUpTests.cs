@@ -1,3 +1,4 @@
+using Alberto.Checkpoints;
 using Alberto.InMemory;
 using Alberto.Projections;
 using FluentAssertions;
@@ -150,5 +151,83 @@ public sealed class ProjectionCatchUpTests
             IEnumerable<IEventToPersist> events, DcbQuery? dcbQuery = null,
             long? expectedPosition = null, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
+    }
+
+    [Fact]
+    public async Task WaitForProjection_ReadingTheStore_SeesProgressAnotherReplicaWrote()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var database = new InMemoryCheckpointStore();
+        await using var cache = new CachingCheckpointStore(database);
+
+        // This replica looked once (and cached "nothing consumed"); no loop of its own advances it.
+        (await cache.GetAsync(Processor, cancellationToken)).Should().BeNull();
+
+        var catchUp = new ProjectionCatchUp(
+            new InMemoryEventStoreBackend(), cache, defaultTimeout: null, readStore: true);
+        var waiting = catchUp.WaitForProjectionAsync(
+            Processor, position: 7, TimeSpan.FromSeconds(10), cancellationToken);
+
+        // The owning replica flushes its checkpoint to the shared store.
+        await database.SaveAsync(Processor, 7, cancellationToken);
+
+        await waiting;
+        (await cache.GetAsync(Processor, cancellationToken)).Should().BeNull(
+            because: "the wait reads the store for itself and leaves the loop's cache alone");
+    }
+
+    [Fact]
+    public async Task WaitForProjection_WithoutReadingTheStore_SeesOnlyTheCache()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var database = new InMemoryCheckpointStore();
+        await using var cache = new CachingCheckpointStore(database);
+        await cache.GetAsync(Processor, cancellationToken);
+        await database.SaveAsync(Processor, 7, cancellationToken);
+
+        var catchUp = new ProjectionCatchUp(
+            new InMemoryEventStoreBackend(), cache, defaultTimeout: null, readStore: false);
+
+        await Assert.ThrowsAsync<TimeoutException>(() => catchUp.WaitForProjectionAsync(
+            Processor, position: 7, TimeSpan.FromMilliseconds(100), cancellationToken));
+    }
+
+    [Fact]
+    public async Task WaitForProjection_ReadingTheStore_ReturnsOnTheCacheWithoutReadingTheStore()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var database = new CountingCheckpointStore();
+        await using var cache = new CachingCheckpointStore(database);
+        await cache.GetAsync(Processor, cancellationToken);
+        await cache.SaveAsync(Processor, 7, cancellationToken);
+        var readsBefore = database.Reads;
+
+        var catchUp = new ProjectionCatchUp(
+            new InMemoryEventStoreBackend(), cache, defaultTimeout: null, readStore: true);
+        await catchUp.WaitForProjectionAsync(Processor, position: 7, TimeSpan.Zero, cancellationToken);
+
+        database.Reads.Should().Be(readsBefore,
+            because: "the replica running the loop is answered by its cache, without a round trip");
+    }
+
+    private sealed class CountingCheckpointStore : ICheckpointStore
+    {
+        private readonly InMemoryCheckpointStore _inner = new();
+        public int Reads;
+
+        public Task<long?> GetAsync(string processorId, CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref Reads);
+            return _inner.GetAsync(processorId, cancellationToken);
+        }
+
+        public Task SaveAsync(string processorId, long position, CancellationToken cancellationToken = default) =>
+            _inner.SaveAsync(processorId, position, cancellationToken);
+
+        public Task ResetAsync(string processorId, CancellationToken cancellationToken = default) =>
+            _inner.ResetAsync(processorId, cancellationToken);
+
+        public Task RewindAsync(string processorId, long position, CancellationToken cancellationToken = default) =>
+            _inner.RewindAsync(processorId, position, cancellationToken);
     }
 }

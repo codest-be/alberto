@@ -180,8 +180,9 @@ public sealed class CheckpointLeaseShutdownTests
         var cancellationToken = TestContext.Current.CancellationToken;
         var inner = new GatedStore();
         await using var cache = new CachingCheckpointStore(inner, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
-        cache.SetFencingContext(new FencingContext("c", "r", true, _ => 1));
+        // Buffered first, fenced after: under fencing SaveAsync would write through itself.
         await cache.SaveAsync("p", 100, cancellationToken);
+        cache.SetFencingContext(new FencingContext("c", "r", true, _ => 1));
 
         var flush = cache.FlushAsync(cancellationToken);
         await inner.Entered.Task;
@@ -198,8 +199,9 @@ public sealed class CheckpointLeaseShutdownTests
         var cancellationToken = TestContext.Current.CancellationToken;
         var inner = new GatedStore();
         await using var cache = new CachingCheckpointStore(inner, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
-        cache.SetFencingContext(new FencingContext("c", "r", true, _ => 1));
+        // Buffered first, fenced after: under fencing SaveAsync would write through itself.
         await cache.SaveAsync("p", 100, cancellationToken);
+        cache.SetFencingContext(new FencingContext("c", "r", true, _ => 1));
 
         var flush = cache.FlushAsync(cancellationToken);
         await inner.Entered.Task;
