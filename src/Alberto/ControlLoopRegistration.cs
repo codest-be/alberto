@@ -113,7 +113,9 @@ internal static class ControlLoopRegistration
             return new ProjectionCatchUp(
                 Backend(sp, moduleKey),
                 sp.GetRequiredKeyedService<ICheckpointStore>(moduleKey),
-                defaultTimeout);
+                defaultTimeout,
+                // With leases a processor runs on one replica; the others only see it in the store.
+                readStore: options.Leases.Enabled);
         });
 
         static TimeSpan Max(TimeSpan left, TimeSpan right) => left > right ? left : right;

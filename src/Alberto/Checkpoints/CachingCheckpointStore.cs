@@ -118,6 +118,18 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
     }
 
     /// <summary>
+    /// Reads the checkpoint the underlying store holds, past the cache and without touching it.
+    /// </summary>
+    /// <remarks>
+    /// For <see cref="ProjectionCatchUp"/> on a replica that does not run the processor: no
+    /// local loop advances its cache, so the only progress it can see is what the owning replica
+    /// has flushed. Deliberately not merged into the cache — this is a read for a waiter, and
+    /// the cache's invariants (generations, fencing cleanup, reset detection) belong to the loop.
+    /// </remarks>
+    internal Task<long?> GetFromStoreAsync(string processorId, CancellationToken cancellationToken) =>
+        _inner.GetAsync(processorId, cancellationToken);
+
+    /// <summary>
     /// The further-advanced of two positions, treating "no checkpoint yet" as behind any.
     /// </summary>
     private static long? Ahead(long? left, long? right) =>

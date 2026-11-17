@@ -19,11 +19,13 @@ namespace Alberto.Projections;
 /// </para>
 /// <para>
 /// It reads the processor's checkpoint, so it can only report progress the checkpoint reflects.
-/// That is exact in the process running the control loop — the loop advances the checkpoint in
-/// memory as it commits each batch. It is <em>not</em> exact anywhere else: a replica that does
-/// not run the processor holds a cached checkpoint that no local loop advances, so a wait there
-/// will run to its timeout even though the projection is up to date. Read your writes in the
-/// process that does the writing, or use an inline projection.
+/// In the process running the control loop that is exact: the loop advances the checkpoint in
+/// memory as it commits each batch. When the module has
+/// <see cref="Configuration.ProcessorLeaseOptions.Enabled">leases</see> on, a processor runs on
+/// one replica only, so the wait also polls the checkpoint in the database (every 100 ms, only
+/// while behind) and works on every replica. The owning replica writes its checkpoint after each
+/// batch when leases are on, so a replica that does not run the processor sees it advance within
+/// one poll of the owner committing the batch.
 /// </para>
 /// </remarks>
 public sealed class ProjectionCatchUp
@@ -32,6 +34,12 @@ public sealed class ProjectionCatchUp
     private readonly ICheckpointStore _checkpoints;
     private readonly TimeSpan _defaultTimeout;
     private readonly TimeSpan _pollInterval;
+
+    // Set only when leases spread processors over replicas; null means the cache is exact.
+    private readonly Func<string, CancellationToken, Task<long?>>? _readStore;
+
+    // The store is a database round trip, so it is read less often than the in-memory cache.
+    internal static readonly TimeSpan StorePollInterval = TimeSpan.FromMilliseconds(100);
 
     /// <param name="eventStore">Backend the head position is read from.</param>
     /// <param name="checkpoints">Checkpoint store the processors' progress is read from.</param>
@@ -55,6 +63,21 @@ public sealed class ProjectionCatchUp
         _checkpoints = checkpoints;
         _defaultTimeout = defaultTimeout ?? TimeSpan.FromSeconds(5);
         _pollInterval = pollInterval ?? TimeSpan.FromMilliseconds(10);
+    }
+
+    /// <summary>
+    /// The registration's constructor: with <paramref name="readStore"/>, the wait also reads
+    /// the checkpoint behind the cache, for a replica that does not run the processor.
+    /// </summary>
+    internal ProjectionCatchUp(
+        IEventStoreBackend eventStore,
+        ICheckpointStore checkpoints,
+        TimeSpan? defaultTimeout,
+        bool readStore)
+        : this(eventStore, checkpoints, defaultTimeout)
+    {
+        if (readStore && checkpoints is CachingCheckpointStore caching)
+            _readStore = caching.GetFromStoreAsync;
     }
 
     /// <summary>
@@ -111,6 +134,7 @@ public sealed class ProjectionCatchUp
         var limit = timeout ?? _defaultTimeout;
         var startedAt = Stopwatch.GetTimestamp();
         long? reached;
+        long? lastStoreRead = null;
 
         while (true)
         {
@@ -121,6 +145,19 @@ public sealed class ProjectionCatchUp
             reached = await _checkpoints.GetAsync(processorId, cancellationToken).ConfigureAwait(false);
             if ((reached ?? 0) >= position)
                 return;
+
+            // Another replica may own the processor; then its progress is only in the store.
+            // The store is GREATEST-monotonic, so the further of the two is the true progress.
+            if (_readStore is not null
+                && (lastStoreRead is null || Stopwatch.GetElapsedTime(lastStoreRead.Value) >= StorePollInterval))
+            {
+                lastStoreRead = Stopwatch.GetTimestamp();
+                var stored = await _readStore(processorId, cancellationToken).ConfigureAwait(false);
+                if (stored > (reached ?? 0))
+                    reached = stored;
+                if ((reached ?? 0) >= position)
+                    return;
+            }
 
             // Checked after the read, so a caller who is already caught up never pays a poll —
             // including with a zero timeout, which is what asking "am I there yet?" looks like.
@@ -133,6 +170,7 @@ public sealed class ProjectionCatchUp
         throw new TimeoutException(
             $"Projection '{processorId}' did not reach position {position} within {limit} " +
             $"(last observed: {reached?.ToString() ?? "nothing consumed"}). The control loop for " +
-            "this processor may be stopped, faulted, or running in another process.");
+            "this processor may be stopped or faulted, or, with leases on, held by a replica that is not " +
+            "running it.");
     }
 }
