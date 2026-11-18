@@ -163,6 +163,8 @@ Alberto.Configuration.ProcessorLeaseOptions
 Alberto.Configuration.ProcessorLeaseOptions.EffectiveReplicaId.get -> string!
 Alberto.Configuration.ProcessorLeaseOptions.Enabled.get -> bool
 Alberto.Configuration.ProcessorLeaseOptions.Enabled.init -> void
+Alberto.Configuration.ProcessorLeaseOptions.Rebalance.get -> bool
+Alberto.Configuration.ProcessorLeaseOptions.Rebalance.init -> void
 Alberto.Configuration.ProcessorLeaseOptions.ReplicaId.get -> string?
 Alberto.Configuration.ProcessorLeaseOptions.ReplicaId.init -> void
 Alberto.Configuration.RebuildOptions
