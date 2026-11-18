@@ -131,7 +131,8 @@ public sealed class EventStoreHead : IHostedService
     private Task WaitForNextRefreshAsync(CancellationToken cancellationToken)
     {
         // A gap still unproven usually proves on the next snapshot (a rollback sends no NOTIFY), so
-        // look again soon, backing off to the interval when an open transaction keeps it unproven.
+        // look again soon. The proof waits on every write transaction on the server, not just this
+        // store's, so the backoff stays at tens of milliseconds rather than growing to the interval.
         var wait = _gapRetry > TimeSpan.Zero && _gapRetry < _refreshInterval ? _gapRetry : _refreshInterval;
         return _signal is null
             ? Task.Delay(wait, cancellationToken)
@@ -140,6 +141,7 @@ public sealed class EventStoreHead : IHostedService
 
     private TimeSpan _gapRetry;
     private static readonly TimeSpan FirstGapRetry = TimeSpan.FromMilliseconds(10);
+    private static readonly TimeSpan MaxGapRetry = TimeSpan.FromMilliseconds(50);
 
     /// <summary>
     /// Performs one poll: advances the contiguous head, clamps it to the stable-head barrier,
@@ -188,7 +190,7 @@ public sealed class EventStoreHead : IHostedService
 
         _gapRetry = !gapHeld ? TimeSpan.Zero
             : _gapRetry == TimeSpan.Zero ? FirstGapRetry
-            : _gapRetry < _refreshInterval ? _gapRetry * 2 : _refreshInterval;
+            : _gapRetry * 2 < MaxGapRetry ? _gapRetry * 2 : MaxGapRetry;
         TrackStall(holding, headAdvanced: current != start);
     }
 
