@@ -17,6 +17,15 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ---
 
+## [0.15.0] - 2026-11-18
+
+### Changed
+
+- A replica that takes a lease back resumes from its own stale cached checkpoint (#260)
+- Hand a shed lease over at once, not after expiry (#259)
+
+---
+
 ## [0.14.0] - 2026-11-18
 
 0.13.0 was tagged but never published to nuget.org; this is the first release that ships its changes.
@@ -1117,7 +1126,8 @@ Initial beta release. Core DCB event store abstractions, PostgreSQL backend, in-
 backend, command pipeline, EF Core projection support, transactional outbox, and
 OpenTelemetry instrumentation.
 
-[Unreleased]: https://github.com/codest-be/alberto/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/codest-be/alberto/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/codest-be/alberto/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/codest-be/alberto/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/codest-be/alberto/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/codest-be/alberto/compare/v0.11.0...v0.12.0
