@@ -142,9 +142,10 @@ public sealed record ProcessorLeaseOptions
     /// <remarks>
     /// Each replica keeps a presence lease, and a replica holds at most
     /// ceil(processors / live replicas). One over its share leaves the excess out of its next
-    /// renewal: the loop stops, its checkpoint is written while the lease is still held, and
-    /// another replica's scan takes the processor once the lease expires. Needs the Postgres or
-    /// in-memory lease manager.
+    /// renewal: the loop stops, its checkpoint is written while the lease is still held, and the
+    /// lease is released. A replica below its share scans every LeaseDuration / 12 for one
+    /// LeaseDuration after its share grows (it started, or a replica left), so it picks the
+    /// processor up within seconds. Needs the Postgres or in-memory lease manager.
     /// </remarks>
     public bool Rebalance { get; init; }
 

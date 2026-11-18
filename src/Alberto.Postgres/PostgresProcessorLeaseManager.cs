@@ -143,6 +143,23 @@ internal sealed class PostgresProcessorLeaseManager : IProcessorLeaseManager, IR
     }
 
     /// <inheritdoc/>
+    public async Task ReleaseLeasesAsync(
+        string consumerId, string replicaId, IReadOnlyCollection<string> processorIds,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var cmd = new NpgsqlCommand($@"
+            DELETE FROM {_schema.Table("alberto_processor_leases")}
+            WHERE consumer_id = @consumer_id
+              AND replica_id = @replica_id
+              AND processor_id = ANY(@processor_ids)", connection);
+        cmd.Parameters.AddWithValue("consumer_id", consumerId);
+        cmd.Parameters.AddWithValue("replica_id", replicaId);
+        cmd.Parameters.AddWithValue("processor_ids", processorIds.ToArray());
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <inheritdoc/>
     public async Task ReleaseAllLeasesAsync(
         string consumerId, string replicaId, CancellationToken cancellationToken = default)
     {

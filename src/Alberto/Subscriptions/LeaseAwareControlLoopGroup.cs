@@ -44,6 +44,14 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
     private CancellationTokenSource? _cts;
     private readonly SemaphoreSlim _scanLock = new(1, 1);
 
+    /// <summary>
+    /// Until when (<see cref="Environment.TickCount64"/>) a replica below its fair share scans at
+    /// the short interval. Set when the share grows, so a replica that stays below it for good
+    /// (6 processors over 4 replicas leaves one with 1 of 2) calms down after one lease duration.
+    /// </summary>
+    private long _hungryUntil;
+    private int _lastShare;
+
     public LeaseAwareControlLoopGroup(
         IReadOnlyList<ControlLoop> allLoops,
         IProcessorLeaseManager leaseManager,
@@ -167,6 +175,7 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
         var share = await FairShareAsync(cancellationToken);
+        NoteShare(share);
 
         // Try to acquire leases for all processors and start those we get
         foreach (var loop in _allLoops)
@@ -209,8 +218,8 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
         var renewalInterval = _leaseManager.LeaseDuration / 3;
         _renewalTimer = new Timer(OnRenewalTimer, null, renewalInterval, renewalInterval);
 
-        // Start scan timer (every leaseDuration / 2) to pick up released processors
-        var scanInterval = _leaseManager.LeaseDuration / 2;
+        // Start the scan timer to pick up released processors
+        var scanInterval = NextScanInterval(share);
         _scanTimer = new Timer(OnScanTimer, null, scanInterval, scanInterval);
     }
 
@@ -311,6 +320,7 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
 
             var renewedSet = new HashSet<string>(renewed, StringComparer.Ordinal);
             var stopped = new List<string>();
+            var release = new List<string>();
 
             // Stop any running loops whose leases were not renewed (stolen/expired, or shed)
             foreach (var (processorId, loop) in _runningLoops)
@@ -329,6 +339,7 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
                 try
                 {
                     await loop.StopAsync(CancellationToken.None);
+                    if (shed.Contains(processorId)) release.Add(processorId);
                 }
                 catch (Exception ex)
                 {
@@ -340,14 +351,27 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
                 stopped.Add(processorId);
             }
 
-            // A shed lease is still ours until it expires, so its last checkpoint passes the
-            // fence, but only while the fence token is still on record. Flush first.
+            // A shed lease is still ours, so its last checkpoint passes the fence, but only while
+            // the fence token is still on record. Flush first.
             if (shed.Count > 0 && _flushCheckpoints is not null)
             {
                 try { await _flushCheckpoints(CancellationToken.None); }
                 catch (Exception ex)
                 {
                     _logger?.LogWarning(ex, "Failed to flush checkpoints for shed processors");
+                    release.Clear(); // their positions are not written yet: let the leases expire instead
+                }
+            }
+
+            // Hand the stopped and flushed ones back now, so another replica's scan takes them
+            // within seconds instead of after expiry. Before the entries go: while a processor is
+            // still in _runningLoops our own scan cannot re-take it, so the rows deleted are ours.
+            if (release.Count > 0)
+            {
+                try { await _rebalancer!.ReleaseLeasesAsync(_consumerId, _replicaId, release, CancellationToken.None); }
+                catch (Exception ex)
+                {
+                    _logger?.LogWarning(ex, "Failed to release shed leases — they will expire naturally");
                 }
             }
 
@@ -384,6 +408,7 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
         try
         {
             var share = await FairShareAsync(_cts.Token);
+            NoteShare(share);
 
             foreach (var loop in _allLoops)
             {
@@ -422,9 +447,33 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
         }
         finally
         {
+            try
+            {
+                var next = NextScanInterval(_lastShare);
+                _scanTimer?.Change(next, next);
+            }
+            catch (ObjectDisposedException) { /* stopping */ }
+
             _scanLock.Release();
         }
     }
+
+    /// <summary>A grown share opens a window of fast scans to pick up what others release.</summary>
+    private void NoteShare(int share)
+    {
+        if (_rebalancer is not null && share > _lastShare)
+            _hungryUntil = Environment.TickCount64 + (long)_leaseManager.LeaseDuration.TotalMilliseconds;
+        _lastShare = share;
+    }
+
+    /// <summary>
+    /// LeaseDuration / 12 while below the share inside the window, else LeaseDuration / 2. A
+    /// replica at its share never scans faster than before.
+    /// </summary>
+    private TimeSpan NextScanInterval(int share) =>
+        _runningLoops.Count < share && Environment.TickCount64 < _hungryUntil
+            ? _leaseManager.LeaseDuration / 12
+            : _leaseManager.LeaseDuration / 2;
 
     private Activity? StartLeaseSpan(string name)
     {
