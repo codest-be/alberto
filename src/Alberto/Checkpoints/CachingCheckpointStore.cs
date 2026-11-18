@@ -185,6 +185,25 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
         }
     }
 
+    /// <summary>
+    /// Drops what this replica remembers of a processor's checkpoint, so the next read comes from
+    /// the store. Called when a lease is acquired: another replica may have advanced the
+    /// processor since this one last ran it, and the cache only ever moves forward on its own
+    /// writes, so a remembered position would replay everything in between.
+    /// </summary>
+    internal async Task ForgetAsync(string processorId, CancellationToken cancellationToken)
+    {
+        // Under the flush lock, as in ResetAsync: a flush in flight must not put the entry back.
+        await _flushLock.WaitAsync(cancellationToken);
+        try
+        {
+            _cache.TryRemove(processorId, out _);
+            _persisted.TryRemove(processorId, out _);
+            _dirty.TryRemove(processorId, out _);
+        }
+        finally { _flushLock.Release(); }
+    }
+
     public async Task ResetAsync(string processorId, CancellationToken cancellationToken = default)
     {
         // Under the flush lock: a flush that snapshotted the dirty entry before this reset

@@ -49,6 +49,22 @@ public class CachingCheckpointStoreTests
     }
 
     [Fact]
+    public async Task GetAsync_AfterForget_ReadsWhereAnotherReplicaLeftOff()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var inner = new InMemoryCheckpointStore();
+        await using var cache = new CachingCheckpointStore(inner);
+        await cache.SaveAsync("processor-1", 100, ct);
+        await cache.FlushAsync(ct);
+
+        // Another replica ran the processor on to 200; this one takes the lease back.
+        await inner.SaveAsync("processor-1", 200, ct);
+        await cache.ForgetAsync("processor-1", ct);
+
+        Assert.Equal(200, await cache.GetAsync("processor-1", ct));
+    }
+
+    [Fact]
     public async Task GetAsync_NotFound_ShouldReturnNull()
     {
         var inner = new InMemoryCheckpointStore();

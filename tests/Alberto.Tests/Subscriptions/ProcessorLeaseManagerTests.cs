@@ -36,6 +36,21 @@ public sealed class ProcessorLeaseManagerTests(SingleTenantPostgresFixture fixtu
     }
 
     [Fact]
+    public async Task ReleaseLeases_FreesTheNamedOwnLeases_AndLeavesAnotherReplicasAlone()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var leases = new PostgresProcessorLeaseManager(fixture.DataSource);
+        var consumerId = $"consumer-{Guid.NewGuid():N}";
+        await leases.TryAcquireAsync(consumerId, "p1", "a", ct);
+        await leases.TryAcquireAsync(consumerId, "p2", "b", ct);
+
+        await leases.ReleaseLeasesAsync(consumerId, "a", ["p1", "p2"], ct);
+
+        Assert.NotNull(await leases.TryAcquireAsync(consumerId, "p1", "c", ct));
+        Assert.Null(await leases.TryAcquireAsync(consumerId, "p2", "c", ct));
+    }
+
+    [Fact]
     public async Task TryAcquire_WhenHeldByAnotherReplica_ShouldReturnNull()
     {
         var leases = new PostgresProcessorLeaseManager(fixture.DataSource);

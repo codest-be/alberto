@@ -172,6 +172,24 @@ internal sealed class InMemoryProcessorLeaseManager : IProcessorLeaseManager, IR
     }
 
     /// <inheritdoc/>
+    public Task ReleaseLeasesAsync(
+        string consumerId, string replicaId, IReadOnlyCollection<string> processorIds,
+        CancellationToken cancellationToken)
+    {
+        lock (_lock)
+        {
+            foreach (var processorId in processorIds)
+            {
+                var key = (consumerId, processorId);
+                if (_leases.TryGetValue(key, out var record) && record.ReplicaId == replicaId)
+                    _leases.Remove(key);
+            }
+
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <inheritdoc/>
     public Task ReleaseAllLeasesAsync(
         string consumerId, string replicaId, CancellationToken cancellationToken = default)
     {

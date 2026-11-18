@@ -10,8 +10,8 @@ namespace Alberto.Tests.Subscriptions;
 
 /// <summary>
 /// <see cref="Configuration.ProcessorLeaseOptions.Rebalance"/>: a replica holds at most
-/// ceil(processors / live replicas), sheds the rest by leaving them out of its renewal, and a
-/// replica that joins late picks up what was shed once those leases expire.
+/// ceil(processors / live replicas), sheds the rest by stopping them, flushing their checkpoints and
+/// releasing their leases, and a replica that joins late picks them up at its next scan.
 /// </summary>
 public sealed class FairShareLeaseTests
 {
@@ -35,7 +35,7 @@ public sealed class FairShareLeaseTests
         Holders(leases).Should().Equal(Enumerable.Repeat("a", 6));
         (await leases.CountLiveReplicasAsync(Consumer, CancellationToken.None)).Should().Be(2);
 
-        // A's renewal keeps its share and leaves the rest to expire.
+        // A's renewal keeps its share and releases the rest.
         _clock.Advance(TimeSpan.FromSeconds(20));
         await a.RenewOnceAsync();
         await b.RenewOnceAsync();
@@ -72,6 +72,67 @@ public sealed class FairShareLeaseTests
         tokenAtFlush.Should().BeGreaterThan(0);
         a.GetFenceToken("p5").Should().Be(0);
         a.GetFenceToken("p0").Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task ShedLeases_AreFreeRightAfterTheShedding_NotAfterExpiry()
+    {
+        var leases = new InMemoryProcessorLeaseManager(_clock, TimeSpan.FromSeconds(30));
+        await using var a = Group(leases, "a");
+        await a.StartAsync(CancellationToken.None);
+        await using var b = Group(leases, "b");
+        await b.StartAsync(CancellationToken.None);
+
+        await a.RenewOnceAsync();
+        Holders(leases).Should().Equal("a", "a", "a", null, null, null);
+
+        await b.ScanOnceAsync();
+        Holders(leases).Should().Equal("a", "a", "a", "b", "b", "b");
+    }
+
+    [Fact]
+    public async Task AcquiringALease_ForgetsTheCachedCheckpoint_BeforeTheLoopStarts()
+    {
+        var leases = new InMemoryProcessorLeaseManager(_clock, TimeSpan.FromSeconds(30));
+        var forgotten = new List<string>();
+        await using var a = new LeaseAwareControlLoopGroup(
+            Processors.Select(BuildLoop).ToList(), leases, Consumer, "a", rebalance: true,
+            forgetCheckpoint: (p, _) => { forgotten.Add(p); return Task.CompletedTask; });
+
+        await a.StartAsync(CancellationToken.None);
+
+        forgotten.Should().Equal(Processors);
+    }
+
+    [Fact]
+    public async Task ReleasingShedLeases_LeavesALeaseAnotherReplicaTookAlone()
+    {
+        var leases = new InMemoryProcessorLeaseManager(_clock, TimeSpan.FromSeconds(30));
+        await using var a = Group(leases, "a");
+        await a.StartAsync(CancellationToken.None);
+
+        // A stalls past expiry; B takes p5 and shows up.
+        _clock.Advance(TimeSpan.FromSeconds(31));
+        await leases.TryAcquireAsync(Consumer, "p5", "b");
+        await leases.TryAcquireAsync(Consumer, "alberto:replica:b", "b");
+
+        await a.RenewOnceAsync();
+
+        leases.GetActiveLease(Consumer, "p5")?.ReplicaId.Should().Be("b");
+    }
+
+    [Fact]
+    public async Task ShedLeases_WhoseCheckpointFlushFailed_AreKeptUntilExpiry()
+    {
+        var leases = new InMemoryProcessorLeaseManager(_clock, TimeSpan.FromSeconds(30));
+        await using var a = Group(leases, "a", _ => throw new InvalidOperationException("database down"));
+        await a.StartAsync(CancellationToken.None);
+        await leases.TryAcquireAsync(Consumer, "alberto:replica:b", "b");
+
+        await a.RenewOnceAsync();
+
+        Holders(leases).Should().Equal(Enumerable.Repeat("a", 6));
+        a.GetFenceToken("p5").Should().Be(0);
     }
 
     [Fact]
@@ -158,6 +219,23 @@ public sealed class FairShareLeasePostgresTests(SingleTenantPostgresFixture fixt
         }
 
         await UntilAsync(h => h.GetValueOrDefault("a") == 6, ct);
+    }
+
+    [Fact]
+    public async Task ALateReplica_ReachesItsShareWithinSecondsOfTheShedding_NotAfterExpiry()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        // 30 s leases: expiry plus a regular scan would take 30-45 s, far past the 8 s deadline.
+        var leases = new PostgresProcessorLeaseManager(fixture.DataSource, leaseDuration: TimeSpan.FromSeconds(30));
+
+        await using var a = FairShareLeaseTests.Group(leases, _consumer, "a");
+        await a.StartAsync(ct);
+        await using var b = FairShareLeaseTests.Group(leases, _consumer, "b");
+        await b.StartAsync(ct);
+
+        await a.RenewOnceAsync();
+
+        await UntilAsync(h => h.GetValueOrDefault("a") == 3 && h.GetValueOrDefault("b") == 3, ct);
     }
 
     private async Task UntilAsync(Func<Dictionary<string, long>, bool> done, CancellationToken ct)

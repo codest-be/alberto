@@ -17,4 +17,12 @@ internal interface IRebalancingLeaseManager
     Task<IReadOnlyList<string>> RenewLeasesAsync(
         string consumerId, string replicaId, IReadOnlyCollection<string> processorIds,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Deletes the named leases while this replica still holds them, so a shed processor is free
+    /// at once instead of after expiry. A row another replica has taken since is left alone.
+    /// </summary>
+    Task ReleaseLeasesAsync(
+        string consumerId, string replicaId, IReadOnlyCollection<string> processorIds,
+        CancellationToken cancellationToken);
 }
