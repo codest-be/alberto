@@ -54,7 +54,8 @@
     <PackageVersion Include="Rebus.PostgreSql" Version="9.1.1" />
     <!-- Testing -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.12.0" />
-    <PackageVersion Include="xunit.v3" Version="4.0.3" />
+    <!-- mtp-off: xunit 4 defaults to Microsoft.Testing.Platform, which drops VSTest on the .NET 10+ SDK; coverlet.collector, the trx logger and Stryker still run on VSTest. -->
+    <PackageVersion Include="xunit.v3.mtp-off" Version="4.0.3" />
     <PackageVersion Include="xunit.v3.extensibility.core" Version="4.0.3" />
     <PackageVersion Include="xunit.v3.assert" Version="4.0.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.1" />
