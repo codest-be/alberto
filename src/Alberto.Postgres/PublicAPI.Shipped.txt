@@ -2,15 +2,21 @@
 Alberto.Postgres.AlbertoStoreMismatchException
 Alberto.Postgres.AlbertoStoreMismatchException.AlbertoStoreMismatchException(string! message) -> void
 Alberto.Postgres.MigrationOptions
+Alberto.Postgres.MigrationOptions.<Clone>$() -> Alberto.Postgres.MigrationOptions!
 Alberto.Postgres.MigrationOptions.EnsureDatabase.get -> bool
 Alberto.Postgres.MigrationOptions.EnsureDatabase.init -> void
+Alberto.Postgres.MigrationOptions.Equals(Alberto.Postgres.MigrationOptions? other) -> bool
 Alberto.Postgres.MigrationOptions.Logger.get -> Microsoft.Extensions.Logging.ILogger?
 Alberto.Postgres.MigrationOptions.Logger.init -> void
+Alberto.Postgres.MigrationOptions.MigrationOptions() -> void
 Alberto.Postgres.MigrationOptions.Schema.get -> string?
 Alberto.Postgres.MigrationOptions.Schema.init -> void
 Alberto.Postgres.MigrationOptions.SingleTenant.get -> bool
 Alberto.Postgres.MigrationOptions.SingleTenant.init -> void
 Alberto.Postgres.MigrationResult
+Alberto.Postgres.MigrationResult.<Clone>$() -> Alberto.Postgres.MigrationResult!
+Alberto.Postgres.MigrationResult.Deconstruct(out bool Successful, out System.Collections.Generic.IReadOnlyCollection<string!>! ExecutedScripts, out System.Exception? Error) -> void
+Alberto.Postgres.MigrationResult.Equals(Alberto.Postgres.MigrationResult? other) -> bool
 Alberto.Postgres.MigrationResult.Error.get -> System.Exception?
 Alberto.Postgres.MigrationResult.Error.init -> void
 Alberto.Postgres.MigrationResult.ExecutedScripts.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
@@ -19,8 +25,11 @@ Alberto.Postgres.MigrationResult.MigrationResult(bool Successful, System.Collect
 Alberto.Postgres.MigrationResult.Successful.get -> bool
 Alberto.Postgres.MigrationResult.Successful.init -> void
 Alberto.Postgres.PostgresBackendDescriptor
+Alberto.Postgres.PostgresBackendDescriptor.<Clone>$() -> Alberto.Postgres.PostgresBackendDescriptor!
 Alberto.Postgres.PostgresBackendDescriptor.ApplyConfiguration(Microsoft.Extensions.Configuration.IConfiguration! moduleSection) -> Alberto.Configuration.IAlbertoBackendDescriptor!
 Alberto.Postgres.PostgresBackendDescriptor.ApplyShardConfiguration(Microsoft.Extensions.Configuration.IConfiguration! shardSection) -> Alberto.Configuration.IAlbertoBackendDescriptor!
+Alberto.Postgres.PostgresBackendDescriptor.Deconstruct(out Alberto.Postgres.PostgresOptions! Options) -> void
+Alberto.Postgres.PostgresBackendDescriptor.Equals(Alberto.Postgres.PostgresBackendDescriptor? other) -> bool
 Alberto.Postgres.PostgresBackendDescriptor.GetConfigurationSection() -> (string? SectionName, System.Type? OverridesType)
 Alberto.Postgres.PostgresBackendDescriptor.Name.get -> string!
 Alberto.Postgres.PostgresBackendDescriptor.Options.get -> Alberto.Postgres.PostgresOptions!
@@ -43,6 +52,7 @@ Alberto.Postgres.PostgresCheckpointStore.SaveAsync(string! processorId, long pos
 Alberto.Postgres.PostgresCheckpointStore.SaveIfLeaseHeldAsync(string! processorId, long position, string! consumerId, string! replicaId, long fenceToken, bool useProcessorLeaseFencing = false, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
 Alberto.Postgres.PostgresMigrator
 Alberto.Postgres.PostgresOptions
+Alberto.Postgres.PostgresOptions.<Clone>$() -> Alberto.Postgres.PostgresOptions!
 Alberto.Postgres.PostgresOptions.AutoMigrate.get -> bool
 Alberto.Postgres.PostgresOptions.AutoMigrate.init -> void
 Alberto.Postgres.PostgresOptions.AutoPrepareMinUsages.get -> int
@@ -55,6 +65,7 @@ Alberto.Postgres.PostgresOptions.EnableStableHeadBarrier.get -> bool
 Alberto.Postgres.PostgresOptions.EnableStableHeadBarrier.init -> void
 Alberto.Postgres.PostgresOptions.EnsureDatabase.get -> bool
 Alberto.Postgres.PostgresOptions.EnsureDatabase.init -> void
+Alberto.Postgres.PostgresOptions.Equals(Alberto.Postgres.PostgresOptions? other) -> bool
 Alberto.Postgres.PostgresOptions.LeaseDuration.get -> System.TimeSpan
 Alberto.Postgres.PostgresOptions.LeaseDuration.init -> void
 Alberto.Postgres.PostgresOptions.MaxAutoPrepare.get -> int
@@ -63,13 +74,9 @@ Alberto.Postgres.PostgresOptions.MaxPoolSize.get -> int
 Alberto.Postgres.PostgresOptions.MaxPoolSize.init -> void
 Alberto.Postgres.PostgresOptions.MinPoolSize.get -> int
 Alberto.Postgres.PostgresOptions.MinPoolSize.init -> void
+Alberto.Postgres.PostgresOptions.PostgresOptions() -> void
 Alberto.Postgres.PostgresOptions.Schema.get -> string?
 Alberto.Postgres.PostgresOptions.Schema.init -> void
-Alberto.Postgres.PostgresShardBuilder
-Alberto.Postgres.PostgresShardBuilder.AddShard(string! shardId, System.Func<Alberto.Postgres.PostgresOptions!, Alberto.Postgres.PostgresOptions!>! configure) -> Alberto.Postgres.PostgresShardBuilder!
-Alberto.Postgres.PostgresShardBuilder.WithCatalog(System.Func<Alberto.Postgres.PostgresOptions!, Alberto.Postgres.PostgresOptions!>! configure) -> Alberto.Postgres.PostgresShardBuilder!
-Alberto.Postgres.PostgresShardBuilder.WithDefaultShard(string! shardId) -> Alberto.Postgres.PostgresShardBuilder!
-Alberto.Postgres.PostgresShardBuilder.WithRefreshInterval(System.TimeSpan interval) -> Alberto.Postgres.PostgresShardBuilder!
 Alberto.Postgres.PostgresStateStore<TState>
 Alberto.Postgres.PostgresStateStore<TState>.ApplyChangesAsync(System.Collections.Generic.IReadOnlyDictionary<string!, TState>! upserts, System.Collections.Generic.IReadOnlyCollection<string!>! deletes, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Alberto.Postgres.PostgresStateStore<TState>.ListRecentAsync(int limit = 20, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<TState>!>!
@@ -77,10 +84,35 @@ Alberto.Postgres.PostgresStateStore<TState>.LoadManyAsync(System.Collections.Gen
 Alberto.Postgres.PostgresStateStore<TState>.PostgresStateStore(Npgsql.NpgsqlDataSource! dataSource, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TState>! jsonTypeInfo, string? projectionType = null, string? schema = null, Alberto.Projections.ProjectionVersion rebuildVersion = default(Alberto.Projections.ProjectionVersion), string? tenantId = null) -> void
 Alberto.Postgres.PostgresStateStore<TState>.PostgresStateStore(Npgsql.NpgsqlDataSource! dataSource, string? projectionType = null, string? schema = null, Alberto.Projections.ProjectionVersion rebuildVersion = default(Alberto.Projections.ProjectionVersion), string? tenantId = null) -> void
 Alberto.Postgres.ShardingBuilderExtensions
+[ALB9001]Alberto.Postgres.PostgresShardBuilder
+[ALB9001]Alberto.Postgres.PostgresShardBuilder.AddShard(string! shardId, System.Func<Alberto.Postgres.PostgresOptions!, Alberto.Postgres.PostgresOptions!>! configure) -> Alberto.Postgres.PostgresShardBuilder!
+[ALB9001]Alberto.Postgres.PostgresShardBuilder.WithCatalog(System.Func<Alberto.Postgres.PostgresOptions!, Alberto.Postgres.PostgresOptions!>! configure) -> Alberto.Postgres.PostgresShardBuilder!
+[ALB9001]Alberto.Postgres.PostgresShardBuilder.WithDefaultShard(string! shardId) -> Alberto.Postgres.PostgresShardBuilder!
+[ALB9001]Alberto.Postgres.PostgresShardBuilder.WithRefreshInterval(System.TimeSpan interval) -> Alberto.Postgres.PostgresShardBuilder!
+[ALB9001]static Alberto.Postgres.ShardingBuilderExtensions.AcrossPostgresDatabases(this Alberto.Configuration.TenancyBuilder! tenancy, System.Action<Alberto.Postgres.PostgresShardBuilder!>! configure) -> Alberto.Configuration.TenancyBuilder!
+override Alberto.Postgres.MigrationOptions.Equals(object? obj) -> bool
+override Alberto.Postgres.MigrationOptions.GetHashCode() -> int
+override Alberto.Postgres.MigrationOptions.ToString() -> string!
+override Alberto.Postgres.MigrationResult.Equals(object? obj) -> bool
+override Alberto.Postgres.MigrationResult.GetHashCode() -> int
+override Alberto.Postgres.MigrationResult.ToString() -> string!
+override Alberto.Postgres.PostgresBackendDescriptor.Equals(object? obj) -> bool
+override Alberto.Postgres.PostgresBackendDescriptor.GetHashCode() -> int
+override Alberto.Postgres.PostgresBackendDescriptor.ToString() -> string!
+override Alberto.Postgres.PostgresOptions.Equals(object? obj) -> bool
+override Alberto.Postgres.PostgresOptions.GetHashCode() -> int
+override Alberto.Postgres.PostgresOptions.ToString() -> string!
+static Alberto.Postgres.MigrationOptions.operator !=(Alberto.Postgres.MigrationOptions? left, Alberto.Postgres.MigrationOptions? right) -> bool
+static Alberto.Postgres.MigrationOptions.operator ==(Alberto.Postgres.MigrationOptions? left, Alberto.Postgres.MigrationOptions? right) -> bool
+static Alberto.Postgres.MigrationResult.operator !=(Alberto.Postgres.MigrationResult? left, Alberto.Postgres.MigrationResult? right) -> bool
+static Alberto.Postgres.MigrationResult.operator ==(Alberto.Postgres.MigrationResult? left, Alberto.Postgres.MigrationResult? right) -> bool
+static Alberto.Postgres.PostgresBackendDescriptor.operator !=(Alberto.Postgres.PostgresBackendDescriptor? left, Alberto.Postgres.PostgresBackendDescriptor? right) -> bool
+static Alberto.Postgres.PostgresBackendDescriptor.operator ==(Alberto.Postgres.PostgresBackendDescriptor? left, Alberto.Postgres.PostgresBackendDescriptor? right) -> bool
 static Alberto.Postgres.PostgresBuilderExtensions.WithPostgres(this Alberto.AlbertoModuleBuilder! builder, System.Func<Alberto.Postgres.PostgresOptions!, Alberto.Postgres.PostgresOptions!>! configure) -> Alberto.AlbertoModuleBuilder!
 static Alberto.Postgres.PostgresCatalogMigrator.Migrate(string! connectionString, string? schema = null) -> Alberto.Postgres.MigrationResult!
 static Alberto.Postgres.PostgresMigrator.GetPendingMigrations(string! connectionString, string? schema = null, bool singleTenant = false) -> System.Collections.Generic.IReadOnlyCollection<string!>!
 static Alberto.Postgres.PostgresMigrator.Migrate(string! connectionString, Alberto.Postgres.MigrationOptions? options) -> Alberto.Postgres.MigrationResult!
 static Alberto.Postgres.PostgresMigrator.Migrate(string! connectionString, string? schema = null, bool singleTenant = false) -> Alberto.Postgres.MigrationResult!
 static Alberto.Postgres.PostgresMigrator.ValidateTenancyMode(string! connectionString, string? schema, bool singleTenant) -> void
-static Alberto.Postgres.ShardingBuilderExtensions.AcrossPostgresDatabases(this Alberto.Configuration.TenancyBuilder! tenancy, System.Action<Alberto.Postgres.PostgresShardBuilder!>! configure) -> Alberto.Configuration.TenancyBuilder!
+static Alberto.Postgres.PostgresOptions.operator !=(Alberto.Postgres.PostgresOptions? left, Alberto.Postgres.PostgresOptions? right) -> bool
+static Alberto.Postgres.PostgresOptions.operator ==(Alberto.Postgres.PostgresOptions? left, Alberto.Postgres.PostgresOptions? right) -> bool

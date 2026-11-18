@@ -13,8 +13,11 @@ Alberto.AlbertoModuleBuilder.WithTenancy(System.Action<Alberto.Configuration.Ten
 Alberto.AlbertoModuleBuilderExtensions
 Alberto.AlbertoServiceCollectionExtensions
 Alberto.Append.AppendContext
+Alberto.Append.AppendContext.<Clone>$() -> Alberto.Append.AppendContext!
+Alberto.Append.AppendContext.AppendContext() -> void
 Alberto.Append.AppendContext.DcbQuery.get -> Alberto.DcbQuery?
 Alberto.Append.AppendContext.DcbQuery.init -> void
+Alberto.Append.AppendContext.Equals(Alberto.Append.AppendContext? other) -> bool
 Alberto.Append.AppendContext.Events.get -> System.Collections.Generic.IReadOnlyList<Alberto.IEventToPersist!>!
 Alberto.Append.AppendContext.Events.init -> void
 Alberto.Append.AppendContext.ExpectedPosition.get -> long?
@@ -44,11 +47,14 @@ Alberto.Configuration.AlbertoModuleContext.ShardId.get -> string?
 Alberto.Configuration.AlbertoModuleContext.TenancyEnabled.get -> bool
 Alberto.Configuration.AlbertoModuleContextExtensions
 Alberto.Configuration.AlbertoModuleDefinition
+Alberto.Configuration.AlbertoModuleDefinition.<Clone>$() -> Alberto.Configuration.AlbertoModuleDefinition!
+Alberto.Configuration.AlbertoModuleDefinition.AlbertoModuleDefinition() -> void
 Alberto.Configuration.AlbertoModuleDefinition.Backend.get -> Alberto.Configuration.IAlbertoBackendDescriptor?
 Alberto.Configuration.AlbertoModuleDefinition.Checkpoints.get -> Alberto.Configuration.CheckpointOptions!
 Alberto.Configuration.AlbertoModuleDefinition.ConfigurationPath.get -> string!
 Alberto.Configuration.AlbertoModuleDefinition.ControlLoop.get -> Alberto.Configuration.ControlLoopOptions!
 Alberto.Configuration.AlbertoModuleDefinition.DisplayName.get -> string!
+Alberto.Configuration.AlbertoModuleDefinition.Equals(Alberto.Configuration.AlbertoModuleDefinition? other) -> bool
 Alberto.Configuration.AlbertoModuleDefinition.ModuleKey.get -> string!
 Alberto.Configuration.AlbertoModuleDefinition.Processors.get -> System.Collections.Immutable.ImmutableArray<Alberto.Configuration.ProcessorDeclaration!>
 Alberto.Configuration.AlbertoModuleDefinition.RegisteredEventTypes.get -> System.Collections.Immutable.ImmutableArray<Alberto.Configuration.RegisteredEventType>
@@ -66,9 +72,12 @@ Alberto.Configuration.AlbertoModuleValidator.Collect(Alberto.Configuration.Alber
 Alberto.Configuration.AlbertoModuleValidator.Validate(string? name, Alberto.Configuration.AlbertoModuleDefinition! options) -> Microsoft.Extensions.Options.ValidateOptionsResult!
 Alberto.Configuration.AlbertoOptionsOverlay
 Alberto.Configuration.AlbertoValidationFailure
+Alberto.Configuration.AlbertoValidationFailure.<Clone>$() -> Alberto.Configuration.AlbertoValidationFailure!
 Alberto.Configuration.AlbertoValidationFailure.AlbertoValidationFailure(string! Code, string! Problem, string! Remedy) -> void
 Alberto.Configuration.AlbertoValidationFailure.Code.get -> string!
 Alberto.Configuration.AlbertoValidationFailure.Code.init -> void
+Alberto.Configuration.AlbertoValidationFailure.Deconstruct(out string! Code, out string! Problem, out string! Remedy) -> void
+Alberto.Configuration.AlbertoValidationFailure.Equals(Alberto.Configuration.AlbertoValidationFailure? other) -> bool
 Alberto.Configuration.AlbertoValidationFailure.Format() -> string!
 Alberto.Configuration.AlbertoValidationFailure.Problem.get -> string!
 Alberto.Configuration.AlbertoValidationFailure.Problem.init -> void
@@ -76,15 +85,21 @@ Alberto.Configuration.AlbertoValidationFailure.Remedy.get -> string!
 Alberto.Configuration.AlbertoValidationFailure.Remedy.init -> void
 Alberto.Configuration.AlbertoValidationReport
 Alberto.Configuration.CheckpointOptions
+Alberto.Configuration.CheckpointOptions.<Clone>$() -> Alberto.Configuration.CheckpointOptions!
+Alberto.Configuration.CheckpointOptions.CheckpointOptions() -> void
+Alberto.Configuration.CheckpointOptions.Equals(Alberto.Configuration.CheckpointOptions? other) -> bool
 Alberto.Configuration.CheckpointOptions.OrphanPolicy.get -> Alberto.Configuration.OrphanCheckpointPolicy
 Alberto.Configuration.CheckpointOptions.OrphanPolicy.init -> void
 Alberto.Configuration.ControlLoopOptions
+Alberto.Configuration.ControlLoopOptions.<Clone>$() -> Alberto.Configuration.ControlLoopOptions!
 Alberto.Configuration.ControlLoopOptions.BatchSize.get -> int
 Alberto.Configuration.ControlLoopOptions.BatchSize.init -> void
+Alberto.Configuration.ControlLoopOptions.ControlLoopOptions() -> void
 Alberto.Configuration.ControlLoopOptions.DeadLetterRetry.get -> Alberto.Configuration.DeadLetterRetryOptions!
 Alberto.Configuration.ControlLoopOptions.DeadLetterRetry.init -> void
 Alberto.Configuration.ControlLoopOptions.DrainTimeout.get -> System.TimeSpan
 Alberto.Configuration.ControlLoopOptions.DrainTimeout.init -> void
+Alberto.Configuration.ControlLoopOptions.Equals(Alberto.Configuration.ControlLoopOptions? other) -> bool
 Alberto.Configuration.ControlLoopOptions.Halt.get -> Alberto.Configuration.HaltOptions!
 Alberto.Configuration.ControlLoopOptions.Halt.init -> void
 Alberto.Configuration.ControlLoopOptions.HeadRefreshInterval.get -> System.TimeSpan
@@ -102,16 +117,22 @@ Alberto.Configuration.ControlLoopOptions.Redelivery.init -> void
 Alberto.Configuration.ControlLoopOptions.Retry.get -> Alberto.Configuration.RetryOptions!
 Alberto.Configuration.ControlLoopOptions.Retry.init -> void
 Alberto.Configuration.DeadLetterRetryOptions
+Alberto.Configuration.DeadLetterRetryOptions.<Clone>$() -> Alberto.Configuration.DeadLetterRetryOptions!
 Alberto.Configuration.DeadLetterRetryOptions.BatchSize.get -> int
 Alberto.Configuration.DeadLetterRetryOptions.BatchSize.init -> void
 Alberto.Configuration.DeadLetterRetryOptions.ClaimLease.get -> System.TimeSpan
 Alberto.Configuration.DeadLetterRetryOptions.ClaimLease.init -> void
+Alberto.Configuration.DeadLetterRetryOptions.DeadLetterRetryOptions() -> void
+Alberto.Configuration.DeadLetterRetryOptions.Equals(Alberto.Configuration.DeadLetterRetryOptions? other) -> bool
 Alberto.Configuration.DeadLetterRetryOptions.PollingInterval.get -> System.TimeSpan
 Alberto.Configuration.DeadLetterRetryOptions.PollingInterval.init -> void
 Alberto.Configuration.HaltOptions
+Alberto.Configuration.HaltOptions.<Clone>$() -> Alberto.Configuration.HaltOptions!
 Alberto.Configuration.HaltOptions.BackoffMultiplier.get -> double
 Alberto.Configuration.HaltOptions.BackoffMultiplier.init -> void
 Alberto.Configuration.HaltOptions.CalculateDelay(int attemptNumber) -> System.TimeSpan
+Alberto.Configuration.HaltOptions.Equals(Alberto.Configuration.HaltOptions? other) -> bool
+Alberto.Configuration.HaltOptions.HaltOptions() -> void
 Alberto.Configuration.HaltOptions.InitialDelay.get -> System.TimeSpan
 Alberto.Configuration.HaltOptions.InitialDelay.init -> void
 Alberto.Configuration.HaltOptions.MaxDelay.get -> System.TimeSpan
@@ -142,6 +163,8 @@ Alberto.Configuration.OrphanCheckpointPolicy.Off = 0 -> Alberto.Configuration.Or
 Alberto.Configuration.OrphanCheckpointPolicy.Strict = 2 -> Alberto.Configuration.OrphanCheckpointPolicy
 Alberto.Configuration.OrphanCheckpointPolicy.Warn = 1 -> Alberto.Configuration.OrphanCheckpointPolicy
 Alberto.Configuration.ProcessorDeclaration
+Alberto.Configuration.ProcessorDeclaration.<Clone>$() -> Alberto.Configuration.ProcessorDeclaration!
+Alberto.Configuration.ProcessorDeclaration.Equals(Alberto.Configuration.ProcessorDeclaration? other) -> bool
 Alberto.Configuration.ProcessorDeclaration.Execution.get -> Alberto.Subscriptions.ProcessorExecutionOptions!
 Alberto.Configuration.ProcessorDeclaration.Execution.init -> void
 Alberto.Configuration.ProcessorDeclaration.HaltsOnFailure.get -> bool
@@ -150,6 +173,7 @@ Alberto.Configuration.ProcessorDeclaration.HandlerType.get -> System.Type?
 Alberto.Configuration.ProcessorDeclaration.HandlerType.init -> void
 Alberto.Configuration.ProcessorDeclaration.Kind.get -> Alberto.Configuration.ProcessorKind
 Alberto.Configuration.ProcessorDeclaration.Kind.init -> void
+Alberto.Configuration.ProcessorDeclaration.ProcessorDeclaration() -> void
 Alberto.Configuration.ProcessorDeclaration.ProcessorId.get -> string!
 Alberto.Configuration.ProcessorDeclaration.ProcessorId.init -> void
 Alberto.Configuration.ProcessorId
@@ -160,31 +184,39 @@ Alberto.Configuration.ProcessorKind
 Alberto.Configuration.ProcessorKind.Projection = 0 -> Alberto.Configuration.ProcessorKind
 Alberto.Configuration.ProcessorKind.Reactor = 1 -> Alberto.Configuration.ProcessorKind
 Alberto.Configuration.ProcessorLeaseOptions
+Alberto.Configuration.ProcessorLeaseOptions.<Clone>$() -> Alberto.Configuration.ProcessorLeaseOptions!
 Alberto.Configuration.ProcessorLeaseOptions.EffectiveReplicaId.get -> string!
 Alberto.Configuration.ProcessorLeaseOptions.Enabled.get -> bool
 Alberto.Configuration.ProcessorLeaseOptions.Enabled.init -> void
+Alberto.Configuration.ProcessorLeaseOptions.Equals(Alberto.Configuration.ProcessorLeaseOptions? other) -> bool
+Alberto.Configuration.ProcessorLeaseOptions.ProcessorLeaseOptions() -> void
 Alberto.Configuration.ProcessorLeaseOptions.Rebalance.get -> bool
 Alberto.Configuration.ProcessorLeaseOptions.Rebalance.init -> void
 Alberto.Configuration.ProcessorLeaseOptions.ReplicaId.get -> string?
 Alberto.Configuration.ProcessorLeaseOptions.ReplicaId.init -> void
 Alberto.Configuration.RebuildOptions
+Alberto.Configuration.RebuildOptions.<Clone>$() -> Alberto.Configuration.RebuildOptions!
 Alberto.Configuration.RebuildOptions.AutoPromote.get -> bool
 Alberto.Configuration.RebuildOptions.AutoPromote.init -> void
 Alberto.Configuration.RebuildOptions.Enabled.get -> bool
 Alberto.Configuration.RebuildOptions.Enabled.init -> void
+Alberto.Configuration.RebuildOptions.Equals(Alberto.Configuration.RebuildOptions? other) -> bool
 Alberto.Configuration.RebuildOptions.PollingInterval.get -> System.TimeSpan
 Alberto.Configuration.RebuildOptions.PollingInterval.init -> void
+Alberto.Configuration.RebuildOptions.RebuildOptions() -> void
 Alberto.Configuration.RebuildOptions.VersionRefreshInterval.get -> System.TimeSpan
 Alberto.Configuration.RebuildOptions.VersionRefreshInterval.init -> void
 Alberto.Configuration.RedeliverWhen
 Alberto.Configuration.RedeliverWhen.Transient = 0 -> Alberto.Configuration.RedeliverWhen
 Alberto.Configuration.RedeliverWhen.TransientOrUnknown = 1 -> Alberto.Configuration.RedeliverWhen
 Alberto.Configuration.RedeliveryOptions
+Alberto.Configuration.RedeliveryOptions.<Clone>$() -> Alberto.Configuration.RedeliveryOptions!
 Alberto.Configuration.RedeliveryOptions.BackoffMultiplier.get -> double
 Alberto.Configuration.RedeliveryOptions.BackoffMultiplier.init -> void
 Alberto.Configuration.RedeliveryOptions.CalculateDelay(int redeliveryNumber) -> System.TimeSpan
 Alberto.Configuration.RedeliveryOptions.Enabled.get -> bool
 Alberto.Configuration.RedeliveryOptions.Enabled.init -> void
+Alberto.Configuration.RedeliveryOptions.Equals(Alberto.Configuration.RedeliveryOptions? other) -> bool
 Alberto.Configuration.RedeliveryOptions.FirstDelay.get -> System.TimeSpan
 Alberto.Configuration.RedeliveryOptions.FirstDelay.init -> void
 Alberto.Configuration.RedeliveryOptions.MaxDelay.get -> System.TimeSpan
@@ -193,6 +225,7 @@ Alberto.Configuration.RedeliveryOptions.MaxRedeliveries.get -> int
 Alberto.Configuration.RedeliveryOptions.MaxRedeliveries.init -> void
 Alberto.Configuration.RedeliveryOptions.RedeliverWhen.get -> Alberto.Configuration.RedeliverWhen
 Alberto.Configuration.RedeliveryOptions.RedeliverWhen.init -> void
+Alberto.Configuration.RedeliveryOptions.RedeliveryOptions() -> void
 Alberto.Configuration.RedeliveryOverrides
 Alberto.Configuration.RedeliveryOverrides.ApplyTo(Alberto.Configuration.RedeliveryOptions! options) -> Alberto.Configuration.RedeliveryOptions!
 Alberto.Configuration.RedeliveryOverrides.BackoffMultiplier.get -> double?
@@ -209,6 +242,8 @@ Alberto.Configuration.RedeliveryOverrides.RedeliverWhen.get -> Alberto.Configura
 Alberto.Configuration.RedeliveryOverrides.RedeliverWhen.set -> void
 Alberto.Configuration.RedeliveryOverrides.RedeliveryOverrides() -> void
 Alberto.Configuration.RegisteredEventType
+Alberto.Configuration.RegisteredEventType.Deconstruct(out string! Id, out int Version, out bool UpcastingNotRequired) -> void
+Alberto.Configuration.RegisteredEventType.Equals(Alberto.Configuration.RegisteredEventType other) -> bool
 Alberto.Configuration.RegisteredEventType.Id.get -> string!
 Alberto.Configuration.RegisteredEventType.Id.init -> void
 Alberto.Configuration.RegisteredEventType.RegisteredEventType() -> void
@@ -218,17 +253,20 @@ Alberto.Configuration.RegisteredEventType.UpcastingNotRequired.init -> void
 Alberto.Configuration.RegisteredEventType.Version.get -> int
 Alberto.Configuration.RegisteredEventType.Version.init -> void
 Alberto.Configuration.RetryOptions
+Alberto.Configuration.RetryOptions.<Clone>$() -> Alberto.Configuration.RetryOptions!
 Alberto.Configuration.RetryOptions.BackoffMultiplier.get -> double
 Alberto.Configuration.RetryOptions.BackoffMultiplier.init -> void
 Alberto.Configuration.RetryOptions.CalculateDelay(int attemptNumber) -> System.TimeSpan
 Alberto.Configuration.RetryOptions.DeadLetterOnMaxRetries.get -> bool
 Alberto.Configuration.RetryOptions.DeadLetterOnMaxRetries.init -> void
+Alberto.Configuration.RetryOptions.Equals(Alberto.Configuration.RetryOptions? other) -> bool
 Alberto.Configuration.RetryOptions.MaxRetries.get -> int
 Alberto.Configuration.RetryOptions.MaxRetries.init -> void
 Alberto.Configuration.RetryOptions.MaxRetryDelay.get -> System.TimeSpan
 Alberto.Configuration.RetryOptions.MaxRetryDelay.init -> void
 Alberto.Configuration.RetryOptions.RetryDelay.get -> System.TimeSpan
 Alberto.Configuration.RetryOptions.RetryDelay.init -> void
+Alberto.Configuration.RetryOptions.RetryOptions() -> void
 Alberto.Configuration.RetryOverrides
 Alberto.Configuration.RetryOverrides.ApplyTo(Alberto.Configuration.RetryOptions! options) -> Alberto.Configuration.RetryOptions!
 Alberto.Configuration.RetryOverrides.BackoffMultiplier.get -> double?
@@ -243,34 +281,46 @@ Alberto.Configuration.RetryOverrides.RetryDelay.get -> System.TimeSpan?
 Alberto.Configuration.RetryOverrides.RetryDelay.set -> void
 Alberto.Configuration.RetryOverrides.RetryOverrides() -> void
 Alberto.Configuration.ShardDeclaration
+Alberto.Configuration.ShardDeclaration.<Clone>$() -> Alberto.Configuration.ShardDeclaration!
 Alberto.Configuration.ShardDeclaration.Backend.get -> Alberto.Configuration.IAlbertoBackendDescriptor!
 Alberto.Configuration.ShardDeclaration.Backend.init -> void
+Alberto.Configuration.ShardDeclaration.Deconstruct(out string! ShardId, out Alberto.Configuration.IAlbertoBackendDescriptor! Backend) -> void
+Alberto.Configuration.ShardDeclaration.Equals(Alberto.Configuration.ShardDeclaration? other) -> bool
 Alberto.Configuration.ShardDeclaration.ShardDeclaration(string! ShardId, Alberto.Configuration.IAlbertoBackendDescriptor! Backend) -> void
 Alberto.Configuration.ShardDeclaration.ShardId.get -> string!
 Alberto.Configuration.ShardDeclaration.ShardId.init -> void
 Alberto.Configuration.TelemetryOptions
+Alberto.Configuration.TelemetryOptions.<Clone>$() -> Alberto.Configuration.TelemetryOptions!
 Alberto.Configuration.TelemetryOptions.Enabled.get -> bool
 Alberto.Configuration.TelemetryOptions.Enabled.init -> void
+Alberto.Configuration.TelemetryOptions.Equals(Alberto.Configuration.TelemetryOptions? other) -> bool
 Alberto.Configuration.TelemetryOptions.RecordEventTagValues.get -> bool
 Alberto.Configuration.TelemetryOptions.RecordEventTagValues.init -> void
+Alberto.Configuration.TelemetryOptions.TelemetryOptions() -> void
 Alberto.Configuration.TenancyBuilder
 Alberto.Configuration.TenancyBuilder.Configure(System.Func<Alberto.Configuration.TenancyDefinition!, Alberto.Configuration.TenancyDefinition!>! configure) -> Alberto.Configuration.TenancyBuilder!
 Alberto.Configuration.TenancyBuilder.ModuleBackend.get -> Alberto.Configuration.IAlbertoBackendDescriptor?
 Alberto.Configuration.TenancyBuilder.ModuleKey.get -> string!
 Alberto.Configuration.TenancyDefinition
+Alberto.Configuration.TenancyDefinition.<Clone>$() -> Alberto.Configuration.TenancyDefinition!
 Alberto.Configuration.TenancyDefinition.Catalog.get -> Alberto.Configuration.IAlbertoBackendDescriptor?
 Alberto.Configuration.TenancyDefinition.Catalog.init -> void
 Alberto.Configuration.TenancyDefinition.CatalogRefreshInterval.get -> System.TimeSpan
 Alberto.Configuration.TenancyDefinition.CatalogRefreshInterval.init -> void
 Alberto.Configuration.TenancyDefinition.DefaultShardId.get -> string?
 Alberto.Configuration.TenancyDefinition.DefaultShardId.init -> void
+Alberto.Configuration.TenancyDefinition.Equals(Alberto.Configuration.TenancyDefinition? other) -> bool
 Alberto.Configuration.TenancyDefinition.IsSharded.get -> bool
 Alberto.Configuration.TenancyDefinition.ShardIds.get -> System.Collections.Generic.IEnumerable<string!>!
 Alberto.Configuration.TenancyDefinition.Shards.get -> System.Collections.Immutable.ImmutableArray<Alberto.Configuration.ShardDeclaration!>
 Alberto.Configuration.TenancyDefinition.Shards.init -> void
+Alberto.Configuration.TenancyDefinition.TenancyDefinition() -> void
 Alberto.Configuration.TenancyDefinition.UndeclaredConfiguredShards.get -> System.Collections.Immutable.ImmutableArray<string!>
 Alberto.Configuration.TenancyDefinition.UndeclaredConfiguredShards.init -> void
 Alberto.Configuration.UnknownConfigurationKey
+Alberto.Configuration.UnknownConfigurationKey.<Clone>$() -> Alberto.Configuration.UnknownConfigurationKey!
+Alberto.Configuration.UnknownConfigurationKey.Deconstruct(out string! FullKey, out string? Suggestion) -> void
+Alberto.Configuration.UnknownConfigurationKey.Equals(Alberto.Configuration.UnknownConfigurationKey? other) -> bool
 Alberto.Configuration.UnknownConfigurationKey.FullKey.get -> string!
 Alberto.Configuration.UnknownConfigurationKey.FullKey.init -> void
 Alberto.Configuration.UnknownConfigurationKey.Suggestion.get -> string?
@@ -307,14 +357,18 @@ Alberto.DcbQuery.WithType<TEvent>() -> Alberto.DcbQuery!
 Alberto.DcbQuery.WithTypes(params Alberto.EventType[]! types) -> Alberto.DcbQuery!
 Alberto.DcbQuery.WithTypes(params string![]! typeIds) -> Alberto.DcbQuery!
 Alberto.DeadLetters.DeadLetterClaim
+Alberto.DeadLetters.DeadLetterClaim.<Clone>$() -> Alberto.DeadLetters.DeadLetterClaim!
 Alberto.DeadLetters.DeadLetterClaim.DeadLetterClaim(Alberto.DeadLetters.DeadLetterEntry! Entry, System.Guid Token, System.DateTimeOffset ExpiresAt) -> void
+Alberto.DeadLetters.DeadLetterClaim.Deconstruct(out Alberto.DeadLetters.DeadLetterEntry! Entry, out System.Guid Token, out System.DateTimeOffset ExpiresAt) -> void
 Alberto.DeadLetters.DeadLetterClaim.Entry.get -> Alberto.DeadLetters.DeadLetterEntry!
 Alberto.DeadLetters.DeadLetterClaim.Entry.init -> void
+Alberto.DeadLetters.DeadLetterClaim.Equals(Alberto.DeadLetters.DeadLetterClaim? other) -> bool
 Alberto.DeadLetters.DeadLetterClaim.ExpiresAt.get -> System.DateTimeOffset
 Alberto.DeadLetters.DeadLetterClaim.ExpiresAt.init -> void
 Alberto.DeadLetters.DeadLetterClaim.Token.get -> System.Guid
 Alberto.DeadLetters.DeadLetterClaim.Token.init -> void
 Alberto.DeadLetters.DeadLetterEntry
+Alberto.DeadLetters.DeadLetterEntry.<Clone>$() -> Alberto.DeadLetters.DeadLetterEntry!
 Alberto.DeadLetters.DeadLetterEntry.AttemptCount.get -> int
 Alberto.DeadLetters.DeadLetterEntry.AttemptCount.init -> void
 Alberto.DeadLetters.DeadLetterEntry.ClaimExpiresAt.get -> System.DateTimeOffset?
@@ -327,6 +381,8 @@ Alberto.DeadLetters.DeadLetterEntry.ClaimedBy.get -> string?
 Alberto.DeadLetters.DeadLetterEntry.ClaimedBy.init -> void
 Alberto.DeadLetters.DeadLetterEntry.CreatedAt.get -> System.DateTime?
 Alberto.DeadLetters.DeadLetterEntry.CreatedAt.init -> void
+Alberto.DeadLetters.DeadLetterEntry.DeadLetterEntry() -> void
+Alberto.DeadLetters.DeadLetterEntry.Equals(Alberto.DeadLetters.DeadLetterEntry? other) -> bool
 Alberto.DeadLetters.DeadLetterEntry.ErrorMessage.get -> string!
 Alberto.DeadLetters.DeadLetterEntry.ErrorMessage.init -> void
 Alberto.DeadLetters.DeadLetterEntry.EventData.get -> string!
@@ -371,16 +427,22 @@ Alberto.DeadLetters.IDeadLetterStore.StoreAsync(Alberto.DeadLetters.DeadLetterEn
 Alberto.Diagnostics.ITraceContextProvider
 Alberto.Diagnostics.ITraceContextProvider.ExtractTraceContext(System.Collections.Generic.IReadOnlyDictionary<string!, string!>! metadata) -> Alberto.Diagnostics.TraceContext?
 Alberto.Diagnostics.TraceContext
+Alberto.Diagnostics.TraceContext.<Clone>$() -> Alberto.Diagnostics.TraceContext!
+Alberto.Diagnostics.TraceContext.Deconstruct(out string! TraceParent, out string? TraceState) -> void
+Alberto.Diagnostics.TraceContext.Equals(Alberto.Diagnostics.TraceContext? other) -> bool
 Alberto.Diagnostics.TraceContext.TraceContext(string! TraceParent, string? TraceState = null) -> void
 Alberto.Diagnostics.TraceContext.TraceParent.get -> string!
 Alberto.Diagnostics.TraceContext.TraceParent.init -> void
 Alberto.Diagnostics.TraceContext.TraceState.get -> string?
 Alberto.Diagnostics.TraceContext.TraceState.init -> void
 Alberto.EventEnvelope
+Alberto.EventEnvelope.<Clone>$() -> Alberto.EventEnvelope!
 Alberto.EventEnvelope.CreatedAt.get -> System.DateTimeOffset
 Alberto.EventEnvelope.CreatedAt.init -> void
+Alberto.EventEnvelope.Equals(Alberto.EventEnvelope? other) -> bool
 Alberto.EventEnvelope.EventData.get -> string!
 Alberto.EventEnvelope.EventData.init -> void
+Alberto.EventEnvelope.EventEnvelope() -> void
 Alberto.EventEnvelope.EventType.get -> Alberto.EventType
 Alberto.EventEnvelope.EventType.init -> void
 Alberto.EventEnvelope.GlobalPosition.get -> long
@@ -419,8 +481,11 @@ Alberto.EventTag.Id.get -> string!
 Alberto.EventTag.Value.get -> string!
 Alberto.EventTagExtractor
 Alberto.EventToPersist
+Alberto.EventToPersist.<Clone>$() -> Alberto.EventToPersist!
+Alberto.EventToPersist.Equals(Alberto.EventToPersist? other) -> bool
 Alberto.EventToPersist.EventData.get -> string!
 Alberto.EventToPersist.EventData.init -> void
+Alberto.EventToPersist.EventToPersist() -> void
 Alberto.EventToPersist.EventType.get -> Alberto.EventType
 Alberto.EventToPersist.EventType.init -> void
 Alberto.EventToPersist.Id.get -> System.Guid
@@ -467,6 +532,9 @@ Alberto.Evolver<TState>.Evolver() -> void
 Alberto.Evolver<TState>.HandledEventTypes.get -> System.Collections.Generic.IReadOnlySet<string!>!
 Alberto.Evolver<TState>.Reconstitute(System.Collections.Generic.IEnumerable<Alberto.IEventEnvelope!>! events, TState? initial = default(TState?)) -> TState
 Alberto.HeadWindow
+Alberto.HeadWindow.<Clone>$() -> Alberto.HeadWindow!
+Alberto.HeadWindow.Deconstruct(out System.Collections.Generic.IReadOnlyList<long>! Positions, out Alberto.TransactionHorizon? Horizon) -> void
+Alberto.HeadWindow.Equals(Alberto.HeadWindow? other) -> bool
 Alberto.HeadWindow.HeadWindow(System.Collections.Generic.IReadOnlyList<long>! Positions, Alberto.TransactionHorizon? Horizon) -> void
 Alberto.HeadWindow.Horizon.get -> Alberto.TransactionHorizon?
 Alberto.HeadWindow.Horizon.init -> void
@@ -523,6 +591,9 @@ Alberto.Leases.IProcessorLeaseManager.ReleaseAllLeasesAsync(string! consumerId, 
 Alberto.Leases.IProcessorLeaseManager.RenewLeasesAsync(string! consumerId, string! replicaId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<string!>!>!
 Alberto.Leases.IProcessorLeaseManager.TryAcquireAsync(string! consumerId, string! processorId, string! replicaId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Alberto.Leases.IProcessorLease?>!
 Alberto.Leases.ProcessorLease
+Alberto.Leases.ProcessorLease.<Clone>$() -> Alberto.Leases.ProcessorLease!
+Alberto.Leases.ProcessorLease.Deconstruct(out string! ProcessorId, out System.DateTimeOffset ExpiresAt, out long FenceToken) -> void
+Alberto.Leases.ProcessorLease.Equals(Alberto.Leases.ProcessorLease? other) -> bool
 Alberto.Leases.ProcessorLease.ExpiresAt.get -> System.DateTimeOffset
 Alberto.Leases.ProcessorLease.ExpiresAt.init -> void
 Alberto.Leases.ProcessorLease.FenceToken.get -> long
@@ -588,10 +659,13 @@ Alberto.Projections.ProjectionDeclarationBuilder<TState>.Collection(string! name
 Alberto.Projections.ProjectionDeclarationBuilder<TState>.InitialState(System.Func<TState>! factory) -> Alberto.Projections.ProjectionDeclarationBuilder<TState>!
 Alberto.Projections.ProjectionDeclarationBuilder<TState>.On<TEvent>(System.Func<TEvent, string?>! id, System.Func<TState, TEvent, Alberto.Projections.ProjectionContext!, Alberto.Projections.ProjectionResult<TState>!>! apply) -> Alberto.Projections.ProjectionDeclarationBuilder<TState>!
 Alberto.Projections.ProjectionRebuildState
+Alberto.Projections.ProjectionRebuildState.<Clone>$() -> Alberto.Projections.ProjectionRebuildState!
 Alberto.Projections.ProjectionRebuildState.ActiveVersion.get -> int
 Alberto.Projections.ProjectionRebuildState.ActiveVersion.init -> void
 Alberto.Projections.ProjectionRebuildState.CompletedAt.get -> System.DateTimeOffset?
 Alberto.Projections.ProjectionRebuildState.CompletedAt.init -> void
+Alberto.Projections.ProjectionRebuildState.Deconstruct(out string! ProcessorId, out string! ProjectionType, out int ActiveVersion, out int? RebuildingVersion, out Alberto.Projections.RebuildStatus Status, out System.DateTimeOffset? StartedAt, out long? TargetPosition, out System.DateTimeOffset? CompletedAt, out int LastAllocatedVersion, out Alberto.Projections.RebuildOperatorAction? RequestedAction) -> void
+Alberto.Projections.ProjectionRebuildState.Equals(Alberto.Projections.ProjectionRebuildState? other) -> bool
 Alberto.Projections.ProjectionRebuildState.IsRebuildInFlight.get -> bool
 Alberto.Projections.ProjectionRebuildState.LastAllocatedVersion.get -> int
 Alberto.Projections.ProjectionRebuildState.LastAllocatedVersion.init -> void
@@ -613,13 +687,21 @@ Alberto.Projections.ProjectionRebuildState.TargetPosition.init -> void
 Alberto.Projections.ProjectionRebuildState.WriteVersionFor(bool isShadowLoop) -> int
 Alberto.Projections.ProjectionResult<TState>
 Alberto.Projections.ProjectionResult<TState>.Delete
+Alberto.Projections.ProjectionResult<TState>.Delete.Delete() -> void
+Alberto.Projections.ProjectionResult<TState>.Delete.Equals(Alberto.Projections.ProjectionResult<TState>.Delete? other) -> bool
+Alberto.Projections.ProjectionResult<TState>.ProjectionResult(Alberto.Projections.ProjectionResult<TState>! original) -> void
 Alberto.Projections.ProjectionResult<TState>.Set
+Alberto.Projections.ProjectionResult<TState>.Set.Deconstruct(out TState State) -> void
+Alberto.Projections.ProjectionResult<TState>.Set.Equals(Alberto.Projections.ProjectionResult<TState>.Set? other) -> bool
 Alberto.Projections.ProjectionResult<TState>.Set.Set(TState State) -> void
 Alberto.Projections.ProjectionResult<TState>.Set.State.get -> TState
 Alberto.Projections.ProjectionResult<TState>.Set.State.init -> void
 Alberto.Projections.ProjectionResult<TState>.Unchanged
+Alberto.Projections.ProjectionResult<TState>.Unchanged.Equals(Alberto.Projections.ProjectionResult<TState>.Unchanged? other) -> bool
+Alberto.Projections.ProjectionResult<TState>.Unchanged.Unchanged() -> void
 Alberto.Projections.ProjectionResults
 Alberto.Projections.ProjectionStoreContext
+Alberto.Projections.ProjectionStoreContext.Equals(Alberto.Projections.ProjectionStoreContext other) -> bool
 Alberto.Projections.ProjectionStoreContext.ProjectionStoreContext() -> void
 Alberto.Projections.ProjectionStoreContext.RebuildVersion.get -> Alberto.Projections.ProjectionVersion
 Alberto.Projections.ProjectionStoreContext.RebuildVersion.init -> void
@@ -627,6 +709,7 @@ Alberto.Projections.ProjectionStoreContext.Services.get -> System.IServiceProvid
 Alberto.Projections.ProjectionStoreContext.Services.init -> void
 Alberto.Projections.ProjectionVersion
 Alberto.Projections.ProjectionVersion.Current.get -> int
+Alberto.Projections.ProjectionVersion.Equals(Alberto.Projections.ProjectionVersion other) -> bool
 Alberto.Projections.ProjectionVersion.ProjectionVersion() -> void
 Alberto.Projections.ProjectionVersions
 Alberto.Projections.ProjectionVersions.ActiveVersion(string! processorId) -> int
@@ -642,8 +725,11 @@ Alberto.Projections.RebuildOperatorAction.Abort = 2 -> Alberto.Projections.Rebui
 Alberto.Projections.RebuildOperatorAction.ForcePromote = 1 -> Alberto.Projections.RebuildOperatorAction
 Alberto.Projections.RebuildOperatorAction.Promote = 0 -> Alberto.Projections.RebuildOperatorAction
 Alberto.Projections.RebuildOutcome
+Alberto.Projections.RebuildOutcome.<Clone>$() -> Alberto.Projections.RebuildOutcome!
+Alberto.Projections.RebuildOutcome.Deconstruct(out Alberto.Projections.ProjectionRebuildState! State, out int DiscardedVersion) -> void
 Alberto.Projections.RebuildOutcome.DiscardedVersion.get -> int
 Alberto.Projections.RebuildOutcome.DiscardedVersion.init -> void
+Alberto.Projections.RebuildOutcome.Equals(Alberto.Projections.RebuildOutcome? other) -> bool
 Alberto.Projections.RebuildOutcome.RebuildOutcome(Alberto.Projections.ProjectionRebuildState! State, int DiscardedVersion) -> void
 Alberto.Projections.RebuildOutcome.State.get -> Alberto.Projections.ProjectionRebuildState!
 Alberto.Projections.RebuildOutcome.State.init -> void
@@ -660,12 +746,14 @@ Alberto.ReactorMode.Async = 0 -> Alberto.ReactorMode
 Alberto.ReactorMode.Sync = 1 -> Alberto.ReactorMode
 Alberto.Results.Decision
 Alberto.Results.Decision.Decision() -> void
+Alberto.Results.Decision.Equals(Alberto.Results.Decision other) -> bool
 Alberto.Results.Decision.Events.get -> System.Collections.Generic.IReadOnlyList<Alberto.IEvent!>!
 Alberto.Results.Decision.IsError.get -> bool
 Alberto.Results.Decision.IsSuccess.get -> bool
 Alberto.Results.Decision.Problems.get -> System.Collections.Generic.IReadOnlyList<Alberto.Results.Problem!>!
 Alberto.Results.Decision<T>
 Alberto.Results.Decision<T>.Decision() -> void
+Alberto.Results.Decision<T>.Equals(Alberto.Results.Decision<T> other) -> bool
 Alberto.Results.Decision<T>.Events.get -> System.Collections.Generic.IReadOnlyList<Alberto.IEvent!>!
 Alberto.Results.Decision<T>.IsError.get -> bool
 Alberto.Results.Decision<T>.IsSuccess.get -> bool
@@ -673,18 +761,23 @@ Alberto.Results.Decision<T>.Map<TNew>(System.Func<T, TNew>! transform) -> Albert
 Alberto.Results.Decision<T>.Problems.get -> System.Collections.Generic.IReadOnlyList<Alberto.Results.Problem!>!
 Alberto.Results.Decision<T>.Value.get -> T
 Alberto.Results.Problem
+Alberto.Results.Problem.<Clone>$() -> Alberto.Results.Problem!
 Alberto.Results.Problem.Code.get -> string!
 Alberto.Results.Problem.Code.init -> void
 Alberto.Results.Problem.Details.get -> System.Collections.Generic.IReadOnlyDictionary<string!, object!>!
 Alberto.Results.Problem.Details.init -> void
+Alberto.Results.Problem.Equals(Alberto.Results.Problem? other) -> bool
 Alberto.Results.Problem.Message.get -> string!
 Alberto.Results.Problem.Message.init -> void
+Alberto.Results.Problem.Problem() -> void
 Alberto.Results.Result
+Alberto.Results.Result.Equals(Alberto.Results.Result other) -> bool
 Alberto.Results.Result.IsFailure.get -> bool
 Alberto.Results.Result.IsSuccess.get -> bool
 Alberto.Results.Result.Problems.get -> System.Collections.Generic.IReadOnlyList<Alberto.Results.Problem!>!
 Alberto.Results.Result.Result() -> void
 Alberto.Results.Result<T>
+Alberto.Results.Result<T>.Equals(Alberto.Results.Result<T> other) -> bool
 Alberto.Results.Result<T>.IsFailure.get -> bool
 Alberto.Results.Result<T>.IsSuccess.get -> bool
 Alberto.Results.Result<T>.Map<TNew>(System.Func<T, TNew>! transform) -> Alberto.Results.Result<TNew>
@@ -772,37 +865,21 @@ Alberto.Subscriptions.ProcessorBatchingMode.Disabled = 0 -> Alberto.Subscription
 Alberto.Subscriptions.ProcessorBatchingMode.IfSupported = 1 -> Alberto.Subscriptions.ProcessorBatchingMode
 Alberto.Subscriptions.ProcessorBatchingMode.Required = 2 -> Alberto.Subscriptions.ProcessorBatchingMode
 Alberto.Subscriptions.ProcessorExecutionOptions
+Alberto.Subscriptions.ProcessorExecutionOptions.<Clone>$() -> Alberto.Subscriptions.ProcessorExecutionOptions!
 Alberto.Subscriptions.ProcessorExecutionOptions.BatchingMode.get -> Alberto.Subscriptions.ProcessorBatchingMode
 Alberto.Subscriptions.ProcessorExecutionOptions.BatchingMode.init -> void
+Alberto.Subscriptions.ProcessorExecutionOptions.Equals(Alberto.Subscriptions.ProcessorExecutionOptions? other) -> bool
 Alberto.Subscriptions.ProcessorExecutionOptions.Halt.get -> Alberto.Configuration.HaltOverrides?
 Alberto.Subscriptions.ProcessorExecutionOptions.Halt.init -> void
 Alberto.Subscriptions.ProcessorExecutionOptions.MaxConcurrency.get -> int
 Alberto.Subscriptions.ProcessorExecutionOptions.MaxConcurrency.init -> void
+Alberto.Subscriptions.ProcessorExecutionOptions.ProcessorExecutionOptions() -> void
 Alberto.Subscriptions.ProcessorExecutionOptions.Redelivery.get -> Alberto.Configuration.RedeliveryOverrides?
 Alberto.Subscriptions.ProcessorExecutionOptions.Redelivery.init -> void
 Alberto.Subscriptions.ProcessorExecutionOptions.Retry.get -> Alberto.Configuration.RetryOverrides?
 Alberto.Subscriptions.ProcessorExecutionOptions.Retry.init -> void
 Alberto.Subscriptions.ProcessorExecutionOptions.TraceParenting.get -> Alberto.Subscriptions.TraceParenting
 Alberto.Subscriptions.ProcessorExecutionOptions.TraceParenting.init -> void
-Alberto.Subscriptions.ProcessorHealthCheck
-Alberto.Subscriptions.ProcessorHealthCheck.CheckHealthAsync(Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext! context, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult>!
-Alberto.Subscriptions.ProcessorHealthCheck.ProcessorHealthCheck(string! moduleKey, Alberto.Subscriptions.ProcessorHealthState! state, System.TimeSpan stalenessThreshold, long degradedLagThreshold, System.TimeProvider? timeProvider = null) -> void
-Alberto.Subscriptions.ProcessorHealthState
-Alberto.Subscriptions.ProcessorHealthState.Get(string! processorId) -> Alberto.Subscriptions.ProcessorSnapshot!
-Alberto.Subscriptions.ProcessorHealthState.ProcessorHealthState() -> void
-Alberto.Subscriptions.ProcessorHealthState.ProcessorIds.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
-Alberto.Subscriptions.ProcessorSnapshot
-Alberto.Subscriptions.ProcessorSnapshot.HasReported.get -> bool
-Alberto.Subscriptions.ProcessorSnapshot.HasReported.init -> void
-Alberto.Subscriptions.ProcessorSnapshot.IsFaulted.get -> bool
-Alberto.Subscriptions.ProcessorSnapshot.IsFaulted.init -> void
-Alberto.Subscriptions.ProcessorSnapshot.Lag.get -> long
-Alberto.Subscriptions.ProcessorSnapshot.Lag.init -> void
-Alberto.Subscriptions.ProcessorSnapshot.LastHeartbeatAt.get -> System.DateTimeOffset
-Alberto.Subscriptions.ProcessorSnapshot.LastHeartbeatAt.init -> void
-Alberto.Subscriptions.ProcessorSnapshot.ProcessorId.get -> string!
-Alberto.Subscriptions.ProcessorSnapshot.ProcessorId.init -> void
-Alberto.Subscriptions.ProcessorSnapshot.ProcessorSnapshot(string! ProcessorId, bool IsFaulted, long Lag, System.DateTimeOffset LastHeartbeatAt, bool HasReported) -> void
 Alberto.Subscriptions.ReactorContext
 Alberto.Subscriptions.ReactorContext.EventId.get -> System.Guid
 Alberto.Subscriptions.ReactorContext.EventId.init -> void
@@ -830,42 +907,7 @@ Alberto.Tenancy.ITenantAccessor
 Alberto.Tenancy.ITenantAccessor.HasTenant.get -> bool
 Alberto.Tenancy.ITenantAccessor.TenantId.get -> string!
 Alberto.Tenancy.ITenantAccessor.TenantIdOrDefault.get -> string?
-Alberto.Tenancy.ITenantShardMap
-Alberto.Tenancy.ITenantShardMap.AssignAsync(string! tenantId, string! shardId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<string!>
-Alberto.Tenancy.ITenantShardMap.GetAllAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<System.Collections.Generic.IReadOnlyDictionary<string!, string!>!>
-Alberto.Tenancy.ITenantShardMap.ResolveAsync(string! tenantId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<string?>
-Alberto.Tenancy.ShardHealth
-Alberto.Tenancy.ShardHealth.All.get -> System.Collections.Generic.IReadOnlyDictionary<string!, Alberto.Tenancy.ShardState!>!
-Alberto.Tenancy.ShardHealth.Get(string! shardId) -> Alberto.Tenancy.ShardState!
-Alberto.Tenancy.ShardHealth.Report(string! shardId, System.Exception? failure) -> void
-Alberto.Tenancy.ShardHealth.ShardHealth(System.TimeProvider? timeProvider = null) -> void
-Alberto.Tenancy.ShardHealth.Unhealthy.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
-Alberto.Tenancy.ShardHealthCheck
-Alberto.Tenancy.ShardHealthCheck.CheckHealthAsync(Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext! context, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult>!
-Alberto.Tenancy.ShardHealthCheck.ShardHealthCheck(string! moduleKey, Alberto.Tenancy.ShardHealth! health, System.Collections.Generic.IReadOnlyCollection<string!>! shardIds) -> void
 Alberto.Tenancy.ShardKey
-Alberto.Tenancy.ShardRoutingEventStore
-Alberto.Tenancy.ShardRoutingEventStore.AppendAsync(System.Collections.Generic.IEnumerable<Alberto.IEventToPersist!>! events, Alberto.DcbQuery? dcbQuery = null, long? expectedPosition = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!
-Alberto.Tenancy.ShardRoutingEventStore.GetLastPositionAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<long>!
-Alberto.Tenancy.ShardRoutingEventStore.ReadAllAsync(long afterPosition, int limit, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!
-Alberto.Tenancy.ShardRoutingEventStore.ReadAsync(Alberto.DcbQuery! query, long afterPosition, int limit, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!
-Alberto.Tenancy.ShardRoutingEventStore.ShardRoutingEventStore(string! moduleKey, Alberto.Tenancy.ITenantAccessor! tenantAccessor, Alberto.Tenancy.TenantShardResolver! resolver, System.Func<string!, Alberto.IEventStore!>! shardStores) -> void
-Alberto.Tenancy.ShardRoutingEventStore.StreamAllAsync(long afterPosition = 0, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Alberto.IEventEnvelope!>!
-Alberto.Tenancy.ShardRoutingEventStore.StreamAsync(Alberto.DcbQuery! query, long afterPosition = 0, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Alberto.IEventEnvelope!>!
-Alberto.Tenancy.ShardState
-Alberto.Tenancy.ShardState.Healthy.get -> bool
-Alberto.Tenancy.ShardState.Healthy.init -> void
-Alberto.Tenancy.ShardState.LastChangedAt.get -> System.DateTimeOffset
-Alberto.Tenancy.ShardState.LastChangedAt.init -> void
-Alberto.Tenancy.ShardState.LastError.get -> string?
-Alberto.Tenancy.ShardState.LastError.init -> void
-Alberto.Tenancy.ShardState.ShardId.get -> string!
-Alberto.Tenancy.ShardState.ShardId.init -> void
-Alberto.Tenancy.ShardState.ShardState(string! ShardId, bool Healthy, string? LastError, System.DateTimeOffset LastChangedAt) -> void
-Alberto.Tenancy.ShardUnavailableException
-Alberto.Tenancy.ShardUnavailableException.ModuleKey.get -> string!
-Alberto.Tenancy.ShardUnavailableException.ShardId.get -> string!
-Alberto.Tenancy.ShardUnavailableException.ShardUnavailableException(string! moduleKey, string! shardId, string! reason, System.Exception? innerException = null) -> void
 Alberto.Tenancy.TenancyServiceCollectionExtensions
 Alberto.Tenancy.TenantAccessor
 Alberto.Tenancy.TenantAccessor.HasTenant.get -> bool
@@ -877,15 +919,10 @@ Alberto.Tenancy.TenantContext.SetTenant(string! tenantId) -> void
 Alberto.Tenancy.TenantContext.TenantContext() -> void
 Alberto.Tenancy.TenantContext.TenantId.get -> string?
 Alberto.Tenancy.TenantScope
-Alberto.Tenancy.TenantShardResolver
-Alberto.Tenancy.TenantShardResolver.RefreshAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Alberto.Tenancy.TenantShardResolver.ResolveAsync(string! tenantId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<string!>
-Alberto.Tenancy.TenantShardResolver.TenantShardResolver(string! moduleKey, Alberto.Tenancy.ITenantShardMap! map, System.Collections.Generic.IReadOnlySet<string!>! declaredShards, string? defaultShardId, Microsoft.Extensions.Logging.ILogger<Alberto.Tenancy.TenantShardResolver!>? logger = null) -> void
-Alberto.Tenancy.UnknownTenantException
-Alberto.Tenancy.UnknownTenantException.ModuleKey.get -> string!
-Alberto.Tenancy.UnknownTenantException.TenantId.get -> string!
-Alberto.Tenancy.UnknownTenantException.UnknownTenantException(string! moduleKey, string! tenantId) -> void
 Alberto.TransactionHorizon
+Alberto.TransactionHorizon.<Clone>$() -> Alberto.TransactionHorizon!
+Alberto.TransactionHorizon.Deconstruct(out long OldestRunning, out long NextToStart, out long LastPosition) -> void
+Alberto.TransactionHorizon.Equals(Alberto.TransactionHorizon? other) -> bool
 Alberto.TransactionHorizon.LastPosition.get -> long
 Alberto.TransactionHorizon.LastPosition.init -> void
 Alberto.TransactionHorizon.NextToStart.get -> long
@@ -908,6 +945,85 @@ Alberto.Upcasting.UpcasterRegistry.UpcasterRegistryBuilder
 Alberto.Upcasting.UpcasterRegistry.UpcasterRegistryBuilder.Add(Alberto.Upcasting.UpcasterDeclaration! declaration) -> Alberto.Upcasting.UpcasterRegistry.UpcasterRegistryBuilder!
 Alberto.Upcasting.UpcasterRegistry.UpcasterRegistryBuilder.Build() -> Alberto.Upcasting.UpcasterRegistry!
 Alberto.Upcasting.UpcasterRegistry.UpcasterRegistryBuilder.UpcasterRegistryBuilder() -> void
+[ALB9001]Alberto.Tenancy.ITenantShardMap
+[ALB9001]Alberto.Tenancy.ITenantShardMap.AssignAsync(string! tenantId, string! shardId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<string!>
+[ALB9001]Alberto.Tenancy.ITenantShardMap.GetAllAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<System.Collections.Generic.IReadOnlyDictionary<string!, string!>!>
+[ALB9001]Alberto.Tenancy.ITenantShardMap.ResolveAsync(string! tenantId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<string?>
+[ALB9001]Alberto.Tenancy.ShardHealth
+[ALB9001]Alberto.Tenancy.ShardHealth.All.get -> System.Collections.Generic.IReadOnlyDictionary<string!, Alberto.Tenancy.ShardState!>!
+[ALB9001]Alberto.Tenancy.ShardHealth.Get(string! shardId) -> Alberto.Tenancy.ShardState!
+[ALB9001]Alberto.Tenancy.ShardHealth.Report(string! shardId, System.Exception? failure) -> void
+[ALB9001]Alberto.Tenancy.ShardHealth.ShardHealth(System.TimeProvider? timeProvider = null) -> void
+[ALB9001]Alberto.Tenancy.ShardHealth.Unhealthy.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+[ALB9001]Alberto.Tenancy.ShardHealthCheck
+[ALB9001]Alberto.Tenancy.ShardHealthCheck.CheckHealthAsync(Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext! context, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult>!
+[ALB9001]Alberto.Tenancy.ShardHealthCheck.ShardHealthCheck(string! moduleKey, Alberto.Tenancy.ShardHealth! health, System.Collections.Generic.IReadOnlyCollection<string!>! shardIds) -> void
+[ALB9001]Alberto.Tenancy.ShardRoutingEventStore
+[ALB9001]Alberto.Tenancy.ShardRoutingEventStore.AppendAsync(System.Collections.Generic.IEnumerable<Alberto.IEventToPersist!>! events, Alberto.DcbQuery? dcbQuery = null, long? expectedPosition = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!
+[ALB9001]Alberto.Tenancy.ShardRoutingEventStore.GetLastPositionAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<long>!
+[ALB9001]Alberto.Tenancy.ShardRoutingEventStore.ReadAllAsync(long afterPosition, int limit, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!
+[ALB9001]Alberto.Tenancy.ShardRoutingEventStore.ReadAsync(Alberto.DcbQuery! query, long afterPosition, int limit, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<Alberto.IEventEnvelope!>!>!
+[ALB9001]Alberto.Tenancy.ShardRoutingEventStore.ShardRoutingEventStore(string! moduleKey, Alberto.Tenancy.ITenantAccessor! tenantAccessor, Alberto.Tenancy.TenantShardResolver! resolver, System.Func<string!, Alberto.IEventStore!>! shardStores) -> void
+[ALB9001]Alberto.Tenancy.ShardRoutingEventStore.StreamAllAsync(long afterPosition = 0, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Alberto.IEventEnvelope!>!
+[ALB9001]Alberto.Tenancy.ShardRoutingEventStore.StreamAsync(Alberto.DcbQuery! query, long afterPosition = 0, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Alberto.IEventEnvelope!>!
+[ALB9001]Alberto.Tenancy.ShardState
+[ALB9001]Alberto.Tenancy.ShardState.<Clone>$() -> Alberto.Tenancy.ShardState!
+[ALB9001]Alberto.Tenancy.ShardState.Deconstruct(out string! ShardId, out bool Healthy, out string? LastError, out System.DateTimeOffset LastChangedAt) -> void
+[ALB9001]Alberto.Tenancy.ShardState.Equals(Alberto.Tenancy.ShardState? other) -> bool
+[ALB9001]Alberto.Tenancy.ShardState.Healthy.get -> bool
+[ALB9001]Alberto.Tenancy.ShardState.Healthy.init -> void
+[ALB9001]Alberto.Tenancy.ShardState.LastChangedAt.get -> System.DateTimeOffset
+[ALB9001]Alberto.Tenancy.ShardState.LastChangedAt.init -> void
+[ALB9001]Alberto.Tenancy.ShardState.LastError.get -> string?
+[ALB9001]Alberto.Tenancy.ShardState.LastError.init -> void
+[ALB9001]Alberto.Tenancy.ShardState.ShardId.get -> string!
+[ALB9001]Alberto.Tenancy.ShardState.ShardId.init -> void
+[ALB9001]Alberto.Tenancy.ShardState.ShardState(string! ShardId, bool Healthy, string? LastError, System.DateTimeOffset LastChangedAt) -> void
+[ALB9001]Alberto.Tenancy.ShardUnavailableException
+[ALB9001]Alberto.Tenancy.ShardUnavailableException.ModuleKey.get -> string!
+[ALB9001]Alberto.Tenancy.ShardUnavailableException.ShardId.get -> string!
+[ALB9001]Alberto.Tenancy.ShardUnavailableException.ShardUnavailableException(string! moduleKey, string! shardId, string! reason, System.Exception? innerException = null) -> void
+[ALB9001]Alberto.Tenancy.TenantShardResolver
+[ALB9001]Alberto.Tenancy.TenantShardResolver.RefreshAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+[ALB9001]Alberto.Tenancy.TenantShardResolver.ResolveAsync(string! tenantId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<string!>
+[ALB9001]Alberto.Tenancy.TenantShardResolver.TenantShardResolver(string! moduleKey, Alberto.Tenancy.ITenantShardMap! map, System.Collections.Generic.IReadOnlySet<string!>! declaredShards, string? defaultShardId, Microsoft.Extensions.Logging.ILogger<Alberto.Tenancy.TenantShardResolver!>? logger = null) -> void
+[ALB9001]Alberto.Tenancy.UnknownTenantException
+[ALB9001]Alberto.Tenancy.UnknownTenantException.ModuleKey.get -> string!
+[ALB9001]Alberto.Tenancy.UnknownTenantException.TenantId.get -> string!
+[ALB9001]Alberto.Tenancy.UnknownTenantException.UnknownTenantException(string! moduleKey, string! tenantId) -> void
+[ALB9001]override Alberto.Tenancy.ShardState.Equals(object? obj) -> bool
+[ALB9001]override Alberto.Tenancy.ShardState.GetHashCode() -> int
+[ALB9001]override Alberto.Tenancy.ShardState.ToString() -> string!
+[ALB9001]static Alberto.Tenancy.ShardState.operator !=(Alberto.Tenancy.ShardState? left, Alberto.Tenancy.ShardState? right) -> bool
+[ALB9001]static Alberto.Tenancy.ShardState.operator ==(Alberto.Tenancy.ShardState? left, Alberto.Tenancy.ShardState? right) -> bool
+[ALB9002]Alberto.Subscriptions.ProcessorHealthCheck
+[ALB9002]Alberto.Subscriptions.ProcessorHealthCheck.CheckHealthAsync(Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext! context, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult>!
+[ALB9002]Alberto.Subscriptions.ProcessorHealthCheck.ProcessorHealthCheck(string! moduleKey, Alberto.Subscriptions.ProcessorHealthState! state, System.TimeSpan stalenessThreshold, long degradedLagThreshold, System.TimeProvider? timeProvider = null) -> void
+[ALB9002]Alberto.Subscriptions.ProcessorHealthState
+[ALB9002]Alberto.Subscriptions.ProcessorHealthState.Get(string! processorId) -> Alberto.Subscriptions.ProcessorSnapshot!
+[ALB9002]Alberto.Subscriptions.ProcessorHealthState.ProcessorHealthState() -> void
+[ALB9002]Alberto.Subscriptions.ProcessorHealthState.ProcessorIds.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+[ALB9002]Alberto.Subscriptions.ProcessorSnapshot
+[ALB9002]Alberto.Subscriptions.ProcessorSnapshot.<Clone>$() -> Alberto.Subscriptions.ProcessorSnapshot!
+[ALB9002]Alberto.Subscriptions.ProcessorSnapshot.Deconstruct(out string! ProcessorId, out bool IsFaulted, out long Lag, out System.DateTimeOffset LastHeartbeatAt, out bool HasReported) -> void
+[ALB9002]Alberto.Subscriptions.ProcessorSnapshot.Equals(Alberto.Subscriptions.ProcessorSnapshot? other) -> bool
+[ALB9002]Alberto.Subscriptions.ProcessorSnapshot.HasReported.get -> bool
+[ALB9002]Alberto.Subscriptions.ProcessorSnapshot.HasReported.init -> void
+[ALB9002]Alberto.Subscriptions.ProcessorSnapshot.IsFaulted.get -> bool
+[ALB9002]Alberto.Subscriptions.ProcessorSnapshot.IsFaulted.init -> void
+[ALB9002]Alberto.Subscriptions.ProcessorSnapshot.Lag.get -> long
+[ALB9002]Alberto.Subscriptions.ProcessorSnapshot.Lag.init -> void
+[ALB9002]Alberto.Subscriptions.ProcessorSnapshot.LastHeartbeatAt.get -> System.DateTimeOffset
+[ALB9002]Alberto.Subscriptions.ProcessorSnapshot.LastHeartbeatAt.init -> void
+[ALB9002]Alberto.Subscriptions.ProcessorSnapshot.ProcessorId.get -> string!
+[ALB9002]Alberto.Subscriptions.ProcessorSnapshot.ProcessorId.init -> void
+[ALB9002]Alberto.Subscriptions.ProcessorSnapshot.ProcessorSnapshot(string! ProcessorId, bool IsFaulted, long Lag, System.DateTimeOffset LastHeartbeatAt, bool HasReported) -> void
+[ALB9002]override Alberto.Subscriptions.ProcessorSnapshot.Equals(object? obj) -> bool
+[ALB9002]override Alberto.Subscriptions.ProcessorSnapshot.GetHashCode() -> int
+[ALB9002]override Alberto.Subscriptions.ProcessorSnapshot.ToString() -> string!
+[ALB9002]static Alberto.Subscriptions.ProcessorSnapshot.operator !=(Alberto.Subscriptions.ProcessorSnapshot? left, Alberto.Subscriptions.ProcessorSnapshot? right) -> bool
+[ALB9002]static Alberto.Subscriptions.ProcessorSnapshot.operator ==(Alberto.Subscriptions.ProcessorSnapshot? left, Alberto.Subscriptions.ProcessorSnapshot? right) -> bool
+abstract Alberto.Projections.ProjectionResult<TState>.<Clone>$() -> Alberto.Projections.ProjectionResult<TState>!
 const Alberto.DcbConflictException.ProblemCode = "dcb.conflict" -> string!
 const Alberto.EventTag.ReservedConceptPrefix = "_" -> string!
 const Alberto.EventTag.SchemaVersionConcept = "_version" -> string!
@@ -918,13 +1034,122 @@ const Alberto.Telemetry.AlbertoMetrics.Name = "Alberto" -> string!
 const Alberto.Tenancy.ShardKey.Separator = '#' -> char
 const Alberto.Tenancy.TenantContext.TenantIdRule = "Identifiers must start with a lowercase letter and contain only lowercase letters, digits, and underscores, with a maximum length of 63 characters." -> string!
 const Alberto.Tenancy.TenantScope.CrossTenant = "*" -> string!
+override Alberto.Append.AppendContext.Equals(object? obj) -> bool
+override Alberto.Append.AppendContext.GetHashCode() -> int
+override Alberto.Append.AppendContext.ToString() -> string!
+override Alberto.Configuration.AlbertoModuleDefinition.Equals(object? obj) -> bool
+override Alberto.Configuration.AlbertoModuleDefinition.GetHashCode() -> int
+override Alberto.Configuration.AlbertoModuleDefinition.ToString() -> string!
+override Alberto.Configuration.AlbertoValidationFailure.Equals(object? obj) -> bool
+override Alberto.Configuration.AlbertoValidationFailure.GetHashCode() -> int
+override Alberto.Configuration.AlbertoValidationFailure.ToString() -> string!
+override Alberto.Configuration.CheckpointOptions.Equals(object? obj) -> bool
+override Alberto.Configuration.CheckpointOptions.GetHashCode() -> int
+override Alberto.Configuration.CheckpointOptions.ToString() -> string!
+override Alberto.Configuration.ControlLoopOptions.Equals(object? obj) -> bool
+override Alberto.Configuration.ControlLoopOptions.GetHashCode() -> int
+override Alberto.Configuration.ControlLoopOptions.ToString() -> string!
+override Alberto.Configuration.DeadLetterRetryOptions.Equals(object? obj) -> bool
+override Alberto.Configuration.DeadLetterRetryOptions.GetHashCode() -> int
+override Alberto.Configuration.DeadLetterRetryOptions.ToString() -> string!
+override Alberto.Configuration.HaltOptions.Equals(object? obj) -> bool
+override Alberto.Configuration.HaltOptions.GetHashCode() -> int
+override Alberto.Configuration.HaltOptions.ToString() -> string!
+override Alberto.Configuration.ProcessorDeclaration.Equals(object? obj) -> bool
+override Alberto.Configuration.ProcessorDeclaration.GetHashCode() -> int
+override Alberto.Configuration.ProcessorDeclaration.ToString() -> string!
+override Alberto.Configuration.ProcessorLeaseOptions.Equals(object? obj) -> bool
+override Alberto.Configuration.ProcessorLeaseOptions.GetHashCode() -> int
+override Alberto.Configuration.ProcessorLeaseOptions.ToString() -> string!
+override Alberto.Configuration.RebuildOptions.Equals(object? obj) -> bool
+override Alberto.Configuration.RebuildOptions.GetHashCode() -> int
+override Alberto.Configuration.RebuildOptions.ToString() -> string!
+override Alberto.Configuration.RedeliveryOptions.Equals(object? obj) -> bool
+override Alberto.Configuration.RedeliveryOptions.GetHashCode() -> int
+override Alberto.Configuration.RedeliveryOptions.ToString() -> string!
+override Alberto.Configuration.RegisteredEventType.GetHashCode() -> int
+override Alberto.Configuration.RetryOptions.Equals(object? obj) -> bool
+override Alberto.Configuration.RetryOptions.GetHashCode() -> int
+override Alberto.Configuration.RetryOptions.ToString() -> string!
+override Alberto.Configuration.ShardDeclaration.Equals(object? obj) -> bool
+override Alberto.Configuration.ShardDeclaration.GetHashCode() -> int
+override Alberto.Configuration.ShardDeclaration.ToString() -> string!
+override Alberto.Configuration.TelemetryOptions.Equals(object? obj) -> bool
+override Alberto.Configuration.TelemetryOptions.GetHashCode() -> int
+override Alberto.Configuration.TelemetryOptions.ToString() -> string!
+override Alberto.Configuration.TenancyDefinition.Equals(object? obj) -> bool
+override Alberto.Configuration.TenancyDefinition.GetHashCode() -> int
+override Alberto.Configuration.TenancyDefinition.ToString() -> string!
+override Alberto.Configuration.UnknownConfigurationKey.Equals(object? obj) -> bool
+override Alberto.Configuration.UnknownConfigurationKey.GetHashCode() -> int
+override Alberto.Configuration.UnknownConfigurationKey.ToString() -> string!
 override Alberto.DcbQuery.ToString() -> string!
+override Alberto.DeadLetters.DeadLetterClaim.Equals(object? obj) -> bool
+override Alberto.DeadLetters.DeadLetterClaim.GetHashCode() -> int
+override Alberto.DeadLetters.DeadLetterClaim.ToString() -> string!
+override Alberto.DeadLetters.DeadLetterEntry.Equals(object? obj) -> bool
+override Alberto.DeadLetters.DeadLetterEntry.GetHashCode() -> int
+override Alberto.DeadLetters.DeadLetterEntry.ToString() -> string!
+override Alberto.Diagnostics.TraceContext.Equals(object? obj) -> bool
+override Alberto.Diagnostics.TraceContext.GetHashCode() -> int
+override Alberto.Diagnostics.TraceContext.ToString() -> string!
+override Alberto.EventEnvelope.Equals(object? obj) -> bool
+override Alberto.EventEnvelope.GetHashCode() -> int
+override Alberto.EventEnvelope.ToString() -> string!
 override Alberto.EventTag.Equals(object? obj) -> bool
 override Alberto.EventTag.GetHashCode() -> int
 override Alberto.EventTag.ToString() -> string!
+override Alberto.EventToPersist.Equals(object? obj) -> bool
+override Alberto.EventToPersist.GetHashCode() -> int
+override Alberto.EventToPersist.ToString() -> string!
 override Alberto.EventType.Equals(object? obj) -> bool
 override Alberto.EventType.GetHashCode() -> int
 override Alberto.EventType.ToString() -> string!
+override Alberto.HeadWindow.Equals(object? obj) -> bool
+override Alberto.HeadWindow.GetHashCode() -> int
+override Alberto.HeadWindow.ToString() -> string!
+override Alberto.Leases.ProcessorLease.Equals(object? obj) -> bool
+override Alberto.Leases.ProcessorLease.GetHashCode() -> int
+override Alberto.Leases.ProcessorLease.ToString() -> string!
+override Alberto.Projections.ProjectionRebuildState.Equals(object? obj) -> bool
+override Alberto.Projections.ProjectionRebuildState.GetHashCode() -> int
+override Alberto.Projections.ProjectionRebuildState.ToString() -> string!
+override Alberto.Projections.ProjectionResult<TState>.Delete.<Clone>$() -> Alberto.Projections.ProjectionResult<TState>.Delete!
+override Alberto.Projections.ProjectionResult<TState>.Delete.Equals(object? obj) -> bool
+override Alberto.Projections.ProjectionResult<TState>.Delete.GetHashCode() -> int
+override Alberto.Projections.ProjectionResult<TState>.Delete.ToString() -> string!
+override Alberto.Projections.ProjectionResult<TState>.Equals(object? obj) -> bool
+override Alberto.Projections.ProjectionResult<TState>.GetHashCode() -> int
+override Alberto.Projections.ProjectionResult<TState>.Set.<Clone>$() -> Alberto.Projections.ProjectionResult<TState>.Set!
+override Alberto.Projections.ProjectionResult<TState>.Set.Equals(object? obj) -> bool
+override Alberto.Projections.ProjectionResult<TState>.Set.GetHashCode() -> int
+override Alberto.Projections.ProjectionResult<TState>.Set.ToString() -> string!
+override Alberto.Projections.ProjectionResult<TState>.ToString() -> string!
+override Alberto.Projections.ProjectionResult<TState>.Unchanged.<Clone>$() -> Alberto.Projections.ProjectionResult<TState>.Unchanged!
+override Alberto.Projections.ProjectionResult<TState>.Unchanged.Equals(object? obj) -> bool
+override Alberto.Projections.ProjectionResult<TState>.Unchanged.GetHashCode() -> int
+override Alberto.Projections.ProjectionResult<TState>.Unchanged.ToString() -> string!
+override Alberto.Projections.ProjectionStoreContext.GetHashCode() -> int
+override Alberto.Projections.ProjectionVersion.GetHashCode() -> int
+override Alberto.Projections.RebuildOutcome.Equals(object? obj) -> bool
+override Alberto.Projections.RebuildOutcome.GetHashCode() -> int
+override Alberto.Projections.RebuildOutcome.ToString() -> string!
+override Alberto.Results.Decision.GetHashCode() -> int
+override Alberto.Results.Decision<T>.GetHashCode() -> int
+override Alberto.Results.Problem.Equals(object? obj) -> bool
+override Alberto.Results.Problem.GetHashCode() -> int
+override Alberto.Results.Problem.ToString() -> string!
+override Alberto.Results.Result.GetHashCode() -> int
+override Alberto.Results.Result<T>.GetHashCode() -> int
+override Alberto.Subscriptions.ProcessorExecutionOptions.Equals(object? obj) -> bool
+override Alberto.Subscriptions.ProcessorExecutionOptions.GetHashCode() -> int
+override Alberto.Subscriptions.ProcessorExecutionOptions.ToString() -> string!
+override Alberto.TransactionHorizon.Equals(object? obj) -> bool
+override Alberto.TransactionHorizon.GetHashCode() -> int
+override Alberto.TransactionHorizon.ToString() -> string!
+override sealed Alberto.Projections.ProjectionResult<TState>.Delete.Equals(Alberto.Projections.ProjectionResult<TState>? other) -> bool
+override sealed Alberto.Projections.ProjectionResult<TState>.Set.Equals(Alberto.Projections.ProjectionResult<TState>? other) -> bool
+override sealed Alberto.Projections.ProjectionResult<TState>.Unchanged.Equals(Alberto.Projections.ProjectionResult<TState>? other) -> bool
 static Alberto.AlbertoModuleBuilderExtensions.AddBatchConsumeMiddleware(this Alberto.AlbertoModuleBuilder! builder, System.Func<System.IServiceProvider!, Alberto.Subscriptions.BatchConsumeMiddleware!>! factory) -> Alberto.AlbertoModuleBuilder!
 static Alberto.AlbertoModuleBuilderExtensions.AddConsumeMiddleware(this Alberto.AlbertoModuleBuilder! builder, System.Func<System.IServiceProvider!, Alberto.Subscriptions.ConsumeMiddleware!>! factory) -> Alberto.AlbertoModuleBuilder!
 static Alberto.AlbertoModuleBuilderExtensions.AddProjection<TState>(this Alberto.AlbertoModuleBuilder! builder, Alberto.Projections.ProjectionDeclaration<TState>! declaration, System.Func<Alberto.Projections.ProjectionStoreContext, System.Func<string?, Alberto.Projections.IStateStore<TState>!>!>! stateStoreFactory, string? projectionType = null) -> Alberto.AlbertoModuleBuilder!
@@ -938,14 +1163,48 @@ static Alberto.AlbertoModuleBuilderExtensions.UseErrorClassifier<TClassifier>(th
 static Alberto.AlbertoModuleBuilderExtensions.WithControlLoop(this Alberto.AlbertoModuleBuilder! builder, System.Func<Alberto.Configuration.ControlLoopOptions!, Alberto.Configuration.ControlLoopOptions!>? configure = null) -> Alberto.AlbertoModuleBuilder!
 static Alberto.AlbertoModuleBuilderExtensions.WithRebuilds(this Alberto.AlbertoModuleBuilder! builder, bool autoPromote = true, System.TimeSpan? pollingInterval = null) -> Alberto.AlbertoModuleBuilder!
 static Alberto.AlbertoServiceCollectionExtensions.AddAlberto(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, string! moduleKey, System.Action<Alberto.AlbertoModuleBuilder!>! configure) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Alberto.Append.AppendContext.operator !=(Alberto.Append.AppendContext? left, Alberto.Append.AppendContext? right) -> bool
+static Alberto.Append.AppendContext.operator ==(Alberto.Append.AppendContext? left, Alberto.Append.AppendContext? right) -> bool
 static Alberto.Configuration.AlbertoModuleContextExtensions.AddEventStoreBackend(this Alberto.Configuration.AlbertoModuleContext! context, Microsoft.Extensions.DependencyInjection.ServiceLifetime lifetime, System.Func<System.IServiceProvider!, Alberto.IEventStoreBackend!>! factory, string? keySuffix = null, string? dbSystem = null) -> void
 static Alberto.Configuration.AlbertoModuleDefinition.ApplyConfiguration(Alberto.Configuration.AlbertoModuleDefinition! definition, Microsoft.Extensions.Configuration.IConfiguration! configuration) -> Alberto.Configuration.AlbertoModuleDefinition!
+static Alberto.Configuration.AlbertoModuleDefinition.operator !=(Alberto.Configuration.AlbertoModuleDefinition? left, Alberto.Configuration.AlbertoModuleDefinition? right) -> bool
+static Alberto.Configuration.AlbertoModuleDefinition.operator ==(Alberto.Configuration.AlbertoModuleDefinition? left, Alberto.Configuration.AlbertoModuleDefinition? right) -> bool
 static Alberto.Configuration.AlbertoOptionsOverlay.Overlay<TOptions, TOverrides>(Microsoft.Extensions.Configuration.IConfiguration! parent, string! key, TOptions! current) -> TOptions!
 static Alberto.Configuration.AlbertoOptionsOverlay.Overlay<TOptions, TOverrides>(Microsoft.Extensions.Configuration.IConfiguration! parent, string! key, TOptions! current, System.Func<Microsoft.Extensions.Configuration.IConfigurationSection!, TOverrides?>! bind) -> TOptions!
+static Alberto.Configuration.AlbertoValidationFailure.operator !=(Alberto.Configuration.AlbertoValidationFailure? left, Alberto.Configuration.AlbertoValidationFailure? right) -> bool
+static Alberto.Configuration.AlbertoValidationFailure.operator ==(Alberto.Configuration.AlbertoValidationFailure? left, Alberto.Configuration.AlbertoValidationFailure? right) -> bool
 static Alberto.Configuration.AlbertoValidationReport.Describe(string! moduleKey, System.Collections.Generic.IReadOnlyList<Alberto.Configuration.AlbertoValidationFailure!>! failures) -> string!
+static Alberto.Configuration.CheckpointOptions.operator !=(Alberto.Configuration.CheckpointOptions? left, Alberto.Configuration.CheckpointOptions? right) -> bool
+static Alberto.Configuration.CheckpointOptions.operator ==(Alberto.Configuration.CheckpointOptions? left, Alberto.Configuration.CheckpointOptions? right) -> bool
 static Alberto.Configuration.ControlLoopOptions.Default.get -> Alberto.Configuration.ControlLoopOptions!
+static Alberto.Configuration.ControlLoopOptions.operator !=(Alberto.Configuration.ControlLoopOptions? left, Alberto.Configuration.ControlLoopOptions? right) -> bool
+static Alberto.Configuration.ControlLoopOptions.operator ==(Alberto.Configuration.ControlLoopOptions? left, Alberto.Configuration.ControlLoopOptions? right) -> bool
+static Alberto.Configuration.DeadLetterRetryOptions.operator !=(Alberto.Configuration.DeadLetterRetryOptions? left, Alberto.Configuration.DeadLetterRetryOptions? right) -> bool
+static Alberto.Configuration.DeadLetterRetryOptions.operator ==(Alberto.Configuration.DeadLetterRetryOptions? left, Alberto.Configuration.DeadLetterRetryOptions? right) -> bool
+static Alberto.Configuration.HaltOptions.operator !=(Alberto.Configuration.HaltOptions? left, Alberto.Configuration.HaltOptions? right) -> bool
+static Alberto.Configuration.HaltOptions.operator ==(Alberto.Configuration.HaltOptions? left, Alberto.Configuration.HaltOptions? right) -> bool
+static Alberto.Configuration.ProcessorDeclaration.operator !=(Alberto.Configuration.ProcessorDeclaration? left, Alberto.Configuration.ProcessorDeclaration? right) -> bool
+static Alberto.Configuration.ProcessorDeclaration.operator ==(Alberto.Configuration.ProcessorDeclaration? left, Alberto.Configuration.ProcessorDeclaration? right) -> bool
 static Alberto.Configuration.ProcessorId.For(System.Type! handlerType) -> string!
 static Alberto.Configuration.ProcessorId.For<THandler>() -> string!
+static Alberto.Configuration.ProcessorLeaseOptions.operator !=(Alberto.Configuration.ProcessorLeaseOptions? left, Alberto.Configuration.ProcessorLeaseOptions? right) -> bool
+static Alberto.Configuration.ProcessorLeaseOptions.operator ==(Alberto.Configuration.ProcessorLeaseOptions? left, Alberto.Configuration.ProcessorLeaseOptions? right) -> bool
+static Alberto.Configuration.RebuildOptions.operator !=(Alberto.Configuration.RebuildOptions? left, Alberto.Configuration.RebuildOptions? right) -> bool
+static Alberto.Configuration.RebuildOptions.operator ==(Alberto.Configuration.RebuildOptions? left, Alberto.Configuration.RebuildOptions? right) -> bool
+static Alberto.Configuration.RedeliveryOptions.operator !=(Alberto.Configuration.RedeliveryOptions? left, Alberto.Configuration.RedeliveryOptions? right) -> bool
+static Alberto.Configuration.RedeliveryOptions.operator ==(Alberto.Configuration.RedeliveryOptions? left, Alberto.Configuration.RedeliveryOptions? right) -> bool
+static Alberto.Configuration.RegisteredEventType.operator !=(Alberto.Configuration.RegisteredEventType left, Alberto.Configuration.RegisteredEventType right) -> bool
+static Alberto.Configuration.RegisteredEventType.operator ==(Alberto.Configuration.RegisteredEventType left, Alberto.Configuration.RegisteredEventType right) -> bool
+static Alberto.Configuration.RetryOptions.operator !=(Alberto.Configuration.RetryOptions? left, Alberto.Configuration.RetryOptions? right) -> bool
+static Alberto.Configuration.RetryOptions.operator ==(Alberto.Configuration.RetryOptions? left, Alberto.Configuration.RetryOptions? right) -> bool
+static Alberto.Configuration.ShardDeclaration.operator !=(Alberto.Configuration.ShardDeclaration? left, Alberto.Configuration.ShardDeclaration? right) -> bool
+static Alberto.Configuration.ShardDeclaration.operator ==(Alberto.Configuration.ShardDeclaration? left, Alberto.Configuration.ShardDeclaration? right) -> bool
+static Alberto.Configuration.TelemetryOptions.operator !=(Alberto.Configuration.TelemetryOptions? left, Alberto.Configuration.TelemetryOptions? right) -> bool
+static Alberto.Configuration.TelemetryOptions.operator ==(Alberto.Configuration.TelemetryOptions? left, Alberto.Configuration.TelemetryOptions? right) -> bool
+static Alberto.Configuration.TenancyDefinition.operator !=(Alberto.Configuration.TenancyDefinition? left, Alberto.Configuration.TenancyDefinition? right) -> bool
+static Alberto.Configuration.TenancyDefinition.operator ==(Alberto.Configuration.TenancyDefinition? left, Alberto.Configuration.TenancyDefinition? right) -> bool
+static Alberto.Configuration.UnknownConfigurationKey.operator !=(Alberto.Configuration.UnknownConfigurationKey? left, Alberto.Configuration.UnknownConfigurationKey? right) -> bool
+static Alberto.Configuration.UnknownConfigurationKey.operator ==(Alberto.Configuration.UnknownConfigurationKey? left, Alberto.Configuration.UnknownConfigurationKey? right) -> bool
 static Alberto.DcbQuery.All.get -> Alberto.DcbQuery!
 static Alberto.DcbQuery.ByAllTags(params Alberto.EventTag[]! tags) -> Alberto.DcbQuery!
 static Alberto.DcbQuery.ByAllTags(params string![]! tags) -> Alberto.DcbQuery!
@@ -960,6 +1219,14 @@ static Alberto.DcbQuery.For(string! concept, int id) -> Alberto.DcbQuery!
 static Alberto.DcbQuery.For(string! concept, long id) -> Alberto.DcbQuery!
 static Alberto.DcbQuery.For(string! concept, string! id) -> Alberto.DcbQuery!
 static Alberto.DcbQuery.For<TId>(string! concept, TId id) -> Alberto.DcbQuery!
+static Alberto.DeadLetters.DeadLetterClaim.operator !=(Alberto.DeadLetters.DeadLetterClaim? left, Alberto.DeadLetters.DeadLetterClaim? right) -> bool
+static Alberto.DeadLetters.DeadLetterClaim.operator ==(Alberto.DeadLetters.DeadLetterClaim? left, Alberto.DeadLetters.DeadLetterClaim? right) -> bool
+static Alberto.DeadLetters.DeadLetterEntry.operator !=(Alberto.DeadLetters.DeadLetterEntry? left, Alberto.DeadLetters.DeadLetterEntry? right) -> bool
+static Alberto.DeadLetters.DeadLetterEntry.operator ==(Alberto.DeadLetters.DeadLetterEntry? left, Alberto.DeadLetters.DeadLetterEntry? right) -> bool
+static Alberto.Diagnostics.TraceContext.operator !=(Alberto.Diagnostics.TraceContext? left, Alberto.Diagnostics.TraceContext? right) -> bool
+static Alberto.Diagnostics.TraceContext.operator ==(Alberto.Diagnostics.TraceContext? left, Alberto.Diagnostics.TraceContext? right) -> bool
+static Alberto.EventEnvelope.operator !=(Alberto.EventEnvelope? left, Alberto.EventEnvelope? right) -> bool
+static Alberto.EventEnvelope.operator ==(Alberto.EventEnvelope? left, Alberto.EventEnvelope? right) -> bool
 static Alberto.EventSerializer.FromAssemblies(System.Text.Json.JsonSerializerOptions? options = null, params System.Reflection.Assembly![]! assemblies) -> Alberto.EventSerializer!
 static Alberto.EventSerializer.FromAssembly(System.Reflection.Assembly! assembly, System.Text.Json.JsonSerializerOptions? options = null) -> Alberto.EventSerializer!
 static Alberto.EventSerializer.FromRegistry(Alberto.IEventTypeRegistry! registry) -> Alberto.EventSerializer!
@@ -968,6 +1235,8 @@ static Alberto.EventTag.TryParse(string! tag, out Alberto.EventTag result) -> bo
 static Alberto.EventTag.implicit operator string!(Alberto.EventTag tag) -> string!
 static Alberto.EventTag.operator !=(Alberto.EventTag left, Alberto.EventTag right) -> bool
 static Alberto.EventTag.operator ==(Alberto.EventTag left, Alberto.EventTag right) -> bool
+static Alberto.EventToPersist.operator !=(Alberto.EventToPersist? left, Alberto.EventToPersist? right) -> bool
+static Alberto.EventToPersist.operator ==(Alberto.EventToPersist? left, Alberto.EventToPersist? right) -> bool
 static Alberto.EventType.FromType(System.Type! type) -> Alberto.EventType
 static Alberto.EventType.FromType<T>() -> Alberto.EventType
 static Alberto.EventType.implicit operator Alberto.EventType(string! id) -> Alberto.EventType
@@ -979,21 +1248,43 @@ static Alberto.EventTypeAttribute.GetEventTypeId(System.Type! type) -> string!
 static Alberto.EventTypeRegistry.CreateBuilder() -> Alberto.EventTypeRegistryBuilder!
 static Alberto.EventTypeRegistry.FromAssemblies(System.Text.Json.JsonSerializerOptions? options, params System.Reflection.Assembly![]! assemblies) -> Alberto.IEventTypeRegistry!
 static Alberto.EventTypeRegistry.FromAssembly(System.Reflection.Assembly! assembly, System.Text.Json.JsonSerializerOptions? options = null) -> Alberto.IEventTypeRegistry!
+static Alberto.HeadWindow.operator !=(Alberto.HeadWindow? left, Alberto.HeadWindow? right) -> bool
+static Alberto.HeadWindow.operator ==(Alberto.HeadWindow? left, Alberto.HeadWindow? right) -> bool
+static Alberto.Leases.ProcessorLease.operator !=(Alberto.Leases.ProcessorLease? left, Alberto.Leases.ProcessorLease? right) -> bool
+static Alberto.Leases.ProcessorLease.operator ==(Alberto.Leases.ProcessorLease? left, Alberto.Leases.ProcessorLease? right) -> bool
 static Alberto.Projections.DeclareProjection.For<TState>(string! processorId) -> Alberto.Projections.ProjectionDeclarationBuilder<TState>!
 static Alberto.Projections.ProjectionContext.FromEnvelope(Alberto.IEventEnvelope! envelope) -> Alberto.Projections.ProjectionContext!
+static Alberto.Projections.ProjectionRebuildState.operator !=(Alberto.Projections.ProjectionRebuildState? left, Alberto.Projections.ProjectionRebuildState? right) -> bool
+static Alberto.Projections.ProjectionRebuildState.operator ==(Alberto.Projections.ProjectionRebuildState? left, Alberto.Projections.ProjectionRebuildState? right) -> bool
+static Alberto.Projections.ProjectionResult<TState>.Delete.operator !=(Alberto.Projections.ProjectionResult<TState>.Delete? left, Alberto.Projections.ProjectionResult<TState>.Delete? right) -> bool
+static Alberto.Projections.ProjectionResult<TState>.Delete.operator ==(Alberto.Projections.ProjectionResult<TState>.Delete? left, Alberto.Projections.ProjectionResult<TState>.Delete? right) -> bool
+static Alberto.Projections.ProjectionResult<TState>.Set.operator !=(Alberto.Projections.ProjectionResult<TState>.Set? left, Alberto.Projections.ProjectionResult<TState>.Set? right) -> bool
+static Alberto.Projections.ProjectionResult<TState>.Set.operator ==(Alberto.Projections.ProjectionResult<TState>.Set? left, Alberto.Projections.ProjectionResult<TState>.Set? right) -> bool
+static Alberto.Projections.ProjectionResult<TState>.Unchanged.operator !=(Alberto.Projections.ProjectionResult<TState>.Unchanged? left, Alberto.Projections.ProjectionResult<TState>.Unchanged? right) -> bool
+static Alberto.Projections.ProjectionResult<TState>.Unchanged.operator ==(Alberto.Projections.ProjectionResult<TState>.Unchanged? left, Alberto.Projections.ProjectionResult<TState>.Unchanged? right) -> bool
 static Alberto.Projections.ProjectionResult<TState>.implicit operator Alberto.Projections.ProjectionResult<TState>!(TState state) -> Alberto.Projections.ProjectionResult<TState>!
+static Alberto.Projections.ProjectionResult<TState>.operator !=(Alberto.Projections.ProjectionResult<TState>? left, Alberto.Projections.ProjectionResult<TState>? right) -> bool
+static Alberto.Projections.ProjectionResult<TState>.operator ==(Alberto.Projections.ProjectionResult<TState>? left, Alberto.Projections.ProjectionResult<TState>? right) -> bool
 static Alberto.Projections.ProjectionResults.Delete<TState>() -> Alberto.Projections.ProjectionResult<TState>!
 static Alberto.Projections.ProjectionResults.Set<TState>(TState state) -> Alberto.Projections.ProjectionResult<TState>!
 static Alberto.Projections.ProjectionResults.Unchanged<TState>() -> Alberto.Projections.ProjectionResult<TState>!
+static Alberto.Projections.ProjectionStoreContext.operator !=(Alberto.Projections.ProjectionStoreContext left, Alberto.Projections.ProjectionStoreContext right) -> bool
+static Alberto.Projections.ProjectionStoreContext.operator ==(Alberto.Projections.ProjectionStoreContext left, Alberto.Projections.ProjectionStoreContext right) -> bool
 static Alberto.Projections.ProjectionVersion.From(System.Func<int>! selector) -> Alberto.Projections.ProjectionVersion
 static Alberto.Projections.ProjectionVersion.NeverRebuilt.get -> Alberto.Projections.ProjectionVersion
+static Alberto.Projections.ProjectionVersion.operator !=(Alberto.Projections.ProjectionVersion left, Alberto.Projections.ProjectionVersion right) -> bool
+static Alberto.Projections.ProjectionVersion.operator ==(Alberto.Projections.ProjectionVersion left, Alberto.Projections.ProjectionVersion right) -> bool
 static Alberto.Projections.ProjectionVersions.LiveVersion(System.IServiceProvider! services, object? moduleKey, string! processorId) -> Alberto.Projections.ProjectionVersion
+static Alberto.Projections.RebuildOutcome.operator !=(Alberto.Projections.RebuildOutcome? left, Alberto.Projections.RebuildOutcome? right) -> bool
+static Alberto.Projections.RebuildOutcome.operator ==(Alberto.Projections.RebuildOutcome? left, Alberto.Projections.RebuildOutcome? right) -> bool
 static Alberto.Results.Decision.Fail(Alberto.Results.Problem! problem) -> Alberto.Results.Decision
 static Alberto.Results.Decision.Fail(System.Collections.Generic.IEnumerable<Alberto.Results.Problem!>! problems) -> Alberto.Results.Decision
 static Alberto.Results.Decision.Fail(string! code, string! message) -> Alberto.Results.Decision
 static Alberto.Results.Decision.Succeed(System.Collections.Generic.IEnumerable<Alberto.IEvent!>! events) -> Alberto.Results.Decision
 static Alberto.Results.Decision.Succeed(params Alberto.IEvent![]! events) -> Alberto.Results.Decision
 static Alberto.Results.Decision.implicit operator Alberto.Results.Decision(Alberto.Results.Problem! problem) -> Alberto.Results.Decision
+static Alberto.Results.Decision.operator !=(Alberto.Results.Decision left, Alberto.Results.Decision right) -> bool
+static Alberto.Results.Decision.operator ==(Alberto.Results.Decision left, Alberto.Results.Decision right) -> bool
 static Alberto.Results.Decision<T>.Fail(Alberto.Results.Problem! problem) -> Alberto.Results.Decision<T>
 static Alberto.Results.Decision<T>.Fail(System.Collections.Generic.IEnumerable<Alberto.Results.Problem!>! problems) -> Alberto.Results.Decision<T>
 static Alberto.Results.Decision<T>.Fail(string! code, string! message) -> Alberto.Results.Decision<T>
@@ -1001,19 +1292,29 @@ static Alberto.Results.Decision<T>.Succeed(T value, System.Collections.Generic.I
 static Alberto.Results.Decision<T>.Succeed(T value, params Alberto.IEvent![]! events) -> Alberto.Results.Decision<T>
 static Alberto.Results.Decision<T>.implicit operator Alberto.Results.Decision(Alberto.Results.Decision<T> decision) -> Alberto.Results.Decision
 static Alberto.Results.Decision<T>.implicit operator Alberto.Results.Decision<T>(Alberto.Results.Problem! problem) -> Alberto.Results.Decision<T>
+static Alberto.Results.Decision<T>.operator !=(Alberto.Results.Decision<T> left, Alberto.Results.Decision<T> right) -> bool
+static Alberto.Results.Decision<T>.operator ==(Alberto.Results.Decision<T> left, Alberto.Results.Decision<T> right) -> bool
 static Alberto.Results.Problem.Create(string! code, string! message, System.Collections.Generic.IReadOnlyDictionary<string!, object!>? details = null) -> Alberto.Results.Problem!
+static Alberto.Results.Problem.operator !=(Alberto.Results.Problem? left, Alberto.Results.Problem? right) -> bool
+static Alberto.Results.Problem.operator ==(Alberto.Results.Problem? left, Alberto.Results.Problem? right) -> bool
 static Alberto.Results.Result.Fail(Alberto.Results.Problem! problem) -> Alberto.Results.Result
 static Alberto.Results.Result.Fail(System.Collections.Generic.IEnumerable<Alberto.Results.Problem!>! problems) -> Alberto.Results.Result
 static Alberto.Results.Result.Success() -> Alberto.Results.Result
 static Alberto.Results.Result.implicit operator Alberto.Results.Result(Alberto.Results.Problem! problem) -> Alberto.Results.Result
+static Alberto.Results.Result.operator !=(Alberto.Results.Result left, Alberto.Results.Result right) -> bool
+static Alberto.Results.Result.operator ==(Alberto.Results.Result left, Alberto.Results.Result right) -> bool
 static Alberto.Results.Result<T>.Fail(Alberto.Results.Problem! problem) -> Alberto.Results.Result<T>
 static Alberto.Results.Result<T>.Fail(System.Collections.Generic.IEnumerable<Alberto.Results.Problem!>! problems) -> Alberto.Results.Result<T>
 static Alberto.Results.Result<T>.Success(T value) -> Alberto.Results.Result<T>
 static Alberto.Results.Result<T>.implicit operator Alberto.Results.Result<T>(Alberto.Results.Problem! problem) -> Alberto.Results.Result<T>
 static Alberto.Results.Result<T>.implicit operator Alberto.Results.Result<T>(T value) -> Alberto.Results.Result<T>
+static Alberto.Results.Result<T>.operator !=(Alberto.Results.Result<T> left, Alberto.Results.Result<T> right) -> bool
+static Alberto.Results.Result<T>.operator ==(Alberto.Results.Result<T> left, Alberto.Results.Result<T> right) -> bool
 static Alberto.Subscriptions.BatchConsumeMiddlewares.RetryAndDeadLetter(Alberto.Configuration.RetryOptions! retry, Alberto.Subscriptions.IErrorClassifier! classifier, Alberto.DeadLetters.IDeadLetterStore? deadLetterStore, System.TimeProvider? timeProvider = null, Microsoft.Extensions.Logging.ILogger? logger = null) -> Alberto.Subscriptions.BatchConsumeMiddleware!
 static Alberto.Subscriptions.ConsumeMiddlewares.RetryAndDeadLetter(Alberto.Configuration.RetryOptions! retry, Alberto.Subscriptions.IErrorClassifier! classifier, Alberto.DeadLetters.IDeadLetterStore? deadLetterStore, System.TimeProvider? timeProvider = null, Microsoft.Extensions.Logging.ILogger? logger = null) -> Alberto.Subscriptions.ConsumeMiddleware!
 static Alberto.Subscriptions.ProcessorExecutionOptions.Default.get -> Alberto.Subscriptions.ProcessorExecutionOptions!
+static Alberto.Subscriptions.ProcessorExecutionOptions.operator !=(Alberto.Subscriptions.ProcessorExecutionOptions? left, Alberto.Subscriptions.ProcessorExecutionOptions? right) -> bool
+static Alberto.Subscriptions.ProcessorExecutionOptions.operator ==(Alberto.Subscriptions.ProcessorExecutionOptions? left, Alberto.Subscriptions.ProcessorExecutionOptions? right) -> bool
 static Alberto.Subscriptions.ReactorContext.FromEnvelope(Alberto.IEventEnvelope! envelope) -> Alberto.Subscriptions.ReactorContext!
 static Alberto.Telemetry.AlbertoMetrics.RecordHeadStalled(string! moduleKey, double stalledSeconds) -> void
 static Alberto.Telemetry.AlbertoMetrics.RecordProcessorLag(string! processorId, string! module, long lag) -> void
@@ -1027,6 +1328,8 @@ static Alberto.Tenancy.ShardKey.TryParse(string? key, out string? moduleKey, out
 static Alberto.Tenancy.TenancyServiceCollectionExtensions.AddTenancy(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static Alberto.Tenancy.TenantContext.IsValidTenantId(string? tenantId) -> bool
 static Alberto.Tenancy.TenantScope.CrossTenantFor(string? consumerTenantId) -> string?
+static Alberto.TransactionHorizon.operator !=(Alberto.TransactionHorizon? left, Alberto.TransactionHorizon? right) -> bool
+static Alberto.TransactionHorizon.operator ==(Alberto.TransactionHorizon? left, Alberto.TransactionHorizon? right) -> bool
 static Alberto.Upcasting.DeclareUpcaster.For<TEvent>(string! eventTypeId) -> Alberto.Upcasting.UpcasterDeclarationBuilder<TEvent>!
 static Alberto.Upcasting.UpcasterRegistry.Create() -> Alberto.Upcasting.UpcasterRegistry.UpcasterRegistryBuilder!
 static readonly Alberto.Projections.ProjectionVersions.NeverRebuilt -> Alberto.Projections.ProjectionVersion
@@ -1048,3 +1351,23 @@ static readonly Alberto.Telemetry.AlbertoMetrics.ProcessorLag -> System.Diagnost
 static readonly Alberto.Telemetry.AlbertoMetrics.Retries -> System.Diagnostics.Metrics.Counter<long>!
 static readonly Alberto.Telemetry.AlbertoMetrics.Source -> System.Diagnostics.ActivitySource!
 static readonly Alberto.Telemetry.AlbertoMetrics.Version -> string!
+virtual Alberto.EventTagExtractor.Invoke(Alberto.IEvent! event) -> System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<string!, object?>>!
+virtual Alberto.Projections.ProjectionResult<TState>.EqualityContract.get -> System.Type!
+virtual Alberto.Projections.ProjectionResult<TState>.Equals(Alberto.Projections.ProjectionResult<TState>? other) -> bool
+virtual Alberto.Projections.ProjectionResult<TState>.PrintMembers(System.Text.StringBuilder! builder) -> bool
+virtual Alberto.Subscriptions.BatchConsumeMiddleware.Invoke(Alberto.Subscriptions.BatchConsumeContext! context, System.Func<System.Threading.Tasks.Task!>! next) -> System.Threading.Tasks.Task!
+virtual Alberto.Subscriptions.ConsumeMiddleware.Invoke(Alberto.Subscriptions.ConsumeEventContext! context, System.Func<System.Threading.Tasks.Task!>! next) -> System.Threading.Tasks.Task!
+~override Alberto.Configuration.RegisteredEventType.Equals(object obj) -> bool
+~override Alberto.Configuration.RegisteredEventType.ToString() -> string
+~override Alberto.Projections.ProjectionStoreContext.Equals(object obj) -> bool
+~override Alberto.Projections.ProjectionStoreContext.ToString() -> string
+~override Alberto.Projections.ProjectionVersion.Equals(object obj) -> bool
+~override Alberto.Projections.ProjectionVersion.ToString() -> string
+~override Alberto.Results.Decision.Equals(object obj) -> bool
+~override Alberto.Results.Decision.ToString() -> string
+~override Alberto.Results.Decision<T>.Equals(object obj) -> bool
+~override Alberto.Results.Decision<T>.ToString() -> string
+~override Alberto.Results.Result.Equals(object obj) -> bool
+~override Alberto.Results.Result.ToString() -> string
+~override Alberto.Results.Result<T>.Equals(object obj) -> bool
+~override Alberto.Results.Result<T>.ToString() -> string
