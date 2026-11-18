@@ -20,6 +20,7 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
     private readonly string _replicaId;
     private readonly ILogger? _logger;
     private readonly Func<CancellationToken, Task>? _flushCheckpoints;
+    private readonly Func<string, CancellationToken, Task>? _forgetCheckpoint;
 
     /// <summary>Set when <see cref="Configuration.ProcessorLeaseOptions.Rebalance"/> is on.</summary>
     private readonly IRebalancingLeaseManager? _rebalancer;
@@ -50,7 +51,8 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
         string replicaId,
         ILogger? logger = null,
         Func<CancellationToken, Task>? flushCheckpoints = null,
-        bool rebalance = false)
+        bool rebalance = false,
+        Func<string, CancellationToken, Task>? forgetCheckpoint = null)
     {
         if (rebalance)
         {
@@ -62,6 +64,7 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
         }
 
         _flushCheckpoints = flushCheckpoints;
+        _forgetCheckpoint = forgetCheckpoint;
         _allLoops = allLoops;
         _leaseManager = leaseManager;
         _consumerId = consumerId;
@@ -439,6 +442,9 @@ internal sealed class LeaseAwareControlLoopGroup : IHostedService, IAsyncDisposa
         {
             var lease = await _leaseManager.TryAcquireAsync(_consumerId, processorId, _replicaId, cancellationToken);
             activity?.SetTag("alberto.lease.acquired", lease is not null);
+            // The loop starts right after this; it must read where the last owner left off.
+            if (lease is not null && _forgetCheckpoint is not null)
+                await _forgetCheckpoint(processorId, cancellationToken);
             if (lease is not null)
                 activity?.SetTag("alberto.lease.fence_token", lease.FenceToken);
             return lease;

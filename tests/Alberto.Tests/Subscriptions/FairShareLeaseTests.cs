@@ -75,6 +75,20 @@ public sealed class FairShareLeaseTests
     }
 
     [Fact]
+    public async Task AcquiringALease_ForgetsTheCachedCheckpoint_BeforeTheLoopStarts()
+    {
+        var leases = new InMemoryProcessorLeaseManager(_clock, TimeSpan.FromSeconds(30));
+        var forgotten = new List<string>();
+        await using var a = new LeaseAwareControlLoopGroup(
+            Processors.Select(BuildLoop).ToList(), leases, Consumer, "a", rebalance: true,
+            forgetCheckpoint: (p, _) => { forgotten.Add(p); return Task.CompletedTask; });
+
+        await a.StartAsync(CancellationToken.None);
+
+        forgotten.Should().Equal(Processors);
+    }
+
+    [Fact]
     public void Rebalance_WithALeaseManagerThatCannotRenewASubset_Throws()
     {
         var act = () => new LeaseAwareControlLoopGroup(
