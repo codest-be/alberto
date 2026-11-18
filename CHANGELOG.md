@@ -19,6 +19,8 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ## [0.14.0] - 2026-11-18
 
+0.13.0 was tagged but never published to nuget.org; this is the first release that ships its changes.
+
 ### Changed
 
 - A held gap backs off to the full refresh interval (#256)
