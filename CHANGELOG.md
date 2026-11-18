@@ -21,8 +21,8 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ### Changed
 
-- A replica that takes a lease back resumes from its own stale cached checkpoint (#260)
-- Hand a shed lease over at once, not after expiry (#259)
+- A replica that takes a lease back reads its checkpoint from the store, not from a stale cache, so reactors no longer fire twice (#260)
+- A shed lease is released at once, and a replica below its share scans every LeaseDuration/12 for one LeaseDuration, so a new replica reaches its share within one renewal plus one fast scan (about 25 s with 60 s leases), not after a full lease expiry (#259)
 
 ---
 
