@@ -1,5 +1,6 @@
 using Alberto.Postgres;
 using Alberto.Tests.Infrastructure;
+using Alberto.Tests.Subscriptions;
 using FluentAssertions;
 using Npgsql;
 using Xunit;
@@ -26,6 +27,9 @@ namespace Alberto.Tests.Postgres;
 /// </para>
 /// </remarks>
 [Trait("Category", "Integration")]
+// These tests hold an append transaction open for seconds, and the append takes its xid with the
+// lock. That pins the server-wide snapshot xmin, which holds every other test's stable head.
+[Collection(StableHeadBarrierCollection.Name)]
 public sealed class AppendAdvisoryLockTests(PostgresCluster cluster)
 {
     /// <summary>
