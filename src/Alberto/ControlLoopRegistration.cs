@@ -214,7 +214,8 @@ internal static class ControlLoopRegistration
             leaseGroup = new LeaseAwareControlLoopGroup(
                 loops, leaseManager, moduleKey, replicaId,
                 sp.GetService<ILogger<LeaseAwareControlLoopGroup>>(),
-                checkpoints is CachingCheckpointStore caching ? caching.FlushAsync : null);
+                checkpoints is CachingCheckpointStore caching ? caching.FlushAsync : null,
+                rebalance: options.Leases.Rebalance);
 
             return leaseGroup;
         });

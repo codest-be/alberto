@@ -136,6 +136,19 @@ public sealed record ProcessorLeaseOptions
     public string? ReplicaId { get; init; }
 
     /// <summary>
+    /// Spread processors evenly over the live replicas. Default false: a replica takes every
+    /// free lease and keeps it.
+    /// </summary>
+    /// <remarks>
+    /// Each replica keeps a presence lease, and a replica holds at most
+    /// ceil(processors / live replicas). One over its share leaves the excess out of its next
+    /// renewal: the loop stops, its checkpoint is written while the lease is still held, and
+    /// another replica's scan takes the processor once the lease expires. Needs the Postgres or
+    /// in-memory lease manager.
+    /// </remarks>
+    public bool Rebalance { get; init; }
+
+    /// <summary>
     /// The replica identity used at runtime. Returns <see cref="ReplicaId"/> when it is set to a
     /// non-whitespace value, and <see cref="Environment.MachineName"/> otherwise. Whitespace is
     /// treated as absent for the same reason null is: a blank id makes every replica look identical
@@ -155,6 +168,9 @@ internal sealed class ProcessorLeaseOverrides : IAlbertoOverrides<ProcessorLease
     /// <summary>Mirror of <see cref="ProcessorLeaseOptions.ReplicaId"/>.</summary>
     public string? ReplicaId { get; set; }
 
+    /// <summary>Mirror of <see cref="ProcessorLeaseOptions.Rebalance"/>.</summary>
+    public bool? Rebalance { get; set; }
+
     /// <inheritdoc />
     public ProcessorLeaseOptions ApplyTo(ProcessorLeaseOptions options)
     {
@@ -164,6 +180,7 @@ internal sealed class ProcessorLeaseOverrides : IAlbertoOverrides<ProcessorLease
         {
             Enabled = Enabled ?? options.Enabled,
             ReplicaId = ReplicaId ?? options.ReplicaId,
+            Rebalance = Rebalance ?? options.Rebalance,
         };
     }
 }

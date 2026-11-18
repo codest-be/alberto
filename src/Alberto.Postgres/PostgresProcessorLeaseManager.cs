@@ -8,7 +8,7 @@ namespace Alberto.Postgres;
 /// Leases expire and must be periodically renewed, enabling single-leader processing
 /// per processor and automatic recovery when replicas crash.
 /// </summary>
-internal sealed class PostgresProcessorLeaseManager : IProcessorLeaseManager
+internal sealed class PostgresProcessorLeaseManager : IProcessorLeaseManager, IRebalancingLeaseManager
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly SchemaQualifier _schema;
@@ -103,6 +103,42 @@ internal sealed class PostgresProcessorLeaseManager : IProcessorLeaseManager
             renewed.Add(reader.GetString(0));
         }
 
+        return renewed;
+    }
+
+    /// <inheritdoc/>
+    public async Task<int> CountLiveReplicasAsync(string consumerId, CancellationToken cancellationToken)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var cmd = new NpgsqlCommand($@"
+            SELECT count(DISTINCT replica_id)::int FROM {_schema.Table("alberto_processor_leases")}
+            WHERE consumer_id = @consumer_id AND expires_at > now()", connection);
+        cmd.Parameters.AddWithValue("consumer_id", consumerId);
+        return (int)(await cmd.ExecuteScalarAsync(cancellationToken))!;
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<string>> RenewLeasesAsync(
+        string consumerId, string replicaId, IReadOnlyCollection<string> processorIds,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var cmd = new NpgsqlCommand($@"
+            UPDATE {_schema.Table("alberto_processor_leases")}
+            SET expires_at = now() + @lease_duration
+            WHERE consumer_id = @consumer_id
+              AND replica_id = @replica_id
+              AND processor_id = ANY(@processor_ids)
+            RETURNING processor_id", connection);
+        cmd.Parameters.AddWithValue("consumer_id", consumerId);
+        cmd.Parameters.AddWithValue("replica_id", replicaId);
+        cmd.Parameters.AddWithValue("processor_ids", processorIds.ToArray());
+        cmd.Parameters.AddWithValue("lease_duration", LeaseDuration);
+
+        var renewed = new List<string>();
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            renewed.Add(reader.GetString(0));
         return renewed;
     }
 

@@ -115,7 +115,8 @@ A complete example covering all sections:
           },
           "Leases": {
             "Enabled": false,
-            "ReplicaId": null
+            "ReplicaId": null,
+            "Rebalance": false
           },
           "Rebuilds": {
             "Enabled": false,
@@ -239,9 +240,18 @@ Nested in `ControlLoop.Leases` · configuration path: `ControlLoop:Leases`
 |---|---|---|---|
 | `Enabled` | `bool` | `false` | `ControlLoop:Leases:Enabled` |
 | `ReplicaId` | `string?` | `null` (machine name) | `ControlLoop:Leases:ReplicaId` |
+| `Rebalance` | `bool` | `false` | `ControlLoop:Leases:Rebalance` |
 
 Set `Enabled = true` when more than one replica runs the same module; each replica
 acquires a fenced lease before consuming.
+
+Without `Rebalance`, whichever replica starts first takes every processor and keeps them. With
+`Rebalance = true`, each replica also holds a presence lease (processor id
+`alberto:replica:{ReplicaId}`, so a replica holding no processor still counts) and keeps at most
+ceil(processors / live replicas). A replica over its share sheds the surplus by leaving it out of
+its renewal: the shed processor stops, its checkpoint is flushed, and its lease expires within
+`LeaseDuration` for another replica's scan to pick up. Needs the Postgres or in-memory backend; a
+custom lease manager makes startup throw.
 
 ### Rebuild options
 
