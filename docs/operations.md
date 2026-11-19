@@ -353,6 +353,7 @@ yourself.
 | `alberto.poll` | Internal | One control-loop poll: `alberto.poll.after_position`, `alberto.poll.events`. The `alberto.read` it issues is its child |
 | `alberto.checkpoint.save` | Internal | One checkpoint write: `alberto.checkpoint.position` |
 | `alberto.lease.acquire` / `.renew` / `.release` | Internal | Processor-lease work of a lease-aware group: `alberto.consumer.id`, `alberto.replica.id`; acquire adds `alberto.lease.acquired` and `alberto.lease.fence_token`, renew adds `alberto.lease.renewed` and `alberto.lease.lost` |
+| `alberto.lease.acquire_many` | Internal | One set-based acquire for every candidate processor, used instead of a per-processor `alberto.lease.acquire` when the lease manager supports it and rebalancing is off: `alberto.lease.requested`, `alberto.lease.acquired_count` |
 | `alberto.rebuild` | Internal | One projection rebuild on the replica driving it, from replay start to the sweep that reclaims the discarded version: `alberto.rebuild.version`. Events: `alberto.rebuild.replay_started` (`alberto.rebuild.shadow_id`), `.ready` (`alberto.rebuild.target_position`), `.promoted` (`alberto.rebuild.discarded_version`, `alberto.rebuild.forced`), `.aborted`, `.swept` |
 | `alberto.outbox.purge` | Internal | One outbox retention pass: `alberto.outbox.purge.before` |
 

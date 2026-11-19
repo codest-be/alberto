@@ -582,4 +582,67 @@ public sealed class LeaseAwareControlLoopGroupTests
         mgr.Held.Should().BeFalse("shutdown must release the lease the in-flight scan acquired");
         GetRunningLoops(group).Should().BeEmpty("no loop may be left running after StopAsync");
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Batch acquisition (IBatchProcessorLeaseManager, rebalancing off)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private sealed class BatchSpyLeaseManager(params string[] winnable) : IProcessorLeaseManager, IBatchProcessorLeaseManager
+    {
+        public TimeSpan LeaseDuration => TimeSpan.FromHours(1);
+        public int SingleAcquires { get; private set; }
+        public List<string[]> Requests { get; } = [];
+
+        public Task<IReadOnlyList<IProcessorLease>> TryAcquireManyAsync(
+            string consumerId, IReadOnlyCollection<string> processorIds, string replicaId, CancellationToken cancellationToken)
+        {
+            Requests.Add(processorIds.ToArray());
+            IReadOnlyList<IProcessorLease> won = processorIds.Where(winnable.Contains)
+                .Select(id => (IProcessorLease)MakeLease(id, 100 + Array.IndexOf(winnable, id))).ToList();
+            return Task.FromResult(won);
+        }
+
+        public Task<IProcessorLease?> TryAcquireAsync(
+            string consumerId, string processorId, string replicaId, CancellationToken cancellationToken = default)
+        {
+            SingleAcquires++;
+            return Task.FromResult<IProcessorLease?>(null);
+        }
+
+        public Task<IReadOnlyList<string>> RenewLeasesAsync(
+            string consumerId, string replicaId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<string>>([]);
+
+        public Task ReleaseAllLeasesAsync(
+            string consumerId, string replicaId, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+    }
+
+    [Fact]
+    public async Task StartAndScan_WithABatchLeaseManager_AcquireInOneCall_AndStartOnlyTheLeasesWon()
+    {
+        var mgr = new BatchSpyLeaseManager("a", "c");
+        var loops = new[] { "a", "b", "c" }.Select(id => BuildLoop(id, TimeSpan.FromMilliseconds(100))).ToArray();
+        var forgotten = new List<string>();
+        await using var group = new LeaseAwareControlLoopGroup(
+            allLoops: loops, leaseManager: mgr, consumerId: "consumer", replicaId: "replica",
+            forgetCheckpoint: (id, _) => { forgotten.Add(id); return Task.CompletedTask; });
+
+        await group.StartAsync(CancellationToken.None);
+
+        mgr.SingleAcquires.Should().Be(0);
+        mgr.Requests.Should().ContainSingle().Which.Should().Equal("a", "b", "c");
+        GetRunningLoops(group).Keys.Should().BeEquivalentTo(["a", "c"]);
+        group.GetFenceToken("a").Should().Be(100);
+        group.GetFenceToken("c").Should().Be(101);
+        group.GetFenceToken("b").Should().Be(0);
+        forgotten.Should().BeEquivalentTo(["a", "c"]);
+        GetControlLoopTask(loops[1]).Should().BeNull();
+
+        await group.ScanOnceAsync();
+
+        mgr.Requests.Should().HaveCount(2);
+        mgr.Requests[1].Should().Equal(["b"], because: "a scan only asks for processors not already running");
+        mgr.SingleAcquires.Should().Be(0);
+    }
 }
