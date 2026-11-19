@@ -98,50 +98,8 @@ internal sealed class DeclaredAsyncProjection<TState> : IBatchableProcessor, IPr
         _stateStores.GetOrAdd(tenantId ?? NoTenant, _ => _stateStoreFactory(tenantId));
 
     /// <inheritdoc/>
-    public async Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default)
-    {
-        if (!_declaration.HandledEventTypes.Contains(@event.EventType.Id)) return;
-
-        // Parse the event payload exactly once and reuse it for both GetDocumentId and Apply
-        // to avoid the double deserialization that the envelope-overloads previously caused.
-        var handler = _declaration.Handlers[@event.EventType.Id];
-        var parsed = handler.ParseEvent(@event, _serializer);
-
-        var docId = handler.GetDocumentId(parsed);
-        if (docId is null) return;
-
-        var stateStore = GetStore(@event.TenantId);
-        var states = await stateStore.LoadManyAsync([docId], cancellationToken);
-        var state = states.GetValueOrDefault(docId) ?? _declaration.InitialState();
-
-        if (state is IProjectionEntity entity && entity.LastProcessedPosition >= @event.GlobalPosition)
-            return;
-
-        var ctx = ProjectionContext.FromEnvelope(@event);
-        var result = handler.Apply(state, parsed, ctx);
-
-        switch (result)
-        {
-            case ProjectionResult<TState>.Set s:
-                if (s.State is IProjectionEntity pe) ProjectionEntityStamp.LastProcessedPosition(pe, @event.GlobalPosition);
-                await stateStore.ApplyChangesAsync(
-                    new Dictionary<string, TState> { [docId] = s.State },
-                    [],
-                    cancellationToken);
-                if (_afterCommit is not null)
-                    await _afterCommit([@event], cancellationToken);
-                break;
-
-            case ProjectionResult<TState>.Delete:
-                await stateStore.ApplyChangesAsync(
-                    new Dictionary<string, TState>(),
-                    [docId],
-                    cancellationToken);
-                if (_afterCommit is not null)
-                    await _afterCommit([@event], cancellationToken);
-                break;
-        }
-    }
+    public Task ProcessEventAsync(IEventEnvelope @event, CancellationToken cancellationToken = default)
+        => ProcessTenantRunAsync(@event.TenantId, [@event], cancellationToken);
 
     /// <inheritdoc/>
     /// <remarks>
@@ -179,79 +137,20 @@ internal sealed class DeclaredAsyncProjection<TState> : IBatchableProcessor, IPr
         IReadOnlyList<IEventEnvelope> events,
         CancellationToken cancellationToken)
     {
-        // Single pass: collect relevant events (matching HandledEventTypes) and build
-        // docId + parsed-event maps. Parsing each event once here eliminates the second
-        // deserialization that previously happened inside the apply loop (PERF-1).
-        // Relevant is tracked separately because afterCommit should receive all
-        // typed-event candidates (including those with null docId), matching the original.
-        var relevant = new List<IEventEnvelope>(events.Count);
-        var docIdMap = new Dictionary<IEventEnvelope, string>(
-            events.Count, ReferenceEqualityComparer.Instance);
-        var parsedMap = new Dictionary<IEventEnvelope, object>(
-            events.Count, ReferenceEqualityComparer.Instance);
-
-        foreach (var evt in events)
-        {
-            if (!_declaration.HandledEventTypes.Contains(evt.EventType.Id)) continue;
-            relevant.Add(evt);
-
-            var handler = _declaration.Handlers[evt.EventType.Id];
-            var parsed = handler.ParseEvent(evt, _serializer);
-            var docId = handler.GetDocumentId(parsed);
-            if (docId is null) continue;
-
-            docIdMap[evt] = docId;
-            parsedMap[evt] = parsed;
-        }
-
-        if (relevant.Count == 0) return;
-        if (docIdMap.Count == 0) return;
+        var batch = new ProjectionBatch<TState>(_declaration, events, _serializer);
+        var documentIds = batch.DocumentIds;
+        if (documentIds.Count == 0) return;
 
         var stateStore = GetStore(tenantId);
-        var states = await stateStore.LoadManyAsync(docIdMap.Values.Distinct(), cancellationToken);
+        var states = await stateStore.LoadManyAsync(documentIds, cancellationToken);
 
-        var upserts = new Dictionary<string, TState>();
-        var deletes = new HashSet<string>();
+        var changes = batch.Fold(states);
 
-        foreach (var evt in relevant)
+        if (changes.Upserts.Count > 0 || changes.Deletes.Count > 0)
         {
-            if (!docIdMap.TryGetValue(evt, out var docId)) continue;
-
-            TState state;
-            if (upserts.TryGetValue(docId, out var pendingState))
-                state = pendingState;
-            else if (deletes.Contains(docId))
-                state = _declaration.InitialState();
-            else
-                state = states.GetValueOrDefault(docId) ?? _declaration.InitialState();
-
-            if (state is IProjectionEntity entity && entity.LastProcessedPosition >= evt.GlobalPosition)
-                continue;
-
-            var handler = _declaration.Handlers[evt.EventType.Id];
-            var ctx = ProjectionContext.FromEnvelope(evt);
-            var result = handler.Apply(state, parsedMap[evt], ctx);
-
-            switch (result)
-            {
-                case ProjectionResult<TState>.Set s:
-                    if (s.State is IProjectionEntity pe) ProjectionEntityStamp.LastProcessedPosition(pe, evt.GlobalPosition);
-                    upserts[docId] = s.State;
-                    deletes.Remove(docId);
-                    break;
-
-                case ProjectionResult<TState>.Delete:
-                    deletes.Add(docId);
-                    upserts.Remove(docId);
-                    break;
-            }
-        }
-
-        if (upserts.Count > 0 || deletes.Count > 0)
-        {
-            await stateStore.ApplyChangesAsync(upserts, deletes.ToList(), cancellationToken);
+            await stateStore.ApplyChangesAsync(changes.Upserts, changes.Deletes, cancellationToken);
             if (_afterCommit is not null)
-                await _afterCommit(relevant, cancellationToken);
+                await _afterCommit(batch.Handled, cancellationToken);
         }
     }
 

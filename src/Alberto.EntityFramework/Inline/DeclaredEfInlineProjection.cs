@@ -90,29 +90,20 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : IInlineP
         IReadOnlyList<IEventEnvelope> events,
         CancellationToken cancellationToken = default)
     {
-        // Build doc-id map up front so we can load all affected rows in one query.
-        var docIdMap = new Dictionary<IEventEnvelope, string>(ReferenceEqualityComparer.Instance);
-        foreach (var evt in events)
-        {
-            if (!_declaration.HandledEventTypes.Contains(evt.EventType.Id))
-                continue;
+        // Planned up front so we can load all affected rows in one query; the payloads are
+        // parsed once here and reused by every retry.
+        var batch = new ProjectionBatch<TEntity>(_declaration, events, serializer: null);
+        var documentKeys = batch.DocumentIds;
 
-            var docId = _declaration.GetDocumentId(evt);
-            if (docId is not null)
-                docIdMap[evt] = docId;
-        }
-
-        if (docIdMap.Count == 0)
+        if (documentKeys.Count == 0)
             return;
-
-        var documentKeys = docIdMap.Values.Distinct().ToList();
 
         var attempt = 0;
         while (true)
         {
             try
             {
-                await ProcessOnceAsync(events, docIdMap, documentKeys, cancellationToken);
+                await ProcessOnceAsync(batch, documentKeys, cancellationToken);
                 return;
             }
             catch (Exception ex) when (IsRetryableConflict(ex))
@@ -148,9 +139,8 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : IInlineP
     }
 
     private async Task ProcessOnceAsync(
-        IReadOnlyList<IEventEnvelope> events,
-        Dictionary<IEventEnvelope, string> docIdMap,
-        List<string> documentKeys,
+        ProjectionBatch<TEntity> batch,
+        IReadOnlyList<string> documentKeys,
         CancellationToken cancellationToken)
     {
         await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
@@ -170,43 +160,9 @@ internal sealed class DeclaredEfInlineProjection<TEntity, TDbContext> : IInlineP
             .Where(e => documentKeys.Contains(e.DocumentId) && e.RebuildVersion == version)
             .ToDictionaryAsync(e => e.DocumentId, cancellationToken);
 
-        var pending = new Dictionary<string, TEntity>();
-        var deletes = new HashSet<string>();
-
-        foreach (var evt in events)
-        {
-            if (!docIdMap.TryGetValue(evt, out var docId))
-                continue;
-
-            TEntity state;
-            if (pending.TryGetValue(docId, out var pendingState))
-                state = pendingState;
-            else if (deletes.Contains(docId))
-                state = _declaration.InitialState();
-            else
-                state = existing.GetValueOrDefault(docId) ?? _declaration.InitialState();
-
-            // Idempotency guard: skip events we've already processed for this entity.
-            if (state.LastProcessedPosition >= evt.GlobalPosition)
-                continue;
-
-            var ctx = ProjectionContext.FromEnvelope(evt);
-            var result = _declaration.Apply(state, evt, ctx);
-
-            switch (result)
-            {
-                case ProjectionResult<TEntity>.Set set:
-                    ProjectionEntityStamp.LastProcessedPosition(set.State, evt.GlobalPosition);
-                    pending[docId] = set.State;
-                    deletes.Remove(docId);
-                    break;
-
-                case ProjectionResult<TEntity>.Delete:
-                    deletes.Add(docId);
-                    pending.Remove(docId);
-                    break;
-            }
-        }
+        var changes = batch.Fold(existing);
+        var pending = changes.Upserts;
+        var deletes = changes.Deletes;
 
         if (pending.Count == 0 && deletes.Count == 0)
             return;
