@@ -17,6 +17,27 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ---
 
+## [0.15.1] - 2026-11-19
+
+Fewer database round trips and scans on the append, checkpoint, lease, polling, projection and
+outbox paths. No public API changes. Upgrading runs migrations 009 to 013. Two of them build an
+index without `CONCURRENTLY` (noted below). A replica still on 0.15.0 keeps working against the
+migrated schema during a rolling deploy.
+
+### Changed
+
+- An append whose condition names both event types and tags checks for conflicts only above the expected position; it no longer scans every matching event. Conflict semantics are unchanged (migration 009) (#266)
+- Checkpoint flush, checkpoint resync and lease acquisition are one statement each, not one round trip per processor. Reset detection is part of the fenced write, and a lease attempt that loses no longer draws a fence token. With `Leases.Rebalance` on, acquisition is still one statement per processor (#267)
+- A processor with no matching events skips its read and moves its checkpoint forward from the head snapshot, typed reads are driven from `alberto_event_type_positions`, and idle loops back off to 1 s while LISTEN is healthy. On a multi-tenant store, migration 010 adds an index on that table without `CONCURRENTLY`, which blocks writes to the table while it builds (#268)
+- Append returns only position and timestamp from the database and builds the envelopes from the events it sent. Migration 011 adds `_lean` append functions next to the originals. On a multi-tenant store a known tenant's `alberto_tenants` row is no longer rewritten on every append, so `last_seen_at` can be up to a minute behind (#269)
+- `PostgresStateStore` writes a batch in one upsert and one delete, `ListRecentAsync` is served in order by an index (migration 012, built without `CONCURRENTLY`), `EfStateStore` reads a batch's rows once, and a discarded rebuild version is deleted in batches of 5000. Rebuild replay has its own batch size, `ControlLoop:Rebuilds:BatchSize`, default 1000 (#270)
+- The outbox relay records a batch's failed deliveries in one statement, after the batch or once half the claim lease has elapsed, and wakes as soon as the `OutboxHandler` in the same process enqueues. An idle relay backs off up to 5 s, so an entry written by another process can wait that long where it waited one `PollingInterval`. Dead-letter retry does one read per module per interval, and only processors with a dead letter due claim. Migration 013 adds a partial index on `failed` outbox rows and drops `idx_alberto_dead_letter_processor`, which the unique `(processor_id, event_id)` index already covers (#271)
+- On a sharded module with no default shard, the refusal of an unknown tenant id is cached for 5 s; it no longer costs one control-database read per request. A tenant assigned by another process resolves up to 5 s later on a replica that cached the refusal (#272)
+- Internal: the projection fold, the retry and dead-letter tail and the in-memory DCB match each have one implementation. `DeadLettered`, `DeadLetterStored` and `DeadLetteredCount` on the consume contexts are set after the dead-letter store write, not before (#263)
+- Internal: the in-memory backend has one checkpoint store, the fenced one, which `.WithInMemory()` already used (#274)
+
+---
+
 ## [0.15.0] - 2026-11-18
 
 ### Changed
@@ -1126,7 +1147,8 @@ Initial beta release. Core DCB event store abstractions, PostgreSQL backend, in-
 backend, command pipeline, EF Core projection support, transactional outbox, and
 OpenTelemetry instrumentation.
 
-[Unreleased]: https://github.com/codest-be/alberto/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/codest-be/alberto/compare/v0.15.1...HEAD
+[0.15.1]: https://github.com/codest-be/alberto/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/codest-be/alberto/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/codest-be/alberto/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/codest-be/alberto/compare/v0.12.0...v0.13.0
