@@ -31,6 +31,22 @@ public sealed class TenantShardResolver
     private readonly ILogger _logger;
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _gates = new(StringComparer.Ordinal);
     private readonly HashSet<string> _warnedShards = new(StringComparer.Ordinal);
+    private readonly TimeProvider _time;
+
+    // Negative cache: tenant id -> timestamp of the catalog read that found no assignment. Only
+    // consulted when there is no default shard. Unknown ids arrive from request headers, so a client
+    // looping on one would otherwise cost a control-database query per request.
+    //
+    // UnknownTenantTtl bounds how stale a refusal can be: a tenant another process assigns after
+    // our miss resolves here at most that long later, with no restart. Five seconds caps the catalog
+    // load from one unknown id at one read per five seconds per replica, and is well inside the
+    // default 30-second refresh interval an operator already waits on for a reassignment.
+    // UnknownTenantCacheCapacity bounds memory against a client cycling through ids: on reaching it
+    // the cache is cleared rather than evicted entry by entry, which costs at most one catalog read
+    // per id afterwards and never a wrong answer.
+    internal static readonly TimeSpan UnknownTenantTtl = TimeSpan.FromSeconds(5);
+    internal const int UnknownTenantCacheCapacity = 10_000;
+    private readonly ConcurrentDictionary<string, long> _unknownTenants = new(StringComparer.Ordinal);
 
     private volatile ImmutableDictionary<string, string> _snapshot =
         ImmutableDictionary<string, string>.Empty.WithComparers(StringComparer.Ordinal);
@@ -50,6 +66,17 @@ public sealed class TenantShardResolver
         IReadOnlySet<string> declaredShards,
         string? defaultShardId,
         ILogger<TenantShardResolver>? logger = null)
+        : this(moduleKey, map, declaredShards, defaultShardId, logger, TimeProvider.System)
+    {
+    }
+
+    internal TenantShardResolver(
+        string moduleKey,
+        ITenantShardMap map,
+        IReadOnlySet<string> declaredShards,
+        string? defaultShardId,
+        ILogger<TenantShardResolver>? logger,
+        TimeProvider timeProvider)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(moduleKey);
         ArgumentNullException.ThrowIfNull(map);
@@ -60,6 +87,7 @@ public sealed class TenantShardResolver
         _declaredShards = declaredShards;
         _defaultShardId = defaultShardId;
         _logger = logger ?? NullLogger<TenantShardResolver>.Instance;
+        _time = timeProvider;
     }
 
     /// <summary>Returns the shard <paramref name="tenantId"/> belongs to.</summary>
@@ -76,6 +104,9 @@ public sealed class TenantShardResolver
         if (_snapshot.TryGetValue(tenantId, out var cached))
             return Verify(tenantId, cached);
 
+        if (IsKnownUnknown(tenantId))
+            throw new UnknownTenantException(_moduleKey, tenantId);
+
         var gate = _gates.GetOrAdd(tenantId, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -83,13 +114,18 @@ public sealed class TenantShardResolver
             // Re-check: whoever held the gate before us has already filled this in.
             if (_snapshot.TryGetValue(tenantId, out cached))
                 return Verify(tenantId, cached);
+            if (IsKnownUnknown(tenantId))
+                throw new UnknownTenantException(_moduleKey, tenantId);
 
             var resolved = await _map.ResolveAsync(tenantId, cancellationToken).ConfigureAwait(false);
 
             if (resolved is null)
             {
                 if (_defaultShardId is null)
+                {
+                    RememberUnknown(tenantId);
                     throw new UnknownTenantException(_moduleKey, tenantId);
+                }
 
                 // Another replica may be doing this at the same instant. AssignAsync returns the
                 // assignment that won, which is what we must use and cache.
@@ -117,6 +153,8 @@ public sealed class TenantShardResolver
 
     internal int GateCount => _gates.Count;
 
+    internal int UnknownTenantCount => _unknownTenants.Count;
+
     /// <summary>
     /// Re-reads the whole catalog and replaces the snapshot, so an operator's reassignment takes
     /// effect without a restart.
@@ -125,6 +163,8 @@ public sealed class TenantShardResolver
     {
         var all = await _map.GetAllAsync(cancellationToken).ConfigureAwait(false);
         _snapshot = all.ToImmutableDictionary(e => e.Key, e => e.Value, StringComparer.Ordinal);
+        // The catalog was just read whole, so every cached refusal is at least as old as this answer.
+        _unknownTenants.Clear();
     }
 
     private void Remember(string tenantId, string shardId)
@@ -139,6 +179,28 @@ public sealed class TenantShardResolver
             updated = seen.SetItem(tenantId, shardId);
         }
         while (Interlocked.CompareExchange(ref _snapshot, updated, seen) != seen);
+
+        _unknownTenants.TryRemove(tenantId, out _);
+    }
+
+    private bool IsKnownUnknown(string tenantId)
+    {
+        if (!_unknownTenants.TryGetValue(tenantId, out var missedAt))
+            return false;
+        if (_time.GetElapsedTime(missedAt) < UnknownTenantTtl)
+            return true;
+
+        _unknownTenants.TryRemove(new KeyValuePair<string, long>(tenantId, missedAt));
+        return false;
+    }
+
+    private void RememberUnknown(string tenantId)
+    {
+        // Count is not exact under concurrency, so the cap can be overshot by the number of
+        // concurrent misses; that is still a bound.
+        if (_unknownTenants.Count >= UnknownTenantCacheCapacity)
+            _unknownTenants.Clear();
+        _unknownTenants[tenantId] = _time.GetTimestamp();
     }
 
     private string Verify(string tenantId, string shardId)

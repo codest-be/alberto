@@ -1,11 +1,14 @@
 using Alberto.Tenancy;
 using FluentAssertions;
+using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
 namespace Alberto.Tests.Tenancy;
 
 public class TenantShardResolverTests
 {
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
     private static readonly HashSet<string> TwoShards = new(["db1", "db2"], StringComparer.Ordinal);
 
     private static TenantShardResolver Resolver(
@@ -177,11 +180,88 @@ public class TenantShardResolverTests
     }
 
     [Fact]
+    public async Task A_repeated_unknown_tenant_is_refused_without_a_catalog_read_until_the_ttl_passes()
+    {
+        var map = new FakeTenantShardMap();
+        var time = new FakeTimeProvider();
+        var resolver = new TenantShardResolver("orders", map, TwoShards, null, null, time);
+
+        foreach (var _ in Enumerable.Range(0, 5))
+            await ((Func<Task>)(async () => await resolver.ResolveAsync("ghost", Ct)))
+                .Should().ThrowAsync<UnknownTenantException>();
+        map.ResolveCalls.Should().Be(1);
+
+        // Another process assigns the tenant after our miss: it resolves once the refusal expires.
+        map.Assign("ghost", "db2");
+        time.Advance(TenantShardResolver.UnknownTenantTtl);
+
+        (await resolver.ResolveAsync("ghost", Ct)).Should().Be("db2");
+        map.ResolveCalls.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task A_catalog_read_that_fails_is_not_cached_as_unknown()
+    {
+        var map = new FailingOnceMap(new FakeTenantShardMap());
+        var resolver = Resolver(map);
+
+        await ((Func<Task>)(async () => await resolver.ResolveAsync("ghost", Ct)))
+            .Should().ThrowAsync<InvalidOperationException>();
+        await ((Func<Task>)(async () => await resolver.ResolveAsync("ghost", Ct)))
+            .Should().ThrowAsync<UnknownTenantException>();
+
+        map.ResolveCalls.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task The_unknown_tenant_cache_stays_within_its_capacity()
+    {
+        var resolver = Resolver(new FakeTenantShardMap());
+
+        foreach (var id in Enumerable.Range(0, TenantShardResolver.UnknownTenantCacheCapacity + 10))
+            await resolver.ResolveAsync($"ghost-{id}", Ct).AsTask().ContinueWith(_ => { }, Ct);
+
+        resolver.UnknownTenantCount.Should().BeInRange(1, TenantShardResolver.UnknownTenantCacheCapacity);
+    }
+
+    [Fact]
+    public async Task A_refresh_that_brings_in_an_unknown_tenant_makes_it_resolve_at_once()
+    {
+        var map = new FakeTenantShardMap();
+        var resolver = new TenantShardResolver("orders", map, TwoShards, null, null, new FakeTimeProvider());
+
+        await ((Func<Task>)(async () => await resolver.ResolveAsync("ghost", Ct)))
+            .Should().ThrowAsync<UnknownTenantException>();
+
+        map.Assign("ghost", "db1");
+        await resolver.RefreshAsync(Ct);
+
+        (await resolver.ResolveAsync("ghost", Ct)).Should().Be("db1");
+        resolver.UnknownTenantCount.Should().Be(0);
+    }
+
+    [Fact]
     public void The_resolver_refuses_to_be_built_without_a_map()
     {
         var construct = () => new TenantShardResolver("orders", null!, TwoShards, null);
 
         construct.Should().Throw<ArgumentNullException>();
+    }
+
+    private sealed class FailingOnceMap(FakeTenantShardMap inner) : ITenantShardMap
+    {
+        public int ResolveCalls;
+
+        public ValueTask<string?> ResolveAsync(string tenantId, CancellationToken cancellationToken = default) =>
+            Interlocked.Increment(ref ResolveCalls) == 1
+                ? throw new InvalidOperationException("catalog unavailable")
+                : inner.ResolveAsync(tenantId, cancellationToken);
+
+        public ValueTask<string> AssignAsync(string tenantId, string shardId, CancellationToken cancellationToken = default) =>
+            inner.AssignAsync(tenantId, shardId, cancellationToken);
+
+        public ValueTask<IReadOnlyDictionary<string, string>> GetAllAsync(CancellationToken cancellationToken = default) =>
+            inner.GetAllAsync(cancellationToken);
     }
 
     /// <summary>
