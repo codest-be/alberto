@@ -196,30 +196,9 @@ public sealed class InMemoryFencedProcessorFaultStoreTests : ProcessorFaultStore
             new InMemoryFencedCheckpointStore(new InMemoryProcessorLeaseManager()));
 }
 
-public sealed class InMemoryProcessorFaultStoreTests : ProcessorFaultStoreSpecification
-{
-    private readonly InMemoryCheckpointStore _store = new();
-
-    protected override Task<ICheckpointStore> CreateStore() =>
-        Task.FromResult<ICheckpointStore>(_store);
-
-    [Fact]
-    public async Task Clear_RemovesTheFault()
-    {
-        var faults = (IProcessorFaultStore)_store;
-        await faults.RecordFaultAsync(ProcessorId,
-            new ProcessorFaultRecord(DateTimeOffset.UnixEpoch, "boom", null, null, null, null),
-            TestContext.Current.CancellationToken);
-
-        _store.Clear();
-
-        Assert.Null(await faults.GetFaultAsync(ProcessorId, TestContext.Current.CancellationToken));
-    }
-}
-
 public sealed class CachingProcessorFaultStoreTests : ProcessorFaultStoreSpecification, IAsyncDisposable
 {
-    private readonly InMemoryCheckpointStore _inner = new();
+    private readonly InMemoryFencedCheckpointStore _inner = new();
     private readonly CachingCheckpointStore _cache;
 
     public CachingProcessorFaultStoreTests()

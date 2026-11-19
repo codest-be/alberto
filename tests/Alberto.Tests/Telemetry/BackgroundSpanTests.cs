@@ -77,7 +77,7 @@ public sealed class BackgroundSpanTests
         var backend = new InterceptingEventStoreBackend(inner, new AppendInterceptorPipeline([]));
         var head = new EventStoreHead(inner, refreshInterval: TimeSpan.FromMilliseconds(10));
         var loop = new ControlLoop(
-            new Processor(processorId), head, backend, new InMemoryCheckpointStore(),
+            new Processor(processorId), head, backend, new InMemoryFencedCheckpointStore(),
             pollingInterval: TimeSpan.FromMilliseconds(10), batchSize: 100, moduleKey: "orders#eu",
             executionOptions: new ProcessorExecutionOptions { BatchingMode = ProcessorBatchingMode.Disabled });
 

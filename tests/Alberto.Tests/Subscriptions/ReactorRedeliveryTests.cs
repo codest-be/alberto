@@ -130,7 +130,7 @@ public sealed class ReactorRedeliveryTests
             policies: new ProcessorPolicies(module, declarations));
 
         var loop = assembler.Create(
-            reactor, head, backend, new InMemoryCheckpointStore(),
+            reactor, head, backend, new InMemoryFencedCheckpointStore(),
             pollingInterval: TimeSpan.FromMilliseconds(10), batchSize: 100, moduleKey: ModuleKey,
             executionOptions: execution);
 

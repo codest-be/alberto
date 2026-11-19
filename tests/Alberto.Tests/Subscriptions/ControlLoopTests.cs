@@ -251,7 +251,7 @@ public sealed class ControlLoopTests
     public async Task ControlLoop_ProcessesExistingEvents()
     {
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
 
         await backend.AppendAsync([CreateEvent(new TestEventA("hello"))], cancellationToken: TestContext.Current.CancellationToken);
 
@@ -276,7 +276,7 @@ public sealed class ControlLoopTests
     public async Task ControlLoop_AdvancesCheckpoint()
     {
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
 
         await backend.AppendAsync([CreateEvent(new TestEventA("first"))], cancellationToken: TestContext.Current.CancellationToken);
         await backend.AppendAsync([CreateEvent(new TestEventA("second"))], cancellationToken: TestContext.Current.CancellationToken);
@@ -303,7 +303,7 @@ public sealed class ControlLoopTests
     public async Task ControlLoop_OnFault_StopsAndPreservesCheckpoint()
     {
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
 
         // Save an existing checkpoint so we know what it was before the fault
         await checkpoints.SaveAsync("faulting", 0, TestContext.Current.CancellationToken);
@@ -336,7 +336,7 @@ public sealed class ControlLoopTests
     public async Task Pipelined_OnEscapedFault_StopsPreservesCheckpoint_AndRedeliversAfterRestart()
     {
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         await checkpoints.SaveAsync("pipelined-faulting", 0, TestContext.Current.CancellationToken);
         await backend.AppendAsync(
             [CreateEvent(new TestEventA("trigger"))],
@@ -411,7 +411,7 @@ public sealed class ControlLoopTests
     public async Task ControlLoop_CancellationIsClean()
     {
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
         var processor = new TestProcessor("test", new HashSet<string> { "test-event-a" });
         var loop = new ControlLoop(processor, head, backend, checkpoints,
@@ -434,7 +434,7 @@ public sealed class ControlLoopTests
     public async Task ControlLoop_OnlyProcessesHandledEventTypes()
     {
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
 
         await backend.AppendAsync([CreateEvent(new TestEventA("a"))], cancellationToken: TestContext.Current.CancellationToken);
         await backend.AppendAsync([CreateEvent(new TestEventB(1))], cancellationToken: TestContext.Current.CancellationToken);
@@ -471,7 +471,7 @@ public sealed class ControlLoopTests
     public async Task ControlLoop_UsesBatchProcessor_WhenBatchingIsRequired()
     {
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
 
         await backend.AppendAsync([CreateEvent(new TestEventA("a"))], cancellationToken: TestContext.Current.CancellationToken);
         await backend.AppendAsync([CreateEvent(new TestEventB(1))], cancellationToken: TestContext.Current.CancellationToken);
@@ -509,7 +509,7 @@ public sealed class ControlLoopTests
     public void ControlLoop_RequireBatching_ThrowsForNonBatchableProcessor()
     {
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
         var processor = new NonBatchableProcessor("non-batch", new HashSet<string> { "test-event-a" });
 
@@ -529,7 +529,7 @@ public sealed class ControlLoopTests
     public void ControlLoop_RequireBatching_ThrowsWhenMiddlewareIsConfigured()
     {
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
         var processor = new BatchProcessor("batch-proc", new HashSet<string> { "test-event-a" });
         var middleware = new TrackingMiddleware();
@@ -552,7 +552,7 @@ public sealed class ControlLoopTests
     public async Task ControlLoop_BatchIfSupported_FallsBackToPerEventWhenMiddlewareIsConfigured()
     {
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var middleware = new TrackingMiddleware();
 
         await backend.AppendAsync([CreateEvent(new TestEventA("a"))], cancellationToken: TestContext.Current.CancellationToken);
@@ -589,7 +589,7 @@ public sealed class ControlLoopTests
     public async Task ControlLoop_UsesBatchPath_WhenBatchMiddlewareIsConfigured()
     {
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var batchMiddleware = new TrackingBatchMiddleware();
 
         await backend.AppendAsync([CreateEvent(new TestEventA("a"))], cancellationToken: TestContext.Current.CancellationToken);
@@ -739,7 +739,7 @@ public sealed class ControlLoopTests
     public async Task Pipelined_ProcessesAllEvents()
     {
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
 
         await backend.AppendAsync([CreateEvent(new TestEventA("a"))], cancellationToken: TestContext.Current.CancellationToken);
         await backend.AppendAsync([CreateEvent(new TestEventA("b"))], cancellationToken: TestContext.Current.CancellationToken);
@@ -769,7 +769,7 @@ public sealed class ControlLoopTests
     public async Task Pipelined_ProcessesConcurrently()
     {
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var concurrentCount = 0;
         var maxConcurrent = 0;
         var processedCount = 0;
@@ -820,7 +820,7 @@ public sealed class ControlLoopTests
     public async Task Pipelined_AdvancesCheckpoint_WhileSlowEventProcesses()
     {
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         // RunContinuationsAsynchronously prevents a deadlock where the continuation runs
@@ -886,7 +886,7 @@ public sealed class ControlLoopTests
     public async Task Pipelined_SkipsNonMatchingEventTypes()
     {
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
 
         await backend.AppendAsync([CreateEvent(new TestEventA("a"))], cancellationToken: TestContext.Current.CancellationToken);
         await backend.AppendAsync([CreateEvent(new TestEventB(1))], cancellationToken: TestContext.Current.CancellationToken); // not handled

@@ -77,7 +77,7 @@ public sealed class ProjectionHaltTests
     private sealed class Rig : IAsyncDisposable
     {
         public required InMemoryEventStoreBackend Backend { get; init; }
-        public required InMemoryCheckpointStore Checkpoints { get; init; }
+        public required InMemoryFencedCheckpointStore Checkpoints { get; init; }
         public required InMemoryDeadLetterStore DeadLetters { get; init; }
         public required EventStoreHead Head { get; init; }
         public required ProcessorHealthState Health { get; init; }
@@ -124,7 +124,7 @@ public sealed class ProjectionHaltTests
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var deadLetters = new InMemoryDeadLetterStore();
         var clock = new FakeTimeProvider(DateTimeOffset.Parse("2026-01-01T00:00:00Z"));
         var health = new ProcessorHealthState();

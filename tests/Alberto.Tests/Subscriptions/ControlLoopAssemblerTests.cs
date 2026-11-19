@@ -101,7 +101,7 @@ public sealed class ControlLoopAssemblerTests
         var liveProcessor = new RecordingProcessor("live-proc");
         var shadowProcessor = new RecordingProcessor("shadow-proc") { IsRebuilding = true };
 
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
 
         var execOptions = new ProcessorExecutionOptions { BatchingMode = ProcessorBatchingMode.Disabled };
@@ -159,7 +159,7 @@ public sealed class ControlLoopAssemblerTests
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
 
         // Two per-event middlewares but zero batch middlewares → hasUnpaired = true.
@@ -231,7 +231,7 @@ public sealed class ControlLoopAssemblerTests
 
         var deadLetterStore = new InMemoryDeadLetterStore();
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
 
         var assembler = new ControlLoopAssembler(
@@ -340,7 +340,7 @@ public sealed class ControlLoopAssemblerTests
         // RecordingProcessor is per-event only: under the Required default, ControlLoop throws.
         var create = () => assembler.Create(
             new RecordingProcessor(processorId),
-            new EventStoreHead(backend, TimeSpan.FromMilliseconds(20)), backend, new InMemoryCheckpointStore(),
+            new EventStoreHead(backend, TimeSpan.FromMilliseconds(20)), backend, new InMemoryFencedCheckpointStore(),
             pollingInterval: TimeSpan.FromMilliseconds(10), batchSize: 100, moduleKey: "test");
 
         create.Should().NotThrow();

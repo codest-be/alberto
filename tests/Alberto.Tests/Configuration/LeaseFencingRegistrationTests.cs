@@ -240,11 +240,11 @@ public class FencingContextRegistrationTests
 
     /// <summary>
     /// A checkpoint store that captures the arguments to SetFencingContext and
-    /// SubscribeFenceViolation, delegating actual storage to InMemoryCheckpointStore.
+    /// SubscribeFenceViolation, delegating actual storage to InMemoryFencedCheckpointStore.
     /// </summary>
     private sealed class CapturingFencableCheckpointStore : ICheckpointStore, IFencableCheckpointStore
     {
-        private readonly InMemoryCheckpointStore _inner = new();
+        private readonly InMemoryFencedCheckpointStore _inner = new();
 
         public FencingContext? CapturedContext { get; private set; }
         public bool SubscribeFenceViolationWasCalled { get; private set; }
