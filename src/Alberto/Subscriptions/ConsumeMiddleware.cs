@@ -19,9 +19,9 @@ public static class ConsumeMiddlewares
     /// <summary>
     /// Retry with exponential backoff, dead-letter on exhaustion.
     /// The retry loop is shared with <see cref="BatchConsumeMiddlewares.RetryAndDeadLetter"/>
-    /// via <see cref="RetryAndDeadLetterCore"/>; this method owns only the
-    /// single-event tail: marking <see cref="ConsumeEventContext.DeadLettered"/>
-    /// and writing the <see cref="DeadLetterEntry"/> for the envelope.
+    /// via <see cref="RetryAndDeadLetterCore"/>, as is the halt / dead-letter tail; this method
+    /// owns only the single-event part: counting redeliveries and marking
+    /// <see cref="ConsumeEventContext.DeadLettered"/>.
     /// </summary>
     /// <param name="retry">Retry policy (max attempts, backoff, dead-letter flag).</param>
     /// <param name="classifier">Determines whether a given exception is transient or permanent.</param>
@@ -55,48 +55,13 @@ public static class ConsumeMiddlewares
             if (context.PriorRedeliveries is not null)
                 instruments.Redeliveries.Add(1, ProcessorTags.ForModule(context.ProcessorId, context.ModuleKey));
 
-            var lastError = await RetryAndDeadLetterCore.ExecuteAsync(
-                context, effectiveRetry, classifier, next, retryMetricCount: 1, instruments, clock);
-
-            if (lastError is null)
-                return; // success
-
-            // A projection never dead-letters or skips: it stays on this event until it works.
-            if (policy is { HaltsOnFailure: true })
+            if (await RetryAndDeadLetterCore.ExecuteAndDeadLetterAsync(
+                    context, context.Envelope, context.PriorRedeliveries, rethrowFailure: false, retryMetricCount: 1,
+                    context.HaltObserver, policy, effectiveRetry, classifier, deadLetterStore, next,
+                    instruments, clock, logger) is { } stored)
             {
-                await RetryAndDeadLetterCore.HaltAsync(
-                    context, context.HaltObserver, context.Envelope.GlobalPosition,
-                    lastError, policy.Halt, next, clock, logger, instruments);
-                return;
-            }
-
-
-            // Exhausted retries or permanent error — dead-letter this event.
-            context.DeadLettered = true;
-
-            instruments.DeadLetters.Add(1, ProcessorTags.ForModule(context.ProcessorId, context.ModuleKey));
-
-            if (effectiveRetry.DeadLetterOnMaxRetries && deadLetterStore is not null)
-            {
-                var now = clock.GetUtcNow();
-                var (nextRetryAt, redeliveryCount) = RetryAndDeadLetterCore.PlanRedelivery(
-                    policy, classifier, lastError, context.PriorRedeliveries, now);
-                var entry = DeadLetterEntryFactory.Create(
-                    context.ProcessorId,
-                    context.Envelope,
-                    lastError,
-                    context.Attempt,
-                    now,
-                    nextRetryAt,
-                    redeliveryCount);
-
-                // A failed write here must not escape. The event that failed is already
-                // dead-lettered as far as the loop is concerned; letting the store's error
-                // out would fault the processor and hold the checkpoint back, re-delivering
-                // every healthy event in the window. See
-                // RetryAndDeadLetterCore.StoreDeadLetterAsync.
-                context.DeadLetterStored = await RetryAndDeadLetterCore.StoreDeadLetterAsync(
-                    deadLetterStore, entry, logger, context.CancellationToken, clock);
+                context.DeadLettered = true;
+                context.DeadLetterStored = stored;
             }
         };
     }

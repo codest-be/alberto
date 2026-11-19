@@ -1,4 +1,5 @@
 using Alberto.Configuration;
+using Alberto.Projections;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -19,8 +20,6 @@ internal sealed record ProcessorPolicy(
 /// </summary>
 internal sealed class ProcessorPolicies
 {
-    private const string RebuildMarker = "::rebuild::";
-
     private readonly ControlLoopOptions _module;
     private readonly Dictionary<string, ProcessorDeclaration> _declarations;
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, ProcessorPolicy> _resolved =
@@ -61,20 +60,14 @@ internal sealed class ProcessorPolicies
     /// the default for custom wiring that declared nothing.
     /// </summary>
     internal ProcessorExecutionOptions ExecutionFor(string processorId) =>
-        _declarations.TryGetValue(DeclaredId(processorId), out var declaration)
+        _declarations.TryGetValue(RebuildableProjection.DeclaredProcessorId(processorId), out var declaration)
             ? declaration.Execution
             : ProcessorExecutionOptions.Default;
-
-    // A shadow rebuild replays a projection under "{id}::rebuild::{version}", and runs like it.
-    private static string DeclaredId(string processorId) =>
-        processorId.Contains(RebuildMarker, StringComparison.Ordinal)
-            ? processorId[..processorId.IndexOf(RebuildMarker, StringComparison.Ordinal)]
-            : processorId;
 
     private ProcessorPolicy Resolve(string processorId)
     {
         // A processor with no declaration is custom wiring: keep the dead-letter behaviour.
-        if (!_declarations.TryGetValue(DeclaredId(processorId), out var declaration))
+        if (!_declarations.TryGetValue(RebuildableProjection.DeclaredProcessorId(processorId), out var declaration))
             return new ProcessorPolicy(false, _module.Retry, _module.Halt, _module.Redelivery);
 
         var execution = declaration.Execution;
