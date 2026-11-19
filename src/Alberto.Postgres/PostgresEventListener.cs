@@ -55,6 +55,7 @@ internal sealed class PostgresEventListener : BackgroundService
                         await cmd.ExecuteNonQueryAsync(stoppingToken);
 
                     // Catch up on anything appended before this connection was ready.
+                    SetListening(true);
                     _signal.Signal();
 
                     while (!stoppingToken.IsCancellationRequested)
@@ -62,6 +63,7 @@ internal sealed class PostgresEventListener : BackgroundService
                 }
                 finally
                 {
+                    SetListening(false);
                     connection.Notification -= OnNotification;
                 }
             }
@@ -76,6 +78,12 @@ internal sealed class PostgresEventListener : BackgroundService
                 catch (OperationCanceledException) { break; }
             }
         }
+    }
+
+    private void SetListening(bool listening)
+    {
+        if (_signal is EventAppendedSignal signal)
+            signal.IsListening = listening;
     }
 
     private void OnNotification(object? sender, NpgsqlNotificationEventArgs e) => _signal.Signal();

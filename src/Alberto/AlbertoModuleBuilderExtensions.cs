@@ -639,7 +639,7 @@ public static class AlbertoModuleBuilderExtensions
 
                     return assembler.Create(
                         processor, head, backend, checkpoints,
-                        opts.PollingInterval, opts.BatchSize, moduleKey,
+                        opts.PollingInterval, opts.Rebuilds.BatchSize, moduleKey,
                         logger: sp.GetService<ILogger<ControlLoop>>(),
                         drainTimeout: opts.DrainTimeout);
                 });

@@ -19,7 +19,7 @@ internal sealed class PostgresEventStoreBackend(
     TimeProvider? timeProvider = null,
     string? schema = null,
     bool enableStableHeadBarrier = true)
-    : IEventStoreBackend, IEventStoreHeadBackend
+    : IEventStoreBackend, IEventStoreHeadBackend, IHeadSnapshotBackend
 {
     private readonly NpgsqlDataSource _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
     // _timeProvider is retained for future use and to preserve the constructor surface.
@@ -135,4 +135,7 @@ internal sealed class PostgresEventStoreBackend(
     public Task<long> GetStableHeadUpToAsync(
         long afterPosition, long upToPosition, CancellationToken cancellationToken = default)
         => PostgresBackendHelpers.GetStableHeadAsync(_schema, _dataSource, _enableStableHeadBarrier, afterPosition, upToPosition, cancellationToken);
+
+    public Task<HeadSnapshot> GetHeadSnapshotAsync(long afterPosition, int windowSize, CancellationToken cancellationToken)
+        => PostgresBackendHelpers.GetHeadSnapshotAsync(_schema, _dataSource, _enableStableHeadBarrier, afterPosition, windowSize, cancellationToken);
 }

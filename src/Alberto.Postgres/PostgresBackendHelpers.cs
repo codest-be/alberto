@@ -46,11 +46,17 @@ internal static class PostgresBackendHelpers
     /// drops them. The numbering keeps its gaps rather than renumbering, so a version in a log
     /// line or an old plan still means what it meant.
     /// </para>
+    /// <para>
+    /// The names returned carry a <c>_lean</c> suffix: migration 011's twins of the four above,
+    /// returning only <c>global_position</c> and <c>created_at</c>. The unsuffixed originals
+    /// stay for replicas on earlier builds and share their conflict semantics, so a change to
+    /// the conflict checks belongs in both families until the originals are dropped.
+    /// </para>
     /// </summary>
     internal static string ResolveAppendFunctionName(bool useAllTags, bool useIntersect)
         => useIntersect
-            ? (useAllTags ? "alberto_append_events_v6" : "alberto_append_events_v4")
-            : (useAllTags ? "alberto_append_events_v3" : "alberto_append_events");
+            ? (useAllTags ? "alberto_append_events_v6_lean" : "alberto_append_events_v4_lean")
+            : (useAllTags ? "alberto_append_events_v3_lean" : "alberto_append_events_lean");
 
     // ---------------------------------------------------------------------------
     // Stream query builder — the single decision tree for both tenancy paths
@@ -249,11 +255,17 @@ internal static class PostgresBackendHelpers
     // ---------------------------------------------------------------------------
 
     /// <summary>
-    /// Executes an append command and reads back the resulting event envelopes.
+    /// Executes an append command and builds the resulting event envelopes.
     /// When <paramref name="tenantId"/> is non-null, <c>@p_tenant_id</c> is added as
-    /// the first parameter and forwarded to <see cref="ReadEvent"/> so the returned
-    /// envelopes carry the correct tenant (the append result set never includes a
-    /// <c>tenant_id</c> column in either path).
+    /// the first parameter and stamped on the returned envelopes.
+    /// <para>
+    /// The <c>_lean</c> append functions (migration 011) return only what the database decides,
+    /// <c>global_position</c> and <c>created_at</c>, one row per input event in input order;
+    /// everything else is taken from the events that were sent (codest-be/alberto#269).
+    /// <see cref="IEventEnvelope.EventData"/> is therefore the caller's payload rather than
+    /// the jsonb re-rendering a read returns: equal as JSON, which is what that property
+    /// promises.
+    /// </para>
     /// </summary>
     private static async Task<IReadOnlyCollection<IEventEnvelope>> ExecuteAppendAsync(
         string sql,
@@ -334,12 +346,32 @@ internal static class PostgresBackendHelpers
             // Skip the lock statement's result set; the append's rows follow it.
             await reader.NextResultAsync(cancellationToken);
 
-            // Resolve ordinals once per reader — not per row.
-            // The append result set does not include a tenant_id column in either path;
-            // the tenant is forwarded via the tenantId override in ReadEvent.
-            var ord = new EventColumnOrdinals(reader, includeTenantId: false);
+            var positionOrdinal = reader.GetOrdinal("global_position");
+            var createdAtOrdinal = reader.GetOrdinal("created_at");
             while (await reader.ReadAsync(cancellationToken))
-                results.Add(ReadEvent(reader, in ord, tenantId));
+            {
+                if (results.Count == eventsList.Count)
+                    throw RowCountMismatch(eventsList.Count);
+
+                var sent = eventsList[results.Count];
+                results.Add(new EventEnvelope
+                {
+                    Id = sent.Id,
+                    TenantId = tenantId,
+                    GlobalPosition = reader.GetInt64(positionOrdinal),
+                    // The version comes from the stored _version:N tag, as ReadEvent derives it.
+                    EventType = new EventType(sent.EventType.Id, EventVersionTag.ParseFromTags(sent.Tags)),
+                    // Copied, not aliased: mutating the appended collections must not change
+                    // an envelope that stands for what is stored.
+                    Tags = sent.Tags.ToArray(),
+                    EventData = sent.EventData,
+                    Metadata = new Dictionary<string, string>(sent.Metadata),
+                    CreatedAt = reader.GetFieldValue<DateTimeOffset>(createdAtOrdinal)
+                });
+            }
+
+            if (results.Count != eventsList.Count)
+                throw RowCountMismatch(eventsList.Count);
 
             return results;
         }
@@ -348,6 +380,9 @@ internal static class PostgresBackendHelpers
             throw ToConflictException(ex, dcbQuery, expectedPosition);
         }
     }
+
+    private static InvalidOperationException RowCountMismatch(int sent) =>
+        new($"The append function returned a different number of rows than the {sent} events sent.");
 
     /// <summary>
     /// Turns the server's <c>P0001</c> conflict into a <see cref="DcbConflictException"/> that
@@ -540,6 +575,48 @@ internal static class PostgresBackendHelpers
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         await reader.ReadAsync(cancellationToken);
         return new HeadWindow(reader.GetFieldValue<long[]>(2), new TransactionHorizon(reader.GetInt64(0), reader.GetInt64(1), reader.GetInt64(3)));
+    }
+
+    /// <summary>
+    /// The head's whole poll in one statement and one snapshot (codest-be/alberto#268): the window
+    /// and horizon of <see cref="GetPositionWindowAsync"/>, the stable-head barrier of
+    /// <see cref="GetStableHeadAsync"/> over that window, and the last position of each event type in
+    /// it, which lets a processor whose types are all absent skip its read. The window now reads the
+    /// heap for <c>event_type</c> and <c>pg_xact_id</c>, which the separate barrier query read for the
+    /// same rows anyway. See <see cref="GetStableHeadAsync"/> for the <c>::TEXT::BIGINT</c> cast.
+    /// </summary>
+    internal static async Task<HeadSnapshot> GetHeadSnapshotAsync(
+        SchemaQualifier schema, NpgsqlDataSource dataSource,
+        bool barrier, long afterPosition, int windowSize, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var cmd = new NpgsqlCommand(
+            "WITH w AS MATERIALIZED (" +
+            $"SELECT global_position, event_type, pg_xact_id FROM {schema.Table("alberto_events")} " +
+            "WHERE global_position > @after ORDER BY global_position LIMIT @limit) " +
+            "SELECT pg_snapshot_xmin(s)::TEXT::BIGINT, pg_snapshot_xmax(s)::TEXT::BIGINT, " +
+            "ARRAY(SELECT global_position FROM w ORDER BY global_position), " +
+            $"(SELECT COALESCE(max(global_position), 0) FROM {schema.Table("alberto_events")}), " +
+            "(SELECT min(global_position) FROM w WHERE @barrier AND pg_xact_id IS NOT NULL " +
+            "AND pg_xact_id >= pg_snapshot_xmin(s)::TEXT::BIGINT), " +
+            "ARRAY(SELECT event_type FROM w GROUP BY event_type ORDER BY event_type), " +
+            "ARRAY(SELECT max(global_position) FROM w GROUP BY event_type ORDER BY event_type) " +
+            "FROM pg_current_snapshot() s",
+            connection);
+        cmd.Parameters.AddWithValue("after", afterPosition);
+        cmd.Parameters.AddWithValue("limit", windowSize);
+        cmd.Parameters.AddWithValue("barrier", barrier);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        await reader.ReadAsync(cancellationToken);
+        var window = new HeadWindow(reader.GetFieldValue<long[]>(2),
+            new TransactionHorizon(reader.GetInt64(0), reader.GetInt64(1), reader.GetInt64(3)));
+        var stableHead = reader.IsDBNull(4) ? long.MaxValue : reader.GetInt64(4) - 1;
+        var types = reader.GetFieldValue<string[]>(5);
+        var lasts = reader.GetFieldValue<long[]>(6);
+        var lastOfType = new Dictionary<string, long>(types.Length, StringComparer.Ordinal);
+        for (var i = 0; i < types.Length; i++)
+            lastOfType[types[i]] = lasts[i];
+        return new HeadSnapshot(window, stableHead, lastOfType);
     }
 
     /// <summary>
@@ -747,10 +824,24 @@ internal static class PostgresBackendHelpers
             yield return ReadEvent(reader, in ord, null);
     }
 
+    /// <summary>The statement behind <see cref="ReadAllOfTypesAsync"/>, separate so tests can EXPLAIN it.</summary>
+    internal static string ReadAllOfTypesSql(SchemaQualifier schema, bool tenanted) =>
+        $"SELECT e.global_position, {(tenanted ? "e.tenant_id, " : "")}e.event_id, e.event_type, e.event_tags, " +
+        "e.event_data, e.event_metadata, e.created_at " +
+        "FROM unnest(@types::text[]) AS t(event_type) " +
+        "CROSS JOIN LATERAL (" +
+        $"SELECT p.global_position FROM {schema.Table("alberto_event_type_positions")} p " +
+        "WHERE p.event_type = t.event_type AND p.global_position > @after " +
+        "ORDER BY p.global_position LIMIT @limit) p " +
+        $"JOIN {schema.Table("alberto_events")} e ON e.global_position = p.global_position " +
+        "ORDER BY e.global_position LIMIT @limit";
+
     /// <summary>
     /// Reads events of <paramref name="eventTypes"/> across the whole log, in position order.
-    /// Plain SQL rather than a function: it needs no migration, and the filter runs beside the
-    /// primary-key scan <c>alberto_read_all</c> already does, so only matching rows are sent.
+    /// Driven from <c>alberto_event_type_positions</c>: one ordered range scan per type, each
+    /// stopping at <paramref name="limit"/>, then a primary-key join to <c>alberto_events</c>.
+    /// The cost follows the matching events, not every event after the checkpoint. Single-tenant
+    /// uses the primary key (event_type, global_position); multi-tenant the index from 010.
     /// </summary>
     internal static async Task<IReadOnlyCollection<IEventEnvelope>> ReadAllOfTypesAsync(
         SchemaQualifier schema,
@@ -762,12 +853,7 @@ internal static class PostgresBackendHelpers
         CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var cmd = new NpgsqlCommand(
-            $"SELECT global_position, {(tenanted ? "tenant_id, " : "")}event_id, event_type, event_tags, " +
-            $"event_data, event_metadata, created_at FROM {schema.Table("alberto_events")} " +
-            "WHERE global_position > @after AND event_type = ANY(@types) " +
-            "ORDER BY global_position LIMIT @limit",
-            connection);
+        await using var cmd = new NpgsqlCommand(ReadAllOfTypesSql(schema, tenanted), connection);
 
         cmd.Parameters.AddWithValue("after", afterPosition);
         cmd.Parameters.AddWithValue("types", eventTypes.ToArray());

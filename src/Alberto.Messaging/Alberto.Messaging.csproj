@@ -18,6 +18,7 @@
 
     <ItemGroup>
         <InternalsVisibleTo Include="Alberto.Tests"/>
+        <InternalsVisibleTo Include="Alberto.Messaging.Postgres"/>
     </ItemGroup>
 
     <ItemGroup>

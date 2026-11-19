@@ -23,6 +23,8 @@ public sealed class OutboxRelay : BackgroundService
     private readonly string _claimedBy;
     private readonly int _maxRetries;
     private readonly ILogger _logger;
+    private readonly WakeSignal? _wake;
+    private readonly TimeSpan _idleCeiling;
 
     /// <summary>
     /// Default time for one relay to own a claimed entry before another relay may recover it.
@@ -41,9 +43,17 @@ public sealed class OutboxRelay : BackgroundService
     // Upper bound for the exponential back-off after failures, unless the polling interval is longer.
     private static readonly TimeSpan MaxBackoff = TimeSpan.FromSeconds(30);
 
-    // Bounds the mark-delivered write that follows a publish, so a shutdown does not skip it
-    // (the message would be delivered twice) yet cannot hang on a stuck store either.
-    private static readonly TimeSpan MarkDeliveredTimeout = TimeSpan.FromSeconds(5);
+    // Bounds the mark writes that follow a batch, so a shutdown does not skip them (a delivered
+    // message would go out twice, a failure would not count) yet cannot hang on a stuck store either.
+    private static readonly TimeSpan MarkTimeout = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// Ceiling of the idle back-off of a relay wired to a <see cref="WakeSignal"/>: an idle
+    /// relay doubles its delay from the polling interval up to this (or the polling interval, if
+    /// longer). Entries this process enqueues wake it at once, so the ceiling only bounds how late an
+    /// entry enqueued by another process, or left behind by a dead relay, is picked up.
+    /// </summary>
+    internal static readonly TimeSpan DefaultIdleCeiling = TimeSpan.FromSeconds(5);
 
     /// <summary>
     /// Creates a new <see cref="OutboxRelay"/>.
@@ -121,7 +131,9 @@ public sealed class OutboxRelay : BackgroundService
         string? claimedBy = null,
         int maxRetries = DefaultMaxRetries,
         ILogger<OutboxRelay>? logger = null,
-        AlbertoInstruments? instruments = null)
+        AlbertoInstruments? instruments = null,
+        WakeSignal? wake = null,
+        TimeSpan? idleCeiling = null)
     {
         ArgumentNullException.ThrowIfNull(store);
         _instruments = instruments ?? AlbertoMetrics.Shared;
@@ -140,6 +152,8 @@ public sealed class OutboxRelay : BackgroundService
         _claimLease = resolvedClaimLease;
         _maxRetries = maxRetries;
         _logger = logger ?? NullLogger<OutboxRelay>.Instance;
+        _wake = wake;
+        _idleCeiling = idleCeiling ?? DefaultIdleCeiling;
         _claimedBy = string.IsNullOrWhiteSpace(claimedBy)
             ? $"{Environment.MachineName}:{Environment.ProcessId}:{Guid.NewGuid():N}"
             : claimedBy;
@@ -158,6 +172,7 @@ public sealed class OutboxRelay : BackgroundService
             await _transport.StartAsync(cancellationToken);
 
             var failureStreak = 0;
+            var idleStreak = 0;
             while (!cancellationToken.IsCancellationRequested)
             {
                 IReadOnlyList<OutboxClaim> pending;
@@ -181,14 +196,25 @@ public sealed class OutboxRelay : BackgroundService
                 }
 
                 var anyPublishFailed = false;
-                // Marked in one round trip once the batch is published. A send span stays open
-                // until then so it can carry the outcome of its mark, with its end time already
-                // fixed at the publish.
+                // Deliveries and failures are each marked in one round trip once the batch is done,
+                // or earlier if half the claim lease has gone by: a mark only lands while the claim
+                // is still held. A send span stays open until its mark so it can carry the outcome,
+                // with its end time already fixed at the publish.
                 var published = new List<(OutboxClaim Claim, Activity? Activity)>(pending.Count);
+                var failures = new List<OutboxFailure>();
+                var claimedAt = Stopwatch.GetTimestamp();
                 try
                 {
                     foreach (var claim in pending)
                     {
+                        if (Stopwatch.GetElapsedTime(claimedAt) >= _claimLease / 2)
+                        {
+                            await MarkDeliveredSafelyAsync(published);
+                            await MarkFailedSafelyAsync(failures);
+                            published.Clear();
+                            failures.Clear();
+                        }
+
                         var entry = claim.Entry;
                         using var scope = entry.TenantId is null
                             ? null
@@ -205,7 +231,7 @@ public sealed class OutboxRelay : BackgroundService
                             BackgroundSpans.Fail(activity, ex);
                             activity?.Dispose();
                             _instruments.OutboxPublishFailures.Add(1, new KeyValuePair<string, object?>("error.type", errorType));
-                            await MarkFailedSafelyAsync(claim, ex, cancellationToken);
+                            failures.Add(new OutboxFailure(claim, ex.Message));
                             continue;
                         }
                         catch
@@ -223,17 +249,22 @@ public sealed class OutboxRelay : BackgroundService
                 }
                 finally
                 {
-                    // Also on shutdown part-way through: what was published must still be marked.
+                    // Also on shutdown part-way through: what was published must still be marked,
+                    // and what failed must still count as an attempt.
                     await MarkDeliveredSafelyAsync(published);
+                    await MarkFailedSafelyAsync(failures);
                 }
 
                 failureStreak = anyPublishFailed ? failureStreak + 1 : 0;
+                idleStreak = pending.Count == 0 ? idleStreak + 1 : 0;
 
+                // The wake signal never cuts the failure back-off short: a fresh entry must not
+                // hammer a transport that is failing.
                 if (anyPublishFailed)
                     await Task.Delay(Backoff(_pollingInterval, failureStreak), cancellationToken);
                 // Back off when there are no more pending entries
                 else if (pending.Count < _batchSize)
-                    await Task.Delay(_pollingInterval, cancellationToken);
+                    await IdleDelayAsync(idleStreak, cancellationToken);
             }
         }
         catch (OperationCanceledException exception) when (cancellationToken.IsCancellationRequested)
@@ -257,27 +288,59 @@ public sealed class OutboxRelay : BackgroundService
         hostCancellation?.Throw();
     }
 
-    internal static TimeSpan Backoff(TimeSpan pollingInterval, int failureStreak)
+    internal static TimeSpan Backoff(TimeSpan pollingInterval, int failureStreak, TimeSpan? maxBackoff = null)
     {
-        var cap = pollingInterval > MaxBackoff ? pollingInterval : MaxBackoff;
+        var limit = maxBackoff ?? MaxBackoff;
+        var cap = pollingInterval > limit ? pollingInterval : limit;
         var factor = Math.Pow(2, Math.Min(failureStreak - 1, 16));
         return TimeSpan.FromTicks((long)Math.Min(pollingInterval.Ticks * factor, cap.Ticks));
     }
 
-    private async Task MarkFailedSafelyAsync(OutboxClaim claim, Exception failure, CancellationToken cancellationToken)
+    // Without a wake signal the relay cannot tell it has work, so it polls at the fixed interval
+    // as it always has. With one, consecutive empty polls back off up to the idle ceiling and a
+    // local enqueue ends the wait at once.
+    private Task IdleDelayAsync(int idleStreak, CancellationToken cancellationToken) =>
+        _wake is null
+            ? Task.Delay(_pollingInterval, cancellationToken)
+            : _wake.WaitAsync(Backoff(_pollingInterval, Math.Max(idleStreak, 1), _idleCeiling), cancellationToken);
+
+    private async Task MarkFailedSafelyAsync(List<OutboxFailure> failures)
     {
+        if (failures.Count == 0)
+            return;
+
+        // Deliberately not the host's token, like the delivered marks: an attempt that failed
+        // before a shutdown still counts towards maxRetries.
+        using var timeout = new CancellationTokenSource(MarkTimeout);
+        IReadOnlySet<Guid> marked;
         try
         {
-            if (!await _store.MarkAttemptFailedAsync(claim, failure.Message, _maxRetries, cancellationToken))
+            if (_store is IOutboxFailureBatchStore batch)
+            {
+                marked = await batch.MarkAttemptsFailedAsync(failures, _maxRetries, timeout.Token);
+            }
+            else
+            {
+                var each = new HashSet<Guid>();
+                foreach (var (claim, error) in failures)
+                    if (await _store.MarkAttemptFailedAsync(claim, error, _maxRetries, timeout.Token))
+                        each.Add(claim.Entry.Id);
+                marked = each;
+            }
+        }
+        catch (Exception ex)
+        {
+            // The claim leases expire and the entries are redelivered.
+            _logger.LogWarning(ex,
+                "Could not record the delivery failure of {Count} outbox entries.", failures.Count);
+            return;
+        }
+
+        foreach (var (claim, _) in failures)
+            if (!marked.Contains(claim.Entry.Id))
                 _logger.LogWarning(
                     "Outbox entry {EntryId} failed delivery but its claim was lost; another relay owns it now.",
                     claim.Entry.Id);
-        }
-        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
-        {
-            // The claim lease expires and the entry is redelivered.
-            _logger.LogWarning(ex, "Could not record the delivery failure of outbox entry {EntryId}.", claim.Entry.Id);
-        }
     }
 
     // Parented to the append that produced the entry's event; a plain root when there is none.
@@ -336,7 +399,7 @@ public sealed class OutboxRelay : BackgroundService
         IReadOnlySet<Guid> marked = new HashSet<Guid>();
         // Deliberately not the host's token: the messages are already published, so a token
         // cancelled by shutdown would leave them to be delivered a second time.
-        using var timeout = new CancellationTokenSource(MarkDeliveredTimeout);
+        using var timeout = new CancellationTokenSource(MarkTimeout);
         try
         {
             marked = await _store.MarkDeliveredBatchAsync(

@@ -80,6 +80,12 @@ internal sealed class RebuildCoordinator(
     private readonly HashSet<string> _pendingReclaim = new(StringComparer.Ordinal);
 
     /// <summary>
+    /// Per processor, what this process's last completed sweep covered, so later sweeps skip
+    /// versions that can no longer hold state. See <see cref="VersionsToSweep"/>.
+    /// </summary>
+    private readonly Dictionary<string, SweptRange> _swept = new(StringComparer.Ordinal);
+
+    /// <summary>
     /// One <c>alberto.rebuild</c> span per rebuild this replica is driving, from the start of its
     /// replay to the sweep that reclaims what it discarded. Detached: it lives across ticks, so it
     /// is never <see cref="Activity.Current"/> and parents nothing.
@@ -427,7 +433,7 @@ internal sealed class RebuildCoordinator(
         if (state.Status is RebuildStatus.Idle)
             return;
 
-        await versions.RefreshAsync(cancellationToken);
+        // No refresh here: state is this tick's, read by ReconcileAsync a moment ago.
         await SweepAsync(projection, state, cancellationToken);
     }
 
@@ -459,7 +465,9 @@ internal sealed class RebuildCoordinator(
     /// being rebuilt when one is in flight, and the active one otherwise. Aborts leave the active
     /// version alone while still consuming numbers, so bounding on it would strand them.
     /// Clearing a version that holds nothing is a no-op, which is what lets this
-    /// run without knowing what a previous coordinator got as far as doing.
+    /// run without knowing what a previous coordinator got as far as doing. Only a processor's
+    /// first sweep in this process walks that whole range; later ones skip what it already
+    /// cleared (see <see cref="VersionsToSweep"/>).
     /// </para>
     /// <para>
     /// The grace check covers the whole processor rather than just the version the last
@@ -493,7 +501,7 @@ internal sealed class RebuildCoordinator(
         // that a run of aborted rebuilds burned through unswept, since abort does not advance it.
         var highest = state.LastAllocatedVersion;
 
-        for (var version = ProjectionVersions.Initial; version <= highest; version++)
+        foreach (var version in VersionsToSweep(projection.ProcessorId, highest))
         {
             if (version == state.ActiveVersion || version == state.RebuildingVersion)
                 continue;
@@ -501,11 +509,41 @@ internal sealed class RebuildCoordinator(
             await ClearAsync(projection, version, cancellationToken);
         }
 
+        // Recorded only once every version above has been cleared: a sweep cut short leaves the
+        // record where it was, and the next one covers the same versions again.
+        _swept[projection.ProcessorId] = new SweptRange(highest, state.ActiveVersion, state.RebuildingVersion);
         _pendingReclaim.Remove(projection.ProcessorId);
         RebuildEvent(projection.ProcessorId, "swept");
         EndRebuildSpan(projection.ProcessorId);
         return true;
     }
+
+    /// <summary>
+    /// The versions a sweep has to clear. The first sweep of a processor in this process covers
+    /// every version ever allocated, since a previous process may have stopped anywhere. After
+    /// that, a version this process has already cleared cannot hold state again — numbers are
+    /// never reused, and an aborted shadow loop's late writes land inside the grace period the
+    /// sweep waits out — so only the versions the last sweep kept, and the ones allocated since,
+    /// can.
+    /// </summary>
+    private IEnumerable<int> VersionsToSweep(string processorId, int highest)
+    {
+        // A high-water mark that went backwards means the state machine row was recreated by
+        // hand; nothing this process remembers about it holds any more.
+        if (!_swept.TryGetValue(processorId, out var swept) || highest < swept.Through)
+            return Enumerable.Range(ProjectionVersions.Initial, Math.Max(0, highest));
+
+        var candidates = Enumerable.Range(swept.Through + 1, highest - swept.Through).Append(swept.Active);
+        if (swept.Rebuilding is { } rebuilding)
+            candidates = candidates.Append(rebuilding);
+        return candidates.Distinct();
+    }
+
+    /// <summary>
+    /// What the last completed sweep of a processor covered: every version up to
+    /// <paramref name="Through"/> except the two it had to keep.
+    /// </summary>
+    private readonly record struct SweptRange(int Through, int Active, int? Rebuilding);
 
     /// <summary>
     /// Reclaims one version of one projection everywhere it is stored: the module's own state

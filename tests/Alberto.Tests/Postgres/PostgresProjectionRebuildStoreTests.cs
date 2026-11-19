@@ -347,6 +347,37 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
     }
 
     [Fact]
+    public async Task DiscardStateVersionAsync_LargerThanOneBatch_RemovesEveryRowOfTheVersionAndNothingElse()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var (_, projectionType) = NewIdentity();
+        var (_, otherType) = NewIdentity();
+        const int rows = PostgresProjectionRebuildStore.DiscardBatchSize * 2 + 3;
+
+        await using (var conn = await fixture.DataSource.OpenConnectionAsync(cancellationToken))
+        await using (var cmd = new NpgsqlCommand(
+            """
+            INSERT INTO alberto_projection_states (projection_type, document_id, rebuild_version, state)
+            SELECT @type, 'doc-' || g, 2, '{}'::jsonb FROM generate_series(1, @rows) g
+            UNION ALL SELECT @type, 'doc-' || g, v, '{}'::jsonb FROM generate_series(1, 3) g, (VALUES (1), (3)) AS v(v)
+            UNION ALL SELECT @other, 'doc-' || g, 2, '{}'::jsonb FROM generate_series(1, 3) g
+            """, conn))
+        {
+            cmd.Parameters.AddWithValue("type", projectionType);
+            cmd.Parameters.AddWithValue("other", otherType);
+            cmd.Parameters.AddWithValue("rows", rows);
+            await cmd.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await CreateStore().DiscardStateVersionAsync(projectionType, 2, cancellationToken);
+
+        (await CountStateAsync(projectionType, 2, cancellationToken)).Should().Be(0);
+        (await CountStateAsync(projectionType, 1, cancellationToken)).Should().Be(3);
+        (await CountStateAsync(projectionType, 3, cancellationToken)).Should().Be(3);
+        (await CountStateAsync(otherType, 2, cancellationToken)).Should().Be(3);
+    }
+
+    [Fact]
     public async Task DiscardStateVersionAsync_ForAVersionHoldingNothing_IsANoOp()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -355,9 +386,9 @@ public sealed class PostgresProjectionRebuildStoreTests(PostgresProjectionRebuil
 
         await InsertStateAsync(projectionType, "doc-1", rebuildVersion: 1, cancellationToken);
 
-        // The sweep runs on every replica and covers the whole version range each time, so
-        // reclaiming a version that another replica already reclaimed — or that never held
-        // anything — has to be ordinary rather than an error.
+        // The sweep runs on every replica, and each one's first sweep covers the whole version
+        // range, so reclaiming a version that another replica already reclaimed — or that never
+        // held anything — has to be ordinary rather than an error.
         await store.DiscardStateVersionAsync(projectionType, 7, cancellationToken);
         await store.DiscardStateVersionAsync(projectionType, 7, cancellationToken);
 

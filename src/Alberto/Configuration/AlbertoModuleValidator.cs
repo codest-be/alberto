@@ -259,6 +259,14 @@ public sealed class AlbertoModuleValidator : IValidateOptions<AlbertoModuleDefin
                     $"ControlLoop.Rebuilds.VersionRefreshInterval is {loop.Rebuilds.VersionRefreshInterval}, which is not a positive duration.",
                     $"Set a positive interval via .WithRebuilds(pollingInterval: ...) or '{path}:ControlLoop:Rebuilds:VersionRefreshInterval'."));
             }
+
+            if (loop.Rebuilds.BatchSize <= 0)
+            {
+                failures.Add(new AlbertoValidationFailure(
+                    "ALB0009",
+                    $"ControlLoop.Rebuilds.BatchSize is {loop.Rebuilds.BatchSize}, which is not a positive count.",
+                    $"Set a positive count via '{path}:ControlLoop:Rebuilds:BatchSize'."));
+            }
         }
     }
 

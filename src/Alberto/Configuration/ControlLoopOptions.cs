@@ -134,6 +134,20 @@ public sealed record RebuildOptions
 
     /// <summary>How often the live-version cache refreshes. Default: 5 s.</summary>
     public TimeSpan VersionRefreshInterval { get; init; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// Maximum events a rebuild's shadow loop fetches per poll. Default: 1000.
+    /// <para>
+    /// Separate from <see cref="ControlLoopOptions.BatchSize"/> because a replay starts from the
+    /// beginning of the log: the live loop's batch, sized for latency at the head, would cost
+    /// a replay of N events N/100 round trips and state writes.
+    /// </para>
+    /// <para>
+    /// Internal: set through configuration (<c>ControlLoop:Rebuilds:BatchSize</c>), so the knob
+    /// adds no public API.
+    /// </para>
+    /// </summary>
+    internal int BatchSize { get; init; } = 1000;
 }
 
 /// <summary>Configuration mirror for <see cref="RebuildOptions"/>.</summary>
@@ -151,6 +165,9 @@ internal sealed class RebuildOverrides : IAlbertoOverrides<RebuildOptions>
     /// <summary>Mirror of <see cref="RebuildOptions.VersionRefreshInterval"/>.</summary>
     public TimeSpan? VersionRefreshInterval { get; set; }
 
+    /// <summary>Mirror of <see cref="RebuildOptions.BatchSize"/>.</summary>
+    public int? BatchSize { get; set; }
+
     /// <inheritdoc />
     public RebuildOptions ApplyTo(RebuildOptions options)
     {
@@ -162,6 +179,7 @@ internal sealed class RebuildOverrides : IAlbertoOverrides<RebuildOptions>
             AutoPromote = AutoPromote ?? options.AutoPromote,
             PollingInterval = PollingInterval ?? options.PollingInterval,
             VersionRefreshInterval = VersionRefreshInterval ?? options.VersionRefreshInterval,
+            BatchSize = BatchSize ?? options.BatchSize,
         };
     }
 }

@@ -196,6 +196,12 @@ A tenant with no row and no `WithDefaultShard` throws `UnknownTenantException`. 
 deliberate strict mode: without a default, Alberto will not guess where a tenant belongs, because
 guessing wrong writes events into a database the tenant will never be read from again.
 
+That refusal is cached for five seconds per tenant id (at most 10,000 ids, cleared when full), so
+a client looping on an unknown `X-Tenant-Id` costs one catalog read per five seconds per replica
+rather than one per request. A tenant assigned after a refusal therefore resolves within five
+seconds, or at once if this process assigns it or refreshes the catalog first. A catalog read that
+fails is not cached, and a module with a default shard never refuses, so nothing is cached there.
+
 A catalog row naming a shard this deployment does not declare throws `ShardUnavailableException`
 for the tenants that reference it: an operator's stray `INSERT`, or a deploy that has not rolled
 out yet, fails those tenants rather than blocking the host from starting.

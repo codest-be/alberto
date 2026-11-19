@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using Alberto.Checkpoints;
@@ -22,8 +23,9 @@ namespace Alberto.Projections;
 /// In the process running the control loop that is exact: the loop advances the checkpoint in
 /// memory as it commits each batch. When the module has
 /// <see cref="Configuration.ProcessorLeaseOptions.Enabled">leases</see> on, a processor runs on
-/// one replica only, so the wait also polls the checkpoint in the database (every 100 ms, only
-/// while behind) and works on every replica. The owning replica writes its checkpoint after each
+/// one replica only, so the wait also polls the checkpoint in the database (at most once per
+/// processor every 100 ms however many callers wait, only while behind, and never on the replica
+/// that holds the processor's lease, whose cache is exact) and works on every replica. The owning replica writes its checkpoint after each
 /// batch when leases are on, so a replica that does not run the processor sees it advance within
 /// one poll of the owner committing the batch.
 /// </para>
@@ -37,6 +39,9 @@ public sealed class ProjectionCatchUp
 
     // Set only when leases spread processors over replicas; null means the cache is exact.
     private readonly Func<string, CancellationToken, Task<long?>>? _readStore;
+
+    // One store read per processor per StorePollInterval, shared by every waiter on it.
+    private readonly ConcurrentDictionary<string, (long StartedAt, Task<long?> Read)> _storeReads = new(StringComparer.Ordinal);
 
     // The store is a database round trip, so it is read less often than the in-memory cache.
     internal static readonly TimeSpan StorePollInterval = TimeSpan.FromMilliseconds(100);
@@ -77,7 +82,20 @@ public sealed class ProjectionCatchUp
         : this(eventStore, checkpoints, defaultTimeout)
     {
         if (readStore && checkpoints is CachingCheckpointStore caching)
-            _readStore = caching.GetFromStoreAsync;
+            _readStore = (processorId, _) => caching.HoldsLease(processorId)
+                ? Task.FromResult<long?>(null)
+                : SharedStoreRead(processorId, caching.GetFromStoreAsync);
+    }
+
+    private Task<long?> SharedStoreRead(string processorId, Func<string, CancellationToken, Task<long?>> read)
+    {
+        var current = _storeReads.AddOrUpdate(
+            processorId,
+            id => (Stopwatch.GetTimestamp(), read(id, CancellationToken.None)),
+            (id, previous) => Stopwatch.GetElapsedTime(previous.StartedAt) < StorePollInterval
+                ? previous
+                : (Stopwatch.GetTimestamp(), read(id, CancellationToken.None)));
+        return current.Read;
     }
 
     /// <summary>
@@ -152,7 +170,7 @@ public sealed class ProjectionCatchUp
                 && (lastStoreRead is null || Stopwatch.GetElapsedTime(lastStoreRead.Value) >= StorePollInterval))
             {
                 lastStoreRead = Stopwatch.GetTimestamp();
-                var stored = await _readStore(processorId, cancellationToken).ConfigureAwait(false);
+                var stored = await _readStore(processorId, cancellationToken).WaitAsync(cancellationToken).ConfigureAwait(false);
                 if (stored > (reached ?? 0))
                     reached = stored;
                 if ((reached ?? 0) >= position)

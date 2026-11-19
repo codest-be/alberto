@@ -142,16 +142,30 @@ internal sealed class DeclaredAsyncProjection<TState> : IBatchableProcessor, IPr
         if (documentIds.Count == 0) return;
 
         var stateStore = GetStore(tenantId);
-        var states = await stateStore.LoadManyAsync(documentIds, cancellationToken);
 
-        var changes = batch.Fold(states);
-
-        if (changes.Upserts.Count > 0 || changes.Deletes.Count > 0)
+        bool applied;
+        if (stateStore is IStateStoreBatchFold<TState> batchFold)
         {
-            await stateStore.ApplyChangesAsync(changes.Upserts, changes.Deletes, cancellationToken);
-            if (_afterCommit is not null)
-                await _afterCommit(batch.Handled, cancellationToken);
+            applied = await batchFold.LoadFoldApplyAsync(
+                documentIds,
+                loaded =>
+                {
+                    var folded = batch.Fold(loaded);
+                    return (folded.Upserts, folded.Deletes);
+                },
+                cancellationToken);
         }
+        else
+        {
+            var states = await stateStore.LoadManyAsync(documentIds, cancellationToken);
+            var changes = batch.Fold(states);
+            applied = changes.Upserts.Count > 0 || changes.Deletes.Count > 0;
+            if (applied)
+                await stateStore.ApplyChangesAsync(changes.Upserts, changes.Deletes, cancellationToken);
+        }
+
+        if (applied && _afterCommit is not null)
+            await _afterCommit(batch.Handled, cancellationToken);
     }
 
     /// <inheritdoc/>

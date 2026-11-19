@@ -18,7 +18,7 @@ internal sealed class InterceptingEventStoreBackend(
     IEventStoreBackend inner,
     IAppendInterceptorPipeline pipeline,
     string? dbSystem = null)
-    : IEventStoreBackend, IEventStoreHeadBackend
+    : IEventStoreBackend, IEventStoreHeadBackend, IHeadSnapshotBackend
 {
     private readonly IEventStoreBackend _inner = inner ?? throw new ArgumentNullException(nameof(inner));
     private readonly IAppendInterceptorPipeline _pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
@@ -219,4 +219,7 @@ internal sealed class InterceptingEventStoreBackend(
     public Task<long> GetStableHeadUpToAsync(
         long afterPosition, long upToPosition, CancellationToken cancellationToken = default)
         => _innerHead.GetStableHeadUpToAsync(afterPosition, upToPosition, cancellationToken);
+
+    public Task<HeadSnapshot> GetHeadSnapshotAsync(long afterPosition, int windowSize, CancellationToken cancellationToken)
+        => HeadSnapshot.ReadAsync(_innerHead, afterPosition, windowSize, cancellationToken);
 }

@@ -99,7 +99,8 @@ public sealed class EventStoreHeadInFlightGapPostgresTests(SingleTenantPostgresF
 
 /// <summary>
 /// The same, with the real multi-tenant append: tenant A's append is held open after drawing its
-/// position (a lock on its tenant row, which the append's trigger updates), while tenant B's
+/// position (a lock on its tenant row, which the append's trigger updates once the row's
+/// last_seen_at is stale), while tenant B's
 /// appends commit above it.
 /// </summary>
 [Trait("Category", "Integration")]
@@ -117,6 +118,9 @@ public sealed class EventStoreHeadInFlightGapMultiTenantTests(MultiTenantDbFixtu
         await store.AppendForTenant("gap-b", [Gap.Event(0)], cancellationToken: ct);
         await head.RefreshAsync(ct);
 
+        // The trigger touches a known tenant's row only once last_seen_at is a minute old, so age
+        // it first: otherwise the append never waits on the lock below.
+        await Gap.Query(fixture.DataSource, "UPDATE alberto_tenants SET last_seen_at = now() - INTERVAL '1 hour' WHERE tenant_id = 'gap-a'", ct);
         await using var rowLock = await Gap.Begin(fixture.ConnectionString, ct);
         await Gap.Scalar(rowLock, "SELECT 1 FROM alberto_tenants WHERE tenant_id = 'gap-a' FOR UPDATE", ct);
         var parked = store.AppendForTenant("gap-a", [Gap.Event(1)], cancellationToken: ct);

@@ -232,6 +232,7 @@ public class AppendWithDcbCheckStoreSizeBenchmarks : AppendBenchmarkBase
 {
     private IEventToPersist[] _single = null!;
     private DcbQuery _realHistoryQuery = null!;
+    private DcbQuery _unseenTypeOnBusyTagQuery = null!;
 
     [Params(StoreSizes.Small, StoreSizes.Medium, StoreSizes.Large)]
     public int StoreSize { get; set; }
@@ -256,6 +257,12 @@ public class AppendWithDcbCheckStoreSizeBenchmarks : AppendBenchmarkBase
         // StoreSize) even though the predicate's shape means that cost stays flat by design,
         // which is itself the answer to whether the check slows as the store grows -- not a harness gap to work around further.
         _realHistoryQuery = DcbQuery.ByTags(new EventTag("order", "1"));
+
+        // Types AND tags (alberto_append_events_v4): a tag holding StoreSize/100 seeded events
+        // and a type none of them has, so the check finds nothing and must prove it. Before
+        // migration 009 the generic plan walked the events primary key from expectedPosition
+        // to the tag's newest event under the append lock (codest-be/alberto#266).
+        _unseenTypeOnBusyTagQuery = DcbQuery.ByTags(new EventTag("order", "1")).WithTypes("never-seeded");
         return Task.CompletedTask;
     }
 
@@ -265,4 +272,20 @@ public class AppendWithDcbCheckStoreSizeBenchmarks : AppendBenchmarkBase
     [Benchmark, BenchmarkCategory(Categories.Append)]
     public Task<IReadOnlyCollection<IEventEnvelope>> AppendWithDcbCheck()
         => Backend.AppendAsync(_single, dcbQuery: _realHistoryQuery, expectedPosition: SeededHead);
+
+    [GlobalSetup(Target = nameof(AppendWithTypesAndTagsCheckFromZero))]
+    public Task SetupAppendWithTypesAndTagsCheckFromZero() => InitAsync(AppendWithTypesAndTagsCheckFromZero, StoreSize);
+
+    /// <summary>The decision read nothing, so expectedPosition is 0.</summary>
+    [Benchmark, BenchmarkCategory(Categories.Append)]
+    public Task<IReadOnlyCollection<IEventEnvelope>> AppendWithTypesAndTagsCheckFromZero()
+        => Backend.AppendAsync(_single, dcbQuery: _unseenTypeOnBusyTagQuery, expectedPosition: 0);
+
+    [GlobalSetup(Target = nameof(AppendWithTypesAndTagsCheckFromMidStore))]
+    public Task SetupAppendWithTypesAndTagsCheckFromMidStore() => InitAsync(AppendWithTypesAndTagsCheckFromMidStore, StoreSize);
+
+    /// <summary>The boundary's types last occurred half the store ago on a busy tag.</summary>
+    [Benchmark, BenchmarkCategory(Categories.Append)]
+    public Task<IReadOnlyCollection<IEventEnvelope>> AppendWithTypesAndTagsCheckFromMidStore()
+        => Backend.AppendAsync(_single, dcbQuery: _unseenTypeOnBusyTagQuery, expectedPosition: SeededHead / 2);
 }

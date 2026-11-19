@@ -264,6 +264,17 @@ internal static class ControlLoopRegistration
                 return new DeadLetterRetryLoopGroup([]);
             }
 
+            // One "which processors have due dead letters" read per interval for the whole
+            // module, instead of one claim per processor, when the store can answer it.
+            var gate = claimableStore is IDeadLetterDueProbe probe && processors.Count > 0
+                ? new DeadLetterDueGate(
+                    probe,
+                    processors.Select(p => p.ProcessorId),
+                    options.DeadLetterRetry.PollingInterval,
+                    timeProvider,
+                    logger)
+                : null;
+
             var retryLoops = processors
                 .Select(p => new DeadLetterRetryLoop(
                     p,
@@ -275,10 +286,11 @@ internal static class ControlLoopRegistration
                     options.DeadLetterRetry.ClaimLease,
                     replicaId,
                     timeProvider: timeProvider,
-                    drainTimeout: options.DrainTimeout))
+                    drainTimeout: options.DrainTimeout,
+                    gate: gate))
                 .ToList();
 
-            return new DeadLetterRetryLoopGroup(retryLoops);
+            return new DeadLetterRetryLoopGroup(retryLoops, gate);
         });
     }
 }

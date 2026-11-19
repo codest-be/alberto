@@ -21,7 +21,7 @@ namespace Alberto.InMemory;
 /// </remarks>
 internal sealed class InMemoryTenantEventStoreDecorator(
     InMemoryEventStoreBackend inner,
-    ITenantAccessor tenantAccessor) : IEventStoreBackend, IEventStoreHeadBackend
+    ITenantAccessor tenantAccessor) : IEventStoreBackend, IEventStoreHeadBackend, IHeadSnapshotBackend
 {
     public Task<IReadOnlyCollection<IEventEnvelope>> ReadAsync(
         DcbQuery query,
@@ -97,6 +97,9 @@ internal sealed class InMemoryTenantEventStoreDecorator(
     public Task<IReadOnlyList<long>> GetPositionsAsync(
         long afterPosition, int windowSize, CancellationToken cancellationToken = default)
         => inner.GetPositionsAsync(afterPosition, windowSize, cancellationToken);
+
+    public Task<HeadSnapshot> GetHeadSnapshotAsync(long afterPosition, int windowSize, CancellationToken cancellationToken)
+        => inner.GetHeadSnapshotAsync(afterPosition, windowSize, cancellationToken);
 
     // In-memory has no in-flight transactions, so there is no stable-head barrier.
     // The default implementation (long.MaxValue) is inherited from IEventStoreHeadBackend,
