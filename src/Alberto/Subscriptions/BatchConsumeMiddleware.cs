@@ -20,19 +20,12 @@ public static class BatchConsumeMiddlewares
     /// Retries a batch as a unit. If the batch still fails after retries,
     /// a single-event batch is dead-lettered; larger batches bubble the
     /// failure so the control loop can isolate the poison event by splitting.
-    /// The retry loop is shared with <see cref="ConsumeMiddlewares.RetryAndDeadLetter"/>
-    /// via <see cref="RetryAndDeadLetterCore"/>; this method owns only the
-    /// batch-specific tail:
-    /// <list type="bullet">
-    ///   <item>Multi-event batches: rethrow via <see cref="BatchSplittingRethrow"/>
-    ///   so the caller can bisect the batch to isolate the poison event.</item>
-    ///   <item>Single-event batches: dead-letter in place.</item>
-    /// </list>
-    /// The dead-letter store write itself is wrapped in a bounded retry. If that
-    /// write still cannot be made durable, the failure is logged at error level and
-    /// the method returns normally — losing one dead-letter entry is strictly safer
-    /// than allowing the exception to escape, which would prevent the checkpoint from
-    /// advancing and cause all already-committed events to be re-delivered.
+    /// The retry loop and the halt / dead-letter tail are shared with
+    /// <see cref="ConsumeMiddlewares.RetryAndDeadLetter"/> via <see cref="RetryAndDeadLetterCore"/>;
+    /// this method owns only the batch-specific part: a multi-event batch rethrows so the caller
+    /// can bisect it to isolate the poison event, and a single-event batch is dead-lettered in place.
+    /// A dead-letter write that still fails is logged, not thrown; see
+    /// <see cref="RetryAndDeadLetterCore.StoreDeadLetterAsync"/> for why.
     /// </summary>
     /// <param name="retry">Retry policy (max attempts, backoff, dead-letter flag).</param>
     /// <param name="classifier">Determines whether a given exception is transient or permanent.</param>
@@ -65,65 +58,14 @@ public static class BatchConsumeMiddlewares
 
             // retryMetricCount is evaluated at dispatch time (inside the lambda)
             // so it reflects the actual batch size for the current invocation.
-            var lastError = await RetryAndDeadLetterCore.ExecuteAsync(
-                context, effectiveRetry, classifier, next, retryMetricCount: context.Envelopes.Count, instruments, clock);
-
-            if (lastError is null)
-                return; // success
-
-            // Batch-splitting rethrow: bubble the failure for multi-event batches
-            // so the control loop can bisect the batch to isolate the poison event.
-            // For single-event batches this is a no-op and we continue to dead-letter.
-            BatchSplittingRethrow(context, lastError);
-
-            // A projection never dead-letters or skips: it stays on this event until it works.
-            if (policy is { HaltsOnFailure: true })
-            {
-                await RetryAndDeadLetterCore.HaltAsync(
-                    context, context.HaltObserver, context.Envelopes[0].GlobalPosition,
-                    lastError, policy.Halt, next, clock, logger, instruments);
-                return;
-            }
-
-
-            // Single-event batch — dead-letter in place.
-            context.DeadLetteredCount = 1;
-
-            instruments.DeadLetters.Add(1, ProcessorTags.ForModule(context.ProcessorId, context.ModuleKey));
-
-            if (!effectiveRetry.DeadLetterOnMaxRetries || deadLetterStore is null)
-                return;
-
-            var envelope = context.Envelopes[0];
-            var now = clock.GetUtcNow();
-            var (nextRetryAt, redeliveryCount) = RetryAndDeadLetterCore.PlanRedelivery(
-                policy, classifier, lastError, priorRedeliveries: null, now);
-            var entry = DeadLetterEntryFactory.Create(
-                context.ProcessorId,
-                envelope,
-                lastError,
-                context.Attempt,
-                now,
-                nextRetryAt,
-                redeliveryCount);
-
-            // A transient DB error on this write must not escape: the checkpoint would stay at
-            // the pre-batch position and every event that already committed side-effects
-            // (A, B, C in a bisected [A, B, C, D]) would be re-delivered on restart. See
-            // RetryAndDeadLetterCore.StoreDeadLetterAsync for the full reasoning.
-            _ = await RetryAndDeadLetterCore.StoreDeadLetterAsync(
-                deadLetterStore, entry, logger, context.CancellationToken, clock);
+            // A multi-event batch rethrows so the control loop can bisect it; only a
+            // single-event batch is halted on or dead-lettered, in place.
+            if (await RetryAndDeadLetterCore.ExecuteAndDeadLetterAsync(
+                    context, context.Envelopes[0], priorRedeliveries: null,
+                    rethrowFailure: context.Envelopes.Count > 1, retryMetricCount: context.Envelopes.Count,
+                    context.HaltObserver, policy, effectiveRetry, classifier, deadLetterStore, next,
+                    instruments, clock, logger) is not null)
+                context.DeadLetteredCount = 1;
         };
-    }
-
-    /// <summary>
-    /// Rethrows the batch failure when the batch contains more than one event,
-    /// so the caller can bisect the batch to isolate the poison event.
-    /// Does nothing for single-event batches (they are dead-lettered in-place).
-    /// </summary>
-    private static void BatchSplittingRethrow(BatchConsumeContext context, Exception? lastError)
-    {
-        if (context.Envelopes.Count > 1)
-            throw lastError ?? new InvalidOperationException("Batch processing failed without an exception.");
     }
 }

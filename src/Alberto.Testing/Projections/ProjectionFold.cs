@@ -13,7 +13,8 @@ internal sealed class ProjectionFold<TState> where TState : new()
         new Dictionary<string, string>();
 
     private readonly ProjectionDeclaration<TState> _declaration;
-    private readonly Dictionary<string, TState> _documents = new(StringComparer.Ordinal);
+
+    private readonly ProjectionChanges<TState> _changes;
     private readonly HashSet<string> _written = new(StringComparer.Ordinal);
     private readonly HashSet<string> _removed = new(StringComparer.Ordinal);
 
@@ -23,10 +24,14 @@ internal sealed class ProjectionFold<TState> where TState : new()
     private IReadOnlyDictionary<string, string> _metadata = NoMetadata;
     private long _position;
 
-    internal ProjectionFold(ProjectionDeclaration<TState> declaration) => _declaration = declaration;
+    internal ProjectionFold(ProjectionDeclaration<TState> declaration)
+    {
+        _declaration = declaration;
+        _changes = new ProjectionChanges<TState>(declaration);
+    }
 
     /// <summary>The documents as they stand.</summary>
-    internal IReadOnlyDictionary<string, TState> Documents => _documents;
+    internal IReadOnlyDictionary<string, TState> Documents => _changes.Upserts;
 
     /// <summary>The documents as they stood before the most recent <c>When</c>.</summary>
     internal IReadOnlyDictionary<string, TState> Before => _before;
@@ -73,7 +78,7 @@ internal sealed class ProjectionFold<TState> where TState : new()
     {
         ArgumentNullException.ThrowIfNull(events);
 
-        _before = new Dictionary<string, TState>(_documents, StringComparer.Ordinal);
+        _before = new Dictionary<string, TState>(_changes.Upserts, StringComparer.Ordinal);
         _written.Clear();
         _removed.Clear();
 
@@ -82,8 +87,9 @@ internal sealed class ProjectionFold<TState> where TState : new()
     }
 
     /// <summary>
-    /// Folds one event, mirroring what <c>DeclaredAsyncProjection</c> does per event minus the
-    /// state store: skip what is not handled, skip what routes nowhere, apply, record the write.
+    /// Folds one event through the same step the runtime hosts use, minus the state store: the
+    /// documents already held are the changes so far, so nothing is loaded. Skip what is not
+    /// handled, skip what routes nowhere, apply, record the write.
     /// </summary>
     private void Project(IEvent @event)
     {
@@ -96,17 +102,11 @@ internal sealed class ProjectionFold<TState> where TState : new()
 
         if (!_declaration.Handles(@event)) return;
 
-        var documentId = _declaration.GetDocumentId(@event);
+        var handler = _declaration.Handlers[EventTypeAttribute.GetEventTypeId(@event.GetType())];
+        var documentId = handler.GetDocumentId(@event);
         if (documentId is null) return;
 
         var position = ++_position;
-
-        var state = _documents.TryGetValue(documentId, out var existing)
-            ? existing
-            : _declaration.InitialState();
-
-        if (state is IProjectionEntity entity && entity.LastProcessedPosition >= position)
-            return;
 
         var context = new ProjectionContext
         {
@@ -117,17 +117,14 @@ internal sealed class ProjectionFold<TState> where TState : new()
             Metadata = _metadata
         };
 
-        switch (_declaration.Apply(state, @event, context))
+        switch (_changes.Fold(handler, documentId, @event, context))
         {
-            case ProjectionResult<TState>.Set set:
-                if (set.State is IProjectionEntity written) ProjectionEntityStamp.LastProcessedPosition(written, position);
-                _documents[documentId] = set.State;
+            case ProjectionResult<TState>.Set:
                 _written.Add(documentId);
                 _removed.Remove(documentId);
                 break;
 
             case ProjectionResult<TState>.Delete:
-                _documents.Remove(documentId);
                 _removed.Add(documentId);
                 _written.Remove(documentId);
                 break;

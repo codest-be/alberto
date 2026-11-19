@@ -431,25 +431,7 @@ internal sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEv
         if (query.IsEmpty)
             return null;
 
-        var typeMatches = query.Types.Count > 0
-            ? CollectTypeMatches(query, expectedPosition)
-            : null;
-
-        var tagMatches = query.Tags.Count > 0
-            ? CollectTagMatches(query, expectedPosition)
-            : null;
-
-        IEnumerable<long> matches;
-        if (typeMatches is not null && tagMatches is not null)
-        {
-            matches = query.IntersectsTypesAndTags
-                ? typeMatches.Where(tagMatches.Contains)
-                : typeMatches.Concat(tagMatches);
-        }
-        else
-        {
-            matches = (IEnumerable<long>?)typeMatches ?? tagMatches!;
-        }
+        IEnumerable<long> matches = MatchingPositions(query, expectedPosition);
 
         // Scope conflicts to the given tenant so that appends from different tenants
         // never interfere with each other — the same isolation the Postgres schema
@@ -457,14 +439,7 @@ internal sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEv
         if (tenantId is not null)
             matches = matches.Where(p => EventAt(p).TenantId == tenantId);
 
-        long? conflict = null;
-        foreach (var pos in matches)
-        {
-            if (conflict is null || pos < conflict)
-                conflict = pos;
-        }
-
-        return conflict;
+        return matches.Select(p => (long?)p).Min();
     }
 
     /// <summary>
