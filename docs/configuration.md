@@ -233,6 +233,10 @@ Nested in `ControlLoop.DeadLetterRetry` · configuration path: `ControlLoop:Dead
 | `BatchSize` | `int` | `10` | `ControlLoop:DeadLetterRetry:BatchSize` |
 | `ClaimLease` | `TimeSpan` | `00:15:00` (15 min) | `ControlLoop:DeadLetterRetry:ClaimLease` |
 
+On PostgreSQL a module's retry loops share one read per `PollingInterval` that finds which
+processors have a dead letter due, and only those claim. Other stores claim once per processor
+per interval.
+
 ### Processor lease options
 
 Nested in `ControlLoop.Leases` · configuration path: `ControlLoop:Leases`

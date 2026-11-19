@@ -24,6 +24,10 @@ namespace Alberto.DeadLetters;
 /// <param name="scopeFactory">Optional DI scope factory used to create a per-event tenant scope.</param>
 /// <param name="timeProvider">Clock used to drive poll delays. Defaults to <see cref="TimeProvider.System"/>.</param>
 /// <param name="drainTimeout">How long <see cref="StopAsync"/> waits for the loop to drain before abandoning it. Defaults to <see cref="Configuration.ControlLoopOptions.DrainTimeout"/>.</param>
+/// <param name="gate">
+/// When set, the loop does not poll on its own: it claims only once the module's shared
+/// <see cref="DeadLetterDueGate"/> reports a due entry for its processor, then drains as usual.
+/// </param>
 internal sealed class DeadLetterRetryLoop(
     IEventProcessor processor,
     IClaimableDeadLetterStore deadLetterStore,
@@ -35,7 +39,8 @@ internal sealed class DeadLetterRetryLoop(
     string? claimedBy = null,
     IServiceScopeFactory? scopeFactory = null,
     TimeProvider? timeProvider = null,
-    TimeSpan? drainTimeout = null) : IHostedService, IAsyncDisposable
+    TimeSpan? drainTimeout = null,
+    DeadLetterDueGate? gate = null) : IHostedService, IAsyncDisposable
 {
     private readonly IEventProcessor _processor = processor ?? throw new ArgumentNullException(nameof(processor));
     private readonly IClaimableDeadLetterStore _deadLetterStore = deadLetterStore ?? throw new ArgumentNullException(nameof(deadLetterStore));
@@ -140,10 +145,16 @@ internal sealed class DeadLetterRetryLoop(
 
     private async Task RunAsync(CancellationToken cancellationToken)
     {
+        // With a gate even the first claim waits for the gate's first probe, which runs at start.
+        var idle = gate is not null;
         while (!cancellationToken.IsCancellationRequested)
         {
             try
             {
+                if (idle)
+                    await IdleAsync(cancellationToken);
+                idle = false;
+
                 // Atomically claim a batch with a time-bounded lease. Until the lease expires
                 // (or we explicitly delete/release the row) no other worker will pick it up.
                 // Rows come back when an operator asked for them or their next_retry_at has
@@ -291,8 +302,7 @@ internal sealed class DeadLetterRetryLoop(
                 }
 
                 // Delay before next poll if no entries were processed
-                if (retries.Count == 0)
-                    await Task.Delay(_pollingInterval, _timeProvider, cancellationToken);
+                idle = retries.Count == 0;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { break; }
             catch (Exception ex)
@@ -301,10 +311,16 @@ internal sealed class DeadLetterRetryLoop(
                     "DeadLetterRetryLoop for processor '{ProcessorId}' encountered an unexpected error. " +
                     "Will retry after delay.",
                     _processor.ProcessorId);
-                await Task.Delay(_pollingInterval, _timeProvider, cancellationToken);
+                idle = true;
             }
         }
     }
+
+    // Without a gate, the per-processor poll it always was.
+    private Task IdleAsync(CancellationToken cancellationToken) =>
+        gate is null
+            ? Task.Delay(_pollingInterval, _timeProvider, cancellationToken)
+            : gate.WaitAsync(_processor.ProcessorId, cancellationToken);
 
     // P0.6 (TEN-5): Create a DI scope per retry entry and set the tenant context so any
     // scoped service resolved within the dispatch (e.g. ITenantAccessor, scoped handler classes)

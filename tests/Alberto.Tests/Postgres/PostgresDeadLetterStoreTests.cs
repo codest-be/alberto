@@ -170,7 +170,39 @@ public sealed class PostgresDeadLetterStoreTests(SingleTenantPostgresFixture fix
         Assert.Contains("single-tenant", failure.Message);
     }
 
-    private async Task<(PostgresDeadLetterStore Store, DeadLetterEntry Entry, EventTag Tag)> SeedRetryRequestedEntryAsync()
+    [Fact]
+    public async Task DueProbe_ReturnsExactlyTheProcessorsTheClaimWouldServe()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var now = DateTimeOffset.UtcNow;
+        var (store, flagged, _) = await SeedRetryRequestedEntryAsync();
+        var (_, scheduledDue, _) = await SeedRetryRequestedEntryAsync(markForRetry: false, nextRetryAt: now.AddMinutes(-1));
+        var (_, scheduledLater, _) = await SeedRetryRequestedEntryAsync(markForRetry: false, nextRetryAt: now.AddMinutes(10));
+        var (_, parked, _) = await SeedRetryRequestedEntryAsync(markForRetry: false);
+        var (_, underClaim, _) = await SeedRetryRequestedEntryAsync();
+        Assert.Single(await store.ClaimDueAsync(
+            underClaim.ProcessorId, 10, TimeSpan.FromMinutes(5), "worker", now, ct));
+        var unknown = $"processor-{Guid.NewGuid():N}";
+
+        string[] ids =
+        [
+            flagged.ProcessorId, scheduledDue.ProcessorId, scheduledLater.ProcessorId,
+            parked.ProcessorId, underClaim.ProcessorId, unknown,
+        ];
+        var due = await ((IDeadLetterDueProbe)store).FindProcessorsWithDueAsync(ids, now, ct);
+
+        Assert.Equal(
+            new HashSet<string> { flagged.ProcessorId, scheduledDue.ProcessorId },
+            due.ToHashSet());
+        foreach (var id in ids)
+        {
+            var claimed = await store.ClaimDueAsync(id, 10, TimeSpan.FromMinutes(5), "worker-2", now, ct);
+            Assert.Equal(due.Contains(id), claimed.Count > 0);
+        }
+    }
+
+    private async Task<(PostgresDeadLetterStore Store, DeadLetterEntry Entry, EventTag Tag)> SeedRetryRequestedEntryAsync(
+        bool markForRetry = true, DateTimeOffset? nextRetryAt = null)
     {
         var eventStore = new EventStore(new PostgresEventStoreBackend(fixture.DataSource));
         var deadLetterStore = new PostgresDeadLetterStore(fixture.DataSource);
@@ -194,10 +226,12 @@ public sealed class PostgresDeadLetterStoreTests(SingleTenantPostgresFixture fix
             AttemptCount = 1,
             FailedAt = DateTimeOffset.UtcNow,
             GlobalPosition = persisted.GlobalPosition,
+            NextRetryAt = nextRetryAt,
         };
 
         await deadLetterStore.StoreAsync(entry, TestContext.Current.CancellationToken);
-        await deadLetterStore.MarkForRetryAsync(entry.ProcessorId, TestContext.Current.CancellationToken);
+        if (markForRetry)
+            await deadLetterStore.MarkForRetryAsync(entry.ProcessorId, TestContext.Current.CancellationToken);
 
         return (deadLetterStore, entry, tag);
     }

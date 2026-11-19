@@ -11,7 +11,7 @@ namespace Alberto.Messaging.Postgres;
 public sealed class PostgresOutboxStore(
     NpgsqlDataSource dataSource,
     string? schema = null,
-    bool? multiTenant = null) : IOutboxStore
+    bool? multiTenant = null) : IOutboxStore, IOutboxFailureBatchStore
 {
     private const int PurgeBatchSize = 5000;
 
@@ -273,6 +273,46 @@ public sealed class PostgresOutboxStore(
         cmd.Parameters.AddWithValue("error", error);
         cmd.Parameters.AddWithValue("max_retries", maxRetries);
         return await cmd.ExecuteNonQueryAsync(cancellationToken) == 1;
+    }
+
+    // Same guards and assignments as MarkAttemptFailedAsync, for a whole batch in one statement.
+    async Task<IReadOnlySet<Guid>> IOutboxFailureBatchStore.MarkAttemptsFailedAsync(
+        IReadOnlyList<OutboxFailure> failures, int maxRetries, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(failures);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxRetries);
+
+        var marked = new HashSet<Guid>();
+        if (failures.Count == 0)
+            return marked;
+
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var cmd = new NpgsqlCommand(
+            $"""
+            UPDATE {_schema.Table("alberto_outbox_entries")} AS o
+            SET status = CASE WHEN o.retry_count + 1 >= @max_retries THEN 'failed' ELSE 'pending' END,
+                retry_count = o.retry_count + 1,
+                last_error = c.error,
+                claim_id = NULL,
+                claimed_by = NULL,
+                claim_expires_at = NULL
+            FROM unnest(@ids, @claim_ids, @errors) AS c(id, claim_id, error)
+            WHERE o.id = c.id
+              AND o.status = 'processing'
+              AND o.claim_id = c.claim_id
+              AND o.claim_expires_at > now()
+            RETURNING o.id
+            """,
+            connection);
+
+        cmd.Parameters.AddWithValue("ids", failures.Select(f => f.Claim.Entry.Id).ToArray());
+        cmd.Parameters.AddWithValue("claim_ids", failures.Select(f => f.Claim.Token).ToArray());
+        cmd.Parameters.AddWithValue("errors", failures.Select(f => f.Error).ToArray());
+        cmd.Parameters.AddWithValue("max_retries", maxRetries);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            marked.Add(reader.GetGuid(0));
+        return marked;
     }
 
     /// <inheritdoc/>

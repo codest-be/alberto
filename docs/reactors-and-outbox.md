@@ -98,7 +98,7 @@ The outbox breaks that into two durable steps.
 event committed to the log
     ↓  OutboxHandler (a processor, with a checkpoint)
 row in alberto_outbox_entries, status = pending
-    ↓  OutboxRelay (a hosted service, polls every 1s)
+    ↓  OutboxRelay (a hosted service, woken by a local enqueue, else polls)
 claimed FOR UPDATE SKIP LOCKED, status = processing
 claim token + claim expiry stored on the row
     ↓  IMessageTransport.PublishAsync
@@ -111,10 +111,16 @@ holding the same live claim. Delivery remains at-least-once: if a publish succee
 dies before recording success, the entry is published again after its claim expires. It is also
 **unordered.** See [Ordering](#ordering-there-isnt-any) before you assume otherwise.
 
-Each claimed entry costs its own round trips: `PublishAsync`, then a separate `MarkDeliveredAsync`
-(or `MarkFailedAsync`) per message. Batching the claim does not batch the acknowledgements, so
-throughput is bounded by database latency per message, not per batch. Run more relay replicas if
-that becomes the limit.
+A batch costs one claim, one `PublishAsync` per message, and then one statement recording every
+delivery and one recording every failure (a store that cannot batch failures gets one
+`MarkAttemptFailedAsync` per failed entry instead). Both are flushed early once the batch has used
+half its claim lease, so a slow broker cannot let the claims they belong to expire first.
+
+The relay does not poll at a fixed rate while the table is empty. An entry written by the
+`OutboxHandler` in the same process wakes it at once; otherwise it backs off from the polling
+interval (default 1 s) by doubling, up to 5 seconds or the polling interval if that is longer.
+That ceiling is the worst-case delay for an entry written by another process, such as another
+replica's handler or an operator's `RetryFailedAsync`.
 
 ### Wiring it
 
@@ -186,10 +192,10 @@ until `retry_count` reaches the relay's `maxRetries` (default 5, `relayMaxRetrie
 `WithOutbox`); that failure parks it as `failed`. `RetryFailedAsync` (optionally filtered by
 message type) puts `failed` entries back to `pending` with a fresh retry count.
 
-The relay marks an entry `delivered` with its own short timeout, not the host's cancellation
-token, and a failure to write that mark is logged, never turned into a delivery failure: the claim
-lease expires and the entry is delivered again, which is the at-least-once contract. A
-`MarkDeliveredAsync` that returns `false` (the claim was lost) is logged too.
+The relay records deliveries and failures with its own short timeout, not the host's cancellation
+token, and a failure to write either is logged, never turned into a delivery failure: the claim
+lease expires and the entry is delivered again, which is the at-least-once contract. An entry whose
+claim was lost before the mark is logged too.
 
 `StartAsync` completes before the relay makes its first claim or publish call. Once Alberto invokes
 it, Alberto makes exactly one `StopAsync` call after the last relay exits, including when startup
