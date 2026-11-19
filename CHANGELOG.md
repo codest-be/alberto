@@ -17,6 +17,25 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ---
 
+## [0.15.1] - 2026-11-19
+
+### Added
+
+- perf: tenant shard resolver has no negative cache; per-shard background load (#272)
+- perf: outbox relay and dead-letter retry polling (#271)
+- perf: projection state writes, ListRecent, EF double read and rebuild cleanup (#270)
+- perf: append returns full rows; multi-tenant append updates alberto_tenants every time (#269)
+- perf: processor reads and head polling scale with processor count, not with matching events (#268)
+- perf: checkpoint write-through, resync, flush and lease scans cost one round trip per processor (#267)
+- perf: types-AND-tags DCB conflict check walks the event log under the append lock (#266)
+
+### Changed
+
+- Make the fenced store the only in-memory checkpoint store (#274)
+- The projection fold, the retry tail and the in-memory DCB match are each written more than once (#263)
+
+---
+
 ## [0.15.0] - 2026-11-18
 
 ### Changed
@@ -1126,7 +1145,8 @@ Initial beta release. Core DCB event store abstractions, PostgreSQL backend, in-
 backend, command pipeline, EF Core projection support, transactional outbox, and
 OpenTelemetry instrumentation.
 
-[Unreleased]: https://github.com/codest-be/alberto/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/codest-be/alberto/compare/v0.15.1...HEAD
+[0.15.1]: https://github.com/codest-be/alberto/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/codest-be/alberto/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/codest-be/alberto/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/codest-be/alberto/compare/v0.12.0...v0.13.0
