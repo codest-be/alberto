@@ -42,6 +42,10 @@ internal sealed class InMemoryFencedCheckpointStore : IFencedCheckpointStore, IC
 
     private readonly record struct CheckpointRecord(long Position, long FenceToken);
 
+    internal InMemoryFencedCheckpointStore() : this(new InMemoryProcessorLeaseManager())
+    {
+    }
+
     internal InMemoryFencedCheckpointStore(InMemoryProcessorLeaseManager leaseManager)
     {
         _leaseManager = leaseManager;
@@ -177,7 +181,7 @@ internal sealed class InMemoryFencedCheckpointStore : IFencedCheckpointStore, IC
     }
 
     // -------------------------------------------------------------------------
-    // IProcessorFaultStore — same semantics as InMemoryCheckpointStore
+    // IProcessorFaultStore
     // -------------------------------------------------------------------------
 
     Task IProcessorFaultStore.RecordFaultAsync(

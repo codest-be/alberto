@@ -117,7 +117,7 @@ public class ProcessorHealthTests
         var state = new ProcessorHealthState();
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
         var processor = new CountingProcessor("counting");
-        var loop = new ControlLoop(processor, head, backend, new InMemoryCheckpointStore(),
+        var loop = new ControlLoop(processor, head, backend, new InMemoryFencedCheckpointStore(),
             TimeSpan.FromMilliseconds(10), 100, healthState: state);
 
         await backend.AppendAsync([Event()], cancellationToken: TestContext.Current.CancellationToken);
@@ -142,7 +142,7 @@ public class ProcessorHealthTests
         var state = new ProcessorHealthState();
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
         var processor = new ThrowingProcessor("throwing");
-        var loop = new ControlLoop(processor, head, backend, new InMemoryCheckpointStore(),
+        var loop = new ControlLoop(processor, head, backend, new InMemoryFencedCheckpointStore(),
             TimeSpan.FromMilliseconds(10), 100, healthState: state);
 
         await backend.AppendAsync([Event()], cancellationToken: TestContext.Current.CancellationToken);

@@ -294,7 +294,7 @@ public sealed class ControlLoopPipelinedMutationTests
     {
         const string processorId = "resume-from-checkpoint";
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
 
         await backend.AppendAsync([CreateEvent("e1")], cancellationToken: TestContext.Current.CancellationToken);
         await backend.AppendAsync([CreateEvent("e2")], cancellationToken: TestContext.Current.CancellationToken);
@@ -352,7 +352,7 @@ public sealed class ControlLoopPipelinedMutationTests
         const string processorId = "catch-up-stops-reading";
         var backend = new InMemoryEventStoreBackend();
         var countingBackend = new CountingBackend(backend);
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
 
         await backend.AppendAsync([CreateEvent("only")], cancellationToken: TestContext.Current.CancellationToken);
 
@@ -391,7 +391,7 @@ public sealed class ControlLoopPipelinedMutationTests
     {
         const string processorId = "lag-arithmetic";
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var healthState = new ProcessorHealthState();
 
         await backend.AppendAsync([CreateEvent("fast-1")], cancellationToken: TestContext.Current.CancellationToken);
@@ -457,7 +457,7 @@ public sealed class ControlLoopPipelinedMutationTests
     {
         const string processorId = "idle-hammer";
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new CountingCheckpointStore(new InMemoryCheckpointStore());
+        var checkpoints = new CountingCheckpointStore(new InMemoryFencedCheckpointStore());
 
         await backend.AppendAsync([CreateEvent("only")], cancellationToken: TestContext.Current.CancellationToken);
 
@@ -509,7 +509,7 @@ public sealed class ControlLoopPipelinedMutationTests
     {
         const string processorId = "empty-read-advances-to-head";
         var stub = new AdvancedHeadEmptyStreamBackend(fixedHead: 5);
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var processor = new DelegatingProcessor(processorId, (_, _) => Task.CompletedTask);
 
         var head = new EventStoreHead(stub, refreshInterval: TimeSpan.FromMilliseconds(10));
@@ -543,7 +543,7 @@ public sealed class ControlLoopPipelinedMutationTests
         const string processorId = "short-batch-head";
         var backend = new InMemoryEventStoreBackend();
         var fixedHeadBackend = new FixedHeadCountingBackend(fixedHead: 5, backend);
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
 
         await backend.AppendAsync(
             [CreateEvent("a"), CreateEvent("b")], cancellationToken: TestContext.Current.CancellationToken);
@@ -585,7 +585,7 @@ public sealed class ControlLoopPipelinedMutationTests
         await eventBackend.AppendAsync([CreateEvent("triggers-head")],
             cancellationToken: TestContext.Current.CancellationToken);
 
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var healthState = new ProcessorHealthState();
         var logger = new CapturingLogger<ControlLoop>();
         var processor = new DelegatingProcessor(processorId,
@@ -624,7 +624,7 @@ public sealed class ControlLoopPipelinedMutationTests
     {
         const string processorId = "normal-shutdown-no-warning";
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var logger = new CapturingLogger<ControlLoop>();
 
         await backend.AppendAsync([CreateEvent("fast-1")], cancellationToken: TestContext.Current.CancellationToken);
@@ -665,7 +665,7 @@ public sealed class ControlLoopPipelinedMutationTests
     {
         const string processorId = "stuck-worker-warning";
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var logger = new CapturingLogger<ControlLoop>();
 
         await backend.AppendAsync([CreateEvent("fast-1")], cancellationToken: TestContext.Current.CancellationToken);

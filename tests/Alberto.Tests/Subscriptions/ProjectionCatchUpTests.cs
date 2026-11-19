@@ -18,7 +18,7 @@ public sealed class ProjectionCatchUpTests
     public async Task WaitForProjection_ReturnsOnceTheProcessorReachesThePosition()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var catchUp = new ProjectionCatchUp(new InMemoryEventStoreBackend(), checkpoints);
 
         var waiting = catchUp.WaitForProjectionAsync(
@@ -37,7 +37,7 @@ public sealed class ProjectionCatchUpTests
     public async Task WaitForProjection_ReturnsWhenTheProcessorIsAlreadyPastThePosition()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         await checkpoints.SaveAsync(Processor, 12, cancellationToken);
 
         var catchUp = new ProjectionCatchUp(new InMemoryEventStoreBackend(), checkpoints);
@@ -52,7 +52,7 @@ public sealed class ProjectionCatchUpTests
     public async Task WaitForProjection_ThrowsNamingTheProcessorWhenItDoesNotCatchUpInTime()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         await checkpoints.SaveAsync(Processor, 3, cancellationToken);
 
         var catchUp = new ProjectionCatchUp(new InMemoryEventStoreBackend(), checkpoints);
@@ -70,7 +70,7 @@ public sealed class ProjectionCatchUpTests
     public async Task WaitForProjection_WithoutAPosition_WaitsForTheHeadAsOfTheCall()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
 
         // A store somebody else keeps writing to. Read the head twice and it is already higher,
         // so an implementation that re-reads it is chasing a target it can never reach — the
@@ -99,7 +99,7 @@ public sealed class ProjectionCatchUpTests
     public async Task WaitForProjection_ObservesCancellationRatherThanRunningOutTheTimeout()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var catchUp = new ProjectionCatchUp(new InMemoryEventStoreBackend(), checkpoints);
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -157,7 +157,7 @@ public sealed class ProjectionCatchUpTests
     public async Task WaitForProjection_ReadingTheStore_SeesProgressAnotherReplicaWrote()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        var database = new InMemoryCheckpointStore();
+        var database = new InMemoryFencedCheckpointStore();
         await using var cache = new CachingCheckpointStore(database);
 
         // This replica looked once (and cached "nothing consumed"); no loop of its own advances it.
@@ -180,7 +180,7 @@ public sealed class ProjectionCatchUpTests
     public async Task WaitForProjection_WithoutReadingTheStore_SeesOnlyTheCache()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        var database = new InMemoryCheckpointStore();
+        var database = new InMemoryFencedCheckpointStore();
         await using var cache = new CachingCheckpointStore(database);
         await cache.GetAsync(Processor, cancellationToken);
         await database.SaveAsync(Processor, 7, cancellationToken);
@@ -212,7 +212,7 @@ public sealed class ProjectionCatchUpTests
 
     private sealed class CountingCheckpointStore : ICheckpointStore
     {
-        private readonly InMemoryCheckpointStore _inner = new();
+        private readonly InMemoryFencedCheckpointStore _inner = new();
         public int Reads;
 
         public Task<long?> GetAsync(string processorId, CancellationToken cancellationToken = default)

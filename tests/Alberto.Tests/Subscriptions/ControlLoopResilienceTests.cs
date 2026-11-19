@@ -129,7 +129,7 @@ public sealed class ControlLoopResilienceTests
         var processor = new CountingProcessor("transient-read");
         using var cts = new CancellationTokenSource();
 
-        var loop = await StartAsync(processor, backend, new InMemoryCheckpointStore(), cts, maxConcurrency);
+        var loop = await StartAsync(processor, backend, new InMemoryFencedCheckpointStore(), cts, maxConcurrency);
         await WaitForAsync(() => processor.Processed == 2, TestContext.Current.CancellationToken);
         await cts.CancelAsync();
         await loop.StopAsync(CancellationToken.None);
@@ -146,7 +146,7 @@ public sealed class ControlLoopResilienceTests
         var backend = new ScriptedBackend((_, _) => [MakeEvent(100), MakeEvent(101), MakeEvent(102)]);
         using var cts = new CancellationTokenSource();
 
-        var loop = await StartAsync(new CountingProcessor("no-spin"), backend, new InMemoryCheckpointStore(), cts, maxConcurrency);
+        var loop = await StartAsync(new CountingProcessor("no-spin"), backend, new InMemoryFencedCheckpointStore(), cts, maxConcurrency);
         await Task.Delay(300, TestContext.Current.CancellationToken);
         await cts.CancelAsync();
         await loop.StopAsync(CancellationToken.None);

@@ -146,7 +146,7 @@ public sealed class ControlLoopPipelinedCancellationTests
     {
         // ── Arrange ───────────────────────────────────────────────────────────────
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
 
         // Three events; InMemory assigns sequential positions starting at 1.
         await backend.AppendAsync(

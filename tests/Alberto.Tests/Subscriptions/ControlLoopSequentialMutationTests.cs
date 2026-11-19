@@ -197,7 +197,7 @@ public sealed class ControlLoopSequentialMutationTests
         var backend = new ScriptedBackend(); // never scripted to return anything meaningful
         var head = new EventStoreHead(new FixedPositionsHeadBackend([1, 2, 3, 4, 5]));
         await head.RefreshAsync(TestContext.Current.CancellationToken); // head.Current == 5
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         await checkpoints.SaveAsync("caught-up", 5, TestContext.Current.CancellationToken); // == head already
         var state = new ProcessorHealthState();
         var processor = new CountingProcessor("caught-up");
@@ -223,7 +223,7 @@ public sealed class ControlLoopSequentialMutationTests
         var backend = new ScriptedBackend { Reader = (_, _) => [] }; // always empty, regardless of head
         var head = new EventStoreHead(new FixedPositionsHeadBackend([1, 2, 3, 4, 5]));
         await head.RefreshAsync(TestContext.Current.CancellationToken); // head.Current == 5
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var state = new ProcessorHealthState();
         var processor = new CountingProcessor("skip-forward");
 
@@ -258,7 +258,7 @@ public sealed class ControlLoopSequentialMutationTests
         };
         var head = new EventStoreHead(new FixedPositionsHeadBackend([1, 2, 3]));
         await head.RefreshAsync(TestContext.Current.CancellationToken); // head.Current == 3, events are at 10/11
-        var innerCheckpoints = new InMemoryCheckpointStore();
+        var innerCheckpoints = new InMemoryFencedCheckpointStore();
         var checkpoints = new SpyCheckpointStore(innerCheckpoints);
         var processor = new CountingProcessor("beyond-head");
 
@@ -294,7 +294,7 @@ public sealed class ControlLoopSequentialMutationTests
         };
         var head = new EventStoreHead(new FixedPositionsHeadBackend([1, 2, 3, 4, 5]));
         await head.RefreshAsync(TestContext.Current.CancellationToken); // head.Current == 5
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var processor = new CountingProcessor("short-batch");
 
         var loop = new ControlLoop(processor, head, backend, checkpoints, TimeSpan.FromMilliseconds(15), 100);
@@ -324,7 +324,7 @@ public sealed class ControlLoopSequentialMutationTests
         };
         var head = new EventStoreHead(new FixedPositionsHeadBackend([1, 2, 3, 4, 5]));
         await head.RefreshAsync(TestContext.Current.CancellationToken); // head.Current == 5
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var state = new ProcessorHealthState();
         var processor = new CountingProcessor("lag-report");
 
@@ -364,7 +364,7 @@ public sealed class ControlLoopSequentialMutationTests
         };
         var head = new EventStoreHead(new FixedPositionsHeadBackend(Enumerable.Range(1, 50).Select(i => (long)i).ToList()));
         await head.RefreshAsync(TestContext.Current.CancellationToken); // head.Current == 50, far beyond available events
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var processor = new CountingProcessor("batch-delay");
 
         var loop = new ControlLoop(processor, head, backend, checkpoints, pollingInterval, batchSize);
@@ -394,7 +394,7 @@ public sealed class ControlLoopSequentialMutationTests
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
         var logger = new CapturingLogger();
         var processor = new ThrowingProcessor("fault-logs");
-        var loop = new ControlLoop(processor, head, backend, new InMemoryCheckpointStore(),
+        var loop = new ControlLoop(processor, head, backend, new InMemoryFencedCheckpointStore(),
             TimeSpan.FromMilliseconds(10), 100, logger: logger);
 
         await backend.AppendAsync([Event()], cancellationToken: TestContext.Current.CancellationToken);
@@ -419,7 +419,7 @@ public sealed class ControlLoopSequentialMutationTests
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
         var logger = new CapturingLogger();
         var processor = new CountingProcessor("start-stop-log");
-        var loop = new ControlLoop(processor, head, backend, new InMemoryCheckpointStore(),
+        var loop = new ControlLoop(processor, head, backend, new InMemoryFencedCheckpointStore(),
             TimeSpan.FromMilliseconds(10), 100, logger: logger);
 
         using var cts = new CancellationTokenSource();
@@ -446,7 +446,7 @@ public sealed class ControlLoopSequentialMutationTests
         var logger = new CapturingLogger();
         var processor = new CountingProcessor("pipelined-stop-log");
         var options = new ProcessorExecutionOptions { BatchingMode = ProcessorBatchingMode.Disabled, MaxConcurrency = 2 };
-        var loop = new ControlLoop(processor, head, backend, new InMemoryCheckpointStore(),
+        var loop = new ControlLoop(processor, head, backend, new InMemoryFencedCheckpointStore(),
             TimeSpan.FromMilliseconds(10), 100, executionOptions: options, logger: logger);
 
         await backend.AppendAsync([Event()], cancellationToken: TestContext.Current.CancellationToken);
@@ -472,7 +472,7 @@ public sealed class ControlLoopSequentialMutationTests
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
         var state = new ProcessorHealthState();
         var processor = new CountingProcessor("fake-time");
-        var loop = new ControlLoop(processor, head, backend, new InMemoryCheckpointStore(),
+        var loop = new ControlLoop(processor, head, backend, new InMemoryFencedCheckpointStore(),
             TimeSpan.FromMilliseconds(10), 100, healthState: state, timeProvider: fakeTime);
 
         await backend.AppendAsync([Event()], cancellationToken: TestContext.Current.CancellationToken);
@@ -498,7 +498,7 @@ public sealed class ControlLoopSequentialMutationTests
         var backend = new InMemoryEventStoreBackend();
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
         var processor = new CountingProcessor(processorId);
-        var loop = new ControlLoop(processor, head, backend, new InMemoryCheckpointStore(),
+        var loop = new ControlLoop(processor, head, backend, new InMemoryFencedCheckpointStore(),
             TimeSpan.FromMilliseconds(10), 100);
 
         await backend.AppendAsync([Event()], cancellationToken: TestContext.Current.CancellationToken);

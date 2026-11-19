@@ -86,10 +86,10 @@ public sealed class ControlLoopFaultRecordTests
     }
 
     /// <summary>
-    /// Wraps <see cref="InMemoryCheckpointStore"/>, counting fault-store calls and optionally
+    /// Wraps <see cref="InMemoryFencedCheckpointStore"/>, counting fault-store calls and optionally
     /// replacing the record write with a custom behaviour (throw, hang).
     /// </summary>
-    private sealed class InstrumentedFaultStore(InMemoryCheckpointStore inner)
+    private sealed class InstrumentedFaultStore(InMemoryFencedCheckpointStore inner)
         : ICheckpointStore, IProcessorFaultStore
     {
         private readonly IProcessorFaultStore _innerFaults = inner;
@@ -173,7 +173,7 @@ public sealed class ControlLoopFaultRecordTests
         var now = new DateTimeOffset(2026, 9, 29, 10, 0, 0, TimeSpan.Zero);
         var time = new FakeTimeProvider(now);
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         await backend.AppendAsync([CreateEvent("boom")], cancellationToken: TestContext.Current.CancellationToken);
 
         await RunUntilFaultedAsync(new FaultingProcessor("seq-per-event"),
@@ -195,7 +195,7 @@ public sealed class ControlLoopFaultRecordTests
     {
         // Batch dispatch cannot know which event in the batch threw.
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         await backend.AppendAsync([CreateEvent("boom")], cancellationToken: TestContext.Current.CancellationToken);
 
         await RunUntilFaultedAsync(new FaultingProcessor("seq-batch"),
@@ -213,7 +213,7 @@ public sealed class ControlLoopFaultRecordTests
     public async Task PipelinedWorkerFault_RecordsTheFaultingEnvelope()
     {
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         await backend.AppendAsync([CreateEvent("boom")], cancellationToken: TestContext.Current.CancellationToken);
 
         await RunUntilFaultedAsync(new FaultingProcessor("pipelined-worker"),
@@ -233,7 +233,7 @@ public sealed class ControlLoopFaultRecordTests
     public async Task HealthyRun_ClearsAPreviousRunsFault()
     {
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var faults = (IProcessorFaultStore)checkpoints;
         await faults.RecordFaultAsync("recovering",
             new ProcessorFaultRecord(DateTimeOffset.UnixEpoch, "old fault", null, 1, EventTypeId, null),
@@ -263,7 +263,7 @@ public sealed class ControlLoopFaultRecordTests
     public async Task FaultIsCleared_OnlyOnce_PerRun()
     {
         var backend = new InMemoryEventStoreBackend();
-        var store = new InstrumentedFaultStore(new InMemoryCheckpointStore());
+        var store = new InstrumentedFaultStore(new InMemoryFencedCheckpointStore());
         await backend.AppendAsync([CreateEvent("one")], cancellationToken: TestContext.Current.CancellationToken);
 
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(10));
@@ -296,7 +296,7 @@ public sealed class ControlLoopFaultRecordTests
         // The store being written to may be the very thing that failed — a throwing fault
         // write must not mask the original fault or crash the loop's shutdown path.
         var backend = new InMemoryEventStoreBackend();
-        var store = new InstrumentedFaultStore(new InMemoryCheckpointStore())
+        var store = new InstrumentedFaultStore(new InMemoryFencedCheckpointStore())
         {
             RecordBehavior = (_, _) => throw new TimeoutException("fault store down"),
         };
@@ -320,7 +320,7 @@ public sealed class ControlLoopFaultRecordTests
         var recordFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         var backend = new InMemoryEventStoreBackend();
-        var store = new InstrumentedFaultStore(new InMemoryCheckpointStore())
+        var store = new InstrumentedFaultStore(new InMemoryFencedCheckpointStore())
         {
             RecordBehavior = async (_, cancellationToken) =>
             {
