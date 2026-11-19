@@ -789,13 +789,18 @@ public sealed class MigrationUpgradeAndParityTests
                     $"migration 025 drops {function} along with the trigger it backed");
         }
 
-        // _v2 and _v5 are absent by 024; the four below are the live append set.
+        // _v2 and _v5 are absent by 024; the four below are the live append set, and 011 adds
+        // their _lean twins, which the backend calls.
         string[] appendFunctions =
         [
             "alberto_append_events",
             "alberto_append_events_v3",
             "alberto_append_events_v4",
             "alberto_append_events_v6",
+            "alberto_append_events_lean",
+            "alberto_append_events_v3_lean",
+            "alberto_append_events_v4_lean",
+            "alberto_append_events_v6_lean",
         ];
 
         foreach (var function in appendFunctions)

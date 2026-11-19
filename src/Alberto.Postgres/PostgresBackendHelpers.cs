@@ -46,11 +46,17 @@ internal static class PostgresBackendHelpers
     /// drops them. The numbering keeps its gaps rather than renumbering, so a version in a log
     /// line or an old plan still means what it meant.
     /// </para>
+    /// <para>
+    /// The names returned carry a <c>_lean</c> suffix: migration 011's twins of the four above,
+    /// returning only <c>global_position</c> and <c>created_at</c>. The unsuffixed originals
+    /// stay for replicas on earlier builds and share their conflict semantics, so a change to
+    /// the conflict checks belongs in both families until the originals are dropped.
+    /// </para>
     /// </summary>
     internal static string ResolveAppendFunctionName(bool useAllTags, bool useIntersect)
         => useIntersect
-            ? (useAllTags ? "alberto_append_events_v6" : "alberto_append_events_v4")
-            : (useAllTags ? "alberto_append_events_v3" : "alberto_append_events");
+            ? (useAllTags ? "alberto_append_events_v6_lean" : "alberto_append_events_v4_lean")
+            : (useAllTags ? "alberto_append_events_v3_lean" : "alberto_append_events_lean");
 
     // ---------------------------------------------------------------------------
     // Stream query builder — the single decision tree for both tenancy paths
@@ -249,11 +255,17 @@ internal static class PostgresBackendHelpers
     // ---------------------------------------------------------------------------
 
     /// <summary>
-    /// Executes an append command and reads back the resulting event envelopes.
+    /// Executes an append command and builds the resulting event envelopes.
     /// When <paramref name="tenantId"/> is non-null, <c>@p_tenant_id</c> is added as
-    /// the first parameter and forwarded to <see cref="ReadEvent"/> so the returned
-    /// envelopes carry the correct tenant (the append result set never includes a
-    /// <c>tenant_id</c> column in either path).
+    /// the first parameter and stamped on the returned envelopes.
+    /// <para>
+    /// The <c>_lean</c> append functions (migration 011) return only what the database decides,
+    /// <c>global_position</c> and <c>created_at</c>, one row per input event in input order;
+    /// everything else is taken from the events that were sent (codest-be/alberto#269).
+    /// <see cref="IEventEnvelope.EventData"/> is therefore the caller's payload rather than
+    /// the jsonb re-rendering a read returns: equal as JSON, which is what that property
+    /// promises.
+    /// </para>
     /// </summary>
     private static async Task<IReadOnlyCollection<IEventEnvelope>> ExecuteAppendAsync(
         string sql,
@@ -334,12 +346,32 @@ internal static class PostgresBackendHelpers
             // Skip the lock statement's result set; the append's rows follow it.
             await reader.NextResultAsync(cancellationToken);
 
-            // Resolve ordinals once per reader — not per row.
-            // The append result set does not include a tenant_id column in either path;
-            // the tenant is forwarded via the tenantId override in ReadEvent.
-            var ord = new EventColumnOrdinals(reader, includeTenantId: false);
+            var positionOrdinal = reader.GetOrdinal("global_position");
+            var createdAtOrdinal = reader.GetOrdinal("created_at");
             while (await reader.ReadAsync(cancellationToken))
-                results.Add(ReadEvent(reader, in ord, tenantId));
+            {
+                if (results.Count == eventsList.Count)
+                    throw RowCountMismatch(eventsList.Count);
+
+                var sent = eventsList[results.Count];
+                results.Add(new EventEnvelope
+                {
+                    Id = sent.Id,
+                    TenantId = tenantId,
+                    GlobalPosition = reader.GetInt64(positionOrdinal),
+                    // The version comes from the stored _version:N tag, as ReadEvent derives it.
+                    EventType = new EventType(sent.EventType.Id, EventVersionTag.ParseFromTags(sent.Tags)),
+                    // Copied, not aliased: mutating the appended collections must not change
+                    // an envelope that stands for what is stored.
+                    Tags = sent.Tags.ToArray(),
+                    EventData = sent.EventData,
+                    Metadata = new Dictionary<string, string>(sent.Metadata),
+                    CreatedAt = reader.GetFieldValue<DateTimeOffset>(createdAtOrdinal)
+                });
+            }
+
+            if (results.Count != eventsList.Count)
+                throw RowCountMismatch(eventsList.Count);
 
             return results;
         }
@@ -348,6 +380,9 @@ internal static class PostgresBackendHelpers
             throw ToConflictException(ex, dcbQuery, expectedPosition);
         }
     }
+
+    private static InvalidOperationException RowCountMismatch(int sent) =>
+        new($"The append function returned a different number of rows than the {sent} events sent.");
 
     /// <summary>
     /// Turns the server's <c>P0001</c> conflict into a <see cref="DcbConflictException"/> that
