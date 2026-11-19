@@ -150,4 +150,7 @@ internal sealed class PostgresTenantEventStoreBackend(
     public Task<long> GetStableHeadGlobalAsync(
         long afterPosition, long upToPosition, CancellationToken cancellationToken = default)
         => PostgresBackendHelpers.GetStableHeadAsync(_schema, _dataSource, _enableStableHeadBarrier, afterPosition, upToPosition, cancellationToken);
+
+    public Task<HeadSnapshot> GetHeadSnapshotGlobalAsync(long afterPosition, int windowSize, CancellationToken cancellationToken)
+        => PostgresBackendHelpers.GetHeadSnapshotAsync(_schema, _dataSource, _enableStableHeadBarrier, afterPosition, windowSize, cancellationToken);
 }

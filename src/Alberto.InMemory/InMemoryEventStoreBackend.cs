@@ -19,7 +19,7 @@ namespace Alberto.InMemory;
 /// <c>TenantEventStoreDecorator</c> wraps the Postgres tenant backend.
 /// </para>
 /// </remarks>
-internal sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEventStoreBackend, IEventStoreHeadBackend
+internal sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEventStoreBackend, IEventStoreHeadBackend, IHeadSnapshotBackend
 {
     private readonly object _lock = new();
 
@@ -402,6 +402,20 @@ internal sealed class InMemoryEventStoreBackend(TimeProvider timeProvider) : IEv
                 .Select(e => e.GlobalPosition)
                 .ToList();
             return Task.FromResult<IReadOnlyList<long>>(result);
+        }
+    }
+
+    // No in-flight transactions in memory, so no barrier and no horizon: the window alone.
+    public Task<HeadSnapshot> GetHeadSnapshotAsync(long afterPosition, int windowSize, CancellationToken cancellationToken)
+    {
+        lock (_lock)
+        {
+            var window = EventsAfter(afterPosition).Take(windowSize).ToList();
+            var lastOfType = new Dictionary<string, long>(StringComparer.Ordinal);
+            foreach (var e in window)
+                lastOfType[e.EventType.Id] = e.GlobalPosition;
+            return Task.FromResult(new HeadSnapshot(
+                new HeadWindow(window.Select(e => e.GlobalPosition).ToList(), null), long.MaxValue, lastOfType));
         }
     }
 

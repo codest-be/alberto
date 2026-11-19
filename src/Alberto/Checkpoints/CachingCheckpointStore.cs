@@ -45,6 +45,12 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
     private volatile int _cacheGeneration;
     private readonly ITimer _flushTimer;
     private readonly ITimer _resyncTimer;
+
+    // One-shot, armed by SaveSkipForwardAsync under leases; _skipFlushArmed coalesces every skip
+    // in the window into the one batched flush.
+    private readonly ITimer _skipFlushTimer;
+    private int _skipFlushArmed;
+    internal static readonly TimeSpan SkipForwardFlushDelay = TimeSpan.FromMilliseconds(100);
     // One lock per processor, so a write-through for one processor does not queue behind every
     // other processor's. A batch flush takes the locks of the ids it writes in ordinal order.
     // Never disposed: a SemaphoreSlim whose wait handle is never touched holds nothing to free,
@@ -99,6 +105,7 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
         var time = timeProvider ?? TimeProvider.System;
         _flushTimer = time.CreateTimer(OnFlushTimer, null, _flushInterval, _flushInterval);
         _resyncTimer = time.CreateTimer(OnResyncTimer, null, _resyncInterval, _resyncInterval);
+        _skipFlushTimer = time.CreateTimer(OnSkipFlushTimer, null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
     }
 
     public async Task<long?> GetAsync(string processorId, CancellationToken cancellationToken = default)
@@ -163,6 +170,42 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
         return _fencingContext is null || RebuildableProjection.IsShadowProcessorId(processorId)
             ? Task.CompletedTask
             : WriteThroughAsync(processorId, cancellationToken);
+    }
+
+    /// <summary>
+    /// <see cref="SaveAsync"/> for a checkpoint that only moves past events the processor does not
+    /// handle (codest-be/alberto#268). Nothing was dispatched, so nothing is lost if the write lags:
+    /// a crash before it lands replays from the older position, it never skips. Under leases it
+    /// therefore does not write through; every skip within <see cref="SkipForwardFlushDelay"/>
+    /// rides one batched flush, so an idle store with many processors costs one round trip per
+    /// window instead of one per processor per head advance. Unleased, it is the timer's, as before.
+    /// </summary>
+    internal Task SaveSkipForwardAsync(string processorId, long position)
+    {
+        _cache.AddOrUpdate(processorId, position, (_, existing) => Ahead(existing, position));
+        _dirty.AddOrUpdate(
+            processorId,
+            (position, _cacheGeneration),
+            (_, existing) => (Math.Max(existing.Position, position), _cacheGeneration));
+
+        if (_fencingContext is not null && !RebuildableProjection.IsShadowProcessorId(processorId)
+            && Interlocked.Exchange(ref _skipFlushArmed, 1) == 0)
+            _skipFlushTimer.Change(SkipForwardFlushDelay, Timeout.InfiniteTimeSpan);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// True when this replica holds the processor's lease, so its cache is the processor's
+    /// progress and the store has nothing newer to tell a waiter.
+    /// </summary>
+    internal bool HoldsLease(string processorId) =>
+        _fencingContext?.FenceTokenProvider?.Invoke(processorId) > 0;
+
+    private void OnSkipFlushTimer(object? state)
+    {
+        // Disarm first: a skip landing during the flush re-arms, so none waits for the 30 s timer.
+        Interlocked.Exchange(ref _skipFlushArmed, 0);
+        OnFlushTimer(state);
     }
 
     private SemaphoreSlim LockFor(string processorId) =>
@@ -618,6 +661,7 @@ internal sealed class CachingCheckpointStore : ICheckpointStore, IFencableCheckp
 
         await _flushTimer.DisposeAsync();
         await _resyncTimer.DisposeAsync();
+        await _skipFlushTimer.DisposeAsync();
 
         // Flush any remaining dirty checkpoints
         await FlushAsync(CancellationToken.None);

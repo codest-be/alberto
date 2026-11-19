@@ -543,6 +543,48 @@ internal static class PostgresBackendHelpers
     }
 
     /// <summary>
+    /// The head's whole poll in one statement and one snapshot (codest-be/alberto#268): the window
+    /// and horizon of <see cref="GetPositionWindowAsync"/>, the stable-head barrier of
+    /// <see cref="GetStableHeadAsync"/> over that window, and the last position of each event type in
+    /// it, which lets a processor whose types are all absent skip its read. The window now reads the
+    /// heap for <c>event_type</c> and <c>pg_xact_id</c>, which the separate barrier query read for the
+    /// same rows anyway. See <see cref="GetStableHeadAsync"/> for the <c>::TEXT::BIGINT</c> cast.
+    /// </summary>
+    internal static async Task<HeadSnapshot> GetHeadSnapshotAsync(
+        SchemaQualifier schema, NpgsqlDataSource dataSource,
+        bool barrier, long afterPosition, int windowSize, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var cmd = new NpgsqlCommand(
+            "WITH w AS MATERIALIZED (" +
+            $"SELECT global_position, event_type, pg_xact_id FROM {schema.Table("alberto_events")} " +
+            "WHERE global_position > @after ORDER BY global_position LIMIT @limit) " +
+            "SELECT pg_snapshot_xmin(s)::TEXT::BIGINT, pg_snapshot_xmax(s)::TEXT::BIGINT, " +
+            "ARRAY(SELECT global_position FROM w ORDER BY global_position), " +
+            $"(SELECT COALESCE(max(global_position), 0) FROM {schema.Table("alberto_events")}), " +
+            "(SELECT min(global_position) FROM w WHERE @barrier AND pg_xact_id IS NOT NULL " +
+            "AND pg_xact_id >= pg_snapshot_xmin(s)::TEXT::BIGINT), " +
+            "ARRAY(SELECT event_type FROM w GROUP BY event_type ORDER BY event_type), " +
+            "ARRAY(SELECT max(global_position) FROM w GROUP BY event_type ORDER BY event_type) " +
+            "FROM pg_current_snapshot() s",
+            connection);
+        cmd.Parameters.AddWithValue("after", afterPosition);
+        cmd.Parameters.AddWithValue("limit", windowSize);
+        cmd.Parameters.AddWithValue("barrier", barrier);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        await reader.ReadAsync(cancellationToken);
+        var window = new HeadWindow(reader.GetFieldValue<long[]>(2),
+            new TransactionHorizon(reader.GetInt64(0), reader.GetInt64(1), reader.GetInt64(3)));
+        var stableHead = reader.IsDBNull(4) ? long.MaxValue : reader.GetInt64(4) - 1;
+        var types = reader.GetFieldValue<string[]>(5);
+        var lasts = reader.GetFieldValue<long[]>(6);
+        var lastOfType = new Dictionary<string, long>(types.Length, StringComparer.Ordinal);
+        for (var i = 0; i < types.Length; i++)
+            lastOfType[types[i]] = lasts[i];
+        return new HeadSnapshot(window, stableHead, lastOfType);
+    }
+
+    /// <summary>
     /// Returns the highest global position that is fully stable (every inserting
     /// transaction has committed and predates every in-flight transaction).
     /// Returns <see cref="long.MaxValue"/> when the barrier is disabled or when all
@@ -747,10 +789,24 @@ internal static class PostgresBackendHelpers
             yield return ReadEvent(reader, in ord, null);
     }
 
+    /// <summary>The statement behind <see cref="ReadAllOfTypesAsync"/>, separate so tests can EXPLAIN it.</summary>
+    internal static string ReadAllOfTypesSql(SchemaQualifier schema, bool tenanted) =>
+        $"SELECT e.global_position, {(tenanted ? "e.tenant_id, " : "")}e.event_id, e.event_type, e.event_tags, " +
+        "e.event_data, e.event_metadata, e.created_at " +
+        "FROM unnest(@types::text[]) AS t(event_type) " +
+        "CROSS JOIN LATERAL (" +
+        $"SELECT p.global_position FROM {schema.Table("alberto_event_type_positions")} p " +
+        "WHERE p.event_type = t.event_type AND p.global_position > @after " +
+        "ORDER BY p.global_position LIMIT @limit) p " +
+        $"JOIN {schema.Table("alberto_events")} e ON e.global_position = p.global_position " +
+        "ORDER BY e.global_position LIMIT @limit";
+
     /// <summary>
     /// Reads events of <paramref name="eventTypes"/> across the whole log, in position order.
-    /// Plain SQL rather than a function: it needs no migration, and the filter runs beside the
-    /// primary-key scan <c>alberto_read_all</c> already does, so only matching rows are sent.
+    /// Driven from <c>alberto_event_type_positions</c>: one ordered range scan per type, each
+    /// stopping at <paramref name="limit"/>, then a primary-key join to <c>alberto_events</c>.
+    /// The cost follows the matching events, not every event after the checkpoint. Single-tenant
+    /// uses the primary key (event_type, global_position); multi-tenant the index from 010.
     /// </summary>
     internal static async Task<IReadOnlyCollection<IEventEnvelope>> ReadAllOfTypesAsync(
         SchemaQualifier schema,
@@ -762,12 +818,7 @@ internal static class PostgresBackendHelpers
         CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var cmd = new NpgsqlCommand(
-            $"SELECT global_position, {(tenanted ? "tenant_id, " : "")}event_id, event_type, event_tags, " +
-            $"event_data, event_metadata, created_at FROM {schema.Table("alberto_events")} " +
-            "WHERE global_position > @after AND event_type = ANY(@types) " +
-            "ORDER BY global_position LIMIT @limit",
-            connection);
+        await using var cmd = new NpgsqlCommand(ReadAllOfTypesSql(schema, tenanted), connection);
 
         cmd.Parameters.AddWithValue("after", afterPosition);
         cmd.Parameters.AddWithValue("types", eventTypes.ToArray());

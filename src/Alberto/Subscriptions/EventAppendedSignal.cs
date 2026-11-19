@@ -12,6 +12,17 @@ public sealed class EventAppendedSignal : IEventAppendedSignal
     private readonly object _gate = new();
     private TaskCompletionSource _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private bool _pending;
+    private volatile bool _isListening;
+
+    /// <summary>
+    /// Set by a LISTEN/NOTIFY listener while its connection is listening. The head backs its idle
+    /// poll off while this holds, because every committed append signals.
+    /// </summary>
+    internal bool IsListening
+    {
+        get => _isListening;
+        set => _isListening = value;
+    }
 
     /// <inheritdoc />
     public void Signal()

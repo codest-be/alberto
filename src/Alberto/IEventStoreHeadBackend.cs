@@ -82,3 +82,36 @@ public sealed record HeadWindow(IReadOnlyList<long> Positions, TransactionHorizo
 /// <see cref="LastPosition"/> is the highest position that snapshot saw (0 when the log is empty).
 /// </summary>
 public sealed record TransactionHorizon(long OldestRunning, long NextToStart, long LastPosition);
+
+/// <summary>
+/// Internal capability of the shipped backends: the head's whole poll in one round trip. Optional,
+/// so a third-party <see cref="IEventStoreHeadBackend"/> keeps working through the two public calls;
+/// decorators implement it by forwarding through <see cref="HeadSnapshot.ReadAsync"/>.
+/// </summary>
+internal interface IHeadSnapshotBackend
+{
+    Task<HeadSnapshot> GetHeadSnapshotAsync(long afterPosition, int windowSize, CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// A <see cref="HeadWindow"/> plus what the head would otherwise ask for separately, all read in
+/// the window's own snapshot.
+/// </summary>
+/// <param name="Window">The window, as <see cref="IEventStoreHeadBackend.GetPositionWindowAsync"/> returns it.</param>
+/// <param name="StableHead">
+/// The position just below the first event in the window whose transaction is not yet stable, or
+/// <see cref="long.MaxValue"/> when there is none (or no barrier). Null when the backend did not
+/// compute it, and the head asks <see cref="IEventStoreHeadBackend.GetStableHeadUpToAsync"/>.
+/// </param>
+/// <param name="LastOfType">
+/// The last position of each event type in the window, or null when the backend does not know,
+/// which turns off skipping a processor's read on the head's word.
+/// </param>
+internal sealed record HeadSnapshot(HeadWindow Window, long? StableHead, IReadOnlyDictionary<string, long>? LastOfType)
+{
+    internal static async Task<HeadSnapshot> ReadAsync(
+        IEventStoreHeadBackend backend, long afterPosition, int windowSize, CancellationToken cancellationToken) =>
+        backend is IHeadSnapshotBackend snapshots
+            ? await snapshots.GetHeadSnapshotAsync(afterPosition, windowSize, cancellationToken).ConfigureAwait(false)
+            : new(await backend.GetPositionWindowAsync(afterPosition, windowSize, cancellationToken).ConfigureAwait(false), null, null);
+}

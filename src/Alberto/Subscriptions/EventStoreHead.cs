@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Alberto.Telemetry;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -17,6 +18,20 @@ public sealed class EventStoreHead : IHostedService
     private readonly TimeSpan _stallWarningThreshold;
     private readonly AlbertoInstruments _instruments;
     private long _current;
+
+    // Completed and swapped each time the head advances, so caught-up control loops wake on the
+    // advance instead of on their polling interval. Many waiters, one broadcast.
+    private TaskCompletionSource _advanced = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    // The last position of every event type the head has passed, cumulative from position 0,
+    // written before the head that covers it is published. Off for good once the backend cannot
+    // say which types a window held (a third-party backend without IHeadSnapshotBackend).
+    private readonly ConcurrentDictionary<string, long> _lastOfType = new(StringComparer.Ordinal);
+    private volatile bool _typesTracked = true;
+
+    // Whether the last refresh found the stable-head barrier holding the head back. A hold ends
+    // when a transaction ends, which sends no NOTIFY, so it keeps the short interval.
+    private bool _holding;
     private CancellationTokenSource? _cts;
     private Task? _loop;
 
@@ -53,6 +68,31 @@ public sealed class EventStoreHead : IHostedService
     }
 
     public long Current => Volatile.Read(ref _current);
+
+    /// <summary>
+    /// Completes the next time <see cref="Current"/> advances. Take it <em>before</em> reading
+    /// <see cref="Current"/>: an advance after that read then always completes the task in hand.
+    /// </summary>
+    internal Task Advanced => Volatile.Read(ref _advanced).Task;
+
+    /// <summary>
+    /// True when the head knows that no event of <paramref name="types"/> lies after
+    /// <paramref name="afterPosition"/> and at or below the <see cref="Current"/> the caller read
+    /// before calling this, so a processor at <paramref name="afterPosition"/> can move to that head
+    /// without reading. Every position at or below the head was in a window the head read, and the
+    /// window's types are recorded before the head is published, so the record covers it. Positions
+    /// past the head may be recorded too; that only makes the answer "no" more often. An empty set
+    /// answers no: the read decides what it means.
+    /// </summary>
+    internal bool HasNoneOf(IReadOnlySet<string> types, long afterPosition)
+    {
+        if (!_typesTracked || types.Count == 0)
+            return false;
+        foreach (var type in types)
+            if (_lastOfType.TryGetValue(type, out var last) && last > afterPosition)
+                return false;
+        return true;
+    }
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
@@ -133,11 +173,27 @@ public sealed class EventStoreHead : IHostedService
         // A gap still unproven usually proves on the next snapshot (a rollback sends no NOTIFY), so
         // look again soon. The proof waits on every write transaction on the server, not just this
         // store's, so the backoff stays at tens of milliseconds rather than growing to the interval.
-        var wait = _gapRetry > TimeSpan.Zero && _gapRetry < _refreshInterval ? _gapRetry : _refreshInterval;
+        var wait = NextRefreshWait;
         return _signal is null
             ? Task.Delay(wait, cancellationToken)
             : _signal.WaitAsync(wait, cancellationToken);
     }
+
+    /// <summary>
+    /// How long to wait before the next refresh. A pending gap proof retries soon. Otherwise, while
+    /// LISTEN is up every committed append wakes the head, so the interval is only a safety net and
+    /// backs off to <see cref="IdleWaitWhileListening"/>; without it (no listener, a dropped
+    /// connection, or a barrier hold that ends with no NOTIFY) the configured interval is the bound.
+    /// </summary>
+    internal TimeSpan NextRefreshWait => NextWait(_refreshInterval, _gapRetry,
+        listening: _signal is EventAppendedSignal { IsListening: true } && !_holding);
+
+    internal static TimeSpan NextWait(TimeSpan refreshInterval, TimeSpan gapRetry, bool listening) =>
+        gapRetry > TimeSpan.Zero && gapRetry < refreshInterval ? gapRetry
+        : listening && refreshInterval < IdleWaitWhileListening ? IdleWaitWhileListening
+        : refreshInterval;
+
+    internal static readonly TimeSpan IdleWaitWhileListening = TimeSpan.FromSeconds(1);
 
     private TimeSpan _gapRetry;
     private static readonly TimeSpan FirstGapRetry = TimeSpan.FromMilliseconds(10);
@@ -161,7 +217,8 @@ public sealed class EventStoreHead : IHostedService
         for (var window = 0; window < MaxWindowsPerRefresh; window++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var read = await _backend.GetPositionWindowAsync(current, _windowSize, cancellationToken);
+            var snapshot = await HeadSnapshot.ReadAsync(_backend, current, _windowSize, cancellationToken);
+            var read = snapshot.Window;
             var positions = read.Positions;
             var head = read.Horizon is { } horizon
                 ? AdvanceThroughProvenGaps(current, positions, horizon, out gapHeld)
@@ -173,8 +230,10 @@ public sealed class EventStoreHead : IHostedService
             // contiguous head unchanged.
             // Only the window just read can be clamped, so the backend is asked about that range
             // and nothing past it; and an empty or gapped-at-the-start window has nothing to clamp.
+            // A snapshot backend computed it over the whole window in the same statement; a first
+            // unstable event past the head gives a stable head at or above it, which clamps nothing.
             var stableHead = head > current
-                ? await _backend.GetStableHeadUpToAsync(current, head, cancellationToken)
+                ? snapshot.StableHead ?? await _backend.GetStableHeadUpToAsync(current, head, cancellationToken)
                 : long.MaxValue;
             holding = gapHeld || stableHead < head;
             if (stableHead < head)
@@ -182,6 +241,7 @@ public sealed class EventStoreHead : IHostedService
 
             var advanced = head > current;
             current = head;
+            RecordTypes(snapshot.LastOfType);
             Volatile.Write(ref _current, current);
 
             if (holding || !advanced || positions.Count < _windowSize)
@@ -191,7 +251,21 @@ public sealed class EventStoreHead : IHostedService
         _gapRetry = !gapHeld ? TimeSpan.Zero
             : _gapRetry == TimeSpan.Zero ? FirstGapRetry
             : _gapRetry * 2 < MaxGapRetry ? _gapRetry * 2 : MaxGapRetry;
+        _holding = holding;
         TrackStall(holding, headAdvanced: current != start);
+        if (current != start)
+            Interlocked.Exchange(ref _advanced, new(TaskCreationOptions.RunContinuationsAsynchronously)).TrySetResult();
+    }
+
+    private void RecordTypes(IReadOnlyDictionary<string, long>? lastOfType)
+    {
+        if (lastOfType is null)
+        {
+            _typesTracked = false;
+            return;
+        }
+        foreach (var (type, last) in lastOfType)
+            _lastOfType.AddOrUpdate(type, last, (_, seen) => Math.Max(seen, last));
     }
 
     private const int MaxWindowsPerRefresh = 1000;
