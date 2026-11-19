@@ -159,7 +159,7 @@ public sealed class FairShareLeaseTests
     {
         var backend = new InMemoryEventStoreBackend();
         return new ControlLoop(new StubProcessor(processorId), new EventStoreHead(backend, TimeSpan.FromMilliseconds(50)),
-            backend, new InMemoryCheckpointStore(),
+            backend, new InMemoryFencedCheckpointStore(),
             pollingInterval: TimeSpan.FromMilliseconds(50), batchSize: 1,
             executionOptions: new ProcessorExecutionOptions { BatchingMode = ProcessorBatchingMode.Disabled },
             drainTimeout: TimeSpan.FromMilliseconds(200));

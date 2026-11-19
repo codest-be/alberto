@@ -203,7 +203,7 @@ public sealed class IdleProcessorCostTests
     {
         var ct = TestContext.Current.CancellationToken;
         var backend = new CountingBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         await Append(backend.Inner, "other", "other", "other");
 
         var head = new EventStoreHead(backend.Inner, TimeSpan.FromMilliseconds(10));

@@ -119,7 +119,7 @@ public sealed class ControlLoopLifecycleMutationTests
     public async Task Cancel_CancelsTheRunningLoopsToken()
     {
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
 
         await backend.AppendAsync([CreateEvent("cancel-me")],
             cancellationToken: TestContext.Current.CancellationToken);
@@ -173,7 +173,7 @@ public sealed class ControlLoopLifecycleMutationTests
     public void Cancel_BeforeStart_DoesNotThrow()
     {
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var head = new EventStoreHead(backend, refreshInterval: TimeSpan.FromMilliseconds(10));
         var processor = new DelegatingProcessor("cancel-before-start", (_, _) => Task.CompletedTask);
 
@@ -199,7 +199,7 @@ public sealed class ControlLoopLifecycleMutationTests
     public async Task StopAsync_AbandonedDrain_LogsWarning()
     {
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
 
         await backend.AppendAsync([CreateEvent("stuck")],
             cancellationToken: TestContext.Current.CancellationToken);
@@ -260,7 +260,7 @@ public sealed class ControlLoopLifecycleMutationTests
     public async Task DisposeAsync_CleanDrain_DisposesProcessorOnceAndIsIdempotent()
     {
         var backend = new InMemoryEventStoreBackend(); // no events — loop just idles and polls
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var processor = new DisposableProcessor("dispose-clean");
 
         var head = new EventStoreHead(backend, refreshInterval: TimeSpan.FromMilliseconds(10));
@@ -302,7 +302,7 @@ public sealed class ControlLoopLifecycleMutationTests
     public async Task DisposeAsync_AbandonedDrain_DefersProcessorDisposalUntilLoopExits()
     {
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
 
         await backend.AppendAsync([CreateEvent("stuck")],
             cancellationToken: TestContext.Current.CancellationToken);

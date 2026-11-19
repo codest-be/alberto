@@ -231,7 +231,7 @@ public class ProcessorHealthWiringMutationTests
     public async Task Assembler_includes_di_batch_middlewares_in_the_assembled_batch_chain()
     {
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(20));
         var batchMiddleware = new RecordingBatchMiddleware();
 
@@ -396,7 +396,7 @@ public class ProcessorHealthWiringMutationTests
 
     private sealed class FakeFencableCheckpointStore : ICheckpointStore, IFencableCheckpointStore
     {
-        private readonly InMemoryCheckpointStore _inner = new();
+        private readonly InMemoryFencedCheckpointStore _inner = new();
 
         public Action<string>? Handler { get; private set; }
 

@@ -94,7 +94,7 @@ public sealed class RebuildPollingAndSweepTests
             projections: [new RebuildableProjection(ProcessorId, ProcessorId, _ => throw new InvalidOperationException())],
             rebuildStore: store,
             versions: versions,
-            checkpoints: new InMemoryCheckpointStore(),
+            checkpoints: new InMemoryFencedCheckpointStore(),
             loopFactory: new ShadowControlLoopFactory(_ => throw new InvalidOperationException()),
             liveLoops: NoLiveLoops.Instance,
             clearers: [],

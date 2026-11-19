@@ -57,7 +57,7 @@ public sealed class ControlLoopGroupSuspensionTests
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         var backend = new InMemoryEventStoreBackend();
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(10));
         var processor = new CountingProcessor("totals");
 

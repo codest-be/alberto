@@ -260,7 +260,7 @@ public class OrphanCheckpointTests
         // processor look like it has no row and causing the orphan check to miss a genuine
         // rename that only affected that processor. The fix is to flush before listing.
         var cancellationToken = TestContext.Current.CancellationToken;
-        var inner = new InMemoryCheckpointStore();
+        var inner = new InMemoryFencedCheckpointStore();
 
         // Long intervals so no background timer fires during the test.
         await using var caching = new CachingCheckpointStore(
@@ -273,11 +273,11 @@ public class OrphanCheckpointTests
         (await inner.GetAsync("OldProcessorName", cancellationToken)).Should().BeNull(
             "the checkpoint is still buffered; the inner store must not have it yet");
 
-        // InMemoryCheckpointStore implements ICheckpointInventory and CanEnumerate defaults
+        // InMemoryFencedCheckpointStore implements ICheckpointInventory and CanEnumerate defaults
         // to true, so the resolution pattern must yield a non-null inventory.
         ICheckpointInventory? inventory =
             caching is ICheckpointInventory { CanEnumerate: true } inv ? inv : null;
-        inventory.Should().NotBeNull("InMemoryCheckpointStore implements ICheckpointInventory");
+        inventory.Should().NotBeNull("InMemoryFencedCheckpointStore implements ICheckpointInventory");
 
         var ids = await inventory!.ListProcessorIdsAsync(cancellationToken);
         ids.Should().Contain("OldProcessorName",
@@ -421,7 +421,7 @@ public class OrphanCheckpointTests
         await using var sp = services.BuildServiceProvider();
 
         // Pin the override assumption: if last-registration-wins ever stops applying here,
-        // the rest of the test would pass vacuously (InMemoryCheckpointStore.CanEnumerate
+        // the rest of the test would pass vacuously (InMemoryFencedCheckpointStore.CanEnumerate
         // is true, ListProcessorIdsAsync runs on the inner store, and the count stays 0).
         sp.GetKeyedService<ICheckpointStore>("orders").Should().BeSameAs(decorator,
             "the last AddKeyedSingleton registration must win for GetKeyedService (singular)");
@@ -532,7 +532,7 @@ public class OrphanCheckpointTests
         const int discardedVersion = 1;
         var shadowKey = RebuildableProjection.ShadowProcessorId(processorId, discardedVersion);
 
-        var checkpointStore = new InMemoryCheckpointStore();
+        var checkpointStore = new InMemoryFencedCheckpointStore();
         await checkpointStore.SaveAsync(shadowKey, 42, cancellationToken);
 
         // The state the database would hold after a successful promotion + elapsed grace period.

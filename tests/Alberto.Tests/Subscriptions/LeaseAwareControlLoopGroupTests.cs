@@ -186,7 +186,7 @@ public sealed class LeaseAwareControlLoopGroupTests
     {
         var backend = new InMemoryEventStoreBackend();
         var head = new EventStoreHead(backend, TimeSpan.FromMilliseconds(50));
-        var checkpoints = new InMemoryCheckpointStore();
+        var checkpoints = new InMemoryFencedCheckpointStore();
         var processor = new StubProcessor(processorId);
         // BatchingMode.Disabled is required because StubProcessor does not implement
         // IBatchableProcessor.
