@@ -99,7 +99,10 @@ public class OptionsOverrideParityTests
 
         foreach (var (overridesType, optionsType) in DiscoverPairs())
         {
-            var known = PublicProperties(optionsType).Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
+            // An internal option (RebuildOptions.BatchSize) is reachable only through configuration,
+            // so its mirror is legitimate even though the options record does not expose it.
+            var known = optionsType.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+                .Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
 
             foreach (var mirror in PublicProperties(overridesType))
             {

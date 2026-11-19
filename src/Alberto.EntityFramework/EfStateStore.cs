@@ -21,7 +21,7 @@ namespace Alberto.EntityFramework;
 /// </remarks>
 /// <typeparam name="TEntity">The entity type implementing <see cref="IProjectionEntity"/>.</typeparam>
 /// <typeparam name="TDbContext">The DbContext type containing the entity DbSet.</typeparam>
-public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IAsyncDisposable
+public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IStateStoreBatchFold<TEntity>, IAsyncDisposable
     where TEntity : class, IProjectionEntity, new()
     where TDbContext : DbContext
 {
@@ -107,7 +107,15 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
 
         // Resolved once for the whole batch, so a promotion landing mid-batch cannot split
         // attempts, upserts, and deletes across two versions.
-        var version = _rebuildVersion.Current;
+        await WriteWithRetriesAsync(upserts, deletes, _rebuildVersion.Current, cancellationToken);
+    }
+
+    private async Task WriteWithRetriesAsync(
+        IReadOnlyDictionary<string, TEntity> upserts,
+        IReadOnlyCollection<string> deletes,
+        int version,
+        CancellationToken cancellationToken)
+    {
         var delay = TimeSpan.FromMilliseconds(50);
 
         for (var attempt = 1; attempt <= MaxWriteAttempts; attempt++)
@@ -131,6 +139,57 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
     }
 
     /// <summary>
+    /// Reads the batch's rows once, tracked, and writes the fold's outcome through the same
+    /// context, instead of <see cref="LoadManyAsync"/> followed by the tracked re-read in
+    /// <see cref="WriteBatchOnceAsync"/>. A conflict falls back to the retry loop behind
+    /// <see cref="ApplyChangesAsync"/>, which re-reads per attempt exactly as before.
+    /// </summary>
+    async Task<bool> IStateStoreBatchFold<TEntity>.LoadFoldApplyAsync(
+        IReadOnlyList<string> documentIds,
+        Func<IReadOnlyDictionary<string, TEntity>, (IReadOnlyDictionary<string, TEntity> Upserts, IReadOnlyCollection<string> Deletes)> fold,
+        CancellationToken cancellationToken)
+    {
+        var version = _rebuildVersion.Current;
+
+        IReadOnlyDictionary<string, TEntity> upserts;
+        IReadOnlyCollection<string> deletes;
+
+        await using (var context = await _contextFactory.CreateDbContextAsync(cancellationToken))
+        {
+            var ids = documentIds as List<string> ?? documentIds.ToList();
+            var existing = await context.Set<TEntity>()
+                .IgnoreQueryFilters([ProjectionQueryFilters.ActiveVersion])
+                .Where(e => ids.Contains(e.DocumentId) && e.RebuildVersion == version)
+                .ToDictionaryAsync(e => e.DocumentId, cancellationToken);
+
+            (upserts, deletes) = fold(existing);
+            if (upserts.Count == 0 && deletes.Count == 0)
+                return false;
+
+            // A handler may mutate the loaded entity in place and then not write it. The
+            // two-read path never persisted that, and change tracking would, so a batch that
+            // leaves a loaded document unwritten and has in-place changes takes that path.
+            var untouched = existing.Keys.Any(id => !upserts.ContainsKey(id) && !deletes.Contains(id));
+            if (!untouched || !context.ChangeTracker.HasChanges())
+            {
+                try
+                {
+                    StageChanges(context, existing, upserts, deletes, version);
+                    await context.SaveChangesAsync(cancellationToken);
+                    return true;
+                }
+                catch (Exception ex) when (IsRetryableConflict(ex))
+                {
+                    AlbertoMetrics.ConcurrencyConflicts.Add(1, new KeyValuePair<string, object?>("kind", "projection"));
+                }
+            }
+        }
+
+        await WriteWithRetriesAsync(upserts, deletes, version, cancellationToken);
+        return true;
+    }
+
+    /// <summary>
     /// Applies the complete change set in one fresh context. Each retry calls this method again,
     /// so no tracked state or partial fallback path can leak between attempts.
     /// </summary>
@@ -147,6 +206,20 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
             .Where(e => allDocIds.Contains(e.DocumentId) && e.RebuildVersion == version)
             .ToDictionaryAsync(e => e.DocumentId, cancellationToken);
 
+        StageChanges(context, existingEntities, upserts, deletes, version);
+        await context.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Stages a change set on a context that tracks the batch's existing rows.
+    /// </summary>
+    private static void StageChanges(
+        TDbContext context,
+        IReadOnlyDictionary<string, TEntity> existingEntities,
+        IReadOnlyDictionary<string, TEntity> upserts,
+        IReadOnlyCollection<string> deletes,
+        int version)
+    {
         // Delete-wins: a document ID present in both upserts and deletes must be absent
         // after the batch. EF cannot express "insert then delete in one statement" the way
         // the Postgres adapter does (upsert SQL followed by delete SQL in one transaction),
@@ -179,8 +252,6 @@ public sealed class EfStateStore<TEntity, TDbContext> : IStateStore<TEntity>, IA
                 context.Set<TEntity>().Add(newEntity);
             }
         }
-
-        await context.SaveChangesAsync(cancellationToken);
     }
 
     /// <summary>

@@ -236,76 +236,58 @@ public sealed class PostgresStateStore<TState> : IStateStore<TState>
 
         try
         {
-            string upsertSql;
-            string deleteSql;
+            // One statement for every upsert and one for every delete, whatever the batch size.
+            // The upsert runs first, so a document in both sets ends deleted, as it did when each
+            // was its own statement. Upsert keys come from a dictionary and are already distinct,
+            // which ON CONFLICT DO UPDATE requires: it refuses to touch one row twice.
+            // now() is the transaction's start time, so every row in a batch shares one
+            // updated_at exactly as before.
+            var tenantColumn = _multiTenant ? "tenant_id, " : "";
+            var tenantValue = _multiTenant ? "@tenant_id, " : "";
+            var tenantFilter = _multiTenant ? "tenant_id = @tenant_id AND " : "";
 
-            if (_multiTenant)
-            {
-                upsertSql = $"""
-                    INSERT INTO {_schema.Table("alberto_projection_states")}
-                        (tenant_id, projection_type, document_id, rebuild_version, state, updated_at)
-                    VALUES (@tenant_id, @projection_type, @document_id, @rebuild_version, @state::jsonb, now())
-                    ON CONFLICT (tenant_id, projection_type, document_id, rebuild_version) DO UPDATE
-                    SET state = @state::jsonb, updated_at = now()
-                    """;
+            var upsertSql = $"""
+                INSERT INTO {_schema.Table("alberto_projection_states")}
+                    ({tenantColumn}projection_type, document_id, rebuild_version, state, updated_at)
+                SELECT {tenantValue}@projection_type, u.document_id, @rebuild_version, u.state::jsonb, now()
+                FROM unnest(@document_ids, @states) AS u(document_id, state)
+                ON CONFLICT ({tenantColumn}projection_type, document_id, rebuild_version) DO UPDATE
+                SET state = EXCLUDED.state, updated_at = now()
+                """;
 
-                deleteSql = $"""
-                    DELETE FROM {_schema.Table("alberto_projection_states")}
-                    WHERE tenant_id = @tenant_id
-                      AND projection_type = @projection_type
-                      AND document_id = @document_id
-                      AND rebuild_version = @rebuild_version
-                    """;
-            }
-            else
-            {
-                upsertSql = $"""
-                    INSERT INTO {_schema.Table("alberto_projection_states")}
-                        (projection_type, document_id, rebuild_version, state, updated_at)
-                    VALUES (@projection_type, @document_id, @rebuild_version, @state::jsonb, now())
-                    ON CONFLICT (projection_type, document_id, rebuild_version) DO UPDATE
-                    SET state = @state::jsonb, updated_at = now()
-                    """;
-
-                deleteSql = $"""
-                    DELETE FROM {_schema.Table("alberto_projection_states")}
-                    WHERE projection_type = @projection_type
-                      AND document_id = @document_id
-                      AND rebuild_version = @rebuild_version
-                    """;
-            }
+            var deleteSql = $"""
+                DELETE FROM {_schema.Table("alberto_projection_states")}
+                WHERE {tenantFilter}projection_type = @projection_type
+                  AND rebuild_version = @rebuild_version
+                  AND document_id = ANY(@document_ids)
+                """;
 
             await using var batch = new NpgsqlBatch(connection)
             {
                 Transaction = transaction
             };
 
-            foreach (var (docId, state) in upserts)
+            if (upserts.Count > 0)
             {
-                var stateJson = JsonSerializer.Serialize(state, _jsonTypeInfo.Value);
-                var batchCmd = new NpgsqlBatchCommand(upsertSql);
-                if (_multiTenant)
-                    batchCmd.Parameters.AddWithValue("tenant_id", _tenantId!);
-                batchCmd.Parameters.AddWithValue("projection_type", _projectionType);
-                batchCmd.Parameters.AddWithValue("document_id", docId);
-                batchCmd.Parameters.AddWithValue("rebuild_version", version);
-                batchCmd.Parameters.AddWithValue("state", stateJson);
-                batch.BatchCommands.Add(batchCmd);
+                var ids = new string[upserts.Count];
+                var states = new string[upserts.Count];
+                var i = 0;
+                foreach (var (docId, state) in upserts)
+                {
+                    ids[i] = docId;
+                    states[i] = JsonSerializer.Serialize(state, _jsonTypeInfo.Value);
+                    i++;
+                }
+
+                var upsertCmd = Scoped(new NpgsqlBatchCommand(upsertSql), version, ids);
+                upsertCmd.Parameters.Add(new NpgsqlParameter<string[]>("states", states));
+                batch.BatchCommands.Add(upsertCmd);
             }
 
-            foreach (var docId in deletes)
-            {
-                var batchCmd = new NpgsqlBatchCommand(deleteSql);
-                if (_multiTenant)
-                    batchCmd.Parameters.AddWithValue("tenant_id", _tenantId!);
-                batchCmd.Parameters.AddWithValue("projection_type", _projectionType);
-                batchCmd.Parameters.AddWithValue("document_id", docId);
-                batchCmd.Parameters.AddWithValue("rebuild_version", version);
-                batch.BatchCommands.Add(batchCmd);
-            }
+            if (deletes.Count > 0)
+                batch.BatchCommands.Add(Scoped(new NpgsqlBatchCommand(deleteSql), version, deletes.ToArray()));
 
-            if (batch.BatchCommands.Count > 0)
-                await batch.ExecuteNonQueryAsync(cancellationToken);
+            await batch.ExecuteNonQueryAsync(cancellationToken);
 
             await transaction.CommitAsync(cancellationToken);
         }
@@ -314,6 +296,16 @@ public sealed class PostgresStateStore<TState> : IStateStore<TState>
             await transaction.RollbackAsync(cancellationToken);
             throw;
         }
+    }
+
+    private NpgsqlBatchCommand Scoped(NpgsqlBatchCommand cmd, int version, string[] documentIds)
+    {
+        if (_multiTenant)
+            cmd.Parameters.AddWithValue("tenant_id", _tenantId!);
+        cmd.Parameters.AddWithValue("projection_type", _projectionType);
+        cmd.Parameters.AddWithValue("rebuild_version", version);
+        cmd.Parameters.Add(new NpgsqlParameter<string[]>("document_ids", documentIds));
+        return cmd;
     }
 
     /// <inheritdoc/>

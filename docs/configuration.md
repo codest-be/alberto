@@ -122,7 +122,8 @@ A complete example covering all sections:
             "Enabled": false,
             "AutoPromote": true,
             "PollingInterval": "00:00:05",
-            "VersionRefreshInterval": "00:00:05"
+            "VersionRefreshInterval": "00:00:05",
+            "BatchSize": 1000
           }
         },
         "Telemetry": {
@@ -263,13 +264,15 @@ Nested in `ControlLoop.Rebuilds` · configuration path: `ControlLoop:Rebuilds`
 | `AutoPromote` | `bool` | `true` | `ControlLoop:Rebuilds:AutoPromote` |
 | `PollingInterval` | `TimeSpan` | `00:00:05` (5 s) | `ControlLoop:Rebuilds:PollingInterval` |
 | `VersionRefreshInterval` | `TimeSpan` | `00:00:05` (5 s) | `ControlLoop:Rebuilds:VersionRefreshInterval` |
+| `BatchSize` | `int` | `1000` | `ControlLoop:Rebuilds:BatchSize` |
 
 `Enabled = true` makes the application *able* to carry out a zero-downtime projection
 rebuild; nothing happens until an operator starts one with `IProjectionRebuildStore.StartAsync`.
 Set `AutoPromote = false` to park a finished rebuild at `Ready` until an operator calls
 `RequestPromotionAsync`, which is the setting you want when promotion should be a
-deliberate step rather than a consequence of catching up. Both intervals must be positive
-(ALB0009).
+deliberate step rather than a consequence of catching up. `BatchSize` is the shadow loop's
+batch: a replay reads the log from the start, so it is larger than the live loop's
+`ControlLoop.BatchSize`. Both intervals and the batch size must be positive (ALB0009).
 
 ---
 
@@ -473,7 +476,7 @@ surfacing them in one error message.
 | `ALB0006` | A processor id is empty or contains whitespace | Use a non-empty identifier without whitespace |
 | `ALB0007` | `Retry.MaxRetries < 0` or `Retry.BackoffMultiplier < 1.0` | Use 0 to disable retries; use 1.0 for a constant backoff delay |
 | `ALB0008` | A configuration key under `Alberto:Modules:{key}` does not match any known option: for example a typo in a section or property name | Correct or remove the key; when a close match exists, the remedy shows a "Did you mean '…'?" suggestion |
-| `ALB0009` | With rebuilds enabled, `Rebuilds.PollingInterval` or `Rebuilds.VersionRefreshInterval` is not a positive duration | Set a positive interval via `.WithRebuilds(pollingInterval: ...)` or the matching `ControlLoop:Rebuilds:*` key |
+| `ALB0009` | With rebuilds enabled, `Rebuilds.PollingInterval` or `Rebuilds.VersionRefreshInterval` is not a positive duration, or `Rebuilds.BatchSize` is not a positive count | Set a positive interval via `.WithRebuilds(pollingInterval: ...)` or the matching `ControlLoop:Rebuilds:*` key |
 | `ALB0010` | The module declares shards but not tenancy: a shard routes tenants, so there is nothing to route | Declare the shards inside `.WithTenancy(t => ...)` rather than alongside it |
 | `ALB0011` | The module declares shards but the backend does not support tenancy | Switch to a backend that supports it, such as `.WithPostgres(...)` |
 | `ALB0012` | A shard id is not a safe identifier, or two shards share one | Use a lowercase identifier starting with a letter (maximum 63 characters), and give each `.AddShard(...)` a distinct id |
