@@ -19,9 +19,12 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ## [0.15.2] - 2026-11-22
 
-### Added
+### Changed
 
-- telemetry: anonymous commands show up as alberto.command <>f__AnonymousTypeN (#276)
+- **Telemetry:** a command passed as an anonymous object is now named after its member names in
+  the `alberto.command {CommandType}` span and the `alberto.command.type` tag, as
+  `{ clientId, therapistId }`, instead of the compiler's `<>f__AnonymousTypeN`. Property values
+  never appear in the name. Named commands keep their type name. (#276)
 
 ---
 
