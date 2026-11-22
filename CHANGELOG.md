@@ -17,6 +17,14 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ---
 
+## [0.15.2] - 2026-11-22
+
+### Added
+
+- telemetry: anonymous commands show up as alberto.command <>f__AnonymousTypeN (#276)
+
+---
+
 ## [0.15.1] - 2026-11-19
 
 Fewer database round trips and scans on the append, checkpoint, lease, polling, projection and
@@ -1147,7 +1155,8 @@ Initial beta release. Core DCB event store abstractions, PostgreSQL backend, in-
 backend, command pipeline, EF Core projection support, transactional outbox, and
 OpenTelemetry instrumentation.
 
-[Unreleased]: https://github.com/codest-be/alberto/compare/v0.15.1...HEAD
+[Unreleased]: https://github.com/codest-be/alberto/compare/v0.15.2...HEAD
+[0.15.2]: https://github.com/codest-be/alberto/compare/v0.15.1...v0.15.2
 [0.15.1]: https://github.com/codest-be/alberto/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/codest-be/alberto/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/codest-be/alberto/compare/v0.13.0...v0.14.0

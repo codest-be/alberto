@@ -7,7 +7,7 @@
         <Copyright>Copyright © $([System.DateTime]::UtcNow.Year) Alberto</Copyright>
 
         <!-- Version -->
-        <VersionPrefix>0.15.1</VersionPrefix>
+        <VersionPrefix>0.15.2</VersionPrefix>
 
         <!-- Repository Information -->
         <RepositoryUrl>https://github.com/codest-be/alberto</RepositoryUrl>
