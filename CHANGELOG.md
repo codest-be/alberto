@@ -17,6 +17,17 @@ The road to 1.0 is collected in [docs/migrating-to-1.0.md](docs/migrating-to-1.0
 
 ---
 
+## [0.15.2] - 2026-11-22
+
+### Changed
+
+- **Telemetry:** a command passed as an anonymous object is now named after its member names in
+  the `alberto.command {CommandType}` span and the `alberto.command.type` tag, as
+  `{ clientId, therapistId }`, instead of the compiler's `<>f__AnonymousTypeN`. Property values
+  never appear in the name. Named commands keep their type name. (#276)
+
+---
+
 ## [0.15.1] - 2026-11-19
 
 Fewer database round trips and scans on the append, checkpoint, lease, polling, projection and
@@ -1147,7 +1158,8 @@ Initial beta release. Core DCB event store abstractions, PostgreSQL backend, in-
 backend, command pipeline, EF Core projection support, transactional outbox, and
 OpenTelemetry instrumentation.
 
-[Unreleased]: https://github.com/codest-be/alberto/compare/v0.15.1...HEAD
+[Unreleased]: https://github.com/codest-be/alberto/compare/v0.15.2...HEAD
+[0.15.2]: https://github.com/codest-be/alberto/compare/v0.15.1...v0.15.2
 [0.15.1]: https://github.com/codest-be/alberto/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/codest-be/alberto/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/codest-be/alberto/compare/v0.13.0...v0.14.0
